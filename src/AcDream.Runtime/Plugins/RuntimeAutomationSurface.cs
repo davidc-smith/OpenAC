@@ -41,6 +41,7 @@ internal sealed class RuntimeAutomationSurface
     private static readonly double PeerHeartbeatSeconds =
         LocalPluginPeerRegistry.HeartbeatPeriod.TotalSeconds;
     private readonly object _gate = new();
+    private readonly RuntimeInventorySnapshotCache _ownedInventorySnapshots = new();
     private readonly AcDream.Runtime.Navigation.RuntimeNavigationAutomation _navigation;
     private readonly AcDream.Runtime.Maps.RuntimeDungeonMapAutomation _dungeonMap = new();
     private readonly AcDream.Core.Plugins.IPluginEventSink? _events;
@@ -1318,6 +1319,7 @@ internal sealed class RuntimeAutomationSurface
         _vendorAutomation?.Dispose();
         _vendorAutomation = null;
         _tradeAutomation = null;
+        _ownedInventorySnapshots.Clear();
         _runtime = null;
         _navigation.UnbindRuntime();
         _communication = null;
@@ -4253,19 +4255,17 @@ internal sealed class RuntimeAutomationSurface
         if (playerId == 0u)
             return Array.Empty<PluginInventoryItem>();
         ClientObjectTable objects = runtime.InventoryOwner.Objects;
-        var built = new List<PluginInventoryItem>();
+        _ownedInventorySnapshots.Begin();
         foreach (ClientObject item in objects.Objects)
         {
             if (!IsPlayerOwned(item, playerId, objects))
                 continue;
-            built.Add(ProjectInventoryItem(runtime, item));
+            RuntimeInventorySnapshotCache.Entry? previous =
+                _ownedInventorySnapshots.Find(item.ObjectId);
+            PluginInventoryItem projected = ProjectInventoryItem(runtime, item, previous);
+            _ownedInventorySnapshots.Add(item.Header, projected);
         }
-        built.Sort(static (left, right) =>
-        {
-            int name = string.CompareOrdinal(left.Name, right.Name);
-            return name != 0 ? name : left.ObjectId.CompareTo(right.ObjectId);
-        });
-        return built;
+        return _ownedInventorySnapshots.Complete();
     }
 
     public bool TryCaptureProperties(
@@ -5179,7 +5179,8 @@ internal sealed class RuntimeAutomationSurface
 
     internal PluginInventoryItem ProjectInventoryItem(
         GameRuntime runtime,
-        ClientObject item)
+        ClientObject item,
+        RuntimeInventorySnapshotCache.Entry? previous = null)
     {
         ClientWeaponProfile? weapon = item.WeaponProfile;
         int damage = weapon is { } weaponDamage
@@ -5246,9 +5247,8 @@ internal sealed class RuntimeAutomationSurface
             BoostValue = item.Properties.GetInt((uint)PropertyInt.BoostValue),
             HealKitModifier = item.Properties.GetFloat(
                 (uint)PropertyFloat.HealkitMod),
-            AppraisedSpellIds = item.AppraisedSpellIds.Count == 0
-                ? Array.Empty<uint>()
-                : item.AppraisedSpellIds.ToArray(),
+            AppraisedSpellIds = RuntimeInventorySnapshotCache.CaptureSpells(
+                item.AppraisedSpellIds, previous?.Item.AppraisedSpellIds),
             GearDamage = item.Properties.GetInt((uint)PropertyInt.GearDamage),
             GearDamageResistance = item.Properties.GetInt(
                 (uint)PropertyInt.GearDamageResist),
@@ -5279,7 +5279,7 @@ internal sealed class RuntimeAutomationSurface
             Retained = item.Properties.GetBool((uint)PropertyBool.Retained),
             MaterialType = item.MaterialType ?? 0u,
             ObjectClass = ClassifyObject(item),
-            Palettes = ProjectPalettes(runtime, item.ObjectId),
+            Palettes = ProjectPalettes(runtime, item.ObjectId, previous?.Item.Palettes),
             IconId = item.IconId,
             IconUnderlayId = item.IconUnderlayId,
             IconOverlayId = item.IconOverlayId,
@@ -5295,15 +5295,17 @@ internal sealed class RuntimeAutomationSurface
                     : null)
                 ?? item.Header?.UseRadius
                 ?? 0f,
-            Header = AcDream.Runtime.Gameplay.RuntimeWorldObjectProjection
-                .ProjectHeader(item.Header),
+            Header = previous is not null && previous.Header == item.Header
+                ? previous.Item.Header
+                : RuntimeWorldObjectProjection.ProjectHeader(item.Header),
             Effects = item.Effects,
         };
     }
 
     private IReadOnlyList<PluginPaletteInfo> ProjectPalettes(
         GameRuntime runtime,
-        uint objectId)
+        uint objectId,
+        IReadOnlyList<PluginPaletteInfo>? previous = null)
     {
         IChargenPaletteColorSource? colors;
         lock (_gate)
@@ -5317,8 +5319,9 @@ internal sealed class RuntimeAutomationSurface
             return Array.Empty<PluginPaletteInfo>();
         }
 
-        var result = new PluginPaletteInfo[record.Snapshot.SubPalettes.Count];
-        for (int index = 0; index < result.Length; index++)
+        int count = record.Snapshot.SubPalettes.Count;
+        PluginPaletteInfo[]? result = previous?.Count == count ? null : new PluginPaletteInfo[count];
+        for (int index = 0; index < count; index++)
         {
             var palette = record.Snapshot.SubPalettes[index];
             // The swap's offset and length count blocks of eight colours, so
@@ -5332,15 +5335,23 @@ internal sealed class RuntimeAutomationSurface
                 palette.SubPaletteId,
                 sampleIndex,
                 out var rgb);
-            result[index] = new PluginPaletteInfo(
+            var projected = new PluginPaletteInfo(
                 palette.SubPaletteId,
                 palette.Offset,
                 palette.Length,
                 rgb.R,
                 rgb.G,
                 rgb.B);
+            if (result is null && previous![index] != projected)
+            {
+                result = new PluginPaletteInfo[count];
+                for (int prior = 0; prior < index; prior++)
+                    result[prior] = previous[prior];
+            }
+            if (result is not null)
+                result[index] = projected;
         }
-        return result;
+        return result is null ? previous! : Array.AsReadOnly(result);
     }
 
     // ── IFellowshipAutomation ────────────────────────────────────────────
