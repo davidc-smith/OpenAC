@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AcDream.Plugin.Abstractions;
@@ -966,16 +967,9 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     /// </summary>
     private List<PeerNote> ReadRemoteNotes(DateTimeOffset now)
     {
-        // The folder's own stamp, which moves whenever a note is put there,
-        // removed or replaced -- every client writes its note by renaming a
-        // new file over the old one, which is a change to the folder. Asked
-        // for first because a client reads this on a timer whether or not
-        // anything has happened, and a folder that has not changed holds
-        // exactly what the last scan found.
-        //
-        // A folder that is not there answers with the zero of file time
-        // rather than throwing, which is the same answer as "nothing has
-        // ever announced itself here".
+        // Enumerate on each request so arrivals and replacements remain visible.
+        // FileInfo returned by the enumeration already carries file metadata;
+        // constructing one from each path would query it separately again.
         if (!Directory.Exists(_directory))
         {
             return _remotePeers.Count == 0
@@ -983,16 +977,15 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
                 : WithRemotePeers([], now);
         }
         var notes = new List<PeerNote>();
-        foreach (string file in Directory.EnumerateFiles(
-            _directory,
+        foreach (FileInfo info in new DirectoryInfo(_directory).EnumerateFiles(
             "peer-*.json",
             SearchOption.TopDirectoryOnly))
         {
+            string file = info.FullName;
             if (file.Equals(_path, StringComparison.OrdinalIgnoreCase))
                 continue;
             try
             {
-                var info = new FileInfo(file);
                 if (info.Length is <= 0 or > MaximumDocumentBytes)
                     continue;
                 // What the file looked like when it was last read. It says
@@ -1011,23 +1004,13 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
                 // cache only ever spares files that have been still for a while.
                 bool justWritten =
                     DateTime.UtcNow - writtenAt < FileTimeGranularity;
+                bool wasCached = _parsedNotes.TryGetValue(file, out CachedNote cached);
                 if (justWritten
-                    || !_parsedNotes.TryGetValue(file, out CachedNote cached)
+                    || !wasCached
                     || cached.Length != info.Length
                     || cached.LastWriteUtc != writtenAt)
                 {
-                    // A note is read on a timer and rewritten every few
-                    // seconds, so most reads find exactly what the last one
-                    // did. What a file says is settled once per version of
-                    // that file; only whether it is still recent is asked
-                    // every time.
-                    PeerDocument? parsed = JsonSerializer.Deserialize<PeerDocument>(
-                        File.ReadAllText(file),
-                        JsonOptions);
-                    cached = new CachedNote(
-                        info.Length,
-                        writtenAt,
-                        Accept(parsed));
+                    cached = ReadNote(file, info.Length, writtenAt, cached);
                     if (_parsedNotes.Count >= ParsedNoteCapacity)
                         _parsedNotes.Clear();
                     _parsedNotes[file] = cached;
@@ -1048,6 +1031,46 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
             }
         }
         return WithRemotePeers(notes, now);
+    }
+
+    private CachedNote ReadNote(
+        string file, long length, DateTime writtenAt, CachedNote previous)
+    {
+        // Recently written files must still be read: their stamps can collide.
+        // Compare the bytes before decoding and validating JSON, and borrow the
+        // read buffer so unchanged notes do not allocate a stream-reader buffer
+        // and an entire document on every plugin poll.
+        byte[] buffer = ArrayPool<byte>.Shared.Rent((int)MaximumDocumentBytes + 1);
+        try
+        {
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read,
+                FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.SequentialScan);
+            int count = 0;
+            while (count <= MaximumDocumentBytes)
+            {
+                int read = stream.Read(buffer.AsSpan(count, (int)MaximumDocumentBytes + 1 - count));
+                if (read == 0)
+                    break;
+                count += read;
+            }
+            if (count > MaximumDocumentBytes)
+                return new CachedNote(length, writtenAt, null, null);
+
+            ReadOnlySpan<byte> contents = buffer.AsSpan(0, count);
+            if (previous.Contents is not null && contents.SequenceEqual(previous.Contents))
+                return previous with { Length = length, LastWriteUtc = writtenAt };
+
+            // Preserve the BOM detection and decoding used by ReadAllText,
+            // including notes supplied by other writers in UTF-16.
+            using var memory = new MemoryStream(buffer, 0, count, writable: false);
+            using var text = new StreamReader(memory);
+            PeerDocument? parsed = JsonSerializer.Deserialize<PeerDocument>(text.ReadToEnd(), JsonOptions);
+            return new CachedNote(length, writtenAt, Accept(parsed), contents.ToArray());
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>
@@ -1625,7 +1648,8 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     private readonly record struct CachedNote(
         long Length,
         DateTime LastWriteUtc,
-        PeerDocument? Document);
+        PeerDocument? Document,
+        byte[]? Contents);
 
     /// <summary>
     /// What a high-water mark belongs to. The identity in a note is a field
