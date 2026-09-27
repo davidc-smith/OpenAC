@@ -31,15 +31,15 @@ public sealed class ChargenAppearanceCatalog :
     }
 
     public ChargenPalSet? TryGetPalSet(uint palSetId) =>
-        _palSets.GetOrAdd(palSetId, LoadPalSet);
+        _palSets.GetOrAdd(palSetId, static (id, catalog) => catalog.LoadPalSet(id), this);
 
     public ChargenClothingTable? TryGetClothingTable(uint clothingTableId) =>
-        _clothingTables.GetOrAdd(clothingTableId, LoadClothingTable);
+        _clothingTables.GetOrAdd(clothingTableId, static (id, catalog) => catalog.LoadClothingTable(id), this);
 
     public bool TryGetColor(uint paletteId, int index, out ChargenSwatchRgb color)
     {
         color = default;
-        DatPalette? palette = _palettes.GetOrAdd(paletteId, Read<DatPalette>);
+        DatPalette? palette = _palettes.GetOrAdd(paletteId, static (id, catalog) => catalog.Read<DatPalette>(id), this);
         if (palette is null || index < 0 || index >= palette.Colors.Count)
             return false;
 
