@@ -128,13 +128,16 @@ internal sealed class PeerHubServer
                 foreach (var peer in _clients.Values.Where(c => c != sender && SameWorld(c, sender)))
                     Send(peer, new() { Kind = "remove", Id = sender.Id });
             sender.Client = message.Client; sender.Capabilities = message.Capabilities;
+            // A peer must know its publication demand before another client can
+            // observe the new listener and act on that state.
+            UpdateDemand();
             foreach (var other in _clients.Values.Where(c => c != sender && SameWorld(c, sender)))
             {
                 if (NeedsState(sender) && ParticipatesInState(other)) SendState(sender, other, initial: true);
                 if (NeedsState(other) && ParticipatesInState(sender)) SendState(other, sender);
             }
             Send(sender, new() { Kind = "ready" });
-            UpdateDemand(); return;
+            return;
         }
         if (sender.Id == Guid.Empty) throw new InvalidDataException("Unregistered peer.");
         if (message.Kind == "state")
