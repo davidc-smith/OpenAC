@@ -71,7 +71,8 @@ internal sealed class ParityPeerClient : IDisposable
     internal void Publish(PluginNetworkClient client)
     {
         _transport.UpdateSelf(client with { ClientId = ClientId });
-        _hub.Until(() => _registry.CaptureRemoteClients().Count > 0 && _transport.HasCastDemand);
+        _hub.Until(() => _registry.CaptureRemoteClients().Count > 0 && _transport.HasCastDemand
+            && _hub.Arm.Host.Automation.Network.CaptureClients().Any(c => c.ClientId == ClientId));
         long sequence = 0;
         foreach (var (cast, at) in _casts)
         {

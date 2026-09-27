@@ -15,6 +15,20 @@ public sealed class PeerHubTests
     }
 
     [Fact]
+    public async Task NewCastListenerDemandArrivesBeforeItsState()
+    {
+        await using var fixture = new HubFixture();
+        using var source = await fixture.Connect(1, "source", "world", PluginPeerCapabilities.Casts);
+        using var listener = await fixture.Connect(2, "listener", "world", PluginPeerCapabilities.Casts);
+        var demand = await PeerHubProtocol.ReadAsync(source, fixture.Token);
+        Assert.Equal("demand", demand!.Kind);
+        Assert.True(demand.Capabilities.HasFlag(PluginPeerCapabilities.Casts));
+        var state = await PeerHubProtocol.ReadAsync(source, fixture.Token);
+        Assert.Equal("state", state!.Kind);
+        Assert.Equal("listener", state.Client.Name);
+    }
+
+    [Fact]
     public async Task CommandsArePushedOnlyToSubscribedMatchingWorldAndTags()
     {
         await using var fixture = new HubFixture();
