@@ -175,7 +175,7 @@
         </Button>
       </Grid>
     </Border>
-    <Grid Grid.Row="3" Margin="14,10" RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsAccountsTabSelected}">
+    <Grid Grid.Row="3" Margin="14,10" RowDefinitions="Auto,Auto,Auto,*" IsVisible="{Binding IsAccountsTabSelected}">
       <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,8">
         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding HasProfileFilters}">
           <TextBlock Text="Profile" Classes="muted" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
@@ -196,13 +196,23 @@
         </StackPanel>
         <Button Grid.Column="2" Content="Check servers" Command="{Binding CheckServersCommand}" VerticalAlignment="Center" />
       </Grid>
-      <Grid Grid.Row="1" ColumnDefinitions="26,*,160,112,*,64,92" Margin="22,0,14,5" ColumnSpacing="6">
+      <StackPanel Grid.Row="1" Spacing="4" Margin="0,0,0,10">
+        <WrapPanel Orientation="Horizontal">
+          <CheckBox Content="Show only checked accounts" IsChecked="{Binding ShowOnlyCheckedAccounts, Mode=TwoWay}" Margin="0,0,16,0" />
+          <CheckBox Content="Relaunch checked clients automatically" IsChecked="{Binding RelaunchCheckedClientsAutomatically, Mode=TwoWay}" Margin="0,0,12,0" />
+          <TextBlock Text="Delay (seconds)" VerticalAlignment="Center" Margin="0,0,6,0" />
+          <TextBox Text="{Binding RelaunchDelaySecondsText, Mode=TwoWay}" Width="65" VerticalAlignment="Center" AutomationProperties.Name="Automatic relaunch delay in seconds" />
+        </WrapPanel>
+        <TextBlock Text="When enabled, checked clients relaunch after a crash or Stop. Uncheck a client or turn this off to keep it stopped. These controls last for this launcher session." Classes="muted" FontSize="11" TextWrapping="Wrap" />
+        <TextBlock Text="Enter a whole number from 5 to 3600 seconds. Automatic relaunch is paused while this value is invalid." IsVisible="{Binding !IsRelaunchDelayValid}" Foreground="#F17474" FontSize="11" TextWrapping="Wrap" />
+      </StackPanel>
+      <Grid Grid.Row="2" ColumnDefinitions="26,*,160,112,*,64,92" Margin="22,0,14,5" ColumnSpacing="6">
         <TextBlock Grid.Column="1" Text="Server · status · players" Classes="muted" FontSize="12" />
         <TextBlock Grid.Column="2" Text="Character" Classes="muted" FontSize="12" />
         <TextBlock Grid.Column="3" Text="Launch mode" Classes="muted" FontSize="12" />
         <TextBlock Grid.Column="4" Text="Session" Classes="muted" FontSize="12" />
       </Grid>
-      <ScrollViewer Grid.Row="2" x:Name="AccountsScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Focusable="True">
+      <ScrollViewer Grid.Row="3" x:Name="AccountsScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Focusable="True">
         <StackPanel Spacing="5">
           <TextBlock Text="Add a server with Add server, then your accounts with Accounts, below." IsVisible="{Binding !HasAccounts}" Classes="muted" Margin="8,16" />
           <ItemsControl ItemsSource="{Binding Accounts}">
@@ -245,7 +255,7 @@
                         <DataTemplate x:DataType="vm:LauncherAccountServerRowViewModel">
                           <Border BorderBrush="#2B3941" BorderThickness="0,1,0,0" Padding="12,3,8,3">
                             <Grid ColumnDefinitions="26,*,160,112,*,64,92" RowDefinitions="Auto,Auto" ColumnSpacing="6">
-                              <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" IsEnabled="{Binding CanEditSelection}" AutomationProperties.Name="Select account and server for batch launch" />
+                              <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" AutomationProperties.Name="Select account and server for batch launch and automatic relaunch" />
                               <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1" Margin="0,2,0,0">
                                 <Grid ColumnDefinitions="14,*"><Ellipse Width="7" Height="7" Fill="{Binding ServerDotColor}" ToolTip.Tip="{Binding ServerStatusText}" /><TextBlock Grid.Column="1" Text="{Binding ServerName}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" ToolTip.Tip="{Binding Endpoint}" /></Grid>
                                 <StackPanel Orientation="Horizontal" Spacing="6">

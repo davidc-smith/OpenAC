@@ -90,11 +90,15 @@ public sealed class LauncherOrchestratorTests : IDisposable
     public async Task BatchAvailabilityPreservesActiveAndReconnectRefusals()
     {
         var sources = new QueueStatusSourceFactory();
-        using var core = CreateOrchestrator(statusSourceFactory: sources);
+        var supervisors = new FakeSupervisorFactory();
+        using var core = CreateOrchestrator(statusSourceFactory: sources, supervisorFactory: supervisors);
         await core.LaunchAsync("Local ACE", "testaccount", "+Acdream", LaunchMode.Headless);
         Check("Stop the running");
         Assert.Single(sources.Created).Enqueue(Exited("s1", 23, "connection lost"));
         core.PollStatus();
+        Check("Stop the running");
+        Assert.Single(supervisors.Created).Exit(23);
+        Assert.False(Assert.Single(core.GetSnapshot().Sessions).IsProcessOrStartActive);
         Check("Try again");
 
         void Check(string reason)
@@ -708,6 +712,13 @@ public sealed class LauncherOrchestratorTests : IDisposable
         source.Enqueue(
             Exited("s1", 0, "graceful host shutdown"));
         orchestrator.PollStatus();
+        LauncherSessionSnapshot beforeProcessExit = Assert.Single(orchestrator.GetSnapshot().Sessions);
+        Assert.False(beforeProcessExit.IsActive);
+        Assert.True(beforeProcessExit.HasLiveProcess);
+        Assert.True(beforeProcessExit.IsProcessOrStartActive);
+        Assert.False(orchestrator.GetAccountLaunchCapability("Local ACE", "testaccount", LaunchMode.Headless).IsAvailable);
+        orchestrator.ClearFinishedSessions();
+        Assert.Single(orchestrator.GetSnapshot().Sessions);
         int reads = source.ReadCount;
         orchestrator.PollStatus();
         Assert.Equal(reads + 1, source.ReadCount);
@@ -718,6 +729,7 @@ public sealed class LauncherOrchestratorTests : IDisposable
         LauncherSessionSnapshot session = Assert.Single(orchestrator.GetSnapshot().Sessions);
         Assert.Equal(LauncherActivityState.Exited, session.State);
         Assert.Contains("graceful host shutdown", session.Status, StringComparison.Ordinal);
+        Assert.False(session.IsProcessOrStartActive);
         Assert.True(orchestrator.GetAccountLaunchCapability(
             "Local ACE",
             "testaccount",
@@ -797,6 +809,74 @@ public sealed class LauncherOrchestratorTests : IDisposable
         Assert.True(orchestrator.GetProbeCapability(
             "Local ACE",
             "testaccount").IsAvailable);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StopDuringStartupRemainsOwnedUntilCancelledOrFailedStartFinishes(bool fail)
+    {
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var config = new RecordingConfigService { BeforeCompose = () =>
+        {
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(5)));
+            if (fail) throw new IOException("Fixture configuration failed.");
+        }};
+        using var orchestrator = CreateOrchestrator(configService: config);
+        Task<LauncherSessionSnapshot> launch = orchestrator.LaunchAsync("Local ACE", "testaccount", "+Acdream", LaunchMode.Headless);
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+            var starting = Assert.Single(orchestrator.GetSnapshot().Sessions);
+            Assert.True(starting.StartupInFlight);
+            Assert.False(starting.HasLiveProcess);
+            await orchestrator.StopSessionAsync(starting.SessionId, TimeSpan.Zero);
+            Assert.True(Assert.Single(orchestrator.GetSnapshot().Sessions).IsProcessOrStartActive);
+            orchestrator.ClearFinishedSessions();
+            Assert.Single(orchestrator.GetSnapshot().Sessions);
+        }
+        finally { release.Set(); }
+        if (fail) await Assert.ThrowsAsync<LauncherOperationException>(() => launch);
+        else await Assert.ThrowsAnyAsync<OperationCanceledException>(() => launch);
+        var finished = Assert.Single(orchestrator.GetSnapshot().Sessions);
+        Assert.False(finished.StartupInFlight);
+        Assert.False(finished.IsProcessOrStartActive);
+    }
+
+    [Fact]
+    public async Task StopStillReachesProcessAfterHostAlreadyReportedExit()
+    {
+        var supervisors = new FakeSupervisorFactory(); var sources = new QueueStatusSourceFactory();
+        using var orchestrator = CreateOrchestrator(supervisorFactory: supervisors, statusSourceFactory: sources);
+        var started = await orchestrator.LaunchAsync("Local ACE", "testaccount", "+Acdream", LaunchMode.Headless);
+        Assert.Single(sources.Created).Enqueue(Exited(started.SessionId, 0, "done"));
+        orchestrator.PollStatus();
+        await orchestrator.StopSessionAsync(started.SessionId, TimeSpan.Zero);
+        Assert.Equal(1, Assert.Single(supervisors.Created).StopCallCount);
+        Assert.False(Assert.Single(orchestrator.GetSnapshot().Sessions).IsProcessOrStartActive);
+    }
+
+    [Fact]
+    public async Task FailedStartupWithLiveChildRetainsAccountAndUpdateOwnership()
+    {
+        var supervisors = new FakeSupervisorFactory(failAfterStarted: true);
+        var barrier = new UpdateSessionBarrier(_paths.DataDirectory);
+        using var orchestrator = CreateOrchestrator(supervisorFactory: supervisors, updateSessionBarrier: barrier);
+        await Assert.ThrowsAsync<LauncherOperationException>(() => orchestrator.LaunchAsync(
+            "Local ACE", "testaccount", "+Acdream", LaunchMode.Headless));
+        var failed = Assert.Single(orchestrator.GetSnapshot().Sessions);
+        Assert.Equal(LauncherActivityState.Failed, failed.State);
+        Assert.False(failed.StartupInFlight);
+        Assert.True(failed.HasLiveProcess);
+        Assert.True(failed.IsProcessOrStartActive);
+        Assert.Throws<LauncherUpdateException>(barrier.AcquireExclusive);
+        orchestrator.ClearFinishedSessions();
+        Assert.Single(orchestrator.GetSnapshot().Sessions);
+        Assert.Single(supervisors.Created).Exit(23);
+        Assert.False(Assert.Single(orchestrator.GetSnapshot().Sessions).IsProcessOrStartActive);
+        using var update = barrier.AcquireExclusive();
     }
 
     private LauncherOrchestrator CreateOrchestrator(
@@ -898,6 +978,7 @@ public sealed class LauncherOrchestratorTests : IDisposable
 
     private sealed class RecordingConfigService : ILauncherSessionConfigService
     {
+        public Action? BeforeCompose { get; init; }
         public int PlayCallCount { get; private set; }
 
         public int ProbeCallCount { get; private set; }
@@ -920,6 +1001,7 @@ public sealed class LauncherOrchestratorTests : IDisposable
             int? loginCommandDelayMs = null,
             PluginCatalog? catalog = null)
         {
+            BeforeCompose?.Invoke();
             PlayCallCount++;
             LastCharacter = character;
             LastAccountPassword = account.Password;
@@ -956,20 +1038,21 @@ public sealed class LauncherOrchestratorTests : IDisposable
     }
 
     private sealed class FakeSupervisorFactory(
-        Func<string?, Exception>? startExceptionFactory = null)
+        Func<string?, Exception>? startExceptionFactory = null,
+        bool failAfterStarted = false)
         : ILauncherProcessSupervisorFactory
     {
         public List<FakeSupervisor> Created { get; } = [];
 
         public ILauncherProcessSupervisor Create()
         {
-            var supervisor = new FakeSupervisor(startExceptionFactory);
+            var supervisor = new FakeSupervisor(startExceptionFactory, failAfterStarted);
             Created.Add(supervisor);
             return supervisor;
         }
     }
 
-    private sealed class FakeSupervisor(Func<string?, Exception>? startExceptionFactory)
+    private sealed class FakeSupervisor(Func<string?, Exception>? startExceptionFactory, bool failAfterStarted = false)
         : ILauncherProcessSupervisor
     {
         public LauncherSessionState State { get; private set; } =
@@ -996,6 +1079,7 @@ public sealed class LauncherOrchestratorTests : IDisposable
 
             State = LauncherSessionState.Running;
             StateChanged?.Invoke(this, State);
+            if (failAfterStarted) throw new IOException("Fixture startup failed after creating child.");
         }
 
         public void Stop(TimeSpan timeout)

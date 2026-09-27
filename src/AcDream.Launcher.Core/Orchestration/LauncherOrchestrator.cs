@@ -796,10 +796,6 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                     () => StartActivityCore(request),
                     CancellationToken.None)
                 .ConfigureAwait(false);
-            lock (_gate)
-            {
-                return request.Activity.ToSnapshot();
-            }
         }
         finally
         {
@@ -815,8 +811,14 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
             }
 
             request.Cancellation.Dispose();
-            request.Activity.StartCompleted.Set();
+            lock (_gate)
+            {
+                request.Activity.StartCompleted.Set();
+                request.Activity.StartupInFlight = false;
+            }
+            RaiseStateChanged();
         }
+        lock (_gate) return request.Activity.ToSnapshot();
     }
 
     private void StartActivityCore(StartRequest request)
@@ -943,7 +945,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         finally
         {
             request.Password = null;
-            if (!hostStarted)
+            if (!hostStarted && supervisor?.HasLiveProcess != true)
             {
                 ReleaseUpdateSessionLease(request.Activity);
             }
@@ -1553,15 +1555,16 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         public UpdateSessionBarrier.SessionLease? UpdateSessionLease;
 
         public ManualResetEventSlim StartCompleted { get; } = new(false);
+        public bool StartupInFlight { get; set; } = true;
 
         public object StatusReadGate { get; } = new();
 
-        public bool IsActive => State is not (
+        public bool IsActive => !IsTerminal || StartupInFlight || Supervisor?.HasLiveProcess == true;
+
+        public bool IsTerminal => State is (
             LauncherActivityState.Exited
             or LauncherActivityState.Failed
             or LauncherActivityState.Cancelled);
-
-        public bool IsTerminal => !IsActive;
 
         public LauncherSessionSnapshot ToSnapshot() =>
             new(
@@ -1578,7 +1581,9 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 CreatedAt,
                 ExitReason,
                 ExitedGracefully,
-                PluginNotice);
+                PluginNotice,
+                Supervisor?.HasLiveProcess == true,
+                StartupInFlight);
     }
 
     private sealed class StartRequest(

@@ -6,6 +6,9 @@ namespace AcDream.Launcher.Core.Launching;
 
 public interface ILauncherChildProcess : IDisposable
 {
+    /// <summary>True once a child exists, even if later startup setup throws.</summary>
+    bool HasStarted => false;
+
     bool HasExited { get; }
 
     int ExitCode { get; }
@@ -98,6 +101,8 @@ internal sealed partial class SystemChildProcess : ILauncherChildProcess
     /// <summary>What the child will be started with, for tests.</summary>
     internal ProcessStartInfo StartInfo => _process.StartInfo;
 
+    public bool HasStarted { get; private set; }
+
     public bool HasExited => _process.HasExited;
 
     public int ExitCode => _process.ExitCode;
@@ -117,7 +122,7 @@ internal sealed partial class SystemChildProcess : ILauncherChildProcess
             _errorReadingEnabled = true;
         }
 
-        _process.Start();
+        HasStarted = _process.Start();
         if (_errorReadingEnabled)
         {
             _process.BeginErrorReadLine();

@@ -272,9 +272,9 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
             }
         }
         finally { _applyingSavedSelection = false; }
-        _activeSessionId = session?.IsActive == true ? session.SessionId : null;
-        _activeIsHeadless = session?.IsActive == true && session.LaunchMode == LaunchMode.Headless;
-        ActiveCharacterName = session?.IsActive == true ? session.CharacterName : null;
+        _activeSessionId = session?.IsProcessOrStartActive == true ? session.SessionId : null;
+        _activeIsHeadless = session?.IsProcessOrStartActive == true && session.LaunchMode == LaunchMode.Headless;
+        ActiveCharacterName = session?.IsProcessOrStartActive == true ? session.CharacterName : null;
         Status = session?.Error ?? session?.Status ?? account.ActivityStatus;
         LaunchError = session?.Error;
         NotifyState();

@@ -211,7 +211,7 @@ public sealed partial class LauncherWindowViewModel
     }
 
     /// <summary>Whether the install may move now: nothing running and nothing busy.</summary>
-    internal bool CanMoveInstallFolder => !IsBusy && Sessions.All(session => !session.IsActive);
+    internal bool CanMoveInstallFolder => !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive);
 
     /// <summary>Gives Add a server its list of known public servers.</summary>
     public void ConfigureKnownServers(KnownServerCatalog catalog) => AddServerDialog.UseCatalog(catalog);

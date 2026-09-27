@@ -38,6 +38,7 @@ public sealed class LauncherProcessSupervisorTests
         using var supervisor = new LauncherProcessSupervisor(factory);
         var states = new List<LauncherSessionState>();
         supervisor.StateChanged += (_, s) => states.Add(s);
+        Assert.False(supervisor.HasLiveProcess);
 
         supervisor.Start(Spec(), "S3cretPassw0rd!");
 
@@ -46,9 +47,12 @@ public sealed class LauncherProcessSupervisorTests
         Assert.Equal("S3cretPassw0rd!\n", fake.StandardInputText);
         Assert.True(fake.StandardInputClosed);
         Assert.Equal(LauncherSessionState.Running, supervisor.State);
+        Assert.True(supervisor.HasLiveProcess);
         Assert.Equal(
             [LauncherSessionState.Starting, LauncherSessionState.Running],
             states);
+        supervisor.Stop(TimeSpan.Zero);
+        Assert.False(supervisor.HasLiveProcess);
     }
 
     /// <summary>
@@ -406,6 +410,27 @@ public sealed class LauncherProcessSupervisorTests
         Assert.True(fake.Started);
         Assert.Equal(1, fake.KillCallCount);
         Assert.True(fake.Disposed);
+    }
+
+    [Theory]
+    [InlineData("delay", false)]
+    [InlineData("delay", true)]
+    [InlineData("throw", false)]
+    [InlineData("throw", true)]
+    public void FailedStartupKeepsOwnershipUntilTheStartedChildActuallyExits(string killBehavior, bool throwAfterSpawn)
+    {
+        var factory = new FakeChildProcessFactory(true, throwOnStandardInputWrite: !throwAfterSpawn, killBehavior: killBehavior, throwAfterSpawn: throwAfterSpawn);
+        using var supervisor = new LauncherProcessSupervisor(factory);
+        Assert.ThrowsAny<Exception>(() => supervisor.Start(Spec(), "pw"));
+        FakeChildProcess child = factory.LastCreated!;
+        try
+        {
+            Assert.True(supervisor.HasLiveProcess);
+            Assert.False(child.Disposed);
+        }
+        finally { child.ExitForTest(-1); }
+        Assert.False(supervisor.HasLiveProcess);
+        Assert.Equal(LauncherSessionState.Exited, supervisor.State);
     }
 
     [Fact]
@@ -942,7 +967,8 @@ public sealed class LauncherProcessSupervisorTests
     private sealed class FakeChildProcessFactory(
         bool exitsWithinStopTimeout,
         bool exitDuringStart = false,
-        bool throwOnStandardInputWrite = false)
+        bool throwOnStandardInputWrite = false,
+        string killBehavior = "exit", bool throwAfterSpawn = false)
         : ILauncherChildProcessFactory
     {
         public FakeChildProcess? LastCreated { get; private set; }
@@ -953,7 +979,8 @@ public sealed class LauncherProcessSupervisorTests
                 spec,
                 exitsWithinStopTimeout,
                 exitDuringStart,
-                throwOnStandardInputWrite);
+                throwOnStandardInputWrite,
+                killBehavior, throwAfterSpawn);
             return LastCreated;
         }
     }
@@ -1056,7 +1083,8 @@ public sealed class LauncherProcessSupervisorTests
         LauncherProcessSpec spec,
         bool exitsWithinStopTimeout,
         bool exitDuringStart = false,
-        bool throwOnStandardInputWrite = false)
+        bool throwOnStandardInputWrite = false,
+        string killBehavior = "exit", bool throwAfterSpawn = false)
         : ILauncherChildProcess
     {
         private readonly RecordingTextWriter _standardInput = new();
@@ -1065,6 +1093,8 @@ public sealed class LauncherProcessSupervisorTests
         public LauncherProcessSpec Spec { get; } = spec;
 
         public bool Started { get; private set; }
+
+        public bool HasStarted => Started;
 
         public string StandardInputText => _standardInput.ToString();
 
@@ -1094,6 +1124,7 @@ public sealed class LauncherProcessSupervisorTests
         public void Start()
         {
             Started = true;
+            if (throwAfterSpawn) throw new IOException("Fixture post-spawn setup failed.");
 
             if (exitDuringStart)
             {
@@ -1131,7 +1162,8 @@ public sealed class LauncherProcessSupervisorTests
         {
             KillCallCount++;
             CallOrder.Add("kill");
-            ExitForTest(-1);
+            if (killBehavior == "throw") throw new IOException("Fixture kill failed.");
+            if (killBehavior == "exit") ExitForTest(-1);
         }
 
         public bool WaitForExit(TimeSpan timeout)

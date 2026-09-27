@@ -26,6 +26,8 @@ internal sealed class WindowsSystemChildProcess : ILauncherChildProcess
         _consoleControl = consoleControl ?? WindowsConsoleControl.Instance;
     }
 
+    public bool HasStarted => _process is not null;
+
     public bool HasExited => RequireProcess().HasExited;
 
     public int ExitCode => RequireProcess().ExitCode;
@@ -81,7 +83,7 @@ internal sealed class WindowsSystemChildProcess : ILauncherChildProcess
             _stderrReadStream = null;
             _stderrCapture?.Dispose();
             _stderrCapture = null;
-            if (_process is not null)
+            if (_process is { HasExited: true })
             {
                 if (_raisingEnabled)
                 {

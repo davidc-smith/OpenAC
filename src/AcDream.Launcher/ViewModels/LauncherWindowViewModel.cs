@@ -12,6 +12,8 @@ namespace AcDream.Launcher.ViewModels;
 public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposable
 {
     private readonly ILauncherOrchestrator _orchestrator;
+    private readonly LauncherStopGate _stopGate = new();
+    private readonly LauncherRelaunchController _automaticRelaunch;
     private static readonly TimeSpan GracefulStopTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IUiDispatcher _dispatcher;
@@ -40,10 +42,14 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         ILauncherUpdater? updater = null,
         Func<CancellationToken, Task<bool>>? applyLauncherUpdateAsync = null,
         Action? requestShutdown = null,
-        PluginInventory? pluginInventory = null)
+        PluginInventory? pluginInventory = null,
+        TimeProvider? timeProvider = null)
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _automaticRelaunch = new LauncherRelaunchController(orchestrator, timeProvider);
+        _automaticRelaunch.StateChanged += OnAutomaticRelaunchStateChanged;
+        _automaticRelaunch.LaunchFailed += OnAutomaticRelaunchFailed;
         _pluginInventory = pluginInventory;
         _orchestrator.StateChanged += OnOrchestratorStateChanged;
 
@@ -54,13 +60,13 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             dispatcher,
             OnInstallCompleted,
             () => CanInteract,
-            () => !IsBusy && Sessions.All(session => !session.IsActive));
+            () => !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive));
         UpdatePrompt = new LauncherUpdateViewModel(
             updater ?? new UnavailableLauncherUpdater(),
             dispatcher,
             OnClientVersionChanged,
             () => CanInteract,
-            () => !IsBusy && Sessions.All(session => !session.IsActive),
+            () => !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive),
             applyLauncherUpdateAsync,
             requestShutdown);
 
@@ -163,7 +169,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         || Plugins.InstallDialog.IsOpen
         || Plugins.IsRemoveDialogOpen;
 
-    private bool CanInteract => !IsBusy && !IsModalOpen;
+    private bool CanInteract => !IsBusy && !IsModalOpen && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching;
 
     public string OperationStatus
     {
@@ -344,6 +350,8 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             _orchestrator.PollStatus();
             // Availability also changes when a reconnect delay expires, without a session event.
             NotifyAccountCommands();
+            if (AutomaticRelaunchTask.IsCompleted)
+                AutomaticRelaunchTask = RunAutomaticRelaunchAsync();
         }
         catch (Exception ex)
         {
@@ -360,6 +368,9 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
 
         DisposeDesktop();
         _disposed = true;
+        _automaticRelaunch.StateChanged -= OnAutomaticRelaunchStateChanged;
+        _automaticRelaunch.LaunchFailed -= OnAutomaticRelaunchFailed;
+        _automaticRelaunch.Dispose();
         _startupCancellation.Cancel();
         _operationCancellation?.Cancel();
         _operationCancellation?.Dispose();
@@ -557,6 +568,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         _snapshot = snapshot;
         RefreshAccountAvailability();
         RefreshAccountRows(snapshot);
+        ObserveSessionControls(snapshot);
 
         Servers.Clear();
         foreach (LauncherServerSnapshot server in snapshot.Servers)
@@ -924,7 +936,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         string activeStatus,
         string completedStatus)
     {
-        if (IsBusy)
+        if (!CanInteract)
         {
             return;
         }
@@ -962,7 +974,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
 
     private async Task StopSessionAsync(string sessionId)
     {
-        if (IsBusy)
+        if (!CanInteract || !_stopGate.TryBegin(sessionId, _orchestrator.GetSnapshot()))
         {
             return;
         }
@@ -1104,7 +1116,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
 
     private async Task VerifyContentAsync()
     {
-        if (IsBusy)
+        if (!CanInteract)
         {
             return;
         }

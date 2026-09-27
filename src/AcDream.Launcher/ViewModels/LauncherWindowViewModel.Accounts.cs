@@ -29,6 +29,75 @@ public sealed class ProfileFilterChipViewModel : ObservableObject
 public sealed partial class LauncherWindowViewModel
 {
     private string? _profileFilter;
+    private bool _showOnlyCheckedAccounts;
+    private bool _relaunchCheckedClientsAutomatically;
+    private string _relaunchDelaySecondsText = "180";
+    private bool _refreshingAccountRows;
+
+    public bool ShowOnlyCheckedAccounts
+    {
+        get => _showOnlyCheckedAccounts;
+        set { if (SetProperty(ref _showOnlyCheckedAccounts, value)) ApplyProfileFilter(); }
+    }
+
+    public bool RelaunchCheckedClientsAutomatically
+    {
+        get => _relaunchCheckedClientsAutomatically;
+        set
+        {
+            if (SetProperty(ref _relaunchCheckedClientsAutomatically, value))
+                ObserveSessionControls(_orchestrator.GetSnapshot());
+        }
+    }
+
+    public string RelaunchDelaySecondsText
+    {
+        get => _relaunchDelaySecondsText;
+        set
+        {
+            if (!SetProperty(ref _relaunchDelaySecondsText, value)) return;
+            if (int.TryParse(value, out int seconds) && seconds is >= 5 and <= 3600)
+                _automaticRelaunch.DelaySeconds = seconds;
+            OnPropertyChanged(nameof(IsRelaunchDelayValid));
+        }
+    }
+
+    public bool IsRelaunchDelayValid => int.TryParse(_relaunchDelaySecondsText, out int seconds) && seconds is >= 5 and <= 3600;
+    internal Task AutomaticRelaunchTask { get; private set; } = Task.CompletedTask;
+
+    private void ObserveSessionControls(LauncherStateSnapshot snapshot)
+    {
+        bool wasStopping = _stopGate.IsPending;
+        _stopGate.Observe(snapshot);
+        _automaticRelaunch.Observe(snapshot, RelaunchCheckedClientsAutomatically
+            ? [.. AllAccountRows.Where(row => row.IsChecked).Select(row =>
+                new LauncherRelaunchSelection(row.ServerName, row.AccountName, row.CharacterName, row.Mode))] : [],
+            RelaunchCheckedClientsAutomatically);
+        if (wasStopping != _stopGate.IsPending) NotifyCommandStates();
+    }
+
+    private void OnAutomaticRelaunchStateChanged() { if (!_disposed) NotifyCommandStates(); }
+    private void OnAutomaticRelaunchFailed(Exception error)
+    {
+        LastError = SafeDisplayError(error, secret: null);
+        OperationStatus = "Automatic relaunch failed; another attempt waits the full delay.";
+    }
+
+    private async Task RunAutomaticRelaunchAsync()
+    {
+        try
+        {
+            await _automaticRelaunch.PollAsync(CanInteract && IsRelaunchDelayValid &&
+                !_isInstallationChecking && !_isClientCompatibilityCheckBlocking).ConfigureAwait(true);
+        }
+        catch (Exception error) { if (!_disposed) OnAutomaticRelaunchFailed(error); }
+    }
+
+    private void OnAccountRowChanged()
+    {
+        ApplyProfileFilter();
+        if (!_refreshingAccountRows && RelaunchCheckedClientsAutomatically) ObserveSessionControls(_orchestrator.GetSnapshot());
+    }
     private IReadOnlyDictionary<(string Server, string Account), LauncherCapability> _graphicalAvailability =
         new Dictionary<(string, string), LauncherCapability>();
     private IReadOnlyDictionary<(string Server, string Account), LauncherCapability> _headlessAvailability =
@@ -81,6 +150,9 @@ public sealed partial class LauncherWindowViewModel
 
     private void RefreshAccountRows(LauncherStateSnapshot snapshot)
     {
+        _refreshingAccountRows = true;
+        try
+        {
         var retained = new HashSet<LauncherAccountGroupViewModel>();
         int index = 0;
         foreach (LauncherServerSnapshot server in snapshot.Servers)
@@ -92,7 +164,7 @@ public sealed partial class LauncherWindowViewModel
             {
                 group = new LauncherAccountGroupViewModel(server.Name, account.AccountName, OpenAccountPlugins, () => CanInteract);
                 var row = new LauncherAccountServerRowViewModel(account.AccountName, server.Name,
-                    GetRowDisabledReason, NotifyAccountCommands, item => LaunchRowsAsync([item]),
+                    GetRowDisabledReason, OnAccountRowChanged, item => LaunchRowsAsync([item]),
                     StopSessionAsync,
                     new LauncherRowActions(OpenLogonCommandsFor, OpenCharacterPlugins, OpenLogsFolder, RemoveRowCharacter),
                     () => CanInteract);
@@ -116,6 +188,8 @@ public sealed partial class LauncherWindowViewModel
         foreach (LauncherAccountGroupViewModel group in Accounts.Where(group => !retained.Contains(group)).ToArray())
             Accounts.Remove(group);
         RefreshProfileFilters();
+        }
+        finally { _refreshingAccountRows = false; }
     }
 
     /// <summary>Rebuilds the chips from the accounts' tags, keeping the chosen one while it exists.</summary>
@@ -145,7 +219,8 @@ public sealed partial class LauncherWindowViewModel
         foreach (ProfileFilterChipViewModel chip in ProfileFilters)
             chip.IsSelected = string.Equals(chip.Profile, _profileFilter, StringComparison.OrdinalIgnoreCase);
         foreach (LauncherAccountGroupViewModel group in Accounts)
-            group.IsVisible = _profileFilter is null || group.HasProfile(_profileFilter);
+            group.IsVisible = (_profileFilter is null || group.HasProfile(_profileFilter))
+                && (!ShowOnlyCheckedAccounts || group.Rows.Any(row => row.IsChecked));
         NotifyAccountCommands();
     }
 
@@ -177,7 +252,7 @@ public sealed partial class LauncherWindowViewModel
         LauncherAccountSnapshot? account = current?.Servers.FirstOrDefault(server => server.Name == row.ServerName)
             ?.Accounts.FirstOrDefault(account => account.AccountName == row.AccountName);
         if (account is null) return "This account is no longer configured on this server.";
-        if (account.HasRunningActivity || current!.Sessions.Any(session => session.IsActive
+        if (account.HasRunningActivity || current!.Sessions.Any(session => session.IsProcessOrStartActive
             && session.ServerName == row.ServerName && session.AccountName == row.AccountName)) return "This account already has an active session on this server.";
         if (characterName is { } name && !account.Characters.Any(character => character.Name == name)) return "Choose a current character.";
         LauncherCapability capability = fresh

@@ -20,7 +20,7 @@ public sealed class LauncherSessionRowViewModel
         Status = DescribeStatus(snapshot);
         Error = snapshot.Error;
         PluginNotice = snapshot.PluginNotice;
-        IsActive = snapshot.IsActive;
+        IsActive = snapshot.IsProcessOrStartActive;
         StopCommand = new AsyncRelayCommand(
             () => stop(SessionId),
             () => IsActive && (canStop?.Invoke() ?? true));

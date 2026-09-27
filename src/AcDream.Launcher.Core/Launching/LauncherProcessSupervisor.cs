@@ -8,6 +8,9 @@ public interface ILauncherProcessSupervisor : IDisposable
 
     int? ExitCode { get; }
 
+    /// <summary>Whether the owned process has started and has not actually exited.</summary>
+    bool HasLiveProcess => State == LauncherSessionState.Running;
+
     event EventHandler<LauncherSessionState>? StateChanged;
 
     void Start(LauncherProcessSpec spec, string? password);
@@ -49,6 +52,7 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
     private bool _publishingStateChanges;
     private bool _disposed;
     private bool _inputOpen;
+    private bool _processStarted;
 
     public LauncherProcessSupervisor(ILauncherChildProcessFactory? factory = null)
     {
@@ -79,6 +83,15 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
 
     public event EventHandler<LauncherSessionState>? StateChanged;
 
+    public bool HasLiveProcess
+    {
+        get
+        {
+            lock (_gate)
+                return _processStarted && _process is { HasExited: false };
+        }
+    }
+
     public void Start(LauncherProcessSpec spec, string? password)
     {
         ArgumentNullException.ThrowIfNull(spec);
@@ -106,6 +119,7 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
         {
             process.Start();
             started = true;
+            lock (_gate) _processStarted = true;
 
             if (password is not null)
             {
@@ -124,26 +138,32 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
                 process.StandardInput.Close();
             }
         }
-        catch
+        catch (Exception startError)
         {
-            lock (_gate)
-            {
-                process.Exited -= OnProcessExited;
-                _process = null;
-            }
-
+            started |= process.HasStarted;
+            lock (_gate) _processStarted = started;
             if (started)
             {
                 try
                 {
                     process.Kill();
                 }
-                catch
+                catch (Exception stopError)
                 {
+                    // Keep ownership and the exit subscription while cleanup
+                    // has not succeeded; callers must still see a live child.
+                    throw new AggregateException("The client failed to start and could not be terminated.", startError, stopError);
                 }
             }
-
-            process.Dispose();
+            if (!started || process.HasExited)
+            {
+                lock (_gate)
+                {
+                    process.Exited -= OnProcessExited;
+                    _process = null;
+                }
+                process.Dispose();
+            }
 
             throw;
         }

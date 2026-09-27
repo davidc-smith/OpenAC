@@ -17,6 +17,34 @@ again on the same server. **Cancel** stops pending starts; use the row's
 the list (**All** and one per tag) show only the accounts with that tag, and
 **Play selected** then starts only the ticked accounts the filter shows.
 
+**Show only checked accounts** combines with the profile filter. Hidden accounts
+keep their selections. You can uncheck a running account without changing its
+character or stopping it.
+
+**Relaunch checked clients automatically** is off by default. When enabled it
+monitors checked accounts' existing and future launcher-owned play sessions,
+including sessions started through the local control pipe. It relaunches after
+a crash **or a manual Stop**, using the account's current selected character and
+mode and the normal saved plugins and logon commands. Character refresh probes,
+old stopped history, and accounts that have never been started are not launched
+just by enabling it. Visual filters do not limit automatic relaunch.
+
+The **Delay (seconds)** must be a whole number from 5 to 3600; the default is 180.
+It begins when startup work and the actual process have finished, not when a
+client first reports an exit. Failed attempts wait a new full delay. Installation
+checks, open dialogs and existing account restrictions still prevent launches.
+The independent three-minute server reconnect hold after an unclean exit still
+applies. Clearing finished history does not cancel an already scheduled relaunch.
+Uncheck an account, remove it, turn automatic relaunch off, or close the launcher
+to cancel its pending relaunch. Checked accounts, these controls, and the delay
+last only for the current launcher session.
+
+While a requested Stop is still completing, all Stop buttons and other session
+operations are disabled until that process and any startup work actually end,
+even if an early exit notice arrived or the stop operation returned an error.
+The existing graceful-stop timeout (30 seconds before forced termination) is
+separate from the automatic relaunch delay.
+
 A row's **Options ▾** menu has **Logon commands…**, **Plugins for this
 character…** (with a character chosen), **Console** (for a running headless
 session), **Open logs folder** and **Remove character** (a later character

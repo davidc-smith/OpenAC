@@ -75,12 +75,18 @@ public sealed record LauncherSessionSnapshot(
     DateTimeOffset CreatedAt,
     string? ExitReason = null,
     bool ExitedGracefully = false,
-    string? PluginNotice = null)
+    string? PluginNotice = null,
+    bool? HasLiveProcess = null,
+    bool StartupInFlight = false)
 {
     public bool IsActive => State is not (
         LauncherActivityState.Exited
         or LauncherActivityState.Failed
         or LauncherActivityState.Cancelled);
+
+    /// <summary>Physical process/start ownership, independent of an early host exit notice.
+    /// Older implementations without process information retain their activity-state behavior.</summary>
+    public bool IsProcessOrStartActive => StartupInFlight || (HasLiveProcess ?? IsActive);
 }
 
 public sealed record LauncherStateSnapshot(

@@ -973,13 +973,15 @@ public sealed partial class LauncherWindowViewModelTests
     private static LauncherWindowViewModel CreateInitialized(
         FakeLauncherOrchestrator orchestrator,
         ILauncherInstaller? installer = null,
-        AcDream.Launcher.Core.Plugins.PluginInventory? pluginInventory = null)
+        AcDream.Launcher.Core.Plugins.PluginInventory? pluginInventory = null,
+        TimeProvider? timeProvider = null)
     {
         var viewModel = new LauncherWindowViewModel(
             orchestrator,
             new ImmediateUiDispatcher(),
             installer,
-            pluginInventory: pluginInventory);
+            pluginInventory: pluginInventory,
+            timeProvider: timeProvider);
         viewModel.Initialize();
         return viewModel;
     }
@@ -1036,6 +1038,8 @@ public sealed partial class LauncherWindowViewModelTests
         public bool IncludeCharacter { get; init; } = true;
 
         public LauncherSessionSnapshot Session { get; set; } = CreateSession();
+        public IReadOnlyList<LauncherSessionSnapshot>? SessionsOverride { get; set; }
+        public Func<CancellationToken, Task>? StopHandler { get; set; }
 
         public Func<CancellationToken, Task<LauncherSessionSnapshot>>? LaunchHandler { get; set; }
 
@@ -1100,7 +1104,7 @@ public sealed partial class LauncherWindowViewModelTests
             SnapshotReadCount++;
             return new(
             ServersOverride ?? [CreateServerSnapshot()],
-            [Session],
+            SessionsOverride ?? [Session],
             Platform,
             IsInstallationReady: InstalledRecord is not null,
             InstallationStatus,
@@ -1120,6 +1124,12 @@ public sealed partial class LauncherWindowViewModelTests
             AccountCapabilityReadCount++;
             return AccountLaunchCapability ?? GetLaunchCapability(mode);
         }
+
+        public IReadOnlyDictionary<(string Server, string Account), LauncherCapability> GetAccountLaunchCapabilities(LaunchMode mode) =>
+            (ServersOverride ?? [CreateServerSnapshot()]).SelectMany(server => server.Accounts.Select(account =>
+                new KeyValuePair<(string, string), LauncherCapability>((server.Name, account.AccountName),
+                    GetAccountLaunchCapability(server.Name, account.AccountName, mode))))
+                .ToDictionary(item => item.Key, item => item.Value);
 
         public LauncherCapability GetProbeCapability(string serverName, string accountName) =>
             ProbeCapability;
@@ -1241,7 +1251,7 @@ public sealed partial class LauncherWindowViewModelTests
             CancellationToken cancellationToken = default)
         {
             StoppedSessionId = sessionId;
-            return Task.CompletedTask;
+            return StopHandler?.Invoke(cancellationToken) ?? Task.CompletedTask;
         }
 
         public void PollStatus()
