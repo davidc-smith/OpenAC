@@ -1044,7 +1044,7 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
         try
         {
             using var stream = new FileStream(file, FileMode.Open, FileAccess.Read,
-                FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.SequentialScan);
+                FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.None);
             int count = 0;
             while (count <= MaximumDocumentBytes)
             {
