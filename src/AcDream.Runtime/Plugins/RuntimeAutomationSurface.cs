@@ -48,6 +48,9 @@ internal sealed class RuntimeAutomationSurface
     private static readonly double PeerCommandPollSeconds =
         LocalPluginPeerRegistry.CommandPollPeriod.TotalSeconds;
     private readonly LocalPluginPeerRegistry _peers;
+    private readonly bool _peerCommunicationDisabled;
+    private readonly LocalPeerTransport? _peerTransport;
+    private double _peerStateRemaining;
 
     /// <summary>
     /// The labels this client answers to. The host starts it with whatever
@@ -200,8 +203,11 @@ internal sealed class RuntimeAutomationSurface
     internal RuntimeAutomationSurface(
         AcDream.Core.Plugins.IPluginEventSink? events,
         LocalPluginPeerRegistry? peers = null,
-        IReadOnlyList<string>? peerTags = null)
+        IReadOnlyList<string>? peerTags = null,
+        bool? disablePeerCommunication = null,
+        PeerHubEndpoint? peerEndpoint = null)
     {
+        _peerCommunicationDisabled = disablePeerCommunication ?? false;
         _navigation = new AcDream.Runtime.Navigation.RuntimeNavigationAutomation(() => IsAvailable);
         _activeSpellIdsForPlayer = _ => _enchantments.Select(static enchantment => enchantment.SpellId).ToArray();
         _pluginCommands = new PluginCommandRegistry(ReportPluginCommandFailure);
@@ -211,6 +217,8 @@ internal sealed class RuntimeAutomationSurface
         _peers = peers ?? new LocalPluginPeerRegistry(
             AcDream.Platform.ApplicationPathSet.Resolve().PluginPeersDirectory);
         _peerTags = NormalizePeerTags(peerTags);
+        if (peerEndpoint is not null)
+            _peerTransport = new LocalPeerTransport(peerEndpoint, _peers, ReceivePushedCommand);
         if (_events is not null)
             _events.Tick += OnPeerTick;
     }
@@ -495,17 +503,35 @@ internal sealed class RuntimeAutomationSurface
             Message: "The action busy count was already zero.");
     }
 
+    bool INetworkAutomation.IsConnected => !_disposed && !_peerCommunicationDisabled && (_peerTransport?.IsConnected ?? true);
+    bool INetworkAutomation.SupportsSubscriptions => _peerTransport is not null;
+    IDisposable? INetworkAutomation.Subscribe(PluginPeerCapabilities capabilities) =>
+        _peerCommunicationDisabled ? null : _peerTransport?.Subscribe(capabilities);
+
+    private void ReceivePushedCommand(PeerWireMessage message)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _pendingPeerCommands.Count >= 256) throw new IOException("Incoming peer command queue is full.");
+            if (_runtime is null) return;
+            _deliveredCommandSequence = Math.Max(_deliveredCommandSequence, _peers.PushCommand(message));
+            _pendingPeerCommands.Add(new PendingPeerCommand(
+                _peers.UtcNow + TimeSpan.FromMilliseconds(message.DelayMilliseconds), message.Line));
+        }
+    }
+
     bool INetworkAutomation.IsAvailable
     {
         get
         {
             lock (_gate)
-                return !_disposed;
+                return !_disposed && !_peerCommunicationDisabled && (_peerTransport?.IsActive ?? true);
         }
     }
 
     IReadOnlyList<PluginNetworkClient> INetworkAutomation.CaptureClients()
     {
+        if (_peerCommunicationDisabled) return Array.Empty<PluginNetworkClient>();
         if (_events is null)
             PublishPeerSnapshot();
         ICharacterInfo character = this;
@@ -514,6 +540,7 @@ internal sealed class RuntimeAutomationSurface
 
     bool INetworkAutomation.TryCaptureSelf(out PluginNetworkClient self)
     {
+        if (_peerCommunicationDisabled) { self = default; return false; }
         lock (_gate)
         {
             if (_disposed)
@@ -528,6 +555,7 @@ internal sealed class RuntimeAutomationSurface
     IReadOnlyList<PluginPeerCast> INetworkAutomation.CaptureOwnCasts(
         long afterSequence)
     {
+        if (_peerCommunicationDisabled) return Array.Empty<PluginPeerCast>();
         lock (_gate)
         {
             if (_disposed)
@@ -539,6 +567,7 @@ internal sealed class RuntimeAutomationSurface
     IReadOnlyList<PluginPeerCommand> INetworkAutomation.CaptureOwnCommands(
         long afterSequence)
     {
+        if (_peerCommunicationDisabled) return Array.Empty<PluginPeerCommand>();
         lock (_gate)
         {
             if (_disposed)
@@ -549,6 +578,7 @@ internal sealed class RuntimeAutomationSurface
 
     bool INetworkAutomation.ImportRemoteClient(PluginNetworkClient client)
     {
+        if (_peerCommunicationDisabled) return false;
         ICharacterInfo character = this;
         uint ownObjectId = character.ObjectId;
         // The same gate an announcement is held to: a client that is not
@@ -571,6 +601,7 @@ internal sealed class RuntimeAutomationSurface
         double secondsRemaining,
         bool landed)
     {
+        if (_peerCommunicationDisabled) return false;
         ICharacterInfo character = this;
         if (character.ObjectId == 0u)
             return false;
@@ -601,6 +632,7 @@ internal sealed class RuntimeAutomationSurface
         IReadOnlyList<string> tags,
         int delayMilliseconds)
     {
+        if (_peerCommunicationDisabled) return false;
         ICharacterInfo character = this;
         if (character.ObjectId == 0u)
             return false;
@@ -609,11 +641,11 @@ internal sealed class RuntimeAutomationSurface
             if (_disposed)
                 return false;
         }
-        return _peers.ImportRemoteCommand(
-            senderObjectId,
-            tags,
-            line ?? string.Empty,
-            delayMilliseconds);
+        bool accepted = _peers.ImportRemoteCommand(
+            senderObjectId, tags, line ?? string.Empty, delayMilliseconds);
+        if (accepted && _peerTransport is not null
+            && _peerTransport.Has(PluginPeerCapabilities.Commands)) TakeInPeerCommands();
+        return accepted;
     }
 
     bool INetworkAutomation.AnnounceCastAttempt(
@@ -652,6 +684,7 @@ internal sealed class RuntimeAutomationSurface
         double durationSeconds,
         bool landed)
     {
+        if (_peerCommunicationDisabled) return false;
         ICharacterInfo character = this;
         uint casterObjectId = character.ObjectId;
         if (casterObjectId == 0u)
@@ -672,6 +705,7 @@ internal sealed class RuntimeAutomationSurface
         // duration that is not a finite number of seconds or is longer than a
         // day -- is the ring's one rule, applied in the same place for a cast
         // this client writes and a cast it reads, so the two cannot drift.
+        if (_peerTransport is not null && !_peerTransport.Has(PluginPeerCapabilities.Casts)) return false;
         if (!_peers.RecordCast(new LocalPluginCast(
             casterObjectId,
             targetObjectId,
@@ -685,6 +719,11 @@ internal sealed class RuntimeAutomationSurface
         // A cast is an event on a transport that otherwise only carries
         // state, so the note is rewritten for it as soon as the debounce
         // allows rather than waiting for the next heartbeat.
+        if (_peerTransport is not null)
+        {
+            PluginPeerCast cast = _peers.CaptureOwnCasts(0).Last();
+            return _peerTransport.SendCast(cast);
+        }
         if (_peers.IsCastWriteDue())
             PublishPeerSnapshot();
         return true;
@@ -693,6 +732,7 @@ internal sealed class RuntimeAutomationSurface
     IReadOnlyList<PluginPeerCast> INetworkAutomation.CaptureCasts(
         long afterSequence)
     {
+        if (_peerCommunicationDisabled) return Array.Empty<PluginPeerCast>();
         if (_events is null)
             PublishPeerSnapshot();
         ICharacterInfo character = this;
@@ -721,6 +761,7 @@ internal sealed class RuntimeAutomationSurface
 
     bool INetworkAutomation.SetTags(IReadOnlyList<string> tags)
     {
+        if (_peerCommunicationDisabled) return false;
         if (tags is null)
             return false;
         foreach (string tag in tags)
@@ -753,6 +794,7 @@ internal sealed class RuntimeAutomationSurface
         IReadOnlyList<string> tags,
         int delayMilliseconds)
     {
+        if (_peerCommunicationDisabled) return false;
         ICharacterInfo character = this;
         uint senderObjectId = character.ObjectId;
         if (senderObjectId == 0u)
@@ -779,6 +821,12 @@ internal sealed class RuntimeAutomationSurface
         // A broadcast is an event on a transport that otherwise only carries
         // state, so the note is rewritten for it as soon as the debounce
         // allows rather than waiting for the next heartbeat.
+        if (_peerTransport is not null)
+        {
+            if (!TryBuildOwnPeerClient(out var self)) return false;
+            _peerTransport.UpdateSelf(self);
+            return _peerTransport.SendCommand(line ?? string.Empty, NormalizePeerTags(tags), delayMilliseconds);
+        }
         if (_peers.IsCommandWriteDue())
             PublishPeerSnapshot();
         return true;
@@ -787,6 +835,7 @@ internal sealed class RuntimeAutomationSurface
     IReadOnlyList<PluginPeerCommand> INetworkAutomation.CaptureCommands(
         long afterSequence)
     {
+        if (_peerCommunicationDisabled) return Array.Empty<PluginPeerCommand>();
         if (_events is null)
             PublishPeerSnapshot();
         IReadOnlyList<LocalPluginPeerCommand> commands = ReadPeerCommands(
@@ -1245,6 +1294,7 @@ internal sealed class RuntimeAutomationSurface
     {
         lock (_gate)
             DetachLocked();
+        _peerTransport?.Withdraw();
         _peers.Withdraw();
         _knownSelfBuffs = Array.Empty<PluginSpellInfo>();
         _knownAttackSpells = Array.Empty<PluginSpellInfo>();
@@ -1363,6 +1413,23 @@ internal sealed class RuntimeAutomationSurface
         _navigation.PublishSnapshotChanged();
         PublishNavigationChange();
 
+        if (_peerCommunicationDisabled) return;
+        if (_peerTransport is not null)
+        {
+            if (!_peerTransport.IsActive) return;
+            if (!_peerTransport.Has(PluginPeerCapabilities.Commands))
+            {
+                lock (_gate) _pendingPeerCommands.Clear();
+            }
+            RunDuePeerCommands();
+            _peerStateRemaining -= Math.Max(0d, elapsedSeconds);
+            if (_peerStateRemaining <= 0d && (!_peerTransport.HasSelf || _peerTransport.NeedsState))
+            {
+                _peerStateRemaining = 0.3d;
+                PublishPeerSnapshot();
+            }
+            return;
+        }
         PumpPeerCommands(elapsedSeconds);
 
         _peerHeartbeatRemaining -= Math.Max(0d, elapsedSeconds);
@@ -1518,12 +1585,19 @@ internal sealed class RuntimeAutomationSurface
 
     private void PublishPeerSnapshot()
     {
+        if (_peerCommunicationDisabled) return;
         if (!TryBuildOwnPeerClient(out PluginNetworkClient self))
         {
+            _peerTransport?.Withdraw();
             _peers.Withdraw();
             return;
         }
 
+        if (_peerTransport is not null)
+        {
+            _peerTransport.UpdateSelf(self);
+            return;
+        }
         try
         {
             _peers.Publish(self);
@@ -6088,6 +6162,7 @@ internal sealed class RuntimeAutomationSurface
         _knownAttackSpells = Array.Empty<PluginSpellInfo>();
         _knownCombatSpells = Array.Empty<PluginSpellInfo>();
         _enchantments = Array.Empty<PluginActiveEnchantment>();
+        _peerTransport?.Dispose();
         _peers.Dispose();
         _timedEnchantments = Array.Empty<PluginActiveEnchantment>();
     }

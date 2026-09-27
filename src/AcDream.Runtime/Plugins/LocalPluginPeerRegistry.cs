@@ -298,12 +298,17 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     /// </summary>
     private DateTimeOffset? _holdWritesUntil;
     private bool _disposed;
+    private readonly bool _memoryOnly;
+    private readonly Dictionary<Guid, PeerDocument> _pushedNotes = [];
+    internal Guid InstanceId => _instanceId;
 
     public LocalPluginPeerRegistry(
         string directory,
         TimeProvider? timeProvider = null,
-        Guid? instanceId = null)
+        Guid? instanceId = null,
+        bool memoryOnly = false)
     {
+        _memoryOnly = memoryOnly;
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         _directory = Path.GetFullPath(directory);
         _time = timeProvider ?? TimeProvider.System;
@@ -328,6 +333,7 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     /// </returns>
     public bool Publish(in PluginNetworkClient client)
     {
+        if (_memoryOnly) throw new InvalidOperationException("Memory peer state must use the local transport.");
         ObjectDisposedException.ThrowIf(_disposed, this);
         DateTimeOffset now = _time.GetUtcNow();
         if (!CanBeWritten(client))
@@ -930,6 +936,7 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
 
     public void Withdraw()
     {
+        if (_memoryOnly) return;
         if (_disposed)
             return;
         lock (_gate)
@@ -965,8 +972,75 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     /// One reader for both what a peer is and what it cast, so a note cannot
     /// be trusted for one and unchecked for the other.
     /// </summary>
+    internal void PushClient(Guid instance, PluginNetworkClient client)
+    {
+        if (instance == Guid.Empty || instance == _instanceId || client.PlayerId == 0 || !CanBeWritten(client)) return;
+        lock (_gate)
+        {
+            if (_disposed || (_pushedNotes.Count >= 256 && !_pushedNotes.ContainsKey(instance))) return;
+            _pushedNotes.TryGetValue(instance, out var previous);
+            _pushedNotes[instance] = PeerDocument.From(client, instance, _time.GetUtcNow().ToUnixTimeMilliseconds(),
+                previous?.Casts?.OfType<PeerCastEntry>().ToArray() ?? [], []);
+        }
+    }
+    internal void PushCast(Guid instance, PluginPeerCast cast, DateTimeOffset at)
+    {
+        lock (_gate)
+        {
+            if (_disposed || !_pushedNotes.TryGetValue(instance, out var note)) return;
+            var entry = new PeerCastEntry { Sequence = cast.Sequence, AtUnixMs = at.ToUnixTimeMilliseconds(),
+                CasterObjectId = cast.CasterObjectId, TargetObjectId = cast.TargetObjectId, SpellId = cast.SpellId,
+                EffectiveSkill = cast.EffectiveSkill, DurationSeconds = cast.SecondsRemaining, Landed = cast.Landed };
+            if (!IsWellFormed(entry)) return;
+            note.Casts = note.Casts.Append(entry).TakeLast(CastRingCapacity).ToArray();
+        }
+    }
+    internal long PushCommand(PeerWireMessage message)
+    {
+        lock (_gate)
+        {
+            _observedCommands.Add(new ObservedCommand(++_observedCommandSequence,
+                message.Client.ClientId, false, new PeerCommandEntry
+                {
+                    SenderObjectId = message.Client.PlayerId,
+                    AtUnixMs = message.CreatedUtc.ToUnixTimeMilliseconds(),
+                    Line = message.Line, Tags = message.Tags,
+                    DelayMilliseconds = message.DelayMilliseconds,
+                }, message.Tags, message.DelayMilliseconds));
+            if (_observedCommands.Count > ObservedCommandCapacity)
+                _observedCommands.RemoveAt(0);
+            return _observedCommandSequence;
+        }
+    }
+    internal void RemovePushedClient(Guid instance)
+    {
+        lock (_gate)
+        {
+            if (_pushedNotes.Remove(instance, out var note))
+                _observedCasts.RemoveAll(cast => !cast.IsRemote && cast.ClientId == note.ClientId);
+        }
+    }
+    internal void ClearPushedClients()
+    {
+        lock (_gate)
+        {
+            _pushedNotes.Clear();
+            _observedCasts.RemoveAll(cast => !cast.IsRemote);
+        }
+    }
+
     private List<PeerNote> ReadRemoteNotes(DateTimeOffset now)
     {
+        if (_memoryOnly)
+        {
+            var pushed = new List<PeerNote>();
+            foreach (var pair in _pushedNotes)
+            {
+                pair.Value.UpdatedUnixMs = now.ToUnixTimeMilliseconds();
+                pushed.Add(new PeerNote(pair.Key.ToString("N"), pair.Value));
+            }
+            return WithRemotePeers(pushed, now);
+        }
         // Enumerate on each request so arrivals and replacements remain visible.
         // FileInfo returned by the enumeration already carries file metadata;
         // constructing one from each path would query it separately again.

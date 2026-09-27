@@ -36,6 +36,7 @@ public sealed class PeerRelayParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             InstallSpell(arm);
             INetworkAutomation network = arm.Host.Automation.Network;
 
@@ -54,7 +55,7 @@ public sealed class PeerRelayParityTests
 
             // A neighbour reads the same client under the same id.
             arm.Advance();
-            using (var onlooker = new LocalPluginPeerRegistry(
+            using (var onlooker = new ParityPeerClient(
                 arm.PeerDirectory, timeProvider: null, OtherClient))
             {
                 PluginNetworkClient seen = Assert.Single(onlooker.CaptureRemoteClients());
@@ -97,6 +98,7 @@ public sealed class PeerRelayParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             InstallSpell(arm);
             INetworkAutomation network = arm.Host.Automation.Network;
             var ran = new List<string>();
