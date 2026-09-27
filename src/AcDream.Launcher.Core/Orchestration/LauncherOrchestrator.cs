@@ -697,7 +697,8 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         {
             ThrowIfDisposed();
             activities = _activities
-                .Where(activity => activity.StatusSource is not null)
+                .Where(activity => activity.StatusSource is not null
+                    && !(activity.ProcessExited && activity.HostReportedExit))
                 .ToArray();
         }
 
@@ -979,6 +980,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                         }
                         break;
                     case LauncherSessionState.Exited:
+                        activity.ProcessExited = true;
                         activity.ExitCode ??= activity.Supervisor?.ExitCode;
                         if (activity.ExitCode is not null and not 0) activity.Error ??= ReadStartupFailure(activity);
                         if (!activity.IsTerminal)
@@ -1531,6 +1533,10 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         /// <summary>LU9: the host reported its own terminal event, as opposed
         /// to the launcher merely observing the process disappear.</summary>
         public bool HostReportedExit { get; set; }
+
+        // Keep reading until both the process exit and its terminal status are
+        // observed; either can arrive first.
+        public bool ProcessExited { get; set; }
 
         public DateTimeOffset? TerminalAt { get; set; }
 

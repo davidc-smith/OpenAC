@@ -671,6 +671,9 @@ public sealed class LauncherOrchestratorTests : IDisposable
 
         Assert.Single(supervisors.Created).Exit(23);
         QueueStatusSource source = Assert.Single(statusSources.Created);
+        orchestrator.PollStatus();
+        orchestrator.PollStatus();
+        Assert.Equal(2, source.ReadCount);
         source.Enqueue(Connected("s1"));
         source.Enqueue(EnteredWorld("s1", "+Acdream"));
         source.Enqueue(Exited("s1", 23, "host crash detail"));
@@ -681,6 +684,10 @@ public sealed class LauncherOrchestratorTests : IDisposable
         Assert.Equal(23, session.ExitCode);
         Assert.Contains("host crash detail", session.Status, StringComparison.Ordinal);
         Assert.True(orchestrator.GetProbeCapability("Local ACE", "testaccount").IsAvailable);
+        int reads = source.ReadCount;
+        orchestrator.PollStatus();
+        orchestrator.PollStatus();
+        Assert.Equal(reads, source.ReadCount);
     }
 
     [Fact]
@@ -697,10 +704,16 @@ public sealed class LauncherOrchestratorTests : IDisposable
             "+Acdream",
             LaunchMode.Headless);
 
-        Assert.Single(statusSources.Created).Enqueue(
+        QueueStatusSource source = Assert.Single(statusSources.Created);
+        source.Enqueue(
             Exited("s1", 0, "graceful host shutdown"));
         orchestrator.PollStatus();
+        int reads = source.ReadCount;
+        orchestrator.PollStatus();
+        Assert.Equal(reads + 1, source.ReadCount);
         Assert.Single(supervisors.Created).Exit(0);
+        orchestrator.PollStatus();
+        Assert.Equal(reads + 1, source.ReadCount);
 
         LauncherSessionSnapshot session = Assert.Single(orchestrator.GetSnapshot().Sessions);
         Assert.Equal(LauncherActivityState.Exited, session.State);
@@ -1074,10 +1087,13 @@ public sealed class LauncherOrchestratorTests : IDisposable
     {
         private readonly Queue<StatusEvent> _events = [];
 
+        public int ReadCount { get; private set; }
+
         public void Enqueue(StatusEvent statusEvent) => _events.Enqueue(statusEvent);
 
         public IReadOnlyList<StatusEvent> ReadNewEvents()
         {
+            ReadCount++;
             var result = new List<StatusEvent>();
             while (_events.TryDequeue(out StatusEvent? statusEvent))
             {
