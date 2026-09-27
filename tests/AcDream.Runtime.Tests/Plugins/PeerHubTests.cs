@@ -132,6 +132,7 @@ public sealed class PeerHubTests
         {
             Stream stream = await Endpoint.ConnectAsync(Token);
             await PeerHubProtocol.WriteAsync(stream, new() { Kind = "register", Id = identity ?? Guid.NewGuid(), Client = Client(player, player, name, world, tags ?? []), Capabilities = capabilities }, Token);
+            await ReadKind(stream, "ready");
             return stream;
         }
         internal async Task<PeerWireMessage> ReadKind(Stream stream, string kind)
