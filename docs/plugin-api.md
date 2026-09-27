@@ -2058,3 +2058,7 @@ sends it.
 
 The headless console is that second front end, and `docs/building-and-running.md`
 describes what can be typed at it.
+
+## Demand-driven peers
+
+See [local peer communication](peer-communication.md) for capability subscriptions, lifetime, readiness and command delivery semantics.

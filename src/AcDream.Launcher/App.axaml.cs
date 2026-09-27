@@ -7,6 +7,7 @@ using AcDream.Launcher.Core.Orchestration;
 using AcDream.Launcher.Core.Profiles;
 using AcDream.Launcher.Core.Updates;
 using AcDream.Launcher.ViewModels;
+using AcDream.Launcher.Automation;
 using AcDream.Platform;
 using Avalonia;
 using Avalonia.Controls;
@@ -22,6 +23,7 @@ public sealed partial class App : Application
     private LauncherWindowViewModel? _viewModel;
     private LauncherUpdateComposition? _updateComposition;
     private LauncherPluginComposition? _pluginComposition;
+    private LauncherControlServer? _controlServer;
     private readonly HttpClient _serverStatusClient = new();
 
     public App()
@@ -137,6 +139,26 @@ public sealed partial class App : Application
             _viewModel.ConfigureKnownServers(new KnownServerCatalog(_serverStatusClient, paths.CacheDirectory));
             _viewModel.ConfigurePlugins(plugins, () => updates.Versions.CachedResolution);
             _viewModel.Initialize();
+            if (startupOptions.ControlPipe is { } controlPipe)
+            {
+                var handler = new LauncherControlHandler(_orchestrator, async token =>
+                {
+                    using var lease = updates.Versions.Barrier.AcquireExclusive();
+                    var resolution = await updates.Versions.LoadCurrentReadOnlyAsync(rid, token);
+                    return resolution.IsVerified
+                        ? new ControlReply(true, new { version = resolution.Record?.Version })
+                        : new ControlReply(false, Error: "The active client failed installed-file verification.");
+                }, () => updates.Versions.CachedResolution.Record?.Version);
+                _controlServer = new LauncherControlServer(controlPipe,
+                    async (request, token) =>
+                    {
+                        var queued = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync<Task<ControlReply>>(
+                            () => handler.HandleAsync(request, token),
+                            Avalonia.Threading.DispatcherPriority.Normal, token);
+                        return await (await queued);
+                    },
+                    message => Console.Error.WriteLine(message));
+            }
             mainWindow.Opened += OnMainWindowOpened;
             desktop.Exit += OnDesktopExit;
         }
@@ -210,6 +232,7 @@ public sealed partial class App : Application
 
     private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
     {
+        _controlServer?.Dispose();
         _viewModel?.Dispose();
         _orchestrator?.Dispose();
         _updateComposition?.Dispose();

@@ -64,6 +64,14 @@ internal static class HeadlessEntryPoint
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
 
+        if (arguments.Count == 2 && arguments[0] == "peer-hub")
+        {
+            var endpoint = AcDream.Runtime.Plugins.PeerHubEndpoint.ForDirectory(arguments[1]);
+            new AcDream.Runtime.Plugins.PeerHubServer(endpoint, error.WriteLine)
+                .RunAsync(cancellationToken).GetAwaiter().GetResult();
+            return 0;
+        }
+
         if (arguments.Count == 0
             || IsHelp(arguments[0]))
         {

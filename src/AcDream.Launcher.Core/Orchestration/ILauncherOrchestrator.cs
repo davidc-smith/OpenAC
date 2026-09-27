@@ -29,6 +29,16 @@ public interface ILauncherOrchestrator : IDisposable
         string accountName,
         LaunchMode mode);
 
+    /// <summary>Captures account availability for one UI refresh. Actual launches validate again.</summary>
+    IReadOnlyDictionary<(string Server, string Account), LauncherCapability> GetAccountLaunchCapabilities(LaunchMode mode)
+    {
+        var result = new Dictionary<(string, string), LauncherCapability>();
+        foreach (LauncherServerSnapshot server in GetSnapshot().Servers)
+        foreach (LauncherAccountSnapshot account in server.Accounts)
+            result[(server.Name, account.AccountName)] = GetAccountLaunchCapability(server.Name, account.AccountName, mode);
+        return result;
+    }
+
     LauncherCapability GetProbeCapability(string serverName, string accountName);
 
     void SetInstallRecord(LauncherInstallRecord? installRecord);

@@ -54,6 +54,7 @@ public sealed class ScopedAutomationSurfaceTests
             // plugin adds to their events come off with it; that they still
             // answer from the host is covered by ScopedPluginHostReleaseTests.
             if (property.Name == nameof(IAutomationSurface.IsAvailable)
+                || property.Name == nameof(IAutomationSurface.Network)
                 || property.Name == nameof(IAutomationSurface.Chat)
                 || property.Name == nameof(IAutomationSurface.Trade)
                 || property.Name == nameof(IAutomationSurface.Vendor)
@@ -93,7 +94,7 @@ public sealed class ScopedAutomationSurfaceTests
         // Every property this loop actually walked should be one of the
         // known forwarders, guarding against the loop silently checking zero
         // properties if reflection ever returned nothing.
-        Assert.Equal(22, checkedMembers.Count);
+        Assert.Equal(21, checkedMembers.Count);
 
         scoped.Dispose();
     }
@@ -113,6 +114,7 @@ public sealed class ScopedAutomationSurfaceTests
         Assert.Same(surfaceA.Character, scoped.Automation.Character);
         Assert.Same(surfaceA.Combat, scoped.Automation.Combat);
         IPluginChat firstChatWrapper = scoped.Automation.Chat;
+        INetworkAutomation firstNetworkWrapper = scoped.Automation.Network;
 
         mutableHost.Automation = surfaceB;
 
@@ -123,8 +125,26 @@ public sealed class ScopedAutomationSurfaceTests
         // must re-wrap lazily rather than keep serving the old plugin chat.
         IPluginChat secondChatWrapper = scoped.Automation.Chat;
         Assert.NotSame(firstChatWrapper, secondChatWrapper);
+        Assert.NotSame(firstNetworkWrapper, scoped.Automation.Network);
+        Assert.False(firstNetworkWrapper.IsAvailable);
 
         scoped.Dispose();
+    }
+
+    [Fact]
+    public void NetworkLeasesAreReleasedOnUnloadAndCannotRestartAfterDisposal()
+    {
+        var inner = new FakeNetworkAutomation();
+        var network = new ScopedPeerAutomation(inner);
+        IDisposable lease = network.Subscribe(PluginPeerCapabilities.Casts)!;
+        Assert.Equal(1, inner.ActiveLeases);
+        network.Dispose();
+        Assert.Equal(0, inner.ActiveLeases);
+        lease.Dispose();
+        Assert.Equal(0, inner.ActiveLeases);
+        Assert.Null(network.Subscribe(PluginPeerCapabilities.ClientState));
+        Assert.False(network.BroadcastCommand("/example", [], 0));
+        Assert.Equal(0, inner.Broadcasts);
     }
 
     [Fact]
@@ -485,7 +505,21 @@ public sealed class ScopedAutomationSurfaceTests
 
     private sealed class FakeLoginAutomation : ILoginAutomation;
 
-    private sealed class FakeNetworkAutomation : INetworkAutomation;
+    private sealed class FakeNetworkAutomation : INetworkAutomation
+    {
+        internal int ActiveLeases;
+        internal int Broadcasts;
+        public bool SupportsSubscriptions => true;
+        public IDisposable Subscribe(PluginPeerCapabilities capabilities)
+        { ActiveLeases++; return new PeerLease(this); }
+        public bool BroadcastCommand(string line, IReadOnlyList<string> tags, int delayMilliseconds)
+        { Broadcasts++; return true; }
+        private sealed class PeerLease(FakeNetworkAutomation owner) : IDisposable
+        {
+            private bool _disposed;
+            public void Dispose() { if (_disposed) return; _disposed = true; owner.ActiveLeases--; }
+        }
+    }
 
     private sealed class FakeRecoveryAutomation : IRecoveryAutomation;
 

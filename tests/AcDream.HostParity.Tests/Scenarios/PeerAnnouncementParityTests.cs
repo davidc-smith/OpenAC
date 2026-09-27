@@ -40,6 +40,7 @@ public sealed class PeerAnnouncementParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             // What the server has said about this character. Without it the
             // note carries nothing but zeroes, and a note of zeroes is the
             // same on a client that fills it in and one that does not.
@@ -99,6 +100,7 @@ public sealed class PeerAnnouncementParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             arm.Advance();
 
             PluginNetworkClient announced = TheOneAnnouncement(arm);
@@ -118,7 +120,7 @@ public sealed class PeerAnnouncementParityTests
     /// </summary>
     private static PluginNetworkClient TheOneAnnouncement(ParityArm arm)
     {
-        using var onlooker = new LocalPluginPeerRegistry(arm.PeerDirectory);
+        using var onlooker = new ParityPeerClient(arm.PeerDirectory);
         IReadOnlyList<PluginNetworkClient> seen =
             onlooker.CaptureRemoteClients();
         Assert.True(

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using AcDream.Plugin.Abstractions;
@@ -297,12 +298,17 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     /// </summary>
     private DateTimeOffset? _holdWritesUntil;
     private bool _disposed;
+    private readonly bool _memoryOnly;
+    private readonly Dictionary<Guid, PeerDocument> _pushedNotes = [];
+    internal Guid InstanceId => _instanceId;
 
     public LocalPluginPeerRegistry(
         string directory,
         TimeProvider? timeProvider = null,
-        Guid? instanceId = null)
+        Guid? instanceId = null,
+        bool memoryOnly = false)
     {
+        _memoryOnly = memoryOnly;
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         _directory = Path.GetFullPath(directory);
         _time = timeProvider ?? TimeProvider.System;
@@ -327,6 +333,7 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     /// </returns>
     public bool Publish(in PluginNetworkClient client)
     {
+        if (_memoryOnly) throw new InvalidOperationException("Memory peer state must use the local transport.");
         ObjectDisposedException.ThrowIf(_disposed, this);
         DateTimeOffset now = _time.GetUtcNow();
         if (!CanBeWritten(client))
@@ -929,6 +936,7 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
 
     public void Withdraw()
     {
+        if (_memoryOnly) return;
         if (_disposed)
             return;
         lock (_gate)
@@ -964,18 +972,78 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     /// One reader for both what a peer is and what it cast, so a note cannot
     /// be trusted for one and unchecked for the other.
     /// </summary>
+    internal void PushClient(Guid instance, PluginNetworkClient client)
+    {
+        if (instance == Guid.Empty || instance == _instanceId || client.PlayerId == 0 || !CanBeWritten(client)) return;
+        lock (_gate)
+        {
+            if (_disposed || (_pushedNotes.Count >= 256 && !_pushedNotes.ContainsKey(instance))) return;
+            _pushedNotes.TryGetValue(instance, out var previous);
+            _pushedNotes[instance] = PeerDocument.From(client, instance, _time.GetUtcNow().ToUnixTimeMilliseconds(),
+                previous?.Casts?.OfType<PeerCastEntry>().ToArray() ?? [], []);
+        }
+    }
+    internal void PushCast(Guid instance, PluginPeerCast cast, DateTimeOffset at)
+    {
+        lock (_gate)
+        {
+            if (_disposed || !_pushedNotes.TryGetValue(instance, out var note)) return;
+            var entry = new PeerCastEntry { Sequence = cast.Sequence, AtUnixMs = at.ToUnixTimeMilliseconds(),
+                CasterObjectId = cast.CasterObjectId, TargetObjectId = cast.TargetObjectId, SpellId = cast.SpellId,
+                EffectiveSkill = cast.EffectiveSkill, DurationSeconds = cast.SecondsRemaining, Landed = cast.Landed };
+            if (!IsWellFormed(entry)) return;
+            note.Casts = note.Casts.Append(entry).TakeLast(CastRingCapacity).ToArray();
+        }
+    }
+    internal long PushCommand(PeerWireMessage message)
+    {
+        lock (_gate)
+        {
+            _observedCommands.Add(new ObservedCommand(++_observedCommandSequence,
+                message.Client.ClientId, false, new PeerCommandEntry
+                {
+                    SenderObjectId = message.Client.PlayerId,
+                    AtUnixMs = message.CreatedUtc.ToUnixTimeMilliseconds(),
+                    Line = message.Line, Tags = message.Tags,
+                    DelayMilliseconds = message.DelayMilliseconds,
+                }, message.Tags, message.DelayMilliseconds));
+            if (_observedCommands.Count > ObservedCommandCapacity)
+                _observedCommands.RemoveAt(0);
+            return _observedCommandSequence;
+        }
+    }
+    internal void RemovePushedClient(Guid instance)
+    {
+        lock (_gate)
+        {
+            if (_pushedNotes.Remove(instance, out var note))
+                _observedCasts.RemoveAll(cast => !cast.IsRemote && cast.ClientId == note.ClientId);
+        }
+    }
+    internal void ClearPushedClients()
+    {
+        lock (_gate)
+        {
+            _pushedNotes.Clear();
+            _observedCasts.RemoveAll(cast => !cast.IsRemote);
+        }
+    }
+
     private List<PeerNote> ReadRemoteNotes(DateTimeOffset now)
     {
-        // The folder's own stamp, which moves whenever a note is put there,
-        // removed or replaced -- every client writes its note by renaming a
-        // new file over the old one, which is a change to the folder. Asked
-        // for first because a client reads this on a timer whether or not
-        // anything has happened, and a folder that has not changed holds
-        // exactly what the last scan found.
-        //
-        // A folder that is not there answers with the zero of file time
-        // rather than throwing, which is the same answer as "nothing has
-        // ever announced itself here".
+        if (_memoryOnly)
+        {
+            var pushed = new List<PeerNote>();
+            foreach (var pair in _pushedNotes)
+            {
+                pair.Value.UpdatedUnixMs = now.ToUnixTimeMilliseconds();
+                pushed.Add(new PeerNote(pair.Key.ToString("N"), pair.Value));
+            }
+            return WithRemotePeers(pushed, now);
+        }
+        // Enumerate on each request so arrivals and replacements remain visible.
+        // FileInfo returned by the enumeration already carries file metadata;
+        // constructing one from each path would query it separately again.
         if (!Directory.Exists(_directory))
         {
             return _remotePeers.Count == 0
@@ -983,16 +1051,15 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
                 : WithRemotePeers([], now);
         }
         var notes = new List<PeerNote>();
-        foreach (string file in Directory.EnumerateFiles(
-            _directory,
+        foreach (FileInfo info in new DirectoryInfo(_directory).EnumerateFiles(
             "peer-*.json",
             SearchOption.TopDirectoryOnly))
         {
+            string file = info.FullName;
             if (file.Equals(_path, StringComparison.OrdinalIgnoreCase))
                 continue;
             try
             {
-                var info = new FileInfo(file);
                 if (info.Length is <= 0 or > MaximumDocumentBytes)
                     continue;
                 // What the file looked like when it was last read. It says
@@ -1011,23 +1078,13 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
                 // cache only ever spares files that have been still for a while.
                 bool justWritten =
                     DateTime.UtcNow - writtenAt < FileTimeGranularity;
+                bool wasCached = _parsedNotes.TryGetValue(file, out CachedNote cached);
                 if (justWritten
-                    || !_parsedNotes.TryGetValue(file, out CachedNote cached)
+                    || !wasCached
                     || cached.Length != info.Length
                     || cached.LastWriteUtc != writtenAt)
                 {
-                    // A note is read on a timer and rewritten every few
-                    // seconds, so most reads find exactly what the last one
-                    // did. What a file says is settled once per version of
-                    // that file; only whether it is still recent is asked
-                    // every time.
-                    PeerDocument? parsed = JsonSerializer.Deserialize<PeerDocument>(
-                        File.ReadAllText(file),
-                        JsonOptions);
-                    cached = new CachedNote(
-                        info.Length,
-                        writtenAt,
-                        Accept(parsed));
+                    cached = ReadNote(file, info.Length, writtenAt, cached);
                     if (_parsedNotes.Count >= ParsedNoteCapacity)
                         _parsedNotes.Clear();
                     _parsedNotes[file] = cached;
@@ -1048,6 +1105,46 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
             }
         }
         return WithRemotePeers(notes, now);
+    }
+
+    private CachedNote ReadNote(
+        string file, long length, DateTime writtenAt, CachedNote previous)
+    {
+        // Recently written files must still be read: their stamps can collide.
+        // Compare the bytes before decoding and validating JSON, and borrow the
+        // read buffer so unchanged notes do not allocate a stream-reader buffer
+        // and an entire document on every plugin poll.
+        byte[] buffer = ArrayPool<byte>.Shared.Rent((int)MaximumDocumentBytes + 1);
+        try
+        {
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read,
+                FileShare.Read | FileShare.Delete, bufferSize: 1, FileOptions.None);
+            int count = 0;
+            while (count <= MaximumDocumentBytes)
+            {
+                int read = stream.Read(buffer.AsSpan(count, (int)MaximumDocumentBytes + 1 - count));
+                if (read == 0)
+                    break;
+                count += read;
+            }
+            if (count > MaximumDocumentBytes)
+                return new CachedNote(length, writtenAt, null, null);
+
+            ReadOnlySpan<byte> contents = buffer.AsSpan(0, count);
+            if (previous.Contents is not null && contents.SequenceEqual(previous.Contents))
+                return previous with { Length = length, LastWriteUtc = writtenAt };
+
+            // Preserve the BOM detection and decoding used by ReadAllText,
+            // including notes supplied by other writers in UTF-16.
+            using var memory = new MemoryStream(buffer, 0, count, writable: false);
+            using var text = new StreamReader(memory);
+            PeerDocument? parsed = JsonSerializer.Deserialize<PeerDocument>(text.ReadToEnd(), JsonOptions);
+            return new CachedNote(length, writtenAt, Accept(parsed), contents.ToArray());
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>
@@ -1625,7 +1722,8 @@ internal sealed class LocalPluginPeerRegistry : IDisposable
     private readonly record struct CachedNote(
         long Length,
         DateTime LastWriteUtc,
-        PeerDocument? Document);
+        PeerDocument? Document,
+        byte[]? Contents);
 
     /// <summary>
     /// What a high-water mark belongs to. The identity in a note is a field

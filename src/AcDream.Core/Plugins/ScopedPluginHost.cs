@@ -288,7 +288,26 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         public IRecallAutomation Recalls => Inner.Recalls;
         public IWorldTimeAutomation WorldTime => Inner.WorldTime;
         public ILoginAutomation Login => Inner.Login;
-        public INetworkAutomation Network => Inner.Network;
+        private ScopedPeerAutomation? _network;
+        private INetworkAutomation? _networkSource;
+        public INetworkAutomation Network
+        {
+            get
+            {
+                INetworkAutomation source = Inner.Network;
+                lock (_gate)
+                {
+                    if (_disposed) return NoOpAutomationSurface.Instance.Network;
+                    if (!ReferenceEquals(_networkSource, source))
+                    {
+                        _network?.Dispose();
+                        _networkSource = source;
+                        _network = new ScopedPeerAutomation(source);
+                    }
+                    return _network!;
+                }
+            }
+        }
         public IRecoveryAutomation Recovery => Inner.Recovery;
         public IProjectileAutomation Projectiles => Inner.Projectiles;
         public ICharacterOptionsAutomation CharacterOptions => Inner.CharacterOptions;
@@ -332,6 +351,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             {
                 _disposed = true;
                 _chatWrapper?.Dispose();
+                _network?.Dispose();
                 navigation = _navigationSource;
                 _navigationSource = null;
                 _navigationScope = null;

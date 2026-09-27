@@ -17,6 +17,34 @@ again on the same server. **Cancel** stops pending starts; use the row's
 the list (**All** and one per tag) show only the accounts with that tag, and
 **Play selected** then starts only the ticked accounts the filter shows.
 
+**Show only checked accounts** combines with the profile filter. Hidden accounts
+keep their selections. You can uncheck a running account without changing its
+character or stopping it.
+
+**Relaunch checked clients automatically** is off by default. When enabled it
+monitors checked accounts' existing and future launcher-owned play sessions,
+including sessions started through the local control pipe. It relaunches after
+a crash **or a manual Stop**, using the account's current selected character and
+mode and the normal saved plugins and logon commands. Character refresh probes,
+old stopped history, and accounts that have never been started are not launched
+just by enabling it. Visual filters do not limit automatic relaunch.
+
+The **Delay (seconds)** must be a whole number from 5 to 3600; the default is 180.
+It begins when startup work and the actual process have finished, not when a
+client first reports an exit. Failed attempts wait a new full delay. Installation
+checks, open dialogs and existing account restrictions still prevent launches.
+The independent three-minute server reconnect hold after an unclean exit still
+applies. Clearing finished history does not cancel an already scheduled relaunch.
+Uncheck an account, remove it, turn automatic relaunch off, or close the launcher
+to cancel its pending relaunch. Checked accounts, these controls, and the delay
+last only for the current launcher session.
+
+While a requested Stop is still completing, all Stop buttons and other session
+operations are disabled until that process and any startup work actually end,
+even if an early exit notice arrived or the stop operation returned an error.
+The existing graceful-stop timeout (30 seconds before forced termination) is
+separate from the automatic relaunch delay.
+
 A row's **Options ▾** menu has **Logon commands…**, **Plugins for this
 character…** (with a character chosen), **Console** (for a running headless
 session), **Open logs folder** and **Remove character** (a later character
@@ -312,6 +340,56 @@ the release of the same number, so a launcher on `0.1.13-dev.1` is not offered
 `0.1.12` and will not go back to it. It stays where it is until `0.1.13` is
 released, then updates to that like any other. The client it installed follows
 the same rule.
+
+## Local automation for performance tests
+
+Start the launcher with `--control-pipe <name>` to enable an optional same-user
+named-pipe interface. It is disabled by default. Names use 1–64 ASCII letters,
+digits, hyphens or underscores. `tools/launcher-control.ps1 -Pipe <name>` reports
+saved account selections and session state without passwords or logon commands.
+
+Use `-Command start -Server <saved-server> -Account <saved-account>` to start
+the character selected on that account's launcher row. The row must use Headless
+mode. The running launcher's normal orchestration supplies credentials, plugins
+and logon commands, tracks the session in the UI, and rejects duplicate launches.
+The control interface does not edit profiles or accept arbitrary game commands.
+
+After installing and activating a separate test client with the normal verified
+version layout, `-Command reload-client` revalidates that installation for future
+launches. It refuses while sessions are active and holds the same exclusive update
+lease as installation. It neither installs a payload nor edits the version pointer.
+Status reports the full active client version, including local build metadata.
+
+Use `-Command stop -Session <session-id>` to request graceful logout through the
+launcher's existing console connection. Poll status until the session is inactive
+and `graceful` is true. A successful stop reply means the request was sent, not that
+logout finished. This interface never force-kills a process. If a connection times
+out, query status before retrying: a command may have run without its reply arriving.
+
+The interface uses one UTF-8 JSON request per connection, prefixed by a four-byte
+little-endian byte count (maximum 16 KiB), and replies using the same framing.
+Commands are `status`, `reload-client`, `start` (fields `server`, `account`) and `stop` (field
+`session`). Replies contain `ok`, `data` and `error`. Connections expire after
+30 seconds and are restricted to the launcher's operating-system user. Close
+the launcher normally to disable the interface; it cannot take ownership of
+sessions created by another launcher process.
+
+`tools/launcher-perf.ps1` drives a fixed list of saved accounts using this interface.
+For example, in PowerShell 7:
+
+```powershell
+$accounts = 1..9 | ForEach-Object { "murder$_" }
+./tools/launcher-perf.ps1 -Pipe perf -Server coldeve -Accounts $accounts -Action Start
+./tools/launcher-perf.ps1 -Pipe perf -Server coldeve -Accounts $accounts -Action Measure -ExpectedVersion 0.1.20 -OutputDirectory C:/perf/run1
+./tools/launcher-perf.ps1 -Pipe perf -Server coldeve -Accounts $accounts -Action Stop
+```
+
+Start waits for all selected clients to enter world. Stop waits for their graceful
+exit. Neither automatically retries a failed launch. Measure is Windows-only,
+verifies process identities and writes per-client CPU samples after a settling
+interval (defaults: two-minute settle, five-minute measurement). It refuses to
+overwrite an existing output directory. Attach allocation or stack collectors
+separately, outside that unprofiled CPU window.
 
 ## Server status
 

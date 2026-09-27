@@ -53,7 +53,10 @@ public sealed class PeerCommandParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
 
+            using var onlooker = new ParityPeerClient(
+                arm.PeerDirectory, timeProvider: null, OtherClient);
             INetworkAutomation network = arm.Host.Automation.Network;
             transcript.Step("broadcast");
             transcript.Record(
@@ -63,8 +66,7 @@ public sealed class PeerCommandParityTests
             // everything else it tells the machine about itself.
             arm.Advance();
 
-            using var onlooker = new LocalPluginPeerRegistry(
-                arm.PeerDirectory, timeProvider: null, OtherClient);
+
             LocalPluginPeerCommand[] seen = onlooker.CaptureRemoteCommands(
                 0L,
                 arm.Host.Automation.Character.WorldName,
@@ -102,11 +104,12 @@ public sealed class PeerCommandParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             var ran = new List<string>();
             using IDisposable verb = arm.Host.Commands.Register(
                 Verb, command => ran.Add(command.RawText));
 
-            using (var other = new LocalPluginPeerRegistry(
+            using (var other = new ParityPeerClient(
                 arm.PeerDirectory, timeProvider: null, OtherClient))
             {
                 Assert.True(other.RecordCommand(new LocalPluginCommand(
@@ -163,8 +166,9 @@ public sealed class PeerCommandParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
 
-            using (var other = new LocalPluginPeerRegistry(
+            using (var other = new ParityPeerClient(
                 arm.PeerDirectory, timeProvider: null, OtherClient))
             {
                 // One of the client's own commands, which reaches the server
@@ -177,10 +181,10 @@ public sealed class PeerCommandParityTests
                     DelayMilliseconds: 0)));
                 Assert.True(other.RecordCommand(new LocalPluginCommand(
                     OtherCharacter, [], "hello", 0)));
+                _ = arm.Operations.TakeOutbound();
                 other.Publish(OtherClientNote(arm));
                 // What staging the world put on the wire is not this
                 // scenario's; what follows is.
-                _ = arm.Operations.TakeOutbound();
 
                 transcript.Step("run");
                 arm.Advance();
@@ -228,6 +232,7 @@ public sealed class PeerCommandParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             var ran = new List<string>();
             using IDisposable verb = arm.Host.Commands.Register(
                 Verb, command => ran.Add(command.RawText));
@@ -237,14 +242,15 @@ public sealed class PeerCommandParityTests
                 "accepted", arm.Host.Automation.Network.SetTags(["healer"]));
             arm.Advance();
 
-            using var onlooker = new LocalPluginPeerRegistry(
+            using var onlooker = new ParityPeerClient(
                 arm.PeerDirectory, timeProvider: null, OtherClient);
             PluginNetworkClient seen = Assert.Single(
                 onlooker.CaptureRemoteClients());
             transcript.Record("tags", string.Join(",", seen.Tags));
             Assert.Equal(["healer"], seen.Tags);
+            onlooker.Dispose();
 
-            using (var other = new LocalPluginPeerRegistry(
+            using (var other = new ParityPeerClient(
                 arm.PeerDirectory, timeProvider: null, OtherClient))
             {
                 // One line for a label this client no longer wears, one for

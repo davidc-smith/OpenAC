@@ -163,6 +163,32 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         }
     }
 
+    public IReadOnlyDictionary<(string Server, string Account), LauncherCapability> GetAccountLaunchCapabilities(LaunchMode mode)
+    {
+        // Executable availability belongs to the host, not to each account row.
+        // Check it once per refresh, while reconnect holds remain current.
+        LauncherCapability host = GetLaunchCapability(mode);
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            var result = new Dictionary<(string, string), LauncherCapability>();
+            foreach (ServerProfile server in _profileStore.Document.Servers)
+            foreach (AccountProfile account in server.Accounts)
+            {
+                LauncherCapability capability = host;
+                if (capability.IsAvailable)
+                {
+                    ManagedActivity? active = FindActiveActivityLocked(server.Name, account.Account);
+                    capability = active is not null
+                        ? LauncherCapability.Unavailable($"Stop the running {active.Kind.ToString().ToLowerInvariant()} for this account before starting another activity.")
+                        : GetReconnectHoldLocked(server.Name, account.Account);
+                }
+                result[(server.Name, account.Account)] = capability;
+            }
+            return result;
+        }
+    }
+
     private LauncherCapability GetReconnectHoldLocked(
         string serverName,
         string accountName)
@@ -671,7 +697,8 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         {
             ThrowIfDisposed();
             activities = _activities
-                .Where(activity => activity.StatusSource is not null)
+                .Where(activity => activity.StatusSource is not null
+                    && !(activity.ProcessExited && activity.HostReportedExit))
                 .ToArray();
         }
 
@@ -769,10 +796,6 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                     () => StartActivityCore(request),
                     CancellationToken.None)
                 .ConfigureAwait(false);
-            lock (_gate)
-            {
-                return request.Activity.ToSnapshot();
-            }
         }
         finally
         {
@@ -788,8 +811,14 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
             }
 
             request.Cancellation.Dispose();
-            request.Activity.StartCompleted.Set();
+            lock (_gate)
+            {
+                request.Activity.StartCompleted.Set();
+                request.Activity.StartupInFlight = false;
+            }
+            RaiseStateChanged();
         }
+        lock (_gate) return request.Activity.ToSnapshot();
     }
 
     private void StartActivityCore(StartRequest request)
@@ -916,7 +945,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         finally
         {
             request.Password = null;
-            if (!hostStarted)
+            if (!hostStarted && supervisor?.HasLiveProcess != true)
             {
                 ReleaseUpdateSessionLease(request.Activity);
             }
@@ -953,6 +982,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                         }
                         break;
                     case LauncherSessionState.Exited:
+                        activity.ProcessExited = true;
                         activity.ExitCode ??= activity.Supervisor?.ExitCode;
                         if (activity.ExitCode is not null and not 0) activity.Error ??= ReadStartupFailure(activity);
                         if (!activity.IsTerminal)
@@ -1506,6 +1536,10 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         /// to the launcher merely observing the process disappear.</summary>
         public bool HostReportedExit { get; set; }
 
+        // Keep reading until both the process exit and its terminal status are
+        // observed; either can arrive first.
+        public bool ProcessExited { get; set; }
+
         public DateTimeOffset? TerminalAt { get; set; }
 
         public bool ExitedGracefully => HostReportedExit && ExitCode == 0;
@@ -1521,15 +1555,16 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         public UpdateSessionBarrier.SessionLease? UpdateSessionLease;
 
         public ManualResetEventSlim StartCompleted { get; } = new(false);
+        public bool StartupInFlight { get; set; } = true;
 
         public object StatusReadGate { get; } = new();
 
-        public bool IsActive => State is not (
+        public bool IsActive => !IsTerminal || StartupInFlight || Supervisor?.HasLiveProcess == true;
+
+        public bool IsTerminal => State is (
             LauncherActivityState.Exited
             or LauncherActivityState.Failed
             or LauncherActivityState.Cancelled);
-
-        public bool IsTerminal => !IsActive;
 
         public LauncherSessionSnapshot ToSnapshot() =>
             new(
@@ -1546,7 +1581,9 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 CreatedAt,
                 ExitReason,
                 ExitedGracefully,
-                PluginNotice);
+                PluginNotice,
+                Supervisor?.HasLiveProcess == true,
+                StartupInFlight);
     }
 
     private sealed class StartRequest(

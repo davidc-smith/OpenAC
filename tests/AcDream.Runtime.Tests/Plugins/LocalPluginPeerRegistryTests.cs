@@ -528,6 +528,106 @@ public sealed class LocalPluginPeerRegistryTests
     }
 
     [Fact]
+    public void RepeatedRecentReadsAvoidAllocatingTheDocumentAgain()
+    {
+        string root = TemporaryRoot();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        try
+        {
+            using var reader = Registry(root, time, 2);
+            WriteRawNote(root, Instance(1), RawNote(time.GetUtcNow(), Instance(1)));
+            string path = Path.Combine(root, $"peer-{Instance(1):N}.json");
+            // Keep the stamp in the reread window even on a slow test host.
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddHours(1));
+            for (int i = 0; i < 20; i++)
+                reader.CaptureRemoteClients();
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            int clients = 0;
+            for (int i = 0; i < 200; i++)
+                clients += reader.CaptureRemoteClients().Count;
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(200, clients);
+            Assert.True(allocated < 1_000_000, $"Repeated reads allocated {allocated:N0} bytes.");
+        }
+        finally
+        {
+            Delete(root);
+        }
+    }
+
+    [Fact]
+    public void CachedNoteStillExpiresAndRecoversAfterMalformedReplacement()
+    {
+        string root = TemporaryRoot();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        try
+        {
+            using var reader = Registry(root, time, 2);
+            JsonObject note = RawNote(time.GetUtcNow(), Instance(1));
+            WriteRawNote(root, Instance(1), note);
+            Assert.Single(reader.CaptureRemoteClients());
+            WriteRawNote(root, Instance(1), "{invalid");
+            Assert.Empty(reader.CaptureRemoteClients());
+            WriteRawNote(root, Instance(1), note);
+            Assert.Single(reader.CaptureRemoteClients());
+            time.Advance(LocalPluginPeerRegistry.StaleAfter + TimeSpan.FromMilliseconds(1));
+            Assert.Empty(reader.CaptureRemoteClients());
+        }
+        finally
+        {
+            Delete(root);
+        }
+    }
+
+    [Fact]
+    public void MaximumSizedNoteIsReadAndOversizedReplacementIsRejected()
+    {
+        string root = TemporaryRoot();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        try
+        {
+            using var reader = Registry(root, time, 2);
+            string json = RawNote(time.GetUtcNow(), Instance(1)).ToJsonString();
+            string maximum = json.PadRight(64 * 1024);
+            WriteRawNote(root, Instance(1), maximum);
+            Assert.Single(reader.CaptureRemoteClients());
+            WriteRawNote(root, Instance(1), maximum + " ");
+            Assert.Empty(reader.CaptureRemoteClients());
+            WriteRawNote(root, Instance(1), json);
+            Assert.Single(reader.CaptureRemoteClients());
+        }
+        finally
+        {
+            Delete(root);
+        }
+    }
+
+    [Fact]
+    public void Utf16NoteAndItsReplacementAreDecoded()
+    {
+        string root = TemporaryRoot();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        try
+        {
+            using var reader = Registry(root, time, 2);
+            Directory.CreateDirectory(root);
+            JsonObject note = RawNote(time.GetUtcNow(), Instance(1));
+            string path = Path.Combine(root, $"peer-{Instance(1):N}.json");
+            File.WriteAllText(path, note.ToJsonString(), System.Text.Encoding.Unicode);
+            DateTime stamp = File.GetLastWriteTimeUtc(path);
+            Assert.Equal("Alpha", Assert.Single(reader.CaptureRemoteClients()).Name);
+            note["Name"] = "Alphb";
+            File.WriteAllText(path, note.ToJsonString(), System.Text.Encoding.Unicode);
+            File.SetLastWriteTimeUtc(path, stamp);
+            Assert.Equal("Alphb", Assert.Single(reader.CaptureRemoteClients()).Name);
+        }
+        finally
+        {
+            Delete(root);
+        }
+    }
+
+    [Fact]
     public void AFileClaimingAPeersIdentityCannotSilenceThatPeer()
     {
         string root = TemporaryRoot();

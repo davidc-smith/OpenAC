@@ -56,8 +56,11 @@ public sealed class PeerCastSharingParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             InstallSpell(arm);
 
+            using var onlooker = new ParityPeerClient(
+                arm.PeerDirectory, timeProvider: null, OtherClient);
             INetworkAutomation network = arm.Host.Automation.Network;
             transcript.Step("announced");
             transcript.Record(
@@ -71,8 +74,7 @@ public sealed class PeerCastSharingParityTests
             // everything else it tells the machine about itself.
             arm.Advance();
 
-            using var onlooker = new LocalPluginPeerRegistry(
-                arm.PeerDirectory, timeProvider: null, OtherClient);
+
             PluginPeerCast[] seen = onlooker.CaptureRemoteCasts(
                 0L, arm.Host.Automation.Character.WorldName, OtherCharacter)
                 .ToArray();
@@ -102,12 +104,13 @@ public sealed class PeerCastSharingParityTests
         ParityScenario.Run(static (arm, transcript) =>
         {
             _ = ParityWorld.Stage(arm);
+            using var peerHub = new ParityPeerHub(arm);
             InstallSpell(arm);
 
             // The other client wrote its note five seconds ago, which is the
             // whole reason a total duration is the wrong thing to hand a
             // reader: this one is polling a file, not hearing an event.
-            using (var other = new LocalPluginPeerRegistry(
+            using (var other = new ParityPeerClient(
                 arm.PeerDirectory, new FiveSecondsAgo(), OtherClient))
             {
                 Assert.True(other.RecordCast(new LocalPluginCast(

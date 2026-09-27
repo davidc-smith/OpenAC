@@ -165,8 +165,9 @@ internal static class RuntimeAutomationBindings
             $"{inputs.HostName}.{nameof(inputs.PeerDirectory)}");
         return new RuntimeAutomationSurface(
             inputs.PluginEvents,
-            new LocalPluginPeerRegistry(inputs.PeerDirectory),
-            inputs.PeerTags);
+            new LocalPluginPeerRegistry(inputs.PeerDirectory, memoryOnly: true),
+            inputs.PeerTags,
+            peerEndpoint: PeerHubEndpoint.ForDirectory(inputs.PeerDirectory));
     }
 
     /// <summary>

@@ -371,6 +371,37 @@ public sealed class RuntimeAutomationSurfacePeerCommandTests
         }
     }
 
+    [Fact]
+    public void DisabledPeerTransportDoesNotPublishReadOrDeliverCommands()
+    {
+        string root = TemporaryRoot();
+        try
+        {
+            using GameRuntime runtime = Bound(root, out var surface, out _, out var events,
+                disablePeerCommunication: true);
+            using (surface)
+            using (var remote = new LocalPluginPeerRegistry(root))
+            {
+                var ran = Verb(surface);
+                Assert.True(remote.RecordCommand(new LocalPluginCommand(Peer, [], "/example remote", 0)));
+                Assert.True(remote.Publish(Note(remote.ClientId, Peer, "Remote", [])));
+                events.FireTick(10d);
+                Assert.False(surface.Network.IsAvailable);
+                Assert.Empty(surface.Network.CaptureClients());
+                Assert.Empty(surface.Network.CaptureCasts(0));
+                Assert.Empty(surface.Network.CaptureCommands(0));
+                Assert.False(surface.Network.BroadcastCommand("/example outgoing", [], 0));
+                Assert.False(surface.Network.AnnounceCastAttempt(1, 1, 100));
+                Assert.False(surface.Network.SetTags(["army"]));
+                Assert.Empty(ran);
+                Assert.Single(Directory.GetFiles(root, "peer-*.json"));
+                Assert.True(surface.TryHandlePluginCommand("/example local"));
+                Assert.Single(ran);
+            }
+        }
+        finally { Delete(root); }
+    }
+
     /// <summary>The step the plugin tick carries.</summary>
     private const double TickSeconds = 0.015d;
 
@@ -415,13 +446,14 @@ public sealed class RuntimeAutomationSurfacePeerCommandTests
         out WorldEvents events,
         uint playerObjectId = LocalPlayer,
         TimeProvider? time = null,
-        Guid? instanceId = null)
+        Guid? instanceId = null,
+        bool disablePeerCommunication = false)
     {
         GameRuntime runtime = GameRuntimeTestFactory.Create();
         runtime.PlayerIdentity.ServerGuid = playerObjectId;
         peers = new LocalPluginPeerRegistry(root, time, instanceId);
         events = new WorldEvents();
-        RuntimeAutomationSurface built = new(events, peers);
+        RuntimeAutomationSurface built = new(events, peers, disablePeerCommunication: disablePeerCommunication);
         surface = built;
         surface.Bind(
             runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);

@@ -175,6 +175,22 @@ public readonly record struct PluginPeerCommand(
 /// </remarks>
 public interface INetworkAutomation
 {
+    /// <summary>True when this host supports explicit peer subscriptions.</summary>
+    bool SupportsSubscriptions => false;
+
+    /// <summary>Whether a subscribed local peer connection is currently established.
+    /// False means capture results may be incomplete while connection is pending or unavailable.</summary>
+    bool IsConnected => IsAvailable;
+
+    /// <summary>
+    /// Participates in the selected peer features until the returned lease is disposed.
+    /// Several plugins share one connection. No leases means no peer transport work.
+    /// Older hosts return null and retain their existing behavior.
+    /// </summary>
+    /// <param name="capabilities">The features this plugin needs on this client.</param>
+    /// <returns>A lease, or null for unsupported or invalid capabilities.</returns>
+    IDisposable? Subscribe(PluginPeerCapabilities capabilities) => null;
+
     /// <summary>
     /// True when this host publishes and reads peer state. The default
     /// implementation always reports false.

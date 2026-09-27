@@ -21,12 +21,14 @@ internal sealed class LauncherStartupOptions
         ApplicationPathSet paths,
         Uri updateManifestUri,
         Uri pluginListUri,
-        IReadOnlyList<string> publicArguments)
+        IReadOnlyList<string> publicArguments,
+        string? controlPipe = null)
     {
         Mode = mode;
         Paths = paths;
         UpdateManifestUri = updateManifestUri;
         PluginListUri = pluginListUri;
+        ControlPipe = controlPipe;
         _publicArguments = Array.AsReadOnly(publicArguments.ToArray());
     }
 
@@ -37,6 +39,8 @@ internal sealed class LauncherStartupOptions
     internal Uri UpdateManifestUri { get; }
 
     internal Uri PluginListUri { get; }
+
+    internal string? ControlPipe { get; }
 
     internal IReadOnlyList<string> PublicArguments => _publicArguments;
 
@@ -80,6 +84,7 @@ internal sealed class LauncherStartupOptions
         string? rootDirectory = null;
         Uri? updateManifestUri = null;
         Uri? pluginListUri = null;
+        string? controlPipe = null;
 
         for (int index = 0; index < publicArguments.Length; index += 2)
         {
@@ -100,6 +105,12 @@ internal sealed class LauncherStartupOptions
 
             switch (name)
             {
+                case "--control-pipe":
+                    if (controlPipe is not null || value.Length > 64
+                        || value.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not '-' and not '_'))
+                        throw new LauncherStartupOptionsException("Use one control pipe name of 1–64 ASCII letters, digits, hyphens or underscores.");
+                    controlPipe = value;
+                    break;
                 case "--config-dir":
                     SetDirectoryOnce(ref configDirectory, value, name);
                     break;
@@ -160,7 +171,8 @@ internal sealed class LauncherStartupOptions
             paths,
             updateManifestUri ?? ReleaseManifestClient.ProductionManifestUri,
             pluginListUri ?? PluginCatalog.ProductionListUri,
-            publicArguments);
+            publicArguments,
+            controlPipe);
     }
 
     /// <summary>Once-only HTTPS-or-loopback URI parsing shared by <c>--update-manifest-uri</c> and
