@@ -1092,13 +1092,20 @@ public sealed partial class LauncherWindowViewModelTests
             }
         }
 
-        public LauncherStateSnapshot GetSnapshot() => new(
+        public int SnapshotReadCount { get; private set; }
+        public int AccountCapabilityReadCount { get; private set; }
+
+        public LauncherStateSnapshot GetSnapshot()
+        {
+            SnapshotReadCount++;
+            return new(
             ServersOverride ?? [CreateServerSnapshot()],
             [Session],
             Platform,
             IsInstallationReady: InstalledRecord is not null,
             InstallationStatus,
             ShowBetaPlugins: ShowBetaPlugins);
+        }
 
         public void SetShowBetaPlugins(bool value) => ShowBetaPlugins = value;
 
@@ -1108,8 +1115,11 @@ public sealed partial class LauncherWindowViewModelTests
         public LauncherCapability GetAccountLaunchCapability(
             string serverName,
             string accountName,
-            LaunchMode mode) =>
-            AccountLaunchCapability ?? GetLaunchCapability(mode);
+            LaunchMode mode)
+        {
+            AccountCapabilityReadCount++;
+            return AccountLaunchCapability ?? GetLaunchCapability(mode);
+        }
 
         public LauncherCapability GetProbeCapability(string serverName, string accountName) =>
             ProbeCapability;

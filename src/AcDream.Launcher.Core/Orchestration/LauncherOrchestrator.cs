@@ -163,6 +163,32 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         }
     }
 
+    public IReadOnlyDictionary<(string Server, string Account), LauncherCapability> GetAccountLaunchCapabilities(LaunchMode mode)
+    {
+        // Executable availability belongs to the host, not to each account row.
+        // Check it once per refresh, while reconnect holds remain current.
+        LauncherCapability host = GetLaunchCapability(mode);
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            var result = new Dictionary<(string, string), LauncherCapability>();
+            foreach (ServerProfile server in _profileStore.Document.Servers)
+            foreach (AccountProfile account in server.Accounts)
+            {
+                LauncherCapability capability = host;
+                if (capability.IsAvailable)
+                {
+                    ManagedActivity? active = FindActiveActivityLocked(server.Name, account.Account);
+                    capability = active is not null
+                        ? LauncherCapability.Unavailable($"Stop the running {active.Kind.ToString().ToLowerInvariant()} for this account before starting another activity.")
+                        : GetReconnectHoldLocked(server.Name, account.Account);
+                }
+                result[(server.Name, account.Account)] = capability;
+            }
+            return result;
+        }
+    }
+
     private LauncherCapability GetReconnectHoldLocked(
         string serverName,
         string accountName)

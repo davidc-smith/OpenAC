@@ -61,6 +61,57 @@ public sealed class LauncherOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public void BatchAvailabilityChecksHostFilesOnceForManyAccountsAndSeesChanges()
+    {
+        int reads = 0;
+        bool exists = true;
+        using var core = CreateOrchestrator(executables: new LauncherExecutableSet(
+            "gui-host", "headless-host", fileExists: _ => { reads++; return exists; },
+            hasUnixExecutePermission: _ => true));
+        for (int index = 0; index < 50; index++)
+            core.AddAccount("Local ACE", $"account{index}", "test-only");
+        reads = 0;
+        var available = core.GetAccountLaunchCapabilities(LaunchMode.Headless);
+        Assert.Equal(51, available.Count);
+        Assert.All(available.Values, capability => Assert.True(capability.IsAvailable));
+        Assert.InRange(reads, 1, 2);
+        exists = false;
+        var missing = core.GetAccountLaunchCapabilities(LaunchMode.Headless);
+        Assert.All(missing.Values, capability => Assert.False(capability.IsAvailable));
+        Assert.Equal(core.GetAccountLaunchCapability("Local ACE", "testaccount", LaunchMode.Headless),
+            missing[("Local ACE", "testaccount")]);
+        exists = true;
+        core.SetInstallRecord(null);
+        Assert.All(core.GetAccountLaunchCapabilities(LaunchMode.Headless).Values,
+            capability => Assert.False(capability.IsAvailable));
+    }
+
+    [Fact]
+    public async Task BatchAvailabilityPreservesActiveAndReconnectRefusals()
+    {
+        var sources = new QueueStatusSourceFactory();
+        using var core = CreateOrchestrator(statusSourceFactory: sources);
+        await core.LaunchAsync("Local ACE", "testaccount", "+Acdream", LaunchMode.Headless);
+        Check("Stop the running");
+        Assert.Single(sources.Created).Enqueue(Exited("s1", 23, "connection lost"));
+        core.PollStatus();
+        Check("Try again");
+
+        void Check(string reason)
+        {
+            foreach (LaunchMode mode in Enum.GetValues<LaunchMode>())
+            {
+                LauncherCapability single = core.GetAccountLaunchCapability("Local ACE", "testaccount", mode);
+                LauncherCapability batch = core.GetAccountLaunchCapabilities(mode)[("Local ACE", "testaccount")];
+                Assert.False(batch.IsAvailable);
+                Assert.Contains(reason, batch.Reason);
+                Assert.False(single.IsAvailable);
+                Assert.Contains(reason, single.Reason);
+            }
+        }
+    }
+
+    [Fact]
     public async Task LogonCommandsAndAccountsCanBeEditedWhileASessionRunsButARunningAccountStays()
     {
         var supervisors = new FakeSupervisorFactory();

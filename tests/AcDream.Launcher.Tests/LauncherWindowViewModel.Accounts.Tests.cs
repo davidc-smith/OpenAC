@@ -9,6 +9,48 @@ namespace AcDream.Launcher.Tests;
 public sealed partial class LauncherWindowViewModelTests
 {
     [Fact]
+    public async Task BindingReadsReuseAvailabilityUntilTheNextPoll()
+    {
+        using var core = BatchOrchestrator();
+        using var vm = CreateInitialized(core);
+        await vm.StartBackgroundInitializationAsync();
+        vm.CloseActiveModal();
+        var row = vm.Accounts[0].Rows[0];
+        vm.PollStatus();
+        int snapshots = core.SnapshotReadCount;
+        int capabilities = core.AccountCapabilityReadCount;
+        for (int index = 0; index < 100; index++)
+        {
+            Assert.True(row.CanPlay);
+            Assert.Empty(row.DisabledReason);
+            Assert.True(row.PlayCommand.CanExecute(null));
+        }
+        Assert.Equal(snapshots, core.SnapshotReadCount);
+        Assert.Equal(capabilities, core.AccountCapabilityReadCount);
+        core.AccountLaunchCapability = LauncherCapability.Unavailable("Try again in 2 s.");
+        vm.PollStatus();
+        Assert.Equal("Try again in 2 s.", row.DisabledReason);
+        core.AccountLaunchCapability = LauncherCapability.Unavailable("Try again in 1 s.");
+        vm.PollStatus();
+        Assert.Equal("Try again in 1 s.", row.DisabledReason);
+    }
+
+    [Fact]
+    public async Task LaunchChecksChangesThatHaveNotReachedTheUiSnapshot()
+    {
+        using var core = BatchOrchestrator();
+        using var vm = CreateInitialized(core);
+        await vm.StartBackgroundInitializationAsync();
+        vm.CloseActiveModal();
+        var row = vm.Accounts[0].Rows[0];
+        Assert.True(row.CanPlay);
+        core.ServersOverride = [];
+        await row.PlayCommand.ExecuteAsync();
+        Assert.Null(core.LaunchRequest);
+        Assert.Contains("no longer configured", vm.LastError);
+    }
+
+    [Fact]
     public async Task PollRefreshesPlayWhenReconnectDelayExpiresWithoutAnEvent()
     {
         using var core = BatchOrchestrator();
@@ -463,8 +505,11 @@ public sealed partial class LauncherWindowViewModelTests
         row.SelectedCharacter = "A character";
         Assert.True(row.CanPlay);
         core.Session = core.Session with { ServerName = row.ServerName, AccountName = row.AccountName, State = LauncherActivityState.Running };
-        Assert.False(row.PlayCommand.CanExecute(null));
+        // Until a notification arrives, bindings retain the displayed snapshot.
+        Assert.True(row.PlayCommand.CanExecute(null));
         await vm.LaunchCheckedCommand.ExecuteAsync();
         Assert.Empty(core.LaunchRequests);
+        core.RaiseStateChanged();
+        Assert.False(row.PlayCommand.CanExecute(null));
     }
 }

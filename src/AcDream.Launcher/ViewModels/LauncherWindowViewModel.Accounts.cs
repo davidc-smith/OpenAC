@@ -29,6 +29,12 @@ public sealed class ProfileFilterChipViewModel : ObservableObject
 public sealed partial class LauncherWindowViewModel
 {
     private string? _profileFilter;
+    private IReadOnlyDictionary<(string Server, string Account), LauncherCapability> _graphicalAvailability =
+        new Dictionary<(string, string), LauncherCapability>();
+    private IReadOnlyDictionary<(string Server, string Account), LauncherCapability> _headlessAvailability =
+        new Dictionary<(string, string), LauncherCapability>();
+    private IReadOnlyDictionary<(string Server, string Account), LauncherCapability> _characterSelectAvailability =
+        new Dictionary<(string, string), LauncherCapability>();
 
     public ObservableCollection<LauncherAccountGroupViewModel> Accounts { get; } = [];
     public bool HasAccounts => Accounts.Count != 0;
@@ -161,20 +167,24 @@ public sealed partial class LauncherWindowViewModel
 
     private string? GetRowLaunchBlock(LauncherAccountServerRowViewModel row) => GetRowLaunchBlock(row, row.CharacterName, row.Mode);
 
-    private string? GetRowLaunchBlock(LauncherAccountServerRowViewModel row, string? characterName, LaunchMode mode)
+    private string? GetRowLaunchBlock(LauncherAccountServerRowViewModel row, string? characterName, LaunchMode mode, bool fresh = false)
     {
         if (_isInstallationChecking || _isClientCompatibilityCheckBlocking) return "Checking installation and client compatibility…";
         if (row.IsActive) return "This account already has an active session on this server.";
         if (mode == LaunchMode.Headless && characterName is null) return "Choose a character for Headless mode.";
         if (row.SelectedLaunchMode is not ("Graphical" or "Headless")) return "Choose Graphical or Headless.";
-        LauncherStateSnapshot current = _orchestrator.GetSnapshot();
-        LauncherAccountSnapshot? account = current.Servers.FirstOrDefault(server => server.Name == row.ServerName)
+        LauncherStateSnapshot? current = fresh ? _orchestrator.GetSnapshot() : _snapshot;
+        LauncherAccountSnapshot? account = current?.Servers.FirstOrDefault(server => server.Name == row.ServerName)
             ?.Accounts.FirstOrDefault(account => account.AccountName == row.AccountName);
         if (account is null) return "This account is no longer configured on this server.";
-        if (account.HasRunningActivity || current.Sessions.Any(session => session.IsActive
+        if (account.HasRunningActivity || current!.Sessions.Any(session => session.IsActive
             && session.ServerName == row.ServerName && session.AccountName == row.AccountName)) return "This account already has an active session on this server.";
         if (characterName is { } name && !account.Characters.Any(character => character.Name == name)) return "Choose a current character.";
-        LauncherCapability capability = _orchestrator.GetAccountLaunchCapability(row.ServerName, row.AccountName, mode);
+        LauncherCapability capability = fresh
+            ? _orchestrator.GetAccountLaunchCapability(row.ServerName, row.AccountName, mode)
+            : (mode == LaunchMode.Headless ? _headlessAvailability
+                : mode == LaunchMode.GuiSelect ? _characterSelectAvailability : _graphicalAvailability)
+                .GetValueOrDefault((row.ServerName, row.AccountName), LauncherCapability.Unavailable("Launch availability has not been checked."));
         return capability.IsAvailable ? null : capability.Reason ?? "Launch unavailable.";
     }
 
@@ -195,7 +205,7 @@ public sealed partial class LauncherWindowViewModel
             foreach (var item in pending)
             {
                 token.ThrowIfCancellationRequested();
-                string? block = GetRowLaunchBlock(item.Row, item.Character, item.Mode);
+                string? block = GetRowLaunchBlock(item.Row, item.Character, item.Mode, fresh: true);
                 if (block is not null) { errors.Add($"{item.Row.AccountName} / {item.Row.ServerName}: {block}"); continue; }
                 OperationStatus = $"Launching {started + 1} of {pending.Length}…";
                 try
@@ -257,6 +267,7 @@ public sealed partial class LauncherWindowViewModel
 
     private void NotifyAccountCommands()
     {
+        RefreshAccountAvailability();
         LaunchCheckedCommand?.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(HasPlayableCheckedRows));
         OnPropertyChanged(nameof(CheckedSelectionSummary));
@@ -264,5 +275,12 @@ public sealed partial class LauncherWindowViewModel
         OnPropertyChanged(nameof(HasAccounts));
         foreach (LauncherAccountGroupViewModel group in Accounts) group.EditPluginsCommand.NotifyCanExecuteChanged();
         foreach (LauncherAccountServerRowViewModel row in AllAccountRows) row.NotifyState();
+    }
+
+    private void RefreshAccountAvailability()
+    {
+        _graphicalAvailability = _orchestrator.GetAccountLaunchCapabilities(LaunchMode.Gui);
+        _headlessAvailability = _orchestrator.GetAccountLaunchCapabilities(LaunchMode.Headless);
+        _characterSelectAvailability = _orchestrator.GetAccountLaunchCapabilities(LaunchMode.GuiSelect);
     }
 }
