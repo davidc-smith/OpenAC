@@ -6,6 +6,15 @@ namespace AcDream.Runtime.Tests.Plugins;
 public sealed class PeerHubTests
 {
     [Fact]
+    public void SocketEndpointFitsWhenPrivateDirectoryUsesMostOfThePlatformPathLimit()
+    {
+        string root = Path.Combine(Path.GetPathRoot(Path.GetFullPath("."))!, new string('p', 80));
+        var endpoint = PeerHubEndpoint.ForDirectory(root);
+        Assert.InRange(System.Text.Encoding.UTF8.GetByteCount(endpoint.SocketPath), 1, 104);
+        _ = new System.Net.Sockets.UnixDomainSocketEndPoint(endpoint.SocketPath);
+    }
+
+    [Fact]
     public async Task CommandsArePushedOnlyToSubscribedMatchingWorldAndTags()
     {
         await using var fixture = new HubFixture();

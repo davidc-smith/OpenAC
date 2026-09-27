@@ -8,7 +8,9 @@ namespace AcDream.Runtime.Plugins;
 
 internal sealed record PeerHubEndpoint(string Directory, string Name)
 {
-    internal string SocketPath => Path.Combine(Directory, Name + ".sock");
+    // The private directory already identifies the hub; keep the socket basename
+    // short enough for Unix platforms with a small endpoint path limit.
+    internal string SocketPath => Path.Combine(Directory, "hub.sock");
     internal static PeerHubEndpoint ForDirectory(string directory)
     {
         string full = Path.GetFullPath(directory);
