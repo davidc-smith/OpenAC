@@ -29,7 +29,8 @@ public sealed class PluginItemBusyTruthfulnessTests
     {
         using Fixture fixture = Fixture.Create();
 
-        fixture.Runtime.InventoryOwner.Transactions.IncrementBusyCount();
+        Assert.True(fixture.Runtime.InventoryOwner.Transactions.TryDispatch(
+            InventoryRequestKind.Move, OwnedItem, static () => true));
 
         Assert.True(fixture.Surface.Items.IsBusy);
         Assert.True(fixture.Surface.Loot.IsBusy);
@@ -83,7 +84,8 @@ public sealed class PluginItemBusyTruthfulnessTests
     {
         using Fixture fixture = Fixture.Create();
 
-        fixture.Runtime.InventoryOwner.Transactions.IncrementBusyCount();
+        Assert.True(fixture.Runtime.InventoryOwner.Transactions.TryDispatch(
+            InventoryRequestKind.Move, OwnedItem, static () => true));
         Assert.True(
             fixture.Runtime.ItemInteractionOwner
                 .TryConsumeUseThrottleForAutomation());
@@ -91,7 +93,7 @@ public sealed class PluginItemBusyTruthfulnessTests
 
         // The in-flight request finishes, but the pacing has not lapsed:
         // still busy, and still refused.
-        fixture.Runtime.InventoryOwner.Transactions.CompleteUse(0u);
+        fixture.Runtime.InventoryOwner.Objects.RejectMove(OwnedItem, 1u);
         Assert.True(fixture.Surface.Items.IsBusy);
         Assert.Equal(
             PluginItemCommandStatus.Busy,

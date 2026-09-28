@@ -823,7 +823,7 @@ internal sealed class NoWindowGameRuntimeHost : IDisposable
             Trace.Add($"message:{message}");
         public void IncrementBusy()
         {
-            _runtime?.InventoryOwner.Transactions.IncrementBusyCount();
+            _runtime?.InventoryOwner.Transactions.IncrementCastBusyCount();
             Trace.Add("cast:busy");
         }
 

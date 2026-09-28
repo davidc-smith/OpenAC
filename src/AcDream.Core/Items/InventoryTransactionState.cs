@@ -50,6 +50,7 @@ public sealed class InventoryTransactionState : IDisposable
     private ulong _useReservationGeneration;
     private PendingInventoryRequest? _pendingRequest;
     private int _busyCount;
+    private int _castBusyCount;
     private int _appraisalCount;
     private long _dispatchFailureCount;
     private bool _disposed;
@@ -88,7 +89,9 @@ public sealed class InventoryTransactionState : IDisposable
     /// </summary>
     public int AppraisalCount => _appraisalCount;
     public bool HasPendingRequest => _pendingRequest is not null;
-    public bool CanBeginRequest => _busyCount == 0 && _pendingRequest is null;
+    /// <summary>Busy references from item actions, excluding cast cursor feedback.</summary>
+    public int ItemBusyCount => _busyCount - _castBusyCount;
+    public bool CanBeginRequest => ItemBusyCount == 0 && _pendingRequest is null;
 
     /// <summary>
     /// Whether another appraisal may be asked for. One at a time, and only
@@ -230,6 +233,14 @@ public sealed class InventoryTransactionState : IDisposable
         DispatchStateChanged();
     }
 
+    public void IncrementCastBusyCount()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _busyCount++;
+        _castBusyCount++;
+        DispatchStateChanged();
+    }
+
     public ItemUseRequestReservation BeginUseRequestReservation()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -240,7 +251,7 @@ public sealed class InventoryTransactionState : IDisposable
         {
             if (generation != _useReservationGeneration || dispatched)
                 return;
-            if (_busyCount > 0)
+            if (ItemBusyCount > 0)
                 _busyCount--;
             DispatchStateChanged();
         });
@@ -250,6 +261,10 @@ public sealed class InventoryTransactionState : IDisposable
     {
         if (_busyCount == 0)
             return;
+        // A response has no action identity. Keep item requests moving when
+        // both kinds of reference are outstanding.
+        if (ItemBusyCount == 0)
+            _castBusyCount--;
         _busyCount--;
         DispatchStateChanged();
     }
@@ -277,6 +292,7 @@ public sealed class InventoryTransactionState : IDisposable
             return;
         _useReservationGeneration++;
         _busyCount = 0;
+        _castBusyCount = 0;
         _appraisalCount = 0;
         DispatchStateChanged();
     }
@@ -289,6 +305,7 @@ public sealed class InventoryTransactionState : IDisposable
         _pendingRequest = null;
         _useReservationGeneration++;
         _busyCount = 0;
+        _castBusyCount = 0;
         _appraisalCount = 0;
         if (changed)
             DispatchStateChanged();
@@ -309,6 +326,7 @@ public sealed class InventoryTransactionState : IDisposable
         _pendingRequest = null;
         _useReservationGeneration++;
         _busyCount = 0;
+        _castBusyCount = 0;
         _appraisalCount = 0;
         StateChanged = null;
         RequestCompleted = null;

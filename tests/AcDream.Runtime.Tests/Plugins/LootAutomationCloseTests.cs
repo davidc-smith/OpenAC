@@ -38,12 +38,13 @@ public sealed class LootAutomationCloseTests
             surface.Loot.Close(otherCorpse).Status);
         Assert.Empty(sent);
 
-        host.Runtime.InventoryOwner.Transactions.IncrementBusyCount();
+        Assert.True(host.Runtime.InventoryOwner.Transactions.TryDispatch(
+            InventoryRequestKind.Move, otherCorpse, static () => true));
         Assert.Equal(
             PluginItemCommandStatus.Busy,
             surface.Loot.Close(corpse).Status);
         Assert.Empty(sent);
-        host.Runtime.InventoryOwner.Transactions.CompleteUse(0u);
+        host.Runtime.InventoryOwner.Transactions.ResetSession();
 
         Assert.Equal(
             PluginItemCommandStatus.Started,

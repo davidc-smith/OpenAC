@@ -3902,22 +3902,10 @@ internal sealed class RuntimeAutomationSurface
         RuntimeWorldObjectProjection.ConvertPosition(position);
 
     /// <summary>
-    /// Whether a cast this session issued is still outstanding. It used to
-    /// answer from the inventory transaction count, which an appraisal or a
-    /// pickup raises as readily as a cast: an automation that appraises as
-    /// it goes then reads as permanently mid-cast, and every rule that
-    /// casts is refused for ever.
+    /// Whether the host currently blocks another cast. Waiting for a
+    /// response to an earlier cast does not block a new request.
     /// </summary>
-    public bool IsCasting
-    {
-        get
-        {
-            RuntimeSpellCastState? cast;
-            lock (_gate)
-                cast = _cast;
-            return cast?.PendingSpellId is not null;
-        }
-    }
+    public bool IsCasting => false;
 
     public PluginCastGate EvaluateGate(uint spellId)
     {
@@ -3932,9 +3920,6 @@ internal sealed class RuntimeAutomationSurface
             return PluginCastGate.Unavailable;
         if (!spellbook.Knows(spellId))
             return PluginCastGate.NotKnown;
-        if (IsCasting)
-            return PluginCastGate.Busy;
-
         return cast.EvaluateCastGate(spellId) switch
         {
             SpellCastGate.Unknown => PluginCastGate.NotKnown,
@@ -4246,12 +4231,10 @@ internal sealed class RuntimeAutomationSurface
     }
 
     /// <summary>
-    /// Whether a use or an inventory request offered this instant would come
-    /// back busy. There are two ways it can: a request of the caller's own is
-    /// still in flight and has to finish first, or the short pacing between
-    /// two uses has not lapsed yet. Both mean "not yet" rather than "no", and
-    /// both have to be visible from outside -- a caller that waits for this
-    /// to clear and only then asks must not still be refused.
+    /// Whether a use or inventory request offered this instant would come
+    /// back busy. An item action or inventory request still in flight, or
+    /// the short pacing between uses, can delay it. A cast's cursor busy
+    /// reference does not block an item action.
     /// </summary>
     private static bool IsItemCommandBusy(GameRuntime runtime) =>
         !runtime.InventoryOwner.Transactions.CanBeginRequest

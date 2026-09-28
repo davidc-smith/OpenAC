@@ -378,7 +378,7 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     spellId),
             displayMessage:
                 text => d.Communication.AddText(text, RetailLogTextType.ClientLocal),
-            incrementBusy: itemInteraction.IncrementBusyCount,
+            incrementBusy: itemInteraction.IncrementCastBusyCount,
             canSend: () => late.Session.IsInWorld);
 
     internal static ChatVM CreateChatViewModel(InteractionRetainedUiDependencies d) =>

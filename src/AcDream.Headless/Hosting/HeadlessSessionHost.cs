@@ -1217,9 +1217,11 @@ internal sealed class HeadlessSessionHost : IDisposable
                 Runtime.InventoryOwner.Shortcuts.Load,
                 error =>
                 {
+                    bool castReceipt = Runtime.InventoryOwner.Transactions.ItemBusyCount == 0;
                     Runtime.InventoryOwner.ExternalContainers
                         .ApplyUseDone(error);
-                    Runtime.ActionOwner.SpellCast.CompleteUse(error);
+                    if (castReceipt)
+                        Runtime.ActionOwner.SpellCast.CompleteUse(error);
                     Runtime.ActionOwner.Transactions.CompleteUse(error);
                 },
                 Runtime.InventoryOwner.ItemMana,

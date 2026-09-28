@@ -169,6 +169,43 @@ public sealed class RuntimeInteractionTransactionStateTests
     }
 
     [Fact]
+    public void AStaleCastCursorReferenceDoesNotHoldAnItemUse()
+    {
+        using var inventory = NewInventory(out _);
+        using var state = new RuntimeInteractionTransactionState(inventory);
+        inventory.IncrementCastBusyCount();
+
+        Assert.True(state.TryDispatchTargetedUse(
+            Item, Container, static (_, _) => { }, incrementBusy: true));
+        Assert.Equal(1, inventory.ItemBusyCount);
+        state.CompleteUse(0u);
+
+        Assert.Equal(0, inventory.ItemBusyCount);
+        Assert.Equal(1, inventory.BusyCount);
+        Assert.Equal(1, state.LastItemUseCompletion.Revision);
+
+        state.CompleteUse(0u);
+        Assert.Equal(0, inventory.BusyCount);
+        Assert.Equal(1, state.LastItemUseCompletion.Revision);
+    }
+
+    [Fact]
+    public void UncountedItemUseStillPublishesItsReceiptWhenNoOtherActionIsPending()
+    {
+        using var inventory = NewInventory(out _);
+        using var state = new RuntimeInteractionTransactionState(inventory);
+
+        Assert.True(state.TryDispatchTargetedUse(
+            Item, Container, static (_, _) => { }, incrementBusy: false));
+        Assert.Equal(0, inventory.BusyCount);
+        state.CompleteUse(0u);
+
+        Assert.Equal(
+            new RuntimeItemUseCompletion(1, Item, Container, 0u),
+            state.LastItemUseCompletion);
+    }
+
+    [Fact]
     public void ReentrantResetPreventsTargetedUseStateResurrection()
     {
         using var inventory = NewInventory(out _);

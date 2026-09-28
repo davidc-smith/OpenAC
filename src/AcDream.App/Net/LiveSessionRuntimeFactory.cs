@@ -342,8 +342,10 @@ internal sealed class LiveSessionRuntimeFactory
         OnShortcuts: _domain.Inventory.Shortcuts.Load,
         OnUseDone: error =>
         {
+            bool castReceipt = _domain.Inventory.Transactions.ItemBusyCount == 0;
             _domain.Inventory.ExternalContainers.ApplyUseDone(error);
-            _domain.Actions.SpellCast.CompleteUse(error);
+            if (castReceipt)
+                _domain.Actions.SpellCast.CompleteUse(error);
             _domain.Actions.Transactions.CompleteUse(error);
         },
         _domain.Inventory.ItemMana,

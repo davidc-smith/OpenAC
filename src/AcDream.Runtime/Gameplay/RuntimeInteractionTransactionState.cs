@@ -397,12 +397,22 @@ public sealed class RuntimeInteractionTransactionState : IDisposable
         IncrementRevision();
     }
 
+    public void IncrementCastBusyCount()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _inventory.IncrementCastBusyCount();
+        IncrementRevision();
+    }
+
     public void CompleteUse(uint error)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         int before = _inventory.BusyCount;
+        bool itemActionOutstanding = _inventory.ItemBusyCount > 0;
+        bool noCountedAction = _inventory.BusyCount == 0;
         _inventory.CompleteUse(error);
-        if (_awaitingItemUseCompletion)
+        if ((itemActionOutstanding || noCountedAction)
+            && _awaitingItemUseCompletion)
         {
             LastItemUseCompletion = new RuntimeItemUseCompletion(
                 LastItemUseCompletion.Revision + 1,

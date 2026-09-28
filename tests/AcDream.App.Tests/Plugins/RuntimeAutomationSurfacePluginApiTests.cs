@@ -87,17 +87,11 @@ public sealed class RuntimeAutomationSurfacePluginApiTests
     }
 
     /// <summary>
-    /// The casting flag means a cast this session issued is still
-    /// outstanding. It once answered from the inventory transaction count,
-    /// which an appraisal or a pickup raises as readily as a cast -- so an
-    /// automation that appraises as it walks read as permanently mid-cast,
-    /// its cast gate answered Busy for ever, and every rule that casts was
-    /// refused on every pass. Mutation: answer from
-    /// <c>Transactions.BusyCount &gt; 0</c> again and the appraisal reads as
-    /// a cast.
+    /// The host does not block new casts while an earlier response is
+    /// outstanding. Item transactions likewise do not turn IsCasting on.
     /// </summary>
     [Fact]
-    public void IsCastingIsACastInFlightAndNotAPendingInventoryRequest()
+    public void IsCastingDoesNotTreatAnInventoryRequestAsACast()
     {
         var (runtime, commands) = CreateRealSession();
         using var runtimeDisposal = runtime;
