@@ -1,6 +1,7 @@
 using System;
 using AcDream.Core.Selection;
 using AcDream.Core.Spells;
+using AcDream.Core.Net;
 
 namespace AcDream.Runtime.Gameplay;
 
@@ -141,6 +142,7 @@ public sealed class RuntimeSpellCastState
             else
                 _operations.SendTargeted(target!.Value, spellId);
             _operations.IncrementBusy();
+            CastTraceDiagnostics.Log.Trace("runtime-pending", spellId, target ?? 0u);
         }
         catch
         {
@@ -157,7 +159,14 @@ public sealed class RuntimeSpellCastState
     public bool CompleteUse(uint weenieError)
     {
         if (PendingSpellId is not uint spellId)
+        {
+            CastTraceDiagnostics.Log.Trace("runtime-orphan-receipt", error: weenieError);
             return false;
+        }
+
+        CastTraceDiagnostics.Log.Trace(
+            "runtime-completed", spellId, PendingTargetId ?? 0u,
+            error: weenieError);
 
         long revision = LastCompletion.Revision + 1;
         LastCompletion = new RuntimeSpellCastCompletion(

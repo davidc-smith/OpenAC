@@ -776,6 +776,11 @@ public static class GameEventWiring
         registrar.Register(GameEventType.UseDone, e =>
         {
             uint? err = GameEvents.ParseUseDone(e.Payload.Span);
+            CastTraceDiagnostics.Log.Trace(
+                err is null ? "use-done-invalid" : "use-done-dispatch",
+                sequence: e.Sequence,
+                error: err ?? 0,
+                payloadLength: e.Payload.Length);
             if (err is null) return;
             Console.WriteLine($"[use-done] err=0x{err.Value:X4}");
             onUseDone?.Invoke(err.Value);

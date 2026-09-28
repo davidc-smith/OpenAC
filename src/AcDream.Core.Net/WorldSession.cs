@@ -1579,7 +1579,15 @@ public sealed partial class WorldSession : IDisposable
             {
                 var env = GameEventEnvelope.TryParseBorrowed(
                     bodyMemory);
-                if (env is not null) GameEvents.Dispatch(env.Value);
+                if (env is not null)
+                {
+                    if (env.Value.EventType == GameEventType.UseDone)
+                        CastTraceDiagnostics.Log.Trace(
+                            "use-done-envelope",
+                            sequence: env.Value.Sequence,
+                            payloadLength: env.Value.Payload.Length);
+                    GameEvents.Dispatch(env.Value);
+                }
             }
             else if (op == 0xEA60u)  // AdminEnvirons — server pushes a fog preset or sound cue
             {
@@ -2338,12 +2346,14 @@ public sealed partial class WorldSession : IDisposable
     {
         uint seq = NextGameActionSequence();
         SendGameAction(CastSpellRequest.BuildUntargeted(seq, spellId));
+        CastTraceDiagnostics.Log.Trace("sent-untargeted", spellId, sequence: seq);
     }
 
     public void SendCastTargetedSpell(uint targetGuid, uint spellId)
     {
         uint seq = NextGameActionSequence();
         SendGameAction(CastSpellRequest.BuildTargeted(seq, targetGuid, spellId));
+        CastTraceDiagnostics.Log.Trace("sent-targeted", spellId, targetGuid, seq);
     }
 
     public void SendChangeCombatMode(CombatMode mode)
