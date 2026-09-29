@@ -168,7 +168,12 @@ unticks it for every account and character that had it enabled, so reinstalling
 it always starts from none. **Refresh list** reloads
 both lists; the launcher also checks once at startup, without delaying the
 window. **Add from URL** adds a plugin from a `https://github.com/owner/name`
-repository not on the list. Right after a curated-list release publishes,
+repository not on the list. **Install from ZIP** opens a local plugin release
+archive, shows its declared capabilities for confirmation, then installs it as
+a Direct install. Selecting a newer ZIP for the same Direct install updates its
+code while retaining its `files/` settings; a ZIP cannot replace a
+launcher-managed or bundled plugin. Direct installs have no automatic release
+checks. Right after a curated-list release publishes,
 GitHub's "latest" link can keep serving the previous release for under a
 minute; wait a moment and press **Refresh list** again.
 

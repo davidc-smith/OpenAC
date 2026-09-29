@@ -13,6 +13,42 @@ public sealed partial class LauncherWindowViewModelTests
     private static readonly Uri PluginListUri = new("https://example.test/plugins.json");
 
     [Fact]
+    public async Task InstallFromZipShowsReviewThenInstallsWithoutAGitHubRelease()
+    {
+        using var fixture = new PluginPanelFixture();
+        string id = "mosswart.massacre";
+        string zip = Path.Combine(fixture.Paths.CacheDirectory, "mosswart.zip");
+        Directory.CreateDirectory(fixture.Paths.CacheDirectory);
+        byte[] manifest = PluginPanelFixture.ManifestJson(
+            id, "0.1.0", "0.1.0", ["headless"], 1,
+            "[{\"name\":\"network\",\"note\":\"Shares vitals.\"}]");
+        await File.WriteAllBytesAsync(zip, PluginPanelFixture.BuildZip(id, manifest),
+            TestContext.Current.CancellationToken);
+        var handler = new RoutedHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        using LauncherPluginComposition composition = LauncherPluginComposition.CreateForTest(
+            fixture.Paths, PluginListUri, handler);
+        using var orchestrator = new FakeLauncherOrchestrator();
+        using var viewModel = CreateInitialized(orchestrator);
+        viewModel.ConfigurePlugins(composition, () => null);
+        Assert.True(viewModel.Plugins.CanInstallLocalZip);
+
+        await viewModel.Plugins.OpenLocalZipAsync(zip);
+
+        Assert.True(viewModel.Plugins.InstallDialog.IsOpen);
+        Assert.Equal("mosswart.massacre", viewModel.Plugins.InstallDialog.PluginId);
+        Assert.Equal("Local ZIP: mosswart.zip", viewModel.Plugins.InstallDialog.Repo);
+        Assert.Contains(viewModel.Plugins.InstallDialog.Capabilities,
+            capability => capability.Label == "uses network");
+        Assert.Empty(handler.Requests);
+
+        await viewModel.Plugins.InstallDialog.ConfirmCommand.ExecuteAsync();
+
+        Assert.False(viewModel.Plugins.InstallDialog.IsOpen);
+        Assert.True(File.Exists(Path.Combine(fixture.Paths.PluginsDirectory, id, "plugin.json")));
+        Assert.DoesNotContain(handler.Requests, uri => uri.Host == "github.com");
+    }
+
+    [Fact]
     public async Task RateLimitedListSkipsPerPluginRequests()
     {
         using var fixture = new PluginPanelFixture();

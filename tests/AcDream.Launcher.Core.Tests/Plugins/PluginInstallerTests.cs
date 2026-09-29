@@ -15,6 +15,151 @@ public sealed class PluginInstallerTests
     private const string Id = "edwards.hello";
 
     [Fact]
+    public async Task LocalZipInstallsAsDirectWithoutAReleaseOrNetworkRequest()
+    {
+        using var fixture = new Fixture();
+        Fixture.Release release = fixture.BuildRelease(Id, "0.1.0");
+        string zip = Path.Combine(fixture.Root, "plugin.zip");
+        Directory.CreateDirectory(fixture.Root);
+        await File.WriteAllBytesAsync(zip, release.ZipBytes);
+
+        LocalPluginZipPreview preview = await fixture.Installer.InspectLocalZipAsync(zip);
+        Assert.Equal(Id, preview.Manifest.Id);
+        PluginInstallResult result = await fixture.Installer.InstallLocalZipAsync(
+            zip, preview.Sha256, null, null, preview.Manifest.Capabilities);
+
+        Assert.False(result.WasUpdate);
+        Assert.Equal("0.1.0", result.Version);
+        Assert.Null(fixture.RecordStore.Find(Id));
+        Assert.Equal(InstalledPluginSource.Direct,
+            Assert.Single(fixture.Inventory.Build(null, null)).Source);
+        Assert.Empty(fixture.Handler.Requests);
+    }
+
+    [Fact]
+    public async Task LocalZipUpdatesDirectPluginAndPreservesItsSavedFiles()
+    {
+        using var fixture = new Fixture();
+        Directory.CreateDirectory(fixture.Root);
+        string zip = Path.Combine(fixture.Root, "plugin.zip");
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.1.0").ZipBytes);
+        LocalPluginZipPreview first = await fixture.Installer.InspectLocalZipAsync(zip);
+        await fixture.Installer.InstallLocalZipAsync(zip, first.Sha256, null, null,
+            first.Manifest.Capabilities);
+        string saved = Path.Combine(fixture.Paths.PluginsDirectory, Id, "files", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(saved)!);
+        await File.WriteAllTextAsync(saved, "player settings");
+
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.2.0").ZipBytes);
+        LocalPluginZipPreview second = await fixture.Installer.InspectLocalZipAsync(zip);
+        PluginInstallResult result = await fixture.Installer.InstallLocalZipAsync(
+            zip, second.Sha256, null, null, second.Manifest.Capabilities);
+
+        Assert.True(result.WasUpdate);
+        Assert.Equal("player settings", await File.ReadAllTextAsync(saved));
+        Assert.Equal("0.2.0", Assert.Single(fixture.Inventory.Build(null, null)).Version);
+        Assert.Null(fixture.RecordStore.Find(Id));
+    }
+
+    [Fact]
+    public async Task LocalZipFailedUpdateRestoresThePreviousCodeAndSavedFiles()
+    {
+        using var fixture = new Fixture();
+        Directory.CreateDirectory(fixture.Root);
+        string zip = Path.Combine(fixture.Root, "plugin.zip");
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.1.0").ZipBytes);
+        LocalPluginZipPreview first = await fixture.Installer.InspectLocalZipAsync(zip);
+        await fixture.Installer.InstallLocalZipAsync(zip, first.Sha256, null, null,
+            first.Manifest.Capabilities);
+        string saved = Path.Combine(fixture.Paths.PluginsDirectory, Id, "files", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(saved)!);
+        await File.WriteAllTextAsync(saved, "keep me");
+
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.2.0").ZipBytes);
+        LocalPluginZipPreview second = await fixture.Installer.InspectLocalZipAsync(zip);
+        fixture.Installer.AfterOldCodeSetAside = () => throw new IOException("test failure");
+        await Assert.ThrowsAsync<LauncherUpdateException>(() =>
+            fixture.Installer.InstallLocalZipAsync(zip, second.Sha256, null, null,
+                second.Manifest.Capabilities));
+
+        Assert.Equal("0.1.0", Assert.Single(fixture.Inventory.Build(null, null)).Version);
+        Assert.Equal("keep me", await File.ReadAllTextAsync(saved));
+    }
+
+    [Fact]
+    public async Task LocalZipRejectsUnsafeArchiveBeforeShowingAReview()
+    {
+        using var fixture = new Fixture();
+        Directory.CreateDirectory(fixture.Root);
+        string zip = Path.Combine(fixture.Root, "plugin.zip");
+        await File.WriteAllBytesAsync(zip, UpdateTestData.CreateZip(
+        [
+            ("../outside.txt", Encoding.UTF8.GetBytes("escape"), null),
+            ("plugin.json", Encoding.UTF8.GetBytes(Fixture.ManifestJson(Id, "0.1.0")), null),
+            ($"{Id}.dll", Encoding.UTF8.GetBytes("binary"), null),
+        ]));
+
+        await Assert.ThrowsAsync<LauncherUpdateException>(() =>
+            fixture.Installer.InspectLocalZipAsync(zip));
+        Assert.False(File.Exists(Path.Combine(fixture.Root, "outside.txt")));
+    }
+
+    [Fact]
+    public async Task LocalZipRefusesAChangedArchiveBeforeReplacingAnInstalledPlugin()
+    {
+        using var fixture = new Fixture();
+        Directory.CreateDirectory(fixture.Root);
+        string zip = Path.Combine(fixture.Root, "plugin.zip");
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.1.0").ZipBytes);
+        LocalPluginZipPreview preview = await fixture.Installer.InspectLocalZipAsync(zip);
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.2.0").ZipBytes);
+
+        LauncherUpdateException error = await Assert.ThrowsAsync<LauncherUpdateException>(() =>
+            fixture.Installer.InstallLocalZipAsync(zip, preview.Sha256, null, null,
+                preview.Manifest.Capabilities));
+
+        Assert.Contains("changed since you reviewed", error.Message, StringComparison.Ordinal);
+        Assert.Empty(fixture.Inventory.Build(null, null));
+    }
+
+    [Fact]
+    public async Task LocalZipCannotReplaceALauncherManagedPlugin()
+    {
+        using var fixture = new Fixture();
+        Fixture.Release first = fixture.BuildRelease(Id, "0.1.0");
+        fixture.RegisterRelease(Repo, first);
+        await fixture.Installer.InstallOrUpdateAsync(Repo, first.Tag, null, null);
+        string zip = Path.Combine(fixture.Root, "plugin.zip");
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.2.0").ZipBytes);
+        LocalPluginZipPreview preview = await fixture.Installer.InspectLocalZipAsync(zip);
+
+        LauncherUpdateException error = await Assert.ThrowsAsync<LauncherUpdateException>(() =>
+            fixture.Installer.InstallLocalZipAsync(zip, preview.Sha256, null, null,
+                preview.Manifest.Capabilities));
+
+        Assert.Contains("managed by the launcher", error.Message, StringComparison.Ordinal);
+        Assert.Equal("0.1.0", Assert.Single(fixture.Inventory.Build(null, null)).Version);
+    }
+
+    [Fact]
+    public async Task LocalZipRespectsTheCatalogBlocklist()
+    {
+        using var fixture = new Fixture();
+        Directory.CreateDirectory(fixture.Root);
+        string zip = Path.Combine(fixture.Root, "plugin.zip");
+        await File.WriteAllBytesAsync(zip, fixture.BuildRelease(Id, "0.1.0").ZipBytes);
+        LocalPluginZipPreview preview = await fixture.Installer.InspectLocalZipAsync(zip);
+        var catalog = new PluginCatalog(1, [], [new PluginBlock(Id, ["*"], "blocked for test")]);
+
+        LauncherUpdateException error = await Assert.ThrowsAsync<LauncherUpdateException>(() =>
+            fixture.Installer.InstallLocalZipAsync(zip, preview.Sha256, catalog, null,
+                preview.Manifest.Capabilities));
+
+        Assert.Contains("blocked for test", error.Message, StringComparison.Ordinal);
+        Assert.Empty(fixture.Inventory.Build(null, catalog));
+    }
+
+    [Fact]
     public async Task InstallRejectsAZipEntryOverTheSharedContractCap()
     {
         using var fixture = new Fixture();
