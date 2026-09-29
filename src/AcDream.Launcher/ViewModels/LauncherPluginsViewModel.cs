@@ -626,6 +626,8 @@ public sealed class LauncherPluginsViewModel : ObservableObject, IDisposable
 
     public AsyncRelayCommand AddFromUrlCommand { get; }
 
+    public bool CanInstallLocalZip => _composition is not null && !IsBusy;
+
     public RelayCommand ConfirmRemoveCommand { get; }
 
     public RelayCommand CancelRemoveCommand { get; }
@@ -650,6 +652,7 @@ public sealed class LauncherPluginsViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _isBusy, value))
             {
                 NotifyCommandStates();
+                OnPropertyChanged(nameof(CanInstallLocalZip));
             }
         }
     }
@@ -807,6 +810,7 @@ public sealed class LauncherPluginsViewModel : ObservableObject, IDisposable
             ?? throw new ArgumentNullException(nameof(clientVersionResolver));
         RestoreShowBetaPluginsFromProfile();
         NotifyCommandStates();
+        OnPropertyChanged(nameof(CanInstallLocalZip));
     }
 
     /// <summary>Reads the saved Show beta plugins back without writing it again, which the public
@@ -1825,6 +1829,76 @@ public sealed class LauncherPluginsViewModel : ObservableObject, IDisposable
             IsBusy = false;
         }
     }
+
+    /// <summary>Shows the same capability and account choice dialog for a local release ZIP.
+    /// The installer checks the archive again before writing, including its reviewed hash.</summary>
+    public async Task OpenLocalZipAsync(string path)
+    {
+        if (_composition is null || IsBusy || !_canInteract())
+            return;
+
+        IsBusy = true;
+        Error = null;
+        StatusText = null;
+        try
+        {
+            LocalPluginZipPreview preview = await _composition.Installer
+                .InspectLocalZipAsync(path).ConfigureAwait(true);
+            LauncherPluginManifest manifest = preview.Manifest;
+            InstalledPluginInfo? installed = _composition.Inventory.Find(
+                manifest.Id, _clientVersionResolver(), _composition.CurrentCatalog);
+            if (installed is not null && (installed.Source != InstalledPluginSource.Direct
+                || installed.Refusal is not null || installed.HasDuplicate))
+            {
+                Error = $"'{manifest.Id}' already has a conflicting installation.";
+                return;
+            }
+
+            if (installed is not null
+                && LauncherVersion.TryParse(installed.Version, out LauncherVersion? current)
+                && LauncherVersion.Parse(manifest.Version) <= current)
+            {
+                Error = $"'{manifest.Id}' {manifest.Version} is not newer than the installed {installed.Version}.";
+                return;
+            }
+
+            InstallDialog.Open(
+                $"Local ZIP: {Path.GetFileName(path)}",
+                manifest.Id,
+                manifest.DisplayName,
+                isListed: false,
+                isUpdate: installed is not null,
+                manifest.Version,
+                BuildCharacterOptions(),
+                async (capabilities, cancellationToken) =>
+                {
+                    PluginInstallResult result = await _composition.Installer.InstallLocalZipAsync(
+                            path, preview.Sha256, _composition.CurrentCatalog,
+                            _clientVersionResolver(), capabilities, cancellationToken)
+                        .ConfigureAwait(true);
+                    _ = CheckNowAsync();
+                    return result;
+                },
+                EnableForCharacters,
+                manifest.Capabilities,
+                installedCapabilities: installed is null ? null : ReadInstalledCapabilities(installed),
+                affectedCharacters: installed is null ? null : CharactersWithPluginEnabled(manifest.Id),
+                disableForAllCharacters: StripFromEveryCharacter);
+        }
+        catch (Exception ex)
+        {
+            Error = string.IsNullOrWhiteSpace(ex.Message) ? "Could not read that plugin ZIP." : ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public void ReportLocalZipPickerError(string message) =>
+        Error = string.IsNullOrWhiteSpace(message)
+            ? "Could not open the plugin ZIP picker."
+            : message;
 
     private void OpenRemoveDialog(InstalledPluginInfo info)
     {

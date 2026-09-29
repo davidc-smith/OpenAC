@@ -217,7 +217,7 @@ internal sealed class HeadlessGameplayOperations
 
     public void IncrementBusy() =>
         RequireRuntime().ActionOwner.Transactions
-            .IncrementBusyCount();
+            .IncrementCastBusyCount();
 
     private static uint? GetSelectedOrClosestTarget(
         GameRuntime runtime,

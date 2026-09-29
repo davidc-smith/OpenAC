@@ -234,6 +234,32 @@ public sealed partial class MainWindow : Window
 
         e.Handled = true;
     }
+
+    private async void OnInstallPluginZip(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LauncherWindowViewModel viewModel || viewModel.IsModalOpen
+            || viewModel.Plugins.IsBusy)
+            return;
+
+        try
+        {
+            IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "Choose a plugin ZIP",
+                    AllowMultiple = false,
+                    FileTypeFilter = [new FilePickerFileType("Plugin ZIP") { Patterns = ["*.zip"] }],
+                });
+            if (files.Count > 0)
+                await viewModel.Plugins.OpenLocalZipAsync(files[0].Path.LocalPath);
+        }
+        catch (Exception ex)
+        {
+            viewModel.Plugins.ReportLocalZipPickerError(ex.Message);
+        }
+
+        e.Handled = true;
+    }
 }
 
 /// <summary>The window clipboard, for the text editors' Copy all and Paste all.</summary>

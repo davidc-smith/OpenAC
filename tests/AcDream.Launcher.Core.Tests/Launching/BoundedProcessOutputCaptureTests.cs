@@ -46,24 +46,20 @@ public sealed class BoundedProcessOutputCaptureTests
     }
 
     [Fact]
-    public void WritesBeyondTheCapAreDroppedAndAOneTimeTruncationMarkerIsAppended()
+    public void RotatesAtTheBoundaryAndKeepsWritingRecentLines()
     {
         string path = TempPath();
         try
         {
-            using var capture = new BoundedProcessOutputCapture(path, maxBytes: 16);
+            using var capture = new BoundedProcessOutputCapture(path, maxBytes: 12);
 
-            capture.AppendLine("0123456789"); // 11 bytes incl. newline
-            capture.AppendLine("this line is dropped entirely");
-            capture.AppendLine("so is this one");
+            capture.AppendLine("first");
+            capture.AppendLine("next!");
+            capture.AppendLine("third");
 
-            Assert.True(capture.IsDone);
-            string written = File.ReadAllText(path);
-            Assert.StartsWith("0123456789\n", written, StringComparison.Ordinal);
-            Assert.Contains("truncated at 16 bytes", written, StringComparison.Ordinal);
-            Assert.True(
-                written.Length < 200,
-                $"expected a small bounded file, got {written.Length} bytes");
+            Assert.False(capture.IsDone);
+            Assert.Equal("first\nnext!\n", File.ReadAllText(path + ".1"));
+            Assert.Equal("third\n", File.ReadAllText(path));
         }
         finally
         {
@@ -72,19 +68,19 @@ public sealed class BoundedProcessOutputCaptureTests
     }
 
     [Fact]
-    public void ALineWhoseTextExactlyExhaustsTheCap_DropsOnlyTheTrailingNewline()
+    public void OversizedRawWritesKeepTheirTailAcrossGenerations()
     {
         string path = TempPath();
         try
         {
-            using var capture = new BoundedProcessOutputCapture(path, maxBytes: 10);
+            using var capture = new BoundedProcessOutputCapture(path, maxBytes: 5);
 
-            capture.AppendLine("0123456789");
+            capture.Append(Encoding.UTF8.GetBytes("abcdefghijkl"));
+            capture.Dispose();
 
-            Assert.True(capture.IsDone);
-            string written = File.ReadAllText(path);
-            Assert.StartsWith("0123456789", written, StringComparison.Ordinal);
-            Assert.Contains("truncated at 10 bytes", written, StringComparison.Ordinal);
+            Assert.Equal("abcde", File.ReadAllText(path + ".2"));
+            Assert.Equal("fghij", File.ReadAllText(path + ".1"));
+            Assert.Equal("kl", File.ReadAllText(path));
         }
         finally
         {
@@ -93,36 +89,54 @@ public sealed class BoundedProcessOutputCaptureTests
     }
 
     [Fact]
-    public void ALogSpammingChildCannotGrowTheFileUnboundedly()
+    public void OldestGenerationIsDiscardedButTheLatestOutputSurvivesExit()
     {
         string path = TempPath();
         try
         {
             using var capture = new BoundedProcessOutputCapture(
                 path,
-                maxBytes: BoundedProcessOutputCapture.DefaultMaxBytes);
+                maxBytes: 4,
+                maxFiles: 3);
 
-            // Far more than the 2 MiB default cap.
-            string spamLine = new('x', 4096);
-            for (int i = 0; i < 4096; i++)
-            {
-                capture.AppendLine(spamLine);
-                if (capture.IsDone)
-                {
-                    break;
-                }
-            }
+            for (int i = 0; i < 8; i++)
+                capture.AppendLine($"{i:000}");
+            capture.Dispose();
 
             Assert.True(capture.IsDone);
-            long fileLength = new FileInfo(path).Length;
-            Assert.True(
-                fileLength < BoundedProcessOutputCapture.DefaultMaxBytes + 256,
-                $"expected the file to stay near the {BoundedProcessOutputCapture.DefaultMaxBytes}-byte "
-                    + $"cap, got {fileLength} bytes");
+            Assert.Equal("007\n", File.ReadAllText(path));
+            Assert.Equal("006\n", File.ReadAllText(path + ".1"));
+            Assert.Equal("005\n", File.ReadAllText(path + ".2"));
+            Assert.False(File.Exists(path + ".3"));
         }
         finally
         {
             TryDelete(path);
+        }
+    }
+
+    [Fact]
+    public void RotatingOneSessionDoesNotTouchAnotherSessionsLog()
+    {
+        string first = TempPath();
+        string second = TempPath();
+        try
+        {
+            using var firstCapture = new BoundedProcessOutputCapture(first, maxBytes: 4);
+            using var secondCapture = new BoundedProcessOutputCapture(second, maxBytes: 4);
+            secondCapture.AppendLine("ok");
+            firstCapture.AppendLine("one");
+            firstCapture.AppendLine("two");
+
+            Assert.Equal("one\n", File.ReadAllText(first + ".1"));
+            Assert.Equal("two\n", File.ReadAllText(first));
+            Assert.False(File.Exists(second + ".1"));
+            Assert.Equal("ok\n", File.ReadAllText(second));
+        }
+        finally
+        {
+            TryDelete(first);
+            TryDelete(second);
         }
     }
 
@@ -228,6 +242,13 @@ public sealed class BoundedProcessOutputCaptureTests
     }
 
     [Fact]
+    public void ConstructorRejectsANonPositiveMaxFiles()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new BoundedProcessOutputCapture(TempPath(), maxFiles: 0));
+    }
+
+    [Fact]
     public void ConstructorRejectsANullOrBlankPath()
     {
         Assert.Throws<ArgumentException>(() => new BoundedProcessOutputCapture(""));
@@ -240,12 +261,16 @@ public sealed class BoundedProcessOutputCaptureTests
 
     private static void TryDelete(string path)
     {
-        try
+        for (int generation = 0; generation < BoundedProcessOutputCapture.DefaultMaxFiles;
+             generation++)
         {
-            File.Delete(path);
-        }
-        catch (IOException)
-        {
+            try
+            {
+                File.Delete(generation == 0 ? path : $"{path}.{generation}");
+            }
+            catch (IOException)
+            {
+            }
         }
     }
 }

@@ -143,17 +143,67 @@ public sealed class RuntimeSpellCastStateTests
     }
 
     [Fact]
-    public void Cast_DoesNotOverwritePendingReceiptIdentity()
+    public void Cast_ReissuesWhileAReceiptIsPending()
     {
         Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
         var operations = new FakeOperations { LocalPlayerId = 42u };
         RuntimeSpellCastState state = Create(book, operations, selected: 99u);
 
         Assert.Equal(CastRequestResult.Sent, state.Cast(1));
-        Assert.Equal(CastRequestResult.Unavailable, state.Cast(1));
-        Assert.Equal(1, operations.TargetedSends);
+        Assert.Equal(CastRequestResult.Sent, state.Cast(1));
+        Assert.Equal(2, operations.TargetedSends);
+        Assert.Equal(2, operations.BusyIncrements);
         Assert.Equal(1u, state.PendingSpellId);
         Assert.Equal(99u, state.PendingTargetId);
+        Assert.True(state.CompleteUse(0u));
+        Assert.Equal(1u, state.PendingSpellId);
+        Assert.True(state.CompleteUse(0u));
+        Assert.Null(state.PendingSpellId);
+    }
+
+    [Fact]
+    public void Cast_DifferentOutstandingSpellsDoNotClaimAnUnidentifiedReceipt()
+    {
+        Spellbook book = MakeBook(
+            flags: 0, untargeted: true, targetMask: 0,
+            includeSecondSpell: true);
+        var operations = new FakeOperations { LocalPlayerId = 42u };
+        RuntimeSpellCastState state = Create(book, operations);
+
+        Assert.Equal(CastRequestResult.Sent, state.Cast(1));
+        Assert.Equal(CastRequestResult.Sent, state.Cast(2));
+        Assert.Null(state.PendingSpellId);
+        Assert.False(state.CompleteUse(0u));
+        Assert.False(state.CompleteUse(0u));
+        Assert.Equal(default, state.LastCompletion);
+
+        Assert.Equal(CastRequestResult.Sent, state.Cast(2));
+        Assert.True(state.CompleteUse(0u));
+        Assert.Equal(2u, state.LastCompletion.SpellId);
+    }
+
+    [Fact]
+    public void FailedReissuePreservesTheEarlierOutstandingCast()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: true, targetMask: 0);
+        int sends = 0;
+        var operations = new FakeOperations
+        {
+            LocalPlayerId = 42u,
+            SendUntargetedAction = _ =>
+            {
+                if (++sends == 2)
+                    throw new InvalidOperationException("wire");
+            },
+        };
+        RuntimeSpellCastState state = Create(book, operations);
+
+        Assert.Equal(CastRequestResult.Sent, state.Cast(1));
+        Assert.Throws<InvalidOperationException>(() => state.Cast(1));
+        Assert.Equal(1u, state.PendingSpellId);
+        Assert.Equal(1, operations.BusyIncrements);
+        Assert.True(state.CompleteUse(0u));
+        Assert.Null(state.PendingSpellId);
     }
 
     [Fact]
@@ -185,15 +235,22 @@ public sealed class RuntimeSpellCastStateTests
         return new RuntimeSpellCastState(book, selection, operations);
     }
 
-    private static Spellbook MakeBook(uint flags, bool untargeted, uint targetMask)
+    private static Spellbook MakeBook(
+        uint flags, bool untargeted, uint targetMask,
+        bool includeSecondSpell = false)
     {
         const string header =
             "Spell ID,Name,Flags [Hex],IsUntargetted,TargetMask [Hex]";
         string row = $"1,Test,0x{flags:X},{untargeted},0x{targetMask:X}";
+        string secondRow = includeSecondSpell
+            ? $"\n2,Other,0x{flags:X},{untargeted},0x{targetMask:X}"
+            : string.Empty;
         SpellTable table = SpellTable.LoadFromReader(
-            new StringReader($"{header}\n{row}"));
+            new StringReader($"{header}\n{row}{secondRow}"));
         var book = new Spellbook(table);
         book.OnSpellLearned(1);
+        if (includeSecondSpell)
+            book.OnSpellLearned(2);
         return book;
     }
 

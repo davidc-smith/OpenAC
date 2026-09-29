@@ -50,6 +50,11 @@ character…** (with a character chosen), **Console** (for a running headless
 session), **Open logs folder** and **Remove character** (a later character
 refresh brings a removed character back; it asks first).
 
+Each session's `client.err.log` keeps the newest client output. At 2 MiB the
+launcher moves it to `client.err.log.1` and starts a fresh file; it retains up
+to three older generations (`.1` newest, `.3` oldest) in that session's log
+folder. The next rotation removes the oldest generation.
+
 ## Accounts and servers
 
 The editors run inside the launcher. Saves are validated and atomic; invalid
@@ -163,7 +168,12 @@ unticks it for every account and character that had it enabled, so reinstalling
 it always starts from none. **Refresh list** reloads
 both lists; the launcher also checks once at startup, without delaying the
 window. **Add from URL** adds a plugin from a `https://github.com/owner/name`
-repository not on the list. Right after a curated-list release publishes,
+repository not on the list. **Install from ZIP** opens a local plugin release
+archive, shows its declared capabilities for confirmation, then installs it as
+a Direct install. Selecting a newer ZIP for the same Direct install updates its
+code while retaining its `files/` settings; a ZIP cannot replace a
+launcher-managed or bundled plugin. Direct installs have no automatic release
+checks. Right after a curated-list release publishes,
 GitHub's "latest" link can keep serving the previous release for under a
 minute; wait a moment and press **Refresh list** again.
 

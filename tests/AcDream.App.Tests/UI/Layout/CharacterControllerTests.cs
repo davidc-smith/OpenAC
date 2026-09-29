@@ -1,5 +1,6 @@
 using AcDream.App.UI;
 using AcDream.App.UI.Layout;
+using AcDream.Core.Properties;
 
 namespace AcDream.App.Tests.UI.Layout;
 
@@ -151,6 +152,57 @@ public sealed class CharacterControllerTests
         Assert.Contains("Innate Quickness: 40", report);
         Assert.Contains("Innate Focus: 30", report);
         Assert.Contains("Innate Self: 10", report);
+    }
+
+    [Theory]
+    [InlineData(PropertyInt.AugmentationSpecializeArmorTinkering, "Armor Tinkering", "Magic Item Tinkering")]
+    [InlineData(PropertyInt.AugmentationSpecializeMagicItemTinkering, "Magic Item Tinkering", "Armor Tinkering")]
+    public void Report_TinkeringAugmentationUsesMatchingProperty(
+        PropertyInt property, string expected, string other)
+    {
+        var sheet = new CharacterSheet
+        {
+            CharacterInfoProperties = new Dictionary<uint, int> { [(uint)property] = 1 },
+        };
+        CharacterInfoStrings strings = CharacterInfoStrings.English with
+        {
+            AugmentationText = new Dictionary<string, string[]>
+            {
+                ["ID_CharacterInfo_Augmentation_Spec_ArmorTinkering"] = ["Armor Tinkering\n"],
+                ["ID_CharacterInfo_Augmentation_Spec_MagicItemTinkering"] = ["Magic Item Tinkering\n"],
+            },
+        };
+
+        string report = CharacterController.BuildReport(sheet, strings);
+
+        Assert.Contains(expected, report);
+        Assert.DoesNotContain(other, report);
+    }
+
+    [Fact]
+    public void Report_DoesNotAppendUnusedValueAfterSingleFragmentAugmentation()
+    {
+        var sheet = new CharacterSheet
+        {
+            CharacterInfoProperties = new Dictionary<uint, int>
+            {
+                [(uint)PropertyInt.AugmentationDamageBonus] = 1,
+                [(uint)PropertyInt.AugmentationJackOfAllTrades] = 1,
+            },
+        };
+        CharacterInfoStrings strings = CharacterInfoStrings.English with
+        {
+            AugmentationText = new Dictionary<string, string[]>
+            {
+                ["ID_CharacterInfo_Augmentation_DamageBonus"] = ["Damage bonus.\n"],
+                ["ID_CharacterInfo_Augmentation_JackOfAllTrades"] = ["Jack of All Trades.\n"],
+            },
+        };
+
+        string report = CharacterController.BuildReport(sheet, strings);
+
+        Assert.Contains("Damage bonus.\nJack of All Trades.", report);
+        Assert.DoesNotContain("Damage bonus.\n1Jack of All Trades.", report);
     }
 
     private static string Report(CharacterSheet sheet)

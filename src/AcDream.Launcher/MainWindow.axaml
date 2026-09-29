@@ -308,6 +308,7 @@
                  PlaceholderText="https://github.com/owner/name" AutomationProperties.Name="Add plugin from URL" />
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
           <Button Content="Add from URL" Command="{Binding Plugins.AddFromUrlCommand}" />
+          <Button Content="Install from ZIP" Click="OnInstallPluginZip" IsEnabled="{Binding Plugins.CanInstallLocalZip}" AutomationProperties.Name="Install plugin from ZIP" />
           <Button Content="Refresh list" Command="{Binding Plugins.CheckNowCommand}" />
         </StackPanel>
       </Grid>

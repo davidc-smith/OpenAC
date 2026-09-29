@@ -1005,9 +1005,8 @@ public sealed class NoOpPluginRegistration : IDisposable
 public interface IMagicCommands
 {
     /// <summary>
-    /// Whether the client is still working on a request that blocks a new
-    /// cast. <see cref="EvaluateGate(uint)"/> reports
-    /// <see cref="PluginCastGate.Busy"/> while this is true.
+    /// Whether the host currently blocks another cast. An unanswered
+    /// response to an earlier cast does not by itself block a new request.
     /// </summary>
     bool IsCasting { get; }
 

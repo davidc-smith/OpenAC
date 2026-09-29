@@ -142,6 +142,12 @@ contains a `plugin.json`:
 | macOS | `~/Library/Application Support/OpenAC/plugins` |
 | Linux | `$XDG_DATA_HOME/openac/plugins` (default `~/.local/share/openac/plugins`) |
 
+The launcher's **Install from ZIP** button accepts a local release archive
+without a GitHub repository. It checks the package and asks the player to
+review declared capabilities before installing. A newer ZIP updates an
+existing Direct install and preserves its `files/` folder; Direct installs
+do not get automatic release checks.
+
 The plugins folder lives in the OpenAC install folder, which the launcher
 settings show and can move; `ACDREAM_ROOT_DIR` (or `--root-dir`) names
 another install folder for one run. What your plugin writes through

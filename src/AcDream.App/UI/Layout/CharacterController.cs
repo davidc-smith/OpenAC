@@ -30,8 +30,8 @@ public static class CharacterController
         new(0xF6u, "ID_CharacterInfo_Augmentation_Resist_Lightning", true),
         new(0xE0u, "ID_CharacterInfo_Augmentation_Spec_Gearcraft", false),
         new(0xE1u, "ID_CharacterInfo_Augmentation_Spec_WeaponTinkering", false),
-        new(0xE2u, "ID_CharacterInfo_Augmentation_Spec_MagicItemTinkering", false),
-        new(0xE3u, "ID_CharacterInfo_Augmentation_Spec_ArmorTinkering", false),
+        new(0xE2u, "ID_CharacterInfo_Augmentation_Spec_ArmorTinkering", false),
+        new(0xE3u, "ID_CharacterInfo_Augmentation_Spec_MagicItemTinkering", false),
         new(0xE4u, "ID_CharacterInfo_Augmentation_Spec_ItemTinkering", false),
         new(0x125u, "ID_CharacterInfo_Augmentation_Spec_Salvaging", false),
         new(0xE5u, "ID_CharacterInfo_Augmentation_ExtraPackSlot", false),
@@ -300,7 +300,7 @@ public static class CharacterController
             int pluralValue = values.Length == 0 ? 0
                 : NumericValue(values[Math.Min(i, values.Length - 1)]);
             body.Append(ResolvePlural(tokens[i], pluralValue));
-            if (i < values.Length)
+            if (i < tokens.Count - 1 && i < values.Length)
                 body.Append(Convert.ToString(values[i], CultureInfo.InvariantCulture));
         }
     }

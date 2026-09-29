@@ -5,19 +5,23 @@ namespace AcDream.Launcher.Core.Launching;
 public sealed class BoundedProcessOutputCapture : IDisposable
 {
     public const long DefaultMaxBytes = 2 * 1024 * 1024;
+    public const int DefaultMaxFiles = 4;
 
     private static readonly byte[] Newline = "\n"u8.ToArray();
 
     private readonly string _path;
     private readonly long _maxBytes;
+    private readonly int _maxFiles;
     private readonly object _gate = new();
     private bool _directoryEnsured;
     private long _written;
-    private bool _capped;
     private bool _latchedOff;
     private bool _disposed;
 
-    public BoundedProcessOutputCapture(string path, long maxBytes = DefaultMaxBytes)
+    public BoundedProcessOutputCapture(
+        string path,
+        long maxBytes = DefaultMaxBytes,
+        int maxFiles = DefaultMaxFiles)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         if (maxBytes <= 0)
@@ -26,9 +30,14 @@ public sealed class BoundedProcessOutputCapture : IDisposable
                 nameof(maxBytes),
                 "The bounded capture size must be positive.");
         }
+        if (maxFiles <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxFiles));
+        }
 
         _path = Path.GetFullPath(path);
         _maxBytes = maxBytes;
+        _maxFiles = maxFiles;
     }
 
     public bool IsDone
@@ -37,7 +46,7 @@ public sealed class BoundedProcessOutputCapture : IDisposable
         {
             lock (_gate)
             {
-                return _capped || _latchedOff || _disposed;
+                return _latchedOff || _disposed;
             }
         }
     }
@@ -75,29 +84,29 @@ public sealed class BoundedProcessOutputCapture : IDisposable
 
     private void AppendLocked(ReadOnlySpan<byte> data)
     {
-        if (data.IsEmpty || _disposed || _latchedOff || _capped)
+        if (data.IsEmpty || _disposed || _latchedOff)
         {
             return;
         }
 
         try
         {
-            long remaining = _maxBytes - _written;
-            if (remaining <= 0)
+            while (!data.IsEmpty)
             {
-                CapLocked();
-                return;
-            }
+                long remaining = _maxBytes - _written;
+                // Keep ordinary lines and stderr reads together. An oversized
+                // write is split across generations without dropping bytes.
+                if (remaining == 0
+                    || (_written > 0 && data.Length <= _maxBytes && data.Length > remaining))
+                {
+                    RotateLocked();
+                    remaining = _maxBytes;
+                }
 
-            int toWrite = data.Length > remaining
-                ? checked((int)remaining)
-                : data.Length;
-            WriteChunkLocked(data[..toWrite]);
-            _written += toWrite;
-
-            if (toWrite < data.Length)
-            {
-                CapLocked();
+                int toWrite = (int)Math.Min(remaining, data.Length);
+                WriteChunkLocked(data[..toWrite]);
+                _written += toWrite;
+                data = data[toWrite..];
             }
         }
         catch (Exception error) when (IsRecoverableIoFailure(error))
@@ -134,24 +143,28 @@ public sealed class BoundedProcessOutputCapture : IDisposable
         _directoryEnsured = true;
     }
 
-    private void CapLocked()
+    private void RotateLocked()
     {
-        if (_capped)
+        EnsureDirectoryLocked();
+        if (_maxFiles == 1)
         {
-            return;
+            File.Delete(_path);
         }
-
-        _capped = true;
-        try
+        else
         {
-            byte[] marker = Encoding.UTF8.GetBytes(
-                $"\n[OpenAC launcher] client.err.log truncated at {_maxBytes} bytes\n");
-            WriteChunkLocked(marker);
+            for (int generation = _maxFiles - 1; generation >= 1; generation--)
+            {
+                string source = generation == 1
+                    ? _path
+                    : BackupPath(generation - 1);
+                if (File.Exists(source))
+                    File.Move(source, BackupPath(generation), overwrite: true);
+            }
         }
-        catch (Exception error) when (IsRecoverableIoFailure(error))
-        {
-        }
+        _written = 0;
     }
+
+    private string BackupPath(int generation) => $"{_path}.{generation}";
 
     private static bool IsRecoverableIoFailure(Exception error) =>
         error is IOException

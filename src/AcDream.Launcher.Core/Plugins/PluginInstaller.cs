@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using AcDream.Launcher.Core.Updates;
 using AcDream.Platform;
@@ -5,6 +6,9 @@ using AcDream.Platform;
 namespace AcDream.Launcher.Core.Plugins;
 
 public sealed record PluginInstallResult(string Id, string Version, bool WasUpdate);
+
+/// <summary>Details read from a local plugin archive before the player confirms installation.</summary>
+public sealed record LocalPluginZipPreview(LauncherPluginManifest Manifest, string Sha256);
 
 /// <summary>Install, update, remove and recovery for launcher-managed plugins, following the plan's
 /// Install/update, Remove and Recovery pipelines. Install, update and a channel change run while
@@ -330,6 +334,193 @@ public sealed class PluginInstaller
         }
     }
 
+    /// <summary>Checks a local ZIP with the same extraction rules used for release packages. The
+    /// hash pins the file the player reviewed to the file installed after confirmation.</summary>
+    public async Task<LocalPluginZipPreview> InspectLocalZipAsync(
+        string sourcePath, CancellationToken cancellationToken = default)
+    {
+        (string archive, string sha256) = await SnapshotLocalZipAsync(sourcePath, cancellationToken)
+            .ConfigureAwait(false);
+        string staging = Path.Combine(_paths.CacheDirectory, "plugin-previews", Guid.NewGuid().ToString("N"));
+        try
+        {
+            LauncherPluginManifest manifest = await ExtractLocalManifestAsync(
+                    archive, staging, cancellationToken)
+                .ConfigureAwait(false);
+            return new LocalPluginZipPreview(manifest, sha256);
+        }
+        finally
+        {
+            VerifiedArtifactDownloader.TryDelete(archive);
+            SafeZipExtractor.TryDeleteDirectory(staging);
+            TryDeleteIfEmpty(Path.Combine(_paths.CacheDirectory, "plugin-previews"));
+        }
+    }
+
+    /// <summary>Installs a reviewed local ZIP or updates a direct install of the same id. It never
+    /// turns a GitHub-managed or bundled plugin into a direct install, and never touches files/.</summary>
+    public async Task<PluginInstallResult> InstallLocalZipAsync(
+        string sourcePath,
+        string expectedSha256,
+        PluginCatalog? catalog,
+        ClientVersionResolution? clientResolution,
+        IReadOnlyList<LauncherPluginCapabilityDeclaration> displayedCapabilities,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedSha256);
+        ArgumentNullException.ThrowIfNull(displayedCapabilities);
+        (string archive, string sha256) = await SnapshotLocalZipAsync(sourcePath, cancellationToken)
+            .ConfigureAwait(false);
+        string staging = Path.Combine(_paths.PluginsDirectory, ".staging", Guid.NewGuid().ToString("N"));
+        string? targetDirectory = null;
+        try
+        {
+            if (!string.Equals(sha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                throw new LauncherUpdateException("The selected ZIP changed since you reviewed it. Select it again.");
+
+            LauncherPluginManifest manifest = await ExtractLocalManifestAsync(
+                    archive, staging, cancellationToken)
+                .ConfigureAwait(false);
+            if (!CapabilitiesMatch(displayedCapabilities, manifest.Capabilities))
+                throw new LauncherUpdateException(CapabilitiesChangedRefusal);
+
+            LauncherVersion version = LauncherVersion.Parse(manifest.Version);
+            string? blockReason = PluginInventory.FindBlockReason(catalog, manifest.Id, version);
+            if (blockReason is not null)
+                throw new LauncherUpdateException($"'{manifest.Id}' is blocked: {blockReason}");
+
+            string? incompatibility = PluginInventory.EvaluateVersionCompatibility(
+                manifest, clientResolution?.Version);
+            if (incompatibility is not null
+                && !string.Equals(incompatibility, LauncherPluginCompatibility.ClientNotInstalled,
+                    StringComparison.Ordinal))
+                throw new LauncherUpdateException($"'{manifest.Id}' {incompatibility}.");
+
+            targetDirectory = Path.Combine(_paths.PluginsDirectory, manifest.Id);
+            using (AcquirePluginWrite())
+            {
+                bool isUpdate = ValidateLocalTarget(manifest, version, targetDirectory,
+                    clientResolution, catalog);
+                ReplaceDirectInPlace(manifest.Id, staging, targetDirectory, manifest.EntryDll);
+                return new PluginInstallResult(manifest.Id, manifest.Version, isUpdate);
+            }
+        }
+        finally
+        {
+            VerifiedArtifactDownloader.TryDelete(archive);
+            ReclaimStaging(staging, targetDirectory ?? string.Empty);
+            TryDeleteIfEmpty(Path.Combine(_paths.PluginsDirectory, ".staging"));
+        }
+    }
+
+    private bool ValidateLocalTarget(
+        LauncherPluginManifest manifest, LauncherVersion version, string targetDirectory,
+        ClientVersionResolution? clientResolution, PluginCatalog? catalog)
+    {
+        if (_recordStore.Find(manifest.Id) is not null)
+            throw new LauncherUpdateException($"'{manifest.Id}' is managed by the launcher. Use its Update button.");
+
+        InstalledPluginInfo[] matches = [.. _inventory.Build(clientResolution, catalog)
+            .Where(info => string.Equals(info.Id, manifest.Id, StringComparison.OrdinalIgnoreCase))];
+        if (matches.Length == 0)
+        {
+            if (Directory.Exists(targetDirectory)
+                && (File.GetAttributes(targetDirectory) & FileAttributes.ReparsePoint) != 0)
+                throw new LauncherUpdateException($"'{manifest.Id}' has a linked plugin folder.");
+            RefuseUnmanagedFolder(null, manifest.Id, targetDirectory);
+            return false;
+        }
+
+        if (matches.Length != 1 || matches[0].Source != InstalledPluginSource.Direct
+            || !string.Equals(Path.GetFullPath(matches[0].Directory),
+                Path.GetFullPath(targetDirectory), StringComparison.OrdinalIgnoreCase)
+            || matches[0].HasDuplicate || matches[0].Refusal is not null)
+            throw new LauncherUpdateException($"'{manifest.Id}' already has a conflicting installation.");
+
+        if (!LauncherVersion.TryParse(matches[0].Version, out LauncherVersion? current)
+            || version <= current)
+            throw new LauncherUpdateException($"'{manifest.Id}' {version} is not newer than the installed {matches[0].Version}.");
+        return true;
+    }
+
+    private async Task<LauncherPluginManifest> ExtractLocalManifestAsync(
+        string archive, string staging, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<ExtractedFileRecord> extracted = await _extractor.ExtractAsync(
+                archive, staging, executableNames: null, cancellationToken)
+            .ConfigureAwait(false);
+        string manifestPath = Path.Combine(staging, "plugin.json");
+        if (!File.Exists(manifestPath))
+            throw new LauncherUpdateException("The plugin archive has no 'plugin.json' at its root.");
+
+        LauncherPluginManifest manifest;
+        try
+        {
+            string json = await File.ReadAllTextAsync(manifestPath, cancellationToken)
+                .ConfigureAwait(false);
+            manifest = LauncherPluginManifest.Parse(json.TrimStart('\uFEFF'));
+            manifest.ValidateForInstall();
+        }
+        catch (LauncherPluginCapabilityVersionException ex)
+        {
+            throw new LauncherUpdateException(CapabilityVocabularyRefusal, ex);
+        }
+        catch (LauncherPluginManifestException ex)
+        {
+            throw new LauncherUpdateException($"The plugin manifest is invalid: {ex.Message}", ex);
+        }
+
+        PluginContentPolicy.Validate(extracted, manifest.EntryDll);
+        RefusePackagedFilesFolder(staging);
+        string icon = Path.Combine(staging, LauncherPluginIcon.FileName);
+        if (File.Exists(icon))
+            LauncherPluginIcon.Validate(await File.ReadAllBytesAsync(icon, cancellationToken)
+                .ConfigureAwait(false));
+        return manifest;
+    }
+
+    private async Task<(string Archive, string Sha256)> SnapshotLocalZipAsync(
+        string sourcePath, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePath);
+        if (!string.Equals(Path.GetExtension(sourcePath), ".zip", StringComparison.OrdinalIgnoreCase))
+            throw new LauncherUpdateException("Choose a plugin ZIP file.");
+
+        string archive = Path.Combine(_paths.CacheDirectory, "plugin-downloads",
+            $"local-{Guid.NewGuid():N}.zip");
+        Directory.CreateDirectory(Path.GetDirectoryName(archive)!);
+        try
+        {
+            await using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read,
+                FileShare.Read, 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using (var destination = new FileStream(archive, FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, 128 * 1024, FileOptions.Asynchronous))
+            {
+                byte[] buffer = new byte[128 * 1024];
+                long copied = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) != 0)
+                {
+                    copied += read;
+                    if (copied > ContractLimits.MaximumZipBytes)
+                        throw new LauncherUpdateException("The plugin ZIP is larger than 64 MiB.");
+                    await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+
+            await using var snapshot = File.OpenRead(archive);
+            string sha256 = Convert.ToHexString(await SHA256.HashDataAsync(snapshot, cancellationToken)
+                .ConfigureAwait(false));
+            return (archive, sha256);
+        }
+        catch
+        {
+            VerifiedArtifactDownloader.TryDelete(archive);
+            throw;
+        }
+    }
+
     /// <summary>Sets a launcher-managed plugin's channel, under the same exclusive lease as
     /// every other record write. Returns the updated record so the toggle can reflect it without
     /// waiting for the next Check pass.</summary>
@@ -612,6 +803,30 @@ public sealed class PluginInstaller
         Upsert(pendingRecord);
         _recordStore.Save();
 
+        string journal = MoveStagedCode(id, stagingDirectory, targetDirectory, entryDll);
+
+        Upsert(pendingRecord with
+        {
+            Version = newVersion,
+            Tag = newTag,
+            ZipSha256 = newZipSha256,
+            Pending = null,
+        });
+        _recordStore.Save();
+
+        FinishInPlace(journal);
+    }
+
+    private void ReplaceDirectInPlace(
+        string id, string stagingDirectory, string targetDirectory, string entryDll)
+    {
+        string journal = MoveStagedCode(id, stagingDirectory, targetDirectory, entryDll);
+        FinishInPlace(journal);
+    }
+
+    private string MoveStagedCode(
+        string id, string stagingDirectory, string targetDirectory, string entryDll)
+    {
         Directory.CreateDirectory(targetDirectory);
         string[] oldCode = CodeFiles(targetDirectory);
         string[] newCode = CodeFiles(stagingDirectory)
@@ -643,16 +858,7 @@ public sealed class PluginInstaller
             throw;
         }
 
-        Upsert(pendingRecord with
-        {
-            Version = newVersion,
-            Tag = newTag,
-            ZipSha256 = newZipSha256,
-            Pending = null,
-        });
-        _recordStore.Save();
-
-        FinishInPlace(journal);
+        return journal;
     }
 
     /// <summary>

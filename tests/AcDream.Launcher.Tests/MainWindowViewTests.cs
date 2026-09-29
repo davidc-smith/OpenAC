@@ -568,6 +568,15 @@ public sealed class MainWindowViewTests
             Assert.False(accountsTab.IsChecked);
             Assert.False(accountsScroll.IsEffectivelyVisible);
             Assert.True(pluginsScroll.IsEffectivelyVisible);
+            Assert.Contains(window.GetVisualDescendants().OfType<Button>(), button =>
+                AutomationProperties.GetName(button) == "Install plugin from ZIP"
+                && button.IsEffectivelyVisible);
+            string artifacts = Path.Combine(FindRepositoryRoot(), "artifacts", "launcher-redesign");
+            Directory.CreateDirectory(artifacts);
+            AvaloniaHeadlessPlatform.ForceRenderTimerTick(1);
+            using (var frame = window.CaptureRenderedFrame())
+                frame!.Save(Path.Combine(artifacts, "launcher-plugins-zip.png"),
+                    Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default);
             Assert.DoesNotContain(
                 window.GetVisualDescendants().OfType<CheckBox>(),
                 checkBox => Equals(AutomationProperties.GetName(checkBox), "Show beta plugins")

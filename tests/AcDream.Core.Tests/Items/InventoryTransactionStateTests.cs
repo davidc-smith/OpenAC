@@ -9,6 +9,41 @@ public sealed class InventoryTransactionStateTests
     private const uint First = 0x60000001u;
     private const uint Second = 0x60000002u;
 
+    [Fact]
+    public void CursorBusyCountDoesNotBlockAnInventoryRequest()
+    {
+        var objects = CreateTable();
+        using var state = new InventoryTransactionState(objects);
+
+        state.IncrementCastBusyCount();
+        Assert.True(state.CanBeginRequest);
+        Assert.True(state.TryDispatch(
+            InventoryRequestKind.PutInContainer, First, static () => true));
+        Assert.Equal(1, state.BusyCount);
+        Assert.False(state.CanBeginRequest);
+    }
+
+    [Fact]
+    public void ItemBusyReferenceStillBlocksWhileCastReferencesRemain()
+    {
+        var objects = CreateTable();
+        using var state = new InventoryTransactionState(objects);
+
+        state.IncrementCastBusyCount();
+        state.IncrementBusyCount();
+        Assert.Equal(2, state.BusyCount);
+        Assert.Equal(1, state.ItemBusyCount);
+        Assert.False(state.CanBeginRequest);
+
+        state.CompleteUse(0u);
+        Assert.Equal(1, state.BusyCount);
+        Assert.Equal(0, state.ItemBusyCount);
+        Assert.True(state.CanBeginRequest);
+
+        state.CompleteUse(0u);
+        Assert.Equal(0, state.BusyCount);
+    }
+
     /// <summary>
     /// Mutation pin: omit matching vendor-response completion by forcing the
     /// Shop transition guard true; the final pending assertion fails.

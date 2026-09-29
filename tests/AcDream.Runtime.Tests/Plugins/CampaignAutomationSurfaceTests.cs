@@ -7,6 +7,7 @@ using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Plugins;
+using AcDream.Runtime.Tests.Support;
 using System.Numerics;
 
 namespace AcDream.Runtime.Tests.Plugins;
@@ -346,6 +347,28 @@ public sealed class CampaignAutomationSurfaceTests
         Assert.Equal((0, 0),
             (alreadyClear.PreviousCount, alreadyClear.CurrentCount));
         Assert.Equal(0, runtime.InventoryOwner.Transactions.BusyCount);
+    }
+
+    [Fact]
+    public void PendingCastReceiptDoesNotBlockAnotherCast()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        GameRuntime runtime = host.Runtime;
+        runtime.CharacterOwner.InstallSpellMetadata(SpellTable.Create([DurationSpell()]));
+        runtime.CharacterOwner.Spellbook.OnSpellLearned(42u);
+        runtime.ActionOwner.Selection.Select(200u, SelectionChangeSource.Plugin);
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        Assert.Equal(PluginCastGate.Ready, surface.Magic.EvaluateGate(42u));
+        Assert.Equal(PluginCastRequestResult.Sent, surface.Magic.RequestCast(42u));
+        Assert.False(surface.Magic.IsCasting);
+        Assert.Equal(PluginCastGate.Ready, surface.Magic.EvaluateGate(42u));
+        Assert.Equal(PluginCastRequestResult.Sent, surface.Magic.RequestCast(42u));
+        Assert.Equal(2, runtime.InventoryOwner.Transactions.BusyCount);
+        Assert.Equal(0, runtime.InventoryOwner.Transactions.ItemBusyCount);
+        Assert.True(runtime.InventoryOwner.Transactions.CanBeginRequest);
     }
 
     [Fact]

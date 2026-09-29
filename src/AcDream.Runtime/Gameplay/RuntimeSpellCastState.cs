@@ -1,6 +1,7 @@
 using System;
 using AcDream.Core.Selection;
 using AcDream.Core.Spells;
+using AcDream.Core.Net;
 
 namespace AcDream.Runtime.Gameplay;
 
@@ -34,6 +35,7 @@ public sealed class RuntimeSpellCastState
     private readonly Spellbook _spellbook;
     private readonly SelectionState _selection;
     private readonly IRuntimeSpellCastOperations _operations;
+    private long _outstandingCastReceipts;
 
     public RuntimeSpellCastState(
         Spellbook spellbook,
@@ -123,31 +125,42 @@ public sealed class RuntimeSpellCastState
             _operations.DisplayMessage("You cannot cast a spell right now.");
             return CastRequestResult.Unavailable;
         }
-        if (PendingSpellId is not null)
-        {
-            _operations.DisplayMessage("You cannot cast a spell right now.");
-            return CastRequestResult.Unavailable;
-        }
-
+        uint? previousRequestedSpellId = LastRequestedSpellId;
+        uint? previousRequestedTargetId = LastRequestedTargetId;
+        uint? previousPendingSpellId = PendingSpellId;
+        uint? previousPendingTargetId = PendingTargetId;
+        long previousOutstandingCastReceipts = _outstandingCastReceipts;
         try
         {
             _operations.StopCompletely();
             LastRequestedSpellId = spellId;
             LastRequestedTargetId = target;
-            PendingSpellId = spellId;
-            PendingTargetId = target;
+            if (_outstandingCastReceipts == 0)
+            {
+                PendingSpellId = spellId;
+                PendingTargetId = target;
+            }
+            else if (PendingSpellId != spellId || PendingTargetId != target)
+            {
+                PendingSpellId = null;
+                PendingTargetId = null;
+            }
             if (untargeted)
                 _operations.SendUntargeted(spellId);
             else
                 _operations.SendTargeted(target!.Value, spellId);
             _operations.IncrementBusy();
+            if (_outstandingCastReceipts < long.MaxValue)
+                _outstandingCastReceipts++;
+            CastTraceDiagnostics.Log.Trace("runtime-pending", spellId, target ?? 0u);
         }
         catch
         {
-            LastRequestedSpellId = null;
-            LastRequestedTargetId = null;
-            PendingSpellId = null;
-            PendingTargetId = null;
+            LastRequestedSpellId = previousRequestedSpellId;
+            LastRequestedTargetId = previousRequestedTargetId;
+            PendingSpellId = previousPendingSpellId;
+            PendingTargetId = previousPendingTargetId;
+            _outstandingCastReceipts = previousOutstandingCastReceipts;
             throw;
         }
         StateChanged?.Invoke();
@@ -156,8 +169,23 @@ public sealed class RuntimeSpellCastState
 
     public bool CompleteUse(uint weenieError)
     {
-        if (PendingSpellId is not uint spellId)
+        if (_outstandingCastReceipts == 0)
+        {
+            CastTraceDiagnostics.Log.Trace("runtime-orphan-receipt", error: weenieError);
             return false;
+        }
+
+        _outstandingCastReceipts--;
+        if (PendingSpellId is not uint spellId)
+        {
+            CastTraceDiagnostics.Log.Trace("runtime-ambiguous-receipt", error: weenieError);
+            StateChanged?.Invoke();
+            return false;
+        }
+
+        CastTraceDiagnostics.Log.Trace(
+            "runtime-completed", spellId, PendingTargetId ?? 0u,
+            error: weenieError);
 
         long revision = LastCompletion.Revision + 1;
         LastCompletion = new RuntimeSpellCastCompletion(
@@ -165,8 +193,11 @@ public sealed class RuntimeSpellCastState
             spellId,
             PendingTargetId ?? 0u,
             weenieError);
-        PendingSpellId = null;
-        PendingTargetId = null;
+        if (_outstandingCastReceipts == 0)
+        {
+            PendingSpellId = null;
+            PendingTargetId = null;
+        }
         StateChanged?.Invoke();
         return true;
     }
@@ -177,11 +208,13 @@ public sealed class RuntimeSpellCastState
             || LastRequestedTargetId is not null
             || PendingSpellId is not null
             || PendingTargetId is not null
+            || _outstandingCastReceipts != 0
             || LastCompletion.Revision != 0;
         LastRequestedSpellId = null;
         LastRequestedTargetId = null;
         PendingSpellId = null;
         PendingTargetId = null;
+        _outstandingCastReceipts = 0;
         LastCompletion = default;
         if (changed)
             StateChanged?.Invoke();

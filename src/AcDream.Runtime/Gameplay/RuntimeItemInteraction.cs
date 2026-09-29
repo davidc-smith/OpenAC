@@ -290,7 +290,7 @@ public sealed class RuntimeItemInteraction : IDisposable
 
     private bool BaseCanMakeInventoryRequest =>
         _readyForInventoryRequest()
-        && _transactions.BusyCount == 0
+        && _transactions.ItemBusyCount == 0
         && !_autoWield.IsBusy;
 
     public bool EnsureInventoryRequestReady()
@@ -299,7 +299,7 @@ public sealed class RuntimeItemInteraction : IDisposable
             return true;
 
         if (_transactions.HasPendingRequest
-            || _transactions.BusyCount != 0
+            || _transactions.ItemBusyCount != 0
             || _autoWield.IsBusy)
             _systemMessage?.Invoke(InventoryRequestBusyMessage);
         return false;
@@ -638,6 +638,9 @@ public sealed class RuntimeItemInteraction : IDisposable
 
     public void IncrementBusyCount()
         => _runtimeTransactions.IncrementBusyCount();
+
+    public void IncrementCastBusyCount()
+        => _runtimeTransactions.IncrementCastBusyCount();
 
     public event Action<ItemPolicyAction>? PolicyActionRequested;
 
