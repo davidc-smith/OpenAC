@@ -50,6 +50,11 @@ character…** (with a character chosen), **Console** (for a running headless
 session), **Open logs folder** and **Remove character** (a later character
 refresh brings a removed character back; it asks first).
 
+Each session's `client.err.log` keeps the newest client output. At 2 MiB the
+launcher moves it to `client.err.log.1` and starts a fresh file; it retains up
+to three older generations (`.1` newest, `.3` oldest) in that session's log
+folder. The next rotation removes the oldest generation.
+
 ## Accounts and servers
 
 The editors run inside the launcher. Saves are validated and atomic; invalid
