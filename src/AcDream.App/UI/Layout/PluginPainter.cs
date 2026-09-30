@@ -43,12 +43,14 @@ internal sealed class PluginPainter : IPluginPainter
     private int _height;
 
     /// <summary>
-    /// The most shape vertices one paint may draw. Shape triangles go into
-    /// the frame's vertex ring, 16 MiB per frame slot and shared by
-    /// everything drawn in that frame (<c>GpuMemoryProfile.RingCapacityBytesPerSlot</c>);
-    /// at 32 bytes a vertex this is 1 MiB of it -- about 75 large circles or
-    /// 130 rounded panels. Tessellating and clipping this many takes about
-    /// 0.6 ms, well inside the paint budget.
+    /// The most shape vertices one paint may ask for, counted per paint
+    /// before clipping. Shape triangles go into the frame's vertex ring,
+    /// 16 MiB per frame slot and shared by everything drawn in that frame
+    /// (<c>GpuMemoryProfile.RingCapacityBytesPerSlot</c>); at 32 bytes a
+    /// vertex this is 1 MiB of it -- about 75 large circles or 130 rounded
+    /// panels. Clipping can add vertices, so in the worst case the ring's
+    /// share is a little more than 1 MiB. Tessellating and clipping this
+    /// many takes about 0.6 ms, well inside the paint budget.
     /// </summary>
     internal const int MaximumShapeVerticesPerPaint = 32_768;
 
