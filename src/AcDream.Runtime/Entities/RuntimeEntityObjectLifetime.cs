@@ -578,50 +578,100 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
         ulong operationVersion =
             Entities.AdvanceLifetimeMutation(incoming.Guid);
 
-        if (result.Disposition
-            is CreateObjectTimestampDisposition.ExistingGeneration)
+        try
         {
-            if (Entities.TryGetActive(
-                    incoming.Guid,
-                    out RuntimeEntityRecord retained))
+            if (result.Disposition
+                is CreateObjectTimestampDisposition.ExistingGeneration)
             {
-                if (admitIntoPendingResidence)
+                if (Entities.TryGetActive(
+                        incoming.Guid,
+                        out RuntimeEntityRecord retained))
                 {
-                    if (!ReferenceEquals(retained, pendingResidenceRecord)
-                        || !AdmitSameGenerationCreate(
-                            retained,
-                            pendingResidence,
-                            incoming,
-                            result,
-                            isLocalPlayer))
+                    if (admitIntoPendingResidence)
                     {
-                        throw FailInitialResidenceRegistration(
+                        if (!ReferenceEquals(retained, pendingResidenceRecord)
+                            || !AdmitSameGenerationCreate(
+                                retained,
+                                pendingResidence,
+                                incoming,
+                                result,
+                                isLocalPlayer))
+                        {
+                            throw FailInitialResidenceRegistration(
+                                retained,
+                                publishDeleted: true);
+                        }
+
+                        InboundCreateResult dormant = result with
+                        {
+                            Snapshot = retained.Snapshot,
+                            SameGenerationEvents = null,
+                        };
+                        return new RuntimeEntityRegistrationResult(
+                            dormant,
                             retained,
-                            publishDeleted: true);
+                            LogicalRegistrationCreated: false,
+                            ReplacedExistingGeneration: false);
                     }
 
-                    InboundCreateResult dormant = result with
+                    Entities.RefreshSnapshot(
+                        retained,
+                        result.Snapshot,
+                        refreshPosition: !beginInitialResidence);
+                    if (!beginInitialResidence)
+                        Entities.AdvanceCreateAuthority(retained);
+                    PublishEntity(RuntimeEntityChange.Updated, retained);
+                    if (!IsCurrentOperation(
+                            incoming.Guid,
+                            retained,
+                            sessionVersion,
+                            operationVersion))
                     {
-                        Snapshot = retained.Snapshot,
-                        SameGenerationEvents = null,
-                    };
+                        return SupersededRegistration(
+                            incoming.Guid,
+                            replacedExistingGeneration: false);
+                    }
                     return new RuntimeEntityRegistrationResult(
-                        dormant,
+                        result,
                         retained,
                         LogicalRegistrationCreated: false,
                         ReplacedExistingGeneration: false);
                 }
 
-                Entities.RefreshSnapshot(
-                    retained,
-                    result.Snapshot,
-                    refreshPosition: !beginInitialResidence);
-                if (!beginInitialResidence)
-                    Entities.AdvanceCreateAuthority(retained);
-                PublishEntity(RuntimeEntityChange.Updated, retained);
+                if (Entities.TryGetTeardown(
+                        incoming.Guid,
+                        result.Snapshot.InstanceSequence,
+                        out _))
+                {
+                    return new RuntimeEntityRegistrationResult(
+                        result,
+                        Canonical: null,
+                        LogicalRegistrationCreated: false,
+                        ReplacedExistingGeneration: false);
+                }
+
+                if (beginInitialResidence
+                    && !InitialCreateResidences.CanAcceptCreate(result.Snapshot))
+                {
+                    throw new InvalidOperationException(
+                        $"Recovered CreateObject 0x{incoming.Guid:X8} cannot acquire a structurally valid initial residence lease.");
+                }
+
+                RuntimeEntityRecord recovered = Entities.AddActive(result.Snapshot);
+                if (!InitializeAcceptedCreateResidence(
+                        recovered,
+                        result,
+                        beginInitialResidence,
+                        isLocalPlayer))
+                {
+                    throw FailInitialResidenceRegistration(
+                        recovered,
+                        publishDeleted: false);
+                }
+                PublishEntity(RuntimeEntityChange.Registered, recovered);
                 if (!IsCurrentOperation(
                         incoming.Guid,
-                        retained,
+                        recovered,
                         sessionVersion,
                         operationVersion))
                 {
@@ -631,178 +681,135 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
                 }
                 return new RuntimeEntityRegistrationResult(
                     result,
-                    retained,
-                    LogicalRegistrationCreated: false,
-                    ReplacedExistingGeneration: false);
-            }
-
-            if (Entities.TryGetTeardown(
-                    incoming.Guid,
-                    result.Snapshot.InstanceSequence,
-                    out _))
-            {
-                return new RuntimeEntityRegistrationResult(
-                    result,
-                    Canonical: null,
-                    LogicalRegistrationCreated: false,
-                    ReplacedExistingGeneration: false);
-            }
-
-            if (beginInitialResidence
-                && !InitialCreateResidences.CanAcceptCreate(result.Snapshot))
-            {
-                throw new InvalidOperationException(
-                    $"Recovered CreateObject 0x{incoming.Guid:X8} cannot acquire a structurally valid initial residence lease.");
-            }
-
-            RuntimeEntityRecord recovered = Entities.AddActive(result.Snapshot);
-            if (!InitializeAcceptedCreateResidence(
                     recovered,
+                    LogicalRegistrationCreated: true,
+                    ReplacedExistingGeneration: false);
+            }
+
+            bool replaced = Entities.RemoveActive(
+                incoming.Guid,
+                out RuntimeEntityRecord? prior);
+            if (result.Disposition
+                is CreateObjectTimestampDisposition.NewGeneration)
+            {
+                if (prior is not null)
+                {
+                    WithdrawCommittedChildrenToCellless(
+                        prior.ServerGuid,
+                        prior.Incarnation);
+                }
+                Entities.ParentAttachments.EndGeneration(
+                    incoming.Guid,
+                    result.Snapshot.InstanceSequence);
+            }
+
+            Exception? cleanupFailure = null;
+            if (prior is not null)
+            {
+                // Removing the active GUID is an ownership transfer, not a gap.
+                // Retain the exact incarnation before arbitrary synchronous
+                // observers can re-enter registration, reset, or disposal.
+                Entities.RetainTeardown(prior);
+                try
+                {
+                    // The object is not leaving the world: this incarnation is
+                    // handing over to the replacement registered just below,
+                    // under the same id. Observers that let go of a departed
+                    // object are told so they do not let go of this one.
+                    PublishEntity(
+                        RuntimeEntityChange.Deleted,
+                        prior,
+                        replacedInPlace: true);
+                }
+                catch (Exception error)
+                {
+                    cleanupFailure = error;
+                }
+
+                Exception? projectionFailure = retirePriorProjection is null
+                    ? RetireCanonicalOnly(prior)
+                    : retirePriorProjection(prior);
+                cleanupFailure = Combine(cleanupFailure, projectionFailure);
+            }
+
+            if (Entities.SessionLifetimeVersion != sessionVersion
+                || Entities.CurrentLifetimeMutation(incoming.Guid)
+                    != operationVersion)
+            {
+                if (cleanupFailure is not null)
+                {
+                    throw new AggregateException(
+                        $"Prior incarnation of live entity 0x{incoming.Guid:X8} failed teardown while its incoming replacement was superseded.",
+                        cleanupFailure);
+                }
+
+                return new RuntimeEntityRegistrationResult(
+                    SupersededCreateResult(),
+                    Entities.TryGetActive(
+                        incoming.Guid,
+                        out RuntimeEntityRecord current)
+                            ? current
+                            : null,
+                    LogicalRegistrationCreated: false,
+                    ReplacedExistingGeneration: replaced);
+            }
+
+            RuntimeEntityRecord canonical = Entities.AddActive(result.Snapshot);
+            if (!InitializeAcceptedCreateResidence(
+                    canonical,
                     result,
                     beginInitialResidence,
                     isLocalPlayer))
             {
                 throw FailInitialResidenceRegistration(
-                    recovered,
+                    canonical,
                     publishDeleted: false);
             }
-            PublishEntity(RuntimeEntityChange.Registered, recovered);
-            if (!IsCurrentOperation(
-                    incoming.Guid,
-                    recovered,
-                    sessionVersion,
-                    operationVersion))
-            {
-                return SupersededRegistration(
-                    incoming.Guid,
-                    replacedExistingGeneration: false);
-            }
-            return new RuntimeEntityRegistrationResult(
-                result,
-                recovered,
-                LogicalRegistrationCreated: true,
-                ReplacedExistingGeneration: false);
-        }
-
-        bool replaced = Entities.RemoveActive(
-            incoming.Guid,
-            out RuntimeEntityRecord? prior);
-        if (result.Disposition
-            is CreateObjectTimestampDisposition.NewGeneration)
-        {
-            if (prior is not null)
-            {
-                WithdrawCommittedChildrenToCellless(
-                    prior.ServerGuid,
-                    prior.Incarnation);
-            }
-            Entities.ParentAttachments.EndGeneration(
-                incoming.Guid,
-                result.Snapshot.InstanceSequence);
-        }
-
-        Exception? cleanupFailure = null;
-        if (prior is not null)
-        {
-            // Removing the active GUID is an ownership transfer, not a gap.
-            // Retain the exact incarnation before arbitrary synchronous
-            // observers can re-enter registration, reset, or disposal.
-            Entities.RetainTeardown(prior);
             try
             {
-                // The object is not leaving the world: this incarnation is
-                // handing over to the replacement registered just below,
-                // under the same id. Observers that let go of a departed
-                // object are told so they do not let go of this one.
-                PublishEntity(
-                    RuntimeEntityChange.Deleted,
-                    prior,
-                    replacedInPlace: true);
+                PublishEntity(RuntimeEntityChange.Registered, canonical);
             }
             catch (Exception error)
             {
-                cleanupFailure = error;
+                if (cleanupFailure is not null)
+                {
+                    throw new AggregateException(
+                        $"Live entity 0x{incoming.Guid:X8} registered after prior cleanup and commit observers failed.",
+                        cleanupFailure,
+                        error);
+                }
+                throw;
             }
 
-            Exception? projectionFailure = retirePriorProjection is null
-                ? RetireCanonicalOnly(prior)
-                : retirePriorProjection(prior);
-            cleanupFailure = Combine(cleanupFailure, projectionFailure);
-        }
-
-        if (Entities.SessionLifetimeVersion != sessionVersion
-            || Entities.CurrentLifetimeMutation(incoming.Guid)
-                != operationVersion)
-        {
-            if (cleanupFailure is not null)
+            if (!IsCurrentOperation(
+                    incoming.Guid,
+                    canonical,
+                    sessionVersion,
+                    operationVersion))
             {
-                throw new AggregateException(
-                    $"Prior incarnation of live entity 0x{incoming.Guid:X8} failed teardown while its incoming replacement was superseded.",
-                    cleanupFailure);
+                if (cleanupFailure is not null)
+                {
+                    throw new AggregateException(
+                        $"Prior incarnation of live entity 0x{incoming.Guid:X8} failed teardown while its committed replacement was superseded.",
+                        cleanupFailure);
+                }
+
+                return SupersededRegistration(
+                    incoming.Guid,
+                    replaced);
             }
 
             return new RuntimeEntityRegistrationResult(
-                SupersededCreateResult(),
-                Entities.TryGetActive(
-                    incoming.Guid,
-                    out RuntimeEntityRecord current)
-                        ? current
-                        : null,
-                LogicalRegistrationCreated: false,
-                ReplacedExistingGeneration: replaced);
-        }
-
-        RuntimeEntityRecord canonical = Entities.AddActive(result.Snapshot);
-        if (!InitializeAcceptedCreateResidence(
-                canonical,
                 result,
-                beginInitialResidence,
-                isLocalPlayer))
-        {
-            throw FailInitialResidenceRegistration(
                 canonical,
-                publishDeleted: false);
+                LogicalRegistrationCreated: true,
+                ReplacedExistingGeneration: replaced,
+                cleanupFailure);
         }
-        try
+        finally
         {
-            PublishEntity(RuntimeEntityChange.Registered, canonical);
+            Entities.ForgetLifetimeMutationIfInactive(incoming.Guid, operationVersion);
         }
-        catch (Exception error)
-        {
-            if (cleanupFailure is not null)
-            {
-                throw new AggregateException(
-                    $"Live entity 0x{incoming.Guid:X8} registered after prior cleanup and commit observers failed.",
-                    cleanupFailure,
-                    error);
-            }
-            throw;
-        }
-
-        if (!IsCurrentOperation(
-                incoming.Guid,
-                canonical,
-                sessionVersion,
-                operationVersion))
-        {
-            if (cleanupFailure is not null)
-            {
-                throw new AggregateException(
-                    $"Prior incarnation of live entity 0x{incoming.Guid:X8} failed teardown while its committed replacement was superseded.",
-                    cleanupFailure);
-            }
-
-            return SupersededRegistration(
-                incoming.Guid,
-                replaced);
-        }
-
-        return new RuntimeEntityRegistrationResult(
-            result,
-            canonical,
-            LogicalRegistrationCreated: true,
-            ReplacedExistingGeneration: replaced,
-            cleanupFailure);
     }
 
     public Exception? RetireCanonicalOnly(RuntimeEntityRecord canonical)

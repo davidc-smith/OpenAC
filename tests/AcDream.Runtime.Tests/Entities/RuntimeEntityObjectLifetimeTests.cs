@@ -814,6 +814,7 @@ public sealed class RuntimeEntityObjectLifetimeTests
             refresh.Inbound.Disposition);
         Assert.Null(refresh.Canonical);
         Assert.False(lifetime.Entities.TryGetActive(guid, out _));
+        Assert.Equal(0UL, lifetime.Entities.CurrentLifetimeMutation(guid));
     }
 
     [Fact]

@@ -148,6 +148,7 @@ public sealed class GameRuntime
     private readonly object _lifetimeGate = new();
     private readonly Dictionary<long, string> _hostLeases = [];
     private readonly GameRuntimeEventHub _events;
+    private RuntimeCreatureDeathEntityFollower? _deathFollowsEntities;
     private long _nextHostLeaseId;
     private int _disposeStage;
     private bool _disposeRequested;
@@ -433,6 +434,9 @@ public sealed class GameRuntime
             _selectionFollowsEntities = new RuntimeSelectionEntityFollower(
                 context.EntityObjects.Events,
                 context.Actions.Selection);
+            _deathFollowsEntities = new RuntimeCreatureDeathEntityFollower(
+                context.EntityObjects,
+                context.Actions.CreatureDeath);
 
             ApproachCompletions = new RuntimeApproachCompletionState();
             context.Movement.AttachApproachCompletions(ApproachCompletions);
@@ -1133,6 +1137,7 @@ public sealed class GameRuntime
                 }
                 return true;
             case 1:
+                _deathFollowsEntities?.Dispose();
                 _selectionFollowsEntities?.Dispose();
                 _events.Dispose();
                 return _events.CaptureOwnership().IsConverged;

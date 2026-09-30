@@ -156,6 +156,36 @@ public sealed class RuntimeCreatureDeathStateTests
     }
 
     [Fact]
+    public void VisibilityExpiryForgetsTheDepartedCreaturesDeath()
+    {
+        using GameRuntime runtime = Create();
+        AddMonster(runtime, Monster);
+        runtime.ActionOwner.CreatureDeath.ObserveMotion(
+            Motion(Monster, forward: DeadWireCommand));
+        Assert.True(runtime.ActionOwner.CreatureDeath.IsDead(Monster, 1));
+
+        Assert.True(RuntimeCanonicalEntityExpirySink.DeleteCanonicalOnly(
+            runtime.EntityObjects,
+            new DeleteObject.Parsed(Monster, 1)));
+
+        Assert.False(runtime.ActionOwner.CreatureDeath.IsDead(Monster));
+    }
+
+    [Fact]
+    public void APlacementWithdrawalKeepsTheActiveCreaturesDeath()
+    {
+        using GameRuntime runtime = Create();
+        AddMonster(runtime, Monster);
+        runtime.ActionOwner.CreatureDeath.ObserveMotion(
+            Motion(Monster, forward: DeadWireCommand));
+        Assert.True(runtime.EntityObjects.Entities.TryGetActive(Monster, out RuntimeEntityRecord creature));
+
+        Assert.True(runtime.EntityObjects.CommitWithdrawal(creature));
+
+        Assert.True(runtime.ActionOwner.CreatureDeath.IsDead(Monster, 1));
+    }
+
+    [Fact]
     public void AStaleDeleteDoesNotForgetTheNewIncarnationsDeath()
     {
         var state = new RuntimeCreatureDeathState();
