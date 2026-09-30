@@ -154,9 +154,9 @@ public readonly record struct PluginPointerEvent(
 /// canvas. The painter is valid only for the duration of the paint
 /// callback: keeping it and drawing later throws.
 ///
-/// <para>Text is drawn in the client's own interface font, at its one
-/// size, which is why there is no font or size to choose. Every clip
-/// pushed during a paint must be popped before it returns.</para>
+/// <para>Text is drawn in the client's own interface font unless a
+/// <see cref="PluginFont"/> from <see cref="IPluginFonts"/> is given. Every
+/// clip pushed during a paint must be popped before it returns.</para>
 /// </summary>
 public interface IPluginPainter
 {
@@ -199,6 +199,32 @@ public interface IPluginPainter
     /// <param name="text">The text to measure.</param>
     /// <returns>The text's width and the font's line height, in pixels.</returns>
     PluginSize MeasureText(string text);
+
+    /// <summary>
+    /// Draws one line of text in a font from <see cref="IPluginFonts"/>, with
+    /// its top-left corner at a position. A released, dropped or invalid font
+    /// draws nothing. A host that predates fonts draws the text in the
+    /// interface font instead.
+    /// </summary>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="position">Where the text's top-left corner goes.</param>
+    /// <param name="color">The text colour.</param>
+    /// <param name="font">The font to draw in.</param>
+    /// <param name="outline">Whether to draw a dark outline around the glyphs.</param>
+    void DrawText(string text, PluginPoint position, PluginColor color, PluginFont font, bool outline = false) =>
+        DrawText(text, position, color, outline);
+
+    /// <summary>
+    /// How much room one line of text takes in a font from
+    /// <see cref="IPluginFonts"/>: its advance width, kerning included, and
+    /// the font's line height. (0, 0) for a released, dropped or invalid
+    /// font; a host that predates fonts answers with the interface font's
+    /// measure.
+    /// </summary>
+    /// <param name="text">The text to measure.</param>
+    /// <param name="font">The font to measure in.</param>
+    /// <returns>The text's width and the font's line height, in pixels.</returns>
+    PluginSize MeasureText(string text, PluginFont font) => MeasureText(text);
 
     /// <summary>Draws an image stretched over a rectangle.</summary>
     /// <param name="image">An image from <see cref="IPluginImages"/>; a released or invalid image draws nothing.</param>

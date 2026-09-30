@@ -179,6 +179,13 @@ public interface IUiRegistry
     IPluginImages Images => NoOpPluginImages.Instance;
 
     /// <summary>
+    /// The fonts this plugin may draw canvas text with: the bundled sans at a
+    /// chosen size and the plugin's own font files, held to a per-plugin
+    /// budget. Inert on a host that draws nothing.
+    /// </summary>
+    IPluginFonts Fonts => NoOpPluginFonts.Instance;
+
+    /// <summary>
     /// Registers a canvas the plugin paints, shown over the world and under
     /// every window. The paint callback runs on the tick thread, at most
     /// once per frame, only after <see cref="IPluginCanvas.Invalidate"/>,
@@ -285,6 +292,15 @@ public interface IScopedUiRegistry : IUiRegistry
     /// every image the plugin held.
     /// </summary>
     IPluginImages ImagesFor(PluginUiOwner owner) => NoOpPluginImages.Instance;
+
+    /// <summary>
+    /// One plugin's font surface, the same object on every call for the same
+    /// owner until it is disposed. A host that draws nothing hands out the
+    /// inert surface; a host that draws hands out a surface that also
+    /// implements <see cref="IDisposable"/>, and disposing it lets go of every
+    /// font the plugin held.
+    /// </summary>
+    IPluginFonts FontsFor(PluginUiOwner owner) => NoOpPluginFonts.Instance;
 
     /// <summary>Registers a canvas on behalf of one plugin; see <see cref="IUiRegistry.RegisterCanvas"/>.</summary>
     /// <param name="owner">The plugin the canvas belongs to.</param>

@@ -991,6 +991,33 @@ public sealed class HeadlessPluginApiSurfaceTests
     }
 
     /// <summary>
+    /// Fonts are asked of the same surface on both hosts. Without a window
+    /// there is nothing to draw text on, so every font request answers "no
+    /// font", nothing is held, and the plugin's stream is never opened.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowTheFontSurfaceAnswersInertly()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        bool opened = false;
+
+        IPluginFonts fonts = pluginHost.Ui.Fonts;
+
+        Assert.False(fonts.IsAvailable);
+        Assert.Equal(PluginFont.None, fonts.Bundled(16f));
+        Assert.Equal(PluginFont.None, fonts.FromStream("fonts/Inter.ttf", () =>
+        {
+            opened = true;
+            return new MemoryStream();
+        }, 16f));
+        Assert.False(opened);
+        Assert.False(fonts.Release(new PluginFont(1, 16f, 22f, 17f)));
+        Assert.Equal(0, fonts.Count);
+    }
+
+    /// <summary>
     /// The same canvas registration a plugin makes with a window is
     /// accepted without one: the plugin keeps its handle, sets what it
     /// likes, and the paint callback is never called because there is
