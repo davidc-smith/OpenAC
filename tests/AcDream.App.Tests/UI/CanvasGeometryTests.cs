@@ -404,4 +404,59 @@ public sealed class CanvasGeometryTests
             [new(3000f, 2000f), new(3000.3f, 2000f), new(3000.3f, 2000.3f), new(3000f, 2000.3f)], Repeat(White, 4), 1f, far);
         AssertCovers(0.09, far, tolerance: 0.02);
     }
+
+    private static double ShoelaceArea(Vector2[] polygon)
+    {
+        double sum = 0;
+        for (int i = 0; i < polygon.Length; i++)
+        {
+            Vector2 a = polygon[i], b = polygon[(i + 1) % polygon.Length];
+            sum += (double)a.X * b.Y - (double)b.X * a.Y;
+        }
+        return Math.Abs(sum) / 2;
+    }
+
+    [Fact]
+    public void NearlyStraightCornersStillPullTheFringeIn()
+    {
+        Vector2[][] polygons =
+        [
+            [
+                new(13.501612f, 1.4726709f), new(-14.647315f, -0.41921416f), new(-3.4119291f, -3.5657823f),
+                new(-3.4024398f, -3.5651155f), new(10.416538f, -2.593997f),
+            ],
+            [
+                new(4.0694532f, 22.838041f), new(3.5629122f, 48.943974f), new(2.2152758f, 78.548645f),
+                new(-2.9446394f, 65.922005f), new(-2.9446561f, 65.89514f), new(-3.0255425f, -64.121704f),
+            ],
+            [
+                new(0.80868554f, 0.015361176f), new(-0.118674494f, 0.030672016f), new(-0.92063224f, 0.0047680126f),
+                new(-0.43840435f, -0.027287133f), new(-0.43777233f, -0.027265519f),
+            ],
+        ];
+        foreach (Vector2[] polygon in polygons)
+        {
+            var triangles = new List<UiColorVertex>();
+            CanvasGeometry.FillConvexPolygon(polygon, Repeat(White, polygon.Length), 1f, triangles);
+            AssertCovers(ShoelaceArea(polygon), triangles, tolerance: 0.02);
+        }
+    }
+
+    [Fact]
+    public void TriangleLikePolygonsWithATinyExtraEdgeStaySolid()
+    {
+        Vector2[][] polygons =
+        [
+            [new(0f, 0f), new(20f, 0f), new(10f, 20f), new(9.99f, 20f)],
+            [new(0f, 0f), new(10f, 5f), new(10f, 5.001f), new(0f, 10f)],
+            [new(0f, 0f), new(10f, 0f), new(5.15f, 20f), new(4.85f, 20f)],
+        ];
+        foreach (Vector2[] polygon in polygons)
+        {
+            var triangles = new List<UiColorVertex>();
+            CanvasGeometry.FillConvexPolygon(polygon, Repeat(White, polygon.Length), 1f, triangles);
+            AssertCovers(ShoelaceArea(polygon), triangles, tolerance: 0.01);
+            Assert.Equal(1f, triangles.Max(v => v.Color.W));
+        }
+    }
 }

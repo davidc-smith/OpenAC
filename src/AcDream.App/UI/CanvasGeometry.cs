@@ -226,13 +226,18 @@ internal static class CanvasGeometry
             }
 
             double soonest = double.MaxValue;
+            int first = -1;
             for (int j = 0; j < active; j++)
             {
                 int next = (j + 1) % active;
                 double rate = shrink[j] + shrink[next];
                 if (rate <= 0) continue;
                 double length = Math.Sqrt((x[next] - x[j]) * (x[next] - x[j]) + (y[next] - y[j]) * (y[next] - y[j]));
-                soonest = Math.Min(soonest, length / rate);
+                if (length / rate < soonest)
+                {
+                    soonest = length / rate;
+                    first = j;
+                }
             }
 
             bool reaches = soonest >= half - pulled;
@@ -252,14 +257,13 @@ internal static class CanvasGeometry
                 int next = (j + 1) % active;
                 double rate = shrink[j] + shrink[next];
                 double length = Math.Sqrt((x[next] - x[j]) * (x[next] - x[j]) + (y[next] - y[j]) * (y[next] - y[j]));
-                vanishes[j] = rate > 0 && length <= 1e-9 * (1 + Math.Abs(x[j]) + Math.Abs(y[j]));
+                // The edge that set the step has vanished whatever rounding left of it.
+                vanishes[j] = j == first || (rate > 0 && length <= 1e-9 * (1 + Math.Abs(x[j]) + Math.Abs(y[j])));
                 if (vanishes[j]) dropping++;
             }
             if (dropping == 0) break; // numerically stuck: stop where it is
-            // Pulled in to a point or a line -- or, from four corners or
-            // more, to a triangle: from there it would shrink along its own
-            // length to a point and lose the thin shape's spine.
-            if (active - dropping < 3 || (count > 3 && active - dropping == 3))
+            // Pulled in to a point or a line.
+            if (active - dropping < 3)
             {
                 collapsed = true;
                 break;
