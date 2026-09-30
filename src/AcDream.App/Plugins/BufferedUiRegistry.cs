@@ -200,6 +200,98 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
             return _images.GetValueOrDefault(owner.Id);
     }
 
+    // Font tables, one per plugin, following the image tables' lifecycle:
+    // made on first request, bound when the interface's texture services
+    // arrive, unbound when they go. The bundled font's bakes are shared by
+    // every table and live exactly as long as the binding.
+    private readonly Dictionary<string, PluginFonts> _fonts = [];
+    private IPluginFontBackend? _fontBackend;
+    private BundledCanvasFontCache? _bundledFonts;
+    private int _fontUiThreadId;
+
+    /// <summary>The per-plugin font ceiling every table is made with.</summary>
+    internal PluginFontBudget FontBudget { get; init; } = PluginFontBudget.Default;
+
+    public IPluginFonts FontsFor(PluginUiOwner owner)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
+        lock (_gate)
+        {
+            if (_fonts.TryGetValue(owner.Id, out PluginFonts? existing))
+                return existing;
+            var table = new PluginFontTable(owner.Id, FontBudget);
+            if (_fontBackend is { } backend && _bundledFonts is { } bundled)
+                table.Bind(backend, bundled, _fontUiThreadId);
+            var fonts = new PluginFonts(table, ForgetFonts);
+            _fonts.Add(owner.Id, fonts);
+            return fonts;
+        }
+    }
+
+    private void ForgetFonts(PluginFonts fonts)
+    {
+        lock (_gate)
+        {
+            foreach ((string ownerId, PluginFonts held) in _fonts)
+            {
+                if (ReferenceEquals(held, fonts))
+                {
+                    _fonts.Remove(ownerId);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Points every plugin's font table, present and future, at the
+    /// interface's texture services. The calling thread is the one the tables
+    /// then accept requests from.
+    /// </summary>
+    internal void BindFontServices(IPluginFontBackend backend)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        lock (_gate)
+        {
+            if (_fontBackend is not null)
+                throw new InvalidOperationException("Font services are already bound.");
+            _fontBackend = backend;
+            _bundledFonts = new BundledCanvasFontCache(
+                backend, AcDream.App.UI.BundledUiFont.ReadEmbeddedFontBytes, FontBudget.MaximumGlyphs);
+            _fontUiThreadId = Environment.CurrentManagedThreadId;
+            foreach (PluginFonts fonts in _fonts.Values)
+                fonts.Table.Bind(backend, _bundledFonts, _fontUiThreadId);
+        }
+    }
+
+    /// <summary>
+    /// Lets every plugin's fonts go, then the shared bundled bakes, and
+    /// forgets the services. Must run before the texture cache goes.
+    /// Idempotent.
+    /// </summary>
+    internal void UnbindFontServices()
+    {
+        lock (_gate)
+        {
+            if (_fontBackend is null)
+                return;
+            // Every table unbinds before the shared bakes go: a cache disposed
+            // under a bound table would leave it resolving released atlases.
+            foreach (PluginFonts fonts in _fonts.Values)
+                fonts.Table.Unbind();
+            _bundledFonts?.Dispose();
+            _bundledFonts = null;
+            _fontBackend = null;
+        }
+    }
+
+    /// <summary>The font surface of one plugin, or null when none was made.</summary>
+    internal PluginFonts? FindFonts(PluginUiOwner owner)
+    {
+        lock (_gate)
+            return _fonts.GetValueOrDefault(owner.Id);
+    }
+
     // Canvases follow the same path as windows: registered at any time,
     // drained by the interface once, taken down through the registration
     // when the plugin disposes it, and handed back to be mounted again when
@@ -439,6 +531,9 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
 
     public IPluginImages Images =>
         ImagesFor(new PluginUiOwner("unscoped", "Plugin"));
+
+    public IPluginFonts Fonts =>
+        FontsFor(new PluginUiOwner("unscoped", "Plugin"));
 
     public IDisposable RegisterMarkupPanel(string markupPath, object binding)
         => RegisterPanel(

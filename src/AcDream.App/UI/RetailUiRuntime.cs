@@ -434,6 +434,7 @@ public sealed class RetailUiRuntime : IDisposable
             bindings.Assets.TextureCache,
             bindings.Assets.Icons,
             bindings.Toolbar.Objects));
+        bindings.Plugins?.BindFontServices(new RetailPluginFontBackend(bindings.Assets.TextureCache));
 
         ChatSettings chatSettings = bindings.Chat.Store?.LoadChat() ?? ChatSettings.Default;
         WindowLockPresentation = new RetailWindowLockPresentationController(
@@ -5157,6 +5158,9 @@ public sealed class RetailUiRuntime : IDisposable
                 // Before the texture cache can go: every plugin's own images
                 // are given back through it.
                 _bindings.Plugins?.UnbindImageServices();
+                // Likewise every plugin's glyph atlases and the shared
+                // bundled bakes, while the texture cache is still here.
+                _bindings.Plugins?.UnbindFontServices();
             },
             () => _itemConfirmationController?.Dispose(),
             () =>
