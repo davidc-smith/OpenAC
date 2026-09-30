@@ -306,7 +306,8 @@ internal sealed class PluginCanvasElement : UiElement
         }
 
         if (_shown is not { HasContent: true } shown) return;
-        ctx.DrawSprite(shown.Handle, 0f, 0f, Width, Height, 0f, 0f, 1f, 1f, Vector4.One);
+        // The target holds premultiplied colour (see PluginCanvasSurface).
+        ctx.DrawSpritePremultiplied(shown.Handle, 0f, 0f, Width, Height, 0f, 0f, 1f, 1f, Vector4.One);
     }
 
     private void RepaintIfInvalidated(int frameSlot)

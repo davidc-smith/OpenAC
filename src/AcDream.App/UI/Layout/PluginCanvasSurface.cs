@@ -68,7 +68,14 @@ internal sealed class PluginCanvasSurface : IDisposable
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         Font = font;
-        _renderer = new TextRenderer(services.Device, services.Frames, services.ShaderDirectory);
+        // The target is cleared to transparent and holds premultiplied colour
+        // once painted; straight alpha on both channels would store alpha
+        // squared and every translucent pixel would show too faint.
+        _renderer = new TextRenderer(
+            services.Device,
+            services.Frames,
+            services.ShaderDirectory,
+            GpuBlendMode.StraightAlphaIntoPremultiplied);
         _renderer.LinearTwinResolver = services.LinearTwinResolver;
         _context = new UiRenderContext(_renderer, Vector2.Zero);
     }

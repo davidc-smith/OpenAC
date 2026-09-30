@@ -171,6 +171,23 @@ public sealed class UiRenderContext
     }
 
     /// <summary>
+    /// Draws a texture whose colour is already multiplied by its alpha, such
+    /// as a plugin canvas's target. Translation, clipping and the alpha stack
+    /// apply as they do for <see cref="DrawSprite"/>.
+    /// </summary>
+    internal void DrawSpritePremultiplied(uint texture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 tint)
+    {
+        x += _current.X;
+        y += _current.Y;
+        if (_clip is { } clip
+            && !UiClipRect.TryClipSprite(
+                clip, ref x, ref y, ref w, ref h, ref u0, ref v0, ref u1, ref v1))
+            return;
+        TextRenderer.DrawPremultipliedSprite(texture, x, y, w, h, u0, v0, u1, v1, ApplyAlpha(tint));
+    }
+
+    /// <summary>
     /// A straight segment from (x0, y0) to (x1, y1), <paramref name="thickness"/>
     /// pixels wide, centred on the segment -- half the width falls on each
     /// side of the line through the two points. The ends are square and flush

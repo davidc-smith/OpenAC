@@ -70,6 +70,42 @@ public sealed class PluginCanvasElementTests
         }
     }
 
+    [Fact]
+    public void TheCanvasIsPaintedIntoPremultipliedAndShownThroughTheCompositePipeline()
+    {
+        var harness = new Harness();
+        harness.Mount(Hud(), painter =>
+            painter.FillRect(new PluginRect(0, 0, 200, 100), new PluginColor(255, 255, 255, 128)));
+
+        harness.Frame();
+
+        Assert.Contains(
+            harness.Device.CreatedPipelines,
+            pipeline => pipeline.Description.Name == TextRenderer.IntoPremultipliedPipelineName
+                && pipeline.Description.Blend == GpuBlendMode.StraightAlphaIntoPremultiplied);
+        Assert.Equal([true], harness.MainRenderer.DebugSpriteSegmentPremultiplied);
+        Assert.Contains(
+            harness.Device.OfKind<GpuRecordedPipelineBind>(),
+            bind => bind.PipelineName == TextRenderer.PremultipliedPipelineName);
+    }
+
+    [Fact]
+    public void AFadedInterfaceStillFadesTheCanvas()
+    {
+        var harness = new Harness();
+        (_, PluginCanvasElement element) = harness.Mount(Hud(), painter => painter.Clear(PluginColor.White));
+        harness.Frame();
+
+        harness.MainRenderer.Begin(new Vector2(800f, 600f));
+        harness.MainContext.Begin(new Vector2(800f, 600f), null);
+        harness.MainContext.PushAlpha(0.5f);
+        harness.MainContext.DrawSpritePremultiplied(
+            element.ShownTextureHandle, 0f, 0f, 200f, 100f, 0f, 0f, 1f, 1f, Vector4.One);
+
+        (uint _, IReadOnlyList<float> verts) = Assert.Single(harness.MainRenderer.DebugSpriteSegmentVerts);
+        Assert.Equal([0.5f, 0.5f, 0.5f, 0.5f], verts.Skip(4).Take(4).ToArray());
+    }
+
     /// <summary>
     /// The interface as the canvas sees it: a root, the overlay host with a
     /// canvas layer, the registry, the shared surface, and a main renderer
