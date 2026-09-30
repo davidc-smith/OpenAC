@@ -418,6 +418,61 @@ public sealed class UiRenderContext
         }
     }
 
+    /// <summary>
+    /// Draws one line of text in a baked canvas font, its top-left corner at
+    /// (<paramref name="x"/>, <paramref name="y"/>). Glyphs are coverage
+    /// sprites, so the text keeps its place among fills and images. The
+    /// baseline and each glyph's left edge snap to whole pixels while the pen
+    /// keeps its fractional advance, as the interface font does. The outline
+    /// is eight copies one pixel out, drawn first.
+    /// </summary>
+    internal void DrawStringCanvasFont(
+        CanvasFont font, string text, float x, float y, Vector4 color,
+        bool outline = false, Vector4? outlineColor = null)
+    {
+        if (font is null || string.IsNullOrEmpty(text)) return;
+        if (outline)
+        {
+            Vector4 shadow = outlineColor ?? DefaultOutlineColor;
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    if (dx != 0 || dy != 0)
+                        DrawCanvasFontPass(font, text, x + dx, y + dy, shadow);
+                }
+            }
+        }
+        DrawCanvasFontPass(font, text, x, y, color);
+    }
+
+    private void DrawCanvasFontPass(CanvasFont font, string text, float x, float y, Vector4 color)
+    {
+        float pen = _current.X + x;
+        float baseline = MathF.Floor(_current.Y + y + font.Ascent + 0.5f);
+        int previous = -1;
+        foreach (System.Text.Rune rune in text.EnumerateRunes())
+        {
+            if (!font.TryGetGlyph(rune.Value, out CanvasGlyph glyph))
+            {
+                previous = -1;
+                continue;
+            }
+            if (previous >= 0)
+                pen += font.Kerning(previous, glyph.GlyphIndex);
+            if (glyph.Width > 0f && glyph.Height > 0f)
+            {
+                float gx = MathF.Floor(pen + glyph.OffsetX + 0.5f);
+                float gy = baseline + MathF.Round(glyph.OffsetY);
+                DrawCoverageSpriteAbsolute(
+                    font.AtlasTexture, gx, gy, glyph.Width, glyph.Height,
+                    glyph.U0, glyph.V0, glyph.U1, glyph.V1, color);
+            }
+            pen += glyph.Advance;
+            previous = glyph.GlyphIndex;
+        }
+    }
+
     private void DrawFillGlyph(
         UiDatFont font, DatReaderWriter.Types.FontCharDesc g,
         float gx, float gy, float gw, float gh, Vector4 tint)
