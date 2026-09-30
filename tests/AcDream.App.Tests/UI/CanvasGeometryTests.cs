@@ -214,6 +214,9 @@ public sealed class CanvasGeometryTests
         Assert.Equal(CanvasShapeOutcome.NotConvex, CanvasGeometry.FillConvexPolygon(star, Repeat(White, 5), 1f, triangles));
         Assert.Equal(CanvasShapeOutcome.NotConvex, CanvasGeometry.FillConvexPolygon(
             [new(0f, 0f), new(20f, 0f), new(10f, 0f), new(10f, 10f)], Repeat(White, 4), 1f, triangles));
+        Assert.Equal(CanvasShapeOutcome.NotConvex, CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(5f, 0f), new(5f, 3f), new(5f, 0f), new(10f, 0f), new(10f, 10f), new(0f, 10f)],
+            Repeat(White, 7), 1f, triangles));
         Assert.Equal(CanvasShapeOutcome.Nothing, CanvasGeometry.FillConvexPolygon(
             [new(0f, 0f), new(10f, 0f), new(20f, 0f)], Repeat(White, 3), 1f, triangles));
         Assert.Equal(CanvasShapeOutcome.TooFewPoints, CanvasGeometry.FillConvexPolygon(

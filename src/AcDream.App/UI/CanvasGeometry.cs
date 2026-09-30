@@ -136,22 +136,32 @@ internal static class CanvasGeometry
 
         // Convex means every turn goes the same way and the turns add up to
         // one full circle; a star turns one way throughout but twice round.
+        // An outline that doubles straight back on itself, as round a spike
+        // with no width, is not convex either, though its half turns can
+        // cancel out; a polygon that is all one line still has no area.
         int turn = 0;
+        bool reverses = false;
         double turning = 0;
         for (int i = 0; i < count; i++)
         {
             Vector2 into = corner[(i + 1) % count] - corner[i];
             Vector2 outOf = corner[(i + 2) % count] - corner[(i + 1) % count];
             float cross = Cross(into, outOf);
+            float dot = Vector2.Dot(into, outOf);
             if (MathF.Abs(cross) > 1e-6f * into.Length() * outOf.Length())
             {
                 int sign = Math.Sign(cross);
                 if (turn == 0) turn = sign;
                 else if (sign != turn) return CanvasShapeOutcome.NotConvex;
             }
-            turning += Math.Atan2(cross, Vector2.Dot(into, outOf));
+            else if (dot < 0f)
+            {
+                reverses = true;
+            }
+            turning += Math.Atan2(cross, dot);
         }
         if (turn == 0) return CanvasShapeOutcome.Nothing;
+        if (reverses) return CanvasShapeOutcome.NotConvex;
         if (Math.Abs(Math.Abs(turning) - 2 * Math.PI) > 1e-3) return CanvasShapeOutcome.NotConvex;
 
         return FillConvexCore(corner, color, turn, pixel, output);
