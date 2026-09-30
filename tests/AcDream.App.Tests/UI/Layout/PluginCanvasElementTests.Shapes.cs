@@ -105,7 +105,7 @@ public sealed partial class PluginCanvasElementTests
     public void AShapeStaysInsideTheCanvasAndOneWhollyOutsideDrawsNothing()
     {
         var harness = new Harness();
-        (PluginCanvasRegistration registration, _) = harness.Mount(Hud(), painter =>
+        harness.Mount(Hud(), painter =>
             painter.StrokeRoundedRect(
                 new PluginRect(-20, 10, 300, 60), PluginCornerRadii.Uniform(10), PluginColor.White, 4f));
 
@@ -119,7 +119,8 @@ public sealed partial class PluginCanvasElementTests
         }
 
         var outside = new Harness();
-        outside.Mount(Hud(), painter => painter.FillEllipse(new PluginRect(500, 500, 10, 10), PluginColor.White));
+        (PluginCanvasRegistration registration, _) = outside.Mount(
+            Hud(), painter => painter.FillEllipse(new PluginRect(500, 500, 10, 10), PluginColor.White));
         outside.Frame();
         Assert.Empty(outside.SurfaceRuns);
         Assert.True(registration.IsAvailable);
