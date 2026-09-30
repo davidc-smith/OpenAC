@@ -665,6 +665,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
                 }
 
                 _orchestrator.AddServer(dialog.Name.Trim(), dialog.Host.Trim(), port);
+                ShowOnlyCheckedAccounts = false;
                 RefreshFromCore(new SelectionKey(
                     LauncherTreeNodeKind.Server,
                     dialog.Name.Trim(),

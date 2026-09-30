@@ -65,6 +65,7 @@ public sealed class AddServerDialogViewModel : ObservableObject
     public const string AllTypes = "All types";
 
     private readonly ILauncherOrchestrator _orchestrator;
+    private readonly Action? _serverAdded;
     private KnownServerCatalog? _catalog;
     private IReadOnlyList<KnownServerRowViewModel> _all = [];
     private bool _isOpen;
@@ -78,9 +79,10 @@ public sealed class AddServerDialogViewModel : ObservableObject
     private string _listStatus = "";
     private string? _notice;
 
-    public AddServerDialogViewModel(ILauncherOrchestrator orchestrator)
+    public AddServerDialogViewModel(ILauncherOrchestrator orchestrator, Action? serverAdded = null)
     {
         _orchestrator = orchestrator;
+        _serverAdded = serverAdded;
         AddOwnCommand = new RelayCommand(AddOwn);
         CloseCommand = new RelayCommand(Close);
     }
@@ -269,6 +271,7 @@ public sealed class AddServerDialogViewModel : ObservableObject
         try
         {
             _orchestrator.AddServer(name, host, port);
+            _serverAdded?.Invoke();
             Error = null;
             int accountCount = _orchestrator.GetSnapshot().Servers
                 .First(server => server.Name == name).Accounts.Count;

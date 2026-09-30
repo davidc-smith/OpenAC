@@ -13,9 +13,10 @@ the other selected rows from starting. Already active accounts cannot start
 again on the same server. **Cancel** stops pending starts; use the row's
 **Stop** action to close an active session gracefully.
 
-**Profiles** tag accounts, such as `Main`, `Bots` or `Mules`. The chips above
-the list (**All** and one per tag) show only the accounts with that tag, and
-**Play selected** then starts only the ticked accounts the filter shows.
+**Profiles** tag accounts on individual servers, such as `Main`, `Bots` or
+`Mules`. Each account card lists its configured servers. The chips above the
+list (**All** and one per tag) show only matching server rows, and **Play
+selected** starts only the ticked rows the filter shows.
 
 **Show only checked accounts** combines with the profile filter. Hidden accounts
 keep their selections. You can uncheck a running account without changing its
@@ -46,7 +47,8 @@ The existing graceful-stop timeout (30 seconds before forced termination) is
 separate from the automatic relaunch delay.
 
 A row's **Options ▾** menu has **Logon commands…**, **Plugins for this
-character…** (with a character chosen), **Console** (for a running headless
+account…**, **Plugins for this character…** (with a character chosen),
+**Console** (for a running headless
 session), **Open logs folder** and **Remove character** (a later character
 refresh brings a removed character back; it asks first).
 
@@ -104,6 +106,7 @@ add them under the server's `#` line in **Accounts**.
 **Edit servers** has two fields per row: **Server name** and **Address:port**.
 For example, enter `Local` and `127.0.0.1:9000`, or `Example` and
 `game.example.org:9000`. Include the port; for IPv6, use `[::1]:9000`.
+Adding a server here also copies the known login names and passwords.
 Removing a server removes its saved characters. Keep server names unchanged
 to retain their character settings. Close that server's sessions first.
 

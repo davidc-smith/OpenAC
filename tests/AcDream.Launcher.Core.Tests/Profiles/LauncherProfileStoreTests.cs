@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using AcDream.Launcher.Core;
 using AcDream.Launcher.Core.Profiles;
 
@@ -89,8 +90,12 @@ public sealed class LauncherProfileStoreTests : IDisposable
         store.AddServer("First", "first.example", 9000);
         store.AddAccount("First", "shared", "secret");
         store.AddServer("Empty", "empty.example", 9000);
-        store.Document.Servers[1].Accounts.Clear(); // Existing profiles predate automatic copying.
         store.Save();
+        JsonObject legacy = JsonNode.Parse(File.ReadAllText(_filePath))!.AsObject();
+        JsonObject empty = legacy["servers"]!.AsArray()[1]!.AsObject();
+        empty["accounts"] = new JsonArray();
+        empty.Remove("accountListInitialized");
+        File.WriteAllText(_filePath, legacy.ToJsonString());
 
         var reloaded = new LauncherProfileStore(_filePath);
         reloaded.Load();
@@ -99,6 +104,24 @@ public sealed class LauncherProfileStoreTests : IDisposable
         var persisted = new LauncherProfileStore(_filePath);
         persisted.Load();
         Assert.Single(persisted.Document.Servers[1].Accounts);
+    }
+
+    [Fact]
+    public void IntentionallyRemovingLastAccountStaysRemovedAfterRestart()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "secret");
+        store.AddServer("Second", "second.example", 9000);
+        store.RemoveAccount("Second", "shared");
+        store.Save();
+
+        var reloaded = new LauncherProfileStore(_filePath);
+        reloaded.Load();
+
+        Assert.Empty(reloaded.Document.Servers[1].Accounts);
+        Assert.Single(reloaded.Document.Servers[0].Accounts);
     }
 
     [Fact]

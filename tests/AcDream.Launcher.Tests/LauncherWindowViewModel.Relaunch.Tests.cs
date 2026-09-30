@@ -32,18 +32,19 @@ public sealed partial class LauncherWindowViewModelTests
         var row = vm.Accounts[0].Rows[0];
         Assert.False(row.CanEditSelection);
         row.IsChecked = true;
-        vm.Accounts[2].Rows[0].IsChecked = true;
+        vm.Accounts[0].Rows[1].IsChecked = true;
         vm.ShowOnlyCheckedAccounts = true;
-        Assert.Equal([true, false, true], vm.Accounts.Select(group => group.IsVisible));
+        Assert.Equal([true, false], vm.Accounts.Select(group => group.IsVisible));
         vm.ProfileFilter = "bots";
-        Assert.Equal([false, false, true], vm.Accounts.Select(group => group.IsVisible));
+        Assert.Equal([true, false], vm.Accounts.Select(group => group.IsVisible));
+        Assert.Equal([false, true], vm.Accounts[0].Rows.Select(item => item.IsVisible));
         Assert.True(row.IsChecked);
         row.IsChecked = false;
         vm.ProfileFilter = null;
-        Assert.Equal([false, false, true], vm.Accounts.Select(group => group.IsVisible));
+        Assert.Equal([true, false], vm.Accounts.Select(group => group.IsVisible));
         vm.ShowOnlyCheckedAccounts = false;
         Assert.All(vm.Accounts, group => Assert.True(group.IsVisible));
-        Assert.True(vm.Accounts[2].Rows[0].IsChecked);
+        Assert.True(vm.Accounts[0].Rows[1].IsChecked);
     }
 
     [Theory]
@@ -71,7 +72,7 @@ public sealed partial class LauncherWindowViewModelTests
         core.SessionsOverride = [first with { State = LauncherActivityState.Exited }, second];
         core.RaiseStateChanged();
         Assert.False(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
-        Assert.False(vm.Accounts[2].Rows[0].PlayCommand.CanExecute(null));
+        Assert.False(vm.Accounts[0].Rows[1].PlayCommand.CanExecute(null));
         // A stopped session still finishing startup retains the gate too.
         core.SessionsOverride = [first with { State = LauncherActivityState.Cancelled, HasLiveProcess = false, StartupInFlight = true }, second];
         core.RaiseStateChanged();
@@ -93,7 +94,7 @@ public sealed partial class LauncherWindowViewModelTests
         vm.RelaunchCheckedClientsAutomatically = true;
         vm.RelaunchDelaySecondsText = "5";
         vm.ProfileFilter = "bots";
-        Assert.False(vm.Accounts[0].IsVisible);
+        Assert.False(vm.Accounts[0].Rows[0].IsVisible);
         core.Session = core.Session with { State = LauncherActivityState.Exited, HasLiveProcess = false };
         core.RaiseStateChanged();
         clock.Advance(5);
