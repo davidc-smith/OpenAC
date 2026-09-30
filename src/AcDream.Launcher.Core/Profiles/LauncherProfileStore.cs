@@ -295,8 +295,11 @@ public sealed class LauncherProfileStore
         {
             if (server.AccountListInitialized)
                 continue;
-            if (server.Accounts.Count == 0)
-                server.Accounts.AddRange(known.Select(CopyAccountCredential));
+            foreach (AccountProfile account in known)
+            {
+                if (FindAccount(server, account.Account) is null)
+                    server.Accounts.Add(CopyAccountCredential(account));
+            }
             server.AccountListInitialized = true;
             initialized = true;
         }

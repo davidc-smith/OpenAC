@@ -107,6 +107,31 @@ public sealed class LauncherProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void LoadingOlderPartialServersAddsMissingAccountsWithoutChangingExistingPasswords()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "first-secret");
+        store.AddServer("Second", "second.example", 9000);
+        store.EditAccount("Second", "shared", newPassword: "second-secret");
+        store.AddAccount("Second", "second-only", "other-secret");
+        store.Save();
+        JsonObject legacy = JsonNode.Parse(File.ReadAllText(_filePath))!.AsObject();
+        foreach (JsonNode? server in legacy["servers"]!.AsArray())
+            server!.AsObject().Remove("accountListInitialized");
+        File.WriteAllText(_filePath, legacy.ToJsonString());
+
+        var reloaded = new LauncherProfileStore(_filePath);
+        reloaded.Load();
+
+        Assert.Equal(["shared", "second-only"], reloaded.Document.Servers[0].Accounts.Select(account => account.Account));
+        Assert.Equal("first-secret", reloaded.Document.Servers[0].Accounts[0].Password);
+        Assert.Equal("other-secret", reloaded.Document.Servers[0].Accounts[1].Password);
+        Assert.Equal("second-secret", reloaded.Document.Servers[1].Accounts[0].Password);
+    }
+
+    [Fact]
     public void IntentionallyRemovingLastAccountStaysRemovedAfterRestart()
     {
         var store = new LauncherProfileStore(_filePath);

@@ -99,8 +99,10 @@ so the dialog also opens offline with the last copy; with no copy at all, only
 your own server can be added. A new server starts with one row for each
 distinct saved account, copying its login name and password from the first
 server where it appears. Character lists, plugins and logon commands remain
-specific to each server. An existing server with no accounts is filled the
-same way when the launcher next opens. If there are no saved accounts yet,
+specific to each server. On first opening an older profile, missing accounts
+on existing servers are filled the same way, preserving credentials already
+set for that server. Later, intentionally removed accounts stay removed.
+If there are no saved accounts yet,
 add them under the server's `#` line in **Accounts**.
 
 **Edit servers** has two fields per row: **Server name** and **Address:port**.
