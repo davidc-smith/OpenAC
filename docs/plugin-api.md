@@ -1337,7 +1337,9 @@ are `Clear`, `FillRect`, `StrokeRect`, `DrawLine`, `DrawText` with
 `MeasureText` (the client's own interface font, one size), `DrawImage`,
 `DrawImageTransformed` (scaled and turned about a pivot, for a compass or
 a rotating map) and `PushClip`/`PopClip`; every clip pushed must be popped
-before the callback returns.
+before the callback returns. Colours with alpha, translucent images and
+text edges are shown at the opacity they were painted with, over whatever
+lies beneath the canvas.
 
 A paint callback is measured. One that stays over its 4 ms budget on three
 frames in a row, throws, or leaves a clip pushed is dropped for the rest

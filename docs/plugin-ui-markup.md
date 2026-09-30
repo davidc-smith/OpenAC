@@ -398,8 +398,11 @@ and canvases (see the plugin API guide) are covered by
 `PluginImageTableTests`, `BufferedUiRegistryImagesTests`,
 `BufferedUiRegistryCanvasTests` and `UI/Layout/PluginCanvasElementTests`
 under `tests/AcDream.App.Tests/`, by `ScopedUiRegistryImagesTests` and
-`ScopedUiRegistryCanvasTests` for the scoped forwarder, and by the contract
-and headless suites for the inert answers a host without a window gives.
+`ScopedUiRegistryCanvasTests` for the scoped forwarder, by the contract
+and headless suites for the inert answers a host without a window gives,
+and, for how a canvas is composited, by `Rendering/TextRendererBlendTests`
+and, on a Vulkan device, `Rendering/Gpu/Vk/PluginCanvasCompositeOffscreenTests`
+(`Lane=Vulkan`).
 
 ## Scrolling transcripts
 

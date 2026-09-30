@@ -4,6 +4,9 @@ using Silk.NET.Vulkan;
 
 namespace AcDream.App.Tests.Rendering.Gpu.Vk;
 
+/// <summary>
+/// A headless Vulkan device, with no window or swapchain, for the Lane=Vulkan offscreen proofs.
+/// </summary>
 internal sealed unsafe class HeadlessVulkanTestHost : IDisposable
 {
     private bool _disposed;

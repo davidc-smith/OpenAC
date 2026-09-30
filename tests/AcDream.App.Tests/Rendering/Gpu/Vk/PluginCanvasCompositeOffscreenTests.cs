@@ -68,8 +68,8 @@ public sealed class PluginCanvasCompositeOffscreenTests
         for (int channel = 0; channel < 4; channel++)
         {
             Assert.True(
-                Math.Abs(expected[channel] - actual[channel]) <= 2,
-                $"channel {channel}: expected {expected[channel]}±2, read {actual[channel]} "
+                Math.Abs(expected[channel] - actual[channel]) <= 1,
+                $"channel {channel}: expected {expected[channel]}±1, read {actual[channel]} "
                 + $"(pixel {actual[0]},{actual[1]},{actual[2]},{actual[3]})");
         }
     }

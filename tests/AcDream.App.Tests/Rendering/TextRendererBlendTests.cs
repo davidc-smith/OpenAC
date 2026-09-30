@@ -116,8 +116,37 @@ public sealed class TextRendererBlendTests
 
         renderer.Dispose();
 
-        Assert.All(
-            device.CreatedPipelines.Where(pipeline => pipeline.Description.Name.StartsWith("ui-text", StringComparison.Ordinal)),
-            pipeline => Assert.True(pipeline.IsDisposed));
+        var uiText = device.CreatedPipelines
+            .Where(pipeline => pipeline.Description.Name.StartsWith("ui-text", StringComparison.Ordinal))
+            .ToList();
+        Assert.Equal(2, uiText.Count);
+        Assert.All(uiText, pipeline => Assert.True(pipeline.IsDisposed));
+    }
+
+    [Fact]
+    public void BindOrderHoldsAcrossTheOverlayLayer()
+    {
+        using var device = new RecordingGpuDevice();
+        var frames = new FrameSource();
+        using var renderer = new TextRenderer(device, frames, "unused");
+
+        renderer.Begin(Screen);
+        renderer.DrawFill(0f, 0f, 10f, 10f, Vector4.One);
+        renderer.DrawPremultipliedSprite(5u, 0f, 0f, 10f, 10f, 0f, 0f, 1f, 1f, Vector4.One);
+        renderer.OverlayMode = true;
+        renderer.DrawFill(0f, 20f, 10f, 10f, Vector4.One);
+        renderer.OverlayMode = false;
+
+        device.Clear();
+        using (IGpuFrame frame = device.BeginFrame())
+        {
+            frames.CurrentFrame = frame;
+            renderer.Flush(null);
+            frames.CurrentFrame = null;
+        }
+
+        Assert.Equal(
+            [TextRenderer.PipelineName, TextRenderer.PremultipliedPipelineName, TextRenderer.PipelineName],
+            device.OfKind<GpuRecordedPipelineBind>().Select(bind => bind.PipelineName).ToArray());
     }
 }

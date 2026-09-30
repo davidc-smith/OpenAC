@@ -286,6 +286,7 @@ public sealed class TextRenderer : IDisposable
     internal void DrawPremultipliedSprite(uint texture, float x, float y, float w, float h,
         float u0, float v0, float u1, float v1, Vector4 tint)
     {
+        // Deliberately skips LinearTwinResolver: canvas targets are linear-sampled already and have no nearest twin.
         _premultipliedPipeline ??= _device.CreatePipeline(
             Describe(PremultipliedPipelineName, GpuBlendMode.PremultipliedAlpha));
         SpriteSeg seg = OverlayMode
