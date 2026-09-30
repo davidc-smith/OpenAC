@@ -1,0 +1,657 @@
+# Plugin painter v2: design
+
+Status: agreed in brainstorming 2026-09-30; awaiting spec review.
+Scope: extend the plugin canvas API so plugins (first user: the Golem plugin's
+HUDs and remote-control widgets) can draw rich widgets themselves. No ImGui:
+native libraries cannot ship in plugins and the Vulkan device is internal to
+`AcDream.App`.
+
+Delivery: one spec, landed as a series of single-topic pull requests (see
+[Order of work](#order-of-work)). Gap 7 (world-anchored drawing) is design only.
+
+---
+
+## 1. Confirmed current behaviour
+
+Every point of the brief was checked against `main` at `bbc83275`.
+
+### Contract (`AcDream.Plugin.Abstractions`)
+
+- `IPluginPainter` (`PluginCanvas.cs:161-242`): `Width`, `Height`, `Clear`,
+  `FillRect`, `StrokeRect`, `DrawLine`, `DrawText`/`MeasureText` (one font, one
+  size, `:157-158`), `DrawImage`, `DrawImageTransformed`, `PushClip`/`PopClip`.
+- `IPluginCanvas` (`PluginCanvas.cs:259-322`): `IsAvailable => false` (`:271`),
+  `PointerHandler` and `ReleasePointer` are default interface members (`:304-321`)
+  — the pattern every addition below follows.
+- `PluginCanvasDescriptor` (`PluginCanvas.cs:52-75`): `CanvasId`, `Width`,
+  `Height`, `Anchor`, `Offset`, `StartVisible`, `AcceptsPointerInput`. No layer
+  or z field.
+- `NoOpPluginCanvas` (`PluginCanvas.cs:328-379`) keeps state, never paints.
+- `IUiRegistry.Images` / `RegisterCanvas` (`IUiRegistry.cs:179, 193`);
+  `IScopedUiRegistry.ImagesFor` / `RegisterCanvas(owner, …)` (`:287, 294`).
+- `IPluginImages` (`PluginImages.cs:46-107`), budgets `MaximumCount`,
+  `MaximumBytes`, `MaximumDimension`; `NoOpPluginImages` (`:113`).
+
+### Implementation (`AcDream.App`)
+
+- `PluginPainter` (`UI/Layout/PluginPainter.cs`) forwards to `UiRenderContext`.
+  `DrawImage` and `DrawImageTransformed` always pass UVs `0,0,1,1`
+  (`:85, :103`) although `UiRenderContext.DrawSprite` takes arbitrary UVs
+  (`UI/UiRenderContext.cs:165`). `DrawText` uses the DAT font
+  (`DrawStringDat`, `:68`).
+- `PluginCanvasSurface` (`UI/Layout/PluginCanvasSurface.cs:57-132`) owns its own
+  `TextRenderer` + `UiRenderContext`, begins at the canvas's logical size and
+  flushes into the target in the `"plugin-canvas"` pass (`:107-122`). It is
+  constructed with `_bindings.Assets.DefaultFont`, the DAT font
+  (`UI/RetailUiRuntime.cs:4195`).
+- `PluginCanvasElement` (`UI/Layout/PluginCanvasElement.cs`): 4 ms repaint
+  budget (`:43`), at most 8 pooled targets (`:46`), pointer input (`:142-253`),
+  anchor layout (`:261-295`). Targets are created at the logical size
+  (`:356-362`) with `GpuSamplerDescription.WorldClamp` (`:375`), which is
+  linear/linear/linear-mip clamp (`Rendering/Gpu/GpuResourceDescriptions.cs`).
+- Registration: `Plugins/PluginCanvasRegistration.cs`; per-plugin cap of 8 and
+  unique id check in `Plugins/BufferedUiRegistry.cs:210-258`.
+- Scoped forwarder: `ScopedPluginHost.ScopedUiRegistry.Images` and
+  `RegisterCanvas` (`src/AcDream.Core/Plugins/ScopedPluginHost.cs:2057-2086`);
+  every canvas call goes through `IndividualCanvas` (`:2162-2210`). **A new
+  `IPluginCanvas` member that is not forwarded there silently falls back to its
+  inert default.**
+- Mounting: `RetailUiRuntime.MountPluginCanvases` (`UI/RetailUiRuntime.cs:4183-4227`)
+  adds every canvas of every plugin to one overlay layer `"PluginCanvases"`.
+
+### Rendering pieces
+
+- `TextRenderer` (`Rendering/TextRenderer.cs`): one `"ui-text"` pipeline,
+  `StraightAlpha`, sample count 1, no anti-aliasing (`:86-98`). Vertex is
+  position + uv + **per-vertex RGBA colour**, interpolated (`:11-20`). Solid
+  fills are sprites with texture handle 0 (`DrawFill`, `:127-128`), so they keep
+  painter's order with images. Within one pass `DrawLayer` draws all sprite runs,
+  then `TextRenderer.DrawRect` quads, then BitmapFont text (`:386-413`).
+- `TextRenderer.DrawConvexPolygon` is internal (`:238`), one colour, fan
+  triangulated; only caller is `UiRenderContext.EmitConvexQuad`.
+- Clipping is geometric on the CPU (`QuadClipper`, `TransformedQuadClipper`,
+  the latter at most 4 input vertices, lerps position and UV only).
+- `BundledUiFont.Load(textures, pixelHeight)` (`UI/BundledUiFont.cs:14`) bakes
+  embedded Noto Sans with `stbtt_BakeFontBitmap` into a `UiDatFont`. 8–32 px
+  only (`:31`) because `FontCharDesc` stores sizes in bytes. No kerning.
+  StbTrueTypeSharp 1.26.12 (`Directory.Packages.props:34`).
+- Plugin zips allow `.ttf`/`.otf` (`docs/plugin-manifest.md:76`).
+- UI shaders `ui_text.vert/.frag`; SPIR-V is pinned both by the manifest
+  (`Rendering/Shaders/spv/shaders.manifest.json`) and by byte hash in
+  `VulkanShaderManifestTests.RetailOracleSpirvSha256`. **This design needs no
+  shader changes.**
+
+### Findings beyond the brief
+
+1. **Translucent canvas content composites at a².** The pipeline uses the same
+   `SrcAlpha, OneMinusSrcAlpha` factors for the alpha channel as for colour
+   (`Rendering/Gpu/Vk/VulkanGpuPipeline.cs:170-179`). A canvas target is cleared
+   to 0, so a 50 % fill is stored with alpha 0.25 and colour already multiplied
+   by 0.5, then blended again with straight alpha. Anything translucent on a
+   canvas — and every feathered edge — comes out too faint.
+2. **Plugin hotkeys ignore chat and dialog focus.** `AppHotkeyRegistry.OnKeyDown`
+   (`Input/AppHotkeyRegistry.cs:170-214`) suppresses on `ActiveScope == Chat` and
+   `Dialog`/`EditField`, but `InputDispatcher.PushScope`
+   (`UI.Abstractions/Input/InputDispatcher.cs:343`) has no production caller. The
+   live signal is `UiRoot.KeyboardFocus` (`UI/UiRoot.cs:115`), reaching the
+   dispatcher as `WantCaptureKeyboard` (`InputDispatcher.cs:414`). So a plain
+   letter hotkey fires while the player types in chat, contrary to
+   `docs/plugin-api.md:1136-1147`.
+3. **"Above everything" today works by integer overflow.**
+   `RetailWindowManager.BringToFront` (`UI/RetailWindowManager.cs:229-236`)
+   takes `max(child.ZOrder + 1)`; children at `int.MaxValue` (SpewBox,
+   pre-game screens) wrap to `int.MinValue` and are ignored.
+4. **Order between canvases is not defined.** All canvases share ZOrder 0 in
+   one layer; order is `Dictionary` enumeration order and `Array.Sort` is not
+   stable past 16 children (`UI/UiElement.cs:269-279`).
+5. **World labels** (`host.Automation.Labels`, `docs/plugin-api.md:1226-1265`)
+   already project text onto objects each frame — the precedent for gap 7.
+
+### HiDPI answer
+
+Canvases are blurry on a Retina display; the main UI is not blurry in the same
+way. The UI is sized in window points (`Rendering/GameWindow.cs:1619`,
+`_window.Size`), the swapchain in framebuffer pixels
+(`Rendering/Gpu/Vk/VulkanGraphicsContext.cs`), and the UI projection stretches
+points over the full framebuffer. Main-UI geometry is therefore rasterised at
+physical resolution, and its bitmap art is magnified with nearest filtering
+(blocky but crisp). A canvas is rasterised into a logical-size texture and
+magnified with bilinear filtering by (framebuffer ÷ window) × `UiRoot.CanvasScale`:
+2× in gameplay on a 2× display, more on a stretched pre-game fixed canvas
+(`CanvasScale` is only the pre-game fixed canvas, `UI/UiRoot.cs:22-81`, not a
+DPI setting). This is derived from the code; PR 4 opens with before/after
+screenshots on a Retina Mac as its acceptance gate.
+
+---
+
+## 2. Cross-cutting rules
+
+- **Additive contract.** New interface members are default members with inert
+  answers (`false`, `None`, no-op). New descriptor properties are `init`
+  properties whose defaults keep today's behaviour. XML docs state when a member
+  returns false or none (the Abstractions build fails on undocumented members).
+- **Forwarders forward.** Every new `IPluginCanvas` member is forwarded in
+  `ScopedPluginHost.IndividualCanvas`, and every new registry surface is cached
+  and tracked in `ScopedUiRegistry` like `Images`. Each gets a
+  `ScopedUiRegistry*Tests` case proving it reaches the host.
+- **Headless inert.** `NoOpPluginCanvas`, `NoOpPluginImages` and the new
+  `NoOpPluginFonts` keep what the plugin sets and never throw. A headless
+  contract test covers each new surface.
+- **Guards unchanged.** 4 ms paint budget, 2 ms input budget (three strikes),
+  balanced clip stack, 8 canvases per plugin. Expensive host work (font baking,
+  target reallocation) happens outside the guarded call.
+- **Thread.** Everything stays on the tick/interface thread; the retained,
+  `Invalidate()`-driven model is unchanged.
+- **Docs and tests per PR.** Each PR updates `docs/plugin-api.md` and the test
+  list in `docs/plugin-ui-markup.md` (Tests section), and states the API change
+  in its description.
+
+---
+
+## 3. PR 0 — Canvas alpha compositing
+
+**Problem:** finding 1.
+
+**Change (no shader change):**
+
+- `GpuBlendMode` gains a mode that blends colour as straight alpha and alpha as
+  `One, OneMinusSrcAlpha` (working name `StraightAlphaOverTransparent`).
+  `VulkanViewportMapping.BlendFactorsOf` returns colour and alpha factors
+  separately; `VulkanGpuPipeline` sets `SrcAlphaBlendFactor`/`DstAlphaBlendFactor`
+  from them. Existing modes map to identical factors as today.
+- `TextRenderer` gets a second pipeline built with the new mode, used by
+  `FlushTo` for passes into a canvas target. The target then holds
+  premultiplied colour with correct coverage.
+- The canvas quad on the interface is drawn with the existing
+  `PremultipliedAlpha` mode (`One, OneMinusSrcAlpha`). `SpriteSeg` carries a
+  blend flag; `DrawLayer` rebinds the pipeline only when the flag changes. The
+  tint passed for a premultiplied sprite is premultiplied (`rgb *= a`) so window
+  and fade alpha still apply.
+- The same `RecordingGpuDevice` fake records pipeline descriptions and binds.
+
+**Tests:** pipeline description and bind order on the recording device
+(`PluginCanvasElementTests`, `TextRenderer` tests); `Lane=Vulkan` readback: a
+50 % white fill on a canvas over black composites to 50 % grey (±1/255).
+
+---
+
+## 4. PR 1 — Fonts
+
+### Contract (new `PluginFonts.cs`)
+
+```csharp
+/// A font at one size, held by the host for a plugin. 0 means no font.
+public readonly record struct PluginFont(int Handle, float PixelSize, float LineHeight, float Ascent)
+{
+    public static PluginFont None => default;
+    public bool IsValid => Handle != 0;
+}
+
+/// An inclusive range of Unicode code points.
+public readonly record struct PluginCodepointRange(int First, int Last);
+
+public sealed record PluginFontOptions
+{
+    /// Null bakes the bundled default ranges: U+0020–U+024F, U+0370–U+052F,
+    /// U+2000–U+206F.
+    public IReadOnlyList<PluginCodepointRange>? Ranges { get; init; }
+}
+
+public interface IPluginFonts
+{
+    bool IsAvailable => false;
+    PluginFont Bundled(float pixelSize) => PluginFont.None;
+    PluginFont FromStream(string name, Func<Stream> open, float pixelSize,
+                          PluginFontOptions? options = null) => PluginFont.None;
+    bool Release(PluginFont font) => false;
+    int Count => 0;
+    int MaximumCount => 0;
+    long MaximumBytes => 0;
+    int MaximumGlyphs => 0;
+    float MinimumPixelSize => 0;
+    float MaximumPixelSize => 0;
+}
+
+public sealed class NoOpPluginFonts : IPluginFonts
+{
+    public static NoOpPluginFonts Instance { get; } = new();
+    private NoOpPluginFonts() { }
+}
+```
+
+- `IUiRegistry`: `IPluginFonts Fonts => NoOpPluginFonts.Instance;`
+- `IScopedUiRegistry`: `IPluginFonts FontsFor(PluginUiOwner owner) => NoOpPluginFonts.Instance;`
+  (the drawing host returns a surface that also implements `IDisposable`).
+- `IPluginPainter` (defaults fall back to the DAT font so an older host still
+  draws the text):
+
+```csharp
+void DrawText(string text, PluginPoint position, PluginColor color, PluginFont font, bool outline = false)
+    => DrawText(text, position, color, outline);
+PluginSize MeasureText(string text, PluginFont font) => MeasureText(text);
+```
+
+### Semantics
+
+- Sizes are in canvas (logical) pixels. `Bundled` is the client's Noto Sans.
+  `FromStream` accepts TrueType (`.ttf`) and, best effort, CFF OpenType (`.otf`);
+  the stream is opened only when the host does not already hold that key and is
+  disposed by the host.
+- Key: `(name, pixelSize, ranges)`; `Bundled` keys on `(pixelSize)`. A repeat
+  request returns the same handle, held once more; it takes as many releases.
+- Budgets (starting points, like the image budget, not measurements):
+  `MaximumCount` 16 handles, `MaximumBytes` 16 MB covering retained font files
+  and the atlases of the plugin's own fonts, `MaximumGlyphs` 2048 per handle,
+  pixel size 6–72. Bundled atlases are cached host-wide by `(size, scale)` and,
+  like client art, not counted against bytes (still counted against
+  `MaximumCount`). A refusal returns `PluginFont.None` and is logged once.
+- A code point the font lacks, or outside the baked ranges, draws the font's
+  `.notdef`/`?` fallback.
+- Handles are dropped when the interface is torn down (e.g. a reconnect); a
+  released or dropped font draws nothing and measures `(0, 0)`.
+- Text is one line, as today. `LineHeight` and `Ascent` let plugins align
+  baselines across fonts. `MeasureText` includes kerning, matching `DrawText`.
+- Calls only from the tick thread; any other thread is refused (throws), as for
+  images. Baking runs synchronously at request time, outside any paint.
+
+### Implementation
+
+- `CanvasFontBaker` (new, internal, in `UI/`): the StbTrueType code factored
+  out of `BundledUiFont.Bake`, taking `byte[]`, pixel size, ranges and scale.
+  Uses the pack API (`stbtt_PackBegin`/`stbtt_PackFontRanges`), growing the
+  atlas page up to 2048×2048, and fails cleanly when glyphs do not fit or exceed
+  the cap. `BundledUiFont` keeps its public behaviour and tests and calls the
+  baker.
+- `CanvasFontAtlas` (new, internal): float metrics per glyph (advance, bearing,
+  size, UV rect), `LineHeight`, `Ascent`, an RGBA atlas (white, alpha =
+  coverage) uploaded releasable with a linear clamp sampler, and the retained
+  `stbtt_fontinfo` for kerning (`stbtt_GetCodepointKernAdvance`) and later
+  rebakes.
+- `PluginFontTable` (new, `Plugins/`): modelled on `PluginImageTable` — bind to
+  texture services and the UI thread, key → entry with ref count, byte and count
+  accounting, report-once, unbind drops everything. Backend interface
+  `IPluginFontBackend` so tests use a fake uploader.
+- `PluginFonts` (new, `Plugins/`): the contract wrapper, disposable,
+  `BufferedUiRegistry.FontsFor(owner)`; `ScopedUiRegistry.Fonts` caches and
+  tracks it like `Images`.
+- `UiRenderContext.DrawStringCanvasFont(CanvasFontAtlas, text, x, y, color, outline)`:
+  glyphs go through the sprite path (painter's order preserved), origins snapped
+  to device pixels, outline as eight offset copies in the outline colour.
+- `PluginPainter` resolves the handle through the plugin's `PluginFonts`
+  (bound alongside images) and draws or measures.
+
+### Tests
+
+- `CanvasFontBakerTests`: Noto at 6, 16 and 72 px; a custom range; glyph cap
+  refusal; a known kerning pair; the OTF path against a small permissively
+  licensed CFF test font committed with its licence (if none fits, OTF is
+  documented as best effort and the test is omitted).
+- `PluginFontTableTests`: dedup and ref counts, count/bytes/size/glyph refusals,
+  bad stream, null stream, wrong thread, unbind, report-once.
+- `BufferedUiRegistryFontsTests`, `ScopedUiRegistryFontsTests` (tracking and
+  disposal with the plugin).
+- `PluginCanvasElementTests`: glyph runs land in call order among fills and
+  images; `MeasureText(text, font)` equals the drawn advance; an invalid font
+  draws nothing; the default-member fallback on a stub painter.
+- Headless contract: `Fonts` is inert.
+- Docs: new `## Fonts` section in `plugin-api.md`; Canvases primitives list.
+
+---
+
+## 5. PR 2 — Image regions and nine-slice
+
+### Contract (`IPluginPainter`, default no-ops)
+
+```csharp
+public readonly record struct PluginInsets(double Left, double Top, double Right, double Bottom)
+{
+    public static PluginInsets Uniform(double all) => new(all, all, all, all);
+}
+
+void DrawImageRegion(PluginImage image, PluginRect source, PluginRect destination, PluginColor tint) { }
+
+void DrawImageRegionTransformed(PluginImage image, PluginRect source, PluginRect destination, PluginColor tint,
+    double rotationRadians, PluginPoint pivot, double scaleX = 1.0, double scaleY = 1.0) { }
+
+void DrawImageNineSlice(PluginImage image, PluginRect destination, PluginInsets insets, PluginColor tint,
+    PluginRect? source = null, bool drawCenter = true) { }
+```
+
+### Semantics
+
+- `source` is in the image's own pixels, clamped to its bounds; an empty or
+  wholly outside region draws nothing.
+- Nine-slice `insets` are in source pixels. Corners draw at inset size; edges
+  and centre stretch (no tiling). When the destination is smaller than the
+  insets' sum on an axis, the corners on that axis shrink proportionally.
+  `source` selects the frame inside a sheet; `drawCenter: false` draws a frame.
+- On a host that predates these members they draw nothing (drawing the whole
+  sheet instead would be wrong).
+
+### Implementation
+
+- UV arithmetic in `PluginPainter` over `DrawSprite`/`DrawSpriteTransformed`;
+  a nine-slice is up to nine sprites, each clipped by `QuadClipper`.
+- Bleed: plugin-owned uploads (`TextureCache.UploadReleasableRgba8` via
+  `RetailPluginImageBackend.UploadOwned`) move to a clamp sampler (whole-image
+  draws are unaffected). `PluginImageTable.TryResolve` also reports whether the
+  texture is linear-filtered; regions on linear textures are inset by half a
+  texel, nearest-filtered client art is not inset.
+
+### Tests
+
+`PluginCanvasElementTests`: UVs for a region, half-texel inset present/absent,
+clamping, nine-slice rectangles and UVs for large, small and frame-only cases,
+transformed region. `PluginImageTableTests`: filter flag. Docs: Canvases.
+
+---
+
+## 6. PR 3 — Shapes
+
+### Contract (`IPluginPainter`, default no-ops unless noted)
+
+```csharp
+public readonly record struct PluginCornerRadii(double TopLeft, double TopRight, double BottomRight, double BottomLeft)
+{
+    public static PluginCornerRadii Uniform(double radius) => new(radius, radius, radius, radius);
+}
+
+public enum PluginGradientDirection { Horizontal, Vertical }
+
+void FillPolygon(ReadOnlySpan<PluginPoint> points, PluginColor color) { }
+void FillPolygon(ReadOnlySpan<PluginPoint> points, ReadOnlySpan<PluginColor> colors) { }
+void FillRoundedRect(PluginRect rect, PluginCornerRadii radii, PluginColor color) { }
+void StrokeRoundedRect(PluginRect rect, PluginCornerRadii radii, PluginColor color, float thickness = 1f) { }
+void FillEllipse(PluginRect bounds, PluginColor color) { }
+void StrokeEllipse(PluginRect bounds, PluginColor color, float thickness = 1f) { }
+void FillCircle(PluginPoint center, double radius, PluginColor color)
+    => FillEllipse(new PluginRect(center.X - radius, center.Y - radius, radius * 2, radius * 2), color);
+void FillRectGradient(PluginRect rect, PluginColor from, PluginColor to, PluginGradientDirection direction) { }
+```
+
+### Semantics
+
+- New shapes are anti-aliased: edges feathered over one device pixel. Existing
+  primitives are unchanged.
+- Polygons are convex, 3–64 points, either winding. Per-vertex colours are
+  interpolated linearly (simple gradients).
+- Radii are clamped the CSS way: if adjacent radii exceed a side, all are scaled
+  down by the same factor. Zero radii give square corners.
+- Strokes are centred on the outline. A stroke thinner than one device pixel is
+  drawn one device pixel wide with proportionally lower alpha.
+- Invalid input (non-convex, too many points, mismatched colour count,
+  non-finite values, negative sizes) draws nothing and is reported once per
+  canvas; it never throws, since a throw drops the canvas.
+
+### Implementation (CPU feathering, no shader change)
+
+- `CanvasGeometry` (new, internal, pure): tessellates each shape into a coloured
+  triangle list plus a feather ring whose outer vertices have alpha 0; arc
+  segment count derives from radius × device scale (bounded per corner).
+- `UiColorVertex` (position, colour) and `TextRenderer.DrawTriangles(ReadOnlySpan<UiColorVertex>)`
+  (new, internal): untextured triangles appended to the sprite runs (texture 0),
+  so painter's order holds.
+- `ColoredTriangleClipper` (new): clips each triangle against the current clip
+  rect, lerping colour; fast accept/reject for triangles wholly inside/outside.
+  `TransformedQuadClipper` is untouched.
+- `UiRenderContext` gains the translate/alpha-aware wrapper that feeds the
+  clipper and `DrawTriangles`.
+- A per-paint vertex cap, sized in the plan from the per-frame vertex ring
+  capacity; exceeding it counts as a paint overrun and is reported.
+- Requires PR 0; without it feathered edges composite at a².
+
+### Tests
+
+`CanvasGeometryTests` (triangle counts, covered area within tolerance of the
+analytic area, feather alphas, radius clamping, convexity rejection, thin
+strokes), `ColoredTriangleClipperTests`, `PluginCanvasElementTests` (order,
+clipping, report-once on bad input). Optional `Lane=Vulkan` readback of a circle
+edge. Docs: Canvases.
+
+---
+
+## 7. PR 4 — HiDPI sharpness
+
+### Contract
+
+```csharp
+// IPluginPainter
+/// Device pixels per canvas pixel for this paint; 1 on a host that does not scale.
+double PixelScale => 1.0;
+```
+
+### Implementation
+
+- `PluginCanvasHostServices` gains `Func<Vector2> PixelScale`, supplied at
+  `Composition/InteractionRetainedUiComposition.cs:1055` as
+  `FramebufferSize / Window.Size`.
+- The element computes `s = max(pixelScale.X, pixelScale.Y) × root.CanvasScale`,
+  rounded up to a multiple of 0.25 and clamped to [1, 4], then lowered further
+  if `ceil(W·s)` or `ceil(H·s)` would exceed the device's render-target limit.
+- Targets are `ceil(W·s) × ceil(H·s)`. When `s` changes, the pool is released
+  through the device (the existing deferred release), the canvas invalidated,
+  and a prepare step outside the guard rebakes the plugin's held fonts at
+  `size·s`.
+- Repaint: `_renderer.CanvasScale = s`, `_renderer.Begin(size·s)`; context,
+  clip and painter `Width`/`Height` stay logical, as `UiRoot` does for the fixed
+  canvas. The surface's renderer disables the linear-twin swap
+  (`TextRenderer.cs:219`) so DAT glyphs keep nearest filtering. Feathering uses
+  one device pixel = `1/s` logical.
+- Display unchanged: `DrawSprite(0, 0, W, H)`, texels now 1:1 with device
+  pixels. Pointer coordinates are unchanged (already logical).
+- Out of scope: HiDPI for the main UI (follow-up).
+
+### Tests
+
+Harness with a fake pixel scale: target description at 2×, renderer projection
+size at 2×, painter and pointer logical; scale change reallocates and
+invalidates; fonts rebaked at `size·s`; clamp to the device limit; `PixelScale`
+reported; `PixelScale` default on a stub. Manual: before/after screenshots on a
+Retina Mac, attached to the PR (acceptance gate).
+
+---
+
+## 8. PR 5 — Layering
+
+### Contract
+
+```csharp
+public enum PluginCanvasLayer
+{
+    /// Over the world, under every window (today's behaviour).
+    World = 0,
+    /// Over every window, under dialogs, tooltips and menus.
+    AboveWindows = 1,
+}
+
+// PluginCanvasDescriptor
+public PluginCanvasLayer Layer { get; init; } = PluginCanvasLayer.World;
+/// Order among this plugin's canvases in the same layer; higher is drawn on top.
+public int ZOrder { get; init; }
+
+// IPluginCanvas
+int ZOrder { get => 0; set { } }
+```
+
+`NoOpPluginCanvas` keeps `ZOrder`; the descriptor's `Layer` is fixed at
+registration.
+
+### Resulting order (bottom → top)
+
+world and world labels → `World` canvases → windows → `AboveWindows` canvases →
+dialogs and tooltips → menus and drag ghost (overlay pass) → `int.MaxValue`
+elements (SpewBox, pre-game screens).
+
+### Implementation
+
+- Two canvas layers: the existing one on the overlay host, and a new
+  viewport-sized click-through layer mounted on `UiRoot` at a new band constant
+  above windows. Each plugin gets its own sub-layer in each, ordered by plugin
+  mount order (first mounted lowest). Within a sub-layer the canvases are
+  ranked by `(ZOrder, registration sequence)` and each element's UI ZOrder is
+  set to its rank, recomputed when a canvas is added, removed or changes
+  `ZOrder`; ranks are unique, so the unstable sort never sees ties.
+- Banded z-order: `RetailWindowManager.BringToFront(window)` raises within the
+  window band only and never reaches the canvas band; a new
+  `BringToFront(window, UiBand.DialogsAndTooltips)` is used by
+  `RetailDialogFactory` (`UI/Layout/RetailDialogFactory.cs:277, 398`) and
+  `RetailTooltipPresenter`. `int.MaxValue` children are skipped explicitly
+  instead of by overflow.
+- Input: an `AboveWindows` canvas with input takes clicks over windows beneath
+  it (documented). Under a modal it gets none (existing `UiRoot.Modal` gate).
+  While a drag is in progress (`UiRoot.DragSource != null`) no canvas answers
+  the hit-test, so drops reach the windows or world beneath.
+- Plan task: list callers of `TextRenderer.DrawRect` and BitmapFont text in
+  retail windows; those draw after all sprites in the pass and could appear over
+  a top canvas. If any matter, move them to the sprite path.
+
+### Tests
+
+`RetailWindowManager` banding (window to front stays below the band; dialog
+and tooltip go above it; `int.MaxValue` untouched), hit-test order across
+layers, modal blocking, drag pass-through, ZOrder within and across plugins,
+runtime ZOrder change, forwarder test, headless inert test. Docs: Canvases
+(replace "under every window" with the layer description).
+
+---
+
+## 9. PR 6a — Hotkeys respect UI focus (bug fix)
+
+- `AppHotkeyRegistry` takes a focus-state source bound from `UiRoot`:
+  `HasKeyboardFocus` (`KeyboardFocus != null`) and `IsModalOpen`
+  (`Modal != null`).
+- Rules: rebind capture → no hotkeys; modal → no hotkeys; any keyboard focus
+  (chat, a text field, a focused canvas) → only chords with Ctrl or Alt. The
+  existing `ActiveScope` checks remain.
+- Caveat, documented: hotkeys run first in the key handler order, so they see
+  the focus state from before the key is handled.
+- Tests: `AppHotkeyRegistryTests` per rule; a host-level test with a focused
+  `UiRoot` element and with a modal.
+- Docs: Hotkeys section wording, which then matches behaviour.
+
+---
+
+## 10. PR 6b — Canvas keyboard input
+
+### Contract
+
+```csharp
+// PluginCanvasDescriptor
+public bool AcceptsKeyboardInput { get; init; }
+
+public enum PluginKeyEventKind { Down, Up, Text, FocusGained, FocusLost }
+
+/// Key is meaningful for Down and Up (PluginKey.Unknown otherwise); Text carries the typed characters for Text.
+/// Keys PluginKey cannot name are not delivered as Down/Up.
+public readonly record struct PluginKeyEvent(
+    PluginKeyEventKind Kind,
+    PluginKey Key,
+    PluginKeyModifiers Modifiers,
+    bool IsRepeat = false,
+    string? Text = null);
+
+// IPluginCanvas
+/// Returns true when the plugin handled the event; only Escape's answer changes what the host does.
+Func<PluginKeyEvent, bool>? KeyHandler { get => null; set { } }
+bool HasKeyboardFocus => false;
+bool RequestKeyboardFocus() => false;
+void ReleaseKeyboardFocus() { }
+```
+
+### Semantics
+
+- A canvas takes focus by a press on it (which needs `AcceptsPointerInput` as
+  well, since only a hit-testable canvas can be clicked) or by
+  `RequestKeyboardFocus()`, which succeeds only when the canvas is mounted,
+  shown and has a `KeyHandler`, nothing else holds keyboard focus, no modal is
+  up, and no rebind capture is running; otherwise false. It never takes focus
+  from chat, a text field or a dialog.
+- While focused the canvas receives `Down`/`Up` for keys `PluginKey` can name,
+  `Text` for typed characters, host-generated repeat as `Down` with
+  `IsRepeat = true` (0.40 s delay, 0.04 s interval, as `UiField`), and
+  modifiers from the same source as pointer events. Game actions are suppressed
+  (existing `WantCaptureKeyboard`); plugin hotkeys follow PR 6a's focus rule.
+- Focus is given back, with exactly one `FocusLost`, on: Escape the handler did
+  not handle; a press elsewhere; the canvas hidden or disposed; the handler set
+  to null or dropped by its guard; the paint callback dropped; a modal opening;
+  interface teardown; `ReleaseKeyboardFocus()`.
+- The key handler has its own guard (2 ms, three strikes). Tripping it releases
+  focus and stops key delivery; pointer input and painting continue.
+- Headless: the handler is kept and never called; `RequestKeyboardFocus`
+  returns false; `HasKeyboardFocus` is false.
+
+### Implementation
+
+- `PluginCanvasElement`: `AcceptsFocus` while opted in, shown, handler set and
+  not dropped; `IsEditControl = true` so `UiRoot.OnChar` delivers text; handles
+  `KeyDown`/`KeyUp`/`Char`/`FocusGained`/`FocusLost` in `OnEvent`; repeat timer
+  in `OnTick`; releases focus in every path above (following
+  `CreditsUiController.cs:360-361`: release only if it still owns focus).
+- The `PluginKey` ↔ Silk `Key` table moves out of `AppHotkeyRegistry.MapKey`
+  into a shared internal mapper used by both.
+- Registration and `ScopedPluginHost.IndividualCanvas` forward the four members.
+
+### Tests
+
+Element tests for each focus path, request refusals, repeat, the Escape policy,
+the guard; `UiRoot` test that game actions are suppressed while a canvas is
+focused; forwarder tests for all four members; headless inert tests. Docs: new
+"Keyboard input" subsection under Canvases.
+
+---
+
+## 11. Gap 7 — World-anchored drawing (design only)
+
+Not implemented in this series. Recommended direction, modelled on World labels:
+
+- **B — object placement (primary).** A descriptor placement alternative to the
+  screen anchor, e.g. `PluginCanvasPlacement.OnObject(uint objectId, double heightOffset, double maxRange)`.
+  Each frame the host projects the object's head point with the same projection
+  World labels use (`Composition/InteractionUiRuntimeSources.cs` `UiSnapshot`)
+  and moves the retained quad; painted content is reused, so movement costs no
+  repaint. Hidden off-screen, beyond range, or when the object is unknown; fades
+  over the last fifth of the range; not occluded (as labels).
+- **A — projection query (secondary).** `bool TryProjectObject(uint objectId, double heightOffset, out PluginPoint screen)`
+  for plugins that lay out their own overlay canvas; one-frame lag documented.
+- **Open issue.** The eight-canvas cap rules out a canvas per creature for health
+  bars. A later "instanced canvas" (one paint callback invoked per object id,
+  with a per-plugin instance cap and shared target atlas) belongs in its own
+  spec.
+
+---
+
+## Order of work
+
+| PR | Branch | Topic | Depends on |
+|---|---|---|---|
+| 0 | `painter-v2/canvas-alpha` | Canvas blend fix | — |
+| 1 | `painter-v2/fonts` | `IPluginFonts`, font-aware text | 0 |
+| 2 | `painter-v2/image-regions` | Source rects, nine-slice | — |
+| 3 | `painter-v2/shapes` | AA polygon, rounded rect, ellipse, strokes, gradients | 0 |
+| 4 | `painter-v2/hidpi` | Physical-resolution canvas targets | 1 |
+| 5 | `painter-v2/layers` | Layer + ZOrder, banded window z-order | — |
+| 6a | `fix/hotkey-focus-scope` | Hotkeys respect UI focus and modals | — |
+| 6b | `painter-v2/keyboard` | Canvas keyboard focus and events | 6a |
+
+Each branch starts from `main` (or from the branch it depends on until that
+merges), commits with subjects in the repo's style (`plugin canvas: …`,
+`plugin api: …`), passes the portable filter from `CONTRIBUTING.md` locally plus
+`Lane=Vulkan` where the PR touches rendering, and is pushed to `origin`. The
+target repository for each PR is decided when it is opened.
+
+## Test plan summary
+
+| Area | Suites (new in bold) | Lane |
+|---|---|---|
+| Alpha | `PluginCanvasElementTests`, TextRenderer tests, **canvas composite readback** | portable; readback `Vulkan` |
+| Fonts | **`CanvasFontBakerTests`**, **`PluginFontTableTests`**, **`BufferedUiRegistryFontsTests`**, **`ScopedUiRegistryFontsTests`**, `PluginCanvasElementTests`, headless contract | portable |
+| Regions | `PluginCanvasElementTests`, `PluginImageTableTests` | portable |
+| Shapes | **`CanvasGeometryTests`**, **`ColoredTriangleClipperTests`**, `PluginCanvasElementTests` | portable; optional `Vulkan` |
+| HiDPI | `PluginCanvasElementTests` with fake pixel scale | portable; manual Retina check |
+| Layers | `RetailWindowManager`/`UiRoot` banding tests, `BufferedUiRegistryCanvasTests`, `ScopedUiRegistryCanvasTests` | portable |
+| Hotkeys | `AppHotkeyRegistryTests`, host-level focus test | portable |
+| Keyboard | `PluginCanvasElementTests`, `UiRoot` tests, `ScopedUiRegistryCanvasTests`, headless contract | portable |
+
+All portable tests use the recording GPU device and fake image/font backends, as
+the existing canvas suites do; anything needing a real device carries
+`Lane=Vulkan`.
