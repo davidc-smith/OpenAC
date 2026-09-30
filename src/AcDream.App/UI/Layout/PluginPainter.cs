@@ -1,8 +1,21 @@
+using System.Globalization;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using AcDream.App.Plugins;
+using AcDream.App.Rendering;
 using AcDream.Plugin.Abstractions;
 
 namespace AcDream.App.UI.Layout;
+
+/// <summary>What went wrong with a shape, for the canvas to report once per kind.</summary>
+internal enum CanvasShapeProblem
+{
+    /// <summary>A shape was given input it cannot draw: not finite, negative, a wrong count, not convex.</summary>
+    InvalidInput,
+
+    /// <summary>A paint drew more shape vertices than one paint may.</summary>
+    VertexBudget,
+}
 
 /// <summary>
 /// The contract painter over one canvas repaint. Bound to the canvas
@@ -15,6 +28,11 @@ namespace AcDream.App.UI.Layout;
 /// surface's context is begun at the canvas's own size, with its origin at
 /// the canvas's top-left corner, and the canvas rectangle is already the
 /// clip in force.</para>
+///
+/// <para>Shapes are tessellated here into anti-aliased triangles
+/// (<see cref="CanvasGeometry"/>). Input they cannot draw draws nothing
+/// and is handed to the problem sink the surface binds, never thrown: a
+/// throw would drop the whole canvas.</para>
 /// </summary>
 internal sealed class PluginPainter : IPluginPainter
 {
@@ -25,9 +43,29 @@ internal sealed class PluginPainter : IPluginPainter
     private int _width;
     private int _height;
 
+    /// <summary>
+    /// The most shape vertices one paint may ask for, counted per paint
+    /// before clipping. Shape triangles go into the frame's vertex ring,
+    /// 16 MiB per frame slot and shared by everything drawn in that frame
+    /// (<c>GpuMemoryProfile.RingCapacityBytesPerSlot</c>); at 32 bytes a
+    /// vertex this is 1 MiB of it -- about 75 large circles or 130 rounded
+    /// panels. Clipping can add vertices, so in the worst case the ring's
+    /// share is a little more than 1 MiB. Tessellating and clipping this
+    /// many takes about 0.6 ms, well inside the paint budget.
+    /// </summary>
+    internal const int MaximumShapeVerticesPerPaint = 32_768;
+
+    /// <summary>Canvases are painted at their own size, so one device pixel of the target is one canvas pixel.</summary>
+    private const float DevicePixel = 1f;
+
+    private readonly List<UiColorVertex> _shape = new(1024);
+    private Action<CanvasShapeProblem, string>? _shapeProblems;
+    private int _shapeVertices;
+
     /// <summary>Points the painter at one repaint. Only the surface calls this.</summary>
-    internal void Bind(UiRenderContext context, UiDatFont? font, PluginImages? images, int width, int height,
-        PluginFonts? fonts = null)
+    internal void Bind(
+        UiRenderContext context, UiDatFont? font, PluginImages? images, int width, int height,
+        PluginFonts? fonts = null, Action<CanvasShapeProblem, string>? shapeProblems = null)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _font = font;
@@ -36,6 +74,9 @@ internal sealed class PluginPainter : IPluginPainter
         _fonts?.BeginPaint();
         _width = width;
         _height = height;
+        _shapeProblems = shapeProblems;
+        _shapeVertices = 0;
+        ShapeBudgetExceeded = false;
     }
 
     /// <summary>Forgets the repaint; every call after this throws.</summary>
@@ -46,7 +87,16 @@ internal sealed class PluginPainter : IPluginPainter
         _font = null;
         _images = null;
         _fonts = null;
+        _shapeProblems = null;
     }
+
+    /// <summary>
+    /// True once a shape in this repaint would have drawn more shape vertices
+    /// than one paint may; it and later shapes in it are skipped. Kept after
+    /// <see cref="Unbind"/> for the guard to read, cleared by the next
+    /// <see cref="Bind"/>.
+    /// </summary>
+    internal bool ShapeBudgetExceeded { get; private set; }
 
     internal bool IsBound => _context is not null;
 
@@ -132,6 +182,123 @@ internal sealed class PluginPainter : IPluginPainter
 
     public void PopClip() => Context.PopClip();
 
+    public void FillPolygon(ReadOnlySpan<PluginPoint> points, PluginColor color)
+    {
+        UiRenderContext context = Context;
+        Span<Vector4> colors = stackalloc Vector4[Math.Min(points.Length, CanvasGeometry.MaximumPolygonPoints)];
+        colors.Fill(ToVector(color));
+        FillPolygonCore(context, points, colors);
+    }
+
+    public void FillPolygon(ReadOnlySpan<PluginPoint> points, ReadOnlySpan<PluginColor> colors)
+    {
+        UiRenderContext context = Context;
+        if (colors.Length != points.Length)
+        {
+            Reject(nameof(FillPolygon), string.Create(
+                CultureInfo.InvariantCulture, $"{colors.Length} colours for {points.Length} points"));
+            return;
+        }
+        Span<Vector4> converted = stackalloc Vector4[Math.Min(colors.Length, CanvasGeometry.MaximumPolygonPoints)];
+        for (int i = 0; i < converted.Length; i++)
+            converted[i] = ToVector(colors[i]);
+        FillPolygonCore(context, points, converted);
+    }
+
+    public void FillRoundedRect(PluginRect rect, PluginCornerRadii radii, PluginColor color)
+    {
+        UiRenderContext context = Context;
+        if (!TryConvert(rect, nameof(FillRoundedRect), out float x, out float y, out float w, out float h)
+            || !TryConvert(radii, nameof(FillRoundedRect), out CanvasCornerRadii corners)
+            || ShapeBudgetExceeded)
+            return;
+        _shape.Clear();
+        CanvasGeometry.FillRoundedRect(x, y, w, h, corners, ToVector(color), DevicePixel, _shape);
+        Emit(context);
+    }
+
+    public void StrokeRoundedRect(PluginRect rect, PluginCornerRadii radii, PluginColor color, float thickness = 1f)
+    {
+        UiRenderContext context = Context;
+        if (!TryConvert(rect, nameof(StrokeRoundedRect), out float x, out float y, out float w, out float h)
+            || !TryConvert(radii, nameof(StrokeRoundedRect), out CanvasCornerRadii corners)
+            || !CheckThickness(thickness, nameof(StrokeRoundedRect))
+            || ShapeBudgetExceeded)
+            return;
+        _shape.Clear();
+        CanvasGeometry.StrokeRoundedRect(x, y, w, h, corners, ToVector(color), thickness, DevicePixel, _shape);
+        Emit(context);
+    }
+
+    public void FillEllipse(PluginRect bounds, PluginColor color)
+    {
+        UiRenderContext context = Context;
+        if (!TryConvert(bounds, nameof(FillEllipse), out float x, out float y, out float w, out float h)
+            || ShapeBudgetExceeded)
+            return;
+        _shape.Clear();
+        CanvasGeometry.FillEllipse(x, y, w, h, ToVector(color), DevicePixel, _shape);
+        Emit(context);
+    }
+
+    public void StrokeEllipse(PluginRect bounds, PluginColor color, float thickness = 1f)
+    {
+        UiRenderContext context = Context;
+        if (!TryConvert(bounds, nameof(StrokeEllipse), out float x, out float y, out float w, out float h)
+            || !CheckThickness(thickness, nameof(StrokeEllipse))
+            || ShapeBudgetExceeded)
+            return;
+        _shape.Clear();
+        CanvasGeometry.StrokeEllipse(x, y, w, h, ToVector(color), thickness, DevicePixel, _shape);
+        Emit(context);
+    }
+
+    public void FillCircle(PluginPoint center, double radius, PluginColor color)
+    {
+        UiRenderContext context = Context;
+        if (!double.IsFinite(radius) || radius < 0)
+        {
+            Reject(nameof(FillCircle), "a radius that is negative or not a finite number");
+            return;
+        }
+        var bounds = new PluginRect(center.X - radius, center.Y - radius, radius * 2, radius * 2);
+        if (!TryConvert(bounds, nameof(FillCircle), out float x, out float y, out float w, out float h)
+            || ShapeBudgetExceeded)
+            return;
+        _shape.Clear();
+        CanvasGeometry.FillEllipse(x, y, w, h, ToVector(color), DevicePixel, _shape);
+        Emit(context);
+    }
+
+    public void FillRectGradient(PluginRect rect, PluginColor from, PluginColor to, PluginGradientDirection direction)
+    {
+        UiRenderContext context = Context;
+        if (!TryConvert(rect, nameof(FillRectGradient), out float x, out float y, out float w, out float h))
+            return;
+        if (direction is not (PluginGradientDirection.Horizontal or PluginGradientDirection.Vertical))
+        {
+            Reject(nameof(FillRectGradient), "a direction that is neither horizontal nor vertical");
+            return;
+        }
+        if (ShapeBudgetExceeded) return;
+
+        Vector4 start = ToVector(from);
+        Vector4 end = ToVector(to);
+        Span<Vector2> corners = [new(x, y), new(x + w, y), new(x + w, y + h), new(x, y + h)];
+        Span<Vector4> colors = stackalloc Vector4[4];
+        if (direction == PluginGradientDirection.Horizontal)
+        {
+            colors[0] = start; colors[1] = end; colors[2] = end; colors[3] = start;
+        }
+        else
+        {
+            colors[0] = start; colors[1] = start; colors[2] = end; colors[3] = end;
+        }
+        _shape.Clear();
+        CanvasGeometry.FillConvexPolygon(corners, colors, DevicePixel, _shape);
+        Emit(context);
+    }
+
     private UiRenderContext Context =>
         _context ?? throw new InvalidOperationException(
             "The painter is valid only for the duration of the paint callback it was handed to.");
@@ -148,6 +315,97 @@ internal sealed class PluginPainter : IPluginPainter
         return _images is not null
             && _images.TryResolve(image, out texture, out _, out _)
             && texture != 0u;
+    }
+
+    private void FillPolygonCore(UiRenderContext context, ReadOnlySpan<PluginPoint> points, ReadOnlySpan<Vector4> colors)
+    {
+        const string member = nameof(FillPolygon);
+        if (points.Length < 3)
+        {
+            Reject(member, "fewer than three points");
+            return;
+        }
+        if (points.Length > CanvasGeometry.MaximumPolygonPoints)
+        {
+            Reject(member, string.Create(
+                CultureInfo.InvariantCulture, $"more than {CanvasGeometry.MaximumPolygonPoints} points"));
+            return;
+        }
+        Span<Vector2> corners = stackalloc Vector2[points.Length];
+        for (int i = 0; i < points.Length; i++)
+        {
+            corners[i] = new Vector2((float)points[i].X, (float)points[i].Y);
+            if (!float.IsFinite(corners[i].X) || !float.IsFinite(corners[i].Y))
+            {
+                Reject(member, "a point that is not a finite number");
+                return;
+            }
+        }
+        if (ShapeBudgetExceeded) return;
+
+        _shape.Clear();
+        if (CanvasGeometry.FillConvexPolygon(corners, colors, DevicePixel, _shape) == CanvasShapeOutcome.NotConvex)
+        {
+            Reject(member, "points that do not make a convex polygon");
+            return;
+        }
+        Emit(context);
+    }
+
+    /// <summary>
+    /// Hands the shape just tessellated to the context, unless it would take
+    /// the paint past its vertex budget; then it and every later shape in
+    /// this paint are skipped, and the surface tells the guard.
+    /// </summary>
+    private void Emit(UiRenderContext context)
+    {
+        int count = _shape.Count;
+        if (count == 0) return;
+        if (_shapeVertices + count > MaximumShapeVerticesPerPaint)
+        {
+            ShapeBudgetExceeded = true;
+            _shapeProblems?.Invoke(CanvasShapeProblem.VertexBudget, string.Create(
+                CultureInfo.InvariantCulture,
+                $"one paint asked for more than {MaximumShapeVerticesPerPaint} shape vertices; the shapes past that were not drawn"));
+            return;
+        }
+        _shapeVertices += count;
+        context.DrawTriangles(CollectionsMarshal.AsSpan(_shape));
+    }
+
+    private bool TryConvert(PluginRect rect, string member, out float x, out float y, out float width, out float height)
+    {
+        x = (float)rect.X;
+        y = (float)rect.Y;
+        width = (float)rect.Width;
+        height = (float)rect.Height;
+        if (!(float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(width) && float.IsFinite(height)))
+            return Reject(member, "a rectangle that is not a finite number");
+        if (width < 0f || height < 0f)
+            return Reject(member, "a rectangle of negative size");
+        return true;
+    }
+
+    private bool TryConvert(PluginCornerRadii radii, string member, out CanvasCornerRadii corners)
+    {
+        corners = new CanvasCornerRadii(
+            (float)radii.TopLeft, (float)radii.TopRight, (float)radii.BottomRight, (float)radii.BottomLeft);
+        if (!(float.IsFinite(corners.TopLeft) && float.IsFinite(corners.TopRight)
+              && float.IsFinite(corners.BottomRight) && float.IsFinite(corners.BottomLeft)))
+            return Reject(member, "a corner radius that is not a finite number");
+        if (corners.TopLeft < 0f || corners.TopRight < 0f || corners.BottomRight < 0f || corners.BottomLeft < 0f)
+            return Reject(member, "a negative corner radius");
+        return true;
+    }
+
+    private bool CheckThickness(float thickness, string member) =>
+        (float.IsFinite(thickness) && thickness >= 0f)
+        || Reject(member, "a thickness that is negative or not a finite number");
+
+    private bool Reject(string member, string what)
+    {
+        _shapeProblems?.Invoke(CanvasShapeProblem.InvalidInput, $"{member} was given {what}");
+        return false;
     }
 
     private static Vector4 ToVector(PluginColor color) =>

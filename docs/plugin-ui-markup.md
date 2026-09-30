@@ -411,6 +411,13 @@ Canvas fonts are covered by `CanvasFontBakerTests`, `CanvasFontTests`,
 `Rendering/TextureCacheReleasableUiTextureTests`, by
 `ScopedUiRegistryFontsTests` for the scoped forwarder, and by
 `PluginFontsContractTests` and the headless suite for the inert answers.
+Canvas shapes are covered by `UI/CanvasGeometryTests`,
+`Rendering/ColoredTriangleClipperTests`, `Rendering/TextRendererTrianglesTests`,
+`UI/UiRenderContextTrianglesTests` and the shape cases in
+`UI/Layout/PluginCanvasElementTests` under `tests/AcDream.App.Tests/`, by
+`PluginCanvasShapesContractTests` for the inert answers of an older host,
+and, on a Vulkan device, by `Rendering/Gpu/Vk/PluginCanvasShapeOffscreenTests`
+(`Lane=Vulkan`).
 
 ## Scrolling transcripts
 
