@@ -102,6 +102,16 @@ internal enum GpuBlendMode
     InverseAdditive,
 
     InverseAlpha,
+
+    /// <summary>
+    /// Straight-alpha sources painted into a target that holds premultiplied
+    /// colour: colour <c>SrcAlpha, OneMinusSrcAlpha</c>, alpha
+    /// <c>One, OneMinusSrcAlpha</c>. Over a target cleared to transparent the
+    /// result is premultiplied colour with the true coverage in alpha, to be
+    /// composited with <see cref="PremultipliedAlpha"/>. Straight alpha on both
+    /// channels would store alpha squared.
+    /// </summary>
+    StraightAlphaIntoPremultiplied,
 }
 
 internal enum GpuCompareOp

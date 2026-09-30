@@ -102,8 +102,20 @@ internal static class VulkanViewportMapping
         GpuBlendMode.RawAdditive => (BlendFactor.One, BlendFactor.One),
         GpuBlendMode.InverseAdditive => (BlendFactor.OneMinusSrcAlpha, BlendFactor.One),
         GpuBlendMode.InverseAlpha => (BlendFactor.OneMinusSrcAlpha, BlendFactor.SrcAlpha),
+        GpuBlendMode.StraightAlphaIntoPremultiplied => (BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha),
         GpuBlendMode.None => (BlendFactor.One, BlendFactor.Zero),
         _ => throw new ArgumentOutOfRangeException(nameof(blend), blend, "Unknown blend mode."),
+    };
+
+    /// <summary>
+    /// The factors for the alpha channel. The same as the colour factors for
+    /// every mode except <see cref="GpuBlendMode.StraightAlphaIntoPremultiplied"/>,
+    /// whose alpha accumulates coverage instead of squaring it.
+    /// </summary>
+    internal static (BlendFactor Source, BlendFactor Destination) AlphaBlendFactorsOf(GpuBlendMode blend) => blend switch
+    {
+        GpuBlendMode.StraightAlphaIntoPremultiplied => (BlendFactor.One, BlendFactor.OneMinusSrcAlpha),
+        _ => BlendFactorsOf(blend),
     };
 
     internal static AttachmentLoadOp ToVulkan(GpuLoadOp load) => load switch

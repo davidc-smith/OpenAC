@@ -166,4 +166,24 @@ public sealed class VulkanViewportMappingTests
         BitConverter.GetBytes(0x8086u).CopyTo(blob, 8);
         Assert.Null(VulkanPipelineCache.ValidateHeader(blob, 0x1002, 0, uuid));
     }
+
+    [Fact]
+    public void AlphaFactorsFollowColourFactorsExceptWhenPaintingIntoAPremultipliedTarget()
+    {
+        foreach (GpuBlendMode mode in Enum.GetValues<GpuBlendMode>())
+        {
+            if (mode == GpuBlendMode.StraightAlphaIntoPremultiplied)
+                continue;
+            Assert.Equal(
+                VulkanViewportMapping.BlendFactorsOf(mode),
+                VulkanViewportMapping.AlphaBlendFactorsOf(mode));
+        }
+
+        Assert.Equal(
+            (BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha),
+            VulkanViewportMapping.BlendFactorsOf(GpuBlendMode.StraightAlphaIntoPremultiplied));
+        Assert.Equal(
+            (BlendFactor.One, BlendFactor.OneMinusSrcAlpha),
+            VulkanViewportMapping.AlphaBlendFactorsOf(GpuBlendMode.StraightAlphaIntoPremultiplied));
+    }
 }

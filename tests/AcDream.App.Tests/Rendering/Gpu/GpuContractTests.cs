@@ -62,7 +62,7 @@ public sealed class GpuContractTests
     [Fact]
     public void BlendModesCoverEveryRetailRendererState()
     {
-        Assert.Equal(7, Enum.GetValues<GpuBlendMode>().Length);
+        Assert.Equal(8, Enum.GetValues<GpuBlendMode>().Length);
         Assert.Contains(GpuBlendMode.None, Enum.GetValues<GpuBlendMode>());
         Assert.Contains(GpuBlendMode.StraightAlpha, Enum.GetValues<GpuBlendMode>());
         Assert.Contains(GpuBlendMode.PremultipliedAlpha, Enum.GetValues<GpuBlendMode>());
@@ -70,6 +70,9 @@ public sealed class GpuContractTests
         Assert.Contains(GpuBlendMode.RawAdditive, Enum.GetValues<GpuBlendMode>());
         Assert.Contains(GpuBlendMode.InverseAlpha, Enum.GetValues<GpuBlendMode>());
         Assert.Contains(GpuBlendMode.InverseAdditive, Enum.GetValues<GpuBlendMode>());
+        // StraightAlphaIntoPremultiplied is the canvas-target mode for painting into
+        // premultiplied targets, not a retail renderer state.
+        Assert.Contains(GpuBlendMode.StraightAlphaIntoPremultiplied, Enum.GetValues<GpuBlendMode>());
     }
 
     [Fact]
