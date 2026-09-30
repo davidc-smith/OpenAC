@@ -36,6 +36,7 @@ public sealed class TextRenderer : IDisposable
     private sealed class SpriteSeg
     {
         public uint Texture;
+        public uint Coverage;
         public bool Premultiplied;
         public readonly List<float> Verts = new(256);
     }
@@ -75,6 +76,17 @@ public sealed class TextRenderer : IDisposable
                 SpriteSeg seg = _spriteSegs[i];
                 result.Add((seg.Texture, seg.Verts.ToArray()));
             }
+            return result;
+        }
+    }
+
+    internal IReadOnlyList<uint> DebugSpriteSegmentCoverage
+    {
+        get
+        {
+            var result = new List<uint>(_segUsed);
+            for (int i = 0; i < _segUsed; i++)
+                result.Add(_spriteSegs[i].Coverage);
             return result;
         }
     }
@@ -297,6 +309,21 @@ public sealed class TextRenderer : IDisposable
     }
 
     /// <summary>
+    /// Draws a region of a single-channel texture, such as a glyph atlas,
+    /// whose value is the alpha of <paramref name="color"/>. It lands in the
+    /// sprite runs, so it keeps its place among fills and images, and
+    /// consecutive glyphs from one atlas are one draw.
+    /// </summary>
+    internal void DrawCoverageSprite(uint coverageTexture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 color)
+    {
+        SpriteSeg seg = OverlayMode
+            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, UiTextureTableHandle.None, coverage: coverageTexture)
+            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        UiTextureTableHandle.None, coverage: coverageTexture);
+        AppendQuad(seg.Verts, x, y, w, h, u0, v0, u1, v1, color);
+    }
+
+    /// <summary>
     /// Append a convex outline of three to eight corners as a triangle fan.
     /// This is the path for anything that is not an upright rectangle -- a
     /// thick line, a rotated or scaled blit, either of those after clipping.
@@ -344,19 +371,26 @@ public sealed class TextRenderer : IDisposable
     internal static uint ResolveExternalTextureSlot(GpuTextureSlot slot) =>
         UiTextureTableHandle.FromSlot(slot);
 
-    private static SpriteSeg NextSpriteSeg(List<SpriteSeg> segs, ref int used, uint texture, bool premultiplied = false)
+    private static SpriteSeg NextSpriteSeg(
+        List<SpriteSeg> segs, ref int used, uint texture,
+        bool premultiplied = false, uint coverage = UiTextureTableHandle.None)
     {
-        if (used > 0 && segs[used - 1].Texture == texture && segs[used - 1].Premultiplied == premultiplied)
-            return segs[used - 1];
+        if (used > 0)
+        {
+            SpriteSeg last = segs[used - 1];
+            if (last.Texture == texture && last.Coverage == coverage && last.Premultiplied == premultiplied)
+                return last;
+        }
         if (used < segs.Count)
         {
             var s = segs[used++];
             s.Texture = texture;
+            s.Coverage = coverage;
             s.Premultiplied = premultiplied;
             s.Verts.Clear();
             return s;
         }
-        var ns = new SpriteSeg { Texture = texture, Premultiplied = premultiplied };
+        var ns = new SpriteSeg { Texture = texture, Coverage = coverage, Premultiplied = premultiplied };
         segs.Add(ns);
         used++;
         return ns;
@@ -467,7 +501,7 @@ public sealed class TextRenderer : IDisposable
             var seg = spriteSegs[i];
             if (seg.Verts.Count == 0) continue;
             Bind(encoder, seg.Premultiplied ? _premultipliedPipeline! : _pipeline, ref bound);
-            SetTextures(encoder, colorHandle: seg.Texture, coverageHandle: UiTextureTableHandle.None);
+            SetTextures(encoder, colorHandle: seg.Texture, coverageHandle: seg.Coverage);
             DrawRing(frame, encoder, seg.Verts);
         }
 

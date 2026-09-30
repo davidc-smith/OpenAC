@@ -188,6 +188,26 @@ public sealed class UiRenderContext
     }
 
     /// <summary>
+    /// Draws a region of a single-channel texture as the alpha of
+    /// <paramref name="color"/> (see <see cref="TextRenderer.DrawCoverageSprite"/>).
+    /// Translation, clipping and the alpha stack apply as they do for
+    /// <see cref="DrawSprite"/>.
+    /// </summary>
+    internal void DrawCoverageSprite(uint coverageTexture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 color) =>
+        DrawCoverageSpriteAbsolute(coverageTexture, x + _current.X, y + _current.Y, w, h, u0, v0, u1, v1, color);
+
+    private void DrawCoverageSpriteAbsolute(uint coverageTexture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 color)
+    {
+        if (_clip is { } clip
+            && !UiClipRect.TryClipSprite(
+                clip, ref x, ref y, ref w, ref h, ref u0, ref v0, ref u1, ref v1))
+            return;
+        TextRenderer.DrawCoverageSprite(coverageTexture, x, y, w, h, u0, v0, u1, v1, ApplyAlpha(color));
+    }
+
+    /// <summary>
     /// A straight segment from (x0, y0) to (x1, y1), <paramref name="thickness"/>
     /// pixels wide, centred on the segment -- half the width falls on each
     /// side of the line through the two points. The ends are square and flush
