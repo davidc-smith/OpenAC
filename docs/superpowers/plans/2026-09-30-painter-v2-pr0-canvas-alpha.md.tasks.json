@@ -1,0 +1,66 @@
+{
+  "planPath": "docs/superpowers/plans/2026-09-30-painter-v2-pr0-canvas-alpha.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Create the branch",
+      "status": "pending",
+      "description": "**Goal:** A clean code branch from `main`.\n\n**Files:** none\n\n**Acceptance Criteria:**\n- [ ] `git branch --show-current` prints `painter-v2/canvas-alpha`\n- [ ] `git log -1 --format=%H main` equals `git merge-base HEAD main`\n- [ ] `docs/superpowers` does not exist in the working tree\n\n**Verify:** `git branch --show-current && test ! -e docs/superpowers && echo clean`\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"\", \"acceptanceCriteria\": [], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Share the headless Vulkan host and readback between ",
+      "status": "pending",
+      "description": "**Goal:** Move the private headless Vulkan host and readback out of `MeshModernSharedIndexOffscreenTests` into two internal test helpers so a new `Lane=Vulkan` test can use them, with no behaviour change.\n\n**Files:**\n- Create: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/HeadlessVulkanTestHost.cs`\n- Create: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/VulkanImageReadback.cs`\n- Modify: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/MeshModernSharedIndexOffscreenTests.cs` (remove `ReadBack` at ~212-346, `CreateHostReadBarrier` at ~348-364, `HeadlessVulkanHost` at ~402-515, `RepositoryRoot` at ~517-524; update call sites and the source-inspecting test at ~40-77)\n- Modify: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/MeshModernSharedIndexOffscreenTests.AtmosphericLighting.cs` (call sites)\n- Modify: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/MeshModernSharedIndexOffscreenTests.EnvCellLighting.cs` (call sites)\n\n**Acceptance Criteria:**\n- [ ] The three `MeshModernSharedIndexOffscreenTests` Vulkan tests pass locally under MoltenVK, as before the move\n- [ ] `ReadbackDependency_PublishesTheExactCopiedRangeBeforeEndAndSubmit` passes and inspects `VulkanImageReadback.cs`\n- [ ] No test file other than the three above and the two new helpers changes\n\n**Verify:** `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter \"FullyQualifiedName~MeshModernSharedIndexOffscreenTests\"` → `Passed!` with 0 failed\n\n```json:metadata\n{\"files\": [\"tests/AcDream.App.Tests/Rendering/Gpu/Vk/HeadlessVulkanTestHost.cs\", \"tests/AcDream.App.Tests/Rendering/Gpu/Vk/VulkanImageReadback.cs\", \"tests/AcDream.App.Tests/Rendering/Gpu/Vk/MeshModernSharedIndexOffscreenTests.cs\", \"tests/AcDream.App.Tests/Rendering/Gpu/Vk/MeshModernSharedIndexOffscreenTests.AtmosphericLighting.cs\", \"tests/AcDream.App.Tests/Rendering/Gpu/Vk/MeshModernSharedIndexOffscreenTests.EnvCellLighting.cs\"], \"verifyCommand\": \"DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter FullyQualifiedName~MeshModernSharedIndexOffscreenTests\", \"acceptanceCriteria\": [\"Mesh Vulkan tests pass as before\", \"source-inspecting test reads VulkanImageReadback.cs\", \"only the listed files change\"], \"modelTier\": \"mechanical\"}\n```",
+      "blockedBy": [
+        0
+      ]
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: A blend mode that paints into a premultiplied target",
+      "status": "pending",
+      "description": "**Goal:** `GpuBlendMode.StraightAlphaIntoPremultiplied` with colour `SrcAlpha, OneMinusSrcAlpha` and alpha `One, OneMinusSrcAlpha`, honoured by the Vulkan pipeline.\n\n**Files:**\n- Modify: `src/AcDream.App/Rendering/Gpu/GpuEnums.cs:87-106`\n- Modify: `src/AcDream.App/Rendering/Gpu/Vk/VulkanViewportMapping.cs:97-107`\n- Modify: `src/AcDream.App/Rendering/Gpu/Vk/VulkanGpuPipeline.cs:169-179`\n- Test: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/VulkanViewportMappingTests.cs`\n\n**Acceptance Criteria:**\n- [ ] `AlphaBlendFactorsOf(mode) == BlendFactorsOf(mode)` for every existing mode\n- [ ] The new mode maps to colour `(SrcAlpha, OneMinusSrcAlpha)` and alpha `(One, OneMinusSrcAlpha)`\n- [ ] The pipeline's `SrcAlphaBlendFactor`/`DstAlphaBlendFactor` come from `AlphaBlendFactorsOf`\n\n**Verify:** `dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter \"FullyQualifiedName~VulkanViewportMappingTests\"` → `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/Rendering/Gpu/GpuEnums.cs\", \"src/AcDream.App/Rendering/Gpu/Vk/VulkanViewportMapping.cs\", \"src/AcDream.App/Rendering/Gpu/Vk/VulkanGpuPipeline.cs\", \"tests/AcDream.App.Tests/Rendering/Gpu/Vk/VulkanViewportMappingTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter FullyQualifiedName~VulkanViewportMappingTests\", \"acceptanceCriteria\": [\"existing modes keep identical alpha factors\", \"new mode maps colour SrcAlpha/OneMinusSrcAlpha and alpha One/OneMinusSrcAlpha\", \"pipeline uses AlphaBlendFactorsOf\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: TextRenderer — blend at construction, premultiplied ",
+      "status": "pending",
+      "description": "**Goal:** `TextRenderer` can be built to paint into a premultiplied target, and any `TextRenderer` can draw premultiplied sprites through a composite pipeline it creates on first use and binds only for those runs.\n\n**Files:**\n- Modify: `src/AcDream.App/Rendering/TextRenderer.cs`\n- Test: `tests/AcDream.App.Tests/Rendering/TextRendererBlendTests.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] Default construction creates one pipeline named `ui-text` with `StraightAlpha` (existing cleanup test unchanged and green)\n- [ ] Construction with `StraightAlphaIntoPremultiplied` creates one pipeline named `ui-text-into-premultiplied` with that blend\n- [ ] Any other blend passed to the constructor throws `ArgumentOutOfRangeException`\n- [ ] The first `DrawPremultipliedSprite` creates `ui-text-premultiplied` (`PremultipliedAlpha`); later calls do not create more\n- [ ] A flush binds `ui-text`, then `ui-text-premultiplied` only around premultiplied runs, then `ui-text` again before later straight runs\n- [ ] A premultiplied sprite's vertex colour is the tint with rgb multiplied by alpha\n- [ ] A straight and a premultiplied sprite of the same texture never share a run\n- [ ] `Dispose` disposes both pipelines\n\n**Verify:** `dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter \"FullyQualifiedName~TextRendererBlendTests|FullyQualifiedName~ResourceCleanupGroupTests|FullyQualifiedName~TextRendererLinearTwinTests\"` → `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/Rendering/TextRenderer.cs\", \"tests/AcDream.App.Tests/Rendering/TextRendererBlendTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter \\\"FullyQualifiedName~TextRendererBlendTests|FullyQualifiedName~ResourceCleanupGroupTests|FullyQualifiedName~TextRendererLinearTwinTests\\\"\", \"acceptanceCriteria\": [\"default construction still makes one ui-text pipeline\", \"canvas construction makes one ui-text-into-premultiplied pipeline\", \"other blends refused\", \"composite pipeline lazy and single\", \"bind order ui-text/premultiplied/ui-text\", \"tint premultiplied\", \"separate runs per blend\", \"dispose disposes both\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Pixel proof in the Vulkan lane",
+      "status": "pending",
+      "description": "**Goal:** On a real device, a 50 % white fill painted into a canvas and composited over opaque black reads back as 50 % grey, and the canvas target stores alpha 50 %, not 25 %.\n\n**Files:**\n- Test: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/PluginCanvasCompositeOffscreenTests.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] Canvas texel reads back `(128, 128, 128, 128)` ±2\n- [ ] Composited texel reads back `(128, 128, 128, 255)` ±2\n- [ ] Temporarily painting with `StraightAlpha` and compositing with `DrawSprite` reads back composite red ≈ 32 (the bug), proving the test discriminates; the change is reverted before commit\n- [ ] The test carries `[Trait(\"Lane\", \"Vulkan\")]`\n\n**Verify:** `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter \"FullyQualifiedName~PluginCanvasCompositeOffscreenTests\"` → `Passed!`\n\n```json:metadata\n{\"files\": [\"tests/AcDream.App.Tests/Rendering/Gpu/Vk/PluginCanvasCompositeOffscreenTests.cs\"], \"verifyCommand\": \"DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter FullyQualifiedName~PluginCanvasCompositeOffscreenTests\", \"acceptanceCriteria\": [\"canvas texel 128,128,128,128 +-2\", \"composite texel 128,128,128,255 +-2\", \"straight/straight variant reads ~64 alpha and ~32 red, then reverted\", \"Lane=Vulkan trait\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Canvases paint into premultiplied and are shown prem",
+      "status": "pending",
+      "description": "**Goal:** The plugin canvas surface paints with the new blend and the canvas element draws its quad through `DrawSpritePremultiplied`, with window alpha still applied.\n\n**Files:**\n- Modify: `src/AcDream.App/UI/UiRenderContext.cs` (add `DrawSpritePremultiplied` after `DrawSprite`, ~line 171)\n- Modify: `src/AcDream.App/UI/Layout/PluginCanvasSurface.cs:71`\n- Modify: `src/AcDream.App/UI/Layout/PluginCanvasElement.cs:309`\n- Test: `tests/AcDream.App.Tests/UI/Layout/PluginCanvasElementTests.cs`\n\n**Acceptance Criteria:**\n- [ ] The surface's renderer pipeline is `ui-text-into-premultiplied`\n- [ ] After a frame, the main renderer's single run is premultiplied and the `ui-text-premultiplied` pipeline is bound in the `ui-text` pass\n- [ ] Under `PushAlpha(0.5f)` the canvas quad's vertex colour is `(0.5, 0.5, 0.5, 0.5)`\n- [ ] All existing `PluginCanvasElementTests` and `PluginCanvasTeardownOrderTests` still pass\n\n**Verify:** `dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter \"FullyQualifiedName~PluginCanvas\"` → `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/UI/UiRenderContext.cs\", \"src/AcDream.App/UI/Layout/PluginCanvasSurface.cs\", \"src/AcDream.App/UI/Layout/PluginCanvasElement.cs\", \"tests/AcDream.App.Tests/UI/Layout/PluginCanvasElementTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj -c Release --filter FullyQualifiedName~PluginCanvas\", \"acceptanceCriteria\": [\"surface pipeline is ui-text-into-premultiplied\", \"main run premultiplied and composite pipeline bound\", \"PushAlpha 0.5 gives 0.5,0.5,0.5,0.5\", \"existing canvas suites pass\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        4
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Full verification and push",
+      "status": "pending",
+      "description": "**Goal:** The branch is green on the portable gate and the Vulkan lane locally, and is pushed to `origin` with a ready PR description.\n\n**Files:** none (a PR description is drafted in the conversation, not committed)\n\n**Acceptance Criteria:**\n- [ ] `dotnet build AcDream.slnx -c Release` reports 0 warnings, 0 errors\n- [ ] The portable filter reports 0 failed across the solution\n- [ ] `Lane=Vulkan` on `AcDream.App.Tests` reports 0 failed under MoltenVK\n- [ ] `git diff main --stat` touches no file under `src/AcDream.App/Rendering/Shaders/`\n- [ ] Branch pushed to `origin`; PR not opened until the user picks the target\n\n**Verify:** the four commands in the steps below, each with the stated output\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"dotnet build AcDream.slnx -c Release\", \"acceptanceCriteria\": [\"0 warnings 0 errors\", \"portable filter 0 failed\", \"Lane=Vulkan 0 failed on MoltenVK\", \"no shader files changed\", \"branch pushed, PR target asked\"], \"modelTier\": \"mechanical\"}\n```",
+      "blockedBy": [
+        5
+      ]
+    }
+  ],
+  "lastUpdated": "2026-09-30T17:55:27"
+}
