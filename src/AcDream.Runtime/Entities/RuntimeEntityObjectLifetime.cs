@@ -1672,10 +1672,17 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
         if (!Entities.RemoveActive(canonical))
             return false;
 
-        Entities.AdvanceLifetimeMutation(canonical.ServerGuid);
-        Entities.RetainTeardown(canonical);
-        PublishEntity(RuntimeEntityChange.Deleted, canonical);
-        return true;
+        ulong mutation = Entities.AdvanceLifetimeMutation(canonical.ServerGuid);
+        try
+        {
+            Entities.RetainTeardown(canonical);
+            PublishEntity(RuntimeEntityChange.Deleted, canonical);
+            return true;
+        }
+        finally
+        {
+            Entities.ForgetLifetimeMutationIfInactive(canonical.ServerGuid, mutation);
+        }
     }
 
     public bool TryAcceptDelete(
@@ -1697,46 +1704,53 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
             return false;
         }
 
-        Entities.AdvanceLifetimeMutation(delete.Guid);
-        WithdrawCommittedChildrenToCellless(delete.Guid, delete.InstanceSequence);
-        Entities.ParentAttachments.DeleteGeneration(
-            delete.Guid,
-            delete.InstanceSequence);
-
-        RuntimeEntityRecord? retiredCanonical = null;
-        if (Entities.TryGetActive(
-                delete.Guid,
-                out RuntimeEntityRecord active)
-            && active.Incarnation == delete.InstanceSequence
-            && Entities.RemoveActive(active))
+        ulong mutation = Entities.AdvanceLifetimeMutation(delete.Guid);
+        try
         {
-            RuntimePlacementCancellationReceipt initialCancellation =
-                ForgetInitialCreateResidence(active);
-            Physics.CollisionReports.Forget(active);
-            RuntimePlacementCancellationReceipt ordinaryCancellation =
-                Physics.SetPosition.Forget(
-                    active,
-                    releasePreparedMover: true);
-            RuntimePlacementCancellationReceipt cancellation =
-                PreferCancellation(
-                    initialCancellation,
-                    ordinaryCancellation);
-            retiredCanonical = active;
-            Entities.RetainTeardown(active);
-            Physics.SetPosition.PublishCancellation(cancellation);
-            PublishEntity(
-                removeRetainedObject
-                    ? RuntimeEntityChange.Deleted
-                    : RuntimeEntityChange.Withdrawn,
-                active);
-        }
+            WithdrawCommittedChildrenToCellless(delete.Guid, delete.InstanceSequence);
+            Entities.ParentAttachments.DeleteGeneration(
+                delete.Guid,
+                delete.InstanceSequence);
 
-        acceptance = new RuntimeEntityDeleteAcceptance(
-            this,
-            delete,
-            retiredCanonical,
-            removeRetainedObject);
-        return true;
+            RuntimeEntityRecord? retiredCanonical = null;
+            if (Entities.TryGetActive(
+                    delete.Guid,
+                    out RuntimeEntityRecord active)
+                && active.Incarnation == delete.InstanceSequence
+                && Entities.RemoveActive(active))
+            {
+                RuntimePlacementCancellationReceipt initialCancellation =
+                    ForgetInitialCreateResidence(active);
+                Physics.CollisionReports.Forget(active);
+                RuntimePlacementCancellationReceipt ordinaryCancellation =
+                    Physics.SetPosition.Forget(
+                        active,
+                        releasePreparedMover: true);
+                RuntimePlacementCancellationReceipt cancellation =
+                    PreferCancellation(
+                        initialCancellation,
+                        ordinaryCancellation);
+                retiredCanonical = active;
+                Entities.RetainTeardown(active);
+                Physics.SetPosition.PublishCancellation(cancellation);
+                PublishEntity(
+                    removeRetainedObject
+                        ? RuntimeEntityChange.Deleted
+                        : RuntimeEntityChange.Withdrawn,
+                    active);
+            }
+
+            acceptance = new RuntimeEntityDeleteAcceptance(
+                this,
+                delete,
+                retiredCanonical,
+                removeRetainedObject);
+            return true;
+        }
+        finally
+        {
+            Entities.ForgetLifetimeMutationIfInactive(delete.Guid, mutation);
+        }
     }
 
     public void CompleteAcceptedDelete(

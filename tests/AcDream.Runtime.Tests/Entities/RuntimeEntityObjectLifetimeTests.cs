@@ -132,6 +132,7 @@ public sealed class RuntimeEntityObjectLifetimeTests
             out RuntimeEntityDeleteAcceptance accepted));
         Assert.Same(canonical, accepted.RetiredCanonical);
         Assert.False(lifetime.Entities.TryGetActive(spawn.Guid, out _));
+        Assert.Equal(0UL, lifetime.Entities.CurrentLifetimeMutation(spawn.Guid));
         lifetime.CompleteAcceptedDelete(accepted);
         Assert.Null(lifetime.RetireCanonicalOnly(canonical));
         Assert.Null(lifetime.Objects.Get(spawn.Guid));

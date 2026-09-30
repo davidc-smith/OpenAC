@@ -22,6 +22,7 @@ public sealed class RuntimeEntityDirectory
         _teardownByIncarnation = new();
     private readonly Dictionary<uint, RuntimeEntityRecord> _byLocalId = new();
     private readonly Dictionary<uint, ulong> _lifetimeMutationByGuid = new();
+    private ulong _nextLifetimeMutation;
     private uint _nextLocalEntityId;
 
     public RuntimeEntityDirectory(uint firstLocalEntityId = FirstLocalEntityId)
@@ -238,13 +239,23 @@ public sealed class RuntimeEntityDirectory
 
     public ulong AdvanceLifetimeMutation(uint serverGuid)
     {
-        ulong next = _lifetimeMutationByGuid.GetValueOrDefault(serverGuid) + 1UL;
+        // Tokens must remain distinct when an old GUID is deleted and later reused.
+        ulong next = checked(++_nextLifetimeMutation);
         _lifetimeMutationByGuid[serverGuid] = next;
         return next;
     }
 
     public ulong CurrentLifetimeMutation(uint serverGuid) =>
         _lifetimeMutationByGuid.GetValueOrDefault(serverGuid);
+
+    public void ForgetLifetimeMutationIfInactive(uint serverGuid, ulong mutation)
+    {
+        if (!_activeByGuid.ContainsKey(serverGuid)
+            && CurrentLifetimeMutation(serverGuid) == mutation)
+        {
+            _lifetimeMutationByGuid.Remove(serverGuid);
+        }
+    }
 
     public void BeginSessionClear()
     {

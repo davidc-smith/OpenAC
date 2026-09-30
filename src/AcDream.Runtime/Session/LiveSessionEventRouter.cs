@@ -178,8 +178,19 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                 creatureDeath.ObserveMotion(update);
                 entities.MotionUpdated(update);
             };
+            Action<DeleteObject.Parsed> deleted = delete =>
+            {
+                try
+                {
+                    entities.Deleted(delete);
+                }
+                finally
+                {
+                    creatureDeath.Forget(delete.Guid, delete.InstanceSequence);
+                }
+            };
             Subscribe(h => session.EntitySpawned += h, h => session.EntitySpawned -= h, spawned);
-            Subscribe(h => session.EntityDeleted += h, h => session.EntityDeleted -= h, entities.Deleted);
+            Subscribe(h => session.EntityDeleted += h, h => session.EntityDeleted -= h, deleted);
             Subscribe(h => session.EntityPickedUp += h, h => session.EntityPickedUp -= h, entities.PickedUp);
             Subscribe(h => session.MotionUpdated += h, h => session.MotionUpdated -= h, motionUpdated);
             {
