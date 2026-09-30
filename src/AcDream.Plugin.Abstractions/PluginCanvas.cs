@@ -154,6 +154,11 @@ public readonly record struct PluginPointerEvent(
 /// canvas. The painter is valid only for the duration of the paint
 /// callback: keeping it and drawing later throws.
 ///
+/// <para>Shapes -- polygons, rounded rectangles, ellipses, circles and
+/// gradients -- have edges anti-aliased over one pixel; the other
+/// primitives have hard edges. A shape given input it cannot draw draws
+/// nothing and never throws; the client's log says so once per canvas.</para>
+///
 /// <para>Text is drawn in the client's own interface font, at its one
 /// size, which is why there is no font or size to choose. Every clip
 /// pushed during a paint must be popped before it returns.</para>
@@ -239,6 +244,100 @@ public interface IPluginPainter
 
     /// <summary>Undoes the most recent <see cref="PushClip"/>.</summary>
     void PopClip();
+
+    /// <summary>
+    /// Fills a convex polygon in one colour, with anti-aliased edges. The
+    /// points go round the outline in order, either way round, 3 to 64 of
+    /// them. Too few or too many points, or an outline that is not convex,
+    /// draws nothing. A host that predates shapes draws nothing.
+    /// </summary>
+    /// <param name="points">The polygon's corners, in order round its outline.</param>
+    /// <param name="color">The fill colour.</param>
+    void FillPolygon(ReadOnlySpan<PluginPoint> points, PluginColor color)
+    {
+    }
+
+    /// <summary>
+    /// Fills a convex polygon with a colour at each corner, blended across
+    /// the polygon, with anti-aliased edges; otherwise as the one-colour
+    /// overload. A colour count that differs from the point count draws
+    /// nothing. A host that predates shapes draws nothing.
+    /// </summary>
+    /// <param name="points">The polygon's corners, in order round its outline.</param>
+    /// <param name="colors">One colour per corner, in the same order as the points.</param>
+    void FillPolygon(ReadOnlySpan<PluginPoint> points, ReadOnlySpan<PluginColor> colors)
+    {
+    }
+
+    /// <summary>
+    /// Fills a rectangle with rounded corners and anti-aliased edges. A host
+    /// that predates shapes draws nothing.
+    /// </summary>
+    /// <param name="rect">The rectangle.</param>
+    /// <param name="radii">Each corner's radius; see <see cref="PluginCornerRadii"/>.</param>
+    /// <param name="color">The fill colour.</param>
+    void FillRoundedRect(PluginRect rect, PluginCornerRadii radii, PluginColor color)
+    {
+    }
+
+    /// <summary>
+    /// Draws a rounded rectangle's outline, centred on the outline so half
+    /// the thickness falls outside the rectangle, with anti-aliased edges.
+    /// Outside a square corner the outline stays square. A host that
+    /// predates shapes draws nothing.
+    /// </summary>
+    /// <param name="rect">The rectangle.</param>
+    /// <param name="radii">Each corner's radius; see <see cref="PluginCornerRadii"/>.</param>
+    /// <param name="color">The outline colour.</param>
+    /// <param name="thickness">The outline's width in pixels; thinner than one pixel is drawn one pixel wide and proportionally fainter.</param>
+    void StrokeRoundedRect(PluginRect rect, PluginCornerRadii radii, PluginColor color, float thickness = 1f)
+    {
+    }
+
+    /// <summary>
+    /// Fills the ellipse that fits a rectangle, with an anti-aliased edge. A
+    /// host that predates shapes draws nothing.
+    /// </summary>
+    /// <param name="bounds">The rectangle the ellipse fits.</param>
+    /// <param name="color">The fill colour.</param>
+    void FillEllipse(PluginRect bounds, PluginColor color)
+    {
+    }
+
+    /// <summary>
+    /// Draws the outline of the ellipse that fits a rectangle, centred on the
+    /// outline, with anti-aliased edges. A host that predates shapes draws
+    /// nothing.
+    /// </summary>
+    /// <param name="bounds">The rectangle the ellipse fits.</param>
+    /// <param name="color">The outline colour.</param>
+    /// <param name="thickness">The outline's width in pixels; thinner than one pixel is drawn one pixel wide and proportionally fainter.</param>
+    void StrokeEllipse(PluginRect bounds, PluginColor color, float thickness = 1f)
+    {
+    }
+
+    /// <summary>
+    /// Fills a circle, with an anti-aliased edge: the ellipse in the square
+    /// around it. A host that predates shapes draws nothing.
+    /// </summary>
+    /// <param name="center">The circle's centre.</param>
+    /// <param name="radius">The circle's radius in pixels.</param>
+    /// <param name="color">The fill colour.</param>
+    void FillCircle(PluginPoint center, double radius, PluginColor color) =>
+        FillEllipse(new PluginRect(center.X - radius, center.Y - radius, radius * 2, radius * 2), color);
+
+    /// <summary>
+    /// Fills a rectangle blending from one colour at one edge to another at
+    /// the opposite edge, with anti-aliased edges. A host that predates
+    /// shapes draws nothing.
+    /// </summary>
+    /// <param name="rect">The rectangle.</param>
+    /// <param name="from">The colour at the left or top edge.</param>
+    /// <param name="to">The colour at the right or bottom edge.</param>
+    /// <param name="direction">Whether the blend runs across the rectangle or down it.</param>
+    void FillRectGradient(PluginRect rect, PluginColor from, PluginColor to, PluginGradientDirection direction)
+    {
+    }
 }
 
 /// <summary>
