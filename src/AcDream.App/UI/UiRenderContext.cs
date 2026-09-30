@@ -37,6 +37,7 @@ public sealed class UiRenderContext
 
     private readonly System.Collections.Generic.List<float> _alphaStack = new();
     private float _alpha = 1f;
+    private readonly System.Collections.Generic.List<UiColorVertex> _triangles = new(256);
 
     public float AlphaMod => _alpha;
 
@@ -300,6 +301,47 @@ public sealed class UiRenderContext
         if (count < 3) return;
         TextRenderer.DrawConvexPolygon(texture, clipped[..count], color);
     }
+
+    /// <summary>
+    /// Untextured triangles in local coordinates, three vertices each, with a
+    /// colour at every corner. They are moved by the current origin, faded
+    /// by the alpha stack and cut to the clip in force, with the colour
+    /// blended wherever the clip cuts, then handed to the batcher in one go.
+    /// </summary>
+    internal void DrawTriangles(ReadOnlySpan<UiColorVertex> triangles)
+    {
+        if (triangles.Length < 3 || _clip is { IsEmpty: true }) return;
+
+        _triangles.Clear();
+        Span<UiColorVertex> clipped = stackalloc UiColorVertex[ColoredTriangleClipper.MaxClippedVertices];
+        for (int i = 0; i + 2 < triangles.Length; i += 3)
+        {
+            UiColorVertex a = Place(triangles[i]);
+            UiColorVertex b = Place(triangles[i + 1]);
+            UiColorVertex c = Place(triangles[i + 2]);
+            if (_clip is not { } clip)
+            {
+                _triangles.Add(a);
+                _triangles.Add(b);
+                _triangles.Add(c);
+                continue;
+            }
+
+            int count = ColoredTriangleClipper.Clip(clip.Left, clip.Top, clip.Right, clip.Bottom, a, b, c, clipped);
+            for (int k = 1; k + 1 < count; k++)
+            {
+                _triangles.Add(clipped[0]);
+                _triangles.Add(clipped[k]);
+                _triangles.Add(clipped[k + 1]);
+            }
+        }
+
+        if (_triangles.Count > 0)
+            TextRenderer.DrawTriangles(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_triangles));
+    }
+
+    private UiColorVertex Place(in UiColorVertex vertex) =>
+        new(vertex.Position + _current, ApplyAlpha(vertex.Color));
 
     private void DrawSpriteAbsolute(
         uint texture, float x, float y, float w, float h,

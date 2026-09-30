@@ -327,6 +327,28 @@ public sealed class TextRenderer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Appends untextured triangles, three vertices each, with a colour at
+    /// every corner that the rasteriser blends across the triangle -- the
+    /// path for anti-aliased canvas shapes, whose fringes fade to clear.
+    /// They land in the untextured run like <see cref="DrawFill"/>, so a
+    /// shape between two fills costs no extra draw call and keeps its place
+    /// among images.
+    /// </summary>
+    internal void DrawTriangles(ReadOnlySpan<UiColorVertex> triangles)
+    {
+        if (triangles.Length % 3 != 0)
+            throw new ArgumentException("A triangle list holds whole triangles.", nameof(triangles));
+        if (triangles.Length == 0)
+            return;
+
+        SpriteSeg seg = OverlayMode
+            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, UiTextureTableHandle.None)
+            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        UiTextureTableHandle.None);
+        foreach (UiColorVertex vertex in triangles)
+            AppendVertex(seg.Verts, new UiQuadVertex(vertex.Position, Vector2.Zero), vertex.Color);
+    }
+
     private void AppendVertex(List<float> buf, in UiQuadVertex vertex, Vector4 color)
     {
         float px = vertex.Position.X;
