@@ -1300,6 +1300,63 @@ call. Without a window, or before the client's interface is up,
 images are dropped when the interface is torn down (for example on a
 reconnect), after which the plugin asks again.
 
+## Fonts
+
+Canvas text is drawn in the client's interface font unless the plugin
+passes a font from `host.Ui.Fonts`. There are two sources: the client's
+bundled sans-serif (Noto Sans) at any size, and a TrueType or OpenType font
+the plugin ships.
+
+```csharp
+IPluginFonts fonts = host.Ui.Fonts;
+
+PluginFont body  = fonts.Bundled(16);                         // Noto Sans, 16 px
+PluginFont title = fonts.FromStream("fonts/Inter-Bold.ttf",    // the plugin's own font
+    () => File.OpenRead(Path.Combine(pluginDirectory, "fonts", "Inter-Bold.ttf")), 22);
+PluginFont icons = fonts.FromStream("fonts/MaterialSymbols.ttf",
+    () => File.OpenRead(Path.Combine(pluginDirectory, "fonts", "MaterialSymbols.ttf")), 20,
+    new PluginFontOptions { Ranges = [new PluginCodepointRange(0xE000, 0xF8FF)] });
+
+// in a paint callback:
+painter.DrawText("Golem", new PluginPoint(8, 6), PluginColor.White, title);
+PluginSize size = painter.MeasureText("Golem", title);   // width with kerning, and title.LineHeight
+painter.DrawText("", new PluginPoint(8, 34), PluginColor.White, icons);
+
+fonts.Release(title);
+```
+
+Each size of each font is its own `PluginFont`, carrying its `PixelSize`,
+`LineHeight` and `Ascent` (how far below the top of a line the baseline
+sits) so text in different fonts can share a baseline. Preparing a font
+takes some milliseconds and happens when it is asked for, never while a
+canvas paints: ask for fonts up front, not inside the paint callback.
+
+`FromStream` prepares the characters named in `PluginFontOptions.Ranges`,
+or by default U+0020-U+024F, U+0370-U+052F and U+2000-U+206F. Only the
+characters the font actually has are prepared and counted, so an icon font
+can name the whole private-use area. A character that was not prepared
+draws as the font's `?` if that was prepared, and as nothing otherwise.
+
+Requests are counted like images: asking twice for the same font, size and
+characters returns the same `PluginFont`, and it takes two releases to let
+it go. A plugin may hold at most `MaximumCount` fonts (16), sized from
+`MinimumPixelSize` to `MaximumPixelSize` (6 to 64 px), each preparing at
+most `MaximumGlyphs` characters (2048); its own fonts may take at most
+`MaximumBytes` (16 MB), counting the font files and the glyph textures made
+from them. The bundled font is shared with every plugin and costs nothing
+against the byte budget. A font file whose structure is malformed
+(truncated, or with a bad table directory) is refused: the client checks
+the file's header, table directory and table extents before reading it. A
+request past any limit, a stream that cannot be read, or a file that is not
+a usable font answers `PluginFont.None` and is reported once in the
+client's log; text drawn with an invalid or released font draws nothing and
+measures `(0, 0)`.
+
+Call all of this from the tick thread. Without a window, or before the
+client's interface is up, `IsAvailable` is false and every request answers
+`PluginFont.None`; fonts are dropped when the interface is torn down, after
+which the plugin asks again.
+
 ## Canvases
 
 A canvas is a rectangle the plugin paints, shown over the world and under
@@ -1334,7 +1391,8 @@ frame, on the tick thread. Several `Invalidate()` calls before that frame
 paint once. The painter handed to the callback is valid only for the
 duration of the call; keeping it and drawing later throws. Its primitives
 are `Clear`, `FillRect`, `StrokeRect`, `DrawLine`, `DrawText` with
-`MeasureText` (the client's own interface font, one size), `DrawImage`,
+`MeasureText` (the client's interface font, or a font from
+[Fonts](#fonts)), `DrawImage`,
 `DrawImageTransformed` (scaled and turned about a pivot, for a compass or
 a rotating map) and `PushClip`/`PopClip`; every clip pushed must be popped
 before the callback returns. Colours with alpha, translucent images and

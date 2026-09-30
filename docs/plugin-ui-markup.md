@@ -403,6 +403,11 @@ and headless suites for the inert answers a host without a window gives,
 and, for how a canvas is composited, by `Rendering/TextRendererBlendTests`
 and, on a Vulkan device, `Rendering/Gpu/Vk/PluginCanvasCompositeOffscreenTests`
 (`Lane=Vulkan`).
+Canvas fonts are covered by `CanvasFontBakerTests`, `CanvasFontTests`,
+`PluginFontTableTests`, `BundledCanvasFontCacheTests` and
+`BufferedUiRegistryFontsTests` under `tests/AcDream.App.Tests/`, by
+`ScopedUiRegistryFontsTests` for the scoped forwarder, and by
+`PluginFontsContractTests` and the headless suite for the inert answers.
 
 ## Scrolling transcripts
 
