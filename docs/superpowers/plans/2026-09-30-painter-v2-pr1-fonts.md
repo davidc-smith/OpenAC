@@ -20,6 +20,7 @@
 - Commit subjects: `plugin api: …`, `plugin fonts: …`, `plugin canvas: …`, `gpu: …`, `docs: …`, `tests: …`. Every commit message ends with `Claude-Session: https://claude.ai/code/session_01EtugJHhFMqGXY2V6Lz2ZFB`.
 - Environment for every command: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH`.
 - Tests run in the machine's culture unless `ACDREAM_TEST_CULTURE` is set (this Mac uses a decimal comma): any reason text a test asserts on is formatted with `CultureInfo.InvariantCulture`.
+- Builds on this Mac rewrite `src/AcDream.Launcher/packages.neutral.lock.json` (its RID section becomes `osx-arm64`), and an unlocked restore also touches the `packages.osx-arm64.lock.json` files. That is local churn: never stage a `packages.*.lock.json`; stage files by explicit path and run `git checkout -- '*.lock.json'` before pushing if `git status` shows any.
 - Portable gate filter: `Lane!=InstalledDat&Lane!=PreparedPackage&Lane!=Live&Lane!=Manual&Lane!=Timing&Lane!=Windows&Lane!=Linux&Lane!=MacOS&Lane!=Unix&Lane!=Vulkan&Lane!=SystemFont&Purpose!=Diagnostic&Status!=KnownFailure`.
 
 **User decisions (already made):**

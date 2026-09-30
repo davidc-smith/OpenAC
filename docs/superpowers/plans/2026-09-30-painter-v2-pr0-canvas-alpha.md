@@ -18,6 +18,7 @@
 - `TextRenderer` construction still creates exactly one pipeline (`ResourceCleanupGroupTests.TextRendererConstructionCreatesAndDisposesOnlyOnePipeline` must keep passing unchanged).
 - Existing `GpuBlendMode` values keep identical colour *and* alpha factors.
 - Environment for every command: `export DOTNET_ROOT=$HOME/.dotnet PATH=$HOME/.dotnet:$PATH` (the pinned 10.0.300 SDK). `Lane=Vulkan` commands also need `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`.
+- Builds on this Mac rewrite `src/AcDream.Launcher/packages.neutral.lock.json` (its RID section becomes `osx-arm64`), and an unlocked restore also touches the `packages.osx-arm64.lock.json` files. That is local churn: never stage a `packages.*.lock.json`; stage files by explicit path and run `git checkout -- '*.lock.json'` before pushing if `git status` shows any.
 - Portable gate filter (from CONTRIBUTING.md): `Lane!=InstalledDat&Lane!=PreparedPackage&Lane!=Live&Lane!=Manual&Lane!=Timing&Lane!=Windows&Lane!=Linux&Lane!=MacOS&Lane!=Unix&Lane!=Vulkan&Lane!=SystemFont&Purpose!=Diagnostic&Status!=KnownFailure`.
 
 **User decisions (already made):**
