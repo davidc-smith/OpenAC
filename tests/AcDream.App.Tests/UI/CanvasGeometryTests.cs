@@ -150,6 +150,19 @@ public sealed class CanvasGeometryTests
     }
 
     [Fact]
+    public void AStrokeThatLeavesNoHoleCoversTheGrownRectangle()
+    {
+        foreach ((float width, float height, float thickness) in new[] { (100f, 2f, 2f), (100f, 1f, 1f), (100f, 4f, 4f) })
+        {
+            var triangles = new List<UiColorVertex>();
+
+            CanvasGeometry.StrokeRoundedRect(10f, 10f, width, height, default, White, thickness, 1f, triangles);
+
+            AssertCovers((width + thickness) * (height + thickness), triangles);
+        }
+    }
+
+    [Fact]
     public void APolygonCoversItsAreaWhicheverWayItWinds()
     {
         Vector2[] clockwise = [new(10f, 10f), new(50f, 10f), new(30f, 40f)];

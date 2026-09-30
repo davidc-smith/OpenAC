@@ -395,6 +395,8 @@ internal static class CanvasGeometry
     /// <summary>
     /// A rounded rectangle's outline, <paramref name="thickness"/> wide,
     /// centred on the outline. Outside a square corner the stroke stays square.
+    /// A stroke that leaves no hole is drawn as the fill of the rectangle
+    /// grown by half its width, so its middle is not left thin.
     /// </summary>
     internal static void StrokeRoundedRect(
         float x, float y, float width, float height, CanvasCornerRadii radii, Vector4 color, float thickness,
@@ -403,6 +405,16 @@ internal static class CanvasGeometry
         if (!(width > 0f && height > 0f && thickness > 0f)) return;
         radii = ClampRadii(radii, width, height);
         (float halfWidth, Vector4 ink) = StrokeProfile(thickness, color, pixel);
+        if (width <= 2f * halfWidth || height <= 2f * halfWidth)
+        {
+            // No hole left: the stroke is the rectangle grown by half its
+            // width, each round corner grown alike; square corners stay square.
+            var grown = new CanvasCornerRadii(
+                Grow(radii.TopLeft), Grow(radii.TopRight), Grow(radii.BottomRight), Grow(radii.BottomLeft));
+            FillRoundedRect(
+                x - halfWidth, y - halfWidth, width + 2f * halfWidth, height + 2f * halfWidth, grown, ink, pixel, output);
+            return;
+        }
         float fringe = pixel * 0.5f;
         Span<int> segments = stackalloc int[4];
         CornerSegments(radii, halfWidth + fringe, pixel, segments);
@@ -413,6 +425,8 @@ internal static class CanvasGeometry
         RoundedRectRing(x, y, width, height, radii, fringe - halfWidth, segments, rings.Slice(points * 2, points));
         RoundedRectRing(x, y, width, height, radii, -halfWidth - fringe, segments, rings.Slice(points * 3, points));
         StrokeRings(rings, points, ink, halfWidth > fringe, output);
+
+        float Grow(float radius) => radius > 0f ? radius + halfWidth : radius;
     }
 
     /// <summary>An ellipse filling a rectangle.</summary>
