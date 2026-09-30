@@ -1320,7 +1320,7 @@ PluginFont icons = fonts.FromStream("fonts/MaterialSymbols.ttf",
 // in a paint callback:
 painter.DrawText("Golem", new PluginPoint(8, 6), PluginColor.White, title);
 PluginSize size = painter.MeasureText("Golem", title);   // width with kerning, and title.LineHeight
-painter.DrawText("", new PluginPoint(8, 34), PluginColor.White, icons);
+painter.DrawText("\uE8B8", new PluginPoint(8, 34), PluginColor.White, icons); // U+E8B8, the "settings" gear
 
 fonts.Release(title);
 ```
