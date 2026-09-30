@@ -4205,7 +4205,8 @@ public sealed class RetailUiRuntime : IDisposable
                     canvas,
                     _pluginCanvasSurface,
                     () => plugins.FindImages(owner),
-                    modifiers: HeldPointerModifiers);
+                    modifiers: HeldPointerModifiers,
+                    fonts: () => plugins.FindFonts(owner));
                 layer.AddChild(element, takesInput: canvas.AcceptsPointerInput);
                 plugins.CompleteCanvasMount(canvas, () =>
                 {

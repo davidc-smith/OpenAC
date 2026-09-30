@@ -101,7 +101,8 @@ internal sealed class PluginCanvasSurface : IDisposable
         PluginCanvasRegistration registration,
         IGpuRenderTarget target,
         UiDrawCallbackGuard guard,
-        PluginImages? images)
+        PluginImages? images,
+        PluginFonts? fonts = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(registration);
@@ -114,7 +115,7 @@ internal sealed class PluginCanvasSurface : IDisposable
         _renderer.Begin(size);
         _context.Begin(size, null);
         _context.PushClip(0f, 0f, width, height);
-        _painter.Bind(_context, Font, images, width, height);
+        _painter.Bind(_context, Font, images, width, height, fonts);
         bool drew;
         try
         {

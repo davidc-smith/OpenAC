@@ -57,6 +57,7 @@ internal sealed class PluginCanvasElement : UiElement
     private readonly PluginCanvasRegistration _registration;
     private readonly PluginCanvasSurface _surface;
     private readonly Func<PluginImages?> _images;
+    private readonly Func<PluginFonts?> _fonts;
     private readonly UiDrawCallbackGuard _guard;
     private readonly UiDrawCallbackGuard _inputGuard;
     private readonly Func<PluginKeyModifiers> _modifiers;
@@ -74,11 +75,13 @@ internal sealed class PluginCanvasElement : UiElement
         Func<PluginImages?> images,
         Action<string>? report = null,
         Func<double>? nowMilliseconds = null,
-        Func<PluginKeyModifiers>? modifiers = null)
+        Func<PluginKeyModifiers>? modifiers = null,
+        Func<PluginFonts?>? fonts = null)
     {
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
         _images = images ?? throw new ArgumentNullException(nameof(images));
+        _fonts = fonts ?? (static () => null);
         _report = report ?? (line => Serilog.Log.Warning("{Line}", line));
         _modifiers = modifiers ?? (static () => PluginKeyModifiers.None);
         _guard = new UiDrawCallbackGuard(
@@ -323,7 +326,7 @@ internal sealed class PluginCanvasElement : UiElement
             return;
         }
 
-        bool drew = _surface.Repaint(_registration, target.Target, _guard, _images());
+        bool drew = _surface.Repaint(_registration, target.Target, _guard, _images(), _fonts());
         target.LastUsedFrameSlot = frameSlot;
         if (_guard.IsTripped)
         {

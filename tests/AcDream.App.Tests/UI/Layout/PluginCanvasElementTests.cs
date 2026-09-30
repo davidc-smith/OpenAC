@@ -140,6 +140,7 @@ public sealed class PluginCanvasElementTests
             MainRenderer = new TextRenderer(Device, Frames, "unused");
             MainContext = new UiRenderContext(MainRenderer, new Vector2(800f, 600f));
             Registry.BindImageServices(new FakeImageBackend());
+            Registry.BindFontServices(new AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend());
             Device.Clear();
         }
 
@@ -150,7 +151,8 @@ public sealed class PluginCanvasElementTests
             PluginCanvasRegistration drained = Assert.Single(Registry.DrainCanvases());
             Assert.Same(registration, drained);
             var element = new PluginCanvasElement(
-                registration, Surface, () => Registry.FindImages(Owner), Reports.Add, Clock.Read);
+                registration, Surface, () => Registry.FindImages(Owner), Reports.Add, Clock.Read,
+                fonts: () => Registry.FindFonts(Owner));
             Layer.AddChild(element);
             Registry.CompleteCanvasMount(registration, () =>
             {
@@ -552,5 +554,63 @@ public sealed class PluginCanvasElementTests
         Assert.Contains("no offscreen targets here", Assert.Single(harness.Reports), StringComparison.Ordinal);
         Assert.True(registration.IsAvailable);
         Assert.Empty(harness.MainRuns);
+    }
+
+    [Fact]
+    public void TextInAPluginFontKeepsItsPlaceAndMeasuresAsItDraws()
+    {
+        var harness = new Harness();
+        PluginFont font = harness.Registry.FontsFor(harness.Owner).Bundled(16f);
+        Assert.True(font.IsValid);
+        PluginSize measured = default;
+        harness.Mount(Hud(), painter =>
+        {
+            painter.FillRect(new PluginRect(0, 0, 200, 100), new PluginColor(0, 0, 0, 160));
+            painter.DrawText("AV", new PluginPoint(4, 4), PluginColor.White, font);
+            painter.FillRect(new PluginRect(0, 50, 200, 10), PluginColor.White);
+            measured = painter.MeasureText("AV", font);
+        });
+
+        harness.Frame();
+
+        uint atlas = AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend.FirstTexture;
+        Assert.Equal([0u, atlas, 0u], harness.Surface.Renderer.DebugSpriteSegmentCoverage);
+        Assert.Equal(12, harness.SurfaceRuns[1].VertexCount);
+        Assert.True(harness.Registry.FindFonts(harness.Owner)!.TryResolve(font, out CanvasFont? resolved));
+        Assert.Equal(new PluginSize(resolved.MeasureWidth("AV"), resolved.LineHeight), measured);
+        Assert.Equal(font.LineHeight, (float)measured.Height);
+    }
+
+    [Fact]
+    public void AReleasedFontDrawsNothingAndMeasuresNothing()
+    {
+        var harness = new Harness();
+        IPluginFonts fonts = harness.Registry.FontsFor(harness.Owner);
+        PluginFont font = fonts.Bundled(16f);
+        fonts.Release(font);
+        PluginSize measured = new(1, 1);
+        harness.Mount(Hud(), painter =>
+        {
+            painter.DrawText("AV", new PluginPoint(4, 4), PluginColor.White, font);
+            measured = painter.MeasureText("AV", font);
+        });
+
+        harness.Frame();
+
+        Assert.Empty(harness.SurfaceRuns);
+        Assert.Equal(default, measured);
+    }
+
+    [Fact]
+    public void APainterKeptPastItsCallbackThrowsOnFontTextToo()
+    {
+        var harness = new Harness();
+        PluginFont font = harness.Registry.FontsFor(harness.Owner).Bundled(16f);
+        IPluginPainter? kept = null;
+        harness.Mount(Hud(), painter => kept = painter);
+        harness.Frame();
+
+        Assert.Throws<InvalidOperationException>(() => kept!.DrawText("x", default, PluginColor.White, font));
+        Assert.Throws<InvalidOperationException>(() => kept!.MeasureText("x", font));
     }
 }

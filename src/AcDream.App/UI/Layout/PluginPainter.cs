@@ -21,15 +21,18 @@ internal sealed class PluginPainter : IPluginPainter
     private UiRenderContext? _context;
     private UiDatFont? _font;
     private PluginImages? _images;
+    private PluginFonts? _fonts;
     private int _width;
     private int _height;
 
     /// <summary>Points the painter at one repaint. Only the surface calls this.</summary>
-    internal void Bind(UiRenderContext context, UiDatFont? font, PluginImages? images, int width, int height)
+    internal void Bind(UiRenderContext context, UiDatFont? font, PluginImages? images, int width, int height,
+        PluginFonts? fonts = null)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _font = font;
         _images = images;
+        _fonts = fonts;
         _width = width;
         _height = height;
     }
@@ -40,6 +43,7 @@ internal sealed class PluginPainter : IPluginPainter
         _context = null;
         _font = null;
         _images = null;
+        _fonts = null;
     }
 
     internal bool IsBound => _context is not null;
@@ -73,6 +77,20 @@ internal sealed class PluginPainter : IPluginPainter
         _ = Context;
         if (_font is null || string.IsNullOrEmpty(text)) return default;
         return new PluginSize(_font.MeasureWidth(text), _font.LineHeight);
+    }
+
+    public void DrawText(string text, PluginPoint position, PluginColor color, PluginFont font, bool outline = false)
+    {
+        UiRenderContext context = Context;
+        if (string.IsNullOrEmpty(text) || !TryResolve(font, out CanvasFont? resolved)) return;
+        context.DrawStringCanvasFont(resolved, text, (float)position.X, (float)position.Y, ToVector(color), outline);
+    }
+
+    public PluginSize MeasureText(string text, PluginFont font)
+    {
+        _ = Context;
+        if (string.IsNullOrEmpty(text) || !TryResolve(font, out CanvasFont? resolved)) return default;
+        return new PluginSize(resolved.MeasureWidth(text), resolved.LineHeight);
     }
 
     public void DrawImage(PluginImage image, PluginRect destination, PluginColor tint)
@@ -115,6 +133,12 @@ internal sealed class PluginPainter : IPluginPainter
     private UiRenderContext Context =>
         _context ?? throw new InvalidOperationException(
             "The painter is valid only for the duration of the paint callback it was handed to.");
+
+    private bool TryResolve(PluginFont font, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CanvasFont? resolved)
+    {
+        resolved = null;
+        return _fonts is not null && _fonts.TryResolve(font, out resolved);
+    }
 
     private bool TryResolve(PluginImage image, out uint texture)
     {
