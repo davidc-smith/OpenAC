@@ -403,6 +403,13 @@ and headless suites for the inert answers a host without a window gives,
 and, for how a canvas is composited, by `Rendering/TextRendererBlendTests`
 and, on a Vulkan device, `Rendering/Gpu/Vk/PluginCanvasCompositeOffscreenTests`
 (`Lane=Vulkan`).
+Canvas shapes are covered by `UI/CanvasGeometryTests`,
+`Rendering/ColoredTriangleClipperTests`, `Rendering/TextRendererTrianglesTests`,
+`UI/UiRenderContextTrianglesTests` and the shape cases in
+`UI/Layout/PluginCanvasElementTests` under `tests/AcDream.App.Tests/`, by
+`PluginCanvasShapesContractTests` for the inert answers of an older host,
+and, on a Vulkan device, by `Rendering/Gpu/Vk/PluginCanvasShapeOffscreenTests`
+(`Lane=Vulkan`).
 
 ## Scrolling transcripts
 

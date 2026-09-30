@@ -1352,6 +1352,48 @@ plugin still holds is removed when the plugin unloads.
 Without a window the canvas is accepted, `IsAvailable` is false, the
 state the plugin sets is kept, and the paint callback is never called.
 
+### Shapes
+
+Besides rectangles and lines, the painter draws shapes with smooth,
+anti-aliased edges:
+
+```csharp
+painter.FillRoundedRect(new PluginRect(0, 0, 200, 60), PluginCornerRadii.Uniform(8), new PluginColor(0, 0, 0, 160));
+painter.StrokeRoundedRect(new PluginRect(0, 0, 200, 60), PluginCornerRadii.Uniform(8), PluginColor.White, 1.5f);
+painter.FillRectGradient(new PluginRect(8, 40, 184 * healthFraction, 12),
+    new PluginColor(200, 30, 30), new PluginColor(255, 120, 60), PluginGradientDirection.Horizontal);
+painter.FillCircle(new PluginPoint(180, 20), 6, online ? new PluginColor(60, 200, 90) : new PluginColor(120, 120, 120));
+painter.FillPolygon([new PluginPoint(10, 10), new PluginPoint(20, 20), new PluginPoint(10, 30)], PluginColor.White);
+```
+
+`FillPolygon` fills a convex polygon of 3 to 64 points, given in order
+round its outline in either direction; its second overload takes one
+colour per point and blends between them. `FillRoundedRect` and
+`StrokeRoundedRect` take a radius per corner (`PluginCornerRadii`, or
+`PluginCornerRadii.Uniform` for all four). If the radii are too large for
+the rectangle they are scaled down together, as CSS does, and zero gives a
+square corner. `FillEllipse`, `StrokeEllipse` and `FillCircle` draw
+ellipses and circles. `FillRectGradient` fills a rectangle blending from
+one colour to another, across it or down it.
+
+The edges of these shapes are anti-aliased over one pixel; `FillRect`,
+`StrokeRect` and `DrawLine` keep their hard edges. Strokes are centred on
+the outline, so half the thickness falls outside the shape. A stroke
+thinner than a pixel is drawn one pixel wide and proportionally fainter.
+A shape with no area or no thickness simply draws nothing.
+
+Some input cannot be drawn: a polygon that is not convex or has too few or
+too many points, a colour count that does not match the point count, a
+negative size, radius or thickness, or a coordinate that is not a finite
+number. Such a shape draws nothing, never throws, and is reported once per
+canvas in the client's log.
+
+One paint may draw at most 32,768 shape vertices; a large circle takes a
+few hundred. Past that limit the remaining shapes are skipped and the log
+says so once. The paint also counts against the paint budget, like a slow
+one, so a callback that keeps going over is dropped. On a host that
+predates shapes, they draw nothing.
+
 ### Pointer input
 
 A canvas is click-through by default. One that wants to be dragged,
