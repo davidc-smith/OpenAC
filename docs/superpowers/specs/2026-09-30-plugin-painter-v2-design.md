@@ -620,6 +620,41 @@ Not implemented in this series. Recommended direction, modelled on World labels:
 
 ---
 
+## Plan-time corrections (2026-09-30)
+
+Measured or found while writing the PR 0 and PR 1 plans; these supersede the
+sections above where they differ.
+
+- **PR 0, lazy composite pipeline.** `ResourceCleanupGroupTests.TextRendererConstructionCreatesAndDisposesOnlyOnePipeline`
+  pins a `TextRenderer` to one pipeline at construction, so the
+  `PremultipliedAlpha` composite pipeline is created on the first premultiplied
+  sprite, not in the constructor. The canvas surface's renderer is constructed
+  with the new blend mode and still creates exactly one pipeline.
+- **PR 1, coverage atlases.** Glyph atlases are single-channel (`R8Unorm`) and
+  drawn through the fragment shader's existing coverage branch
+  (`uTextureIndexB`), in sprite runs keyed by the coverage texture, so painter's
+  order holds and atlases are a quarter of the RGBA size. Still no shader change.
+- **PR 1, sizes.** Measured with the pack API: Noto Sans with the default ranges
+  needs a 512² atlas at 16 px, 1024² at 32 px and 2048² at 72 px; baking takes
+  about 11 ms at 16 px and 29 ms at 72 px (hence baking outside paint).
+  `MaximumPixelSize` is 64 and atlases are capped at 2048².
+- **PR 1, glyph selection.** `stbtt_PackSetSkipMissingCodepoints` makes
+  `stbtt_PackFontRanges` report failure in StbTrueTypeSharp 1.26.12 even when
+  every glyph packed. The baker instead scans the requested ranges, keeps only
+  code points the font has (`stbtt_FindGlyphIndex != 0`), and packs them from an
+  explicit code point list. `MaximumGlyphs` (2048) counts those present glyphs,
+  so a sparse icon font can name all of U+E000–U+F8FF; the scan is capped at
+  65,536 code points per request.
+- **PR 1, fallback.** A code point the font lacks draws the font's `?` when that
+  glyph was baked, and nothing otherwise (an icon-only range usually has no `?`).
+- **PR 1, BundledUiFont untouched.** Its atlas layout and metrics feed the markup
+  "plugin" theme; refactoring it onto the new baker would shift that UI. It only
+  gains an internal accessor for the embedded font bytes.
+- **PR 1, OTF fixture.** A 1.4 KB CFF subset of the repository's Noto Sans
+  ("AVTo?", OFL) generated with fontTools 4.60.1 rasterises through
+  StbTrueTypeSharp and reports the same GPOS kerning as the TTF (A–V −40,
+  T–o −70 units), so `.otf` support is tested, not best effort.
+
 ## Order of work
 
 | PR | Branch | Topic | Depends on |
