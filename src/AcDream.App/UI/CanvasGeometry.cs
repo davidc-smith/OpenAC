@@ -40,6 +40,9 @@ internal readonly record struct CanvasCornerRadii(float TopLeft, float TopRight,
 /// for point. Everything here is pure: sizes come in canvas pixels, along
 /// with how many canvas pixels one device pixel is, and triangles go out
 /// as a list, three vertices each.</para>
+///
+/// <para>Strokes grow both radii of an ellipse alike, so a strongly
+/// eccentric ellipse's stroke is thinner along its flat sides.</para>
 /// </summary>
 internal static class CanvasGeometry
 {
@@ -172,8 +175,34 @@ internal static class CanvasGeometry
             clear[i] = Transparent(color[i]);
         }
 
+        // A polygon thinner than the fringe has no inner ring: pulling every
+        // corner in by half a pixel turns an edge back on itself. Collapse the
+        // inner ring to the vertex mean (inside any convex polygon) so nothing
+        // folds, then weaken the whole shape to the polygon's own area.
+        bool collapsed = false;
+        for (int i = 0; i < count && !collapsed; i++)
+        {
+            int next = (i + 1) % count;
+            collapsed = Vector2.Dot(inner[next] - inner[i], corner[next] - corner[i]) <= 0f;
+        }
+        double area = 0;
+        if (collapsed)
+        {
+            Vector2 mean = Vector2.Zero;
+            for (int i = 0; i < count; i++)
+            {
+                mean += corner[i];
+                area += Cross(corner[i], corner[(i + 1) % count]);
+            }
+            mean /= count;
+            area = Math.Abs(area) * 0.5;
+            inner.Fill(mean);
+        }
+
+        int start = output.Count;
         Fan(inner, color, output);
         Band(inner, color, outer, clear, output);
+        if (collapsed) ScaleToArea(output, start, area);
         return CanvasShapeOutcome.Drawn;
     }
 
@@ -192,7 +221,14 @@ internal static class CanvasGeometry
         Span<Vector2> outer = stackalloc Vector2[points];
         RoundedRectRing(x, y, width, height, radii, -half, segments, inner);
         RoundedRectRing(x, y, width, height, radii, half, segments, outer);
+        int start = output.Count;
         FillRing(inner, outer, color, output);
+        if (width < pixel || height < pixel)
+        {
+            double corners = (double)radii.TopLeft * radii.TopLeft + (double)radii.TopRight * radii.TopRight
+                + (double)radii.BottomRight * radii.BottomRight + (double)radii.BottomLeft * radii.BottomLeft;
+            ScaleToArea(output, start, (double)width * height - (4 - Math.PI) / 4 * corners);
+        }
     }
 
     /// <summary>
@@ -231,7 +267,9 @@ internal static class CanvasGeometry
         Span<Vector2> outer = stackalloc Vector2[segments];
         EllipseRing(centre, radii, -half, inner);
         EllipseRing(centre, radii, half, outer);
+        int start = output.Count;
         FillRing(inner, outer, color, output);
+        if (radii.X < half || radii.Y < half) ScaleToArea(output, start, Math.PI * radii.X * radii.Y);
     }
 
     /// <summary>
@@ -402,6 +440,31 @@ internal static class CanvasGeometry
         {
             float angle = MathF.PI * 2f * i / ring.Length;
             ring[i] = new Vector2(centre.X + rx * MathF.Cos(angle), centre.Y + ry * MathF.Sin(angle));
+        }
+    }
+
+    /// <summary>
+    /// Weakens the triangles written from <paramref name="start"/> on, all by
+    /// one factor, until what they cover weighted by alpha is
+    /// <paramref name="area"/>. A fill narrower than its fringe has no solid
+    /// core, and its two fringes alone would cover more than the shape does.
+    /// Never raises alpha.
+    /// </summary>
+    private static void ScaleToArea(List<UiColorVertex> output, int start, double area)
+    {
+        double covered = 0;
+        for (int i = start; i + 2 < output.Count; i += 3)
+        {
+            Vector2 a = output[i].Position, b = output[i + 1].Position, c = output[i + 2].Position;
+            double triangle = Math.Abs((b.X - a.X) * (double)(c.Y - a.Y) - (c.X - a.X) * (double)(b.Y - a.Y)) / 2;
+            covered += triangle * (output[i].Color.W + output[i + 1].Color.W + output[i + 2].Color.W) / 3;
+        }
+        if (!(covered > area) || !(covered > 0)) return;
+        float factor = (float)(area / covered);
+        for (int i = start; i < output.Count; i++)
+        {
+            UiColorVertex vertex = output[i];
+            output[i] = vertex with { Color = vertex.Color with { W = vertex.Color.W * factor } };
         }
     }
 

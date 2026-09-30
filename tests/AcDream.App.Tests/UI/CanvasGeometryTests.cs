@@ -261,4 +261,42 @@ public sealed class CanvasGeometryTests
 
         Assert.Empty(triangles);
     }
+
+    [Fact]
+    public void ShapesNarrowerThanTheirFringeStillCoverOnlyTheirOwnArea()
+    {
+        var strip = new List<UiColorVertex>();
+        Assert.Equal(CanvasShapeOutcome.Drawn, CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 0f), new(100f, 0.4f), new(0f, 0.4f)], Repeat(White, 4), 1f, strip));
+        AssertCovers(40, strip, tolerance: 0.02);
+        Assert.All(strip, v => Assert.InRange(v.Color.W, 0f, 1f));
+
+        // A diagonal quad 0.4 across: corners offset along a 45 degree line.
+        var diagonal = new List<UiColorVertex>();
+        float d = 0.4f / MathF.Sqrt(2f);
+        Assert.Equal(CanvasShapeOutcome.Drawn, CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 100f), new(100f + d, 100f - d), new(d, -d)], Repeat(White, 4), 1f, diagonal));
+        AssertCovers(0.4 * 100 * Math.Sqrt(2), diagonal, tolerance: 0.02);
+        Assert.All(diagonal, v => Assert.InRange(v.Color.W, 0f, 1f));
+
+        var rect = new List<UiColorVertex>();
+        CanvasGeometry.FillRoundedRect(0f, 0f, 100f, 0.4f, default, White, 1f, rect);
+        AssertCovers(40, rect, tolerance: 0.02);
+        Assert.All(rect, v => Assert.InRange(v.Color.W, 0f, 1f));
+
+        var dot = new List<UiColorVertex>();
+        CanvasGeometry.FillEllipse(0f, 0f, 0.4f, 0.4f, White, 1f, dot);
+        AssertCovers(Math.PI * 0.2 * 0.2, dot, tolerance: 0.02);
+        Assert.All(dot, v => Assert.InRange(v.Color.W, 0f, 1f));
+    }
+
+    [Fact]
+    public void AnEllipseThatIsNotACircleCoversItsArea()
+    {
+        var triangles = new List<UiColorVertex>();
+
+        CanvasGeometry.FillEllipse(0f, 0f, 80f, 20f, White, 1f, triangles);
+
+        AssertCovers(Math.PI * 40 * 10, triangles);
+    }
 }
