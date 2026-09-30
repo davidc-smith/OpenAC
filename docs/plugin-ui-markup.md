@@ -406,6 +406,9 @@ and, on a Vulkan device, `Rendering/Gpu/Vk/PluginCanvasCompositeOffscreenTests`
 Canvas fonts are covered by `CanvasFontBakerTests`, `CanvasFontTests`,
 `PluginFontTableTests`, `BundledCanvasFontCacheTests` and
 `BufferedUiRegistryFontsTests` under `tests/AcDream.App.Tests/`, by
+`Rendering/TextRendererCoverageSpriteTests`, by the font cases in
+`UI/Layout/PluginCanvasElementTests` and
+`Rendering/TextureCacheReleasableUiTextureTests`, by
 `ScopedUiRegistryFontsTests` for the scoped forwarder, and by
 `PluginFontsContractTests` and the headless suite for the inert answers.
 

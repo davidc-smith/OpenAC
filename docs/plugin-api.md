@@ -1315,7 +1315,8 @@ PluginFont title = fonts.FromStream("fonts/Inter-Bold.ttf",    // the plugin's o
     () => File.OpenRead(Path.Combine(pluginDirectory, "fonts", "Inter-Bold.ttf")), 22);
 PluginFont icons = fonts.FromStream("fonts/MaterialSymbols.ttf",
     () => File.OpenRead(Path.Combine(pluginDirectory, "fonts", "MaterialSymbols.ttf")), 20,
-    new PluginFontOptions { Ranges = [new PluginCodepointRange(0xE000, 0xF8FF)] });
+    new PluginFontOptions { Ranges = [new PluginCodepointRange(0xE8B8, 0xE8B8),      // settings gear
+                  new PluginCodepointRange(0xE5CD, 0xE5CD)] });  // close
 
 // in a paint callback:
 painter.DrawText("Golem", new PluginPoint(8, 6), PluginColor.White, title);
@@ -1329,12 +1330,16 @@ Each size of each font is its own `PluginFont`, carrying its `PixelSize`,
 `LineHeight` and `Ascent` (how far below the top of a line the baseline
 sits) so text in different fonts can share a baseline. Preparing a font
 takes some milliseconds and happens when it is asked for, never while a
-canvas paints: ask for fonts up front, not inside the paint callback.
+canvas paints: ask for fonts up front, not inside the paint callback. A
+request made inside a paint callback for a font not already held answers
+`PluginFont.None` and is reported once; asking again for a font already held
+is allowed.
 
 `FromStream` prepares the characters named in `PluginFontOptions.Ranges`,
 or by default U+0020-U+024F, U+0370-U+052F and U+2000-U+206F. Only the
 characters the font actually has are prepared and counted, so an icon font
-can name the whole private-use area. A character that was not prepared
+can name the whole private-use area, as long as it has no more than
+`MaximumGlyphs` of those characters. A character that was not prepared
 draws as the font's `?` if that was prepared, and as nothing otherwise.
 
 Requests are counted like images: asking twice for the same font, size and
@@ -1352,8 +1357,9 @@ a usable font answers `PluginFont.None` and is reported once in the
 client's log; text drawn with an invalid or released font draws nothing and
 measures `(0, 0)`.
 
-Call all of this from the tick thread. Without a window, or before the
-client's interface is up, `IsAvailable` is false and every request answers
+Call all of this from the tick thread; another thread gets an
+`InvalidOperationException`. Without a window, or before the client's
+interface is up, `IsAvailable` is false and every request answers
 `PluginFont.None`; fonts are dropped when the interface is torn down, after
 which the plugin asks again.
 
