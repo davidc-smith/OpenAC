@@ -26,16 +26,22 @@ public static class BundledUiFont
             0, 0, 0, LineHeight, Ascent, Glyphs, fallbackCharacter: '?');
     }
 
-    internal static unsafe Atlas Bake(float pixelHeight = DefaultPixelHeight)
+    /// <summary>The embedded Noto Sans file, for anything else that bakes it.</summary>
+    internal static byte[] ReadEmbeddedFontBytes()
     {
-        if (!float.IsFinite(pixelHeight) || pixelHeight < 8 || pixelHeight > 32)
-            throw new ArgumentOutOfRangeException(nameof(pixelHeight), "Font size must be between 8 and 32 pixels.");
         using var stream = typeof(BundledUiFont).Assembly.GetManifestResourceStream(
             "AcDream.App.Fonts.NotoSans-Regular.ttf")
             ?? throw new InvalidOperationException("Bundled Noto Sans font is missing.");
         using var bytes = new MemoryStream();
         stream.CopyTo(bytes);
-        byte[] fontBytes = bytes.ToArray();
+        return bytes.ToArray();
+    }
+
+    internal static unsafe Atlas Bake(float pixelHeight = DefaultPixelHeight)
+    {
+        if (!float.IsFinite(pixelHeight) || pixelHeight < 8 || pixelHeight > 32)
+            throw new ArgumentOutOfRangeException(nameof(pixelHeight), "Font size must be between 8 and 32 pixels.");
+        byte[] fontBytes = ReadEmbeddedFontBytes();
         using var info = StbTrueType.CreateFont(fontBytes, 0)
             ?? throw new InvalidOperationException("Bundled Noto Sans font could not be read.");
         float scale = StbTrueType.stbtt_ScaleForPixelHeight(info, pixelHeight);

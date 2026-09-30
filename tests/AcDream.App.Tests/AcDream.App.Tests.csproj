@@ -54,6 +54,8 @@
              Link="Fixtures\LauncherCoreSessionConfigFixture.cs" />
     <Compile Include="..\Fixtures\plugin-icons\PngTestData.cs"
              Link="Fixtures\PngTestData.cs" />
+    <EmbeddedResource Include="..\Fixtures\fonts\NotoSansCffFixture.otf"
+                      LogicalName="AcDream.Tests.Fixtures.Fonts.NotoSansCffFixture.otf" />
     <!-- One plugin, two hosts: the same script runs in both host suites. -->
   </ItemGroup>
 
