@@ -2075,6 +2075,30 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
 
+        // The font surface is asked for once and kept, like the image
+        // surface; a disposable one is tracked so the plugin's fonts go with
+        // the plugin.
+        private IPluginFonts? _fonts;
+
+        public IPluginFonts Fonts
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+                    if (_fonts is null)
+                    {
+                        _fonts = _inner.FontsFor(_owner);
+                        if (_fonts is IDisposable disposable)
+                            _registrations.Add(disposable);
+                    }
+                    return _fonts;
+                }
+            }
+        }
+
         public IPluginCanvas RegisterCanvas(
             PluginCanvasDescriptor descriptor,
             Action<IPluginPainter> paint)
