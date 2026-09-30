@@ -61,6 +61,47 @@ public sealed class LauncherProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void AddingServerCopiesEachKnownAccountCredentialOnceWithoutCopyingCharacters()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "secret");
+        store.AddServer("Second", "second.example", 9000);
+        store.EditAccount("Second", "shared", newPassword: "second-secret");
+        store.AddAccount("Second", "second-only", "other-secret");
+
+        ServerProfile third = store.AddServer("Third", "third.example", 9000);
+
+        Assert.Equal(2, third.Accounts.Count);
+        Assert.Equal("secret", Assert.Single(third.Accounts, account => account.Account == "shared").Password);
+        Assert.Equal("other-secret", Assert.Single(third.Accounts, account => account.Account == "second-only").Password);
+        Assert.All(third.Accounts, account => Assert.Empty(account.Characters));
+        Assert.Equal("second-secret", Assert.Single(store.Document.Servers[1].Accounts,
+            account => account.Account == "shared").Password);
+    }
+
+    [Fact]
+    public void LoadingExistingEmptyServerPopulatesItWithKnownAccountsAndPersistsThem()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "secret");
+        store.AddServer("Empty", "empty.example", 9000);
+        store.Document.Servers[1].Accounts.Clear(); // Existing profiles predate automatic copying.
+        store.Save();
+
+        var reloaded = new LauncherProfileStore(_filePath);
+        reloaded.Load();
+
+        Assert.Equal("secret", Assert.Single(reloaded.Document.Servers[1].Accounts).Password);
+        var persisted = new LauncherProfileStore(_filePath);
+        persisted.Load();
+        Assert.Single(persisted.Document.Servers[1].Accounts);
+    }
+
+    [Fact]
     public void SaveNeverWritesShowBetaPluginsWhenFalse()
     {
         var store = new LauncherProfileStore(_filePath);

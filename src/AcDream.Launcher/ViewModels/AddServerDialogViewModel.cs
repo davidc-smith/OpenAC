@@ -270,7 +270,11 @@ public sealed class AddServerDialogViewModel : ObservableObject
         {
             _orchestrator.AddServer(name, host, port);
             Error = null;
-            Notice = $"Added {name}. Add your accounts on it with Accounts.";
+            int accountCount = _orchestrator.GetSnapshot().Servers
+                .First(server => server.Name == name).Accounts.Count;
+            Notice = accountCount == 0
+                ? $"Added {name}. Add your accounts on it with Accounts."
+                : $"Added {name} with {accountCount} saved accounts. Character lists will refresh on that server.";
             return true;
         }
         catch (Exception ex) when (ex is LauncherProfileException or LauncherOperationException or ArgumentException or IOException or UnauthorizedAccessException)

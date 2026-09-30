@@ -129,7 +129,8 @@ public sealed class LauncherProfileStore
 
         ValidateAndNormalizeDocument(document);
         Document = document;
-        if (version == Version1 || source != FilePath)
+        bool populatedEmptyServers = PopulateEmptyServersFromKnownAccounts(document);
+        if (version == Version1 || source != FilePath || populatedEmptyServers)
         {
             // A copy of the old file as migrated, whatever an older launcher does to it later.
             if (version == Version1 && !File.Exists(Version1BackupPath))
@@ -270,9 +271,47 @@ public sealed class LauncherProfileStore
         }
 
         var server = new ServerProfile { Name = name, Host = host, Port = port };
+        foreach (AccountProfile account in DistinctKnownAccounts(Document))
+        {
+            server.Accounts.Add(new AccountProfile
+            {
+                Account = account.Account,
+                Password = account.Password,
+            });
+        }
         Document.Servers.Add(server);
         return server;
     }
+
+    private static bool PopulateEmptyServersFromKnownAccounts(
+        LauncherProfileDocument document)
+    {
+        AccountProfile[] known = [.. DistinctKnownAccounts(document)];
+        if (known.Length == 0)
+            return false;
+
+        bool populated = false;
+        foreach (ServerProfile server in document.Servers)
+        {
+            if (server.Accounts.Count != 0)
+                continue;
+            foreach (AccountProfile account in known)
+            {
+                server.Accounts.Add(new AccountProfile
+                {
+                    Account = account.Account,
+                    Password = account.Password,
+                });
+            }
+            populated = true;
+        }
+        return populated;
+    }
+
+    private static IEnumerable<AccountProfile> DistinctKnownAccounts(
+        LauncherProfileDocument document) =>
+        document.Servers.SelectMany(server => server.Accounts)
+            .DistinctBy(account => account.Account, StringComparer.Ordinal);
 
     public void EditServer(
         string name,

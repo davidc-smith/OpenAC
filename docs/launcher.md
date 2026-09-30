@@ -94,8 +94,12 @@ with its type, player count, description and links. Search by name, address or
 description, or narrow the list by type; a server you already have (same name,
 or same host and port) shows **Added**. The list is saved each time it loads,
 so the dialog also opens offline with the last copy; with no copy at all, only
-your own server can be added. A new server has no accounts until you add them
-under its `#` line in **Accounts**.
+your own server can be added. A new server starts with one row for each
+distinct saved account, copying its login name and password from the first
+server where it appears. Character lists, plugins and logon commands remain
+specific to each server. An existing server with no accounts is filled the
+same way when the launcher next opens. If there are no saved accounts yet,
+add them under the server's `#` line in **Accounts**.
 
 **Edit servers** has two fields per row: **Server name** and **Address:port**.
 For example, enter `Local` and `127.0.0.1:9000`, or `Example` and
@@ -150,7 +154,8 @@ here are not seen by the older one. The conversion:
 - each account's logon commands are its characters' commands when they were
   all the same, otherwise the first character's, and a one-time notice lists
   what the other characters had;
-- every server keeps exactly the accounts it showed before.
+- existing accounts and their settings stay on their original servers; a
+  server with no accounts receives the known login names and passwords.
 
 ## Plugins
 
