@@ -117,4 +117,34 @@ public sealed class CanvasFontBakerTests
         Assert.Equal(['?', 'A', 'T', 'V', 'o'], bake.Glyphs.Keys.Order().Select(codepoint => (char)codepoint).ToArray());
         Assert.All(bake.Glyphs.Values, glyph => Assert.True(glyph.Width > 0f && glyph.Height > 0f));
     }
+
+    private static byte[] Header(string tag, int tables, int bytes = 12)
+    {
+        byte[] data = new byte[bytes];
+        System.Text.Encoding.ASCII.GetBytes(tag).CopyTo(data, 0);
+        data[4] = (byte)(tables >> 8);
+        data[5] = (byte)tables;
+        return data;
+    }
+
+    [Fact]
+    public void StructurallyBrokenFontFilesAreRefusedWithoutThrowing()
+    {
+        byte[] pointsPastEnd = Header("OTTO", 1, 28);
+        System.Text.Encoding.ASCII.GetBytes("cmap").CopyTo(pointsPastEnd, 12);
+        pointsPastEnd[23] = 0xFF; // offset
+        pointsPastEnd[27] = 0x10; // length
+
+        byte[] noCmap = CffFixture();
+        int numTables = (noCmap[4] << 8) | noCmap[5];
+        int record = Enumerable.Range(0, numTables).Select(i => 12 + 16 * i)
+            .First(at => Encoding.ASCII.GetString(noCmap, at, 4) == "cmap");
+        Encoding.ASCII.GetBytes("xxxx").CopyTo(noCmap, record);
+
+        foreach (byte[] bytes in new[] { [], new byte[4], Header("OTTO", 200), pointsPastEnd, noCmap })
+        {
+            Assert.False(CanvasFontBaker.TryBake(bytes, 16f, CanvasFontBaker.DefaultRanges, 2048, out _, out string? failure));
+            Assert.False(string.IsNullOrEmpty(failure));
+        }
+    }
 }

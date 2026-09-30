@@ -70,6 +70,9 @@ internal static class CanvasFontBaker
             return false;
         }
 
+        if (!TryValidateSfnt(fontBytes, out failure))
+            return false;
+
         StbTrueType.stbtt_fontinfo? info;
         try
         {
@@ -131,6 +134,61 @@ internal static class CanvasFontBaker
         }
     }
 
+    /// <summary>
+    /// StbTrueTypeSharp does no bounds checking, so the sfnt header, table
+    /// directory and every table's extent are checked here before the native
+    /// parser sees the bytes. Residual risk: malformed outline data inside
+    /// valid table bounds still reaches the native parser.
+    /// </summary>
+    private static bool TryValidateSfnt(byte[] bytes, [NotNullWhen(false)] out string? failure)
+    {
+        const string NotAFont = "the file is not a TrueType or OpenType font";
+        failure = NotAFont;
+        if (bytes.Length < 12)
+            return false;
+        uint version = ReadU32(bytes, 0);
+        if (version == 0x74746366) // 'ttcf'
+        {
+            failure = "font collections are not supported";
+            return false;
+        }
+        if (version != 0x00010000 && version != 0x4F54544F && version != 0x74727565)
+            return false;
+        int numTables = (bytes[4] << 8) | bytes[5];
+        if (numTables < 1 || 12L + 16L * numTables > bytes.Length)
+            return false;
+        var tags = new HashSet<uint>();
+        for (int i = 0; i < numTables; i++)
+        {
+            int record = 12 + 16 * i;
+            long offset = ReadU32(bytes, record + 8);
+            long length = ReadU32(bytes, record + 12);
+            if (offset + length > bytes.Length)
+                return false;
+            tags.Add(ReadU32(bytes, record));
+        }
+        foreach (string required in new[] { "cmap", "head", "hhea", "hmtx" })
+        {
+            if (!tags.Contains(Tag(required)))
+            {
+                failure = $"the font is missing its '{required}' table";
+                return false;
+            }
+        }
+        if (!tags.Contains(Tag("CFF ")) && !(tags.Contains(Tag("glyf")) && tags.Contains(Tag("loca"))))
+        {
+            failure = "the font is missing its outlines ('glyf' and 'loca', or 'CFF ')";
+            return false;
+        }
+        failure = null;
+        return true;
+    }
+
+    private static uint ReadU32(byte[] b, int at) =>
+        ((uint)b[at] << 24) | ((uint)b[at + 1] << 16) | ((uint)b[at + 2] << 8) | b[at + 3];
+
+    private static uint Tag(string tag) => ReadU32(System.Text.Encoding.ASCII.GetBytes(tag), 0);
+
     private static bool TryCollectCodepoints(
         StbTrueType.stbtt_fontinfo info,
         IReadOnlyList<(int First, int Last)> ranges,
@@ -170,8 +228,9 @@ internal static class CanvasFontBaker
         }
         if (present.Count > maximumGlyphs)
         {
-            failure = $"the font has {present.Count} of the requested characters; "
-                + $"the most a font may prepare is {maximumGlyphs}";
+            failure = string.Create(
+                CultureInfo.InvariantCulture,
+                $"the font has {present.Count} of the requested characters; the most a font may prepare is {maximumGlyphs}");
             return false;
         }
         codepoints = [.. present];
