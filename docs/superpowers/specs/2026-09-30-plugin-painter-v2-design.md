@@ -655,6 +655,20 @@ sections above where they differ.
   StbTrueTypeSharp and reports the same GPOS kerning as the TTF (A–V −40,
   T–o −70 units), so `.otf` support is tested, not best effort.
 
+## Status and carry-forward (2026-09-30)
+
+- PR 0 pushed as `origin/painter-v2/canvas-alpha` (6 commits, reviewed).
+- PR 1 pushed as `origin/painter-v2/fonts`, stacked on PR 0 (reviewed). Two contract-level changes beyond section 4: font requests that would bake inside a paint callback answer `PluginFont.None` (cache hits allowed), and font files are refused unless their sfnt header and table directory are structurally sound.
+
+### Inputs for the PR 4 (HiDPI) plan
+
+- PluginFont carries LineHeight/Ascent and record equality includes them; a device-scale rebake must keep logical metrics identical.
+- DrawCanvasFontPass snaps in logical pixels; must snap in device pixels.
+- 64 px already needs 2048x1024; a 2x bake of 64 px default ranges won't fit 2048² and atlas bytes grow 4x against the budget — define a fallback (e.g. keep the 1x bake).
+- CanvasFont does not retain managed bytes; a rebake needs them retained in the table entry.
+- Bundled cache keyed by exact float size only; round sizes (e.g. 0.25 px), key by (size, scale), share one fontinfo per file.
+- Optional hardening: head/hhea/maxp minimum lengths, cmap subtable and loca offsets inside their tables.
+
 ## Order of work
 
 | PR | Branch | Topic | Depends on |
