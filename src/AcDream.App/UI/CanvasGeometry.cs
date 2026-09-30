@@ -107,9 +107,9 @@ internal static class CanvasGeometry
     /// <summary>
     /// A convex polygon with a colour at each point, blended across it.
     /// Repeated neighbouring points are merged; a polygon with no area draws
-    /// nothing. Either winding is accepted. The fringe's inner edge is inset
-    /// by half a pixel, or by less when the polygon is too thin for that, and
-    /// a polygon that is mostly fringe has its alpha lowered to its own area.
+    /// nothing. Either winding is accepted. The fringe is half a pixel
+    /// either side of the outline; see <see cref="FillConvexCore"/> for how the
+    /// inside is pulled in and how a polygon too thin for it is handled.
     /// </summary>
     internal static CanvasShapeOutcome FillConvexPolygon(
         ReadOnlySpan<Vector2> points, ReadOnlySpan<Vector4> colors, float pixel, List<UiColorVertex> output)
@@ -154,79 +154,213 @@ internal static class CanvasGeometry
         if (turn == 0) return CanvasShapeOutcome.Nothing;
         if (Math.Abs(Math.Abs(turning) - 2 * Math.PI) > 1e-3) return CanvasShapeOutcome.NotConvex;
 
-        // Outward normal of each edge; which side is out depends on the winding.
-        Span<Vector2> normal = stackalloc Vector2[count];
+        return FillConvexCore(corner, color, turn, pixel, output);
+    }
+
+    /// <summary>
+    /// Fringes a convex polygon already merged and checked: the outer ring is
+    /// the outline pushed out half a device pixel (bevelled where a mitre
+    /// would reach past <see cref="MaximumMiter"/>), the inner ring the
+    /// outline pulled in half a device pixel. The pull-in moves every edge's
+    /// line inward; an edge that shrinks to nothing on the way drops out and
+    /// its neighbours meet directly, so the inner ring never folds. A polygon
+    /// too thin to pull in that far stops where it collapses to a point or a
+    /// line, and is then mostly fringe, so its alpha is lowered until it
+    /// covers its own area.
+    /// </summary>
+    private static CanvasShapeOutcome FillConvexCore(
+        ReadOnlySpan<Vector2> corner, ReadOnlySpan<Vector4> color, int turn, float pixel, List<UiColorVertex> output)
+    {
+        int count = corner.Length;
+        double half = pixel * 0.5;
+
+        // Outward unit normal of each edge, corner i to corner i + 1.
+        Span<double> normalX = stackalloc double[count];
+        Span<double> normalY = stackalloc double[count];
         for (int i = 0; i < count; i++)
         {
-            Vector2 edge = Vector2.Normalize(corner[(i + 1) % count] - corner[i]);
-            normal[i] = turn > 0 ? new Vector2(edge.Y, -edge.X) : new Vector2(-edge.Y, edge.X);
+            double ex = (double)corner[(i + 1) % count].X - corner[i].X;
+            double ey = (double)corner[(i + 1) % count].Y - corner[i].Y;
+            double length = Math.Sqrt(ex * ex + ey * ey);
+            ex /= length;
+            ey /= length;
+            normalX[i] = turn > 0 ? ey : -ey;
+            normalY[i] = turn > 0 ? -ex : ex;
         }
 
-        float half = pixel * 0.5f;
-        Span<Vector2> inner = stackalloc Vector2[count];
-        Span<Vector2> outer = stackalloc Vector2[count];
-        Span<Vector4> clear = stackalloc Vector4[count];
-        Span<Vector2> average = stackalloc Vector2[count];
-        Span<float> tangent = stackalloc float[count];
+        // The polygon being pulled in: its corners, the edge leaving each, and
+        // which of them each original corner has become.
+        Span<double> x = stackalloc double[count];
+        Span<double> y = stackalloc double[count];
+        Span<int> leaving = stackalloc int[count];
+        Span<int> becomes = stackalloc int[count];
+        Span<double> miterX = stackalloc double[count];
+        Span<double> miterY = stackalloc double[count];
+        Span<double> shrink = stackalloc double[count];
+        Span<bool> vanishes = stackalloc bool[count];
         for (int i = 0; i < count; i++)
         {
-            // The mitre: the corner moves along the average of its two edge
-            // normals, far enough that both edges move by half a pixel. The
-            // outer ring caps how far a very sharp corner reaches.
-            average[i] = (normal[(i + count - 1) % count] + normal[i]) * 0.5f;
-            Vector2 miter = average[i] / MathF.Max(average[i].LengthSquared(), 1f / (MaximumMiter * MaximumMiter));
-            outer[i] = corner[i] + miter * half;
-            clear[i] = Transparent(color[i]);
-
-            // tan of half the turning angle here: how much an edge shortens
-            // at this end for every pixel the polygon is inset.
-            float length = average[i].Length();
-            tangent[i] = length < 1e-6f ? 1e6f : MathF.Sqrt(MathF.Max(0f, 1f - length * length)) / length;
+            x[i] = corner[i].X;
+            y[i] = corner[i].Y;
+            leaving[i] = i;
+            becomes[i] = i;
         }
 
-        // The inner ring insets every corner by one distance: half a pixel, or
-        // less when the polygon is too thin to be inset that far, so that no
-        // edge shrinks past nothing and turns back on itself.
-        float limit = float.MaxValue;
-        for (int i = 0; i < count; i++)
-        {
-            int next = (i + 1) % count;
-            float shortening = tangent[i] + tangent[next];
-            if (shortening > 0f)
-                limit = MathF.Min(limit, (corner[next] - corner[i]).Length() / shortening);
-        }
-        float inset = MathF.Min(half, limit);
-        for (int i = 0; i < count; i++)
-        {
-            float lengthSquared = average[i].LengthSquared();
-            Vector2 miter = lengthSquared > 1e-12f
-                ? average[i] / lengthSquared
-                : average[i] / MathF.Max(lengthSquared, 1f / (MaximumMiter * MaximumMiter));
-            inner[i] = corner[i] - miter * inset;
-        }
-
-        // A polygon that is mostly fringe covers more than its own area once
-        // fringed, so its alpha is lowered to make up the difference.
+        int active = count;
+        double pulled = 0;
         bool collapsed = false;
-        double area = 0;
-        if (limit <= half)
+        while (true)
         {
-            double whole = 0, core = 0;
-            for (int i = 0; i < count; i++)
+            // Each corner moves along its mitre, and each end of an edge eats
+            // tan(half the turn) of it for every pixel pulled in.
+            for (int j = 0; j < active; j++)
             {
-                int next = (i + 1) % count;
-                whole += Cross(corner[i], corner[next]);
-                core += Cross(inner[i], inner[next]);
+                int into = leaving[(j + active - 1) % active];
+                int outOf = leaving[j];
+                double ax = (normalX[into] + normalX[outOf]) * 0.5;
+                double ay = (normalY[into] + normalY[outOf]) * 0.5;
+                double lengthSquared = Math.Max(ax * ax + ay * ay, 1e-18);
+                miterX[j] = ax / lengthSquared;
+                miterY[j] = ay / lengthSquared;
+                shrink[j] = Math.Sqrt(Math.Max(0, 1 - lengthSquared) / lengthSquared);
             }
-            area = Math.Abs(whole) * 0.5;
-            collapsed = Math.Abs(core) * 0.5 < area * 0.5;
+
+            double soonest = double.MaxValue;
+            for (int j = 0; j < active; j++)
+            {
+                int next = (j + 1) % active;
+                double rate = shrink[j] + shrink[next];
+                if (rate <= 0) continue;
+                double length = Math.Sqrt((x[next] - x[j]) * (x[next] - x[j]) + (y[next] - y[j]) * (y[next] - y[j]));
+                soonest = Math.Min(soonest, length / rate);
+            }
+
+            bool reaches = soonest >= half - pulled;
+            double step = reaches ? half - pulled : soonest;
+            for (int j = 0; j < active; j++)
+            {
+                x[j] -= miterX[j] * step;
+                y[j] -= miterY[j] * step;
+            }
+            pulled += step;
+            if (reaches) break;
+
+            // Drop every edge that has just shrunk to nothing.
+            int dropping = 0;
+            for (int j = 0; j < active; j++)
+            {
+                int next = (j + 1) % active;
+                double rate = shrink[j] + shrink[next];
+                double length = Math.Sqrt((x[next] - x[j]) * (x[next] - x[j]) + (y[next] - y[j]) * (y[next] - y[j]));
+                vanishes[j] = rate > 0 && length <= 1e-9 * (1 + Math.Abs(x[j]) + Math.Abs(y[j]));
+                if (vanishes[j]) dropping++;
+            }
+            if (dropping == 0) break; // numerically stuck: stop where it is
+            // Pulled in to a point or a line -- or, from four corners or
+            // more, to a triangle: from there it would shrink along its own
+            // length to a point and lose the thin shape's spine.
+            if (active - dropping < 3 || (count > 3 && active - dropping == 3))
+            {
+                collapsed = true;
+                break;
+            }
+            while (dropping > 0)
+            {
+                int j = 0;
+                while (!vanishes[j]) j++;
+                // Corner j and the next become one, which keeps the edge leaving the next.
+                int next = (j + 1) % active;
+                x[j] = (x[j] + x[next]) * 0.5;
+                y[j] = (y[j] + y[next]) * 0.5;
+                leaving[j] = leaving[next];
+                vanishes[j] = vanishes[next];
+                for (int i = 0; i < count; i++)
+                    if (becomes[i] == next) becomes[i] = j;
+                for (int k = next; k + 1 < active; k++)
+                {
+                    x[k] = x[k + 1];
+                    y[k] = y[k + 1];
+                    leaving[k] = leaving[k + 1];
+                    vanishes[k] = vanishes[k + 1];
+                }
+                for (int i = 0; i < count; i++)
+                    if (becomes[i] > next) becomes[i]--;
+                active--;
+                dropping--;
+            }
+
+            // Thinner now than what is left to pull in: going on would shrink
+            // it along its length rather than across it. Stop and let the
+            // alpha make up for the fringe.
+            double activeArea = 0, perimeter = 0;
+            for (int j = 0; j < active; j++)
+            {
+                int next = (j + 1) % active;
+                activeArea += (x[j] - x[0]) * (y[next] - y[0]) - (x[next] - x[0]) * (y[j] - y[0]);
+                perimeter += Math.Sqrt((x[next] - x[j]) * (x[next] - x[j]) + (y[next] - y[j]) * (y[next] - y[j]));
+            }
+            if (Math.Abs(activeArea) * 0.5 < perimeter * (half - pulled))
+            {
+                collapsed = true;
+                break;
+            }
+        }
+
+        // The rings, one or two points per original corner: a corner whose
+        // mitre would reach too far is bevelled on the outside and repeated
+        // on the inside, so the rings still pair point for point.
+        Span<Vector2> inner = stackalloc Vector2[count * 2];
+        Span<Vector2> outer = stackalloc Vector2[count * 2];
+        Span<Vector4> solid = stackalloc Vector4[count * 2];
+        Span<Vector4> clear = stackalloc Vector4[count * 2];
+        int points = 0;
+        for (int i = 0; i < count; i++)
+        {
+            int into = (i + count - 1) % count;
+            var inside = new Vector2((float)x[becomes[i]], (float)y[becomes[i]]);
+            double ax = (normalX[into] + normalX[i]) * 0.5;
+            double ay = (normalY[into] + normalY[i]) * 0.5;
+            double lengthSquared = ax * ax + ay * ay;
+            if (lengthSquared * MaximumMiter * MaximumMiter >= 1)
+            {
+                Put(inner, outer, solid, clear, ref points, inside,
+                    new Vector2((float)(corner[i].X + ax / lengthSquared * half), (float)(corner[i].Y + ay / lengthSquared * half)), color[i]);
+            }
+            else
+            {
+                Put(inner, outer, solid, clear, ref points, inside,
+                    new Vector2((float)(corner[i].X + normalX[into] * half), (float)(corner[i].Y + normalY[into] * half)), color[i]);
+                Put(inner, outer, solid, clear, ref points, inside,
+                    new Vector2((float)(corner[i].X + normalX[i] * half), (float)(corner[i].Y + normalY[i] * half)), color[i]);
+            }
         }
 
         int start = output.Count;
-        Fan(inner, color, output);
-        Band(inner, color, outer, clear, output);
-        if (collapsed) ScaleToArea(output, start, area);
+        Fan(inner[..points], solid[..points], output);
+        Band(inner[..points], solid[..points], outer[..points], clear[..points], output);
+        if (collapsed)
+        {
+            double area = 0;
+            for (int i = 1; i + 1 < count; i++)
+            {
+                double ux = (double)corner[i].X - corner[0].X, uy = (double)corner[i].Y - corner[0].Y;
+                double vx = (double)corner[i + 1].X - corner[0].X, vy = (double)corner[i + 1].Y - corner[0].Y;
+                area += ux * vy - uy * vx;
+            }
+            ScaleToArea(output, start, Math.Abs(area) * 0.5);
+        }
         return CanvasShapeOutcome.Drawn;
+    }
+
+    private static void Put(
+        Span<Vector2> inner, Span<Vector2> outer, Span<Vector4> solid, Span<Vector4> clear, ref int points,
+        Vector2 inside, Vector2 outside, Vector4 ink)
+    {
+        inner[points] = inside;
+        outer[points] = outside;
+        solid[points] = ink;
+        clear[points] = Transparent(ink);
+        points++;
     }
 
     /// <summary>A rectangle with rounded corners; zero radii give square corners.</summary>

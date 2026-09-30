@@ -308,8 +308,7 @@ public sealed class CanvasGeometryTests
         Assert.Equal(CanvasShapeOutcome.Drawn, CanvasGeometry.FillConvexPolygon(
             [new(0f, 0f), new(100f, 0f), new(50f, 0.3f)], Repeat(White, 3), 1f, triangles));
 
-        // The outer mitre is capped, so the two needle tips lose a little: never over, about a tenth under.
-        AssertCovers(15, triangles, tolerance: 0.12);
+        AssertCovers(15, triangles, tolerance: 0.02);
         Assert.All(triangles, v => Assert.InRange(v.Color.W, 0f, 1f));
     }
 
@@ -320,14 +319,14 @@ public sealed class CanvasGeometryTests
         CanvasGeometry.FillConvexPolygon(
             [new(0f, 0f), new(100f, 0f), new(100f, 99.8f), new(99.8f, 100f), new(0f, 100f)],
             Repeat(White, 5), 1f, chamfer);
-        AssertCovers(10000 - 0.02, chamfer);
+        AssertCovers(10000 - 0.02, chamfer, tolerance: 0.01);
         Assert.Equal(1f, chamfer.Max(v => v.Color.W));
 
         var near = new List<UiColorVertex>();
         CanvasGeometry.FillConvexPolygon(
             [new(0f, 0f), new(100f, 0f), new(100f, 100f), new(99.95f, 100f), new(0f, 100f)],
             Repeat(White, 5), 1f, near);
-        AssertCovers(10000, near, tolerance: 0.015);
+        AssertCovers(10000, near, tolerance: 0.01);
         Assert.Equal(1f, near.Max(v => v.Color.W));
     }
 
@@ -365,5 +364,44 @@ public sealed class CanvasGeometryTests
         var square = new List<UiColorVertex>();
         CanvasGeometry.FillRoundedRect(0f, 0f, 1f, 1f, default, White, 1f, square);
         AssertCovers(1, square, tolerance: 0.02);
+    }
+
+    [Fact]
+    public void SharpCornersAndThinShapesCoverTheirArea()
+    {
+        var triangle = new List<UiColorVertex>();
+        CanvasGeometry.FillConvexPolygon([new(0f, 0f), new(100f, 0f), new(50f, 5f)], Repeat(White, 3), 1f, triangle);
+        AssertCovers(250, triangle, tolerance: 0.01);
+
+        var needle = new List<UiColorVertex>();
+        CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(32f, -1.5f), new(64f, 0f), new(32f, 1.5f)], Repeat(White, 4), 1f, needle);
+        AssertCovers(96, needle, tolerance: 0.01);
+
+        var nick = new List<UiColorVertex>();
+        CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 0f), new(100f, 0.4f), new(99.95f, 0.4f), new(0f, 0.4f)], Repeat(White, 5), 1f, nick);
+        AssertCovers(40, nick, tolerance: 0.02);
+        Assert.True(nick.Max(v => v.Color.W) < 1f);
+
+        Vector2[] slanted =
+        [
+            new(25.055227f, 0.76358986f), new(96.05029f, 0.80383503f),
+            new(93.91133f, -0.019011175f), new(21.913465f, -0.21365674f),
+        ];
+        double shoelace = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            Vector2 a = slanted[i], b = slanted[(i + 1) % 4];
+            shoelace += (double)a.X * b.Y - (double)b.X * a.Y;
+        }
+        var quad = new List<UiColorVertex>();
+        CanvasGeometry.FillConvexPolygon(slanted, Repeat(White, 4), 1f, quad);
+        AssertCovers(Math.Abs(shoelace) / 2, quad, tolerance: 0.02);
+
+        var far = new List<UiColorVertex>();
+        CanvasGeometry.FillConvexPolygon(
+            [new(3000f, 2000f), new(3000.3f, 2000f), new(3000.3f, 2000.3f), new(3000f, 2000.3f)], Repeat(White, 4), 1f, far);
+        AssertCovers(0.09, far, tolerance: 0.02);
     }
 }
