@@ -125,4 +125,24 @@ public sealed class BufferedUiRegistryFontsTests
         registry.BindFontServices(backend);
         Assert.Throws<InvalidOperationException>(() => registry.BindFontServices(backend));
     }
+
+    [Fact]
+    public void AfterAReconnectAHandleFromBeforeNoLongerResolvesAndANewOneDoes()
+    {
+        (_, BufferedUiRegistry registry) = Host();
+        var backend = new PluginFontTableTests.FakeFontBackend();
+        registry.BindFontServices(backend);
+        var owner = new PluginUiOwner("example.plugin", "Example");
+        IPluginFonts fonts = registry.FontsFor(owner);
+        PluginFont before = fonts.Bundled(16f);
+
+        registry.UnbindFontServices();
+        registry.BindFontServices(backend);
+
+        Assert.False(registry.FindFonts(owner)!.TryResolve(before, out _));
+        Assert.True(fonts.IsAvailable);
+        PluginFont after = fonts.Bundled(16f);
+        Assert.True(after.IsValid);
+        Assert.NotEqual(before.Handle, after.Handle);
+    }
 }

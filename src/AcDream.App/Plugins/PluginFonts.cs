@@ -50,6 +50,16 @@ internal sealed class PluginFonts : IPluginFonts, IDisposable
 
     public float MaximumPixelSize => _table.Budget.MaximumPixelSize;
 
+    /// <summary>A canvas is about to paint: fonts not already held are refused until <see cref="EndPaint"/>.</summary>
+    internal void BeginPaint()
+    {
+        if (!_disposed)
+            _table.IsPainting = true;
+    }
+
+    /// <summary>The canvas has finished painting, normally or not.</summary>
+    internal void EndPaint() => _table.IsPainting = false;
+
     /// <summary>The baked font behind a handle, for the painter.</summary>
     internal bool TryResolve(PluginFont font, [NotNullWhen(true)] out CanvasFont? resolved)
     {

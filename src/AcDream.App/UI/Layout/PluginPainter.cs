@@ -33,6 +33,7 @@ internal sealed class PluginPainter : IPluginPainter
         _font = font;
         _images = images;
         _fonts = fonts;
+        _fonts?.BeginPaint();
         _width = width;
         _height = height;
     }
@@ -40,6 +41,7 @@ internal sealed class PluginPainter : IPluginPainter
     /// <summary>Forgets the repaint; every call after this throws.</summary>
     internal void Unbind()
     {
+        _fonts?.EndPaint();
         _context = null;
         _font = null;
         _images = null;

@@ -15,7 +15,7 @@ public readonly record struct PluginFont(int Handle, float PixelSize, float Line
     /// <summary>No font: what every refused request returns.</summary>
     public static PluginFont None => default;
 
-    /// <summary>True when the host issued this font and it has not yet been released.</summary>
+    /// <summary>True for a font the host issued. A released or dropped font stays valid by this test but draws nothing.</summary>
     public bool IsValid => Handle != 0;
 }
 
@@ -58,8 +58,10 @@ public sealed record PluginFontOptions
 ///
 /// <para>Preparing a font takes some milliseconds and happens when it is
 /// asked for, never while a canvas paints, so ask for fonts up front rather
-/// than inside a paint callback. Call this only from the thread the plugin's
-/// own callbacks run on; the host refuses any other. On a host without a
+/// than inside a paint callback: a request made inside a paint callback for a
+/// font not already held answers <see cref="PluginFont.None"/> and is
+/// reported. Call this only from the thread the plugin's own callbacks run
+/// on; the host throws <see cref="InvalidOperationException"/> on any other. On a host without a
 /// window, or before the client's interface is up, every request answers
 /// <see cref="PluginFont.None"/> and <see cref="IsAvailable"/> is false.
 /// Fonts are dropped when the interface is torn down, for example on a

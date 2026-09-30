@@ -613,4 +613,27 @@ public sealed class PluginCanvasElementTests
         Assert.Throws<InvalidOperationException>(() => kept!.DrawText("x", default, PluginColor.White, font));
         Assert.Throws<InvalidOperationException>(() => kept!.MeasureText("x", font));
     }
+
+    [Fact]
+    public void AFontFirstAskedForInsideAPaintIsRefusedButOneAlreadyHeldIsNot()
+    {
+        var harness = new Harness();
+        IPluginFonts fonts = harness.Registry.FontsFor(harness.Owner);
+        PluginFont held = fonts.Bundled(16f);
+        PluginFont insideNew = held;
+        PluginFont insideHeld = default;
+        harness.Mount(Hud(), painter =>
+        {
+            insideNew = fonts.Bundled(18f);
+            insideHeld = fonts.Bundled(16f);
+            painter.DrawText("AV", new PluginPoint(4, 4), PluginColor.White, insideNew);
+        });
+
+        harness.Frame();
+
+        Assert.Equal(PluginFont.None, insideNew);
+        Assert.Equal(held, insideHeld);
+        Assert.Empty(harness.SurfaceRuns);
+        Assert.True(fonts.Bundled(18f).IsValid);
+    }
 }

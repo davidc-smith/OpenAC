@@ -210,4 +210,31 @@ public sealed class PluginFontTableTests
         Assert.Equal(0, rig.Bundled.HeldCount);
         Assert.Equal(2, rig.Backend.Released.Count);
     }
+
+    [Fact]
+    public void WhilePaintingANewFontIsRefusedAndOneAlreadyHeldAnswersTheSameHandle()
+    {
+        var rig = new Rig();
+        PluginFont held = rig.Table.AcquireBundled(16f);
+        PluginFont heldOwn = rig.Table.AcquireStream("f.otf", Otf(), 16f, null);
+        int opens = 0;
+        rig.Table.IsPainting = true;
+
+        Assert.Equal(PluginFont.None, rig.Table.AcquireBundled(18f));
+        Assert.Equal(PluginFont.None, rig.Table.AcquireStream("g.otf", Otf(() => opens++), 16f, null));
+        Assert.Equal(PluginFont.None, rig.Table.AcquireStream("g.otf", Otf(() => opens++), 20f, null));
+        Assert.Equal(held, rig.Table.AcquireBundled(16f));
+        Assert.Equal(heldOwn, rig.Table.AcquireStream("f.otf", Otf(() => opens++), 16f, null));
+
+        Assert.Equal(0, opens);
+        Assert.Equal(2, rig.Table.Count);
+        string report = Assert.Single(rig.Reports);
+        Assert.Contains("paint callback", report, StringComparison.Ordinal);
+
+        rig.Table.IsPainting = false;
+
+        Assert.True(rig.Table.AcquireBundled(18f).IsValid);
+        Assert.True(rig.Table.AcquireStream("g.otf", Otf(() => opens++), 16f, null).IsValid);
+        Assert.Equal(1, opens);
+    }
 }

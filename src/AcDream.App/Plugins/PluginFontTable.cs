@@ -92,6 +92,12 @@ internal sealed class PluginFontTable : IDisposable
 
     internal bool IsBound => _backend is not null;
 
+    /// <summary>
+    /// True while one of the plugin's canvases paints. A font not already held
+    /// is refused then, because preparing one takes longer than a paint may.
+    /// </summary>
+    internal bool IsPainting { get; set; }
+
     internal void Bind(IPluginFontBackend backend, BundledCanvasFontCache bundled, int uiThreadId)
     {
         ArgumentNullException.ThrowIfNull(backend);
@@ -120,6 +126,8 @@ internal sealed class PluginFontTable : IDisposable
         var key = new Key(Bundled: true, Name: "", pixelSize, Ranges: "");
         if (TryHoldAgain(key, out PluginFont again))
             return again;
+        if (RefusedWhilePainting())
+            return PluginFont.None;
         if (!HasRoomForOneMore(FormattableString.Invariant($"the bundled font at {pixelSize} px")))
             return PluginFont.None;
         CanvasFont? font = bundled.Acquire(pixelSize, out string? failure);
@@ -145,6 +153,8 @@ internal sealed class PluginFontTable : IDisposable
         var key = new Key(Bundled: false, name, pixelSize, string.Join(",", baked.Select(r => $"{r.First:X}-{r.Last:X}")));
         if (TryHoldAgain(key, out PluginFont again))
             return again;
+        if (RefusedWhilePainting())
+            return PluginFont.None;
         if (!HasRoomForOneMore(FormattableString.Invariant($"font '{name}'")))
             return PluginFont.None;
 
@@ -287,6 +297,14 @@ internal sealed class PluginFontTable : IDisposable
         }
         handle = PluginFont.None;
         return false;
+    }
+
+    private bool RefusedWhilePainting()
+    {
+        if (!IsPainting)
+            return false;
+        ReportOnce("paint", "a font was asked for inside a paint callback and refused: fonts are prepared when asked for, so ask before painting");
+        return true;
     }
 
     private bool HasRoomForOneMore(string what)
