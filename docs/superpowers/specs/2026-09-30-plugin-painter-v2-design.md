@@ -685,10 +685,43 @@ sections above where they differ.
   `1 / s`. `CanvasGeometry` already takes the device pixel size, and the
   fringe width and chord counts follow from it.
 
+- **PR 3, polygon fringe (found in task review; supersedes the plan's Task 4
+  polygon code).** A fixed half-pixel inset folds on polygons thinner than a
+  pixel and loses coverage at sharp corners. Instead, the inner ring pulls the
+  edge lines in by half a device pixel, in double precision. An edge that
+  shrinks to nothing drops out and its neighbours meet (a straight skeleton;
+  the edge that set the step always drops). The outer ring is mitred, and
+  bevelled past a 10× mitre. The pull-in stops early when the polygon
+  collapses to a point or a line, or when it is thinner than the remaining
+  pull-in (area < perimeter × remaining). The polygon is then mostly fringe,
+  and its alpha is lowered until it covers its own area (never raised). A
+  fold-back spike, which reverses with zero cross product, is not convex.
+  Measured: named cases within 0.33% of the analytic area. Across 200k random
+  convex polygons, 449 big shapes (> 4 px²) are more than 2% off their area,
+  against 7298 for the plan's code. The residual is needles under 2 px wide
+  with ~1° tips, which under-cover by up to ~9%.
+- **PR 3, sub-pixel fills and strokes.** A rounded rect or ellipse at most
+  one device pixel across is area-corrected in the same way. A stroke that
+  leaves no hole is drawn as the fill of the rectangle grown by half the
+  stroke. A stroke whose hole is narrower than the fringe under-covers by
+  about 6% (accepted).
+- **PR 3, gradients to transparent.** Vertex colours blend as straight
+  colour, so a fade to `PluginColor.Transparent` (transparent black) darkens
+  the middle of the fade. The docs say to fade to the same colour with alpha
+  0. Interpolating premultiplied colour would need its own run type; that is
+  left as a design choice for later.
+- **PR 3 × PR 1 merge.** A scratch merge conflicted in five files, all "keep
+  both". One of them, not listed in the plan, is the `IPluginPainter` class
+  doc paragraph: keep PR 3's Shapes paragraph followed by PR 1's text
+  paragraph. Use parameter order `Bind(…, fonts, shapeProblems)` and
+  `Repaint(…, _images(), _fonts(), shapeProblems: _shapeProblems)`. The
+  merged tree built with 0 warnings and passed the shape and font suites.
+
 ## Status and carry-forward (2026-09-30)
 
 - PR 0 pushed as `origin/painter-v2/canvas-alpha` (6 commits, reviewed).
-- PR 1 pushed as `origin/painter-v2/fonts`, stacked on PR 0 (reviewed). Two contract-level changes beyond section 4: font requests that would bake inside a paint callback answer `PluginFont.None` (cache hits allowed), and font files are refused unless their sfnt header and table directory are structurally sound.
+- PR 1 pushed as `origin/painter-v2/fonts`, stacked on PR 0 (reviewed).
+- PR 3 built on `painter-v2/shapes` from PR 0 (reviewed; see the PR 3 corrections above). Two contract-level changes beyond section 4: font requests that would bake inside a paint callback answer `PluginFont.None` (cache hits allowed), and font files are refused unless their sfnt header and table directory are structurally sound.
 
 ### Inputs for the PR 4 (HiDPI) plan
 
