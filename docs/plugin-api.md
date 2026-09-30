@@ -1387,9 +1387,9 @@ A shape with no area or no thickness simply draws nothing.
 
 Some input cannot be drawn: a polygon that is not convex or has too few or
 too many points, a colour count that does not match the point count, a
-negative size, radius or thickness, or a coordinate that is not a finite
-number. Such a shape draws nothing, never throws, and is reported once per
-canvas in the client's log.
+negative size, radius or thickness, an unknown gradient direction, or a
+coordinate that is not a finite number. Such a shape draws nothing, never
+throws, and is reported once per canvas in the client's log.
 
 One paint may draw at most 32,768 shape vertices; a large circle takes a
 few hundred. Past that limit the remaining shapes are skipped and the log
