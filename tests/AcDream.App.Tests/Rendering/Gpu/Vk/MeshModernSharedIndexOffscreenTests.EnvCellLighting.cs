@@ -20,8 +20,8 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         lock (VulkanLock)
         {
             string shaderDirectory = Path.Combine(
-                RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv");
-            using var host = HeadlessVulkanHost.Create(shaderDirectory);
+                HeadlessVulkanTestHost.RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv");
+            using var host = HeadlessVulkanTestHost.Create(shaderDirectory);
 
             (Pixel envFirst, Pixel envSecond) = RenderStridePair(
                 host,
@@ -48,7 +48,7 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
     }
 
     private static (Pixel First, Pixel Second) RenderStridePair(
-        HeadlessVulkanHost host,
+        HeadlessVulkanTestHost host,
         string shaderName,
         bool atmospheric,
         int lightingMode,
@@ -145,13 +145,15 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
 
         device.WaitIdle();
         VulkanGpuRenderTarget vkTarget = Assert.IsType<VulkanGpuRenderTarget>(target);
-        byte[] pixels = ReadBack(
+        byte[] pixels = VulkanImageReadback.ReadBack(
             host.Vk,
             host.PhysicalDevice,
             host.LogicalDevice,
             host.Queue,
             host.QueueFamily,
-            vkTarget.ColorResult.Image);
+            vkTarget.ColorResult.Image,
+            Extent,
+            Extent);
         return (PixelAt(pixels, 16, 32), PixelAt(pixels, 48, 32));
     }
 
