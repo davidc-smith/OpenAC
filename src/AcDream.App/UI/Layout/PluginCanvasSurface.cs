@@ -97,8 +97,8 @@ internal sealed class PluginCanvasSurface : IDisposable
     /// what the guard returned: true when the callback drew and left the
     /// clip stack as it found it. The target is cleared and drawn either
     /// way, so a callback that threw halfway leaves a blank canvas rather
-    /// than half of one over the last. A paint that drew more shape vertices
-    /// than one paint may counts against the guard as an overrun.
+    /// than half of one over the last. A paint that asked for more shape
+    /// vertices than one paint may counts against the guard as an overrun.
     /// </summary>
     internal bool Repaint(
         PluginCanvasRegistration registration,

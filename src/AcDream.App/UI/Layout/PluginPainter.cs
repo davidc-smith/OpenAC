@@ -84,9 +84,10 @@ internal sealed class PluginPainter : IPluginPainter
     }
 
     /// <summary>
-    /// True once this repaint drew as many shape vertices as one paint may;
-    /// later shapes in it are skipped. Kept after <see cref="Unbind"/> for the
-    /// guard to read, cleared by the next <see cref="Bind"/>.
+    /// True once a shape in this repaint would have drawn more shape vertices
+    /// than one paint may; it and later shapes in it are skipped. Kept after
+    /// <see cref="Unbind"/> for the guard to read, cleared by the next
+    /// <see cref="Bind"/>.
     /// </summary>
     internal bool ShapeBudgetExceeded { get; private set; }
 
@@ -338,7 +339,7 @@ internal sealed class PluginPainter : IPluginPainter
             ShapeBudgetExceeded = true;
             _shapeProblems?.Invoke(CanvasShapeProblem.VertexBudget, string.Create(
                 CultureInfo.InvariantCulture,
-                $"one paint drew more than {MaximumShapeVerticesPerPaint} shape vertices; the shapes past that were not drawn"));
+                $"one paint asked for more than {MaximumShapeVerticesPerPaint} shape vertices; the shapes past that were not drawn"));
             return;
         }
         _shapeVertices += count;
