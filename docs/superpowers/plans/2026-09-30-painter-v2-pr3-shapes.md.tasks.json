@@ -4,14 +4,14 @@
     {
       "id": 0,
       "subject": "Task 0: Create the branch",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** A code branch that contains PR 0 and not PR 1.\n\n**Files:** none\n\n**Acceptance Criteria:**\n- [ ] `git branch --show-current` prints `painter-v2/shapes`\n- [ ] The branch contains PR 0's commit \"plugin canvas: translucent content is shown at the alpha it was painted with\"\n- [ ] The branch does not contain `src/AcDream.Plugin.Abstractions/PluginFonts.cs` (PR 1)\n- [ ] `docs/superpowers` does not exist in the working tree\n\n**Verify:** `git branch --show-current && git log --oneline -30 | grep -c \"shown at the alpha it was painted with\" && test ! -e src/AcDream.Plugin.Abstractions/PluginFonts.cs && test ! -e docs/superpowers && echo clean` \u2192 `painter-v2/shapes`, `1`, `clean`\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"git branch --show-current\", \"acceptanceCriteria\": [\"on painter-v2/shapes\", \"contains PR 0\", \"no PluginFonts.cs\", \"no docs/superpowers\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": []
     },
     {
       "id": 1,
       "subject": "Task 1: The shapes contract",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `PluginCornerRadii`, `PluginGradientDirection`, and eight default members on `IPluginPainter`. The defaults draw nothing, except `FillCircle`, which forwards to `FillEllipse`.\n\n**Files:**\n- Create: `src/AcDream.Plugin.Abstractions/PluginShapes.cs`\n- Modify: `src/AcDream.Plugin.Abstractions/PluginCanvas.cs:155` (painter doc: new paragraph after this line), `:241` (members after `void PopClip();`)\n- Test: `tests/AcDream.Plugin.Tests/PluginCanvasShapesContractTests.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] A painter implementing only the pre-shapes members compiles, and every shape call on it draws nothing and does not throw\n- [ ] `FillCircle(center, r, c)` on a painter that implements only `FillEllipse` calls it with `(cx \u2212 r, cy \u2212 r, 2r, 2r)` and the same colour\n- [ ] `PluginCornerRadii.Uniform(6) == new(6, 6, 6, 6)`; `Horizontal == 0`, `Vertical == 1`\n- [ ] The Abstractions build has 0 warnings (every new member documented)\n\n**Verify:** `dotnet test tests/AcDream.Plugin.Tests -c Release --filter \"FullyQualifiedName~PluginCanvas\"` \u2192 `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.Plugin.Abstractions/PluginShapes.cs\", \"src/AcDream.Plugin.Abstractions/PluginCanvas.cs\", \"tests/AcDream.Plugin.Tests/PluginCanvasShapesContractTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.Plugin.Tests -c Release --filter FullyQualifiedName~PluginCanvas\", \"acceptanceCriteria\": [\"older painter accepts every shape, draws nothing\", \"FillCircle forwards to FillEllipse with the square\", \"Uniform radii and enum values\", \"Abstractions 0 warnings\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         0
@@ -20,7 +20,7 @@
     {
       "id": 2,
       "subject": "Task 2: Clipping coloured triangles",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `UiColorVertex` and `ColoredTriangleClipper`. The clipper trims one triangle to an axis-aligned rectangle and interpolates colour at the cuts. Triangles wholly inside or wholly outside take a fast path.\n\n**Files:**\n- Create: `src/AcDream.App/Rendering/ColoredTriangleClipper.cs`\n- Test: `tests/AcDream.App.Tests/Rendering/ColoredTriangleClipperTests.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] A triangle wholly inside comes back as its three corners, unchanged and in order\n- [ ] A triangle wholly beyond one edge, or an empty clip, gives 0\n- [ ] (0,0) red, (20,0) blue, (0,20) red cut at x = 10 gives four corners (0,0) red, (10,0) and (10,10) half red/half blue, (0,20) red\n- [ ] (\u22125,\u22125), (25,5), (5,25) against (0,0)\u2013(20,20) gives seven corners, all inside the clip\n- [ ] A destination shorter than 7 throws `ArgumentException`\n\n**Verify:** `dotnet test tests/AcDream.App.Tests -c Release --filter \"FullyQualifiedName~ColoredTriangleClipperTests\"` \u2192 `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/Rendering/ColoredTriangleClipper.cs\", \"tests/AcDream.App.Tests/Rendering/ColoredTriangleClipperTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests -c Release --filter FullyQualifiedName~ColoredTriangleClipperTests\", \"acceptanceCriteria\": [\"inside unchanged\", \"outside and empty clip give 0\", \"cut blends colour\", \"seven-corner case inside\", \"short destination throws\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         0
@@ -29,7 +29,7 @@
     {
       "id": 3,
       "subject": "Task 3: Coloured triangles in the interface renderer",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `TextRenderer.DrawTriangles` appends untextured per-vertex-coloured triangles to the untextured sprite run. `UiRenderContext.DrawTriangles` moves them by the current origin, fades them by the alpha stack and clips them.\n\n**Files:**\n- Modify: `src/AcDream.App/Rendering/TextRenderer.cs` (new method after `DrawConvexPolygon`, before `AppendVertex` at ~330)\n- Modify: `src/AcDream.App/UI/UiRenderContext.cs` (field near the stacks at ~33; method after `EmitConvexQuad`, ~303)\n- Test: `tests/AcDream.App.Tests/Rendering/TextRendererTrianglesTests.cs` (create)\n- Test: `tests/AcDream.App.Tests/UI/UiRenderContextTrianglesTests.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] fill \u2192 triangles \u2192 sprite(7) \u2192 triangles gives runs with textures `[0, 7, 0]` and vertex counts `[9, 6, 3]`\n- [ ] Each vertex is written as `x, y, 0, 0, r, g, b, a` with its own colour\n- [ ] `CanvasScale` stretches triangle positions as it does quads\n- [ ] A list that is not whole triangles throws `ArgumentException`\n- [ ] Through the context: moved by `PushTransform`, alpha multiplied by `PushAlpha`, cut by `PushClip` with colour blended at the cut; wholly clipped or empty clip draws nothing\n\n**Verify:** `dotnet test tests/AcDream.App.Tests -c Release --filter \"FullyQualifiedName~TrianglesTests\"` \u2192 `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/Rendering/TextRenderer.cs\", \"src/AcDream.App/UI/UiRenderContext.cs\", \"tests/AcDream.App.Tests/Rendering/TextRendererTrianglesTests.cs\", \"tests/AcDream.App.Tests/UI/UiRenderContextTrianglesTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests -c Release --filter FullyQualifiedName~TrianglesTests\", \"acceptanceCriteria\": [\"runs [0,7,0] counts [9,6,3]\", \"vertex layout x,y,0,0,rgba\", \"CanvasScale applies\", \"partial list throws\", \"context origin/alpha/clip applied\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         2
@@ -38,7 +38,7 @@
     {
       "id": 4,
       "subject": "Task 4: Tessellating shapes with an anti-aliased fringe",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `CanvasGeometry`, a pure tessellator. It turns polygons, rounded rectangles and ellipses (filled and stroked) into coloured triangles with a one-device-pixel fringe fading to clear. The alpha-weighted covered area is within 1% of the analytic area.\n\n**Files:**\n- Create: `src/AcDream.App/UI/CanvasGeometry.cs`\n- Test: `tests/AcDream.App.Tests/UI/CanvasGeometryTests.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] Circle of radius 20 at pixel 1: 282 vertices, coverage within 1% of \u03c0\u00b720\u00b2, solid vertices within 19.5 of the centre, clear vertices at 20.5\n- [ ] 20\u00d720 square: 30 vertices, coverage within 0.5% of 400, clear corners at \u00b10.5 outside, solid corners at 0.5 inside\n- [ ] Rounded rectangle and oversized-radius cases within 1%; `ClampRadii` scales the CSS way\n- [ ] Strokes: rect t = 2 gives 72 vertices and coverage within 0.5% of 240; circle t = 2 within 1%; t = 0.5 and t = 0.25 have peak alpha 0.5 and 0.25 and coverage within 1% of perimeter \u00d7 t; t = 30 on a 10\u00d710 rect covers 40\u00d740\n- [ ] Polygons: a triangle either way round gives 21 vertices and coverage within 0.5%; per-corner colours are kept and fringes fade from them; concave, star and back-tracking outlines are `NotConvex`; collinear is `Nothing`; 2 points are `TooFewPoints`; 65 points are `TooManyPoints`; repeated points are merged\n- [ ] `ArcSegments(20.5, 2\u03c0, 1) == 32`, `(40.5, 2\u03c0, 1) == 45`, `(20.5, 2\u03c0, 0.5) == (41, 2\u03c0, 1)`; huge rounded rect gives 1182 vertices and huge ellipse 2298\n- [ ] Zero area and zero thickness write nothing\n\n**Verify:** `dotnet test tests/AcDream.App.Tests -c Release --filter \"FullyQualifiedName~CanvasGeometryTests\"` \u2192 `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/UI/CanvasGeometry.cs\", \"tests/AcDream.App.Tests/UI/CanvasGeometryTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests -c Release --filter FullyQualifiedName~CanvasGeometryTests\", \"acceptanceCriteria\": [\"circle 282 verts within 1%, rim alphas\", \"square 30 verts, fringe positions\", \"rounded and clamped radii within 1%\", \"strokes centred; thin strokes fainter; thick stroke fills\", \"polygon windings, colours, outcomes, merging\", \"arc segment counts and caps\", \"zero area/thickness writes nothing\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         2
@@ -47,7 +47,7 @@
     {
       "id": 5,
       "subject": "Task 5: Over another budget counts as an overrun",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `UiDrawCallbackGuard.Invoke(context, draw, overBudget)` takes an optional predicate. It is asked after a call that ran to the end, and a true answer counts that call as an overrun, the same as a slow call. The trip message says which budget was exceeded.\n\n**Files:**\n- Modify: `src/AcDream.App/UI/UiDrawCallbackGuard.cs:60` (field), `:112-160` (`Invoke` with context), `:170-198` (`Invoke(Action)`: note the kind of overrun), `:200-204` (`TripForOverruns`)\n- Test: `tests/AcDream.App.Tests/UI/UiDrawCallbackGuardTests.cs` (append)\n\n**Acceptance Criteria:**\n- [ ] With the time within budget, three calls whose predicate answers true trip the guard, with 1 and 2 consecutive overruns after the first two\n- [ ] The trip report says \"went over its drawing budget\" and not \"ms on\"\n- [ ] A call within both budgets clears the run\n- [ ] Every existing `UiDrawCallbackGuardTests` passes unchanged\n\n**Verify:** `dotnet test tests/AcDream.App.Tests -c Release --filter \"FullyQualifiedName~UiDrawCallbackGuardTests\"` \u2192 `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/UI/UiDrawCallbackGuard.cs\", \"tests/AcDream.App.Tests/UI/UiDrawCallbackGuardTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests -c Release --filter FullyQualifiedName~UiDrawCallbackGuardTests\", \"acceptanceCriteria\": [\"predicate true trips after three quick calls\", \"trip message names the drawing budget\", \"within both budgets clears the run\", \"existing guard tests unchanged\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         0
@@ -56,7 +56,7 @@
     {
       "id": 6,
       "subject": "Task 6: The painter draws shapes",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `PluginPainter` implements the eight shape members. Input is validated; bad input is reported once per canvas through the element. Shapes go through `CanvasGeometry` and `UiRenderContext.DrawTriangles`, and a vertex budget per paint counts as a paint overrun when exceeded.\n\n**Files:**\n- Modify: `src/AcDream.App/UI/Layout/PluginPainter.cs` (usings; `CanvasShapeProblem` enum before the class; constants/fields; `Bind`/`Unbind`; members after `PopClip`; helpers after `TryResolve`)\n- Modify: `src/AcDream.App/UI/Layout/PluginCanvasSurface.cs:64-80` (cached predicate), `:100-124` (`Repaint`)\n- Modify: `src/AcDream.App/UI/Layout/PluginCanvasElement.cs:69` (fields), ctor (`_shapeProblems`), `:326` (repaint call), new `ReportShapeProblem` before `ReleaseTargets` (~402)\n- Modify: `tests/AcDream.App.Tests/UI/Layout/PluginCanvasElementTests.cs:20` (`sealed class` \u2192 `sealed partial class`)\n- Test: `tests/AcDream.App.Tests/UI/Layout/PluginCanvasElementTests.Shapes.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] fill \u2192 image \u2192 circle \u2192 fill gives runs `[0, art, 0]` with counts `[6, 6, circle + 6]`\n- [ ] A vertical gradient blends from red at the top to blue at the bottom (within 0.02)\n- [ ] A circle under a pushed 50\u00d750 clip stays inside it and covers a quarter of the circle (within 2%); a stroke partly off the canvas stays inside it; a shape wholly outside draws nothing\n- [ ] Nine kinds of bad input draw nothing, do not throw or trip the guard, and give exactly one report per canvas across two frames; the report names the canvas, `FillPolygon` and \"convex\"\n- [ ] Zero-area, zero-thickness and collinear shapes draw nothing and are not reported\n- [ ] 400 circles of radius 40 draw exactly `\u230a32768 / per-circle\u230b` circles, report once with \"32768 shape vertices\", count one overrun, and trip the guard after three such paints with a second report naming the drawing budget\n- [ ] A painter kept past its callback throws on shape members\n- [ ] Every existing `PluginCanvas*` test passes\n\n**Verify:** `dotnet test tests/AcDream.App.Tests -c Release --filter \"FullyQualifiedName~PluginCanvas\"` \u2192 `Passed!`\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/UI/Layout/PluginPainter.cs\", \"src/AcDream.App/UI/Layout/PluginCanvasSurface.cs\", \"src/AcDream.App/UI/Layout/PluginCanvasElement.cs\", \"tests/AcDream.App.Tests/UI/Layout/PluginCanvasElementTests.cs\", \"tests/AcDream.App.Tests/UI/Layout/PluginCanvasElementTests.Shapes.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.App.Tests -c Release --filter FullyQualifiedName~PluginCanvas\", \"acceptanceCriteria\": [\"runs [0,art,0] with circle in the last run\", \"vertical gradient red to blue\", \"clip and canvas bounds respected; outside draws nothing\", \"bad input: nothing drawn, one report per canvas naming FillPolygon/convex\", \"zero-area shapes silent\", \"vertex budget: fits drawn, one report, overrun counted, trips after three\", \"kept painter throws on shapes\", \"existing canvas tests green\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         1,
@@ -68,7 +68,7 @@
     {
       "id": 7,
       "subject": "Task 7: The fringe on a real device",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** A `Lane=Vulkan` proof that a straight edge through a pixel centre covers half of that pixel and that a circle's rim is partly covered. It runs through the real painter, context, renderer and premultiplied target.\n\n**Files:**\n- Test: `tests/AcDream.App.Tests/Rendering/Gpu/Vk/PluginCanvasShapeOffscreenTests.cs` (create)\n\n**Acceptance Criteria:**\n- [ ] Rectangle `(0, 0, 8.5, 16)`: pixel (7, 4) is 255 in every channel, (8, 4) is 128 \u00b1 2, and (9, 4) is 0\n- [ ] Circle centred (8, 8), radius \u221a20.5: centre pixel 255, pixel (0, 0) 0, rim pixels (3, 8) and (12, 8) have alpha in [80, 150] with colour equal to alpha \u00b1 2 (premultiplied white)\n- [ ] Passes locally under MoltenVK; skipped by the portable filter\n\n**Verify:** `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib dotnet test tests/AcDream.App.Tests -c Release --filter \"FullyQualifiedName~PluginCanvasShapeOffscreenTests\"` \u2192 `Passed!`\n\n```json:metadata\n{\"files\": [\"tests/AcDream.App.Tests/Rendering/Gpu/Vk/PluginCanvasShapeOffscreenTests.cs\"], \"verifyCommand\": \"DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib dotnet test tests/AcDream.App.Tests -c Release --filter FullyQualifiedName~PluginCanvasShapeOffscreenTests\", \"acceptanceCriteria\": [\"rect edge pixel 128\u00b12 between 255 and 0\", \"circle centre 255, corner 0, rim alpha 80-150 premultiplied\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         6
@@ -77,7 +77,7 @@
     {
       "id": 8,
       "subject": "Task 8: Documentation",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Plugin authors can find and use shapes from the docs, and the markup guide's test list names the new suites.\n\n**Files:**\n- Modify: `docs/plugin-api.md` (new `### Shapes` directly before `### Pointer input`, ~line 1355)\n- Modify: `docs/plugin-ui-markup.md` (Tests section: a sentence after the one ending ``(`Lane=Vulkan`).``, ~line 405)\n\n**Acceptance Criteria:**\n- [ ] `### Shapes` documents all eight members, `PluginCornerRadii` and CSS-style clamping, convex 3\u201364 points and either winding, per-corner colours, centred strokes and thin-stroke behaviour, one-pixel anti-aliasing (existing primitives keep hard edges), silent no-ops, the report-once rule, the 32,768-vertex budget counting as an overrun, and older hosts drawing nothing\n- [ ] The Canvases primitives paragraph is not edited (PR 1 edits it)\n- [ ] The Tests paragraph names the six new suites\n\n**Verify:** `grep -n \"^### Shapes\" docs/plugin-api.md && grep -c \"CanvasGeometryTests\" docs/plugin-ui-markup.md` \u2192 one heading line and `1`\n\n```json:metadata\n{\"files\": [\"docs/plugin-api.md\", \"docs/plugin-ui-markup.md\"], \"verifyCommand\": \"grep -n \\\"^### Shapes\\\" docs/plugin-api.md\", \"acceptanceCriteria\": [\"Shapes section covers members, radii, polygons, strokes, AA, no-ops, report-once, budget, older hosts\", \"primitives paragraph untouched\", \"test list names the new suites\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         6
@@ -86,7 +86,7 @@
     {
       "id": 9,
       "subject": "Task 9: Full verification and push",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** A green build, green portable gate and green Vulkan lane; the branch pushed; the PR description drafted; the user asked where the PR goes.\n\n**Files:** none\n\n**Acceptance Criteria:**\n- [ ] `dotnet build AcDream.slnx -c Release` reports 0 warnings, 0 errors\n- [ ] Portable filter: every assembly `Passed!`. Known Mac-only failures are compared against the base branch and reported, not fixed here\n- [ ] `Lane=Vulkan` on `AcDream.App.Tests`: `Passed!` under MoltenVK\n- [ ] No shader file changed against the base; no `packages.*.lock.json` staged\n- [ ] Branch pushed; PR opened only after the user picks the repository\n\n**Verify:** the commands below with the stated output\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"dotnet build AcDream.slnx -c Release\", \"acceptanceCriteria\": [\"0 warnings 0 errors\", \"portable gate green (known Mac failures compared and reported)\", \"Vulkan lane green on MoltenVK\", \"no shader changes, no lock files\", \"pushed; PR target asked\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         7,
@@ -94,5 +94,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-09-30T00:00:00Z"
+  "lastUpdated": "2026-09-30T20:17:16.021692+00:00"
 }
