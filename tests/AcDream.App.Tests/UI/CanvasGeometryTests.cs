@@ -299,4 +299,71 @@ public sealed class CanvasGeometryTests
 
         AssertCovers(Math.PI * 40 * 10, triangles);
     }
+
+    [Fact]
+    public void ASliverTriangleDoesNotFold()
+    {
+        var triangles = new List<UiColorVertex>();
+
+        Assert.Equal(CanvasShapeOutcome.Drawn, CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 0f), new(50f, 0.3f)], Repeat(White, 3), 1f, triangles));
+
+        // The outer mitre is capped, so the two needle tips lose a little: never over, about a tenth under.
+        AssertCovers(15, triangles, tolerance: 0.12);
+        Assert.All(triangles, v => Assert.InRange(v.Color.W, 0f, 1f));
+    }
+
+    [Fact]
+    public void ATinyEdgeOnABigPolygonKeepsItSolid()
+    {
+        var chamfer = new List<UiColorVertex>();
+        CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 0f), new(100f, 99.8f), new(99.8f, 100f), new(0f, 100f)],
+            Repeat(White, 5), 1f, chamfer);
+        AssertCovers(10000 - 0.02, chamfer);
+        Assert.Equal(1f, chamfer.Max(v => v.Color.W));
+
+        var near = new List<UiColorVertex>();
+        CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 0f), new(100f, 100f), new(99.95f, 100f), new(0f, 100f)],
+            Repeat(White, 5), 1f, near);
+        AssertCovers(10000, near, tolerance: 0.015);
+        Assert.Equal(1f, near.Max(v => v.Color.W));
+    }
+
+    [Fact]
+    public void AOnePixelStripPolygonCoversItsArea()
+    {
+        var triangles = new List<UiColorVertex>();
+
+        CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 0f), new(100f, 1f), new(0f, 1f)], Repeat(White, 4), 1f, triangles);
+
+        AssertCovers(100, triangles, tolerance: 0.01);
+    }
+
+    [Fact]
+    public void AStripPolygonThinnerThanAPixelIsALineNotASpindle()
+    {
+        var triangles = new List<UiColorVertex>();
+
+        CanvasGeometry.FillConvexPolygon(
+            [new(0f, 0f), new(100f, 0f), new(100f, 0.4f), new(0f, 0.4f)], Repeat(White, 4), 1f, triangles);
+
+        float[] alphas = triangles.Select(v => v.Color.W).Where(w => w > 0f).ToArray();
+        Assert.NotEmpty(alphas);
+        Assert.InRange(alphas.Max() - alphas.Min(), 0f, 1e-4f);
+    }
+
+    [Fact]
+    public void AShapeExactlyOnePixelAcrossCoversItsArea()
+    {
+        var dot = new List<UiColorVertex>();
+        CanvasGeometry.FillEllipse(0f, 0f, 1f, 1f, White, 1f, dot);
+        AssertCovers(Math.PI / 4, dot, tolerance: 0.02);
+
+        var square = new List<UiColorVertex>();
+        CanvasGeometry.FillRoundedRect(0f, 0f, 1f, 1f, default, White, 1f, square);
+        AssertCovers(1, square, tolerance: 0.02);
+    }
 }

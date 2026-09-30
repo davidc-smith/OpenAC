@@ -107,7 +107,9 @@ internal static class CanvasGeometry
     /// <summary>
     /// A convex polygon with a colour at each point, blended across it.
     /// Repeated neighbouring points are merged; a polygon with no area draws
-    /// nothing. Either winding is accepted.
+    /// nothing. Either winding is accepted. The fringe's inner edge is inset
+    /// by half a pixel, or by less when the polygon is too thin for that, and
+    /// a polygon that is mostly fringe has its alpha lowered to its own area.
     /// </summary>
     internal static CanvasShapeOutcome FillConvexPolygon(
         ReadOnlySpan<Vector2> points, ReadOnlySpan<Vector4> colors, float pixel, List<UiColorVertex> output)
@@ -164,39 +166,60 @@ internal static class CanvasGeometry
         Span<Vector2> inner = stackalloc Vector2[count];
         Span<Vector2> outer = stackalloc Vector2[count];
         Span<Vector4> clear = stackalloc Vector4[count];
+        Span<Vector2> average = stackalloc Vector2[count];
+        Span<float> tangent = stackalloc float[count];
         for (int i = 0; i < count; i++)
         {
             // The mitre: the corner moves along the average of its two edge
-            // normals, far enough that both edges move by half a pixel.
-            Vector2 average = (normal[(i + count - 1) % count] + normal[i]) * 0.5f;
-            Vector2 miter = average / MathF.Max(average.LengthSquared(), 1f / (MaximumMiter * MaximumMiter));
-            inner[i] = corner[i] - miter * half;
+            // normals, far enough that both edges move by half a pixel. The
+            // outer ring caps how far a very sharp corner reaches.
+            average[i] = (normal[(i + count - 1) % count] + normal[i]) * 0.5f;
+            Vector2 miter = average[i] / MathF.Max(average[i].LengthSquared(), 1f / (MaximumMiter * MaximumMiter));
             outer[i] = corner[i] + miter * half;
             clear[i] = Transparent(color[i]);
+
+            // tan of half the turning angle here: how much an edge shortens
+            // at this end for every pixel the polygon is inset.
+            float length = average[i].Length();
+            tangent[i] = length < 1e-6f ? 1e6f : MathF.Sqrt(MathF.Max(0f, 1f - length * length)) / length;
         }
 
-        // A polygon thinner than the fringe has no inner ring: pulling every
-        // corner in by half a pixel turns an edge back on itself. Collapse the
-        // inner ring to the vertex mean (inside any convex polygon) so nothing
-        // folds, then weaken the whole shape to the polygon's own area.
-        bool collapsed = false;
-        for (int i = 0; i < count && !collapsed; i++)
+        // The inner ring insets every corner by one distance: half a pixel, or
+        // less when the polygon is too thin to be inset that far, so that no
+        // edge shrinks past nothing and turns back on itself.
+        float limit = float.MaxValue;
+        for (int i = 0; i < count; i++)
         {
             int next = (i + 1) % count;
-            collapsed = Vector2.Dot(inner[next] - inner[i], corner[next] - corner[i]) <= 0f;
+            float shortening = tangent[i] + tangent[next];
+            if (shortening > 0f)
+                limit = MathF.Min(limit, (corner[next] - corner[i]).Length() / shortening);
         }
-        double area = 0;
-        if (collapsed)
+        float inset = MathF.Min(half, limit);
+        for (int i = 0; i < count; i++)
         {
-            Vector2 mean = Vector2.Zero;
+            float lengthSquared = average[i].LengthSquared();
+            Vector2 miter = lengthSquared > 1e-12f
+                ? average[i] / lengthSquared
+                : average[i] / MathF.Max(lengthSquared, 1f / (MaximumMiter * MaximumMiter));
+            inner[i] = corner[i] - miter * inset;
+        }
+
+        // A polygon that is mostly fringe covers more than its own area once
+        // fringed, so its alpha is lowered to make up the difference.
+        bool collapsed = false;
+        double area = 0;
+        if (limit <= half)
+        {
+            double whole = 0, core = 0;
             for (int i = 0; i < count; i++)
             {
-                mean += corner[i];
-                area += Cross(corner[i], corner[(i + 1) % count]);
+                int next = (i + 1) % count;
+                whole += Cross(corner[i], corner[next]);
+                core += Cross(inner[i], inner[next]);
             }
-            mean /= count;
-            area = Math.Abs(area) * 0.5;
-            inner.Fill(mean);
+            area = Math.Abs(whole) * 0.5;
+            collapsed = Math.Abs(core) * 0.5 < area * 0.5;
         }
 
         int start = output.Count;
@@ -223,7 +246,7 @@ internal static class CanvasGeometry
         RoundedRectRing(x, y, width, height, radii, half, segments, outer);
         int start = output.Count;
         FillRing(inner, outer, color, output);
-        if (width < pixel || height < pixel)
+        if (width <= pixel || height <= pixel)
         {
             double corners = (double)radii.TopLeft * radii.TopLeft + (double)radii.TopRight * radii.TopRight
                 + (double)radii.BottomRight * radii.BottomRight + (double)radii.BottomLeft * radii.BottomLeft;
@@ -269,7 +292,7 @@ internal static class CanvasGeometry
         EllipseRing(centre, radii, half, outer);
         int start = output.Count;
         FillRing(inner, outer, color, output);
-        if (radii.X < half || radii.Y < half) ScaleToArea(output, start, Math.PI * radii.X * radii.Y);
+        if (radii.X <= half || radii.Y <= half) ScaleToArea(output, start, Math.PI * radii.X * radii.Y);
     }
 
     /// <summary>
