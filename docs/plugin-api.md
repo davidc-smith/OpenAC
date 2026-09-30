@@ -1374,7 +1374,10 @@ colour per point and blends between them. `FillRoundedRect` and
 the rectangle they are scaled down together, as CSS does, and zero gives a
 square corner. `FillEllipse`, `StrokeEllipse` and `FillCircle` draw
 ellipses and circles. `FillRectGradient` fills a rectangle blending from
-one colour to another, across it or down it.
+one colour to another, across it or down it. Colours blend as given, alpha
+included: to fade a colour out, fade to the same colour with zero alpha
+(`new PluginColor(r, g, b, 0)`), not to `PluginColor.Transparent`, which
+is transparent black and darkens the middle of the fade.
 
 The edges of these shapes are anti-aliased over one pixel; `FillRect`,
 `StrokeRect` and `DrawLine` keep their hard edges. Strokes are centred on

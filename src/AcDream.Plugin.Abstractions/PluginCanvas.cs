@@ -261,7 +261,12 @@ public interface IPluginPainter
     /// Fills a convex polygon with a colour at each corner, blended across
     /// the polygon, with anti-aliased edges; otherwise as the one-colour
     /// overload. A colour count that differs from the point count draws
-    /// nothing. A host that predates shapes draws nothing.
+    /// nothing. Colours blend as given, alpha included: to fade a colour
+    /// out, fade to the same colour with zero alpha
+    /// (<c>new PluginColor(r, g, b, 0)</c>), not to
+    /// <see cref="PluginColor.Transparent"/>, which is transparent black and
+    /// darkens the middle of the fade. A host that predates shapes draws
+    /// nothing.
     /// </summary>
     /// <param name="points">The polygon's corners, in order round its outline.</param>
     /// <param name="colors">One colour per corner, in the same order as the points.</param>
@@ -328,8 +333,12 @@ public interface IPluginPainter
 
     /// <summary>
     /// Fills a rectangle blending from one colour at one edge to another at
-    /// the opposite edge, with anti-aliased edges. A host that predates
-    /// shapes draws nothing.
+    /// the opposite edge, with anti-aliased edges. Colours blend as given,
+    /// alpha included: to fade a colour out, fade to the same colour with
+    /// zero alpha (<c>new PluginColor(r, g, b, 0)</c>), not to
+    /// <see cref="PluginColor.Transparent"/>, which is transparent black and
+    /// darkens the middle of the fade. A host that predates shapes draws
+    /// nothing.
     /// </summary>
     /// <param name="rect">The rectangle.</param>
     /// <param name="from">The colour at the left or top edge.</param>
