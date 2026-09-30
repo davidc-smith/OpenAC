@@ -622,7 +622,7 @@ Not implemented in this series. Recommended direction, modelled on World labels:
 
 ## Plan-time corrections (2026-09-30)
 
-Measured or found while writing the PR 0 and PR 1 plans; these supersede the
+Measured or found while writing the PR 0, PR 1 and PR 3 plans; these supersede the
 sections above where they differ.
 
 - **PR 0, lazy composite pipeline.** `ResourceCleanupGroupTests.TextRendererConstructionCreatesAndDisposesOnlyOnePipeline`
@@ -654,6 +654,36 @@ sections above where they differ.
   ("AVTo?", OFL) generated with fontTools 4.60.1 rasterises through
   StbTrueTypeSharp and reports the same GPOS kerning as the TTF (A–V −40,
   T–o −70 units), so `.otf` support is tested, not best effort.
+
+- **PR 3, vertex budget.** 32,768 shape vertices per paint. A vertex is
+  32 bytes, so that is 1 MiB of the 16 MiB per-slot vertex ring
+  (`GpuMemoryProfile.RingCapacityBytesPerSlot`), and it takes about 0.6 ms
+  to tessellate and clip. Going over is reported once per canvas, and the
+  rest of that paint's shapes are skipped. The paint counts as an overrun
+  through a new optional predicate on `UiDrawCallbackGuard.Invoke`, so
+  three such paints in a row drop the callback, as for time; the trip
+  message names the drawing budget.
+- **PR 3, curves.** Chords stray at most 0.1 device pixel from the true curve
+  (0.25 px was considered; 0.1 keeps covered area within 1% from a
+  20 px radius). A corner gets at most 32 chords; an ellipse gets 8–256,
+  rounded up to a multiple of 4. Ellipse strokes grow both radii, which is
+  exact for circles. Outside a zero-radius corner a stroke stays square, as
+  in CSS.
+- **PR 3, what is reported.** Reported once per canvas: non-finite values;
+  negative sizes, radii or thicknesses; wrong point or colour counts;
+  non-convex outlines (checked by the sign of each turn *and* a total
+  turning of exactly one circle, which rejects stars); an unknown gradient
+  direction. Silent: zero area, zero thickness, collinear points.
+- **PR 3, gradients** are drawn as a four-point polygon, so their edges are
+  feathered too.
+- **PR 3, branch.** Built from `painter-v2/canvas-alpha`, not from the fork's
+  `main`, which carries PR 1. Merging the two conflicts only mechanically:
+  both sides add a parameter to `PluginPainter.Bind` and
+  `PluginCanvasSurface.Repaint`, and both append to the
+  `plugin-ui-markup.md` test paragraph.
+- **PR 3, input for PR 4.** `PluginPainter.DevicePixel` (1 today) becomes
+  `1 / s`. `CanvasGeometry` already takes the device pixel size, and the
+  fringe width and chord counts follow from it.
 
 ## Status and carry-forward (2026-09-30)
 
