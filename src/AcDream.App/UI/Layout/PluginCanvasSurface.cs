@@ -62,6 +62,7 @@ internal sealed class PluginCanvasSurface : IDisposable
     private readonly TextRenderer _renderer;
     private readonly UiRenderContext _context;
     private readonly PluginPainter _painter = new();
+    private readonly Func<bool> _overShapeBudget;
     private bool _disposed;
 
     internal PluginCanvasSurface(PluginCanvasHostServices services, UiDatFont? font)
@@ -78,6 +79,7 @@ internal sealed class PluginCanvasSurface : IDisposable
             GpuBlendMode.StraightAlphaIntoPremultiplied);
         _renderer.LinearTwinResolver = services.LinearTwinResolver;
         _context = new UiRenderContext(_renderer, Vector2.Zero);
+        _overShapeBudget = () => _painter.ShapeBudgetExceeded;
     }
 
     internal PluginCanvasHostServices Services => _services;
@@ -95,13 +97,15 @@ internal sealed class PluginCanvasSurface : IDisposable
     /// what the guard returned: true when the callback drew and left the
     /// clip stack as it found it. The target is cleared and drawn either
     /// way, so a callback that threw halfway leaves a blank canvas rather
-    /// than half of one over the last.
+    /// than half of one over the last. A paint that drew more shape vertices
+    /// than one paint may counts against the guard as an overrun.
     /// </summary>
     internal bool Repaint(
         PluginCanvasRegistration registration,
         IGpuRenderTarget target,
         UiDrawCallbackGuard guard,
-        PluginImages? images)
+        PluginImages? images,
+        Action<CanvasShapeProblem, string>? shapeProblems = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(registration);
@@ -114,12 +118,12 @@ internal sealed class PluginCanvasSurface : IDisposable
         _renderer.Begin(size);
         _context.Begin(size, null);
         _context.PushClip(0f, 0f, width, height);
-        _painter.Bind(_context, Font, images, width, height);
+        _painter.Bind(_context, Font, images, width, height, shapeProblems);
         bool drew;
         try
         {
             Action<Plugin.Abstractions.IPluginPainter>? paint = registration.Paint;
-            drew = paint is not null && guard.Invoke(_context, _ => paint(_painter));
+            drew = paint is not null && guard.Invoke(_context, _ => paint(_painter), _overShapeBudget);
         }
         finally
         {

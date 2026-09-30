@@ -67,6 +67,9 @@ internal sealed class PluginCanvasElement : UiElement
     private bool _released;
     private PluginPointerButton _heldButton;
     private readonly Action? _pointerRelease;
+    private readonly Action<CanvasShapeProblem, string> _shapeProblems;
+    private bool _reportedBadShape;
+    private bool _reportedShapeBudget;
 
     internal PluginCanvasElement(
         PluginCanvasRegistration registration,
@@ -81,6 +84,7 @@ internal sealed class PluginCanvasElement : UiElement
         _images = images ?? throw new ArgumentNullException(nameof(images));
         _report = report ?? (line => Serilog.Log.Warning("{Line}", line));
         _modifiers = modifiers ?? (static () => PluginKeyModifiers.None);
+        _shapeProblems = ReportShapeProblem;
         _guard = new UiDrawCallbackGuard(
             $"plugin canvas {registration.Owner.Id}/{registration.CanvasId}",
             _report,
@@ -323,7 +327,7 @@ internal sealed class PluginCanvasElement : UiElement
             return;
         }
 
-        bool drew = _surface.Repaint(_registration, target.Target, _guard, _images());
+        bool drew = _surface.Repaint(_registration, target.Target, _guard, _images(), shapeProblems: _shapeProblems);
         target.LastUsedFrameSlot = frameSlot;
         if (_guard.IsTripped)
         {
@@ -383,6 +387,31 @@ internal sealed class PluginCanvasElement : UiElement
         {
             target.Dispose();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Where the painter says a shape went wrong. Each kind is reported once
+    /// per canvas: the paint callback runs again every time the plugin
+    /// invalidates, and the same bad shape would otherwise fill the log.
+    /// </summary>
+    private void ReportShapeProblem(CanvasShapeProblem problem, string detail)
+    {
+        string canvas = $"{_registration.Owner.Id}/{_registration.CanvasId}";
+        switch (problem)
+        {
+            case CanvasShapeProblem.InvalidInput when !_reportedBadShape:
+                _reportedBadShape = true;
+                _report(
+                    $"Plugin canvas '{canvas}': {detail}, so that shape drew nothing. "
+                    + "A shape given input it cannot draw draws nothing; this is reported once per canvas.");
+                break;
+            case CanvasShapeProblem.VertexBudget when !_reportedShapeBudget:
+                _reportedShapeBudget = true;
+                _report(
+                    $"Plugin canvas '{canvas}': {detail}, and the paint counts as over its budget. "
+                    + "This is reported once per canvas.");
+                break;
         }
     }
 
