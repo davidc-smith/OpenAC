@@ -19,10 +19,26 @@ public sealed class TextRenderer : IDisposable
             new GpuVertexAttribute(2, GpuVertexFormat.Float4, 16),
         ]);
 
+    /// <summary>The pipeline that paints the interface into the frame.</summary>
+    internal const string PipelineName = "ui-text";
+
+    /// <summary>The pipeline that paints a canvas into its premultiplied target.</summary>
+    internal const string IntoPremultipliedPipelineName = "ui-text-into-premultiplied";
+
+    /// <summary>The pipeline that composites a premultiplied texture, made on first use.</summary>
+    internal const string PremultipliedPipelineName = "ui-text-premultiplied";
+
+    private readonly IGpuDevice _device;
     private readonly ICurrentGpuFrameSource _frameSource;
     private readonly IGpuPipeline _pipeline;
+    private IGpuPipeline? _premultipliedPipeline;
 
-    private sealed class SpriteSeg { public uint Texture; public readonly List<float> Verts = new(256); }
+    private sealed class SpriteSeg
+    {
+        public uint Texture;
+        public bool Premultiplied;
+        public readonly List<float> Verts = new(256);
+    }
 
     private readonly List<float> _textBuf = new(8192);
     private readonly List<float> _rectBuf = new(1024);
@@ -63,6 +79,17 @@ public sealed class TextRenderer : IDisposable
         }
     }
 
+    internal IReadOnlyList<bool> DebugSpriteSegmentPremultiplied
+    {
+        get
+        {
+            var result = new List<bool>(_segUsed);
+            for (int i = 0; i < _segUsed; i++)
+                result.Add(_spriteSegs[i].Premultiplied);
+            return result;
+        }
+    }
+
     internal (int VertexCount, float Alpha) DebugTextBuffer
         => (_textVerts, _textBuf.Count > 0 ? _textBuf[7] : 0f);
 
@@ -77,26 +104,48 @@ public sealed class TextRenderer : IDisposable
 
     public bool OverlayMode { get; set; }
 
-    internal TextRenderer(IGpuDevice device, ICurrentGpuFrameSource frameSource, string shaderDir)
+    /// <summary>
+    /// A renderer that paints with <paramref name="blend"/>: straight alpha
+    /// into the frame (the default), or
+    /// <see cref="GpuBlendMode.StraightAlphaIntoPremultiplied"/> into a canvas
+    /// target. Exactly one pipeline is made here; the composite pipeline for
+    /// <see cref="DrawPremultipliedSprite"/> is made on first use.
+    /// </summary>
+    internal TextRenderer(
+        IGpuDevice device,
+        ICurrentGpuFrameSource frameSource,
+        string shaderDir,
+        GpuBlendMode blend = GpuBlendMode.StraightAlpha)
     {
         ArgumentNullException.ThrowIfNull(device);
         _frameSource = frameSource ?? throw new ArgumentNullException(nameof(frameSource));
         ArgumentException.ThrowIfNullOrWhiteSpace(shaderDir);
-
-        _pipeline = device.CreatePipeline(new GpuPipelineDescription
+        if (blend is not (GpuBlendMode.StraightAlpha or GpuBlendMode.StraightAlphaIntoPremultiplied))
         {
-            Name = "ui-text",
-            Shaders = new GpuShaderSet("ui_text"),
-            VertexLayout = SpriteVertexLayout,
-            Topology = GpuPrimitiveTopology.TriangleList,
-            Blend = GpuBlendMode.StraightAlpha,
-            Depth = GpuDepthState.Disabled,
-            Cull = GpuCullMode.None,
-            AlphaToCoverage = false,
-            ColorWrite = true,
-            SampleCount = 1,
-        });
+            throw new ArgumentOutOfRangeException(
+                nameof(blend),
+                blend,
+                "The interface paints with straight alpha, into the frame or into a premultiplied target.");
+        }
+        _device = device;
+        _pipeline = device.CreatePipeline(Describe(
+            blend == GpuBlendMode.StraightAlpha ? PipelineName : IntoPremultipliedPipelineName,
+            blend));
     }
+
+    private static GpuPipelineDescription Describe(string name, GpuBlendMode blend) => new()
+    {
+        Name = name,
+        Shaders = new GpuShaderSet("ui_text"),
+        VertexLayout = SpriteVertexLayout,
+        Topology = GpuPrimitiveTopology.TriangleList,
+        Blend = blend,
+        Depth = GpuDepthState.Disabled,
+        Cull = GpuCullMode.None,
+        AlphaToCoverage = false,
+        ColorWrite = true,
+        SampleCount = 1,
+    };
 
     internal Vector2 CanvasScale = Vector2.One;
 
@@ -226,6 +275,27 @@ public sealed class TextRenderer : IDisposable
     }
 
     /// <summary>
+    /// Draws a texture whose colour is already multiplied by its alpha, such
+    /// as a canvas target painted with
+    /// <see cref="GpuBlendMode.StraightAlphaIntoPremultiplied"/>, composited
+    /// with <see cref="GpuBlendMode.PremultipliedAlpha"/>. The tint is
+    /// premultiplied here so a faded window still fades what it shows. The
+    /// run never joins a straight-alpha run of the same texture. The
+    /// pipeline is made on first use: most interfaces never show a canvas.
+    /// </summary>
+    internal void DrawPremultipliedSprite(uint texture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 tint)
+    {
+        _premultipliedPipeline ??= _device.CreatePipeline(
+            Describe(PremultipliedPipelineName, GpuBlendMode.PremultipliedAlpha));
+        SpriteSeg seg = OverlayMode
+            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, texture, premultiplied: true)
+            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        texture, premultiplied: true);
+        var premultipliedTint = new Vector4(tint.X * tint.W, tint.Y * tint.W, tint.Z * tint.W, tint.W);
+        AppendQuad(seg.Verts, x, y, w, h, u0, v0, u1, v1, premultipliedTint);
+    }
+
+    /// <summary>
     /// Append a convex outline of three to eight corners as a triangle fan.
     /// This is the path for anything that is not an upright rectangle -- a
     /// thick line, a rotated or scaled blit, either of those after clipping.
@@ -273,18 +343,19 @@ public sealed class TextRenderer : IDisposable
     internal static uint ResolveExternalTextureSlot(GpuTextureSlot slot) =>
         UiTextureTableHandle.FromSlot(slot);
 
-    private static SpriteSeg NextSpriteSeg(List<SpriteSeg> segs, ref int used, uint texture)
+    private static SpriteSeg NextSpriteSeg(List<SpriteSeg> segs, ref int used, uint texture, bool premultiplied = false)
     {
-        if (used > 0 && segs[used - 1].Texture == texture)
+        if (used > 0 && segs[used - 1].Texture == texture && segs[used - 1].Premultiplied == premultiplied)
             return segs[used - 1];
         if (used < segs.Count)
         {
             var s = segs[used++];
             s.Texture = texture;
+            s.Premultiplied = premultiplied;
             s.Verts.Clear();
             return s;
         }
-        var ns = new SpriteSeg { Texture = texture };
+        var ns = new SpriteSeg { Texture = texture, Premultiplied = premultiplied };
         segs.Add(ns);
         used++;
         return ns;
@@ -378,27 +449,29 @@ public sealed class TextRenderer : IDisposable
         using IDisposable? stage = AcDream.App.Diagnostics.GpuStageProfiler.Measure(
             encoder, stageName);
         encoder.BindPipeline(_pipeline);
+        IGpuPipeline bound = _pipeline;
 
-        DrawLayer(_spriteSegs, _segUsed, _rectBuf, _rectVerts, _textBuf, _textVerts, font, frame, encoder);
-        DrawLayer(_overlaySpriteSegs, _overlaySegUsed, _overlayRectBuf, _overlayRectVerts, _overlayTextBuf, _overlayTextVerts, font, frame, encoder);
+        DrawLayer(_spriteSegs, _segUsed, _rectBuf, _rectVerts, _textBuf, _textVerts, font, frame, encoder, ref bound);
+        DrawLayer(_overlaySpriteSegs, _overlaySegUsed, _overlayRectBuf, _overlayRectVerts, _overlayTextBuf, _overlayTextVerts, font, frame, encoder, ref bound);
     }
 
     private void DrawLayer(
         List<SpriteSeg> spriteSegs, int segUsed,
         List<float> rectBuf, int rectVerts,
         List<float> textBuf, int textVerts, BitmapFont? font,
-        IGpuFrame frame, IGpuPassEncoder encoder)
+        IGpuFrame frame, IGpuPassEncoder encoder, ref IGpuPipeline bound)
     {
-        if (segUsed > 0)
+        for (int i = 0; i < segUsed; i++)
         {
-            for (int i = 0; i < segUsed; i++)
-            {
-                var seg = spriteSegs[i];
-                if (seg.Verts.Count == 0) continue;
-                SetTextures(encoder, colorHandle: seg.Texture, coverageHandle: UiTextureTableHandle.None);
-                DrawRing(frame, encoder, seg.Verts);
-            }
+            var seg = spriteSegs[i];
+            if (seg.Verts.Count == 0) continue;
+            Bind(encoder, seg.Premultiplied ? _premultipliedPipeline! : _pipeline, ref bound);
+            SetTextures(encoder, colorHandle: seg.Texture, coverageHandle: UiTextureTableHandle.None);
+            DrawRing(frame, encoder, seg.Verts);
         }
+
+        if (rectVerts > 0 || (textVerts > 0 && font is not null))
+            Bind(encoder, _pipeline, ref bound);
 
         if (rectVerts > 0)
         {
@@ -411,6 +484,13 @@ public sealed class TextRenderer : IDisposable
             SetTextures(encoder, UiTextureTableHandle.None, coverageHandle: font.TextureId);
             DrawRing(frame, encoder, textBuf);
         }
+    }
+
+    private static void Bind(IGpuPassEncoder encoder, IGpuPipeline wanted, ref IGpuPipeline bound)
+    {
+        if (ReferenceEquals(wanted, bound)) return;
+        encoder.BindPipeline(wanted);
+        bound = wanted;
     }
 
     private void SetTextures(IGpuPassEncoder encoder, uint colorHandle, uint coverageHandle)
@@ -433,5 +513,9 @@ public sealed class TextRenderer : IDisposable
         encoder.Draw((uint)(buf.Count / FloatsPerVertex), 1, 0, 0);
     }
 
-    public void Dispose() => _pipeline.Dispose();
+    public void Dispose()
+    {
+        _pipeline.Dispose();
+        _premultipliedPipeline?.Dispose();
+    }
 }
