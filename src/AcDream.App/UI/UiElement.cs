@@ -142,7 +142,12 @@ public abstract class UiElement
 
     public Func<bool>? EnabledSource { get; set; }
 
-    public bool AcceptsFocus    { get; set; }
+    /// <summary>
+    /// Whether a left press (or Tab, with <see cref="TabStop"/>) gives this
+    /// element keyboard focus. Virtual so an element whose answer depends
+    /// on live state can compute it when the root asks.
+    /// </summary>
+    public virtual bool AcceptsFocus { get; set; }
     public bool FocusOnMouseClick { get; set; } = true;
     public bool TabStop         { get; set; }
 

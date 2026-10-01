@@ -4204,7 +4204,8 @@ public sealed class RetailUiRuntime : IDisposable
                     canvas,
                     _pluginCanvasSurface,
                     () => plugins.FindImages(owner),
-                    modifiers: HeldPointerModifiers);
+                    modifiers: HeldPointerModifiers,
+                    keyboardCaptured: () => _bindings.Keyboard?.Dispatcher?.IsCapturing == true);
                 layer.AddChild(element, takesInput: canvas.AcceptsPointerInput);
                 plugins.CompleteCanvasMount(canvas, () =>
                 {
@@ -4226,7 +4227,7 @@ public sealed class RetailUiRuntime : IDisposable
 
     /// <summary>
     /// The modifier keys held right now, read from the window's keyboard
-    /// for each pointer event a plugin canvas delivers; none without one.
+    /// for each pointer or key event a plugin canvas delivers; none without one.
     /// </summary>
     private PluginKeyModifiers HeldPointerModifiers()
     {
