@@ -1481,9 +1481,8 @@ covers in this paint, for a detail that should be exactly one screen pixel:
 painter.FillRect(new PluginRect(0, 40, painter.Width, 1 / painter.PixelScale), divider); // a hairline
 ```
 
-The scale is the window's framebuffer pixels per point, times the stretch
-of the fixed-size screens before the world, rounded up to a quarter, from
-1 to 4. A canvas too large for the graphics card at that scale is painted
+The scale is the window's framebuffer pixels per point, rounded up to a
+quarter, from 1 to 4. A canvas too large for the graphics card at that scale is painted
 at the largest quarter that fits. When the scale changes -- the window
 moved to another display -- the host repaints the canvas; the paint
 callback reads the new value then.

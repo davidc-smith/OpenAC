@@ -4,34 +4,31 @@ using AcDream.App.UI.Layout;
 namespace AcDream.App.Tests.UI.Layout;
 
 /// <summary>
-/// A canvas is painted at framebuffer pixels per point times the interface's
-/// stretch, rounded up to a quarter, from 1 to 4, and lowered only to fit
-/// the device.
+/// A canvas is painted at framebuffer pixels per point, rounded up to a
+/// quarter, from 1 to 4, and lowered only to fit the device.
 /// </summary>
 public sealed class CanvasPixelScaleTests
 {
     [Theory]
-    [InlineData(1f, 1f, 1f, 1f, 1f)]
-    [InlineData(2f, 2f, 1f, 1f, 2f)]
-    [InlineData(1.5f, 1.5f, 1f, 1f, 1.5f)]
-    [InlineData(1.1f, 1.1f, 1f, 1f, 1.25f)]
-    [InlineData(2f, 2f, 1.3333334f, 1.3333334f, 2.75f)]
-    [InlineData(2f, 1f, 1f, 1f, 2f)]
-    [InlineData(1f, 1f, 1f, 1.6f, 1.75f)]
-    [InlineData(3f, 3f, 2f, 2f, 4f)]
-    [InlineData(0.5f, 0.5f, 1f, 1f, 1f)]
+    [InlineData(1f, 1f, 1f)]
+    [InlineData(2f, 2f, 2f)]
+    [InlineData(1.5f, 1.5f, 1.5f)]
+    [InlineData(1.1f, 1.1f, 1.25f)]
+    [InlineData(2f, 1f, 2f)]
+    [InlineData(1f, 1.6f, 1.75f)]
+    [InlineData(3f, 3f, 3f)]
+    [InlineData(5f, 5f, 4f)]
+    [InlineData(0.5f, 0.5f, 1f)]
     public void TheInterfaceScaleIsTheLargerAxisRoundedUpToAQuarter(
-        float framebufferX, float framebufferY, float stretchX, float stretchY, float expected)
+        float framebufferX, float framebufferY, float expected)
     {
-        Assert.Equal(
-            expected,
-            CanvasPixelScale.ForInterface(new Vector2(framebufferX, framebufferY), new Vector2(stretchX, stretchY)));
+        Assert.Equal(expected, CanvasPixelScale.ForInterface(new Vector2(framebufferX, framebufferY)));
     }
 
     [Fact]
     public void AScaleAHairOverAStepIsThatStep()
     {
-        Assert.Equal(2f, CanvasPixelScale.ForInterface(new Vector2(2880f / 1440f + 1e-6f), Vector2.One));
+        Assert.Equal(2f, CanvasPixelScale.ForInterface(new Vector2(2880f / 1440f + 1e-6f)));
     }
 
     [Theory]
@@ -40,7 +37,7 @@ public sealed class CanvasPixelScaleTests
     [InlineData(0f)]
     public void AScaleThatIsNotAPositiveNumberIsOne(float framebuffer)
     {
-        Assert.Equal(1f, CanvasPixelScale.ForInterface(new Vector2(framebuffer), Vector2.One));
+        Assert.Equal(1f, CanvasPixelScale.ForInterface(new Vector2(framebuffer)));
     }
 
     [Theory]

@@ -472,8 +472,7 @@ internal sealed class PluginCanvasElement : UiElement
     /// </summary>
     private void FollowPixelScale()
     {
-        _interfaceScale = CanvasPixelScale.ForInterface(
-            _surface.Services.FramebufferPerPoint(), FindRoot()?.CanvasScale ?? Vector2.One);
+        _interfaceScale = CanvasPixelScale.ForInterface(_surface.Services.FramebufferPerPoint());
         float scale = CanvasPixelScale.ForCanvas(
             _interfaceScale,
             _registration.Width,

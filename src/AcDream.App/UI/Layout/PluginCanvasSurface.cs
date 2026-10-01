@@ -83,8 +83,9 @@ internal sealed class PluginCanvasSurface : IDisposable
             services.ShaderDirectory,
             GpuBlendMode.StraightAlphaIntoPremultiplied);
         // No linear twins, unlike the fixed canvas: a canvas painted above
-        // one pixel per canvas pixel is not magnified afterwards, so the
-        // interface font keeps its nearest-sampled, whole-pixel look.
+        // one pixel per canvas pixel is not magnified afterwards (except
+        // behind a pre-game screen, where nobody sees it), so the interface
+        // font keeps its nearest-sampled, whole-pixel look.
         _renderer.LinearTwinResolver = null;
         _context = new UiRenderContext(_renderer, Vector2.Zero);
         _overShapeBudget = () => _painter.ShapeBudgetExceeded;

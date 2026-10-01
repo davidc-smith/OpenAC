@@ -5,9 +5,15 @@ namespace AcDream.App.UI.Layout;
 /// <summary>
 /// How many device pixels a plugin canvas is painted at per canvas pixel.
 /// The interface is laid out in window points and stretched over the
-/// framebuffer, and a pre-game fixed canvas stretches it again; a canvas
-/// painted at its own size would be magnified by both and come out blurred.
-/// Painting it at the product instead puts one texel on each device pixel.
+/// framebuffer; a canvas painted at its own size would be magnified and come
+/// out blurred. Painting it at framebuffer pixels per point instead puts one
+/// texel on each device pixel.
+///
+/// <para>A pre-game fixed canvas stretches the interface again, but that
+/// stretch is left out. The screens that declare one are opaque windows over
+/// the whole interface, and plugin canvases sit behind every window, so a
+/// canvas painted larger for it would cost memory and font bakes that nobody
+/// can see.</para>
 ///
 /// <para>The scale goes up in quarter steps, rounded up so a texel is never
 /// stretched, from 1 to 4. A canvas too large for the device at that scale
@@ -23,15 +29,13 @@ internal static class CanvasPixelScale
 
     /// <summary>
     /// The scale every canvas of the interface is painted at, before any
-    /// canvas's own size is considered: framebuffer pixels per window point
-    /// times the interface's fixed-canvas stretch, the larger of the two
-    /// axes, rounded up to a step.
+    /// canvas's own size is considered: framebuffer pixels per window point,
+    /// the larger of the two axes, rounded up to a step.
     /// </summary>
     /// <param name="framebufferPerPoint">Framebuffer pixels per window point on each axis.</param>
-    /// <param name="interfaceStretch">The root's <see cref="UiRoot.CanvasScale"/>.</param>
-    internal static float ForInterface(Vector2 framebufferPerPoint, Vector2 interfaceStretch)
+    internal static float ForInterface(Vector2 framebufferPerPoint)
     {
-        float raw = MathF.Max(framebufferPerPoint.X * interfaceStretch.X, framebufferPerPoint.Y * interfaceStretch.Y);
+        float raw = MathF.Max(framebufferPerPoint.X, framebufferPerPoint.Y);
         if (!float.IsFinite(raw) || raw <= Minimum)
             return Minimum;
         // A hair of tolerance, so 2.0000002 from a float division is 2, not 2.25.

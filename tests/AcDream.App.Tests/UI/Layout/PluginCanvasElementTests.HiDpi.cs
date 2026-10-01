@@ -69,8 +69,13 @@ public sealed partial class PluginCanvasElementTests
         Assert.Equal((200f, 100f), SurfaceProjection(harness));
     }
 
+    /// <summary>
+    /// A fixed pre-game screen is an opaque window over the whole interface,
+    /// and plugin canvases sit behind every window, so its stretch is left
+    /// out: a canvas nobody can see is not painted larger for it.
+    /// </summary>
     [Fact]
-    public void TheFixedCanvasStretchCountsTowardsTheScale()
+    public void AFixedPreGameScreenDoesNotRaiseTheScale()
     {
         var harness = new Harness();
         harness.Root.DeclareFixedCanvas(this, new Vector2(400f, 300f));
@@ -79,7 +84,9 @@ public sealed partial class PluginCanvasElementTests
 
         harness.Frame();
 
-        Assert.Equal(2.0, scale);
+        Assert.Equal(1.0, scale);
+        GpuRecordedRenderTargetCreate created = Assert.Single(harness.Device.OfKind<GpuRecordedRenderTargetCreate>());
+        Assert.Equal((200, 100), (created.Description.Width, created.Description.Height));
     }
 
     [Fact]
