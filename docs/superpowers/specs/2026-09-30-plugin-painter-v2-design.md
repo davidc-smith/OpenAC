@@ -759,6 +759,21 @@ sections above where they differ.
 - **PR 4, test harness.** `PluginCanvasElementTests.Harness` now mounts an input
   canvas with `takesInput`, as the runtime does; before, only the pointer
   suite's own harness did.
+- **PR 4, no pre-game stretch (from the final review, 2026-10-01; supersedes
+  "`× root.CanvasScale`" in section 7).** The scale is framebuffer pixels per
+  point only, rounded up to a quarter, from 1 to 4. A pre-game fixed canvas
+  stretches the interface, but every screen that declares one (connecting,
+  character select and creation, credits) is an opaque window over the whole
+  interface, and plugin canvases sit on the overlay band at z −9000, behind
+  every window. Painting at the stretch (up to 3.25 on a Retina display,
+  pre-game) cost target memory and font rebakes on every quarter step of a
+  window resize, all for a canvas nobody could see. Confirmed by a capture of
+  the connecting screen with the demo canvas mounted (not visible). The
+  review's concern about fractional scales therefore does not arise.
+- **PR 4, platforms.** GLFW on Windows reports window and framebuffer sizes
+  both in pixels, so `PixelScale` stays 1 at 150 % there; the plugin docs name
+  a Retina Mac (or a desktop with more framebuffer pixels than points, such as
+  scaled Wayland), not Windows.
 - **Finding (separate fix, not PR 4).** The client's backbuffer screenshot
   (`RenderFrameOrchestrator` → `FrameScreenshotController.CapturePending`)
   passes `input.ViewportWidth/Height`, the window size in points. On a
@@ -777,6 +792,7 @@ sections above where they differ.
 - PR 3 built on `painter-v2/shapes` from PR 0 (reviewed; see the PR 3 corrections above). Two contract-level changes beyond section 4: font requests that would bake inside a paint callback answer `PluginFont.None` (cache hits allowed), and font files are refused unless their sfnt header and table directory are structurally sound.
 
 - PR 4 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr4-hidpi.md`, branch `painter-v2/hidpi` from fork `main`. Verified by a prototype on 44a505ee, including 2× captures on the built-in Retina display (before: soft; after: sharp text and edges, interface font crisply pixel-doubled).
+- PR 4 done 2026-10-01: `origin/painter-v2/hidpi` (12 commits, reviewed; the review's docs fixes and the pre-game stretch removal included), merged into fork `main` as 450dd2b9. Review follow-ups not taken: a per-font guard around `PrepareScale` in `OnDraw`; spreading a scale change's rebakes across frames; retrying a budget-refused font when room frees.
 
 ### Inputs for the PR 4 (HiDPI) plan
 
