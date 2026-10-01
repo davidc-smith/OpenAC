@@ -60,6 +60,7 @@ internal static class PluginMarkupTheme
                 var bg = button.BackgroundColor; var border = button.BorderColor;
                 var text = button.TextColor; var outline = button.Outline;
                 panel.AddThemeAction(p => {
+                    button.ThemePalette = p;
                     button.Outline = p is null && outline;
                     if (Default("background")) button.BackgroundColor = p?.Field ?? bg;
                     if (Default("border")) button.BorderColor = p?.Border ?? border;

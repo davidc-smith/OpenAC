@@ -35,12 +35,16 @@ public sealed class UiMarkupToggle : UiElement
 
     protected override void OnDraw(UiRenderContext ctx)
     {
+        if (ThemePalette is { } themed)
+        {
+            DrawThemed(ctx, themed);
+            return;
+        }
         if (_keyboardActivation.Focused)
             ctx.DrawRectOutline(0f, 0f, Width, Height,
                 new Vector4(1f, 0.82f, 0.25f, 1f), 1f);
         float checkY = MathF.Max(1f, (Height - UiCheckLamp.LampSize) * 0.5f);
-        if (ThemePalette is { } p) p.DrawCheck(ctx, 1f, checkY, IsChecked);
-        else UiCheckLamp.Draw(ctx, 1f, checkY, IsChecked);
+        UiCheckLamp.Draw(ctx, 1f, checkY, IsChecked);
 
         string caption = TextSource?.Invoke() ?? Text;
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
@@ -51,8 +55,25 @@ public sealed class UiMarkupToggle : UiElement
             ? (Height - font.LineHeight) * 0.5f
             : 1f;
         if (DatFont is { } dat)
-            ctx.DrawStringDat(dat, caption, 17f, y, color, outline: ThemePalette is null);
+            ctx.DrawStringDat(dat, caption, 17f, y, color, outline: true);
         else
             ctx.DrawString(caption, 17f, y, color);
+    }
+
+    private void DrawThemed(UiRenderContext ctx, PluginUiPalette palette)
+    {
+        float switchY = MathF.Max(0f, (Height - PluginUiStyle.SwitchHeight) * 0.5f);
+        PluginUiStyle.Switch(ctx, palette, 1f, switchY, IsChecked, Enabled);
+        if (_keyboardActivation.Focused)
+            PluginUiStyle.FocusRing(ctx, palette, Width, Height, PluginUiStyle.SmallRadius);
+
+        string caption = TextSource?.Invoke() ?? Text;
+        Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
+        Vector4 color = Enabled ? textColor : textColor with { W = 0.42f };
+        float x = 1f + PluginUiStyle.SwitchWidth + PluginUiStyle.SwitchCaptionGap;
+        if (DatFont is { } dat)
+            ctx.DrawStringDat(dat, caption, x, (Height - dat.LineHeight) * 0.5f, color, outline: false);
+        else
+            ctx.DrawString(caption, x, 1f, color);
     }
 }
