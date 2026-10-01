@@ -59,6 +59,37 @@ public sealed class PluginThemeControlTests
         Assert.True(ThemeDrawCapture.HasColor(DrawElement(button), PluginUiStyle.Pressed(P.Field)));
     }
 
+    private static List<float> CaptionAlphas(UiSimpleButton button)
+    {
+        button.DatFont = BundledUiFont.Bake().CreateFont(42);
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        button.DrawSelfAndChildren(ctx);
+        var alphas = new List<float>();
+        foreach (var seg in renderer.DebugSpriteSegmentVerts.Where(s => s.Texture == 42u))
+            for (int i = 0; i + TextRenderer.FloatsPerVertex <= seg.Verts.Count; i += TextRenderer.FloatsPerVertex)
+                alphas.Add(seg.Verts[i + 7]);
+        return alphas;
+    }
+
+    [Fact]
+    public void ADisabledThemedButtonFadesItsCaptionToo()
+    {
+        var (_, panel) = Themed(
+            "<button x=\"10\" y=\"10\" w=\"80\" h=\"24\" text=\"Start\" onclick=\"{Click}\" />" +
+            "<button x=\"100\" y=\"10\" w=\"80\" h=\"24\" text=\"Stop\" enabled=\"{Off}\" onclick=\"{Click}\" />");
+        var enabled = Assert.IsType<UiSimpleButton>(panel.Children[0]);
+        var disabled = Assert.IsType<UiSimpleButton>(panel.Children[1]);
+        Assert.False(disabled.Enabled);
+
+        var on = CaptionAlphas(enabled);
+        Assert.NotEmpty(on);
+        Assert.All(on, a => Assert.Equal(1f, a, 1e-4f));
+
+        var off = CaptionAlphas(disabled);
+        Assert.NotEmpty(off);
+        Assert.All(off, a => Assert.True(a <= PluginUiStyle.DisabledAlpha + 1e-4f, $"alpha {a}"));
+    }
+
     [Fact]
     public void ASelectedThemedTabIsAPillWithoutUnderline()
     {

@@ -158,6 +158,7 @@ public class UiSimpleButton : UiPanel
                     new Vector4(1f, 0.82f, 0.25f, 1f), 1f);
         }
 
+        bool fade = ThemePalette is not null && !Enabled;
         float iconColumn = 0f;
         if (IconSource is { } iconSource)
         {
@@ -175,13 +176,14 @@ public class UiSimpleButton : UiPanel
                     3f + (extent - drawWidth) * 0.5f,
                     (Height - drawHeight) * 0.5f,
                     drawWidth, drawHeight,
-                    0f, 0f, 1f, 1f, Vector4.One);
+                    0f, 0f, 1f, 1f, fade ? PluginUiStyle.Faded(Vector4.One) : Vector4.One);
             }
         }
 
         string caption = TextSource?.Invoke() ?? Text;
         if (caption.Length == 0) return;
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
+        if (fade) textColor = PluginUiStyle.Faded(textColor);
 
         float captionAreaX = iconColumn;
         float captionAreaWidth = MathF.Max(0f, Width - iconColumn);
