@@ -17,7 +17,7 @@ namespace AcDream.App.Tests.UI.Layout;
 /// the guard, with a painter that dies with the call; shown as one quad
 /// on the interface; taken down through the tree and the retirement queue.
 /// </summary>
-public sealed class PluginCanvasElementTests
+public sealed partial class PluginCanvasElementTests
 {
     private sealed class FrameSource : ICurrentGpuFrameSource
     {
