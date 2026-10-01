@@ -7,7 +7,7 @@ namespace AcDream.Plugin.Abstractions;
 /// Sizes and metrics are in canvas pixels.
 /// </summary>
 /// <param name="Handle">The host's number for this font; 0 means no font.</param>
-/// <param name="PixelSize">The size the font was asked for, in pixels.</param>
+/// <param name="PixelSize">The size the font was prepared at, in pixels: the size asked for, to the nearest quarter pixel.</param>
 /// <param name="LineHeight">How far apart two lines of this font sit, in pixels.</param>
 /// <param name="Ascent">How far below the top of a line its baseline sits, in pixels.</param>
 public readonly record struct PluginFont(int Handle, float PixelSize, float LineHeight, float Ascent)
@@ -77,7 +77,7 @@ public interface IPluginFonts
     bool IsAvailable => false;
 
     /// <summary>The client's bundled sans-serif font, Noto Sans, at a size.</summary>
-    /// <param name="pixelSize">The size in canvas pixels, from <see cref="MinimumPixelSize"/> to <see cref="MaximumPixelSize"/>.</param>
+    /// <param name="pixelSize">The size in canvas pixels, from <see cref="MinimumPixelSize"/> to <see cref="MaximumPixelSize"/>, prepared to the nearest quarter pixel.</param>
     /// <returns>The font, or <see cref="PluginFont.None"/> when the request was refused.</returns>
     PluginFont Bundled(float pixelSize) => PluginFont.None;
 
@@ -89,7 +89,7 @@ public interface IPluginFonts
     /// </summary>
     /// <param name="name">The plugin's own name for the font file, unique within the plugin, such as a relative path.</param>
     /// <param name="open">Opens a fresh readable stream of the font file.</param>
-    /// <param name="pixelSize">The size in canvas pixels, from <see cref="MinimumPixelSize"/> to <see cref="MaximumPixelSize"/>.</param>
+    /// <param name="pixelSize">The size in canvas pixels, from <see cref="MinimumPixelSize"/> to <see cref="MaximumPixelSize"/>, prepared to the nearest quarter pixel.</param>
     /// <param name="options">Which characters to prepare; null prepares the default set.</param>
     /// <returns>The font, or <see cref="PluginFont.None"/> when the stream could not be opened or read, the font has none of the characters, a limit would be passed, or the request was refused.</returns>
     PluginFont FromStream(string name, Func<Stream> open, float pixelSize, PluginFontOptions? options = null) =>

@@ -39,4 +39,53 @@ public sealed class BundledCanvasFontCacheTests
         Assert.Null(cache.Acquire(16f, out string? failure));
         Assert.NotNull(failure);
     }
+
+    [Fact]
+    public void EverySizeSharesOneFace()
+    {
+        var backend = new PluginFontTableTests.FakeFontBackend();
+        using var cache = new BundledCanvasFontCache(backend, BundledUiFont.ReadEmbeddedFontBytes, 2048);
+
+        CanvasFont? sixteen = cache.Acquire(16f, out _);
+        CanvasFont? twenty = cache.Acquire(20f, out _);
+
+        Assert.Same(sixteen!.Face, twenty!.Face);
+    }
+
+    [Fact]
+    public void ASizesSharperBakeIsMadeOnceForEveryHolderAndGoesWithTheLastRelease()
+    {
+        var backend = new PluginFontTableTests.FakeFontBackend();
+        using var cache = new BundledCanvasFontCache(backend, BundledUiFont.ReadEmbeddedFontBytes, 2048);
+        CanvasFont font = cache.Acquire(16f, out _)!;
+        cache.Acquire(16f, out _);
+
+        cache.PrepareScale(font, 2f, out string? shortfall);
+        cache.PrepareScale(font, 2f, out _);
+
+        Assert.Null(shortfall);
+        Assert.Equal(2f, font.Sharp!.Scale);
+        Assert.Equal(2, backend.Uploaded.Count);
+        Assert.Equal((1024, 512), (backend.Uploaded[1].Width, backend.Uploaded[1].Height));
+        cache.Release(font);
+        Assert.Empty(backend.Released);
+        cache.Release(font);
+        Assert.Equal(
+            [PluginFontTableTests.FakeFontBackend.FirstTexture + 1, PluginFontTableTests.FakeFontBackend.FirstTexture],
+            backend.Released);
+    }
+
+    [Fact]
+    public void DisposingGivesBackSharperBakesToo()
+    {
+        var backend = new PluginFontTableTests.FakeFontBackend();
+        var cache = new BundledCanvasFontCache(backend, BundledUiFont.ReadEmbeddedFontBytes, 2048);
+        CanvasFont font = cache.Acquire(16f, out _)!;
+        cache.PrepareScale(font, 2f, out _);
+
+        cache.Dispose();
+
+        Assert.Equal(2, backend.Released.Count);
+        Assert.Null(font.Face.Info);
+    }
 }

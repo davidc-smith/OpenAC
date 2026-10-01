@@ -6,7 +6,9 @@ namespace AcDream.App.Plugins;
 /// The bundled font's bakes, shared by every plugin: one per size, uploaded
 /// once, held while any plugin holds that size and given back on the last
 /// release. Like client art, a shared bake costs no plugin anything against
-/// its byte budget.
+/// its byte budget. Every size shares one face of the font file, and each
+/// size's sharper bake for the canvas scale is shared the same way: the
+/// scale is the interface's, the same for every plugin.
 /// </summary>
 internal sealed class BundledCanvasFontCache : IDisposable
 {
@@ -15,6 +17,7 @@ internal sealed class BundledCanvasFontCache : IDisposable
     private readonly int _maximumGlyphs;
     private readonly Dictionary<float, (CanvasFont Font, int Holds)> _bySize = [];
     private byte[]? _fontBytes;
+    private CanvasFontFace? _face;
     private bool _disposed;
 
     internal BundledCanvasFontCache(IPluginFontBackend backend, Func<byte[]> readFontBytes, int maximumGlyphs)
@@ -46,12 +49,35 @@ internal sealed class BundledCanvasFontCache : IDisposable
                 _fontBytes, pixelSize, CanvasFontBaker.DefaultRanges, _maximumGlyphs,
                 out CanvasFontBake? bake, out failure))
             return null;
+        // The face is made once the bytes have passed a bake's checks.
+        _face ??= new CanvasFontFace(_fontBytes);
         uint texture = _backend.UploadCoverage(
-            bake.Coverage, bake.AtlasWidth, bake.AtlasHeight, $"plugin-font-bundled-{pixelSize}px");
-        var font = new CanvasFont(bake, texture, _fontBytes);
+            bake.Coverage, bake.AtlasWidth, bake.AtlasHeight, DebugName(pixelSize));
+        var font = new CanvasFont(bake, texture, _face, ownsFace: false);
         _bySize.Add(pixelSize, (font, 1));
         return font;
     }
+
+    /// <summary>
+    /// Prepares one of the cache's bakes for the canvas scale. A bake another
+    /// plugin already prepared for the scale is left as it is.
+    /// </summary>
+    /// <param name="shortfall">Why the font is not drawn at <paramref name="scale"/> itself, or null.</param>
+    internal void PrepareScale(CanvasFont font, float scale, out string? shortfall)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        shortfall = null;
+        if (_disposed || font.PreparedScale == scale
+            || !_bySize.TryGetValue(font.PixelSize, out (CanvasFont Font, int Holds) held)
+            || !ReferenceEquals(held.Font, font))
+            return;
+        CanvasFontSharpening.Prepare(
+            font, scale, CanvasFontBaker.DefaultRanges, _maximumGlyphs, long.MaxValue,
+            _backend, DebugName(font.PixelSize), out shortfall);
+    }
+
+    private static string DebugName(float pixelSize) =>
+        FormattableString.Invariant($"plugin-font-bundled-{pixelSize}px");
 
     /// <summary>Lets go of one hold; the last one gives the texture back.</summary>
     internal void Release(CanvasFont font)
@@ -66,6 +92,7 @@ internal sealed class BundledCanvasFontCache : IDisposable
             return;
         }
         _bySize.Remove(font.PixelSize);
+        CanvasFontSharpening.Release(font, _backend);
         _backend.ReleaseCoverage(font.AtlasTexture);
         font.Dispose();
     }
@@ -76,9 +103,12 @@ internal sealed class BundledCanvasFontCache : IDisposable
         _disposed = true;
         foreach ((CanvasFont font, int _) in _bySize.Values)
         {
+            CanvasFontSharpening.Release(font, _backend);
             _backend.ReleaseCoverage(font.AtlasTexture);
             font.Dispose();
         }
         _bySize.Clear();
+        _face?.Dispose();
+        _face = null;
     }
 }
