@@ -1328,7 +1328,9 @@ fonts.Release(title);
 
 Each size of each font is its own `PluginFont`, carrying its `PixelSize`,
 `LineHeight` and `Ascent` (how far below the top of a line the baseline
-sits) so text in different fonts can share a baseline. Preparing a font
+sits) so text in different fonts can share a baseline. Sizes are prepared
+to the nearest quarter pixel, and `PixelSize` is the size prepared: asking
+for 16.1 px gives the 16 px font. Preparing a font
 takes some milliseconds and happens when it is asked for, never while a
 canvas paints: ask for fonts up front, not inside the paint callback. A
 request made inside a paint callback for a font not already held answers
@@ -1443,11 +1445,12 @@ included: to fade a colour out, fade to the same colour with zero alpha
 (`new PluginColor(r, g, b, 0)`), not to `PluginColor.Transparent`, which
 is transparent black and darkens the middle of the fade.
 
-The edges of these shapes are anti-aliased over one pixel; `FillRect`,
-`StrokeRect` and `DrawLine` keep their hard edges. Strokes are centred on
-the outline, so half the thickness falls outside the shape. A stroke
-thinner than a pixel is drawn one pixel wide and proportionally fainter.
-A shape with no area or no thickness simply draws nothing.
+The edges of these shapes are anti-aliased over one screen pixel;
+`FillRect`, `StrokeRect` and `DrawLine` keep their hard edges. Strokes are
+centred on the outline, so half the thickness falls outside the shape. A
+stroke thinner than a screen pixel is drawn one screen pixel wide and
+proportionally fainter. A shape with no area or no thickness simply draws
+nothing.
 
 Some input cannot be drawn: a polygon that is not convex or has too few or
 too many points, a colour count that does not match the point count, a
@@ -1456,10 +1459,44 @@ coordinate that is not a finite number. Such a shape draws nothing, never
 throws, and is reported once per canvas in the client's log.
 
 One paint may draw at most 32,768 shape vertices; a large circle takes a
-few hundred. Past that limit the remaining shapes are skipped and the log
-says so once. The paint also counts against the paint budget, like a slow
-one, so a callback that keeps going over is dropped. On a host that
-predates shapes, they draw nothing.
+few hundred, and about 1.4 times as many on a high-density display (see
+[High-density displays](#high-density-displays)). Past that limit the
+remaining shapes are skipped and the log says so once. The paint also
+counts against the paint budget, like a slow one, so a callback that keeps
+going over is dropped. On a host that predates shapes, they draw nothing.
+
+### High-density displays
+
+On a high-density display -- a Retina Mac, or Windows at 150 % -- the host
+paints each canvas at more than one screen pixel per canvas pixel, so
+shape edges and text in a font from [Fonts](#fonts) come out as sharp as
+the display can show them rather than magnified. Nothing changes for the
+plugin: coordinates, sizes, `Width`, `Height`, `MeasureText` and pointer
+positions stay in canvas pixels, and the canvas takes the same room on
+screen. `painter.PixelScale` says how many screen pixels one canvas pixel
+covers in this paint, for a detail that should be exactly one screen pixel:
+
+```csharp
+painter.FillRect(new PluginRect(0, 40, painter.Width, 1 / painter.PixelScale), divider); // a hairline
+```
+
+The scale is the window's framebuffer pixels per point, times the stretch
+of the fixed-size screens before the world, rounded up to a quarter, from
+1 to 4. A canvas too large for the graphics card at that scale is painted
+at the largest quarter that fits. When the scale changes -- the window
+moved to another display -- the host repaints the canvas; the paint
+callback reads the new value then.
+
+The client's interface font keeps its look: it is drawn on whole canvas
+pixels, as the rest of the interface draws it, so on a 2x display each of
+its pixels is a crisp 2 x 2 block. Images are drawn from the same texture
+as before, now at the display's resolution. Fonts from `host.Ui.Fonts` are
+prepared again at the scale
+before the canvas paints, without the plugin asking: this does not count
+against `MaximumBytes`, and a plugin's own fonts have a separate 32 MB for
+it. A font too large to prepare at the full scale (the bundled font at
+64 px does not fit at 2x) uses the largest quarter that fits, and the
+client's log says so once.
 
 ### Pointer input
 
