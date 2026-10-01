@@ -622,7 +622,7 @@ Not implemented in this series. Recommended direction, modelled on World labels:
 
 ## Plan-time corrections (2026-09-30)
 
-Measured or found while writing the PR 0, PR 1, PR 3 and PR 4 plans; these supersede the
+Measured or found while writing the PR 0, PR 1, PR 3, PR 4 and PR 5 plans; these supersede the
 sections above where they differ.
 
 - **PR 0, lazy composite pipeline.** `ResourceCleanupGroupTests.TextRendererConstructionCreatesAndDisposesOnlyOnePipeline`
@@ -785,6 +785,71 @@ sections above where they differ.
   HostParity peer tests. With `TMPDIR=/tmp/`, 4–5 HostParity `Peer*ParityTests`
   still time out on clean `44a505ee`.
 
+- **PR 5, pre-game screens (supersedes "pre-game screens" among the
+  `int.MaxValue` elements in sections 1 and 8).** Only the SpewBox, the
+  credits' click surface and a few non-root children are pinned at
+  `int.MaxValue`. The connecting, character select, character creation and
+  credits roots are raised with `BringToFront`, so in a banded scheme they
+  would land in the window band, under `AboveWindows` canvases. They get a
+  band of their own between those canvases and dialogs (user's choice), so
+  canvases stay hidden behind pre-game screens, as PR 4's pixel scale
+  assumes, while dialogs and tooltips still show above them. Order, bottom
+  to top: world and world labels → `World` canvases → windows →
+  `AboveWindows` canvases → screens → dialogs and tooltips → menus and drag
+  ghost → pinned.
+- **PR 5, bands.** `UiBands`: windows from 0 to 1,000,000,000 (exclusive);
+  the layer of canvases over windows at exactly 1,000,000,000, in no band;
+  screens from 1,000,000,001; dialogs and tooltips from 1,500,000,000 up to
+  `int.MaxValue` (exclusive); `int.MaxValue` pinned. `BringToFront(e)`
+  raises within the band `e` is already in, not "within the window band
+  only": `UiRoot.OnMouseDown` raises a clicked dialog with the plain call,
+  and must not drop it under the canvases. `BringToFront(e, band)` moves
+  `e` into a band. Window-band members below 0 (overlays, an imported root
+  one level back) keep their values until raised, as
+  `UiOverlayHostTests` expects. A raise that would reach a band's ceiling
+  renumbers the band from its floor in order: dialogs and tooltips are
+  raised every tick (about 120 a second with one of each open), which would
+  fill the dialog band in about 1,500 hours.
+- **PR 5, an upper draw layer instead of moving callers to the sprite path
+  (supersedes the plan task in section 8).** The audit found the live
+  interface's default font is the debug `BitmapFont`
+  (`InteractionRetainedUiComposition` passes `d.DebugFont`), and `UiText`,
+  `UiLabel`, `UiPanel` captions, `UiMenu`, `UiField` and the markup list,
+  log and toggle all fall back to it, so bitmap-font text appears in
+  ordinary windows. Moving every caller would also change painter's order
+  inside windows. Instead `TextRenderer` draws three layers (main, upper,
+  overlay), each sprites, then rectangles, then text; the root switches to
+  the upper layer before its first child at or above the canvas layer.
+  Side effect: window text and rectangles no longer show through dialogs,
+  tooltips and screens either. The debug accessors report main and upper
+  together, so existing renderer tests are unchanged.
+- **PR 5, groups.** Each plugin gets a group per layer, a `UiOverlayLayer`
+  that follows the layer's size and re-ranks its canvases every tick by
+  `(ZOrder, registration id)` (at most 8, and the z-order setter ignores an
+  unchanged value). A group's z-order is the order it was created in;
+  groups are never removed. `DrainCanvases` sorts by registration id,
+  because the dictionary loses insertion order once an entry is removed. A
+  layer value other than `AboveWindows` is drawn in the world layer.
+- **PR 5, drag.** `PluginCanvasElement.OnHitTest` answers false while
+  `UiRoot.DragSource` is set, so drag hover and drop see what is beneath.
+- **PR 5, branch and merge.** Built from upstream `main` (`bbc83275`, user's
+  choice), then merged into fork `main` with a merge commit, as PR 3 was. A
+  scratch merge into `450dd2b9` conflicted in four files, one hunk each
+  (`TextRenderer` flush loop, `RetailUiRuntime` mount, the plugin API
+  guide's Canvases subsections, the markup test paragraph). PR 0, 1 and 3's
+  `DrawPremultipliedSprite`, `DrawCoverageSprite`, `DrawTriangles` and two
+  debug accessors merged cleanly but still named the removed fields; the
+  plan's Task 8 gives every resolution. The merged tree built with 0
+  warnings, passed the portable suite (baseline failures only) and the 5
+  `Lane=Vulkan` canvas tests.
+- **Finding (environment).** On clean `bbc83275` with `TMPDIR=/tmp/` these
+  also fail: `GraphicalPluginSessionTests.ReloadCommandLoadsAFreshCopyAndTheOldOneLeavesMemory`,
+  `GameWindowRenderLeafCompositionTests.PaperdollComposition_SkipsEitherMissingOptionalUiSurface`,
+  `LiveEntityNetworkUpdateControllerForcePositionWiringTests.CommittedOrDeferredCellReturnsBeforeReachingTheGenericTail`,
+  three `RenderPackValidatorCommandTests.External*` and
+  `HeadlessSessionIsolationTests.ThirtySessionMixedWorkloadMaintainsIsolationAndConverges`,
+  besides 2–6 HostParity peer tests.
+
 ## Status and carry-forward (2026-09-30)
 
 - PR 0 pushed as `origin/painter-v2/canvas-alpha` (6 commits, reviewed).
@@ -793,6 +858,7 @@ sections above where they differ.
 
 - PR 4 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr4-hidpi.md`, branch `painter-v2/hidpi` from fork `main`. Verified by a prototype on 44a505ee, including 2× captures on the built-in Retina display (before: soft; after: sharp text and edges, interface font crisply pixel-doubled).
 - PR 4 done 2026-10-01: `origin/painter-v2/hidpi` (12 commits, reviewed; the review's docs fixes and the pre-game stretch removal included), merged into fork `main` as 450dd2b9. Review follow-ups not taken: a per-font guard around `PrepareScale` in `OnDraw`; spreading a scale change's rebakes across frames; retrying a budget-refused font when room frees.
+- PR 5 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr5-layers.md`, branch `painter-v2/layers` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` and scratch-merged into `450dd2b9` before hand-off (see the PR 5 corrections above).
 
 ### Inputs for the PR 4 (HiDPI) plan
 
