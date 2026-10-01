@@ -1144,10 +1144,10 @@ chords included.
 Plugin hotkeys are a raw keyboard subscription, not a route through
 InputDispatcher's action/scope engine (a dynamic per-plugin action space
 large enough to fit that machinery would be a much bigger change than the
-rest of this surface) -- documented deviation. They see each key before the
-interface handles it, so a key is judged by the focus from before that key:
-a key press that moves focus into or out of a text field is judged by where
-focus was.
+rest of this surface) -- documented deviation. Plugin hotkeys see each key
+before the interface handles it, so a key is judged by the focus from before
+that key: a key press that moves focus into or out of a text field is judged
+by where focus was.
 
 The graphical host may receive a `Register` call before its keyboard and
 input dispatcher exist yet (plugin loading is not strictly ordered against
