@@ -1404,6 +1404,8 @@ help.ZOrder = 1;
 Without a window the layer and `ZOrder` are kept and nothing is stacked.
 A host that predates layers draws every canvas in the world layer and
 answers `ZOrder` with 0.
+A plugin that needs a canvas over windows declares a `minHostVersion` (see
+the [manifest guide](plugin-manifest.md)) of a client that has layers.
 
 ### Pointer input
 
