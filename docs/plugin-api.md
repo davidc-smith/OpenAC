@@ -1372,7 +1372,8 @@ painter.DrawImageNineSlice(panel, new PluginRect(0, 0, painter.Width, painter.He
 A source rectangle is in the image's own pixels. It is cut to the
 image's bounds and the destination shrinks with it, so a source that runs
 off the image draws only the part on it, where that part would have been.
-An empty source, or one wholly off the image, draws nothing.
+An empty source, or one wholly off the image, draws nothing, and so does
+an empty or non-finite destination.
 
 A nine-slice draws its four corners at the size of the insets, stretches
 the edges along the frame and the middle both ways; nothing is tiled.
@@ -1386,11 +1387,13 @@ or non-finite insets draw nothing.
 
 The client's art and the plugin's own images are smoothed when stretched,
 which would blend in the pixels just outside a region: the neighbouring
-frame on a sheet. So a region's edges that lie inside the image are
-pulled in by half a pixel, and frames need no padding between them. An
-edge on the image's own border is drawn exactly as `DrawImage` draws it,
-and the seams between a nine-slice's pieces are left alone, since what
-lies across them is the same frame. Spell and object icons are drawn with
+frame on a sheet. A region drawn at its own size on whole pixels,
+nine-slice corners included, is drawn exactly. When it is stretched, or
+turned, its edges that lie inside the image are pulled in just far enough
+(up to half a pixel) to keep the neighbouring frame out, so frames need no
+padding between them. An edge on the image's own border is drawn exactly
+as `DrawImage` draws it, and the seams between a nine-slice's pieces are
+left alone, since what lies across them is the same frame. Spell and object icons are drawn with
 hard pixels, as the client draws them, and are not pulled in.
 
 On a host that predates image regions these calls draw nothing, rather
