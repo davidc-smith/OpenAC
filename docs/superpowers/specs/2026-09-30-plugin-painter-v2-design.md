@@ -795,8 +795,10 @@ sections above where they differ.
   canvases stay hidden behind pre-game screens, as PR 4's pixel scale
   assumes, while dialogs and tooltips still show above them. Order, bottom
   to top: world and world labels → `World` canvases → windows →
-  `AboveWindows` canvases → screens → dialogs and tooltips → menus and drag
-  ghost → pinned.
+  `AboveWindows` canvases → screens → dialogs and tooltips → pinned
+  children (the SpewBox, the credits' click surface) → menus and drag ghost.
+  Pinned children are drawn in the tree walk, before the overlay pass, as
+  before; the plan's Global Constraints list them last, which is wrong.
 - **PR 5, bands.** `UiBands`: windows from 0 to 1,000,000,000 (exclusive);
   the layer of canvases over windows at exactly 1,000,000,000, in no band;
   screens from 1,000,000,001; dialogs and tooltips from 1,500,000,000 up to
@@ -859,6 +861,7 @@ sections above where they differ.
 - PR 4 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr4-hidpi.md`, branch `painter-v2/hidpi` from fork `main`. Verified by a prototype on 44a505ee, including 2× captures on the built-in Retina display (before: soft; after: sharp text and edges, interface font crisply pixel-doubled).
 - PR 4 done 2026-10-01: `origin/painter-v2/hidpi` (12 commits, reviewed; the review's docs fixes and the pre-game stretch removal included), merged into fork `main` as 450dd2b9. Review follow-ups not taken: a per-font guard around `PrepareScale` in `OnDraw`; spreading a scale change's rebakes across frames; retrying a budget-refused font when room frees.
 - PR 5 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr5-layers.md`, branch `painter-v2/layers` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` and scratch-merged into `450dd2b9` before hand-off (see the PR 5 corrections above).
+- PR 5 done 2026-10-01: `origin/painter-v2/layers` (8 commits: the plan's six plus a final-review fix wave — `BringToFront(e, band)` leaves the canvas layer alone; the docs say a plugin needing layers sets `minHostVersion`), merged into fork `main` as a4ab9664 (pushed). Review follow-ups not taken: an `OverlayMode = false` that restores the previous layer rather than Main; groups anchored to follow a resize at draw time instead of one tick later; a main-only test of premultiplied runs across all three layers. Group order after an interface rebuild follows the lowest surviving registration id (plan-mandated). Next: PR 6a, 6b; PR 2 still skipped.
 
 ### Inputs for the PR 4 (HiDPI) plan
 
