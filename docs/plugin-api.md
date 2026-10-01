@@ -1467,13 +1467,14 @@ going over is dropped. On a host that predates shapes, they draw nothing.
 
 ### High-density displays
 
-On a high-density display -- a Retina Mac, or Windows at 150 % -- the host
-paints each canvas at more than one screen pixel per canvas pixel, so
-shape edges and text in a font from [Fonts](#fonts) come out as sharp as
-the display can show them rather than magnified. Nothing changes for the
-plugin: coordinates, sizes, `Width`, `Height`, `MeasureText` and pointer
-positions stay in canvas pixels, and the canvas takes the same room on
-screen. `painter.PixelScale` says how many screen pixels one canvas pixel
+On a high-density display -- a Retina Mac, or another desktop whose
+window has more framebuffer pixels than points, such as a scaled Wayland
+session -- the host paints each canvas at more than one screen pixel per
+canvas pixel, so shape edges and text in a font from [Fonts](#fonts) come
+out as sharp as the display can show them rather than magnified. Nothing
+changes for the plugin: coordinates, sizes, `Width`, `Height`,
+`MeasureText` and pointer positions stay in canvas pixels, and the canvas
+takes the same room on screen. `painter.PixelScale` says how many screen pixels one canvas pixel
 covers in this paint, for a detail that should be exactly one screen pixel:
 
 ```csharp
@@ -1491,12 +1492,12 @@ The client's interface font keeps its look: it is drawn on whole canvas
 pixels, as the rest of the interface draws it, so on a 2x display each of
 its pixels is a crisp 2 x 2 block. Images are drawn from the same texture
 as before, now at the display's resolution. Fonts from `host.Ui.Fonts` are
-prepared again at the scale
-before the canvas paints, without the plugin asking: this does not count
-against `MaximumBytes`, and a plugin's own fonts have a separate 32 MB for
-it. A font too large to prepare at the full scale (the bundled font at
-64 px does not fit at 2x) uses the largest quarter that fits, and the
-client's log says so once.
+prepared again at the scale before the canvas paints, without the plugin
+asking, and this does not count against `MaximumBytes`: sharper copies of
+the plugin's own fonts may take up to 32 MB, separately; the bundled
+font's are shared and free. A font too large to prepare at the full
+scale (the bundled font at 64 px does not fit at 2x) uses the largest
+quarter that fits, and the client's log says so once.
 
 ### Pointer input
 
