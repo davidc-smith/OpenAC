@@ -151,7 +151,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                 handle.Show();
         };
 
-        var minimize = new PluginMinimizeButton(handle, _font)
+        var minimize = new PluginMinimizeButton(handle, _font, _themes)
         {
             Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
             Top = 3f,
@@ -182,6 +182,13 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         _requestedVisible = false;
         Reflow();
         _handle?.NotifyStateChanged();
+    }
+
+    protected override void OnDraw(UiRenderContext ctx)
+    {
+        if (_themes?.Palette is not { } p) { base.OnDraw(ctx); return; }
+        PluginUiStyle.ShelfShadow(ctx, Width, Height);
+        PluginUiStyle.Surface(ctx, 0f, 0f, Width, Height, PluginUiStyle.WindowRadius, p.Background, p.Border);
     }
 
     protected override void OnTick(double deltaSeconds)
@@ -621,6 +628,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             if (theme != PluginUiTheme.Classic)
             {
                 PluginUiPalette palette = _themes!.Palette!;
+                ThemePalette = palette;
                 BackgroundColor = _handle.IsVisible ? palette.Selected : palette.Field;
                 BorderColor = _handle.IsVisible ? palette.Accent : palette.Border;
                 Outline = false;
@@ -628,6 +636,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                 if (Text.Length > 0) Text = _initialsFallback[..1];
                 return;
             }
+            ThemePalette = null;
             Outline = true;
             TextColor = Vector4.One;
             if (Text.Length > 0) Text = _initialsFallback;
@@ -657,10 +666,14 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     private sealed class PluginMinimizeButton : UiSimpleButton
     {
         private readonly RetailWindowHandle _handle;
+        private readonly PluginUiThemeSettings? _themes;
+        private readonly UiDatFont? _classicFont;
 
-        internal PluginMinimizeButton(RetailWindowHandle handle, UiDatFont? font)
+        internal PluginMinimizeButton(RetailWindowHandle handle, UiDatFont? font, PluginUiThemeSettings? themes)
         {
             _handle = handle;
+            _themes = themes;
+            _classicFont = font;
             Text = "–";
             DatFont = font;
             Outline = true;
@@ -671,5 +684,18 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         }
 
         public override string? GetTooltipText() => "Minimize to plugin sidepanel";
+
+        /// <summary>Only windows that opted into the shared theme get the ghost button in their header.</summary>
+        protected override void OnTick(double deltaSeconds)
+        {
+            base.OnTick(deltaSeconds);
+            ThemePalette = _handle.OuterFrame is UiPluginMarkupPanel ? _themes?.Palette : null;
+            Outline = ThemePalette is null;
+            TextColor = ThemePalette?.Muted ?? Vector4.One;
+            DatFont = ThemePalette is null ? _classicFont : _themes?.ModernFont ?? _classicFont;
+        }
+
+        private protected override void DrawThemedFace(UiRenderContext ctx, PluginUiPalette palette) =>
+            PluginUiStyle.GhostButton(ctx, palette, Width, Height, ThemeState);
     }
 }
