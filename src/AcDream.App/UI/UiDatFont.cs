@@ -31,6 +31,14 @@ public sealed class UiDatFont
     public int BorderX { get; }
     public int BorderY { get; }
 
+    /// <summary>
+    /// The same font baked at a multiple of its size, whose glyphs are drawn
+    /// in its place on displays with that many device pixels per point.
+    /// Every measurement, and so all layout, still comes from this font.
+    /// Only bundled fonts have one; dat fonts never do.
+    /// </summary>
+    internal UiDatFontSharp? Sharp { get; set; }
+
     private readonly Dictionary<char, FontCharDesc> _glyphs;
     private readonly char? _fallbackCharacter;
 
@@ -117,3 +125,6 @@ public sealed class UiDatFont
     public static float GlyphAdvance(FontCharDesc g)
         => g.HorizontalOffsetBefore + g.Width + g.HorizontalOffsetAfter;
 }
+
+/// <summary>A sharper bake of a font and how many times its size it was baked at.</summary>
+internal sealed record UiDatFontSharp(UiDatFont Font, float Scale);

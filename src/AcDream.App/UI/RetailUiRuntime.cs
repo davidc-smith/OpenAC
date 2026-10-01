@@ -43,7 +43,8 @@ public sealed record RetailUiAssets(
     ControlsIni Controls,
     IconComposer Icons,
     TextureCache TextureCache,
-    UiDatFont? ModernFont = null);
+    UiDatFont? ModernFont = null,
+    UiDatFont? ModernTitleFont = null);
 
 public sealed record VitalsRuntimeBindings(VitalsVM ViewModel);
 
@@ -4071,7 +4072,8 @@ public sealed class RetailUiRuntime : IDisposable
     {
         if (_bindings.Plugins is null) return;
 
-        _pluginThemes ??= new PluginUiThemeSettings(_bindings.Chat.Store, _bindings.Assets.ModernFont);
+        _pluginThemes ??= new PluginUiThemeSettings(
+            _bindings.Chat.Store, _bindings.Assets.ModernFont, _bindings.Assets.ModernTitleFont);
 
         IMarkupIconResolver iconResolver = new RetailMarkupIconResolver(
             _bindings.Assets.Dats,

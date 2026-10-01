@@ -11,10 +11,16 @@ public sealed class PluginUiThemeSettings
     private readonly SettingsStore? _store;
     private PluginUiTheme _theme;
     public UiDatFont? ModernFont { get; }
-    public PluginUiThemeSettings(SettingsStore? store = null, UiDatFont? modernFont = null)
+
+    /// <summary>The heavier weight themed windows set their titles in; null falls back to <see cref="ModernFont"/>.</summary>
+    public UiDatFont? ModernTitleFont { get; }
+
+    public PluginUiThemeSettings(
+        SettingsStore? store = null, UiDatFont? modernFont = null, UiDatFont? modernTitleFont = null)
     {
         _store = store;
         ModernFont = modernFont;
+        ModernTitleFont = modernTitleFont;
         _theme = Enum.TryParse<PluginUiTheme>(store?.LoadPluginUiTheme(), out var value)
             && Enum.IsDefined(value) ? value : PluginUiTheme.Classic;
     }
@@ -64,6 +70,7 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
     public UiPluginMarkupPanel(Func<uint, (uint, int, int)> resolve, PluginUiThemeSettings settings)
         : base(resolve) => _settings = settings;
     public UiDatFont? ModernFont => _settings.ModernFont;
+    public UiDatFont? ModernTitleFont => _settings.ModernTitleFont;
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
         _apply.Add(action);

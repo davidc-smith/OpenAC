@@ -1,3 +1,4 @@
+using System.Numerics;
 using AcDream.App.UI;
 namespace AcDream.App.Tests.UI;
 
@@ -49,5 +50,37 @@ public sealed class BundledUiFontTests
         Assert.Same(classic, label.DatFont);
         Assert.Same(classic, ((UiField)panel.Children[2]).DatFont);
     }
-}
 
+    [Fact]
+    public void SemiBoldBakesAndDiffersFromRegular()
+    {
+        var regular = BundledUiFont.Bake(16f);
+        var bold = BundledUiFont.Bake(16f, BundledUiFontWeight.SemiBold);
+        Assert.True(bold.Glyphs.ContainsKey('W'));
+        Assert.NotEqual(regular.Pixels, bold.Pixels);
+    }
+
+    [Fact]
+    public void ASharpCompanionDrawsAtHalfSizeOnlyAtScaleTwoAndNeverChangesMetrics()
+    {
+        var font = BundledUiFont.Bake(16f).CreateFont(11);
+        float width = font.MeasureWidth("Buff Bot");
+        float line = font.LineHeight;
+        var sharpAtlas = BundledUiFont.Bake(32f);
+        font.Sharp = new UiDatFontSharp(sharpAtlas.CreateFont(22), 2f);
+        Assert.Equal(width, font.MeasureWidth("Buff Bot"));
+        Assert.Equal(line, font.LineHeight);
+
+        var (r1, c1) = ThemeDrawCapture.Context(pixelScale: 1f);
+        c1.DrawStringDat(font, "B", 0f, 0f, Vector4.One);
+        Assert.All(r1.DebugSpriteSegmentVerts, s => Assert.Equal(11u, s.Texture));
+
+        var (r2, c2) = ThemeDrawCapture.Context(pixelScale: 2f);
+        c2.DrawStringDat(font, "B", 0f, 0f, Vector4.One);
+        var segment = Assert.Single(r2.DebugSpriteSegmentVerts);
+        Assert.Equal(22u, segment.Texture);
+        Assert.True(sharpAtlas.Glyphs.TryGetValue('B', out var fine));
+        var xs = ThemeDrawCapture.Vertices(r2).Select(v => v.Position.X).ToList();
+        Assert.Equal(fine.Width / 2f, xs.Max() - xs.Min(), 3);
+    }
+}

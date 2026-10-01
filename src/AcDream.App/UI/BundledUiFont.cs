@@ -4,6 +4,9 @@ using StbTrueTypeSharp;
 
 namespace AcDream.App.UI;
 
+/// <summary>The weights of the bundled sans font.</summary>
+public enum BundledUiFontWeight { Regular, SemiBold }
+
 /// <summary>Bundled, platform-independent sans font for any retained client control.</summary>
 public static class BundledUiFont
 {
@@ -11,13 +14,25 @@ public static class BundledUiFont
     private const int AtlasSize = 512;
     private static readonly (int First, int Count)[] Ranges = [(32, 560), (0x370, 448), (0x2000, 112)];
 
-    public static UiDatFont Load(TextureCache textures, float pixelHeight = DefaultPixelHeight)
+    /// <summary>How much sharper the companion bake is than the font it draws for.</summary>
+    public const float SharpScale = 2f;
+
+    public static UiDatFont Load(
+        TextureCache textures, float pixelHeight = DefaultPixelHeight,
+        BundledUiFontWeight weight = BundledUiFontWeight.Regular)
     {
         ArgumentNullException.ThrowIfNull(textures);
-        var atlas = Bake(pixelHeight);
-        uint texture = textures.UploadRgba8(atlas.Pixels, atlas.Width, atlas.Height, nearest: true);
-        return atlas.CreateFont(texture);
+        UiDatFont font = Upload(textures, Bake(pixelHeight, weight));
+        // A sharper twin for high-density displays, where the bake fits.
+        if (pixelHeight * SharpScale <= MaximumPixelHeight)
+            font.Sharp = new UiDatFontSharp(Upload(textures, Bake(pixelHeight * SharpScale, weight)), SharpScale);
+        return font;
     }
+
+    private static UiDatFont Upload(TextureCache textures, Atlas atlas) =>
+        atlas.CreateFont(textures.UploadRgba8(atlas.Pixels, atlas.Width, atlas.Height, nearest: true));
+
+    private const float MaximumPixelHeight = 32f;
 
     internal sealed record Atlas(byte[] Pixels, int Width, int Height, float LineHeight,
         float Ascent, Dictionary<char, FontCharDesc> Glyphs)
@@ -27,21 +42,26 @@ public static class BundledUiFont
     }
 
     /// <summary>The embedded Noto Sans file, for anything else that bakes it.</summary>
-    internal static byte[] ReadEmbeddedFontBytes()
+    internal static byte[] ReadEmbeddedFontBytes() => ReadEmbeddedFontBytes(BundledUiFontWeight.Regular);
+
+    internal static byte[] ReadEmbeddedFontBytes(BundledUiFontWeight weight)
     {
-        using var stream = typeof(BundledUiFont).Assembly.GetManifestResourceStream(
-            "AcDream.App.Fonts.NotoSans-Regular.ttf")
-            ?? throw new InvalidOperationException("Bundled Noto Sans font is missing.");
+        string name = weight == BundledUiFontWeight.SemiBold
+            ? "AcDream.App.Fonts.NotoSans-SemiBold.ttf"
+            : "AcDream.App.Fonts.NotoSans-Regular.ttf";
+        using var stream = typeof(BundledUiFont).Assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"Bundled font {name} is missing.");
         using var bytes = new MemoryStream();
         stream.CopyTo(bytes);
         return bytes.ToArray();
     }
 
-    internal static unsafe Atlas Bake(float pixelHeight = DefaultPixelHeight)
+    internal static unsafe Atlas Bake(
+        float pixelHeight = DefaultPixelHeight, BundledUiFontWeight weight = BundledUiFontWeight.Regular)
     {
-        if (!float.IsFinite(pixelHeight) || pixelHeight < 8 || pixelHeight > 32)
+        if (!float.IsFinite(pixelHeight) || pixelHeight < 8 || pixelHeight > MaximumPixelHeight)
             throw new ArgumentOutOfRangeException(nameof(pixelHeight), "Font size must be between 8 and 32 pixels.");
-        byte[] fontBytes = ReadEmbeddedFontBytes();
+        byte[] fontBytes = ReadEmbeddedFontBytes(weight);
         using var info = StbTrueType.CreateFont(fontBytes, 0)
             ?? throw new InvalidOperationException("Bundled Noto Sans font could not be read.");
         float scale = StbTrueType.stbtt_ScaleForPixelHeight(info, pixelHeight);

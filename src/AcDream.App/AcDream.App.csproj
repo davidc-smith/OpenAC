@@ -63,6 +63,8 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\assets\fonts\NotoSans\NotoSans-Regular.ttf"
                       LogicalName="AcDream.App.Fonts.NotoSans-Regular.ttf" />
+    <EmbeddedResource Include="..\..\assets\fonts\NotoSans\NotoSans-SemiBold.ttf"
+                      LogicalName="AcDream.App.Fonts.NotoSans-SemiBold.ttf" />
     <None Include="..\..\assets\fonts\NotoSans\OFL.txt" Link="licenses\NotoSans-OFL.txt"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="..\..\assets\icons\acdream-client-16.png"

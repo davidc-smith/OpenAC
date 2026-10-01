@@ -558,11 +558,27 @@ public sealed class UiRenderContext
 
         float baseY = System.MathF.Floor(originY + 0.5f);
 
+        // On a high-density display a bundled font's sharper twin supplies
+        // the glyph images; the pen still advances by this font's own metrics.
+        UiDatFontSharp? sharp = !isOutlinePass && PixelScale >= 1.5f ? font.Sharp : null;
+        float grid = sharp is null ? 1f : MathF.Min(PixelScale, sharp.Scale);
+
         float pen = originX;
         for (int i = 0; i < text.Length; i++)
         {
             if (!font.TryGetGlyph(text[i], out var g))
                 continue;
+
+            if (sharp is not null && sharp.Font.TryGetGlyph(text[i], out var fine)
+                && fine.Width > 0 && fine.Height > 0)
+            {
+                float texel = 1f / sharp.Scale;
+                float fx = Snap(pen + fine.HorizontalOffsetBefore * texel, grid);
+                float fy = baseY + MathF.Round(fine.VerticalOffsetBefore * texel * grid) / grid;
+                DrawFillGlyph(sharp.Font, fine, fx, fy, fine.Width * texel, fine.Height * texel, tint);
+                pen += UiDatFont.GlyphAdvance(g);
+                continue;
+            }
 
             // Horizontal: snap each glyph's dest X to a whole pixel (the pen keeps its
             // true fractional advance). Vertical: integer baseline + integer per-glyph
