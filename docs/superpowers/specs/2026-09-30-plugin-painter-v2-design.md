@@ -622,7 +622,7 @@ Not implemented in this series. Recommended direction, modelled on World labels:
 
 ## Plan-time corrections (2026-09-30)
 
-Measured or found while writing the PR 0, PR 1, PR 3, PR 4, PR 5, PR 6a and PR 6b plans; these
+Measured or found while writing the PR 0, PR 1, PR 2, PR 3, PR 4, PR 5, PR 6a and PR 6b plans; these
 supersede the sections above where they differ.
 
 - **PR 0, lazy composite pipeline.** `ResourceCleanupGroupTests.TextRendererConstructionCreatesAndDisposesOnlyOnePipeline`
@@ -938,6 +938,51 @@ supersede the sections above where they differ.
   for keys that act once, and that a key held before focus can arrive as an
   `Up` with no `Down`.
 
+- **PR 2, which images are linear (supersedes "nearest-filtered client art
+  is not inset" in section 5).** Client art reaches plugins through the
+  shared `GetOrUploadRenderSurface(…, nearest: false)` upload, which samples
+  linearly (`WorldRepeat`). The nearest textures a plugin can hold are the
+  composed spell and object icons (`IconComposer` uploads them
+  `nearest: true`). The table learns this from a new
+  `IPluginImageBackend.IsLinearFiltered(texture)`, asked once when an image
+  is first held; the retail backend answers from a new
+  `TextureCache.IsNearestUiTexture`. `TryResolve` gains an overload that
+  reports it, so existing callers are unchanged.
+- **PR 2, where the half-pixel pull-in applies.** Only on an edge that lies
+  strictly inside the image. An edge on the image's border is sampled as
+  `DrawImage` samples it, so a whole-image region is exactly a `DrawImage`.
+  A nine-slice pulls in only the frame's outer edges, never the seams
+  between its pieces, since what lies across a seam is the next piece of the
+  same frame. A span narrower than its pulls shares them, so a region under
+  one pixel wide samples its middle.
+- **PR 2, cutting (refines "clamped to its bounds" in section 5).** A source
+  running off the image is cut to it and the destination shrinks with it,
+  in proportion, as an HTML canvas `drawImage` does, so what remains lands
+  where it was rather than stretching. A transformed region measures its
+  pivot from the new corner, so it turns about the same point. A
+  nine-slice's source is cut and its destination is not moved. Insets that
+  add up to more than the source are scaled down to fit it, leaving no
+  middle.
+- **PR 2, bad input** (non-finite or non-positive rectangles, negative or
+  non-finite insets, a source wholly off the image) draws nothing and is not
+  reported: PR 3's report-once channel lives on the shapes branch, which
+  PR 2 does not build on.
+- **PR 2, clamp (supersedes "whole-image draws are unaffected").**
+  `UploadReleasableRgba8` moves from `WorldRepeat` to `WorldClamp`, so a
+  plugin's own art no longer wraps one edge into the opposite one under
+  linear filtering, in whole-image draws too. Only the plugin's own uploads
+  change; shared client art keeps its sampler.
+- **PR 2, branch and merge.** Built from upstream `main` (`bbc83275`), per
+  the order of work, then merged into fork `main` with a merge commit. A
+  scratch merge into `84ada220` conflicted in four files, one hunk each, all
+  "keep both": the guide's Canvases subsections (Image regions before
+  Shapes), the markup Tests paragraph, `PluginPainter`'s `TryResolve`
+  overloads (PR 1's font one, then PR 2's two image ones), and the
+  releasable-texture tests. The merged tree built with 0 warnings and passed
+  the canvas suites, the 5 `Lane=Vulkan` canvas tests and the portable suite
+  (HostParity peer tests only). The CanvasDemo sample, which lives on fork
+  `main`, is not changed.
+
 ## Status and carry-forward (2026-09-30)
 
 - PR 0 pushed as `origin/painter-v2/canvas-alpha` (6 commits, reviewed).
@@ -952,6 +997,7 @@ supersede the sections above where they differ.
 - PR 6a done 2026-10-01: `origin/fix/hotkey-focus-scope` (4 commits: the plan's three plus a final-review wording fix — the docs say "Plugin hotkeys see each key…" and the `OnKeyDown` comment names where the key order comes from), merged into fork `main` as 301852fc (pushed). Review follow-ups not taken: a combined modal + focus test; a shared test helper for the duplicated keyboard and mouse fakes; a test that pins the keyboard-source-before-interface subscription order. `HasKeyboardFocus` also counts Tab-reached controls, an open searchable menu and the credits surface (all clear focus when hidden). Next: PR 6b; PR 2 still skipped.
 - PR 6b planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr6b-keyboard.md`, branch `painter-v2/keyboard` from `fix/hotkey-focus-scope` (`f951ce16`), then merged into fork `main`. Its code was prototyped on `f951ce16`, replayed as one commit per task, and scratch-merged into `301852fc` before hand-off (see the PR 6b corrections above).
 - PR 6b done 2026-10-01: `origin/painter-v2/keyboard` (8 commits: the plan's six, a docs fix from task review, and a final-review fix wave that keeps the text cursor off canvases, renames a contract test and says which keys repeat), merged into fork `main` as 84ada220 (pushed). Review follow-ups not taken: an unnamed key (Shift, Ctrl) going down does not stop a repeat; `KeyboardFocusChanged` fires out of order on a re-entrant release (only listener unaffected); a left press during a rebind capture still focuses (as `UiField`); untested: a hidden ancestor refusing a request, a handler throwing on `FocusLost`, a repeated Escape, a modal between ticks. Next: upstream PRs (deferred by the user); PR 2 still skipped.
+- PR 2 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr2-image-regions.md`, branch `painter-v2/image-regions` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` as one commit per task and scratch-merged into `84ada220` before hand-off (see the PR 2 corrections above).
 
 ### Inputs for the PR 4 (HiDPI) plan
 
