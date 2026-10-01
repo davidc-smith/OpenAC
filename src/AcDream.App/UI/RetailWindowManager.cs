@@ -240,11 +240,13 @@ public sealed class RetailWindowManager : IDisposable
 
     /// <summary>
     /// Moves <paramref name="window"/> into <paramref name="band"/>, over
-    /// every other root child there. A pinned element stays pinned.
+    /// every other root child there. An element in no band -- pinned, or
+    /// the layer of canvases drawn above windows -- stays where it is.
     /// </summary>
     public void BringToFront(UiElement window, UiBand band)
     {
-        if (window.ZOrder != UiBands.Pinned)
+        if (window.ZOrder != UiBands.Pinned
+            && window.ZOrder != UiBands.CanvasesAboveWindows)
             Raise(window, band);
     }
 

@@ -132,6 +132,19 @@ public sealed class UiBandTests
     }
 
     [Fact]
+    public void TheCanvasLayerIsNeverMovedIntoABand()
+    {
+        (UiRoot root, UiPanel canvasLayer) = RootWithCanvasLayer();
+        Child(root, zOrder: 7);
+
+        root.BringToFront(canvasLayer, UiBand.DialogsAndTooltips);
+        Assert.Equal(UiBands.CanvasesAboveWindows, canvasLayer.ZOrder);
+
+        root.BringToFront(canvasLayer, UiBand.Windows);
+        Assert.Equal(UiBands.CanvasesAboveWindows, canvasLayer.ZOrder);
+    }
+
+    [Fact]
     public void AFullDialogBandIsRenumberedFromItsFloorInOrder()
     {
         var root = new UiRoot { Width = 800, Height = 600 };
