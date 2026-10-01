@@ -400,6 +400,13 @@ and canvases (see the plugin API guide) are covered by
 under `tests/AcDream.App.Tests/`, by `ScopedUiRegistryImagesTests` and
 `ScopedUiRegistryCanvasTests` for the scoped forwarder, and by the contract
 and headless suites for the inert answers a host without a window gives.
+Image regions and nine-slices are covered by `UI/CanvasImageRegionsTests`,
+the region cases in `UI/Layout/PluginCanvasElementTests` and the filtering
+cases in `PluginImageTableTests` and
+`Rendering/TextureCacheReleasableUiTextureTests` under
+`tests/AcDream.App.Tests/`, and by `PluginCanvasImageRegionsContractTests`
+under `tests/AcDream.Plugin.Tests/` for the inert answers of a host that
+predates them.
 
 ## Scrolling transcripts
 

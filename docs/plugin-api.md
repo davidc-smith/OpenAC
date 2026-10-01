@@ -1350,6 +1350,54 @@ plugin still holds is removed when the plugin unloads.
 Without a window the canvas is accepted, `IsAvailable` is false, the
 state the plugin sets is kept, and the paint callback is never called.
 
+### Image regions
+
+Part of an image, such as one frame of a sprite sheet or one icon of an
+atlas, is drawn with `DrawImageRegion`, and a panel or button background
+that keeps its corners at any size with `DrawImageNineSlice`:
+
+```csharp
+// The third 16x16 frame of a strip, at twice its size:
+painter.DrawImageRegion(sheet, new PluginRect(32, 0, 16, 16), new PluginRect(10, 10, 32, 32), PluginColor.White);
+
+// The same frame, turned about its middle:
+painter.DrawImageRegionTransformed(sheet, new PluginRect(32, 0, 16, 16), new PluginRect(50, 10, 32, 32),
+    PluginColor.White, rotationRadians: heading, pivot: new PluginPoint(16, 16));
+
+// A panel from a frame with 8-pixel corners, stretched over the canvas:
+painter.DrawImageNineSlice(panel, new PluginRect(0, 0, painter.Width, painter.Height),
+    PluginInsets.Uniform(8), PluginColor.White);
+```
+
+A source rectangle is in the image's own pixels. It is cut to the
+image's bounds and the destination shrinks with it, so a source that runs
+off the image draws only the part on it, where that part would have been.
+An empty source, or one wholly off the image, draws nothing.
+
+A nine-slice draws its four corners at the size of the insets, stretches
+the edges along the frame and the middle both ways; nothing is tiled.
+Insets are in the image's pixels. When the destination is narrower or
+shorter than its two corners, those corners shrink to fit in proportion.
+Insets that add up to more than the source are scaled down to fit it, and
+then there is no middle to stretch. The optional `source` picks the frame
+out of a sheet (cut to the image's bounds; the destination is not moved),
+and `drawCenter: false` draws only the frame around the middle. Negative
+or non-finite insets draw nothing.
+
+The client's art and the plugin's own images are smoothed when stretched,
+which would blend in the pixels just outside a region: the neighbouring
+frame on a sheet. So a region's edges that lie inside the image are
+pulled in by half a pixel, and frames need no padding between them. An
+edge on the image's own border is drawn exactly as `DrawImage` draws it,
+and the seams between a nine-slice's pieces are left alone, since what
+lies across them is the same frame. Spell and object icons are drawn with
+hard pixels, as the client draws them, and are not pulled in.
+
+On a host that predates image regions these calls draw nothing, rather
+than the whole sheet. A plugin that needs them declares a
+`minHostVersion` (see the [manifest guide](plugin-manifest.md)) of a
+client that has them.
+
 ### Pointer input
 
 A canvas is click-through by default. One that wants to be dragged,
