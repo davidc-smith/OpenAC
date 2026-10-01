@@ -69,10 +69,17 @@ public sealed class PluginThemeClassicIdentityTests
         UiRoot themed = Root("theme=\"plugin\"", settings, classicFont);
         settings.Theme = PluginUiTheme.Moss;
         themed.Tick(0.016, 1);
-        ThemeDrawCapture.Draw(themed);
+        float[] moss = ThemeDrawCapture.Draw(themed);
         settings.Theme = PluginUiTheme.Classic;
         themed.Tick(0.016, 2);
 
-        Assert.Equal(ThemeDrawCapture.Draw(plain), ThemeDrawCapture.Draw(themed));
+        float[] classic = ThemeDrawCapture.Draw(plain);
+        float[] back = ThemeDrawCapture.Draw(themed);
+
+        // The capture must actually record the gallery, and see theme changes.
+        Assert.True(classic.Length > 500, $"expected a real draw, got {classic.Length} floats");
+        Assert.NotEqual(classic, moss);
+
+        Assert.Equal(classic, back);
     }
 }
