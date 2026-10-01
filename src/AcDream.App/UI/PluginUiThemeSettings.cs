@@ -52,12 +52,8 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
         "border" => Border, "accent" => Accent, "background" => Background,
         _ => throw new FormatException($"Unknown plugin theme color '{name}'."),
     };
-    internal void DrawCheck(UiRenderContext ctx, float x, float y, bool value)
-    {
-        ctx.DrawFill(x, y, 11, 11, value ? Selected : Field);
-        ctx.DrawRectOutline(x, y, 11, 11, value ? Accent : Border, 1);
-        if (value) ctx.DrawFill(x + 3, y + 3, 5, 5, Accent);
-    }
+    internal void DrawCheck(UiRenderContext ctx, float x, float y, bool value) =>
+        PluginUiStyle.Check(ctx, this, x, y, value);
 }
 
 internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
