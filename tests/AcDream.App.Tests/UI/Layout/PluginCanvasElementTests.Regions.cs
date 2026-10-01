@@ -49,8 +49,11 @@ public sealed partial class PluginCanvasElementTests
             [FakeImageBackend.ArtTexture, FakeImageBackend.IconTexture],
             harness.SurfaceRuns.Select(run => run.Texture).ToArray());
         IReadOnlyList<(uint Texture, IReadOnlyList<float> Verts)> runs = harness.Surface.Renderer.DebugSpriteSegmentVerts;
+        // 8 texels over 16 pixels: pulled in just far enough at both ends.
+        double pull = 0.5 * (16 - 8) / (16 - 1.0);
+        float low = (float)((4 + pull) / 16), high = (float)((12 - pull) / 16);
         Assert.Equal(
-            new CanvasImagePiece(10, 10, 16, 16, 4.5f / 16, 4.5f / 16, 11.5f / 16, 11.5f / 16),
+            new CanvasImagePiece(10, 10, 16, 16, low, low, high, high),
             QuadOf(runs[0].Verts, 0));
         Assert.Equal(
             new CanvasImagePiece(40, 10, 16, 16, 0.25f, 0f, 0.5f, 0.25f),
@@ -135,5 +138,10 @@ public sealed partial class PluginCanvasElementTests
         float[] ys = Enumerable.Range(0, verts.Count / TextRenderer.FloatsPerVertex).Select(i => VertexOf(verts, i).Y).ToArray();
         Assert.Equal((60f, 100f), (xs.Min(), xs.Max()));
         Assert.Equal((10f, 50f), (ys.Min(), ys.Max()));
+        // Turned or scaled, no edge is on a whole pixel: the cut source's
+        // inner edge at 8 is pulled in by the full half pixel.
+        float[] us = Enumerable.Range(0, verts.Count / TextRenderer.FloatsPerVertex)
+            .Select(i => verts[i * TextRenderer.FloatsPerVertex + 2]).ToArray();
+        Assert.Equal((0f, 7.5f / 16), (us.Min(), us.Max()));
     }
 }

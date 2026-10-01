@@ -18,6 +18,11 @@ namespace AcDream.App.UI.Layout;
 /// </summary>
 internal sealed class PluginPainter : IPluginPainter
 {
+    // The canvas surface paints at one screen pixel per canvas pixel, so
+    // that is the scale image regions are pulled in at. HiDPI work passes
+    // its pixel scale here.
+    private const double DevicePixelsPerPixel = 1.0;
+
     private UiRenderContext? _context;
     private UiDatFont? _font;
     private PluginImages? _images;
@@ -111,7 +116,8 @@ internal sealed class PluginPainter : IPluginPainter
     {
         UiRenderContext context = Context;
         if (!TryResolve(image, out uint texture, out int width, out int height, out bool linear)) return;
-        if (!CanvasImageRegions.TryMapRegion(width, height, linear, source, destination, out CanvasImagePiece piece))
+        if (!CanvasImageRegions.TryMapRegion(
+                width, height, linear, source, destination, DevicePixelsPerPixel, exactPull: false, out CanvasImagePiece piece))
             return;
         context.DrawSprite(
             texture,
@@ -132,7 +138,10 @@ internal sealed class PluginPainter : IPluginPainter
     {
         UiRenderContext context = Context;
         if (!TryResolve(image, out uint texture, out int width, out int height, out bool linear)) return;
-        if (!CanvasImageRegions.TryMapRegion(width, height, linear, source, destination, out CanvasImagePiece piece))
+        // Once turned or scaled no edge is on a whole pixel, so the region
+        // is pulled in by the full half pixel.
+        if (!CanvasImageRegions.TryMapRegion(
+                width, height, linear, source, destination, DevicePixelsPerPixel, exactPull: true, out CanvasImagePiece piece))
             return;
         // The pivot is measured from the rectangle's corner; a cut source
         // moves that corner, so the pivot is measured from the new one to
@@ -158,7 +167,8 @@ internal sealed class PluginPainter : IPluginPainter
         UiRenderContext context = Context;
         if (!TryResolve(image, out uint texture, out int width, out int height, out bool linear)) return;
         Span<CanvasImagePiece> pieces = stackalloc CanvasImagePiece[CanvasImageRegions.MaximumNineSlicePieces];
-        int count = CanvasImageRegions.NineSlice(width, height, linear, destination, insets, source, drawCenter, pieces);
+        int count = CanvasImageRegions.NineSlice(
+            width, height, linear, destination, insets, source, drawCenter, DevicePixelsPerPixel, pieces);
         Vector4 color = ToVector(tint);
         foreach (CanvasImagePiece piece in pieces[..count])
         {

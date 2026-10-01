@@ -6,26 +6,33 @@ namespace AcDream.App.Tests.UI;
 /// <summary>
 /// Source rectangles become texture coordinates: cut to the image, the
 /// destination shrinking with the cut; on a linear texture an edge inside
-/// the image is pulled in by half a pixel and an edge on its border is not.
-/// A nine-slice is up to nine such pieces, corners at their own size,
-/// shrinking when the destination is too small for them.
+/// the image is pulled in just far enough that the sample nearest it stays
+/// half a pixel inside (nothing at its own size on whole pixels, the full
+/// half pixel when the edge is off a whole pixel or the region is turned),
+/// and an edge on its border is not. A nine-slice is up to nine such
+/// pieces, corners at their own size, shrinking when the destination is
+/// too small for them.
 /// </summary>
 public sealed class CanvasImageRegionsTests
 {
     private const int Sheet = 64;
 
-    private static CanvasImagePiece Region(PluginRect source, PluginRect destination, bool linear)
+    private static CanvasImagePiece Region(
+        PluginRect source, PluginRect destination, bool linear,
+        double devicePixelsPerPixel = 1.0, bool exactPull = false)
     {
-        Assert.True(CanvasImageRegions.TryMapRegion(Sheet, Sheet, linear, source, destination, out CanvasImagePiece piece));
+        Assert.True(CanvasImageRegions.TryMapRegion(
+            Sheet, Sheet, linear, source, destination, devicePixelsPerPixel, exactPull, out CanvasImagePiece piece));
         return piece;
     }
 
     private static CanvasImagePiece[] NineSlice(
         PluginRect destination, PluginInsets insets, PluginRect? source = null,
-        bool drawCenter = true, bool linear = false)
+        bool drawCenter = true, bool linear = false, double devicePixelsPerPixel = 1.0)
     {
         var pieces = new CanvasImagePiece[CanvasImageRegions.MaximumNineSlicePieces];
-        int count = CanvasImageRegions.NineSlice(Sheet, Sheet, linear, destination, insets, source, drawCenter, pieces);
+        int count = CanvasImageRegions.NineSlice(
+            Sheet, Sheet, linear, destination, insets, source, drawCenter, devicePixelsPerPixel, pieces);
         return pieces[..count];
     }
 
@@ -40,12 +47,69 @@ public sealed class CanvasImageRegionsTests
     }
 
     [Fact]
-    public void ARegionOnALinearTextureIsPulledInByHalfAPixelOnlyWhereItsEdgeIsInsideTheImage()
+    public void ALinearRegionDrawnAtItsOwnSizeOnWholePixelsSamplesExactly()
+    {
+        // Every pixel centre is a texel centre, so nothing beyond the region is reached.
+        CanvasImagePiece piece = Region(new PluginRect(16, 16, 16, 16), new PluginRect(3, 5, 16, 16), linear: true);
+
+        Assert.Equal(new CanvasImagePiece(3, 5, 16, 16, Texel(16), Texel(16), Texel(32), Texel(32)), piece);
+    }
+
+    [Fact]
+    public void ALinearRegionMagnifiedOnWholePixelsIsPulledInJustFarEnough()
+    {
+        // 16 texels over 32 pixels, both ends inside the image.
+        CanvasImagePiece piece = Region(new PluginRect(16, 16, 16, 16), new PluginRect(0, 0, 32, 32), linear: true);
+
+        double pull = 0.5 * (32 - 16) / (32 - 1.0);
+        Assert.Equal(
+            (Texel(16 + pull), Texel(16 + pull), Texel(32 - pull), Texel(32 - pull)),
+            (piece.U0, piece.V0, piece.U1, piece.V1));
+    }
+
+    [Fact]
+    public void ARegionOnALinearTextureIsPulledInOnlyWhereItsEdgeIsInsideTheImage()
     {
         // The top edge is the image's own top: not pulled in. The others are inside.
-        CanvasImagePiece piece = Region(new PluginRect(16, 0, 16, 16), new PluginRect(0, 0, 16, 16), linear: true);
+        CanvasImagePiece piece = Region(new PluginRect(16, 0, 16, 16), new PluginRect(0, 0, 32, 32), linear: true);
 
-        Assert.Equal((Texel(16.5), 0f, Texel(31.5), Texel(15.5)), (piece.U0, piece.V0, piece.U1, piece.V1));
+        double both = 0.5 * (32 - 16) / (32 - 1.0);
+        double one = 0.5 * (32 - 16) / (32 - 0.5);
+        Assert.Equal(
+            (Texel(16 + both), 0f, Texel(32 - both), Texel(16 - one)),
+            (piece.U0, piece.V0, piece.U1, piece.V1));
+        Assert.Equal((0f, 0f, 32f, 32f), (piece.X, piece.Y, piece.Width, piece.Height));
+    }
+
+    [Fact]
+    public void ALinearRegionOffAWholePixelIsPulledInByTheFullHalfPixelOnThatAxis()
+    {
+        // Across, the region starts half a pixel in; down, it is on whole pixels at its own size.
+        CanvasImagePiece piece = Region(new PluginRect(16, 16, 16, 16), new PluginRect(0.5, 0, 16, 16), linear: true);
+
+        Assert.Equal((Texel(16.5), Texel(16), Texel(31.5), Texel(32)), (piece.U0, piece.V0, piece.U1, piece.V1));
+    }
+
+    [Fact]
+    public void ATurnedRegionIsPulledInByTheFullHalfPixelEvenAtItsOwnSize()
+    {
+        CanvasImagePiece piece = Region(
+            new PluginRect(16, 16, 16, 16), new PluginRect(0, 0, 16, 16), linear: true, exactPull: true);
+
+        Assert.Equal((Texel(16.5), Texel(16.5), Texel(31.5), Texel(31.5)), (piece.U0, piece.V0, piece.U1, piece.V1));
+    }
+
+    [Fact]
+    public void TwoDevicePixelsPerCanvasPixelMagnifyARegionDrawnAtItsOwnSize()
+    {
+        // 16 texels over 16 canvas pixels are 32 device pixels.
+        CanvasImagePiece piece = Region(
+            new PluginRect(16, 16, 16, 16), new PluginRect(0, 0, 16, 16), linear: true, devicePixelsPerPixel: 2);
+
+        double pull = 0.5 * (32 - 16) / (32 - 1.0);
+        Assert.Equal(
+            (Texel(16 + pull), Texel(16 + pull), Texel(32 - pull), Texel(32 - pull)),
+            (piece.U0, piece.V0, piece.U1, piece.V1));
         Assert.Equal((0f, 0f, 16f, 16f), (piece.X, piece.Y, piece.Width, piece.Height));
     }
 
@@ -73,7 +137,9 @@ public sealed class CanvasImageRegionsTests
 
         Assert.Equal(Texel(10.5), piece.U0);
         Assert.Equal(Texel(10.5), piece.U1);
-        Assert.Equal((Texel(10.5), Texel(13.5)), (piece.V0, piece.V1));
+        // Down, 4 texels over 8 pixels are pulled in as any magnified span.
+        double pull = 0.5 * (8 - 4) / (8 - 1.0);
+        Assert.Equal((Texel(10 + pull), Texel(14 - pull)), (piece.V0, piece.V1));
     }
 
     [Theory]
@@ -86,7 +152,7 @@ public sealed class CanvasImageRegionsTests
     public void AnEmptyOffImageOrNonFiniteSourceDrawsNothing(double x, double y, double width, double height)
     {
         Assert.False(CanvasImageRegions.TryMapRegion(
-            Sheet, Sheet, true, new PluginRect(x, y, width, height), new PluginRect(0, 0, 16, 16), out _));
+            Sheet, Sheet, true, new PluginRect(x, y, width, height), new PluginRect(0, 0, 16, 16), 1.0, false, out _));
     }
 
     [Theory]
@@ -96,7 +162,7 @@ public sealed class CanvasImageRegionsTests
     public void AnEmptyOrNonFiniteDestinationDrawsNothing(double width, double height)
     {
         Assert.False(CanvasImageRegions.TryMapRegion(
-            Sheet, Sheet, false, new PluginRect(0, 0, 16, 16), new PluginRect(0, 0, width, height), out _));
+            Sheet, Sheet, false, new PluginRect(0, 0, 16, 16), new PluginRect(0, 0, width, height), 1.0, false, out _));
     }
 
     [Fact]
@@ -143,19 +209,37 @@ public sealed class CanvasImageRegionsTests
     }
 
     [Fact]
-    public void ASourceSelectsTheFrameInsideASheetAndOnlyItsOuterEdgesArePulledIn()
+    public void ANineSliceWithCornersAtTheirOwnSizeOnWholePixelsHasCrispCorners()
     {
-        // A 16x16 frame at (16, 16) on a linear sheet, insets of 4.
+        // A 16x16 frame at (16, 16) on a linear sheet, insets of 4: the corners are 4 texels over 4 pixels.
         CanvasImagePiece[] pieces = NineSlice(
             new PluginRect(0, 0, 32, 32), PluginInsets.Uniform(4), new PluginRect(16, 16, 16, 16), linear: true);
 
         Assert.Equal(9, pieces.Length);
+        Assert.Equal((Texel(16), Texel(16), Texel(20), Texel(20)), (pieces[0].U0, pieces[0].V0, pieces[0].U1, pieces[0].V1));
+        Assert.Equal((Texel(28), Texel(28), Texel(32), Texel(32)), (pieces[8].U0, pieces[8].V0, pieces[8].U1, pieces[8].V1));
+    }
+
+    [Fact]
+    public void ASourceSelectsTheFrameInsideASheetAndOnlyItsOuterEdgesArePulledIn()
+    {
+        // The same frame at two device pixels per canvas pixel: each corner is 4 texels over 8 pixels.
+        CanvasImagePiece[] pieces = NineSlice(
+            new PluginRect(0, 0, 32, 32), PluginInsets.Uniform(4), new PluginRect(16, 16, 16, 16), linear: true,
+            devicePixelsPerPixel: 2);
+
+        double pull = 0.5 * (8 - 4) / (8 - 0.5);
+        Assert.Equal(9, pieces.Length);
         // Top-left corner: its outer edges are pulled in, the seams with its neighbours are not.
-        Assert.Equal((Texel(16.5), Texel(16.5), Texel(20), Texel(20)), (pieces[0].U0, pieces[0].V0, pieces[0].U1, pieces[0].V1));
+        Assert.Equal(
+            (Texel(16 + pull), Texel(16 + pull), Texel(20), Texel(20)),
+            (pieces[0].U0, pieces[0].V0, pieces[0].U1, pieces[0].V1));
         // The middle touches no outer edge.
         Assert.Equal((Texel(20), Texel(20), Texel(28), Texel(28)), (pieces[4].U0, pieces[4].V0, pieces[4].U1, pieces[4].V1));
         // Bottom-right corner.
-        Assert.Equal((Texel(28), Texel(28), Texel(31.5), Texel(31.5)), (pieces[8].U0, pieces[8].V0, pieces[8].U1, pieces[8].V1));
+        Assert.Equal(
+            (Texel(28), Texel(28), Texel(32 - pull), Texel(32 - pull)),
+            (pieces[8].U0, pieces[8].V0, pieces[8].U1, pieces[8].V1));
     }
 
     [Fact]
@@ -164,8 +248,10 @@ public sealed class CanvasImageRegionsTests
         CanvasImagePiece[] pieces = NineSlice(
             new PluginRect(0, 0, 32, 32), new PluginInsets(0, 4, 0, 4), new PluginRect(16, 16, 16, 16), linear: true);
 
+        // The middle column is 16 texels over 32 pixels, pulled in at both ends.
+        double pull = 0.5 * (32 - 16) / (32 - 1.0);
         Assert.Equal(3, pieces.Length);
-        Assert.All(pieces, p => Assert.Equal((Texel(16.5), Texel(31.5)), (p.U0, p.U1)));
+        Assert.All(pieces, p => Assert.Equal((Texel(16 + pull), Texel(32 - pull)), (p.U0, p.U1)));
         Assert.Equal([(0f, 4f), (4f, 24f), (28f, 4f)], pieces.Select(p => (p.Y, p.Height)).ToArray());
     }
 
@@ -181,6 +267,17 @@ public sealed class CanvasImageRegionsTests
         Assert.Equal((0f, Texel(12)), (pieces[0].U0, pieces[0].U1));
         Assert.Equal((Texel(12), Texel(16)), (pieces[1].U0, pieces[1].U1));
         Assert.Equal((12f, 4f), (pieces[0].Width, pieces[1].Width));
+    }
+
+    [Fact]
+    public void UnevenInsetsScaledDownToTheSourceLeaveNoSliverOfAMiddle()
+    {
+        // 5 + 6 over 10 pixels: scaled by 10/11, the two inner edges fall a rounding error apart.
+        CanvasImagePiece[] pieces = NineSlice(
+            new PluginRect(0, 0, 100, 100), new PluginInsets(5, 0, 6, 0), new PluginRect(0, 0, 10, 64));
+
+        Assert.Equal(2, pieces.Length);
+        Assert.Equal(pieces[0].U1, pieces[1].U0);
     }
 
     [Theory]
