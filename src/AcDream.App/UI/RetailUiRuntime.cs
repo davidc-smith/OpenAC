@@ -4213,7 +4213,8 @@ public sealed class RetailUiRuntime : IDisposable
                     _pluginCanvasSurface,
                     () => plugins.FindImages(owner),
                     modifiers: HeldPointerModifiers,
-                    fonts: () => plugins.FindFonts(owner));
+                    fonts: () => plugins.FindFonts(owner),
+                    keyboardCaptured: () => _bindings.Keyboard?.Dispatcher?.IsCapturing == true);
                 stack.Add(element);
                 plugins.CompleteCanvasMount(canvas, () =>
                 {
@@ -4235,7 +4236,7 @@ public sealed class RetailUiRuntime : IDisposable
 
     /// <summary>
     /// The modifier keys held right now, read from the window's keyboard
-    /// for each pointer event a plugin canvas delivers; none without one.
+    /// for each pointer or key event a plugin canvas delivers; none without one.
     /// </summary>
     private PluginKeyModifiers HeldPointerModifiers()
     {

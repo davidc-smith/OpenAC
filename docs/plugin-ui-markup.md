@@ -396,7 +396,8 @@ the same tree, and by `ScopedUiRegistryClientWindowTests` under
 `tests/AcDream.Core.Tests/Plugins/` for the scoped forwarder. Plugin images
 and canvases (see the plugin API guide) are covered by
 `PluginImageTableTests`, `BufferedUiRegistryImagesTests`,
-`BufferedUiRegistryCanvasTests` and `UI/Layout/PluginCanvasElementTests`
+`BufferedUiRegistryCanvasTests`, `UI/Layout/PluginCanvasElementTests`,
+`UI/Layout/PluginCanvasKeyboardTests` and `Input/PluginKeyMapTests`
 under `tests/AcDream.App.Tests/`, by `ScopedUiRegistryImagesTests` and
 `ScopedUiRegistryCanvasTests` for the scoped forwarder, by the contract
 and headless suites for the inert answers a host without a window gives,

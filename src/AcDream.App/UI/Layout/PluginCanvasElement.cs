@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
+using AcDream.App.Input;
 using AcDream.App.Plugins;
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
@@ -39,8 +41,16 @@ namespace AcDream.App.UI.Layout;
 /// pixels. The handler runs under a guard of its own: one that throws or
 /// stays slow is dropped, and the canvas goes back to click-through while
 /// its painting carries on.</para>
+///
+/// <para>A canvas that opted in to keyboard input takes the interface's
+/// keyboard focus, like a text field, while it is shown and has a key
+/// handler: from a left press on it, or when the plugin asks and nothing
+/// else has focus. Focus is the root's; the canvas only reports what the
+/// root tells it, so exactly one focus lost follows each focus gained,
+/// whichever way focus goes. While focused it hands the plugin keys,
+/// typed text and its own key repeat, under a third guard.</para>
 /// </summary>
-internal sealed class PluginCanvasElement : UiElement
+internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocus
 {
     /// <summary>
     /// How long one repaint may take. Twice the frame guard's budget: a
@@ -51,6 +61,12 @@ internal sealed class PluginCanvasElement : UiElement
 
     /// <summary>The most targets a canvas may hold; the flight depth plus one is the real bound.</summary>
     internal const int MaximumTargets = 8;
+
+    /// <summary>How long a key is held before the host repeats it, as a text field does.</summary>
+    internal const double KeyRepeatDelaySeconds = 0.40;
+
+    /// <summary>How often a held key repeats after the delay, as a text field does.</summary>
+    internal const double KeyRepeatIntervalSeconds = 0.04;
 
     private sealed class CanvasTarget(IGpuRenderTarget target, GpuTextureSlot slot)
     {
@@ -67,7 +83,9 @@ internal sealed class PluginCanvasElement : UiElement
     private readonly Func<PluginFonts?> _fonts;
     private readonly UiDrawCallbackGuard _guard;
     private readonly UiDrawCallbackGuard _inputGuard;
+    private readonly UiDrawCallbackGuard _keyGuard;
     private readonly Func<PluginKeyModifiers> _modifiers;
+    private readonly Func<bool> _keyboardCaptured;
     private readonly Action<string> _report;
     private readonly List<CanvasTarget> _targets = [];
     private CanvasTarget? _shown;
@@ -80,6 +98,9 @@ internal sealed class PluginCanvasElement : UiElement
     private bool _reportedShapeBudget;
     private float _pixelScale = 1f;
     private float _interfaceScale = 1f;
+    private bool _focused;
+    private PluginKey _repeatKey;
+    private double _repeatTimer;
 
     internal PluginCanvasElement(
         PluginCanvasRegistration registration,
@@ -88,7 +109,8 @@ internal sealed class PluginCanvasElement : UiElement
         Action<string>? report = null,
         Func<double>? nowMilliseconds = null,
         Func<PluginKeyModifiers>? modifiers = null,
-        Func<PluginFonts?>? fonts = null)
+        Func<PluginFonts?>? fonts = null,
+        Func<bool>? keyboardCaptured = null)
     {
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
@@ -97,6 +119,7 @@ internal sealed class PluginCanvasElement : UiElement
         _report = report ?? (line => Serilog.Log.Warning("{Line}", line));
         _modifiers = modifiers ?? (static () => PluginKeyModifiers.None);
         _shapeProblems = ReportShapeProblem;
+        _keyboardCaptured = keyboardCaptured ?? (static () => false);
         _guard = new UiDrawCallbackGuard(
             $"plugin canvas {registration.Owner.Id}/{registration.CanvasId}",
             _report,
@@ -104,6 +127,12 @@ internal sealed class PluginCanvasElement : UiElement
             RepaintBudgetMilliseconds);
         _inputGuard = new UiDrawCallbackGuard(
             $"plugin canvas {registration.Owner.Id}/{registration.CanvasId} pointer handler",
+            _report,
+            nowMilliseconds,
+            UiDrawCallbackGuard.FrameBudgetMilliseconds,
+            callUnit: "events");
+        _keyGuard = new UiDrawCallbackGuard(
+            $"plugin canvas {registration.Owner.Id}/{registration.CanvasId} key handler",
             _report,
             nowMilliseconds,
             UiDrawCallbackGuard.FrameBudgetMilliseconds,
@@ -127,6 +156,13 @@ internal sealed class PluginCanvasElement : UiElement
             _pointerRelease = ReleasePointer;
             registration.PointerRelease = _pointerRelease;
         }
+        if (registration.AcceptsKeyboardInput)
+        {
+            // Typed text reaches only an edit control, and the root sends
+            // keys nowhere else while one has focus.
+            IsEditControl = true;
+            registration.KeyboardFocus = this;
+        }
     }
 
     internal PluginCanvasRegistration Registration => _registration;
@@ -144,6 +180,30 @@ internal sealed class PluginCanvasElement : UiElement
     /// <summary>True once the pointer handler was dropped; the canvas is click-through from then on.</summary>
     internal bool IsInputDropped => _inputGuard.IsTripped;
 
+    /// <summary>True once the key handler was dropped; the canvas cannot take focus from then on.</summary>
+    internal bool IsKeyInputDropped => _keyGuard.IsTripped;
+
+    /// <summary>True while the root's keyboard focus is this canvas.</summary>
+    public bool HasFocus => _focused;
+
+    /// <summary>
+    /// Whether the canvas may hold keyboard focus right now: it opted in,
+    /// is shown, someone is listening, and neither the listener nor the
+    /// paint callback has been dropped. Read by the root on a left press.
+    /// </summary>
+    public override bool AcceptsFocus
+    {
+        get => TakesKeyboard;
+        // Computed from the canvas's own state; nothing sets it from outside.
+        set { }
+    }
+
+    private bool TakesKeyboard =>
+        _registration.AcceptsKeyboardInput
+        && !_keyGuard.IsTripped
+        && _registration.KeyHandler is not null
+        && VisibleSource!();
+
     /// <summary>
     /// Whether the canvas answers for its rectangle right now: it opted in,
     /// someone is listening, and the listener has not been dropped.
@@ -153,7 +213,16 @@ internal sealed class PluginCanvasElement : UiElement
 
     protected override bool ClipsChildren => true;
 
-    protected override void OnTick(double deltaSeconds) => Layout();
+    protected override void OnTick(double deltaSeconds)
+    {
+        Layout();
+        if (!_focused || !KeepsFocus()) return;
+        if (_repeatKey == PluginKey.Unknown) return;
+        _repeatTimer -= deltaSeconds;
+        if (_repeatTimer > 0) return;
+        _repeatTimer = KeyRepeatIntervalSeconds;
+        KeyDown(_repeatKey, isRepeat: true);
+    }
 
     // While something is being dragged no canvas answers, so the drop
     // reaches the window or the world beneath.
@@ -218,6 +287,55 @@ internal sealed class PluginCanvasElement : UiElement
                 return true;
             }
 
+            case UiEventType.FocusGained:
+                _focused = true;
+                DeliverKey(new PluginKeyEvent(PluginKeyEventKind.FocusGained, PluginKey.Unknown, _modifiers()));
+                return true;
+
+            case UiEventType.FocusLost:
+                if (!_focused) return true;
+                _focused = false;
+                _repeatKey = PluginKey.Unknown;
+                DeliverKey(new PluginKeyEvent(PluginKeyEventKind.FocusLost, PluginKey.Unknown, _modifiers()));
+                return true;
+
+            case UiEventType.KeyDown:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                PluginKey key = PluginKeyMap.FromSilk((Silk.NET.Input.Key)e.Data0);
+                // A key the contract cannot name is still the canvas's:
+                // nothing behind a focused canvas acts on keys.
+                if (key == PluginKey.Unknown) return true;
+                _repeatKey = key;
+                _repeatTimer = KeyRepeatDelaySeconds;
+                KeyDown(key, isRepeat: false);
+                return true;
+            }
+
+            case UiEventType.KeyUp:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                PluginKey key = PluginKeyMap.FromSilk((Silk.NET.Input.Key)e.Data0);
+                if (key == PluginKey.Unknown) return true;
+                if (key == _repeatKey) _repeatKey = PluginKey.Unknown;
+                DeliverKey(new PluginKeyEvent(PluginKeyEventKind.Up, key, _modifiers()));
+                return true;
+            }
+
+            case UiEventType.Char:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                // Silk hands over UTF-16 units; a lone surrogate or a control
+                // character is not text a plugin can draw.
+                if (!Rune.IsValid(e.Data0) || Rune.IsControl(new Rune(e.Data0))) return true;
+                DeliverKey(new PluginKeyEvent(
+                    PluginKeyEventKind.Text, PluginKey.Unknown, _modifiers(), Text: new Rune(e.Data0).ToString()));
+                return true;
+            }
+
             // Click, double-click and right-click are the root's reading of a
             // press and release the plugin already saw; nothing beneath the
             // canvas should act on them either.
@@ -271,6 +389,84 @@ internal sealed class PluginCanvasElement : UiElement
             // press does not hang, and stop answering the hit-test.
             ReleasePointer();
         }
+    }
+
+    /// <summary>
+    /// Gives focus back when the canvas can no longer hold it: the plugin
+    /// hid it or took its handler away, or a modal dialog opened. Checked
+    /// every tick and before every key, so a key between a change and the
+    /// next tick does not reach the plugin. Removal is the root's to notice.
+    /// </summary>
+    private bool KeepsFocus()
+    {
+        if (TakesKeyboard && FindRoot()?.Modal is null) return true;
+        ReleaseFocus();
+        return false;
+    }
+
+    /// <summary>
+    /// A key went down or repeated: the plugin sees it, and an Escape it
+    /// did not handle gives focus back, as Escape leaves a text field.
+    /// </summary>
+    private void KeyDown(PluginKey key, bool isRepeat)
+    {
+        bool handled = DeliverKey(new PluginKeyEvent(PluginKeyEventKind.Down, key, _modifiers(), isRepeat));
+        if (key == PluginKey.Escape && !handled)
+            ReleaseFocus();
+    }
+
+    /// <summary>
+    /// Hands one event to the key handler under its guard. Returns the
+    /// handler's answer; false when nobody heard it.
+    /// </summary>
+    private bool DeliverKey(PluginKeyEvent key)
+    {
+        Func<PluginKeyEvent, bool>? handler = _registration.KeyHandler;
+        if (handler is null || _keyGuard.IsTripped) return false;
+        bool handled = false;
+        _keyGuard.Invoke(() => handled = handler(key));
+        if (_keyGuard.IsTripped)
+        {
+            // Nobody is listening any more: give the keyboard back.
+            ReleaseFocus();
+            return false;
+        }
+        return handled;
+    }
+
+    /// <summary>
+    /// Takes the keyboard on the plugin's request, which never takes it
+    /// from anything else: the chat bar, a text field, another canvas or a
+    /// dialog keeps it, and so does a key rebind being captured.
+    /// </summary>
+    public bool RequestFocus()
+    {
+        if (_focused) return true;
+        if (_released || !TakesKeyboard || !IsShownInTree()) return false;
+        if (FindRoot() is not { } root) return false;
+        if (root.KeyboardFocus is not null || root.Modal is not null || _keyboardCaptured())
+            return false;
+        root.SetKeyboardFocus(this);
+        return _focused;
+    }
+
+    /// <summary>
+    /// Gives the keyboard back if the canvas still has it; the root's focus
+    /// change delivers the one focus lost.
+    /// </summary>
+    public void ReleaseFocus()
+    {
+        if (FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, this))
+            root.SetKeyboardFocus(null);
+    }
+
+    private bool IsShownInTree()
+    {
+        for (UiElement? element = this; element is not null; element = element.Parent)
+        {
+            if (!element.Visible) return false;
+        }
+        return true;
     }
 
     /// <summary>
@@ -462,6 +658,10 @@ internal sealed class PluginCanvasElement : UiElement
         _released = true;
         if (ReferenceEquals(_registration.PointerRelease, _pointerRelease))
             _registration.PointerRelease = null;
+        // Focus needs nothing here: the element left the tree first, and
+        // the root took focus back from it on the way out.
+        if (ReferenceEquals(_registration.KeyboardFocus, this))
+            _registration.KeyboardFocus = null;
         GiveBackTargets();
     }
 

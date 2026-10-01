@@ -118,7 +118,9 @@ public sealed class CursorFeedbackController
             WindowMoveActive: root.IsWindowMoveActive,
             HoverWindowMove: root.HoverWindowMove,
             HoverUi: hover is not null,
-            HoverTextEdit: hover?.IsEditControl == true,
+            // A plugin canvas is an edit control only so typed text reaches
+            // it; whether it looks like a text field is the plugin's to paint.
+            HoverTextEdit: hover is { IsEditControl: true } and not Layout.PluginCanvasElement,
             HoverTargetGuid: hoverTarget,
             HoverTargetCompatible: hoverTargetCompatible,
             // An outstanding description counts towards the busy cursor even

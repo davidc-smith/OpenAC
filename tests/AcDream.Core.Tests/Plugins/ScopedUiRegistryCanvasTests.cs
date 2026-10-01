@@ -24,12 +24,28 @@ public sealed class ScopedUiRegistryCanvasTests
         public int Invalidations { get; private set; }
         public int Disposals { get; private set; }
         public int PointerReleases { get; private set; }
+        public int FocusRequests { get; private set; }
+        public int FocusReleases { get; private set; }
         public Action<PluginPointerEvent>? PointerHandler { get; set; }
         public int ZOrder { get; set; } = descriptor.ZOrder;
+        public Func<PluginKeyEvent, bool>? KeyHandler { get; set; }
+        public bool HasKeyboardFocus { get; set; }
 
         public void Invalidate() => Invalidations++;
 
         public void ReleasePointer() => PointerReleases++;
+
+        public bool RequestKeyboardFocus()
+        {
+            FocusRequests++;
+            return HasKeyboardFocus = true;
+        }
+
+        public void ReleaseKeyboardFocus()
+        {
+            FocusReleases++;
+            HasKeyboardFocus = false;
+        }
 
         public void Dispose() => Disposals++;
     }
@@ -148,6 +164,29 @@ public sealed class ScopedUiRegistryCanvasTests
         Assert.Equal(9, hosts.ZOrder);
         hosts.ZOrder = -2;
         Assert.Equal(-2, canvas.ZOrder);
+        scoped.Dispose();
+    }
+
+    [Fact]
+    public void EveryKeyboardCallOnThePluginsHandleReachesTheHostsCanvas()
+    {
+        var inner = new FakeScopedUiRegistry();
+        var scoped = new ScopedPluginHost(new StubHost(inner), "example.plugin", "Example");
+        IPluginCanvas canvas = scoped.Ui.RegisterCanvas(Hud, _ => { });
+        FakeCanvas hosts = Assert.Single(inner.Canvases);
+        Func<PluginKeyEvent, bool> handler = _ => true;
+
+        canvas.KeyHandler = handler;
+        Assert.False(canvas.HasKeyboardFocus);
+        Assert.True(canvas.RequestKeyboardFocus());
+        Assert.True(canvas.HasKeyboardFocus);
+        canvas.ReleaseKeyboardFocus();
+
+        Assert.Same(handler, hosts.KeyHandler);
+        Assert.Same(handler, canvas.KeyHandler);
+        Assert.Equal(1, hosts.FocusRequests);
+        Assert.Equal(1, hosts.FocusReleases);
+        Assert.False(canvas.HasKeyboardFocus);
         scoped.Dispose();
     }
 

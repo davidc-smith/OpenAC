@@ -109,6 +109,17 @@ public sealed record PluginCanvasDescriptor(string CanvasId, int Width, int Heig
     /// it later through <see cref="IPluginCanvas.ZOrder"/>.
     /// </summary>
     public int ZOrder { get; init; }
+    /// <summary>
+    /// Whether the canvas can take keyboard focus. Off, the default, the
+    /// canvas never sees a key. On, a left press on the canvas (which needs
+    /// <see cref="AcceptsPointerInput"/> and a pointer handler as well) or
+    /// <see cref="IPluginCanvas.RequestKeyboardFocus"/> gives it the
+    /// keyboard while it is shown and has an
+    /// <see cref="IPluginCanvas.KeyHandler"/>; until focus goes back, keys
+    /// and typed text go to that handler and not to the game. On a host
+    /// without a window the flag is kept and the canvas never takes focus.
+    /// </summary>
+    public bool AcceptsKeyboardInput { get; init; }
 }
 
 /// <summary>Which mouse button a pointer event is about.</summary>
@@ -127,7 +138,7 @@ public enum PluginPointerButton
     Middle = 3,
 }
 
-/// <summary>The modifier keys held while a pointer event happened.</summary>
+/// <summary>The modifier keys held while a pointer or key event happened.</summary>
 [Flags]
 public enum PluginKeyModifiers
 {
@@ -184,6 +195,47 @@ public readonly record struct PluginPointerEvent(
     PluginPointerButton Button,
     PluginKeyModifiers Modifiers,
     int WheelDelta = 0);
+
+/// <summary>What happened to a canvas that has keyboard focus.</summary>
+public enum PluginKeyEventKind
+{
+    /// <summary>A key went down, or is held and repeating (<see cref="PluginKeyEvent.IsRepeat"/>).</summary>
+    Down,
+
+    /// <summary>A key came up.</summary>
+    Up,
+
+    /// <summary>The player typed text; <see cref="PluginKeyEvent.Text"/> holds it.</summary>
+    Text,
+
+    /// <summary>The canvas took keyboard focus; keys arrive from now on.</summary>
+    FocusGained,
+
+    /// <summary>The canvas gave keyboard focus back; no keys arrive until it takes focus again.</summary>
+    FocusLost,
+}
+
+/// <summary>
+/// One keyboard event on a canvas that has keyboard focus.
+/// <see cref="Key"/> is meaningful for <see cref="PluginKeyEventKind.Down"/>
+/// and <see cref="PluginKeyEventKind.Up"/> and is
+/// <see cref="PluginKey.Unknown"/> otherwise; <see cref="Text"/> carries
+/// the typed characters for <see cref="PluginKeyEventKind.Text"/> and is
+/// null otherwise. Keys <see cref="PluginKey"/> cannot name, the modifier
+/// keys among them, are not delivered as <c>Down</c> or <c>Up</c>; the
+/// modifiers held travel with every event instead.
+/// </summary>
+/// <param name="Kind">What happened.</param>
+/// <param name="Key">The key that went down or came up.</param>
+/// <param name="Modifiers">The modifier keys held at the time.</param>
+/// <param name="IsRepeat">True for a <c>Down</c> the host repeats while the key stays held.</param>
+/// <param name="Text">The characters typed, for <see cref="PluginKeyEventKind.Text"/>; never a control character.</param>
+public readonly record struct PluginKeyEvent(
+    PluginKeyEventKind Kind,
+    PluginKey Key,
+    PluginKeyModifiers Modifiers,
+    bool IsRepeat = false,
+    string? Text = null);
 
 /// <summary>
 /// What a canvas's paint callback draws with. Coordinates are pixels from
@@ -432,7 +484,8 @@ public interface IPluginPainter
 /// A rectangle the plugin paints, shown over the world and under every
 /// window (or, in <see cref="PluginCanvasLayer.AboveWindows"/>, over every
 /// window), taking no input unless it opted in through
-/// <see cref="PluginCanvasDescriptor.AcceptsPointerInput"/>. Painting is retained: the host keeps what was
+/// <see cref="PluginCanvasDescriptor.AcceptsPointerInput"/> or
+/// <see cref="PluginCanvasDescriptor.AcceptsKeyboardInput"/>. Painting is retained: the host keeps what was
 /// last painted and calls the paint callback again only after
 /// <see cref="Invalidate"/>, at most once per frame, on the tick thread,
 /// with a painter that is valid only for the duration of that call.
@@ -520,6 +573,57 @@ public interface IPluginCanvas : IDisposable
         get => 0;
         set { }
     }
+
+    /// <summary>
+    /// Where keyboard events go while the canvas has keyboard focus, on a
+    /// canvas registered with
+    /// <see cref="PluginCanvasDescriptor.AcceptsKeyboardInput"/>. Null, the
+    /// default, and the canvas cannot take focus. The handler answers true
+    /// when it handled the event; only the answer to
+    /// <see cref="PluginKey.Escape"/> going down changes what the host does:
+    /// an Escape the handler did not handle gives focus back.
+    ///
+    /// <para>The handler is measured like the pointer handler: one that
+    /// keeps running over its budget on several events in a row, or throws,
+    /// is dropped for the rest of the session and focus goes back; pointer
+    /// input and painting continue. Setting the handler on a canvas that did
+    /// not opt in, or on a host without a window, keeps the value and
+    /// delivers nothing; a host that predates keyboard input answers null
+    /// and ignores the set.</para>
+    /// </summary>
+    Func<PluginKeyEvent, bool>? KeyHandler
+    {
+        get => null;
+        set { }
+    }
+
+    /// <summary>
+    /// Whether the canvas has keyboard focus right now. Always false on a
+    /// host without a window or one that predates keyboard input.
+    /// </summary>
+    bool HasKeyboardFocus => false;
+
+    /// <summary>
+    /// Asks for keyboard focus without a press. Succeeds, and answers true,
+    /// only when the canvas opted in, is mounted and shown, has a
+    /// <see cref="KeyHandler"/>, nothing else in the interface has keyboard
+    /// focus, no modal dialog is open and no key rebind is being captured;
+    /// it never takes focus from the chat bar, a text field or a dialog.
+    /// Answers true at once when the canvas already has focus, and false on
+    /// a host without a window or one that predates keyboard input.
+    /// </summary>
+    /// <returns>True when the canvas has keyboard focus afterwards.</returns>
+    bool RequestKeyboardFocus() => false;
+
+    /// <summary>
+    /// Gives keyboard focus back, with a
+    /// <see cref="PluginKeyEventKind.FocusLost"/> to the handler first. Safe
+    /// to call from inside the handler and at any other time; does nothing
+    /// when the canvas does not have focus.
+    /// </summary>
+    void ReleaseKeyboardFocus()
+    {
+    }
 }
 
 /// <summary>
@@ -578,6 +682,21 @@ public sealed class NoOpPluginCanvas : IPluginCanvas
 
     /// <summary>Kept so the plugin's own logic runs unchanged; nothing is stacked.</summary>
     public int ZOrder { get; set; }
+
+    /// <summary>Kept so the plugin's own logic runs unchanged; never called, because there is no keyboard to focus.</summary>
+    public Func<PluginKeyEvent, bool>? KeyHandler { get; set; }
+
+    /// <summary>Always false; there is no keyboard to focus.</summary>
+    public bool HasKeyboardFocus => false;
+
+    /// <summary>Always false; there is no keyboard to focus.</summary>
+    /// <returns>False.</returns>
+    public bool RequestKeyboardFocus() => false;
+
+    /// <summary>Does nothing; the canvas never has focus.</summary>
+    public void ReleaseKeyboardFocus()
+    {
+    }
 
     /// <summary>Marks the canvas disposed; there is nothing to remove.</summary>
     public void Dispose() => IsDisposed = true;

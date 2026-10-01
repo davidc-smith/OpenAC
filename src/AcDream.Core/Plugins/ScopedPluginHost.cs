@@ -2226,6 +2226,18 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 set => inner.ZOrder = value;
             }
 
+            public Func<PluginKeyEvent, bool>? KeyHandler
+            {
+                get => inner.KeyHandler;
+                set => inner.KeyHandler = value;
+            }
+
+            public bool HasKeyboardFocus => inner.HasKeyboardFocus;
+
+            public bool RequestKeyboardFocus() => inner.RequestKeyboardFocus();
+
+            public void ReleaseKeyboardFocus() => inner.ReleaseKeyboardFocus();
+
             public void Dispose()
             {
                 registration.Dispose();
