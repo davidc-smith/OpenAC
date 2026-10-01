@@ -79,6 +79,7 @@ internal sealed class PluginCanvasElement : UiElement
     private bool _reportedBadShape;
     private bool _reportedShapeBudget;
     private float _pixelScale = 1f;
+    private float _interfaceScale = 1f;
 
     internal PluginCanvasElement(
         PluginCanvasRegistration registration,
@@ -342,8 +343,15 @@ internal sealed class PluginCanvasElement : UiElement
             return;
         }
 
+        // Sharper font bakes are made here, outside the guard: baking takes
+        // longer than a paint may. They follow the interface's scale rather
+        // than this canvas's, which is lower only when the canvas is too
+        // large for the device, so two canvases of one plugin never make
+        // its fonts bake back and forth.
+        PluginFonts? fonts = _fonts();
+        fonts?.PrepareScale(_interfaceScale);
         bool drew = _surface.Repaint(
-            _registration, target.Target, _guard, _images(), _fonts(), _shapeProblems, _pixelScale);
+            _registration, target.Target, _guard, _images(), fonts, _shapeProblems, _pixelScale);
         target.LastUsedFrameSlot = frameSlot;
         if (_guard.IsTripped)
         {
@@ -464,10 +472,10 @@ internal sealed class PluginCanvasElement : UiElement
     /// </summary>
     private void FollowPixelScale()
     {
-        float interfaceScale = CanvasPixelScale.ForInterface(
+        _interfaceScale = CanvasPixelScale.ForInterface(
             _surface.Services.FramebufferPerPoint(), FindRoot()?.CanvasScale ?? Vector2.One);
         float scale = CanvasPixelScale.ForCanvas(
-            interfaceScale,
+            _interfaceScale,
             _registration.Width,
             _registration.Height,
             _surface.Services.Device.Capabilities.MaxImageDimension2D);

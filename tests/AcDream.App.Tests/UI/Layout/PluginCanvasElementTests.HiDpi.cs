@@ -159,6 +159,30 @@ public sealed partial class PluginCanvasElementTests
         Assert.Throws<InvalidOperationException>(() => kept!.PixelScale);
     }
 
+    [Fact]
+    public void FontsAreReadiedForTheScaleBeforeThePaintThatDrawsWithThem()
+    {
+        var harness = new Harness { FramebufferPerPoint = new Vector2(2f, 2f) };
+        PluginFont font = harness.Registry.FontsFor(harness.Owner).Bundled(16f);
+        uint ownAtlas = Assert.Single(harness.FontBackend.Uploaded).Texture;
+        (PluginCanvasRegistration registration, _) = harness.Mount(Hud(), painter =>
+            painter.DrawText("AV", new PluginPoint(10, 10), PluginColor.White, font));
+
+        harness.Frame();
+
+        (uint sharpAtlas, int width, int height) = harness.FontBackend.Uploaded[1];
+        Assert.Equal((1024, 512), (width, height));
+        Assert.Equal([sharpAtlas], harness.Surface.Renderer.DebugSpriteSegmentCoverage);
+
+        // Back on a display of one pixel per point: the sharper bake is given back.
+        harness.FramebufferPerPoint = Vector2.One;
+        harness.Frame();
+
+        Assert.Equal([sharpAtlas], harness.FontBackend.Released);
+        Assert.Equal([ownAtlas], harness.Surface.Renderer.DebugSpriteSegmentCoverage);
+        _ = registration;
+    }
+
     /// <summary>The projection size the surface's pass pushed: what one target pixel of the canvas pass is.</summary>
     private static (float Width, float Height) SurfaceProjection(Harness harness)
     {

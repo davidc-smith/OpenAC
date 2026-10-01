@@ -125,6 +125,7 @@ public sealed partial class PluginCanvasElementTests
         public TextRenderer MainRenderer { get; }
         public UiRenderContext MainContext { get; }
         public List<string> Reports { get; } = [];
+        public AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend FontBackend { get; } = new();
         public ManualClock Clock { get; } = new();
         public PluginUiOwner Owner { get; } = new("example.plugin", "Example");
         private long _now;
@@ -146,7 +147,7 @@ public sealed partial class PluginCanvasElementTests
             MainRenderer = new TextRenderer(Device, Frames, "unused");
             MainContext = new UiRenderContext(MainRenderer, new Vector2(800f, 600f));
             Registry.BindImageServices(new FakeImageBackend());
-            Registry.BindFontServices(new AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend());
+            Registry.BindFontServices(FontBackend);
             Device.Clear();
         }
 
