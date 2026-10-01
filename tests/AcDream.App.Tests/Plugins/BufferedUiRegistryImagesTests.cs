@@ -53,6 +53,8 @@ public sealed class BufferedUiRegistryImagesTests
             Released.Add(texture);
             return true;
         }
+
+        public bool IsLinearFiltered(uint texture) => true;
     }
 
     private sealed class SilentLogger : IPluginLogger

@@ -27,6 +27,7 @@ public sealed partial class PluginCanvasElementTests
     private sealed class FakeImageBackend : IPluginImageBackend
     {
         public const uint ArtTexture = 77u;
+        public const uint IconTexture = 78u;
 
         public bool TryGetClientArt(uint surfaceId, out uint texture, out int width, out int height)
         {
@@ -36,8 +37,8 @@ public sealed partial class PluginCanvasElementTests
 
         public bool TryGetSpellIcon(uint spellId, out uint texture, out int width, out int height)
         {
-            texture = 0u; width = 0; height = 0;
-            return false;
+            texture = IconTexture; width = 32; height = 32;
+            return true;
         }
 
         public bool TryGetObjectIcon(uint objectId, out uint texture, out int width, out int height)
@@ -48,6 +49,9 @@ public sealed partial class PluginCanvasElementTests
 
         public uint UploadOwned(byte[] rgba, int width, int height, string debugName) => 0u;
         public bool ReleaseOwned(uint texture) => false;
+
+        // Client art is linear, icons nearest, as the live backend reports them.
+        public bool IsLinearFiltered(uint texture) => texture != IconTexture;
     }
 
     /// <summary>A clock the test advances by hand: each guarded call costs what the test says.</summary>

@@ -19,6 +19,8 @@ public sealed class PluginImageTableTests
         public List<(uint Texture, int Width, int Height, string Name)> Uploads { get; } = [];
         public List<uint> Released { get; } = [];
         public HashSet<uint> KnownArt { get; } = [0x06001234u];
+        public HashSet<uint> NearestTextures { get; } = [];
+        public List<uint> FilterQueries { get; } = [];
 
         public bool TryGetClientArt(uint surfaceId, out uint texture, out int width, out int height)
         {
@@ -54,6 +56,12 @@ public sealed class PluginImageTableTests
         {
             Released.Add(texture);
             return true;
+        }
+
+        public bool IsLinearFiltered(uint texture)
+        {
+            FilterQueries.Add(texture);
+            return !NearestTextures.Contains(texture);
         }
     }
 
@@ -94,6 +102,31 @@ public sealed class PluginImageTableTests
         Assert.Equal([backend.Uploads[0].Texture], backend.Released);
         Assert.Equal(0, table.Count);
         Assert.Equal(0L, table.OwnedBytes);
+    }
+
+    [Fact]
+    public void EachImageCarriesTheBackendsFilterAskedOnceWhenFirstHeld()
+    {
+        (PluginImageTable table, FakeBackend backend, _) = Bound();
+        backend.NearestTextures.Add(8u);
+
+        PluginImageHandle art = table.AcquireClientArt(0x06001234u);
+        PluginImageHandle icon = table.AcquireSpellIcon(42u);
+        PluginImageHandle own = table.AcquireDecoded("map", Png64());
+        PluginImageHandle iconAgain = table.AcquireSpellIcon(42u);
+
+        Assert.True(table.TryResolve(art, out uint artTexture, out _, out _, out bool artLinear));
+        Assert.True(table.TryResolve(icon, out uint iconTexture, out _, out _, out bool iconLinear));
+        Assert.True(table.TryResolve(own, out uint ownTexture, out _, out _, out bool ownLinear));
+        Assert.Equal((7u, true), (artTexture, artLinear));
+        Assert.Equal((8u, false), (iconTexture, iconLinear));
+        Assert.Equal((backend.Uploads[0].Texture, true), (ownTexture, ownLinear));
+        Assert.Equal(icon, iconAgain);
+        Assert.Equal([7u, 8u, backend.Uploads[0].Texture], backend.FilterQueries);
+
+        Assert.True(table.Release(own));
+        Assert.False(table.TryResolve(own, out _, out _, out _, out bool releasedLinear));
+        Assert.False(releasedLinear);
     }
 
     [Fact]

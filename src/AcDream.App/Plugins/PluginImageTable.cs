@@ -61,6 +61,13 @@ internal interface IPluginImageBackend
 
     /// <summary>Gives back a texture from <see cref="UploadOwned"/>.</summary>
     bool ReleaseOwned(uint texture);
+
+    /// <summary>
+    /// Whether a texture this backend handed out is sampled linearly. A part
+    /// cut from a linear texture blends in the pixels just outside it unless
+    /// its edges are pulled in by half a pixel; a nearest one does not.
+    /// </summary>
+    bool IsLinearFiltered(uint texture);
 }
 
 /// <summary>
@@ -88,13 +95,17 @@ internal sealed class PluginImageTable : IDisposable
 
     private readonly record struct Key(Kind Kind, uint Id, string? Name);
 
-    private sealed class Entry(Key key, int id, uint texture, int width, int height, long ownedBytes)
+    private sealed class Entry(
+        Key key, int id, uint texture, int width, int height, long ownedBytes, bool linearFiltered)
     {
         internal Key Key { get; } = key;
         internal int Id { get; } = id;
         internal uint Texture { get; } = texture;
         internal int Width { get; } = width;
         internal int Height { get; } = height;
+
+        /// <summary>Whether the texture is sampled linearly, asked of the backend once, when it is first held.</summary>
+        internal bool LinearFiltered { get; } = linearFiltered;
 
         /// <summary>Zero for shared client art; the upload size for the plugin's own.</summary>
         internal long OwnedBytes { get; } = ownedBytes;
@@ -285,7 +296,7 @@ internal sealed class PluginImageTable : IDisposable
         uint texture = backend.UploadOwned(
             decoded.Data, decoded.Width, decoded.Height, $"plugin-{_ownerId}-{name}");
         _ownedBytes += bytes;
-        return Add(key, texture, decoded.Width, decoded.Height, bytes).Handle;
+        return Add(key, texture, decoded.Width, decoded.Height, bytes, backend.IsLinearFiltered(texture)).Handle;
     }
 
     /// <summary>
@@ -310,18 +321,29 @@ internal sealed class PluginImageTable : IDisposable
     /// The interface texture behind a handle, for the painter. False for a
     /// handle that was released, issued by another table, or never issued.
     /// </summary>
-    internal bool TryResolve(PluginImageHandle handle, out uint texture, out int width, out int height)
+    internal bool TryResolve(PluginImageHandle handle, out uint texture, out int width, out int height) =>
+        TryResolve(handle, out texture, out width, out height, out _);
+
+    /// <summary>
+    /// The interface texture behind a handle and whether it is sampled
+    /// linearly, which decides whether a region of it is pulled in by half
+    /// a pixel.
+    /// </summary>
+    internal bool TryResolve(
+        PluginImageHandle handle, out uint texture, out int width, out int height, out bool linearFiltered)
     {
         if (handle.IsValid && !_disposed && _byId.TryGetValue(handle.Id, out Entry? entry))
         {
             texture = entry.Texture;
             width = entry.Width;
             height = entry.Height;
+            linearFiltered = entry.LinearFiltered;
             return true;
         }
         texture = 0u;
         width = 0;
         height = 0;
+        linearFiltered = false;
         return false;
     }
 
@@ -361,7 +383,7 @@ internal sealed class PluginImageTable : IDisposable
             ReportOnce($"missing:{what}", $"{what} is not something the client can draw");
             return PluginImageHandle.None;
         }
-        return Add(key, texture, width, height, ownedBytes: 0L).Handle;
+        return Add(key, texture, width, height, ownedBytes: 0L, backend.IsLinearFiltered(texture)).Handle;
     }
 
     private bool TryEnter(out IPluginImageBackend backend)
@@ -409,9 +431,9 @@ internal sealed class PluginImageTable : IDisposable
         return false;
     }
 
-    private Entry Add(Key key, uint texture, int width, int height, long ownedBytes)
+    private Entry Add(Key key, uint texture, int width, int height, long ownedBytes, bool linearFiltered)
     {
-        var entry = new Entry(key, checked(++_nextId), texture, width, height, ownedBytes);
+        var entry = new Entry(key, checked(++_nextId), texture, width, height, ownedBytes, linearFiltered);
         _byKey.Add(key, entry);
         _byId.Add(entry.Id, entry);
         return entry;

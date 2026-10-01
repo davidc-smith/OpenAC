@@ -38,6 +38,9 @@ internal enum CanvasShapeProblem
 /// </summary>
 internal sealed class PluginPainter : IPluginPainter
 {
+    // Image regions are pulled in at the pixel scale of the current paint.
+    private double DevicePixelsPerPixel => PixelScale;
+
     private UiRenderContext? _context;
     private UiDatFont? _font;
     private PluginImages? _images;
@@ -196,6 +199,74 @@ internal sealed class PluginPainter : IPluginPainter
             new Vector2((float)pivot.X, (float)pivot.Y));
     }
 
+    public void DrawImageRegion(PluginImage image, PluginRect source, PluginRect destination, PluginColor tint)
+    {
+        UiRenderContext context = Context;
+        if (!TryResolve(image, out uint texture, out int width, out int height, out bool linear)) return;
+        if (!CanvasImageRegions.TryMapRegion(
+                width, height, linear, source, destination, DevicePixelsPerPixel, exactPull: false, out CanvasImagePiece piece))
+            return;
+        context.DrawSprite(
+            texture,
+            piece.X, piece.Y, piece.Width, piece.Height,
+            piece.U0, piece.V0, piece.U1, piece.V1,
+            ToVector(tint));
+    }
+
+    public void DrawImageRegionTransformed(
+        PluginImage image,
+        PluginRect source,
+        PluginRect destination,
+        PluginColor tint,
+        double rotationRadians,
+        PluginPoint pivot,
+        double scaleX = 1.0,
+        double scaleY = 1.0)
+    {
+        UiRenderContext context = Context;
+        if (!TryResolve(image, out uint texture, out int width, out int height, out bool linear)) return;
+        // Once turned or scaled no edge is on a whole pixel, so the region
+        // is pulled in by the full half pixel.
+        if (!CanvasImageRegions.TryMapRegion(
+                width, height, linear, source, destination, DevicePixelsPerPixel, exactPull: true, out CanvasImagePiece piece))
+            return;
+        // The pivot is measured from the rectangle's corner; a cut source
+        // moves that corner, so the pivot is measured from the new one to
+        // stay where the plugin put it.
+        context.DrawSpriteTransformed(
+            texture,
+            piece.X, piece.Y, piece.Width, piece.Height,
+            piece.U0, piece.V0, piece.U1, piece.V1,
+            ToVector(tint),
+            (float)rotationRadians,
+            new Vector2((float)scaleX, (float)scaleY),
+            new Vector2((float)(destination.X + pivot.X) - piece.X, (float)(destination.Y + pivot.Y) - piece.Y));
+    }
+
+    public void DrawImageNineSlice(
+        PluginImage image,
+        PluginRect destination,
+        PluginInsets insets,
+        PluginColor tint,
+        PluginRect? source = null,
+        bool drawCenter = true)
+    {
+        UiRenderContext context = Context;
+        if (!TryResolve(image, out uint texture, out int width, out int height, out bool linear)) return;
+        Span<CanvasImagePiece> pieces = stackalloc CanvasImagePiece[CanvasImageRegions.MaximumNineSlicePieces];
+        int count = CanvasImageRegions.NineSlice(
+            width, height, linear, destination, insets, source, drawCenter, DevicePixelsPerPixel, pieces);
+        Vector4 color = ToVector(tint);
+        foreach (CanvasImagePiece piece in pieces[..count])
+        {
+            context.DrawSprite(
+                texture,
+                piece.X, piece.Y, piece.Width, piece.Height,
+                piece.U0, piece.V0, piece.U1, piece.V1,
+                color);
+        }
+    }
+
     public void PushClip(PluginRect rect) =>
         Context.PushClip((float)rect.X, (float)rect.Y, (float)rect.Width, (float)rect.Height);
 
@@ -328,11 +399,17 @@ internal sealed class PluginPainter : IPluginPainter
         return _fonts is not null && _fonts.TryResolve(font, out resolved);
     }
 
-    private bool TryResolve(PluginImage image, out uint texture)
+    private bool TryResolve(PluginImage image, out uint texture) =>
+        TryResolve(image, out texture, out _, out _, out _);
+
+    private bool TryResolve(PluginImage image, out uint texture, out int width, out int height, out bool linear)
     {
         texture = 0u;
+        width = 0;
+        height = 0;
+        linear = false;
         return _images is not null
-            && _images.TryResolve(image, out texture, out _, out _)
+            && _images.TryResolve(image, out texture, out width, out height, out linear)
             && texture != 0u;
     }
 

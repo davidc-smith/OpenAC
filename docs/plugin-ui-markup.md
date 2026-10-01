@@ -434,6 +434,13 @@ Canvas layers and stacking are covered by `UI/Layout/PluginCanvasStackTests`,
 forwarder, and by `PluginCanvasLayerContractTests` under
 `tests/AcDream.Plugin.Tests/` for the inert answers of a host that predates
 layers.
+Image regions and nine-slices are covered by `UI/CanvasImageRegionsTests`,
+the region cases in `UI/Layout/PluginCanvasElementTests` and the filtering
+cases in `PluginImageTableTests` and
+`Rendering/TextureCacheReleasableUiTextureTests` under
+`tests/AcDream.App.Tests/`, and by `PluginCanvasImageRegionsContractTests`
+under `tests/AcDream.Plugin.Tests/` for the inert answers of a host that
+predates them.
 
 ## Scrolling transcripts
 

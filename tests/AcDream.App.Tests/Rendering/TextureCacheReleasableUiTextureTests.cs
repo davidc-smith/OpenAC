@@ -123,4 +123,30 @@ public sealed class TextureCacheReleasableUiTextureTests
         Assert.Throws<ArgumentException>(() => cache.UploadReleasableCoverage8(new byte[8 * 4 * 4], 8, 4, "rgba"));
         Assert.Equal(0, cache.ReleasableUiTextureCount);
     }
+
+    [Fact]
+    public void AReleasableUploadIsSampledLinearAndClampedSoASheetsEdgesDoNotWrap()
+    {
+        (RecordingGpuDevice device, TextureCache cache, _) = Build();
+
+        uint handle = cache.UploadReleasableRgba8(new byte[4 * 4 * 4], 4, 4, "test-sheet");
+
+        GpuRecordedTextureRegistration registration = Assert.Single(
+            device.OfKind<GpuRecordedTextureRegistration>(), r => r.TextureName == "test-sheet");
+        Assert.Equal(GpuSamplerDescription.WorldClamp, registration.Sampler);
+        Assert.False(cache.IsNearestUiTexture(handle));
+    }
+
+    [Fact]
+    public void AnAdHocNearestUploadIsReportedNearestAndALinearOneIsNot()
+    {
+        (_, TextureCache cache, _) = Build();
+
+        uint nearest = cache.UploadRgba8(new byte[4 * 4 * 4], 4, 4, nearest: true);
+        uint linear = cache.UploadRgba8(new byte[4 * 4 * 4], 4, 4);
+
+        Assert.True(cache.IsNearestUiTexture(nearest));
+        Assert.False(cache.IsNearestUiTexture(linear));
+        Assert.False(cache.IsNearestUiTexture(0u));
+    }
 }
