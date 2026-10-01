@@ -2196,6 +2196,18 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
 
             public void ReleasePointer() => inner.ReleasePointer();
 
+            public Func<PluginKeyEvent, bool>? KeyHandler
+            {
+                get => inner.KeyHandler;
+                set => inner.KeyHandler = value;
+            }
+
+            public bool HasKeyboardFocus => inner.HasKeyboardFocus;
+
+            public bool RequestKeyboardFocus() => inner.RequestKeyboardFocus();
+
+            public void ReleaseKeyboardFocus() => inner.ReleaseKeyboardFocus();
+
             public void Dispose()
             {
                 registration.Dispose();

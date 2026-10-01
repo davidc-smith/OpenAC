@@ -9,8 +9,8 @@ namespace AcDream.App.Plugins;
 /// handle is this object; the element the interface draws reads it every
 /// frame.
 ///
-/// <para>The paint delegate and the pointer handler are dropped on
-/// dispose. They are the references from the client into the plugin's
+/// <para>The paint delegate and the pointer and key handlers are dropped
+/// on dispose. They are the references from the client into the plugin's
 /// code that the interface holds, and a plugin assembly cannot unload
 /// while anything still points into it.</para>
 /// </summary>
@@ -19,6 +19,8 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     private readonly BufferedUiRegistry _registry;
     private Action<IPluginPainter>? _paint;
     private volatile Action<PluginPointerEvent>? _pointerHandler;
+    private volatile Func<PluginKeyEvent, bool>? _keyHandler;
+    private volatile IPluginCanvasKeyboardFocus? _keyboardFocus;
     private volatile bool _invalidated = true;
     private Action? _teardown;
     private Action? _releasePointer;
@@ -66,6 +68,19 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     /// <summary>Whether the plugin asked for pointer input when it registered the canvas.</summary>
     internal bool AcceptsPointerInput => Descriptor.AcceptsPointerInput;
 
+    /// <summary>Whether the plugin asked for keyboard input when it registered the canvas.</summary>
+    internal bool AcceptsKeyboardInput => Descriptor.AcceptsKeyboardInput;
+
+    /// <summary>
+    /// The mounted element's answer to the keyboard focus calls; set by
+    /// the element when it mounts, cleared by it when it comes down.
+    /// </summary>
+    internal IPluginCanvasKeyboardFocus? KeyboardFocus
+    {
+        get => _keyboardFocus;
+        set => _keyboardFocus = value;
+    }
+
     /// <summary>
     /// Records how the element ends a press the canvas is holding, so the
     /// plugin's <see cref="ReleasePointer"/> reaches it; cleared by the
@@ -86,6 +101,18 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     }
 
     public void ReleasePointer() => _releasePointer?.Invoke();
+
+    public Func<PluginKeyEvent, bool>? KeyHandler
+    {
+        get => _keyHandler;
+        set => _keyHandler = value;
+    }
+
+    public bool HasKeyboardFocus => _keyboardFocus?.HasFocus ?? false;
+
+    public bool RequestKeyboardFocus() => _keyboardFocus?.RequestFocus() ?? false;
+
+    public void ReleaseKeyboardFocus() => _keyboardFocus?.ReleaseFocus();
 
     public int Width => Descriptor.Width;
 
@@ -124,7 +151,7 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
 
     /// <summary>
     /// Runs the teardown once and forgets it. The paint delegate and the
-    /// pointer handler stay unless <paramref name="forget"/> is set: an
+    /// pointer and key handlers stay unless <paramref name="forget"/> is set: an
     /// interface that is going away hands the canvas back to the registry
     /// to be mounted again by the next one, and the plugin's callbacks must
     /// survive that.
@@ -132,13 +159,15 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     internal void Unmount(bool forget)
     {
         Action? teardown = Interlocked.Exchange(ref _teardown, null);
-        // The element comes down first: a press it still holds is cancelled
-        // to the plugin's handler on the way, which needs the handler.
+        // The element comes down first: a press it still holds is cancelled,
+        // and keyboard focus it still has is lost, to the plugin's handlers
+        // on the way, which needs the handlers.
         teardown?.Invoke();
         if (forget)
         {
             _paint = null;
             _pointerHandler = null;
+            _keyHandler = null;
         }
     }
 
