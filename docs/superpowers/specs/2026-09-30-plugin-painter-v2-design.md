@@ -851,6 +851,26 @@ sections above where they differ.
   three `RenderPackValidatorCommandTests.External*` and
   `HeadlessSessionIsolationTests.ThirtySessionMixedWorkloadMaintainsIsolationAndConverges`,
   besides 2–6 HostParity peer tests.
+- **PR 6a, the focus source (refines "bound from `UiRoot`" in section 9).**
+  `AppHotkeyRegistry.Bind` takes a fourth argument, a new public
+  `IHotkeyFocusSource` (`HasKeyboardFocus`, `IsModalOpen`). `GameWindow`
+  passes the `RetainedUiInputCaptureSlot` it already owns: the slot is bound
+  to whichever `UiRoot` is live (`InteractionRetainedUiComposition`), reports
+  `false` for both while unbound, and follows an interface rebuild without the
+  registry rebinding. The registry is bound before any `UiRoot` exists, so
+  binding to the root directly would need a second publish step.
+- **PR 6a, what "any keyboard focus" covers.** The chat bar, text fields and
+  markup controls reached with Tab. Clicking a markup button, tab or toggle
+  does not take focus (`FocusOnMouseClick = false`), so a click never
+  silences plain hotkeys. "A focused canvas" in section 9 arrives with PR 6b,
+  which focuses canvases through `UiRoot.KeyboardFocus` and so needs no
+  further hotkey change; PR 6a's docs leave canvases out.
+- **PR 6a, the key-order caveat in the docs is generic.** Enter and Tab, the
+  keys that move focus into chat, are client bindings, so a plugin cannot bind
+  them without Ctrl or Alt; the docs state the rule (a key is judged by the
+  focus from before it) without a key example.
+- **Finding (environment).** On clean `bbc83275` the HostParity peer tests
+  failed 7 and 6 of 10 on two consecutive runs; the baseline range is 2–7.
 
 ## Status and carry-forward (2026-09-30)
 
@@ -862,6 +882,7 @@ sections above where they differ.
 - PR 4 done 2026-10-01: `origin/painter-v2/hidpi` (12 commits, reviewed; the review's docs fixes and the pre-game stretch removal included), merged into fork `main` as 450dd2b9. Review follow-ups not taken: a per-font guard around `PrepareScale` in `OnDraw`; spreading a scale change's rebakes across frames; retrying a budget-refused font when room frees.
 - PR 5 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr5-layers.md`, branch `painter-v2/layers` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` and scratch-merged into `450dd2b9` before hand-off (see the PR 5 corrections above).
 - PR 5 done 2026-10-01: `origin/painter-v2/layers` (8 commits: the plan's six plus a final-review fix wave — `BringToFront(e, band)` leaves the canvas layer alone; the docs say a plugin needing layers sets `minHostVersion`), merged into fork `main` as a4ab9664 (pushed). Review follow-ups not taken: an `OverlayMode = false` that restores the previous layer rather than Main; groups anchored to follow a resize at draw time instead of one tick later; a main-only test of premultiplied runs across all three layers. Group order after an interface rebuild follows the lowest surviving registration id (plan-mandated). Next: PR 6a, 6b; PR 2 still skipped.
+- PR 6a planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr6a-hotkey-focus.md`, branch `fix/hotkey-focus-scope` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` (see the PR 6a corrections above); fork `main` touches none of its files.
 
 ### Inputs for the PR 4 (HiDPI) plan
 
