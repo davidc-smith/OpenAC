@@ -388,7 +388,8 @@ public sealed class RetailUiRuntime : IDisposable
     private ProjectileDebugOverlayController? _projectileDebugOverlay;
     private WorldLabelOverlayController? _worldLabelOverlay;
     private Layout.PluginCanvasSurface? _pluginCanvasSurface;
-    private Layout.UiOverlayLayer? _pluginCanvasLayer;
+    private Layout.PluginCanvasStack? _worldCanvases;
+    private Layout.PluginCanvasStack? _canvasesAboveWindows;
 
     /// <summary>
     /// The one click-through overlay band, shared by everything that paints
@@ -4174,8 +4175,19 @@ public sealed class RetailUiRuntime : IDisposable
     }
 
     /// <summary>
-    /// Mounts every canvas registered since the last drain on the shared
-    /// overlay layer. The same shape as the window mount: ownership is
+    /// The stack a canvas in <paramref name="layer"/> joins, made on first
+    /// use. Anything but <see cref="PluginCanvasLayer.AboveWindows"/> is the
+    /// world layer under every window.
+    /// </summary>
+    private Layout.PluginCanvasStack CanvasStack(PluginCanvasLayer layer) =>
+        layer == PluginCanvasLayer.AboveWindows
+            ? _canvasesAboveWindows ??= new Layout.PluginCanvasStack(
+                OverlayHost.AddLayerAboveWindows("PluginCanvasesAboveWindows"))
+            : _worldCanvases ??= new Layout.PluginCanvasStack(OverlayHost.AddLayer("PluginCanvases"));
+
+    /// <summary>
+    /// Mounts every canvas registered since the last drain in its layer's
+    /// stack. The same shape as the window mount: ownership is
     /// published right after the tree mutation, so a plugin that disposed
     /// its canvas between the drain and here has it taken down at once.
     /// Without renderer services (a host built without them) every canvas
@@ -4194,12 +4206,7 @@ public sealed class RetailUiRuntime : IDisposable
                         "this interface was built without renderer services for plugin canvases");
                 }
                 _pluginCanvasSurface ??= new Layout.PluginCanvasSurface(services, _bindings.Assets.DefaultFont);
-                if (_pluginCanvasLayer is null)
-                {
-                    _pluginCanvasLayer = OverlayHost.AddLayer("PluginCanvases");
-                    _pluginCanvasLayer.Visible = true;
-                }
-                Layout.UiOverlayLayer layer = _pluginCanvasLayer;
+                Layout.PluginCanvasStack stack = CanvasStack(canvas.Layer);
                 PluginUiOwner owner = canvas.Owner;
                 var element = new Layout.PluginCanvasElement(
                     canvas,
@@ -4207,10 +4214,10 @@ public sealed class RetailUiRuntime : IDisposable
                     () => plugins.FindImages(owner),
                     modifiers: HeldPointerModifiers,
                     fonts: () => plugins.FindFonts(owner));
-                layer.AddChild(element, takesInput: canvas.AcceptsPointerInput);
+                stack.Add(element);
                 plugins.CompleteCanvasMount(canvas, () =>
                 {
-                    layer.RemoveChild(element);
+                    Layout.PluginCanvasStack.Remove(element);
                     element.ReleaseTargets();
                 });
                 Console.WriteLine(

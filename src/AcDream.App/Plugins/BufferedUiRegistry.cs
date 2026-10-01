@@ -363,6 +363,10 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 registration.Drained = true;
                 pending.Add(registration);
             }
+            // Registration order, which the dictionary does not keep once
+            // entries have been removed: plugins' canvas groups stack in the
+            // order their first canvas mounts.
+            pending.Sort(static (a, b) => a.Id.CompareTo(b.Id));
             return pending;
         }
     }

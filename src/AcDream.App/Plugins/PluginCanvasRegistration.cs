@@ -20,6 +20,7 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     private Action<IPluginPainter>? _paint;
     private volatile Action<PluginPointerEvent>? _pointerHandler;
     private volatile bool _invalidated = true;
+    private volatile int _zOrder;
     private Action? _teardown;
     private Action? _releasePointer;
 
@@ -39,6 +40,7 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
         IsVisible = descriptor.StartVisible;
         Anchor = descriptor.Anchor;
         Offset = descriptor.Offset;
+        _zOrder = descriptor.ZOrder;
     }
 
     internal long Id { get; }
@@ -63,6 +65,9 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     /// <summary>The plugin's paint callback, or null once the canvas is disposed.</summary>
     internal Action<IPluginPainter>? Paint => _paint;
 
+    /// <summary>The layer the plugin chose when it registered the canvas.</summary>
+    internal PluginCanvasLayer Layer => Descriptor.Layer;
+
     /// <summary>Whether the plugin asked for pointer input when it registered the canvas.</summary>
     internal bool AcceptsPointerInput => Descriptor.AcceptsPointerInput;
 
@@ -86,6 +91,16 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     }
 
     public void ReleasePointer() => _releasePointer?.Invoke();
+
+    /// <summary>
+    /// Read by the canvas's group in the interface every tick, which restacks
+    /// the plugin's canvases when it changes.
+    /// </summary>
+    public int ZOrder
+    {
+        get => _zOrder;
+        set => _zOrder = value;
+    }
 
     public int Width => Descriptor.Width;
 

@@ -136,7 +136,7 @@ internal sealed class ConnectionUiController : IDisposable
         {
             Root.Visible = true;
             _host.DeclareFixedCanvas(this, new Vector2(Root.Width, Root.Height));
-            _host.BringToFront(Root);
+            _host.BringToFront(Root, UiBand.Screens);
         }
         if (_snapshot == snapshot) return;
         _snapshot = snapshot;

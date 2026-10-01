@@ -6,6 +6,27 @@ using AcDream.App.Rendering.Gpu;
 
 namespace AcDream.App.Rendering;
 
+/// <summary>
+/// Which of a frame's three draw layers a draw lands in. The layers are
+/// drawn in this order, and each one draws its sprite runs, then its
+/// rectangles, then its bitmap-font text, so text never shows through
+/// anything in a later layer.
+/// </summary>
+internal enum UiDrawLayer
+{
+    /// <summary>The world overlays, plugin canvases under windows, and every window.</summary>
+    Main,
+
+    /// <summary>
+    /// Everything from the plugin canvases drawn over windows upwards:
+    /// those canvases, pre-game screens, dialogs and tooltips.
+    /// </summary>
+    Upper,
+
+    /// <summary>The overlay pass: menus, popups and the drag ghost.</summary>
+    Overlay,
+}
+
 public sealed class TextRenderer : IDisposable
 {
     internal const int FloatsPerVertex = 8;
@@ -41,13 +62,49 @@ public sealed class TextRenderer : IDisposable
         public readonly List<float> Verts = new(256);
     }
 
-    private readonly List<float> _textBuf = new(8192);
-    private readonly List<float> _rectBuf = new(1024);
-    private readonly List<SpriteSeg> _spriteSegs = new();
-    private int _segUsed;
-    private int _textVerts;
-    private int _rectVerts;
+    /// <summary>What one <see cref="UiDrawLayer"/> collected this frame.</summary>
+    private sealed class DrawLayerBuffers(int textCapacity, int rectCapacity)
+    {
+        public readonly List<float> Text = new(textCapacity);
+        public readonly List<float> Rects = new(rectCapacity);
+        public readonly List<SpriteSeg> SpriteSegs = new();
+        public int SegUsed;
+        public int TextVerts;
+        public int RectVerts;
+
+        public bool HasAnything => SegUsed > 0 || TextVerts > 0 || RectVerts > 0;
+
+        public void Clear()
+        {
+            Text.Clear();
+            Rects.Clear();
+            SegUsed = 0; // pool the SpriteSeg objects across frames
+            TextVerts = 0;
+            RectVerts = 0;
+        }
+    }
+
+    // Indexed by UiDrawLayer, and drawn in that order.
+    private readonly DrawLayerBuffers[] _layers =
+    [
+        new(textCapacity: 8192, rectCapacity: 1024),
+        new(textCapacity: 1024, rectCapacity: 256),
+        new(textCapacity: 1024, rectCapacity: 256),
+    ];
     private Vector2 _screenSize;
+
+    private DrawLayerBuffers Current => _layers[(int)Layer];
+
+    /// <summary>The sprite runs below the overlay pass, main layer first, as the frame draws them.</summary>
+    private IEnumerable<SpriteSeg> DebugSegs()
+    {
+        for (int layer = (int)UiDrawLayer.Main; layer <= (int)UiDrawLayer.Upper; layer++)
+        {
+            DrawLayerBuffers buffers = _layers[layer];
+            for (int i = 0; i < buffers.SegUsed; i++)
+                yield return buffers.SpriteSegs[i];
+        }
+    }
 
     internal long DynamicBufferCapacityBytes => 0;
 
@@ -55,10 +112,9 @@ public sealed class TextRenderer : IDisposable
     {
         get
         {
-            var result = new List<(uint, int, float)>(_segUsed);
-            for (int i = 0; i < _segUsed; i++)
+            var result = new List<(uint, int, float)>();
+            foreach (SpriteSeg seg in DebugSegs())
             {
-                SpriteSeg seg = _spriteSegs[i];
                 float alpha = seg.Verts.Count > 0 ? seg.Verts[7] : 0f;
                 result.Add((seg.Texture, seg.Verts.Count / FloatsPerVertex, alpha));
             }
@@ -70,12 +126,9 @@ public sealed class TextRenderer : IDisposable
     {
         get
         {
-            var result = new List<(uint, IReadOnlyList<float>)>(_segUsed);
-            for (int i = 0; i < _segUsed; i++)
-            {
-                SpriteSeg seg = _spriteSegs[i];
+            var result = new List<(uint, IReadOnlyList<float>)>();
+            foreach (SpriteSeg seg in DebugSegs())
                 result.Add((seg.Texture, seg.Verts.ToArray()));
-            }
             return result;
         }
     }
@@ -84,9 +137,9 @@ public sealed class TextRenderer : IDisposable
     {
         get
         {
-            var result = new List<uint>(_segUsed);
-            for (int i = 0; i < _segUsed; i++)
-                result.Add(_spriteSegs[i].Coverage);
+            var result = new List<uint>();
+            foreach (SpriteSeg seg in DebugSegs())
+                result.Add(seg.Coverage);
             return result;
         }
     }
@@ -95,26 +148,36 @@ public sealed class TextRenderer : IDisposable
     {
         get
         {
-            var result = new List<bool>(_segUsed);
-            for (int i = 0; i < _segUsed; i++)
-                result.Add(_spriteSegs[i].Premultiplied);
+            var result = new List<bool>();
+            foreach (SpriteSeg seg in DebugSegs())
+                result.Add(seg.Premultiplied);
             return result;
         }
     }
 
     internal (int VertexCount, float Alpha) DebugTextBuffer
-        => (_textVerts, _textBuf.Count > 0 ? _textBuf[7] : 0f);
+    {
+        get
+        {
+            DrawLayerBuffers main = _layers[(int)UiDrawLayer.Main];
+            DrawLayerBuffers upper = _layers[(int)UiDrawLayer.Upper];
+            List<float> first = main.Text.Count > 0 ? main.Text : upper.Text;
+            return (main.TextVerts + upper.TextVerts, first.Count > 0 ? first[7] : 0f);
+        }
+    }
 
-    internal int DebugRectVertexCount => _rectVerts;
+    internal int DebugRectVertexCount =>
+        _layers[(int)UiDrawLayer.Main].RectVerts + _layers[(int)UiDrawLayer.Upper].RectVerts;
 
-    private readonly List<float> _overlayTextBuf = new(1024);
-    private readonly List<float> _overlayRectBuf = new(256);
-    private readonly List<SpriteSeg> _overlaySpriteSegs = new();
-    private int _overlaySegUsed;
-    private int _overlayTextVerts;
-    private int _overlayRectVerts;
+    /// <summary>Where draws land; back to <see cref="UiDrawLayer.Main"/> at every <see cref="Begin"/>.</summary>
+    internal UiDrawLayer Layer { get; set; }
 
-    public bool OverlayMode { get; set; }
+    /// <summary>Whether draws land in the overlay layer; false puts them back in the main layer.</summary>
+    public bool OverlayMode
+    {
+        get => Layer == UiDrawLayer.Overlay;
+        set => Layer = value ? UiDrawLayer.Overlay : UiDrawLayer.Main;
+    }
 
     /// <summary>
     /// A renderer that paints with <paramref name="blend"/>: straight alpha
@@ -166,23 +229,16 @@ public sealed class TextRenderer : IDisposable
     public void Begin(Vector2 screenSize)
     {
         _screenSize = screenSize;
-        _textBuf.Clear();
-        _rectBuf.Clear();
-        _segUsed = 0; // pool the SpriteSeg objects across frames
-        _textVerts = 0;
-        _rectVerts = 0;
-        _overlayTextBuf.Clear();
-        _overlayRectBuf.Clear();
-        _overlaySegUsed = 0;
-        _overlayTextVerts = 0;
-        _overlayRectVerts = 0;
-        OverlayMode = false;
+        foreach (DrawLayerBuffers layer in _layers)
+            layer.Clear();
+        Layer = UiDrawLayer.Main;
     }
 
     public void DrawRect(float x, float y, float w, float h, Vector4 color)
     {
-        if (OverlayMode) { AppendQuad(_overlayRectBuf, x, y, w, h, 0, 0, 0, 0, color); _overlayRectVerts += 6; }
-        else             { AppendQuad(_rectBuf,        x, y, w, h, 0, 0, 0, 0, color); _rectVerts += 6; }
+        DrawLayerBuffers layer = Current;
+        AppendQuad(layer.Rects, x, y, w, h, 0, 0, 0, 0, color);
+        layer.RectVerts += 6;
     }
 
     public void DrawFill(float x, float y, float w, float h, Vector4 color)
@@ -267,8 +323,9 @@ public sealed class TextRenderer : IDisposable
                     ref gx, ref gy, ref gw, ref gh,
                     ref u0, ref v0, ref u1, ref v1)))
             {
-                if (OverlayMode) { AppendQuad(_overlayTextBuf, gx, gy, gw, gh, u0, v0, u1, v1, color); _overlayTextVerts += 6; }
-                else             { AppendQuad(_textBuf,        gx, gy, gw, gh, u0, v0, u1, v1, color); _textVerts += 6; }
+                DrawLayerBuffers layer = Current;
+                AppendQuad(layer.Text, gx, gy, gw, gh, u0, v0, u1, v1, color);
+                layer.TextVerts += 6;
             }
             cursorX += g.Advance;
         }
@@ -280,9 +337,8 @@ public sealed class TextRenderer : IDisposable
         if (CanvasScale != Vector2.One && LinearTwinResolver is { } resolve)
             texture = resolve(texture);
 
-        SpriteSeg seg = OverlayMode
-            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, texture)
-            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        texture);
+        DrawLayerBuffers layer = Current;
+        SpriteSeg seg = NextSpriteSeg(layer.SpriteSegs, ref layer.SegUsed, texture);
         AppendQuad(seg.Verts, x, y, w, h, u0, v0, u1, v1, tint);
     }
 
@@ -301,9 +357,8 @@ public sealed class TextRenderer : IDisposable
         // Deliberately skips LinearTwinResolver: canvas targets are linear-sampled already and have no nearest twin.
         _premultipliedPipeline ??= _device.CreatePipeline(
             Describe(PremultipliedPipelineName, GpuBlendMode.PremultipliedAlpha));
-        SpriteSeg seg = OverlayMode
-            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, texture, premultiplied: true)
-            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        texture, premultiplied: true);
+        DrawLayerBuffers layer = Current;
+        SpriteSeg seg = NextSpriteSeg(layer.SpriteSegs, ref layer.SegUsed, texture, premultiplied: true);
         var premultipliedTint = new Vector4(tint.X * tint.W, tint.Y * tint.W, tint.Z * tint.W, tint.W);
         AppendQuad(seg.Verts, x, y, w, h, u0, v0, u1, v1, premultipliedTint);
     }
@@ -317,9 +372,8 @@ public sealed class TextRenderer : IDisposable
     internal void DrawCoverageSprite(uint coverageTexture, float x, float y, float w, float h,
         float u0, float v0, float u1, float v1, Vector4 color)
     {
-        SpriteSeg seg = OverlayMode
-            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, UiTextureTableHandle.None, coverage: coverageTexture)
-            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        UiTextureTableHandle.None, coverage: coverageTexture);
+        DrawLayerBuffers layer = Current;
+        SpriteSeg seg = NextSpriteSeg(layer.SpriteSegs, ref layer.SegUsed, UiTextureTableHandle.None, coverage: coverageTexture);
         AppendQuad(seg.Verts, x, y, w, h, u0, v0, u1, v1, color);
     }
 
@@ -340,9 +394,8 @@ public sealed class TextRenderer : IDisposable
         if (CanvasScale != Vector2.One && LinearTwinResolver is { } resolve)
             texture = resolve(texture);
 
-        SpriteSeg seg = OverlayMode
-            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, texture)
-            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        texture);
+        DrawLayerBuffers layer = Current;
+        SpriteSeg seg = NextSpriteSeg(layer.SpriteSegs, ref layer.SegUsed, texture);
 
         // Fan from the first corner: (0,1,2), (0,2,3), ... The pipeline takes a
         // plain triangle list, so the fan is written out as separate triangles.
@@ -369,9 +422,8 @@ public sealed class TextRenderer : IDisposable
         if (triangles.Length == 0)
             return;
 
-        SpriteSeg seg = OverlayMode
-            ? NextSpriteSeg(_overlaySpriteSegs, ref _overlaySegUsed, UiTextureTableHandle.None)
-            : NextSpriteSeg(_spriteSegs,        ref _segUsed,        UiTextureTableHandle.None);
+        DrawLayerBuffers layer = Current;
+        SpriteSeg seg = NextSpriteSeg(layer.SpriteSegs, ref layer.SegUsed, UiTextureTableHandle.None);
         foreach (UiColorVertex vertex in triangles)
             AppendVertex(seg.Verts, new UiQuadVertex(vertex.Position, Vector2.Zero), vertex.Color);
     }
@@ -491,9 +543,7 @@ public sealed class TextRenderer : IDisposable
             font);
     }
 
-    private bool HasAnythingToDraw =>
-        _segUsed > 0 || _textVerts > 0 || _rectVerts > 0
-        || _overlaySegUsed > 0 || _overlayTextVerts > 0 || _overlayRectVerts > 0;
+    private bool HasAnythingToDraw => Array.Exists(_layers, static layer => layer.HasAnything);
 
     private void FlushInto(GpuPassDescription pass, string stageName, BitmapFont? font)
     {
@@ -508,8 +558,8 @@ public sealed class TextRenderer : IDisposable
         encoder.BindPipeline(_pipeline);
         IGpuPipeline bound = _pipeline;
 
-        DrawLayer(_spriteSegs, _segUsed, _rectBuf, _rectVerts, _textBuf, _textVerts, font, frame, encoder, ref bound);
-        DrawLayer(_overlaySpriteSegs, _overlaySegUsed, _overlayRectBuf, _overlayRectVerts, _overlayTextBuf, _overlayTextVerts, font, frame, encoder, ref bound);
+        foreach (DrawLayerBuffers layer in _layers)
+            DrawLayer(layer.SpriteSegs, layer.SegUsed, layer.Rects, layer.RectVerts, layer.Text, layer.TextVerts, font, frame, encoder, ref bound);
     }
 
     private void DrawLayer(

@@ -119,12 +119,14 @@ internal class UiOverlayLayer : UiPanel
 /// </summary>
 internal sealed class UiOverlayHost
 {
+    private readonly UiRoot _host;
     private readonly UiOverlayLayer _root;
     private readonly List<UiOverlayLayer> _layers = [];
     private Vector2 _viewport;
 
-    private UiOverlayHost(UiOverlayLayer root, Vector2 viewport)
+    private UiOverlayHost(UiRoot host, UiOverlayLayer root, Vector2 viewport)
     {
+        _host = host;
         _root = root;
         _viewport = viewport;
     }
@@ -144,7 +146,7 @@ internal sealed class UiOverlayHost
             ZOrder = UiOverlayZOrder.SharedHostRoot,
         };
         host.AddChild(root);
-        var overlayHost = new UiOverlayHost(root, new Vector2(host.Width, host.Height));
+        var overlayHost = new UiOverlayHost(host, root, new Vector2(host.Width, host.Height));
         overlayHost.ApplyViewport();
         return overlayHost;
     }
@@ -161,6 +163,29 @@ internal sealed class UiOverlayHost
         var layer = new UiOverlayLayer { Name = name, Visible = false };
         _layers.Add(layer);
         _root.AddChild(layer);
+        ApplyViewport(layer);
+        return layer;
+    }
+
+    /// <summary>
+    /// A layer over every window, for the plugin canvases drawn there. It
+    /// is the one layer not under the shared root: it hangs from the
+    /// interface root itself at <see cref="UiBands.CanvasesAboveWindows"/>,
+    /// above the window band and under screens, dialogs and tooltips (see
+    /// <see cref="UiBand"/>). Like every layer it starts hidden, covers the
+    /// viewport and is click-through except where a child takes input.
+    /// </summary>
+    internal UiOverlayLayer AddLayerAboveWindows(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var layer = new UiOverlayLayer
+        {
+            Name = name,
+            Visible = false,
+            ZOrder = UiBands.CanvasesAboveWindows,
+        };
+        _layers.Add(layer);
+        _host.AddChild(layer);
         ApplyViewport(layer);
         return layer;
     }

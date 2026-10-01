@@ -69,6 +69,20 @@ public sealed class ConnectionUiControllerTests
     }
 
     [Fact]
+    public void TheScreenIsRaisedIntoTheScreensBand()
+    {
+        var host = new UiRoot();
+        ImportedLayout layout = FixtureLoader.LoadConnectionScreen();
+        var view = new View { Snapshot = new(RuntimeConnectionStatus.Connecting, 0f, 0f) };
+        using var controller = Bind(host, layout, view);
+
+        controller.Tick();
+
+        Assert.True(controller.Root.Visible);
+        Assert.Equal(UiBand.Screens, UiBands.Of(controller.Root.ZOrder));
+    }
+
+    [Fact]
     public void BackdropCoversTheCanvasBehindAllAuthoredArtwork()
     {
         var host = new UiRoot();

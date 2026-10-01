@@ -56,6 +56,17 @@ public sealed class CharacterCreationUiControllerTests
     }
 
     [Fact]
+    public void AnOpenScreenIsRaisedIntoTheScreensBand()
+    {
+        using var environment = new EnvironmentHarness();
+
+        environment.Controller.Open();
+        environment.Controller.Tick();
+
+        Assert.Equal(UiBand.Screens, UiBands.Of(environment.Controller.Root.ZOrder));
+    }
+
+    [Fact]
     public void TabClick_SwitchesToTheClickedPage_FreeOfValidation()
     {
         using var environment = new EnvironmentHarness();

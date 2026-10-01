@@ -309,6 +309,9 @@ public abstract class UiElement
 
     protected virtual void OnDrawAfterChildren(UiRenderContext ctx) { }
 
+    /// <summary>Called just before each child is drawn, back to front.</summary>
+    private protected virtual void OnDrawingChild(UiRenderContext ctx, UiElement child) { }
+
     protected virtual void OnDrawOverlay(UiRenderContext ctx) { }
 
     protected virtual bool ClipsChildren => true;
@@ -427,7 +430,10 @@ public abstract class UiElement
                 {
                     UiElement[] ordered = ChildrenBackToFrontSnapshot();
                     for (int i = 0; i < ordered.Length; i++)
+                    {
+                        OnDrawingChild(ctx, ordered[i]);
                         ordered[i].DrawSelfAndChildren(ctx);
+                    }
                 }
 
                 OnDrawAfterChildren(ctx);

@@ -159,9 +159,10 @@ internal sealed class CreditsUiController : IDisposable
         TextRoot.Visible = true;
         _actionSurface.Visible = true;
         _host.DeclareFixedCanvas(this, _authoredCanvas);
-        _host.BringToFront(PictureRoot);
-        _host.BringToFront(TextRoot);
-        _host.BringToFront(_actionSurface);
+        _host.BringToFront(PictureRoot, UiBand.Screens);
+        _host.BringToFront(TextRoot, UiBand.Screens);
+        // Pinned: stays over everything, as before.
+        _host.BringToFront(_actionSurface, UiBand.Screens);
         _host.SetKeyboardFocus(_actionSurface);
 
         Tick();

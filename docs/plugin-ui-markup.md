@@ -427,6 +427,12 @@ answer of an older host, and, on a Vulkan device, by
 `Rendering/Gpu/Vk/PluginCanvasHiDpiOffscreenTests` (`Lane=Vulkan`).
 `samples/AcDream.Plugins.CanvasDemo` paints one canvas with every kind of
 content, for looking at by eye.
+Canvas layers and stacking are covered by `UI/Layout/PluginCanvasStackTests`,
+`UI/UiBandTests` and `Rendering/TextRendererDrawLayerTests` under
+`tests/AcDream.App.Tests/`, by `ScopedUiRegistryCanvasTests` for the scoped
+forwarder, and by `PluginCanvasLayerContractTests` under
+`tests/AcDream.Plugin.Tests/` for the inert answers of a host that predates
+layers.
 
 ## Scrolling transcripts
 

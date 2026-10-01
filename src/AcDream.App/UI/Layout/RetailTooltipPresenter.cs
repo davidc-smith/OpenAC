@@ -100,7 +100,7 @@ public sealed class RetailTooltipPresenter : IDisposable
         PositionAtMouse(root);
 
         _host.AddChild(root);
-        _host.BringToFront(root);
+        _host.BringToFront(root, UiBand.DialogsAndTooltips);
         _popupRoot = root;
         return true;
     }
@@ -329,7 +329,7 @@ public sealed class RetailTooltipPresenter : IDisposable
     public void Tick()
     {
         if (_popupRoot is not null)
-            _host.BringToFront(_popupRoot);
+            _host.BringToFront(_popupRoot, UiBand.DialogsAndTooltips);
 
         UpdateWorldHoverTooltip();
     }

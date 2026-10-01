@@ -155,8 +155,10 @@ internal sealed class PluginCanvasElement : UiElement
 
     protected override void OnTick(double deltaSeconds) => Layout();
 
+    // While something is being dragged no canvas answers, so the drop
+    // reaches the window or the world beneath.
     protected override bool OnHitTest(float localX, float localY) =>
-        TakesInput && base.OnHitTest(localX, localY);
+        TakesInput && FindRoot()?.DragSource is null && base.OnHitTest(localX, localY);
 
     public override bool OnEvent(in UiEvent e)
     {
