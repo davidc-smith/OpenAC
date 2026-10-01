@@ -400,6 +400,11 @@ and canvases (see the plugin API guide) are covered by
 under `tests/AcDream.App.Tests/`, by `ScopedUiRegistryImagesTests` and
 `ScopedUiRegistryCanvasTests` for the scoped forwarder, and by the contract
 and headless suites for the inert answers a host without a window gives.
+Canvas layers and stacking are covered by `UI/Layout/PluginCanvasStackTests`,
+`UI/UiBandTests` and `Rendering/TextRendererDrawLayerTests` under
+`tests/AcDream.App.Tests/`, by `ScopedUiRegistryCanvasTests` for the scoped
+forwarder, and by `PluginCanvasLayerContractTests` for the inert answers of
+a host that predates layers.
 
 ## Scrolling transcripts
 

@@ -1302,8 +1302,9 @@ reconnect), after which the plugin asks again.
 
 ## Canvases
 
-A canvas is a rectangle the plugin paints, shown over the world and under
-every window, taking no input unless it asks for it (see
+A canvas is a rectangle the plugin paints, shown over the world and either
+under every window or over them (see [Layers and order](#layers-and-order)
+below), taking no input unless it asks for it (see
 [Pointer input](#pointer-input) below). It is positioned by an anchor plus
 an offset, it is exactly its declared size, and everything painted is
 clipped to it; there is no way to draw anywhere else on the screen.
@@ -1343,12 +1344,66 @@ A paint callback is measured. One that stays over its 4 ms budget on three
 frames in a row, throws, or leaves a clip pushed is dropped for the rest
 of the session and the canvas hidden; the client's log says why. A plugin
 may register at most 8 canvases, each with an id unique within the plugin;
-`RegisterCanvas` throws past either. `IsVisible`, `Anchor` and `Offset`
-can be set at any time; disposing the canvas removes it, and everything a
+`RegisterCanvas` throws past either. `IsVisible`, `Anchor`, `Offset` and
+`ZOrder` can be set at any time; disposing the canvas removes it, and everything a
 plugin still holds is removed when the plugin unloads.
 
 Without a window the canvas is accepted, `IsAvailable` is false, the
 state the plugin sets is kept, and the paint callback is never called.
+
+### Layers and order
+
+A canvas is drawn in one of two layers, chosen with `Layer` on the
+descriptor and fixed from then on:
+
+- `PluginCanvasLayer.World`, the default: over the world and its labels,
+  under every window. A HUD here never hides the interface.
+- `PluginCanvasLayer.AboveWindows`: over every window, under dialogs,
+  tooltips, menus and the item being dragged. It suits something the
+  player must see over their windows, such as a remote-control widget; it
+  also covers whatever window is beneath it, so keep it small or let the
+  player hide it.
+
+From the bottom up the interface stacks the world and world labels,
+`World` canvases, windows, `AboveWindows` canvases, the pre-game screens
+(connecting, character select and creation, credits), dialogs and
+tooltips, and last menus and the drag ghost. No canvas is ever seen over
+a pre-game screen.
+
+Within a layer each plugin's canvases are kept together, and plugins are
+stacked in the order their first canvas there was mounted, so the numbers
+one plugin picks never lift its canvases over another plugin's. Among one
+plugin's canvases in a layer `ZOrder` decides: higher is drawn on top, and
+equal values keep the order the canvases were registered in. It starts at
+the descriptor's `ZOrder` and can be set on the canvas at any time; the
+canvases restack on the next frame.
+
+```csharp
+IPluginCanvas remote = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("remote", 160, 48)
+    {
+        Layer = PluginCanvasLayer.AboveWindows,
+        Anchor = PluginCanvasAnchor.TopCenter,
+        AcceptsPointerInput = true,
+    },
+    painter => DrawRemote(painter));
+IPluginCanvas help = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("help", 160, 120)
+    {
+        Layer = PluginCanvasLayer.AboveWindows,
+        Anchor = PluginCanvasAnchor.TopCenter,
+        Offset = new PluginPoint(0, 40),
+        ZOrder = -1,
+    },
+    painter => DrawHelp(painter));
+
+// while the player hovers the remote's help button, show the help over it
+help.ZOrder = 1;
+```
+
+Without a window the layer and `ZOrder` are kept and nothing is stacked.
+A host that predates layers draws every canvas in the world layer and
+answers `ZOrder` with 0.
 
 ### Pointer input
 
@@ -1360,7 +1415,11 @@ canvas is shown and has a handler, everything the pointer does inside the
 canvas's rectangle goes to the handler and no further, and the world
 beneath gets no mouse there. Outside the rectangle nothing changes.
 Without a handler an opted-in canvas stays click-through, since nobody is
-listening.
+listening. An `AboveWindows` canvas with input takes the pointer from the
+windows beneath its rectangle in the same way; a `World` canvas gets
+nothing where a window covers it. While a modal dialog is open no canvas
+gets input, and while the player drags an item no canvas answers, so the
+drop reaches the window or the world beneath.
 
 ```csharp
 IPluginCanvas map = host.Ui.RegisterCanvas(
