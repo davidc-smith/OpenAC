@@ -78,6 +78,7 @@ internal static class PluginMarkupTheme
                 var focus = field.FocusFieldSprite; var left = field.FocusRailLeftSprite;
                 var right = field.FocusRailRightSprite; var selection = field.SelectionColor;
                 panel.AddThemeAction(p => {
+                    field.ThemePalette = p;
                     field.Outline = p is null && fieldOutline;
                     field.BackgroundSprite = p is null ? sprite : 0;
                     field.FocusFieldSprite = p is null ? focus : 0;
@@ -96,6 +97,7 @@ internal static class PluginMarkupTheme
                 var ma = menu.PlainTriangleColor; var ms = menu.PlainSelectedColor;
                 var mh = menu.PlainHoverColor;
                 panel.AddThemeAction(p => {
+                    menu.ThemePalette = p;
                     menu.PlainPopupScrollbar = p is not null || flatScroll;
                     menu.RetailButtonArt = p is null && art; menu.Outline = p is null && menuOutline;
                     menu.PlainBackgroundColor = p?.Field ?? mb; menu.PlainBorderColor = p?.Border ?? me;

@@ -96,4 +96,39 @@ public sealed class PluginThemeControlTests
         float expected = toggle.Left + 1f + PluginUiStyle.SwitchWidth + PluginUiStyle.SwitchCaptionGap;
         Assert.InRange(minX, expected - 0.5f, expected + 4f);
     }
+
+    [Fact]
+    public void AThemedFieldGlowsWhenFocused()
+    {
+        var (_, panel) = Themed("<field x=\"10\" y=\"10\" w=\"160\" h=\"24\" text=\"abc\" />");
+        var field = Assert.IsType<UiField>(panel.Children[0]);
+        Assert.Same(P, field.ThemePalette);
+        var blurred = DrawElement(field);
+        Assert.True(ThemeDrawCapture.HasColor(blurred, P.Border));
+        Assert.False(ThemeDrawCapture.HasColor(blurred, P.Accent));
+        field.OnEvent(new UiEvent { Type = UiEventType.FocusGained });
+        Assert.True(field.IsFocused);
+        Assert.True(ThemeDrawCapture.HasColor(DrawElement(field), P.Accent));
+    }
+
+    [Fact]
+    public void AThemedMenuHasARoundedFaceAndAShadowedPopup()
+    {
+        var (root, panel) = Themed("<menu x=\"10\" y=\"10\" w=\"160\" h=\"24\" items=\"{Items}\" selected=\"{Selected}\" rows=\"3\" />");
+        var menu = Assert.IsType<UiMenu>(panel.Children[0]);
+        Assert.Same(P, menu.ThemePalette);
+        menu.OnEvent(new UiEvent { Type = UiEventType.HoverEnter });
+        Assert.True(ThemeDrawCapture.HasColor(DrawElement(menu), PluginUiStyle.Hover(P, menu.PlainBackgroundColor)));
+
+        int x = (int)(menu.Left + 20), y = (int)(menu.Top + 12);
+        root.OnMouseDown(UiMouseButton.Left, x, y, 0);
+        root.OnMouseUp(UiMouseButton.Left, x, y, 0);
+        Assert.True(menu.IsOpen);
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        root.Draw(ctx);
+        var v = ThemeDrawCapture.Vertices(renderer);
+        Assert.Contains(v, p => p.Color.X == 0f && p.Color.Y == 0f && p.Color.Z == 0f && p.Color.W > 0f
+            && p.Position.Y > menu.Top + menu.Height);
+        Assert.True(ThemeDrawCapture.HasColor(v, P.Accent));
+    }
 }

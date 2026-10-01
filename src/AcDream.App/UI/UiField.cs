@@ -29,6 +29,9 @@ public sealed class UiField : UiElement
     public Func<Vector4>? BackgroundColorSource { get; set; }
 
     /// <summary>Selected-span highlight (translucent blue, behind the text).</summary>
+    /// <summary>The shared plugin theme this field draws in; null draws Classic.</summary>
+    public PluginUiPalette? ThemePalette { get; set; }
+
     public Vector4 SelectionColor { get; set; } = new(0.25f, 0.45f, 0.85f, 0.5f);
     public float Padding { get; set; } = 4f;
     public int MaxCharacters { get; set; } = 0xFFFF;
@@ -475,7 +478,13 @@ public sealed class UiField : UiElement
             }
         }
         if (!lit)
-            ctx.DrawFill(0, 0, Width, Height, BackgroundColorSource?.Invoke() ?? BackgroundColor);
+        {
+            Vector4 fill = BackgroundColorSource?.Invoke() ?? BackgroundColor;
+            if (ThemePalette is { } palette)
+                PluginUiStyle.Field(ctx, palette, Width, Height, fill, _focused);
+            else
+                ctx.DrawFill(0, 0, Width, Height, fill);
+        }
 
         if (!OneLine)
         {
