@@ -8,7 +8,7 @@ namespace AcDream.App.Tests.UI;
 /// </summary>
 public sealed class PluginThemeClassicIdentityTests
 {
-    private sealed class Binding
+    internal sealed class Binding
     {
         public Action Click => () => { };
         public bool TabSelected => true;

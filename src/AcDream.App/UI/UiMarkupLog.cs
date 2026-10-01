@@ -98,8 +98,14 @@ public sealed class UiMarkupLog : UiPanel
     {
         Refresh();
         var p = ThemePalette;
-        ctx.DrawFill(0, 0, Width, Height, p?.Field ?? BackgroundColor);
-        ctx.DrawRectOutline(0, 0, Width, Height, p?.Border ?? BorderColor, 1);
+        if (p is not null)
+            PluginUiStyle.Surface(ctx, 0, 0, Width, Height, PluginUiStyle.ContainerRadius, p.Field, p.Border);
+        else
+        {
+            ctx.DrawFill(0, 0, Width, Height, BackgroundColor);
+            ctx.DrawRectOutline(0, 0, Width, Height, BorderColor, 1);
+        }
+        _bar.ThemePalette = p;
         _bar.RetailArt = p is null;
         _bar.PlainTrackColor = p?.Field ?? BackgroundColor;
         _bar.PlainBorderColor = p?.Border ?? BorderColor;

@@ -118,12 +118,15 @@ internal static class PluginMarkupTheme
                     list.SelectedColor = p?.Selected ?? ls; list.SelectionBandEnabled = p is not null || band;
                 });
                 break;
+            case UiMeter meter:
+                panel.AddThemeAction(p => meter.ThemePalette = p);
+                break;
             case UiScrollbar scroll:
                 var retail = scroll.RetailArt; var track = scroll.PlainTrackColor;
                 var rail = scroll.PlainBorderColor; var nub = scroll.PlainNubColor;
                 panel.AddThemeAction(p => { scroll.RetailArt = p is null && retail;
                     scroll.PlainTrackColor = p?.Field ?? track; scroll.PlainBorderColor = p?.Border ?? rail;
-                    scroll.PlainNubColor = p?.Muted ?? nub; });
+                    scroll.PlainNubColor = p?.Muted ?? nub; scroll.ThemePalette = p; });
                 break;
         }
     }
