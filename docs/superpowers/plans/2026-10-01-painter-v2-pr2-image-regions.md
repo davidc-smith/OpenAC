@@ -111,7 +111,7 @@ Expected: `0 Warning(s)`, `0 Error(s)` (if `NETSDK1047` appears, build again).
 mkdir -p /tmp/openac-regions
 TMPDIR=/tmp/ dotnet test AcDream.slnx -c Release --no-build \
   --filter 'Lane!=InstalledDat&Lane!=PreparedPackage&Lane!=Live&Lane!=Manual&Lane!=Timing&Lane!=Windows&Lane!=Linux&Lane!=MacOS&Lane!=Unix&Lane!=Vulkan&Lane!=SystemFont&Purpose!=Diagnostic&Status!=KnownFailure' \
-  2>&1 | grep -E '^\s+Failed ' | sed -E 's/^\s+Failed ([^ ]+).*/\1/' | sort > /tmp/openac-regions/baseline-failures.txt
+  2>&1 | grep -E '^\s+Failed ' | sed -E 's/^[[:space:]]+Failed ([^ ]+).*/\1/' | sort > /tmp/openac-regions/baseline-failures.txt
 cat /tmp/openac-regions/baseline-failures.txt
 git checkout -- '*.lock.json'
 ```
@@ -2040,7 +2040,7 @@ git commit -m "docs: image regions and nine-slice on canvases" \
 dotnet build AcDream.slnx -c Release 2>&1 | grep -E 'Warning\(s\)|Error\(s\)'
 TMPDIR=/tmp/ dotnet test AcDream.slnx -c Release --no-build \
   --filter 'Lane!=InstalledDat&Lane!=PreparedPackage&Lane!=Live&Lane!=Manual&Lane!=Timing&Lane!=Windows&Lane!=Linux&Lane!=MacOS&Lane!=Unix&Lane!=Vulkan&Lane!=SystemFont&Purpose!=Diagnostic&Status!=KnownFailure' \
-  2>&1 | grep -E '^\s+Failed ' | sed -E 's/^\s+Failed ([^ ]+).*/\1/' | sort > /tmp/openac-regions/branch-failures.txt
+  2>&1 | grep -E '^\s+Failed ' | sed -E 's/^[[:space:]]+Failed ([^ ]+).*/\1/' | sort > /tmp/openac-regions/branch-failures.txt
 comm -13 /tmp/openac-regions/baseline-failures.txt /tmp/openac-regions/branch-failures.txt | grep -v 'HostParity.Tests.Peer' || echo "no new failures"
 ```
 
