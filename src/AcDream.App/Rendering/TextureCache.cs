@@ -276,7 +276,8 @@ public sealed class TextureCache
         }
     }
 
-    private GpuUiTextureEntry UploadUiTexture(DecodedTexture decoded, bool nearest, string debugName)
+    private GpuUiTextureEntry UploadUiTexture(
+        DecodedTexture decoded, bool nearest, string debugName, bool clamp = false)
     {
         IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(
             debugName,
@@ -292,7 +293,10 @@ public sealed class TextureCache
             uint glName = UploadAccountingName(texture);
             TrackUploadedTexture(glName, decoded.Width, decoded.Height);
 
-            IGpuSampler sampler = _device.CreateSampler(nearest ? UiNearestRepeat : GpuSamplerDescription.WorldRepeat);
+            IGpuSampler sampler = _device.CreateSampler(
+                nearest ? UiNearestRepeat
+                : clamp ? GpuSamplerDescription.WorldClamp
+                : GpuSamplerDescription.WorldRepeat);
             GpuTextureSlot slot = _device.RegisterTexture(texture, sampler);
             uint handle = UiTextureTableHandle.FromSlot(slot);
             if (nearest)
@@ -307,6 +311,13 @@ public sealed class TextureCache
             throw;
         }
     }
+
+    /// <summary>
+    /// True for an interface texture uploaded to be sampled nearest, such as
+    /// a composed icon; false for one sampled linearly, and for any handle
+    /// this cache did not upload that way.
+    /// </summary>
+    internal bool IsNearestUiTexture(uint handle) => _nearestUiTextureSources.ContainsKey(handle);
 
     internal uint GetOrCreateLinearUiTwin(uint handle)
     {
@@ -773,14 +784,16 @@ public sealed class TextureCache
     /// Uploads an interface texture that the caller will give back through
     /// <see cref="ReleaseUiTexture"/>. The ad-hoc path keeps every upload for
     /// the life of the cache; this one is for art whose owner comes and goes,
-    /// such as a plugin's own images.
+    /// such as a plugin's own images. It is sampled linearly and clamped, so
+    /// a part cut from the edge of a sheet does not pick up the opposite
+    /// edge.
     /// </summary>
     internal uint UploadReleasableRgba8(byte[] rgba, int width, int height, string debugName)
     {
         ArgumentNullException.ThrowIfNull(rgba);
         ArgumentException.ThrowIfNullOrWhiteSpace(debugName);
         GpuUiTextureEntry entry = UploadUiTexture(
-            new DecodedTexture(rgba, width, height), nearest: false, debugName);
+            new DecodedTexture(rgba, width, height), nearest: false, debugName, clamp: true);
         uint handle = UiTextureTableHandle.FromSlot(entry.Slot);
         _releasableUiTextures.Add(handle, entry);
         return handle;

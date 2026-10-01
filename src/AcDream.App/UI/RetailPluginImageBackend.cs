@@ -89,4 +89,8 @@ internal sealed class RetailPluginImageBackend : IPluginImageBackend
         _textures.UploadReleasableRgba8(rgba, width, height, debugName);
 
     public bool ReleaseOwned(uint texture) => _textures.ReleaseUiTexture(texture);
+
+    // Client art and the plugin's own art are uploaded linear; the composed
+    // spell and object icons are uploaded nearest, as the client draws them.
+    public bool IsLinearFiltered(uint texture) => !_textures.IsNearestUiTexture(texture);
 }
