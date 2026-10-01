@@ -925,6 +925,18 @@ supersede the sections above where they differ.
 - **Finding (environment).** On the PR 6b prototype the full portable suite
   failed only 3 HostParity peer tests; the other baseline failures listed
   for PR 5 passed.
+- **PR 6b, the text cursor (from the final review, 2026-10-01).** Section 10's
+  `IsEditControl = true` also made `CursorFeedbackController` show the
+  text-edit cursor over every canvas that takes keys, focused or not, ahead
+  of the combat cursor. Canvases are left out of `HoverTextEdit`: a canvas
+  is an edit control only so typed text reaches it, and whether it looks
+  like a text field is the plugin's to paint.
+- **PR 6b, docs (from review).** A handler set to null or dropped by its
+  guard gets no `FocusLost` (nobody is left to hear it); dispose and a
+  dropped paint callback do deliver one. Every key `PluginKey` can name
+  repeats, the last one down, so the docs tell plugins to check `IsRepeat`
+  for keys that act once, and that a key held before focus can arrive as an
+  `Up` with no `Down`.
 
 ## Status and carry-forward (2026-09-30)
 
@@ -939,6 +951,7 @@ supersede the sections above where they differ.
 - PR 6a planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr6a-hotkey-focus.md`, branch `fix/hotkey-focus-scope` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` (see the PR 6a corrections above); fork `main` touches none of its files.
 - PR 6a done 2026-10-01: `origin/fix/hotkey-focus-scope` (4 commits: the plan's three plus a final-review wording fix — the docs say "Plugin hotkeys see each key…" and the `OnKeyDown` comment names where the key order comes from), merged into fork `main` as 301852fc (pushed). Review follow-ups not taken: a combined modal + focus test; a shared test helper for the duplicated keyboard and mouse fakes; a test that pins the keyboard-source-before-interface subscription order. `HasKeyboardFocus` also counts Tab-reached controls, an open searchable menu and the credits surface (all clear focus when hidden). Next: PR 6b; PR 2 still skipped.
 - PR 6b planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr6b-keyboard.md`, branch `painter-v2/keyboard` from `fix/hotkey-focus-scope` (`f951ce16`), then merged into fork `main`. Its code was prototyped on `f951ce16`, replayed as one commit per task, and scratch-merged into `301852fc` before hand-off (see the PR 6b corrections above).
+- PR 6b done 2026-10-01: `origin/painter-v2/keyboard` (8 commits: the plan's six, a docs fix from task review, and a final-review fix wave that keeps the text cursor off canvases, renames a contract test and says which keys repeat), merged into fork `main` as 84ada220 (pushed). Review follow-ups not taken: an unnamed key (Shift, Ctrl) going down does not stop a repeat; `KeyboardFocusChanged` fires out of order on a re-entrant release (only listener unaffected); a left press during a rebind capture still focuses (as `UiField`); untested: a hidden ancestor refusing a request, a handler throwing on `FocusLost`, a repeated Escape, a modal between ticks. Next: upstream PRs (deferred by the user); PR 2 still skipped.
 
 ### Inputs for the PR 4 (HiDPI) plan
 
