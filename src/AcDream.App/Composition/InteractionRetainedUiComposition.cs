@@ -1056,7 +1056,11 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     d.GpuDevice,
                     d.GpuFrameSource,
                     d.ShadersDirectory,
-                    d.TextureCache.GetOrCreateLinearUiTwin),
+                    () => d.Window.Size is { X: > 0, Y: > 0 } points
+                        ? new System.Numerics.Vector2(
+                            d.Window.FramebufferSize.X / (float)points.X,
+                            d.Window.FramebufferSize.Y / (float)points.Y)
+                        : System.Numerics.Vector2.One),
                 SynchronizeDisplayPhase: () =>
                 {
                     if (late.GameRuntime.Connection?.Snapshot.Status is

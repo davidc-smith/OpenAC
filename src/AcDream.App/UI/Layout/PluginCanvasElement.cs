@@ -24,6 +24,13 @@ namespace AcDream.App.UI.Layout;
 /// painted, so a repaint never tears. The pool grows to the flight depth
 /// plus one and no further.</para>
 ///
+/// <para>Targets are painted at the interface's pixel scale
+/// (<see cref="CanvasPixelScale"/>), so on a high-density display each texel
+/// lands on one device pixel instead of being magnified. The element
+/// reads the scale every frame it draws; when it changes, every target is
+/// given back, the canvas is invalidated, and the next paint allocates at
+/// the new size.</para>
+///
 /// <para>A canvas that opted in to pointer input answers the hit-test for
 /// its own rectangle while it has a handler, and for nothing outside it.
 /// The root gives it the pointer on a press, as it does any element that
@@ -71,6 +78,7 @@ internal sealed class PluginCanvasElement : UiElement
     private readonly Action<CanvasShapeProblem, string> _shapeProblems;
     private bool _reportedBadShape;
     private bool _reportedShapeBudget;
+    private float _pixelScale = 1f;
 
     internal PluginCanvasElement(
         PluginCanvasRegistration registration,
@@ -125,6 +133,9 @@ internal sealed class PluginCanvasElement : UiElement
     internal UiDrawCallbackGuard Guard => _guard;
 
     internal int TargetCount => _targets.Count;
+
+    /// <summary>The pixel scale the targets are painted at.</summary>
+    internal float PixelScale => _pixelScale;
 
     /// <summary>The interface texture currently shown, or 0 before the first paint.</summary>
     internal uint ShownTextureHandle => _shown is { HasContent: true } shown ? shown.Handle : 0u;
@@ -307,6 +318,7 @@ internal sealed class PluginCanvasElement : UiElement
         int? frameSlot = _surface.CurrentFrameSlot;
         if (frameSlot is { } slot)
         {
+            FollowPixelScale();
             RepaintIfInvalidated(slot);
             if (_shown is not null)
                 _shown.LastUsedFrameSlot = slot;
@@ -331,7 +343,7 @@ internal sealed class PluginCanvasElement : UiElement
         }
 
         bool drew = _surface.Repaint(
-            _registration, target.Target, _guard, _images(), _fonts(), shapeProblems: _shapeProblems);
+            _registration, target.Target, _guard, _images(), _fonts(), _shapeProblems, _pixelScale);
         target.LastUsedFrameSlot = frameSlot;
         if (_guard.IsTripped)
         {
@@ -359,13 +371,15 @@ internal sealed class PluginCanvasElement : UiElement
             return null;
 
         IGpuDevice device = _surface.Services.Device;
+        int width = CanvasPixelScale.DeviceSize(_registration.Width, _pixelScale);
+        int height = CanvasPixelScale.DeviceSize(_registration.Height, _pixelScale);
         IGpuRenderTarget target;
         try
         {
             target = device.CreateRenderTarget(new GpuRenderTargetDescription(
                 $"plugin-canvas-{_registration.Owner.Id}-{_registration.CanvasId}-{_targets.Count}",
-                _registration.Width,
-                _registration.Height,
+                width,
+                height,
                 GpuTextureFormat.Rgba8UnormRenderTarget,
                 DepthFormat: null,
                 SampleCount: 1));
@@ -375,7 +389,7 @@ internal sealed class PluginCanvasElement : UiElement
             _targetsUnavailable = true;
             _report(
                 $"Plugin canvas '{_registration.Owner.Id}/{_registration.CanvasId}' cannot be painted: "
-                + $"no off-screen target ({_registration.Width}x{_registration.Height}): {failure.Message}.");
+                + $"no off-screen target ({width}x{height}): {failure.Message}.");
             return null;
         }
 
@@ -436,9 +450,37 @@ internal sealed class PluginCanvasElement : UiElement
     {
         if (_released) return;
         _released = true;
-        _shown = null;
         if (ReferenceEquals(_registration.PointerRelease, _pointerRelease))
             _registration.PointerRelease = null;
+        GiveBackTargets();
+    }
+
+    /// <summary>
+    /// Reads the pixel scale for this frame. A change gives every target
+    /// back -- the one shown too, since the repaint that follows in this
+    /// same draw replaces it -- and invalidates, so the canvas is painted
+    /// again at the new size. A target that could not be made at the old
+    /// size may be possible at the new one, so that is tried afresh.
+    /// </summary>
+    private void FollowPixelScale()
+    {
+        float interfaceScale = CanvasPixelScale.ForInterface(
+            _surface.Services.FramebufferPerPoint(), FindRoot()?.CanvasScale ?? Vector2.One);
+        float scale = CanvasPixelScale.ForCanvas(
+            interfaceScale,
+            _registration.Width,
+            _registration.Height,
+            _surface.Services.Device.Capabilities.MaxImageDimension2D);
+        if (scale == _pixelScale) return;
+        _pixelScale = scale;
+        GiveBackTargets();
+        _targetsUnavailable = false;
+        _registration.Invalidate();
+    }
+
+    private void GiveBackTargets()
+    {
+        _shown = null;
         IGpuDevice device = _surface.Services.Device;
         foreach (CanvasTarget target in _targets)
         {

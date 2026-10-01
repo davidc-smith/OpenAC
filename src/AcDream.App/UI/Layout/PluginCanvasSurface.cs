@@ -8,8 +8,8 @@ namespace AcDream.App.UI.Layout;
 /// <summary>
 /// What the interface needs from the renderer to paint plugin canvases:
 /// the device the off-screen targets come from, the frame the passes go
-/// into, where the interface shaders are, and the twin resolver the main
-/// interface renderer uses. Public so it can travel in the runtime's
+/// into, where the interface shaders are, and how many framebuffer pixels
+/// the window has per point. Public so it can travel in the runtime's
 /// bindings; the renderer types themselves stay internal.
 /// </summary>
 public sealed class PluginCanvasHostServices
@@ -18,13 +18,13 @@ public sealed class PluginCanvasHostServices
         IGpuDevice device,
         ICurrentGpuFrameSource frames,
         string shaderDirectory,
-        Func<uint, uint>? linearTwinResolver)
+        Func<Vector2>? framebufferPerPoint)
     {
         Device = device ?? throw new ArgumentNullException(nameof(device));
         Frames = frames ?? throw new ArgumentNullException(nameof(frames));
         ArgumentException.ThrowIfNullOrWhiteSpace(shaderDirectory);
         ShaderDirectory = shaderDirectory;
-        LinearTwinResolver = linearTwinResolver;
+        FramebufferPerPoint = framebufferPerPoint ?? (static () => Vector2.One);
     }
 
     /// <summary>
@@ -38,7 +38,12 @@ public sealed class PluginCanvasHostServices
 
     internal string ShaderDirectory { get; }
 
-    internal Func<uint, uint>? LinearTwinResolver { get; }
+    /// <summary>
+    /// Framebuffer pixels per window point on each axis, read every frame:
+    /// 2 on a typical high-density display, and it changes when the window
+    /// moves to a display of another density. One without a window.
+    /// </summary>
+    internal Func<Vector2> FramebufferPerPoint { get; }
 }
 
 /// <summary>
@@ -77,7 +82,10 @@ internal sealed class PluginCanvasSurface : IDisposable
             services.Frames,
             services.ShaderDirectory,
             GpuBlendMode.StraightAlphaIntoPremultiplied);
-        _renderer.LinearTwinResolver = services.LinearTwinResolver;
+        // No linear twins, unlike the fixed canvas: a canvas painted above
+        // one pixel per canvas pixel is not magnified afterwards, so the
+        // interface font keeps its nearest-sampled, whole-pixel look.
+        _renderer.LinearTwinResolver = null;
         _context = new UiRenderContext(_renderer, Vector2.Zero);
         _overShapeBudget = () => _painter.ShapeBudgetExceeded;
     }
@@ -99,6 +107,11 @@ internal sealed class PluginCanvasSurface : IDisposable
     /// way, so a callback that threw halfway leaves a blank canvas rather
     /// than half of one over the last. A paint that asked for more shape
     /// vertices than one paint may counts against the guard as an overrun.
+    ///
+    /// <para>At a <paramref name="pixelScale"/> above 1 the target is that
+    /// many times the canvas's size. The context, the clip and the painter
+    /// stay in canvas pixels, as the interface does on the fixed canvas:
+    /// only the renderer multiplies, as the vertices go out.</para>
     /// </summary>
     internal bool Repaint(
         PluginCanvasRegistration registration,
@@ -106,7 +119,8 @@ internal sealed class PluginCanvasSurface : IDisposable
         UiDrawCallbackGuard guard,
         PluginImages? images,
         PluginFonts? fonts = null,
-        Action<CanvasShapeProblem, string>? shapeProblems = null)
+        Action<CanvasShapeProblem, string>? shapeProblems = null,
+        float pixelScale = 1f)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(registration);
@@ -116,10 +130,12 @@ internal sealed class PluginCanvasSurface : IDisposable
         int height = registration.Height;
         var size = new Vector2(width, height);
 
-        _renderer.Begin(size);
+        _renderer.Begin(new Vector2(
+            CanvasPixelScale.DeviceSize(width, pixelScale), CanvasPixelScale.DeviceSize(height, pixelScale)));
+        _renderer.CanvasScale = new Vector2(pixelScale);
         _context.Begin(size, null);
         _context.PushClip(0f, 0f, width, height);
-        _painter.Bind(_context, Font, images, width, height, fonts, shapeProblems);
+        _painter.Bind(_context, Font, images, width, height, fonts, shapeProblems, pixelScale);
         bool drew;
         try
         {
@@ -130,6 +146,7 @@ internal sealed class PluginCanvasSurface : IDisposable
         {
             _painter.Unbind();
             _context.PopClip();
+            _renderer.CanvasScale = Vector2.One;
         }
         _renderer.FlushTo(target, Vector4.Zero, null, PassName);
         return drew;

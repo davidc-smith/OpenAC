@@ -27,7 +27,9 @@ internal enum CanvasShapeProblem
 /// <para>Coordinates come in as canvas pixels and go out unchanged: the
 /// surface's context is begun at the canvas's own size, with its origin at
 /// the canvas's top-left corner, and the canvas rectangle is already the
-/// clip in force.</para>
+/// clip in force. The pixel scale the surface binds is how many target
+/// pixels each canvas pixel covers; only what is measured in device pixels
+/// -- a shape's fringe, a curve's chords -- reads it.</para>
 ///
 /// <para>Shapes are tessellated here into anti-aliased triangles
 /// (<see cref="CanvasGeometry"/>). Input they cannot draw draws nothing
@@ -55,8 +57,10 @@ internal sealed class PluginPainter : IPluginPainter
     /// </summary>
     internal const int MaximumShapeVerticesPerPaint = 32_768;
 
-    /// <summary>Canvases are painted at their own size, so one device pixel of the target is one canvas pixel.</summary>
-    private const float DevicePixel = 1f;
+    /// <summary>One pixel of the target, in canvas pixels: the reciprocal of the pixel scale.</summary>
+    private float _devicePixel = 1f;
+
+    private float _pixelScale = 1f;
 
     private readonly List<UiColorVertex> _shape = new(1024);
     private Action<CanvasShapeProblem, string>? _shapeProblems;
@@ -65,9 +69,14 @@ internal sealed class PluginPainter : IPluginPainter
     /// <summary>Points the painter at one repaint. Only the surface calls this.</summary>
     internal void Bind(
         UiRenderContext context, UiDatFont? font, PluginImages? images, int width, int height,
-        PluginFonts? fonts = null, Action<CanvasShapeProblem, string>? shapeProblems = null)
+        PluginFonts? fonts = null, Action<CanvasShapeProblem, string>? shapeProblems = null,
+        float pixelScale = 1f)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        if (!(float.IsFinite(pixelScale) && pixelScale >= 1f))
+            throw new ArgumentOutOfRangeException(nameof(pixelScale), pixelScale, "A pixel scale is at least 1.");
+        _pixelScale = pixelScale;
+        _devicePixel = 1f / pixelScale;
         _font = font;
         _images = images;
         _fonts = fonts;
@@ -103,6 +112,15 @@ internal sealed class PluginPainter : IPluginPainter
     public int Width => _width;
 
     public int Height => _height;
+
+    public double PixelScale
+    {
+        get
+        {
+            _ = Context;
+            return _pixelScale;
+        }
+    }
 
     public void Clear(PluginColor color) =>
         Context.DrawFill(0f, 0f, _width, _height, ToVector(color));
@@ -213,7 +231,7 @@ internal sealed class PluginPainter : IPluginPainter
             || ShapeBudgetExceeded)
             return;
         _shape.Clear();
-        CanvasGeometry.FillRoundedRect(x, y, w, h, corners, ToVector(color), DevicePixel, _shape);
+        CanvasGeometry.FillRoundedRect(x, y, w, h, corners, ToVector(color), _devicePixel, _shape);
         Emit(context);
     }
 
@@ -226,7 +244,7 @@ internal sealed class PluginPainter : IPluginPainter
             || ShapeBudgetExceeded)
             return;
         _shape.Clear();
-        CanvasGeometry.StrokeRoundedRect(x, y, w, h, corners, ToVector(color), thickness, DevicePixel, _shape);
+        CanvasGeometry.StrokeRoundedRect(x, y, w, h, corners, ToVector(color), thickness, _devicePixel, _shape);
         Emit(context);
     }
 
@@ -237,7 +255,7 @@ internal sealed class PluginPainter : IPluginPainter
             || ShapeBudgetExceeded)
             return;
         _shape.Clear();
-        CanvasGeometry.FillEllipse(x, y, w, h, ToVector(color), DevicePixel, _shape);
+        CanvasGeometry.FillEllipse(x, y, w, h, ToVector(color), _devicePixel, _shape);
         Emit(context);
     }
 
@@ -249,7 +267,7 @@ internal sealed class PluginPainter : IPluginPainter
             || ShapeBudgetExceeded)
             return;
         _shape.Clear();
-        CanvasGeometry.StrokeEllipse(x, y, w, h, ToVector(color), thickness, DevicePixel, _shape);
+        CanvasGeometry.StrokeEllipse(x, y, w, h, ToVector(color), thickness, _devicePixel, _shape);
         Emit(context);
     }
 
@@ -266,7 +284,7 @@ internal sealed class PluginPainter : IPluginPainter
             || ShapeBudgetExceeded)
             return;
         _shape.Clear();
-        CanvasGeometry.FillEllipse(x, y, w, h, ToVector(color), DevicePixel, _shape);
+        CanvasGeometry.FillEllipse(x, y, w, h, ToVector(color), _devicePixel, _shape);
         Emit(context);
     }
 
@@ -295,7 +313,7 @@ internal sealed class PluginPainter : IPluginPainter
             colors[0] = start; colors[1] = start; colors[2] = end; colors[3] = end;
         }
         _shape.Clear();
-        CanvasGeometry.FillConvexPolygon(corners, colors, DevicePixel, _shape);
+        CanvasGeometry.FillConvexPolygon(corners, colors, _devicePixel, _shape);
         Emit(context);
     }
 
@@ -344,7 +362,7 @@ internal sealed class PluginPainter : IPluginPainter
         if (ShapeBudgetExceeded) return;
 
         _shape.Clear();
-        if (CanvasGeometry.FillConvexPolygon(corners, colors, DevicePixel, _shape) == CanvasShapeOutcome.NotConvex)
+        if (CanvasGeometry.FillConvexPolygon(corners, colors, _devicePixel, _shape) == CanvasShapeOutcome.NotConvex)
         {
             Reject(member, "points that do not make a convex polygon");
             return;
