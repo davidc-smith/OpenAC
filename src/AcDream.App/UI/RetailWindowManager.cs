@@ -226,13 +226,59 @@ public sealed class RetailWindowManager : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Raises <paramref name="window"/> over every other root child in the
+    /// band it is already in (see <see cref="UiBands"/>). An element in no
+    /// band -- pinned, or the layer of canvases drawn above windows -- stays
+    /// where it is.
+    /// </summary>
     public void BringToFront(UiElement window)
     {
-        int top = window.ZOrder;
+        if (UiBands.Of(window.ZOrder) is { } band)
+            Raise(window, band);
+    }
+
+    /// <summary>
+    /// Moves <paramref name="window"/> into <paramref name="band"/>, over
+    /// every other root child there. A pinned element stays pinned.
+    /// </summary>
+    public void BringToFront(UiElement window, UiBand band)
+    {
+        if (window.ZOrder != UiBands.Pinned)
+            Raise(window, band);
+    }
+
+    private void Raise(UiElement window, UiBand band)
+    {
+        (int floor, int ceiling) = UiBands.Range(band);
+        int top = UiBands.Of(window.ZOrder) == band ? window.ZOrder : floor;
         foreach (var child in _root.Children)
-            if (!ReferenceEquals(child, window))
+        {
+            // A band member is below the band's ceiling, so the + 1 cannot overflow.
+            if (!ReferenceEquals(child, window) && UiBands.Of(child.ZOrder) == band)
                 top = Math.Max(top, child.ZOrder + 1);
+        }
+        if (top >= ceiling)
+            top = Compact(window, band, floor);
         window.ZOrder = top;
+    }
+
+    /// <summary>
+    /// Renumbers the band's other members from its floor, in their current
+    /// order, and answers the value above them. Reached only after about a
+    /// billion raises in one band; members below the floor keep their values.
+    /// </summary>
+    private int Compact(UiElement window, UiBand band, int floor)
+    {
+        UiElement[] members = _root.Children
+            .Where(child => !ReferenceEquals(child, window)
+                && UiBands.Of(child.ZOrder) == band
+                && child.ZOrder >= floor)
+            .OrderBy(child => child.ZOrder)
+            .ToArray();
+        for (int index = 0; index < members.Length; index++)
+            members[index].ZOrder = floor + index;
+        return floor + members.Length;
     }
 
     internal void PrepareToHide(UiElement subtree)

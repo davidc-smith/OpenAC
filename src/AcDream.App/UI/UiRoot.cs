@@ -974,6 +974,9 @@ public sealed class UiRoot : UiElement
     public void BringToFront(UiElement window)
         => WindowManager.BringToFront(window);
 
+    public void BringToFront(UiElement window, UiBand band)
+        => WindowManager.BringToFront(window, band);
+
     internal void NotifyWindowMoved(UiElement window)
     {
         if (WindowManager.TryGet(window, out var handle))
