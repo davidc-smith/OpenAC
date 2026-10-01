@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using AcDream.App.Rendering;
 
 namespace AcDream.App.UI;
 
@@ -404,6 +405,16 @@ public sealed class UiRoot : UiElement
         {
             ctx.TextRenderer.CanvasScale = Vector2.One;
         }
+    }
+
+    /// <summary>
+    /// From the plugin canvases drawn over windows upwards, everything is
+    /// drawn in the upper layer, so no window's text shows through them.
+    /// </summary>
+    private protected override void OnDrawingChild(UiRenderContext ctx, UiElement child)
+    {
+        if (child.ZOrder >= UiBands.UpperRenderLayerFloor && ctx.TextRenderer.Layer == UiDrawLayer.Main)
+            ctx.BeginUpperLayer();
     }
 
     private void DrawCore(UiRenderContext ctx)

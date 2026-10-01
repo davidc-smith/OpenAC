@@ -141,6 +141,12 @@ public sealed class UiRenderContext
     public void BeginOverlayLayer() => TextRenderer.OverlayMode = true;
     public void EndOverlayLayer() => TextRenderer.OverlayMode = false;
 
+    /// <summary>
+    /// Sends what is drawn next to the upper layer, which the frame draws
+    /// after everything before it, text included. The root calls it once,
+    /// at the plugin canvases drawn over windows.
+    /// </summary>
+    internal void BeginUpperLayer() => TextRenderer.Layer = UiDrawLayer.Upper;
 
     public void DrawRect(float x, float y, float w, float h, Vector4 color) => DrawFill(x, y, w, h, color);
 
