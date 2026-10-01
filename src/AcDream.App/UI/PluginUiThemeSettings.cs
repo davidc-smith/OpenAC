@@ -83,16 +83,21 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
         _last = _settings.Theme;
         foreach (var apply in _apply) apply(_settings.Palette);
     }
+    /// <summary>Whether the window's markup gave it a title, so the header band is drawn.</summary>
+    internal bool HasTitle { get; set; }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
         if (_settings.Palette is not { } p) { base.OnDraw(ctx); return; }
-        ctx.DrawFill(0, 0, Width, Height, p.Background);
+        PluginUiStyle.WindowShadow(ctx, Width, Height);
+        ctx.FillRoundedRect(0, 0, Width, Height, PluginUiStyle.WindowRadius, p.Background);
+        if (HasTitle) PluginUiStyle.Header(ctx, p, Width);
     }
     protected override void OnDrawAfterChildren(UiRenderContext ctx)
     {
         if (_settings.Palette is not { } p) { base.OnDrawAfterChildren(ctx); return; }
-        ctx.DrawRectOutline(0, 0, Width, Height, p.Border, 1);
+        ctx.StrokeRoundedRect(0.5f, 0.5f, Width - 1f, Height - 1f, PluginUiStyle.WindowRadius - 0.5f, p.Border, 1f);
         if (Resizable && DrawResizeAffordances)
-            ctx.DrawFill(Width - 7, Height - 3, 5, 1, p.Muted);
+            PluginUiStyle.ResizeGrip(ctx, p, Width, Height);
     }
 }

@@ -3,6 +3,24 @@ namespace AcDream.App.UI;
 
 internal static class PluginMarkupTheme
 {
+    /// <summary>
+    /// Moves a themed window's title into the header band and sets it in the
+    /// title weight. Register's label action has already run for the title,
+    /// so Classic's font is restored there; this only puts the position back.
+    /// </summary>
+    public static void RegisterTitle(UiPluginMarkupPanel panel, UiLabel title)
+    {
+        float left = title.Left, top = title.Top;
+        panel.AddThemeAction(p =>
+        {
+            if (p is null) { title.Left = left; title.Top = top; return; }
+            if (panel.ModernTitleFont is { } bold) title.DatFont = bold;
+            float lineHeight = title.DatFont?.LineHeight ?? 14f;
+            title.Left = 12f;
+            title.Top = MathF.Max(0f, MathF.Round((PluginUiStyle.HeaderHeight - lineHeight) / 2f));
+        });
+    }
+
     public static void Register(UiPluginMarkupPanel panel, UiElement element, XElement xml)
     {
         if (panel.ModernFont is { } modern)

@@ -73,7 +73,11 @@ public static class MarkupDocument
         }
 
         if (panel is UiPluginMarkupPanel titlePanel && panel.Children.Count > 0)
+        {
+            titlePanel.HasTitle = true;
             PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
+            PluginMarkupTheme.RegisterTitle(titlePanel, (UiLabel)panel.Children[0]);
+        }
 
         foreach (var el in root.Elements())
             AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes);
