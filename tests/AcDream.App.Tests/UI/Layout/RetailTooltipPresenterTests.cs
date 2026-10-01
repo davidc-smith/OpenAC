@@ -94,6 +94,25 @@ public sealed class RetailTooltipPresenterTests
     }
 
     [Fact]
+    public void ATooltipIsRaisedIntoTheDialogBandAndKeptThere()
+    {
+        var (root, presenter, _) = CreateHarness();
+        AddFullyAuthoredTarget(root);
+        var canvasLayer = new UiPanel { ZOrder = UiBands.CanvasesAboveWindows };
+        root.AddChild(canvasLayer);
+        var before = root.Children.ToHashSet();
+
+        root.OnMouseMove(110, 110);
+        root.Tick(0.016, 0);
+        root.Tick(0.016, root.TooltipDelayMs);
+        UiElement popup = Assert.Single(root.Children, child => !before.Contains(child));
+        Assert.Equal(UiBand.DialogsAndTooltips, UiBands.Of(popup.ZOrder));
+
+        presenter.Tick();
+        Assert.Equal(UiBand.DialogsAndTooltips, UiBands.Of(popup.ZOrder));
+    }
+
+    [Fact]
     public void GlobalEnableGateOff_SuppressesPresentation_ButTheDwellTimerStillFires()
     {
         var (root, presenter, requests) = CreateHarness();

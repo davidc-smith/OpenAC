@@ -170,6 +170,14 @@ public sealed class CharacterManagementUiControllerTests
     }
 
     [Fact]
+    public void AnActiveScreenIsRaisedIntoTheScreensBand()
+    {
+        using var environment = new EnvironmentHarness();
+
+        Assert.Equal(UiBand.Screens, UiBands.Of(environment.Controller.Root.ZOrder));
+    }
+
+    [Fact]
     public void AuthoredChildContract_PreservesRuntimeOrderGreyTailHighlightAndButtonMatrix()
     {
         using var environment = new EnvironmentHarness();

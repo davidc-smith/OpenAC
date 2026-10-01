@@ -30,6 +30,24 @@ public sealed class RetailDialogFactoryTests
     }
 
     [Fact]
+    public void ADialogIsRaisedIntoTheDialogBandOverTheCanvasLayerAndKeptThere()
+    {
+        var root = new UiRoot { Width = 1024f, Height = 768f };
+        var canvasLayer = new UiPanel { ZOrder = UiBands.CanvasesAboveWindows };
+        root.AddChild(canvasLayer);
+        var layouts = new List<ImportedLayout>();
+        var factory = CreateFactory(root, layouts);
+
+        factory.MakeConfirmation("Quit?", _ => { });
+        UiElement dialog = Assert.Single(layouts).Root;
+        Assert.Equal(UiBand.DialogsAndTooltips, UiBands.Of(dialog.ZOrder));
+        Assert.True(canvasLayer.ZOrder < dialog.ZOrder);
+
+        factory.Tick();
+        Assert.Equal(UiBand.DialogsAndTooltips, UiBands.Of(dialog.ZOrder));
+    }
+
+    [Fact]
     public void ConfirmationCreatesFreshCenteredRootAndReturnsPropertyResult()
     {
         var root = new UiRoot { Width = 1024f, Height = 768f };
