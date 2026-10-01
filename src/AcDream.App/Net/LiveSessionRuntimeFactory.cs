@@ -375,11 +375,9 @@ internal sealed class LiveSessionRuntimeFactory
                     Settings = _interaction.Settings,
                     MovementStats = _domain.Runtime.MovementStats,
                     ResolveSkillFormulaBonus = skillCreditResolver.Resolve,
-                    // Effects are stamped on arrival and read back by the
-                    // plugin surface against the simulation clock, as on
-                    // the headless host.
-                    ClientTime = () =>
-                        _domain.Runtime.Clock.SimulationTimeSeconds,
+                    // Effects are stamped on the clock the plugin surface
+                    // reads their time left against.
+                    ClientTime = () => _domain.Runtime.EffectClock.NowSeconds,
                     RetainedUi = _ui.RetailUi,
                     NoteOptionsSeeded = _noteOptionsSeeded,
                     Warn = _log,

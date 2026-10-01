@@ -11,7 +11,7 @@ namespace AcDream.App.Tests.Net;
 /// <summary>
 /// An effect's start time is stamped when it arrives and read back against
 /// "now" by the plugin surface and the retained UI. Both ends have to use the
-/// same clock, and the plugin surface uses the runtime's simulation clock.
+/// same clock, and the plugin surface uses the runtime's effect clock.
 /// </summary>
 public sealed class GraphicalEffectClockTests
 {
@@ -22,7 +22,7 @@ public sealed class GraphicalEffectClockTests
         | BindingFlags.DeclaredOnly;
 
     [Fact]
-    public void SessionStampsEffectsWithTheRuntimeClock()
+    public void SessionStampsEffectsWithTheEffectClock()
     {
         MethodInfo create = typeof(LiveSessionRuntimeFactory).GetMethod(
             "CreateCharacterBindings",
@@ -41,14 +41,14 @@ public sealed class GraphicalEffectClockTests
             .SelectMany(CompiledCallGraph.Read)
             .ToArray();
 
-        Assert.Contains(delegateCalls, call => ReadsRuntimeClock(call.Target));
+        Assert.Contains(delegateCalls, call => ReadsEffectClock(call.Target));
         Assert.DoesNotContain(
             delegateCalls,
             call => call.Target.DeclaringType == typeof(Stopwatch));
     }
 
     [Fact]
-    public void RetainedUiMeasuresEffectsOnTheRuntimeClock()
+    public void RetainedUiMeasuresEffectsOnTheEffectClock()
     {
         ConstructorInfo magicBindings =
             Assert.Single(typeof(MagicRuntimeBindings).GetConstructors());
@@ -72,13 +72,12 @@ public sealed class GraphicalEffectClockTests
         MethodBase serverTime = references[built - 2].Target;
         Assert.Contains(
             CompiledCallGraph.Read(serverTime),
-            call => ReadsRuntimeClock(call.Target));
+            call => ReadsEffectClock(call.Target));
     }
 
-    private static bool ReadsRuntimeClock(MethodBase method) =>
-        method.Name == "get_" + nameof(GameRuntimeClock.SimulationTimeSeconds)
-        && (method.DeclaringType == typeof(GameRuntimeClock)
-            || method.DeclaringType == typeof(IGameRuntimeClock));
+    private static bool ReadsEffectClock(MethodBase method) =>
+        method.DeclaringType == typeof(RuntimeEffectClock)
+        && method.Name == "get_" + nameof(RuntimeEffectClock.NowSeconds);
 
     private static IEnumerable<MethodBase> OwnedMethods(Type root) =>
         new[] { root }
