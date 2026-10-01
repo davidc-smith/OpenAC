@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Numerics;
+using AcDream.App.Input;
 using AcDream.App.Plugins;
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
@@ -7,6 +8,7 @@ using AcDream.App.Tests.Rendering.Gpu;
 using AcDream.App.UI;
 using AcDream.App.UI.Layout;
 using AcDream.Plugin.Abstractions;
+using AcDream.UI.Abstractions.Input;
 using Silk.NET.Input;
 
 namespace AcDream.App.Tests.UI.Layout;
@@ -476,5 +478,258 @@ public sealed class PluginCanvasKeyboardTests
         Assert.Null(harness.Root.KeyboardFocus);
         Assert.False(registration.HasKeyboardFocus);
         Assert.Contains("focus boom", Assert.Single(harness.Reports));
+    }
+
+    [Fact]
+    public void KeysAndTypedTextArriveWhileTheCanvasHasFocus()
+    {
+        (Harness harness, _, _, Recorder keys) = FocusedPad();
+
+        harness.Root.OnKeyDown((int)Key.A);
+        harness.Root.OnChar('a');
+        harness.Root.OnKeyUp((int)Key.A);
+
+        Assert.Equal(
+            [
+                new PluginKeyEvent(PluginKeyEventKind.Down, PluginKey.A, PluginKeyModifiers.None),
+                new PluginKeyEvent(PluginKeyEventKind.Text, PluginKey.Unknown, PluginKeyModifiers.None, Text: "a"),
+                new PluginKeyEvent(PluginKeyEventKind.Up, PluginKey.A, PluginKeyModifiers.None),
+            ],
+            keys.Events);
+    }
+
+    [Fact]
+    public void AnEscapeTheHandlerDidNotHandleGivesFocusBack()
+    {
+        (Harness harness, PluginCanvasRegistration registration, _, Recorder keys) = FocusedPad();
+
+        harness.Root.OnKeyDown((int)Key.Escape);
+
+        Assert.Null(harness.Root.KeyboardFocus);
+        Assert.False(registration.HasKeyboardFocus);
+        Assert.Equal([PluginKeyEventKind.Down, PluginKeyEventKind.FocusLost], keys.Kinds);
+    }
+
+    [Fact]
+    public void AnEscapeTheHandlerHandledKeepsFocus()
+    {
+        (Harness harness, PluginCanvasRegistration registration, _, Recorder keys) = FocusedPad();
+        keys.HandlesEscape = true;
+
+        harness.Type(Key.Escape);
+
+        Assert.True(registration.HasKeyboardFocus);
+        Assert.Equal([PluginKeyEventKind.Down, PluginKeyEventKind.Up], keys.Kinds);
+    }
+
+    [Fact]
+    public void ReleasingFocusFromInsideTheHandlerIsSafe()
+    {
+        var harness = new Harness();
+        var kinds = new List<PluginKeyEventKind>();
+        IPluginCanvas? canvas = null;
+        (PluginCanvasRegistration registration, _) = harness.Mount(Pad(), e =>
+        {
+            kinds.Add(e.Kind);
+            if (e.Kind == PluginKeyEventKind.Down) canvas!.ReleaseKeyboardFocus();
+            return true;
+        }, pointer: _ => { });
+        canvas = registration;
+
+        harness.Press(100, 60);
+        harness.Type(Key.Enter);
+
+        Assert.Null(harness.Root.KeyboardFocus);
+        Assert.Equal([PluginKeyEventKind.FocusGained, PluginKeyEventKind.Down, PluginKeyEventKind.FocusLost], kinds);
+    }
+
+    [Fact]
+    public void AKeyAfterTheCanvasIsHiddenButBeforeTheNextTickDoesNotReachThePlugin()
+    {
+        (Harness harness, PluginCanvasRegistration registration, _, Recorder keys) = FocusedPad();
+
+        registration.IsVisible = false;
+        harness.Type(Key.A);
+
+        Assert.Null(harness.Root.KeyboardFocus);
+        Assert.Equal([PluginKeyEventKind.FocusLost], keys.Kinds);
+    }
+
+    [Fact]
+    public void AHeldKeyRepeatsAfterTheDelayUntilItComesUp()
+    {
+        (Harness harness, _, _, Recorder keys) = FocusedPad();
+
+        harness.Root.OnKeyDown((int)Key.Backspace);
+        harness.Tick(0.39);
+        Assert.Single(keys.Events);
+        harness.Tick(0.02);
+        harness.Tick(0.04);
+        harness.Root.OnKeyUp((int)Key.Backspace);
+        harness.Tick(1.0);
+
+        Assert.Equal(
+            [
+                new PluginKeyEvent(PluginKeyEventKind.Down, PluginKey.Backspace, PluginKeyModifiers.None),
+                new PluginKeyEvent(PluginKeyEventKind.Down, PluginKey.Backspace, PluginKeyModifiers.None, IsRepeat: true),
+                new PluginKeyEvent(PluginKeyEventKind.Down, PluginKey.Backspace, PluginKeyModifiers.None, IsRepeat: true),
+                new PluginKeyEvent(PluginKeyEventKind.Up, PluginKey.Backspace, PluginKeyModifiers.None),
+            ],
+            keys.Events);
+    }
+
+    [Fact]
+    public void LosingFocusStopsTheRepeat()
+    {
+        (Harness harness, PluginCanvasRegistration registration, _, Recorder keys) = FocusedPad();
+
+        harness.Root.OnKeyDown((int)Key.Left);
+        registration.ReleaseKeyboardFocus();
+        harness.Tick(1.0);
+
+        Assert.Equal([PluginKeyEventKind.Down, PluginKeyEventKind.FocusLost], keys.Kinds);
+    }
+
+    [Fact]
+    public void KeysThePluginCannotNameAreNotDeliveredButModifiersTravelWithEveryEvent()
+    {
+        (Harness harness, _, _, Recorder keys) = FocusedPad();
+
+        harness.Modifiers = PluginKeyModifiers.Shift;
+        harness.Root.OnKeyDown((int)Key.ShiftLeft);
+        harness.Root.OnKeyDown((int)Key.A);
+        harness.Root.OnChar('A');
+        harness.Root.OnKeyUp((int)Key.A);
+        harness.Modifiers = PluginKeyModifiers.None;
+        harness.Root.OnKeyUp((int)Key.ShiftLeft);
+
+        Assert.Equal(
+            [PluginKeyEventKind.Down, PluginKeyEventKind.Text, PluginKeyEventKind.Up],
+            keys.Kinds);
+        Assert.All(keys.Events, e => Assert.Equal(PluginKeyModifiers.Shift, e.Modifiers));
+        Assert.Equal("A", keys.Events[1].Text);
+    }
+
+    [Fact]
+    public void ControlCharactersAndLoneSurrogatesAreNotText()
+    {
+        (Harness harness, _, _, Recorder keys) = FocusedPad();
+
+        harness.Root.OnChar('\r');
+        harness.Root.OnChar('\b');
+        harness.Root.OnChar(0xD83D);
+        harness.Root.OnChar('é');
+
+        PluginKeyEvent only = Assert.Single(keys.Events);
+        Assert.Equal("é", only.Text);
+    }
+
+    [Fact]
+    public void AThrowingKeyHandlerIsDroppedFocusGoesBackAndPointerAndPaintingCarryOn()
+    {
+        var harness = new Harness();
+        int calls = 0;
+        var pointer = new List<PluginPointerEvent>();
+        (PluginCanvasRegistration registration, PluginCanvasElement element) = harness.Mount(Pad(), e =>
+        {
+            calls++;
+            if (e.Kind == PluginKeyEventKind.Down) throw new InvalidOperationException("keys boom");
+            return true;
+        }, pointer: pointer.Add);
+
+        harness.Press(100, 60);
+        harness.Type(Key.A);
+        harness.Press(100, 60);
+        harness.Type(Key.B);
+
+        Assert.Equal(2, calls);   // the focus gained, then the throwing down
+        Assert.True(element.IsKeyInputDropped);
+        Assert.False(element.IsInputDropped);
+        Assert.Null(harness.Root.KeyboardFocus);
+        Assert.False(registration.RequestKeyboardFocus());
+        string report = Assert.Single(harness.Reports);
+        Assert.Contains("keys boom", report);
+        Assert.Contains("key handler", report);
+        Assert.Equal(4, pointer.Count);
+        Assert.False(registration.IsDropped);
+        Assert.True(element.Visible);
+    }
+
+    [Fact]
+    public void ASlowKeyHandlerIsDroppedAfterThreeOverrunsInARow()
+    {
+        (Harness harness, _, PluginCanvasElement element, Recorder keys) = FocusedPad();
+        harness.Clock.NextCallCosts = UiDrawCallbackGuard.FrameBudgetMilliseconds + 1.0;
+
+        harness.Root.OnKeyDown((int)Key.A);
+        harness.Root.OnKeyDown((int)Key.B);
+        Assert.False(element.IsKeyInputDropped);
+        harness.Root.OnKeyDown((int)Key.C);
+        Assert.True(element.IsKeyInputDropped);
+        harness.Root.OnKeyDown((int)Key.D);
+
+        Assert.Equal(3, keys.Events.Count);
+        Assert.Contains("3 events in a row", Assert.Single(harness.Reports));
+        Assert.Null(harness.Root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void WhileACanvasHasFocusTheGameGetsNoKeysAndPlainHotkeysDoNotFire()
+    {
+        var harness = new Harness();
+        var keys = new Recorder();
+        harness.Mount(Pad(), keys.Handle, pointer: _ => { });
+        var slot = new RetainedUiInputCaptureSlot();
+        using IDisposable bound = slot.Bind(harness.Root);
+        var keyboard = new FakeKeyboard();
+        var bindings = new KeyBindings();
+        bindings.Add(new Binding(new KeyChord(Key.W, ModifierMask.None), InputAction.MovementForward));
+        InputDispatcher dispatcher = InputDispatcher.CreateDetached(keyboard, new SlotMouse(slot), bindings);
+        dispatcher.Attach();
+        var fired = new List<InputAction>();
+        dispatcher.Fired += (action, _) => fired.Add(action);
+        var hotkeys = new AppHotkeyRegistry(overridesFilePath: null);
+        hotkeys.Bind(keyboard, bindings, dispatcher, slot);
+        int hotkeyFired = 0;
+        hotkeys.Register("plain", "Plain", new PluginKeyChord(PluginKey.F9), () => hotkeyFired++);
+
+        harness.Press(100, 60);
+        keyboard.Fire(Key.W);
+        keyboard.Fire(Key.F9);
+        Assert.Empty(fired);
+        Assert.Equal(0, hotkeyFired);
+
+        harness.Press(400, 300);
+        keyboard.Fire(Key.W);
+        keyboard.Fire(Key.F9);
+        Assert.Equal([InputAction.MovementForward], fired);
+        Assert.Equal(1, hotkeyFired);
+        dispatcher.Dispose();
+    }
+
+    private sealed class FakeKeyboard : IKeyboardSource
+    {
+        public event Action<Key, ModifierMask>? KeyDown;
+#pragma warning disable CS0067
+        public event Action<Key, ModifierMask>? KeyUp;
+#pragma warning restore CS0067
+        public bool IsHeld(Key key) => false;
+        public ModifierMask CurrentModifiers => ModifierMask.None;
+
+        public void Fire(Key key) => KeyDown?.Invoke(key, ModifierMask.None);
+    }
+
+    /// <summary>The mouse source the dispatcher asks, answering for the keyboard as the window's does: from the capture slot.</summary>
+    private sealed class SlotMouse(RetainedUiInputCaptureSlot slot) : IMouseSource
+    {
+#pragma warning disable CS0067
+        public event Action<MouseButton, ModifierMask>? MouseDown;
+        public event Action<MouseButton, ModifierMask>? MouseUp;
+        public event Action<float, float>? MouseMove;
+        public event Action<float>? Scroll;
+#pragma warning restore CS0067
+        public bool WantCaptureKeyboard => slot.WantCaptureKeyboard;
+        public bool WantCaptureMouse => slot.WantCaptureMouse;
+        public bool IsHeld(MouseButton button) => false;
     }
 }

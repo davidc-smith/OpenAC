@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
+using AcDream.App.Input;
 using AcDream.App.Plugins;
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
@@ -53,6 +55,12 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     /// <summary>The most targets a canvas may hold; the flight depth plus one is the real bound.</summary>
     internal const int MaximumTargets = 8;
 
+    /// <summary>How long a key is held before the host repeats it, as a text field does.</summary>
+    internal const double KeyRepeatDelaySeconds = 0.40;
+
+    /// <summary>How often a held key repeats after the delay, as a text field does.</summary>
+    internal const double KeyRepeatIntervalSeconds = 0.04;
+
     private sealed class CanvasTarget(IGpuRenderTarget target, GpuTextureSlot slot)
     {
         internal IGpuRenderTarget Target { get; } = target;
@@ -78,6 +86,8 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     private PluginPointerButton _heldButton;
     private readonly Action? _pointerRelease;
     private bool _focused;
+    private PluginKey _repeatKey;
+    private double _repeatTimer;
 
     internal PluginCanvasElement(
         PluginCanvasRegistration registration,
@@ -187,7 +197,12 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     protected override void OnTick(double deltaSeconds)
     {
         Layout();
-        if (_focused) KeepsFocus();
+        if (!_focused || !KeepsFocus()) return;
+        if (_repeatKey == PluginKey.Unknown) return;
+        _repeatTimer -= deltaSeconds;
+        if (_repeatTimer > 0) return;
+        _repeatTimer = KeyRepeatIntervalSeconds;
+        KeyDown(_repeatKey, isRepeat: true);
     }
 
     protected override bool OnHitTest(float localX, float localY) =>
@@ -259,8 +274,46 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
             case UiEventType.FocusLost:
                 if (!_focused) return true;
                 _focused = false;
+                _repeatKey = PluginKey.Unknown;
                 DeliverKey(new PluginKeyEvent(PluginKeyEventKind.FocusLost, PluginKey.Unknown, _modifiers()));
                 return true;
+
+            case UiEventType.KeyDown:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                PluginKey key = PluginKeyMap.FromSilk((Silk.NET.Input.Key)e.Data0);
+                // A key the contract cannot name is still the canvas's:
+                // nothing behind a focused canvas acts on keys.
+                if (key == PluginKey.Unknown) return true;
+                _repeatKey = key;
+                _repeatTimer = KeyRepeatDelaySeconds;
+                KeyDown(key, isRepeat: false);
+                return true;
+            }
+
+            case UiEventType.KeyUp:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                PluginKey key = PluginKeyMap.FromSilk((Silk.NET.Input.Key)e.Data0);
+                if (key == PluginKey.Unknown) return true;
+                if (key == _repeatKey) _repeatKey = PluginKey.Unknown;
+                DeliverKey(new PluginKeyEvent(PluginKeyEventKind.Up, key, _modifiers()));
+                return true;
+            }
+
+            case UiEventType.Char:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                // Silk hands over UTF-16 units; a lone surrogate or a control
+                // character is not text a plugin can draw.
+                if (!Rune.IsValid(e.Data0) || Rune.IsControl(new Rune(e.Data0))) return true;
+                DeliverKey(new PluginKeyEvent(
+                    PluginKeyEventKind.Text, PluginKey.Unknown, _modifiers(), Text: new Rune(e.Data0).ToString()));
+                return true;
+            }
 
             // Click, double-click and right-click are the root's reading of a
             // press and release the plugin already saw; nothing beneath the
@@ -328,6 +381,17 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         if (TakesKeyboard && FindRoot()?.Modal is null) return true;
         ReleaseFocus();
         return false;
+    }
+
+    /// <summary>
+    /// A key went down or repeated: the plugin sees it, and an Escape it
+    /// did not handle gives focus back, as Escape leaves a text field.
+    /// </summary>
+    private void KeyDown(PluginKey key, bool isRepeat)
+    {
+        bool handled = DeliverKey(new PluginKeyEvent(PluginKeyEventKind.Down, key, _modifiers(), isRepeat));
+        if (key == PluginKey.Escape && !handled)
+            ReleaseFocus();
     }
 
     /// <summary>
