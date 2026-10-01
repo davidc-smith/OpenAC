@@ -1480,9 +1480,10 @@ characters in `Text`. Text is what the player's keyboard layout typed, so
 use it for anything that is typed and `Down` for keys that do something;
 it never holds a control character, so Enter, Tab and Backspace arrive
 only as `Down`. Keys `PluginKey` cannot name, the modifier keys among
-them, arrive as neither `Down` nor `Up`. A key held down repeats as
-`Down` with `IsRepeat` set, after 0.4 s and then every 0.04 s, as in the
-client's own text fields, until it comes up.
+them, arrive as neither `Down` nor `Up`. The last key that went down
+repeats while it is held, as `Down` with `IsRepeat` set, after 0.4 s and
+then every 0.04 s, as in the client's own text fields, until it comes up
+or another key goes down.
 
 The handler answers true when it handled the event. Only one answer
 changes what the host does: an Escape `Down` the handler did not handle
@@ -1499,10 +1500,12 @@ the player did, so keys never vanish into a canvas they did not choose.
 
 Focus goes back, with exactly one `FocusLost` to the handler, when an
 Escape is not handled, the player presses the left button anywhere else,
-the canvas is hidden or disposed, the handler is set to null or dropped,
-the paint callback is dropped, a modal dialog opens, the interface is torn
-down, or the plugin calls `ReleaseKeyboardFocus()`. `HasKeyboardFocus`
-says whether the canvas has focus right now.
+the canvas is hidden or disposed, the paint callback is dropped, a modal
+dialog opens, the interface is torn down, or the plugin calls
+`ReleaseKeyboardFocus()`. It also goes back when the handler is set to
+null or dropped by its guard, with no `FocusLost`, since no handler is
+left to hear it. `HasKeyboardFocus` says whether the canvas has focus
+right now.
 
 The key handler has its own guard, measured like the pointer handler: one
 that stays over the 2 ms budget on three events in a row, or throws, is
