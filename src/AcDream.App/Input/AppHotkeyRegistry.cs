@@ -173,7 +173,9 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
     // with Ctrl or Alt fires, so typed letters are never hotkey presses.
     // The interface's focus is the live signal: no production code pushes
     // a dispatcher scope. This handler runs before the interface's own key
-    // handler, so it sees the focus from before this key is handled.
+    // handler (the keyboard source attaches in HostInputCameraComposition,
+    // before the retained UI's UiHost.WireKeyboard), so it sees the focus
+    // from before this key is handled.
     private void OnKeyDown(Key key, ModifierMask modifiers)
     {
         Entry[] snapshot;
