@@ -230,6 +230,75 @@ public interface IPluginPainter
         double scaleY = 1.0);
 
     /// <summary>
+    /// Draws part of an image, such as one frame of a sprite sheet, stretched
+    /// over a rectangle. The part is cut to the image's bounds, and the
+    /// rectangle shrinks with it, so a source that runs off the image draws
+    /// only the part that is on it, where it would have been. An empty
+    /// source, or one wholly off the image, draws nothing. On a host that
+    /// predates image regions this draws nothing.
+    /// </summary>
+    /// <param name="image">An image from <see cref="IPluginImages"/>; a released or invalid image draws nothing.</param>
+    /// <param name="source">The part of the image to draw, in the image's own pixels.</param>
+    /// <param name="destination">The rectangle the part fills.</param>
+    /// <param name="tint">A colour the image is multiplied by; <see cref="PluginColor.White"/> leaves it unchanged.</param>
+    void DrawImageRegion(PluginImage image, PluginRect source, PluginRect destination, PluginColor tint)
+    {
+    }
+
+    /// <summary>
+    /// Draws part of an image over a rectangle after scaling and turning that
+    /// rectangle about a pivot, as <see cref="DrawImageTransformed"/> does
+    /// for a whole image. The part is cut to the image's bounds as in
+    /// <see cref="DrawImageRegion"/>; the pivot stays where it was. On a host
+    /// that predates image regions this draws nothing.
+    /// </summary>
+    /// <param name="image">An image from <see cref="IPluginImages"/>; a released or invalid image draws nothing.</param>
+    /// <param name="source">The part of the image to draw, in the image's own pixels.</param>
+    /// <param name="destination">The rectangle the part would fill unturned and unscaled.</param>
+    /// <param name="tint">A colour the image is multiplied by; <see cref="PluginColor.White"/> leaves it unchanged.</param>
+    /// <param name="rotationRadians">How far to turn the rectangle about the pivot, in radians, clockwise on screen.</param>
+    /// <param name="pivot">The point, in pixels from the rectangle's top-left corner, the rectangle turns and scales about.</param>
+    /// <param name="scaleX">How much to stretch the rectangle sideways about the pivot; 1 leaves it.</param>
+    /// <param name="scaleY">How much to stretch the rectangle vertically about the pivot; 1 leaves it.</param>
+    void DrawImageRegionTransformed(
+        PluginImage image,
+        PluginRect source,
+        PluginRect destination,
+        PluginColor tint,
+        double rotationRadians,
+        PluginPoint pivot,
+        double scaleX = 1.0,
+        double scaleY = 1.0)
+    {
+    }
+
+    /// <summary>
+    /// Draws an image as a nine-slice frame stretched over a rectangle: the
+    /// four corners at their own size, the edges stretched along the frame
+    /// and the middle stretched both ways, so a panel background or a button
+    /// keeps crisp corners at any size. Nothing is tiled. When the rectangle
+    /// is narrower or shorter than the two corners on that axis, those
+    /// corners shrink to fit, in proportion. Negative or non-finite insets
+    /// draw nothing. On a host that predates image regions this draws
+    /// nothing.
+    /// </summary>
+    /// <param name="image">An image from <see cref="IPluginImages"/>; a released or invalid image draws nothing.</param>
+    /// <param name="destination">The rectangle the frame fills.</param>
+    /// <param name="insets">How far in from the source's edges the corners run, in the image's own pixels; insets that add up to more than the source are scaled down to fit it.</param>
+    /// <param name="tint">A colour the image is multiplied by; <see cref="PluginColor.White"/> leaves it unchanged.</param>
+    /// <param name="source">The frame's part of the image, in the image's own pixels, cut to the image's bounds; null takes the whole image.</param>
+    /// <param name="drawCenter">False leaves the middle out, drawing only the frame around it.</param>
+    void DrawImageNineSlice(
+        PluginImage image,
+        PluginRect destination,
+        PluginInsets insets,
+        PluginColor tint,
+        PluginRect? source = null,
+        bool drawCenter = true)
+    {
+    }
+
+    /// <summary>
     /// Restricts what follows to a rectangle, intersected with whatever clip
     /// is already in force. Every push must be matched by a
     /// <see cref="PopClip"/> before the paint callback returns.
