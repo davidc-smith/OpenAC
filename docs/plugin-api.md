@@ -1133,19 +1133,21 @@ key binding is refused rather than silently stealing it: `handle.IsBound` is
 binding; the host also revokes every hotkey a plugin registered when that
 plugin unloads.
 
-A hotkey does not fire while the chat bar has keyboard focus unless Ctrl or
-Alt is part of the chord — otherwise every letter typed into chat would also
-be a candidate hotkey press.
+While anything in the interface has keyboard focus (the chat bar, a text
+field, a control reached with Tab), a hotkey fires only if Ctrl or Alt is
+part of the chord; otherwise every letter typed would also be a candidate
+hotkey press. Clicking a button does not give it keyboard focus. While a
+modal dialog is open, or a key rebind is being captured
+(`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
+chords included.
 
 Plugin hotkeys are a raw keyboard subscription, not a route through
 InputDispatcher's action/scope engine (a dynamic per-plugin action space
 large enough to fit that machinery would be a much bigger change than the
-rest of this surface) -- documented deviation. Two dispatcher states still
-suppress every hotkey, matching how the dispatcher itself would refuse to
-route a client action in the same situations: a rebind capture in progress
-(`InputDispatcher.BeginCapture`) and a modal `Dialog`/`EditField` scope
-pushed on top (not just `Chat`, which has its own Ctrl/Alt carve-out
-above).
+rest of this surface) -- documented deviation. They see each key before the
+interface handles it, so a key is judged by the focus from before that key:
+a key press that moves focus into or out of a text field is judged by where
+focus was.
 
 The graphical host may receive a `Register` call before its keyboard and
 input dispatcher exist yet (plugin loading is not strictly ordered against
