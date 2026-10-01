@@ -1134,9 +1134,9 @@ binding; the host also revokes every hotkey a plugin registered when that
 plugin unloads.
 
 While anything in the interface has keyboard focus (the chat bar, a text
-field, a control reached with Tab), a hotkey fires only if Ctrl or Alt is
-part of the chord; otherwise every letter typed would also be a candidate
-hotkey press. Clicking a button does not give it keyboard focus. While a
+field, a control reached with Tab, a plugin canvas with keyboard focus), a
+hotkey fires only if Ctrl or Alt is part of the chord; otherwise every
+letter typed would also be a candidate hotkey press. Clicking a button does not give it keyboard focus. While a
 modal dialog is open, or a key rebind is being captured
 (`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
 chords included.
@@ -1306,7 +1306,8 @@ reconnect), after which the plugin asks again.
 
 A canvas is a rectangle the plugin paints, shown over the world and under
 every window, taking no input unless it asks for it (see
-[Pointer input](#pointer-input) below). It is positioned by an anchor plus
+[Pointer input](#pointer-input) and [Keyboard input](#keyboard-input)
+below). It is positioned by an anchor plus
 an offset, it is exactly its declared size, and everything painted is
 clipped to it; there is no way to draw anywhere else on the screen.
 
@@ -1420,6 +1421,98 @@ handler is dropped with the paint callback when the canvas is disposed.
 
 Without a window `AcceptsPointerInput` and the handler are kept, the
 handler is never called, and `ReleasePointer()` does nothing.
+
+### Keyboard input
+
+A canvas that wants keys (a text box, a widget driven by the arrow keys)
+opts in with `AcceptsKeyboardInput` on the descriptor and sets a
+`KeyHandler`. It then takes the interface's keyboard focus, as the chat
+bar does, in one of two ways: a left press on it (which needs
+`AcceptsPointerInput` and a `PointerHandler` as well, since only a canvas
+that takes the pointer can be clicked), or `RequestKeyboardFocus()`.
+While it has focus, keys go to the handler and not to the game: the
+character does not move, the client's own key bindings do not fire, and
+plugin hotkeys follow the rule in [Hotkeys](#hotkeys) (only chords with
+Ctrl or Alt).
+
+```csharp
+string query = "";
+bool focused = false;
+IPluginCanvas box = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("search", 240, 24)
+    {
+        AcceptsPointerInput = true,
+        AcceptsKeyboardInput = true,
+    },
+    painter => DrawBox(painter, query, focused));
+
+box.PointerHandler = _ => { };   // a press on the box gives it focus
+box.KeyHandler = e =>
+{
+    switch (e.Kind)
+    {
+        case PluginKeyEventKind.FocusGained or PluginKeyEventKind.FocusLost:
+            focused = e.Kind == PluginKeyEventKind.FocusGained;
+            break;
+        case PluginKeyEventKind.Text:
+            query += e.Text;
+            break;
+        case PluginKeyEventKind.Down when e.Key == PluginKey.Backspace && query.Length > 0:
+            query = query[..^1];
+            break;
+        case PluginKeyEventKind.Down when e.Key == PluginKey.Enter:
+            Search(query);
+            box.ReleaseKeyboardFocus();
+            break;
+        case PluginKeyEventKind.Down when e.Key == PluginKey.Escape:
+            return false;   // not handled: focus goes back to the game
+    }
+    box.Invalidate();
+    return true;
+};
+```
+
+Every event arrives on the tick thread as a `PluginKeyEvent`: its `Kind`
+(`Down`, `Up`, `Text`, `FocusGained`, `FocusLost`), the `Key` for `Down`
+and `Up` (`PluginKey.Unknown` otherwise), the `Modifiers` held, read from
+the same place as for pointer events, `IsRepeat`, and for `Text` the typed
+characters in `Text`. Text is what the player's keyboard layout typed, so
+use it for anything that is typed and `Down` for keys that do something;
+it never holds a control character, so Enter, Tab and Backspace arrive
+only as `Down`. Keys `PluginKey` cannot name, the modifier keys among
+them, arrive as neither `Down` nor `Up`. A key held down repeats as
+`Down` with `IsRepeat` set, after 0.4 s and then every 0.04 s, as in the
+client's own text fields, until it comes up.
+
+The handler answers true when it handled the event. Only one answer
+changes what the host does: an Escape `Down` the handler did not handle
+gives focus back, as Escape leaves a text field, and the game does not see
+that Escape either. A canvas that wants Escape for itself answers true.
+
+`RequestKeyboardFocus()` never takes focus from anything else: it answers
+false, and changes nothing, while the canvas did not opt in, is not
+mounted or shown, has no handler, or while the chat bar, a text field,
+another canvas or a dialog has focus, a modal dialog is open, or a key
+rebind is being captured. It answers true when the canvas has focus
+afterwards, including when it already had it. Ask in answer to something
+the player did, so keys never vanish into a canvas they did not choose.
+
+Focus goes back, with exactly one `FocusLost` to the handler, when an
+Escape is not handled, the player presses the left button anywhere else,
+the canvas is hidden or disposed, the handler is set to null or dropped,
+the paint callback is dropped, a modal dialog opens, the interface is torn
+down, or the plugin calls `ReleaseKeyboardFocus()`. `HasKeyboardFocus`
+says whether the canvas has focus right now.
+
+The key handler has its own guard, measured like the pointer handler: one
+that stays over the 2 ms budget on three events in a row, or throws, is
+dropped for the rest of the session and focus goes back; pointer input and
+painting continue, and the client's log says why. The handler is dropped
+with the paint callback when the canvas is disposed.
+
+Without a window `AcceptsKeyboardInput` and the handler are kept, the
+handler is never called, `RequestKeyboardFocus()` answers false and
+`HasKeyboardFocus` is false.
 
 ## Dungeon map
 
