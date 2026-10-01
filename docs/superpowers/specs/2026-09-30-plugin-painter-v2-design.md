@@ -622,8 +622,8 @@ Not implemented in this series. Recommended direction, modelled on World labels:
 
 ## Plan-time corrections (2026-09-30)
 
-Measured or found while writing the PR 0, PR 1, PR 3, PR 4 and PR 5 plans; these supersede the
-sections above where they differ.
+Measured or found while writing the PR 0, PR 1, PR 3, PR 4, PR 5, PR 6a and PR 6b plans; these
+supersede the sections above where they differ.
 
 - **PR 0, lazy composite pipeline.** `ResourceCleanupGroupTests.TextRendererConstructionCreatesAndDisposesOnlyOnePipeline`
   pins a `TextRenderer` to one pipeline at construction, so the
@@ -871,6 +871,60 @@ sections above where they differ.
   focus from before it) without a key example.
 - **Finding (environment).** On clean `bbc83275` the HostParity peer tests
   failed 7 and 6 of 10 on two consecutive runs; the baseline range is 2–7.
+- **PR 6b, the press (refines "a press on it" in section 10).** The root
+  gives keyboard focus only on a *left* press, to an element whose
+  `AcceptsFocus` is true at that moment, and before the element sees the
+  press. A canvas's answer depends on the plugin's live handler and
+  visibility, so `UiElement.AcceptsFocus` becomes virtual and the canvas
+  computes it (opted in, key guard not tripped, handler set, shown). A
+  press needs `AcceptsPointerInput` *and* a `PointerHandler`: without one
+  the canvas is click-through and the press never reaches it. A right or
+  middle press neither gives nor takes focus, as for every other element.
+- **PR 6b, one source of focus events.** `FocusGained` and `FocusLost` reach
+  the plugin only from the root's focus events, which is what guarantees
+  exactly one `FocusLost` per `FocusGained`. Hiding (including a dropped
+  paint callback, which hides the canvas) and removal are the root's to
+  notice; the canvas itself checks every tick *and before every key* that
+  it is still shown, still has a handler and no modal is open, so a key
+  between a change and the next tick never reaches the plugin. When the
+  handler is set to null or dropped by its guard, focus goes back with
+  nobody left to tell. A canvas that is not mounted answers as a headless
+  one. The runtime unbinds canvases while its root is whole, so no
+  fallback `FocusLost` in `ReleaseTargets` is needed (one was prototyped,
+  found unreachable, and removed).
+- **PR 6b, the request.** "No rebind capture" is
+  `_bindings.Keyboard?.Dispatcher?.IsCapturing`, passed to the element at
+  mount. A handler that throws on `FocusGained` is dropped inside the
+  root's `SetKeyboardFocus`, which then clears focus re-entrantly; the only
+  `KeyboardFocusChanged` listener (`RetailWindowManager`) is unaffected,
+  since canvases sit outside every window frame. Open: a request is not
+  refused while a pre-game screen covers the canvases (PR 4 and 5 keep
+  canvases behind those screens), so the docs tell plugins to ask in answer
+  to something the player did.
+- **PR 6b, keys.** Escape follows `UiField`: an Escape the handler did not
+  handle gives focus back and is consumed, so the game never sees it (the
+  dispatcher already saw the focus and suppressed the Escape action). A key
+  `PluginKey` cannot name is consumed too. Silk hands typed text over as
+  UTF-16 units (truncating above U+FFFF), so `Text` carries one valid,
+  non-control `Rune`; control characters and lone surrogates are dropped,
+  and Enter, Tab and Backspace arrive only as `Down`. Repeat is of the last
+  key that went down, at most once per tick, and a repeated Escape follows
+  the same Escape rule.
+- **PR 6b, hotkeys.** PR 6a's rule needs no change (its source reads
+  `UiRoot.KeyboardFocus`); the Hotkeys docs now list a focused canvas, which
+  PR 6a's docs left out.
+- **PR 6b, branch and merge.** Built from `fix/hotkey-focus-scope`
+  (`f951ce16`), the branch it depends on, per the order of work. A scratch
+  merge into fork `main` (`301852fc`) conflicted in seven files, every hunk
+  "keep both" apart from the element's `ReleaseTargets` (PR 4 split it into
+  `GiveBackTargets`) and the runtime's mount (PR 5's per-layer stack
+  replaces `layer.AddChild`). PR 1's `fonts` parameter precedes the new
+  `keyboardCaptured`, so callers pass it by name. The merged tree built with
+  0 warnings and passed the portable suite (HostParity peer tests only) and
+  the 5 `Lane=Vulkan` canvas tests.
+- **Finding (environment).** On the PR 6b prototype the full portable suite
+  failed only 3 HostParity peer tests; the other baseline failures listed
+  for PR 5 passed.
 
 ## Status and carry-forward (2026-09-30)
 
@@ -884,6 +938,7 @@ sections above where they differ.
 - PR 5 done 2026-10-01: `origin/painter-v2/layers` (8 commits: the plan's six plus a final-review fix wave — `BringToFront(e, band)` leaves the canvas layer alone; the docs say a plugin needing layers sets `minHostVersion`), merged into fork `main` as a4ab9664 (pushed). Review follow-ups not taken: an `OverlayMode = false` that restores the previous layer rather than Main; groups anchored to follow a resize at draw time instead of one tick later; a main-only test of premultiplied runs across all three layers. Group order after an interface rebuild follows the lowest surviving registration id (plan-mandated). Next: PR 6a, 6b; PR 2 still skipped.
 - PR 6a planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr6a-hotkey-focus.md`, branch `fix/hotkey-focus-scope` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` (see the PR 6a corrections above); fork `main` touches none of its files.
 - PR 6a done 2026-10-01: `origin/fix/hotkey-focus-scope` (4 commits: the plan's three plus a final-review wording fix — the docs say "Plugin hotkeys see each key…" and the `OnKeyDown` comment names where the key order comes from), merged into fork `main` as 301852fc (pushed). Review follow-ups not taken: a combined modal + focus test; a shared test helper for the duplicated keyboard and mouse fakes; a test that pins the keyboard-source-before-interface subscription order. `HasKeyboardFocus` also counts Tab-reached controls, an open searchable menu and the credits surface (all clear focus when hidden). Next: PR 6b; PR 2 still skipped.
+- PR 6b planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr6b-keyboard.md`, branch `painter-v2/keyboard` from `fix/hotkey-focus-scope` (`f951ce16`), then merged into fork `main`. Its code was prototyped on `f951ce16`, replayed as one commit per task, and scratch-merged into `301852fc` before hand-off (see the PR 6b corrections above).
 
 ### Inputs for the PR 4 (HiDPI) plan
 
