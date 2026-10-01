@@ -38,6 +38,7 @@ public sealed class UiRenderContext
     private readonly System.Collections.Generic.List<float> _alphaStack = new();
     private float _alpha = 1f;
     private readonly System.Collections.Generic.List<UiColorVertex> _triangles = new(256);
+    private readonly System.Collections.Generic.List<UiColorVertex> _shape = new(256);
 
     public float AlphaMod => _alpha;
 
@@ -67,10 +68,19 @@ public sealed class UiRenderContext
     /// frame rate. A newly constructed context goes through this same reset,
     /// which is what makes a reused one start where a fresh one starts.
     /// </summary>
-    public void Begin(Vector2 screenSize, BitmapFont? defaultFont)
+    /// <summary>
+    /// Device pixels per interface point this frame: 1 on a standard display,
+    /// 2 on a typical high-density one. Shapes use it for the width of their
+    /// anti-aliased edge, and fonts that carry a sharp companion use it to
+    /// pick their sharper glyphs. Layout never reads it.
+    /// </summary>
+    public float PixelScale { get; private set; } = 1f;
+
+    public void Begin(Vector2 screenSize, BitmapFont? defaultFont, float pixelScale = 1f)
     {
         ScreenSize = screenSize;
         DefaultFont = defaultFont;
+        PixelScale = float.IsFinite(pixelScale) && pixelScale >= 1f ? pixelScale : 1f;
         _stack.Clear();
         _current = default;
         _clipStack.Clear();
@@ -364,6 +374,115 @@ public sealed class UiRenderContext
 
         if (_triangles.Count > 0)
             TextRenderer.DrawTriangles(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_triangles));
+    }
+
+    /// <summary>One device pixel, in interface points: the width of a shape's soft edge.</summary>
+    private float DevicePixel => 1f / PixelScale;
+
+    private void DrawShape()
+    {
+        if (_shape.Count > 0)
+            DrawTriangles(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_shape));
+    }
+
+    /// <summary>A rectangle with rounded corners and a smooth edge, in local coordinates.</summary>
+    internal void FillRoundedRect(float x, float y, float w, float h, CanvasCornerRadii radii, Vector4 color)
+    {
+        _shape.Clear();
+        CanvasGeometry.FillRoundedRect(x, y, w, h, radii, color, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    internal void FillRoundedRect(float x, float y, float w, float h, float radius, Vector4 color) =>
+        FillRoundedRect(x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), color);
+
+    /// <summary>A rounded rectangle's outline, centred on the outline.</summary>
+    internal void StrokeRoundedRect(float x, float y, float w, float h, float radius, Vector4 color, float thickness)
+    {
+        _shape.Clear();
+        CanvasGeometry.StrokeRoundedRect(
+            x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), color, thickness, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    internal void FillEllipse(float x, float y, float w, float h, Vector4 color)
+    {
+        _shape.Clear();
+        CanvasGeometry.FillEllipse(x, y, w, h, color, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    internal void StrokeEllipse(float x, float y, float w, float h, Vector4 color, float thickness)
+    {
+        _shape.Clear();
+        CanvasGeometry.StrokeEllipse(x, y, w, h, color, thickness, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    /// <summary>A straight segment with smooth sides and square, flush ends.</summary>
+    internal void DrawSmoothLine(float x0, float y0, float x1, float y1, Vector4 color, float thickness)
+    {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        float length = MathF.Sqrt(dx * dx + dy * dy);
+        if (!(length > 0f) || !(thickness > 0f)) return;
+        float nx = -dy / length * thickness * 0.5f;
+        float ny = dx / length * thickness * 0.5f;
+        Span<Vector2> corners =
+        [
+            new(x0 + nx, y0 + ny), new(x1 + nx, y1 + ny), new(x1 - nx, y1 - ny), new(x0 - nx, y0 - ny),
+        ];
+        Span<Vector4> colors = [color, color, color, color];
+        _shape.Clear();
+        CanvasGeometry.FillConvexPolygon(corners, colors, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    /// <summary>
+    /// A rounded rectangle whose colour runs from <paramref name="top"/> to
+    /// <paramref name="bottom"/>. Each corner of the shape takes the colour
+    /// at its height; the soft edge keeps its own transparency.
+    /// </summary>
+    internal void FillVerticalGradient(
+        float x, float y, float w, float h, CanvasCornerRadii radii, Vector4 top, Vector4 bottom)
+    {
+        if (!(h > 0f)) return;
+        _shape.Clear();
+        CanvasGeometry.FillRoundedRect(x, y, w, h, radii, Vector4.One, DevicePixel, _shape);
+        for (int i = 0; i < _shape.Count; i++)
+        {
+            UiColorVertex v = _shape[i];
+            float t = Math.Clamp((v.Position.Y - y) / h, 0f, 1f);
+            Vector4 c = Vector4.Lerp(top, bottom, t);
+            _shape[i] = new UiColorVertex(v.Position, c with { W = c.W * v.Color.W });
+        }
+        DrawShape();
+    }
+
+    /// <summary>
+    /// A soft shadow under a rounded rectangle: six stacked rounded fills,
+    /// each grown by a sixth of <paramref name="spread"/>, so the darkness
+    /// fades outwards. Drawn with the clip lifted to the whole screen,
+    /// because a shadow lies outside the element that casts it.
+    /// </summary>
+    internal void DrawSoftShadow(float x, float y, float w, float h, float radius, float spread, Vector4 color)
+    {
+        if (!(spread > 0f) || !(color.W > 0f) || !(w > 0f) || !(h > 0f)) return;
+        const int Layers = 6;
+        Vector4 layer = color with { W = color.W / Layers };
+        PushClipUnbounded();
+        try
+        {
+            for (int i = Layers; i >= 1; i--)
+            {
+                float grow = spread * i / Layers;
+                FillRoundedRect(x - grow, y - grow, w + 2f * grow, h + 2f * grow, radius + grow, layer);
+            }
+        }
+        finally
+        {
+            PopClip();
+        }
     }
 
     private UiColorVertex Place(in UiColorVertex vertex) =>

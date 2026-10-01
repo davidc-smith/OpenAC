@@ -784,6 +784,11 @@ public sealed class RetailUiRuntime : IDisposable
             _overlayHost?.SetViewport(screenSize);
         }
 
+        // Themed plugin windows draw their soft edges and sharp text at the
+        // display's density; the canvas services already know it.
+        Host.PixelScale = _bindings.PluginCanvases is { } canvases
+            ? Layout.CanvasPixelScale.ForInterface(canvases.FramebufferPerPoint())
+            : 1f;
         Host.Draw(screenSize);
     }
 

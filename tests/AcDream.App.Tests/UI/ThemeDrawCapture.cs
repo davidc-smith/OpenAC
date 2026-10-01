@@ -20,7 +20,7 @@ internal static class ThemeDrawCapture
         var renderer = new TextRenderer(new RecordingGpuDevice(), new FrameSource(), "unused");
         renderer.Begin(new Vector2(width, height));
         var context = new UiRenderContext(renderer, new Vector2(width, height));
-        context.Begin(new Vector2(width, height), null);
+        context.Begin(new Vector2(width, height), null, pixelScale);
         return (renderer, context);
     }
 
