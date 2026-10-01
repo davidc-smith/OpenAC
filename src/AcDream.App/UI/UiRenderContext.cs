@@ -467,10 +467,16 @@ public sealed class UiRenderContext
     /// baseline and each glyph's left edge snap to whole pixels while the pen
     /// keeps its fractional advance, as the interface font does. The outline
     /// is eight copies one pixel out, drawn first.
+    ///
+    /// <para>On a canvas painted at a <paramref name="pixelScale"/> above 1,
+    /// glyphs come from the font's sharper bake when it has one, and snap
+    /// to that bake's pixels instead: whole device pixels when the bake
+    /// matches the canvas. The pen, and so every position the text is
+    /// measured at, still comes from the font's own bake.</para>
     /// </summary>
     internal void DrawStringCanvasFont(
         CanvasFont font, string text, float x, float y, Vector4 color,
-        bool outline = false, Vector4? outlineColor = null)
+        bool outline = false, Vector4? outlineColor = null, float pixelScale = 1f)
     {
         if (font is null || string.IsNullOrEmpty(text)) return;
         if (outline)
@@ -481,17 +487,21 @@ public sealed class UiRenderContext
                 for (int dx = -1; dx <= 1; dx++)
                 {
                     if (dx != 0 || dy != 0)
-                        DrawCanvasFontPass(font, text, x + dx, y + dy, shadow);
+                        DrawCanvasFontPass(font, text, x + dx, y + dy, shadow, pixelScale);
                 }
             }
         }
-        DrawCanvasFontPass(font, text, x, y, color);
+        DrawCanvasFontPass(font, text, x, y, color, pixelScale);
     }
 
-    private void DrawCanvasFontPass(CanvasFont font, string text, float x, float y, Vector4 color)
+    private void DrawCanvasFontPass(CanvasFont font, string text, float x, float y, Vector4 color, float pixelScale)
     {
+        CanvasSharpGlyphs? sharp = pixelScale > 1f ? font.Sharp : null;
+        // Pixels per canvas pixel of the grid glyphs snap to: the sharper
+        // bake's, but no finer than the canvas's own device pixels.
+        float grid = sharp is null ? 1f : MathF.Min(pixelScale, sharp.Scale);
         float pen = _current.X + x;
-        float baseline = MathF.Floor(_current.Y + y + font.Ascent + 0.5f);
+        float baseline = Snap(_current.Y + y + font.Ascent, grid);
         int previous = -1;
         foreach (System.Text.Rune rune in text.EnumerateRunes())
         {
@@ -502,18 +512,32 @@ public sealed class UiRenderContext
             }
             if (previous >= 0)
                 pen += font.Kerning(previous, glyph.GlyphIndex);
-            if (glyph.Width > 0f && glyph.Height > 0f)
+            // Canvas pixels per atlas pixel of the glyph drawn.
+            float texel = 1f;
+            CanvasGlyph drawn = glyph;
+            uint atlas = font.AtlasTexture;
+            if (sharp is not null && sharp.TryGetGlyph(rune.Value, out CanvasGlyph fine))
             {
-                float gx = MathF.Floor(pen + glyph.OffsetX + 0.5f);
-                float gy = baseline + MathF.Round(glyph.OffsetY);
+                texel = 1f / sharp.Scale;
+                drawn = fine;
+                atlas = sharp.AtlasTexture;
+            }
+            if (drawn.Width > 0f && drawn.Height > 0f)
+            {
+                float gx = Snap(pen + drawn.OffsetX * texel, grid);
+                float gy = baseline + MathF.Round(drawn.OffsetY * texel * grid) / grid;
                 DrawCoverageSpriteAbsolute(
-                    font.AtlasTexture, gx, gy, glyph.Width, glyph.Height,
-                    glyph.U0, glyph.V0, glyph.U1, glyph.V1, color);
+                    atlas, gx, gy, drawn.Width * texel, drawn.Height * texel,
+                    drawn.U0, drawn.V0, drawn.U1, drawn.V1, color);
             }
             pen += glyph.Advance;
             previous = glyph.GlyphIndex;
         }
     }
+
+    /// <summary>Rounds half up to the nearest multiple of 1 / <paramref name="pixelsPerUnit"/>.</summary>
+    private static float Snap(float value, float pixelsPerUnit) =>
+        MathF.Floor(value * pixelsPerUnit + 0.5f) / pixelsPerUnit;
 
     private void DrawFillGlyph(
         UiDatFont font, DatReaderWriter.Types.FontCharDesc g,

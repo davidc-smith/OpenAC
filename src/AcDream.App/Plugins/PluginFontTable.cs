@@ -8,7 +8,10 @@ namespace AcDream.App.Plugins;
 /// How many fonts one plugin may hold and how much memory its own fonts may
 /// take. <paramref name="MaximumBytes"/> counts the font files the plugin
 /// supplied and the atlases baked from them; the bundled font is shared and
-/// costs nothing against it.
+/// costs nothing against it. The sharper bakes a high-density display gets
+/// are the host's choice, not the plugin's, and are counted separately
+/// (<see cref="MaximumSharpBytes"/>), so a plugin that fits one display fits
+/// every display.
 /// </summary>
 internal readonly record struct PluginFontBudget(
     int MaximumCount,
@@ -23,6 +26,14 @@ internal readonly record struct PluginFontBudget(
     /// measurements.
     /// </summary>
     public static PluginFontBudget Default { get; } = new(16, 16L * 1024 * 1024, 2048, 6f, 64f);
+
+    /// <summary>
+    /// How much memory the sharper bakes of the plugin's own fonts may take
+    /// together: 32 MB, room for sixteen 16 px fonts at 2x several times
+    /// over. A font whose sharper bake would pass it is drawn from a lower
+    /// step, or from its own bake.
+    /// </summary>
+    public long MaximumSharpBytes { get; init; } = 32L * 1024 * 1024;
 }
 
 /// <summary>The texture services a font table draws on: glyph atlases in, and back out.</summary>
@@ -47,11 +58,14 @@ internal sealed class PluginFontTable : IDisposable
 {
     private readonly record struct Key(bool Bundled, string Name, float PixelSize, string Ranges);
 
-    private sealed class Entry(Key key, int id, CanvasFont font, long ownedBytes)
+    private sealed class Entry(Key key, int id, CanvasFont font, long ownedBytes, IReadOnlyList<(int First, int Last)> ranges)
     {
         internal Key Key { get; } = key;
         internal int Id { get; } = id;
         internal CanvasFont Font { get; } = font;
+
+        /// <summary>The characters baked, for a sharper bake of the same set.</summary>
+        internal IReadOnlyList<(int First, int Last)> Ranges { get; } = ranges;
 
         /// <summary>Zero for the shared bundled font; file plus atlas for the plugin's own.</summary>
         internal long OwnedBytes { get; } = ownedBytes;
@@ -71,6 +85,7 @@ internal sealed class PluginFontTable : IDisposable
     private int _uiThreadId;
     private int _nextId;
     private long _ownedBytes;
+    private long _sharpBytes;
     private bool _disposed;
 
     internal PluginFontTable(string ownerId, PluginFontBudget budget, Action<string>? report = null)
@@ -89,6 +104,9 @@ internal sealed class PluginFontTable : IDisposable
     internal int Count => _byId.Count;
 
     internal long OwnedBytes => _ownedBytes;
+
+    /// <summary>The bytes the sharper bakes of the plugin's own fonts take.</summary>
+    internal long SharpBytes => _sharpBytes;
 
     internal bool IsBound => _backend is not null;
 
@@ -123,6 +141,7 @@ internal sealed class PluginFontTable : IDisposable
     {
         if (!TryEnter(out _, out BundledCanvasFontCache? bundled) || !IsSizeAllowed(pixelSize))
             return PluginFont.None;
+        pixelSize = RoundSize(pixelSize);
         var key = new Key(Bundled: true, Name: "", pixelSize, Ranges: "");
         if (TryHoldAgain(key, out PluginFont again))
             return again;
@@ -136,7 +155,7 @@ internal sealed class PluginFontTable : IDisposable
             ReportOnce(FormattableString.Invariant($"bundled:{pixelSize}"), FormattableString.Invariant($"the bundled font at {pixelSize} px could not be prepared: {failure}"));
             return PluginFont.None;
         }
-        return Add(key, font, ownedBytes: 0L).Handle;
+        return Add(key, font, ownedBytes: 0L, CanvasFontBaker.DefaultRanges).Handle;
     }
 
     internal PluginFont AcquireStream(
@@ -146,6 +165,7 @@ internal sealed class PluginFontTable : IDisposable
         ArgumentNullException.ThrowIfNull(open);
         if (!TryEnter(out IPluginFontBackend? backend, out _) || !IsSizeAllowed(pixelSize))
             return PluginFont.None;
+        pixelSize = RoundSize(pixelSize);
 
         IReadOnlyList<(int First, int Last)> baked = ranges is null
             ? CanvasFontBaker.DefaultRanges
@@ -190,9 +210,60 @@ internal sealed class PluginFontTable : IDisposable
         }
 
         uint texture = backend.UploadCoverage(
-            bake.Coverage, bake.AtlasWidth, bake.AtlasHeight, $"plugin-{_ownerId}-font-{name}-{pixelSize}px");
+            bake.Coverage, bake.AtlasWidth, bake.AtlasHeight, DebugName(name, pixelSize));
         _ownedBytes += owned;
-        return Add(key, new CanvasFont(bake, texture, bytes), owned).Handle;
+        return Add(key, new CanvasFont(bake, texture, bytes), owned, baked).Handle;
+    }
+
+    /// <summary>
+    /// Readies every font the plugin holds for canvases painted at
+    /// <paramref name="scale"/>: each gets a sharper bake at that multiple
+    /// of its size, or the largest lower step that fits, and the bake for
+    /// any other scale is given back. A font already prepared for the scale
+    /// is left alone, so this costs nothing on a paint that follows another
+    /// at the same scale. Bundled fonts are prepared in the shared cache;
+    /// the plugin's own count against <see cref="PluginFontBudget.MaximumSharpBytes"/>.
+    /// A font drawn less sharply than the scale is reported once.
+    /// </summary>
+    internal void PrepareScale(float scale)
+    {
+        if (_disposed || _backend is not { } backend || _bundled is not { } bundled)
+            return;
+        ThrowIfWrongThread();
+        foreach (Entry entry in _byId.Values)
+        {
+            CanvasFont font = entry.Font;
+            if (font.PreparedScale == scale)
+                continue;
+            string? shortfall;
+            if (entry.Key.Bundled)
+            {
+                bundled.PrepareScale(font, scale, out shortfall);
+            }
+            else
+            {
+                long room = Budget.MaximumSharpBytes - _sharpBytes + (font.Sharp?.AtlasBytes ?? 0L);
+                _sharpBytes += CanvasFontSharpening.Prepare(
+                    font, scale, entry.Ranges, Budget.MaximumGlyphs, room, backend,
+                    DebugName(entry.Key.Name, entry.Key.PixelSize), out shortfall);
+                // Short of the largest atlas, the room is what stopped the bake.
+                if (shortfall is not null && room < (long)CanvasFontBaker.MaximumAtlasSide * CanvasFontBaker.MaximumAtlasSide)
+                {
+                    shortfall = FormattableString.Invariant(
+                        $"the plugin's sharper fonts have {Math.Max(room, 0L):N0} of their {Budget.MaximumSharpBytes:N0} bytes left");
+                }
+            }
+            if (shortfall is not null)
+            {
+                string what = entry.Key.Bundled
+                    ? FormattableString.Invariant($"the bundled font at {entry.Key.PixelSize} px")
+                    : FormattableString.Invariant($"font '{entry.Key.Name}' at {entry.Key.PixelSize} px");
+                ReportOnce(
+                    FormattableString.Invariant($"sharp:{entry.Id}:{scale}"),
+                    FormattableString.Invariant(
+                        $"{what} is drawn at {font.Sharp?.Scale ?? 1f}x on canvases painted at {scale}x, so it is less sharp than it could be: {shortfall}"));
+            }
+        }
     }
 
     /// <summary>
@@ -315,9 +386,9 @@ internal sealed class PluginFontTable : IDisposable
         return false;
     }
 
-    private Entry Add(Key key, CanvasFont font, long ownedBytes)
+    private Entry Add(Key key, CanvasFont font, long ownedBytes, IReadOnlyList<(int First, int Last)> ranges)
     {
-        var entry = new Entry(key, checked(++_nextId), font, ownedBytes);
+        var entry = new Entry(key, checked(++_nextId), font, ownedBytes, ranges);
         _byKey.Add(key, entry);
         _byId.Add(entry.Id, entry);
         return entry;
@@ -333,9 +404,24 @@ internal sealed class PluginFontTable : IDisposable
             return;
         }
         _ownedBytes -= entry.OwnedBytes;
-        _backend?.ReleaseCoverage(entry.Font.AtlasTexture);
+        if (_backend is { } backend)
+        {
+            _sharpBytes -= CanvasFontSharpening.Release(entry.Font, backend);
+            backend.ReleaseCoverage(entry.Font.AtlasTexture);
+        }
         entry.Font.Dispose();
     }
+
+    /// <summary>
+    /// A size allowed by the budget, to the nearest quarter pixel, so
+    /// near-equal requests share one bake. Rounding cannot leave the budget's
+    /// range while its ends are whole quarters.
+    /// </summary>
+    private static float RoundSize(float pixelSize) =>
+        MathF.Round(pixelSize * 4f, MidpointRounding.AwayFromZero) / 4f;
+
+    private string DebugName(string name, float pixelSize) =>
+        FormattableString.Invariant($"plugin-{_ownerId}-font-{name}-{pixelSize}px");
 
     private void ReportOnce(string key, string message)
     {

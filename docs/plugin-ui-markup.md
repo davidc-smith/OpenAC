@@ -418,6 +418,15 @@ Canvas shapes are covered by `UI/CanvasGeometryTests`,
 `PluginCanvasShapesContractTests` for the inert answers of an older host,
 and, on a Vulkan device, by `Rendering/Gpu/Vk/PluginCanvasShapeOffscreenTests`
 (`Lane=Vulkan`).
+Canvases on high-density displays are covered by `UI/Layout/CanvasPixelScaleTests`,
+the high-density cases in `UI/Layout/PluginCanvasElementTests`, the sharper-bake
+cases in `CanvasFontBakerTests`, `CanvasFontTests` and
+`BundledCanvasFontCacheTests`, and `Plugins/PluginFontTableScaleTests` under
+`tests/AcDream.App.Tests/`, by `PluginCanvasPixelScaleContractTests` for the
+answer of an older host, and, on a Vulkan device, by
+`Rendering/Gpu/Vk/PluginCanvasHiDpiOffscreenTests` (`Lane=Vulkan`).
+`samples/AcDream.Plugins.CanvasDemo` paints one canvas with every kind of
+content, for looking at by eye.
 
 ## Scrolling transcripts
 

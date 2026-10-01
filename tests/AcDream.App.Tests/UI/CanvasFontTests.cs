@@ -109,4 +109,93 @@ public sealed class CanvasFontTests
         font.Dispose();
         font.Dispose();
     }
+
+    private const uint SharpAtlas = 43u;
+
+    /// <summary>The font of <see cref="Bake"/>, given its 2x bake as a canvas scale of 2 would.</summary>
+    private static CanvasFont BakeWithSharp()
+    {
+        CanvasFont font = Bake(BundledUiFont.ReadEmbeddedFontBytes());
+        Assert.True(CanvasFontBaker.TryBakeForScale(
+            font.Face.Bytes, font.PixelSize, 2f, CanvasFontBaker.DefaultRanges, 2048, long.MaxValue,
+            out CanvasFontBake? sharp, out float baked, out _));
+        font.PrepareSharp(2f, new CanvasSharpGlyphs(SharpAtlas, baked, sharp.Glyphs, (long)sharp.AtlasWidth * sharp.AtlasHeight));
+        return font;
+    }
+
+    private static (TextRenderer Renderer, UiRenderContext Context, RecordingGpuDevice Device) Rig()
+    {
+        var device = new RecordingGpuDevice();
+        var renderer = new TextRenderer(device, new NullFrames(), "unused");
+        renderer.Begin(new Vector2(200f, 50f));
+        return (renderer, new UiRenderContext(renderer, new Vector2(200f, 50f)), device);
+    }
+
+    [Fact]
+    public void OnAScaledCanvasGlyphsComeFromTheSharperBakeOnDevicePixels()
+    {
+        using CanvasFont font = BakeWithSharp();
+        (TextRenderer renderer, UiRenderContext context, RecordingGpuDevice device) = Rig();
+        using (device)
+        using (renderer)
+        {
+            context.DrawStringCanvasFont(font, "AV", 10.3f, 5.2f, Vector4.One, pixelScale: 2f);
+
+            Assert.Equal([SharpAtlas], renderer.DebugSpriteSegmentCoverage);
+            (uint _, IReadOnlyList<float> verts) = Assert.Single(renderer.DebugSpriteSegmentVerts);
+            Assert.True(font.TryGetGlyph('A', out CanvasGlyph a));
+            Assert.True(font.TryGetGlyph('V', out CanvasGlyph v));
+            Assert.True(font.Sharp!.TryGetGlyph('V', out CanvasGlyph sharpV));
+            // The pen is the font's own; the glyph's box is the sharper bake's, halved, on half pixels.
+            float pen = 10.3f + a.Advance + font.Kerning(a.GlyphIndex, v.GlyphIndex);
+            float expectedLeft = MathF.Floor((pen + sharpV.OffsetX / 2f) * 2f + 0.5f) / 2f;
+            float[] second = Enumerable.Range(6, 6).Select(i => verts[i * TextRenderer.FloatsPerVertex]).ToArray();
+            Assert.Equal(expectedLeft, second.Min());
+            Assert.Equal(sharpV.Width / 2f, second.Max() - second.Min(), 4);
+            float[] ys = Enumerable.Range(0, 12).Select(i => verts[i * TextRenderer.FloatsPerVertex + 1]).ToArray();
+            Assert.All(ys, y => Assert.Equal(MathF.Round(y * 2f), y * 2f, 4));
+        }
+    }
+
+    [Fact]
+    public void ASharperBakeChangesNoMeasurement()
+    {
+        using CanvasFont plain = Bake(BundledUiFont.ReadEmbeddedFontBytes());
+        using CanvasFont sharp = BakeWithSharp();
+
+        Assert.Equal(plain.MeasureWidth("BuffProfile AV Ж"), sharp.MeasureWidth("BuffProfile AV Ж"));
+        Assert.Equal((plain.LineHeight, plain.Ascent), (sharp.LineHeight, sharp.Ascent));
+    }
+
+    [Fact]
+    public void AtOnePixelPerPixelTheSharperBakeIsNotUsed()
+    {
+        using CanvasFont font = BakeWithSharp();
+        (TextRenderer renderer, UiRenderContext context, RecordingGpuDevice device) = Rig();
+        using (device)
+        using (renderer)
+        {
+            context.DrawStringCanvasFont(font, "AV", 10.3f, 5f, Vector4.One);
+
+            Assert.Equal([Atlas], renderer.DebugSpriteSegmentCoverage);
+        }
+    }
+
+    [Fact]
+    public void WithoutASharperBakeAScaledCanvasDrawsTheFontsOwnGlyphsOnWholePixels()
+    {
+        using CanvasFont font = Bake(BundledUiFont.ReadEmbeddedFontBytes());
+        (TextRenderer renderer, UiRenderContext context, RecordingGpuDevice device) = Rig();
+        using (device)
+        using (renderer)
+        {
+            context.DrawStringCanvasFont(font, "AV", 10.3f, 5.2f, Vector4.One, pixelScale: 2f);
+
+            Assert.Equal([Atlas], renderer.DebugSpriteSegmentCoverage);
+            (uint _, IReadOnlyList<float> verts) = Assert.Single(renderer.DebugSpriteSegmentVerts);
+            Assert.All(
+                Enumerable.Range(0, 12).Select(i => verts[i * TextRenderer.FloatsPerVertex]),
+                x => Assert.Equal(MathF.Round(x), x));
+        }
+    }
 }

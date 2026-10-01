@@ -60,6 +60,13 @@ internal sealed class PluginFonts : IPluginFonts, IDisposable
     /// <summary>The canvas has finished painting, normally or not.</summary>
     internal void EndPaint() => _table.IsPainting = false;
 
+    /// <summary>Readies the plugin's fonts for canvases painted at a scale; see <see cref="PluginFontTable.PrepareScale"/>.</summary>
+    internal void PrepareScale(float scale)
+    {
+        if (!_disposed)
+            _table.PrepareScale(scale);
+    }
+
     /// <summary>The baked font behind a handle, for the painter.</summary>
     internal bool TryResolve(PluginFont font, [NotNullWhen(true)] out CanvasFont? resolved)
     {

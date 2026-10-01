@@ -125,22 +125,29 @@ public sealed partial class PluginCanvasElementTests
         public TextRenderer MainRenderer { get; }
         public UiRenderContext MainContext { get; }
         public List<string> Reports { get; } = [];
+        public AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend FontBackend { get; } = new();
         public ManualClock Clock { get; } = new();
         public PluginUiOwner Owner { get; } = new("example.plugin", "Example");
         private long _now;
 
-        public Harness()
+        /// <summary>Framebuffer pixels per window point; tests set it to stand in for a high-density display.</summary>
+        public Vector2 FramebufferPerPoint { get; set; } = Vector2.One;
+
+        public Harness(uint maximumImageDimension = 16_384)
         {
-            Device = new RecordingGpuDevice(retirement: Retirement);
+            Device = new RecordingGpuDevice(retirement: Retirement)
+            {
+                Capabilities = RecordingGpuDevice.DefaultCapabilities with { MaxImageDimension2D = maximumImageDimension },
+            };
             Host = UiOverlayHost.Mount(Root);
             Layer = Host.AddLayer("PluginCanvases");
             Layer.Visible = true;
-            var services = new PluginCanvasHostServices(Device, Frames, "unused", null);
+            var services = new PluginCanvasHostServices(Device, Frames, "unused", () => FramebufferPerPoint);
             Surface = new PluginCanvasSurface(services, font: null);
             MainRenderer = new TextRenderer(Device, Frames, "unused");
             MainContext = new UiRenderContext(MainRenderer, new Vector2(800f, 600f));
             Registry.BindImageServices(new FakeImageBackend());
-            Registry.BindFontServices(new AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend());
+            Registry.BindFontServices(FontBackend);
             Device.Clear();
         }
 
@@ -153,7 +160,7 @@ public sealed partial class PluginCanvasElementTests
             var element = new PluginCanvasElement(
                 registration, Surface, () => Registry.FindImages(Owner), Reports.Add, Clock.Read,
                 fonts: () => Registry.FindFonts(Owner));
-            Layer.AddChild(element);
+            Layer.AddChild(element, takesInput: descriptor.AcceptsPointerInput);
             Registry.CompleteCanvasMount(registration, () =>
             {
                 Layer.RemoveChild(element);

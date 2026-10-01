@@ -189,7 +189,10 @@ internal sealed class RecordingGpuDevice : IGpuDevice, IGpuPipelineFormatVariant
 
     public GpuBackendKind Backend => GpuBackendKind.Recording;
 
-    public GpuCapabilityRecord Capabilities { get; init; } = new()
+    public GpuCapabilityRecord Capabilities { get; init; } = DefaultCapabilities;
+
+    /// <summary>What the double reports unless a test says otherwise; a test changes one field with <c>with</c>.</summary>
+    public static GpuCapabilityRecord DefaultCapabilities { get; } = new()
     {
         Backend = GpuBackendKind.Recording,
         DeviceName = "recording",

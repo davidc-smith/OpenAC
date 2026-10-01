@@ -147,4 +147,66 @@ public sealed class CanvasFontBakerTests
             Assert.False(string.IsNullOrEmpty(failure));
         }
     }
+
+    [Fact]
+    public void ABakeKeepsToTheAtlasBytesItIsGiven()
+    {
+        Assert.True(CanvasFontBaker.TryBake(
+            Noto, 16f, CanvasFontBaker.DefaultRanges, 2048, out CanvasFontBake? bake, out _, maximumAtlasBytes: 512 * 256));
+        Assert.Equal((512, 256), (bake.AtlasWidth, bake.AtlasHeight));
+
+        Assert.False(CanvasFontBaker.TryBake(
+            Noto, 16f, CanvasFontBaker.DefaultRanges, 2048, out _, out string? failure, maximumAtlasBytes: 512 * 256 - 1));
+        Assert.Equal("1063 glyphs at 16 px do not fit a 256x256 atlas", failure);
+
+        Assert.False(CanvasFontBaker.TryBake(
+            Noto, 16f, CanvasFontBaker.DefaultRanges, 2048, out _, out failure, maximumAtlasBytes: 1000));
+        Assert.Equal("no atlas fits in 1,000 bytes", failure);
+    }
+
+    [Fact]
+    public void ASharperBakeHasTheSameGlyphsAtTheScale()
+    {
+        Assert.True(CanvasFontBaker.TryBake(Noto, 16f, CanvasFontBaker.DefaultRanges, 2048, out CanvasFontBake? own, out _));
+
+        Assert.True(CanvasFontBaker.TryBakeForScale(
+            Noto, 16f, 2f, CanvasFontBaker.DefaultRanges, 2048, long.MaxValue,
+            out CanvasFontBake? sharp, out float baked, out string? shortfall));
+
+        Assert.Equal(2f, baked);
+        Assert.Null(shortfall);
+        Assert.Equal(32f, sharp.PixelSize);
+        Assert.Equal((1024, 512), (sharp.AtlasWidth, sharp.AtlasHeight));
+        Assert.Equal(own.Glyphs.Keys.Order(), sharp.Glyphs.Keys.Order());
+        // Advances scale exactly, so text laid out from the font's own bake lines up with the sharper glyphs.
+        foreach (int codepoint in new[] { 'A', 'V', 'g', 0x416 })
+            Assert.Equal(own.Glyphs[codepoint].Advance * 2f, sharp.Glyphs[codepoint].Advance, 3);
+    }
+
+    [Fact]
+    public void ASharperBakeThatDoesNotFitStepsDownAQuarterAtATime()
+    {
+        Assert.True(CanvasFontBaker.TryBakeForScale(
+            Noto, 64f, 2f, CanvasFontBaker.DefaultRanges, 2048, long.MaxValue,
+            out CanvasFontBake? sharp, out float baked, out string? shortfall));
+
+        Assert.Equal(1.75f, baked);
+        Assert.Equal(112f, sharp.PixelSize);
+        Assert.Equal("1063 glyphs at 128 px do not fit a 2048x2048 atlas", shortfall);
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.25f)]
+    public void NoSharperBakeIsMadeAtOneOrWhenNoStepFits(float scale)
+    {
+        long room = scale == 1f ? long.MaxValue : 1000;
+
+        Assert.False(CanvasFontBaker.TryBakeForScale(
+            Noto, 16f, scale, CanvasFontBaker.DefaultRanges, 2048, room,
+            out _, out float baked, out string? shortfall));
+
+        Assert.Equal(1f, baked);
+        Assert.False(string.IsNullOrEmpty(shortfall));
+    }
 }
