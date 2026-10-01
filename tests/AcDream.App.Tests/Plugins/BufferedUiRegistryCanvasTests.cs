@@ -209,4 +209,22 @@ public sealed class BufferedUiRegistryCanvasTests
         Assert.True(registration.TakeInvalidation());
         Assert.False(registration.TakeInvalidation());
     }
+
+    [Fact]
+    public void ARegistrationKeepsItsLayerAndStartsAtItsDescriptorsZOrder()
+    {
+        var registry = new BufferedUiRegistry();
+        var registration = (PluginCanvasRegistration)registry.RegisterCanvas(
+            A, Canvas("hud") with { Layer = PluginCanvasLayer.AboveWindows, ZOrder = 3 }, Paint);
+        var plain = (PluginCanvasRegistration)registry.RegisterCanvas(A, Canvas("map"), Paint);
+
+        Assert.Equal(PluginCanvasLayer.AboveWindows, registration.Layer);
+        Assert.Equal(3, registration.ZOrder);
+        Assert.Equal(PluginCanvasLayer.World, plain.Layer);
+        Assert.Equal(0, plain.ZOrder);
+
+        registration.ZOrder = -7;
+        Assert.Equal(-7, registration.ZOrder);
+        Assert.Equal(PluginCanvasLayer.AboveWindows, registration.Layer);
+    }
 }

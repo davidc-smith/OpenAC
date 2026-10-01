@@ -25,6 +25,7 @@ public sealed class ScopedUiRegistryCanvasTests
         public int Disposals { get; private set; }
         public int PointerReleases { get; private set; }
         public Action<PluginPointerEvent>? PointerHandler { get; set; }
+        public int ZOrder { get; set; } = descriptor.ZOrder;
 
         public void Invalidate() => Invalidations++;
 
@@ -131,6 +132,22 @@ public sealed class ScopedUiRegistryCanvasTests
         Assert.Equal(2, hosts.Invalidations);
         Assert.False(canvas.IsVisible);
         Assert.Equal(PluginCanvasAnchor.Center, canvas.Anchor);
+        scoped.Dispose();
+    }
+
+    [Fact]
+    public void TheZOrderReachesTheHostsCanvasBothWays()
+    {
+        var inner = new FakeScopedUiRegistry();
+        var scoped = new ScopedPluginHost(new StubHost(inner), "example.plugin", "Example");
+        IPluginCanvas canvas = scoped.Ui.RegisterCanvas(Hud with { ZOrder = 4 }, _ => { });
+        FakeCanvas hosts = Assert.Single(inner.Canvases);
+
+        Assert.Equal(4, canvas.ZOrder);
+        canvas.ZOrder = 9;
+        Assert.Equal(9, hosts.ZOrder);
+        hosts.ZOrder = -2;
+        Assert.Equal(-2, canvas.ZOrder);
         scoped.Dispose();
     }
 

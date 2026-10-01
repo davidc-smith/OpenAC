@@ -36,6 +36,26 @@ public enum PluginCanvasAnchor
     BottomRight,
 }
 
+/// <summary>
+/// Where a canvas sits in the interface's stacking order. The layer is
+/// chosen when the canvas is registered and does not change.
+/// </summary>
+public enum PluginCanvasLayer
+{
+    /// <summary>
+    /// Over the world and its labels, under every window: a HUD that never
+    /// hides the interface. The default.
+    /// </summary>
+    World = 0,
+
+    /// <summary>
+    /// Over every window, under dialogs, tooltips, menus and the item being
+    /// dragged. A canvas here that takes input takes the pointer from the
+    /// windows beneath its rectangle.
+    /// </summary>
+    AboveWindows = 1,
+}
+
 /// <summary>A width and a height, in pixels.</summary>
 /// <param name="Width">The width.</param>
 /// <param name="Height">The height.</param>
@@ -72,6 +92,23 @@ public sealed record PluginCanvasDescriptor(string CanvasId, int Width, int Heig
     /// the flag is kept and nothing is ever delivered.
     /// </summary>
     public bool AcceptsPointerInput { get; init; }
+
+    /// <summary>
+    /// Which layer the canvas is drawn in: <see cref="PluginCanvasLayer.World"/>,
+    /// the default, under every window, or
+    /// <see cref="PluginCanvasLayer.AboveWindows"/>. Fixed at registration.
+    /// A host that predates layers draws every canvas in the world layer.
+    /// </summary>
+    public PluginCanvasLayer Layer { get; init; } = PluginCanvasLayer.World;
+
+    /// <summary>
+    /// The canvas's starting place among this plugin's canvases in the same
+    /// layer: higher is drawn on top, and canvases with equal values keep the
+    /// order they were registered in. It orders a plugin's own canvases
+    /// only; it never lifts one plugin's canvas over another plugin's. Change
+    /// it later through <see cref="IPluginCanvas.ZOrder"/>.
+    /// </summary>
+    public int ZOrder { get; init; }
 }
 
 /// <summary>Which mouse button a pointer event is about.</summary>
@@ -243,7 +280,8 @@ public interface IPluginPainter
 
 /// <summary>
 /// A rectangle the plugin paints, shown over the world and under every
-/// window, taking no input unless it opted in through
+/// window (or, in <see cref="PluginCanvasLayer.AboveWindows"/>, over every
+/// window), taking no input unless it opted in through
 /// <see cref="PluginCanvasDescriptor.AcceptsPointerInput"/>. Painting is retained: the host keeps what was
 /// last painted and calls the paint callback again only after
 /// <see cref="Invalidate"/>, at most once per frame, on the tick thread,
@@ -319,6 +357,19 @@ public interface IPluginCanvas : IDisposable
     void ReleasePointer()
     {
     }
+
+    /// <summary>
+    /// The canvas's place among this plugin's canvases in the same layer:
+    /// higher is drawn on top, and equal values keep registration order.
+    /// Starts at <see cref="PluginCanvasDescriptor.ZOrder"/>; set it to
+    /// restack, from the next frame. A host that predates layers answers 0
+    /// and ignores the set.
+    /// </summary>
+    int ZOrder
+    {
+        get => 0;
+        set { }
+    }
 }
 
 /// <summary>
@@ -338,6 +389,7 @@ public sealed class NoOpPluginCanvas : IPluginCanvas
         IsVisible = descriptor.StartVisible;
         Anchor = descriptor.Anchor;
         Offset = descriptor.Offset;
+        ZOrder = descriptor.ZOrder;
     }
 
     /// <inheritdoc/>
@@ -373,6 +425,9 @@ public sealed class NoOpPluginCanvas : IPluginCanvas
     public void ReleasePointer()
     {
     }
+
+    /// <summary>Kept so the plugin's own logic runs unchanged; nothing is stacked.</summary>
+    public int ZOrder { get; set; }
 
     /// <summary>Marks the canvas disposed; there is nothing to remove.</summary>
     public void Dispose() => IsDisposed = true;

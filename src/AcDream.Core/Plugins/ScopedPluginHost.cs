@@ -2196,6 +2196,12 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
 
             public void ReleasePointer() => inner.ReleasePointer();
 
+            public int ZOrder
+            {
+                get => inner.ZOrder;
+                set => inner.ZOrder = value;
+            }
+
             public void Dispose()
             {
                 registration.Dispose();
