@@ -153,7 +153,8 @@ internal sealed class PluginPainter : IPluginPainter
     {
         UiRenderContext context = Context;
         if (string.IsNullOrEmpty(text) || !TryResolve(font, out CanvasFont? resolved)) return;
-        context.DrawStringCanvasFont(resolved, text, (float)position.X, (float)position.Y, ToVector(color), outline);
+        context.DrawStringCanvasFont(
+            resolved, text, (float)position.X, (float)position.Y, ToVector(color), outline, pixelScale: _pixelScale);
     }
 
     public PluginSize MeasureText(string text, PluginFont font)
