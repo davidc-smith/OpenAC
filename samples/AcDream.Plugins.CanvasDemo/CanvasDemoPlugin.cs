@@ -86,6 +86,13 @@ public sealed class CanvasDemoPlugin : IAcDreamPlugin
         painter.DrawLine(new PluginPoint(14, 168), new PluginPoint(252, 168), PluginColor.White, 1f);
         painter.DrawLine(new PluginPoint(14, 200), new PluginPoint(252, 176), PluginColor.White, 1f);
 
+        // A hairline one screen pixel wide, whatever the display.
+        double hairline = 1.0 / painter.PixelScale;
+        painter.FillRect(new PluginRect(14, 206, 238, hairline), Accent);
+        painter.DrawText(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Pixel scale {painter.PixelScale:0.##}"),
+            new PluginPoint(274, 190), new PluginColor(200, 200, 200), _body);
+
         // An 8 x 8 image shown at 64 x 64: how the host samples art.
         painter.DrawImage(_checker, new PluginRect(274, 92, 64, 64), PluginColor.White);
         painter.DrawText("8x8 at 64", new PluginPoint(274, 160), new PluginColor(200, 200, 200), _body);

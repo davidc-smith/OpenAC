@@ -155,13 +155,18 @@ public readonly record struct PluginPointerEvent(
 /// callback: keeping it and drawing later throws.
 ///
 /// <para>Shapes -- polygons, rounded rectangles, ellipses, circles and
-/// gradients -- have edges anti-aliased over one pixel; the other
+/// gradients -- have edges anti-aliased over one screen pixel; the other
 /// primitives have hard edges. A shape given input it cannot draw draws
 /// nothing and never throws; the client's log says so once per canvas.</para>
 ///
 /// <para>Text is drawn in the client's own interface font unless a
 /// <see cref="PluginFont"/> from <see cref="IPluginFonts"/> is given. Every
 /// clip pushed during a paint must be popped before it returns.</para>
+///
+/// <para>On a high-density display the host paints the canvas at more than
+/// one screen pixel per canvas pixel (<see cref="PixelScale"/>), so shapes
+/// and text in a <see cref="PluginFont"/> come out sharp. Coordinates and
+/// sizes stay in canvas pixels whatever the scale.</para>
 /// </summary>
 public interface IPluginPainter
 {
@@ -170,6 +175,17 @@ public interface IPluginPainter
 
     /// <summary>The canvas's height in pixels.</summary>
     int Height { get; }
+
+    /// <summary>
+    /// How many screen pixels one canvas pixel covers in this paint: 2 on a
+    /// typical high-density display, 1 on a host that does not scale.
+    /// Coordinates are canvas pixels either way; read this only to align a
+    /// detail to screen pixels, for example a hairline one screen pixel
+    /// wide (1 / <see cref="PixelScale"/> canvas pixels). It can change
+    /// between paints, when the window moves to another display; the host
+    /// repaints the canvas when it does.
+    /// </summary>
+    double PixelScale => 1.0;
 
     /// <summary>Fills the whole canvas with one colour; transparent black clears it.</summary>
     /// <param name="color">The colour to fill with.</param>
@@ -320,7 +336,7 @@ public interface IPluginPainter
     /// <param name="rect">The rectangle.</param>
     /// <param name="radii">Each corner's radius; see <see cref="PluginCornerRadii"/>.</param>
     /// <param name="color">The outline colour.</param>
-    /// <param name="thickness">The outline's width in pixels; thinner than one pixel is drawn one pixel wide and proportionally fainter.</param>
+    /// <param name="thickness">The outline's width in pixels; thinner than one screen pixel is drawn one screen pixel wide and proportionally fainter.</param>
     void StrokeRoundedRect(PluginRect rect, PluginCornerRadii radii, PluginColor color, float thickness = 1f)
     {
     }
@@ -342,7 +358,7 @@ public interface IPluginPainter
     /// </summary>
     /// <param name="bounds">The rectangle the ellipse fits.</param>
     /// <param name="color">The outline colour.</param>
-    /// <param name="thickness">The outline's width in pixels; thinner than one pixel is drawn one pixel wide and proportionally fainter.</param>
+    /// <param name="thickness">The outline's width in pixels; thinner than one screen pixel is drawn one screen pixel wide and proportionally fainter.</param>
     void StrokeEllipse(PluginRect bounds, PluginColor color, float thickness = 1f)
     {
     }
