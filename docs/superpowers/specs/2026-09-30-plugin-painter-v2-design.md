@@ -622,7 +622,7 @@ Not implemented in this series. Recommended direction, modelled on World labels:
 
 ## Plan-time corrections (2026-09-30)
 
-Measured or found while writing the PR 0, PR 1 and PR 3 plans; these supersede the
+Measured or found while writing the PR 0, PR 1, PR 3 and PR 4 plans; these supersede the
 sections above where they differ.
 
 - **PR 0, lazy composite pipeline.** `ResourceCleanupGroupTests.TextRendererConstructionCreatesAndDisposesOnlyOnePipeline`
@@ -717,11 +717,66 @@ sections above where they differ.
   `Repaint(…, _images(), _fonts(), shapeProblems: _shapeProblems)`. The
   merged tree built with 0 warnings and passed the shape and font suites.
 
+- **PR 4, host services.** `PluginCanvasHostServices` takes
+  `Func<Vector2> FramebufferPerPoint` (framebuffer ÷ window size, 1 for a
+  minimised window) in place of the linear-twin resolver. The canvas surface
+  never swaps to linear twins, so the old parameter had no use left.
+- **PR 4, which scale fonts follow.** Each canvas paints at its own clamped
+  scale. Fonts are prepared for the *interface* scale, which is lower for a
+  canvas only when it is too large for the device, so two canvases of one
+  plugin never make its fonts rebake back and forth. A glyph from a bake at
+  a higher scale than its canvas is drawn at `1/bake scale` size and snapped
+  to the canvas's device pixels.
+- **PR 4, sharper bakes keep logical layout.** The sharper bake supplies only
+  glyph boxes and UVs (divided by its scale). The pen, kerning, `LineHeight`,
+  `Ascent` and `MeasureText` come from the font's own bake, so no handle or
+  measurement changes. stbtt's packed advances are `scale × advanceWidth`,
+  exactly linear, so the two bakes agree to float precision.
+- **PR 4, the fallback ladder.** `TryBakeForScale` tries `s`, then `s − 0.25`,
+  … while above 1. The baker first sums the packer's rectangles
+  (`stbtt_GetGlyphBitmapBoxSubpixel` + 1 px padding) and skips atlas sizes
+  below that area, an exact lower bound, so a hopeless bake fails in under
+  1 ms. Measured: 16 px at 2× takes 1024×512 (~9 ms); 32 px at 2× takes
+  2048×1024 (~24 ms). 64 px at 2× passes the bound but fails packing (~23 ms),
+  then fits at 1.75× in 2048×2048 (~47 ms in all). A font below its scale is
+  reported once per (font, scale).
+- **PR 4, the sharper budget.** `PluginFontBudget.MaximumSharpBytes` is 32 MiB
+  per plugin, for the plugin's own sharper atlases only. Bundled sharper bakes
+  live on the shared cache's `CanvasFont` and cost no plugin anything. When
+  the room left is below 2048², the shortfall reported is the budget.
+- **PR 4, one face per file.** `CanvasFontFace` holds the bytes (kept for
+  rebakes) and the parser's copy (for kerning). The bundled cache shares one
+  face across every size; a plugin's own font keeps a face of its own, as its
+  bytes are already counted per request. Sizes are rounded to quarter pixels
+  *after* the min/max check, so PR 1's refusals (5.9, 64.1) are unchanged and
+  `PluginFont.PixelSize` is the rounded size (contract docs updated).
+- **PR 4, what stays as before.** The interface (DAT) font is drawn on whole
+  canvas pixels with nearest sampling, so at 2× it is crisply pixel-doubled.
+  Plugin images keep their own linear sampler. Outline offsets stay one
+  canvas pixel. The 32,768-vertex budget is unchanged although curves take
+  ~1.3–1.4× the vertices at 2× (a 100 px circle: 642 → 894), and the docs
+  say so.
+- **PR 4, test harness.** `PluginCanvasElementTests.Harness` now mounts an input
+  canvas with `takesInput`, as the runtime does; before, only the pointer
+  suite's own harness did.
+- **Finding (separate fix, not PR 4).** The client's backbuffer screenshot
+  (`RenderFrameOrchestrator` → `FrameScreenshotController.CapturePending`)
+  passes `input.ViewportWidth/Height`, the window size in points. On a
+  high-density display it fails with "The retained capture is 1600x1200;
+  800x600 was requested". PR 4's captures patch this in a throwaway worktree
+  only.
+- **Finding (environment).** On this Mac the default `TMPDIR` makes Unix-socket
+  paths longer than 104 characters, which fails Launcher pipe tests and most
+  HostParity peer tests. With `TMPDIR=/tmp/`, 4–5 HostParity `Peer*ParityTests`
+  still time out on clean `44a505ee`.
+
 ## Status and carry-forward (2026-09-30)
 
 - PR 0 pushed as `origin/painter-v2/canvas-alpha` (6 commits, reviewed).
 - PR 1 pushed as `origin/painter-v2/fonts`, stacked on PR 0 (reviewed).
 - PR 3 built on `painter-v2/shapes` from PR 0 (reviewed; see the PR 3 corrections above). Two contract-level changes beyond section 4: font requests that would bake inside a paint callback answer `PluginFont.None` (cache hits allowed), and font files are refused unless their sfnt header and table directory are structurally sound.
+
+- PR 4 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr4-hidpi.md`, branch `painter-v2/hidpi` from fork `main`. Verified by a prototype on 44a505ee, including 2× captures on the built-in Retina display (before: soft; after: sharp text and edges, interface font crisply pixel-doubled).
 
 ### Inputs for the PR 4 (HiDPI) plan
 
