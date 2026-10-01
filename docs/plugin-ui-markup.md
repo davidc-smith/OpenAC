@@ -51,12 +51,24 @@ punctuation; unsupported characters display a question mark.
 Modern shelves are 24 pixels wide; wheel scrolling reaches
 entries that do not fit vertically. Icons keep their full-color composition.
 
-Opted-in windows keep their authored layout and use themed labels, buttons,
-tabs, fields, menus, lists, toggles and scrollbars. Literal and bound semantic
-colors remain unchanged. To adapt a decorative color, use a token with its
-original Classic fallback, for example `color="theme:text|#FFE8DEC3"` or
-`background="theme:field|#FF0C0906"`. Tokens are `text`, `muted`, `field`,
-`border`, `accent`, and `background`; the fallback uses `#AARRGGBB`.
+Opted-in windows keep their authored layout. In the modern themes they draw
+in a softer style: the window has rounded corners, a soft shadow and a header
+band behind its title, set in Noto Sans SemiBold; buttons, fields, menus,
+lists and logs are rounded, and buttons, tabs and menus react to the pointer
+and show an accent ring when focused. Tabs are pills and toggles are switches.
+A themed toggle's caption starts 18 points further right than in Classic, so
+give toggles room for it. On high-density displays themed text is drawn from
+a sharper bake of the font; measurements, and so layout, are the same on
+every display.
+
+Literal and bound semantic colours remain unchanged. To adapt a decorative
+colour, use a token with its original Classic fallback, for example
+`color="theme:text|#FFE8DEC3"` or `background="theme:field|#FF0C0906"`.
+Tokens are `text`, `muted`, `field`, `border`, `accent`, and `background`;
+the fallback uses `#AARRGGBB`.
+
+The `samples/AcDream.Plugins.ThemeGallery` plugin shows every control in one
+opted-in window; switch themes from the shelf to compare them.
 
 Set `searchable="true"` on a menu to add an editable search band. Each typed
 word must match its label, ignoring case. Filtering does not select an item;

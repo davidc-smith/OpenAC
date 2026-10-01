@@ -1,0 +1,29 @@
+<panel x="120" y="120" w="420" h="430" title="Theme Gallery" theme="plugin" resizable="true" minw="420" minh="430">
+  <tab x="12" y="32" w="90" h="24" text="Status" selected="{StatusTab}" onclick="{ShowStatus}" />
+  <tab x="106" y="32" w="90" h="24" text="Spells" selected="{SpellsTab}" onclick="{ShowSpells}" />
+  <tab x="200" y="32" w="90" h="24" text="Settings" selected="{SettingsTab}" onclick="{ShowSettings}" />
+
+  <label x="12" y="70" text="Target" color="theme:muted|#FF9AA99E" />
+  <field x="90" y="66" w="318" h="24" text="{Target}" onchange="{SetTarget}" />
+
+  <label x="12" y="102" text="Profile" color="theme:muted|#FF9AA99E" />
+  <menu x="90" y="98" w="318" h="24" items="{Profiles}" selected="{Profile}" onchange="{SetProfile}" searchable="true" rows="5" />
+
+  <toggle x="12" y="132" w="200" h="20" text="Auto-rebuff" checked="{AutoRebuff}" onclick="{ToggleAutoRebuff}" />
+  <toggle x="212" y="132" w="200" h="20" text="Announce in chat" checked="{Announce}" onclick="{ToggleAnnounce}" />
+
+  <label x="12" y="164" text="Threshold" color="theme:muted|#FF9AA99E" />
+  <slider x="90" y="162" w="318" h="16" value="{Threshold}" onchange="{SetThreshold}" min="0" max="100" />
+
+  <list x="12" y="190" w="396" h="96" selected="{Spell}" onchange="{SelectSpell}" selectionband="true">
+    <column type="check" width="22" values="{SpellEnabled}" onchange="{ToggleSpell}" />
+    <column type="text" width="*" items="{Spells}" />
+  </list>
+
+  <log x="12" y="294" w="396" h="72" items="{Log}" />
+
+  <meter x="12" y="374" w="250" h="12" fill="{Mana}" color="#FF4A7FD0" />
+
+  <button x="228" y="394" w="86" h="26" text="Stop" onclick="{Stop}" enabled="{Running}" anchor="right bottom" />
+  <button x="322" y="394" w="86" h="26" text="Start" onclick="{Start}" anchor="right bottom" />
+</panel>

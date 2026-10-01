@@ -1,0 +1,9 @@
+{
+  "id": "sample.theme-gallery",
+  "displayName": "Theme Gallery Sample",
+  "version": "1.0.0",
+  "entryDll": "AcDream.Plugins.ThemeGallery.dll",
+  "apiVersion": 1,
+  "kinds": ["gameplay"],
+  "hosts": ["graphical"]
+}
