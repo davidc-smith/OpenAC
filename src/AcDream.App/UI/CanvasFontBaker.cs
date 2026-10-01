@@ -38,7 +38,8 @@ internal sealed record CanvasFontBake(
 /// packed, from an explicit list: StbTrueTypeSharp's skip-missing switch
 /// makes the packer report failure even when every glyph fitted. The atlas
 /// is the smallest in a fixed ladder of sizes, up to 2048 on a side, that
-/// holds them all.
+/// holds them all. Sizes smaller than the glyphs' combined area are not
+/// tried, so a bake that cannot fit fails before any glyph is drawn.
 /// </summary>
 internal static class CanvasFontBaker
 {
@@ -53,13 +54,21 @@ internal static class CanvasFontBaker
     private static readonly (int Width, int Height)[] AtlasSizes =
         [(256, 256), (512, 256), (512, 512), (1024, 512), (1024, 1024), (2048, 1024), (2048, 2048)];
 
+    /// <param name="fontBytes">The font file.</param>
+    /// <param name="pixelSize">The size to bake at.</param>
+    /// <param name="ranges">The characters to bake, where the font has them.</param>
+    /// <param name="maximumGlyphs">The most glyphs the bake may hold.</param>
+    /// <param name="bake">The bake, when it succeeds.</param>
+    /// <param name="failure">Why it did not, when it does not.</param>
+    /// <param name="maximumAtlasBytes">The largest atlas, in bytes, the bake may use.</param>
     internal static unsafe bool TryBake(
         byte[] fontBytes,
         float pixelSize,
         IReadOnlyList<(int First, int Last)> ranges,
         int maximumGlyphs,
         [NotNullWhen(true)] out CanvasFontBake? bake,
-        [NotNullWhen(false)] out string? failure)
+        [NotNullWhen(false)] out string? failure,
+        long maximumAtlasBytes = long.MaxValue)
     {
         ArgumentNullException.ThrowIfNull(fontBytes);
         ArgumentNullException.ThrowIfNull(ranges);
@@ -98,9 +107,15 @@ internal static class CanvasFontBaker
             StbTrueType.stbtt_GetFontVMetrics(info, &ascent, &descent, &gap);
             float baseline = MathF.Round(ascent * scale);
             float lineHeight = MathF.Ceiling((ascent - descent + gap) * scale);
+            long area = PackedArea(info, codepoints, scale);
 
             foreach ((int width, int height) in AtlasSizes)
             {
+                long atlasBytes = (long)width * height;
+                if (atlasBytes > maximumAtlasBytes)
+                    break;
+                if (atlasBytes < area)
+                    continue;
                 byte[] coverage = new byte[width * height];
                 var packed = new StbTrueType.stbtt_packedchar[codepoints.Length];
                 if (!TryPack(fontBytes, pixelSize, codepoints, coverage, width, height, packed))
@@ -127,11 +142,72 @@ internal static class CanvasFontBaker
                 return true;
             }
 
-            failure = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{codepoints.Length} glyphs at {pixelSize} px do not fit a {MaximumAtlasSide}x{MaximumAtlasSide} atlas");
+            (int Width, int Height) largest = AtlasSizes.LastOrDefault(size => (long)size.Width * size.Height <= maximumAtlasBytes);
+            failure = largest == default
+                ? string.Create(CultureInfo.InvariantCulture, $"no atlas fits in {maximumAtlasBytes:N0} bytes")
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{codepoints.Length} glyphs at {pixelSize} px do not fit a {largest.Width}x{largest.Height} atlas");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Bakes a font again for a canvas painted at <paramref name="scale"/>
+    /// device pixels per canvas pixel: at <paramref name="pixelSize"/> times
+    /// the scale, or, when that does not fit the atlas or the byte room, at
+    /// the largest lower quarter step that does. Nothing is baked at a step
+    /// of 1 or below -- the font's own bake is that.
+    /// </summary>
+    /// <param name="bakedScale">The step the bake was made at; 1 when none was.</param>
+    /// <param name="shortfall">
+    /// Why the bake is not at <paramref name="scale"/> itself: null when it
+    /// is, and always set when nothing was baked.
+    /// </param>
+    internal static bool TryBakeForScale(
+        byte[] fontBytes,
+        float pixelSize,
+        float scale,
+        IReadOnlyList<(int First, int Last)> ranges,
+        int maximumGlyphs,
+        long maximumAtlasBytes,
+        [NotNullWhen(true)] out CanvasFontBake? bake,
+        out float bakedScale,
+        out string? shortfall)
+    {
+        shortfall = null;
+        for (float step = scale; step > 1f; step -= Layout.CanvasPixelScale.Step)
+        {
+            if (TryBake(fontBytes, pixelSize * step, ranges, maximumGlyphs, out bake, out string? failure, maximumAtlasBytes))
+            {
+                bakedScale = step;
+                return true;
+            }
+            shortfall ??= failure;
+        }
+        shortfall ??= "the canvas is painted at one pixel per pixel";
+        bake = null;
+        bakedScale = 1f;
+        return false;
+    }
+
+    /// <summary>
+    /// The area the packer's rectangles take: each glyph's box at this scale
+    /// plus the one pixel of padding the packer puts after it, as
+    /// <c>stbtt_PackFontRangesGatherRects</c> measures them. No atlas
+    /// smaller than this can hold them.
+    /// </summary>
+    private static unsafe long PackedArea(StbTrueType.stbtt_fontinfo info, int[] codepoints, float scale)
+    {
+        long area = 0;
+        foreach (int codepoint in codepoints)
+        {
+            int x0, y0, x1, y1;
+            StbTrueType.stbtt_GetGlyphBitmapBoxSubpixel(
+                info, StbTrueType.stbtt_FindGlyphIndex(info, codepoint), scale, scale, 0f, 0f, &x0, &y0, &x1, &y1);
+            area += (long)(x1 - x0 + 1) * (y1 - y0 + 1);
+        }
+        return area;
     }
 
     /// <summary>
