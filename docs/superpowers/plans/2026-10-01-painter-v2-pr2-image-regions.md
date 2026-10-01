@@ -2139,6 +2139,10 @@ grep -n '^### ' docs/plugin-api.md | sed -n '/Image regions/,+1p'
 
 Expected: four `resolved` lines, `no markers`, and `### Image regions` followed by `### Shapes`. If the script's assertion fails (fork `main` has moved since `84ada220`), resolve by hand following the four rules above.
 
+- [ ] **Step 2b: Pass PR 4's pixel scale to the region arithmetic** (added after the final review)
+
+The final review made the pull-in depend on device pixels, and the branch's painter passes a constant `DevicePixelsPerPixel = 1.0`. Fork `main`'s painter has PR 4's `PixelScale` (device pixels per canvas pixel for this paint). In `src/AcDream.App/UI/Layout/PluginPainter.cs`, replace the line `private const double DevicePixelsPerPixel = 1.0;` (and its comment, which names this step) with a property that answers `PixelScale`, for example `private double DevicePixelsPerPixel => PixelScale;`, keeping a one-line comment that it is the pixel scale of the current paint. Then add an element test in `tests/AcDream.App.Tests/UI/Layout/PluginCanvasElementTests.Regions.cs` using the high-density harness from fork `main`'s element tests (a fake pixel scale of 2): a linear inner region drawn at its own size in canvas pixels is a 2× device magnification and is pulled by `0.5 * (m - n) / (m - 1)` with m = 2n, not 0.
+
 - [ ] **Step 3: Build and test the merged tree** (outside the command sandbox)
 
 ```bash

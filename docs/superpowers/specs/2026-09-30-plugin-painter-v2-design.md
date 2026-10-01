@@ -982,6 +982,20 @@ supersede the sections above where they differ.
   the canvas suites, the 5 `Lane=Vulkan` canvas tests and the portable suite
   (HostParity peer tests only). The CanvasDemo sample, which lives on fork
   `main`, is not changed.
+- **PR 2, how far an edge is pulled in (from the final review, 2026-10-01;
+  supersedes "half a texel" above and in section 5).** A fixed half-texel
+  pull maps n texels over n pixels off-centre, so frames and nine-slice
+  corners at their own size came out soft. The pull is now the least that
+  keeps the sample at the pixel centre nearest a pulled edge half a texel
+  inside: for a span of n texels over m device pixels whose ends lie on
+  whole device pixels, `0.5(m − n)/(m − 1)` with both ends pulled and
+  `0.5(m − n)/(m − 0.5)` with one, clamped to [0, ½]. That is 0 at 1:1 or
+  when shrinking. An end off whole pixels, m ≤ 1, and every transformed
+  region keep the full ½. `CanvasImageRegions` takes the device scale
+  explicitly; the painter passes 1 on upstream `main`, and in the merge
+  into fork `main` it passes PR 4's `PixelScale`. Insets scaled down to
+  the source now leave exactly no middle (a rounding sliver was being
+  stretched).
 
 ## Status and carry-forward (2026-09-30)
 
@@ -998,6 +1012,7 @@ supersede the sections above where they differ.
 - PR 6b planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr6b-keyboard.md`, branch `painter-v2/keyboard` from `fix/hotkey-focus-scope` (`f951ce16`), then merged into fork `main`. Its code was prototyped on `f951ce16`, replayed as one commit per task, and scratch-merged into `301852fc` before hand-off (see the PR 6b corrections above).
 - PR 6b done 2026-10-01: `origin/painter-v2/keyboard` (8 commits: the plan's six, a docs fix from task review, and a final-review fix wave that keeps the text cursor off canvases, renames a contract test and says which keys repeat), merged into fork `main` as 84ada220 (pushed). Review follow-ups not taken: an unnamed key (Shift, Ctrl) going down does not stop a repeat; `KeyboardFocusChanged` fires out of order on a re-entrant release (only listener unaffected); a left press during a rebind capture still focuses (as `UiField`); untested: a hidden ancestor refusing a request, a handler throwing on `FocusLost`, a repeated Escape, a modal between ticks. Next: upstream PRs (deferred by the user); PR 2 still skipped.
 - PR 2 planned 2026-10-01: `docs/superpowers/plans/2026-10-01-painter-v2-pr2-image-regions.md`, branch `painter-v2/image-regions` from upstream `main` (`bbc83275`), then merged into fork `main`. Its code was prototyped on `bbc83275` as one commit per task and scratch-merged into `84ada220` before hand-off (see the PR 2 corrections above).
+- PR 2 done on its branch 2026-10-01: `origin/painter-v2/image-regions` (7 commits: the plan's five plus a final-review fix wave — the scale-aware pull, no sliver middle, docs), reviewed. Merge into fork `main` follows Task 7, plus one edit: the painter's `DevicePixelsPerPixel` becomes PR 4's `PixelScale`.
 
 ### Inputs for the PR 4 (HiDPI) plan
 
