@@ -1483,7 +1483,10 @@ only as `Down`. Keys `PluginKey` cannot name, the modifier keys among
 them, arrive as neither `Down` nor `Up`. The last key that went down
 repeats while it is held, as `Down` with `IsRepeat` set, after 0.4 s and
 then every 0.04 s, as in the client's own text fields, until it comes up
-or another key goes down.
+or another key it can name goes down. Every key it can name repeats, Enter
+and the letters included, so check `IsRepeat` for a key that should act
+once. A key already held when the canvas takes focus can arrive as an
+`Up` with no `Down` before it.
 
 The handler answers true when it handled the event. Only one answer
 changes what the host does: an Escape `Down` the handler did not handle

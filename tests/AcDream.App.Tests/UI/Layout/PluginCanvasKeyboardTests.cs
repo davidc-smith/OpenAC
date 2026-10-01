@@ -176,6 +176,17 @@ public sealed class PluginCanvasKeyboardTests
         return (harness, registration, element, keys);
     }
 
+    [Fact]
+    public void HoveringACanvasThatTakesKeys_DoesNotShowTheTextCursor()
+    {
+        var (harness, _, _, _) = MountedPad();
+        harness.Root.OnMouseMove(100, 60);
+
+        CursorFeedback feedback = new CursorFeedbackController().Update(harness.Root);
+
+        Assert.NotEqual(CursorFeedbackKind.Text, feedback.Kind);
+    }
+
     private static (Harness Harness, PluginCanvasRegistration Registration, PluginCanvasElement Element, Recorder Keys)
         FocusedPad()
     {

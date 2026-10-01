@@ -61,7 +61,7 @@ public sealed class PluginCanvasContractTests
     }
 
     [Fact]
-    public void ARegistryThatNeverHeardOfKeyboardInputKeepsNothingAndNeverFocuses()
+    public void ARegistryThatNeverHeardOfKeyboardInputKeepsTheHandlerAndNeverFocuses()
     {
         IUiRegistry registry = new BareRegistry();
 
