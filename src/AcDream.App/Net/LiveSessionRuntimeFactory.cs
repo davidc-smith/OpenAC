@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using AcDream.App.Combat;
 using AcDream.App.Composition;
 using AcDream.App.Input;
@@ -376,7 +375,11 @@ internal sealed class LiveSessionRuntimeFactory
                     Settings = _interaction.Settings,
                     MovementStats = _domain.Runtime.MovementStats,
                     ResolveSkillFormulaBonus = skillCreditResolver.Resolve,
-                    ClientTime = ClientTimerNow,
+                    // Effects are stamped on arrival and read back by the
+                    // plugin surface against the simulation clock, as on
+                    // the headless host.
+                    ClientTime = () =>
+                        _domain.Runtime.Clock.SimulationTimeSeconds,
                     RetainedUi = _ui.RetailUi,
                     NoteOptionsSeeded = _noteOptionsSeeded,
                     Warn = _log,
@@ -420,7 +423,4 @@ internal sealed class LiveSessionRuntimeFactory
                 },
                 SetChatLogFile),
             _log);
-
-    private static double ClientTimerNow() =>
-        Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 }
