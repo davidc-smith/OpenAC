@@ -38,9 +38,14 @@ tabs, real hover/pressed/focus states) with "C"'s switch-style toggles.
 All lengths are in interface points. Colours come from the active palette;
 two are derived so `PluginUiPalette` needs no new fields:
 
-- `Hover` = `Field` mixed 12% toward `Border`.
-- `Pressed` = `Field` mixed 20% toward `Background`.
-- Focus glow = `Accent` at 18% alpha.
+- `Hover(fill)` = the control's fill mixed 30% toward `Border`; a hovered
+  edge is mixed 15% toward `Text`.
+- `Pressed(fill)` = the fill mixed 25% toward black. (`Background` is lighter
+  than `Field` in both palettes, so mixing toward it would brighten.)
+- Focus glow = `Accent` at 30% alpha; focus ring = `Accent` at 60% alpha.
+- Focus rings and glows are drawn just inside the control's edge: every
+  element clips its own drawing to its bounds (`UiElement.ClipsChildren`),
+  so anything outside would be cut off.
 
 | Piece | Radius | Fill | Edge | States |
 |---|---|---|---|---|
@@ -48,16 +53,16 @@ two are derived so `PluginUiPalette` needs no new fields:
 | Header band | top corners 10 | vertical gradient: `Background` mixed 6% toward `Text` at the top, 2% at the bottom | 1px separator line `Border` at y=24 | — |
 | Button | 6 | `Field` | 1px `Border` | hover: `Hover` fill, `Border` lightened 15%; pressed: `Pressed`; disabled: 45% alpha; focus: ring |
 | Tab | 6 | none | none | selected: `Selected` fill, `Text` colour; unselected: `Muted` text; hover: `Hover` fill |
-| Field | 6 | `Field` | 1px `Border` | focused: 1px `Accent` edge + 3px focus glow |
+| Field | 6 | `Field` | 1px `Border` | focused: 1px `Accent` edge + 2px inner focus glow |
 | Toggle (switch) | full (pill) 26×14 | off: `Field`; on: `Accent` at 35% | 1px `Border` / `Accent` | knob 8px circle, `Muted` off / `Text` on, slides left↔right |
-| List check column | 4, 11×11 | off: `Field`; on: `Accent` | 1px `Border` / `Accent` | on: two-stroke tick in `Field` |
+| List check column | 4, 11×11 | off: `Field`; on: `Accent` | 1px `Border` / `Accent` | on: two-stroke smooth tick in `Field` |
 | Slider | track 2, 4px tall | `Field`; filled part `Accent` | — | thumb 14px circle `Text` with small shadow; hover/drag: 2px `Accent` ring |
 | Scrollbar (list, log, menu popup) | full | track: none | — | thumb 4px wide, `Muted`; hover/drag: 6px wide, `Text` at 70%; no arrow ticks |
 | Menu face | 6 | as Button | as Button | chevron (two 1.5px strokes) in `Muted` |
 | Menu popup | 8 | `Field` | 1px `Border` | rows inset 3, radius 5; hover `Hover`, selected `Selected`; soft shadow |
 | List / Log container | 8 | `Field` | 1px `Border` | rows inset 3, radius 5; selection `Selected` |
 | Meter (no sprite art) | 3 | track `Field` | — | bar in its authored colour, rounded |
-| Focus ring (any control) | control radius + 2 | — | 2px `Accent` at 60% | drawn 2px outside the control |
+| Focus ring (any control) | control radius − 2 | — | 2px `Accent` at 60% | drawn 1–3px inside the control's edge |
 
 A meter with authored sprite art (`backleft`…`frontright`) keeps that art.
 
