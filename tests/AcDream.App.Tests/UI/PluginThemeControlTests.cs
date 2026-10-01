@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.App.Rendering;
 using AcDream.App.UI;
 
 namespace AcDream.App.Tests.UI;
@@ -81,8 +82,18 @@ public sealed class PluginThemeControlTests
         var v = DrawElement(toggle);
         Assert.True(ThemeDrawCapture.HasColor(v, P.Text));                    // knob, on
         Assert.True(ThemeDrawCapture.HasColor(v, P.Accent));                  // switch edge, on
-        // No font in this build, so only the switch is drawn: it ends where the caption's gap begins.
-        Assert.True(v.Where(p => p.Color.W > 0.05f).Max(p => p.Position.X)
-            <= toggle.Left + 1f + PluginUiStyle.SwitchWidth + 0.51f);
+
+        // With a real font the caption is drawn; its ink starts after the switch and the gap.
+        toggle.DatFont = BundledUiFont.Bake().CreateFont(42);
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        toggle.DrawSelfAndChildren(ctx);
+        var caption = renderer.DebugSpriteSegmentVerts.Where(s => s.Texture == 42u).ToList();
+        Assert.NotEmpty(caption);
+        float minX = float.MaxValue;
+        foreach (var seg in caption)
+            for (int i = 0; i + TextRenderer.FloatsPerVertex <= seg.Verts.Count; i += TextRenderer.FloatsPerVertex)
+                minX = MathF.Min(minX, seg.Verts[i]);
+        float expected = toggle.Left + 1f + PluginUiStyle.SwitchWidth + PluginUiStyle.SwitchCaptionGap;
+        Assert.InRange(minX, expected - 0.5f, expected + 4f);
     }
 }
