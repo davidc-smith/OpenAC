@@ -208,6 +208,68 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         }
     }
 
+    /// <summary>The hover label is drawn in the overlay pass, outside the dock's own clip.</summary>
+    protected override bool ExpandsClipForPopup => true;
+
+    /// <summary>The slot (or gear) the pointer is over, whose label shows; null when none is.</summary>
+    internal UiSimpleButton? HoveredSlot
+    {
+        get
+        {
+            if (_collapsed || !Visible) return null;
+            if (_gear.Visible && _gear.State is UiControlState.Hovered or UiControlState.Pressed)
+                return _gear;
+            foreach (RetailWindowHandle handle in _order)
+            {
+                PluginShelfButton button = _entries[handle].Button;
+                if (button.Visible && button.State is UiControlState.Hovered or UiControlState.Pressed)
+                    return button;
+            }
+            return null;
+        }
+    }
+
+    /// <summary>A slot's label: the window title, and the plugin's name under it unless they are the same.</summary>
+    internal static (string Title, string? Subtitle) LabelText(UiSimpleButton slot) => slot switch
+    {
+        PluginShelfButton button => (button.WindowTitle,
+            string.Equals(button.WindowTitle, button.OwnerName, StringComparison.Ordinal) ? null : button.OwnerName),
+        _ => ("Plugin appearance", null),
+    };
+
+    /// <summary>Where a slot's label goes, in the dock's space: beside the slot, on the side away from the screen edge.</summary>
+    internal DockRect LabelRect(UiSimpleButton slot)
+    {
+        (string title, string? subtitle) = LabelText(slot);
+        UiDatFont? titleFont = TitleFont, bodyFont = BodyFont;
+        float titleHeight = titleFont?.LineHeight ?? 12f;
+        float bodyHeight = bodyFont?.LineHeight ?? 12f;
+        float textWidth = MathF.Max(titleFont?.MeasureWidth(title) ?? 0f,
+            subtitle is null ? 0f : bodyFont?.MeasureWidth(subtitle) ?? 0f);
+        float w = MathF.Ceiling(textWidth + 2f * LabelPadX);
+        float h = MathF.Ceiling(titleHeight + (subtitle is null ? 0f : bodyHeight + 1f) + 2f * LabelPadY);
+        float x = ScreenSide == DockSide.Left ? Width + LabelGap : -LabelGap - w;
+        float y = MathF.Round(slot.Top + (slot.Height - h) / 2f);
+        return new DockRect(x, y, w, h);
+    }
+
+    protected override void OnDrawOverlay(UiRenderContext ctx)
+    {
+        if (HoveredSlot is not { } slot) return;
+        PluginUiPalette p = Palette;
+        DockRect r = LabelRect(slot);
+        HoverLabel(ctx, p, r.X, r.Y, r.W, r.H);
+        (string title, string? subtitle) = LabelText(slot);
+        float y = r.Y + LabelPadY;
+        if (TitleFont is { } titleFont)
+        {
+            ctx.DrawStringDat(titleFont, title, r.X + LabelPadX, y, p.Text);
+            y += titleFont.LineHeight + 1f;
+        }
+        if (subtitle is not null && BodyFont is { } bodyFont)
+            ctx.DrawStringDat(bodyFont, subtitle, r.X + LabelPadX, y, p.Muted);
+    }
+
     protected override void OnDrawAfterChildren(UiRenderContext ctx)
     {
         if (_collapsed) return;
@@ -592,7 +654,10 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     /// <summary>The gear slot at the bottom of the dock, which opens plugin appearance.</summary>
     private sealed class DockGearButton(PluginSidePanel dock) : UiSimpleButton
     {
-        public override string? GetTooltipText() => "Plugin appearance";
+        internal UiControlState State => ThemeState;
+
+        /// <summary>The dock's hover label says "Plugin appearance", so the gear has no tooltip.</summary>
+        public override string? GetTooltipText() => null;
 
         protected override void OnDraw(UiRenderContext ctx)
         {
@@ -610,7 +675,6 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         private readonly Func<uint, (uint tex, int width, int height)> _resolve;
         private readonly (uint Texture, int Width, int Height)? _fileIcon;
         private readonly uint _iconSurfaceId;
-        private readonly string _tooltip;
         private readonly string _initialsFallback;
         private readonly Vector4 _monogramHue;
 
@@ -633,10 +697,6 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             WindowTitle = descriptor.Title;
             OwnerName = owner.DisplayName;
             _iconSurfaceId = PluginIcons.Normalize(descriptor.IconSurfaceId);
-            _tooltip = string.Equals(descriptor.Title, owner.DisplayName,
-                    StringComparison.Ordinal)
-                ? descriptor.Title
-                : $"{owner.DisplayName} — {descriptor.Title}";
             _initialsFallback = Initials(descriptor.IconText, descriptor.Title);
             _monogramHue = MonogramHue(owner.Id);
             Text = _fileIcon is null && _iconSurfaceId == 0 ? _initialsFallback : string.Empty;
@@ -658,7 +718,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         /// <summary>How tall this slot's edge pill is now; it eases toward its state's height on a rail.</summary>
         internal float PillHeight { get; set; }
 
-        public override string? GetTooltipText() => _tooltip;
+        /// <summary>The dock's hover label names the window, so the slot has no tooltip.</summary>
+        public override string? GetTooltipText() => null;
 
         protected override void OnDraw(UiRenderContext ctx)
         {
