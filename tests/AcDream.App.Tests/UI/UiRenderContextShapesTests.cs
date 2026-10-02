@@ -62,10 +62,61 @@ public sealed class UiRenderContextShapesTests
     {
         var (renderer, ctx) = ThemeDrawCapture.Context();
         ctx.PushClip(100f, 100f, 50f, 50f);
-        ctx.DrawSoftShadow(100f, 100f, 50f, 50f, 10f, 12f, new Vector4(0f, 0f, 0f, 0.45f));
+        ctx.DrawSoftShadow(100f, 100f, 50f, 50f, 10f, 4f, 12f, new Vector4(0f, 0f, 0f, 0.45f));
         Assert.True(ThemeDrawCapture.Vertices(renderer).Min(v => v.Position.X) < 100f);
         Assert.Equal(1, ctx.ClipStackDepth);
         ctx.FillRoundedRect(0f, 0f, 20f, 20f, 4f, Red);
         Assert.DoesNotContain(ThemeDrawCapture.Vertices(renderer), v => v.Color == Red && v.Position.X < 100f);
+    }
+
+    /// <summary>
+    /// The shadow of a caster at (100, 100), 60 by 50 with radius 10, dropped
+    /// 4 and spread 12: as dark at each point outside the caster as six
+    /// stacked fills, each grown a further 2, would make it.
+    /// </summary>
+    [Theory]
+    [InlineData(130f, 152f, 6)]   // below the caster, inside the dropped rectangle
+    [InlineData(95f, 130f, 4)]    // 5 left of it: the layers grown 6 and more
+    [InlineData(125f, 161f, 3)]   // 7 below it: grown 8, 10 and 12
+    [InlineData(171f, 130f, 1)]   // 11 right of it: only the layer grown 12
+    [InlineData(174f, 130f, 0)]   // past the spread
+    public void AShadowIsAsDarkAsSixStackedLayersOutsideItsCaster(float px, float py, int layers)
+    {
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        ctx.DrawSoftShadow(100f, 100f, 60f, 50f, 10f, 4f, 12f, new Vector4(0f, 0f, 0f, 0.45f));
+        float expected = 1f - MathF.Pow(1f - 0.45f / 6f, layers);
+        Assert.Equal(expected, AlphaAt(ThemeDrawCapture.Vertices(renderer), new Vector2(px, py)), 3);
+    }
+
+    [Theory]
+    [InlineData(130f, 125f)]   // the middle
+    [InlineData(101f, 130f)]   // just inside its left side
+    [InlineData(159f, 115f)]   // just inside its right side
+    public void AShadowDrawsNothingUnderTheBodyOfItsCaster(float px, float py)
+    {
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        ctx.DrawSoftShadow(100f, 100f, 60f, 50f, 10f, 4f, 12f, new Vector4(0f, 0f, 0f, 0.45f));
+        Assert.Equal(0f, AlphaAt(ThemeDrawCapture.Vertices(renderer), new Vector2(px, py)));
+    }
+
+    /// <summary>How dark the drawn triangles make a point, alpha over alpha.</summary>
+    private static float AlphaAt(List<(Vector2 Position, Vector4 Color)> v, Vector2 p)
+    {
+        float clear = 1f;
+        for (int i = 0; i + 2 < v.Count; i += 3)
+        {
+            Vector2 a = v[i].Position, b = v[i + 1].Position, c = v[i + 2].Position;
+            float area = Cross(b - a, c - a);
+            if (MathF.Abs(area) < 1e-6f) continue;
+            float wa = Cross(b - p, c - p) / area;
+            float wb = Cross(c - p, a - p) / area;
+            float wc = 1f - wa - wb;
+            if (wa < 0f || wb < 0f || wc < 0f) continue;
+            float alpha = wa * v[i].Color.W + wb * v[i + 1].Color.W + wc * v[i + 2].Color.W;
+            clear *= 1f - alpha;
+        }
+        return 1f - clear;
+
+        static float Cross(Vector2 x, Vector2 y) => x.X * y.Y - x.Y * y.X;
     }
 }

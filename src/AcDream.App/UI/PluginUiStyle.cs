@@ -161,13 +161,13 @@ internal static class PluginUiStyle
     }
 
     internal static void WindowShadow(UiRenderContext ctx, float w, float h) =>
-        ctx.DrawSoftShadow(0f, 4f, w, h, WindowRadius, 12f, Black with { W = 0.45f });
+        ctx.DrawSoftShadow(0f, 0f, w, h, WindowRadius, 4f, 12f, Black with { W = 0.45f });
 
     internal static void PopupShadow(UiRenderContext ctx, float x, float y, float w, float h) =>
-        ctx.DrawSoftShadow(x, y + 3f, w, h, ContainerRadius, 8f, Black with { W = 0.35f });
+        ctx.DrawSoftShadow(x, y, w, h, ContainerRadius, 3f, 8f, Black with { W = 0.35f });
 
     internal static void ShelfShadow(UiRenderContext ctx, float w, float h) =>
-        ctx.DrawSoftShadow(0f, 3f, w, h, WindowRadius, 8f, Black with { W = 0.40f });
+        ctx.DrawSoftShadow(0f, 0f, w, h, WindowRadius, 3f, 8f, Black with { W = 0.40f });
 
     /// <summary>The band behind a window's title, with a separator line under it.</summary>
     internal static void Header(UiRenderContext ctx, PluginUiPalette p, float w)

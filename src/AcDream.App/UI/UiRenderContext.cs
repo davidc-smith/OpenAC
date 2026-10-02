@@ -460,24 +460,38 @@ public sealed class UiRenderContext
     }
 
     /// <summary>
-    /// A soft shadow under a rounded rectangle: six stacked rounded fills,
-    /// each grown by a sixth of <paramref name="spread"/>, so the darkness
-    /// fades outwards. Drawn with the clip lifted to the whole screen,
-    /// because a shadow lies outside the element that casts it.
+    /// The soft shadow of an opaque rounded rectangle at (x, y), dropped
+    /// <paramref name="drop"/> below it: as dark as six stacked fills, each
+    /// grown by a further sixth of <paramref name="spread"/>, so the darkness
+    /// fades outwards. Only what the caster leaves showing is drawn: the
+    /// bands round the dropped rectangle, and the dropped rectangle itself
+    /// from where the caster's bottom corners start to round off. Drawn with
+    /// the clip lifted to the whole screen, because a shadow lies outside the
+    /// element that casts it.
     /// </summary>
-    internal void DrawSoftShadow(float x, float y, float w, float h, float radius, float spread, Vector4 color)
+    internal void DrawSoftShadow(
+        float x, float y, float w, float h, float radius, float drop, float spread, Vector4 color)
     {
         if (!(spread > 0f) || !(color.W > 0f) || !(w > 0f) || !(h > 0f)) return;
         const int Layers = 6;
         Vector4 layer = color with { W = color.W / Layers };
+        var radii = new CanvasCornerRadii(radius, radius, radius, radius);
+        float top = y + MathF.Max(drop, 0f);
         PushClipUnbounded();
         try
         {
-            for (int i = Layers; i >= 1; i--)
-            {
-                float grow = spread * i / Layers;
-                FillRoundedRect(x - grow, y - grow, w + 2f * grow, h + 2f * grow, radius + grow, layer);
-            }
+            _shape.Clear();
+            CanvasGeometry.ShadowBands(x, top, w, h, radii, spread, Layers, layer, DevicePixel, _shape);
+            DrawShape();
+
+            // Above the caster's bottom corners its straight sides cover the
+            // dropped rectangle edge to edge.
+            float shown = y + h - MathF.Min(radius, h * 0.5f);
+            PushClip(x, shown, w, top + h - shown);
+            _shape.Clear();
+            CanvasGeometry.ShadowCore(x, top, w, h, radii, spread, Layers, layer, DevicePixel, _shape);
+            DrawShape();
+            PopClip();
         }
         finally
         {
