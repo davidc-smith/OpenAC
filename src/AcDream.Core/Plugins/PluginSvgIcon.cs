@@ -71,7 +71,8 @@ public static class PluginSvgIcon
             }
             return TryParse(buffer.AsSpan(0, read).ToArray(), out document, out reason);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                       or NotSupportedException)
         {
             reason = "could not be read: " + ex.Message;
             return false;
@@ -98,7 +99,9 @@ public static class PluginSvgIcon
         }
         catch (XmlException ex)
         {
-            reason = "is not well-formed XML: " + ex.Message;
+            reason = ex.Message.Contains("DTD", StringComparison.Ordinal)
+                ? "uses a DTD, which plugin icons do not support"
+                : "is not well-formed XML: " + ex.Message;
             return false;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or FormatException
@@ -175,17 +178,51 @@ public static class PluginSvgIcon
         return path.StartsWith(prefix, comparison);
     }
 
-    /// <summary>Follows every link along <paramref name="path"/>, directories included.</summary>
+    /// <summary>
+    /// Follows every link along <paramref name="path"/>, directories included, one component at a
+    /// time. A link's target is itself walked component by component, so a link that points through
+    /// another link cannot hide where the real file is.
+    /// </summary>
     private static string ResolveLinks(string path)
     {
+        const int MaximumLinkHops = 40;
         string full = Path.GetFullPath(path);
-        string? parent = Path.GetDirectoryName(full);
-        string resolvedParent = parent is null || parent == full ? full : ResolveLinks(parent);
-        string joined = parent is null || parent == full ? full : Path.Combine(resolvedParent, Path.GetFileName(full));
-        FileSystemInfo info = Directory.Exists(joined) ? new DirectoryInfo(joined) : new FileInfo(joined);
-        FileSystemInfo? target = info.LinkTarget is null ? null : info.ResolveLinkTarget(returnFinalTarget: true);
-        return target is null ? joined : Path.GetFullPath(target.FullName);
+        string current = Path.GetPathRoot(full) ?? "";
+        var pending = new LinkedList<string>(SplitPath(full[current.Length..]));
+        int hops = 0;
+        while (pending.First is { } node)
+        {
+            pending.RemoveFirst();
+            string part = node.Value;
+            if (part == ".") continue;
+            if (part == "..")
+            {
+                current = Path.GetDirectoryName(current) ?? current;
+                continue;
+            }
+
+            string next = Path.Combine(current, part);
+            FileSystemInfo info = Directory.Exists(next) ? new DirectoryInfo(next) : new FileInfo(next);
+            string? target = info.LinkTarget;
+            if (target is null)
+            {
+                current = next;
+                continue;
+            }
+            if (++hops > MaximumLinkHops) throw new IOException("too many levels of links");
+            if (Path.IsPathRooted(target))
+            {
+                current = Path.GetPathRoot(target) ?? current;
+                target = target[current.Length..];
+            }
+            string[] targetParts = SplitPath(target);
+            for (int i = targetParts.Length - 1; i >= 0; i--) pending.AddFirst(targetParts[i]);
+        }
+        return current;
     }
+
+    private static string[] SplitPath(string path) =>
+        path.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
 
     private readonly record struct Style(
         bool Fill, bool Stroke, double FillOpacity, double StrokeOpacity, double GroupOpacity,
@@ -211,6 +248,8 @@ public static class PluginSvgIcon
             {
                 DtdProcessing = DtdProcessing.Prohibit,
                 XmlResolver = null,
+                // Note: 0 means "no limit" in .NET. DtdProcessing.Prohibit is the real guard:
+                // with DTDs refused there are no entities to expand.
                 MaxCharactersFromEntities = 0,
                 MaxCharactersInDocument = MaximumBytes,
                 IgnoreComments = true,
@@ -286,11 +325,7 @@ public static class PluginSvgIcon
                 return false;
             }
 
-            if (Skipped.Contains(name))
-            {
-                reader.Skip();
-                return true;
-            }
+            if (Skipped.Contains(name)) return SkipCounting(reader);
             if (name == "defs")
             {
                 if (!reader.IsEmptyElement)
@@ -321,6 +356,11 @@ public static class PluginSvgIcon
             Style style = inherited;
             if (!TryStyle(attributes, ref style, out SvgMatrix own, out double opacity)) return false;
             SvgMatrix transform = ctm.Then(own);
+            if (!IsUsable(transform))
+            {
+                Reason = "has a transform that is not finite or collapses the shape";
+                return false;
+            }
             style = style with { GroupOpacity = style.GroupOpacity * opacity };
 
             if (name == "g")
@@ -337,6 +377,11 @@ public static class PluginSvgIcon
             var subpaths = new List<SvgSubpath>();
             if (!TryGeometry(name, attributes, subpaths)) return false;
             if (!NoneLeft(attributes, name)) return false;
+            if (!AllFinite(subpaths))
+            {
+                Reason = $"has a coordinate that is not finite on <{name}>";
+                return false;
+            }
             if (subpaths.Count > 0)
             {
                 double fillOpacity = style.FillOpacity * style.GroupOpacity;
@@ -367,12 +412,32 @@ public static class PluginSvgIcon
                         Reason = $"puts <{reader.LocalName}> inside <{name}>, which plugin icons do not support";
                         return false;
                     }
-                    reader.Skip();
+                    if (!SkipCounting(reader)) return false;
                     continue;
                 }
                 reader.Read();
             }
             if (reader.NodeType == XmlNodeType.EndElement && reader.Depth == parentDepth) reader.Read();
+            return true;
+        }
+
+        /// <summary>Skips an element and everything in it, but counts its descendants toward the element limit.</summary>
+        private bool SkipCounting(XmlReader reader)
+        {
+            if (!reader.IsEmptyElement)
+            {
+                using XmlReader inner = reader.ReadSubtree();
+                inner.Read();
+                while (inner.Read())
+                {
+                    if (inner.NodeType == XmlNodeType.Element && ++_elements > MaximumElements)
+                    {
+                        Reason = $"has more than {MaximumElements} elements";
+                        return false;
+                    }
+                }
+            }
+            reader.Skip();
             return true;
         }
 
@@ -572,8 +637,7 @@ public static class PluginSvgIcon
                 Reason = "uses a paint server (url(...)), which plugin icons do not support";
                 return false;
             }
-            if (value == "currentColor" || value.StartsWith('#') || value.StartsWith("rgb", StringComparison.Ordinal)
-                || value.StartsWith("hsl", StringComparison.Ordinal) || value.All(char.IsAsciiLetter))
+            if (value == "currentColor" || NamedColours.Contains(value) || IsHexColour(value) || IsFunctionColour(value))
             {
                 ink = true;
                 return true;
@@ -581,6 +645,44 @@ public static class PluginSvgIcon
             Reason = $"has an unknown paint '{value}'";
             return false;
         }
+
+        private static bool IsHexColour(string value) =>
+            value.Length is 4 or 5 or 7 or 9 && value[0] == '#' && value.AsSpan(1).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+
+        private static bool IsFunctionColour(string value)
+        {
+            foreach (string function in (ReadOnlySpan<string>)["rgb(", "rgba(", "hsl(", "hsla("])
+            {
+                if (value.StartsWith(function, StringComparison.Ordinal) && value.EndsWith(')')
+                    && value.IndexOf(')') == value.Length - 1)
+                    return true;
+            }
+            return false;
+        }
+
+        private static readonly HashSet<string> NamedColours = new(StringComparer.Ordinal)
+        {
+            "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure", "beige", "bisque", "black", "blanchedalmond",
+            "blue", "blueviolet", "brown", "burlywood", "cadetblue", "chartreuse", "chocolate", "coral",
+            "cornflowerblue", "cornsilk", "crimson", "cyan", "darkblue", "darkcyan", "darkgoldenrod", "darkgray",
+            "darkgreen", "darkgrey", "darkkhaki", "darkmagenta", "darkolivegreen", "darkorange", "darkorchid",
+            "darkred", "darksalmon", "darkseagreen", "darkslateblue", "darkslategray", "darkslategrey",
+            "darkturquoise", "darkviolet", "deeppink", "deepskyblue", "dimgray", "dimgrey", "dodgerblue",
+            "firebrick", "floralwhite", "forestgreen", "fuchsia", "gainsboro", "ghostwhite", "gold", "goldenrod",
+            "gray", "green", "greenyellow", "grey", "honeydew", "hotpink", "indianred", "indigo", "ivory", "khaki",
+            "lavender", "lavenderblush", "lawngreen", "lemonchiffon", "lightblue", "lightcoral", "lightcyan",
+            "lightgoldenrodyellow", "lightgray", "lightgreen", "lightgrey", "lightpink", "lightsalmon",
+            "lightseagreen", "lightskyblue", "lightslategray", "lightslategrey", "lightsteelblue", "lightyellow",
+            "lime", "limegreen", "linen", "magenta", "maroon", "mediumaquamarine", "mediumblue", "mediumorchid",
+            "mediumpurple", "mediumseagreen", "mediumslateblue", "mediumspringgreen", "mediumturquoise",
+            "mediumvioletred", "midnightblue", "mintcream", "mistyrose", "moccasin", "navajowhite", "navy",
+            "oldlace", "olive", "olivedrab", "orange", "orangered", "orchid", "palegoldenrod", "palegreen",
+            "paleturquoise", "palevioletred", "papayawhip", "peachpuff", "peru", "pink", "plum", "powderblue",
+            "purple", "rebeccapurple", "red", "rosybrown", "royalblue", "saddlebrown", "salmon", "sandybrown",
+            "seagreen", "seashell", "sienna", "silver", "skyblue", "slateblue", "slategray", "slategrey", "snow",
+            "springgreen", "steelblue", "tan", "teal", "thistle", "tomato", "turquoise", "violet", "wheat",
+            "white", "whitesmoke", "yellow", "yellowgreen",
+        };
 
         private static bool TryOpacity(string value, out double opacity)
         {
@@ -634,10 +736,31 @@ public static class PluginSvgIcon
                 if (step is null) return false;
                 matrix = matrix.Then(step.Value);
             }
-            if (!double.IsFinite(matrix.Determinant) || Math.Abs(matrix.Determinant) < 1e-12)
+            if (!IsUsable(matrix))
             {
-                Reason = "has a transform that collapses the shape";
+                Reason = "has a transform that is not finite or collapses the shape";
                 return false;
+            }
+            return true;
+        }
+
+        private static bool IsUsable(SvgMatrix m) =>
+            double.IsFinite(m.A) && double.IsFinite(m.B) && double.IsFinite(m.C) && double.IsFinite(m.D)
+            && double.IsFinite(m.E) && double.IsFinite(m.F)
+            && double.IsFinite(m.Determinant) && Math.Abs(m.Determinant) >= 1e-12;
+
+        private static bool AllFinite(List<SvgSubpath> subpaths)
+        {
+            static bool Ok(SvgPoint p) => double.IsFinite(p.X) && double.IsFinite(p.Y);
+            foreach (SvgSubpath subpath in subpaths)
+            {
+                if (!Ok(subpath.Start)) return false;
+                foreach (SvgSegment segment in subpath.Segments)
+                {
+                    if (!Ok(segment.End)) return false;
+                    if (segment.Kind != SvgSegmentKind.Line && !Ok(segment.C1)) return false;
+                    if (segment.Kind == SvgSegmentKind.Cubic && !Ok(segment.C2)) return false;
+                }
             }
             return true;
         }

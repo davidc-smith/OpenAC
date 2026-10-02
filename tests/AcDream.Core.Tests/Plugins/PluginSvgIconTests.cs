@@ -158,7 +158,7 @@ public sealed class PluginSvgIconTests
     public void ADtdIsRejected()
     {
         string svg = """<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x "boom">]><svg viewBox="0 0 1 1"><title>&x;</title></svg>""";
-        Assert.Contains("XML", Reject(svg), StringComparison.Ordinal);
+        Assert.Contains("DTD", Reject(svg), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -259,16 +259,161 @@ public sealed class PluginSvgIconTests
     }
 
     [Theory]
-    [InlineData("../outside.svg")]
-    [InlineData("icons/../../outside.svg")]
-    [InlineData("/etc/icon.svg")]
-    [InlineData("C:/icon.svg")]
-    [InlineData("icons/loot.png")]
-    [InlineData("missing.svg")]
-    public void ResolvePathRejectsAnythingElse(string iconFile)
+    [InlineData("../outside.svg", "points outside")]
+    [InlineData("icons/../../outside.svg", "points outside")]
+    [InlineData(@"..\outside.svg", "points outside")]
+    [InlineData("/etc/icon.svg", "points outside")]
+    [InlineData("C:/icon.svg", "points outside")]
+    [InlineData(@"\\server\x.svg", "points outside")]
+    [InlineData("icons/loot.png", "not an .svg")]
+    [InlineData("missing.svg", "does not exist")]
+    public void ResolvePathRejectsAnythingElse(string iconFile, string named)
+    {
+        using var outer = new TemporaryDirectory();
+        string folder = Path.Combine(outer.Path, "plugin");
+        Directory.CreateDirectory(Path.Combine(folder, "icons"));
+        File.WriteAllText(Path.Combine(outer.Path, "outside.svg"), Loot);
+        File.WriteAllText(Path.Combine(folder, "icons", "loot.png"), "x");
+        Assert.False(PluginSvgIcon.TryResolvePath(folder, iconFile, out _, out string? reason));
+        Assert.Contains(named, reason, StringComparison.Ordinal);
+    }
+
+    private static bool TryLink(Action create)
+    {
+        try
+        {
+            create();
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false; // Symlinks need a privilege on some Windows machines.
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ResolvePathRejectsAFileLinkThroughADirectoryLinkOut(bool absoluteTarget)
+    {
+        using var outer = new TemporaryDirectory();
+        string folder = Path.Combine(outer.Path, "plugin");
+        string outside = Path.Combine(outer.Path, "outside");
+        Directory.CreateDirectory(folder);
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "real.svg"), Loot);
+        if (!TryLink(() => Directory.CreateSymbolicLink(Path.Combine(folder, "outdir"), "../outside"))) return;
+        string target = absoluteTarget ? Path.Combine(folder, "outdir", "real.svg") : "outdir/real.svg";
+        if (!TryLink(() => File.CreateSymbolicLink(Path.Combine(folder, "via.svg"), target))) return;
+
+        Assert.False(PluginSvgIcon.TryResolvePath(folder, "via.svg", out _, out string? reason));
+        Assert.Contains("outside", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolvePathRejectsAPathThroughADirectoryLinkOut()
+    {
+        using var outer = new TemporaryDirectory();
+        string folder = Path.Combine(outer.Path, "plugin");
+        string outside = Path.Combine(outer.Path, "outside");
+        Directory.CreateDirectory(folder);
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "real.svg"), Loot);
+        if (!TryLink(() => Directory.CreateSymbolicLink(Path.Combine(folder, "outdir"), "../outside"))) return;
+
+        Assert.False(PluginSvgIcon.TryResolvePath(folder, "outdir/real.svg", out _, out string? reason));
+        Assert.Contains("outside", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolvePathAcceptsALinkThatStaysInside()
     {
         using var directory = new TemporaryDirectory();
-        Assert.False(PluginSvgIcon.TryResolvePath(directory.Path, iconFile, out _, out string? reason));
+        Directory.CreateDirectory(Path.Combine(directory.Path, "real"));
+        File.WriteAllText(Path.Combine(directory.Path, "real", "loot.svg"), Loot);
+        if (!TryLink(() => File.CreateSymbolicLink(Path.Combine(directory.Path, "icon.svg"), "real/loot.svg"))) return;
+
+        Assert.True(PluginSvgIcon.TryResolvePath(directory.Path, "icon.svg", out string? full, out string? reason), reason);
+        Assert.EndsWith("loot.svg", full, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""transform="translate(1e308) translate(1e308)" """)]
+    [InlineData("""transform="matrix(1 0 0 1 1e999 0)" """)]
+    [InlineData("""transform="scale(1e-7)" """)]
+    public void ANonFiniteOrCollapsedTransformIsRejected(string attribute)
+    {
+        Assert.Contains("transform", Reject(Wrap($"""<path d="M0 0h1v1z" {attribute}/>""")), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""<g transform="scale(1e150)"><g transform="scale(1e150)"><g transform="scale(1e150)"><path d="M0 0h1v1z"/></g></g></g>""")]
+    [InlineData("""<g transform="translate(1e308)"><g transform="translate(1e308)"><path d="M0 0h1v1z"/></g></g>""")]
+    [InlineData("""<g transform="scale(1e-5)"><g transform="scale(1e-5)"><g transform="scale(1e-5)"><path d="M0 0h1v1z"/></g></g></g>""")]
+    public void ANonFiniteOrCollapsedComposedTransformIsRejected(string body)
+    {
+        Assert.Contains("transform", Reject(Wrap(body)), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""<rect x="1e308" width="1e308" height="1"/>""")]
+    [InlineData("""<circle cx="1e308" r="1e308"/>""")]
+    [InlineData("""<ellipse cx="1e308" rx="1e308" ry="1"/>""")]
+    public void NonFiniteShapeCoordinatesAreRejected(string body)
+    {
+        Assert.Contains("not finite", Reject(Wrap(body)), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("red")]
+    [InlineData("#abc")]
+    [InlineData("#abcd")]
+    [InlineData("#aabbcc")]
+    [InlineData("#aabbccdd")]
+    [InlineData("rgb(1,2,3)")]
+    [InlineData("rgba(1,2,3,0.5)")]
+    [InlineData("hsl(1,2%,3%)")]
+    [InlineData("currentColor")]
+    [InlineData("none")]
+    public void KnownPaintsAreAccepted(string paint)
+    {
+        Accept(Wrap($"""<path d="M0 0h1v1z" fill="{paint}"/>"""));
+    }
+
+    [Theory]
+    [InlineData("bogus")]
+    [InlineData("")]
+    [InlineData("None")]
+    [InlineData("#zzz")]
+    [InlineData("#ab")]
+    [InlineData("rgb(1,2,3")]
+    public void UnknownPaintsAreRejected(string paint)
+    {
+        Assert.Contains("unknown paint", Reject(Wrap($"""<path d="M0 0h1v1z" fill="{paint}"/>""")), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ElementsInsideSkippedContainersCountTowardTheLimit()
+    {
+        string body = "<metadata>" + string.Concat(Enumerable.Repeat("<x/>", 300)) + "</metadata>";
+        Assert.Contains("elements", Reject(Wrap(body)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ADtdReasonDoesNotSuggestEnablingDtds()
+    {
+        string svg = """<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x "boom">]><svg viewBox="0 0 1 1"/>""";
+        string reason = Reject(svg);
+        Assert.Contains("DTD", reason, StringComparison.Ordinal);
+        Assert.DoesNotContain("DtdProcessing", reason, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("a\0b")]
+    public void TryLoadNeverThrowsOnABadPath(string path)
+    {
+        Assert.False(PluginSvgIcon.TryLoad(path, out _, out string? reason));
         Assert.NotNull(reason);
     }
 
