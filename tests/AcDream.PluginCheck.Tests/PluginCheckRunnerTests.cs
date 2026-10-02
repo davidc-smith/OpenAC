@@ -93,6 +93,48 @@ public sealed class PluginCheckRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task AnSvgIconIsReportedWithItsSize()
+    {
+        string directory = WriteValidPluginFolder("svg-icon");
+        File.WriteAllText(Path.Combine(directory, "icon.svg"), "<svg viewBox=\"0 0 1 1\"/>");
+
+        PluginCheckReport report = await PluginCheckRunner.RunAsync(directory);
+
+        Assert.Equal(PluginCheckVerdict.WouldInstall, report.Verdict);
+        PluginCheckItem check = Assert.Single(report.Checks, c => c.Check == "plugin svg icon");
+        Assert.Equal(PluginCheckStatus.Pass, check.Status);
+        Assert.Contains("24 bytes", check.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnOversizedSvgFailsTheContentPolicyInZipMode()
+    {
+        Directory.CreateDirectory(_root);
+        string zipPath = Path.Combine(_root, "big-svg.zip");
+        using (FileStream stream = File.Create(zipPath))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+        {
+            AddEntry(archive, "plugin.json", Encoding.UTF8.GetBytes(ValidManifestJson()));
+            AddEntry(archive, EntryDll, [1, 2, 3]);
+            AddEntry(archive, "icon.svg", new byte[16 * 1024 + 1]);
+        }
+
+        PluginCheckReport report = await PluginCheckRunner.RunAsync(zipPath);
+
+        Assert.Equal(PluginCheckVerdict.WouldBeRefused, report.Verdict);
+        PluginCheckItem check = Assert.Single(report.Checks, c => c.Check == "plugin content policy");
+        Assert.Equal(PluginCheckStatus.Fail, check.Status);
+        Assert.Contains("SVG", check.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NoSvgIconIsSkipped()
+    {
+        PluginCheckReport report = await PluginCheckRunner.RunAsync(WriteValidPluginFolder("no-svg"));
+        Assert.Equal(PluginCheckStatus.Skip, Assert.Single(report.Checks, c => c.Check == "plugin svg icon").Status);
+    }
+
+    [Fact]
     public async Task AnOversizedIconFailsInDirectoryMode()
     {
         string directory = WriteValidPluginFolder("oversized-icon");

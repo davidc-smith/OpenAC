@@ -9,7 +9,7 @@ public static class PluginContentPolicy
 {
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".dll", ".pdb", ".json", ".xml", ".txt", ".md", ".png", ".jpg", ".jpeg", ".ttf", ".otf",
+        ".dll", ".pdb", ".json", ".xml", ".txt", ".md", ".png", ".jpg", ".jpeg", ".ttf", ".otf", ".svg",
     };
 
     public static void Validate(IReadOnlyList<ExtractedFileRecord> files, string entryDll)
@@ -25,6 +25,14 @@ public static class PluginContentPolicy
             {
                 throw new LauncherUpdateException(
                     $"Plugin file '{file.Path}' has a disallowed extension.");
+            }
+
+            if (string.Equals(Path.GetExtension(file.Path), ".svg", StringComparison.OrdinalIgnoreCase)
+                && file.Size > LauncherPluginIcon.SvgMaximumBytes)
+            {
+                throw new LauncherUpdateException(
+                    $"Plugin file '{file.Path}' is larger than {LauncherPluginIcon.SvgMaximumBytes / 1024} KiB, "
+                    + "the limit for SVG icons.");
             }
 
             if (file.Path.Split('/').Any(segment =>
