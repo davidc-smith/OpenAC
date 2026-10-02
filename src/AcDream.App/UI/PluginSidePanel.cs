@@ -1,42 +1,35 @@
 using System.Numerics;
 using AcDream.Plugin.Abstractions;
+using static AcDream.App.UI.PluginUiStyle;
 
 namespace AcDream.App.UI;
 
+/// <summary>
+/// The plugin dock: one slot per plugin window, a move handle, a collapse
+/// button and a gear that opens plugin appearance. It draws the same shape in
+/// every theme, in the theme's palette or the dock's own Classic colours
+/// (<see cref="PluginUiThemeSettings.DockPalette"/>). Where things go is
+/// worked out by <see cref="PluginDockLayout"/>.
+/// </summary>
 public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowStateController, IRetainedPanelController
 {
-    private const float OuterPadding = 4f;
-    private const float ButtonExtent = 28f;
-    private const float ButtonGap = 4f;
     private const float DefaultTop = 116f;
     private const float DefaultLeft = 10f;
-
-    private const float GripHeight = 12f;
-
-    internal float ExpandedGripBandHeight => Compact ? 24f :
-        _font is { } f ? MathF.Max(GripHeight, f.LineHeight + 2f) : GripHeight;
-
-    private const float ToggleWidth = 16f;
-
-    private const float CollapsedWidth = ToggleWidth + OuterPadding * 2f;
-
-    private static readonly Vector4 ToggleGlyphColor = new(0.86f, 0.72f, 0.32f, 1f);
+    private const float BottomMargin = 8f;
 
     private readonly RetailWindowManager _windows;
     private readonly Func<uint, (uint tex, int width, int height)> _resolve;
     private readonly UiDatFont? _font;
     private readonly Dictionary<RetailWindowHandle, ShelfEntry> _entries = [];
-    private readonly ShelfGripPanel _grip;
-    private readonly ShelfToggleButton _toggle;
-    private readonly PluginUiThemeSettings? _themes;
+    private readonly List<RetailWindowHandle> _order = [];
+    private readonly DockGrip _grip;
+    private readonly DockToggleButton _toggle;
+    private readonly DockGearButton _gear;
+    private readonly PluginUiThemeSettings _themes;
     private readonly Action? _appearanceRequested;
     private PluginUiTheme _lastTheme;
+    private PluginDockLayout _layout;
     private int _firstRow;
-    private int _visibleRows = 1;
-    private bool Compact => (_themes?.Theme ?? PluginUiTheme.Classic) != PluginUiTheme.Classic;
-    private float Padding => Compact ? 1f : OuterPadding;
-    private float Extent => Compact ? 22f : ButtonExtent;
-    private float Gap => Compact ? 2f : ButtonGap;
     private bool _disposed;
     private float _lastLayoutHeight = -1f;
 
@@ -46,12 +39,12 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
     private bool _userPositioned;
 
-    private bool _initialDockApplied;
+    private bool _homeApplied;
 
-    private float _dockLeft;
-    private float _dockTop;
+    private float _homeLeft;
+    private float _homeTop;
 
-    private RetailWindowHandle? _handle;
+    private RetailWindowHandle? _ownHandle;
 
     public PluginSidePanel(
         RetailWindowManager windows,
@@ -63,45 +56,31 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         _windows = windows ?? throw new ArgumentNullException(nameof(windows));
         _resolve = resolve ?? throw new ArgumentNullException(nameof(resolve));
         _font = font;
-        _themes = themes;
+        _themes = themes ?? new PluginUiThemeSettings();
         _appearanceRequested = appearanceRequested;
-        _lastTheme = themes?.Theme ?? PluginUiTheme.Classic;
+        _lastTheme = _themes.Theme;
 
-        Width = ButtonExtent + OuterPadding * 2f;
-        Height = ExpandedGripBandHeight + OuterPadding * 2f;
         Top = DefaultTop;
         Anchors = AnchorEdges.None;
         Draggable = false;
         Resizable = false;
-        // Nit 10: the shelf's Width/Height are entirely derived (Reflow), so a
-        // restored layout's saved dimensions must never stomp them via ResizeTo.
+        // The dock's Width/Height are entirely derived (Reflow), so a restored
+        // layout's saved dimensions must never stomp them via ResizeTo.
         ResizeX = false;
         ResizeY = false;
-        BackgroundColor = new Vector4(0f, 0f, 0f, 0.88f);
-        BorderColor = new Vector4(0.62f, 0.48f, 0.16f, 1f);
-        BorderThickness = 1f;
+        BackgroundColor = Vector4.Zero;
+        BorderColor = Vector4.Zero;
         Visible = false;
 
-        _grip = new ShelfGripPanel
-        {
-            WindowMoveHandle = true,
-            BackgroundColor = Vector4.Zero,
-            BorderColor = Vector4.Zero,
-            Anchors = AnchorEdges.None,
-        };
-        _toggle = new ShelfToggleButton(() => Compact, () => _collapsed)
-        {
-            BackgroundColor = Vector4.Zero,
-            BorderColor = Vector4.Zero,
-            TextColor = ToggleGlyphColor,
-            DatFont = _font,
-            Outline = true,
-            TextSource = () => Compact ? string.Empty : (_collapsed ? "<" : ">"),
-            Anchors = AnchorEdges.None,
-        };
+        _grip = new DockGrip(this) { WindowMoveHandle = true, Anchors = AnchorEdges.None };
+        _toggle = new DockToggleButton(this) { Anchors = AnchorEdges.None };
         _toggle.Click += ToggleCollapsed;
+        _gear = new DockGearButton(this) { Anchors = AnchorEdges.None };
+        _gear.Click += () => _appearanceRequested?.Invoke();
         AddChild(_grip);
         AddChild(_toggle);
+        AddChild(_gear);
+        _layout = PluginDockLayout.Compute(PluginDockMode.Floating, false, [], float.PositiveInfinity, 0);
         Reflow();
 
         _windows.WindowUnregistered += OnWindowUnregistered;
@@ -110,6 +89,21 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
     /// <summary>Number of live plugin-window entries, exposed for gates.</summary>
     public int EntryCount => _entries.Count;
+
+    /// <summary>Where the dock's parts are now, for tests and for drawing.</summary>
+    internal PluginDockLayout Layout => _layout;
+
+    internal PluginUiPalette Palette => _themes.DockPalette;
+
+    /// <summary>The font for monograms and labels: the bundled title face in Moss/Brass, the DAT font in Classic.</summary>
+    internal UiDatFont? TitleFont => _themes.Palette is null ? _font : _themes.ModernTitleFont ?? _themes.ModernFont ?? _font;
+
+    internal UiDatFont? BodyFont => _themes.Palette is null ? _font : _themes.ModernFont ?? _font;
+
+    /// <summary>Whether the pointer is over the dock, which shows the handle dots and the collapse button.</summary>
+    internal bool PointerOver { get; private set; }
+
+    internal bool Collapsed => _collapsed;
 
     /// <summary>
     /// Adds one manifest-scoped plugin window and its minimize affordance.
@@ -131,17 +125,10 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         handle.OuterFrame.ConstrainResizeToParent = true;
         KeepWindowReachable(handle);
 
-        var button = new PluginShelfButton(
-            descriptor,
-            owner.DisplayName,
-            handle,
-            _resolve,
-            _font,
-            fileIcon,
-            _themes)
+        var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, fileIcon)
         {
-            Width = ButtonExtent,
-            Height = ButtonExtent,
+            Width = DockSlot,
+            Height = DockSlot,
         };
         button.Click += () =>
         {
@@ -162,6 +149,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         handle.OuterFrame.AddChild(minimize);
 
         _entries.Add(handle, new ShelfEntry(button, minimize));
+        _order.Add(handle);
         AddChild(button);
         Reflow();
     }
@@ -172,67 +160,83 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         if (_collapsed)
             _collapsed = false;
         Reflow();
-        _handle?.NotifyStateChanged();
+        _ownHandle?.NotifyStateChanged();
     }
 
-    /// <summary>Hide the shelf. Preserves entries/positions; never disables a
+    /// <summary>Hide the dock. Preserves entries/positions; never disables a
     /// plugin or touches any plugin window's own visibility.</summary>
     public void Hide()
     {
         _requestedVisible = false;
         Reflow();
-        _handle?.NotifyStateChanged();
+        _ownHandle?.NotifyStateChanged();
     }
 
     protected override void OnDraw(UiRenderContext ctx)
     {
-        if (_themes?.Palette is not { } p) { base.OnDraw(ctx); return; }
-        PluginUiStyle.ShelfShadow(ctx, Width, Height);
-        PluginUiStyle.Surface(ctx, 0f, 0f, Width, Height, PluginUiStyle.WindowRadius, p.Background, p.Border);
+        PluginUiPalette p = Palette;
+        DockBody(ctx, p, PluginDockMode.Floating, Width, Height);
+        foreach (float y in _layout.Dividers)
+            DockDivider(ctx, p, Width, y);
+        if (_collapsed) return;
+        DockSide side = ScreenSide;
+        foreach (ShelfEntry entry in _entries.Values)
+        {
+            if (entry.Button.Visible && entry.Button.IsOpen)
+                OpenDot(ctx, p, side, Width, entry.Button.Top, entry.Button.Height);
+        }
     }
+
+    protected override void OnDrawAfterChildren(UiRenderContext ctx)
+    {
+        if (_collapsed) return;
+        if (_layout.FadeTop) DockFade(ctx, Palette, _layout.ListTop, Width, darkAtBottom: false);
+        if (_layout.FadeBottom) DockFade(ctx, Palette, _layout.ListBottom - DockFadeHeight, Width, darkAtBottom: true);
+    }
+
+    /// <summary>The side of the screen the dock is nearer: where its open dots go.</summary>
+    internal DockSide ScreenSide =>
+        Parent is { } parent && Left + Width / 2f > parent.Width / 2f ? DockSide.Right : DockSide.Left;
 
     protected override void OnTick(double deltaSeconds)
     {
         base.OnTick(deltaSeconds);
 
-        PluginUiTheme theme = _themes?.Theme ?? PluginUiTheme.Classic;
-        if (_lastTheme != theme)
+        if (_lastTheme != _themes.Theme)
         {
-            _lastTheme = theme;
-            _firstRow = 0;
-            _lastLayoutHeight = -1f;
+            _lastTheme = _themes.Theme;
             Reflow();
         }
         _grip.Opacity = _windows.IsLocked ? 0.5f : 1f;
+        PointerOver = Parent is UiRoot root
+            && root.MouseX >= Left && root.MouseX < Left + Width
+            && root.MouseY >= Top && root.MouseY < Top + Height;
 
         if (Parent is { } parent)
         {
-            float availableHeight = MathF.Max(
-                Extent + Padding * 2f,
-                parent.Height - Top - ExpandedGripBandHeight - Padding);
+            float availableHeight = MathF.Max(0f, parent.Height - Top - BottomMargin);
             if (MathF.Abs(availableHeight - _lastLayoutHeight) > 0.5f)
             {
                 _lastLayoutHeight = availableHeight;
                 Reflow(availableHeight);
             }
 
-            if (!_initialDockApplied && !_userPositioned && parent.Width > 0f)
+            if (!_homeApplied && !_userPositioned && parent.Width > 0f)
             {
-                float dockLeft = MathF.Min(DefaultLeft, MathF.Max(0f, parent.Width - Width));
-                float dockTop = Top;
-                _dockLeft = dockLeft;
-                _dockTop = dockTop;
-                _initialDockApplied = true;
-                if (_handle is { } handle)
-                    handle.MoveTo(dockLeft, dockTop);
+                float homeLeft = MathF.Min(DefaultLeft, MathF.Max(0f, parent.Width - Width));
+                float homeTop = Top;
+                _homeLeft = homeLeft;
+                _homeTop = homeTop;
+                _homeApplied = true;
+                if (_ownHandle is { } handle)
+                    handle.MoveTo(homeLeft, homeTop);
                 else
-                    Left = dockLeft;
+                    Left = homeLeft;
             }
         }
 
         foreach (RetailWindowHandle handle in _entries.Keys)
             KeepWindowReachable(handle);
-
     }
 
     /// <inheritdoc />
@@ -243,58 +247,53 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             _appearanceRequested();
             return true;
         }
-        if (Compact && e.Type == UiEventType.Scroll && !_collapsed)
+        if (e.Type == UiEventType.Scroll && !_collapsed)
         {
-            _firstRow = Math.Clamp(_firstRow + (e.Data0 > 0 ? -1 : 1),
-                0, Math.Max(0, _entries.Count - _visibleRows));
+            _firstRow = Math.Clamp(_firstRow + (e.Data0 > 0 ? -1 : 1), 0, _layout.MaxFirstRow);
             Reflow();
             return true;
         }
         return base.OnEvent(in e);
     }
 
-    /// <inheritdoc />
-    public override string? GetTooltipText() => _appearanceRequested is null
-        ? null : "Right-click for plugin appearance. Scroll to browse plugins.";
-
     private void ToggleCollapsed()
     {
         _collapsed = !_collapsed;
         Reflow();
-        _handle?.NotifyStateChanged();
+        _ownHandle?.NotifyStateChanged();
     }
 
     private void OnWindowRegistered(RetailWindowHandle handle)
     {
         if (!ReferenceEquals(handle.OuterFrame, this)) return;
-        _handle = handle;
+        _ownHandle = handle;
         handle.Moved += OnHandleMoved;
         _windows.WindowRegistered -= OnWindowRegistered;
     }
 
     private void OnHandleMoved(RetailWindowHandle _)
     {
-        if (!_initialDockApplied)
+        if (!_homeApplied)
         {
             _userPositioned = true;
             return;
         }
         if (Parent is { } parent)
         {
-            float currentDockLeft = MathF.Min(DefaultLeft, MathF.Max(0f, parent.Width - Width));
-            float reachabilityClampOfPriorDock = Math.Clamp(
-                _dockLeft, 0f, MathF.Max(0f, parent.Width - Width));
-            bool stillDocked = Top == _dockTop
-                && (Left == currentDockLeft || Left == reachabilityClampOfPriorDock);
-            if (stillDocked)
+            float currentHomeLeft = MathF.Min(DefaultLeft, MathF.Max(0f, parent.Width - Width));
+            float reachabilityClampOfPriorHome = Math.Clamp(
+                _homeLeft, 0f, MathF.Max(0f, parent.Width - Width));
+            bool stillHome = Top == _homeTop
+                && (Left == currentHomeLeft || Left == reachabilityClampOfPriorHome);
+            if (stillHome)
             {
-                _dockLeft = Left;
-                _dockTop = Top;
+                _homeLeft = Left;
+                _homeTop = Top;
                 return;
             }
         }
 
-        if (Left != _dockLeft || Top != _dockTop)
+        if (Left != _homeLeft || Top != _homeTop)
             _userPositioned = true;
     }
 
@@ -310,7 +309,6 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         if (_entries.Count > 0)
             _requestedVisible = false;
     }
-
 
     public RetainedWindowState CaptureWindowState() =>
         new(Collapsed: _collapsed, RequestedVisible: _requestedVisible);
@@ -328,10 +326,10 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         if (!_entries.Remove(handle, out ShelfEntry entry))
             return;
 
+        _order.Remove(handle);
         RemoveChild(entry.Button);
         if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
             handle.OuterFrame.RemoveChild(entry.Minimize);
-        entry.Button.DisposeSubscriptions();
         Reflow();
     }
 
@@ -356,91 +354,49 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             handle.MoveTo(left, top);
     }
 
-    private void LayoutChrome()
-    {
-        if (Compact)
-        {
-            _grip.Left = 1f;
-            _grip.Top = 0f;
-            _grip.Width = Extent;
-            _grip.Height = 10f;
-            _grip.Compact = true;
-            _toggle.Left = 1f;
-            _toggle.Top = 10f;
-            _toggle.Width = Extent;
-            _toggle.Height = 14f;
-            _toggle.Outline = false;
-            return;
-        }
-        _grip.Compact = false;
-        _toggle.Outline = true;
-        float bandHeight = _collapsed ? ButtonExtent : ExpandedGripBandHeight;
-        _grip.Left = 0f;
-        _grip.Top = 0f;
-        _grip.Width = MathF.Max(0f, Width - ToggleWidth);
-        _grip.Height = bandHeight;
-
-        _toggle.Left = Width - ToggleWidth;
-        _toggle.Top = 0f;
-        _toggle.Width = ToggleWidth;
-        _toggle.Height = bandHeight;
-    }
-
     private void Reflow(float? maximumHeight = null)
     {
         float effectiveHeight = maximumHeight
             ?? (_lastLayoutHeight >= 0f ? _lastLayoutHeight : float.PositiveInfinity);
+        string[] owners = _order.Select(h => _entries[h].Button.OwnerId).ToArray();
+        _layout = PluginDockLayout.Compute(PluginDockMode.Floating, _collapsed, owners, effectiveHeight, _firstRow);
+        _firstRow = _layout.FirstRow;
 
-        int maximumRows = float.IsPositiveInfinity(effectiveHeight)
-            ? Math.Max(1, _entries.Count)
-            : Math.Max(
-                1,
-                (int)MathF.Floor(
-                    (effectiveHeight - Padding * 2f + Gap)
-                    / (Extent + Gap)));
-        _visibleRows = maximumRows;
-        _firstRow = Math.Clamp(_firstRow, 0, Math.Max(0, _entries.Count - maximumRows));
-        int index = 0;
-        foreach (ShelfEntry entry in _entries.Values)
+        for (int i = 0; i < _order.Count; i++)
         {
-            int column = Compact ? 0 : index / maximumRows;
-            int row = Compact ? index - _firstRow : index % maximumRows;
-            entry.Button.Left = Padding + column * (Extent + Gap);
-            entry.Button.Top = ExpandedGripBandHeight + Padding + row * (Extent + Gap);
-            entry.Button.Width = Extent;
-            entry.Button.Height = Extent;
-            entry.Button.Visible = !_collapsed && (!Compact || row >= 0 && row < maximumRows);
-            index++;
+            PluginShelfButton button = _entries[_order[i]].Button;
+            if (_layout.Slots[i] is { } slot)
+            {
+                Place(button, slot);
+                button.Visible = true;
+            }
+            else
+            {
+                button.Visible = false;
+            }
         }
 
-        int rows = Math.Min(index, maximumRows);
-        int columns = Compact || index == 0 ? 1 : (index + maximumRows - 1) / maximumRows;
-
-        if (_collapsed)
-        {
-            Width = Compact ? 24f : CollapsedWidth;
-            Height = Compact ? 24f : ButtonExtent;
-        }
-        else
-        {
-            Width = Padding * 2f + columns * Extent + Math.Max(0, columns - 1) * Gap;
-            Height = ExpandedGripBandHeight
-                + Padding * 2f + rows * Extent + Math.Max(0, rows - 1) * Gap;
-        }
-
-        PluginUiPalette? palette = _themes?.Palette;
-        BackgroundColor = palette?.Background ?? new(0f, 0f, 0f, 0.88f);
-        BorderColor = palette?.Border ?? new(0.62f, 0.48f, 0.16f, 1f);
-        _toggle.TextColor = palette?.Muted ?? ToggleGlyphColor;
-        _grip.DashColor = palette?.Muted ?? new(0.62f, 0.48f, 0.16f, 1f);
-        LayoutChrome();
+        Width = _layout.Width;
+        Height = _layout.Height;
+        Place(_grip, _layout.Handle);
+        Place(_toggle, _layout.Toggle);
+        Place(_gear, _layout.Gear);
+        _gear.Visible = !_collapsed;
         ApplyVisibility();
 
-        if (_initialDockApplied && !_userPositioned)
+        if (_homeApplied && !_userPositioned)
         {
-            _dockLeft = Left;
-            _dockTop = Top;
+            _homeLeft = Left;
+            _homeTop = Top;
         }
+    }
+
+    private static void Place(UiElement element, DockRect rect)
+    {
+        element.Left = rect.X;
+        element.Top = rect.Y;
+        element.Width = rect.W;
+        element.Height = rect.H;
     }
 
     private void ApplyVisibility()
@@ -455,16 +411,16 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         _disposed = true;
         _windows.WindowUnregistered -= OnWindowUnregistered;
         _windows.WindowRegistered -= OnWindowRegistered;
-        if (_handle is { } ownHandle)
+        if (_ownHandle is { } ownHandle)
             ownHandle.Moved -= OnHandleMoved;
 
         foreach ((RetailWindowHandle handle, ShelfEntry entry) in _entries)
         {
-            entry.Button.DisposeSubscriptions();
             if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
                 handle.OuterFrame.RemoveChild(entry.Minimize);
         }
         _entries.Clear();
+        _order.Clear();
         Visible = false;
     }
 
@@ -472,108 +428,116 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         PluginShelfButton Button,
         PluginMinimizeButton Minimize);
 
-    private sealed class ShelfToggleButton(Func<bool> compact, Func<bool> collapsed) : UiSimpleButton
+    /// <summary>The move handle: three dots, shown while the pointer is over the dock or it is collapsed.</summary>
+    private sealed class DockGrip(PluginSidePanel dock) : UiPanel
     {
         protected override void OnDraw(UiRenderContext ctx)
         {
-            base.OnDraw(ctx);
-            if (!compact()) return;
-            float direction = collapsed() ? -1f : 1f;
-            float center = Width * 0.5f;
-            for (int i = 0; i < 3; i++)
-            {
-                float x = center + direction * (i - 1);
-                ctx.DrawFill(x, Height * 0.5f - 3 + i, 1f, 1f, TextColor);
-                ctx.DrawFill(x, Height * 0.5f + 1 - i, 1f, 1f, TextColor);
-            }
+            if (!dock.PointerOver && !dock.Collapsed) return;
+            HandleDots(ctx, dock.Palette, Width / 2f, dock.Collapsed ? Height / 2f : DockHandleTop + DockHandleHeight / 2f);
         }
     }
 
-    private sealed class ShelfGripPanel : UiPanel
+    /// <summary>Collapses or expands the dock. Shown with the handle dots.</summary>
+    private sealed class DockToggleButton(PluginSidePanel dock) : UiSimpleButton
     {
-        internal bool Compact { get; set; }
-        internal Vector4 DashColor { get; set; } = new(0.62f, 0.48f, 0.16f, 1f);
+        public override string? GetTooltipText() => dock.Collapsed ? "Expand the dock" : "Collapse the dock";
 
         protected override void OnDraw(UiRenderContext ctx)
         {
-            base.OnDraw(ctx);
+            if (!dock.PointerOver && !dock.Collapsed) return;
+            PluginUiPalette p = dock.Palette;
+            GhostButton(ctx, p, Width, Height, ThemeState);
+            Chevron(ctx, Width / 2f, Height / 2f, 6f,
+                dock.Collapsed ? ChevronDirection.Down : ChevronDirection.Up,
+                ThemeState == UiControlState.Normal ? p.Muted : p.Text);
+        }
+    }
 
-            if (Compact)
-            {
-                ctx.DrawFill(4f, 3f, 8f, 1f, DashColor);
-                ctx.DrawFill(4f, 6f, 8f, 1f, DashColor);
-                return;
-            }
-            const float dashWidth = 5f;
-            const float dashGap = 4f;
-            float totalDashWidth = dashWidth * 3f + dashGap * 2f;
-            float dashX = MathF.Max(2f, (Width - totalDashWidth) * 0.5f);
-            float dashY = Height * 0.5f - 1f;
-            for (int i = 0; i < 3; i++)
-                ctx.DrawFill(dashX + i * (dashWidth + dashGap), dashY, dashWidth, 2f, DashColor);
+    /// <summary>The gear slot at the bottom of the dock, which opens plugin appearance.</summary>
+    private sealed class DockGearButton(PluginSidePanel dock) : UiSimpleButton
+    {
+        public override string? GetTooltipText() => "Plugin appearance";
+
+        protected override void OnDraw(UiRenderContext ctx)
+        {
+            PluginUiPalette p = dock.Palette;
+            DockSlotWell(ctx, p, 0f, 0f, Width, Height, ThemeState);
+            Gear(ctx, (Width - DockArt) / 2f, (Height - DockArt) / 2f, DockArt,
+                ThemeState == UiControlState.Normal ? p.Muted : p.Text);
         }
     }
 
     internal sealed class PluginShelfButton : UiSimpleButton
     {
-        private static readonly Vector4 HiddenBackground =
-            new(0.025f, 0.025f, 0.02f, 0.96f);
-        private static readonly Vector4 VisibleBackground =
-            new(0.09f, 0.19f, 0.055f, 0.96f);
-        private static readonly Vector4 HiddenBorder =
-            new(0.48f, 0.38f, 0.14f, 1f);
-        private static readonly Vector4 VisibleBorder =
-            new(0.76f, 0.64f, 0.25f, 1f);
-
-        private readonly PluginUiThemeSettings? _themes;
+        private readonly PluginSidePanel _dock;
         private readonly RetailWindowHandle _handle;
         private readonly Func<uint, (uint tex, int width, int height)> _resolve;
         private readonly (uint Texture, int Width, int Height)? _fileIcon;
         private readonly uint _iconSurfaceId;
         private readonly string _tooltip;
         private readonly string _initialsFallback;
+        private readonly Vector4 _monogramHue;
 
         private bool _iconResolveAttempted;
         private bool _iconAvailable;
 
         internal PluginShelfButton(
+            PluginSidePanel dock,
             PluginPanelDescriptor descriptor,
-            string ownerDisplayName,
+            PluginUiOwner owner,
             RetailWindowHandle handle,
             Func<uint, (uint tex, int width, int height)> resolve,
-            UiDatFont? font,
-            (uint Texture, int Width, int Height)? fileIcon = null,
-            PluginUiThemeSettings? themes = null)
+            (uint Texture, int Width, int Height)? fileIcon = null)
         {
-            _themes = themes;
+            _dock = dock;
             _handle = handle;
             _resolve = resolve;
             _fileIcon = fileIcon;
+            OwnerId = owner.Id;
+            WindowTitle = descriptor.Title;
+            OwnerName = owner.DisplayName;
             _iconSurfaceId = PluginIcons.Normalize(descriptor.IconSurfaceId);
-            _tooltip = string.Equals(descriptor.Title, ownerDisplayName,
+            _tooltip = string.Equals(descriptor.Title, owner.DisplayName,
                     StringComparison.Ordinal)
                 ? descriptor.Title
-                : $"{ownerDisplayName} — {descriptor.Title}";
+                : $"{owner.DisplayName} — {descriptor.Title}";
             _initialsFallback = Initials(descriptor.IconText, descriptor.Title);
+            _monogramHue = MonogramHue(owner.Id);
             Text = _fileIcon is null && _iconSurfaceId == 0 ? _initialsFallback : string.Empty;
-            DatFont = font;
-            Outline = true;
-            BorderThickness = 1f;
             Anchors = AnchorEdges.None;
-            _handle.Shown += OnVisibilityChanged;
-            _handle.Hidden += OnVisibilityChanged;
-            RefreshPresentation();
         }
+
+        internal string OwnerId { get; }
+
+        internal string WindowTitle { get; }
+
+        internal string OwnerName { get; }
+
+        internal bool IsOpen => _handle.IsVisible;
+
+        internal RetailWindowHandle Window => _handle;
+
+        internal UiControlState State => ThemeState;
 
         public override string? GetTooltipText() => _tooltip;
 
-        protected override void OnTick(double deltaSeconds)
+        protected override void OnDraw(UiRenderContext ctx)
         {
-            base.OnTick(deltaSeconds);
-            RefreshPresentation();
+            PluginUiPalette p = _dock.Palette;
+            DockSlotWell(ctx, p, 0f, 0f, Width, Height, ThemeState);
+            Vector4 colour = ThemeState is UiControlState.Hovered or UiControlState.Pressed ? p.Text
+                : IsOpen ? p.Accent : p.Muted;
+            DrawIcon(ctx, (Width - DockArt) / 2f, (Height - DockArt) / 2f, DockArt, colour);
         }
 
-        protected override void OnDraw(UiRenderContext ctx)
+        /// <summary>
+        /// Draws this window's icon in the <paramref name="extent"/> box at (x, y): its
+        /// file icon, else its DAT surface, else its monogram. Colour art keeps its own
+        /// colours and only takes <paramref name="colour"/>'s strength (dimmer while
+        /// closed); one-colour art is drawn in <paramref name="colour"/>.
+        /// </summary>
+        internal void DrawIcon(UiRenderContext ctx, float x, float y, float extent, Vector4 colour)
         {
             if (_fileIcon is null && !_iconResolveAttempted && _iconSurfaceId != 0)
             {
@@ -584,72 +548,26 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                     Text = _initialsFallback;
             }
 
-            base.OnDraw(ctx);
-
-            uint texture;
-            int width;
-            int height;
+            float alpha = IsOpen || ThemeState != UiControlState.Normal ? 1f : ClosedArtAlpha;
+            uint texture = 0;
+            int width = 0, height = 0;
             if (_fileIcon is { } file)
                 (texture, width, height) = file;
             else if (_iconSurfaceId != 0 && _iconAvailable)
                 (texture, width, height) = _resolve(_iconSurfaceId);
-            else
-                return;
 
-            if (texture == 0 || width <= 0 || height <= 0)
-                return;
-            float inset = (_themes?.Theme ?? PluginUiTheme.Classic) == PluginUiTheme.Classic ? 6f : 2f;
-            float extent = MathF.Min(Width - inset, Height - inset);
-            ctx.DrawSprite(
-                texture,
-                (Width - extent) * 0.5f,
-                (Height - extent) * 0.5f,
-                extent,
-                extent,
-                0f,
-                0f,
-                1f,
-                1f,
-                Vector4.One);
-        }
-
-        internal void DisposeSubscriptions()
-        {
-            _handle.Shown -= OnVisibilityChanged;
-            _handle.Hidden -= OnVisibilityChanged;
-        }
-
-        private void OnVisibilityChanged(RetailWindowHandle _) =>
-            RefreshPresentation();
-
-        private void RefreshPresentation()
-        {
-            PluginUiTheme theme = _themes?.Theme ?? PluginUiTheme.Classic;
-            if (theme != PluginUiTheme.Classic)
+            if (texture != 0 && width > 0 && height > 0)
             {
-                PluginUiPalette palette = _themes!.Palette!;
-                ThemePalette = palette;
-                BackgroundColor = _handle.IsVisible ? palette.Selected : palette.Field;
-                BorderColor = _handle.IsVisible ? palette.Accent : palette.Border;
-                Outline = false;
-                TextColor = palette.Text;
-                if (Text.Length > 0) Text = _initialsFallback[..1];
+                ctx.DrawSprite(texture, x, y, extent, extent, 0f, 0f, 1f, 1f, Vector4.One with { W = alpha });
                 return;
             }
-            ThemePalette = null;
-            Outline = true;
-            TextColor = Vector4.One;
-            if (Text.Length > 0) Text = _initialsFallback;
-            BackgroundColor = _handle.IsVisible
-                ? VisibleBackground
-                : HiddenBackground;
-            BorderColor = _handle.IsVisible ? VisibleBorder : HiddenBorder;
+            Monogram(ctx, _dock.TitleFont, Text, _monogramHue, x, y, extent, alpha);
         }
 
         private static string Initials(string? requested, string title)
         {
             if (!string.IsNullOrWhiteSpace(requested))
-                return requested.Trim()[..Math.Min(3, requested.Trim().Length)];
+                return requested.Trim()[..Math.Min(2, requested.Trim().Length)];
 
             string[] words = title.Split(
                 ' ',

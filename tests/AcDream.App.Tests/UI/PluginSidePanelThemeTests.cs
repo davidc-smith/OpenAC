@@ -7,9 +7,10 @@ namespace AcDream.App.Tests.UI;
 public sealed class PluginSidePanelThemeTests
 {
     [Theory]
+    [InlineData(PluginUiTheme.Classic)]
     [InlineData(PluginUiTheme.Moss)]
     [InlineData(PluginUiTheme.Brass)]
-    public void CompactShelfRemains24PixelsAndScrollsEveryEntryIntoView(PluginUiTheme theme)
+    public void EveryThemeHasTheSameDockShape_AndScrollsEveryEntryIntoView(PluginUiTheme theme)
     {
         var root = new UiRoot { Width = 800, Height = 260 };
         var settings = new PluginUiThemeSettings { Theme = theme };
@@ -17,7 +18,7 @@ public sealed class PluginSidePanelThemeTests
         root.AddChild(shelf);
         for (int i = 0; i < 12; i++) Add(root, shelf, i);
         root.Tick(0.016, 16);
-        Assert.Equal(24f, shelf.Width);
+        Assert.Equal(PluginUiStyle.DockWidth, shelf.Width);
         Assert.True(shelf.Top + shelf.Height <= root.Height);
         var buttons = shelf.Children.OfType<PluginSidePanel.PluginShelfButton>().ToArray();
         Assert.True(buttons[0].Visible);
@@ -27,20 +28,10 @@ public sealed class PluginSidePanelThemeTests
         Assert.False(buttons[0].Visible);
         Assert.All(buttons.Where(b => b.Visible), b =>
         {
-            Assert.Equal(1f, b.Left);
-            Assert.Equal(22f, b.Width);
-            Assert.True(b.Top >= shelf.ExpandedGripBandHeight);
+            Assert.Equal(PluginUiStyle.DockPadding, b.Left);
+            Assert.Equal(PluginUiStyle.DockSlot, b.Width);
+            Assert.True(b.Top >= PluginUiStyle.DockSlotsTop);
             Assert.True(b.Top + b.Height <= shelf.Height);
-        });
-        settings.Theme = PluginUiTheme.Classic;
-        root.Tick(0.016, 32);
-        Assert.True(shelf.Width > 36f);
-        Assert.All(buttons, b =>
-        {
-            Assert.True(b.Visible);
-            Assert.Equal(28f, b.Width);
-            Assert.True(b.Outline);
-            Assert.Equal(Vector4.One, b.TextColor);
         });
     }
 
@@ -68,6 +59,24 @@ public sealed class PluginSidePanelThemeTests
         Assert.Equal(visible, handle.IsVisible);
     }
 
+    [Fact]
+    public void TheGearOpensAppearance()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        int requests = 0;
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), null,
+            new PluginUiThemeSettings(), () => requests++);
+        Add(root, shelf, 0);
+        root.AddChild(shelf);
+        root.Tick(0.016, 16);
+        DockRect gear = shelf.Layout.Gear;
+        int x = (int)(shelf.Left + gear.X + gear.W / 2);
+        int y = (int)(shelf.Top + gear.Y + gear.H / 2);
+        root.OnMouseDown(UiMouseButton.Left, x, y, 0);
+        root.OnMouseUp(UiMouseButton.Left, x, y, 0);
+        Assert.Equal(1, requests);
+    }
+
     private static RetailWindowHandle AddThemed(UiRoot root, PluginSidePanel shelf, PluginUiThemeSettings settings, int index)
     {
         var frame = MarkupDocument.Build(
@@ -81,7 +90,7 @@ public sealed class PluginSidePanelThemeTests
     }
 
     [Fact]
-    public void ThemedShelfEntriesAndMinimizeFollowThePalette()
+    public void TheDockDrawsInTheDockPalette_AndMinimizeFollowsTheWindowsTheme()
     {
         var root = new UiRoot { Width = 800, Height = 600 };
         var settings = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
@@ -91,8 +100,6 @@ public sealed class PluginSidePanelThemeTests
         var plain = Add(root, shelf, 1);
         root.Tick(0.016, 16);
 
-        Assert.All(shelf.Children.OfType<PluginSidePanel.PluginShelfButton>(),
-            b => Assert.Same(settings.Palette, b.ThemePalette));
         var themedMin = themed.OuterFrame.Children.OfType<UiSimpleButton>().Single(b => b.Text == "–");
         var plainMin = plain.OuterFrame.Children.OfType<UiSimpleButton>().Single(b => b.Text == "–");
         Assert.Same(settings.Palette, themedMin.ThemePalette);
@@ -102,14 +109,46 @@ public sealed class PluginSidePanelThemeTests
 
         var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
         shelf.DrawSelfAndChildren(ctx);
-        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => v.Position.X < shelf.Left);
+        var moss = ThemeDrawCapture.Vertices(renderer);
+        Assert.True(ThemeDrawCapture.HasColor(moss, PluginUiPalette.Moss.Background));
+        Assert.Contains(moss, v => v.Position.Y > shelf.Top + shelf.Height);   // the shadow
 
         settings.Theme = PluginUiTheme.Classic;
         root.Tick(0.016, 32);
-        Assert.All(shelf.Children.OfType<PluginSidePanel.PluginShelfButton>(), b => Assert.Null(b.ThemePalette));
+        (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        shelf.DrawSelfAndChildren(ctx);
+        Assert.True(ThemeDrawCapture.HasColor(ThemeDrawCapture.Vertices(renderer), PluginUiPalette.ClassicDock.Border,
+            tolerance: 0.05f));
         Assert.Null(themedMin.ThemePalette);
         Assert.Equal(Vector4.One, themedMin.TextColor);
     }
+
+    [Fact]
+    public void AnOpenWindowGetsAnAccentDot_AndAClosedOneDoesNot()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var settings = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), null, settings);
+        root.AddChild(shelf);
+        var handle = Add(root, shelf, 0);
+        root.Tick(0.016, 16);
+
+        handle.Show();
+        var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        shelf.DrawSelfAndChildren(ctx);
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => IsDot(v, shelf));
+
+        handle.Hide();
+        (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        shelf.DrawSelfAndChildren(ctx);
+        Assert.DoesNotContain(ThemeDrawCapture.Vertices(renderer), v => IsDot(v, shelf));
+    }
+
+    private static bool IsDot((Vector2 Position, Vector4 Color) v, PluginSidePanel shelf) =>
+        v.Position.X < shelf.Left + PluginUiStyle.DockPadding
+        && v.Color.W > 0.5f
+        && MathF.Abs(v.Color.X - PluginUiPalette.Moss.Accent.X) < 0.01f
+        && MathF.Abs(v.Color.Y - PluginUiPalette.Moss.Accent.Y) < 0.01f;
 
     private static RetailWindowHandle Add(UiRoot root, PluginSidePanel shelf, int index)
     {
@@ -121,4 +160,3 @@ public sealed class PluginSidePanelThemeTests
         return handle;
     }
 }
-
