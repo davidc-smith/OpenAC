@@ -214,6 +214,19 @@ public sealed class UiRenderContext
         float u0, float v0, float u1, float v1, Vector4 color) =>
         DrawCoverageSpriteAbsolute(coverageTexture, x + _current.X, y + _current.Y, w, h, u0, v0, u1, v1, color);
 
+    /// <summary>
+    /// Draws a coverage icon baked at <paramref name="devicePixels"/>² device
+    /// pixels with its top-left corner at (<paramref name="x"/>, <paramref name="y"/>),
+    /// snapped to the device grid so each texel lands on one device pixel.
+    /// </summary>
+    internal void DrawCoverageIcon(uint texture, float x, float y, int devicePixels, Vector4 color)
+    {
+        float extent = devicePixels / PixelScale;
+        float ax = MathF.Round((_current.X + x) * PixelScale) / PixelScale;
+        float ay = MathF.Round((_current.Y + y) * PixelScale) / PixelScale;
+        DrawCoverageSpriteAbsolute(texture, ax, ay, extent, extent, 0f, 0f, 1f, 1f, color);
+    }
+
     private void DrawCoverageSpriteAbsolute(uint coverageTexture, float x, float y, float w, float h,
         float u0, float v0, float u1, float v1, Vector4 color)
     {

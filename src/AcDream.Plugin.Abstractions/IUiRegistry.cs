@@ -24,6 +24,15 @@ public sealed record PluginPanelDescriptor(string WindowId, string Title)
     /// </summary>
     public uint IconSurfaceId { get; init; }
 
+    /// <summary>
+    /// An SVG icon for this window's dock button: a path relative to the
+    /// plugin's install folder, such as <c>"icons/loot.svg"</c>. Null uses the
+    /// plugin's own <c>icon.svg</c>, if it ships one. A file that is missing or
+    /// outside the supported subset falls back to the next icon. The icon is
+    /// drawn in one colour that follows the plugin theme.
+    /// </summary>
+    public string? IconFile { get; init; }
+
     /// <summary>Whether the window is open as soon as it is registered.</summary>
     public bool StartVisible { get; init; } = true;
 
