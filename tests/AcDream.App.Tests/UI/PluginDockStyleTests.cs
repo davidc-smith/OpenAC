@@ -102,4 +102,21 @@ public sealed class PluginDockStyleTests
         Assert.True(ThemeDrawCapture.HasColor(vertices, Moss.Border));
         Assert.Contains(vertices, v => v.Position.Y > 56f && v.Color.W > 0f);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DockDivider_IsAOnePointHairline_FadedFromTheBorderTowardTheFill(bool classic)
+    {
+        PluginUiPalette p = classic ? PluginUiPalette.ClassicDock : Moss;
+        Vector4 expected = PluginUiStyle.Mix(p.Border, p.Background, PluginUiStyle.DockDividerFade);
+        var (renderer, ctx) = ThemeDrawCapture.Context(200, 200);
+        PluginUiStyle.DockDivider(ctx, p, PluginUiStyle.DockWidth, 50f);
+        var vertices = ThemeDrawCapture.Vertices(renderer);
+
+        Assert.Equal(6, vertices.Count);
+        Assert.All(vertices, v => Assert.Equal(expected, v.Color));
+        Assert.NotEqual(p.Border, expected);
+        Assert.Equal(1f, vertices.Max(v => v.Position.Y) - vertices.Min(v => v.Position.Y), 3);
+    }
 }

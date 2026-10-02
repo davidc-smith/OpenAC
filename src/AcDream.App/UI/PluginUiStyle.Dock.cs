@@ -28,6 +28,8 @@ internal static partial class PluginUiStyle
     internal const float DockCollapseSize = 12f;
     internal const float DockDividerSpace = 4f;
     internal const float DockDividerInset = 8f;
+    /// <summary>How far a divider's colour moves from Border toward the dock's fill, so it reads as a faint hairline.</summary>
+    internal const float DockDividerFade = 0.6f;
     internal const float DockFadeHeight = 12f;
     internal const float DockSlotRadius = 9f;
     internal const float DockOpenDot = 3f;
@@ -114,9 +116,9 @@ internal static partial class PluginUiStyle
         ctx.FillRoundedRect(x, slotTop + (slotHeight - height) / 2f, RailPillWidth, height, corners, color);
     }
 
-    /// <summary>A hairline between two plugins' slots, at <paramref name="y"/>.</summary>
+    /// <summary>A faint hairline between two plugins' slots, at <paramref name="y"/>: the border colour faded toward the fill.</summary>
     internal static void DockDivider(UiRenderContext ctx, PluginUiPalette p, float dockWidth, float y) =>
-        ctx.DrawFill(DockDividerInset, y, dockWidth - 2f * DockDividerInset, 1f, p.Border);
+        ctx.DrawFill(DockDividerInset, y, dockWidth - 2f * DockDividerInset, 1f, Mix(p.Border, p.Background, DockDividerFade));
 
     /// <summary>A fade into the dock's fill, marking the end where slots are cut off.</summary>
     internal static void DockFade(UiRenderContext ctx, PluginUiPalette p, float y, float w, bool darkAtBottom)

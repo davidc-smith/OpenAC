@@ -117,7 +117,8 @@ public sealed class PluginSidePanelThemeTests
         root.Tick(0.016, 32);
         (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
         shelf.DrawSelfAndChildren(ctx);
-        Assert.True(ThemeDrawCapture.HasColor(ThemeDrawCapture.Vertices(renderer), PluginUiPalette.ClassicDock.Border,
+        Assert.True(ThemeDrawCapture.HasColor(ThemeDrawCapture.Vertices(renderer), PluginUiStyle.Mix(PluginUiPalette.ClassicDock.Border,
+                PluginUiPalette.ClassicDock.Background, PluginUiStyle.DockDividerFade),
             tolerance: 0.05f));
         Assert.Null(themedMin.ThemePalette);
         Assert.Equal(Vector4.One, themedMin.TextColor);
