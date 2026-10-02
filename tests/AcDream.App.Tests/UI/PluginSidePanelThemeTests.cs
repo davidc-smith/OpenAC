@@ -144,6 +144,30 @@ public sealed class PluginSidePanelThemeTests
         Assert.DoesNotContain(ThemeDrawCapture.Vertices(renderer), v => IsDot(v, shelf));
     }
 
+    [Fact]
+    public void ARightHandDockPutsTheAccentDotOnItsRightEdge()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var settings = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), null, settings);
+        root.AddChild(shelf);
+        var handle = Add(root, shelf, 0);
+        root.Tick(0.016, 16);
+        shelf.Left = 700f;
+        handle.Show();
+
+        var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        shelf.DrawSelfAndChildren(ctx);
+        var verts = ThemeDrawCapture.Vertices(renderer);
+        Assert.Contains(verts, v => IsAccent(v) && v.Position.X > shelf.Left + shelf.Width - PluginUiStyle.DockPadding);
+        Assert.DoesNotContain(verts, v => IsAccent(v) && v.Position.X < shelf.Left + PluginUiStyle.DockPadding);
+    }
+
+    private static bool IsAccent((Vector2 Position, Vector4 Color) v) =>
+        v.Color.W > 0.5f
+        && MathF.Abs(v.Color.X - PluginUiPalette.Moss.Accent.X) < 0.01f
+        && MathF.Abs(v.Color.Y - PluginUiPalette.Moss.Accent.Y) < 0.01f;
+
     private static bool IsDot((Vector2 Position, Vector4 Color) v, PluginSidePanel shelf) =>
         v.Position.X < shelf.Left + PluginUiStyle.DockPadding
         && v.Color.W > 0.5f

@@ -83,6 +83,31 @@ public sealed class PluginDockChromeTests
     }
 
     [Fact]
+    public void AfterUnregisteringTheFirstEntryAndADraw_EveryRemainingSlotMatchesAFreshLayout()
+    {
+        var (root, dock, windows) = Mount(12, height: 300f);
+        ThemeDrawCapture.Draw(root);
+
+        root.WindowManager.Unregister(windows[0].Name);
+        ThemeDrawCapture.Draw(root);
+
+        string[] owners = Enumerable.Range(1, 11).Select(i => $"test.{i}").ToArray();
+        PluginDockLayout fresh = PluginDockLayout.Compute(
+            PluginDockMode.Floating, false, owners, 300f - dock.Top - 8f, 0);
+        var buttons = dock.Children.OfType<PluginSidePanel.PluginShelfButton>().ToArray();
+        Assert.Equal(11, buttons.Length);
+        Assert.Equal(owners, buttons.Select(b => b.OwnerId).ToArray());
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            Assert.Equal(fresh.Slots[i] is not null, buttons[i].Visible);
+            if (fresh.Slots[i] is { } slot)
+                Assert.Equal((slot.X, slot.Y), (buttons[i].Left, buttons[i].Top));
+        }
+        Assert.Equal(fresh.Dividers, dock.Layout.Dividers);
+        Assert.Equal(fresh.Height, dock.Height);
+    }
+
+    [Fact]
     public void HandleDotsAndToggle_AreDrawnOnlyWhileThePointerIsOverTheDock()
     {
         var (root, dock, _) = Mount(1, settings: new PluginUiThemeSettings { Theme = PluginUiTheme.Moss });
@@ -90,7 +115,8 @@ public sealed class PluginDockChromeTests
         root.Tick(0.016d, 32L);
         int away = ThemeDrawCapture.Draw(root).Length;
 
-        root.OnMouseMove((int)dock.Left + 20, (int)dock.Top + 40);
+        // Inside the handle row, away from the toggle and every slot, so only the dots can add geometry.
+        root.OnMouseMove((int)dock.Left + 10, (int)dock.Top + 8);
         root.Tick(0.016d, 48L);
         Assert.True(dock.PointerOver);
         int over = ThemeDrawCapture.Draw(root).Length;

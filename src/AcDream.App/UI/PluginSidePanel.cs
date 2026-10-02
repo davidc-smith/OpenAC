@@ -533,9 +533,10 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
         /// <summary>
         /// Draws this window's icon in the <paramref name="extent"/> box at (x, y): its
-        /// file icon, else its DAT surface, else its monogram. Colour art keeps its own
-        /// colours and only takes <paramref name="colour"/>'s strength (dimmer while
-        /// closed); one-colour art is drawn in <paramref name="colour"/>.
+        /// file icon, else its DAT surface, else its monogram. RGBA art ignores the
+        /// hue of <paramref name="colour"/> and keeps its own colours (dimmer while
+        /// closed). Coverage (one-colour) art will be tinted with
+        /// <paramref name="colour"/> once SVG icons land.
         /// </summary>
         internal void DrawIcon(UiRenderContext ctx, float x, float y, float extent, Vector4 colour)
         {
