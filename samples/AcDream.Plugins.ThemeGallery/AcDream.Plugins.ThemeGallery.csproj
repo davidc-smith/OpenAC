@@ -16,5 +16,7 @@
   <ItemGroup>
     <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="gallery.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="icon.svg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="icons\swatch.svg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

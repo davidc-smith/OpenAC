@@ -11,6 +11,7 @@ public sealed class ThemeGalleryPlugin : IAcDreamPlugin
 {
     private IPluginHost? _host;
     private IDisposable? _window;
+    private IDisposable? _swatches;
     private readonly GalleryBinding _binding = new();
 
     public void Initialize(IPluginHost host) => _host = host;
@@ -24,12 +25,24 @@ public sealed class ThemeGalleryPlugin : IAcDreamPlugin
         _window = host.Ui.RegisterPanel(
             new PluginPanelDescriptor("gallery", "Theme Gallery") { IconText = "TG", StartVisible = true },
             markup, _binding);
+        // A second window with its own SVG, so the dock shows both a plugin icon.svg
+        // and a per-window IconFile side by side.
+        _swatches = host.Ui.RegisterPanelContent(
+            new PluginPanelDescriptor("swatches", "Swatches") { IconText = "SW", IconFile = "icons/swatch.svg", StartVisible = false },
+            """
+            <panel x="420" y="120" w="220" h="96" title="Swatches" theme="plugin">
+              <label x="12" y="36" text="This window's dock icon is icons/swatch.svg." />
+            </panel>
+            """,
+            _binding);
     }
 
     public void Disable()
     {
         _window?.Dispose();
         _window = null;
+        _swatches?.Dispose();
+        _swatches = null;
     }
 
     /// <summary>Plain properties the markup binds to; every action only changes what is shown.</summary>
