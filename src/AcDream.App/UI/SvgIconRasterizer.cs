@@ -13,7 +13,7 @@ namespace AcDream.App.UI;
 internal static class SvgIconRasterizer
 {
     internal const int MaximumSize = 128;
-    internal const int MaximumPoints = 65_536;
+    internal const int MaximumPoints = SvgStroker.DefaultPointBudget;
     private const float Flatness = 0.35f;
     private const double StrokeTolerance = 0.2;
     private const double SubPixels = 64;
@@ -21,7 +21,7 @@ internal static class SvgIconRasterizer
 
     /// <summary>The icon fitted into <paramref name="size"/>² device pixels, centred
     /// (<c>xMidYMid meet</c>), or null when it needs more than
-    /// <see cref="MaximumPoints"/> points.</summary>
+    /// <see cref="MaximumPoints"/> flattened points or overflows device space.</summary>
     internal static byte[]? Bake(SvgIconDocument document, int size)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(size, 1);
@@ -34,15 +34,16 @@ internal static class SvgIconRasterizer
 
         var result = new byte[size * size];
         var layer = new byte[size * size];
-        int budget = MaximumPoints;
+        long budget = MaximumPoints;
         foreach (SvgPaintLayer paint in document.Layers)
         {
             List<Vertex>? vertices = paint.Kind == SvgPaintKind.Fill
                 ? FillVertices(paint, fit)
-                : StrokeVertices(paint, fit, budget);
+                : StrokeVertices(paint, fit, (int)Math.Max(budget, 0));
             if (vertices is null) return null; // stroker over budget
-            budget -= vertices.Count;
-            if (budget < 0 || !AllFinite(vertices)) return null;
+            if (!AllFinite(vertices)) return null;
+            budget -= Cost(vertices);
+            if (budget < 0) return null;
             if (vertices.Count == 0) continue;
 
             Array.Clear(layer);
@@ -109,6 +110,34 @@ internal static class SvgIconRasterizer
         }
         return true;
     }
+
+    /// <summary>An upper bound on the points stb flattens these vertices into: one per
+    /// line or move, and for a curve 2·sqrt(control polygon length / flatness) + 2
+    /// (stb quarters a curve's error per halving of its parameter span).</summary>
+    private static long Cost(List<Vertex> vertices)
+    {
+        long cost = 0;
+        SvgPoint previous = default;
+        foreach (Vertex v in vertices)
+        {
+            if (v.Type == VCurve)
+            {
+                double length = (v.C - previous).Length + (v.P - v.C).Length;
+                cost += Curve(length);
+            }
+            else if (v.Type == VCubic)
+            {
+                double length = (v.C - previous).Length + (v.C1 - v.C).Length + (v.P - v.C1).Length;
+                cost += Curve(length);
+            }
+            else cost++;
+            previous = v.P;
+        }
+        return cost;
+    }
+
+    private static long Curve(double length) =>
+        (long)Math.Min(Math.Ceiling(2 * Math.Sqrt(length / Flatness)), 1e9) + 2;
 
     private static short Fixed(double v) => (short)Math.Round(Math.Clamp(v, -Clamp, Clamp) * SubPixels);
 

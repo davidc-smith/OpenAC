@@ -121,6 +121,40 @@ public sealed class SvgIconRasterizerTests
     }
 
     [Fact]
+    public void AStrokeDeviceSpaceOverflowFailsTheBake()
+    {
+        SvgIconDocument doc = Parse("""<path d="M0 0h1e308" stroke="black" transform="scale(10)"/>""");
+        Assert.Null(SvgIconRasterizer.Bake(doc, 16));
+    }
+
+    [Fact]
+    public void ManyLargeArcsAreChargedTheirFlattenedPoints()
+    {
+        var sb = new StringBuilder("M8 8");
+        for (int i = 0; i < 1000; i++) sb.Append(i % 2 == 0 ? "a60 60 0 1 0 1 0" : "a60 60 0 1 1-1 0");
+        SvgIconDocument doc = Parse($"""<path d="{sb}"/>""");
+        Assert.Null(SvgIconRasterizer.Bake(doc, 128));
+        Assert.NotNull(SvgIconRasterizer.Bake(Parse("""<circle cx="8" cy="8" r="6"/>"""), 128));
+    }
+
+    private static SvgSubpath Zigzag(int count)
+    {
+        var segments = new List<SvgSegment>();
+        for (int i = 1; i <= count; i++) segments.Add(SvgSegment.Line(new SvgPoint(i % 2 == 0 ? 1 : 15, 1 + i % 13)));
+        return new SvgSubpath(new SvgPoint(1, 1), segments, false);
+    }
+
+    [Fact]
+    public void AStrokeAfterAFillIsGivenOnlyTheRemainingBudget()
+    {
+        var stroke = new SvgPaintLayer(SvgPaintKind.Stroke, 1, [Zigzag(3_000)],
+            new SvgStrokeStyle(1, SvgLineCap.Butt, SvgLineJoin.Miter, 4), SvgMatrix.Identity);
+        var fill = new SvgPaintLayer(SvgPaintKind.Fill, 1, [Zigzag(55_000)], null, SvgMatrix.Identity);
+        Assert.NotNull(SvgIconRasterizer.Bake(new SvgIconDocument(0, 0, 16, 16, [stroke]), 128));
+        Assert.Null(SvgIconRasterizer.Bake(new SvgIconDocument(0, 0, 16, 16, [fill, stroke]), 128));
+    }
+
+    [Fact]
     public void AStrokedXWithRoundCapsMatchesItsGolden()
     {
         SvgIconDocument doc = Parse(

@@ -14,6 +14,13 @@ public sealed class SvgStrokerTests
     private static List<SvgPoint[]> Expand(SvgPaintLayer layer) => SvgStroker.Expand(layer, SvgMatrix.Identity, 0.05)!;
 
     [Fact]
+    public void ANonFiniteTransformedPieceMakesExpandReturnNull()
+    {
+        var huge = new SvgMatrix(10, 0, 0, 10, 0, 0);
+        Assert.Null(SvgStroker.Expand(Stroke(Open(new(0, 0), new(1e308, 0))), huge, 0.05));
+    }
+
+    [Fact]
     public void EveryPieceHasPositiveArea()
     {
         SvgSubpath zigzag = Open(new(0, 0), new(10, 0), new(10, 10), new(0, 10), new(5, 3));

@@ -20,7 +20,9 @@ public static class SvgStroker
     /// <paramref name="toDevice"/> maps the icon's viewBox to, flattened to within
     /// <paramref name="tolerance"/> of that space's units. Returns null when the work would
     /// generate more than <paramref name="maxPoints"/> points (flattened points plus piece
-    /// vertices); generation stops as soon as the budget is exceeded.</summary>
+    /// vertices); generation stops as soon as the budget is exceeded. Also returns null when a
+    /// transformed piece is not finite (the icon overflowed device space); pieces of
+    /// near-zero area are skipped.</summary>
     public static List<SvgPoint[]>? Expand(SvgPaintLayer layer, SvgMatrix toDevice, double tolerance,
         int maxPoints = DefaultPointBudget)
     {
@@ -91,7 +93,8 @@ public static class SvgStroker
         {
             for (int i = 0; i < piece.Length; i++) piece[i] = m.Apply(piece[i]);
             double area = SignedArea(piece);
-            if (!double.IsFinite(area) || Math.Abs(area) < Epsilon) continue;
+            if (!double.IsFinite(area)) return null; // the icon overflowed device space
+            if (Math.Abs(area) < Epsilon) continue;
             if (area < 0) Array.Reverse(piece);
             result.Add(piece);
         }
