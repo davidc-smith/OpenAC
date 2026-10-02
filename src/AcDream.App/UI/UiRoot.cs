@@ -492,6 +492,7 @@ public sealed class UiRoot : UiElement
                 left = Math.Clamp(left, 0f, Math.Max(0f, parent.Width - _windowDragTarget.Width));
                 top = Math.Clamp(top, 0f, Math.Max(0f, parent.Height - _windowDragTarget.Height));
             }
+            _windowDragTarget.ConstrainWindowDrag(ref left, ref top, x, y);
             _windowDragTarget.Left = left;
             _windowDragTarget.Top  = top;
             _windowDragTarget.ResetAnchorCapture();

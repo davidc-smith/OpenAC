@@ -12,10 +12,10 @@ depend on `AcDream.App`.
 host.Ui.AddPanel(
     new PluginPanelDescriptor("main", "My Plugin")
     {
-        IconText = "MP",             // shelf button initials, the last resort
+        IconText = "MP",             // dock monogram letters, the last resort
         IconSurfaceId = 0x06002C41,  // an icon id (see "Icon ids")
         StartVisible = true,
-        ShowInSidePanel = true,      // default: a button in the plugin shelf
+        ShowInSidePanel = true,      // default: a slot in the plugin dock
     },
     Path.Combine(pluginDirectory, "main.xml"),
     binding);
@@ -27,9 +27,10 @@ host.Ui.AddPanel(
   removes the window on its own.
 - `RegisterPanelContent` takes the markup as a string instead of a file path.
 
-The plugin shelf picks a button's icon in order: the plugin's own `icon.png`
+The plugin dock picks a slot's icon in order: the plugin's own `icon.png`
 (one per plugin, at the root of its install folder), else `IconSurfaceId`,
-else the initials from `IconText`.
+else a two-letter monogram from `IconText` (or the title) on a colour picked
+from the plugin id.
 
 Every window gets drag, an optional resize, the global UI lock, and a
 persisted position keyed `plugin:{pluginId}:{windowId}`. Hiding a window never
@@ -37,10 +38,10 @@ pauses the plugin.
 
 ## Shared plugin appearance
 
-Right-click the plugin shelf or an entry to open **Plugin appearance**. Classic
-is the default. **Charcoal + moss** and **Warm graphite + brass** apply to
-windows whose root uses `<panel theme="plugin" ...>`. The choice is saved in
-the client's settings. Existing windows without this attribute keep their
+Click the gear at the bottom of the plugin dock, or right-click the dock, to
+open **Plugin appearance**. Classic is the default. **Charcoal + moss** and
+**Warm graphite + brass** apply to windows whose root uses `<panel theme="plugin" ...>`. The choice is
+saved in the client's settings. Existing windows without this attribute keep their
 original styling. Both modern themes use the bundled Noto Sans Regular font;
 no operating-system font installation is required. Classic keeps its original
 font. The font loader is shared client infrastructure (`BundledUiFont.Load`),
@@ -69,7 +70,7 @@ Tokens are `text`, `muted`, `field`, `border`, `accent`, and `background`;
 the fallback uses `#AARRGGBB`.
 
 The `samples/AcDream.Plugins.ThemeGallery` plugin shows every control in one
-opted-in window; switch themes from the shelf to compare them.
+opted-in window; switch themes from the dock's gear to compare them.
 
 Set `searchable="true"` on a menu to add an editable search band. Each typed
 word must match its label, ignoring case. Filtering does not select an item;
@@ -344,22 +345,35 @@ widget works in 0..1 internally. They default to 0 and 1.
         value="{HealPercent}" onchange="{SetHealPercent}"/>
 ```
 
-## The plugin shelf
+## The plugin dock
 
-The shelf is the strip of plugin-window buttons at the right screen edge. It
-is a normal window: draggable by the grip along its top, collapsible with
-the `>`/`<` toggle at the grip's right end, and persisted like any other.
-`Shift+Ctrl+F1` hides and shows it; hiding the shelf never disables a plugin
-or touches a plugin window's own visibility.
+The dock holds one slot per plugin window, with a divider between plugins and
+a gear at the bottom that opens **Plugin appearance**. Hovering a slot names
+the window and its plugin; an open window gets an accent dot. It draws the
+same shape in every theme, in Classic's black and gold or the theme's colours.
+
+- **Floating** (the default): drag it by the dots that appear along its top
+  while the pointer is over it. The chevron beside them collapses it to a
+  small pill.
+- **Left edge / Right edge**: a rail locked to that screen edge, which slides
+  up and down it. An accent pill on the edge marks open windows, and a taller
+  one the window in front.
+
+Choose the mode under **Dock** in Plugin appearance, or drag the dock to
+within 8 points of a screen edge to lock it there; pull it more than 32 points
+away to float it again. The mode is saved with the theme. When there are more
+windows than fit, the dock scrolls with the mouse wheel. `Shift+Ctrl+F1`
+hides and shows it; hiding the dock never disables a plugin or touches a
+plugin window's own visibility.
 
 ## Showing and hiding your own window
 
 A plugin window is on screen only while two things agree: the player's own
-request (its shelf button and its close button) and, when the markup binds
+request (its dock slot and its close button) and, when the markup binds
 the root's `visible`, the plugin's binding. Closing the window with its
 close button clears the player's request, so setting the binding back to
 true does not reopen it. `ShowPanel` and `HidePanel` make that request from
-the plugin, exactly as the shelf button does:
+the plugin, exactly as the dock slot does:
 
 ```csharp
 host.Ui.ShowPanel("main");          // by window id or title

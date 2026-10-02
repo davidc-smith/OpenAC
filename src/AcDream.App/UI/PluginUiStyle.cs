@@ -11,7 +11,7 @@ namespace AcDream.App.UI;
 /// <para>Everything is drawn inside the bounds given: an element clips to
 /// its own rectangle, so a ring or glow outside it would be cut off.</para>
 /// </summary>
-internal static class PluginUiStyle
+internal static partial class PluginUiStyle
 {
     internal const float WindowRadius = 10f;
     internal const float ControlRadius = 6f;

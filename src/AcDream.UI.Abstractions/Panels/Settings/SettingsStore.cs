@@ -246,25 +246,33 @@ public sealed class SettingsStore
     public void SaveCameraTurning(CameraTurningSettings cameraTurning)
         => SaveSection("cameraTurning", BuildCameraTurningObject(cameraTurning));
 
-    public string LoadPluginUiTheme()
+    public PluginUiSettings LoadPluginUi()
     {
-        if (!File.Exists(_path)) return "Classic";
+        var d = PluginUiSettings.Default;
+        if (!File.Exists(_path)) return d;
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(_path));
-            return doc.RootElement.TryGetProperty("pluginUi", out var section)
-                && section.ValueKind == JsonValueKind.Object
-                ? ReadString(section, "theme", "Classic") : "Classic";
+            if (!doc.RootElement.TryGetProperty("pluginUi", out var section)
+                || section.ValueKind != JsonValueKind.Object)
+                return d;
+            return new PluginUiSettings(
+                Theme: ReadString(section, "theme", d.Theme),
+                Dock: ReadString(section, "dock", d.Dock));
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             Console.WriteLine($"settings: failed to load plugin appearance: {ex.Message}");
-            return "Classic";
+            return d;
         }
     }
 
-    public void SavePluginUiTheme(string theme)
-        => SaveSection("pluginUi", new SortedDictionary<string, object> { ["theme"] = theme });
+    public void SavePluginUi(PluginUiSettings pluginUi)
+        => SaveSection("pluginUi", new SortedDictionary<string, object>
+        {
+            ["dock"] = pluginUi.Dock,
+            ["theme"] = pluginUi.Theme,
+        });
 
     public MiscSettings LoadMisc()
     {

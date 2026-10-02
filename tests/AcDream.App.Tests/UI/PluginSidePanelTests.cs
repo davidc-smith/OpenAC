@@ -10,8 +10,28 @@ namespace AcDream.App.Tests.UI;
 
 public sealed class PluginSidePanelTests
 {
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(12, true)]
+    public void AScrollOverTheDock_IsHandledOnlyWhenThereIsSomethingToScroll(int count, bool handled)
+    {
+        var root = new UiRoot { Width = 800f, Height = count > 3 ? 260f : 600f };
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), font: null);
+        root.AddChild(shelf);
+        for (int i = 0; i < count; i++)
+        {
+            var frame = new UiPanel { Width = 200f, Height = 100f };
+            root.AddChild(frame);
+            RetailWindowHandle handle = root.WindowManager.Register($"plugin:test:{i}", frame);
+            shelf.Add(new PluginUiOwner($"test.{i}", $"Plugin {i}"), new PluginPanelDescriptor("main", $"Plugin {i}"), handle);
+        }
+        root.Tick(0.016d, 16L);
+
+        Assert.Equal(handled, shelf.OnEvent(new UiEvent(0u, shelf, UiEventType.Scroll, Data0: -1)));
+    }
+
     [Fact]
-    public void ManyPluginsWrapIntoReachableColumnsWithinTheLiveScreenHeight()
+    public void ManyPluginsScrollWithinTheLiveScreenHeight()
     {
         var root = new UiRoot { Width = 800f, Height = 260f };
         using var shelf = new PluginSidePanel(
@@ -36,11 +56,14 @@ public sealed class PluginSidePanelTests
         root.Tick(0.016d, 16L);
 
         Assert.Equal(12, shelf.EntryCount);
-        Assert.True(shelf.Width > 36f);
+        Assert.Equal(48f, shelf.Width);
         Assert.True(shelf.Top + shelf.Height <= root.Height);
         Assert.All(
-            shelf.Children,
+            shelf.Children.Where(child => child.Visible),
             child => Assert.True(child.Top + child.Height <= shelf.Height));
+        Assert.Contains(
+            shelf.Children.OfType<PluginSidePanel.PluginShelfButton>(),
+            button => !button.Visible);
         Assert.Equal(10f, shelf.Left);
     }
 
@@ -160,9 +183,9 @@ public sealed class PluginSidePanelTests
     }
 
     [Fact]
-    public void TopLeftCorner_StaysFixed_WhenReflowChangesWidthWhileStillDocked()
+    public void TopLeftCorner_StaysFixed_WhenReflowChangesHeightWhileStillHome()
     {
-        var root = new UiRoot { Width = 800f, Height = 260f };
+        var root = new UiRoot { Width = 800f, Height = 600f };
         using var shelf = new PluginSidePanel(
             root.WindowManager, _ => (0u, 0, 0), font: null);
         root.AddChild(shelf);
@@ -182,12 +205,12 @@ public sealed class PluginSidePanelTests
 
         root.Tick(0.016d, 16L);
         float leftEdge = shelf.Left;
-        float widthBefore = shelf.Width;
+        float heightBefore = shelf.Height;
 
-        root.Height = 150f;
+        root.Height = 260f;
         root.Tick(0.016d, 16L);
 
-        Assert.NotEqual(widthBefore, shelf.Width);
+        Assert.NotEqual(heightBefore, shelf.Height);
         Assert.Equal(leftEdge, shelf.Left, precision: 3);
     }
 
@@ -220,11 +243,11 @@ public sealed class PluginSidePanelTests
         Assert.Equal(216f, shelf.Top);
 
         float leftAfterDrag = shelf.Left;
-        float widthBeforeCollapse = shelf.Width;
+        float heightBeforeCollapse = shelf.Height;
 
         shelf.RestoreWindowState(new RetainedWindowState(Collapsed: true));
 
-        Assert.NotEqual(widthBeforeCollapse, shelf.Width);
+        Assert.NotEqual(heightBeforeCollapse, shelf.Height);
         Assert.Equal(leftAfterDrag, shelf.Left);
     }
 
@@ -247,8 +270,8 @@ public sealed class PluginSidePanelTests
             pluginHandle);
         root.Tick(0.016d, 16L);   // establishes the initial left-edge dock
 
-        int pressX = (int)shelf.Left + 2;   // left of button.Left (4)
-        int pressY = (int)shelf.Top + (int)shelf.ExpandedGripBandHeight + 8;
+        int pressX = (int)shelf.Left + 2;   // left of the slot, which starts at 6
+        int pressY = (int)shelf.Top + (int)shelf.Layout.Slots[0]!.Value.Y + 8;
         float leftBefore = shelf.Left;
         float topBefore = shelf.Top;
 
@@ -294,7 +317,7 @@ public sealed class PluginSidePanelTests
     }
 
     [Fact]
-    public void Collapse_HidesButtonsAndShrinksWidth_RoundTripsThroughWindowState()
+    public void Collapse_HidesButtonsAndShrinksToTheHandlePill_RoundTripsThroughWindowState()
     {
         var root = new UiRoot { Width = 800f, Height = 600f };
         using var shelf = new PluginSidePanel(
@@ -312,7 +335,7 @@ public sealed class PluginSidePanelTests
             pluginHandle);
         root.Tick(0.016d, 16L);
 
-        float expandedWidth = shelf.Width;
+        float expandedHeight = shelf.Height;
         float leftBeforeCollapse = shelf.Left;
         PluginSidePanel.PluginShelfButton button = Assert.Single(
             shelf.Children.OfType<PluginSidePanel.PluginShelfButton>());
@@ -324,7 +347,8 @@ public sealed class PluginSidePanelTests
         root.OnMouseUp(UiMouseButton.Left, toggleX, toggleY);
 
         Assert.False(button.Visible);
-        Assert.True(shelf.Width < expandedWidth);
+        Assert.Equal((PluginUiStyle.DockWidth, PluginUiStyle.DockCollapsedHeight), (shelf.Width, shelf.Height));
+        Assert.True(shelf.Height < expandedHeight);
         RetainedWindowState captured = shelf.CaptureWindowState();
         Assert.True(captured.Collapsed);
         // The left origin remains fixed when the shelf width changes.
@@ -336,7 +360,7 @@ public sealed class PluginSidePanelTests
         shelf.RestoreWindowState(new RetainedWindowState(Collapsed: false));
 
         Assert.True(button.Visible);
-        Assert.Equal(expandedWidth, shelf.Width);
+        Assert.Equal(expandedHeight, shelf.Height);
         Assert.False(shelf.CaptureWindowState().Collapsed);
     }
 
@@ -686,7 +710,7 @@ public sealed class PluginSidePanelTests
     }
 
     [Fact]
-    public void CollapseExpandViaTheToggle_DoesNotCollapseTheColumnWrapToOneColumn()
+    public void CollapseThenExpandViaTheToggle_WithManyPlugins_StillFitsTheScreen()
     {
         var root = new UiRoot { Width = 800f, Height = 260f };
         using var shelf = new PluginSidePanel(
@@ -720,7 +744,7 @@ public sealed class PluginSidePanelTests
 
         Assert.True(shelf.Top + shelf.Height <= root.Height);
         Assert.All(
-            shelf.Children.OfType<PluginSidePanel.PluginShelfButton>(),
+            shelf.Children.OfType<PluginSidePanel.PluginShelfButton>().Where(button => button.Visible),
             button => Assert.True(button.Top + button.Height <= shelf.Height));
     }
 

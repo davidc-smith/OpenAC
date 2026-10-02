@@ -5,11 +5,15 @@ namespace AcDream.App.UI;
 
 public enum PluginUiTheme { Classic, Moss, Brass }
 
+/// <summary>Where the plugin dock sits: floating anywhere, or locked to the left or right screen edge.</summary>
+public enum PluginDockMode { Floating, Left, Right }
+
 /// <summary>One appearance preference shared by opted-in plugin windows.</summary>
 public sealed class PluginUiThemeSettings
 {
     private readonly SettingsStore? _store;
     private PluginUiTheme _theme;
+    private PluginDockMode _dock;
     private readonly Lazy<UiDatFont>? _modernFont;
     private readonly Lazy<UiDatFont>? _modernTitleFont;
 
@@ -28,8 +32,10 @@ public sealed class PluginUiThemeSettings
         _store = store;
         _modernFont = modernFont;
         _modernTitleFont = modernTitleFont;
-        _theme = Enum.TryParse<PluginUiTheme>(store?.LoadPluginUiTheme(), out var value)
+        PluginUiSettings saved = store?.LoadPluginUi() ?? PluginUiSettings.Default;
+        _theme = Enum.TryParse<PluginUiTheme>(saved.Theme, out var value)
             && Enum.IsDefined(value) ? value : PluginUiTheme.Classic;
+        _dock = ParseDock(saved.Dock);
     }
     public PluginUiTheme Theme
     {
@@ -38,8 +44,21 @@ public sealed class PluginUiThemeSettings
         {
             if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
             if (_theme == value) return;
-            _store?.SavePluginUiTheme(value.ToString());
             _theme = value;
+            Save();
+        }
+    }
+
+    /// <summary>Where the plugin dock sits. Saved with the theme.</summary>
+    public PluginDockMode Dock
+    {
+        get => _dock;
+        set
+        {
+            if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (_dock == value) return;
+            _dock = value;
+            Save();
         }
     }
     public PluginUiPalette? Palette => Theme switch
@@ -47,6 +66,25 @@ public sealed class PluginUiThemeSettings
         PluginUiTheme.Moss => PluginUiPalette.Moss,
         PluginUiTheme.Brass => PluginUiPalette.Brass,
         _ => null,
+    };
+
+    /// <summary>The colours the plugin dock draws in: the theme's palette, or the dock's own Classic set.</summary>
+    public PluginUiPalette DockPalette => Palette ?? PluginUiPalette.ClassicDock;
+
+    private void Save() => _store?.SavePluginUi(new PluginUiSettings(_theme.ToString(), DockName(_dock)));
+
+    private static string DockName(PluginDockMode mode) => mode switch
+    {
+        PluginDockMode.Left => "left",
+        PluginDockMode.Right => "right",
+        _ => "floating",
+    };
+
+    private static PluginDockMode ParseDock(string? name) => name?.ToLowerInvariant() switch
+    {
+        "left" => PluginDockMode.Left,
+        "right" => PluginDockMode.Right,
+        _ => PluginDockMode.Floating,
     };
 }
 
@@ -59,6 +97,13 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
         C(0x35443B), C(0xE0E8E2), C(0x9AA99E), C(0x97BE81), C(0x344B37));
     public static PluginUiPalette Brass { get; } = new(C(0x221F1B), C(0x181612),
         C(0x4C4335), C(0xE9E2D5), C(0xB2A58E), C(0xC9A665), C(0x51442D));
+
+    /// <summary>
+    /// The plugin dock's colours under Classic, taken from the Classic dock's old black and gold.
+    /// Only the dock uses it: it is not a theme, and Classic windows still draw unthemed.
+    /// </summary>
+    internal static PluginUiPalette ClassicDock { get; } = new(C(0x000000) with { W = 0.88f }, C(0x060605),
+        C(0x9E7A29), C(0xF0EBDD), C(0xA8925C), C(0xDBB852), C(0x17300E));
     public Vector4 Token(string name) => name switch
     {
         "text" => Text, "muted" => Muted, "field" => Field,
