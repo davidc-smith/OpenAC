@@ -94,12 +94,12 @@
     {
       "id": 10,
       "subject": "Task 10: Final review, full suite and hand-off",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** The whole branch is reviewed against the spec, the full App suite shows no new failures against the Task 0 baseline, the Release build has 0 warnings, and the user decides about merging and pushing.\n\n**Files:**\n- None new; fixes from the review go in the files they concern.\n\n**Acceptance Criteria:**\n- [ ] A code review of `main..modern-theme/dock` against the spec has been done and every finding fixed or answered.\n- [ ] `dotnet build AcDream.slnx -c Release` \u2192 0 warnings, 0 errors.\n- [ ] The full App suite's failures, compared with `/tmp/dock-base-fails.txt`, show no new names (the two deleted `PluginSidePanelToggleGlyphClipTests` InstalledDat failures disappear).\n- [ ] `AcDream.UI.Abstractions.Tests` all pass (983 on 2026-10-02, the 5 new ones included).\n- [ ] The user was asked before any merge into `main` or push, and their answer was followed.\n\n**Verify:** `comm -13 /tmp/dock-base-fails.txt /tmp/dock-branch-fails.txt` \u2192 only the `Passed!/Failed!` summary line\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"comm -13 /tmp/dock-base-fails.txt /tmp/dock-branch-fails.txt\", \"acceptanceCriteria\": [\"A code review of `main..modern-theme/dock` against the spec has been done and every finding fixed or answered.\", \"`dotnet build AcDream.slnx -c Release` \\u2192 0 warnings, 0 errors.\", \"The full App suite's failures, compared with `/tmp/dock-base-fails.txt`, show no new names (the two deleted `PluginSidePanelToggleGlyphClipTests` InstalledDat failures disappear).\", \"`AcDream.UI.Abstractions.Tests` all pass (983 on 2026-10-02, the 5 new ones included).\", \"The user was asked before any merge into `main` or push, and their answer was followed.\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         9
       ]
     }
   ],
-  "lastUpdated": "2026-10-02T22:57:29.414983"
+  "lastUpdated": "2026-10-02T23:09:18.735699"
 }
