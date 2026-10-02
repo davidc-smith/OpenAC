@@ -216,4 +216,66 @@ public sealed class SvgOutlineTests
         Assert.Equal(3, new SvgMatrix(3, 0, 0, 0.5, 0, 0).MaximumScale, 9);
         Assert.Equal(2, new SvgMatrix(0, 2, -2, 0, 0, 0).MaximumScale, 9);
     }
+
+    [Theory]
+    [InlineData("M0 0 l1e308 0 l1e308 0")]
+    public void ComputedNonFiniteCoordinatesAreRejectedNamingTheOffset(string d)
+    {
+        Assert.Contains("non-finite coordinate at offset", Reject(d), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnArcWhoseRadiiSquareToInfinityFallsBackToAFiniteLine()
+    {
+        SvgSubpath p = Assert.Single(Parse("M0 0 a1e200 1e200 0 0 1 1e200 0"));
+        SvgSegment s = Assert.Single(p.Segments);
+        Assert.Equal(SvgSegmentKind.Line, s.Kind);
+        Assert.True(double.IsFinite(s.End.X) && double.IsFinite(s.End.Y));
+    }
+
+    [Fact]
+    public void AnArcSmallerThanTheDoubleSquareRangeFallsBackToAFiniteLine()
+    {
+        SvgSubpath p = Assert.Single(Parse("M0 0 a1 1 0 0 1 1e-200 0"));
+        SvgSegment s = Assert.Single(p.Segments);
+        Assert.Equal(SvgSegmentKind.Line, s.Kind);
+        Assert.True(double.IsFinite(s.End.X) && double.IsFinite(s.End.Y));
+    }
+
+    [Fact]
+    public void AZeroLengthArcAddsNoSegment()
+    {
+        SvgSubpath p = Assert.Single(Parse("M1 1 A1 1 0 0 1 1 1"));
+        Assert.Empty(p.Segments);
+    }
+
+    [Fact]
+    public void SmoothQuadraticAfterANonQuadraticUsesTheCurrentPointAsControl()
+    {
+        SvgSubpath p = Assert.Single(Parse("M0 0 L2 0 T4 0"));
+        Assert.Equal(SvgSegmentKind.Quadratic, p.Segments[1].Kind);
+        Assert.Equal(new SvgPoint(2, 0), p.Segments[1].C1);
+    }
+
+    [Theory]
+    [InlineData("M0 0 L")]
+    [InlineData("M0 0 L1e")]
+    public void ACommandWithMissingOrTruncatedNumbersIsRejected(string d)
+    {
+        Assert.NotNull(Reject(d));
+    }
+
+    [Fact]
+    public void PolyRejectsAnEmptyPointList()
+    {
+        Assert.Throws<ArgumentException>(() => SvgOutline.Poly([], false));
+    }
+
+    [Fact]
+    public void PolyOfOnePointIsAnEmptySubpath()
+    {
+        SvgSubpath p = SvgOutline.Poly([new SvgPoint(1, 2)], false);
+        Assert.Equal(new SvgPoint(1, 2), p.Start);
+        Assert.Empty(p.Segments);
+    }
 }

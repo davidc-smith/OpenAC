@@ -113,6 +113,7 @@ public static class SvgOutline
                     return false;
                 }
 
+                int before = segments.Count;
                 SvgPoint origin = relative ? current : default;
                 switch (upper)
                 {
@@ -229,6 +230,18 @@ public static class SvgOutline
                         return false;
                 }
 
+                bool finite = double.IsFinite(current.X) && double.IsFinite(current.Y);
+                for (int i = Math.Min(before, segments.Count); finite && i < segments.Count; i++)
+                {
+                    SvgSegment seg = segments[i];
+                    finite = IsFinite(seg.End) && IsFinite(seg.C1) && IsFinite(seg.C2);
+                }
+                if (!finite)
+                {
+                    reason = $"path data has a non-finite coordinate at offset {reader.Offset}";
+                    return false;
+                }
+
                 last = upper;
                 first = false;
                 if (upper == 'M') last = 'L';
@@ -245,6 +258,8 @@ public static class SvgOutline
         reason = null;
         return true;
     }
+
+    private static bool IsFinite(SvgPoint p) => double.IsFinite(p.X) && double.IsFinite(p.Y);
 
     private static bool Malformed(PathReader reader, out string? reason)
     {
@@ -299,6 +314,7 @@ public static class SvgOutline
     /// <summary>A polyline or polygon from its points.</summary>
     public static SvgSubpath Poly(IReadOnlyList<SvgPoint> points, bool closed)
     {
+        if (points.Count == 0) throw new ArgumentException("A polyline needs at least one point.", nameof(points));
         var segments = new SvgSegment[points.Count - 1];
         for (int i = 1; i < points.Count; i++) segments[i - 1] = SvgSegment.Line(points[i]);
         return new SvgSubpath(points[0], segments, closed);
@@ -360,6 +376,12 @@ public static class SvgOutline
 
         double num = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1;
         double den = rx * rx * y1 * y1 + ry * ry * x1 * x1;
+        if (!(den > 0) || !double.IsFinite(num) || !double.IsFinite(den))
+        {
+            into.Add(SvgSegment.Line(to));
+            return;
+        }
+
         double coef = Math.Sqrt(Math.Max(0, num / den)) * (large == sweep ? -1 : 1);
         double cx1 = coef * rx * y1 / ry, cy1 = -coef * ry * x1 / rx;
         double cx = cos * cx1 - sin * cy1 + (from.X + to.X) / 2;
