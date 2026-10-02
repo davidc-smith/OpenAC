@@ -177,6 +177,15 @@ public abstract class UiElement
 
     public bool WindowMoveHandle { get; set; }
 
+    /// <summary>
+    /// Called on each pointer move while this window is being dragged by a
+    /// move handle, with where the drag would put it (already kept inside the
+    /// parent) and the pointer's position. A window that snaps somewhere
+    /// changes <paramref name="left"/> and <paramref name="top"/>. Most windows
+    /// leave them alone.
+    /// </summary>
+    internal virtual void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY) { }
+
 
     public bool ConstrainResizeToParent { get; set; }
 
