@@ -8,7 +8,9 @@ public sealed class PluginThemeWindowTests
     private static (UiRoot Root, UiNineSlicePanel Panel, PluginUiThemeSettings Settings) Build(
         string title, UiDatFont? modern = null, UiDatFont? bold = null, UiDatFont? classic = null)
     {
-        var settings = new PluginUiThemeSettings(modernFont: modern, modernTitleFont: bold);
+        var settings = new PluginUiThemeSettings(
+            modernFont: modern is null ? null : new(() => modern),
+            modernTitleFont: bold is null ? null : new(() => bold));
         var panel = MarkupDocument.Build(
             $"<panel x=\"100\" y=\"100\" w=\"200\" h=\"120\" {title} theme=\"plugin\"><label x=\"12\" y=\"30\" text=\"Body\" /></panel>",
             new object(), _ => (0u, 0, 0), datFont: classic, themes: settings);

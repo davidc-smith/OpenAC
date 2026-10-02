@@ -10,17 +10,24 @@ public sealed class PluginUiThemeSettings
 {
     private readonly SettingsStore? _store;
     private PluginUiTheme _theme;
-    public UiDatFont? ModernFont { get; }
+    private readonly Lazy<UiDatFont>? _modernFont;
+    private readonly Lazy<UiDatFont>? _modernTitleFont;
+
+    /// <summary>The font themed windows set their text in; loaded the first time it is read.</summary>
+    public UiDatFont? ModernFont => _modernFont?.Value;
 
     /// <summary>The heavier weight themed windows set their titles in; null falls back to <see cref="ModernFont"/>.</summary>
-    public UiDatFont? ModernTitleFont { get; }
+    public UiDatFont? ModernTitleFont => _modernTitleFont?.Value;
+
+    /// <summary>Whether there is a <see cref="ModernFont"/>, without loading it.</summary>
+    public bool HasModernFont => _modernFont is not null;
 
     public PluginUiThemeSettings(
-        SettingsStore? store = null, UiDatFont? modernFont = null, UiDatFont? modernTitleFont = null)
+        SettingsStore? store = null, Lazy<UiDatFont>? modernFont = null, Lazy<UiDatFont>? modernTitleFont = null)
     {
         _store = store;
-        ModernFont = modernFont;
-        ModernTitleFont = modernTitleFont;
+        _modernFont = modernFont;
+        _modernTitleFont = modernTitleFont;
         _theme = Enum.TryParse<PluginUiTheme>(store?.LoadPluginUiTheme(), out var value)
             && Enum.IsDefined(value) ? value : PluginUiTheme.Classic;
     }
@@ -71,6 +78,7 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
         : base(resolve) => _settings = settings;
     public UiDatFont? ModernFont => _settings.ModernFont;
     public UiDatFont? ModernTitleFont => _settings.ModernTitleFont;
+    public bool HasModernFont => _settings.HasModernFont;
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
         _apply.Add(action);

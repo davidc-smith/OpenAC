@@ -60,12 +60,12 @@ public sealed class PluginThemeClassicIdentityTests
         var classicFont = BundledUiFont.Bake(12).CreateFont(7);
         var modernFont = BundledUiFont.Bake().CreateFont(8);
 
-        var plainSettings = new PluginUiThemeSettings(modernFont: modernFont);
+        var plainSettings = new PluginUiThemeSettings(modernFont: new(() => modernFont));
         UiRoot plain = Root("", plainSettings, classicFont);
         plain.Tick(0.016, 1);
         plain.Tick(0.016, 2);
 
-        var settings = new PluginUiThemeSettings(modernFont: modernFont);
+        var settings = new PluginUiThemeSettings(modernFont: new(() => modernFont));
         UiRoot themed = Root("theme=\"plugin\"", settings, classicFont);
         settings.Theme = PluginUiTheme.Moss;
         themed.Tick(0.016, 1);

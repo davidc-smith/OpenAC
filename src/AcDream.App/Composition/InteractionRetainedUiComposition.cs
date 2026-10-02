@@ -609,8 +609,9 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                 controls,
                 iconComposer,
                 d.TextureCache,
-                BundledUiFont.Load(d.TextureCache),
-                BundledUiFont.Load(d.TextureCache, weight: BundledUiFontWeight.SemiBold));
+                // Baked only once a themed plugin window wants them.
+                new Lazy<UiDatFont>(() => BundledUiFont.Load(d.TextureCache)),
+                new Lazy<UiDatFont>(() => BundledUiFont.Load(d.TextureCache, weight: BundledUiFontWeight.SemiBold)));
             var characterCreationStrings = new DatStringResolver(d.Dats);
             var chargenSkillScoreResolver = new ChargenSkillScoreResolver(
                 d.Runtime.CharacterCreation.Options);

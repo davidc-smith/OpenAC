@@ -43,8 +43,8 @@ public sealed record RetailUiAssets(
     ControlsIni Controls,
     IconComposer Icons,
     TextureCache TextureCache,
-    UiDatFont? ModernFont = null,
-    UiDatFont? ModernTitleFont = null);
+    Lazy<UiDatFont>? ModernFont = null,
+    Lazy<UiDatFont>? ModernTitleFont = null);
 
 public sealed record VitalsRuntimeBindings(VitalsVM ViewModel);
 

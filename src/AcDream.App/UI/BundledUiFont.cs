@@ -14,19 +14,38 @@ public static class BundledUiFont
     private const int AtlasSize = 512;
     private static readonly (int First, int Count)[] Ranges = [(32, 560), (0x370, 448), (0x2000, 112)];
 
-    /// <summary>How much sharper the companion bake is than the font it draws for.</summary>
-    public const float SharpScale = 2f;
-
     public static UiDatFont Load(
         TextureCache textures, float pixelHeight = DefaultPixelHeight,
         BundledUiFontWeight weight = BundledUiFontWeight.Regular)
     {
         ArgumentNullException.ThrowIfNull(textures);
         UiDatFont font = Upload(textures, Bake(pixelHeight, weight));
-        // A sharper twin for high-density displays, where the bake fits.
-        if (pixelHeight * SharpScale <= MaximumPixelHeight)
-            font.Sharp = new UiDatFontSharp(Upload(textures, Bake(pixelHeight * SharpScale, weight)), SharpScale);
+        // A sharper twin for high-density displays, baked when one first draws it.
+        var baked = new Dictionary<float, UiDatFontSharp>();
+        font.SharpSource = pixelScale =>
+        {
+            float scale = SharpScaleFor(pixelHeight, pixelScale);
+            if (scale <= 1f) return null;
+            if (!baked.TryGetValue(scale, out UiDatFontSharp? sharp))
+                baked[scale] = sharp = new UiDatFontSharp(Upload(textures, Bake(pixelHeight * scale, weight)), scale);
+            return sharp;
+        };
         return font;
+    }
+
+    /// <summary>
+    /// The scale a sharp twin is baked at for a display with
+    /// <paramref name="pixelScale"/> device pixels per point: that scale,
+    /// rounded down to a quarter step, so each texel lands on one device
+    /// pixel, and no larger than the largest bake allows. 1 or below means
+    /// no twin.
+    /// </summary>
+    internal static float SharpScaleFor(float pixelHeight, float pixelScale)
+    {
+        if (!float.IsFinite(pixelScale)) return 1f;
+        const float Step = Layout.CanvasPixelScale.Step;
+        float limit = MathF.Min(pixelScale, MaximumPixelHeight / pixelHeight);
+        return MathF.Floor(limit / Step + 1e-3f) * Step;
     }
 
     private static UiDatFont Upload(TextureCache textures, Atlas atlas) =>

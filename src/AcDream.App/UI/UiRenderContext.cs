@@ -574,8 +574,12 @@ public sealed class UiRenderContext
 
         // On a high-density display a bundled font's sharper twin supplies
         // the glyph images; the pen still advances by this font's own metrics.
-        UiDatFontSharp? sharp = !isOutlinePass && PixelScale >= 1.5f ? font.Sharp : null;
+        UiDatFontSharp? sharp = isOutlinePass ? null : font.SharpFor(PixelScale);
         float grid = sharp is null ? 1f : MathF.Min(PixelScale, sharp.Scale);
+        // The twin's glyphs sit on device pixels, so its baseline must too: a
+        // whole point is half a device pixel out at 1.5, and nearest sampling
+        // there would split every texel. At 2 a whole point is already on one.
+        float sharpBaseY = Snap(baseY, grid);
 
         float pen = originX;
         for (int i = 0; i < text.Length; i++)
@@ -588,7 +592,7 @@ public sealed class UiRenderContext
             {
                 float texel = 1f / sharp.Scale;
                 float fx = Snap(pen + fine.HorizontalOffsetBefore * texel, grid);
-                float fy = baseY + MathF.Round(fine.VerticalOffsetBefore * texel * grid) / grid;
+                float fy = sharpBaseY + MathF.Round(fine.VerticalOffsetBefore * texel * grid) / grid;
                 DrawFillGlyph(sharp.Font, fine, fx, fy, fine.Width * texel, fine.Height * texel, tint);
                 pen += UiDatFont.GlyphAdvance(g);
                 continue;

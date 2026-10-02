@@ -23,12 +23,14 @@ internal static class PluginMarkupTheme
 
     public static void Register(UiPluginMarkupPanel panel, UiElement element, XElement xml)
     {
-        if (panel.ModernFont is { } modern)
+        if (panel.HasModernFont)
         {
+            // The modern font is read only once a theme is on, so a Classic
+            // window never loads it.
             void Bind(Func<UiDatFont?> get, Action<UiDatFont?> set)
             {
                 UiDatFont? classic = get();
-                panel.AddThemeAction(p => set(p is null ? classic : modern));
+                panel.AddThemeAction(p => set(p is null ? classic : panel.ModernFont ?? classic));
             }
             switch (element)
             {
