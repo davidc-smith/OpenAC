@@ -216,6 +216,9 @@ public sealed class UiRoot : UiElement
     public int TooltipDurationMs { get; set; } = 10_000;
     private bool _tooltipFired;
     private long _tooltipShownMs;
+    // The hover element's tooltip ran its full duration. It stays hidden while
+    // the pointer rests; the next move over the element starts a fresh dwell.
+    private bool _tooltipExpired;
 
     public event Action<UiElement>? TooltipShow;
 
@@ -338,6 +341,7 @@ public sealed class UiRoot : UiElement
                 TooltipHide?.Invoke(_hoverWidget);
             _hoverWidget = null;
             _tooltipFired = false;
+            _tooltipExpired = false;
         }
         if (IsWithinSubtree(_lastDragHoverTarget, subtree))
             _lastDragHoverTarget = null;
@@ -371,7 +375,7 @@ public sealed class UiRoot : UiElement
     {
         _nowMs = nowMs;
 
-        if (_hoverWidget is not null && !_tooltipFired && Captured is null
+        if (_hoverWidget is not null && !_tooltipFired && !_tooltipExpired && Captured is null
             && _nowMs - _hoverStartedMs >= EffectiveTooltipDelayMs(_hoverWidget))
         {
             var e = new UiEvent(_hoverWidget.EventId, _hoverWidget, UiEventType.Tooltip);
@@ -383,11 +387,11 @@ public sealed class UiRoot : UiElement
         else if (_hoverWidget is not null && _tooltipFired
             && _nowMs - _tooltipShownMs >= TooltipDurationMs)
         {
-            var leave = new UiEvent(_hoverWidget.EventId, _hoverWidget, UiEventType.HoverLeave);
-            _hoverWidget.OnEvent(in leave);
+            // Only the tooltip goes: the pointer is still over the element,
+            // so it keeps its hover look and gets no HoverLeave.
             TooltipHide?.Invoke(_hoverWidget);
-            _hoverWidget = null;
             _tooltipFired = false;
+            _tooltipExpired = true;
         }
 
         BroadcastGlobalUiTime(this, nowMs / 1000d);
@@ -1095,6 +1099,7 @@ public sealed class UiRoot : UiElement
         {
             if (w?.ReceivesHoverMouseMove == true)
                 DispatchMouseMove(w, x, y);
+            _tooltipExpired = false;
             if (!_tooltipFired)
                 _hoverStartedMs = _nowMs;
             return;
@@ -1110,6 +1115,7 @@ public sealed class UiRoot : UiElement
         _hoverWidget = w;
         _hoverStartedMs = _nowMs;
         _tooltipFired = false;
+        _tooltipExpired = false;
         if (w is not null)
         {
             var screen = w.ScreenPosition;
