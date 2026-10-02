@@ -12,31 +12,50 @@ public static class SvgStroker
 {
     private const double Epsilon = 1e-9;
 
+    /// <summary>Default cap on generated points (flattened points plus piece vertices),
+    /// matching the 65,536 points per bake limit.</summary>
+    public const int DefaultPointBudget = 65_536;
+
     /// <summary>Expands <paramref name="layer"/>'s stroke into polygons in the space
     /// <paramref name="toDevice"/> maps the icon's viewBox to, flattened to within
-    /// <paramref name="tolerance"/> of that space's units.</summary>
-    public static List<SvgPoint[]> Expand(SvgPaintLayer layer, SvgMatrix toDevice, double tolerance)
+    /// <paramref name="tolerance"/> of that space's units. Returns null when the work would
+    /// generate more than <paramref name="maxPoints"/> points (flattened points plus piece
+    /// vertices); generation stops as soon as the budget is exceeded.</summary>
+    public static List<SvgPoint[]>? Expand(SvgPaintLayer layer, SvgMatrix toDevice, double tolerance,
+        int maxPoints = DefaultPointBudget)
     {
+        long used = 0;
         ArgumentNullException.ThrowIfNull(layer.Stroke);
         SvgStrokeStyle style = layer.Stroke;
         SvgMatrix m = toDevice.Then(layer.Transform);
         double local = tolerance / Math.Max(m.MaximumScale, Epsilon);
         double h = style.Width / 2;
         var pieces = new List<SvgPoint[]>();
+        bool Add(SvgPoint[] piece)
+        {
+            used += piece.Length;
+            if (used > maxPoints) return false;
+            pieces.Add(piece);
+            return true;
+        }
 
         foreach (SvgSubpath subpath in layer.Subpaths)
         {
-            List<SvgPoint> points = Distinct(Flatten(subpath, local), subpath.Closed);
+            List<SvgPoint>? flat = FlattenBudgeted(subpath, local, ref used, maxPoints);
+            if (flat is null) return null;
+            List<SvgPoint> points = Distinct(flat, subpath.Closed);
             if (points.Count == 1)
             {
                 SvgPoint p = points[0];
-                if (style.Cap == SvgLineCap.Round) pieces.Add(Circle(p, h, local));
+                if (style.Cap == SvgLineCap.Round) { if (!Add(Circle(p, h, local))) return null; }
                 else if (style.Cap == SvgLineCap.Square)
-                    pieces.Add([new(p.X - h, p.Y - h), new(p.X + h, p.Y - h), new(p.X + h, p.Y + h), new(p.X - h, p.Y + h)]);
+                {
+                    if (!Add([new(p.X - h, p.Y - h), new(p.X + h, p.Y - h), new(p.X + h, p.Y + h), new(p.X - h, p.Y + h)])) return null;
+                }
                 continue;
             }
 
-            bool closed = subpath.Closed && points.Count > 2;
+            bool closed = subpath.Closed; // closed subpaths get joins and never caps
             int edgeCount = closed ? points.Count : points.Count - 1;
             for (int i = 0; i < edgeCount; i++)
             {
@@ -47,7 +66,7 @@ public static class SvgStroker
                     if (i == edgeCount - 1) b += Unit(b - a) * h;
                 }
                 SvgPoint n = Normal(b - a) * h;
-                pieces.Add([a + n, b + n, b - n, a - n]);
+                if (!Add([a + n, b + n, b - n, a - n])) return null;
             }
 
             int joins = closed ? points.Count : points.Count - 2;
@@ -57,13 +76,13 @@ public static class SvgStroker
                 SvgPoint v = points[at];
                 SvgPoint before = points[(at - 1 + points.Count) % points.Count];
                 SvgPoint after = points[(at + 1) % points.Count];
-                if (Join(v, before, after, h, style, local) is { } join) pieces.Add(join);
+                if (Join(v, before, after, h, style, local) is { } join && !Add(join)) return null;
             }
 
             if (!closed && style.Cap == SvgLineCap.Round)
             {
-                pieces.Add(Circle(points[0], h, local));
-                pieces.Add(Circle(points[^1], h, local));
+                if (!Add(Circle(points[0], h, local))) return null;
+                if (!Add(Circle(points[^1], h, local))) return null;
             }
         }
 
@@ -83,6 +102,12 @@ public static class SvgStroker
     /// <paramref name="tolerance"/> from it.</summary>
     public static List<SvgPoint> Flatten(SvgSubpath subpath, double tolerance)
     {
+        long used = 0;
+        return FlattenBudgeted(subpath, tolerance, ref used, long.MaxValue)!;
+    }
+
+    private static List<SvgPoint>? FlattenBudgeted(SvgSubpath subpath, double tolerance, ref long used, long max)
+    {
         var points = new List<SvgPoint> { subpath.Start };
         SvgPoint current = subpath.Start;
         foreach (SvgSegment s in subpath.Segments)
@@ -91,11 +116,14 @@ public static class SvgStroker
             {
                 case SvgSegmentKind.Line:
                     points.Add(s.End);
+                    if (++used > max) return null;
                     break;
                 case SvgSegmentKind.Quadratic:
                 {
                     double dd = (current - s.C1 * 2 + s.End).Length;
                     int n = Steps(dd / 4, tolerance);
+                    used += n;
+                    if (used > max) return null;
                     for (int i = 1; i <= n; i++)
                     {
                         double t = (double)i / n, u = 1 - t;
@@ -107,6 +135,8 @@ public static class SvgStroker
                 {
                     double dd = Math.Max((current - s.C1 * 2 + s.C2).Length, (s.C1 - s.C2 * 2 + s.End).Length);
                     int n = Steps(dd * 0.75, tolerance);
+                    used += n;
+                    if (used > max) return null;
                     for (int i = 1; i <= n; i++)
                     {
                         double t = (double)i / n, u = 1 - t;
@@ -120,7 +150,7 @@ public static class SvgStroker
         return points;
     }
 
-    /// <summary>Twice the shoelace sum, halved: positive for clockwise on screen (y down).</summary>
+    /// <summary>Shoelace area, positive clockwise when y points down.</summary>
     public static double SignedArea(IReadOnlyList<SvgPoint> polygon)
     {
         double sum = 0;
@@ -132,6 +162,8 @@ public static class SvgStroker
         return sum / 2;
     }
 
+    // The 512-chord and 128-point clamps keep work bounded; they only exceed the 0.2 px
+    // tolerance beyond the 128 px bake cap.
     private static int Steps(double bound, double tolerance) =>
         Math.Clamp((int)Math.Ceiling(Math.Sqrt(bound / Math.Max(tolerance, Epsilon))), 1, 512);
 

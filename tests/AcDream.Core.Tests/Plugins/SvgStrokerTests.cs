@@ -11,7 +11,7 @@ public sealed class SvgStrokerTests
 
     private static SvgSubpath Open(params SvgPoint[] points) => SvgOutline.Poly(points, closed: false);
 
-    private static List<SvgPoint[]> Expand(SvgPaintLayer layer) => SvgStroker.Expand(layer, SvgMatrix.Identity, 0.05);
+    private static List<SvgPoint[]> Expand(SvgPaintLayer layer) => SvgStroker.Expand(layer, SvgMatrix.Identity, 0.05)!;
 
     [Fact]
     public void EveryPieceHasPositiveArea()
@@ -108,7 +108,7 @@ public sealed class SvgStrokerTests
     {
         var stretch = new SvgMatrix(1, 0, 0, 3, 0, 0);
         SvgPoint[] rect = Assert.Single(SvgStroker.Expand(Stroke(Open(new(0, 0), new(10, 0)), width: 2, transform: stretch),
-            SvgMatrix.Identity, 0.05));
+            SvgMatrix.Identity, 0.05)!);
         Assert.Equal(6, rect.Max(p => p.Y) - rect.Min(p => p.Y), 9);
     }
 
@@ -130,7 +130,7 @@ public sealed class SvgStrokerTests
         SvgSubpath circle = SvgOutline.Ellipse(0, 0, 1, 1);
         var big = new SvgMatrix(50, 0, 0, 50, 0, 0);
         int small = Expand(Stroke(circle, width: 0.1, join: SvgLineJoin.Bevel)).Count;
-        int large = SvgStroker.Expand(Stroke(circle, width: 0.1, join: SvgLineJoin.Bevel), big, 0.05).Count;
+        int large = SvgStroker.Expand(Stroke(circle, width: 0.1, join: SvgLineJoin.Bevel), big, 0.05)!.Count;
         Assert.True(large > small, $"{large} pieces at 50x should exceed {small} at 1x");
     }
 
@@ -181,7 +181,58 @@ public sealed class SvgStrokerTests
     public void ADegenerateTransformGivesNoPiecesAndNoNaN()
     {
         var squash = new SvgMatrix(0, 0, 0, 0, 0, 0);
-        AssertAllFinite(SvgStroker.Expand(Stroke(Open(new(0, 0), new(10, 0), new(10, 10)), transform: squash),
-            SvgMatrix.Identity, 0.05));
+        List<SvgPoint[]>? pieces = SvgStroker.Expand(Stroke(Open(new(0, 0), new(10, 0), new(10, 10)), transform: squash),
+            SvgMatrix.Identity, 0.05);
+        Assert.NotNull(pieces);
+        Assert.Empty(pieces);
+    }
+
+    [Fact]
+    public void AHostileInputExceedsThePointBudgetAndReturnsNullQuickly()
+    {
+        var segments = new List<SvgSegment>();
+        for (int i = 0; i < 4096; i++)
+            segments.Add(SvgSegment.Cubic(new(i, 100), new(-i, -100), new(i % 7, i % 5)));
+        var path = new SvgSubpath(new SvgPoint(0, 0), segments, false);
+        var huge = new SvgMatrix(1000, 0, 0, 1000, 0, 0);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        List<SvgPoint[]>? result = SvgStroker.Expand(Stroke(path, cap: SvgLineCap.Round, join: SvgLineJoin.Round), huge, 0.05);
+        watch.Stop();
+        Assert.Null(result);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"took {watch.Elapsed}");
+    }
+
+    [Fact]
+    public void ANormalIconStillExpandsUnderTheBudget()
+    {
+        Assert.NotNull(SvgStroker.Expand(Stroke(SvgOutline.Ellipse(12, 12, 8, 8), join: SvgLineJoin.Round),
+            new SvgMatrix(5, 0, 0, 5, 0, 0), 0.05));
+    }
+
+    [Fact]
+    public void ASmallBudgetReturnsNull()
+    {
+        Assert.Null(SvgStroker.Expand(Stroke(Open(new(0, 0), new(10, 0))), SvgMatrix.Identity, 0.05, maxPoints: 3));
+    }
+
+    [Theory]
+    [InlineData(SvgLineCap.Square)]
+    [InlineData(SvgLineCap.Round)]
+    public void AClosedTwoPointSubpathGetsNoCaps(SvgLineCap cap)
+    {
+        SvgSubpath line = SvgOutline.Poly([new SvgPoint(0, 0), new SvgPoint(10, 0)], closed: true);
+        List<SvgPoint[]> pieces = Expand(Stroke(line, width: 2, cap: cap, join: SvgLineJoin.Miter));
+        Assert.Equal(2, pieces.Count);
+        Assert.Equal(0, pieces.SelectMany(p => p).Min(p => p.X), 9);
+        Assert.Equal(10, pieces.SelectMany(p => p).Max(p => p.X), 9);
+    }
+
+    [Fact]
+    public void AClosedTwoPointSubpathWithRoundJoinsAddsCircles()
+    {
+        SvgSubpath line = SvgOutline.Poly([new SvgPoint(0, 0), new SvgPoint(10, 0)], closed: true);
+        List<SvgPoint[]> pieces = Expand(Stroke(line, width: 2, cap: SvgLineCap.Butt, join: SvgLineJoin.Round));
+        Assert.Equal(4, pieces.Count);
+        Assert.Equal(-1, pieces.SelectMany(p => p).Min(p => p.X), 2);
     }
 }
