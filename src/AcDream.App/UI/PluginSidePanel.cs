@@ -16,6 +16,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     private const float DefaultTop = 116f;
     private const float DefaultLeft = 10f;
     private const float BottomMargin = 8f;
+    private const float SnapIn = 8f;
+    private const float SnapOut = 32f;
 
     private readonly RetailWindowManager _windows;
     private readonly Func<uint, (uint tex, int width, int height)> _resolve;
@@ -28,6 +30,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     private readonly PluginUiThemeSettings _themes;
     private readonly Action? _appearanceRequested;
     private PluginUiTheme _lastTheme;
+    private PluginDockMode _appliedMode;
+    private PluginDockMode? _dragMode;
     private PluginDockLayout _layout;
     private int _firstRow;
     private bool _disposed;
@@ -59,6 +63,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         _themes = themes ?? new PluginUiThemeSettings();
         _appearanceRequested = appearanceRequested;
         _lastTheme = _themes.Theme;
+        _appliedMode = _themes.Dock;
 
         Top = DefaultTop;
         Anchors = AnchorEdges.None;
@@ -104,6 +109,12 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     internal bool PointerOver { get; private set; }
 
     internal bool Collapsed => _collapsed;
+
+    /// <summary>
+    /// The mode the dock is drawn in: the saved one, or the one a drag has
+    /// snapped it into, which is saved when the drag ends.
+    /// </summary>
+    internal PluginDockMode Mode => _dragMode ?? _themes.Dock;
 
     /// <summary>
     /// Adds one manifest-scoped plugin window and its minimize affordance.
@@ -175,15 +186,25 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     protected override void OnDraw(UiRenderContext ctx)
     {
         PluginUiPalette p = Palette;
-        DockBody(ctx, p, PluginDockMode.Floating, Width, Height);
+        PluginDockMode mode = Mode;
+        DockBody(ctx, p, mode, Width, Height);
         foreach (float y in _layout.Dividers)
             DockDivider(ctx, p, Width, y);
         if (_collapsed) return;
         DockSide side = ScreenSide;
         foreach (ShelfEntry entry in _entries.Values)
         {
-            if (entry.Button.Visible && entry.Button.IsOpen)
-                OpenDot(ctx, p, side, Width, entry.Button.Top, entry.Button.Height);
+            PluginShelfButton button = entry.Button;
+            if (!button.Visible) continue;
+            if (mode == PluginDockMode.Floating)
+            {
+                if (button.IsOpen)
+                    OpenDot(ctx, p, side, Width, button.Top, button.Height);
+            }
+            else
+            {
+                EdgePill(ctx, button.IsOpen ? p.Accent : p.Muted, side, Width, button.Top, button.Height, button.PillHeight);
+            }
         }
     }
 
@@ -194,9 +215,44 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         if (_layout.FadeBottom) DockFade(ctx, Palette, _layout.ListBottom - DockFadeHeight, Width, darkAtBottom: true);
     }
 
-    /// <summary>The side of the screen the dock is nearer: where its open dots go.</summary>
-    internal DockSide ScreenSide =>
-        Parent is { } parent && Left + Width / 2f > parent.Width / 2f ? DockSide.Right : DockSide.Left;
+    /// <summary>The screen edge the dock faces: a rail's own edge, or the nearer one for a floating dock.</summary>
+    internal DockSide ScreenSide => Mode switch
+    {
+        PluginDockMode.Left => DockSide.Left,
+        PluginDockMode.Right => DockSide.Right,
+        _ => Parent is { } parent && Left + Width / 2f > parent.Width / 2f ? DockSide.Right : DockSide.Left,
+    };
+
+    /// <summary>
+    /// While the dock is dragged: a floating dock that comes within 8pt of a
+    /// screen edge becomes a rail on that edge, and a rail follows the pointer
+    /// up and down its edge until the pointer is more than 32pt away, when it
+    /// floats again. The new mode is saved when the drag ends.
+    /// </summary>
+    internal override void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY)
+    {
+        if (Parent is not { } parent) return;
+        PluginDockMode mode = Mode;
+        PluginDockMode next = mode switch
+        {
+            PluginDockMode.Floating when left <= SnapIn => PluginDockMode.Left,
+            PluginDockMode.Floating when left + Width >= parent.Width - SnapIn => PluginDockMode.Right,
+            PluginDockMode.Left when pointerX > SnapOut => PluginDockMode.Floating,
+            PluginDockMode.Right when pointerX < parent.Width - SnapOut => PluginDockMode.Floating,
+            _ => mode,
+        };
+        if (next != mode)
+        {
+            _dragMode = next;
+            _appliedMode = next;
+            Reflow();
+        }
+        if (next == PluginDockMode.Left)
+            left = 0f;
+        else if (next == PluginDockMode.Right)
+            left = parent.Width - Width;
+        top = Math.Clamp(top, 0f, MathF.Max(0f, parent.Height - Height));
+    }
 
     protected override void OnTick(double deltaSeconds)
     {
@@ -207,6 +263,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             _lastTheme = _themes.Theme;
             Reflow();
         }
+        if (_appliedMode != Mode)
+            ApplyModeFromSetting(_appliedMode, Mode);
         _grip.Opacity = _windows.IsLocked ? 0.5f : 1f;
         PointerOver = Parent is UiRoot root
             && root.MouseX >= Left && root.MouseX < Left + Width
@@ -235,8 +293,67 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             }
         }
 
+        if (Parent is { } edgeParent && Mode != PluginDockMode.Floating)
+            Left = Mode == PluginDockMode.Left ? 0f : edgeParent.Width - Width;
+
+        UpdateEdgePills((float)deltaSeconds);
+
         foreach (RetailWindowHandle handle in _entries.Keys)
             KeepWindowReachable(handle);
+    }
+
+    /// <summary>
+    /// The player picked a mode in plugin appearance: a rail moves to its
+    /// edge, and a floating dock moves 10pt in from the edge it was on. Both
+    /// keep their top.
+    /// </summary>
+    private void ApplyModeFromSetting(PluginDockMode from, PluginDockMode to)
+    {
+        _appliedMode = to;
+        Reflow();
+        if (Parent is not { } parent) return;
+        float left = to switch
+        {
+            PluginDockMode.Left => 0f,
+            PluginDockMode.Right => parent.Width - Width,
+            _ when from == PluginDockMode.Right => MathF.Max(0f, parent.Width - Width - DefaultLeft),
+            _ => DefaultLeft,
+        };
+        if (_ownHandle is { } handle)
+            handle.MoveTo(left, Top);
+        else
+            Left = left;
+    }
+
+    /// <summary>The plugin window drawn over the dock's other open windows, which gets the tall edge pill.</summary>
+    internal RetailWindowHandle? FrontWindow
+    {
+        get
+        {
+            RetailWindowHandle? front = null;
+            foreach (RetailWindowHandle handle in _order)
+            {
+                if (handle.IsVisible && (front is null || handle.OuterFrame.ZOrder >= front.OuterFrame.ZOrder))
+                    front = handle;
+            }
+            return front;
+        }
+    }
+
+    private void UpdateEdgePills(float dt)
+    {
+        RetailWindowHandle? front = FrontWindow;
+        float step = RailPillFront / RailPillSeconds * MathF.Max(0f, dt);
+        foreach (RetailWindowHandle handle in _order)
+        {
+            PluginShelfButton button = _entries[handle].Button;
+            float target = ReferenceEquals(handle, front) ? RailPillFront
+                : button.IsOpen ? RailPillOpen
+                : button.State is UiControlState.Hovered or UiControlState.Pressed ? RailPillHover
+                : 0f;
+            float delta = target - button.PillHeight;
+            button.PillHeight += Math.Clamp(delta, -step, step);
+        }
     }
 
     /// <inheritdoc />
@@ -273,6 +390,13 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
     private void OnHandleMoved(RetailWindowHandle _)
     {
+        if (_dragMode is { } snapped)
+        {
+            _dragMode = null;
+            _themes.Dock = snapped;
+        }
+        if (Mode != PluginDockMode.Floating)
+            return;
         if (!_homeApplied)
         {
             _userPositioned = true;
@@ -359,7 +483,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         float effectiveHeight = maximumHeight
             ?? (_lastLayoutHeight >= 0f ? _lastLayoutHeight : float.PositiveInfinity);
         string[] owners = _order.Select(h => _entries[h].Button.OwnerId).ToArray();
-        _layout = PluginDockLayout.Compute(PluginDockMode.Floating, _collapsed, owners, effectiveHeight, _firstRow);
+        _layout = PluginDockLayout.Compute(Mode, _collapsed, owners, effectiveHeight, _firstRow);
         _firstRow = _layout.FirstRow;
 
         for (int i = 0; i < _order.Count; i++)
@@ -434,7 +558,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         protected override void OnDraw(UiRenderContext ctx)
         {
             if (!dock.PointerOver && !dock.Collapsed) return;
-            HandleDots(ctx, dock.Palette, Width / 2f, dock.Collapsed ? Height / 2f : DockHandleTop + DockHandleHeight / 2f);
+            HandleDots(ctx, dock.Palette, Width / 2f,
+                dock.Collapsed && dock.Mode == PluginDockMode.Floating ? Height / 2f : DockHandleTop + DockHandleHeight / 2f);
         }
     }
 
@@ -448,8 +573,14 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             if (!dock.PointerOver && !dock.Collapsed) return;
             PluginUiPalette p = dock.Palette;
             GhostButton(ctx, p, Width, Height, ThemeState);
-            Chevron(ctx, Width / 2f, Height / 2f, 6f,
-                dock.Collapsed ? ChevronDirection.Down : ChevronDirection.Up,
+            ChevronDirection direction = (dock.Mode, dock.Collapsed) switch
+            {
+                (PluginDockMode.Left, false) or (PluginDockMode.Right, true) => ChevronDirection.Left,
+                (PluginDockMode.Left, true) or (PluginDockMode.Right, false) => ChevronDirection.Right,
+                (_, true) => ChevronDirection.Down,
+                _ => ChevronDirection.Up,
+            };
+            Chevron(ctx, Width / 2f, Height / 2f, 6f, direction,
                 ThemeState == UiControlState.Normal ? p.Muted : p.Text);
         }
     }
@@ -519,6 +650,9 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         internal RetailWindowHandle Window => _handle;
 
         internal UiControlState State => ThemeState;
+
+        /// <summary>How tall this slot's edge pill is now; it eases toward its state's height on a rail.</summary>
+        internal float PillHeight { get; set; }
 
         public override string? GetTooltipText() => _tooltip;
 
