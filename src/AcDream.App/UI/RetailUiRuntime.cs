@@ -3139,14 +3139,14 @@ public sealed class RetailUiRuntime : IDisposable
             .FirstOrDefault();
         if (bound is not { } binding)
         {
-            return "Plugin shelf hidden. Bind Toggle Plugin Manager in "
+            return "Plugin dock hidden. Bind Toggle Plugin Manager in "
                 + "Configure Keyboard to show it again.";
         }
 
         var strings = new DatStringResolver(_bindings.Assets.Dats);
         string chordText = new Layout.RetailKeyNames((tableId, stringId) =>
             strings.Resolve(tableId, stringId)).Describe(binding.Chord);
-        return $"Plugin shelf hidden. Press {chordText} to show it again.";
+        return $"Plugin dock hidden. Press {chordText} to show it again.";
     }
 
     private static string UnmappedKeyBindingsPath(string keyBindingsFilePath)

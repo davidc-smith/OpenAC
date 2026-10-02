@@ -10,6 +10,26 @@ namespace AcDream.App.Tests.UI;
 
 public sealed class PluginSidePanelTests
 {
+    [Theory]
+    [InlineData(2, false)]
+    [InlineData(12, true)]
+    public void AScrollOverTheDock_IsHandledOnlyWhenThereIsSomethingToScroll(int count, bool handled)
+    {
+        var root = new UiRoot { Width = 800f, Height = count > 3 ? 260f : 600f };
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), font: null);
+        root.AddChild(shelf);
+        for (int i = 0; i < count; i++)
+        {
+            var frame = new UiPanel { Width = 200f, Height = 100f };
+            root.AddChild(frame);
+            RetailWindowHandle handle = root.WindowManager.Register($"plugin:test:{i}", frame);
+            shelf.Add(new PluginUiOwner($"test.{i}", $"Plugin {i}"), new PluginPanelDescriptor("main", $"Plugin {i}"), handle);
+        }
+        root.Tick(0.016d, 16L);
+
+        Assert.Equal(handled, shelf.OnEvent(new UiEvent(0u, shelf, UiEventType.Scroll, Data0: -1)));
+    }
+
     [Fact]
     public void ManyPluginsScrollWithinTheLiveScreenHeight()
     {

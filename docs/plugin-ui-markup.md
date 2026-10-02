@@ -39,10 +39,9 @@ pauses the plugin.
 ## Shared plugin appearance
 
 Click the gear at the bottom of the plugin dock, or right-click the dock, to
-open **Plugin appearance**. Classic
-is the default. **Charcoal + moss** and **Warm graphite + brass** apply to
-windows whose root uses `<panel theme="plugin" ...>`. The choice is saved in
-the client's settings. Existing windows without this attribute keep their
+open **Plugin appearance**. Classic is the default. **Charcoal + moss** and
+**Warm graphite + brass** apply to windows whose root uses `<panel theme="plugin" ...>`. The choice is
+saved in the client's settings. Existing windows without this attribute keep their
 original styling. Both modern themes use the bundled Noto Sans Regular font;
 no operating-system font installation is required. Classic keeps its original
 font. The font loader is shared client infrastructure (`BundledUiFont.Load`),

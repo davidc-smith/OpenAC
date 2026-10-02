@@ -135,6 +135,25 @@ public sealed class PluginDockModeTests : IDisposable
         Assert.Equal((1000f - PluginUiStyle.RailTabWidth, PluginUiStyle.RailTabHeight), (dock.Left, dock.Height));
     }
 
+    [Theory]
+    [InlineData(PluginDockMode.Left)]
+    [InlineData(PluginDockMode.Right)]
+    public void ARailSlotsWell_LeavesTheEdgePillUncovered(PluginDockMode mode)
+    {
+        float w = PluginUiStyle.RailWidth, h = PluginUiStyle.RailSlot;
+        var (x, y, ww, wh) = PluginUiStyle.DockSlotWellRect(mode, w, h);
+        Assert.Equal(PluginUiStyle.RailWellInsetY, y);
+        Assert.Equal(h - 2f * PluginUiStyle.RailWellInsetY, wh);
+        if (mode == PluginDockMode.Left) Assert.True(x >= PluginUiStyle.RailPillHover);
+        else Assert.True(x + ww <= w - PluginUiStyle.RailPillHover);
+    }
+
+    [Fact]
+    public void AFloatingSlotsWell_SpansTheFullSlot()
+    {
+        Assert.Equal((0f, 0f, 40f, 30f), PluginUiStyle.DockSlotWellRect(PluginDockMode.Floating, 40f, 30f));
+    }
+
     [Fact]
     public void EdgePills_EaseToTheirHeights_AndTheFrontWindowGetsTheTallOne()
     {

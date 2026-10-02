@@ -186,7 +186,6 @@ public abstract class UiElement
     /// </summary>
     internal virtual void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY) { }
 
-
     public bool ConstrainResizeToParent { get; set; }
 
     public bool Resizable { get; set; }

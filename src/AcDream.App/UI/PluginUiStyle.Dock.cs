@@ -39,6 +39,10 @@ internal static partial class PluginUiStyle
     internal const float RailRadius = 12f;
     internal const float RailSlot = 38f;
     internal const float RailGap = 2f;
+    /// <summary>A rail slot's hover well is inset this far at each side so it never covers the edge pill.</summary>
+    internal const float RailWellInsetX = 5f;
+    /// <summary>A rail slot's hover well is inset this far at its top and bottom.</summary>
+    internal const float RailWellInsetY = 1f;
     internal const float RailPillWidth = 3f;
     internal const float RailPillHover = 4f;
     internal const float RailPillOpen = 8f;
@@ -89,6 +93,12 @@ internal static partial class PluginUiStyle
         float rimWidth = rail ? w + radius : w;
         ctx.StrokeRoundedRect(x + 0.5f, 0.5f, rimWidth - 1f, h - 1f, radius - 0.5f, rim, 1f);
     }
+
+    /// <summary>The well's rect in a slot: the full slot when floating, inset clear of the edge pill on a rail.</summary>
+    internal static (float X, float Y, float W, float H) DockSlotWellRect(PluginDockMode mode, float w, float h) =>
+        mode == PluginDockMode.Floating
+            ? (0f, 0f, w, h)
+            : (RailWellInsetX, RailWellInsetY, w - 2f * RailWellInsetX, h - 2f * RailWellInsetY);
 
     /// <summary>The well behind a slot while it is hovered or pressed; nothing when idle.</summary>
     internal static void DockSlotWell(UiRenderContext ctx, PluginUiPalette p, float x, float y, float w, float h, UiControlState state)

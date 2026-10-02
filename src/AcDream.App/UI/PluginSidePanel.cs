@@ -430,7 +430,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             _appearanceRequested();
             return true;
         }
-        if (e.Type == UiEventType.Scroll && !_collapsed)
+        if (e.Type == UiEventType.Scroll && !_collapsed && _layout.MaxFirstRow > 0)
         {
             _firstRow = Math.Clamp(_firstRow + (e.Data0 > 0 ? -1 : 1), 0, _layout.MaxFirstRow);
             Reflow();
@@ -662,7 +662,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         protected override void OnDraw(UiRenderContext ctx)
         {
             PluginUiPalette p = dock.Palette;
-            DockSlotWell(ctx, p, 0f, 0f, Width, Height, ThemeState);
+            var (wx, wy, ww, wh) = DockSlotWellRect(dock.Mode, Width, Height);
+            DockSlotWell(ctx, p, wx, wy, ww, wh, ThemeState);
             Gear(ctx, (Width - DockArt) / 2f, (Height - DockArt) / 2f, DockArt,
                 ThemeState == UiControlState.Normal ? p.Muted : p.Text);
         }
@@ -724,7 +725,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         protected override void OnDraw(UiRenderContext ctx)
         {
             PluginUiPalette p = _dock.Palette;
-            DockSlotWell(ctx, p, 0f, 0f, Width, Height, ThemeState);
+            var (wx, wy, ww, wh) = DockSlotWellRect(_dock.Mode, Width, Height);
+            DockSlotWell(ctx, p, wx, wy, ww, wh, ThemeState);
             Vector4 colour = ThemeState is UiControlState.Hovered or UiControlState.Pressed ? p.Text
                 : IsOpen ? p.Accent : p.Muted;
             DrawIcon(ctx, (Width - DockArt) / 2f, (Height - DockArt) / 2f, DockArt, colour);
