@@ -232,6 +232,13 @@ Today's private "dock" fields (`_dockLeft`, `_dockTop`,
 `_initialDockApplied`), which mean the default spot, are renamed to "home"
 so they don't clash with the new meaning.
 
+**Default spot (corrected 2026-10-02 after the final review):** with no saved
+layout the dock sits 10pt from the left edge and is centred vertically. That
+comes from the shared `WindowPlacementGeometry.Default` (`PluginShelf` arm),
+which layout persistence applies before the dock's first tick; the dock's own
+`DefaultTop` of 116 only applies where persistence is not wired up, as in
+unit tests. This is pre-existing behaviour and is left unchanged.
+
 ## Copy
 
 - The minimize button in plugin windows: "Minimize to the dock" (today

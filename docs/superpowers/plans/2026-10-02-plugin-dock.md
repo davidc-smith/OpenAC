@@ -1320,7 +1320,7 @@ Claude-Session: https://claude.ai/code/session_01EtugJHhFMqGXY2V6Lz2ZFB"
 
 **Acceptance Criteria:**
 - [ ] All three themes draw the same 48-wide dock; Classic draws in `ClassicDock`, Moss/Brass in their palette; Classic's column wrap is gone and every theme scrolls by one slot per wheel step.
-- [ ] The public surface is unchanged: `Add`, `Show`, `Hide`, `EntryCount`, `Dispose`, `CaptureWindowState`/`RestoreWindowState`, the minimize button, window reachability, right-click for appearance, default home (10, 116).
+- [ ] The public surface is unchanged: `Add`, `Show`, `Hide`, `EntryCount`, `Dispose`, `CaptureWindowState`/`RestoreWindowState`, the minimize button, window reachability, right-click for appearance, default home (10, 116) when no layout persistence is wired up (in the client the shared default placement centres it vertically; see the spec's Default spot note).
 - [ ] The handle row (0..30 × 0..16) is the only move handle; the toggle at (30,2) collapses to a 48×24 pill and back; dots and chevron draw only while the pointer is over the dock (or collapsed).
 - [ ] The gear slot (after a divider) invokes the appearance callback.
 - [ ] Icon order is unchanged (file icon, DAT surface, monogram); `Text` still holds the initials (two letters at most); colour art draws at 85% alpha while its window is closed and 100% otherwise; iconless slots draw their `MonogramHue`.
