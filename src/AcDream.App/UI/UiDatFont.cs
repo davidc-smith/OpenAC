@@ -31,6 +31,29 @@ public sealed class UiDatFont
     public int BorderX { get; }
     public int BorderY { get; }
 
+    /// <summary>
+    /// Bakes this font again for a display with the given device pixels per
+    /// point, or gives null when it would be no sharper there. Only bundled
+    /// fonts have one; dat fonts never do.
+    /// </summary>
+    internal Func<float, UiDatFontSharp?>? SharpSource { get; set; }
+
+    private readonly Dictionary<float, UiDatFontSharp?> _sharp = new();
+
+    /// <summary>
+    /// The same font baked at a multiple of its size, whose glyphs are drawn
+    /// in its place on a display with <paramref name="pixelScale"/> device
+    /// pixels per point. Baked the first time a scale asks for it. Every
+    /// measurement, and so all layout, still comes from this font.
+    /// </summary>
+    internal UiDatFontSharp? SharpFor(float pixelScale)
+    {
+        if (SharpSource is null || !(pixelScale > 1f)) return null;
+        if (!_sharp.TryGetValue(pixelScale, out UiDatFontSharp? sharp))
+            _sharp[pixelScale] = sharp = SharpSource(pixelScale);
+        return sharp;
+    }
+
     private readonly Dictionary<char, FontCharDesc> _glyphs;
     private readonly char? _fallbackCharacter;
 
@@ -117,3 +140,6 @@ public sealed class UiDatFont
     public static float GlyphAdvance(FontCharDesc g)
         => g.HorizontalOffsetBefore + g.Width + g.HorizontalOffsetAfter;
 }
+
+/// <summary>A sharper bake of a font and how many times its size it was baked at.</summary>
+internal sealed record UiDatFontSharp(UiDatFont Font, float Scale);

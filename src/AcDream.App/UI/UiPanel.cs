@@ -97,6 +97,16 @@ public class UiSimpleButton : UiPanel
 
     public bool Outline { get; set; } = true;
 
+    /// <summary>The shared plugin theme this button draws in; null draws Classic.</summary>
+    public PluginUiPalette? ThemePalette { get; set; }
+
+    private UiPointerState _pointer;
+
+    /// <summary>The state a themed face shows: hovered, pressed, disabled or normal.</summary>
+    private protected UiControlState ThemeState => _pointer.State(Enabled);
+
+    private protected bool KeyboardFocused => _keyboardActivation.Focused;
+
     public Func<(uint tex, int w, int h)>? IconSource { get; set; }
 
     public event System.Action? Click;
@@ -113,6 +123,7 @@ public class UiSimpleButton : UiPanel
 
     public override bool OnEvent(in UiEvent e)
     {
+        _pointer.Observe(in e);
         if (_keyboardActivation.HandleEvent(in e, TabStop, Enabled, () => Click?.Invoke()))
             return true;
         if (e.Type == UiEventType.Click && Enabled)
@@ -123,13 +134,31 @@ public class UiSimpleButton : UiPanel
         return false;
     }
 
+    /// <summary>The face a themed button draws under its icon and caption.</summary>
+    private protected virtual void DrawThemedFace(UiRenderContext ctx, PluginUiPalette palette)
+    {
+        PluginUiStyle.Button(ctx, palette, Width, Height,
+            BackgroundColorSource?.Invoke() ?? BackgroundColor,
+            BorderColorSource?.Invoke() ?? BorderColor, ThemeState);
+        if (KeyboardFocused)
+            PluginUiStyle.FocusRing(ctx, palette, Width, Height, PluginUiStyle.ControlRadius);
+    }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
-        base.OnDraw(ctx);
-        if (_keyboardActivation.Focused)
-            ctx.DrawRectOutline(1f, 1f, Width - 2f, Height - 2f,
-                new Vector4(1f, 0.82f, 0.25f, 1f), 1f);
+        if (ThemePalette is { } palette)
+        {
+            DrawThemedFace(ctx, palette);
+        }
+        else
+        {
+            base.OnDraw(ctx);
+            if (_keyboardActivation.Focused)
+                ctx.DrawRectOutline(1f, 1f, Width - 2f, Height - 2f,
+                    new Vector4(1f, 0.82f, 0.25f, 1f), 1f);
+        }
 
+        bool fade = ThemePalette is not null && !Enabled;
         float iconColumn = 0f;
         if (IconSource is { } iconSource)
         {
@@ -147,13 +176,14 @@ public class UiSimpleButton : UiPanel
                     3f + (extent - drawWidth) * 0.5f,
                     (Height - drawHeight) * 0.5f,
                     drawWidth, drawHeight,
-                    0f, 0f, 1f, 1f, Vector4.One);
+                    0f, 0f, 1f, 1f, fade ? PluginUiStyle.Faded(Vector4.One) : Vector4.One);
             }
         }
 
         string caption = TextSource?.Invoke() ?? Text;
         if (caption.Length == 0) return;
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
+        if (fade) textColor = PluginUiStyle.Faded(textColor);
 
         float captionAreaX = iconColumn;
         float captionAreaWidth = MathF.Max(0f, Width - iconColumn);

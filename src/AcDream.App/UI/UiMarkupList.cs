@@ -102,14 +102,13 @@ public sealed class UiMarkupList : UiElement
         bool showScrollbar = items.Count > visibleRows;
         float contentWidth = showScrollbar ? MathF.Max(0f, Width - ScrollbarWidth) : Width;
 
-        context.DrawFill(0f, 0f, Width, Height, BackgroundColor);
-        context.DrawRectOutline(0f, 0f, Width, Height, BorderColor, 1f);
+        DrawContainer(context);
         int end = Math.Min(items.Count, _topRow + visibleRows);
         for (int index = _topRow; index < end; index++)
         {
             float y = (index - _topRow) * RowHeight;
             if (index == selected && SelectionBandEnabled)
-                context.DrawFill(1f, y + 1f, contentWidth - 2f, RowHeight - 1f, SelectedColor);
+                DrawSelectionBand(context, y, contentWidth);
 
             if (iconIds is not null && index < iconIds.Count && IconResolve is { } resolve)
             {
@@ -281,15 +280,14 @@ public sealed class UiMarkupList : UiElement
         }
         ClampTop(rowCount, visibleRows);
 
-        context.DrawFill(0f, 0f, Width, Height, BackgroundColor);
-        context.DrawRectOutline(0f, 0f, Width, Height, BorderColor, 1f);
+        DrawContainer(context);
 
         int end = Math.Min(rowCount, _topRow + visibleRows);
         for (int index = _topRow; index < end; index++)
         {
             float y = (index - _topRow) * RowHeight;
             if (index == selected && SelectionBandEnabled)
-                context.DrawFill(1f, y + 1f, contentWidth - 2f, RowHeight - 1f, SelectedColor);
+                DrawSelectionBand(context, y, contentWidth);
 
             for (int c = 0; c < columns.Count; c++)
             {
@@ -442,18 +440,34 @@ public sealed class UiMarkupList : UiElement
         _scroll.SetScrollY(_topRow * lineHeight);
     }
 
+    private void DrawContainer(UiRenderContext context)
+    {
+        if (ThemePalette is not null)
+        {
+            PluginUiStyle.Surface(context, 0f, 0f, Width, Height, PluginUiStyle.ContainerRadius,
+                BackgroundColor, BorderColor);
+            return;
+        }
+        context.DrawFill(0f, 0f, Width, Height, BackgroundColor);
+        context.DrawRectOutline(0f, 0f, Width, Height, BorderColor, 1f);
+    }
+
+    private void DrawSelectionBand(UiRenderContext context, float y, float contentWidth)
+    {
+        if (ThemePalette is not null)
+            PluginUiStyle.Row(context, 0f, y, contentWidth, RowHeight, SelectedColor);
+        else
+            context.DrawFill(1f, y + 1f, contentWidth - 2f, RowHeight - 1f, SelectedColor);
+    }
+
     private void DrawScrollbar(UiRenderContext ctx, float x, int rowCount, int visibleRows)
     {
         ConfigureScroll(rowCount, visibleRows);
         if (ThemePalette is { } p)
         {
-            ctx.DrawFill(x, 0, ScrollbarWidth, Height, p.Field);
-            ctx.DrawRectOutline(x, 0, ScrollbarWidth, Height, p.Border, 1);
             float button = Math.Min(ScrollButtonExtent, Height / 2);
             var (top, size) = UiScrollbar.ThumbRect(_scroll, button, Math.Max(0, Height - 2 * button));
-            ctx.DrawFill(x + 3, top, ScrollbarWidth - 6, size, p.Muted);
-            ctx.DrawFill(x + 5, button / 2, ScrollbarWidth - 10, 1, p.Muted);
-            ctx.DrawFill(x + 5, Height - button / 2, ScrollbarWidth - 10, 1, p.Muted);
+            PluginUiStyle.ScrollThumb(ctx, p, x, top, ScrollbarWidth, size, active: _draggingThumb);
             return;
         }
         if (SpriteResolve is not { } resolve) return;

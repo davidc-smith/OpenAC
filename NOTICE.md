@@ -89,7 +89,7 @@ affiliated with Microsoft, Turbine, or Warner Bros. Entertainment.
 
 ## Noto Sans
 
-The graphical client embeds unmodified Noto Sans Regular from the Noto project.
+The graphical client embeds unmodified Noto Sans Regular and SemiBold from the Noto project.
 Copyright 2018 The Noto Project Authors. Licensed under SIL Open Font License 1.1.
 See [the full license](assets/fonts/NotoSans/OFL.txt) and
 [the pinned source and checksum](assets/fonts/NotoSans/README.md).

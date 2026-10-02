@@ -58,13 +58,16 @@ public sealed class UiHost : System.IDisposable
         Root.Tick(deltaSeconds, now);
     }
 
+    /// <summary>Device pixels per interface point, handed to every frame's render context.</summary>
+    public float PixelScale { get; set; } = 1f;
+
     public void Draw(Vector2 screenSize)
     {
         // Set UiRoot bounds to full screen so HitTestTopDown works.
         Root.Width = screenSize.X;
         Root.Height = screenSize.Y;
         UiRenderContext ctx = _renderContext;
-        ctx.Begin(screenSize, DefaultFont);
+        ctx.Begin(screenSize, DefaultFont, PixelScale);
         TextRenderer.Begin(screenSize);
         Root.Draw(ctx);
         TextRenderer.Flush(DefaultFont);

@@ -21,6 +21,9 @@ public sealed class UiScrollbar : UiElement
     public Vector4 PlainBorderColor { get; set; } = new(0.46f, 0.37f, 0.16f, 1f);
     public Vector4 PlainNubColor { get; set; } = new(0.72f, 0.62f, 0.34f, 1f);
 
+    /// <summary>The shared plugin theme the plain look draws in; null draws Classic plain.</summary>
+    public PluginUiPalette? ThemePalette { get; set; }
+
     public bool IsDragging => _draggingThumb;
 
     public Action? DragCompleted { get; set; }
@@ -323,8 +326,42 @@ public sealed class UiScrollbar : UiElement
         DrawSprite(ctx, resolve, ActiveThumbSprite, 0f, y, Width, thumbHeight);
     }
 
+    /// <summary>
+    /// The themed plain look. A slider's thumb is centred on the thumb its
+    /// hit test uses, so it is dragged where it is drawn; a bar that follows
+    /// a scroll model draws its thumb where the model's hit test puts it.
+    /// </summary>
+    private void DrawThemedPlain(UiRenderContext ctx, PluginUiPalette palette)
+    {
+        bool active = _draggingThumb || _hoveredThumb;
+        if (Horizontal)
+        {
+            float thumbWidth = ScalarThumbWidth(SpriteResolve);
+            float thumbX = MathF.Max(0f, Width - thumbWidth) * ScalarPosition;
+            PluginUiStyle.Slider(ctx, palette, Width, Height, thumbX + thumbWidth * 0.5f, active);
+            return;
+        }
+        if (Model is { } m)
+        {
+            float trackTop = AxisExtent(DecrementButtonExtent, Height);
+            float trackLen = MathF.Max(0f,
+                Height - AxisExtent(DecrementButtonExtent, Height) - AxisExtent(IncrementButtonExtent, Height));
+            var (ty, th) = ModelThumbRect(m, trackTop, trackLen);
+            PluginUiStyle.ScrollThumb(ctx, palette, 0f, ty, Width, th, active);
+            return;
+        }
+        float thumbHeight = ScalarThumbExtent(SpriteResolve, Height);
+        float thumbY = MathF.Max(0f, Height - thumbHeight) * ScalarPosition;
+        PluginUiStyle.ScrollThumb(ctx, palette, 0f, thumbY, Width, thumbHeight, active);
+    }
+
     private void DrawPlainScalar(UiRenderContext ctx)
     {
+        if (ThemePalette is { } palette)
+        {
+            DrawThemedPlain(ctx, palette);
+            return;
+        }
         ctx.DrawFill(0f, 0f, Width, Height, PlainTrackColor);
         ctx.DrawRectOutline(0f, 0f, Width, Height, PlainBorderColor, 1f);
 

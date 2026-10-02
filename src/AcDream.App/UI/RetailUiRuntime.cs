@@ -43,7 +43,8 @@ public sealed record RetailUiAssets(
     ControlsIni Controls,
     IconComposer Icons,
     TextureCache TextureCache,
-    UiDatFont? ModernFont = null);
+    Lazy<UiDatFont>? ModernFont = null,
+    Lazy<UiDatFont>? ModernTitleFont = null);
 
 public sealed record VitalsRuntimeBindings(VitalsVM ViewModel);
 
@@ -784,6 +785,11 @@ public sealed class RetailUiRuntime : IDisposable
             _overlayHost?.SetViewport(screenSize);
         }
 
+        // Themed plugin windows draw their soft edges and sharp text at the
+        // display's density; the canvas services already know it.
+        Host.PixelScale = _bindings.PluginCanvases is { } canvases
+            ? Layout.CanvasPixelScale.ForInterface(canvases.FramebufferPerPoint())
+            : 1f;
         Host.Draw(screenSize);
     }
 
@@ -4066,7 +4072,8 @@ public sealed class RetailUiRuntime : IDisposable
     {
         if (_bindings.Plugins is null) return;
 
-        _pluginThemes ??= new PluginUiThemeSettings(_bindings.Chat.Store, _bindings.Assets.ModernFont);
+        _pluginThemes ??= new PluginUiThemeSettings(
+            _bindings.Chat.Store, _bindings.Assets.ModernFont, _bindings.Assets.ModernTitleFont);
 
         IMarkupIconResolver iconResolver = new RetailMarkupIconResolver(
             _bindings.Assets.Dats,

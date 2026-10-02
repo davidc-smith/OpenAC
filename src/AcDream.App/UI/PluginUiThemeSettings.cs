@@ -10,11 +10,24 @@ public sealed class PluginUiThemeSettings
 {
     private readonly SettingsStore? _store;
     private PluginUiTheme _theme;
-    public UiDatFont? ModernFont { get; }
-    public PluginUiThemeSettings(SettingsStore? store = null, UiDatFont? modernFont = null)
+    private readonly Lazy<UiDatFont>? _modernFont;
+    private readonly Lazy<UiDatFont>? _modernTitleFont;
+
+    /// <summary>The font themed windows set their text in; loaded the first time it is read.</summary>
+    public UiDatFont? ModernFont => _modernFont?.Value;
+
+    /// <summary>The heavier weight themed windows set their titles in; null falls back to <see cref="ModernFont"/>.</summary>
+    public UiDatFont? ModernTitleFont => _modernTitleFont?.Value;
+
+    /// <summary>Whether there is a <see cref="ModernFont"/>, without loading it.</summary>
+    public bool HasModernFont => _modernFont is not null;
+
+    public PluginUiThemeSettings(
+        SettingsStore? store = null, Lazy<UiDatFont>? modernFont = null, Lazy<UiDatFont>? modernTitleFont = null)
     {
         _store = store;
-        ModernFont = modernFont;
+        _modernFont = modernFont;
+        _modernTitleFont = modernTitleFont;
         _theme = Enum.TryParse<PluginUiTheme>(store?.LoadPluginUiTheme(), out var value)
             && Enum.IsDefined(value) ? value : PluginUiTheme.Classic;
     }
@@ -52,12 +65,8 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
         "border" => Border, "accent" => Accent, "background" => Background,
         _ => throw new FormatException($"Unknown plugin theme color '{name}'."),
     };
-    internal void DrawCheck(UiRenderContext ctx, float x, float y, bool value)
-    {
-        ctx.DrawFill(x, y, 11, 11, value ? Selected : Field);
-        ctx.DrawRectOutline(x, y, 11, 11, value ? Accent : Border, 1);
-        if (value) ctx.DrawFill(x + 3, y + 3, 5, 5, Accent);
-    }
+    internal void DrawCheck(UiRenderContext ctx, float x, float y, bool value) =>
+        PluginUiStyle.Check(ctx, this, x, y, value);
 }
 
 internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
@@ -68,6 +77,8 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
     public UiPluginMarkupPanel(Func<uint, (uint, int, int)> resolve, PluginUiThemeSettings settings)
         : base(resolve) => _settings = settings;
     public UiDatFont? ModernFont => _settings.ModernFont;
+    public UiDatFont? ModernTitleFont => _settings.ModernTitleFont;
+    public bool HasModernFont => _settings.HasModernFont;
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
         _apply.Add(action);
@@ -80,16 +91,21 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
         _last = _settings.Theme;
         foreach (var apply in _apply) apply(_settings.Palette);
     }
+    /// <summary>Whether the window's markup gave it a title, so the header band is drawn.</summary>
+    internal bool HasTitle { get; set; }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
         if (_settings.Palette is not { } p) { base.OnDraw(ctx); return; }
-        ctx.DrawFill(0, 0, Width, Height, p.Background);
+        PluginUiStyle.WindowShadow(ctx, Width, Height);
+        ctx.FillRoundedRect(0, 0, Width, Height, PluginUiStyle.WindowRadius, p.Background);
+        if (HasTitle) PluginUiStyle.Header(ctx, p, Width);
     }
     protected override void OnDrawAfterChildren(UiRenderContext ctx)
     {
         if (_settings.Palette is not { } p) { base.OnDrawAfterChildren(ctx); return; }
-        ctx.DrawRectOutline(0, 0, Width, Height, p.Border, 1);
+        ctx.StrokeRoundedRect(0.5f, 0.5f, Width - 1f, Height - 1f, PluginUiStyle.WindowRadius - 0.5f, p.Border, 1f);
         if (Resizable && DrawResizeAffordances)
-            ctx.DrawFill(Width - 7, Height - 3, 5, 1, p.Muted);
+            PluginUiStyle.ResizeGrip(ctx, p, Width, Height);
     }
 }

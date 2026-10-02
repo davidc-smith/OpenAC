@@ -70,10 +70,13 @@ public static class MarkupDocument
             {
                 Text = title, Left = 8, Top = 4, TextColor = tc, DatFont = datFont,
             });
+            if (panel is UiPluginMarkupPanel titlePanel && panel.Children[0] is UiLabel titleLabel)
+            {
+                titlePanel.HasTitle = true;
+                PluginMarkupTheme.Register(titlePanel, titleLabel, new XElement("label"));
+                PluginMarkupTheme.RegisterTitle(titlePanel, titleLabel);
+            }
         }
-
-        if (panel is UiPluginMarkupPanel titlePanel && panel.Children.Count > 0)
-            PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
 
         foreach (var el in root.Elements())
             AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes);

@@ -439,6 +439,70 @@ internal static class CanvasGeometry
         float Grow(float radius) => radius > 0f ? radius + halfWidth : radius;
     }
 
+    /// <summary>
+    /// The soft shadow round a rounded rectangle, outside it only:
+    /// <paramref name="layers"/> bands, each <paramref name="spread"/> /
+    /// layers wide, as dark as that many fills of <paramref name="layer"/>
+    /// would be if each were grown a band further than the last and all were
+    /// stacked. Neighbouring bands share their edge, so none shows a seam;
+    /// the outermost fades out over a device pixel.
+    /// </summary>
+    internal static void ShadowBands(
+        float x, float y, float width, float height, CanvasCornerRadii radii, float spread, int layers,
+        Vector4 layer, float pixel, List<UiColorVertex> output)
+    {
+        if (!(width > 0f && height > 0f && spread > 0f) || layers < 1) return;
+        radii = ClampRadii(radii, width, height);
+        Span<int> segments = stackalloc int[4];
+        ShadowSegments(radii, spread, pixel, segments);
+        int points = RingLength(segments);
+        Span<Vector2> inner = stackalloc Vector2[points];
+        Span<Vector2> outer = stackalloc Vector2[points];
+        Span<Vector4> ink = stackalloc Vector4[points];
+        Span<Vector4> clear = stackalloc Vector4[points];
+        float half = pixel * 0.5f;
+        RoundedRectRing(x, y, width, height, radii, 0f, segments, inner);
+        for (int band = 1; band <= layers; band++)
+        {
+            float grow = band == layers ? MathF.Max(spread - half, 0f) : spread * band / layers;
+            RoundedRectRing(x, y, width, height, radii, grow, segments, outer);
+            ink.Fill(Stacked(layer, layers - band + 1));
+            Band(inner, ink, outer, ink, output);
+            outer.CopyTo(inner);
+        }
+        clear.Fill(Transparent(layer));
+        RoundedRectRing(x, y, width, height, radii, spread + half, segments, outer);
+        Band(inner, ink, outer, clear, output);
+    }
+
+    /// <summary>
+    /// The inside of the rectangle <see cref="ShadowBands"/> surrounds, as
+    /// dark as all its layers stacked, with an edge that meets the first
+    /// band's exactly.
+    /// </summary>
+    internal static void ShadowCore(
+        float x, float y, float width, float height, CanvasCornerRadii radii, float spread, int layers,
+        Vector4 layer, float pixel, List<UiColorVertex> output)
+    {
+        if (!(width > 0f && height > 0f && spread > 0f) || layers < 1) return;
+        radii = ClampRadii(radii, width, height);
+        Span<int> segments = stackalloc int[4];
+        ShadowSegments(radii, spread, pixel, segments);
+        int points = RingLength(segments);
+        Span<Vector2> ring = stackalloc Vector2[points];
+        Span<Vector4> ink = stackalloc Vector4[points];
+        RoundedRectRing(x, y, width, height, radii, 0f, segments, ring);
+        ink.Fill(Stacked(layer, layers));
+        Fan(ring, ink, output);
+    }
+
+    private static void ShadowSegments(CanvasCornerRadii radii, float spread, float pixel, Span<int> segments) =>
+        CornerSegments(radii, spread + pixel * 0.5f, pixel, segments);
+
+    /// <summary><paramref name="layer"/> drawn <paramref name="count"/> times over itself.</summary>
+    private static Vector4 Stacked(Vector4 layer, int count) =>
+        layer with { W = 1f - MathF.Pow(1f - layer.W, count) };
+
     /// <summary>An ellipse filling a rectangle.</summary>
     internal static void FillEllipse(
         float x, float y, float width, float height, Vector4 color, float pixel, List<UiColorVertex> output)

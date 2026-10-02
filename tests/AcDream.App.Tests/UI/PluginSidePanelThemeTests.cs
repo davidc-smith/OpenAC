@@ -68,6 +68,49 @@ public sealed class PluginSidePanelThemeTests
         Assert.Equal(visible, handle.IsVisible);
     }
 
+    private static RetailWindowHandle AddThemed(UiRoot root, PluginSidePanel shelf, PluginUiThemeSettings settings, int index)
+    {
+        var frame = MarkupDocument.Build(
+            "<panel x=\"100\" y=\"100\" w=\"200\" h=\"100\" title=\"T\" theme=\"plugin\" />",
+            new object(), _ => (0u, 0, 0), themes: settings);
+        root.AddChild(frame);
+        var handle = root.WindowManager.Register($"plugin:themed:{index}", frame);
+        shelf.Add(new PluginUiOwner($"themed.{index}", $"Themed {index}"),
+            new PluginPanelDescriptor("main", $"Themed {index}") { IconText = "TT" }, handle);
+        return handle;
+    }
+
+    [Fact]
+    public void ThemedShelfEntriesAndMinimizeFollowThePalette()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var settings = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), null, settings);
+        root.AddChild(shelf);
+        var themed = AddThemed(root, shelf, settings, 0);
+        var plain = Add(root, shelf, 1);
+        root.Tick(0.016, 16);
+
+        Assert.All(shelf.Children.OfType<PluginSidePanel.PluginShelfButton>(),
+            b => Assert.Same(settings.Palette, b.ThemePalette));
+        var themedMin = themed.OuterFrame.Children.OfType<UiSimpleButton>().Single(b => b.Text == "–");
+        var plainMin = plain.OuterFrame.Children.OfType<UiSimpleButton>().Single(b => b.Text == "–");
+        Assert.Same(settings.Palette, themedMin.ThemePalette);
+        Assert.Equal(settings.Palette!.Muted, themedMin.TextColor);
+        Assert.Null(plainMin.ThemePalette);
+        Assert.True(plainMin.Outline);
+
+        var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        shelf.DrawSelfAndChildren(ctx);
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => v.Position.X < shelf.Left);
+
+        settings.Theme = PluginUiTheme.Classic;
+        root.Tick(0.016, 32);
+        Assert.All(shelf.Children.OfType<PluginSidePanel.PluginShelfButton>(), b => Assert.Null(b.ThemePalette));
+        Assert.Null(themedMin.ThemePalette);
+        Assert.Equal(Vector4.One, themedMin.TextColor);
+    }
+
     private static RetailWindowHandle Add(UiRoot root, PluginSidePanel shelf, int index)
     {
         var frame = new UiPanel { Left = 100, Width = 200, Height = 100 };
