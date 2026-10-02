@@ -29,7 +29,7 @@ public sealed class UiMarkupTabButton : UiSimpleButton
     {
         base.OnTick(deltaSeconds);
         TextColor = !Enabled
-            ? DisabledText
+            ? ThemePalette?.Muted ?? DisabledText
             : IsSelected ? ThemePalette?.Text ?? ActiveText : ThemePalette?.Muted ?? NormalText;
     }
 

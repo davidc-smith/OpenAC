@@ -28,10 +28,10 @@ public sealed class UiField : UiElement
     /// <summary>Re-read every frame in place of <see cref="BackgroundColor"/>.</summary>
     public Func<Vector4>? BackgroundColorSource { get; set; }
 
-    /// <summary>Selected-span highlight (translucent blue, behind the text).</summary>
     /// <summary>The shared plugin theme this field draws in; null draws Classic.</summary>
     public PluginUiPalette? ThemePalette { get; set; }
 
+    /// <summary>Selected-span highlight (translucent blue, behind the text).</summary>
     public Vector4 SelectionColor { get; set; } = new(0.25f, 0.45f, 0.85f, 0.5f);
     public float Padding { get; set; } = 4f;
     public int MaxCharacters { get; set; } = 0xFFFF;

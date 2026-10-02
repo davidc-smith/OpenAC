@@ -103,7 +103,7 @@ internal static class PluginMarkupTheme
                     menu.PlainBackgroundColor = p?.Field ?? mb; menu.PlainBorderColor = p?.Border ?? me;
                     menu.PlainOpenBorderColor = p?.Accent ?? mo; menu.PlainTextColor = p?.Text ?? mt;
                     menu.PlainTriangleColor = p?.Muted ?? ma; menu.PlainSelectedColor = p?.Selected ?? ms;
-                    menu.PlainHoverColor = p?.Selected ?? mh;
+                    menu.PlainHoverColor = p is null ? mh : PluginUiStyle.Hover(p, p.Field);
                 });
                 break;
             case UiMarkupLog log:

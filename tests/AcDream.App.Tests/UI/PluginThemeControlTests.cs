@@ -211,6 +211,25 @@ public sealed class PluginThemeControlTests
     }
 
     [Fact]
+    public void AThemedMenuPopupHoversInHoverColourDistinctFromSelected()
+    {
+        var settings = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build(
+            "<panel x=\"0\" y=\"0\" w=\"400\" h=\"300\" theme=\"plugin\"><menu x=\"10\" y=\"10\" w=\"160\" h=\"24\" items=\"{Items}\" selected=\"{Selected}\" rows=\"3\" /></panel>",
+            new Binding(), _ => (0u, 0, 0), themes: settings);
+        var root = new UiRoot { Width = 600, Height = 600 };
+        root.AddChild(panel);
+        root.Tick(0.016, 1);
+        var menu = panel.Children.OfType<UiMenu>().First();
+        var classicHover = new UiMenu().PlainHoverColor;
+        Assert.Equal(PluginUiStyle.Hover(P, P.Field), menu.PlainHoverColor);
+        Assert.NotEqual(menu.PlainSelectedColor, menu.PlainHoverColor);
+        settings.Theme = PluginUiTheme.Classic;
+        root.Tick(0.016, 2);
+        Assert.Equal(classicHover, menu.PlainHoverColor);
+    }
+
+    [Fact]
     public void SwitchingToClassicClearsEveryControlsPalette()
     {
         var settings = new PluginUiThemeSettings { Theme = PluginUiTheme.Brass };

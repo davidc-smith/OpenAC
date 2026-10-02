@@ -54,8 +54,9 @@ entries that do not fit vertically. Icons keep their full-color composition.
 Opted-in windows keep their authored layout. In the modern themes they draw
 in a softer style: the window has rounded corners, a soft shadow and a header
 band behind its title, set in Noto Sans SemiBold; buttons, fields, menus,
-lists and logs are rounded, and buttons, tabs and menus react to the pointer
-and show an accent ring when focused. Tabs are pills and toggles are switches.
+lists and logs are rounded, and buttons, tabs and menus react to the pointer;
+buttons and tabs show an accent ring when focused, and menus show an accent
+edge while open. Tabs are pills and toggles are switches.
 A themed toggle's caption starts 18 points further right than in Classic, so
 give toggles room for it. On high-density displays themed text is drawn from
 a sharper bake of the font; measurements, and so layout, are the same on

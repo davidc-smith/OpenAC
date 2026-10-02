@@ -60,6 +60,14 @@ public sealed class UiRenderContext
     }
 
     /// <summary>
+    /// Device pixels per interface point this frame: 1 on a standard display,
+    /// 2 on a typical high-density one. Shapes use it for the width of their
+    /// anti-aliased edge, and fonts that carry a sharp companion use it to
+    /// pick their sharper glyphs. Layout never reads it.
+    /// </summary>
+    public float PixelScale { get; private set; } = 1f;
+
+    /// <summary>
     /// Points the context at a new frame and clears what the last one left.
     /// One context serves every frame instead of one being built per frame:
     /// its three stacks are built empty and grown as the interface nests, so
@@ -68,14 +76,6 @@ public sealed class UiRenderContext
     /// frame rate. A newly constructed context goes through this same reset,
     /// which is what makes a reused one start where a fresh one starts.
     /// </summary>
-    /// <summary>
-    /// Device pixels per interface point this frame: 1 on a standard display,
-    /// 2 on a typical high-density one. Shapes use it for the width of their
-    /// anti-aliased edge, and fonts that carry a sharp companion use it to
-    /// pick their sharper glyphs. Layout never reads it.
-    /// </summary>
-    public float PixelScale { get; private set; } = 1f;
-
     public void Begin(Vector2 screenSize, BitmapFont? defaultFont, float pixelScale = 1f)
     {
         ScreenSize = screenSize;

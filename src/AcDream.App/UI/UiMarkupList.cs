@@ -467,7 +467,7 @@ public sealed class UiMarkupList : UiElement
         {
             float button = Math.Min(ScrollButtonExtent, Height / 2);
             var (top, size) = UiScrollbar.ThumbRect(_scroll, button, Math.Max(0, Height - 2 * button));
-            PluginUiStyle.ScrollThumb(ctx, p, x, top, ScrollbarWidth, size, active: false);
+            PluginUiStyle.ScrollThumb(ctx, p, x, top, ScrollbarWidth, size, active: _draggingThumb);
             return;
         }
         if (SpriteResolve is not { } resolve) return;
