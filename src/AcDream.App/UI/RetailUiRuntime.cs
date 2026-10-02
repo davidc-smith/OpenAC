@@ -4169,10 +4169,12 @@ public sealed class RetailUiRuntime : IDisposable
         }
         var binding = new PluginAppearanceBinding(_pluginThemes!);
         _pluginAppearance = MarkupDocument.Build("""
-            <panel x="70" y="90" w="310" h="140" title="Plugin appearance" theme="plugin">
+            <panel x="70" y="90" w="310" h="196" title="Plugin appearance" theme="plugin">
               <label x="12" y="33" text="Theme" />
               <menu x="12" y="55" w="286" h="24" items="{Themes}" selected="{Selected}" onchange="{Select}" rows="3" />
-              <button x="226" y="102" w="72" h="24" text="Close" onclick="{Close}" />
+              <label x="12" y="89" text="Dock" />
+              <menu x="12" y="111" w="286" h="24" items="{Docks}" selected="{SelectedDock}" onchange="{SelectDock}" rows="3" />
+              <button x="226" y="158" w="72" h="24" text="Close" onclick="{Close}" />
             </panel>
             """, binding, _bindings.Assets.ResolveSprite, _bindings.Assets.Controls,
             _bindings.Assets.DefaultFont, themes: _pluginThemes);

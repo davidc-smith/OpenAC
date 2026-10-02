@@ -801,7 +801,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             Click += () => _handle.Hide();
         }
 
-        public override string? GetTooltipText() => "Minimize to plugin sidepanel";
+        public override string? GetTooltipText() => "Minimize to the dock";
 
         /// <summary>Only windows that opted into the shared theme get the ghost button in their header.</summary>
         protected override void OnTick(double deltaSeconds)
