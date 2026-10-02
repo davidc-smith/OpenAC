@@ -113,10 +113,10 @@ public sealed class PluginDockModeTests : IDisposable
         Assert.Equal(PluginDockMode.Left, settings.Dock);
         Assert.Equal((0f, 176f), (dock.Left, dock.Top));
 
-        Drag(root, dock, dx: 25, dy: 0);    // pointer ends at x = 35
+        Drag(root, dock, dx: 40, dy: 0);    // grabbed at x = 10, so the dock's edge ends at x = 40
         Assert.Equal(PluginDockMode.Floating, settings.Dock);
         Assert.Equal(PluginUiStyle.DockWidth, dock.Width);
-        Assert.Equal(25f, dock.Left);
+        Assert.Equal(40f, dock.Left);
     }
 
     [Fact]
@@ -182,5 +182,85 @@ public sealed class PluginDockModeTests : IDisposable
 
         Assert.Equal(PluginDockMode.Right, dock2.Mode);
         Assert.Equal((800f - 46f, 222f), (dock2.Left, dock2.Top));
+    }
+
+    private static List<PluginDockMode> Steps(UiRoot root, PluginSidePanel dock, int fromX, int fromY, int dx, int dy, int count)
+    {
+        var modes = new List<PluginDockMode>();
+        for (int i = 1; i <= count; i++)
+        {
+            root.OnMouseMove(fromX + dx * i, fromY + dy * i);
+            modes.Add(dock.Mode);
+        }
+        return modes;
+    }
+
+    private static int Changes(List<PluginDockMode> modes, PluginDockMode start)
+    {
+        int n = 0;
+        PluginDockMode last = start;
+        foreach (PluginDockMode m in modes) { if (m != last) n++; last = m; }
+        return n;
+    }
+
+    [Fact]
+    public void AnExpandedRightRail_GrabbedNearItsLeftEdge_SlidesVerticallyAndStaysARail()
+    {
+        var settings = new PluginUiThemeSettings { Dock = PluginDockMode.Right };
+        var (root, dock, _) = Mount(settings);
+        int x = (int)dock.Left + 5, y = (int)dock.Top + 5;
+        float top = dock.Top;
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        var modes = Steps(root, dock, x, y, 0, 6, 8);
+        Assert.All(modes, m => Assert.Equal(PluginDockMode.Right, m));
+        Assert.Equal(800f - PluginUiStyle.RailWidth, dock.Left);
+        Assert.Equal(top + 48f, dock.Top);
+        root.OnMouseUp(UiMouseButton.Left, x, y + 48);
+        Assert.Equal(PluginDockMode.Right, settings.Dock);
+    }
+
+    [Fact]
+    public void ADockDraggedSlowlyToTheRightEdge_SnapsOnceAndSavesRight()
+    {
+        var settings = new PluginUiThemeSettings();
+        var (root, dock, _) = Mount(settings);
+        int x = (int)dock.Left + 2, y = (int)dock.Top + 5;   // grabbed near its left edge
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        var modes = Steps(root, dock, x, y, 2, 0, 400);
+        Assert.True(Changes(modes, PluginDockMode.Floating) <= 1);
+        Assert.Equal(PluginDockMode.Right, dock.Mode);
+        root.OnMouseUp(UiMouseButton.Left, x + 800, y);
+        Assert.Equal(PluginDockMode.Right, settings.Dock);
+    }
+
+    [Fact]
+    public void ADockDraggedSlowlyToTheLeftEdge_WithAFarGrab_SnapsOnceAndSavesLeft()
+    {
+        var settings = new PluginUiThemeSettings();
+        var (root, dock, _) = Mount(settings);
+        root.WindowManager.MoveTo(WindowNames.PluginShelf, 600f, dock.Top);
+        root.Tick(0.016d, 32L);
+        int x = (int)dock.Left + 28, y = (int)dock.Top + 5;   // grab offset 28 (more than 24), on the grip
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        var modes = Steps(root, dock, x, y, -2, 0, 330);
+        Assert.True(Changes(modes, PluginDockMode.Floating) <= 1);
+        Assert.Equal(PluginDockMode.Left, dock.Mode);
+        root.OnMouseUp(UiMouseButton.Left, x - 660, y);
+        Assert.Equal(PluginDockMode.Left, settings.Dock);
+    }
+
+    [Fact]
+    public void ARailPulledAway_FloatsAndStaysFloatingOnFurtherSmallMoves()
+    {
+        var settings = new PluginUiThemeSettings { Dock = PluginDockMode.Left };
+        var (root, dock, _) = Mount(settings);
+        int x = (int)dock.Left + 10, y = (int)dock.Top + 5;
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        var modes = Steps(root, dock, x, y, 3, 1, 30);
+        int firstFloat = modes.IndexOf(PluginDockMode.Floating);
+        Assert.True(firstFloat > 0);
+        Assert.All(modes.Skip(firstFloat), m => Assert.Equal(PluginDockMode.Floating, m));
+        root.OnMouseUp(UiMouseButton.Left, x + 90, y + 30);
+        Assert.Equal(PluginDockMode.Floating, settings.Dock);
     }
 }

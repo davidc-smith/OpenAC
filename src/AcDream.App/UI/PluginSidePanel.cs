@@ -226,7 +226,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     /// <summary>
     /// While the dock is dragged: a floating dock that comes within 8pt of a
     /// screen edge becomes a rail on that edge, and a rail follows the pointer
-    /// up and down its edge until the pointer is more than 32pt away, when it
+    /// up and down its edge until the dock's would-be edge is more than 32pt away, when it
     /// floats again. The new mode is saved when the drag ends.
     /// </summary>
     internal override void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY)
@@ -237,8 +237,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         {
             PluginDockMode.Floating when left <= SnapIn => PluginDockMode.Left,
             PluginDockMode.Floating when left + Width >= parent.Width - SnapIn => PluginDockMode.Right,
-            PluginDockMode.Left when pointerX > SnapOut => PluginDockMode.Floating,
-            PluginDockMode.Right when pointerX < parent.Width - SnapOut => PluginDockMode.Floating,
+            PluginDockMode.Left when left > SnapOut => PluginDockMode.Floating,
+            PluginDockMode.Right when left + PluginUiStyle.RailWidth < parent.Width - SnapOut => PluginDockMode.Floating,
             _ => mode,
         };
         if (next != mode)
@@ -246,6 +246,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             _dragMode = next;
             _appliedMode = next;
             Reflow();
+            if (next == PluginDockMode.Floating)
+                left = Math.Clamp(left, 0f, MathF.Max(0f, parent.Width - Width));
         }
         if (next == PluginDockMode.Left)
             left = 0f;
@@ -263,6 +265,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             _lastTheme = _themes.Theme;
             Reflow();
         }
+        if (_dragMode is not null && Parent is UiRoot moveRoot && !moveRoot.IsWindowMoveActive)
+            _dragMode = null;
         if (_appliedMode != Mode)
             ApplyModeFromSetting(_appliedMode, Mode);
         _grip.Opacity = _windows.IsLocked ? 0.5f : 1f;
