@@ -197,3 +197,266 @@ internal sealed class WorldIconLayout
     private static bool IsOnScreen(float x, float y, float size, Vector2 viewport) =>
         x + size >= 0f && x <= viewport.X && y + size >= 0f && y <= viewport.Y;
 }
+
+/// <summary>The interface texture behind an icon's image, and the image's size in texels.</summary>
+internal readonly record struct WorldIconTexture(uint Texture, int Width, int Height);
+
+/// <summary>
+/// The one element that draws every icon. Sprite quads are batched into runs
+/// by texture in emission order, so it draws every border first -- borders
+/// are fills, all on one texture -- and then every image, in the far-to-near
+/// order of the placements. A border can then sit under a nearer icon's
+/// neighbour; that is the price of not paying a run per bordered icon.
+/// </summary>
+internal sealed class WorldIconLayerElement : UiElement
+{
+    private readonly Func<string, PluginImage, WorldIconTexture?> _resolve;
+    private IReadOnlyList<WorldIconEntry> _icons = Array.Empty<WorldIconEntry>();
+    private IReadOnlyList<WorldIconPlacement> _placements = Array.Empty<WorldIconPlacement>();
+
+    internal WorldIconLayerElement(Func<string, PluginImage, WorldIconTexture?> resolve)
+    {
+        ArgumentNullException.ThrowIfNull(resolve);
+        _resolve = resolve;
+        ClickThrough = true;
+        Anchors = AnchorEdges.None;
+    }
+
+    /// <summary>
+    /// What to draw from now on. The placements list is read until the next
+    /// call and never written by this element.
+    /// </summary>
+    internal void Present(IReadOnlyList<WorldIconEntry> icons, IReadOnlyList<WorldIconPlacement> placements)
+    {
+        ArgumentNullException.ThrowIfNull(icons);
+        ArgumentNullException.ThrowIfNull(placements);
+        _icons = icons;
+        _placements = placements;
+    }
+
+    /// <summary>How many placements the element is currently drawing.</summary>
+    internal int PlacementCount => _placements.Count;
+
+    /// <summary>The placements the element is currently drawing, for tests.</summary>
+    internal IReadOnlyList<WorldIconPlacement> Placements => _placements;
+
+    /// <summary>
+    /// Where an image of <paramref name="width"/> by <paramref name="height"/>
+    /// texels sits inside a square of side <paramref name="size"/>: as large as
+    /// fits, keeping its shape, centred.
+    /// </summary>
+    internal static (float X, float Y, float Width, float Height) Fit(float size, int width, int height)
+    {
+        float w = size, h = size;
+        if (width > height)
+            h = size * height / width;
+        else if (height > width)
+            w = size * width / height;
+        return ((size - w) * 0.5f, (size - h) * 0.5f, w, h);
+    }
+
+    protected override void OnDraw(UiRenderContext ctx)
+    {
+        IReadOnlyList<WorldIconEntry> icons = _icons;
+        IReadOnlyList<WorldIconPlacement> placements = _placements;
+        float scale = ctx.PixelScale;
+
+        // Pass 1: every border, one run on the fill texture.
+        for (int i = 0; i < placements.Count; i++)
+        {
+            WorldIconPlacement placement = placements[i];
+            WorldIconEntry entry = icons[placement.IconIndex];
+            if (entry.Icon.Border is not { } border
+                || !TryFit(entry, placement, scale, out _, out float x, out float y, out float w, out float h))
+            {
+                continue;
+            }
+            ctx.PushAlpha(placement.Alpha);
+            ctx.DrawRectOutline(x - 1f, y - 1f, w + 2f, h + 2f, ToVector(border), 1f);
+            ctx.PopAlpha();
+        }
+
+        // Pass 2: every image; consecutive icons with one image share a run.
+        for (int i = 0; i < placements.Count; i++)
+        {
+            WorldIconPlacement placement = placements[i];
+            WorldIconEntry entry = icons[placement.IconIndex];
+            if (!TryFit(entry, placement, scale, out uint texture, out float x, out float y, out float w, out float h))
+                continue;
+            ctx.PushAlpha(placement.Alpha);
+            ctx.DrawSprite(texture, x, y, w, h, 0f, 0f, 1f, 1f, ToVector(entry.Icon.Tint));
+            ctx.PopAlpha();
+        }
+    }
+
+    private bool TryFit(
+        WorldIconEntry entry,
+        WorldIconPlacement placement,
+        float scale,
+        out uint texture,
+        out float x,
+        out float y,
+        out float w,
+        out float h)
+    {
+        if (_resolve(entry.OwnerId, entry.Icon.Image) is not { Width: > 0, Height: > 0 } resolved)
+        {
+            texture = 0u;
+            x = y = w = h = 0f;
+            return false;
+        }
+
+        (float dx, float dy, w, h) = Fit(placement.Size, resolved.Width, resolved.Height);
+        // Whole device pixels, so an icon does not shimmer as its anchor drifts.
+        x = MathF.Round((placement.X + dx) * scale) / scale;
+        y = MathF.Round((placement.Y + dy) * scale) / scale;
+        texture = resolved.Texture;
+        return true;
+    }
+
+    private static Vector4 ToVector(PluginColor color) =>
+        new(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+}
+
+/// <summary>
+/// Hangs plugin icons in the world on the shared overlay band, on a layer of
+/// its own mounted before the label layer, so label text reads over icons.
+///
+/// <para>Each frame it counts the label lines over each object, places every
+/// icon through <see cref="WorldIconLayout"/>, and hands the result to one
+/// drawing element. Two placement lists alternate, as the label overlay's do,
+/// so the list being drawn is never the list being written. Icons are not
+/// occluded: the interface is drawn after the world.</para>
+/// </summary>
+internal sealed class WorldIconOverlayController
+{
+    private readonly UiOverlayHost _host;
+    private readonly UiOverlayLayer _layer;
+    private readonly WorldIconLayerElement _element;
+    private readonly WorldIconLayout _layout = new();
+    private readonly Func<IReadOnlyList<WorldIconEntry>> _icons;
+    private readonly Func<uint, WorldLabelAnchor?> _anchor;
+    private readonly Func<PluginNavigationPosition, Vector3?> _position;
+    private readonly Func<IReadOnlyList<PluginWorldLabel>>? _labels;
+    private readonly float _labelLineHeight;
+    private readonly Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> _camera;
+    private readonly Dictionary<uint, int> _labelLines = [];
+    private readonly Func<uint, int> _labelLinesOf;
+    private List<WorldIconPlacement> _front = [];
+    private List<WorldIconPlacement> _back = [];
+
+    private WorldIconOverlayController(
+        UiOverlayHost host,
+        UiOverlayLayer layer,
+        WorldIconLayerElement element,
+        Func<IReadOnlyList<WorldIconEntry>> icons,
+        Func<uint, WorldLabelAnchor?> anchor,
+        Func<PluginNavigationPosition, Vector3?> position,
+        Func<IReadOnlyList<PluginWorldLabel>>? labels,
+        float labelLineHeight,
+        Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera)
+    {
+        _host = host;
+        _layer = layer;
+        _element = element;
+        _icons = icons;
+        _anchor = anchor;
+        _position = position;
+        _labels = labels;
+        _labelLineHeight = labelLineHeight;
+        _camera = camera;
+        _labelLinesOf = id => _labelLines.GetValueOrDefault(id);
+    }
+
+    /// <summary>The element doing the drawing, for the tests that count its runs.</summary>
+    internal WorldIconLayerElement Element => _element;
+
+    /// <summary>This frame's placements, for tests.</summary>
+    internal IReadOnlyList<WorldIconPlacement> Placements => _element.Placements;
+
+    /// <summary>Whether the layer is showing, for tests.</summary>
+    internal bool LayerVisible => _layer.Visible;
+
+    internal static WorldIconOverlayController Mount(
+        UiOverlayHost host,
+        Func<IReadOnlyList<WorldIconEntry>> icons,
+        Func<string, PluginImage, WorldIconTexture?> resolve,
+        Func<uint, WorldLabelAnchor?> anchor,
+        Func<PluginNavigationPosition, Vector3?> position,
+        Func<IReadOnlyList<PluginWorldLabel>>? labels,
+        float labelLineHeight,
+        Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(icons);
+        ArgumentNullException.ThrowIfNull(resolve);
+        ArgumentNullException.ThrowIfNull(anchor);
+        ArgumentNullException.ThrowIfNull(position);
+        ArgumentNullException.ThrowIfNull(camera);
+        UiOverlayLayer layer = host.AddLayer("PluginWorldIconOverlay");
+        var element = new WorldIconLayerElement(resolve)
+        {
+            Name = "PluginWorldIcons",
+            Left = 0f,
+            Top = 0f,
+            Width = layer.Width,
+            Height = layer.Height,
+        };
+        layer.AddChild(element);
+        return new WorldIconOverlayController(
+            host, layer, element, icons, anchor, position, labels, labelLineHeight, camera);
+    }
+
+    internal void Tick()
+    {
+        IReadOnlyList<WorldIconEntry> icons = _icons();
+        var camera = _camera();
+        if (icons.Count == 0 || camera.Viewport.X <= 0f || camera.Viewport.Y <= 0f)
+        {
+            _back.Clear();
+            Present(icons);
+            return;
+        }
+
+        _host.SetViewport(camera.Viewport);
+        _element.Width = camera.Viewport.X;
+        _element.Height = camera.Viewport.Y;
+        CountLabelLines();
+        _layout.Place(
+            icons,
+            _anchor,
+            _position,
+            _labelLinesOf,
+            _labelLineHeight,
+            camera.View,
+            camera.Projection,
+            camera.Viewport,
+            _back);
+        Present(icons);
+    }
+
+    /// <summary>How many lines of labels hang over each object: its highest line plus one.</summary>
+    private void CountLabelLines()
+    {
+        _labelLines.Clear();
+        if (_labels is null)
+            return;
+        IReadOnlyList<PluginWorldLabel> labels = _labels();
+        for (int i = 0; i < labels.Count; i++)
+        {
+            PluginWorldLabel label = labels[i];
+            if (label.ObjectId == 0u)
+                continue;
+            int lines = Math.Max(0, label.Line) + 1;
+            if (lines > _labelLines.GetValueOrDefault(label.ObjectId))
+                _labelLines[label.ObjectId] = lines;
+        }
+    }
+
+    private void Present(IReadOnlyList<WorldIconEntry> icons)
+    {
+        (_front, _back) = (_back, _front);
+        _element.Present(icons, _front);
+        _layer.Visible = _front.Count > 0;
+    }
+}
