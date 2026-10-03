@@ -991,6 +991,20 @@ public sealed class HeadlessPluginApiSurfaceTests
     }
 
     /// <summary>
+    /// World markers are asked of the same surface on both hosts. Without a
+    /// window there is no world to hang them in, so no layer is made.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowWorldMarkersHaveNoLayers()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+
+        Assert.Null(pluginHost.Ui.WorldMarkers.CreateLayer());
+    }
+
+    /// <summary>
     /// Fonts are asked of the same surface on both hosts. Without a window
     /// there is nothing to draw text on, so every font request answers "no
     /// font", nothing is held, and the plugin's stream is never opened.
