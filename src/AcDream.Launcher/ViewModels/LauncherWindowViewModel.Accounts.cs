@@ -192,6 +192,9 @@ public sealed partial class LauncherWindowViewModel
                                 OpenCharacterPlugins, OpenLogsFolder, RemoveRowCharacter),
                             () => CanInteract);
                         row.UseSelectionStore(SaveRowSelection);
+                        row.UseCheckedSelectionStore(
+                            _checkedAccountsLoaded && _checkedAccountStore?.Contains(server.Name, account.AccountName) == true,
+                            SaveCheckedAccounts);
                         row.UseConsole(OpenSessionConsole);
                         group.Rows.Insert(Math.Min(rowIndex, group.Rows.Count), row);
                     }
@@ -259,6 +262,22 @@ public sealed partial class LauncherWindowViewModel
         try
         {
             _orchestrator.UpdateAccountSelection(row.ServerName, row.AccountName, row.CharacterName, row.Mode);
+        }
+        catch (Exception ex)
+        {
+            LastError = SafeDisplayError(ex, secret: null);
+        }
+    }
+
+    private void SaveCheckedAccounts()
+    {
+        if (_checkedAccountStore is null) return;
+        try
+        {
+            if (!_checkedAccountsLoaded)
+                throw new InvalidOperationException("Checked accounts could not be loaded; selections cannot be saved.");
+            _checkedAccountStore.Save(AllAccountRows.Where(row => row.IsChecked)
+                .Select(row => new LauncherCheckedAccount(row.ServerName, row.AccountName)));
         }
         catch (Exception ex)
         {

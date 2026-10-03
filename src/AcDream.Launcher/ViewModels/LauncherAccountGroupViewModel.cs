@@ -105,6 +105,7 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     private readonly Func<LauncherAccountServerRowViewModel, string?> _disabledReason;
     private readonly Action _changed;
     private Action<LauncherAccountServerRowViewModel>? _selectionChanged;
+    private Action? _checkedChanged;
     private bool _applyingSavedSelection;
     private bool _selectionLoaded;
     private readonly Func<bool> _canInteract;
@@ -166,7 +167,18 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     public string Endpoint { get => _endpoint; private set => SetProperty(ref _endpoint, value); }
     public bool IsVisible { get => _isVisible; set => SetProperty(ref _isVisible, value); }
     public bool HasProfile(string profile) => _profiles.Contains(profile, StringComparer.OrdinalIgnoreCase);
-    public bool IsChecked { get => _isChecked; set { if (SetProperty(ref _isChecked, value)) _changed(); } }
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set
+        {
+            if (SetProperty(ref _isChecked, value))
+            {
+                _changed();
+                _checkedChanged?.Invoke();
+            }
+        }
+    }
     public ObservableCollection<string> CharacterChoices { get; } = [CharacterSelect];
     public IReadOnlyList<string> LaunchModes { get; } = ["Graphical", "Headless"];
     public string SelectedCharacter { get => _selectedCharacter; set { if (SetProperty(ref _selectedCharacter, value ?? CharacterSelect)) { OnPropertyChanged(nameof(DisplayedCharacter)); OnPropertyChanged(nameof(OptionsAutomationName)); NotifyState(); _changed(); SaveSelection(); } } }
@@ -201,6 +213,11 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     internal void UseConsole(Action<string, string> open) => _openConsole = open;
 
     internal void UseSelectionStore(Action<LauncherAccountServerRowViewModel> save) => _selectionChanged = save;
+    internal void UseCheckedSelectionStore(bool isChecked, Action save)
+    {
+        SetProperty(ref _isChecked, isChecked, nameof(IsChecked));
+        _checkedChanged = save;
+    }
     public LaunchMode Mode => SelectedLaunchMode == "Headless" ? LaunchMode.Headless : SelectedCharacter == CharacterSelect ? LaunchMode.GuiSelect : LaunchMode.Gui;
     public string? CharacterName => SelectedCharacter == CharacterSelect ? null : SelectedCharacter;
 

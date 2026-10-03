@@ -22,6 +22,11 @@ selected** starts only the ticked rows the filter shows.
 keep their selections. You can uncheck a running account without changing its
 character or stopping it.
 
+Checked rows are remembered per account and server when the launcher reopens.
+Checking or unchecking a row saves immediately to `launcher-checked-accounts.json`
+in the settings directory, separately from credentials. Hidden rows keep their
+saved checks. Restoring checks does not start clients; choose **Play selected**.
+
 **Relaunch checked clients automatically** is off by default. When enabled it
 monitors checked accounts' existing and future launcher-owned play sessions,
 including sessions started through the local control pipe. It relaunches after
@@ -37,8 +42,8 @@ checks, open dialogs and existing account restrictions still prevent launches.
 The independent three-minute server reconnect hold after an unclean exit still
 applies. Clearing finished history does not cancel an already scheduled relaunch.
 Uncheck an account, remove it, turn automatic relaunch off, or close the launcher
-to cancel its pending relaunch. Checked accounts, these controls, and the delay
-last only for the current launcher session.
+to cancel its pending relaunch. The automatic relaunch switch, display filter,
+and delay last only for the current launcher session.
 
 While a requested Stop is still completing, all Stop buttons and other session
 operations are disabled until that process and any startup work actually end,

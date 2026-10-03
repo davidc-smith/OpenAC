@@ -117,7 +117,8 @@ public sealed partial class App : Application
                 installer,
                 updates.Updater,
                 applyLauncherUpdate,
-                () => desktop.Shutdown());
+                () => desktop.Shutdown(),
+                checkedAccountStore: LauncherCheckedAccountStore.ForApplicationPaths(paths));
             LauncherWindowViewModel windowViewModel = _viewModel;
             _viewModel.ConfigureInstallFolder(new InstallFolderViewModel(
                 paths,
