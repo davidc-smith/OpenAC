@@ -58,7 +58,7 @@ internal sealed class PluginSvgIconCache : IDisposable
             var info = new FileInfo(fullPath);
             key = new Key(info.FullName, info.Length, info.LastWriteTimeUtc);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             Reject(label, fullPath, "could not be read: " + ex.Message);
             return null;
@@ -66,9 +66,22 @@ internal sealed class PluginSvgIconCache : IDisposable
 
         if (!_entries.TryGetValue(key, out PluginSvgIconEntry? entry))
         {
-            if (!PluginSvgIcon.TryLoad(fullPath, out SvgIconDocument? document, out string? reason))
+            SvgIconDocument? document;
+            string? reason;
+            bool loaded;
+            try
             {
-                Reject(label, fullPath, reason);
+                loaded = PluginSvgIcon.TryLoad(fullPath, out document, out reason);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                document = null;
+                reason = "could not be parsed: " + ex.Message;
+                loaded = false;
+            }
+            if (!loaded || document is null)
+            {
+                Reject(label, fullPath, reason ?? "could not be loaded");
                 return null;
             }
             entry = new PluginSvgIconEntry(this, key, label, document);
@@ -129,15 +142,26 @@ internal sealed class PluginSvgIconCache : IDisposable
                 return baked.Texture;
             }
 
-            byte[]? coverage = _owner._bake(_document, devicePixels);
-            uint texture = coverage is null
-                ? 0
-                : _owner._backend.UploadCoverage(coverage, devicePixels, devicePixels, "plugin icon " + _label);
+            uint texture = 0;
+            string reason = "could not be drawn at this size";
+            try
+            {
+                byte[]? coverage = _owner._bake(_document, devicePixels);
+                if (coverage is not null)
+                {
+                    reason = "could not be uploaded";
+                    texture = _owner._backend.UploadCoverage(coverage, devicePixels, devicePixels, "plugin icon " + _label);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                reason += ": " + ex.Message;
+                texture = 0;
+            }
             if (texture == 0)
             {
                 Failed = true;
-                _owner._report($"[UI] plugin icon '{_label}' ignored: "
-                    + (coverage is null ? "could not be drawn at this size" : "could not be uploaded"));
+                _owner._report($"[UI] plugin icon '{_label}' ignored: " + reason);
                 ReleaseTextures();
                 return 0;
             }

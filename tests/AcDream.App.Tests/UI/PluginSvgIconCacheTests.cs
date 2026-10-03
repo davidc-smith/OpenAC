@@ -19,11 +19,15 @@ public sealed class PluginSvgIconCacheTests : IDisposable
     {
         private uint _next = 700;
         public bool Refuse { get; set; }
+        public bool Throw { get; set; }
+        public int UploadCalls { get; private set; }
         public List<int> UploadedSizes { get; } = [];
         public List<uint> Released { get; } = [];
 
         public uint UploadCoverage(byte[] coverage, int width, int height, string debugName)
         {
+            UploadCalls++;
+            if (Throw) throw new InvalidOperationException("gl exploded");
             if (Refuse) return 0;
             UploadedSizes.Add(width);
             return _next++;
@@ -43,6 +47,33 @@ public sealed class PluginSvgIconCacheTests : IDisposable
         string path = Path.Combine(_root, name);
         File.WriteAllText(path, content);
         return path;
+    }
+
+    [Fact]
+    public void AnUploadThatThrowsFailsTheIconInsteadOfEscaping()
+    {
+        using PluginSvgIconCache cache = Cache();
+        PluginSvgIconCache.PluginSvgIconEntry entry = cache.Acquire("p/icon.svg", Write("icon.svg"))!;
+        _backend.Throw = true;
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.True(entry.Failed);
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.Equal(1, _backend.UploadCalls);
+        string report = Assert.Single(_reports);
+        Assert.Contains("could not be uploaded: gl exploded", report);
+    }
+
+    [Fact]
+    public void ABakeThatThrowsFailsTheIconInsteadOfEscaping()
+    {
+        int bakes = 0;
+        using PluginSvgIconCache cache = new(_backend, _reports.Add, (_, _) => { bakes++; throw new InvalidOperationException("bad bake"); });
+        PluginSvgIconCache.PluginSvgIconEntry entry = cache.Acquire("p/icon.svg", Write("icon.svg"))!;
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.Equal(1, bakes);
+        string report = Assert.Single(_reports);
+        Assert.Contains("could not be drawn at this size: bad bake", report);
     }
 
     [Fact]
