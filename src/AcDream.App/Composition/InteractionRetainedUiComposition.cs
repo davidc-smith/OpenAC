@@ -78,7 +78,8 @@ internal sealed record InteractionRetainedUiDependencies(
     string? ScreenshotsDirectory = null,
     AcDream.Runtime.Plugins.RuntimeAutomationSurface? Automation = null,
     Func<GameplayInputFrameController?>? GameplayInputFrame = null,
-    string? JournalDirectory = null)
+    string? JournalDirectory = null,
+    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -147,6 +148,7 @@ internal sealed class InteractionUiLateBindings : IDisposable
     public DeferredGameRuntimeStateCommands GameRuntime { get; } = new();
     public DeferredSelectionUiAuthority Selection { get; } = new();
     public DeferredSelectionViewPlaneSource SelectionViewPlane { get; } = new();
+    public DeferredPortalViewportSource PortalViewport { get; } = new();
     public DeferredRadarSnapshotSource Radar { get; } = new();
     public DeferredInventoryContainerSource InventoryContainer { get; } = new();
     public DeferredWorldLifecycleAutomationRuntime Automation { get; } = new();
@@ -202,6 +204,7 @@ internal sealed class InteractionUiLateBindings : IDisposable
         Automation.Deactivate();
         Radar.Deactivate();
         SelectionViewPlane.Deactivate();
+        PortalViewport.Deactivate();
         Selection.Deactivate();
         GameRuntime.Deactivate();
         Session.Deactivate();
@@ -1028,6 +1031,12 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                         guid, out AcDream.App.Interaction.WorldLabelAnchor anchor)
                         ? anchor
                         : null,
+                WorldPosition: d.WorldOrigin is not { } worldOrigin
+                    ? null
+                    : position => worldOrigin.IsKnown
+                        ? AcDream.App.World.PluginNavigationProjection.ToWorld(
+                            position, worldOrigin.CenterX, worldOrigin.CenterY)
+                        : null,
                 Connection: new ConnectionRuntimeBindings(
                     () => late.GameRuntime.Connection, d.Window.Close,
                     ShowProgress: d.Options.LiveCharacterSelector is null),
@@ -1075,7 +1084,8 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     d.Settings.SetGameplayDisplay(
                         !d.Options.LiveMode || late.GameRuntime.CharacterSelection?.Snapshot.Lifecycle ==
                             AcDream.Runtime.Session.RuntimeCharacterSelectionLifecycle.InWorld);
-                });
+                },
+                IsPortalViewVisible: () => late.PortalViewport.IsPortalViewportVisible);
             RetailUiRuntime runtime = lease.Mount(
                 () => RetailUiRuntime.CreateUninitialized(bindings));
             checkpoint(InteractionRetainedUiCompositionPoint.UiRuntimeMounted);

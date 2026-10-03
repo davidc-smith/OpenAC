@@ -2099,6 +2099,30 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
 
+        // The world-marker surface is asked for once and kept, like the image
+        // surface; a disposable one is tracked so the plugin's layers go with
+        // the plugin.
+        private IPluginWorldMarkers? _worldMarkers;
+
+        public IPluginWorldMarkers WorldMarkers
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+                    if (_worldMarkers is null)
+                    {
+                        _worldMarkers = _inner.WorldMarkersFor(_owner);
+                        if (_worldMarkers is IDisposable disposable)
+                            _registrations.Add(disposable);
+                    }
+                    return _worldMarkers;
+                }
+            }
+        }
+
         public IPluginCanvas RegisterCanvas(
             PluginCanvasDescriptor descriptor,
             Action<IPluginPainter> paint)

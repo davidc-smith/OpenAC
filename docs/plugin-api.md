@@ -1266,6 +1266,67 @@ itself, from the object's position and its own knowledge of the place.
 The set belongs to the session: when the character leaves the world, every
 plugin's labels are dropped, and a plugin that is unloaded takes its labels
 with it.
+
+## World markers
+
+```csharp
+IPluginWorldMarkerLayer? layer = host.Ui.WorldMarkers.CreateLayer(); // null without a window
+
+layer?.SetIcons(
+[
+    new PluginWorldIcon(PluginMarkerAnchor.Object(creatureId), images.FromSpellIcon(vulnerabilityId))
+        { Border = new PluginColor(220, 60, 60) },
+    new PluginWorldIcon(PluginMarkerAnchor.At(waypoint), waypointImage)
+        { SizePixels = 32, MaxRange = 200f },
+]);
+```
+
+`host.Ui.WorldMarkers` hangs images in the world: over an object, following
+it wherever it goes, or pinned to a position. A plugin makes layers and sets
+each layer's icons; a call replaces that layer's set, and the list is copied,
+so it can be reused. Disposing a layer takes its icons away. How a plugin
+decides what to show -- which creatures carry its debuffs, where its route
+goes -- is its own business; the client only draws.
+
+Over an object, the client lays the object's icons out itself: centred in
+rows of up to eight, two points apart, above the object's head and above any
+[world labels](#world-labels) on it, in the order given, with every plugin's
+icons over one object sharing the rows. An icon pinned to a position is
+centred on it; `PluginMarkerAnchor.At` takes the same position world lines
+and navigation use. A marker over an object the client does not hold is not
+drawn until the object appears.
+
+Icons are drawn at a constant size on the screen. `SizePixels` is the side
+of the square the image is fitted into, keeping its shape, in interface
+points (24 by default, clamped to 8–128), so an icon is as sharp on a
+high-density display as the rest of the interface. `Tint` is multiplied into
+the image and its alpha is the icon's opacity; `Border` draws a thin frame.
+`MaxRange` is the distance from the camera, in metres, past which the icon is
+not drawn; it fades over the last fifth. The image comes from the plugin's
+own [images](#images) -- a spell's icon is `images.FromSpellIcon(spellId)` --
+and is looked up in that plugin's images only.
+
+Each plugin may have at most `IPluginWorldMarkers.MaximumIcons` (256) icons
+set across all its layers. A set whose entries, added to the plugin's other
+layers, come to more is refused as a whole -- `SetIcons` returns false and
+the layer keeps what it had. Inside an accepted set, an icon pinned to
+nothing (object id zero, or a position with a coordinate that is not a
+finite number), with an image that is not valid, or with a size or range
+that is not a finite number (or a range that is not positive) is dropped and
+the rest are shown.
+
+Like labels, icons are not occluded: they show through walls and hills,
+because the interface is drawn after the world.
+
+Layers belong to the plugin: unloading it takes them down. When the
+character leaves the world -- logging out, losing the connection,
+reconnecting -- every layer's icons are cleared, because object ids mean
+nothing in the next session; the layers stay usable, so the plugin sets its
+icons again on the next stay. Images are dropped when the interface is torn
+down (for example on a reconnect); an icon whose image is gone is not drawn
+until the plugin asks for its images again and sets its icons again. Call
+all of this from the tick thread, as with every other UI call.
+
 ## Images
 
 A plugin that draws its own map or HUD gets its images through

@@ -655,6 +655,47 @@ internal sealed class DeferredSelectionViewPlaneSource
     }
 }
 
+/// <summary>
+/// Whether the renderer is showing the portal view in place of the world, for
+/// interface overlays that draw over the world. The retained UI is built
+/// before the renderer's portal state exists, so this answers false until the
+/// frame root binds it, and false again once released or deactivated.
+/// </summary>
+internal sealed class DeferredPortalViewportSource
+{
+    private IRenderFramePortalStateSource? _target;
+    private bool _deactivated;
+
+    public bool IsPortalViewportVisible =>
+        !_deactivated && _target is { IsPortalViewportVisible: true };
+
+    public IDisposable Bind(IRenderFramePortalStateSource target)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ObjectDisposedException.ThrowIf(_deactivated, this);
+        if (_target is not null)
+        {
+            throw new InvalidOperationException(
+                "The retained-UI portal viewport is already bound.");
+        }
+
+        _target = target;
+        return new ExpectedOwnerBinding<IRenderFramePortalStateSource>(target, Release);
+    }
+
+    public void Deactivate()
+    {
+        _deactivated = true;
+        _target = null;
+    }
+
+    private void Release(IRenderFramePortalStateSource expected)
+    {
+        if (ReferenceEquals(_target, expected))
+            _target = null;
+    }
+}
+
 internal sealed class SelectionCameraSource
 {
     private readonly CameraController _camera;

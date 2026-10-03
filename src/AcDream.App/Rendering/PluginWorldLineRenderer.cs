@@ -202,10 +202,8 @@ internal sealed class PluginWorldLineRenderer(
 
     // Landblock coordinates to the live world's origin-relative frame: a
     // landblock is 192 m across, a position's cell offsets are in 240ths.
-    private Vector3 Project(PluginNavigationPosition p) => new(
-        (float)(p.EastWest * 240d + (127 - origin.CenterX) * 192d + 84d),
-        (float)(p.NorthSouth * 240d + (127 - origin.CenterY) * 192d + 84d),
-        (float)(p.Elevation * 240d));
+    private Vector3 Project(PluginNavigationPosition p) =>
+        PluginNavigationProjection.ToWorld(p, origin.CenterX, origin.CenterY);
 
     private readonly record struct PlannedLine(
         Vector3 Start,

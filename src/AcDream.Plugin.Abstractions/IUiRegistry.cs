@@ -197,6 +197,14 @@ public interface IUiRegistry
     IPluginFonts Fonts => NoOpPluginFonts.Instance;
 
     /// <summary>
+    /// The markers this plugin hangs in the world -- icons over objects or at
+    /// fixed positions -- in layers it owns. Inert on a host that draws
+    /// nothing, where <see cref="IPluginWorldMarkers.CreateLayer"/> answers
+    /// null.
+    /// </summary>
+    IPluginWorldMarkers WorldMarkers => NoOpPluginWorldMarkers.Instance;
+
+    /// <summary>
     /// Registers a canvas the plugin paints, shown over the world and under
     /// every window. The paint callback runs on the tick thread, at most
     /// once per frame, only after <see cref="IPluginCanvas.Invalidate"/>,
@@ -312,6 +320,15 @@ public interface IScopedUiRegistry : IUiRegistry
     /// font the plugin held.
     /// </summary>
     IPluginFonts FontsFor(PluginUiOwner owner) => NoOpPluginFonts.Instance;
+
+    /// <summary>
+    /// One plugin's world-marker surface, the same object on every call for
+    /// the same owner until it is disposed. A host that draws nothing hands
+    /// out the inert surface; a host that draws hands out a surface that also
+    /// implements <see cref="IDisposable"/>, and disposing it takes down every
+    /// layer the plugin made.
+    /// </summary>
+    IPluginWorldMarkers WorldMarkersFor(PluginUiOwner owner) => NoOpPluginWorldMarkers.Instance;
 
     /// <summary>Registers a canvas on behalf of one plugin; see <see cref="IUiRegistry.RegisterCanvas"/>.</summary>
     /// <param name="owner">The plugin the canvas belongs to.</param>

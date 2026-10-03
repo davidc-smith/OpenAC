@@ -200,6 +200,15 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
             return _images.GetValueOrDefault(owner.Id);
     }
 
+    /// <summary>Every plugin's world markers, read by the interface's icon overlay.</summary>
+    internal PluginWorldMarkerStore WorldMarkerStore { get; } = new();
+
+    public IPluginWorldMarkers WorldMarkersFor(PluginUiOwner owner)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
+        return WorldMarkerStore.For(owner.Id);
+    }
+
     // Font tables, one per plugin, following the image tables' lifecycle:
     // made on first request, bound when the interface's texture services
     // arrive, unbound when they go. The bundled font's bakes are shared by
@@ -538,6 +547,9 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
 
     public IPluginFonts Fonts =>
         FontsFor(new PluginUiOwner("unscoped", "Plugin"));
+
+    public IPluginWorldMarkers WorldMarkers =>
+        WorldMarkersFor(new PluginUiOwner("unscoped", "Plugin"));
 
     public IDisposable RegisterMarkupPanel(string markupPath, object binding)
         => RegisterPanel(

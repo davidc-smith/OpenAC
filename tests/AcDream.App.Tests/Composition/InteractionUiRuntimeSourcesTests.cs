@@ -169,6 +169,45 @@ public sealed class InteractionUiRuntimeSourcesTests
     }
 
     [Fact]
+    public void PortalViewportIsHiddenUntilBoundThenFollowsTheRendererUntilReleased()
+    {
+        var source = new DeferredPortalViewportSource();
+        var renderer = new PortalState { IsPortalViewportVisible = true };
+        Assert.False(source.IsPortalViewportVisible);
+
+        IDisposable binding = source.Bind(renderer);
+        Assert.True(source.IsPortalViewportVisible);
+        renderer.IsPortalViewportVisible = false;
+        Assert.False(source.IsPortalViewportVisible);
+        Assert.Throws<InvalidOperationException>(() => source.Bind(new PortalState()));
+
+        renderer.IsPortalViewportVisible = true;
+        binding.Dispose();
+        Assert.False(source.IsPortalViewportVisible);
+
+        IDisposable rebound = source.Bind(renderer);
+        binding.Dispose();
+        Assert.True(source.IsPortalViewportVisible);
+
+        source.Deactivate();
+        Assert.False(source.IsPortalViewportVisible);
+        Assert.Throws<ObjectDisposedException>(() => source.Bind(renderer));
+        rebound.Dispose();
+    }
+
+    [Fact]
+    public void LateBindingCleanupDeactivatesThePortalViewport()
+    {
+        var bindings = new InteractionUiLateBindings();
+        bindings.PortalViewport.Bind(new PortalState { IsPortalViewportVisible = true });
+
+        bindings.Dispose();
+
+        Assert.False(bindings.PortalViewport.IsPortalViewportVisible);
+        Assert.Throws<ObjectDisposedException>(() => bindings.PortalViewport.Bind(new PortalState()));
+    }
+
+    [Fact]
     public void AutomationProxyIsInertUntilExactRuntimeBinds()
     {
         var source = new DeferredWorldLifecycleAutomationRuntime();
@@ -257,6 +296,13 @@ public sealed class InteractionUiRuntimeSourcesTests
         Assert.Equal(2, second.Calls);
         Assert.Throws<ObjectDisposedException>(() =>
             bindings.AdoptLateOwnerBinding("late", new RetryBinding(0)));
+    }
+
+    private sealed class PortalState : IRenderFramePortalStateSource
+    {
+        public bool IsPortalViewportVisible { get; set; }
+
+        public uint ActiveDestinationCell => 0u;
     }
 
     private sealed class SessionTarget(bool inWorld) : ILiveUiSessionTarget

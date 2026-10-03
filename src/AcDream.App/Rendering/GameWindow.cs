@@ -605,6 +605,10 @@ public sealed class GameWindow :
             () => _runtimeSettings.DisplayPreview);
         _animationDiagnostics = AnimationPresentationDiagnostics.FromEnvironment();
         _uiRegistry = uiRegistry;
+        // A marker hung over an object belongs to the stay that object lives
+        // in: leaving the world, by any way out, takes every plugin's markers
+        // down. The layers stay, so plugins set them again on the next stay.
+        _ = _uiRegistry?.WorldMarkerStore.ClearOn(_worldEvents);
         _renderPackRegistry = renderPackRegistry;
         _animatedEntities = new LiveEntityAnimationRuntimeView<LiveEntityAnimationState>(
             _liveEntityRuntimeSlot);
@@ -1394,7 +1398,8 @@ public sealed class GameWindow :
                     _applicationPaths.ScreenshotsDirectory,
                     _automation,
                     GameplayInputFrame: () => _gameplayInputFrame,
-                    JournalDirectory: _applicationPaths.JournalDirectory),
+                    JournalDirectory: _applicationPaths.JournalDirectory,
+                    WorldOrigin: _liveWorldOrigin),
                 _retailUiLease,
                 this).Compose(
                     platformResult,
