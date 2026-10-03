@@ -148,6 +148,7 @@ internal sealed class InteractionUiLateBindings : IDisposable
     public DeferredGameRuntimeStateCommands GameRuntime { get; } = new();
     public DeferredSelectionUiAuthority Selection { get; } = new();
     public DeferredSelectionViewPlaneSource SelectionViewPlane { get; } = new();
+    public DeferredPortalViewportSource PortalViewport { get; } = new();
     public DeferredRadarSnapshotSource Radar { get; } = new();
     public DeferredInventoryContainerSource InventoryContainer { get; } = new();
     public DeferredWorldLifecycleAutomationRuntime Automation { get; } = new();
@@ -203,6 +204,7 @@ internal sealed class InteractionUiLateBindings : IDisposable
         Automation.Deactivate();
         Radar.Deactivate();
         SelectionViewPlane.Deactivate();
+        PortalViewport.Deactivate();
         Selection.Deactivate();
         GameRuntime.Deactivate();
         Session.Deactivate();
@@ -1082,7 +1084,8 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     d.Settings.SetGameplayDisplay(
                         !d.Options.LiveMode || late.GameRuntime.CharacterSelection?.Snapshot.Lifecycle ==
                             AcDream.Runtime.Session.RuntimeCharacterSelectionLifecycle.InWorld);
-                });
+                },
+                IsPortalViewVisible: () => late.PortalViewport.IsPortalViewportVisible);
             RetailUiRuntime runtime = lease.Mount(
                 () => RetailUiRuntime.CreateUninitialized(bindings));
             checkpoint(InteractionRetainedUiCompositionPoint.UiRuntimeMounted);

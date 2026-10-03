@@ -340,7 +340,8 @@ public sealed record RetailUiRuntimeBindings(
     Func<IReadOnlyList<PluginWorldLabel>>? WorldLabels = null,
     Func<uint, AcDream.App.Interaction.WorldLabelAnchor?>? WorldLabelAnchor = null,
     PluginCanvasHostServices? PluginCanvases = null,
-    Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null);
+    Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null,
+    Func<bool>? IsPortalViewVisible = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -1450,7 +1451,9 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.WorldPosition ?? (static _ => null),
             _bindings.WorldLabels,
             _bindings.Assets.DefaultFont?.LineHeight ?? 0f,
-            _bindings.VividTarget.Camera);
+            _bindings.VividTarget.Camera,
+            // In portal space the world is not on the screen, so neither are its icons.
+            _bindings.IsPortalViewVisible);
         Console.WriteLine("[PluginUI] world icon overlay mounted.");
     }
 

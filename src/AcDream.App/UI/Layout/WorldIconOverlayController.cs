@@ -340,6 +340,7 @@ internal sealed class WorldIconOverlayController
     private readonly Func<IReadOnlyList<PluginWorldLabel>>? _labels;
     private readonly float _labelLineHeight;
     private readonly Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> _camera;
+    private readonly Func<bool>? _hidden;
     private readonly Dictionary<uint, int> _labelLines = [];
     private readonly Func<uint, int> _labelLinesOf;
     private List<WorldIconPlacement> _front = [];
@@ -354,7 +355,8 @@ internal sealed class WorldIconOverlayController
         Func<PluginNavigationPosition, Vector3?> position,
         Func<IReadOnlyList<PluginWorldLabel>>? labels,
         float labelLineHeight,
-        Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera)
+        Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera,
+        Func<bool>? hidden)
     {
         _host = host;
         _layer = layer;
@@ -365,6 +367,7 @@ internal sealed class WorldIconOverlayController
         _labels = labels;
         _labelLineHeight = labelLineHeight;
         _camera = camera;
+        _hidden = hidden;
         _labelLinesOf = id => _labelLines.GetValueOrDefault(id);
     }
 
@@ -377,6 +380,11 @@ internal sealed class WorldIconOverlayController
     /// <summary>Whether the layer is showing, for tests.</summary>
     internal bool LayerVisible => _layer.Visible;
 
+    /// <summary>Mounts the icon layer on <paramref name="host"/>.</summary>
+    /// <param name="hidden">
+    /// When it answers true -- the client is showing the portal view instead
+    /// of the world -- nothing is placed or drawn that frame. Null never hides.
+    /// </param>
     internal static WorldIconOverlayController Mount(
         UiOverlayHost host,
         Func<IReadOnlyList<WorldIconEntry>> icons,
@@ -385,7 +393,8 @@ internal sealed class WorldIconOverlayController
         Func<PluginNavigationPosition, Vector3?> position,
         Func<IReadOnlyList<PluginWorldLabel>>? labels,
         float labelLineHeight,
-        Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera)
+        Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera,
+        Func<bool>? hidden = null)
     {
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(icons);
@@ -404,12 +413,19 @@ internal sealed class WorldIconOverlayController
         };
         layer.AddChild(element);
         return new WorldIconOverlayController(
-            host, layer, element, icons, anchor, position, labels, labelLineHeight, camera);
+            host, layer, element, icons, anchor, position, labels, labelLineHeight, camera, hidden);
     }
 
     internal void Tick()
     {
         IReadOnlyList<WorldIconEntry> icons = _icons();
+        if (_hidden?.Invoke() == true)
+        {
+            _back.Clear();
+            Present(icons);
+            return;
+        }
+
         var camera = _camera();
         if (icons.Count == 0 || camera.Viewport.X <= 0f || camera.Viewport.Y <= 0f)
         {

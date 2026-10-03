@@ -55,30 +55,55 @@ public sealed class WorldIconOverlayDrawTests
             Border = border ? new PluginColor(255, 0, 0) : null,
         });
 
+    /// <summary>A mounted overlay and the renderer it draws into, for tests that draw more than one frame.</summary>
+    private sealed class Scene
+    {
+        private readonly TextRenderer _renderer;
+        private readonly UiRenderContext _ctx;
+        private readonly UiRoot _root;
+
+        internal Scene(
+            IReadOnlyList<WorldIconEntry> icons,
+            IReadOnlyList<PluginWorldLabel>? labels = null,
+            Func<bool>? hidden = null)
+        {
+            var device = new RecordingGpuDevice();
+            _renderer = new TextRenderer(device, new NullGpuFrameSource(), "unused");
+            _ctx = new UiRenderContext(_renderer, Viewport);
+            _root = new UiRoot { Width = Viewport.X, Height = Viewport.Y };
+            UiOverlayHost host = UiOverlayHost.Mount(_root);
+            Controller = WorldIconOverlayController.Mount(
+                host,
+                () => icons,
+                Resolve,
+                Anchor,
+                _ => null,
+                labels is null ? null : () => labels,
+                16f,
+                () => (View, Projection, Viewport),
+                hidden);
+        }
+
+        internal WorldIconOverlayController Controller { get; }
+
+        /// <summary>One frame: the controller ticks, then the root draws.</summary>
+        internal IReadOnlyList<(uint Texture, int VertexCount, float Alpha)> Frame()
+        {
+            _renderer.Begin(Viewport);
+            Controller.Tick();
+            _root.Draw(_ctx);
+            return _renderer.DebugSpriteSegments;
+        }
+    }
+
     private static IReadOnlyList<(uint Texture, int VertexCount, float Alpha)> DrawOnce(
         IReadOnlyList<WorldIconEntry> icons,
         out WorldIconOverlayController controller,
         IReadOnlyList<PluginWorldLabel>? labels = null)
     {
-        var device = new RecordingGpuDevice();
-        var renderer = new TextRenderer(device, new NullGpuFrameSource(), "unused");
-        renderer.Begin(Viewport);
-        var ctx = new UiRenderContext(renderer, Viewport);
-        var root = new UiRoot { Width = Viewport.X, Height = Viewport.Y };
-        UiOverlayHost host = UiOverlayHost.Mount(root);
-        controller = WorldIconOverlayController.Mount(
-            host,
-            () => icons,
-            Resolve,
-            Anchor,
-            _ => null,
-            labels is null ? null : () => labels,
-            16f,
-            () => (View, Projection, Viewport));
-
-        controller.Tick();
-        root.Draw(ctx);
-        return renderer.DebugSpriteSegments;
+        var scene = new Scene(icons, labels);
+        controller = scene.Controller;
+        return scene.Frame();
     }
 
     [Theory]
@@ -145,6 +170,26 @@ public sealed class WorldIconOverlayDrawTests
         DrawOnce([], out WorldIconOverlayController controller);
 
         Assert.False(controller.LayerVisible);
+    }
+
+    [Fact]
+    public void NothingIsPlacedOrDrawnWhileThePortalViewIsShowing()
+    {
+        bool portal = true;
+        var scene = new Scene([Icon(1u, border: true), Icon(2u)], hidden: () => portal);
+
+        var segments = scene.Frame();
+
+        Assert.Equal(0, scene.Controller.Element.PlacementCount);
+        Assert.False(scene.Controller.LayerVisible);
+        Assert.Empty(segments);
+
+        portal = false;
+        segments = scene.Frame();
+
+        Assert.Equal(2, scene.Controller.Element.PlacementCount);
+        Assert.True(scene.Controller.LayerVisible);
+        Assert.NotEmpty(segments);
     }
 
     [Theory]

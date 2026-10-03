@@ -247,6 +247,9 @@ internal sealed class FrameRootCompositionPhase
             new LocalPlayerTeleportRenderStateSource(
                 session.LocalTeleport,
                 renderLoginState);
+        bindings.Adopt(
+            "retained UI portal viewport binding",
+            interaction.LateBindings.PortalViewport.Bind(teleportRenderState));
         var vulkanClear = new AcDream.App.Rendering.Gpu.Vk.VulkanBackbufferClearState();
         var renderFrameLivePreparation =
             new RuntimeRenderFrameLivePreparation(
