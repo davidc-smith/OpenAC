@@ -104,6 +104,21 @@ internal sealed class PluginSvgIconCache : IDisposable
         _entries.Clear();
     }
 
+    /// <summary>Gives a texture back; a backend that throws is reported once per icon and
+    /// never lets the caller fail.</summary>
+    private void TryRelease(string label, string path, uint texture)
+    {
+        try
+        {
+            _backend.ReleaseCoverage(texture);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            if (_reported.Add(path + "\0release"))
+                _report($"[UI] plugin icon '{label}' ignored: could not release a texture: " + ex.Message);
+        }
+    }
+
     internal sealed class PluginSvgIconEntry
     {
         private const int MaximumSizes = 2;
@@ -149,8 +164,15 @@ internal sealed class PluginSvgIconCache : IDisposable
                 byte[]? coverage = _owner._bake(_document, devicePixels);
                 if (coverage is not null)
                 {
-                    reason = "could not be uploaded";
-                    texture = _owner._backend.UploadCoverage(coverage, devicePixels, devicePixels, "plugin icon " + _label);
+                    if (!coverage.AsSpan().ContainsAnyExcept((byte)0))
+                    {
+                        reason = "draws nothing at this size";
+                    }
+                    else
+                    {
+                        reason = "could not be uploaded";
+                        texture = _owner._backend.UploadCoverage(coverage, devicePixels, devicePixels, "plugin icon " + _label);
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -169,8 +191,9 @@ internal sealed class PluginSvgIconCache : IDisposable
             if (_textures.Count >= MaximumSizes)
             {
                 int oldest = _textures.MinBy(pair => pair.Value.Used).Key;
-                _owner._backend.ReleaseCoverage(_textures[oldest].Texture);
+                uint evicted = _textures[oldest].Texture;
                 _textures.Remove(oldest);
+                _owner.TryRelease(_label, _key.Path, evicted);
             }
             _textures[devicePixels] = (texture, now);
             return texture;
@@ -187,8 +210,9 @@ internal sealed class PluginSvgIconCache : IDisposable
 
         internal void ReleaseTextures()
         {
-            foreach ((uint texture, _) in _textures.Values) _owner._backend.ReleaseCoverage(texture);
+            (uint Texture, long Used)[] held = [.. _textures.Values];
             _textures.Clear();
+            foreach ((uint texture, _) in held) _owner.TryRelease(_label, _key.Path, texture);
         }
     }
 }

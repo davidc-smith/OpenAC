@@ -201,6 +201,17 @@ public sealed class PluginShelfSvgIconTests : IDisposable
     }
 
     [Fact]
+    public void AnIconThatDrawsNothingFallsBackToTheInitialsAndIsGivenBack()
+    {
+        File.WriteAllText(_path, """<svg viewBox="0 0 24 24"><path d="M0 0h5"/></svg>""");
+        Rig rig = Build();
+        rig.Button.DrawSelfAndChildren(Context().Context);
+        Assert.Equal("TP", rig.Button.Text);
+        Assert.Empty(_backend.Uploaded);
+        Assert.Equal(0, _cache.EntryCount);
+    }
+
+    [Fact]
     public void AnIconThatCannotBeUploadedFallsBackToTheFileIcon()
     {
         _backend.Refuse = true;

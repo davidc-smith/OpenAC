@@ -1,4 +1,5 @@
 using AcDream.App.Plugins;
+using AcDream.Core.Plugins;
 using AcDream.App.UI;
 
 namespace AcDream.App.Tests.UI;
@@ -20,6 +21,7 @@ public sealed class PluginSvgIconCacheTests : IDisposable
         private uint _next = 700;
         public bool Refuse { get; set; }
         public bool Throw { get; set; }
+        public bool ThrowOnRelease { get; set; }
         public int UploadCalls { get; private set; }
         public List<int> UploadedSizes { get; } = [];
         public List<uint> Released { get; } = [];
@@ -36,6 +38,7 @@ public sealed class PluginSvgIconCacheTests : IDisposable
         public bool ReleaseCoverage(uint texture)
         {
             Released.Add(texture);
+            if (ThrowOnRelease) throw new InvalidOperationException("release exploded " + texture);
             return true;
         }
     }
@@ -221,5 +224,105 @@ public sealed class PluginSvgIconCacheTests : IDisposable
         uint t = entry.TextureFor(24);
         cache.Dispose();
         Assert.Equal([t], _backend.Released);
+    }
+
+    [Fact]
+    public void ABlankBakeFallsBackWithoutUploadingAndIsNotRetried()
+    {
+        int bakes = 0;
+        using var cache = new PluginSvgIconCache(_backend, _reports.Add, (_, size) => { bakes++; return new byte[size * size]; });
+        PluginSvgIconCache.PluginSvgIconEntry entry = cache.Acquire("p/icon.svg", Write("icon.svg"))!;
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.True(entry.Failed);
+        Assert.Equal(1, bakes);
+        Assert.Equal(0, _backend.UploadCalls);
+        string report = Assert.Single(_reports);
+        Assert.Contains("draws nothing", report);
+    }
+
+    [Fact]
+    public void ABlankBakeReleasesTheOtherSizes()
+    {
+        using var cache = new PluginSvgIconCache(_backend, _reports.Add, (_, size) => size == 36 ? new byte[size * size] : SvgIconRasterizer.Bake(Doc(), size));
+        PluginSvgIconCache.PluginSvgIconEntry entry = cache.Acquire("p/icon.svg", Write("icon.svg"))!;
+        uint at24 = entry.TextureFor(24);
+        Assert.NotEqual(0u, at24);
+        Assert.Equal(0u, entry.TextureFor(36));
+        Assert.Equal([at24], _backend.Released);
+        Assert.Equal(0, entry.BakedSizes);
+    }
+
+    private SvgIconDocument Doc()
+    {
+        Assert.True(PluginSvgIcon.TryLoad(Write("doc.svg"), out SvgIconDocument? document, out _));
+        return document!;
+    }
+
+    [Fact]
+    public void ADocumentThatBakesToNothingFallsBack()
+    {
+        using PluginSvgIconCache cache = Cache();
+        string path = Write("blank.svg", """<svg viewBox="0 0 24 24"><path d="M0 0h5"/></svg>""");
+        PluginSvgIconCache.PluginSvgIconEntry? entry = cache.Acquire("p/blank.svg", path);
+        if (entry is null) return; // rejected at parse: also a fallback
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.Equal(0, _backend.UploadCalls);
+    }
+
+    [Fact]
+    public void ALoneMovetoStrokeFallsBack()
+    {
+        using PluginSvgIconCache cache = Cache();
+        string path = Write("dot.svg", """<svg viewBox="0 0 24 24"><path d="M12 12" fill="none" stroke="black" stroke-linecap="round"/></svg>""");
+        PluginSvgIconCache.PluginSvgIconEntry? entry = cache.Acquire("p/dot.svg", path);
+        if (entry is null) return;
+        Assert.Equal(0u, entry.TextureFor(24));
+        Assert.Equal(0, _backend.UploadCalls);
+    }
+
+    [Fact]
+    public void AReleaseThatThrowsDuringEvictionDoesNotEscape()
+    {
+        using PluginSvgIconCache cache = Cache();
+        PluginSvgIconCache.PluginSvgIconEntry entry = cache.Acquire("p/icon.svg", Write("icon.svg"))!;
+        uint at24 = entry.TextureFor(24);
+        entry.TextureFor(48);
+        entry.TextureFor(24);
+        _backend.ThrowOnRelease = true;
+        uint at36 = entry.TextureFor(36);
+        Assert.NotEqual(0u, at36);
+        Assert.Equal(2, entry.BakedSizes);
+        Assert.Equal(at24, entry.TextureFor(24));
+        Assert.Equal(at36, entry.TextureFor(36));
+        Assert.False(entry.Failed);
+        Assert.Single(_backend.Released);
+        string report = Assert.Single(_reports);
+        Assert.Contains("could not release a texture: release exploded", report);
+    }
+
+    [Fact]
+    public void AReleaseThatThrowsForTheLastHolderDoesNotEscape()
+    {
+        using PluginSvgIconCache cache = Cache();
+        PluginSvgIconCache.PluginSvgIconEntry entry = cache.Acquire("p/icon.svg", Write("icon.svg"))!;
+        entry.TextureFor(24);
+        _backend.ThrowOnRelease = true;
+        entry.Release();
+        Assert.Equal(0, cache.EntryCount);
+        Assert.Equal(0, entry.BakedSizes);
+        Assert.Single(_reports, r => r.Contains("could not release a texture", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DisposeReleasesEveryTextureEvenWhenOneThrows()
+    {
+        PluginSvgIconCache cache = Cache();
+        cache.Acquire("p/a.svg", Write("a.svg"))!.TextureFor(24);
+        cache.Acquire("p/b.svg", Write("b.svg", Icon.Replace("r=\"8\"", "r=\"9\"", StringComparison.Ordinal)))!.TextureFor(24);
+        _backend.ThrowOnRelease = true;
+        cache.Dispose();
+        Assert.Equal(2, _backend.Released.Count);
+        Assert.Equal(2, _reports.Count(r => r.Contains("could not release a texture", StringComparison.Ordinal)));
     }
 }
