@@ -14,6 +14,7 @@ host.Ui.AddPanel(
     {
         IconText = "MP",             // dock monogram letters, the last resort
         IconSurfaceId = 0x06002C41,  // an icon id (see "Icon ids")
+        IconFile = "icons/main.svg", // a one-colour SVG (see "SVG icons")
         StartVisible = true,
         ShowInSidePanel = true,      // default: a slot in the plugin dock
     },
@@ -27,10 +28,78 @@ host.Ui.AddPanel(
   removes the window on its own.
 - `RegisterPanelContent` takes the markup as a string instead of a file path.
 
-The plugin dock picks a slot's icon in order: the plugin's own `icon.png`
-(one per plugin, at the root of its install folder), else `IconSurfaceId`,
-else a two-letter monogram from `IconText` (or the title) on a colour picked
-from the plugin id.
+The plugin dock picks a slot's icon in order:
+
+1. the window's own `IconFile`, an SVG path relative to the install folder. It
+   must end in `.svg` and stay inside the folder: rooted paths, drive letters,
+   `..` that leaves the folder, and links that point out are refused;
+2. the plugin's `icon.svg`, at the root of its install folder;
+3. the plugin's `icon.png`, at the root of its install folder;
+4. `IconSurfaceId`;
+5. a two-letter monogram from `IconText` (or the title) on a colour picked
+   from the plugin id.
+
+An icon that cannot be used is skipped, and the next one in the list is
+drawn. Two cases differ slightly:
+
+- If a window's own `IconFile` cannot be read or parsed, the plugin's
+  `icon.svg` is tried next. If it parses but cannot be drawn at some display
+  size (it has too many points for that size, or the graphics upload fails),
+  the dock goes to `icon.png`, then `IconSurfaceId`, then the monogram; it
+  does not try `icon.svg` in that case.
+- `IconFile` is ignored for a registration that has no plugin folder.
+
+## SVG icons
+
+An SVG icon stays sharp at every display scale and takes the dock's state
+colours: muted while the window is closed, the text colour while the pointer
+is over the slot, and the accent while the window is open (Classic uses the
+dock's own Classic colours). The file supplies only the shape. Any colour in
+it means "draw here", and its hue is ignored. Icon sets drawn on a 24-unit
+grid with a stroke, such as Lucide or Tabler, work as they are.
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M5.5 8.5h13l-1 11h-11l-1-11Z"/>
+  <path d="M9 8.5V7a3 3 0 0 1 6 0v1.5"/>
+</svg>
+```
+
+The client reads a small, safe part of SVG. A file that uses anything else
+is not drawn at all, so an icon is never drawn wrong:
+
+- **Limits:** at most 16 KiB, 256 elements (title, desc and metadata content
+  and the root `<svg>` count too) nested at most 8 deep, 4,096 path commands, and 65,536
+  flattened points at each size the icon is baked for.
+- **Shapes:** `path` (every command, `M L H V C S Q T A Z`), `circle`,
+  `ellipse`, `rect` (with `rx`/`ry`), `line`, `polyline`, `polygon`, grouped
+  with `g`. `title`, `desc` and `metadata` are skipped, as is an empty
+  `defs`.
+- **Style**, as attributes or in `style="..."`, inherited through `g`:
+  `fill`, `stroke`, `fill-opacity`, `stroke-opacity`, `opacity`,
+  `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`.
+  A paint value must be `none`, `transparent`, `currentColor`, a CSS colour name,
+  `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, or `rgb()`, `rgba()`, `hsl()`,
+  `hsla()`; anything else rejects the file. Keywords and colour names are
+  case-insensitive. A file that draws nothing (no shapes, or everything
+  `fill="none"` with no stroke) is refused too and falls back to the next icon. `opacity` on a `g` is applied to
+  each child separately, so where two children overlap they look slightly
+  darker than a browser would draw them.
+- **Transforms:** `matrix`, `translate`, `scale`, `rotate`, `skewX`,
+  `skewY`. A transform with NaN or infinite numbers, or one that collapses
+  the shape to nothing, rejects the file.
+- **The icon is fitted** into a square and centred, whatever its `viewBox`
+  shape.
+- **Not supported:** `fill-rule="evenodd"`, dashed strokes
+  (any `stroke-dasharray` other than `none`), gradients, patterns, masks,
+  clip paths, filters, text, images, `<use>`, `<style>`, scripts and DTDs.
+
+When a file is skipped, the client log says why, once per file:
+
+```
+[UI] plugin icon 'acme.hello/icons/main.svg' ignored: uses <mask>, which plugin icons do not support
+```
 
 Every window gets drag, an optional resize, the global UI lock, and a
 persisted position keyed `plugin:{pluginId}:{windowId}`. Hiding a window never
@@ -49,8 +118,9 @@ so other client panels can use it too; this preference currently changes only
 opted-in plugin windows. The atlas covers Latin, Greek, Cyrillic and common
 punctuation; unsupported characters display a question mark.
 
-Modern shelves are 24 pixels wide; wheel scrolling reaches
-entries that do not fit vertically. Icons keep their full-color composition.
+The dock is 48 points wide, with 36-point slots and 24-point artwork; wheel
+scrolling reaches entries that do not fit vertically. PNG and DAT icons keep
+their full-color composition; SVG icons take the dock's state colours.
 
 Opted-in windows keep their authored layout. In the modern themes they draw
 in a softer style: the window has rounded corners, a soft shadow and a header

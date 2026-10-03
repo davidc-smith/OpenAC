@@ -254,6 +254,7 @@ Mode: plugin .zip (a release asset)
 [PASS] manifest satisfies install rules
 [PASS] plugin content policy
 [PASS] plugin icon
+[SKIP] plugin svg icon
 [PASS] sha256 sidecar
 
 Verdict: this plugin would install.
@@ -299,6 +300,9 @@ loads locally. The headlines:
 - Managed files only, by extension allowlist; no `runtimes/` folder.
 - An optional `icon.png` at the zip root: PNG, exactly 64x64, at most 64 KiB,
   not animated. No icon is fine; a broken one refuses the whole install.
+- Optional SVG icons (`icon.svg` at the root, or any path a window's
+  `IconFile` names): at most 16 KiB each. See
+  [SVG icons](plugin-ui-markup.md#svg-icons) for what the client draws.
 - Declare [capabilities](plugin-manifest.md#capabilities) for anything the
   player would want to know about — network access, chat, input automation.
   The launcher shows them before installing and asks again when an update

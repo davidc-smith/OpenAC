@@ -124,45 +124,65 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         PluginUiOwner owner,
         PluginPanelDescriptor descriptor,
         RetailWindowHandle handle,
-        (uint Texture, int Width, int Height)? fileIcon = null)
+        (uint Texture, int Width, int Height)? fileIcon = null) =>
+        Add(owner, descriptor, handle, fileIcon, svgIcon: null);
+
+    /// <summary>
+    /// The same, with an SVG icon. The caller's hold on <paramref name="svgIcon"/>
+    /// passes to the dock, which gives it back when the window goes.
+    /// </summary>
+    internal void Add(
+        PluginUiOwner owner,
+        PluginPanelDescriptor descriptor,
+        RetailWindowHandle handle,
+        (uint Texture, int Width, int Height)? fileIcon,
+        PluginSvgIconCache.PluginSvgIconEntry? svgIcon)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
-        ArgumentNullException.ThrowIfNull(descriptor);
-        ArgumentNullException.ThrowIfNull(handle);
-        if (_entries.ContainsKey(handle))
-            return;
-
-        handle.OuterFrame.ConstrainResizeToParent = true;
-        KeepWindowReachable(handle);
-
-        var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, fileIcon)
+        bool handedOver = false;
+        try
         {
-            Width = DockSlot,
-            Height = DockSlot,
-        };
-        button.Click += () =>
-        {
-            if (handle.IsVisible)
-                handle.Hide();
-            else
-                handle.Show();
-        };
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
+            ArgumentNullException.ThrowIfNull(descriptor);
+            ArgumentNullException.ThrowIfNull(handle);
+            if (_entries.ContainsKey(handle)) return;
 
-        var minimize = new PluginMinimizeButton(handle, _font, _themes)
-        {
-            Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
-            Top = 3f,
-            Width = 18f,
-            Height = 17f,
-            Anchors = AnchorEdges.Top | AnchorEdges.Right,
-        };
-        handle.OuterFrame.AddChild(minimize);
+            handle.OuterFrame.ConstrainResizeToParent = true;
+            KeepWindowReachable(handle);
 
-        _entries.Add(handle, new ShelfEntry(button, minimize));
-        _order.Add(handle);
-        AddChild(button);
-        Reflow();
+            var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, fileIcon, svgIcon)
+            {
+                Width = DockSlot,
+                Height = DockSlot,
+            };
+            button.Click += () =>
+            {
+                if (handle.IsVisible)
+                    handle.Hide();
+                else
+                    handle.Show();
+            };
+
+            var minimize = new PluginMinimizeButton(handle, _font, _themes)
+            {
+                Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
+                Top = 3f,
+                Width = 18f,
+                Height = 17f,
+                Anchors = AnchorEdges.Top | AnchorEdges.Right,
+            };
+            handle.OuterFrame.AddChild(minimize);
+
+            _entries.Add(handle, new ShelfEntry(button, minimize));
+            handedOver = true;
+            _order.Add(handle);
+            AddChild(button);
+            Reflow();
+        }
+        finally
+        {
+            if (!handedOver) svgIcon?.Release();
+        }
     }
 
     public void Show()
@@ -517,6 +537,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             return;
 
         _order.Remove(handle);
+        entry.Button.ReleaseSvgIcon();
         RemoveChild(entry.Button);
         if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
             handle.OuterFrame.RemoveChild(entry.Minimize);
@@ -606,6 +627,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
         foreach ((RetailWindowHandle handle, ShelfEntry entry) in _entries)
         {
+            entry.Button.ReleaseSvgIcon();
             if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
                 handle.OuterFrame.RemoveChild(entry.Minimize);
         }
@@ -681,6 +703,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
         private bool _iconResolveAttempted;
         private bool _iconAvailable;
+        private PluginSvgIconCache.PluginSvgIconEntry? _svgIcon;
 
         internal PluginShelfButton(
             PluginSidePanel dock,
@@ -688,9 +711,11 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             PluginUiOwner owner,
             RetailWindowHandle handle,
             Func<uint, (uint tex, int width, int height)> resolve,
-            (uint Texture, int Width, int Height)? fileIcon = null)
+            (uint Texture, int Width, int Height)? fileIcon = null,
+            PluginSvgIconCache.PluginSvgIconEntry? svgIcon = null)
         {
             _dock = dock;
+            _svgIcon = svgIcon;
             _handle = handle;
             _resolve = resolve;
             _fileIcon = fileIcon;
@@ -700,7 +725,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             _iconSurfaceId = PluginIcons.Normalize(descriptor.IconSurfaceId);
             _initialsFallback = Initials(descriptor.IconText, descriptor.Title);
             _monogramHue = MonogramHue(owner.Id);
-            Text = _fileIcon is null && _iconSurfaceId == 0 ? _initialsFallback : string.Empty;
+            Text = _svgIcon is null && _fileIcon is null && _iconSurfaceId == 0 ? _initialsFallback : string.Empty;
             Anchors = AnchorEdges.None;
         }
 
@@ -734,13 +759,29 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
         /// <summary>
         /// Draws this window's icon in the <paramref name="extent"/> box at (x, y): its
-        /// file icon, else its DAT surface, else its monogram. RGBA art ignores the
-        /// hue of <paramref name="colour"/> and keeps its own colours (dimmer while
-        /// closed). Coverage (one-colour) art will be tinted with
-        /// <paramref name="colour"/> once SVG icons land.
+        /// SVG, else its file icon, else its DAT surface, else its monogram. The SVG is
+        /// one colour, drawn in <paramref name="colour"/> and snapped to the device grid.
+        /// RGBA art ignores the hue of <paramref name="colour"/> and keeps its own
+        /// colours (dimmer while closed).
         /// </summary>
         internal void DrawIcon(UiRenderContext ctx, float x, float y, float extent, Vector4 colour)
         {
+            if (_svgIcon is { } svg)
+            {
+                int pixels = PluginSvgIconCache.DevicePixels(extent, ctx.PixelScale);
+                uint coverage = svg.TextureFor(pixels);
+                if (coverage != 0)
+                {
+                    float offset = (extent - pixels / ctx.PixelScale) * 0.5f;
+                    ctx.DrawCoverageIcon(coverage, x + offset, y + offset, pixels, colour);
+                    return;
+                }
+                // The icon failed for good (it never retries): give it back and use the next one.
+                ReleaseSvgIcon();
+                if (_fileIcon is null && _iconSurfaceId == 0)
+                    Text = _initialsFallback;
+            }
+
             if (_fileIcon is null && !_iconResolveAttempted && _iconSurfaceId != 0)
             {
                 _iconResolveAttempted = true;
@@ -764,6 +805,13 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                 return;
             }
             Monogram(ctx, _dock.TitleFont, Text, _monogramHue, x, y, extent, alpha);
+        }
+
+        /// <summary>Gives the button's hold on its SVG back; safe to call more than once.</summary>
+        internal void ReleaseSvgIcon()
+        {
+            _svgIcon?.Release();
+            _svgIcon = null;
         }
 
         private static string Initials(string? requested, string title)

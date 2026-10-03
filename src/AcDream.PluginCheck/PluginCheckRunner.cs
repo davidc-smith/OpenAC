@@ -72,6 +72,7 @@ internal static class PluginCheckRunner
                 "folder passes the direct-install checks",
                 refusal,
                 "This is the exact refusal a hand-unzipped install would show; fix it and re-run."));
+        checks.Add(CheckSvgIcon(directory));
 
         return Finish(PluginCheckMode.Directory, directory, checks);
     }
@@ -161,6 +162,7 @@ internal static class PluginCheckRunner
             }
 
             checks.Add(CheckIcon(stagingDirectory, extracted));
+            checks.Add(CheckSvgIcon(stagingDirectory));
             checks.Add(CheckSha256Sidecar(zipPath));
 
             return Finish(PluginCheckMode.Zip, zipPath, checks);
@@ -198,6 +200,25 @@ internal static class PluginCheckRunner
                 $"Make icon.png a non-animated {LauncherPluginIcon.Extent}x{LauncherPluginIcon.Extent} "
                 + $"PNG under {LauncherPluginIcon.MaximumBytes / 1024} KiB.");
         }
+    }
+
+    /// <summary>Reports the file and fails one over the size limit; the
+    /// client parses the file itself, falling back to the next icon if it cannot use it.</summary>
+    private static PluginCheckItem CheckSvgIcon(string root)
+    {
+        var file = new FileInfo(Path.Combine(root, LauncherPluginIcon.SvgFileName));
+        if (file.Exists && file.Length > LauncherPluginIcon.SvgMaximumBytes)
+        {
+            return Fail(
+                "plugin svg icon",
+                $"icon.svg is {file.Length} bytes; the limit is {LauncherPluginIcon.SvgMaximumBytes / 1024} KiB.",
+                $"Simplify or minify it to {LauncherPluginIcon.SvgMaximumBytes / 1024} KiB or less.");
+        }
+        return file.Exists
+            ? Pass(
+                "plugin svg icon",
+                $"icon.svg present, {file.Length} bytes. The client checks the rest when it draws it.")
+            : Skip("plugin svg icon", "No icon.svg at the root; it is optional.");
     }
 
     /// <summary>The <c>.sha256</c> sidecar is a release asset, not part of the zip itself, so this

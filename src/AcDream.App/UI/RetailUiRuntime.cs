@@ -408,6 +408,7 @@ public sealed class RetailUiRuntime : IDisposable
     private PluginUiThemeSettings? _pluginThemes;
     private UiNineSlicePanel? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
+    private PluginSvgIconCache? _pluginSvgIcons;
     private bool _pluginsMounted;
     private IDisposable? _characterSheetSubscription;
     private Layout.CharacterTitlesController? _characterTitlesController;
@@ -4144,7 +4145,8 @@ public sealed class RetailUiRuntime : IDisposable
                         panel.Owner,
                         panel.Descriptor,
                         handle,
-                        ResolvePluginFileIcon(panel.Owner.Id, panel.PluginDirectory));
+                        ResolvePluginFileIcon(panel.Owner.Id, panel.PluginDirectory),
+                        ResolvePluginSvgIcon(panel.Owner.Id, panel.Descriptor, panel.PluginDirectory));
                 }
 
                 Console.WriteLine(
@@ -4279,6 +4281,40 @@ public sealed class RetailUiRuntime : IDisposable
 
         _pluginIcons[pluginId] = icon;
         return icon;
+    }
+
+    /// <summary>
+    /// The window's SVG icon with one hold taken, or null: the descriptor's
+    /// <c>IconFile</c> first, then the plugin's own <c>icon.svg</c>. Any file that
+    /// cannot be used is logged once and the next icon is tried.
+    /// </summary>
+    private PluginSvgIconCache.PluginSvgIconEntry? ResolvePluginSvgIcon(
+        string pluginId,
+        PluginPanelDescriptor descriptor,
+        string? pluginDirectory)
+    {
+        if (pluginDirectory is null)
+            return null;
+        _pluginSvgIcons ??= new PluginSvgIconCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
+
+        if (descriptor.IconFile is { } iconFile
+            && AcquirePluginSvgIcon(pluginId, pluginDirectory, iconFile) is { } own)
+            return own;
+        return File.Exists(Path.Combine(pluginDirectory, PluginSvgIcon.FileName))
+            ? AcquirePluginSvgIcon(pluginId, pluginDirectory, PluginSvgIcon.FileName)
+            : null;
+    }
+
+    private PluginSvgIconCache.PluginSvgIconEntry? AcquirePluginSvgIcon(
+        string pluginId, string pluginDirectory, string relative)
+    {
+        string label = $"{pluginId}/{relative.Replace('\\', '/')}";
+        if (!PluginSvgIcon.TryResolvePath(pluginDirectory, relative, out string? fullPath, out string? reason))
+        {
+            _pluginSvgIcons!.Reject(label, Path.Combine(pluginDirectory, relative), reason);
+            return null;
+        }
+        return _pluginSvgIcons!.Acquire(label, fullPath);
     }
 
     private void MountInventory()
@@ -5156,6 +5192,9 @@ public sealed class RetailUiRuntime : IDisposable
                 _characterSheetSubscription?.Dispose();
                 _characterTitlesController?.Dispose();
                 _pluginSidePanel?.Dispose();
+                // After the dock has given back its holds, while the texture cache is still here.
+                _pluginSvgIcons?.Dispose();
+                _pluginSvgIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;
                 WindowLockPresentation.Dispose();
                 WindowOpacity.Dispose();

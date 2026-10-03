@@ -74,8 +74,9 @@ install. `icon.jpg` and `icon.jpeg` are never accepted at the zip root, in any c
 subfolder is untouched by this rule.
 
 **Managed code only, by allowlist.** Every file in the zip must end in one of: `.dll`, `.pdb`,
-`.json`, `.xml`, `.txt`, `.md`, `.png`, `.jpg`, `.jpeg`, `.ttf`, `.otf`. A `runtimes/` folder is
-rejected.
+`.json`, `.xml`, `.txt`, `.md`, `.png`, `.jpg`, `.jpeg`, `.ttf`, `.otf`, `.svg`. A `runtimes/`
+folder is rejected. An `.svg` file may be at most 16 KiB; the launcher checks only that, and the
+client decides whether it can draw it (see [SVG icons](plugin-ui-markup.md#svg-icons)).
 
 **Caps:** zip at most 64 MiB. Extraction: 2,000 entries, 64 MiB per entry, 256 MiB total,
 compression ratio 200. A hand-installed folder is limited the same way, counting files rather than
