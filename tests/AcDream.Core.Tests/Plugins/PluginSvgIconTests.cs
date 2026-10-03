@@ -40,6 +40,15 @@ public sealed class PluginSvgIconTests
     }
 
     [Fact]
+    public void KeywordValuesAreCaseInsensitive()
+    {
+        SvgPaintLayer layer = Assert.Single(Accept(Wrap(
+            """<path d="M0 0h5" fill="none" stroke="red" stroke-linecap="Round" stroke-linejoin="BEVEL" display="Inline" visibility="VISIBLE" fill-rule="NonZero" stroke-dasharray="NONE"/>""")).Layers);
+        Assert.Equal(SvgLineCap.Round, layer.Stroke!.Cap);
+        Assert.Equal(SvgLineJoin.Bevel, layer.Stroke.Join);
+    }
+
+    [Fact]
     public void AStrokedLucideIconParsesIntoStrokeLayers()
     {
         SvgIconDocument doc = Accept(Loot);
@@ -148,6 +157,8 @@ public sealed class PluginSvgIconTests
 
     [Theory]
     [InlineData("fill=\"url(#g)\"", "paint server")]
+    [InlineData("fill=\"URL(#a)\"", "paint server")]
+    [InlineData("fill-rule=\"EVENODD\"", "nonzero")]
     [InlineData("fill-rule=\"evenodd\"", "nonzero")]
     [InlineData("style=\"fill-rule:evenodd\"", "nonzero")]
     [InlineData("stroke-dasharray=\"2 2\" stroke=\"red\"", "stroke-dasharray")]
@@ -384,6 +395,11 @@ public sealed class PluginSvgIconTests
     [InlineData("hsl(1,2%,3%)")]
     [InlineData("currentColor")]
     [InlineData("none")]
+    [InlineData("currentcolor")]
+    [InlineData("Red")]
+    [InlineData("RGB(0,0,0)")]
+    [InlineData("None")]
+    [InlineData("TRANSPARENT")]
     public void KnownPaintsAreAccepted(string paint)
     {
         Accept(Wrap($"""<path d="M0 0h1v1z" fill="{paint}" stroke="black"/>"""));
@@ -392,7 +408,6 @@ public sealed class PluginSvgIconTests
     [Theory]
     [InlineData("bogus")]
     [InlineData("")]
-    [InlineData("None")]
     [InlineData("#zzz")]
     [InlineData("#ab")]
     [InlineData("rgb(1,2,3")]

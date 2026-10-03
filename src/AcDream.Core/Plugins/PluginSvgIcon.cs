@@ -533,7 +533,8 @@ public static class PluginSvgIcon
             foreach ((string name, string raw) in properties)
             {
                 string value = raw.Trim();
-                if (value == "inherit") continue;
+                string keyword = value.ToLowerInvariant();
+                if (keyword == "inherit") continue;
                 switch (name)
                 {
                     case "fill":
@@ -554,7 +555,7 @@ public static class PluginSvgIcon
                         style = style with { StrokeWidth = width };
                         break;
                     case "stroke-linecap":
-                        SvgLineCap? cap = value switch
+                        SvgLineCap? cap = keyword switch
                         {
                             "butt" => SvgLineCap.Butt, "round" => SvgLineCap.Round, "square" => SvgLineCap.Square, _ => null,
                         };
@@ -562,7 +563,7 @@ public static class PluginSvgIcon
                         style = style with { Cap = cap.Value };
                         break;
                     case "stroke-linejoin":
-                        SvgLineJoin? join = value switch
+                        SvgLineJoin? join = keyword switch
                         {
                             "miter" => SvgLineJoin.Miter, "round" => SvgLineJoin.Round, "bevel" => SvgLineJoin.Bevel, _ => null,
                         };
@@ -575,14 +576,14 @@ public static class PluginSvgIcon
                         break;
                     case "fill-rule":
                     case "clip-rule":
-                        if (value != "nonzero")
+                        if (keyword != "nonzero")
                         {
                             Reason = $"uses {name}=\"{value}\"; plugin icons support only nonzero";
                             return false;
                         }
                         break;
                     case "stroke-dasharray":
-                        if (value != "none")
+                        if (keyword != "none")
                         {
                             Reason = "uses stroke-dasharray, which plugin icons do not support";
                             return false;
@@ -591,14 +592,14 @@ public static class PluginSvgIcon
                     case "stroke-dashoffset":
                         break;
                     case "display":
-                        if (value is not ("inline" or "block"))
+                        if (keyword is not ("inline" or "block"))
                         {
                             Reason = $"uses display=\"{value}\", which plugin icons do not support";
                             return false;
                         }
                         break;
                     case "visibility":
-                        if (value != "visible")
+                        if (keyword != "visible")
                         {
                             Reason = $"uses visibility=\"{value}\", which plugin icons do not support";
                             return false;
@@ -632,13 +633,13 @@ public static class PluginSvgIcon
         private bool TryPaint(string value, out bool ink)
         {
             ink = false;
-            if (value is "none" or "transparent") return true;
-            if (value.StartsWith("url(", StringComparison.Ordinal))
+            if (value.Equals("none", StringComparison.OrdinalIgnoreCase) || value.Equals("transparent", StringComparison.OrdinalIgnoreCase)) return true;
+            if (value.StartsWith("url(", StringComparison.OrdinalIgnoreCase))
             {
                 Reason = "uses a paint server (url(...)), which plugin icons do not support";
                 return false;
             }
-            if (value == "currentColor" || NamedColours.Contains(value) || IsHexColour(value) || IsFunctionColour(value))
+            if (value.Equals("currentColor", StringComparison.OrdinalIgnoreCase) || NamedColours.Contains(value) || IsHexColour(value) || IsFunctionColour(value))
             {
                 ink = true;
                 return true;
@@ -654,14 +655,14 @@ public static class PluginSvgIcon
         {
             foreach (string function in (ReadOnlySpan<string>)["rgb(", "rgba(", "hsl(", "hsla("])
             {
-                if (value.StartsWith(function, StringComparison.Ordinal) && value.EndsWith(')')
+                if (value.StartsWith(function, StringComparison.OrdinalIgnoreCase) && value.EndsWith(')')
                     && value.IndexOf(')') == value.Length - 1)
                     return true;
             }
             return false;
         }
 
-        private static readonly HashSet<string> NamedColours = new(StringComparer.Ordinal)
+        private static readonly HashSet<string> NamedColours = new(StringComparer.OrdinalIgnoreCase)
         {
             "aliceblue", "antiquewhite", "aqua", "aquamarine", "azure", "beige", "bisque", "black", "blanchedalmond",
             "blue", "blueviolet", "brown", "burlywood", "cadetblue", "chartreuse", "chocolate", "coral",
