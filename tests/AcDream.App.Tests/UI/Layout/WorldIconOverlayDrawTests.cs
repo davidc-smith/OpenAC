@@ -49,8 +49,9 @@ public sealed class WorldIconOverlayDrawTests
         _ => null,
     };
 
-    private static WorldIconEntry Icon(uint objectId, int imageHandle = 1, bool border = false) =>
-        new("a.plugin", new PluginWorldIcon(PluginMarkerAnchor.Object(objectId), new PluginImage(imageHandle, 32, 32))
+    private static WorldIconEntry Icon(
+        uint objectId, int imageHandle = 1, bool border = false, string owner = "a.plugin") =>
+        new(owner, new PluginWorldIcon(PluginMarkerAnchor.Object(objectId), new PluginImage(imageHandle, 32, 32))
         {
             Border = border ? new PluginColor(255, 0, 0) : null,
         });
@@ -65,7 +66,8 @@ public sealed class WorldIconOverlayDrawTests
         internal Scene(
             IReadOnlyList<WorldIconEntry> icons,
             IReadOnlyList<PluginWorldLabel>? labels = null,
-            Func<bool>? hidden = null)
+            Func<bool>? hidden = null,
+            Func<string, PluginImage, WorldIconTexture?>? resolve = null)
         {
             var device = new RecordingGpuDevice();
             _renderer = new TextRenderer(device, new NullGpuFrameSource(), "unused");
@@ -75,7 +77,7 @@ public sealed class WorldIconOverlayDrawTests
             Controller = WorldIconOverlayController.Mount(
                 host,
                 () => icons,
-                Resolve,
+                resolve ?? Resolve,
                 Anchor,
                 _ => null,
                 labels is null ? null : () => labels,
@@ -139,6 +141,26 @@ public sealed class WorldIconOverlayDrawTests
         var segments = DrawOnce([Icon(1u, 1), Icon(2u, 2), Icon(3u, 1)], out _);
 
         Assert.Equal(new[] { IconTex, OtherTex, IconTex }, segments.Select(s => s.Texture));
+    }
+
+    [Fact]
+    public void EachIconsImageIsLookedUpUnderItsOwnPlugin()
+    {
+        // One handle, two plugins: the same number names a different image in each.
+        static WorldIconTexture? ByOwner(string ownerId, PluginImage image) => ownerId switch
+        {
+            "a.plugin" when image.Handle == 1 => new WorldIconTexture(IconTex, 32, 32),
+            "b.plugin" when image.Handle == 1 => new WorldIconTexture(OtherTex, 32, 32),
+            _ => null,
+        };
+        var scene = new Scene(
+            [Icon(1u, 1, owner: "a.plugin"), Icon(2u, 1, owner: "b.plugin")],
+            resolve: ByOwner);
+
+        var segments = scene.Frame();
+
+        // Far to near is object 2 (b.plugin), then object 1 (a.plugin).
+        Assert.Equal(new[] { OtherTex, IconTex }, segments.Select(s => s.Texture));
     }
 
     [Fact]
