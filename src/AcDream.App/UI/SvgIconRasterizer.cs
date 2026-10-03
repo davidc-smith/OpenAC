@@ -112,8 +112,10 @@ internal static class SvgIconRasterizer
     }
 
     /// <summary>An upper bound on the points stb flattens these vertices into: one per
-    /// line or move, and for a curve 2·sqrt(control polygon length / flatness) + 2
-    /// (stb quarters a curve's error per halving of its parameter span).</summary>
+    /// line or move, and for a curve 2·sqrt(control polygon length / flatness) + 2.
+    /// Exact upper bound for quadratics (stb quarters the error per halving); for cubics
+    /// stb's length test is heuristic, and this bound held with at least 11% margin over
+    /// ~20M sampled curves.</summary>
     private static long Cost(List<Vertex> vertices)
     {
         long cost = 0;

@@ -123,7 +123,7 @@ public sealed class SvgIconRasterizerTests
     [Fact]
     public void AStrokeDeviceSpaceOverflowFailsTheBake()
     {
-        SvgIconDocument doc = Parse("""<path d="M0 0h1e308" stroke="black" transform="scale(10)"/>""");
+        SvgIconDocument doc = Parse("""<path d="M0 0h1e308" fill="none" stroke="black" transform="scale(10)"/>""");
         Assert.Null(SvgIconRasterizer.Bake(doc, 16));
     }
 
@@ -144,14 +144,17 @@ public sealed class SvgIconRasterizerTests
         return new SvgSubpath(new SvgPoint(1, 1), segments, false);
     }
 
-    [Fact]
-    public void AStrokeAfterAFillIsGivenOnlyTheRemainingBudget()
+    [Theory]
+    [InlineData(65_531, false)] // fill costs 65,532, leaving 4: the stroker needs 1 + 4
+    [InlineData(65_529, true)]  // leaving 6
+    public void AStrokeAfterAFillIsGivenOnlyTheRemainingBudget(int fillSegments, bool fits)
     {
-        var stroke = new SvgPaintLayer(SvgPaintKind.Stroke, 1, [Zigzag(3_000)],
+        var line = new SvgSubpath(new SvgPoint(1, 1), [SvgSegment.Line(new SvgPoint(15, 1))], false);
+        var stroke = new SvgPaintLayer(SvgPaintKind.Stroke, 1, [line],
             new SvgStrokeStyle(1, SvgLineCap.Butt, SvgLineJoin.Miter, 4), SvgMatrix.Identity);
-        var fill = new SvgPaintLayer(SvgPaintKind.Fill, 1, [Zigzag(55_000)], null, SvgMatrix.Identity);
-        Assert.NotNull(SvgIconRasterizer.Bake(new SvgIconDocument(0, 0, 16, 16, [stroke]), 128));
-        Assert.Null(SvgIconRasterizer.Bake(new SvgIconDocument(0, 0, 16, 16, [fill, stroke]), 128));
+        var fill = new SvgPaintLayer(SvgPaintKind.Fill, 1, [Zigzag(fillSegments)], null, SvgMatrix.Identity);
+        byte[]? baked = SvgIconRasterizer.Bake(new SvgIconDocument(0, 0, 16, 16, [fill, stroke]), 16);
+        Assert.Equal(fits, baked is not null);
     }
 
     [Fact]
