@@ -17,6 +17,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/AcDream.Plugins.CanvasDemo/AcDream.Plugins.CanvasDemo.csproj" />
+    <Project Path="samples/AcDream.Plugins.WorldMarkersDemo/AcDream.Plugins.WorldMarkersDemo.csproj" />
     <Project Path="samples/AcDream.Plugins.ThemeGallery/AcDream.Plugins.ThemeGallery.csproj" />
     <Project Path="samples/AcDream.RenderPacks.AtmosphericTier2/AcDream.RenderPacks.AtmosphericTier2.csproj" />
     <Project Path="samples/AcDream.RenderPacks.NoOp/AcDream.RenderPacks.NoOp.csproj" />
