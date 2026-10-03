@@ -1,7 +1,7 @@
 # World markers — design
 
-Date: 2026-10-03. Status: approved design, decisions taken (see Decisions),
-awaiting spec review.
+Date: 2026-10-03. Status: approved; corrected while planning PR 1 (see the
+PR 1 plan's "Spec corrections").
 
 ## Goal
 
@@ -98,16 +98,21 @@ layer.SetShapes([
 ```csharp
 public readonly record struct PluginWorldIcon(PluginMarkerAnchor Anchor, PluginImage Image)
 {
-    public float SizePixels { get; init; } = 24f;       // clamped 8..128, times PixelScale
+    public float SizePixels { get; init; } = 24f;       // interface points; finite values clamped 8..128
     public PluginColor Tint { get; init; } = PluginColor.White; // multiply, alpha is opacity
     public PluginColor? Border { get; init; }            // thin frame; null for none
-    public float HeightOffset { get; init; }             // metres, object anchors only
     public float MaxRange { get; init; } = 60f;          // metres from the camera
 }
 ```
 
 Icons are square: the image is fitted inside `SizePixels` keeping its aspect
-ratio. The border is 1 logical pixel (times `PixelScale`) outside the image.
+ratio. The border is 1 interface point outside the image. Sizes are in
+interface points, the unit labels are laid out in; the interface already
+draws at the display's density, so `PixelScale` is only used to snap icon
+positions to whole device pixels.
+
+There is no per-icon height offset: an object's icons share one row origin
+above its head and labels, and per-icon offsets would tear a row apart.
 
 ### Ground shapes
 
@@ -158,11 +163,20 @@ public interface IPluginWorldMarkerLayer : IDisposable
 - `SetIcons` / `SetShapes` replace that kind's set on the layer. The list is
   copied and may be reused.
 - **Refused as a whole** (returns false, the layer keeps what it had) when
-  the new set would take the plugin past its cap, counting its other layers.
-- **Dropped from an accepted set:** an object anchor with id zero; an icon
-  whose image is `None`, released, or not owned by this plugin; any value
-  that is not a finite number; a size, radius, width or sweep outside its
-  range; a width of zero or more than the radius.
+  the entries given, plus the plugin's other layers, exceed its cap. The
+  count is taken before drops, so the outcome doesn't depend on which
+  entries happen to be invalid.
+- **Dropped from an accepted set:** an anchor pinned to nothing (the default
+  anchor, object id zero, or a position coordinate that is not finite); an
+  icon whose image is not valid; any value that is not a finite number; a
+  range that is not positive; a radius, width or sweep outside its range; a
+  width of zero or more than the radius. Finite icon sizes are clamped, not
+  dropped.
+- **Images are looked up in the owning plugin's images only.** Image handles
+  are per-plugin sequential ids, so another plugin's handle can't be told
+  apart from an own one, but it can never reach the other plugin's image. A
+  handle that doesn't resolve (released, or dropped with the interface)
+  draws nothing.
 - Calls are made on the tick thread, as with every other UI call.
   `ObjectDisposedException` after the layer is disposed, as world-line
   layers do.
@@ -177,8 +191,8 @@ before it, so label text stays readable over icons.
 
 - A pure `WorldIconLayout.Place(icons, anchor, labelLines, camera, scale,
   output)` does the placement, the way `WorldLabelLayout.Place` does.
-- **Object anchors:** the head point is found as labels find it (base, plus
-  the host's height, plus `HeightOffset`). Icons start above that object's
+- **Object anchors:** the head point is found as labels find it (base plus
+  the host's height). Icons start above that object's
   label stack: `labelLines(objectId)` lines of the label font's height. The
   object's icons, ordered by plugin id then the order given, are
   centred in rows of at most 8, 2 logical pixels apart, stacking upward. A
@@ -229,7 +243,11 @@ opaque world.
 - Disposing a layer removes its markers. Unloading a plugin disposes every
   layer it made, through a scoping wrapper like `ScopedWorldLines`.
 - Leaving the world clears every layer's icons and shapes (object ids mean
-  nothing in the next session). The layers stay usable.
+  nothing in the next session). The layers stay usable. The store subscribes
+  to the shared `WorldEvents.Logoff`, which fires once per stay on every way
+  out (logout, lost connection, reconnect, stop). World labels do not in fact
+  clear on logoff today (`RuntimeAutomationSurface.Unbind()` has no
+  production caller); that is a separate upstream issue, not fixed here.
 - Images dropped by an interface teardown (a reconnect) stop the icons that
   use them from drawing. The plugin asks for its images again and calls
   `SetIcons` again, as it would for a canvas.
