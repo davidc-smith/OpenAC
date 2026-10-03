@@ -1398,7 +1398,8 @@ public sealed class GameWindow :
                     _applicationPaths.ScreenshotsDirectory,
                     _automation,
                     GameplayInputFrame: () => _gameplayInputFrame,
-                    JournalDirectory: _applicationPaths.JournalDirectory),
+                    JournalDirectory: _applicationPaths.JournalDirectory,
+                    WorldOrigin: _liveWorldOrigin),
                 _retailUiLease,
                 this).Compose(
                     platformResult,

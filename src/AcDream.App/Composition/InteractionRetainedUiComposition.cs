@@ -78,7 +78,8 @@ internal sealed record InteractionRetainedUiDependencies(
     string? ScreenshotsDirectory = null,
     AcDream.Runtime.Plugins.RuntimeAutomationSurface? Automation = null,
     Func<GameplayInputFrameController?>? GameplayInputFrame = null,
-    string? JournalDirectory = null)
+    string? JournalDirectory = null,
+    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -1027,6 +1028,12 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     late.Selection.TryResolveWorldLabelAnchor(
                         guid, out AcDream.App.Interaction.WorldLabelAnchor anchor)
                         ? anchor
+                        : null,
+                WorldPosition: d.WorldOrigin is not { } worldOrigin
+                    ? null
+                    : position => worldOrigin.IsKnown
+                        ? AcDream.App.World.PluginNavigationProjection.ToWorld(
+                            position, worldOrigin.CenterX, worldOrigin.CenterY)
                         : null,
                 Connection: new ConnectionRuntimeBindings(
                     () => late.GameRuntime.Connection, d.Window.Close,

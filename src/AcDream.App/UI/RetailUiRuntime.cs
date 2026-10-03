@@ -339,7 +339,8 @@ public sealed record RetailUiRuntimeBindings(
     BookRuntimeBindings? Book = null,
     Func<IReadOnlyList<PluginWorldLabel>>? WorldLabels = null,
     Func<uint, AcDream.App.Interaction.WorldLabelAnchor?>? WorldLabelAnchor = null,
-    PluginCanvasHostServices? PluginCanvases = null);
+    PluginCanvasHostServices? PluginCanvases = null,
+    Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -387,6 +388,7 @@ public sealed class RetailUiRuntime : IDisposable
     private VividTargetIndicatorController? _vividTargetIndicator;
     private Layout.UiOverlayHost? _overlayHost;
     private ProjectileDebugOverlayController? _projectileDebugOverlay;
+    private WorldIconOverlayController? _worldIconOverlay;
     private WorldLabelOverlayController? _worldLabelOverlay;
     private Layout.PluginCanvasSurface? _pluginCanvasSurface;
     private Layout.PluginCanvasStack? _worldCanvases;
@@ -470,6 +472,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountFpsDisplay();
         MountVividTargetIndicator();
         MountProjectileDebugOverlay();
+        MountWorldIconOverlay();
         MountWorldLabelOverlay();
         MountVitals();
         MountRadar();
@@ -731,6 +734,7 @@ public sealed class RetailUiRuntime : IDisposable
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
         _projectileDebugOverlay?.Tick();
+        _worldIconOverlay?.Tick();
         _worldLabelOverlay?.Tick();
         _vitalsSideBySide?.Tick();
         SpellbookWindowController?.Tick();
@@ -1424,6 +1428,30 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.VividTarget.Camera);
         Console.WriteLine(
             "[PluginUI] projectile collision debug overlay mounted.");
+    }
+
+    private void MountWorldIconOverlay()
+    {
+        if (_bindings.Plugins is not { } plugins
+            || _bindings.WorldLabelAnchor is not { } anchor)
+        {
+            return;
+        }
+        _worldIconOverlay = WorldIconOverlayController.Mount(
+            OverlayHost,
+            plugins.WorldMarkerStore.CaptureIcons,
+            // An icon's image is looked up in its own plugin's images only.
+            (ownerId, image) =>
+                plugins.FindImages(new PluginUiOwner(ownerId, ownerId)) is { } images
+                && images.TryResolve(image, out uint texture, out int width, out int height)
+                    ? new WorldIconTexture(texture, width, height)
+                    : null,
+            anchor,
+            _bindings.WorldPosition ?? (static _ => null),
+            _bindings.WorldLabels,
+            _bindings.Assets.DefaultFont?.LineHeight ?? 0f,
+            _bindings.VividTarget.Camera);
+        Console.WriteLine("[PluginUI] world icon overlay mounted.");
     }
 
     private void MountWorldLabelOverlay()
