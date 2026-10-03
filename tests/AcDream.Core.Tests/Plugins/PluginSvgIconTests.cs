@@ -30,6 +30,15 @@ public sealed class PluginSvgIconTests
     private static string Wrap(string body, string attributes = "") =>
         $"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" {attributes}>{body}</svg>""";
 
+    [Theory]
+    [InlineData("""<svg viewBox="0 0 24 24"/>""")]
+    [InlineData("""<svg viewBox="0 0 24 24"><title>Nothing</title></svg>""")]
+    [InlineData("""<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5"/></svg>""")]
+    public void ADocumentThatDrawsNothingIsRefused(string svg)
+    {
+        Assert.Contains("draws nothing", Reject(svg));
+    }
+
     [Fact]
     public void AStrokedLucideIconParsesIntoStrokeLayers()
     {
@@ -215,7 +224,7 @@ public sealed class PluginSvgIconTests
     [Fact]
     public void EmptyShapesDrawNothing()
     {
-        Assert.Empty(Accept(Wrap("""<circle r="0"/><rect width="0" height="4"/><path d=""/>""")).Layers);
+        Assert.Single(Accept(Wrap("""<circle r="0"/><rect width="0" height="4"/><path d=""/><path d="M0 0h1v1z"/>""")).Layers);
     }
 
     [Fact]
@@ -377,7 +386,7 @@ public sealed class PluginSvgIconTests
     [InlineData("none")]
     public void KnownPaintsAreAccepted(string paint)
     {
-        Accept(Wrap($"""<path d="M0 0h1v1z" fill="{paint}"/>"""));
+        Accept(Wrap($"""<path d="M0 0h1v1z" fill="{paint}" stroke="black"/>"""));
     }
 
     [Theory]

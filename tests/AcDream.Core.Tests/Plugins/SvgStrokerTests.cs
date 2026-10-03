@@ -13,6 +13,31 @@ public sealed class SvgStrokerTests
 
     private static List<SvgPoint[]> Expand(SvgPaintLayer layer) => SvgStroker.Expand(layer, SvgMatrix.Identity, 0.05)!;
 
+    private static List<SvgPoint[]> ExpandPath(string d, SvgLineCap cap = SvgLineCap.Round)
+    {
+        var subpaths = new List<SvgSubpath>();
+        int commands = 0;
+        Assert.True(SvgOutline.TryParsePath(d, subpaths, ref commands, 4096, out string? reason), reason);
+        var layer = new SvgPaintLayer(SvgPaintKind.Stroke, 1, subpaths, new SvgStrokeStyle(2, cap, SvgLineJoin.Round, 4), SvgMatrix.Identity);
+        return SvgStroker.Expand(layer, SvgMatrix.Identity, 0.05)!;
+    }
+
+    [Fact]
+    public void AMovetoOnlySubpathIsNeverStroked()
+    {
+        Assert.Empty(ExpandPath("M12 12"));
+        List<SvgPoint[]> pieces = ExpandPath("M2 2L4 4M12 12");
+        Assert.DoesNotContain(pieces, p => p.Average(q => q.X) > 10);
+    }
+
+    [Theory]
+    [InlineData("M12 12z")]
+    [InlineData("M12 12l0 0")]
+    public void AClosedOrZeroLengthSubpathStillGivesADot(string d)
+    {
+        Assert.Single(ExpandPath(d));
+    }
+
     [Fact]
     public void ANonFiniteTransformedPieceMakesExpandReturnNull()
     {

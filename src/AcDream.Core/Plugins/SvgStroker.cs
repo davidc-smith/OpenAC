@@ -43,6 +43,7 @@ public static class SvgStroker
 
         foreach (SvgSubpath subpath in layer.Subpaths)
         {
+            if (subpath.Segments.Count == 0 && !subpath.Closed) continue; // a lone moveto is never stroked
             List<SvgPoint>? flat = FlattenBudgeted(subpath, local, ref used, maxPoints);
             if (flat is null) return null;
             List<SvgPoint> points = Distinct(flat, subpath.Closed);

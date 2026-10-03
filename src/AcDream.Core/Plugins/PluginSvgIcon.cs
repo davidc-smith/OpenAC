@@ -278,6 +278,7 @@ public static class PluginSvgIcon
 
             _elements = 1;
             if (!reader.IsEmptyElement && !ReadChildren(reader, style, transform, depth: 1)) return null;
+            if (_layers.Count == 0) return Fail("draws nothing");
             return new SvgIconDocument(minX, minY, width, height, _layers);
         }
 
