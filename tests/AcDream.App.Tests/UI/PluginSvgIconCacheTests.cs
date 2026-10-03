@@ -1,6 +1,6 @@
 using AcDream.App.Plugins;
-using AcDream.Core.Plugins;
 using AcDream.App.UI;
+using AcDream.Core.Plugins;
 
 namespace AcDream.App.Tests.UI;
 
@@ -50,6 +50,12 @@ public sealed class PluginSvgIconCacheTests : IDisposable
         string path = Path.Combine(_root, name);
         File.WriteAllText(path, content);
         return path;
+    }
+
+    private SvgIconDocument Doc()
+    {
+        Assert.True(PluginSvgIcon.TryLoad(Write("doc.svg"), out SvgIconDocument? document, out _));
+        return document!;
     }
 
     [Fact]
@@ -253,21 +259,16 @@ public sealed class PluginSvgIconCacheTests : IDisposable
         Assert.Equal(0, entry.BakedSizes);
     }
 
-    private SvgIconDocument Doc()
-    {
-        Assert.True(PluginSvgIcon.TryLoad(Write("doc.svg"), out SvgIconDocument? document, out _));
-        return document!;
-    }
-
     [Fact]
     public void ADocumentThatBakesToNothingFallsBack()
     {
         using PluginSvgIconCache cache = Cache();
         string path = Write("blank.svg", """<svg viewBox="0 0 24 24"><path d="M0 0h5"/></svg>""");
         PluginSvgIconCache.PluginSvgIconEntry? entry = cache.Acquire("p/blank.svg", path);
-        if (entry is null) return; // rejected at parse: also a fallback
+        Assert.NotNull(entry);
         Assert.Equal(0u, entry.TextureFor(24));
         Assert.Equal(0, _backend.UploadCalls);
+        Assert.Contains("draws nothing", Assert.Single(_reports));
     }
 
     [Fact]
@@ -276,9 +277,10 @@ public sealed class PluginSvgIconCacheTests : IDisposable
         using PluginSvgIconCache cache = Cache();
         string path = Write("dot.svg", """<svg viewBox="0 0 24 24"><path d="M12 12" fill="none" stroke="black" stroke-linecap="round"/></svg>""");
         PluginSvgIconCache.PluginSvgIconEntry? entry = cache.Acquire("p/dot.svg", path);
-        if (entry is null) return;
+        Assert.NotNull(entry);
         Assert.Equal(0u, entry.TextureFor(24));
         Assert.Equal(0, _backend.UploadCalls);
+        Assert.Contains("draws nothing", Assert.Single(_reports));
     }
 
     [Fact]

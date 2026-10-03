@@ -17,11 +17,12 @@ public sealed class PluginShelfSvgIconTests : IDisposable
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"acdream-shelf-svg-{Guid.NewGuid():N}.svg");
     private readonly Backend _backend = new();
     private readonly PluginSvgIconCache _cache;
+    private readonly List<string> _reports = [];
 
     public PluginShelfSvgIconTests()
     {
         File.WriteAllText(_path, Icon);
-        _cache = new PluginSvgIconCache(_backend, _ => { });
+        _cache = new PluginSvgIconCache(_backend, _reports.Add);
     }
 
     public void Dispose()
@@ -209,6 +210,7 @@ public sealed class PluginShelfSvgIconTests : IDisposable
         Assert.Equal("TP", rig.Button.Text);
         Assert.Empty(_backend.Uploaded);
         Assert.Equal(0, _cache.EntryCount);
+        Assert.Contains("draws nothing", Assert.Single(_reports));
     }
 
     [Fact]
