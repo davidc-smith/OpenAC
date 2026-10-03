@@ -165,15 +165,20 @@ public sealed class PluginWorldMarkerStore
         public bool SetIcons(IReadOnlyList<PluginWorldIcon> icons)
         {
             ArgumentNullException.ThrowIfNull(icons);
+            // The plugin's list is read once, outside the lock, so a list that
+            // throws or crawls cannot do so while other callers wait on it.
+            var given = new PluginWorldIcon[icons.Count];
+            for (int i = 0; i < given.Length; i++)
+                given[i] = icons[i];
             lock (store._gate)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
-                if (icons.Count + owner.IconCountExcept(this) > IPluginWorldMarkers.MaximumIcons)
+                if (given.Length + owner.IconCountExcept(this) > IPluginWorldMarkers.MaximumIcons)
                     return false;
-                var accepted = new List<PluginWorldIcon>(icons.Count);
-                for (int i = 0; i < icons.Count; i++)
+                var accepted = new List<PluginWorldIcon>(given.Length);
+                for (int i = 0; i < given.Length; i++)
                 {
-                    if (WorldMarkerRules.TryNormalizeIcon(icons[i], out PluginWorldIcon icon))
+                    if (WorldMarkerRules.TryNormalizeIcon(given[i], out PluginWorldIcon icon))
                         accepted.Add(icon);
                 }
                 Icons = accepted.ToArray();
