@@ -202,11 +202,18 @@ internal static class PluginCheckRunner
         }
     }
 
-    /// <summary>Only reported: the size limit is already part of the content policy, and the
+    /// <summary>Reports the file and fails one over the size limit; the
     /// client parses the file itself, falling back to the next icon if it cannot use it.</summary>
     private static PluginCheckItem CheckSvgIcon(string root)
     {
         var file = new FileInfo(Path.Combine(root, LauncherPluginIcon.SvgFileName));
+        if (file.Exists && file.Length > LauncherPluginIcon.SvgMaximumBytes)
+        {
+            return Fail(
+                "plugin svg icon",
+                $"icon.svg is {file.Length} bytes; the limit is {LauncherPluginIcon.SvgMaximumBytes / 1024} KiB.",
+                $"Simplify or minify it to {LauncherPluginIcon.SvgMaximumBytes / 1024} KiB or less.");
+        }
         return file.Exists
             ? Pass(
                 "plugin svg icon",

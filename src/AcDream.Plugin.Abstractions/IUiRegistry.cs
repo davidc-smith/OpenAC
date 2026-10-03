@@ -29,7 +29,9 @@ public sealed record PluginPanelDescriptor(string WindowId, string Title)
     /// plugin's install folder, such as <c>"icons/loot.svg"</c>. Null uses the
     /// plugin's own <c>icon.svg</c>, if it ships one. A file that is missing or
     /// outside the supported subset falls back to the next icon. The icon is
-    /// drawn in one colour that follows the plugin theme.
+    /// drawn in one colour that follows the plugin theme. Must be a relative
+    /// <c>.svg</c> path that stays inside the plugin folder (links included);
+    /// ignored when the registration has no plugin folder.
     /// </summary>
     public string? IconFile { get; init; }
 

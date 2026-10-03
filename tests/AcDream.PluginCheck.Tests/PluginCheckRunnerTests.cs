@@ -107,6 +107,20 @@ public sealed class PluginCheckRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task AnOversizedSvgFailsInDirectoryMode()
+    {
+        string directory = WriteValidPluginFolder("big-svg-dir");
+        File.WriteAllBytes(Path.Combine(directory, "icon.svg"), new byte[16 * 1024 + 1]);
+
+        PluginCheckReport report = await PluginCheckRunner.RunAsync(directory);
+
+        Assert.Equal(PluginCheckVerdict.WouldBeRefused, report.Verdict);
+        PluginCheckItem check = Assert.Single(report.Checks, c => c.Check == "plugin svg icon");
+        Assert.Equal(PluginCheckStatus.Fail, check.Status);
+        Assert.Contains("16 KiB", check.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AnOversizedSvgFailsTheContentPolicyInZipMode()
     {
         Directory.CreateDirectory(_root);
@@ -124,7 +138,7 @@ public sealed class PluginCheckRunnerTests : IDisposable
         Assert.Equal(PluginCheckVerdict.WouldBeRefused, report.Verdict);
         PluginCheckItem check = Assert.Single(report.Checks, c => c.Check == "plugin content policy");
         Assert.Equal(PluginCheckStatus.Fail, check.Status);
-        Assert.Contains("SVG", check.Message, StringComparison.Ordinal);
+        Assert.Contains("16 KiB", check.Message, StringComparison.Ordinal);
     }
 
     [Fact]

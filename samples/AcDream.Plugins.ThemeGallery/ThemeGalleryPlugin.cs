@@ -5,7 +5,7 @@ namespace AcDream.Plugins.ThemeGallery;
 /// <summary>
 /// One window with every markup control, opted into the shared plugin
 /// theme. It exists to be looked at -- switch between Classic, Moss and
-/// Brass from the plugin shelf's right-click menu -- and does nothing else.
+/// Brass from the dock's gear (Plugin appearance) -- and does nothing else.
 /// </summary>
 public sealed class ThemeGalleryPlugin : IAcDreamPlugin
 {

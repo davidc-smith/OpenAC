@@ -30,7 +30,9 @@ host.Ui.AddPanel(
 
 The plugin dock picks a slot's icon in order:
 
-1. the window's own `IconFile`, an SVG path relative to the install folder;
+1. the window's own `IconFile`, an SVG path relative to the install folder. It
+   must end in `.svg` and stay inside the folder: rooted paths, drive letters,
+   `..` that leaves the folder, and links that point out are refused;
 2. the plugin's `icon.svg`, at the root of its install folder;
 3. the plugin's `icon.png`, at the root of its install folder;
 4. `IconSurfaceId`;
@@ -68,7 +70,7 @@ The client reads a small, safe part of SVG. A file that uses anything else
 is not drawn at all, so an icon is never drawn wrong:
 
 - **Limits:** at most 16 KiB, 256 elements (title, desc and metadata content
-  counts too) nested at most 8 deep, 4,096 path commands, and 65,536
+  and the root `<svg>` count too) nested at most 8 deep, 4,096 path commands, and 65,536
   flattened points at each size the icon is baked for.
 - **Shapes:** `path` (every command, `M L H V C S Q T A Z`), `circle`,
   `ellipse`, `rect` (with `rx`/`ry`), `line`, `polyline`, `polygon`, grouped
@@ -77,9 +79,11 @@ is not drawn at all, so an icon is never drawn wrong:
 - **Style**, as attributes or in `style="..."`, inherited through `g`:
   `fill`, `stroke`, `fill-opacity`, `stroke-opacity`, `opacity`,
   `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`.
-  A paint value must be `none`, `currentColor`, a CSS colour name,
+  A paint value must be `none`, `transparent`, `currentColor`, a CSS colour name,
   `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, or `rgb()`, `rgba()`, `hsl()`,
-  `hsla()`; anything else rejects the file. `opacity` on a `g` is applied to
+  `hsla()`; anything else rejects the file. Keywords and colour names are
+  case-insensitive. A file that draws nothing (no shapes, or everything
+  `fill="none"` with no stroke) is refused too and falls back to the next icon. `opacity` on a `g` is applied to
   each child separately, so where two children overlap they look slightly
   darker than a browser would draw them.
 - **Transforms:** `matrix`, `translate`, `scale`, `rotate`, `skewX`,
