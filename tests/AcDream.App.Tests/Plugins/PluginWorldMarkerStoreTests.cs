@@ -67,6 +67,27 @@ public sealed class PluginWorldMarkerStoreTests
     }
 
     [Fact]
+    public void AListClaimingAbsurdlyManyIconsIsRefusedWithoutBeingCopied()
+    {
+        var store = new PluginWorldMarkerStore();
+        IPluginWorldMarkerLayer layer = Layer(store);
+        Assert.True(layer.SetIcons([Over(1u)]));
+
+        // Refused on its Count alone: the fake throws if anything reads it.
+        Assert.False(layer.SetIcons(new HugeList()));
+
+        Assert.Single(store.CaptureIcons());
+    }
+
+    private sealed class HugeList : IReadOnlyList<PluginWorldIcon>
+    {
+        public int Count => int.MaxValue;
+        public PluginWorldIcon this[int index] => throw new InvalidOperationException();
+        public IEnumerator<PluginWorldIcon> GetEnumerator() => throw new InvalidOperationException();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => throw new InvalidOperationException();
+    }
+
+    [Fact]
     public void TheCapCountsEveryLayerOfThePluginAndRefusesTheWholeSet()
     {
         var store = new PluginWorldMarkerStore();

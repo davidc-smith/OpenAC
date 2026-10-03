@@ -167,7 +167,12 @@ public sealed class PluginWorldMarkerStore
             ArgumentNullException.ThrowIfNull(icons);
             // The plugin's list is read once, outside the lock, so a list that
             // throws or crawls cannot do so while other callers wait on it.
-            var given = new PluginWorldIcon[icons.Count];
+            // Count is read once: a set over the cap on its own can never be
+            // accepted, so it is refused before anything is allocated.
+            int count = icons.Count;
+            if (count > IPluginWorldMarkers.MaximumIcons)
+                return false;
+            var given = new PluginWorldIcon[count];
             for (int i = 0; i < given.Length; i++)
                 given[i] = icons[i];
             lock (store._gate)
