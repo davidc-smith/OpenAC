@@ -138,46 +138,51 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         (uint Texture, int Width, int Height)? fileIcon,
         PluginSvgIconCache.PluginSvgIconEntry? svgIcon)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
-        ArgumentNullException.ThrowIfNull(descriptor);
-        ArgumentNullException.ThrowIfNull(handle);
-        if (_entries.ContainsKey(handle))
+        bool handedOver = false;
+        try
         {
-            svgIcon?.Release();
-            return;
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
+            ArgumentNullException.ThrowIfNull(descriptor);
+            ArgumentNullException.ThrowIfNull(handle);
+            if (_entries.ContainsKey(handle)) return;
+
+            handle.OuterFrame.ConstrainResizeToParent = true;
+            KeepWindowReachable(handle);
+
+            var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, fileIcon, svgIcon)
+            {
+                Width = DockSlot,
+                Height = DockSlot,
+            };
+            button.Click += () =>
+            {
+                if (handle.IsVisible)
+                    handle.Hide();
+                else
+                    handle.Show();
+            };
+
+            var minimize = new PluginMinimizeButton(handle, _font, _themes)
+            {
+                Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
+                Top = 3f,
+                Width = 18f,
+                Height = 17f,
+                Anchors = AnchorEdges.Top | AnchorEdges.Right,
+            };
+            handle.OuterFrame.AddChild(minimize);
+
+            _entries.Add(handle, new ShelfEntry(button, minimize));
+            handedOver = true;
+            _order.Add(handle);
+            AddChild(button);
+            Reflow();
         }
-
-        handle.OuterFrame.ConstrainResizeToParent = true;
-        KeepWindowReachable(handle);
-
-        var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, fileIcon, svgIcon)
+        finally
         {
-            Width = DockSlot,
-            Height = DockSlot,
-        };
-        button.Click += () =>
-        {
-            if (handle.IsVisible)
-                handle.Hide();
-            else
-                handle.Show();
-        };
-
-        var minimize = new PluginMinimizeButton(handle, _font, _themes)
-        {
-            Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
-            Top = 3f,
-            Width = 18f,
-            Height = 17f,
-            Anchors = AnchorEdges.Top | AnchorEdges.Right,
-        };
-        handle.OuterFrame.AddChild(minimize);
-
-        _entries.Add(handle, new ShelfEntry(button, minimize));
-        _order.Add(handle);
-        AddChild(button);
-        Reflow();
+            if (!handedOver) svgIcon?.Release();
+        }
     }
 
     public void Show()

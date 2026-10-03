@@ -126,13 +126,18 @@ public sealed class PluginShelfSvgIconTests : IDisposable
         Assert.Equal(48, Assert.Single(_backend.Uploaded).Size);
     }
 
-    [Fact]
-    public void TheIconLandsOnTheDeviceGrid()
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.25f)]
+    [InlineData(1.5f)]
+    [InlineData(1.75f)]
+    [InlineData(2f)]
+    public void TheIconLandsOnTheDeviceGrid(float scale)
     {
         Rig rig = Build(new PluginUiThemeSettings { Theme = PluginUiTheme.Moss });
         rig.Button.Left = 10.3f;
         rig.Button.Top = 20.7f;
-        (TextRenderer renderer, UiRenderContext context) = Context(pixelScale: 2f);
+        (TextRenderer renderer, UiRenderContext context) = Context(pixelScale: scale);
         rig.Button.DrawSelfAndChildren(context);
 
         int index = renderer.DebugSpriteSegmentCoverage.ToList().IndexOf(_backend.Uploaded[0].Texture);
@@ -145,10 +150,11 @@ public sealed class PluginShelfSvgIconTests : IDisposable
             minY = MathF.Min(minY, v[i + 1]);
             maxY = MathF.Max(maxY, v[i + 1]);
         }
-        Assert.Equal(MathF.Round(minX * 2f), minX * 2f, 3);
-        Assert.Equal(MathF.Round(minY * 2f), minY * 2f, 3);
-        Assert.Equal(24f, maxX - minX, 3);
-        Assert.Equal(24f, maxY - minY, 3);
+        Assert.Equal(MathF.Round(minX * scale), minX * scale, 2);
+        Assert.Equal(MathF.Round(minY * scale), minY * scale, 2);
+        float expected = PluginSvgIconCache.DevicePixels(24f, scale) / scale;
+        Assert.Equal(expected, maxX - minX, 3);
+        Assert.Equal(expected, maxY - minY, 3);
     }
 
     [Theory]
@@ -238,6 +244,23 @@ public sealed class PluginShelfSvgIconTests : IDisposable
             entry);
         Assert.Equal(1, entry.Holders);
         rig.Shelf.Dispose();
+    }
+
+    [Fact]
+    public void AddingToADisposedDockStillGivesTheHoldBack()
+    {
+        Rig rig = Build();
+        rig.Shelf.Dispose();
+        PluginSvgIconCache.PluginSvgIconEntry entry = _cache.Acquire("acdream.test/icon.svg", _path)!;
+        Assert.Equal(1, entry.Holders);
+        Assert.Throws<ObjectDisposedException>(() => rig.Shelf.Add(
+            new PluginUiOwner("acdream.test", "Test Plugin"),
+            new PluginPanelDescriptor("other", "Other"),
+            rig.Handle,
+            null,
+            entry));
+        Assert.Equal(0, entry.Holders);
+        Assert.Equal(0, _cache.EntryCount);
     }
 
     /// <summary>Bakes the button's icon at 1x with a throwaway draw and returns its texture.</summary>
