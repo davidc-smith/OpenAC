@@ -1266,6 +1266,7 @@ itself, from the object's position and its own knowledge of the place.
 The set belongs to the session: when the character leaves the world, every
 plugin's labels are dropped, and a plugin that is unloaded takes its labels
 with it.
+
 ## World markers
 
 ```csharp
