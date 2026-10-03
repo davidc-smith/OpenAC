@@ -1,7 +1,7 @@
 # World markers — design
 
-Date: 2026-10-03. Status: approved; corrected while planning PR 1 (see the
-PR 1 plan's "Spec corrections").
+Date: 2026-10-03. Status: approved; corrected while planning PR 1 and PR 2
+(see each plan's "Spec corrections").
 
 ## Goal
 
@@ -78,7 +78,7 @@ layer.SetShapes([
     PluginGroundShape.Ring(PluginMarkerAnchor.Object(targetId), radius: 2f, width: 0.15f, color),
     PluginGroundShape.Disc(PluginMarkerAnchor.At(aoeCentre), radius: 6f, new PluginColor(255, 80, 0, 90)),
     PluginGroundShape.Arc(PluginMarkerAnchor.Object(mobId), radius: 5f,
-        startDegrees: -45f, sweepDegrees: 90f, filled: true, color) { FacesObject = true },
+        startDegrees: -45f, sweepDegrees: 90f, filled: true, color) with { FacesObject = true },
 ]);
 ```
 
@@ -120,7 +120,7 @@ above its head and labels, and per-icon offsets would tear a row apart.
 public readonly record struct PluginGroundShape
 {
     public PluginMarkerAnchor Anchor { get; init; }
-    public PluginGroundShapeKind Kind { get; init; }     // Ring, Disc, Arc
+    public PluginGroundShapeKind Kind { get; init; }     // None (dropped), Ring, Disc, Arc
     public float Radius { get; init; }                   // metres, 0.1..100
     public float Width { get; init; }                    // metres, outline width (Ring, unfilled Arc)
     public float StartDegrees { get; init; }             // Arc: clockwise from north
@@ -137,7 +137,9 @@ public readonly record struct PluginGroundShape
 ```
 
 A ring and an unfilled arc are bands from `Radius - Width` to `Radius`. A
-disc and a filled arc are filled from the centre.
+disc and a filled arc are filled from the centre. The store normalises rings
+and discs to a full turn from north (their start, sweep and `FacesObject`
+are ignored) and drops the width of discs and filled arcs.
 
 ### Surface and layers
 
@@ -209,17 +211,22 @@ before it, so label text stays readable over icons.
 
 A new `PluginGroundShapeRenderer` drawn in the same slot as
 `PluginWorldLineRenderer` (both Vulkan frame-phase call sites), after the
-opaque world.
+opaque world and right after the plugin world lines.
 
 - **Pipeline:** a new `GroundShapeBatch`, a sibling of
-  `DebugLineRenderer` with its own vertex layout (position plus RGBA
-  colour; the line renderer's is RGB only) and its own budget. Alpha
-  blending, depth test on, depth write off, with a small depth bias against
-  the ground. Shapes are hidden by walls and hills and never hide each
-  other.
+  `DebugLineRenderer` with its own `ground_shape` shader, vertex layout
+  (position plus RGBA colour; the line renderer's is RGB only) and 2 MiB
+  budget. Straight alpha blending, depth test on, depth write off. Shapes
+  are hidden by walls and hills and never hide each other. The RHI has no
+  depth-bias state, so instead of a pipeline bias each vertex is moved
+  0.2 % of the way toward the camera: the same place on screen, only its
+  depth comes forward (2 cm at 10 m, 50 cm at 250 m).
 - **Tessellation:** a pure `GroundShapeTessellator` turns a shape into
   triangles. Edge segments about 0.5 m long, 16 to 128 per shape (360°
-  equivalent; an arc takes its share).
+  equivalent; an arc takes its share, at least one). Filled shapes are also
+  cut into concentric rings about 4 m deep (at most 8), so a large disc has
+  points on the land every few metres instead of a fan cutting through a
+  hill.
 - **Ground height:**
   - Outdoors (an object anchor whose base is within about 1 m of the
     sampled terrain, or a spot anchor with `IsOutdoor`), each vertex sits
@@ -228,8 +235,10 @@ opaque world.
   - Otherwise (indoors, a dungeon, a bridge or roof) the shape is flat at
     the anchor's height plus 5 cm. An object anchor's height is its base.
 - **Facing:** `FacesObject` adds the object's heading to `StartDegrees`.
-  The internal anchor lookup (`TryResolveWorldLabelAnchor` or a sibling)
-  gains the object's heading.
+  `WorldLabelAnchor` gains an init-only `HeadingDegrees`, which
+  `TryResolveWorldLabelAnchor` sets from the entity's rotation
+  (`MoveToMath.GetHeading`), or from the published child pose for a
+  wielded object.
 - **Bounds:** shapes whose centre is more than
   `PluginWorldLineRenderer.DrawRangeMeters` (250 m) from the camera are
   skipped. When the frame's shapes exceed the remaining vertex budget, the
