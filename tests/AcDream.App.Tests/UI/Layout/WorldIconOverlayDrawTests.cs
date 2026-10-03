@@ -165,6 +165,42 @@ public sealed class WorldIconOverlayDrawTests
     }
 
     [Fact]
+    public void ALabelsHeightOffsetLiftsTheIconsWithIt()
+    {
+        DrawOnce([Icon(1u)], out WorldIconOverlayController level,
+            labels: [new PluginWorldLabel(1u, "a", Vector4.One)]);
+        DrawOnce([Icon(1u)], out WorldIconOverlayController raised,
+            labels: [new PluginWorldLabel(1u, "a", Vector4.One, HeightOffset: 1f)]);
+
+        // The label hangs from its offset head; so must the row above it.
+        WorldLabelAnchor at = Anchor(1u)!.Value;
+        float lift = ScreenY(at.BasePosition + new Vector3(0f, 0f, at.Height))
+            - ScreenY(at.BasePosition + new Vector3(0f, 0f, at.Height + 1f));
+        Assert.True(lift > 0f);
+        Assert.Equal(level.Placements.Single().Y - lift, raised.Placements.Single().Y, 3);
+    }
+
+    [Theory]
+    [InlineData(-1f)]
+    [InlineData(float.NaN)]
+    [InlineData(float.PositiveInfinity)]
+    public void ANegativeOrNonFiniteLabelOffsetLeavesTheIconsWhereTheyWere(float offset)
+    {
+        DrawOnce([Icon(1u)], out WorldIconOverlayController level,
+            labels: [new PluginWorldLabel(1u, "a", Vector4.One)]);
+        DrawOnce([Icon(1u)], out WorldIconOverlayController odd,
+            labels: [new PluginWorldLabel(1u, "a", Vector4.One, HeightOffset: offset)]);
+
+        Assert.Equal(level.Placements.Single().Y, odd.Placements.Single().Y, 3);
+    }
+
+    private static float ScreenY(Vector3 point)
+    {
+        Vector4 clip = Vector4.Transform(new Vector4(point, 1f), View * Projection);
+        return (1f - clip.Y / clip.W) * 0.5f * Viewport.Y;
+    }
+
+    [Fact]
     public void NothingPlacedHidesTheLayer()
     {
         DrawOnce([], out WorldIconOverlayController controller);

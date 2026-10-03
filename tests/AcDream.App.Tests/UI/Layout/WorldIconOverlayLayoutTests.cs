@@ -49,7 +49,8 @@ public sealed class WorldIconOverlayLayoutTests
         IReadOnlyList<WorldIconEntry> icons,
         Func<uint, WorldLabelAnchor?> anchor,
         Func<uint, int>? labelLines = null,
-        Func<PluginNavigationPosition, Vector3?>? position = null)
+        Func<PluginNavigationPosition, Vector3?>? position = null,
+        Func<uint, float>? labelHeightOffset = null)
     {
         var output = new List<WorldIconPlacement>();
         new WorldIconLayout().Place(
@@ -57,6 +58,7 @@ public sealed class WorldIconOverlayLayoutTests
             anchor,
             position ?? (_ => null),
             labelLines ?? (_ => 0),
+            labelHeightOffset ?? (_ => 0f),
             LineHeight,
             View,
             Projection,
@@ -85,6 +87,20 @@ public sealed class WorldIconOverlayLayoutTests
             [Over(1u)], _ => StandingAt(10f), labelLines: id => id == 1u ? 2 : 0));
 
         Assert.Equal(240f - 2 * LineHeight - 2f - 24f, only.Y, 3);
+    }
+
+    [Fact]
+    public void IconsRiseWithTheLabelsHeightOffsetInMetres()
+    {
+        WorldIconPlacement only = Assert.Single(Place(
+            [Over(1u)],
+            _ => StandingAt(10f),
+            labelLines: id => id == 1u ? 1 : 0,
+            labelHeightOffset: id => id == 1u ? 1f : 0f));
+
+        // A label raised 1 m hangs from 3 m up, which at 10 m projects to
+        // y = 210 rather than 240; the row sits a gap above its one line.
+        Assert.Equal(210f - LineHeight - 2f - 24f, only.Y, 3);
     }
 
     [Fact]

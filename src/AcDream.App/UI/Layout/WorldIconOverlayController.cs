@@ -49,6 +49,10 @@ internal sealed class WorldIconLayout
     /// <param name="anchor">An object's base and height by server id, or null when the client does not hold it.</param>
     /// <param name="position">A navigation position in world metres, or null when the client cannot place it yet.</param>
     /// <param name="labelLines">How many label lines hang over an object, by server id.</param>
+    /// <param name="labelHeightOffset">
+    /// How far above an object's head, in metres, its labels hang, by server
+    /// id; the icons hang from the same point so they stay above the labels.
+    /// </param>
     /// <param name="lineHeight">The label font's line height in interface points.</param>
     /// <param name="view">The camera's view matrix.</param>
     /// <param name="projection">The camera's projection matrix.</param>
@@ -59,6 +63,7 @@ internal sealed class WorldIconLayout
         Func<uint, WorldLabelAnchor?> anchor,
         Func<PluginNavigationPosition, Vector3?> position,
         Func<uint, int> labelLines,
+        Func<uint, float> labelHeightOffset,
         float lineHeight,
         Matrix4x4 view,
         Matrix4x4 projection,
@@ -76,7 +81,8 @@ internal sealed class WorldIconLayout
             }
             else if (at.Kind == PluginMarkerAnchorKind.Object && _placedObjects.Add(at.ObjectId))
             {
-                PlaceOverObject(icons, index, anchor, labelLines, lineHeight, view, projection, viewport, output);
+                PlaceOverObject(
+                    icons, index, anchor, labelLines, labelHeightOffset, lineHeight, view, projection, viewport, output);
             }
         }
 
@@ -113,6 +119,7 @@ internal sealed class WorldIconLayout
         int first,
         Func<uint, WorldLabelAnchor?> anchor,
         Func<uint, int> labelLines,
+        Func<uint, float> labelHeightOffset,
         float lineHeight,
         Matrix4x4 view,
         Matrix4x4 projection,
@@ -122,7 +129,8 @@ internal sealed class WorldIconLayout
         uint objectId = icons[first].Icon.Anchor.ObjectId;
         if (anchor(objectId) is not { } at)
             return;
-        Vector3 head = at.BasePosition + new Vector3(0f, 0f, at.Height);
+        // Labels hang from the head raised by their offset; so does the row.
+        Vector3 head = at.BasePosition + new Vector3(0f, 0f, at.Height + labelHeightOffset(objectId));
         if (!TryProject(head, view, projection, viewport, out Vector2 centre, out float depth))
             return;
 
@@ -322,9 +330,9 @@ internal sealed class WorldIconLayerElement : UiElement
 /// Hangs plugin icons in the world on the shared overlay band, on a layer of
 /// its own mounted before the label layer, so label text reads over icons.
 ///
-/// <para>Each frame it counts the label lines over each object, places every
-/// icon through <see cref="WorldIconLayout"/>, and hands the result to one
-/// drawing element. Two placement lists alternate, as the label overlay's do,
+/// <para>Each frame it counts the label lines over each object and how far
+/// they are raised, places every icon through <see cref="WorldIconLayout"/>,
+/// and hands the result to one drawing element. Two placement lists alternate, as the label overlay's do,
 /// so the list being drawn is never the list being written. Icons are not
 /// occluded: the interface is drawn after the world.</para>
 /// </summary>
@@ -343,6 +351,8 @@ internal sealed class WorldIconOverlayController
     private readonly Func<bool>? _hidden;
     private readonly Dictionary<uint, int> _labelLines = [];
     private readonly Func<uint, int> _labelLinesOf;
+    private readonly Dictionary<uint, float> _labelOffsets = [];
+    private readonly Func<uint, float> _labelOffsetOf;
     private List<WorldIconPlacement> _front = [];
     private List<WorldIconPlacement> _back = [];
 
@@ -369,6 +379,7 @@ internal sealed class WorldIconOverlayController
         _camera = camera;
         _hidden = hidden;
         _labelLinesOf = id => _labelLines.GetValueOrDefault(id);
+        _labelOffsetOf = id => _labelOffsets.GetValueOrDefault(id);
     }
 
     /// <summary>The element doing the drawing, for the tests that count its runs.</summary>
@@ -443,6 +454,7 @@ internal sealed class WorldIconOverlayController
             _anchor,
             _position,
             _labelLinesOf,
+            _labelOffsetOf,
             _labelLineHeight,
             camera.View,
             camera.Projection,
@@ -451,10 +463,14 @@ internal sealed class WorldIconOverlayController
         Present(icons);
     }
 
-    /// <summary>How many lines of labels hang over each object: its highest line plus one.</summary>
+    /// <summary>
+    /// How many lines of labels hang over each object -- its highest line plus
+    /// one -- and the largest finite upward offset among them, in metres.
+    /// </summary>
     private void CountLabelLines()
     {
         _labelLines.Clear();
+        _labelOffsets.Clear();
         if (_labels is null)
             return;
         IReadOnlyList<PluginWorldLabel> labels = _labels();
@@ -466,6 +482,9 @@ internal sealed class WorldIconOverlayController
             int lines = Math.Max(0, label.Line) + 1;
             if (lines > _labelLines.GetValueOrDefault(label.ObjectId))
                 _labelLines[label.ObjectId] = lines;
+            float offset = label.HeightOffset;
+            if (float.IsFinite(offset) && offset > _labelOffsets.GetValueOrDefault(label.ObjectId))
+                _labelOffsets[label.ObjectId] = offset;
         }
     }
 
