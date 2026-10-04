@@ -242,6 +242,47 @@ public sealed class WorldSelectionQueryTests
     }
 
     [Fact]
+    public void LabelAnchorCarriesTheWayTheObjectFaces()
+    {
+        var h = new Harness();
+        // A quarter turn clockwise seen from above: facing east.
+        h.Add(Target, Vector3.Zero, ItemType.Creature,
+            rotation: Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -MathF.PI / 2f));
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(Target, out WorldLabelAnchor anchor));
+        Assert.Equal(90f, anchor.HeadingDegrees, 3);
+    }
+
+    [Fact]
+    public void LabelAnchorOfAnUnturnedObjectFacesNorthOnEveryHeightRung()
+    {
+        var h = new Harness { Cylinder = (0f, 0f), Sphere = null, ModelHeight = null };
+        h.Add(Target, Vector3.Zero, ItemType.Creature);
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(Target, out WorldLabelAnchor anchor));
+        Assert.Equal(WorldLabelAnchorSource.Fallback, anchor.Source);
+        Assert.Equal(0f, anchor.HeadingDegrees, 3);
+    }
+
+    [Fact]
+    public void AWieldedObjectFacesTheWayItsPublishedPoseDoes()
+    {
+        var h = new Harness();
+        WorldEntity wielder = h.Add(Wielder, new Vector3(0f, 0f, -10f), ItemType.Creature);
+        h.AddAttached(
+            RemoteWeapon,
+            wielder.Position,
+            ItemType.MeleeWeapon,
+            wielderId: Wielder,
+            // A quarter turn anticlockwise seen from above: facing west.
+            childRoot: Matrix4x4.CreateRotationZ(MathF.PI / 2f) * Matrix4x4.CreateTranslation(1f, 2f, -9f));
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(RemoteWeapon, out WorldLabelAnchor anchor));
+        Assert.Equal(new Vector3(1f, 2f, -9f), anchor.BasePosition);
+        Assert.Equal(270f, anchor.HeadingDegrees, 3);
+    }
+
+    [Fact]
     public void PickRejectsPublishedPartAfterGuidWasReused()
     {
         var h = new Harness();

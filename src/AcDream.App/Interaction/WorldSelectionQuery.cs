@@ -6,6 +6,7 @@ using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Net;
 using AcDream.Core.Physics;
+using AcDream.Core.Physics.Motion;
 using AcDream.Core.Properties;
 using AcDream.Core.Selection;
 using AcDream.Core.Ui;
@@ -110,7 +111,14 @@ public enum WorldLabelAnchorSource
 public readonly record struct WorldLabelAnchor(
     Vector3 BasePosition,
     float Height,
-    WorldLabelAnchorSource Source);
+    WorldLabelAnchorSource Source)
+{
+    /// <summary>
+    /// The way the object faces, as a compass bearing in degrees: 0 is north,
+    /// 90 east, clockwise. Ground shapes that face with the object turn by it.
+    /// </summary>
+    public float HeadingDegrees { get; init; }
+}
 
 internal interface IRetainedUiSelectionQuery
 {
@@ -594,18 +602,27 @@ internal sealed class WorldSelectionQuery
         bool attached =
             _liveEntities.TryGetAttachedProjectedRecord(serverGuid, out _);
         Vector3 basePosition = entity.Position;
+        Quaternion rotation = entity.Rotation;
         if (attached)
         {
             if (_childRootPose(entity.Id) is not { } published)
                 return false;
             basePosition = published.Translation;
+            // A wielded object turns with the pose it was published at, not
+            // with the rotation its entity last had of its own.
+            if (Matrix4x4.Decompose(published, out _, out Quaternion childRotation, out _))
+                rotation = childRotation;
         }
+        float heading = MoveToMath.GetHeading(rotation);
 
         (_, float bodyHeight) = _setupCylinder(serverGuid, entity);
         if (bodyHeight > 0f && float.IsFinite(bodyHeight))
         {
             anchor = new WorldLabelAnchor(
-                basePosition, bodyHeight, WorldLabelAnchorSource.PhysicsCylinder);
+                basePosition, bodyHeight, WorldLabelAnchorSource.PhysicsCylinder)
+            {
+                HeadingDegrees = heading,
+            };
             return true;
         }
 
@@ -626,7 +643,10 @@ internal sealed class WorldSelectionQuery
             if (top > 0f && float.IsFinite(top))
             {
                 anchor = new WorldLabelAnchor(
-                    basePosition, top, WorldLabelAnchorSource.SelectionSphere);
+                    basePosition, top, WorldLabelAnchorSource.SelectionSphere)
+                {
+                    HeadingDegrees = heading,
+                };
                 return true;
             }
         }
@@ -637,12 +657,18 @@ internal sealed class WorldSelectionQuery
             && float.IsFinite(modelTop))
         {
             anchor = new WorldLabelAnchor(
-                basePosition, modelTop * scale, WorldLabelAnchorSource.ModelBounds);
+                basePosition, modelTop * scale, WorldLabelAnchorSource.ModelBounds)
+            {
+                HeadingDegrees = heading,
+            };
             return true;
         }
 
         anchor = new WorldLabelAnchor(
-            basePosition, FallbackLabelHeight, WorldLabelAnchorSource.Fallback);
+            basePosition, FallbackLabelHeight, WorldLabelAnchorSource.Fallback)
+        {
+            HeadingDegrees = heading,
+        };
         return true;
     }
 
