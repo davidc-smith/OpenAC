@@ -147,6 +147,15 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
         LiveInventorySessionBindings inventory = _inventory;
         LiveCharacterSessionBindings character = _character;
         LiveSocialSessionBindings social = _social;
+        RuntimeFellowshipEventSink? fellowshipEvents = social.Fellowship is { } fellowship
+            ? new RuntimeFellowshipEventSink(fellowship, inventory.PlayerGuid, text =>
+            {
+                if (social.AddText is { } addText)
+                    addText(text, RetailLogTextType.Default);
+                else
+                    social.Chat.OnSystemMessage(text, (uint)RetailLogTextType.Default);
+            })
+            : null;
 
         try
         {
@@ -307,15 +316,9 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                 onFellowshipUpdateFellow: social.Fellowship is { } fellowshipUpdate
                     ? fellowshipUpdate.ApplyUpdateFellow
                     : null,
-                onFellowshipQuit: social.Fellowship is { } fellowshipQuit
-                    ? quitterGuid => fellowshipQuit.ApplyQuit(quitterGuid, inventory.PlayerGuid())
-                    : null,
-                onFellowshipDismiss: social.Fellowship is { } fellowshipDismiss
-                    ? dismissedGuid => fellowshipDismiss.ApplyDismiss(dismissedGuid, inventory.PlayerGuid())
-                    : null,
-                onFellowshipDisband: social.Fellowship is { } fellowshipDisband
-                    ? fellowshipDisband.ApplyDisband
-                    : null,
+                onFellowshipQuit: fellowshipEvents is null ? null : fellowshipEvents.ApplyQuit,
+                onFellowshipDismiss: fellowshipEvents is null ? null : fellowshipEvents.ApplyDismiss,
+                onFellowshipDisband: fellowshipEvents is null ? null : fellowshipEvents.ApplyDisband,
                 onAllegianceUpdate: social.Allegiance is { } allegianceUpdate
                     ? allegianceUpdate.ApplyUpdate
                     : null,
