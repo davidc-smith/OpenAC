@@ -2,7 +2,7 @@ namespace AcDream.Plugin.Abstractions;
 
 /// <summary>
 /// How a plugin's window should be presented: its identity, its title bar,
-/// its shelf button, and whether it starts open.
+/// its dock button, and whether it starts open.
 /// </summary>
 /// <param name="WindowId">
 /// The plugin's own short name for this window. It is part of the key the
@@ -13,14 +13,18 @@ namespace AcDream.Plugin.Abstractions;
 public sealed record PluginPanelDescriptor(string WindowId, string Title)
 {
     /// <summary>
-    /// A word or two of initials drawn on the shelf button when no icon id
-    /// is given. Null falls back to the host's own default.
+    /// A word or two of initials drawn on the dock button when the window has
+    /// no other icon (<see cref="IconFile"/>, the plugin's <c>icon.svg</c> or
+    /// <c>icon.png</c>, or <see cref="IconSurfaceId"/>). Null falls back to
+    /// the host's own default.
     /// </summary>
     public string? IconText { get; init; }
 
     /// <summary>
-    /// The icon drawn on the shelf button, either a full image id or a bare
-    /// index. 0 means no icon, in which case <see cref="IconText"/> is used.
+    /// The icon drawn on the dock button, either a full image id or a bare
+    /// index, used when the window has no <see cref="IconFile"/> and the
+    /// plugin ships no <c>icon.svg</c> or <c>icon.png</c>. 0 means no icon, in
+    /// which case <see cref="IconText"/> is used.
     /// </summary>
     public uint IconSurfaceId { get; init; }
 
@@ -38,7 +42,7 @@ public sealed record PluginPanelDescriptor(string WindowId, string Title)
     /// <summary>Whether the window is open as soon as it is registered.</summary>
     public bool StartVisible { get; init; } = true;
 
-    /// <summary>Whether this window receives a button in the shared sidepanel.</summary>
+    /// <summary>Whether this window receives a button in the plugin dock.</summary>
     public bool ShowInSidePanel { get; init; } = true;
 }
 
@@ -63,7 +67,7 @@ public interface IUiRegistry
 
     /// <summary>
     /// Registers a window for the plugin's lifetime, with a descriptor
-    /// giving its id, title and shelf button.
+    /// giving its id, title and dock button.
     /// </summary>
     /// <param name="descriptor">How the window is identified and presented.</param>
     /// <param name="markupPath">Absolute path to the plugin's panel markup file.</param>
@@ -77,7 +81,7 @@ public interface IUiRegistry
     /// <summary>
     /// Registers a window whose lifetime may be ended independently while the
     /// plugin keeps running. Disposing the token removes the retained window
-    /// and its sidepanel entry.
+    /// and its dock button.
     /// </summary>
     IDisposable RegisterPanel(
         PluginPanelDescriptor descriptor,
@@ -110,7 +114,7 @@ public interface IUiRegistry
     bool IsViewVisible(string viewName) => false;
 
     /// <summary>
-    /// Shows one of this plugin's own windows, as its shelf button does --
+    /// Shows one of this plugin's own windows, as its dock button does --
     /// including one the player closed with its close button, which the
     /// plugin setting its own bound visibility back to true does not undo.
     /// A window whose markup binds its visibility to something the plugin
@@ -127,7 +131,7 @@ public interface IUiRegistry
 
     /// <summary>
     /// Hides one of this plugin's own windows, as closing it does: it stays
-    /// registered and <see cref="ShowPanel"/> or its shelf button brings it
+    /// registered and <see cref="ShowPanel"/> or its dock button brings it
     /// back. A window already hidden by its own bound visibility is left as
     /// it is, as a close would leave it: it shows again when the binding
     /// turns true.

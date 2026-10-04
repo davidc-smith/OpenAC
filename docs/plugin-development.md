@@ -124,7 +124,11 @@ constructor. The host creates it with no arguments, then calls:
 `WorldLines` draws lines in the world (a route, say) in layers the plugin
 owns; a host without a window hands out no layer. Only the parts of lines
 within 250 m of the camera are drawn, and a frame draws a fixed amount of
-them: past that, the lines nearest the camera are kept. `Automation` is the
+them: past that, the lines nearest the camera are kept. `Ui` registers
+windows and also hands out what a plugin draws for itself:
+`Ui.WorldMarkers` (icons over objects and shapes on the ground), `Ui.Images`,
+`Ui.Fonts` and canvases (`Ui.RegisterCanvas`), all covered in the
+[plugin API guide](plugin-api.md#world-markers). `Automation` is the
 large surface: character, items, spells, combat, world objects, trade,
 vendor, navigation, fellowship, login. Check `IsAvailable` on a surface
 before relying on it; a host that cannot provide something returns an inert
@@ -184,11 +188,11 @@ that failed to start is tried again the same way. The same happens when the
 launcher updates your plugin while a game is running.
 
 A reload switches the running copy off (`Disable`), then releases everything
-the host handed it: panels, canvases and images; commands; hotkeys; handlers
+the host handed it: panels, canvases, images and fonts; commands; hotkeys; handlers
 on `Events` and `Selection`; chat filters, input interceptors and chat
 handlers; the handlers on `Automation.Trade`, `Automation.Vendor`,
 `Automation.Equipment` and `Automation.Navigation`, its walk and its pauses;
-world labels and world lines; maps, HUDs and textures; loot classifiers;
+world labels, world lines and world-marker layers; maps, HUDs and textures; loot classifiers;
 status lines. Then it unloads the old assemblies, creates the new copy, and
 calls `Initialize` and `Enable` as at startup. `IPluginHost.IsHotReload` is
 true for that new copy. If the character is already in the world, the new

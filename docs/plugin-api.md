@@ -1,9 +1,18 @@
-# Plugin API: chat, lifecycle, spells, storage, clipboard, objects, confirmations, session and loot
+# Plugin API: chat, lifecycle, spells, storage, clipboard, objects, confirmations, session, loot and drawing
 
 Everything here lives in `AcDream.Plugin.Abstractions` and has a default
 implementation, so a plugin written against an older build still compiles and
 a host that cannot provide something returns an inert value rather than
 throwing. `docs/plugin-ui-markup.md` covers the panel markup separately.
+
+A plugin that draws for itself, rather than through panel markup, starts
+at [World labels](#world-labels) and [World markers](#world-markers)
+(text, icons and ground shapes in the world), [Images](#images),
+[Fonts](#fonts) and [Canvases](#canvases), whose subsections cover
+[image regions](#image-regions), [shapes](#shapes),
+[high-density displays](#high-density-displays),
+[layers and order](#layers-and-order), [pointer input](#pointer-input) and
+[keyboard input](#keyboard-input).
 
 ## The tick
 
@@ -1324,8 +1333,10 @@ the rest are shown.
 
 `SetShapes` lays shapes on the ground around an anchor. `Ring` is a band from
 `radius - width` out to `radius`; `Disc` is filled; `Arc` is part of a
-circle -- a wedge filled from the centre, or, unfilled, a band like a ring's.
-Sizes are metres, and a radius may be 0.1 to 100. An arc starts at
+circle -- a wedge filled from the centre, or, unfilled, a band like a ring's
+(`width` wide, 0.15 m unless given: `PluginGroundShape.DefaultWidth`).
+Sizes are metres, and a radius may be 0.1 to 100
+(`PluginGroundShape.MinimumRadius` to `MaximumRadius`). An arc starts at
 `startDegrees`, a compass bearing (0 is north, 90 east), and runs clockwise
 through `sweepDegrees` (more than 0, up to 360). With `FacesObject` an arc
 over an object measures its start from the way the object faces, so a wedge
@@ -1359,7 +1370,15 @@ next session; the layers stay usable, so the plugin sets its markers again on
 the next stay. Images are dropped when the interface is torn down (for
 example on a reconnect); an icon whose image is gone is not drawn until the
 plugin asks for its images again and sets its markers again. Call all of this
-from the tick thread, as with every other UI call.
+from the tick thread, as with every other UI call. `SetIcons` and `SetShapes`
+throw `ArgumentNullException` for a null list and `ObjectDisposedException`
+on a disposed layer.
+
+Without a window, and on a host that predates world markers, `CreateLayer()`
+answers null: there is no layer to keep a set in, unlike
+[world labels](#world-labels), which a windowless client keeps. A plugin that
+needs markers declares a `minHostVersion` (see the
+[manifest guide](plugin-manifest.md)) of a client that has them.
 
 ## Images
 
@@ -1432,7 +1451,8 @@ takes some milliseconds and happens when it is asked for, never while a
 canvas paints: ask for fonts up front, not inside the paint callback. A
 request made inside a paint callback for a font not already held answers
 `PluginFont.None` and is reported once; asking again for a font already held
-is allowed.
+is allowed, and, like any other request, adds a hold that needs its own
+`Release`. `Count` says how many distinct fonts the plugin holds.
 
 `FromStream` prepares the characters named in `PluginFontOptions.Ranges`,
 or by default U+0020-U+024F, U+0370-U+052F and U+2000-U+206F. Only the
@@ -1456,11 +1476,17 @@ a usable font answers `PluginFont.None` and is reported once in the
 client's log; text drawn with an invalid or released font draws nothing and
 measures `(0, 0)`.
 
-Call all of this from the tick thread; another thread gets an
-`InvalidOperationException`. Without a window, or before the client's
-interface is up, `IsAvailable` is false and every request answers
-`PluginFont.None`; fonts are dropped when the interface is torn down, after
-which the plugin asks again.
+Call all of this from the tick thread; once the client's interface is up,
+another thread gets an `InvalidOperationException`. Without a window, or
+before the client's interface is up, `IsAvailable` is false and every request
+answers `PluginFont.None`; fonts are dropped when the interface is torn down,
+after which the plugin asks again.
+
+On a host that predates fonts, `host.Ui.Fonts` answers `PluginFont.None` to
+every request, and `DrawText` and `MeasureText` given a font draw and measure
+in the interface font instead, so the canvas still shows its text. A plugin
+whose look depends on its fonts declares a `minHostVersion` (see the
+[manifest guide](plugin-manifest.md)) of a client that has them.
 
 ## Canvases
 
@@ -1501,8 +1527,9 @@ are `Clear`, `FillRect`, `StrokeRect`, `DrawLine`, `DrawText` with
 `MeasureText` (the client's interface font, or a font from
 [Fonts](#fonts)), `DrawImage`,
 `DrawImageTransformed` (scaled and turned about a pivot, for a compass or
-a rotating map) and `PushClip`/`PopClip`; every clip pushed must be popped
-before the callback returns. Colours with alpha, translucent images and
+a rotating map) and `PushClip`/`PopClip`, plus
+[image regions](#image-regions) and [shapes](#shapes) below; every clip
+pushed must be popped before the callback returns. Colours with alpha, translucent images and
 text edges are shown at the opacity they were painted with, over whatever
 lies beneath the canvas.
 
@@ -1635,7 +1662,8 @@ The scale is the window's framebuffer pixels per point, rounded up to a
 quarter, from 1 to 4. A canvas too large for the graphics card at that scale is painted
 at the largest quarter that fits. When the scale changes -- the window
 moved to another display -- the host repaints the canvas; the paint
-callback reads the new value then.
+callback reads the new value then. On a host that does not scale, or one
+that predates high-density displays, `PixelScale` is 1.
 
 The client's interface font keeps its look: it is drawn on whole canvas
 pixels, as the rest of the interface draws it, so on a 2x display each of
@@ -1873,7 +1901,11 @@ with the paint callback when the canvas is disposed.
 
 Without a window `AcceptsKeyboardInput` and the handler are kept, the
 handler is never called, `RequestKeyboardFocus()` answers false and
-`HasKeyboardFocus` is false.
+`HasKeyboardFocus` is false. A host that predates keyboard input answers
+`KeyHandler` with null and ignores a handler set on it, and
+`RequestKeyboardFocus()` answers false. A plugin that needs keys declares a
+`minHostVersion` (see the [manifest guide](plugin-manifest.md)) of a client
+that has keyboard input.
 
 ## Dungeon map
 
@@ -2296,7 +2328,10 @@ tested; it does not mean the flight is blocked.
 
 `Labels.ShowLabels` is taken on both clients, with the same validation and
 the same cap. A windowless client keeps the set and has nothing to draw it
-with; a plugin cannot tell the two apart through this surface.
+with; a plugin cannot tell the two apart through this surface. World markers,
+which live on `host.Ui` rather than here, differ: without a window
+`host.Ui.WorldMarkers.CreateLayer()` answers null (see
+[World markers](#world-markers)).
 
 ### Walking to something and then using it
 
