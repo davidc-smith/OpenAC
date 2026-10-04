@@ -1279,14 +1279,21 @@ layer?.SetIcons(
     new PluginWorldIcon(PluginMarkerAnchor.At(waypoint), waypointImage)
         { SizePixels = 32, MaxRange = 200f },
 ]);
+
+layer?.SetShapes(
+[
+    PluginGroundShape.Ring(PluginMarkerAnchor.Object(targetId), radius: 2f, width: 0.15f, new PluginColor(220, 60, 60)),
+    PluginGroundShape.Disc(PluginMarkerAnchor.At(blastCentre), radius: 6f, new PluginColor(255, 80, 0, 90)),
+    PluginGroundShape.Arc(PluginMarkerAnchor.Object(creatureId), radius: 5f, startDegrees: -45f, sweepDegrees: 90f,
+        filled: true, new PluginColor(255, 200, 40, 90)) with { FacesObject = true },
+]);
 ```
 
-`host.Ui.WorldMarkers` hangs images in the world: over an object, following
-it wherever it goes, or pinned to a position. A plugin makes layers and sets
-each layer's icons; a call replaces that layer's set, and the list is copied,
-so it can be reused. Disposing a layer takes its icons away. How a plugin
-decides what to show -- which creatures carry its debuffs, where its route
-goes -- is its own business; the client only draws.
+`host.Ui.WorldMarkers` hangs images in the world -- over an object, following
+it wherever it goes, or pinned to a position -- and lays shapes on the ground
+around them. A plugin makes layers and sets each layer's icons and shapes; a
+call replaces that layer's set of that kind, and the list is copied, so it
+can be reused. Disposing a layer takes its markers away.
 
 Over an object, the client lays the object's icons out itself: centred in
 rows of up to eight, two points apart, above the object's head and above any
@@ -1315,16 +1322,42 @@ finite number), with an image that is not valid, or with a size or range
 that is not a finite number (or a range that is not positive) is dropped and
 the rest are shown.
 
+`SetShapes` lays shapes on the ground around an anchor. `Ring` is a band from
+`radius - width` out to `radius`; `Disc` is filled; `Arc` is part of a
+circle -- a wedge filled from the centre, or, unfilled, a band like a ring's.
+Sizes are metres, and a radius may be 0.1 to 100. An arc starts at
+`startDegrees`, a compass bearing (0 is north, 90 east), and runs clockwise
+through `sweepDegrees` (more than 0, up to 360). With `FacesObject` an arc
+over an object measures its start from the way the object faces, so a wedge
+in front of a creature turns as it turns. The colour's alpha is the shape's
+opacity.
+
+Shapes are drawn in the world, not over it: walls and hills hide them, and
+they never hide each other. Outdoors -- an object standing on the land, or a
+position whose `IsOutdoor` is true -- a shape follows the slope of the land
+under it; anywhere else (a dungeon, a floor, a roof) it lies flat at the
+object's feet or at the position's height. A shape whose centre is more than
+250 m from the camera is not drawn, and when a frame's shapes come to more
+than the client draws at once, the nearest are drawn.
+
+Each plugin may have at most `IPluginWorldMarkers.MaximumShapes` (256)
+shapes set across all its layers, counted apart from its icons, and refused
+the same way. Inside an accepted set a shape is dropped when it is pinned to
+nothing, of no kind, or has a radius out of range, a ring's or unfilled arc's
+width that is not more than zero and at most the radius, or an arc's start
+or sweep that is not a finite number or a sweep out of range. A ring's or
+disc's start, sweep and `FacesObject` are ignored.
+
 Like labels, icons are not occluded: they show through walls and hills,
 because the interface is drawn after the world.
 
 Layers belong to the plugin: unloading it takes them down. When the
 character leaves the world -- logging out, losing the connection,
-reconnecting -- every layer's icons are cleared, because object ids mean
+reconnecting -- every layer's icons and shapes are cleared, because object ids mean
 nothing in the next session; the layers stay usable, so the plugin sets its
-icons again on the next stay. Images are dropped when the interface is torn
+markers again on the next stay. Images are dropped when the interface is torn
 down (for example on a reconnect); an icon whose image is gone is not drawn
-until the plugin asks for its images again and sets its icons again. Call
+until the plugin asks for its images again and sets its markers again. Call
 all of this from the tick thread, as with every other UI call.
 
 ## Images

@@ -4,9 +4,11 @@ namespace AcDream.Plugins.WorldMarkersDemo;
 
 /// <summary>
 /// Hangs a row of spell icons over the selected object -- or over the player
-/// when nothing is selected -- and pins a larger, half-transparent icon a few
-/// metres east of where the player stood when the demo first saw them. It
-/// exists to be looked at, for example to check the icon overlay on a
+/// when nothing is selected -- with a ring at its feet and a wedge in front
+/// of it that turns as it turns, and marks a spot a few metres east of where
+/// the player stood when the demo first saw them with a larger,
+/// half-transparent icon over a disc and a half band on the ground. It
+/// exists to be looked at, for example to check the markers on a
 /// high-density display, and does nothing else.
 /// </summary>
 public sealed class WorldMarkersDemoPlugin : IAcDreamPlugin
@@ -21,7 +23,7 @@ public sealed class WorldMarkersDemoPlugin : IAcDreamPlugin
     private IPluginHost? _host;
     private IPluginWorldMarkerLayer? _layer;
     private PluginImage _spotImage = PluginImage.None;
-    private PluginNavigationPosition? _spot;
+    private PluginNavigationPosition? _ground;
     private uint _shownOver;
     private bool _dirty;
 
@@ -47,14 +49,14 @@ public sealed class WorldMarkersDemoPlugin : IAcDreamPlugin
     }
 
     // The client clears every layer on logoff; forget what was shown so the
-    // next stay sets the icons again.
+    // next stay sets the markers again.
     private void OnLogoff()
     {
         _shownOver = 0u;
-        _spot = null;
+        _ground = null;
     }
 
-    /// <summary>Images can only be asked for once the interface is up, and the icons follow the selection.</summary>
+    /// <summary>Images can only be asked for once the interface is up, and the markers follow the selection.</summary>
     private void OnTick(double deltaSeconds)
     {
         if (_host is not { } host || _layer is not { } layer) return;
@@ -76,14 +78,10 @@ public sealed class WorldMarkersDemoPlugin : IAcDreamPlugin
 
         PluginNavigationSnapshot navigation = host.Automation.Navigation.Snapshot;
         if (!navigation.IsAvailable) return;
-        if (_spot is null)
+        if (_ground is null)
         {
             PluginNavigationPosition here = navigation.Position;
-            _spot = here with
-            {
-                EastWest = here.EastWest + 5d / MetresPerMapUnit,
-                Elevation = here.Elevation + 1.5d / MetresPerMapUnit,
-            };
+            _ground = here with { EastWest = here.EastWest + 5d / MetresPerMapUnit };
             _dirty = true;
         }
 
@@ -96,6 +94,8 @@ public sealed class WorldMarkersDemoPlugin : IAcDreamPlugin
         if (!_dirty || over == 0u) return;
         _dirty = false;
 
+        PluginNavigationPosition ground = _ground.Value;
+        PluginNavigationPosition spot = ground with { Elevation = ground.Elevation + 1.5d / MetresPerMapUnit };
         var icons = new List<PluginWorldIcon>(_row.Count + 1);
         for (int i = 0; i < _row.Count; i++)
         {
@@ -106,12 +106,25 @@ public sealed class WorldMarkersDemoPlugin : IAcDreamPlugin
                 Tint = i == 2 ? new PluginColor(255, 255, 255, 110) : PluginColor.White,
             });
         }
-        icons.Add(new PluginWorldIcon(PluginMarkerAnchor.At(_spot.Value), _spotImage)
+        icons.Add(new PluginWorldIcon(PluginMarkerAnchor.At(spot), _spotImage)
         {
             SizePixels = 40f,
             Tint = new PluginColor(255, 255, 255, 180),
             MaxRange = 120f,
         });
         layer.SetIcons(icons);
+
+        layer.SetShapes(
+        [
+            // A ring at the feet of whatever the icons hang over...
+            PluginGroundShape.Ring(PluginMarkerAnchor.Object(over), radius: 1.5f, width: 0.15f, Hostile),
+            // ...and a wedge in front of it that turns as it turns.
+            PluginGroundShape.Arc(PluginMarkerAnchor.Object(over), radius: 4f, startDegrees: -30f, sweepDegrees: 60f,
+                filled: true, new PluginColor(255, 200, 40, 90)) with { FacesObject = true },
+            // A see-through disc under the spot, and a band round its eastern half.
+            PluginGroundShape.Disc(PluginMarkerAnchor.At(ground), radius: 3f, new PluginColor(255, 80, 0, 90)),
+            PluginGroundShape.Arc(PluginMarkerAnchor.At(ground), radius: 4.5f, startDegrees: 0f, sweepDegrees: 180f,
+                filled: false, new PluginColor(80, 160, 255, 200), width: 0.3f),
+        ]);
     }
 }
