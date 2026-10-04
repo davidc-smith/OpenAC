@@ -293,7 +293,6 @@ public interface IPluginWorldMarkerLayer : IDisposable
     /// </returns>
     bool SetIcons(IReadOnlyList<PluginWorldIcon> icons);
 
-
     /// <summary>
     /// Replaces this layer's ground shapes with <paramref name="shapes"/>.
     /// The list is copied and may be reused. Shapes pinned to nothing, of no

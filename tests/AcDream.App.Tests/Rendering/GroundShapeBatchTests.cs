@@ -66,12 +66,13 @@ public sealed class GroundShapeBatchTests
         batch.Begin();
         for (int i = 0; i < (GroundShapeBatch.VertexBudget / 3) + 100; i++)
             batch.AddTriangle(Vector3.Zero, Vector3.UnitX, Vector3.UnitY, HalfOrange);
-        Assert.InRange(batch.RemainingVertexBudget, 0, 2);
+        Assert.Equal(GroundShapeBatch.VertexBudget % 3, batch.RemainingVertexBudget);
         using (IGpuPassEncoder encoder = frame.BeginPass(WorldPass(withDepth: true)))
             batch.Flush(encoder, Matrix4x4.Identity, 1280, 720);
 
+        // Every whole triangle that fits, and not one more.
         uint drawn = Assert.Single(device.Calls.OfType<GpuRecordedDraw>()).VertexCount;
-        Assert.InRange((int)drawn, 1, GroundShapeBatch.VertexBudget);
+        Assert.Equal(GroundShapeBatch.VertexBudget / 3 * 3, (int)drawn);
     }
 
     [Fact]
