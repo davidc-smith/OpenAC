@@ -10,15 +10,17 @@ internal readonly record struct WorldIconEntry(string OwnerId, PluginWorldIcon I
 /// <summary>
 /// Every plugin's world markers. Each plugin gets one surface, the same until
 /// it is disposed, and makes layers on it; the overlay reads one merged,
-/// ordered snapshot. Everything is guarded by one lock: plugins set markers
-/// on the tick thread, but a logoff can clear them from whichever thread
-/// ends the session.
+/// ordered snapshot of icons and the world pass one of ground shapes.
+/// Everything is guarded by one lock: plugins set markers on the tick thread,
+/// the shapes are read on the render thread, and a logoff can clear them from
+/// whichever thread ends the session.
 /// </summary>
 public sealed class PluginWorldMarkerStore
 {
     private readonly object _gate = new();
     private readonly SortedDictionary<string, Markers> _owners = new(StringComparer.Ordinal);
     private WorldIconEntry[]? _merged = [];
+    private PluginGroundShape[]? _mergedShapes = [];
 
     /// <summary>
     /// One plugin's surface, the same object on every call until it is
@@ -63,6 +65,27 @@ public sealed class PluginWorldMarkerStore
     }
 
     /// <summary>
+    /// Every ground shape of every plugin, already checked and normalised, in
+    /// the same order as <see cref="CaptureIcons"/>. The same array until
+    /// something changes; the caller never writes to it.
+    /// </summary>
+    internal IReadOnlyList<PluginGroundShape> CaptureShapes()
+    {
+        lock (_gate)
+        {
+            if (_mergedShapes is { } merged)
+                return merged;
+            var shapes = new List<PluginGroundShape>();
+            foreach (Markers owner in _owners.Values)
+            {
+                foreach (Layer layer in owner.Layers)
+                    shapes.AddRange(layer.Shapes);
+            }
+            return _mergedShapes = shapes.ToArray();
+        }
+    }
+
+    /// <summary>
     /// Empties every layer of every plugin. The layers stay, so a plugin sets
     /// its markers again on its next stay in the world without asking for a
     /// new layer.
@@ -74,9 +97,12 @@ public sealed class PluginWorldMarkerStore
             foreach (Markers owner in _owners.Values)
             {
                 foreach (Layer layer in owner.Layers)
+                {
                     layer.Icons = [];
+                    layer.Shapes = [];
+                }
             }
-            _merged = null;
+            Changed();
         }
     }
 
@@ -92,6 +118,13 @@ public sealed class PluginWorldMarkerStore
         Action clear = Clear;
         events.Logoff += clear;
         return new Subscription(events, clear);
+    }
+
+    // The caller holds the gate. Both snapshots are rebuilt on next read.
+    private void Changed()
+    {
+        _merged = null;
+        _mergedShapes = null;
     }
 
     private sealed class Subscription(IEvents events, Action clear) : IDisposable
@@ -136,6 +169,17 @@ public sealed class PluginWorldMarkerStore
             return count;
         }
 
+        internal int ShapeCountExcept(Layer except)
+        {
+            int count = 0;
+            foreach (Layer layer in Layers)
+            {
+                if (!ReferenceEquals(layer, except))
+                    count += layer.Shapes.Length;
+            }
+            return count;
+        }
+
         public void Dispose()
         {
             lock (store._gate)
@@ -151,7 +195,7 @@ public sealed class PluginWorldMarkerStore
                 {
                     store._owners.Remove(ownerId);
                 }
-                store._merged = null;
+                store.Changed();
             }
         }
     }
@@ -162,19 +206,13 @@ public sealed class PluginWorldMarkerStore
 
         internal PluginWorldIcon[] Icons { get; set; } = [];
 
+        internal PluginGroundShape[] Shapes { get; set; } = [];
+
         public bool SetIcons(IReadOnlyList<PluginWorldIcon> icons)
         {
             ArgumentNullException.ThrowIfNull(icons);
-            // The plugin's list is read once, outside the lock, so a list that
-            // throws or crawls cannot do so while other callers wait on it.
-            // Count is read once: a set over the cap on its own can never be
-            // accepted, so it is refused before anything is allocated.
-            int count = icons.Count;
-            if (count > IPluginWorldMarkers.MaximumIcons)
+            if (!TryCopy(icons, IPluginWorldMarkers.MaximumIcons, out PluginWorldIcon[] given))
                 return false;
-            var given = new PluginWorldIcon[count];
-            for (int i = 0; i < given.Length; i++)
-                given[i] = icons[i];
             lock (store._gate)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
@@ -187,9 +225,49 @@ public sealed class PluginWorldMarkerStore
                         accepted.Add(icon);
                 }
                 Icons = accepted.ToArray();
-                store._merged = null;
+                store.Changed();
                 return true;
             }
+        }
+
+        public bool SetShapes(IReadOnlyList<PluginGroundShape> shapes)
+        {
+            ArgumentNullException.ThrowIfNull(shapes);
+            if (!TryCopy(shapes, IPluginWorldMarkers.MaximumShapes, out PluginGroundShape[] given))
+                return false;
+            lock (store._gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (given.Length + owner.ShapeCountExcept(this) > IPluginWorldMarkers.MaximumShapes)
+                    return false;
+                var accepted = new List<PluginGroundShape>(given.Length);
+                for (int i = 0; i < given.Length; i++)
+                {
+                    if (WorldMarkerRules.TryNormalizeShape(given[i], out PluginGroundShape shape))
+                        accepted.Add(shape);
+                }
+                Shapes = accepted.ToArray();
+                store.Changed();
+                return true;
+            }
+        }
+
+        // The plugin's list is read once, outside the lock, so a list that
+        // throws or crawls cannot do so while other callers wait on it.
+        // Count is read once: a set over the cap on its own can never be
+        // accepted, so it is refused before anything is allocated.
+        private static bool TryCopy<T>(IReadOnlyList<T> entries, int maximum, out T[] copy)
+        {
+            int count = entries.Count;
+            if (count > maximum)
+            {
+                copy = [];
+                return false;
+            }
+            copy = new T[count];
+            for (int i = 0; i < copy.Length; i++)
+                copy[i] = entries[i];
+            return true;
         }
 
         /// <summary>Marks the layer gone and empties it; the caller removes it from its owner.</summary>
@@ -197,6 +275,7 @@ public sealed class PluginWorldMarkerStore
         {
             _disposed = true;
             Icons = [];
+            Shapes = [];
         }
 
         public void Dispose()
@@ -207,7 +286,7 @@ public sealed class PluginWorldMarkerStore
                     return;
                 Detach();
                 owner.Layers.Remove(this);
-                store._merged = null;
+                store.Changed();
             }
         }
     }

@@ -44,4 +44,57 @@ internal static class WorldMarkerRules
         };
         return true;
     }
+
+    /// <summary>
+    /// The shape as the renderer will draw it, or false when it is dropped.
+    /// A ring or disc becomes a full turn from north (its start, sweep and
+    /// facing are ignored); a disc or filled arc has no width.
+    /// </summary>
+    internal static bool TryNormalizeShape(PluginGroundShape shape, out PluginGroundShape normalized)
+    {
+        normalized = default;
+        if (!IsValidAnchor(shape.Anchor)
+            || !float.IsFinite(shape.Radius)
+            || shape.Radius < PluginGroundShape.MinimumRadius
+            || shape.Radius > PluginGroundShape.MaximumRadius)
+        {
+            return false;
+        }
+
+        switch (shape.Kind)
+        {
+            case PluginGroundShapeKind.Ring:
+                if (!IsValidBand(shape.Width, shape.Radius))
+                    return false;
+                normalized = shape with { StartDegrees = 0f, SweepDegrees = 360f, Filled = false, FacesObject = false };
+                return true;
+            case PluginGroundShapeKind.Disc:
+                normalized = shape with { Width = 0f, StartDegrees = 0f, SweepDegrees = 360f, Filled = true, FacesObject = false };
+                return true;
+            case PluginGroundShapeKind.Arc:
+                if (!float.IsFinite(shape.StartDegrees)
+                    || !float.IsFinite(shape.SweepDegrees)
+                    || shape.SweepDegrees <= 0f
+                    || shape.SweepDegrees > 360f)
+                {
+                    return false;
+                }
+                if (shape.Filled)
+                {
+                    normalized = shape with { Width = 0f };
+                    return true;
+                }
+                if (!IsValidBand(shape.Width, shape.Radius))
+                    return false;
+                normalized = shape;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // A band runs inward from the radius: it must have some width and cannot
+    // run past the centre.
+    private static bool IsValidBand(float width, float radius) =>
+        float.IsFinite(width) && width > 0f && width <= radius;
 }
