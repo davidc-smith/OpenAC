@@ -228,17 +228,20 @@ opaque world and right after the plugin world lines.
   points on the land every few metres instead of a fan cutting through a
   hill.
 - **Ground height:**
-  - Outdoors (an object anchor whose base is within about 1 m of the
-    sampled terrain, or a spot anchor with `IsOutdoor`), each vertex sits
-    5 cm above `PhysicsEngine.SampleTerrainZ` at that vertex, so a ring on a
-    slope follows the slope.
-  - Otherwise (indoors, a dungeon, a bridge or roof) the shape is flat at
-    the anchor's height plus 5 cm. An object anchor's height is its base.
+  - In an outdoor cell AND no more than 1 m above the sampled land at the
+    shape's centre (at or below the land counts), each vertex sits 5 cm
+    above `PhysicsEngine.SampleTerrainZ` at that vertex, so a ring on a
+    slope follows the slope. The same rule serves both anchor kinds.
+  - Otherwise (indoors, a dungeon, or up on a bridge or roof) the shape is
+    flat at the anchor's height plus 5 cm. An object anchor's height is its
+    base. An object's outdoor-ness comes from its cell, a spot's from
+    `IsOutdoor`.
 - **Facing:** `FacesObject` adds the object's heading to `StartDegrees`.
   `WorldLabelAnchor` gains an init-only `HeadingDegrees`, which
   `TryResolveWorldLabelAnchor` sets from the entity's rotation
   (`MoveToMath.GetHeading`), or from the published child pose for a
-  wielded object.
+  wielded object. It also gains an init-only `IsOutdoor`, set from the
+  entity's cell (an unknown cell counts as outdoors).
 - **Bounds:** shapes whose centre is more than
   `PluginWorldLineRenderer.DrawRangeMeters` (250 m) from the camera are
   skipped. When the frame's shapes exceed the remaining vertex budget, the
