@@ -72,6 +72,18 @@ public sealed class PluginGroundShapeRendererTests
     }
 
     [Fact]
+    public void AShapeOnTheLandIsInViewWhereTheLandIsNotWhereItsAnchorIs()
+    {
+        // Pinned 50 m under the land, below the view; it is drawn on the land, in view.
+        using var scene = new Scene(LookingEast());
+        PluginGroundShape sunk = PluginGroundShape.Disc(At(new Vector3(50f, 0f, -50f)), 2f, Orange);
+
+        scene.Draw(sunk);
+
+        Assert.Equal(VertexCount(sunk), scene.DrawnVertexCount);
+    }
+
+    [Fact]
     public void AShapeOffScreenDoesNotTakeTheBudgetFromOneOnIt()
     {
         using var scene = new Scene(LookingEast());
