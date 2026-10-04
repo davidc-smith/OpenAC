@@ -29,6 +29,17 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
+  <!-- Fork only (davidc-smith/OpenAC): the fork's contract runs ahead of upstream's under the same
+       <Version>, so a plugin in its own repository packs it under a version of its own and never
+       mistakes an older 0.1.23 package for it. Bump the fork number whenever the fork changes the
+       contract; when a sync moves upstream's <Version>, start again at <Version>-fork.1. Only a pack
+       that asks with -p:UseForkContractVersion=true carries it, so the client, restore and the lock
+       files keep <Version>. -->
+  <PropertyGroup>
+    <ForkContractVersion>0.1.23-fork.1</ForkContractVersion>
+    <PackageVersion Condition="'$(UseForkContractVersion)' == 'true'">$(ForkContractVersion)</PackageVersion>
+  </PropertyGroup>
+
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
