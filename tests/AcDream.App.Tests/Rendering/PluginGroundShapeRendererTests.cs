@@ -89,6 +89,38 @@ public sealed class PluginGroundShapeRendererTests
         Assert.Contains(fixedNorth.UploadedPositions(), p => p.Y > 4.5f);
     }
 
+    [Fact]
+    public void AWedgeAtAFixedSpotDoesNotTurnWithTheSpotsHeading()
+    {
+        // FacesObject is for arcs over objects; at a spot facing east the wedge still points north.
+        PluginMarkerAnchor spot = PluginMarkerAnchor.At(At(new Vector3(5f, 6f, 0f)).Position with { HeadingDegrees = 90f });
+        PluginGroundShape wedge = PluginGroundShape.Arc(spot, 5f, -10f, 20f, filled: true, Orange) with { FacesObject = true };
+
+        Assert.True(PluginGroundShapeRenderer.TryPlace(wedge, _ => null, FlatLand, 127, 127, out GroundShapePlacement placement));
+
+        Assert.Equal(-10f, placement.StartDegrees);
+    }
+
+    [Fact]
+    public void EachFrameDrawsOnlyThatFramesShapes()
+    {
+        using var scene = new Scene(camera: Vector3.Zero);
+        PluginGroundShape disc = PluginGroundShape.Disc(At(new Vector3(5f, 0f, 0f)), 2f, Orange);
+        PluginGroundShape ring = PluginGroundShape.Ring(At(new Vector3(-5f, 0f, 0f)), 1f, 0.2f, Orange);
+
+        scene.Draw(disc, ring);
+        scene.Draw(ring);
+        scene.Draw(ring);
+
+        int discVertices = VertexCount(disc);
+        int ringVertices = VertexCount(ring);
+        Assert.Equal([(uint)(discVertices + ringVertices), (uint)ringVertices, (uint)ringVertices], scene.DrawnVertexCounts);
+        // The last frame's upload is the ring alone, round its own spot.
+        Vector3[] last = scene.UploadedPositions()[^ringVertices..];
+        Assert.All(last, p => Assert.InRange(
+            Vector2.Distance(new Vector2(p.X, p.Y), new Vector2(-5f, 0f)), 0.8f - 0.1f, 1f + 0.1f));
+    }
+
     [Theory]
     [InlineData(0.3f, true)]   // standing on the land
     [InlineData(-0.9f, true)]  // a little sunk into it
@@ -199,6 +231,12 @@ public sealed class PluginGroundShapeRendererTests
         Assert.Contains(scene.UploadedPositions(), p => MathF.Abs(p.X - 5f) <= 1.2f && MathF.Abs(p.Y) <= 1.2f);
     }
 
+    private static int VertexCount(PluginGroundShape shape)
+    {
+        Assert.True(WorldMarkerRules.TryNormalizeShape(shape, out PluginGroundShape normalized));
+        return GroundShapeTessellator.VertexCount(normalized);
+    }
+
     // With the world's origin at the centre landblock, a local position is
     // the map position times 240 plus 84 m on each ground axis.
     private static PluginMarkerAnchor At(Vector3 local) => PluginMarkerAnchor.At(new PluginNavigationPosition(
@@ -216,6 +254,7 @@ public sealed class PluginGroundShapeRendererTests
         private readonly GroundShapeBatch _batch;
         private readonly PluginWorldMarkerStore _store = new();
         private readonly PluginGroundShapeRenderer _renderer;
+        private IPluginWorldMarkerLayer? _layer;
 
         public Scene(Vector3 camera, bool originKnown = true)
         {
@@ -237,9 +276,12 @@ public sealed class PluginGroundShapeRendererTests
 
         public long DrawnVertexCount => _device.Calls.OfType<GpuRecordedDraw>().Sum(draw => (long)draw.VertexCount);
 
+        public uint[] DrawnVertexCounts => [.. _device.Calls.OfType<GpuRecordedDraw>().Select(draw => draw.VertexCount)];
+
         public void Draw(params PluginGroundShape[] shapes)
         {
-            Assert.True(_store.For("a.plugin").CreateLayer()!.SetShapes(shapes));
+            _layer ??= _store.For("a.plugin").CreateLayer()!;
+            Assert.True(_layer.SetShapes(shapes));
             using IGpuPassEncoder encoder = _frame.BeginPass(WorldPass());
             _renderer.Render(encoder, 1280, 720);
         }

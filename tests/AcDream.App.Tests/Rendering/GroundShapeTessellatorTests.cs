@@ -98,6 +98,50 @@ public sealed class GroundShapeTessellatorTests
     }
 
     [Fact]
+    public void AFilledFullTurnArcClosesWithoutASeam()
+    {
+        // At the origin, so no centre's offset rounds a stray last bit away.
+        PluginGroundShape arc = PluginGroundShape.Arc(Anchor, 4f, 37f, 360f, filled: true, Paint);
+        int segments = GroundShapeTessellator.SegmentsFor(4f, 360f);
+
+        List<Vector3> points = Cut(arc);
+
+        // One ring: a fan of (centre, rim i, rim i + 1). The last rim point is
+        // the first one exactly, not one turn of rounding away from it.
+        Assert.Equal(3 * segments, points.Count);
+        Assert.Equal(points[1], points[^1]);
+        Assert.All(points, p => Assert.True(Across(p, default) <= 4f + Tolerance));
+        Assert.Contains(points, p => p.X > 3.9f);
+        Assert.Contains(points, p => p.X < -3.9f);
+        Assert.Contains(points, p => p.Y > 3.9f);
+        Assert.Contains(points, p => p.Y < -3.9f);
+    }
+
+    [Fact]
+    public void AFilledSliverIsOneTriangleFromTheCentreAcrossItsSweep()
+    {
+        List<Vector3> points = Cut(PluginGroundShape.Arc(Anchor, 0.5f, 0f, 10f, filled: true, Paint));
+
+        Assert.Equal(3, points.Count);
+        Assert.Equal(0f, Across(points[0], default), 3);
+        // North, then 10° clockwise of north.
+        Assert.Equal(0f, points[1].X, 3);
+        Assert.Equal(0.5f, points[1].Y, 3);
+        Assert.Equal(0.5f * MathF.Sin(10f * MathF.PI / 180f), points[2].X, 3);
+        Assert.Equal(0.5f * MathF.Cos(10f * MathF.PI / 180f), points[2].Y, 3);
+    }
+
+    [Fact]
+    public void AnUnfilledSliverIsOneQuadAcrossItsBand()
+    {
+        List<Vector3> points = Cut(PluginGroundShape.Arc(Anchor, 0.5f, 0f, 10f, filled: false, Paint, width: 0.1f));
+
+        Assert.Equal(6, points.Count);
+        Assert.All(points, p => Assert.InRange(Across(p, default), 0.4f - Tolerance, 0.5f + Tolerance));
+        Assert.All(points, p => Assert.True(p.X >= -Tolerance));
+    }
+
+    [Fact]
     public void TheStartGivenOverridesTheShapesOwnStart()
     {
         // A thin wedge pointing north, started from 85° instead (its object faces east): it points east.
