@@ -29,9 +29,10 @@ internal sealed class PluginGroundShapeRenderer(
     // The same reach as plugins' world lines.
     internal const float DrawRangeMeters = PluginWorldLineRenderer.DrawRangeMeters;
 
-    // An object whose base is this close to the land under it is standing on
-    // the land, and its shapes follow it; anything further off (a floor, a
-    // roof, a bridge, a dungeon) gets a flat shape at its base.
+    // A shape follows the land only when its anchor is in an outdoor cell and
+    // no more than this far above the land at its centre (at or below the land
+    // counts). Anything else (a floor, a roof, a bridge, a dungeon) gets a
+    // flat shape at the anchor's height.
     internal const float OnTheLandMeters = 1f;
 
     // Each point moves this fraction of the way toward the camera. Along the
@@ -104,8 +105,7 @@ internal sealed class PluginGroundShapeRenderer(
                 Vector3 feet = anchor.BasePosition;
                 if (!float.IsFinite(feet.X + feet.Y + feet.Z))
                     return false;
-                bool onTheLand = terrain(feet.X, feet.Y) is { } ground
-                    && MathF.Abs(feet.Z - ground) <= OnTheLandMeters;
+                bool onTheLand = anchor.IsOutdoor && StandsOnTheLand(feet, terrain);
                 float start = shape.FacesObject
                     ? shape.StartDegrees + anchor.HeadingDegrees
                     : shape.StartDegrees;
@@ -117,13 +117,18 @@ internal sealed class PluginGroundShapeRenderer(
                 Vector3 spot = PluginNavigationProjection.ToWorld(shape.Anchor.Position, centerX, centerY);
                 if (!float.IsFinite(spot.X + spot.Y + spot.Z))
                     return false;
-                placement = new GroundShapePlacement(spot, shape.StartDegrees, shape.Anchor.Position.IsOutdoor);
+                bool onTheLand = shape.Anchor.Position.IsOutdoor && StandsOnTheLand(spot, terrain);
+                placement = new GroundShapePlacement(spot, shape.StartDegrees, onTheLand);
                 return true;
             }
             default:
                 return false;
         }
     }
+
+    // No more than OnTheLandMeters above the sampled land at the centre.
+    private static bool StandsOnTheLand(Vector3 centre, Func<float, float, float?> terrain) =>
+        terrain(centre.X, centre.Y) is { } ground && centre.Z - ground <= OnTheLandMeters;
 
     /// <summary><paramref name="point"/> moved <see cref="DepthNudge"/> of the way toward <paramref name="camera"/>.</summary>
     internal static Vector3 TowardCamera(Vector3 point, Vector3 camera) =>
@@ -162,6 +167,8 @@ internal sealed class PluginGroundShapeRenderer(
 /// <summary>
 /// Where one ground shape lies this frame: its centre in world metres, the
 /// bearing its arc starts at (the object's heading already added), and
-/// whether it follows the land or lies flat at the centre's height.
+/// whether it follows the land (its anchor is in an outdoor cell and no more
+/// than <see cref="PluginGroundShapeRenderer.OnTheLandMeters"/> above the land
+/// at the centre) or lies flat at the centre's height.
 /// </summary>
 internal readonly record struct GroundShapePlacement(Vector3 Centre, float StartDegrees, bool FollowTerrain);

@@ -8,6 +8,7 @@ using AcDream.Core.Net;
 using AcDream.Core.Physics;
 using AcDream.Core.Physics.Motion;
 using AcDream.Core.Properties;
+using AcDream.Core.Rendering;
 using AcDream.Core.Selection;
 using AcDream.Core.Ui;
 using AcDream.Core.World;
@@ -118,6 +119,12 @@ public readonly record struct WorldLabelAnchor(
     /// 90 east, clockwise. Ground shapes that face with the object turn by it.
     /// </summary>
     public float HeadingDegrees { get; init; }
+
+    /// <summary>
+    /// True when the object is in an outdoor landscape cell, false inside a
+    /// building or dungeon. Ground shapes follow the land only outdoors.
+    /// </summary>
+    public bool IsOutdoor { get; init; }
 }
 
 internal interface IRetainedUiSelectionQuery
@@ -614,6 +621,11 @@ internal sealed class WorldSelectionQuery
                 rotation = childRotation;
         }
         float heading = MoveToMath.GetHeading(rotation);
+        // An EnvCell id (low 16 bits >= 0x0100) is indoors. An entity with no
+        // cell yet is treated as outdoors, so the height rule alone decides.
+        // A wielded object uses its own entity's cell, like any other.
+        bool outdoor = entity.VisibilityCellId is not { } cellId
+            || !RenderingDiagnostics.IsEnvCellId(cellId);
 
         (_, float bodyHeight) = _setupCylinder(serverGuid, entity);
         if (bodyHeight > 0f && float.IsFinite(bodyHeight))
@@ -622,6 +634,7 @@ internal sealed class WorldSelectionQuery
                 basePosition, bodyHeight, WorldLabelAnchorSource.PhysicsCylinder)
             {
                 HeadingDegrees = heading,
+                IsOutdoor = outdoor,
             };
             return true;
         }
@@ -646,6 +659,7 @@ internal sealed class WorldSelectionQuery
                     basePosition, top, WorldLabelAnchorSource.SelectionSphere)
                 {
                     HeadingDegrees = heading,
+                    IsOutdoor = outdoor,
                 };
                 return true;
             }
@@ -660,6 +674,7 @@ internal sealed class WorldSelectionQuery
                 basePosition, modelTop * scale, WorldLabelAnchorSource.ModelBounds)
             {
                 HeadingDegrees = heading,
+                IsOutdoor = outdoor,
             };
             return true;
         }
@@ -668,6 +683,7 @@ internal sealed class WorldSelectionQuery
             basePosition, FallbackLabelHeight, WorldLabelAnchorSource.Fallback)
         {
             HeadingDegrees = heading,
+            IsOutdoor = outdoor,
         };
         return true;
     }

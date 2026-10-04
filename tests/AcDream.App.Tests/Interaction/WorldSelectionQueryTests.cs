@@ -98,7 +98,8 @@ public sealed class WorldSelectionQueryTests
             Quaternion? rotation = null,
             float? useRadius = null,
             byte? radarBehavior = null,
-            int? containersCapacity = null)
+            int? containersCapacity = null,
+            uint? cellId = null)
         {
             WorldSession.EntitySpawn spawn = Spawn(guid, instance) with
             {
@@ -113,6 +114,8 @@ public sealed class WorldSelectionQueryTests
                 guid,
                 0x0101_0001u,
                 id => Entity(id, guid, position, scale, rotation ?? Quaternion.Identity))!;
+            // The runtime assigns its own cell; the test names the one it wants.
+            entity.ParentCellId = cellId;
             Objects.AddOrUpdate(new ClientObject
             {
                 ObjectId = guid,
@@ -239,6 +242,19 @@ public sealed class WorldSelectionQueryTests
         var h = new Harness();
 
         Assert.False(h.Query.TryResolveWorldLabelAnchor(0x7000_0FFFu, out _));
+    }
+
+    [Theory]
+    [InlineData(0xA9B40021u, true)]
+    [InlineData(0xA9B40105u, false)]
+    [InlineData(null, true)]
+    public void LabelAnchorSaysWhetherTheObjectIsOutdoors(uint? cellId, bool outdoor)
+    {
+        var h = new Harness();
+        h.Add(Target, Vector3.Zero, ItemType.Creature, cellId: cellId);
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(Target, out WorldLabelAnchor anchor));
+        Assert.Equal(outdoor, anchor.IsOutdoor);
     }
 
     [Fact]

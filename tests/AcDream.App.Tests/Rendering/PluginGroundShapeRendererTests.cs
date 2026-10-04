@@ -96,7 +96,7 @@ public sealed class PluginGroundShapeRendererTests
     public void AnObjectFollowsTheLandOnlyWhenItStandsOnIt(float baseHeight, bool follows)
     {
         PluginGroundShape ring = PluginGroundShape.Ring(PluginMarkerAnchor.Object(Creature), 2f, 0.2f, Orange);
-        var anchor = new WorldLabelAnchor(new Vector3(0f, 0f, baseHeight), 2f, WorldLabelAnchorSource.PhysicsCylinder);
+        var anchor = new WorldLabelAnchor(new Vector3(0f, 0f, baseHeight), 2f, WorldLabelAnchorSource.PhysicsCylinder) { IsOutdoor = true };
 
         Assert.True(PluginGroundShapeRenderer.TryPlace(ring, _ => anchor, FlatLand, 127, 127, out GroundShapePlacement placement));
 
@@ -105,10 +105,34 @@ public sealed class PluginGroundShapeRendererTests
     }
 
     [Fact]
+    public void AnObjectInsideABuildingIsFlatEvenOnTheLand()
+    {
+        PluginGroundShape ring = PluginGroundShape.Ring(PluginMarkerAnchor.Object(Creature), 2f, 0.2f, Orange);
+        var anchor = new WorldLabelAnchor(new Vector3(0f, 0f, 0.3f), 2f, WorldLabelAnchorSource.PhysicsCylinder) { IsOutdoor = false };
+
+        Assert.True(PluginGroundShapeRenderer.TryPlace(ring, _ => anchor, FlatLand, 127, 127, out GroundShapePlacement placement));
+
+        Assert.False(placement.FollowTerrain);
+    }
+
+    [Theory]
+    [InlineData(1.0f, true)]
+    [InlineData(1.01f, false)]
+    public void TheOneMetreBoundaryIsInclusive(float baseHeight, bool follows)
+    {
+        PluginGroundShape ring = PluginGroundShape.Ring(PluginMarkerAnchor.Object(Creature), 2f, 0.2f, Orange);
+        var anchor = new WorldLabelAnchor(new Vector3(0f, 0f, baseHeight), 2f, WorldLabelAnchorSource.PhysicsCylinder) { IsOutdoor = true };
+
+        Assert.True(PluginGroundShapeRenderer.TryPlace(ring, _ => anchor, FlatLand, 127, 127, out GroundShapePlacement placement));
+
+        Assert.Equal(follows, placement.FollowTerrain);
+    }
+
+    [Fact]
     public void AnObjectWithNoLandUnderItIsFlat()
     {
         PluginGroundShape ring = PluginGroundShape.Ring(PluginMarkerAnchor.Object(Creature), 2f, 0.2f, Orange);
-        var anchor = new WorldLabelAnchor(Vector3.Zero, 2f, WorldLabelAnchorSource.PhysicsCylinder);
+        var anchor = new WorldLabelAnchor(Vector3.Zero, 2f, WorldLabelAnchorSource.PhysicsCylinder) { IsOutdoor = true };
 
         Assert.True(PluginGroundShapeRenderer.TryPlace(ring, _ => anchor, NoLand, 127, 127, out GroundShapePlacement placement));
 
@@ -116,19 +140,21 @@ public sealed class PluginGroundShapeRendererTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void ASpotFollowsTheLandOnlyOutdoors(bool outdoor)
+    [InlineData(true, 0f, true)]     // outdoors, on the land
+    [InlineData(true, 6f, false)]    // outdoors but up on a roof
+    [InlineData(false, 0f, false)]   // indoors
+    [InlineData(true, -20f, true)]   // outdoors, far below the land
+    public void ASpotFollowsTheLandOnlyOutdoorsAndOnIt(bool outdoor, float z, bool follows)
     {
         PluginGroundShape disc = PluginGroundShape.Disc(
-            PluginMarkerAnchor.At(At(new Vector3(5f, 6f, 7f)).Position with { IsOutdoor = outdoor }), 2f, Orange);
+            PluginMarkerAnchor.At(At(new Vector3(5f, 6f, z)).Position with { IsOutdoor = outdoor }), 2f, Orange);
 
         Assert.True(PluginGroundShapeRenderer.TryPlace(disc, _ => null, FlatLand, 127, 127, out GroundShapePlacement placement));
 
-        Assert.Equal(outdoor, placement.FollowTerrain);
+        Assert.Equal(follows, placement.FollowTerrain);
         Assert.Equal(5f, placement.Centre.X, 3);
         Assert.Equal(6f, placement.Centre.Y, 3);
-        Assert.Equal(7f, placement.Centre.Z, 3);
+        Assert.Equal(z, placement.Centre.Z, 3);
     }
 
     [Fact]
