@@ -1578,7 +1578,8 @@ public sealed class GameWindow :
                         _frameGraphs,
                         Console.WriteLine,
                         _renderPackDiagnostics,
-                        WorldLines),
+                        WorldLines,
+                        _uiRegistry?.WorldMarkerStore),
                     this).Compose(
                         platformResult,
                         hostInputCamera,

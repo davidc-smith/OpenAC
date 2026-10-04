@@ -58,7 +58,8 @@ internal sealed record FrameRootDependencies(
     Action<string> Log,
     AcDream.App.Rendering.Packs.DeferredRenderPackDiagnosticsSource?
         RenderPackDiagnostics = null,
-    AcDream.App.Plugins.PluginWorldLineStore? WorldLines = null)
+    AcDream.App.Plugins.PluginWorldLineStore? WorldLines = null,
+    AcDream.App.Plugins.PluginWorldMarkerStore? WorldMarkers = null)
 {
     public RuntimeLocalPlayerMovementState PlayerController =>
         Runtime.MovementOwner;
@@ -514,6 +515,23 @@ internal sealed class FrameRootCompositionPhase
                 displayPolicy,
                 live.WorldAvailability,
                 atmosphericInputs);
+            PluginGroundShapeRenderer? groundShapes = null;
+            if (d.WorldMarkers is { } worldMarkers)
+            {
+                // worldPassScope was checked non-null when the world pass surface was built above.
+                var groundShapeBatch = new GroundShapeBatch(host.GpuDevice, host.GpuFrameLifetime, worldPassScope!);
+                bindings.Adopt("plugin ground shape batch", groundShapeBatch);
+                groundShapes = new PluginGroundShapeRenderer(
+                    worldMarkers.CaptureShapes,
+                    groundShapeBatch,
+                    new RuntimeWorldFrameCameraSource(host.CameraController, session.LocalTeleport.ApplyViewPlane),
+                    d.WorldOrigin,
+                    guid => interaction.LateBindings.Selection.TryResolveWorldLabelAnchor(
+                        guid, out AcDream.App.Interaction.WorldLabelAnchor anchor)
+                        ? anchor
+                        : null,
+                    d.PhysicsEngine.SampleTerrainZ);
+            }
             worldSceneRenderer =
                 new AcDream.App.Rendering.Gpu.Vk.VulkanWorldScenePhase(
                     host.GpuFrameLifetime,
@@ -534,7 +552,8 @@ internal sealed class FrameRootCompositionPhase
                     d.WorldLines is null ? null : new PluginWorldLineRenderer(
                         d.WorldLines, foundation.DebugLines,
                         new RuntimeWorldFrameCameraSource(host.CameraController, session.LocalTeleport.ApplyViewPlane),
-                        d.WorldOrigin, d.PhysicsEngine));
+                        d.WorldOrigin, d.PhysicsEngine),
+                    groundShapes);
         }
         Fault(FrameRootCompositionPoint.WorldRendererCreated);
         WorldLifecycleAutomationController? lifecycleAutomation = null;
