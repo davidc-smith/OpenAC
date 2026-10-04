@@ -14,9 +14,10 @@ namespace AcDream.App.Rendering;
 /// </summary>
 /// <remarks>
 /// Bounded here, not by the plugin: a shape whose centre is more than
-/// <see cref="DrawRangeMeters"/> from the camera is skipped, and the
-/// triangles of one frame never exceed the batch's budget. When the shapes in
-/// range would, the nearest are drawn and the farthest are left out.
+/// <see cref="DrawRangeMeters"/> from the camera, or that lies wholly outside
+/// its view, is skipped, and the triangles of one frame never exceed the
+/// batch's budget. When the shapes in range and in view would, the nearest
+/// are drawn and the farthest are left out.
 /// </remarks>
 internal sealed class PluginGroundShapeRenderer(
     Func<IReadOnlyList<PluginGroundShape>> shapes,
@@ -40,6 +41,11 @@ internal sealed class PluginGroundShapeRenderer(
     // comes forward, so the land it lies on doesn't flicker through it.
     internal const float DepthNudge = 0.002f;
 
+    // How far the land under a shape that follows it may rise or fall per
+    // metre out from its centre, for the box the view is tested against:
+    // steeper than any slope the land has but a cliff.
+    internal const float LandSlopeAllowance = 2f;
+
     private readonly List<PlannedShape> _planned = [];
     private readonly List<Vector3> _triangles = [];
 
@@ -60,6 +66,8 @@ internal sealed class PluginGroundShapeRenderer(
                 continue;
             float distanceSquared = Vector3.DistanceSquared(placement.Centre, frame.Position);
             if (!(distanceSquared <= DrawRangeMeters * DrawRangeMeters))
+                continue;
+            if (!IsInView(frame.Frustum, placement, shape.Radius))
                 continue;
             int count = GroundShapeTessellator.VertexCount(shape);
             _planned.Add(new PlannedShape(shape, placement, distanceSquared, count));
@@ -124,6 +132,21 @@ internal sealed class PluginGroundShapeRenderer(
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Whether any of a shape of <paramref name="radius"/> metres lying at
+    /// <paramref name="placement"/> may be in the camera's view: a box round
+    /// it, as deep as the land under it could rise or fall, touches the
+    /// frustum.
+    /// </summary>
+    internal static bool IsInView(in FrustumPlanes frustum, in GroundShapePlacement placement, float radius)
+    {
+        float rise = placement.FollowTerrain
+            ? (radius * LandSlopeAllowance) + GroundShapeTessellator.LiftMeters
+            : GroundShapeTessellator.LiftMeters;
+        var reach = new Vector3(radius, radius, rise);
+        return FrustumCuller.IsAabbVisible(frustum, placement.Centre - reach, placement.Centre + reach);
     }
 
     // No more than OnTheLandMeters above the sampled land at the centre.
