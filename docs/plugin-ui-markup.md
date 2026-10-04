@@ -118,8 +118,9 @@ so other client panels can use it too; this preference currently changes only
 opted-in plugin windows. The atlas covers Latin, Greek, Cyrillic and common
 punctuation; unsupported characters display a question mark.
 
-The dock is 48 points wide, with 36-point slots and 24-point artwork; wheel
-scrolling reaches entries that do not fit vertically. PNG and DAT icons keep
+The floating dock is 48 points wide, with 36-point slots; on a left or right
+edge it becomes a 46-point rail with 46 by 38-point slots. Artwork is 24 points
+in both. Wheel scrolling reaches entries that do not fit vertically. PNG and DAT icons keep
 their full-color composition; SVG icons take the dock's state colours.
 
 Opted-in windows keep their authored layout. In the modern themes they draw
@@ -538,6 +539,22 @@ cases in `PluginImageTableTests` and
 `tests/AcDream.App.Tests/`, and by `PluginCanvasImageRegionsContractTests`
 under `tests/AcDream.Plugin.Tests/` for the inert answers of a host that
 predates them.
+
+World markers are covered by `Plugins/PluginWorldMarkerStoreTests`,
+`Plugins/PluginWorldMarkerStoreShapeTests`,
+`Plugins/BufferedUiRegistryWorldMarkersTests`,
+`UI/Layout/WorldIconOverlayLayoutTests`, `UI/Layout/WorldIconOverlayDrawTests`,
+`Rendering/GroundShapeTessellatorTests`, `Rendering/GroundShapeBatchTests` and
+`Rendering/PluginGroundShapeRendererTests` under `tests/AcDream.App.Tests/`,
+by `Plugins/ScopedUiRegistryWorldMarkersTests` and
+`Physics/TerrainHeightSamplerTests` under `tests/AcDream.Core.Tests/`, and by
+`PluginWorldMarkersContractTests` under `tests/AcDream.Plugin.Tests/` for the
+inert answers of an older host.
+
+SVG icons are covered by `Plugins/PluginSvgIconTests`, `Plugins/SvgOutlineTests`
+and `Plugins/SvgStrokerTests` under `tests/AcDream.Core.Tests/`, and by
+`UI/SvgIconRasterizerTests`, `UI/PluginSvgIconCacheTests` and
+`UI/PluginShelfSvgIconTests` under `tests/AcDream.App.Tests/`.
 
 ## Scrolling transcripts
 
