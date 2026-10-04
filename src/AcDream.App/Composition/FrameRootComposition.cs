@@ -530,7 +530,8 @@ internal sealed class FrameRootCompositionPhase
                         guid, out AcDream.App.Interaction.WorldLabelAnchor anchor)
                         ? anchor
                         : null,
-                    d.PhysicsEngine.SampleTerrainZ);
+                    // One sampler for every shape: the points of a shape mostly share a landblock.
+                    d.PhysicsEngine.CreateTerrainHeightSampler().SampleZ);
             }
             worldSceneRenderer =
                 new AcDream.App.Rendering.Gpu.Vk.VulkanWorldScenePhase(

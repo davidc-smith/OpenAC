@@ -779,6 +779,61 @@ public sealed class PhysicsEngine
         return null;
     }
 
+    /// <summary>
+    /// A <see cref="TerrainHeightSampler"/> over this engine's landblocks, for
+    /// a caller that samples many points close together.
+    /// </summary>
+    public TerrainHeightSampler CreateTerrainHeightSampler() => new(this);
+
+    /// <summary>
+    /// Samples the land as <see cref="SampleTerrainZ"/> does, but checks the
+    /// landblock it last found before scanning them all, so points close
+    /// together cost one scan instead of one each. A landblock added, replaced
+    /// or removed since the last sample is never read stale. Not thread-safe.
+    /// </summary>
+    public sealed class TerrainHeightSampler
+    {
+        private readonly PhysicsEngine _engine;
+        private uint _lastId;
+        private LandblockPhysics? _last;
+
+        internal TerrainHeightSampler(PhysicsEngine engine) => _engine = engine;
+
+        public float? SampleZ(float worldX, float worldY)
+        {
+            if (_last is { } last
+                && _engine._landblocks.TryGetValue(_lastId, out LandblockPhysics? current)
+                && ReferenceEquals(current, last)
+                && TrySample(last, worldX, worldY, out float z))
+            {
+                return z;
+            }
+            foreach ((uint id, LandblockPhysics landblock) in _engine._landblocks)
+            {
+                if (TrySample(landblock, worldX, worldY, out z))
+                {
+                    _lastId = id;
+                    _last = landblock;
+                    return z;
+                }
+            }
+            return null;
+        }
+
+        private static bool TrySample(LandblockPhysics landblock, float worldX, float worldY, out float z)
+        {
+            float localX = worldX - landblock.WorldOffsetX;
+            float localY = worldY - landblock.WorldOffsetY;
+            if (localX >= 0f && localX < 192f && localY >= 0f && localY < 192f)
+            {
+                z = landblock.Terrain.SampleZ(localX, localY);
+                return true;
+            }
+            z = 0f;
+            return false;
+        }
+    }
+
     public float SampleWaterDepth(float worldX, float worldY)
     {
         foreach (var kvp in _landblocks)
