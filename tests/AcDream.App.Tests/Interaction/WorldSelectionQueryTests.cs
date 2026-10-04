@@ -98,7 +98,8 @@ public sealed class WorldSelectionQueryTests
             Quaternion? rotation = null,
             float? useRadius = null,
             byte? radarBehavior = null,
-            int? containersCapacity = null)
+            int? containersCapacity = null,
+            uint? cellId = null)
         {
             WorldSession.EntitySpawn spawn = Spawn(guid, instance) with
             {
@@ -113,6 +114,8 @@ public sealed class WorldSelectionQueryTests
                 guid,
                 0x0101_0001u,
                 id => Entity(id, guid, position, scale, rotation ?? Quaternion.Identity))!;
+            // The runtime assigns its own cell; the test names the one it wants.
+            entity.ParentCellId = cellId;
             Objects.AddOrUpdate(new ClientObject
             {
                 ObjectId = guid,
@@ -239,6 +242,60 @@ public sealed class WorldSelectionQueryTests
         var h = new Harness();
 
         Assert.False(h.Query.TryResolveWorldLabelAnchor(0x7000_0FFFu, out _));
+    }
+
+    [Theory]
+    [InlineData(0xA9B40021u, true)]
+    [InlineData(0xA9B40105u, false)]
+    [InlineData(null, true)]
+    public void LabelAnchorSaysWhetherTheObjectIsOutdoors(uint? cellId, bool outdoor)
+    {
+        var h = new Harness();
+        h.Add(Target, Vector3.Zero, ItemType.Creature, cellId: cellId);
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(Target, out WorldLabelAnchor anchor));
+        Assert.Equal(outdoor, anchor.IsOutdoor);
+    }
+
+    [Fact]
+    public void LabelAnchorCarriesTheWayTheObjectFaces()
+    {
+        var h = new Harness();
+        // A quarter turn clockwise seen from above: facing east.
+        h.Add(Target, Vector3.Zero, ItemType.Creature,
+            rotation: Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -MathF.PI / 2f));
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(Target, out WorldLabelAnchor anchor));
+        Assert.Equal(90f, anchor.HeadingDegrees, 3);
+    }
+
+    [Fact]
+    public void LabelAnchorOfAnUnturnedObjectFacesNorthOnEveryHeightRung()
+    {
+        var h = new Harness { Cylinder = (0f, 0f), Sphere = null, ModelHeight = null };
+        h.Add(Target, Vector3.Zero, ItemType.Creature);
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(Target, out WorldLabelAnchor anchor));
+        Assert.Equal(WorldLabelAnchorSource.Fallback, anchor.Source);
+        Assert.Equal(0f, anchor.HeadingDegrees, 3);
+    }
+
+    [Fact]
+    public void AWieldedObjectFacesTheWayItsPublishedPoseDoes()
+    {
+        var h = new Harness();
+        WorldEntity wielder = h.Add(Wielder, new Vector3(0f, 0f, -10f), ItemType.Creature);
+        h.AddAttached(
+            RemoteWeapon,
+            wielder.Position,
+            ItemType.MeleeWeapon,
+            wielderId: Wielder,
+            // A quarter turn anticlockwise seen from above: facing west.
+            childRoot: Matrix4x4.CreateRotationZ(MathF.PI / 2f) * Matrix4x4.CreateTranslation(1f, 2f, -9f));
+
+        Assert.True(h.Query.TryResolveWorldLabelAnchor(RemoteWeapon, out WorldLabelAnchor anchor));
+        Assert.Equal(new Vector3(1f, 2f, -9f), anchor.BasePosition);
+        Assert.Equal(270f, anchor.HeadingDegrees, 3);
     }
 
     [Fact]
