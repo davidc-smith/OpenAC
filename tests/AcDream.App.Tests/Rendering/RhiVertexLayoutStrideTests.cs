@@ -58,6 +58,14 @@ public class RhiVertexLayoutStrideTests
     }
 
     [Fact]
+    public void GroundShapeStrideMatchesTheFloatsTheProducerAppends()
+    {
+        Assert.Equal(
+            (uint)(GroundShapeBatch.FloatsPerVertex * sizeof(float)),
+            GroundShapeBatch.VertexLayout.StrideBytes);
+    }
+
+    [Fact]
     public void ParticleBillboardStridesMatchTheirUploadedRecords()
     {
         GpuVertexLayout layout = ParticleRenderer.BillboardVertexLayout;
@@ -129,6 +137,7 @@ public class RhiVertexLayoutStrideTests
         yield return ("sky", SkyRenderer.SkyVertexLayout);
         yield return ("retained UI sprite", TextRenderer.SpriteVertexLayout);
         yield return ("debug line", DebugLineRenderer.VertexLayout);
+        yield return ("ground shape", GroundShapeBatch.VertexLayout);
         yield return ("particle billboard", ParticleRenderer.BillboardVertexLayout);
         yield return ("particle mesh", ParticleRenderer.MeshVertexLayout);
     }
