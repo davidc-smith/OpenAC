@@ -1333,32 +1333,33 @@ in front of a creature turns as it turns. The colour's alpha is the shape's
 opacity.
 
 Shapes are drawn in the world, not over it: walls and hills hide them, and
-they never hide each other. Outdoors -- an object standing on the land, or a
-position whose `IsOutdoor` is true -- a shape follows the slope of the land
-under it; anywhere else (a dungeon, a floor, a roof) it lies flat at the
-object's feet or at the position's height. A shape whose centre is more than
-250 m from the camera is not drawn, and when a frame's shapes come to more
-than the client draws at once, the nearest are drawn.
+they never hide each other. An object or position in an outdoor cell and
+standing on the land -- no more than 1 m above it -- has its shape follow the
+slope of the land; anywhere else (a dungeon, a building, a roof or a bridge)
+the shape lies flat at the object's feet or at the position's height. A shape
+whose centre is more than 250 m from the camera is not drawn, and when a
+frame's shapes come to more than the client draws at once, the nearest are
+drawn.
 
-Each plugin may have at most `IPluginWorldMarkers.MaximumShapes` (256)
-shapes set across all its layers, counted apart from its icons, and refused
-the same way. Inside an accepted set a shape is dropped when it is pinned to
-nothing, of no kind, or has a radius out of range, a ring's or unfilled arc's
-width that is not more than zero and at most the radius, or an arc's start
-or sweep that is not a finite number or a sweep out of range. A ring's or
-disc's start, sweep and `FacesObject` are ignored.
+Each plugin may have at most `IPluginWorldMarkers.MaximumShapes` (256) shapes
+set across all its layers, counted apart from its icons, and refused the same
+way. Inside an accepted set a shape is dropped when it is pinned to nothing,
+of no kind, or has a radius out of range, a ring's or unfilled arc's width
+that is not more than zero or is more than the radius, or an arc's start or
+sweep that is not a finite number or a sweep out of range. A ring's or disc's
+start, sweep and `FacesObject` are ignored.
 
 Like labels, icons are not occluded: they show through walls and hills,
 because the interface is drawn after the world.
 
-Layers belong to the plugin: unloading it takes them down. When the
-character leaves the world -- logging out, losing the connection,
-reconnecting -- every layer's icons and shapes are cleared, because object ids mean
-nothing in the next session; the layers stay usable, so the plugin sets its
-markers again on the next stay. Images are dropped when the interface is torn
-down (for example on a reconnect); an icon whose image is gone is not drawn
-until the plugin asks for its images again and sets its markers again. Call
-all of this from the tick thread, as with every other UI call.
+Layers belong to the plugin: unloading it takes them down. When the character
+leaves the world -- logging out, losing the connection, reconnecting -- every
+layer's icons and shapes are cleared, because object ids mean nothing in the
+next session; the layers stay usable, so the plugin sets its markers again on
+the next stay. Images are dropped when the interface is torn down (for
+example on a reconnect); an icon whose image is gone is not drawn until the
+plugin asks for its images again and sets its markers again. Call all of this
+from the tick thread, as with every other UI call.
 
 ## Images
 

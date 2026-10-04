@@ -313,9 +313,9 @@ public interface IPluginWorldMarkerLayer : IDisposable
 
 /// <summary>
 /// Markers a plugin draws in the world -- icons over objects or at fixed
-/// positions, and shapes on the ground -- in layers it owns. The layers go with the plugin when it is
-/// unloaded, and every layer's markers are cleared when the character leaves
-/// the world (the layers stay usable).
+/// positions, and shapes on the ground -- in layers it owns. The layers go
+/// with the plugin when it is unloaded, and every layer's markers are cleared
+/// when the character leaves the world (the layers stay usable).
 /// </summary>
 public interface IPluginWorldMarkers
 {
@@ -323,7 +323,6 @@ public interface IPluginWorldMarkers
     /// The most icons one plugin may have set at once, across all its layers.
     /// </summary>
     const int MaximumIcons = 256;
-
 
     /// <summary>
     /// The most ground shapes one plugin may have set at once, across all its
