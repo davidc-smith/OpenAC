@@ -808,6 +808,8 @@ public sealed class PhysicsEngine
             {
                 return z;
             }
+            // Holds no landblock while it scans, so one since removed is not kept alive.
+            _last = null;
             foreach ((uint id, LandblockPhysics landblock) in _engine._landblocks)
             {
                 if (TrySample(landblock, worldX, worldY, out z))
