@@ -2853,3 +2853,92 @@ Read the screenshot, describe what is and isn't there against the acceptance cri
 - Whole-branch review (superpowers-extended-cc:requesting-code-review) against the spec and this plan.
 - Merge `world-markers/shapes` into fork `main` with a merge commit, only after the user confirms (as PR 1 was). Pushing anything waits for the user to ask.
 - Update the world-markers memory: PR 2 state, branch, merge commit.
+
+## Execution record (2026-10-04)
+
+Executed with subagent-driven development. Branch `world-markers/shapes`
+(worktree `.worktrees/world-markers-shapes`), 9 commits on 11be68a0, HEAD
+6f764202. Not merged, not pushed.
+
+| Task | Commits | Review |
+|---|---|---|
+| 1 Contract and store | 7c7deb83 | clean |
+| 2 Heading on the label anchor | 3b344ac7 | clean |
+| 3 Tessellator | 991a34ec | clean |
+| 4 Batch and `ground_shape` shader | df252041 | clean; no existing `.spv` changed |
+| 5 Renderer | c08eb4bd | clean |
+| 6 World-phase wiring | 5d8f8b45 | clean |
+| 7 Docs and demo | c17dba5b | clean |
+| Final whole-branch review fixes | 112c8dcf, 6f764202 | re-review: all addressed |
+| 8 Live gate | none | **pending**; the user deferred it to 2026-10-05 |
+
+Verification after the final fixes: Release build 0 warnings; Plugin
+102/102; Core 5794/5794; App 52 failures, the same environmental classes
+as the baseline (probes, installed-DAT, offscreen Vulkan, Linux-only, live).
+
+**Rulings made during execution**
+
+1. The commit trailers carry the executing session's URL
+   (`session_019dvJ5gakBkq3uJyr1PAC3u`), not the planning session's.
+2. Scratch output went to the session scratchpad, not `/tmp/openac-shapes`.
+3. **One land-following rule for both anchor kinds** (from the final review;
+   the spec is updated in 4e6203b6). A shape follows the land only when its
+   anchor is in an outdoor cell and no more than 1 m above the sampled land.
+   At or below the land counts. Anywhere else it lies flat at the anchor's
+   height + 5 cm.
+   - Previously a spot followed the land whenever `IsOutdoor` was set, and
+     `IsOutdoor` includes roofs and bridges.
+   - `WorldLabelAnchor` gains `IsOutdoor`, taken from the entity's cell
+     (`RenderingDiagnostics.IsEnvCellId`). A null cell counts as outdoor.
+   - To revert to the spec's original two rules, revert 112c8dcf.
+4. Parked as cosmetic: a doubled blank line before the `SetShapes` doc
+   comment in `WorldMarkers.cs`. Fix it the next time the file is touched.
+
+**Deferred minors** (the final reviewer triaged all of these as fine to
+leave):
+
+- Tests:
+  - The tessellator lacks a filled 360° arc test and a sliver arc test.
+  - The batch budget test's bound is loose.
+  - The renderer tests lack a two-frame reuse test and `FacesObject` at a
+    Position anchor.
+- Behaviour:
+  - Drawing stops at the first shape that does not fit the budget, so
+    smaller, farther shapes are left out. World lines do the same.
+  - The range check for a spot uses the plugin's Elevation.
+  - `Changed()` invalidates both snapshots.
+  - The demo re-sends the unchanged spot shapes when the selection changes.
+
+**Follow-ups suggested by the final review** (not in this PR):
+
+- Frustum-cull shapes, and resolve the landblock once per shape instead of
+  sampling every vertex through `PhysicsEngine.SampleTerrainZ`'s landblock
+  scan.
+- Large filled shapes can be clipped slightly on sharp ridges, because the
+  fill rings are 4 m apart.
+- An object jumping more than 1 m makes its shapes switch to flat.
+- On the atmospheric path, colours are blended before tonemapping, as
+  world lines' are.
+
+**To run the live gate (Task 8):**
+
+1. Rebuild `src/AcDream.App` and the demo in Release from the shapes
+   worktree.
+2. Copy the demo's `bin/Release/net10.0/*` into a fresh scratch
+   `ACDREAM_ROOT_DIR/plugins/sample.world-markers-demo/`.
+3. Launch as in Step 2, with `. ~/OpenAC-dev/dev-client.env` and the
+   sandbox off for the network.
+4. Confirm that the log shows `plugin loaded: sample.world-markers-demo` and
+   `live: connecting to 10.10.20.20:9000`.
+5. The user takes a ⌘⇧3 screenshot and confirms:
+   - a red ring and a yellow see-through wedge under the creature (or the
+     player);
+   - an orange see-through disc with a blue band round its eastern half at
+     the spot;
+   - the wedge turns with its creature;
+   - a wall or hill hides part of a shape;
+   - a shape inside a building, or on a roof or bridge, lies flat.
+6. Optionally, read the frame profiler's `[gpu-mem] ring-peak` in a dense
+   town.
+
+Then merge `world-markers/shapes` into fork main with a merge commit.
