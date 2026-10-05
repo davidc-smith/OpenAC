@@ -889,28 +889,23 @@ public sealed class HeadlessConsoleTests
 
             HeadlessSessionHost alpha = host.Sessions[0];
             HeadlessSessionHost beta = host.Sessions[1];
-            HostWindowResult? observed = null;
+            var closeObserved = new TaskCompletionSource<HostWindowResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
             alpha.Plugins.Host.Events.LoginComplete += () =>
             {
-                observed = alpha.Plugins.Host.Window.RequestClose();
+                closeObserved.TrySetResult(alpha.Plugins.Host.Window.RequestClose());
             };
 
             using var cts = new CancellationTokenSource();
             Task<HeadlessExitCode> run = host.RunAsync(cts.Token);
 
-            DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-            while (!File.Exists(statusPathAlpha)
-                || !LiveStatusFile.ReadAllText(statusPathAlpha).Contains("\"exited\""))
-            {
-                if (DateTime.UtcNow > deadline)
-                {
-                    throw new TimeoutException(
-                        "alpha never reached its own terminal event.");
-                }
-                await Task.Delay(10);
-
-            }
-            Assert.Equal(HostWindowStatus.Done, observed?.Status);
+            // The status file is written inside RequestClose, before it
+            // returns. Wait for the callback's result rather than racing
+            // that earlier write from another thread.
+            HostWindowResult observed = await closeObserved.Task.WaitAsync(
+                TimeSpan.FromSeconds(10));
+            Assert.Equal(HostWindowStatus.Done, observed.Status);
+            Assert.Contains("\"exited\"", LiveStatusFile.ReadAllText(statusPathAlpha));
             Assert.True(alpha.IsPolicyComplete);
 
             // beta starts a moment after alpha (sessions start in order in

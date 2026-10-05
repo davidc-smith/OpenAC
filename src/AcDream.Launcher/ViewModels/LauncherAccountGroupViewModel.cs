@@ -4,8 +4,7 @@ using AcDream.Launcher.Core.Profiles;
 
 namespace AcDream.Launcher.ViewModels;
 
-/// <summary>One account on one server: its profile tags, the plugins its characters share, and its
-/// launch row.</summary>
+/// <summary>One account name with a launch row for each configured server.</summary>
 public sealed class LauncherAccountGroupViewModel : ObservableObject
 {
     private bool _isExpanded = true;
@@ -26,7 +25,7 @@ public sealed class LauncherAccountGroupViewModel : ObservableObject
         EditPluginsCommand = new RelayCommand(() => editPlugins?.Invoke(this), () => editPlugins is not null && canEdit());
     }
 
-    public string ServerName { get; }
+    public string ServerName { get; private set; }
 
     public string AccountName { get; }
 
@@ -53,21 +52,41 @@ public sealed class LauncherAccountGroupViewModel : ObservableObject
 
     public RelayCommand EditPluginsCommand { get; }
 
+    public bool HasOneServer => Rows.Count == 1;
+
     public bool HasProfile(string profile) =>
         Profiles.Contains(profile, StringComparer.OrdinalIgnoreCase);
 
-    internal void Update(LauncherAccountSnapshot account, Func<string, string> pluginDisplayName)
+    internal void Update(IReadOnlyList<LauncherAccountSnapshot> accounts, Func<string, string> pluginDisplayName)
     {
-        if (!Profiles.SequenceEqual(account.Profiles, StringComparer.Ordinal))
+        string firstServer = Rows[0].ServerName;
+        if (ServerName != firstServer)
         {
-            Profiles = [.. account.Profiles];
+            ServerName = firstServer;
+            OnPropertyChanged(nameof(ServerName));
+        }
+        string[] profiles = [.. accounts.SelectMany(account => account.Profiles)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+        if (!Profiles.SequenceEqual(profiles, StringComparer.Ordinal))
+        {
+            Profiles = profiles;
         }
 
-        PluginsSummary = account.Plugins.Count == 0
-            ? "none"
-            : string.Join(" · ", account.Plugins.Select(pluginDisplayName));
-        int count = account.Characters.Count;
-        Subtitle = $"{ServerName} · {count} {(count == 1 ? "character" : "characters")}";
+        if (accounts.Count == 1)
+        {
+            LauncherAccountSnapshot account = accounts[0];
+            PluginsSummary = account.Plugins.Count == 0
+                ? "none"
+                : string.Join(" · ", account.Plugins.Select(pluginDisplayName));
+            int count = account.Characters.Count;
+            Subtitle = $"{ServerName} · {count} {(count == 1 ? "character" : "characters")}";
+        }
+        else
+        {
+            PluginsSummary = "configured per server";
+            Subtitle = $"{accounts.Count} servers";
+        }
+        OnPropertyChanged(nameof(HasOneServer));
         EditPluginsCommand.NotifyCanExecuteChanged();
     }
 }
@@ -75,6 +94,7 @@ public sealed class LauncherAccountGroupViewModel : ObservableObject
 /// <summary>What a row's Options menu does, supplied by the window.</summary>
 public sealed record LauncherRowActions(
     Action<LauncherAccountServerRowViewModel> LogonCommands,
+    Action<LauncherAccountServerRowViewModel> AccountPlugins,
     Action<LauncherAccountServerRowViewModel> CharacterPlugins,
     Action<LauncherAccountServerRowViewModel> OpenLogs,
     Action<LauncherAccountServerRowViewModel> RemoveCharacter);
@@ -85,10 +105,13 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     private readonly Func<LauncherAccountServerRowViewModel, string?> _disabledReason;
     private readonly Action _changed;
     private Action<LauncherAccountServerRowViewModel>? _selectionChanged;
+    private Action? _checkedChanged;
     private bool _applyingSavedSelection;
     private bool _selectionLoaded;
     private readonly Func<bool> _canInteract;
     private bool _isChecked;
+    private bool _isVisible = true;
+    private IReadOnlyList<string> _profiles = [];
     private string _selectedCharacter = CharacterSelect;
     private string? _activeCharacterName;
     private string _selectedLaunchMode = "Graphical";
@@ -122,6 +145,7 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
         StopCommand = new AsyncRelayCommand(() => _activeSessionId is { } id ? stop(id) : Task.CompletedTask,
             () => IsActive && canInteract());
         LogonCommandsCommand = new RelayCommand(() => actions.LogonCommands(this), canInteract);
+        AccountPluginsCommand = new RelayCommand(() => actions.AccountPlugins(this), canInteract);
         CharacterPluginsCommand = new RelayCommand(
             () => actions.CharacterPlugins(this),
             () => canInteract() && CharacterName is not null);
@@ -141,7 +165,20 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     public string AccountName { get; }
     public string ServerName { get; }
     public string Endpoint { get => _endpoint; private set => SetProperty(ref _endpoint, value); }
-    public bool IsChecked { get => _isChecked; set { if (SetProperty(ref _isChecked, value)) _changed(); } }
+    public bool IsVisible { get => _isVisible; set => SetProperty(ref _isVisible, value); }
+    public bool HasProfile(string profile) => _profiles.Contains(profile, StringComparer.OrdinalIgnoreCase);
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set
+        {
+            if (SetProperty(ref _isChecked, value))
+            {
+                _changed();
+                _checkedChanged?.Invoke();
+            }
+        }
+    }
     public ObservableCollection<string> CharacterChoices { get; } = [CharacterSelect];
     public IReadOnlyList<string> LaunchModes { get; } = ["Graphical", "Headless"];
     public string SelectedCharacter { get => _selectedCharacter; set { if (SetProperty(ref _selectedCharacter, value ?? CharacterSelect)) { OnPropertyChanged(nameof(DisplayedCharacter)); OnPropertyChanged(nameof(OptionsAutomationName)); NotifyState(); _changed(); SaveSelection(); } } }
@@ -176,6 +213,11 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     internal void UseConsole(Action<string, string> open) => _openConsole = open;
 
     internal void UseSelectionStore(Action<LauncherAccountServerRowViewModel> save) => _selectionChanged = save;
+    internal void UseCheckedSelectionStore(bool isChecked, Action save)
+    {
+        SetProperty(ref _isChecked, isChecked, nameof(IsChecked));
+        _checkedChanged = save;
+    }
     public LaunchMode Mode => SelectedLaunchMode == "Headless" ? LaunchMode.Headless : SelectedCharacter == CharacterSelect ? LaunchMode.GuiSelect : LaunchMode.Gui;
     public string? CharacterName => SelectedCharacter == CharacterSelect ? null : SelectedCharacter;
 
@@ -237,6 +279,7 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     public AsyncRelayCommand PlayCommand { get; }
     public AsyncRelayCommand StopCommand { get; }
     public RelayCommand LogonCommandsCommand { get; }
+    public RelayCommand AccountPluginsCommand { get; }
     public RelayCommand CharacterPluginsCommand { get; }
     public RelayCommand OpenLogsCommand { get; }
     public RelayCommand RemoveCharacterCommand { get; }
@@ -244,6 +287,7 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
 
     internal void Update(LauncherServerSnapshot server, LauncherAccountSnapshot account, LauncherSessionSnapshot? session)
     {
+        _profiles = account.Profiles;
         string endpoint = $"{server.Host}:{server.Port}";
         if (Endpoint != endpoint)
         {
@@ -291,6 +335,7 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
         PlayCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
         LogonCommandsCommand.NotifyCanExecuteChanged();
+        AccountPluginsCommand.NotifyCanExecuteChanged();
         CharacterPluginsCommand.NotifyCanExecuteChanged();
         RemoveCharacterCommand.NotifyCanExecuteChanged();
         ConsoleCommand.NotifyCanExecuteChanged();

@@ -135,6 +135,67 @@ public sealed class RuntimeCreatureDeathStateTests
         Assert.True(runtime.ActionOwner.CreatureDeath.IsDead(Monster, 1));
     }
 
+    [Fact]
+    public void DeletingACorpseForgetsItsDeathEvenWithoutAWindow()
+    {
+        using GameRuntime runtime = Create();
+        using WorldSession session = NewSession();
+        using LiveSessionEventRouter router = Router(session, runtime);
+        router.Attach();
+        FireMotion(session, Motion(Monster, forward: DeadWireCommand));
+        Assert.Equal(1, runtime.ActionOwner.CreatureDeath.Count);
+
+        FieldInfo field = typeof(WorldSession).GetField(
+            nameof(session.EntityDeleted),
+            BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("delete event field not found");
+        Assert.IsType<Action<DeleteObject.Parsed>>(field.GetValue(session))
+            .Invoke(new DeleteObject.Parsed(Monster, 1));
+
+        Assert.Equal(0, runtime.ActionOwner.CreatureDeath.Count);
+    }
+
+    [Fact]
+    public void VisibilityExpiryForgetsTheDepartedCreaturesDeath()
+    {
+        using GameRuntime runtime = Create();
+        AddMonster(runtime, Monster);
+        runtime.ActionOwner.CreatureDeath.ObserveMotion(
+            Motion(Monster, forward: DeadWireCommand));
+        Assert.True(runtime.ActionOwner.CreatureDeath.IsDead(Monster, 1));
+
+        Assert.True(RuntimeCanonicalEntityExpirySink.DeleteCanonicalOnly(
+            runtime.EntityObjects,
+            new DeleteObject.Parsed(Monster, 1)));
+
+        Assert.False(runtime.ActionOwner.CreatureDeath.IsDead(Monster));
+    }
+
+    [Fact]
+    public void APlacementWithdrawalKeepsTheActiveCreaturesDeath()
+    {
+        using GameRuntime runtime = Create();
+        AddMonster(runtime, Monster);
+        runtime.ActionOwner.CreatureDeath.ObserveMotion(
+            Motion(Monster, forward: DeadWireCommand));
+        Assert.True(runtime.EntityObjects.Entities.TryGetActive(Monster, out RuntimeEntityRecord creature));
+
+        Assert.True(runtime.EntityObjects.CommitWithdrawal(creature));
+
+        Assert.True(runtime.ActionOwner.CreatureDeath.IsDead(Monster, 1));
+    }
+
+    [Fact]
+    public void AStaleDeleteDoesNotForgetTheNewIncarnationsDeath()
+    {
+        var state = new RuntimeCreatureDeathState();
+        state.ObserveMotion(Motion(Monster, forward: DeadWireCommand, incarnation: 2));
+
+        state.Forget(Monster, incarnation: 1);
+
+        Assert.True(state.IsDead(Monster, 2));
+    }
+
     /// <summary>
     /// Mutation: stop projecting the death onto the snapshot and a macro
     /// reading the capture cannot tell a corpse from a monster whose health

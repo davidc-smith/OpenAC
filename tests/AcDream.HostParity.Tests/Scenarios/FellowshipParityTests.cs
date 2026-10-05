@@ -1,4 +1,7 @@
 using AcDream.Plugin.Abstractions;
+using System.Buffers.Binary;
+using System.Text.RegularExpressions;
+using AcDream.Core.Net.Messages;
 
 namespace AcDream.HostParity.Tests;
 
@@ -25,6 +28,48 @@ public sealed class FellowshipParityTests
     private const string FellowshipName = "Parity Fellows";
     private const uint OwnLevel = 30u;
     private const uint FellowLevel = 42u;
+
+    [Theory]
+    [InlineData(GameEventType.FellowshipQuit, false, false, "Jerry Seinfeld has left your Fellowship.")]
+    [InlineData(GameEventType.FellowshipQuit, false, true, "You are no longer a member of the Parity Fellows Fellowship.")]
+    [InlineData(GameEventType.FellowshipDismiss, false, false, "Jerry Seinfeld has been dismissed from the Fellowship.")]
+    [InlineData(GameEventType.FellowshipDismiss, true, false, "You dismiss Jerry Seinfeld from your Fellowship.")]
+    [InlineData(GameEventType.FellowshipDismiss, false, true, "Jerry Seinfeld has dismissed you from the Fellowship.")]
+    [InlineData(GameEventType.FellowshipDisband, false, true, "Jerry Seinfeld has disbanded your Fellowship.")]
+    [InlineData(GameEventType.FellowshipDisband, true, true, "You have disbanded your Fellowship.")]
+    public void DepartureNoticesReachPluginChatOnBothClients(
+        GameEventType kind, bool selfLeads, bool selfDeparts, string expected) =>
+        ParityScenario.Run((arm, transcript) =>
+        {
+            _ = ParityWorld.Stage(arm);
+            arm.Server.FellowshipFullUpdate(
+                FellowshipName,
+                selfLeads ? ParityWorld.Player : ParityWorld.OtherPlayer,
+                true, true,
+                new ParityServer.Fellow(ParityWorld.Player, "Parity", OwnLevel),
+                new ParityServer.Fellow(ParityWorld.OtherPlayer, "Jerry Seinfeld", FellowLevel));
+            arm.Advance();
+            byte[] payload = kind == GameEventType.FellowshipDisband ? [] : new byte[4];
+            if (payload.Length != 0)
+                BinaryPrimitives.WriteUInt32LittleEndian(payload,
+                    selfDeparts ? ParityWorld.Player : ParityWorld.OtherPlayer);
+
+            arm.Server.GameEvent(kind, payload);
+            arm.Advance();
+            PluginChatMessage message = Assert.Single(
+                arm.Host.Automation.Chat.CaptureMessages(0), row => row.Text == expected);
+            Assert.Equal(0, message.LogTextType);
+            transcript.Record("departure", message.Text);
+            if (kind == GameEventType.FellowshipQuit && !selfDeparts)
+            {
+                Match capture = Regex.Match(message.Text,
+                    @"(?<who>\w[\w ]*\w) has left your Fellowship");
+                Assert.Equal("Jerry Seinfeld", capture.Groups["who"].Value);
+            }
+            arm.Server.GameEvent(kind, payload);
+            arm.Advance();
+            Assert.Single(arm.Host.Automation.Chat.CaptureMessages(0), row => row.Text == expected);
+        });
 
     [Fact]
     public void AFellowshipsTermsAndLevelsReachAPluginOnBothClients() =>

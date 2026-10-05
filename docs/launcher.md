@@ -13,13 +13,19 @@ the other selected rows from starting. Already active accounts cannot start
 again on the same server. **Cancel** stops pending starts; use the row's
 **Stop** action to close an active session gracefully.
 
-**Profiles** tag accounts, such as `Main`, `Bots` or `Mules`. The chips above
-the list (**All** and one per tag) show only the accounts with that tag, and
-**Play selected** then starts only the ticked accounts the filter shows.
+**Profiles** tag accounts on individual servers, such as `Main`, `Bots` or
+`Mules`. Each account card lists its configured servers. The chips above the
+list (**All** and one per tag) show only matching server rows, and **Play
+selected** starts only the ticked rows the filter shows.
 
 **Show only checked accounts** combines with the profile filter. Hidden accounts
 keep their selections. You can uncheck a running account without changing its
 character or stopping it.
+
+Checked rows are remembered per account and server when the launcher reopens.
+Checking or unchecking a row saves immediately to `launcher-checked-accounts.json`
+in the settings directory, separately from credentials. Hidden rows keep their
+saved checks. Restoring checks does not start clients; choose **Play selected**.
 
 **Relaunch checked clients automatically** is off by default. When enabled it
 monitors checked accounts' existing and future launcher-owned play sessions,
@@ -36,8 +42,8 @@ checks, open dialogs and existing account restrictions still prevent launches.
 The independent three-minute server reconnect hold after an unclean exit still
 applies. Clearing finished history does not cancel an already scheduled relaunch.
 Uncheck an account, remove it, turn automatic relaunch off, or close the launcher
-to cancel its pending relaunch. Checked accounts, these controls, and the delay
-last only for the current launcher session.
+to cancel its pending relaunch. The automatic relaunch switch, display filter,
+and delay last only for the current launcher session.
 
 While a requested Stop is still completing, all Stop buttons and other session
 operations are disabled until that process and any startup work actually end,
@@ -46,7 +52,8 @@ The existing graceful-stop timeout (30 seconds before forced termination) is
 separate from the automatic relaunch delay.
 
 A row's **Options ▾** menu has **Logon commands…**, **Plugins for this
-character…** (with a character chosen), **Console** (for a running headless
+account…**, **Plugins for this character…** (with a character chosen),
+**Console** (for a running headless
 session), **Open logs folder** and **Remove character** (a later character
 refresh brings a removed character back; it asks first).
 
@@ -94,12 +101,19 @@ with its type, player count, description and links. Search by name, address or
 description, or narrow the list by type; a server you already have (same name,
 or same host and port) shows **Added**. The list is saved each time it loads,
 so the dialog also opens offline with the last copy; with no copy at all, only
-your own server can be added. A new server has no accounts until you add them
-under its `#` line in **Accounts**.
+your own server can be added. A new server starts with one row for each
+distinct saved account, copying its login name and password from the first
+server where it appears. Character lists, plugins and logon commands remain
+specific to each server. On first opening an older profile, missing accounts
+on existing servers are filled the same way, preserving credentials already
+set for that server. Later, intentionally removed accounts stay removed.
+If there are no saved accounts yet,
+add them under the server's `#` line in **Accounts**.
 
 **Edit servers** has two fields per row: **Server name** and **Address:port**.
 For example, enter `Local` and `127.0.0.1:9000`, or `Example` and
 `game.example.org:9000`. Include the port; for IPv6, use `[::1]:9000`.
+Adding a server here also copies the known login names and passwords.
 Removing a server removes its saved characters. Keep server names unchanged
 to retain their character settings. Close that server's sessions first.
 
@@ -150,7 +164,8 @@ here are not seen by the older one. The conversion:
 - each account's logon commands are its characters' commands when they were
   all the same, otherwise the first character's, and a one-time notice lists
   what the other characters had;
-- every server keeps exactly the accounts it showed before.
+- existing accounts and their settings stay on their original servers; a
+  server with no accounts receives the known login names and passwords.
 
 ## Plugins
 

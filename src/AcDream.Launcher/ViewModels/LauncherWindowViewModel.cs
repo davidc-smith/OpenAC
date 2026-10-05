@@ -12,6 +12,8 @@ namespace AcDream.Launcher.ViewModels;
 public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposable
 {
     private readonly ILauncherOrchestrator _orchestrator;
+    private readonly LauncherCheckedAccountStore? _checkedAccountStore;
+    private bool _checkedAccountsLoaded;
     private readonly LauncherStopGate _stopGate = new();
     private readonly LauncherRelaunchController _automaticRelaunch;
     private static readonly TimeSpan GracefulStopTimeout = TimeSpan.FromSeconds(30);
@@ -43,9 +45,11 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         Func<CancellationToken, Task<bool>>? applyLauncherUpdateAsync = null,
         Action? requestShutdown = null,
         PluginInventory? pluginInventory = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        LauncherCheckedAccountStore? checkedAccountStore = null)
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
+        _checkedAccountStore = checkedAccountStore;
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _automaticRelaunch = new LauncherRelaunchController(orchestrator, timeProvider);
         _automaticRelaunch.StateChanged += OnAutomaticRelaunchStateChanged;
@@ -307,6 +311,8 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         try
         {
             _orchestrator.LoadProfiles();
+            _checkedAccountStore?.Load();
+            _checkedAccountsLoaded = true;
             ProfileMigrationNotice = _orchestrator.TakeProfileMigrationNotice();
             // The plugin panel is configured before this runs (App.axaml.cs), so it read the
             // unloaded store's default; hand it the saved value now the profiles are in.
@@ -665,6 +671,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
                 }
 
                 _orchestrator.AddServer(dialog.Name.Trim(), dialog.Host.Trim(), port);
+                ShowOnlyCheckedAccounts = false;
                 RefreshFromCore(new SelectionKey(
                     LauncherTreeNodeKind.Server,
                     dialog.Name.Trim(),

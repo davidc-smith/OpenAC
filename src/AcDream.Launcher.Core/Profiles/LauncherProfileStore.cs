@@ -129,7 +129,8 @@ public sealed class LauncherProfileStore
 
         ValidateAndNormalizeDocument(document);
         Document = document;
-        if (version == Version1 || source != FilePath)
+        bool initializedAccountLists = InitializeAccountLists(document);
+        if (version == Version1 || source != FilePath || initializedAccountLists)
         {
             // A copy of the old file as migrated, whatever an older launcher does to it later.
             if (version == Version1 && !File.Exists(Version1BackupPath))
@@ -175,10 +176,14 @@ public sealed class LauncherProfileStore
             $"'{source}' is not a valid launcher profile document: it has no version.");
     }
 
-    public void Save() =>
+    public void Save()
+    {
+        foreach (ServerProfile server in Document.Servers)
+            server.AccountListInitialized = true;
         WriteCredentialFile(
             FilePath,
             stream => JsonSerializer.Serialize(stream, Document, SerializerOptions));
+    }
 
     /// <summary>Writes a file that holds passwords: owner-only from its first byte, and whole or not
     /// at all.</summary>
@@ -269,10 +274,49 @@ public sealed class LauncherProfileStore
                 $"A server named '{name}' already exists.");
         }
 
-        var server = new ServerProfile { Name = name, Host = host, Port = port };
+        var server = new ServerProfile
+        {
+            Name = name,
+            Host = host,
+            Port = port,
+            Accounts = CopyKnownAccountCredentials(Document),
+            AccountListInitialized = true,
+        };
         Document.Servers.Add(server);
         return server;
     }
+
+    private static bool InitializeAccountLists(
+        LauncherProfileDocument document)
+    {
+        AccountProfile[] known = [.. DistinctKnownAccounts(document)];
+        bool initialized = false;
+        foreach (ServerProfile server in document.Servers)
+        {
+            if (server.AccountListInitialized)
+                continue;
+            foreach (AccountProfile account in known)
+            {
+                if (FindAccount(server, account.Account) is null)
+                    server.Accounts.Add(CopyAccountCredential(account));
+            }
+            server.AccountListInitialized = true;
+            initialized = true;
+        }
+        return initialized;
+    }
+
+    private static IEnumerable<AccountProfile> DistinctKnownAccounts(
+        LauncherProfileDocument document) =>
+        document.Servers.SelectMany(server => server.Accounts)
+            .DistinctBy(account => account.Account, StringComparer.Ordinal);
+
+    internal static List<AccountProfile> CopyKnownAccountCredentials(
+        LauncherProfileDocument document) =>
+        [.. DistinctKnownAccounts(document).Select(CopyAccountCredential)];
+
+    private static AccountProfile CopyAccountCredential(AccountProfile account) =>
+        new() { Account = account.Account, Password = account.Password };
 
     public void EditServer(
         string name,

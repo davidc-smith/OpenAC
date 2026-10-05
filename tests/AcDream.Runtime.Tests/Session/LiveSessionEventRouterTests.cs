@@ -6,6 +6,7 @@ using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
+using AcDream.Core.Net.Packets;
 using AcDream.Core.Player;
 using AcDream.Core.Properties;
 using AcDream.Core.Social;
@@ -167,6 +168,44 @@ public sealed class LiveSessionEventRouterTests : IDisposable
         Assert.Equal("fallback path", chat.Snapshot()[0].Text);
 
         router.Dispose();
+    }
+
+    [Theory]
+    [InlineData(RetailLogTextType.CombatSelf)]
+    [InlineData(RetailLogTextType.CombatEnemy)]
+    [InlineData(RetailLogTextType.Magic)]
+    [InlineData(RetailLogTextType.Default)]
+    public void RepeatedServerMessagePackets_PublishDistinctEntriesThroughAddText(RetailLogTextType type)
+    {
+        using var session = NewSession();
+        using var communication = new RuntimeCommunicationState();
+        using var router = NewRouter(session, new Counters(), chat: communication.Chat,
+            addText: (text, textType) => communication.AddText(text, textType));
+        var committed = new List<ChatEntry>();
+        communication.Chat.EntryAppended += committed.Add;
+        var receive = EventDelegate<Action<ServerMessage.Parsed>>(session, nameof(session.ServerMessageReceived));
+
+        var writer = new PacketWriter(64);
+        writer.WriteUInt32(ServerMessage.Opcode);
+        writer.WriteString16L("Additional damage: 5");
+        writer.WriteUInt32((uint)type);
+        for (int i = 0; i < 2; i++)
+        {
+            ServerMessage.Parsed? parsed = ServerMessage.TryParse(writer.ToArray());
+            Assert.NotNull(parsed);
+            receive(parsed.Value);
+        }
+
+        Assert.Equal(2, communication.Chat.Count);
+        Assert.Equal(2, committed.Count);
+        Assert.Equal(2UL, communication.LastSequence);
+        Assert.All(committed, entry =>
+        {
+            Assert.Equal("Additional damage: 5", entry.Text);
+            Assert.Equal((uint)type, entry.LogTextType);
+        });
+        Assert.Equal(1L, committed[0].Sequence);
+        Assert.Equal(2L, committed[1].Sequence);
     }
 
     [Fact]
@@ -1057,7 +1096,8 @@ public sealed class LiveSessionEventRouterTests : IDisposable
         Counters counters,
         Action<int>? constructionCheckpoint = null,
         CombatState? combat = null,
-        ChatLog? chat = null)
+        ChatLog? chat = null,
+        Action<string, RetailLogTextType>? addText = null)
     {
         var router = new LiveSessionEventRouter(
             session,
@@ -1085,7 +1125,7 @@ public sealed class LiveSessionEventRouterTests : IDisposable
                 }),
             NewInventoryBindings(),
             NewCharacterBindings(combat),
-            NewSocialBindings(chat),
+            NewSocialBindings(chat, addText),
             NewActions(),
             constructionCheckpoint);
         try
@@ -1119,11 +1159,12 @@ public sealed class LiveSessionEventRouterTests : IDisposable
         ClientTime: () => 0d);
 
     private static LiveSocialSessionBindings NewSocialBindings(
-        ChatLog? chat = null) => new(
+        ChatLog? chat = null,
+        Action<string, RetailLogTextType>? addText = null) => new(
         chat ?? new ChatLog(),
         new TurbineChatState(),
         new FriendsState(),
-        new SquelchState());
+        new SquelchState(), addText);
 
     private static byte[] WrapPlayerDescriptionEnvelope(uint options1, uint options2)
     {

@@ -443,12 +443,20 @@ public static class LauncherProfileText
         Require(servers.All(s => !string.IsNullOrWhiteSpace(s.Name) && !string.IsNullOrWhiteSpace(s.Host) && s.Port is >= 1 and <= 65535),
             "Each server needs a name, host and port from 1 to 65535.");
         Require(servers.Select(s => s.Name).Distinct(StringComparer.Ordinal).Count() == servers.Length, "Server names must be unique.");
+        List<AccountProfile> knownAccounts =
+            LauncherProfileStore.CopyKnownAccountCredentials(document);
         document.Servers = [.. servers.Select(s => new ServerProfile
         {
             Name = s.Name,
             Host = s.Host,
             Port = s.Port,
-            Accounts = document.Servers.Find(old => old.Name == s.Name)?.Accounts ?? [],
+            Accounts = document.Servers.Find(old => old.Name == s.Name)?.Accounts
+                ?? knownAccounts.Select(account => new AccountProfile
+                {
+                    Account = account.Account,
+                    Password = account.Password,
+                }).ToList(),
+            AccountListInitialized = true,
         })];
     }
 

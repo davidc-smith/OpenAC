@@ -147,6 +147,15 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
         LiveInventorySessionBindings inventory = _inventory;
         LiveCharacterSessionBindings character = _character;
         LiveSocialSessionBindings social = _social;
+        RuntimeFellowshipEventSink? fellowshipEvents = social.Fellowship is { } fellowship
+            ? new RuntimeFellowshipEventSink(fellowship, inventory.PlayerGuid, text =>
+            {
+                if (social.AddText is { } addText)
+                    addText(text, RetailLogTextType.Default);
+                else
+                    social.Chat.OnSystemMessage(text, (uint)RetailLogTextType.Default);
+            })
+            : null;
 
         try
         {
@@ -178,8 +187,19 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                 creatureDeath.ObserveMotion(update);
                 entities.MotionUpdated(update);
             };
+            Action<DeleteObject.Parsed> deleted = delete =>
+            {
+                try
+                {
+                    entities.Deleted(delete);
+                }
+                finally
+                {
+                    creatureDeath.Forget(delete.Guid, delete.InstanceSequence);
+                }
+            };
             Subscribe(h => session.EntitySpawned += h, h => session.EntitySpawned -= h, spawned);
-            Subscribe(h => session.EntityDeleted += h, h => session.EntityDeleted -= h, entities.Deleted);
+            Subscribe(h => session.EntityDeleted += h, h => session.EntityDeleted -= h, deleted);
             Subscribe(h => session.EntityPickedUp += h, h => session.EntityPickedUp -= h, entities.PickedUp);
             Subscribe(h => session.MotionUpdated += h, h => session.MotionUpdated -= h, motionUpdated);
             {
@@ -296,15 +316,9 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                 onFellowshipUpdateFellow: social.Fellowship is { } fellowshipUpdate
                     ? fellowshipUpdate.ApplyUpdateFellow
                     : null,
-                onFellowshipQuit: social.Fellowship is { } fellowshipQuit
-                    ? quitterGuid => fellowshipQuit.ApplyQuit(quitterGuid, inventory.PlayerGuid())
-                    : null,
-                onFellowshipDismiss: social.Fellowship is { } fellowshipDismiss
-                    ? dismissedGuid => fellowshipDismiss.ApplyDismiss(dismissedGuid, inventory.PlayerGuid())
-                    : null,
-                onFellowshipDisband: social.Fellowship is { } fellowshipDisband
-                    ? fellowshipDisband.ApplyDisband
-                    : null,
+                onFellowshipQuit: fellowshipEvents is null ? null : fellowshipEvents.ApplyQuit,
+                onFellowshipDismiss: fellowshipEvents is null ? null : fellowshipEvents.ApplyDismiss,
+                onFellowshipDisband: fellowshipEvents is null ? null : fellowshipEvents.ApplyDisband,
                 onAllegianceUpdate: social.Allegiance is { } allegianceUpdate
                     ? allegianceUpdate.ApplyUpdate
                     : null,

@@ -277,6 +277,23 @@ public sealed class LauncherProfileTextTests
     }
 
     [Fact]
+    public void AddingServerInTextEditorCopiesKnownCredentials()
+    {
+        LauncherProfileDocument document = Sample();
+
+        LauncherProfileText.Apply(document, LauncherTextEditorKind.Servers,
+            "Coldeve | play.coldeve.ac | 9000\nsawato | localhost | 9000\nDreamWeave | game.example | 9000");
+
+        ServerProfile added = document.Servers[2];
+        Assert.Equal(["notan3", "notan", "testaccount"],
+            added.Accounts.Select(account => account.Account));
+        Assert.Equal("secret", added.Accounts[0].Password);
+        Assert.Empty(added.Accounts[0].Characters);
+        Assert.Empty(added.Accounts[0].Plugins);
+        Assert.Single(document.Servers[0].Accounts[0].Characters);
+    }
+
+    [Fact]
     public void QuotedServerSeparatorsRoundTrip()
     {
         LauncherProfileDocument document = Sample();

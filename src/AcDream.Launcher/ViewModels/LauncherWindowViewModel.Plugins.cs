@@ -252,6 +252,14 @@ public sealed partial class LauncherWindowViewModel
     private void OpenAccountPlugins(LauncherAccountGroupViewModel group)
     {
         var key = (group.ServerName, group.AccountName);
+        OpenAccountPlugins(key);
+    }
+
+    private void OpenAccountPlugins(LauncherAccountServerRowViewModel row) =>
+        OpenAccountPlugins((row.ServerName, row.AccountName));
+
+    private void OpenAccountPlugins((string Server, string Account) key)
+    {
         if (FindAccountSnapshot(key) is not { } account) return;
         SetRowOptionsAccount(key);
         LoadPluginChoices(account.Plugins, host: null);
