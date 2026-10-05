@@ -83,6 +83,12 @@ public sealed class UiField : UiElement
     public Action? OnDown { get; set; }
     public Action? OnFocusGained { get; set; }
     public Action<string>? OnFocusLost { get; set; }
+
+    /// <summary>
+    /// True while an Enter submit that handed the text to <see cref="OnSubmit"/>,
+    /// or cleared it, is under way, including the focus loss that ends it.
+    /// </summary>
+    public bool LosingFocusToSubmit { get; private set; }
     public Action<string>? OnTextChanged { get; set; }
 
     /// <summary>
@@ -873,9 +879,18 @@ public sealed class UiField : UiElement
                             _suppressNextNewlineChar = true;
                             return true;
                         }
-                        Submit();
-                        if (StayFocusedAfterSubmit?.Invoke() != true)
-                            FindRoot()?.SetKeyboardFocus(null);   // exit write mode after sending
+                        LosingFocusToSubmit = ClearOnSubmit
+                            || (OnSubmit is not null && _text.Trim().Length > 0);
+                        try
+                        {
+                            Submit();
+                            if (StayFocusedAfterSubmit?.Invoke() != true)
+                                FindRoot()?.SetKeyboardFocus(null);   // exit write mode after sending
+                        }
+                        finally
+                        {
+                            LosingFocusToSubmit = false;
+                        }
                         return true;
                     case Silk.NET.Input.Key.Backspace: Backspace();        StartRepeat(key); return true;
                     case Silk.NET.Input.Key.Delete:    DeleteForward();    StartRepeat(key); return true;

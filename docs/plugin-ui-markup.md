@@ -179,7 +179,7 @@ back at runtime instead.
 | `tab selected`, `toggle checked`, `visible`, `enabled` | `bool` | throws |
 | `onclick` (button, tab, toggle) | `Action` | throws |
 | `slider onchange` | `Action<float>` | throws |
-| `field onchange`, `field onsubmit`, `menu onchange` | `Action<string>` | throws |
+| `field onchange`, `field onsubmit`, `field onblur`, `menu onchange` | `Action<string>` | throws |
 | `field onup`, `field ondown` | `Action` | throws |
 | `list onchange` | `Action<int>` | throws |
 | `column` attributes | see "Columns" | see "Columns" |
@@ -239,7 +239,7 @@ Unknown or miscased element names throw at build time.
 | `tab` | Tab button | `x y w h text selected onclick` |
 | `toggle` | Checkbox | `x y w h text checked onclick color` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
-| `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onup ondown color background` |
+| `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
 | `list` | Scrolling rows | `x y w h selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children |
 
@@ -258,6 +258,23 @@ typing in the field, a value that changes behind it -- a profile loaded after
 the panel was built -- replaces what the field shows. `onchange` reports what
 the player types; it is not called for the field's own value being shown, at
 build time or later.
+
+A `field` has three ways to hand its text back, each an `Action<string>`:
+
+- `onchange` fires on every edit, with the whole text.
+- `onsubmit` fires when Enter is pressed on a one-line field with text that is
+  not blank. Enter then ends the edit, and with `clearonsubmit="true"` the field
+  empties.
+- `onblur` fires when the field loses keyboard focus, with the text it has at
+  that moment: the player clicks another control or empty space, presses Escape
+  or Tab, or the panel hides or closes while the field is focused. Use it to
+  apply a value the way an ordinary text box does, without requiring Enter.
+
+The focus loss that Enter causes does not fire `onblur` when `onsubmit` has
+just received the text or `clearonsubmit` has just emptied the field, so a
+field that binds both never applies the same text twice and never reports the
+cleared empty text. A field with `onblur` and no `onsubmit` still applies its
+text when Enter ends the edit.
 
 `menu style` and `slider style` are `plain` (default: flat fill, one-pixel
 border, no sprite art) or `retail` (the game's own pushbutton or scrollbar
