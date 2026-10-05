@@ -661,3 +661,24 @@ accepted:
 | Snapping error distribution unspecified | Cumulative-edge snapping (3.1) |
 | `NaN`/`Infinity` parse as numbers | Build-time error (5) |
 | Wall-clock performance test flaky | Scaling and allocation tests (7) |
+
+## Planning corrections (PR 2)
+
+Found while planning the title bar (see the PR 2 plan's "Spec corrections"):
+
+- **The dock already adds a "–" minimize button** to docked plugin windows
+  (`PluginSidePanel.Add`); it is the close button the markup docs describe.
+  User decision (2026-10-05): on a window with a title bar the bar's X
+  replaces it, with the tooltip "Close (reopen from the dock)"; windows
+  without a bar keep "–".
+- The close button is a 19-point square (the bar below the Classic top
+  border), at the frame's right inset; modern themes centre it in the band.
+  Classic art is `0x06004D0C`, the retail inventory close button's image.
+- The eager first measurement (3.4) moves to PR 3: until `layout` exists
+  every root states its `w`/`h`, so no measure pass is needed.
+- `CloseRequested` is on `PluginTitleBar`; `MarkupDocument.BuildWindow`
+  returns a `MarkupWindow` whose `Register` wires it to
+  `RetailWindowManager.Close` after registration. Public `Build` is
+  unchanged.
+- The authored-inputs revision is FNV-1a (process-stable); the ellipsis is
+  ASCII `...`.
