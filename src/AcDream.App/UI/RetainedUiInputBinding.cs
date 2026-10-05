@@ -19,8 +19,9 @@ internal interface IRetainedMouseSurface
     void RemoveMouseUp(Action<MouseButton, int, int> callback);
     void AddMouseMove(Action<int, int> callback);
     void RemoveMouseMove(Action<int, int> callback);
-    void AddScroll(Action<int> callback);
-    void RemoveScroll(Action<int> callback);
+    /// <summary>Wheel steps as (dx, dy), each -1, 0 or +1: +1 is left or up.</summary>
+    void AddScroll(Action<int, int> callback);
+    void RemoveScroll(Action<int, int> callback);
 }
 
 internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
@@ -29,7 +30,7 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
     private Action<MouseButton, int, int>? _downCallback;
     private Action<MouseButton, int, int>? _upCallback;
     private Action<int, int>? _moveCallback;
-    private Action<int>? _scrollCallback;
+    private Action<int, int>? _scrollCallback;
     private readonly Action<IMouse, MouseButton> _down;
     private readonly Action<IMouse, MouseButton> _up;
     private readonly Action<IMouse, Vector2> _move;
@@ -83,13 +84,13 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
         _moveCallback = null;
     }
 
-    public void AddScroll(Action<int> callback)
+    public void AddScroll(Action<int, int> callback)
     {
         _scrollCallback = callback ?? throw new ArgumentNullException(nameof(callback));
         _mouse.Scroll += _scroll;
     }
 
-    public void RemoveScroll(Action<int> callback)
+    public void RemoveScroll(Action<int, int> callback)
     {
         if (!ReferenceEquals(_scrollCallback, callback)) return;
         _mouse.Scroll -= _scroll;
@@ -104,9 +105,9 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
         _moveCallback?.Invoke((int)position.X, (int)position.Y);
     private void OnScroll(IMouse _, ScrollWheel scroll)
     {
-        // Each wheel event is a directional action, including small trackpad deltas.
-        if (scroll.Y > 0f) _scrollCallback?.Invoke(1);
-        else if (scroll.Y < 0f) _scrollCallback?.Invoke(-1);
+        // Each wheel event is a directional action on each axis, including small trackpad deltas.
+        int dx = Math.Sign(scroll.X), dy = Math.Sign(scroll.Y);
+        if (dx != 0 || dy != 0) _scrollCallback?.Invoke(dx, dy);
     }
 }
 
@@ -118,7 +119,7 @@ internal sealed class RetainedMouseInputBinding : IRetainedUiInputBinding
     private readonly Action<MouseButton, int, int> _down;
     private readonly Action<MouseButton, int, int> _up;
     private readonly Action<int, int> _move;
-    private readonly Action<int> _scroll;
+    private readonly Action<int, int> _scroll;
     private readonly bool[] _attached = new bool[4];
     private ResourceShutdownTransaction? _detach;
     private bool _attachStarted;
@@ -182,7 +183,7 @@ internal sealed class RetainedMouseInputBinding : IRetainedUiInputBinding
     private void OnUp(MouseButton button, int x, int y) =>
         Invoke(() => _root.OnMouseUp(MapButton(button), x, y));
     private void OnMove(int x, int y) => Invoke(() => _root.OnMouseMove(x, y));
-    private void OnScroll(int amount) => Invoke(() => _root.OnScroll(amount));
+    private void OnScroll(int dx, int dy) => Invoke(() => _root.OnScroll(dx, dy, _root.ShiftHeld));
 
     private void Invoke(Action callback) =>
         _quiescence.Invoke(() =>
