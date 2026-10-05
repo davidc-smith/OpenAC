@@ -409,7 +409,7 @@ public sealed class RetailUiRuntime : IDisposable
     private CharacterCreationUiMountCoordinator? _characterCreationMount;
     private PluginSidePanel? _pluginSidePanel;
     private PluginUiThemeSettings? _pluginThemes;
-    private UiNineSlicePanel? _pluginAppearance;
+    private PluginAppearanceWindow? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
     private PluginSvgIconCache? _pluginSvgIcons;
     private bool _pluginsMounted;
@@ -4159,7 +4159,7 @@ public sealed class RetailUiRuntime : IDisposable
                         _pluginSidePanel = new PluginSidePanel(
                             Host.WindowManager,
                             iconResolver.ResolveDid,
-                            _bindings.Assets.DefaultFont, _pluginThemes, ShowPluginAppearance);
+                            _bindings.Assets.DefaultFont, _pluginThemes, TogglePluginAppearance);
                         Host.Root.AddChild(_pluginSidePanel);
                         Host.WindowManager.Register(
                             WindowNames.PluginShelf,
@@ -4187,28 +4187,23 @@ public sealed class RetailUiRuntime : IDisposable
         }
     }
 
-    private void ShowPluginAppearance()
+    private void TogglePluginAppearance()
     {
-        if (_pluginAppearance is not null)
+        _pluginAppearance ??= new PluginAppearanceWindow(Host.Root, close =>
         {
-            _pluginAppearance.Visible = true;
-            Host.Root.BringToFront(_pluginAppearance);
-            return;
-        }
-        var binding = new PluginAppearanceBinding(_pluginThemes!);
-        _pluginAppearance = MarkupDocument.Build("""
-            <panel x="70" y="90" w="310" h="196" title="Plugin appearance" theme="plugin">
-              <label x="12" y="33" text="Theme" />
-              <menu x="12" y="55" w="286" h="24" items="{Themes}" selected="{Selected}" onchange="{Select}" rows="3" />
-              <label x="12" y="89" text="Dock" />
-              <menu x="12" y="111" w="286" h="24" items="{Docks}" selected="{SelectedDock}" onchange="{SelectDock}" rows="3" />
-              <button x="226" y="158" w="72" h="24" text="Close" onclick="{Close}" />
-            </panel>
-            """, binding, _bindings.Assets.ResolveSprite, _bindings.Assets.Controls,
-            _bindings.Assets.DefaultFont, themes: _pluginThemes);
-        binding.Close = () => _pluginAppearance.Visible = false;
-        Host.Root.AddChild(_pluginAppearance);
-        Host.Root.BringToFront(_pluginAppearance);
+            var binding = new PluginAppearanceBinding(_pluginThemes!) { Close = close };
+            return MarkupDocument.Build("""
+                <panel x="70" y="90" w="310" h="196" title="Plugin appearance" theme="plugin">
+                  <label x="12" y="33" text="Theme" />
+                  <menu x="12" y="55" w="286" h="24" items="{Themes}" selected="{Selected}" onchange="{Select}" rows="3" />
+                  <label x="12" y="89" text="Dock" />
+                  <menu x="12" y="111" w="286" h="24" items="{Docks}" selected="{SelectedDock}" onchange="{SelectDock}" rows="3" />
+                  <button x="226" y="158" w="72" h="24" text="Close" onclick="{Close}" />
+                </panel>
+                """, binding, _bindings.Assets.ResolveSprite, _bindings.Assets.Controls,
+                _bindings.Assets.DefaultFont, themes: _pluginThemes);
+        });
+        _pluginAppearance.Toggle();
     }
 
     /// <summary>
