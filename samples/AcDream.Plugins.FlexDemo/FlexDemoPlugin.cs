@@ -92,6 +92,8 @@ public sealed class FlexDemoPlugin : IAcDreamPlugin
         public IReadOnlyList<string> Profiles { get; } = ["Mage", "Melee", "Archer", "Lifestone runner"];
         public string Profile { get; private set; } = "Mage";
         public Action<string> SetProfile => value => Profile = value;
+        public int ProfileIndex => ((IList<string>)Profiles).IndexOf(Profile);
+        public Action<int> PickProfile => index => Profile = Profiles[index];
         public string Target { get; private set; } = "Asheron";
         public Action<string> SetTarget => value => Target = value;
         public bool AutoRebuff { get; private set; } = true;

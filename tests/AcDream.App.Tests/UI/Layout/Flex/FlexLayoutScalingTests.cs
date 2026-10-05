@@ -50,11 +50,17 @@ public sealed class FlexLayoutScalingTests
         for (int width = 200; width < 300; width++)
             FlexLayout.Arrange(grid, new FlexRect(0f, 0f, width, 400f));
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int width = 200; width < 300; width++)
-            FlexLayout.Arrange(grid, new FlexRect(0f, 0f, width, 400f));
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        // The least of a few rounds: the runtime's own tiering work can land in
+        // one, but an allocation by the layout would show in every round.
+        long least = long.MaxValue;
+        for (int round = 0; round < 5; round++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int width = 200; width < 300; width++)
+                FlexLayout.Arrange(grid, new FlexRect(0f, 0f, width, 400f));
+            least = Math.Min(least, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
 
-        Assert.Equal(0L, allocated);
+        Assert.Equal(0L, least);
     }
 }

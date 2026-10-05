@@ -782,16 +782,36 @@ public sealed class UiRoot : UiElement
     /// <see cref="UiEventType.ScrollHorizontal"/> event, which only a group
     /// scrolling horizontally consumes; nothing passes it to the world. A Shift
     /// step that nothing horizontal takes is routed as the vertical step it was.
+    ///
+    /// <para>A step the interface takes may move content under the pointer, so
+    /// the hover is checked again; and taken anywhere but over an open popup,
+    /// it closes the popup, which may have scrolled away with its group.</para>
     /// </summary>
     public void OnScroll(int dx, int dy, bool shift)
     {
+        bool overPopup = PopupHit(MouseX, MouseY) is not null;
+        bool taken = false;
         if (shift && dy != 0 && dx == 0)
         {
-            if (!RouteHorizontal(dy)) RouteVertical(dy);
-            return;
+            taken = RouteHorizontal(dy) || RouteVertical(dy);
         }
-        if (dx != 0) RouteHorizontal(dx);
-        if (dy != 0) RouteVertical(dy);
+        else
+        {
+            if (dx != 0) taken |= RouteHorizontal(dx);
+            if (dy != 0) taken |= RouteVertical(dy);
+        }
+        if (!taken) return;
+
+        if (!overPopup && _activePopup is not null)
+        {
+            var dismiss = _activePopupDismiss;
+            _activePopup = null;
+            _activePopupDismiss = null;
+            dismiss?.Invoke();
+        }
+        // As a move would: not while a resize, window drag or capture owns the pointer.
+        if (_resizeTarget is null && _windowDragTarget is null && Captured is null)
+            UpdateHover(MouseX, MouseY);
     }
 
     /// <summary>Whether shift is held on the attached keyboard.</summary>
@@ -809,7 +829,8 @@ public sealed class UiRoot : UiElement
         return BubbleEvent(target, in e);
     }
 
-    private void RouteVertical(int dy)
+    /// <summary>Routes a vertical step; true when the interface took it.</summary>
+    private bool RouteVertical(int dy)
     {
         if (PopupHit(MouseX, MouseY) is { } popupTarget)
         {
@@ -817,19 +838,18 @@ public sealed class UiRoot : UiElement
             var pe = new UiEvent(popupTarget.EventId, popupTarget, UiEventType.Scroll,
                                  Data0: dy,
                                  Data1: (int)(MouseX - pp.X), Data2: (int)(MouseY - pp.Y));
-            BubbleEvent(popupTarget, in pe);
-            return;
+            return BubbleEvent(popupTarget, in pe);
         }
 
         var (target, lx, ly) = HitTestTopDown(MouseX, MouseY);
         if (target is null)
         {
             WorldScrollFallThrough?.Invoke(dy);
-            return;
+            return false;
         }
         var e = new UiEvent(target.EventId, target, UiEventType.Scroll, Data0: dy,
                             Data1: (int)lx, Data2: (int)ly);
-        BubbleEvent(target, in e);
+        return BubbleEvent(target, in e);
     }
 
     public void OnKeyDown(int vk, uint lparam = 0)

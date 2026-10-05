@@ -129,6 +129,8 @@ public sealed class UiMarkupLog : UiPanel
     {
         if (e.Type != UiEventType.Scroll) return base.OnEvent(e);
         Refresh();
+        // A log with nothing to scroll leaves the wheel to the group around it.
+        if (!Scroll.HasOverflow) return false;
         Scroll.ScrollByLines(-e.Data0 * 3);
         return true;
     }

@@ -163,7 +163,8 @@ public sealed class UiMarkupList : UiElement
         if (TryHandleScrollbarEvent(e, contentWidth, items.Count, visibleRows))
             return true;
 
-        if (e.Type == UiEventType.Scroll)
+        // A list with nothing to scroll leaves the wheel to the group around it.
+        if (e.Type == UiEventType.Scroll && items.Count > visibleRows)
         {
             _topRow -= Math.Sign(e.Data0);
             ClampTop(items.Count, visibleRows);
@@ -385,7 +386,7 @@ public sealed class UiMarkupList : UiElement
         if (TryHandleScrollbarEvent(e, contentWidth, rowCount, visibleRows))
             return true;
 
-        if (e.Type == UiEventType.Scroll)
+        if (e.Type == UiEventType.Scroll && rowCount > visibleRows)
         {
             _topRow -= Math.Sign(e.Data0);
             ClampTop(rowCount, visibleRows);

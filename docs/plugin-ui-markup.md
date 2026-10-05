@@ -534,8 +534,9 @@ is cut off, as before; any other value fails the build.
 
 **The wheel** scrolls the innermost thing under the pointer that can scroll:
 a `list` or `log` inside a scrolling group scrolls itself, and the group
-scrolls everywhere else. A group with nothing to scroll lets the wheel pass to
-a group around it. A sideways swipe, a tilt wheel, or Shift with the wheel
+scrolls everywhere else. A group, list or log with nothing to scroll lets the
+wheel pass to a group around it. Scrolling closes an open menu, unless the
+pointer is over the menu's popup. A sideways swipe, a tilt wheel, or Shift with the wheel
 scrolls horizontally. Only `scroll="x"` and `scroll="both"` groups take a
 horizontal step; a Shift step that no such group takes scrolls vertically as
 before. One wheel step moves 48 points (three 16-point
