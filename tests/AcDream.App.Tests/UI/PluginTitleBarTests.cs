@@ -116,6 +116,30 @@ public sealed class PluginTitleBarTests
     }
 
     [Fact]
+    public void TheTitleWidthFollowsTheBarWidthWithoutADraw()
+    {
+        var font = BundledUiFont.Bake(12).CreateFont(1);
+        var (_, _, bar) = Mount(new string('W', 80));
+        bar.DatFont = font;
+        string wide = bar.DisplayedTitle(s => font.MeasureWidth(s));
+        bar.Width = 200;
+        string narrow = bar.DisplayedTitle(s => font.MeasureWidth(s));
+        Assert.True(narrow.Length < wide.Length);
+        Assert.True(PluginTitleBar.ClassicTextLeft + font.MeasureWidth(narrow) <= 200 - 24f - 4f);
+    }
+
+    [Theory]
+    [InlineData(14f)]
+    [InlineData(17f)]
+    public void TheTitleTextOriginIsPinnedPerLook(float lineHeight)
+    {
+        var (_, _, bar) = Mount();
+        Assert.Equal((8f, 5f + MathF.Floor((19f - lineHeight) / 2f + 0.5f)), bar.TextOrigin(lineHeight));
+        bar.ThemePalette = PluginUiPalette.Moss;
+        Assert.Equal((12f, MathF.Floor((24f - lineHeight) / 2f + 0.5f)), bar.TextOrigin(lineHeight));
+    }
+
+    [Fact]
     public void TheCloseButtonSaysWhatItDoes()
     {
         var (_, _, bar) = Mount();

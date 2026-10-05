@@ -280,6 +280,8 @@ With the bar on, the window has a **content area** inside the chrome:
 - `w`, `h`, `minw` and `minh` describe the content area, and the host adds
   the chrome: 5 points left, right and bottom, and the 24-point bar on top
   (the frame is 10 points wider and 29 points taller);
+- the root's `x`/`y` still position the window's outer frame, while children
+  are placed from the content area's corner;
 - dragging the bar moves the window.
 
 ```xml
@@ -292,7 +294,10 @@ With the bar on, the window has a **content area** inside the chrome:
 The close button does what the window's dock slot does: it closes the
 window for the player and the plugin keeps running; the dock slot (or
 `ShowPanel`) opens it again. A window with a bar does not get the dock's
-"–" button, since its X does the same thing. Turning the bar on for an
+"–" button, since its X does the same thing. A window kept out of the dock
+(registered with `ShowInSidePanel` off) has no dock slot, so after the player
+closes it only the plugin's `ShowPanel` opens it again; give players a way to
+call it, such as a command or a button. Turning the bar on for an
 existing window changes its size, so a size the player saved is reset once
 (the position is kept).
 

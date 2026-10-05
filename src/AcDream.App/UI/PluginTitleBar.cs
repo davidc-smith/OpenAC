@@ -57,6 +57,8 @@ internal sealed class PluginTitleBar : UiElement
             _palette = value;
             Close.ThemePalette = value;
             Close.Top = value is null ? PluginWindowChrome.Border : ThemedCloseTop;
+            // The anchor pass resets Top to the captured baseline every draw; re-capture so a live switch sticks.
+            Close.CaptureCurrentAnchorBaseline();
         }
     }
 
@@ -64,7 +66,7 @@ internal sealed class PluginTitleBar : UiElement
     internal string DisplayedTitle(Func<string, float> measure)
     {
         float left = _palette is null ? ClassicTextLeft : ThemedTextLeft;
-        float width = MathF.Max(0f, Close.Left - TextGap - left);
+        float width = MathF.Max(0f, Width - PluginWindowChrome.TitleBarHeight - TextGap - left);
         if (!ReferenceEquals(_shownFor, Title) || _shownWidth != width || !ReferenceEquals(_shownFont, DatFont))
         {
             _shown = PluginWindowChrome.Ellipsize(Title, measure, width);
@@ -74,6 +76,12 @@ internal sealed class PluginTitleBar : UiElement
         }
         return _shown;
     }
+
+    /// <summary>Where the title's top-left sits in the bar, for a font of this line height.</summary>
+    internal (float X, float Y) TextOrigin(float lineHeight) => _palette is null
+        ? (ClassicTextLeft, PluginWindowChrome.Border
+            + MathF.Floor((PluginWindowChrome.CloseButtonSize - lineHeight) / 2f + 0.5f))
+        : (ThemedTextLeft, MathF.Floor((PluginWindowChrome.TitleBarHeight - lineHeight) / 2f + 0.5f));
 
     protected override void OnDraw(UiRenderContext ctx)
     {
@@ -86,18 +94,7 @@ internal sealed class PluginTitleBar : UiElement
         string text = DisplayedTitle(measure);
         if (text.Length == 0) return;
         float lineHeight = DatFont?.LineHeight ?? ctx.DefaultFont?.LineHeight ?? 14f;
-        float x, y;
-        if (_palette is null)
-        {
-            x = ClassicTextLeft;
-            y = PluginWindowChrome.Border
-                + MathF.Floor((PluginWindowChrome.CloseButtonSize - lineHeight) / 2f + 0.5f);
-        }
-        else
-        {
-            x = ThemedTextLeft;
-            y = MathF.Floor((PluginWindowChrome.TitleBarHeight - lineHeight) / 2f + 0.5f);
-        }
+        var (x, y) = TextOrigin(lineHeight);
         if (DatFont is { } datFont)
             ctx.DrawStringDat(datFont, text, x, y, TextColor, Outline);
         else if (ctx.DefaultFont is not null)

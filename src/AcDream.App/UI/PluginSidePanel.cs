@@ -118,7 +118,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     internal PluginDockMode Mode => _dragMode ?? _themes.Dock;
 
     /// <summary>
-    /// Adds one manifest-scoped plugin window and its minimize affordance.
+    /// Adds one manifest-scoped plugin window and its dock slot (a minimize button too, unless the window has a title bar, whose X replaces it).
     /// Duplicate handles are idempotent.
     /// </summary>
     public void Add(

@@ -184,4 +184,31 @@ public sealed class MarkupTitleBarTests
         Assert.Equal(classicColor, bar.TextColor);
         Assert.True(bar.Outline);
     }
+
+    [Fact]
+    public void Themed_TheCloseButtonFollowsALiveThemeSwitchAfterBuild()
+    {
+        var settings = new PluginUiThemeSettings();
+        MarkupWindow window = Window("titlebar=\"true\" title=\"T\" theme=\"plugin\"", themes: settings);
+        UiRoot root = Mount(window);
+        PluginCloseButton close = window.TitleBar!.Close;
+        void Frame(int n)
+        {
+            root.Tick(0.016, n);
+            var (_, ctx) = ThemeDrawCapture.Context(1280, 720);
+            root.Draw(ctx);
+        }
+        Frame(1);
+        float left = close.Left;
+        Assert.Equal(5f, close.Top);
+
+        settings.Theme = PluginUiTheme.Moss;
+        Frame(2);
+        Assert.Equal(3f, close.Top);
+        Assert.Equal(left, close.Left);
+
+        settings.Theme = PluginUiTheme.Classic;
+        Frame(3);
+        Assert.Equal(5f, close.Top);
+    }
 }
