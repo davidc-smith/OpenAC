@@ -52,6 +52,11 @@ public static class MarkupDocument
         bool hasLayout = MarkupFlexAttributes.IsContainer(root);
         bool hasTitleBar = TitleBar(root, hasLayout);
         bool hasContentArea = hasLayout || hasTitleBar;
+        var (rootScrollX, rootScrollY) = MarkupFlexAttributes.Scroll(root);
+        if ((rootScrollX || rootScrollY) && !hasContentArea)
+            throw new FormatException(
+                $"<panel scroll=\"{(string?)root.Attribute("scroll")}\"> scrolls the window's content area, "
+                + "which needs layout=\"row|column\" or titlebar=\"true\" on the panel");
         float chromeW = hasContentArea ? PluginWindowChrome.HorizontalInsets : 0f;
         float chromeH = hasContentArea ? PluginWindowChrome.VerticalInsetsFor(hasTitleBar) : 0f;
         if (!hasLayout) MarkupFlexAttributes.RejectContainer(root);
@@ -68,7 +73,9 @@ public static class MarkupDocument
 
         bool resizable = B(root, "resizable", false);
         panel.Resizable = resizable;
-        panel.MinWidth = FOr(root, "minw", contentW) + chromeW;
+        panel.MinWidth = hasContentArea
+            ? PluginWindowChrome.FrameMinimumWidth(FOr(root, "minw", contentW), hasTitleBar)
+            : FOr(root, "minw", contentW);
         panel.MinHeight = FOr(root, "minh", contentH) + chromeH;
         panel.ResizeX = resizable;
         panel.ResizeY = resizable;
@@ -148,6 +155,11 @@ public static class MarkupDocument
             rootFlex = content!.UseFlex();
             MarkupFlexAttributes.ReadContainer(root, rootFlex.Node);
         }
+        if (rootScrollX || rootScrollY)
+        {
+            content!.UseScroll(rootScrollX, rootScrollY, resolve);
+            if (panel is UiPluginMarkupPanel scrollPanel) content.ScrollArea!.RegisterTheme(scrollPanel);
+        }
 
         foreach (var el in root.Elements())
             AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, rootFlex);
@@ -164,10 +176,16 @@ public static class MarkupDocument
             contentW = MathF.Max(authoredW ?? measured.Preferred.Width, minW);
             contentH = MathF.Max(authoredH ?? measured.Preferred.Height, minH);
             panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
-            panel.MinWidth = minW + chromeW; panel.MinHeight = minH + chromeH;
+            panel.MinWidth = PluginWindowChrome.FrameMinimumWidth(minW, hasTitleBar); panel.MinHeight = minH + chromeH;
             content!.Width = contentW; content.Height = contentH;
-            titleBar?.SetFrameWidth(panel.Width);
         }
+        if (hasTitleBar && panel.Width < PluginWindowChrome.MinimumBarFrameWidth)
+        {
+            // A window narrower than its title bar needs opens at the bar's minimum.
+            panel.Width = panel.MinWidth;
+            content!.Width = panel.Width - chromeW;
+        }
+        titleBar?.SetFrameWidth(panel.Width);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -183,7 +201,7 @@ public static class MarkupDocument
                 panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
         var window = new MarkupWindow(panel, contentParent, titleBar, revision);
         if (rootFlex is not null)
-            window.TrackContentMinimum(content!, chromeW, chromeH, authoredMinW, authoredMinH);
+            window.TrackContentMinimum(content!, chromeH, authoredMinW, authoredMinH);
         return window;
     }
 
@@ -229,18 +247,23 @@ public static class MarkupDocument
             case "group":
                 UiFlexBox? groupFlex = null;
                 UiPanel group;
+                var (scrollX, scrollY) = MarkupFlexAttributes.Scroll(el);
+                bool scrolls = scrollX || scrollY;
                 if (MarkupFlexAttributes.IsContainer(el))
                 {
                     var flexGroup = new UiFlexGroup();
                     MarkupFlexAttributes.ReadContainer(el, flexGroup.Flex.Node);
+                    if (scrolls) flexGroup.UseScroll(scrollX, scrollY, resolve);
                     groupFlex = flexGroup.Flex;
                     group = flexGroup;
                 }
                 else
                 {
                     MarkupFlexAttributes.RejectContainer(el);
-                    group = new UiPanel();
+                    group = scrolls ? new UiScrollPanel(scrollX, scrollY, resolve) : new UiPanel();
                 }
+                if (themedPanel is not null && group is IUiScrollHost { ScrollArea: { } groupScroll })
+                    groupScroll.RegisterTheme(themedPanel);
                 group.Left = F(el, "x");
                 group.Top = F(el, "y");
                 group.Width = F(el, "w");
@@ -252,7 +275,8 @@ public static class MarkupDocument
                     ? Vector4.Zero
                     : Color((string?)el.Attribute("border"));
                 group.BorderThickness = el.Attribute("border") is null ? 0f : 1f;
-                group.ClickThrough = true;
+                // A scrolling group is hit-testable so the wheel reaches it over empty space.
+                group.ClickThrough = !scrolls;
                 BindColorSource(
                     (string?)el.Attribute("background"), binding,
                     value => group.BackgroundColor = value,
@@ -831,7 +855,7 @@ public static class MarkupDocument
         UiFlexItem item = element is UiFlexGroup group
             ? flex.AddContainer(group, group.Flex)
             : flex.AddLeaf(element, new FlexNode(),
-                el.Name.LocalName == "group" ? new FlexSize(element.Width, element.Height) : null);
+                el.Name.LocalName == "group" ? AbsoluteGroupSize(element) : null);
         MarkupFlexAttributes.ReadItem(el, item.Node);
         element.Anchors = AnchorEdges.None;
         if (element is UiLabel label) label.SizedByLayout = true;
@@ -847,6 +871,20 @@ public static class MarkupDocument
                 menu.ColumnWidth = MathF.Max(20f, menu.Width);
             };
         }
+    }
+
+    /// <summary>
+    /// An absolute group's content size in a flex container: its authored
+    /// size, which is also its minimum, except along an axis it scrolls, where
+    /// it can shrink to a 40-point viewport (plus the other axis's bar).
+    /// </summary>
+    private static FlexMeasurement AbsoluteGroupSize(UiElement group)
+    {
+        var size = new FlexSize(group.Width, group.Height);
+        if (group is not UiScrollPanel { ScrollArea: var area }) return new FlexMeasurement(size, size);
+        float minW = area.ScrollsX ? FlexLayout.MinimumScrollViewport + (area.ScrollsY ? UiScrollArea.BarSize : 0f) : size.Width;
+        float minH = area.ScrollsY ? FlexLayout.MinimumScrollViewport + (area.ScrollsX ? UiScrollArea.BarSize : 0f) : size.Height;
+        return new FlexMeasurement(size, new FlexSize(MathF.Min(minW, size.Width), MathF.Min(minH, size.Height)));
     }
 
     private static string ValidateIconKind(string? iconKind, string context = "iconkind") =>

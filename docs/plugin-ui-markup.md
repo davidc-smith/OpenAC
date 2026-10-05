@@ -230,8 +230,8 @@ Unknown or miscased element names throw at build time.
 
 | Element | Purpose | Attributes |
 |---|---|---|
-| `panel` (root) | The window | `x y w h title visible resizable minw minh resize titlebar`, and the flex container attributes |
-| `group` | Layout container | `x y w h background border`, and the flex container attributes |
+| `panel` (root) | The window | `x y w h title visible resizable minw minh resize titlebar scroll`, and the flex container attributes |
+| `group` | Layout container | `x y w h background border scroll`, and the flex container attributes |
 | `label` | Text | `x y text color` |
 | `button` | Button with caption and optional icon | `x y w h text color background border onclick icon iconkind` |
 | `icon` | An icon | `x y w h did` or `spell` or `item`, `tooltip` |
@@ -302,7 +302,9 @@ With the bar on, the window has a **content area** inside the chrome:
   (the frame is 10 points wider and 29 points taller);
 - the root's `x`/`y` still position the window's outer frame, while children
   are placed from the content area's corner;
-- dragging the bar moves the window.
+- dragging the bar moves the window;
+- the frame is never narrower than 96 points, so the close button always
+  leaves room for the start of the title; a narrower window opens at 96.
 
 ```xml
 <panel x="120" y="120" w="300" h="160" title="Buff Bot" titlebar="true">
@@ -473,20 +475,78 @@ them it is empty and shows nothing.
   content off. When the content needs more later (a longer caption), the
   window grows to fit, even when it is not resizable, and stays on screen;
 - as with the title bar, the window's saved size is reset once when its
-  markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout` or
-  `titlebar` change. Captions and appearance never reset it.
+  markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout`,
+  `titlebar` or `scroll` change. Captions and appearance never reset it.
 
 Windows only grow to fit: when the content later needs less room, the window
 keeps its size. A wrapping root's minimum height is the height of its
-narrowest layout, so a wide wrapping window cannot be made shorter than that.
+narrowest layout, so a wide wrapping window cannot be made shorter than that;
+give it `scroll="y"` (see [Scrolling groups](#scrolling-groups)) to let it.
 
 A layout root with `titlebar="false"` shows no title text in the window (its
-`title` still names it in the dock). A docked window without a bar keeps the
-dock's "–" button at its top-right corner, over the corner of the content
-area, so leave room there.
+`title` still names it in the dock), and gets no dock "–" button either, since
+its content reaches the corner where the button would sit: the player closes
+it from its dock slot, the plugin with `HidePanel`.
 
 A root that wraps should state its `w`: without it the window opens one
 line wide.
+
+## Scrolling groups
+
+`scroll="y"`, `scroll="x"` or `scroll="both"` on a `<group>` makes it scroll
+along those axes when its content does not fit; on the root `<panel>` it
+scrolls the window's content area. Without `scroll` content that does not fit
+is cut off, as before; any other value fails the build.
+
+```xml
+<panel title="Spells" layout="column" padding="8" gap="6" w="240" h="200" resizable="true">
+  <label text="Known spells" />
+  <group layout="row" wrap="true" gap="4" scroll="y" grow="1">
+    <icon spell="{Spell1}" />
+    <icon spell="{Spell2}" />
+    <!-- ... -->
+  </group>
+</panel>
+```
+
+- **Flex groups** lay their items out without a limit along the scrolling
+  axis: a scrolling column keeps every item at its size instead of shrinking
+  it, and a wrapping row with `scroll="y"` keeps its width and grows downward.
+  Items do not grow to fill a scrolling axis either; `grow` there has no space
+  to share.
+- **Groups without `layout`** scroll over their children as placed: the
+  scrolled area reaches the right and bottom edges of the furthest visible
+  child, measured from the group's top-left corner. A child at negative
+  coordinates is not reachable; leave your own margin after the last child if
+  you want one.
+- A **bar** (16 points) appears on each scrolling axis only while the content
+  overflows it, beside the content rather than over it: the content is laid
+  out (or its anchors applied) in the room left, so a right-anchored child
+  moves in beside the bar. When both bars show, the corner square stays empty.
+  Classic uses the game's scrollbar art and the shared themes a slim thumb.
+- **In a flex container** a scrolling group may shrink to a 40-point view
+  along each axis it scrolls (plus the other bar's 16 points), so it never
+  holds its window open. A scrolling wrapping row in a column shows all its
+  lines when the window has room and scrolls when it does not. On the root,
+  the window's minimum along a scrolling axis is that small view too.
+- The root needs a content area to scroll: `scroll` on a root `<panel>`
+  without `layout` and without `titlebar="true"` fails the build.
+
+**The wheel** scrolls the innermost thing under the pointer that can scroll:
+a `list` or `log` inside a scrolling group scrolls itself, and the group
+scrolls everywhere else. A group with nothing to scroll lets the wheel pass to
+a group around it. A sideways swipe, a tilt wheel, or Shift with the wheel
+scrolls horizontally. Only `scroll="x"` and `scroll="both"` groups take a
+horizontal step; a Shift step that no such group takes scrolls vertically as
+before. One wheel step moves 48 points (three 16-point
+lines); the bar's arrows move 16 and a click in its track a page.
+
+**Focus** moves into view: when Tab (or a click) gives a control keyboard
+focus, each scrolling group around it scrolls just far enough to show it.
+
+The scroll position survives hiding and showing the group and a change of
+appearance, is pulled back when the group grows or its content shrinks, and
+is not saved between sessions. Plugins cannot read or set it in this version.
 
 ## Icon ids
 
@@ -612,8 +672,8 @@ plugin window's own visibility.
 A plugin window is on screen only while two things agree: the player's own
 request and, when the markup binds the root's `visible`, the plugin's
 binding. The player closes a window with its title bar's X (see "Title
-bar"), or, without a bar, with the dock's "–" on its corner or its dock
-slot; each clears the player's request, so setting the binding back to true
+bar"), or, without a bar, with the dock's "–" on its corner (absolute windows
+only) or its dock slot; each clears the player's request, so setting the binding back to true
 does not reopen it. `ShowPanel` and `HidePanel` make that request from the
 plugin, exactly as the dock slot does:
 

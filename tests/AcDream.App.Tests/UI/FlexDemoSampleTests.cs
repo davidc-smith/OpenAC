@@ -68,7 +68,8 @@ public sealed class FlexDemoSampleTests
             Assert.True(child.Left >= 0f && child.Top >= 0f, $"{child.GetType().Name} starts outside its parent");
             Assert.True(child.Left + child.Width <= container.Width + 0.01f, $"{child.GetType().Name} overflows the width");
             Assert.True(child.Top + child.Height <= container.Height + 0.01f, $"{child.GetType().Name} overflows the height");
-            if (child is UiFlexGroup) AssertInside(child);
+            // A scrolling group's content reaches past it by design.
+            if (child is UiFlexGroup { ScrollArea: null }) AssertInside(child);
         }
     }
 
@@ -98,5 +99,49 @@ public sealed class FlexDemoSampleTests
 
         Assert.True(window.Frame.Width > width);
         AssertInside(window.ContentRoot);
+    }
+
+    [Fact]
+    public void The_settings_window_scrolls_when_it_is_made_short()
+    {
+        var (root, window) = Mount("settings.xml", new Settings());
+        Assert.True(root.WindowManager.TryGet("settings.xml", out RetailWindowHandle handle));
+        var content = (UiPluginContentHost)window.ContentRoot;
+        Assert.False(content.ScrollArea!.Vertical.Visible);
+
+        handle.ResizeTo(window.Frame.Width, 100f);
+        root.Tick(0, 0);
+        ThemeDrawCapture.Draw(root);
+
+        Assert.Equal(100f, window.Frame.Height);
+        Assert.True(content.ScrollArea.Vertical.Visible);
+    }
+
+    [Fact]
+    public void The_gallery_wraps_its_icons_and_scrolls_them()
+    {
+        var (root, window) = Mount("gallery.xml", new object());
+        AssertInside(window.ContentRoot);
+
+        var grid = Assert.IsType<UiFlexGroup>(window.ContentRoot.Children[1]);
+        Assert.True(grid.ScrollArea!.Vertical.Visible);
+        // 30 icons of 32 at a 4-point gap, five a line beside the bar: six lines.
+        Assert.Equal(212, grid.ScrollArea.Y.ContentHeight);
+
+        var at = grid.ScreenPosition + new System.Numerics.Vector2(20f, 20f);
+        root.OnMouseMove((int)at.X, (int)at.Y);
+        root.OnScroll(0, -1, shift: false);
+
+        Assert.Equal(48, grid.ScrollArea.Y.ScrollY);
+
+        // The recent strip: twelve icons in a row that scrolls sideways, with Shift and the wheel.
+        var strip = Assert.IsType<UiFlexGroup>(window.ContentRoot.Children[3]);
+        Assert.True(strip.ScrollArea!.Horizontal.Visible);
+        Assert.Equal(48f, strip.Height);
+        at = strip.ScreenPosition + new System.Numerics.Vector2(20f, 10f);
+        root.OnMouseMove((int)at.X, (int)at.Y);
+        root.OnScroll(0, -1, shift: true);
+
+        Assert.Equal(48, strip.ScrollArea.X.ScrollY);
     }
 }

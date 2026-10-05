@@ -3,18 +3,22 @@ using AcDream.Plugin.Abstractions;
 namespace AcDream.Plugins.FlexDemo;
 
 /// <summary>
-/// Two windows laid out with markup flex instead of coordinates: a finder
-/// (a toolbar over a list that takes the spare height, over a footer) and a
+/// Three windows laid out with markup flex instead of coordinates: a finder
+/// (a toolbar over a list that takes the spare height, over a footer), a
 /// settings form whose summary line and button caption change length at
-/// runtime, so the window grows to fit them. Resize the finder, switch the
-/// shared appearance from the dock's gear, and press "Show details" to watch
-/// both reflow.
+/// runtime, so the window grows to fit them, and a gallery of spell icons
+/// that wraps and scrolls, over a strip of recent spells that scrolls
+/// sideways (swipe, tilt the wheel, or hold Shift). Resize the finder and the
+/// gallery, make the settings window short to scroll it, switch the shared
+/// appearance from the dock's gear, and press "Show details" to watch them
+/// reflow.
 /// </summary>
 public sealed class FlexDemoPlugin : IAcDreamPlugin
 {
     private IPluginHost? _host;
     private IDisposable? _finder;
     private IDisposable? _settings;
+    private IDisposable? _gallery;
     private readonly FinderBinding _finderBinding = new();
     private readonly SettingsBinding _settingsBinding = new();
 
@@ -32,6 +36,9 @@ public sealed class FlexDemoPlugin : IAcDreamPlugin
         _settings = host.Ui.RegisterPanel(
             new PluginPanelDescriptor("settings", "Flex Settings") { IconText = "FS", StartVisible = true },
             Markup("settings.xml"), _settingsBinding);
+        _gallery = host.Ui.RegisterPanel(
+            new PluginPanelDescriptor("gallery", "Flex Gallery") { IconText = "FG", StartVisible = true },
+            Markup("gallery.xml"), new GalleryBinding());
     }
 
     public void Disable()
@@ -40,7 +47,12 @@ public sealed class FlexDemoPlugin : IAcDreamPlugin
         _finder = null;
         _settings?.Dispose();
         _settings = null;
+        _gallery?.Dispose();
+        _gallery = null;
     }
+
+    /// <summary>The gallery's icons are literal spell ids; it binds nothing.</summary>
+    public sealed class GalleryBinding;
 
     /// <summary>A search box over the names it finds.</summary>
     public sealed class FinderBinding

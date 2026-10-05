@@ -172,7 +172,10 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             {
                 titleBar.Close.Tooltip = PluginWindowChrome.DockedCloseTooltip;
             }
-            else
+            // A layout window without a bar has content right up to its
+            // 5-point border, where "-" would sit over it; it is closed
+            // from its dock slot (or HidePanel), as the author chose no chrome.
+            else if (!handle.OuterFrame.Children.OfType<UiPluginContentHost>().Any())
             {
                 minimize = new PluginMinimizeButton(handle, _font, _themes)
                 {

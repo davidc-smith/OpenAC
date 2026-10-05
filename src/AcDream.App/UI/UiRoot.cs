@@ -598,6 +598,9 @@ public sealed class UiRoot : UiElement
             return;
         }
 
+        // Focus may scroll a scrolling ancestor to reveal the target; the
+        // press is reported where it landed, so read the position first.
+        var sp = target.ScreenPosition;
         if (btn == UiMouseButton.Left)
             SetKeyboardFocus(target.AcceptsFocus && target.FocusOnMouseClick ? target : null);
 
@@ -667,7 +670,6 @@ public sealed class UiRoot : UiElement
             UiMouseButton.Middle => UiEventType.MiddleDown,
             _ => UiEventType.MouseDown,
         };
-        var sp = target.ScreenPosition;
         var e = new UiEvent(target.EventId, target, rawType,
                             Data0: (int)flags, Data1: (int)(x - sp.X), Data2: (int)(y - sp.Y));
         BubbleEvent(target, in e);
@@ -767,7 +769,47 @@ public sealed class UiRoot : UiElement
         WorldMouseFallThrough?.Invoke(btn, x, y, flags);
     }
 
-    public void OnScroll(int dy)
+    /// <summary>A vertical wheel step: +1 up, -1 down.</summary>
+    public void OnScroll(int dy) => OnScroll(0, dy, shift: false);
+
+    /// <summary>
+    /// A wheel event with its horizontal and vertical steps (each -1, 0 or +1;
+    /// +1 is left or up) and whether Shift was held. Shift turns a vertical
+    /// step into a horizontal one before routing, as most applications do. A
+    /// vertical step is routed as it always has been: to the element under the
+    /// pointer and up through its parents until one consumes it, else to the
+    /// world. A horizontal step goes the same way as a
+    /// <see cref="UiEventType.ScrollHorizontal"/> event, which only a group
+    /// scrolling horizontally consumes; nothing passes it to the world. A Shift
+    /// step that nothing horizontal takes is routed as the vertical step it was.
+    /// </summary>
+    public void OnScroll(int dx, int dy, bool shift)
+    {
+        if (shift && dy != 0 && dx == 0)
+        {
+            if (!RouteHorizontal(dy)) RouteVertical(dy);
+            return;
+        }
+        if (dx != 0) RouteHorizontal(dx);
+        if (dy != 0) RouteVertical(dy);
+    }
+
+    /// <summary>Whether shift is held on the attached keyboard.</summary>
+    internal bool ShiftHeld =>
+        Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true;
+
+    private bool RouteHorizontal(int dx)
+    {
+        UiElement? target = PopupHit(MouseX, MouseY) ?? HitTestTopDown(MouseX, MouseY).element;
+        if (target is null) return false;
+        var sp = target.ScreenPosition;
+        var e = new UiEvent(target.EventId, target, UiEventType.ScrollHorizontal, Data0: Math.Sign(dx),
+                            Data1: (int)(MouseX - sp.X), Data2: (int)(MouseY - sp.Y));
+        return BubbleEvent(target, in e);
+    }
+
+    private void RouteVertical(int dy)
     {
         if (PopupHit(MouseX, MouseY) is { } popupTarget)
         {
@@ -806,9 +848,7 @@ public sealed class UiRoot : UiElement
             return;
         }
 
-        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(
-                Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
-                || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true))
+        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(ShiftHeld))
             return;
 
         // Focus widget first.
@@ -917,8 +957,17 @@ public sealed class UiRoot : UiElement
         {
             var gained = new UiEvent(e.EventId, e, UiEventType.FocusGained);
             e.OnEvent(in gained);
+            RevealInScrollingAncestors(e);
         }
         KeyboardFocusChanged?.Invoke(previous, e);
+    }
+
+    /// <summary>Scrolls each scrolling ancestor of <paramref name="e"/>, innermost first, just far enough to show it.</summary>
+    private static void RevealInScrollingAncestors(UiElement e)
+    {
+        for (UiElement? p = e.Parent; p is not null; p = p.Parent)
+            if (p is IUiScrollHost { ScrollArea: { } area })
+                area.Reveal(e);
     }
 
     public void SetCapture(UiElement e)
