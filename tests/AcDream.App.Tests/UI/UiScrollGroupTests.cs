@@ -335,6 +335,7 @@ public sealed class UiScrollGroupTests
         Wheel(root, 20, 20, dy: -1);
 
         Assert.Equal(0, Area(Find(frame, "g")).Y.ScrollY);
+        Assert.Equal(1, ((UiMarkupList)Find(frame, "l")).TopRowForTest);
     }
 
     [Fact]
@@ -368,6 +369,76 @@ public sealed class UiScrollGroupTests
         Wheel(root, 20, 20, dy: -1, shift: true);
 
         Assert.Equal(48, Area(Find(frame, "g")).X.ScrollY);
+        Assert.Equal(0, ((UiMarkupList)Find(frame, "l")).TopRowForTest);
+    }
+
+    [Fact]
+    public void Shift_over_a_list_in_a_group_without_a_horizontal_scroller_scrolls_the_list()
+    {
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="200" h="100" scroll="y">
+              <list name="l" x="0" y="0" w="150" h="40" items="{Lines}" selected="{Selected}" />
+              <button x="0" y="250" w="50" h="24" text="Far" />
+            </group>
+            """);
+
+        Wheel(root, 20, 20, dy: -1, shift: true);
+
+        Assert.Equal(1, ((UiMarkupList)Find(frame, "l")).TopRowForTest);
+        Assert.Equal(0, Area(Find(frame, "g")).Y.ScrollY);
+    }
+
+    private sealed class PressRecorder : UiElement
+    {
+        public int? DownY;
+        public PressRecorder() { AcceptsFocus = true; }
+        public override bool OnEvent(in UiEvent e)
+        {
+            if (e.Type == UiEventType.MouseDown) DownY = e.Data2;
+            return true;
+        }
+    }
+
+    [Fact]
+    public void A_press_reports_its_position_as_it_was_before_focus_scrolled_the_target_into_view()
+    {
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="200" h="100" scroll="y">
+              <button x="0" y="250" w="50" h="24" text="Far" />
+            </group>
+            """);
+        var rec = new PressRecorder { Left = 0, Top = 80, Width = 100, Height = 60 };
+        Find(frame, "g").AddChild(rec);
+        Frame(root);
+
+        root.OnMouseMove(10, 90);
+        root.OnMouseDown(UiMouseButton.Left, 10, 90);
+
+        Assert.True(Area(Find(frame, "g")).Y.ScrollY > 0, "focus should have revealed the target");
+        Assert.Equal(10, rec.DownY);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_press_on_empty_scrolling_space_drags_the_window(bool rootContent)
+    {
+        var (root, frame) = rootContent
+            ? Mount("""<group w="100" h="400" />""", panel: "w=\"300\" h=\"200\" layout=\"column\" scroll=\"y\"")
+            : Mount("""
+                <group name="g" x="0" y="0" w="200" h="100" scroll="y">
+                  <button x="0" y="250" w="50" h="24" text="Far" />
+                </group>
+                """);
+        Assert.True(frame.Draggable);
+        float l = frame.Left, t = frame.Top;
+
+        root.OnMouseMove(150, 60);
+        root.OnMouseDown(UiMouseButton.Left, 150, 60);
+        root.OnMouseMove(180, 80);
+        root.OnMouseUp(UiMouseButton.Left, 180, 80);
+
+        Assert.Equal((l + 30, t + 20), (frame.Left, frame.Top));
     }
 
     [Fact]

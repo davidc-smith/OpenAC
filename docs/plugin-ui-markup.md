@@ -536,8 +536,9 @@ is cut off, as before; any other value fails the build.
 a `list` or `log` inside a scrolling group scrolls itself, and the group
 scrolls everywhere else. A group with nothing to scroll lets the wheel pass to
 a group around it. A sideways swipe, a tilt wheel, or Shift with the wheel
-scrolls horizontally, and only `scroll="x"` and `scroll="both"` groups take
-that; lists and logs ignore it. One wheel step moves 48 points (three 16-point
+scrolls horizontally. Only `scroll="x"` and `scroll="both"` groups take a
+horizontal step; a Shift step that no such group takes scrolls vertically as
+before. One wheel step moves 48 points (three 16-point
 lines); the bar's arrows move 16 and a click in its track a page.
 
 **Focus** moves into view: when Tab (or a click) gives a control keyboard

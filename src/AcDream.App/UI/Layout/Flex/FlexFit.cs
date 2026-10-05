@@ -31,7 +31,8 @@ public static class FlexFit
         {
             FlexLayout.Arrange(root, new FlexRect(0f, 0f, width, height));
             // A bar the root shows takes room beside its content on the other axis.
-            float barW = root.ScrollbarY ? root.ScrollbarSize : 0f, barH = root.ScrollbarX ? root.ScrollbarSize : 0f;
+            float bar = root.ScrollbarSize > 0f && float.IsFinite(root.ScrollbarSize) ? root.ScrollbarSize : 0f;
+            float barW = root.ScrollbarY ? bar : 0f, barH = root.ScrollbarX ? bar : 0f;
             float needWidth = root.ScrollX ? width : MathF.Ceiling(root.ContentSize.Width + barW);
             float needHeight = root.ScrollY ? height : MathF.Ceiling(root.ContentSize.Height + barH);
             if (needWidth <= width && needHeight <= height) break;

@@ -5,8 +5,9 @@ namespace AcDream.App.Tests.UI;
 /// <summary>
 /// <see cref="UiRoot.OnScroll(int, int, bool)"/>: vertical steps keep their
 /// routing, horizontal steps travel as <see cref="UiEventType.ScrollHorizontal"/>
-/// to whatever consumes them, Shift turns a vertical step horizontal, and only
-/// a Shift step reaches the world (as the vertical step it was).
+/// to whatever consumes them, Shift turns a vertical step horizontal, and a
+/// Shift step nothing takes horizontally is routed as the vertical step it was
+/// (to the interface, else the world).
 /// </summary>
 public sealed class UiRootWheelRoutingTests
 {
@@ -84,12 +85,13 @@ public sealed class UiRootWheelRoutingTests
     }
 
     [Fact]
-    public void A_shift_step_nothing_takes_over_the_interface_is_dropped()
+    public void A_shift_step_nothing_takes_horizontally_falls_back_to_vertical()
     {
-        var (root, _, _, world) = Tree(outerH: false, innerV: true);
+        var (root, _, inner, world) = Tree(outerH: false, innerV: true);
 
         root.OnScroll(0, 1, shift: true);
 
+        Assert.Equal([(UiEventType.ScrollHorizontal, 1), (UiEventType.Scroll, 1)], inner.Seen);
         Assert.Empty(world);
     }
 

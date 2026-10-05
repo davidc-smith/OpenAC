@@ -106,7 +106,13 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
     private void OnScroll(IMouse _, ScrollWheel scroll)
     {
         // Each wheel event is a directional action on each axis, including small trackpad deltas.
-        int dx = Math.Sign(scroll.X), dy = Math.Sign(scroll.Y);
+        // Trackpads add noise on the off axis, so only the dominant axis counts.
+        float x = float.IsNaN(scroll.X) ? 0f : scroll.X, y = float.IsNaN(scroll.Y) ? 0f : scroll.Y;
+        if (x != 0f && y != 0f)
+        {
+            if (Math.Abs(x) >= Math.Abs(y)) y = 0f; else x = 0f;
+        }
+        int dx = Math.Sign(x), dy = Math.Sign(y);
         if (dx != 0 || dy != 0) _scrollCallback?.Invoke(dx, dy);
     }
 }

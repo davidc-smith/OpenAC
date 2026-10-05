@@ -48,6 +48,7 @@ public sealed class UiMarkupList : UiElement
     private const float ScrollButtonExtent = 16f;
 
     private int _topRow;
+    internal int TopRowForTest => _topRow;
     private IReadOnlyList<UiMarkupListColumn>? _columns;
 
     private int _lastRevealedSelected = int.MinValue;

@@ -244,9 +244,9 @@ public static class FlexLayout
     /// whose axis now overflows, and repeats in the smaller viewport until
     /// the bars stop changing. A vertical bar narrows the viewport, which can
     /// make the content overflow horizontally, and a horizontal bar does the
-    /// reverse; bars are only ever added, so this ends after at most three
-    /// layouts of the container's own items. Its subtree is then laid out
-    /// once, in the settled viewport.
+    /// reverse; bars are only ever added, so the container's own items are
+    /// laid out at most three times to settle the bars, then once more (its
+    /// subtree too when descending) in the settled viewport.
     /// </summary>
     private static void SettleScrollbars(FlexNode node, float width, float height, bool descend)
     {

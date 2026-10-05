@@ -74,15 +74,30 @@ public sealed class SilkRetainedMouseScrollTests
         Assert.Equal(new[] { (expected, 0) }, steps);
     }
 
-    [Fact]
-    public void DiagonalWheelEvent_emitsBothStepsTogether()
+    [Theory]
+    [InlineData(-0.2f, 0.4f, 0, 1)]
+    [InlineData(0.6f, -0.1f, 1, 0)]
+    [InlineData(0.5f, 0.5f, 1, 0)]
+    public void DiagonalWheelEvent_keepsOnlyTheDominantAxis(float x, float y, int dx, int dy)
     {
         IMouse mouse = DispatchProxy.Create<IMouse, WheelMouseProxy>();
         var surface = new SilkRetainedMouseSurface(mouse);
         var steps = new List<(int, int)>();
-        surface.AddScroll((dx, dy) => steps.Add((dx, dy)));
-        ((WheelMouseProxy)mouse).Raise(mouse, new ScrollWheel(-0.2f, 0.4f));
-        Assert.Equal(new[] { (-1, 1) }, steps);
+        surface.AddScroll((a, b) => steps.Add((a, b)));
+        ((WheelMouseProxy)mouse).Raise(mouse, new ScrollWheel(x, y));
+        Assert.Equal(new[] { (dx, dy) }, steps);
+    }
+
+    [Fact]
+    public void NaNWheelComponents_areTreatedAsZero()
+    {
+        IMouse mouse = DispatchProxy.Create<IMouse, WheelMouseProxy>();
+        var surface = new SilkRetainedMouseSurface(mouse);
+        var steps = new List<(int, int)>();
+        surface.AddScroll((a, b) => steps.Add((a, b)));
+        ((WheelMouseProxy)mouse).Raise(mouse, new ScrollWheel(float.NaN, float.NaN));
+        ((WheelMouseProxy)mouse).Raise(mouse, new ScrollWheel(float.NaN, 0.3f));
+        Assert.Equal(new[] { (0, 1) }, steps);
     }
 
     public class WheelMouseProxy : DispatchProxy

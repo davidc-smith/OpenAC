@@ -598,6 +598,9 @@ public sealed class UiRoot : UiElement
             return;
         }
 
+        // Focus may scroll a scrolling ancestor to reveal the target; the
+        // press is reported where it landed, so read the position first.
+        var sp = target.ScreenPosition;
         if (btn == UiMouseButton.Left)
             SetKeyboardFocus(target.AcceptsFocus && target.FocusOnMouseClick ? target : null);
 
@@ -667,7 +670,6 @@ public sealed class UiRoot : UiElement
             UiMouseButton.Middle => UiEventType.MiddleDown,
             _ => UiEventType.MouseDown,
         };
-        var sp = target.ScreenPosition;
         var e = new UiEvent(target.EventId, target, rawType,
                             Data0: (int)flags, Data1: (int)(x - sp.X), Data2: (int)(y - sp.Y));
         BubbleEvent(target, in e);
@@ -778,16 +780,14 @@ public sealed class UiRoot : UiElement
     /// pointer and up through its parents until one consumes it, else to the
     /// world. A horizontal step goes the same way as a
     /// <see cref="UiEventType.ScrollHorizontal"/> event, which only a group
-    /// scrolling horizontally consumes; nothing passes it to the world, except
-    /// that a Shift step over no interface at all still reaches the world as
-    /// the vertical step it was.
+    /// scrolling horizontally consumes; nothing passes it to the world. A Shift
+    /// step that nothing horizontal takes is routed as the vertical step it was.
     /// </summary>
     public void OnScroll(int dx, int dy, bool shift)
     {
         if (shift && dy != 0 && dx == 0)
         {
-            if (!RouteHorizontal(dy) && PopupHit(MouseX, MouseY) is null && HitTestTopDown(MouseX, MouseY).element is null)
-                WorldScrollFallThrough?.Invoke(dy);
+            if (!RouteHorizontal(dy)) RouteVertical(dy);
             return;
         }
         if (dx != 0) RouteHorizontal(dx);
