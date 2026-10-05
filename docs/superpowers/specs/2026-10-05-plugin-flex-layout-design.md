@@ -1,7 +1,7 @@
 # Plugin flex layout, title bars and scrolling groups — design
 
 Date: 2026-10-05. Status: approved; revised after a Codex review and while
-planning PR 1 — see "Planning corrections" and "Review changes" at the end.
+planning PRs 1–3 — see "Planning corrections" and "Review changes" at the end.
 
 ## Goal
 
@@ -682,3 +682,35 @@ Found while planning the title bar (see the PR 2 plan's "Spec corrections"):
   unchanged.
 - The authored-inputs revision is FNV-1a (process-stable); the ellipsis is
   ASCII `...`.
+
+## Planning corrections (PR 3)
+
+Found while prototyping the markup PR (see the PR 3 plan's "Spec corrections"):
+
+- **Changes are detected by comparison at layout time** (replaces the
+  `InvalidateMeasure()` walk and the theme-change action of 3.3). A drawn
+  flex root compares each item's visibility with its node and each leaf's
+  caption, font and theme with what it was measured from, and lays out only
+  when something differs or its size changed. There is no invalidation API;
+  hidden subtrees lay out when shown.
+- **Content sizes are measured centrally** in `MarkupContentSize` instead of
+  an `IUiContentSize` interface on each control (3.2). Constants: control
+  height `max(24, line + 8)`, button padding 12 a side, toggle
+  `max(20, line + 4)` tall with its caption at 17 (Classic) or 35 (themed);
+  the rest as in the 3.2 table.
+- **The window minimum is fitted** (settles the 3.1 known gaps):
+  `FlexFit.Minimum` grows the measured minimum until the content laid out at
+  it fits, on each non-scrolling axis.
+- **`wrap` is rows only in v1**: `wrap="true"` on a column is a build error
+  (settles the 3.1 one-direction limitation).
+- **A changed minimum is applied on the next tick**, outside the draw,
+  through `EnforceMinimumSize` once the window is registered.
+- **An authored `w`/`h` below the content minimum opens at the minimum**;
+  authored `minw`/`minh` still win over the content minimum.
+- **A label in flex centres its line vertically** in its rect.
+- **A layout root without the bar** is inset by the 5-point border on every
+  side. Its `w`, `h`, `minw` and `minh` are parsed strictly; roots without
+  `layout` keep lenient parsing.
+- **No theme case is needed for `UiFlexGroup`**: groups have none.
+- **FlexDemo** ships a finder (window 1) and a settings form (window 3,
+  without scrolling); the scrolling grid comes with PR 4.
