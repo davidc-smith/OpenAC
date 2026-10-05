@@ -136,7 +136,7 @@ public sealed class FlexLayoutNestingTests
         Arrange(root, 150f, 200f);
 
         // 252 + 40 = 292 overflows 150 by 142. Shrink by basis would take the
-        // leaf to 40 - 142 * 40/292 = 20.5, under its 40 minimum, so it
+        // leaf to 40 - 142 * 40/292 = 20.55, under its 40 minimum, so it
         // freezes and the toolbar gets 150 - 40 = 110. At 110 two items
         // (124) no longer fit: four lines, 4 x 20 + 3 x 4 = 92 high.
         Assert.Equal(new FlexRect(0f, 0f, 110f, 92f), toolbar.Rect);
@@ -157,6 +157,102 @@ public sealed class FlexLayoutNestingTests
         // columns of two (20 + 20 = 40), 30 + 30 = 60 wide. The single line
         // must not stretch it back to 80.
         Assert.Equal(new FlexRect(0f, 0f, 60f, 50f), column.Rect);
+    }
+
+    /// <summary>A wrapping row holding the wrapping toolbar and a 40 x 20 leaf.</summary>
+    private static (FlexNode outer, FlexNode toolbar, FlexNode leaf) WrapInWrap()
+    {
+        FlexNode toolbar = WrappingToolbar();
+        FlexNode leaf = Leaf(40f, 20f);
+        FlexNode outer = Row(toolbar, leaf);
+        outer.Wrap = true;
+        return (outer, toolbar, leaf);
+    }
+
+    [Fact]
+    public void A_wrapping_row_inside_a_wrapping_row_is_as_tall_as_the_lines_its_items_make_at_their_real_sizes()
+    {
+        var w = WrapInWrap();
+
+        Arrange(Column(w.outer), 150f, 400f);
+
+        // The outer row is 150 wide: the toolbar (252) and the leaf do not share
+        // a line. On its own line the toolbar shrinks to 150, where it makes two
+        // lines of two (60 + 4 + 60 = 124): 44 high. The leaf's line is 20, so
+        // the outer row is 44 + 20 = 64 high, not the 20 + 20 its items'
+        // one-line heights would give.
+        Assert.Equal(new FlexRect(0f, 0f, 150f, 64f), w.outer.Rect);
+        Assert.Equal(new FlexSize(150f, 64f), w.outer.ContentSize);
+        Assert.Equal(new FlexRect(0f, 0f, 150f, 44f), w.toolbar.Rect);
+        Assert.Equal(new FlexRect(0f, 44f, 40f, 20f), w.leaf.Rect);
+    }
+
+    [Fact]
+    public void A_padded_column_around_a_wrapping_row_is_as_tall_as_the_lines_at_its_width()
+    {
+        FlexNode toolbar = WrappingToolbar();
+        FlexNode card = Column(toolbar);
+        card.Padding = FlexEdges.All(8f);
+        FlexNode list = Leaf(160f, 80f, minWidth: 60f, minHeight: 40f);
+        list.Grow = 1f;
+        FlexNode root = Column(card, list);
+
+        Arrange(root, 140f, 400f);
+
+        // Inside its padding the card is 124 wide, where the toolbar makes two
+        // lines of two (124 fits exactly): 44 high, so the card is 44 + 16 = 60,
+        // not its narrowest-lines minimum of 92 + 16. The list takes the rest.
+        Assert.Equal(new FlexRect(0f, 0f, 140f, 60f), card.Rect);
+        Assert.Equal(new FlexRect(8f, 8f, 124f, 44f), toolbar.Rect);
+        Assert.Equal(new FlexRect(0f, 60f, 140f, 340f), list.Rect);
+    }
+
+    [Fact]
+    public void A_column_around_a_wrapping_row_shrunk_in_a_row_is_as_tall_as_the_lines_at_its_width()
+    {
+        FlexNode toolbar = WrappingToolbar();
+        FlexNode column = Column(toolbar);
+        FlexNode root = Row(column);
+        root.Align = FlexAlign.Start;
+
+        Arrange(root, 150f, 200f);
+
+        // The column's preferred 252 shrinks to the row's 150. At 150 the
+        // toolbar makes two lines of two (124; three would be 188): 44 high.
+        Assert.Equal(new FlexRect(0f, 0f, 150f, 44f), column.Rect);
+        Assert.Equal(new FlexRect(0f, 0f, 150f, 44f), toolbar.Rect);
+    }
+
+    /// <summary>
+    /// A wrapping column whose greedy lines are not monotonic in its height:
+    /// at 117 inside its padding it makes [78, 12] [22, 34] (39 + 3 + 77 wide),
+    /// at 118 it makes [78, 12, 22] [34] (47 + 3 + 77 wide).
+    /// </summary>
+    private static (FlexNode root, FlexNode column) NonMonotonicWrappingColumn()
+    {
+        FlexNode column = Column(Leaf(39f, 78f), Leaf(32f, 12f), Leaf(47f, 22f), Leaf(77f, 34f));
+        column.Wrap = true;
+        column.Gap = 3f;
+        column.Padding = FlexEdges.All(1f);
+        column.Grow = 1f;
+        FlexNode root = Column(column);
+        root.Align = FlexAlign.Start;
+        return (root, column);
+    }
+
+    [Fact]
+    public void A_wrapping_container_is_sized_for_the_lines_it_makes_at_either_snapped_size()
+    {
+        var w = NonMonotonicWrappingColumn();
+
+        Arrange(w.root, 300f, 119.6f);
+
+        // Its preferred 146 + 9 + 2 = 157 shrinks to 119.6, which snaps to 119
+        // or 120. At 119 (117 inside) its lines are 39 + 3 + 77 + 2 = 121 wide,
+        // at 120 (118 inside) 47 + 3 + 77 + 2 = 129: it takes the wider. The
+        // rect snaps to 120, where the content is 129 x (1 + 78 + 3 + 12 + 3 + 22 + 1).
+        Assert.Equal(new FlexRect(0f, 0f, 129f, 120f), w.column.Rect);
+        Assert.Equal(new FlexSize(129f, 120f), w.column.ContentSize);
     }
 
     /// <summary>Trees whose wrapping containers are sized from their lines; see the theory below.</summary>
@@ -192,6 +288,24 @@ public sealed class FlexLayoutNestingTests
                 root.Align = FlexAlign.Start;
                 return (root, 150f, 200f);
             }
+            case "wrap-in-wrap":
+                return (Column(WrapInWrap().outer), 150f, 400f);
+            case "padded-column-in-column":
+            {
+                FlexNode card = Column(WrappingToolbar());
+                card.Padding = FlexEdges.All(8f);
+                FlexNode list = Leaf(160f, 80f, minWidth: 60f, minHeight: 40f);
+                list.Grow = 1f;
+                return (Column(card, list), 140f, 400f);
+            }
+            case "column-shrunk-in-row":
+            {
+                FlexNode root = Row(Column(WrappingToolbar()));
+                root.Align = FlexAlign.Start;
+                return (root, 150f, 200f);
+            }
+            case "non-monotonic-lines":
+                return (NonMonotonicWrappingColumn().root, 300f, 119.6f);
             default:
                 throw new System.ArgumentException(name, nameof(name));
         }
@@ -203,18 +317,22 @@ public sealed class FlexLayoutNestingTests
     [InlineData("start-aligned-column")]
     [InlineData("stretched-in-row")]
     [InlineData("shrunk-in-row")]
-    public void Every_wrapping_container_holds_the_lines_it_makes_inside_its_rect(string name)
+    [InlineData("wrap-in-wrap")]
+    [InlineData("padded-column-in-column")]
+    [InlineData("column-shrunk-in-row")]
+    [InlineData("non-monotonic-lines")]
+    public void Every_container_holds_the_lines_it_makes_inside_its_rect(string name)
     {
         var (root, width, height) = WrappingTree(name);
 
         Arrange(root, width, height);
 
-        AssertWrappingContentFits(root);
+        AssertContentFits(root);
     }
 
-    private static void AssertWrappingContentFits(FlexNode node)
+    private static void AssertContentFits(FlexNode node)
     {
-        if (node.Measure is null && node.Wrap)
+        if (node.Measure is null)
         {
             Assert.True(node.ContentSize.Width <= node.Rect.Width + 0.5f,
                 $"content width {node.ContentSize.Width} exceeds rect {node.Rect}");
@@ -222,7 +340,7 @@ public sealed class FlexLayoutNestingTests
                 $"content height {node.ContentSize.Height} exceeds rect {node.Rect}");
         }
         if (node.Measure is not null) return;
-        for (int i = 0; i < node.Children.Count; i++) AssertWrappingContentFits(node.Children[i]);
+        for (int i = 0; i < node.Children.Count; i++) AssertContentFits(node.Children[i]);
     }
 
     [Fact]

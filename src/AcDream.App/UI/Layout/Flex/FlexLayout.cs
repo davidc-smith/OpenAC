@@ -8,15 +8,36 @@ namespace AcDream.App.UI.Layout.Flex;
 /// axes. Pure: it reads and writes <see cref="FlexNode"/>s and knows nothing
 /// of the UI tree.
 ///
-/// <para>One <see cref="Arrange"/> measures every node once, bottom-up, then
-/// places every node top-down. Each leaf's measure callback runs exactly once
-/// per arrange, and a repeated arrange of the same tree allocates nothing
-/// once its scratch buffers have grown to fit.</para>
+/// <para><see cref="Measure"/> and <see cref="Arrange"/> each measure the
+/// whole tree, bottom-up; <see cref="Arrange"/> then places every node
+/// top-down. Each leaf's measure callback runs exactly once per call, and a
+/// repeated arrange of the same tree allocates nothing once its scratch
+/// buffers have grown to fit.</para>
 ///
-/// <para>A wrapping container placed across its parent's main axis (a
-/// wrapping row inside a column) is sized height-for-width: its extent along
-/// the parent's main axis is the lines it makes at the width it is given,
-/// not the lines it would make at its narrowest.</para>
+/// <para>Sizing is height-for-width at any depth. A node whose extent along
+/// one axis depends on the size it gets along the other (a wrapping
+/// container, or any container holding one, that does not scroll) is
+/// "size-dependent": its parent finds that extent by laying the node's
+/// subtree out at the size it gives it, with the dependent axis unbounded,
+/// rather than trusting a measurement made before any size was known. A
+/// wrapping row inside a padded column inside a column is therefore as tall
+/// as the lines it makes at the width it actually gets.</para>
+///
+/// <para>A size-dependent node's measured minimum is still its narrowest
+/// layout (it drives the window minimum) but does not lift its preferred
+/// size on the dependent axis. Greedy line breaking is not monotonic: more
+/// room can make wider lines when items differ in cross size, and items that
+/// prefer more than their minimum (nested wrapping containers) can make more
+/// lines at a wider size than at the narrowest. A root wrapping container's
+/// <see cref="FlexMeasurement.Minimum"/> cross size is therefore a close
+/// estimate rather than a strict bound; nested containers are sized from
+/// their real lines and are unaffected.</para>
+///
+/// <para>Each size-dependent node depends along one axis. A node that depends
+/// both ways (a wrapping column holding a wrapping row) is resolved along its
+/// own wrapping axis, or height-for-width when it does not wrap, and the
+/// other way it is laid out from its preferred sizes; such a tree can
+/// overflow its rect even at its minimum.</para>
 /// </summary>
 public static class FlexLayout
 {
@@ -43,7 +64,7 @@ public static class FlexLayout
     {
         MeasureNode(root);
         root.Rect = bounds;
-        ArrangeChildren(root, Positive(bounds.Width), Positive(bounds.Height));
+        ArrangeChildren(root, Positive(bounds.Width), Positive(bounds.Height), descend: true);
     }
 
     // ── Measure ─────────────────────────────────────────────────────────
@@ -66,12 +87,17 @@ public static class FlexLayout
         float minW = MathF.Min(node.MinWidth is { } nw ? Positive(nw) : autoMinW, maxW);
         float minH = MathF.Min(node.MinHeight is { } nh ? Positive(nh) : autoMinH, maxH);
 
+        MarkSizeDependent(node);
+
         // A wrapping container's cross minimum is the lines it makes at its
-        // narrowest; that must not lift its preferred cross size, which is one line.
+        // narrowest, and a size-dependent container's minimum on its dependent
+        // axis is its narrowest layout; neither lifts the preferred size, which
+        // is the layout at its preferred size along the other axis (one line).
         float floorW = minW, floorH = minH;
-        if (node.Measure is null && node.Wrap)
+        if (node.Measure is null && (node.Wrap || node.SizeDependent))
         {
-            if (node.Direction == FlexDirection.Row) floorH = MathF.Min(node.MinHeight is { } eh ? Positive(eh) : 0f, maxH);
+            bool heightDepends = node.SizeDependent ? node.HeightForWidth : node.Direction == FlexDirection.Row;
+            if (heightDepends) floorH = MathF.Min(node.MinHeight is { } eh ? Positive(eh) : 0f, maxH);
             else floorW = MathF.Min(node.MinWidth is { } ew ? Positive(ew) : 0f, maxW);
         }
 
@@ -81,6 +107,35 @@ public static class FlexLayout
         node.Measured = new FlexMeasurement(
             new FlexSize(Math.Clamp(prefW, floorW, maxW), Math.Clamp(prefH, floorH, maxH)),
             new FlexSize(minW, minH));
+    }
+
+    /// <summary>
+    /// Sets <see cref="FlexNode.SizeDependent"/> once the node's children are
+    /// measured: a container that does not scroll depends on its size when it
+    /// wraps (its cross axis depends on its main size, whatever its children
+    /// do) or when any visible child does (along the same physical axis as
+    /// that child; should children depend along different axes,
+    /// height-for-width wins). A leaf never depends on its size in v1, and a
+    /// scrolling container keeps its measured size.
+    /// </summary>
+    private static void MarkSizeDependent(FlexNode node)
+    {
+        node.SizeDependent = false;
+        node.HeightForWidth = false;
+        if (node.Measure is not null || node.ScrollX || node.ScrollY) return;
+        if (node.Wrap)
+        {
+            node.SizeDependent = true;
+            node.HeightForWidth = node.Direction == FlexDirection.Row;
+            return;
+        }
+        for (int i = 0; i < node.Children.Count; i++)
+        {
+            FlexNode child = node.Children[i];
+            if (child.Hidden || !child.SizeDependent) continue;
+            node.SizeDependent = true;
+            node.HeightForWidth |= child.HeightForWidth;
+        }
     }
 
     private static FlexMeasurement MeasureChildren(FlexNode node)
@@ -170,11 +225,21 @@ public static class FlexLayout
     // stretch never goes below.
     private const int TargetSlot = 0, FrozenSlot = 1, BaseSlot = 2, MinSlot = 3, CrossSlot = 4, CrossFloorSlot = 5;
 
-    private static void ArrangeChildren(FlexNode node, float width, float height)
+    /// <summary>
+    /// Lays out <paramref name="node"/>'s children inside a box of
+    /// <paramref name="width"/> x <paramref name="height"/> and sets its
+    /// <see cref="FlexNode.ContentSize"/>. A null size leaves that axis
+    /// unbounded, as scrolling does: <see cref="Extent"/> uses that to find how
+    /// far a size-dependent node's content reaches. With
+    /// <paramref name="descend"/> false only this node's children are placed
+    /// (enough for its content size); the real arrange that follows overwrites
+    /// them and lays out the rest of the subtree.
+    /// </summary>
+    private static void ArrangeChildren(FlexNode node, float? width, float? height, bool descend)
     {
         if (node.Measure is not null)
         {
-            node.ContentSize = new FlexSize(width, height);
+            node.ContentSize = new FlexSize(width ?? 0f, height ?? 0f);
             return;
         }
 
@@ -183,17 +248,16 @@ public static class FlexLayout
         float gap = Positive(node.Gap);
         bool mainScrolls = row ? node.ScrollX : node.ScrollY;
         bool crossScrolls = row ? node.ScrollY : node.ScrollX;
-        float contentMain = Positive((row ? width : height) - (row ? p.Horizontal : p.Vertical));
-        float contentCross = Positive((row ? height : width) - (row ? p.Vertical : p.Horizontal));
-        float? availableMain = mainScrolls ? null : contentMain;
-        float? availableCross = crossScrolls ? null : contentCross;
+        float? mainSize = row ? width : height, crossSize = row ? height : width;
+        float? availableMain = mainScrolls || mainSize is not { } ms ? null : Positive(ms - (row ? p.Horizontal : p.Vertical));
+        float? availableCross = crossScrolls || crossSize is not { } cs ? null : Positive(cs - (row ? p.Vertical : p.Horizontal));
         float originMain = row ? p.Left : p.Top;
         float originCross = row ? p.Top : p.Left;
         bool singleLine = !node.Wrap || availableMain is null;
 
         int count = node.Children.Count;
         if (node.Scratch.Length < count * 6) node.Scratch = new float[count * 6];
-        ResolveBases(node, row, count, availableCross, contentCross, singleLine);
+        ResolveBases(node, row, count, availableCross, singleLine);
 
         BreakLines(node, row, count, availableMain, gap);
 
@@ -242,11 +306,11 @@ public static class FlexLayout
             lineStart = lineEnd;
         }
 
-        for (int i = 0; i < count; i++)
+        for (int i = 0; descend && i < count; i++)
         {
             FlexNode child = node.Children[i];
             if (child.Hidden) { child.Rect = default; continue; }
-            ArrangeChildren(child, child.Rect.Width, child.Rect.Height);
+            ArrangeChildren(child, child.Rect.Width, child.Rect.Height, descend: true);
         }
 
         float trailMain = row ? p.Right : p.Bottom;
@@ -256,14 +320,14 @@ public static class FlexLayout
 
     /// <summary>
     /// Fills each visible child's flex base size, minimum main size and cross
-    /// sizes. Most children use their measurement; a wrapping child laid
-    /// across this container's main axis gets its one cross size here, and
-    /// its main size is the extent of the lines it makes at that size. The
-    /// place pass gives it exactly that cross size, so its rect always holds
-    /// the lines its extent was computed for.
+    /// sizes. Most children use their measurement; a size-dependent child
+    /// whose dependent axis is this container's main axis gets its one cross
+    /// size here, and its main size is the extent of its content laid out at
+    /// that size. The place pass gives it exactly that cross size, so its rect
+    /// always holds the content its extent was computed for.
     /// </summary>
     private static void ResolveBases(
-        FlexNode node, bool row, int count, float? availableCross, float contentCross, bool singleLine)
+        FlexNode node, bool row, int count, float? availableCross, bool singleLine)
     {
         float[] s = node.Scratch;
         for (int i = 0; i < count; i++)
@@ -280,22 +344,23 @@ public static class FlexLayout
                 continue;
             }
 
-            // The child's own main axis is our cross axis: find the cross size it
-            // gets (stretched over a non-wrapping line, else its preferred size
-            // within the space), then the extent its lines make along our main
-            // axis. A wrapping line is not known yet, so it never stretches the
-            // child: a wider line would leave the extent made for fewer lines.
+            // The child's size along our main axis depends on its size across
+            // it: find the cross size it gets (stretched over a non-wrapping
+            // line, else its preferred size within the space), then the extent
+            // its content reaches along our main axis at that size. A wrapping
+            // line is not known yet, so it never stretches the child: a wider
+            // line would leave the extent made for a narrower one.
             float? explicitCross = row ? child.Height : child.Width;
             float minCross = CrossOf(child.MinimumSize, row), maxCross = CrossOf(child.MaximumSize, row);
             FlexAlign align = child.AlignSelf ?? node.Align;
-            bool stretched = singleLine && availableCross is not null && align == FlexAlign.Stretch && explicitCross is null;
-            float cross = stretched ? contentCross : CrossOf(child.Measured.Preferred, row);
-            if (!stretched && availableCross is { } limit) cross = MathF.Min(cross, limit);
+            bool stretched = singleLine && align == FlexAlign.Stretch && explicitCross is null;
+            float cross = CrossOf(child.Measured.Preferred, row);
+            if (availableCross is { } space) cross = stretched ? space : MathF.Min(cross, space);
             cross = Math.Clamp(cross, minCross, MathF.Max(minCross, maxCross));
             s[CrossSlot * count + i] = cross;
             s[CrossFloorSlot * count + i] = cross;
 
-            float extent = WrappedExtent(child, MathF.Floor(cross));
+            float extent = Extent(child, widthGiven: !row, cross);
             float? explicitMain = row ? child.Width : child.Height;
             float? explicitMin = row ? child.MinWidth : child.MinHeight;
             float maxMain = MainOf(child.MaximumSize, row);
@@ -306,58 +371,55 @@ public static class FlexLayout
     }
 
     /// <summary>
-    /// Whether <paramref name="child"/> is a wrapping container whose own main
-    /// axis is <paramref name="parent"/>'s cross axis, so its size along the
-    /// parent's main axis depends on the cross size it gets. A child that
-    /// scrolls along either axis keeps its measured size instead.
+    /// Whether <paramref name="child"/> is size-dependent along
+    /// <paramref name="parent"/>'s main axis (a wrapping row, or a column
+    /// holding one, inside a column), so its size along that axis depends on
+    /// the cross size it gets.
     /// </summary>
     private static bool IsSizedAcross(FlexNode parent, FlexNode child) =>
-        child.Measure is null && child.Wrap && child.Direction != parent.Direction
-        && !child.ScrollX && !child.ScrollY;
+        child.SizeDependent && child.HeightForWidth == (parent.Direction == FlexDirection.Column);
 
     /// <summary>
-    /// Whether <paramref name="child"/> is a wrapping container along
-    /// <paramref name="parent"/>'s main axis (a wrapping row inside a row), so
-    /// its cross size depends on the main size the line resolves for it. A
-    /// child that scrolls along either axis keeps its measured size instead.
+    /// Whether <paramref name="child"/> is size-dependent along
+    /// <paramref name="parent"/>'s cross axis (a wrapping row, or a column
+    /// holding one, inside a row), so its cross size depends on the main size
+    /// the line resolves for it.
     /// </summary>
     private static bool IsSizedAlong(FlexNode parent, FlexNode child) =>
-        child.Measure is null && child.Wrap && child.Direction == parent.Direction
-        && !child.ScrollX && !child.ScrollY;
+        child.SizeDependent && child.HeightForWidth == (parent.Direction == FlexDirection.Row);
 
     /// <summary>
-    /// The extent of <paramref name="node"/>'s wrapped lines across its own
-    /// main axis when its main size is <paramref name="mainSize"/>, padding
-    /// included. Uses the same line breaking as the arrange pass. Callers pass
-    /// the floor of the size the node will get: snapping never gives it less,
-    /// and given more it makes no more lines, so its content still fits.
+    /// How far a size-dependent <paramref name="node"/>'s content reaches
+    /// along one axis when it is given <paramref name="given"/> along the
+    /// other: its height at that width when <paramref name="widthGiven"/>,
+    /// else its width at that height, padding included. The node will get the
+    /// size snapped to whole points, which is the floor or the ceiling of
+    /// <paramref name="given"/>. Greedy line breaking is not monotonic (more
+    /// room can make wider lines when items differ in cross size), so the
+    /// extent is the larger of the two layouts.
     /// </summary>
-    private static float WrappedExtent(FlexNode node, float mainSize)
+    private static float Extent(FlexNode node, bool widthGiven, float given)
     {
-        bool row = node.Direction == FlexDirection.Row;
-        FlexEdges p = node.Padding;
-        float gap = Positive(node.Gap);
-        float available = Positive(mainSize - (row ? p.Horizontal : p.Vertical));
-        float total = 0f, lineMain = 0f, lineCross = 0f;
-        int lines = 0, inLine = 0;
-        for (int i = 0; i < node.Children.Count; i++)
+        float low = MathF.Floor(Positive(given)), high = MathF.Ceiling(Positive(given));
+        float extent = LaidOutExtent(node, widthGiven, low);
+        return high == low ? extent : MathF.Max(extent, LaidOutExtent(node, widthGiven, high));
+    }
+
+    /// <summary>
+    /// Lays <paramref name="node"/>'s children out at <paramref name="size"/>
+    /// on one axis with the other unbounded and reads how far they reach. The
+    /// measure pass is not repeated, so leaves are still measured once per
+    /// arrange; the node's real arrange later overwrites what this writes.
+    /// </summary>
+    private static float LaidOutExtent(FlexNode node, bool widthGiven, float size)
+    {
+        if (widthGiven)
         {
-            FlexNode child = node.Children[i];
-            if (child.Hidden) continue;
-            float min = MainOf(child.MinimumSize, row);
-            float main = Math.Clamp(MeasuredBase(child, row), min, MathF.Max(min, MainOf(child.MaximumSize, row)));
-            if (inLine > 0 && lineMain + gap + main > available)
-            {
-                total += lineCross;
-                lines++;
-                lineMain = 0f; lineCross = 0f; inLine = 0;
-            }
-            lineMain += (inLine > 0 ? gap : 0f) + main;
-            lineCross = MathF.Max(lineCross, CrossOf(child.Measured.Preferred, row));
-            inLine++;
+            ArrangeChildren(node, size, null, descend: false);
+            return node.ContentSize.Height;
         }
-        if (inLine > 0) { total += lineCross; lines++; }
-        return total + (lines > 1 ? gap * (lines - 1) : 0f) + (row ? p.Vertical : p.Horizontal);
+        ArrangeChildren(node, null, size, descend: false);
+        return node.ContentSize.Width;
     }
 
     /// <summary>Fills <see cref="FlexNode.LineEnds"/> with the exclusive end index of each line.</summary>
@@ -481,11 +543,12 @@ public static class FlexLayout
     }
 
     /// <summary>
-    /// Once a line's main sizes are resolved, gives each wrapping child laid
-    /// along this container's main axis the cross size of the lines it makes
-    /// at its resolved main size: that is its preferred cross size, and the
-    /// floor a stretch never goes below (its measured minimum, the lines at
-    /// its narrowest, would overflow a line it does not need).
+    /// Once a line's main sizes are resolved, gives each size-dependent child
+    /// whose dependent axis is this container's cross axis the cross extent
+    /// of its content laid out at its resolved main size: that is its
+    /// preferred cross size, and the floor a stretch never goes below (its
+    /// measured minimum, its narrowest layout, would overflow a line it does
+    /// not need).
     /// </summary>
     private static void ResolveAlongCross(FlexNode node, bool row, int count, int start, int end)
     {
@@ -494,7 +557,7 @@ public static class FlexLayout
         {
             FlexNode child = node.Children[i];
             if (child.Hidden || !IsSizedAlong(node, child)) continue;
-            float extent = WrappedExtent(child, MathF.Floor(s[TargetSlot * count + i]));
+            float extent = Extent(child, widthGiven: row, s[TargetSlot * count + i]);
 
             // Explicit cross sizes keep their meaning, as in the measure pass,
             // with the extent standing in for the content minimum.

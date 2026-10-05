@@ -89,6 +89,15 @@ public sealed class FlexNode
     internal FlexSize MinimumSize;
     internal FlexSize MaximumSize;
 
+    // Measure-pass result: this node's extent along one axis depends on the
+    // size it gets along the other (a container that wraps, or holds such a
+    // container, and does not scroll), so its parent lays it out to find that
+    // extent instead of trusting its measurement. HeightForWidth says which
+    // axis depends: its height on its width when true, its width on its height
+    // when false.
+    internal bool SizeDependent;
+    internal bool HeightForWidth;
+
     // Arrange scratch, reused so a steady-state layout allocates nothing.
     internal readonly List<int> LineEnds = new();
     internal float[] Scratch = System.Array.Empty<float>();
