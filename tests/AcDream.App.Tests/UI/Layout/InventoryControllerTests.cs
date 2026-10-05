@@ -565,7 +565,9 @@ public class InventoryControllerTests
 
         UiItemSlot eighth = containers.GetItem(7)!;
         Assert.False(eighth.Visible);
-        containers.OnEvent(new UiEvent(0u, containers, UiEventType.Scroll, Data0: -1));
+        var (hoverX, hoverY) = AbsoluteCentre(containers.GetItem(6)!);
+        root.OnMouseMove(hoverX, hoverY);
+        root.OnScroll(-1);
         containers.LayoutCells();
         Assert.Equal(36, containers.Scroll.ScrollY);
         Assert.True(eighth.Visible);
