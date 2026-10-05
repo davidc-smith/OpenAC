@@ -42,6 +42,17 @@ internal static class PluginWindowChrome
     /// <summary>The same element's pressed-state art (Normal_pressed), 24x25. The retail art has no hover state.</summary>
     internal const uint ClassicClosePressedSprite = 0x06004D0Du;
 
+    /// <summary>
+    /// The narrowest frame a window with a title bar may be: the close button
+    /// and its inset, the title's inset and gap, and room for about eight
+    /// characters of title, so the button never covers the title.
+    /// </summary>
+    internal const float MinimumBarFrameWidth = 96f;
+
+    /// <summary>A frame's minimum width from its content's: the content plus the side insets, floored for a title bar.</summary>
+    internal static float FrameMinimumWidth(float contentMinimum, bool titleBar) =>
+        MathF.Max(contentMinimum + HorizontalInsets, titleBar ? MinimumBarFrameWidth : 0f);
+
     internal const string CloseTooltip = "Close";
     internal const string DockedCloseTooltip = "Close (reopen from the dock)";
 

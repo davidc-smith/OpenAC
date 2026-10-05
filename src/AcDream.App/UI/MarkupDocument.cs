@@ -73,7 +73,9 @@ public static class MarkupDocument
 
         bool resizable = B(root, "resizable", false);
         panel.Resizable = resizable;
-        panel.MinWidth = FOr(root, "minw", contentW) + chromeW;
+        panel.MinWidth = hasContentArea
+            ? PluginWindowChrome.FrameMinimumWidth(FOr(root, "minw", contentW), hasTitleBar)
+            : FOr(root, "minw", contentW);
         panel.MinHeight = FOr(root, "minh", contentH) + chromeH;
         panel.ResizeX = resizable;
         panel.ResizeY = resizable;
@@ -174,10 +176,16 @@ public static class MarkupDocument
             contentW = MathF.Max(authoredW ?? measured.Preferred.Width, minW);
             contentH = MathF.Max(authoredH ?? measured.Preferred.Height, minH);
             panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
-            panel.MinWidth = minW + chromeW; panel.MinHeight = minH + chromeH;
+            panel.MinWidth = PluginWindowChrome.FrameMinimumWidth(minW, hasTitleBar); panel.MinHeight = minH + chromeH;
             content!.Width = contentW; content.Height = contentH;
-            titleBar?.SetFrameWidth(panel.Width);
         }
+        if (hasTitleBar && panel.Width < PluginWindowChrome.MinimumBarFrameWidth)
+        {
+            // A window narrower than its title bar needs opens at the bar's minimum.
+            panel.Width = panel.MinWidth;
+            content!.Width = panel.Width - chromeW;
+        }
+        titleBar?.SetFrameWidth(panel.Width);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -193,7 +201,7 @@ public static class MarkupDocument
                 panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
         var window = new MarkupWindow(panel, contentParent, titleBar, revision);
         if (rootFlex is not null)
-            window.TrackContentMinimum(content!, chromeW, chromeH, authoredMinW, authoredMinH);
+            window.TrackContentMinimum(content!, chromeH, authoredMinW, authoredMinH);
         return window;
     }
 
