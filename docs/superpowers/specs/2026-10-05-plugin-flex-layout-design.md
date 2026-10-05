@@ -747,3 +747,7 @@ Found while prototyping the scroll PR (see the PR 4 plan's "Spec corrections"):
 - **FlexDemo window 2** is a "Flex Gallery": a scrolling grid of 30 spell
   icons over a sideways-scrolling strip of 12; the settings window is
   resizable and scrolls.
+- **Final review (PR 4)**: a Shift step that no horizontal scroller takes
+  falls back to vertical routing (replaces "lists, logs, `y` groups do not
+  see it", which dropped Shift+wheel over every list while Shift is the walk
+  key). Trackpad steps keep only their dominant axis.

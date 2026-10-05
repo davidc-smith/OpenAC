@@ -4037,3 +4037,36 @@ In game check each live criterion above, with the user driving the trackpad and 
 - [ ] **Step 5: Finish**
 
 Use superpowers-extended-cc:finishing-a-development-branch. Delivery as for PRs 1–3: merge `flex/scroll` into local main with `--no-ff` after review and the user's confirmation, keep the branch locally, push nothing without the user's word.
+
+## Execution notes (2026-10-05)
+
+Branch `flex/scroll` from main d54f047a, 9 commits (Tasks 1–8, then the
+final-review fix wave ce549264). Each task was reviewed on its own, and every
+review came back clean (minors deferred). The final whole-branch review said
+"with fixes", and its fix wave (ce549264) changed four things:
+
+- **Shift+wheel falls back to vertical.** A Shift step that no horizontal
+  scroller takes is now routed as the vertical step it was. As planned, it
+  would have been dropped over every list, log and chat, and Shift is also the
+  walk-mode key.
+- **Trackpad steps keep only their dominant axis**, and a NaN component counts
+  as zero.
+- **A press reports its position from before focus scrolled the target into
+  view.**
+- **Tests and cleanups:** tests that a press on empty scrolling space drags the
+  window, plus small cleanups.
+
+The scoped re-review found every finding addressed. Release build: 0 warnings.
+The App suite fails the same 166 environment tests as main, by name.
+
+The live gate on 10.10.20.20 (player account) passed. The user reported
+"it all works well"; no 2× captures were taken. Merged into local main as
+4aa1492d (`--no-ff`); the merged suite matches the branch. The branch is kept
+locally and nothing is pushed.
+
+Parked for a follow-up:
+
+- a short list takes the wheel even when it has nothing to scroll;
+- an open menu popup is not dismissed when its group scrolls;
+- hover goes stale after a wheel scroll;
+- PR 1's `A_repeated_arrange_allocates_nothing` can flake in a filtered run.
