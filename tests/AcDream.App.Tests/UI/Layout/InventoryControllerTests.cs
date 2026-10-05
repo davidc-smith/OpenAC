@@ -529,6 +529,9 @@ public class InventoryControllerTests
         Assert.Equal(8, containers.GetNumUIItems());
         Assert.Equal(0u, containers.GetItem(7)!.ItemId);
         Assert.Equal(288, containers.Scroll.ContentHeight);
+        Assert.Equal(288, containers.Height);
+        Assert.Equal(0, containers.Scroll.ScrollY);
+        for (int i = 0; i < 8; i++) Assert.True(containers.GetItem(i)!.Visible);
     }
 
     [Fact]
@@ -544,12 +547,16 @@ public class InventoryControllerTests
 
         Assert.Equal(8, containers.GetNumUIItems());
         UiItemSlot eighth = containers.GetItem(7)!;
+        Assert.Equal(288, containers.Height);
+        Assert.True(eighth.Visible);
         Assert.True(objects.NotifyObjectUpdated(Player));
         Assert.Same(eighth, containers.GetItem(7));
     }
 
-    [Fact]
-    public void EighthPack_canBeScrolledIntoViewAndOpenedWithMouseInput()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void EighthPack_canBeOpenedWithMouseInput(bool shortenedViewport)
     {
         var (layout, grid, containers, top, _, _, _, _) = BuildLayout();
         var objects = new ClientObjectTable();
@@ -558,18 +565,26 @@ public class InventoryControllerTests
         SeedContained(objects, 0xD0u, 0xC7u, slot: 0);
         var uses = new List<uint>();
         InventoryController controller = Bind(layout, objects, uses: uses);
+        if (shortenedViewport)
+        {
+            containers.Height = 252;
+            containers.LayoutCells();
+        }
         grid.Left = 40;
         top.Left = 240;
         var root = new UiRoot { Width = 800, Height = 600 };
         root.AddChild(layout.Root);
 
         UiItemSlot eighth = containers.GetItem(7)!;
-        Assert.False(eighth.Visible);
-        var (hoverX, hoverY) = AbsoluteCentre(containers.GetItem(6)!);
-        root.OnMouseMove(hoverX, hoverY);
-        root.OnScroll(-1);
-        containers.LayoutCells();
-        Assert.Equal(36, containers.Scroll.ScrollY);
+        if (shortenedViewport)
+        {
+            Assert.False(eighth.Visible);
+            var (hoverX, hoverY) = AbsoluteCentre(containers.GetItem(6)!);
+            root.OnMouseMove(hoverX, hoverY);
+            root.OnScroll(-1);
+            containers.LayoutCells();
+        }
+        Assert.Equal(shortenedViewport ? 36 : 0, containers.Scroll.ScrollY);
         Assert.True(eighth.Visible);
         var (x, y) = AbsoluteCentre(eighth);
         root.OnMouseMove(x, y);

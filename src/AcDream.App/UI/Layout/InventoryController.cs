@@ -45,6 +45,12 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
     private readonly UiItemList? _containerList;
     private readonly UiItemList? _topContainer;
     private readonly UiMeter?    _burdenMeter;
+    private readonly UiElement _inventoryWindow;
+    private readonly UiElement? _backpackWindow;
+    private readonly float _authoredColumnHeight;
+    private readonly float _authoredBackpackHeight;
+    private readonly float _authoredInventoryHeight;
+    private readonly float _authoredInventoryMinHeight;
 
     private float _burdenFill;
     private int   _burdenPercent;
@@ -131,6 +137,12 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         _topContainer  = layout.FindElement(TopContainerId)  as UiItemList;
 
         ConfigureResizeLayout(layout);
+        _inventoryWindow = layout.Root;
+        _backpackWindow = layout.FindElement(BackpackWindowId);
+        _authoredColumnHeight = _containerList?.Height ?? 0;
+        _authoredBackpackHeight = _backpackWindow?.Height ?? 0;
+        _authoredInventoryHeight = _inventoryWindow.Height;
+        _authoredInventoryMinHeight = _inventoryWindow.MinHeight;
 
         if (_contentsGrid is not null)
         {
@@ -424,6 +436,8 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             visibleBags.Insert(index, bagProjection.ItemId);
         }
 
+        ResizePackColumn(ContainerSlotTarget(p, visibleBags.Count));
+
         var visibleContents = new List<uint>();
         foreach (var guid in _objects.GetContents(open))
         {
@@ -516,6 +530,27 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         item.ContainerTypeHint != 0u
         || item.Type.HasFlag(ItemType.Container)
         || item.ItemsCapacity > 0;
+
+    private void ResizePackColumn(int slotCount)
+    {
+        if (_containerList is null) return;
+        float extension = MathF.Max(0, slotCount * _containerList.CellHeight - _authoredColumnHeight);
+        float height = _authoredColumnHeight + extension;
+        if (_containerList.Height == height) return;
+
+        // Keep every side-pack slot visible below the separate main backpack.
+        _containerList.Height = height;
+        _containerList.Anchors = AnchorEdges.Left | AnchorEdges.Top;
+        if (_backpackWindow is not null)
+        {
+            _backpackWindow.Height = _authoredBackpackHeight + extension;
+            _backpackWindow.ResetAnchorCapture();
+        }
+        _inventoryWindow.MinHeight = MathF.Max(_authoredInventoryMinHeight, _authoredInventoryHeight + extension);
+        _inventoryWindow.Height = MathF.Max(_inventoryWindow.Height, _inventoryWindow.MinHeight);
+        _inventoryWindow.ResetAnchorCapture();
+        _containerList.CaptureCurrentAnchorBaseline();
+    }
 
     private int CountBags(uint containerId)
     {
