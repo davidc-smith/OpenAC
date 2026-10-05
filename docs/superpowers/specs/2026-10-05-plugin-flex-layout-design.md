@@ -245,7 +245,9 @@ A pure module in `src/AcDream.App/UI/Layout/Flex/` with no dependency on
   (`float?` available sizes and nullable maximums), never as infinity. A
   scrolling axis lays out with a `null` available size; an absent `maxw` is a
   `null` maximum.
-- **Output**: a rectangle per node, relative to its parent's content box,
+- **Output**: a rectangle per node, relative to its parent's top-left
+  corner (its border box: the parent's padding is included in the offset,
+  which is what `UiElement.Left/Top` want),
   plus the container's content size (for scrolling) and its content minimum.
 - **Measure** (bottom-up): content size and content minimum for every node.
   A container's content size is the size its items need at their bases with
@@ -285,6 +287,40 @@ A pure module in `src/AcDream.App/UI/Layout/Flex/` with no dependency on
   same extent. Its measured minimum (the lines at its narrowest) still feeds
   the window minimum but does not lift its preferred cross size, which is
   one line.
+- **Recursive.** Height-for-width applies at any depth: a node is
+  *size-dependent* when it is a non-scrolling container that wraps or has a
+  size-dependent child, and its parent sizes it by laying its subtree out at
+  the given size with the dependent axis unbounded (a dry run that does not
+  re-measure leaves). Extents are taken at both candidate snapped sizes
+  (floor and ceiling), because greedy line breaking is not monotonic with
+  mixed item sizes; for the same reason a root wrapping container's measured
+  minimum cross size is not a strict bound.
+- **Limitation (v1): one dependence direction.** Exact height-for-width
+  holds when every wrapping container in a chain wraps the same way
+  (wrapping rows, the toolbar and icon-grid shapes). A node that depends on
+  its size both ways — a wrapping column holding wrapping rows, directly or
+  through plain containers — is resolved along one axis only and may
+  overflow its rect (and clip). PR 3 decides whether markup allows `wrap`
+  on columns at all.
+- **Known gaps for PR 3 to settle** (from the PR 1 re-review): a
+  container's measured minimum is built from its items' minimum sizes, but
+  lines break on their hypothetical sizes, so when items prefer more than
+  their minimum (a `basis` above the content, an explicit `minw` below it, a
+  nested wrapping container) a root over a size-dependent chain can need
+  more than its `Measured.Minimum` and clip at the window minimum; making
+  minimums strict means breaking minimum lines on `max(min, clamp(basis))`.
+  A size-dependent node's `Measured.Preferred` can be below its
+  `Measured.Minimum` on the dependent axis, so window sizing must clamp.
+  Layout cost roughly doubles per level of nested size dependence (each
+  extent is laid out at the floor and ceiling sizes), about N·2^D; cache
+  extents or skip the ceiling when it equals the floor if profiling asks.
+- **Explicit cross size of a size-dependent child laid across its parent**
+  is capped to the available cross size, so its extent and its rect agree.
+  This departs from CSS, where an explicit size overflows; ordinary items
+  keep their explicit cross size.
+- `Measure` and `Arrange` each run the measure pass; an additive arrange
+  overload that reuses a fresh measurement can come later if profiling asks
+  for it.
 - Free space that cannot be satisfied (items at their minimums) overflows
   the container's end and is clipped (or scrolls, section 4).
 - Never throws. Authored numbers are finite by construction (section 5);
@@ -318,7 +354,11 @@ Labels in absolute layouts keep today's behaviour.
 
 - A new `UiFlexGroup` (a `UiPanel` subclass, same background/border
   attributes as `group`) and the root panel's content area own a cached
-  `FlexNode` tree mirroring their children.
+  `FlexNode` tree mirroring their children. **One tree per flex root**: a
+  nested `UiFlexGroup` maps to an inner node (no measure callback) of its
+  flex ancestor's tree, never to a leaf, because height-for-width only works
+  across inner nodes; absolute groups and controls map to leaves with an
+  `IUiContentSize` measure callback.
 - In `DrawSelfAndChildren`, where `ApplyAnchor` runs for children today, a
   flex container calls `EnsureLayout()` and assigns its children's
   `Left/Top/Width/Height` from the result instead of applying anchors.
@@ -467,6 +507,15 @@ today. Any other value is a build error.
 - **Position** survives hide/show and theme changes, is clamped when the
   group resizes or its content shrinks, and is not persisted across
   sessions.
+
+### 4.3a Engine follow-ups for PR 4
+
+Found in the PR 1 review, to be handled additively in PR 4: a scrolling
+wrapping grid laid across its parent (a `scroll="y"` icon grid in a column
+without `grow`) currently gets only the 40-point viewport even when there is
+room — it should get its lines' extent with the 40-point viewport as its
+minimum; and the engine needs an input (or in-engine settling) so a nested
+scroll container lays its children out at its viewport minus a reserved bar.
 
 ### 4.4 Out of scope (v1)
 

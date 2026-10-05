@@ -38,6 +38,23 @@ Found while prototyping the engine (every code block below was compiled and its 
 3. **Stretch never squashes an item below its content minimum on the cross axis.** CSS treats `min-height: auto` as 0 across the line; we keep the content minimum (a button never gets shorter than its text) — the same "content minimum" rule as the main axis.
 4. **The flex types are `public`, not internal.** xUnit theories take enum parameters and public test methods cannot expose internal types; `UiElement` and the other UI classes are public too. The measure-pass and scratch fields on `FlexNode` stay `internal`.
 
+## Execution notes (2026-10-05)
+
+The code blocks below are the plan as written. Execution changed the engine
+beyond them, after reviews found nested wrapping layouts mis-sized; the
+branch `flex/engine` is the source of truth for the final code:
+
+- Task 2 fix round (0548b87b): one cross size per across child shared by both
+  passes, along children sized from their resolved main size, extents at the
+  floor size, CSS factor-sum rule; scratch grew to 6 slots; +10 tests.
+- Final-review fix wave (e358693f..17c77905): recursive size-dependent
+  extents by a dry-run layout with the dependent axis unbounded (any depth),
+  extents at floor and ceiling sizes, measured preferred sizes clamped to item
+  limits, empty-container content size includes padding, one line-breaking
+  routine, a seeded fuzz test; 77 flex tests in total.
+- Rulings and limitations are recorded in the spec (3.1 "Recursive",
+  "Limitation (v1): one dependence direction", 4.3a).
+
 ## File Structure
 
 | File | Responsibility |
