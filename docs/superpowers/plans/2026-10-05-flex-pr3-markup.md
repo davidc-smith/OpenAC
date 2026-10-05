@@ -3031,3 +3031,32 @@ In game check each live criterion above. Switch themes from the dock's gear (Plu
 - [ ] **Step 5: Finish**
 
 Use superpowers-extended-cc:finishing-a-development-branch. Delivery as for PRs 1 and 2: merge `flex/markup` into local main with `--no-ff` after review and the user's confirmation, keep the branch locally, push nothing without the user's word.
+
+## Execution notes (2026-10-05)
+
+Branch `flex/markup`, head c76c878f (11 commits), merged into local main as
+4f16abe3 (`--no-ff`, on top of the `feat/field-onblur` merge 053cedf7; no
+conflicts). Tasks 1–7 reviewed per task. Task 2 needed a fix round: `FlexFit`
+now always arranges at the size it returns (9f7bf5e0). The final review's fix
+wave (7896260d) added:
+
+- no legacy title label on a layout root with `titlebar="false"`;
+- a zero-size-parent guard in `EnforceMinimumSize`;
+- the sample's "Done" caption;
+- exact line-height terms and three behaviour notes in the docs;
+- a test pinning restore against the minimum.
+
+The live gate on 10.10.20.20 (player account) passed. It found one bug: a
+flex `<menu>` opened a popup only 20 points wide, because the popup took its
+width from an authored `w`. Fixed in c76c878f, where the popup follows the
+laid-out width on each open. Release build has 0 warnings. The App suite
+fails the same 166 environment tests as main, by name, before and after the
+merge.
+
+Backlog for PR 4:
+
+- the frame minimum ignores the title bar, so a very narrow window's X
+  covers its title;
+- the dock's "–" sits over the content corner of a layout window without
+  a bar;
+- the remaining minor items, which the final review triaged as "leave".
