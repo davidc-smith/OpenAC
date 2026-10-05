@@ -35,7 +35,13 @@ public sealed class FlexFitTests
         root.Wrap = true;
 
         Assert.Equal(new FlexSize(60f, 20f), FlexLayout.Measure(root).Minimum);
-        Assert.Equal(new FlexSize(60f, 30f), FlexFit.Minimum(root));
+        FlexSize fitted = FlexFit.Minimum(root);
+        Assert.Equal(new FlexSize(60f, 30f), fitted);
+
+        // Verify the tree is left arranged at the returned size
+        Assert.Equal(new FlexRect(0f, 0f, fitted.Width, fitted.Height), root.Rect);
+        Assert.True(root.ContentSize.Width <= fitted.Width, $"Content width {root.ContentSize.Width} exceeds fitted width {fitted.Width}");
+        Assert.True(root.ContentSize.Height <= fitted.Height, $"Content height {root.ContentSize.Height} exceeds fitted height {fitted.Height}");
     }
 
     [Fact]

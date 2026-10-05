@@ -19,7 +19,9 @@ public static class FlexFit
     /// <summary>
     /// The smallest whole-point size, starting from the measured minimum, at
     /// which <paramref name="root"/>'s content fits. The tree is left arranged
-    /// at the last size tried; arrange it again before reading its rects.
+    /// at the returned size. If the content still needs more room after
+    /// <see cref="MaxPasses"/> layouts (only possible with pathological nesting),
+    /// the grown size is returned and may still clip.
     /// </summary>
     public static FlexSize Minimum(FlexNode root)
     {
@@ -34,6 +36,7 @@ public static class FlexFit
             width = MathF.Max(width, needWidth);
             height = MathF.Max(height, needHeight);
         }
+        FlexLayout.Arrange(root, new FlexRect(0f, 0f, width, height));
         return new FlexSize(width, height);
     }
 }
