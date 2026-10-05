@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Xml.Linq;
+using AcDream.App.UI.Layout.Flex;
 using AcDream.Plugin.Abstractions;
 
 namespace AcDream.App.UI;
@@ -163,9 +164,11 @@ public static class MarkupDocument
         object binding,
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
-        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes)
+        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
+        UiFlexBox? flex = null)
     {
         int firstChild = parent.Children.Count;
+        if (flex is null) MarkupFlexAttributes.RejectItem(el);
         void BindColorSource(string? expression, object model, Action<Vector4> setValue,
             Action<Func<Vector4>> setSource)
         {
@@ -182,21 +185,32 @@ public static class MarkupDocument
         switch (el.Name.LocalName)
         {
             case "group":
-                var group = new UiPanel
+                UiFlexBox? groupFlex = null;
+                UiPanel group;
+                if (MarkupFlexAttributes.IsContainer(el))
                 {
-                    Left = F(el, "x"),
-                    Top = F(el, "y"),
-                    Width = F(el, "w"),
-                    Height = F(el, "h"),
-                    BackgroundColor = el.Attribute("background") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("background")),
-                    BorderColor = el.Attribute("border") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("border")),
-                    BorderThickness = el.Attribute("border") is null ? 0f : 1f,
-                    ClickThrough = true,
-                };
+                    var flexGroup = new UiFlexGroup();
+                    MarkupFlexAttributes.ReadContainer(el, flexGroup.Flex.Node);
+                    groupFlex = flexGroup.Flex;
+                    group = flexGroup;
+                }
+                else
+                {
+                    MarkupFlexAttributes.RejectContainer(el);
+                    group = new UiPanel();
+                }
+                group.Left = F(el, "x");
+                group.Top = F(el, "y");
+                group.Width = F(el, "w");
+                group.Height = F(el, "h");
+                group.BackgroundColor = el.Attribute("background") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("background"));
+                group.BorderColor = el.Attribute("border") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("border"));
+                group.BorderThickness = el.Attribute("border") is null ? 0f : 1f;
+                group.ClickThrough = true;
                 BindColorSource(
                     (string?)el.Attribute("background"), binding,
                     value => group.BackgroundColor = value,
@@ -208,7 +222,7 @@ public static class MarkupDocument
                 ApplyCommon(group, el, binding);
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
-                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes);
+                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, groupFlex);
                 break;
 
             case "meter":
@@ -742,6 +756,26 @@ public static class MarkupDocument
         }
         if (themedPanel is not null && parent.Children.Count > firstChild)
             PluginMarkupTheme.Register(themedPanel, parent.Children[firstChild], el);
+        if (flex is not null && parent.Children.Count > firstChild)
+            AddFlexItem(flex, parent.Children[firstChild], el);
+    }
+
+    /// <summary>
+    /// Enters <paramref name="element"/>, just built from <paramref name="el"/>
+    /// under a flex container, into that container's layout: a flex group as an
+    /// inner node, an absolute group as a leaf of its authored size, any other
+    /// control as a leaf measured by <see cref="MarkupContentSize"/>. The
+    /// container places it, so it keeps no anchors.
+    /// </summary>
+    private static void AddFlexItem(UiFlexBox flex, UiElement element, XElement el)
+    {
+        UiFlexItem item = element is UiFlexGroup group
+            ? flex.AddContainer(group, group.Flex)
+            : flex.AddLeaf(element, new FlexNode(),
+                el.Name.LocalName == "group" ? new FlexSize(element.Width, element.Height) : null);
+        MarkupFlexAttributes.ReadItem(el, item.Node);
+        element.Anchors = AnchorEdges.None;
+        if (element is UiLabel label) label.SizedByLayout = true;
     }
 
     private static string ValidateIconKind(string? iconKind, string context = "iconkind") =>
