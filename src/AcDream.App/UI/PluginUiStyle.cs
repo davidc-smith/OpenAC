@@ -16,6 +16,7 @@ internal static partial class PluginUiStyle
     internal const float WindowRadius = 10f;
     internal const float ControlRadius = 6f;
     internal const float SmallRadius = 4f;
+    internal const float CloseGlyphSize = 8f;
     internal const float ContainerRadius = 8f;
     internal const float RowRadius = 5f;
     internal const float RowInset = 3f;
@@ -78,6 +79,21 @@ internal static partial class PluginUiStyle
             ctx.FillRoundedRect(0f, 0f, w, h, SmallRadius, Hover(p, p.Field));
         else if (state == UiControlState.Pressed)
             ctx.FillRoundedRect(0f, 0f, w, h, SmallRadius, Pressed(Hover(p, p.Field)));
+    }
+
+    /// <summary>
+    /// A title bar's close button: a ghost face and an X, muted at rest and in
+    /// the text colour while hovered or pressed, ringed while focused.
+    /// </summary>
+    internal static void CloseButton(
+        UiRenderContext ctx, PluginUiPalette p, float w, float h, UiControlState state, bool focused)
+    {
+        GhostButton(ctx, p, w, h, state);
+        Vector4 color = state is UiControlState.Hovered or UiControlState.Pressed ? p.Text : p.Muted;
+        float x = (w - CloseGlyphSize) / 2f, y = (h - CloseGlyphSize) / 2f;
+        ctx.DrawSmoothLine(x, y, x + CloseGlyphSize, y + CloseGlyphSize, color, 1.5f);
+        ctx.DrawSmoothLine(x + CloseGlyphSize, y, x, y + CloseGlyphSize, color, 1.5f);
+        if (focused) FocusRing(ctx, p, w, h, SmallRadius);
     }
 
     internal static void Tab(UiRenderContext ctx, PluginUiPalette p, float w, float h, bool selected, UiControlState state)

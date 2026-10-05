@@ -230,7 +230,7 @@ Unknown or miscased element names throw at build time.
 
 | Element | Purpose | Attributes |
 |---|---|---|
-| `panel` (root) | The window | `x y w h title visible resizable minw minh resize` |
+| `panel` (root) | The window | `x y w h title visible resizable minw minh resize titlebar` |
 | `group` | Layout container | `x y w h background border` |
 | `label` | Text | `x y text color` |
 | `button` | Button with caption and optional icon | `x y w h text color background border onclick icon iconkind` |
@@ -263,6 +263,43 @@ build time or later.
 border, no sprite art) or `retail` (the game's own pushbutton or scrollbar
 art). A `menu` always opens as one scrolling column of at most `rows` entries;
 when the entries overflow, the popup shows the game's scrollbar.
+
+## Title bar
+
+`titlebar="true"` on the root `<panel>` gives the window a host title bar:
+the window's name on the left and a close button on the right, drawn in the
+window's look (the game's close art in Classic; the header band and a ghost
+X in the shared themes). The name is the panel's `title`, or the title the
+window was registered with when the markup has none. `titlebar` takes
+`true` or `false`; anything else fails the build.
+
+With the bar on, the window has a **content area** inside the chrome:
+
+- children's `x`/`y` are measured from the content area's top-left corner,
+  so nothing you place can sit under the title;
+- `w`, `h`, `minw` and `minh` describe the content area, and the host adds
+  the chrome: 5 points left, right and bottom, and the 24-point bar on top
+  (the frame is 10 points wider and 29 points taller);
+- the root's `x`/`y` still position the window's outer frame, while children
+  are placed from the content area's corner;
+- dragging the bar moves the window.
+
+```xml
+<panel x="120" y="120" w="300" h="160" title="Buff Bot" titlebar="true">
+  <label x="8" y="8" text="Ready" />
+  <button x="212" y="128" w="80" h="24" text="Start" onclick="{Start}" anchor="right bottom" />
+</panel>
+```
+
+The close button does what the window's dock slot does: it closes the
+window for the player and the plugin keeps running; the dock slot (or
+`ShowPanel`) opens it again. A window with a bar does not get the dock's
+"–" button, since its X does the same thing. A window kept out of the dock
+(registered with `ShowInSidePanel` off) has no dock slot, so after the player
+closes it only the plugin's `ShowPanel` opens it again; give players a way to
+call it, such as a command or a button. Turning the bar on for an
+existing window changes its size, so a size the player saved is reset once
+(the position is kept).
 
 ## Resizable panels and anchors
 
@@ -440,11 +477,12 @@ plugin window's own visibility.
 ## Showing and hiding your own window
 
 A plugin window is on screen only while two things agree: the player's own
-request (its dock slot and its close button) and, when the markup binds
-the root's `visible`, the plugin's binding. Closing the window with its
-close button clears the player's request, so setting the binding back to
-true does not reopen it. `ShowPanel` and `HidePanel` make that request from
-the plugin, exactly as the dock slot does:
+request and, when the markup binds the root's `visible`, the plugin's
+binding. The player closes a window with its title bar's X (see "Title
+bar"), or, without a bar, with the dock's "–" on its corner or its dock
+slot; each clears the player's request, so setting the binding back to true
+does not reopen it. `ShowPanel` and `HidePanel` make that request from the
+plugin, exactly as the dock slot does:
 
 ```csharp
 host.Ui.ShowPanel("main");          // by window id or title
