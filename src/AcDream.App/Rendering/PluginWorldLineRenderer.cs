@@ -79,7 +79,7 @@ internal sealed class PluginWorldLineRenderer(
             Draw(in planned);
         }
         _planned.Clear();
-        lines.FlushWorld(encoder, frame.ViewProjection, width, height);
+        lines.FlushWorld(encoder, frame.ViewProjection);
     }
 
     /// <summary>

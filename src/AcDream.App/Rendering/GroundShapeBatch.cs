@@ -30,6 +30,7 @@ internal sealed class GroundShapeBatch : IDisposable
         ]);
 
     private readonly ICurrentGpuFrameSource _frameSource;
+    private readonly IWorldPassScope _worldPass;
     private readonly IGpuPipeline _pipeline;
     private readonly List<float> _buffer = new(4096);
     private int _vertexCount;
@@ -39,6 +40,7 @@ internal sealed class GroundShapeBatch : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(worldPass);
         _frameSource = frameSource ?? throw new ArgumentNullException(nameof(frameSource));
+        _worldPass = worldPass;
         _pipeline = device.CreatePipeline(new GpuPipelineDescription
         {
             Name = "ground-shape",
@@ -82,17 +84,19 @@ internal sealed class GroundShapeBatch : IDisposable
 
     /// <summary>
     /// Draws the triangles added since <see cref="Begin"/> into
-    /// <paramref name="encoder"/>'s pass, which must have depth.
+    /// <paramref name="encoder"/>'s pass, which must have depth, across the
+    /// whole world pass in its pixels (not the window's points, which a
+    /// high-density display halves).
     /// </summary>
-    internal void Flush(IGpuPassEncoder encoder, Matrix4x4 viewProjection, int width, int height)
+    internal void Flush(IGpuPassEncoder encoder, Matrix4x4 viewProjection)
     {
         if (_vertexCount == 0 || encoder.Pass.Depth is null)
             return;
         IGpuFrame frame = _frameSource.CurrentFrame
             ?? throw new InvalidOperationException("Ground shapes require an active frame.");
         encoder.BindPipeline(_pipeline);
-        encoder.SetViewport(0, 0, width, height);
-        encoder.SetScissor(0, 0, width, height);
+        encoder.SetViewport(0, 0, _worldPass.AttachmentWidth, _worldPass.AttachmentHeight);
+        encoder.SetScissor(0, 0, _worldPass.AttachmentWidth, _worldPass.AttachmentHeight);
         encoder.SetDepthWrite(false);
         encoder.SetStencil(GpuStencilState.Default);
         GpuPushConstants constants = GpuPushConstants.Default;
