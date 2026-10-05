@@ -436,8 +436,7 @@ public abstract class UiElement
             {
                 OnDraw(ctx);
 
-                for (int i = 0; i < _children.Count; i++)
-                    _children[i].ApplyAnchor(Width, Height);
+                LayoutChildren();
 
                 if (_children.Count > 0)
                 {
@@ -513,6 +512,17 @@ public abstract class UiElement
         OnTick(dt);
         for (int i = 0; i < _children.Count; i++)
             _children[i].TickSelfAndChildren(dt);
+    }
+
+    /// <summary>
+    /// Puts the children where they belong for this element's current size,
+    /// just before they are drawn: by default each child's anchors. A flex
+    /// container lays its items out here instead.
+    /// </summary>
+    private protected virtual void LayoutChildren()
+    {
+        for (int i = 0; i < _children.Count; i++)
+            _children[i].ApplyAnchor(Width, Height);
     }
 
     internal UiElement? HitTest(float localX, float localY)

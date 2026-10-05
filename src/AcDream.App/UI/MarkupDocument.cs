@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Xml.Linq;
+using AcDream.App.UI.Layout.Flex;
 using AcDream.Plugin.Abstractions;
 
 namespace AcDream.App.UI;
@@ -45,12 +46,23 @@ public static class MarkupDocument
             ? new UiPluginMarkupPanel(resolve, themes ?? new PluginUiThemeSettings())
             : new UiNineSlicePanel(resolve);
 
-        // A window with chrome has a content area: its authored sizes are the
-        // area inside the border and title bar, and the frame adds the chrome.
-        bool hasTitleBar = TitleBar(root);
-        float chromeW = hasTitleBar ? PluginWindowChrome.HorizontalInsets : 0f;
-        float chromeH = hasTitleBar ? PluginWindowChrome.VerticalInsets : 0f;
-        float contentW = F(root, "w"), contentH = F(root, "h");
+        // A window with chrome or a flex layout has a content area: its authored
+        // sizes are the area inside the border (and title bar), and the frame
+        // adds the chrome. A root with layout gets the title bar by default.
+        bool hasLayout = MarkupFlexAttributes.IsContainer(root);
+        bool hasTitleBar = TitleBar(root, hasLayout);
+        bool hasContentArea = hasLayout || hasTitleBar;
+        float chromeW = hasContentArea ? PluginWindowChrome.HorizontalInsets : 0f;
+        float chromeH = hasContentArea ? PluginWindowChrome.VerticalInsetsFor(hasTitleBar) : 0f;
+        if (!hasLayout) MarkupFlexAttributes.RejectContainer(root);
+
+        // A layout root may leave its size to its content; it is measured once
+        // its children exist (below), so these are provisional for it.
+        float? authoredW = hasLayout ? MarkupFlexAttributes.RootSize(root, "w") : F(root, "w");
+        float? authoredH = hasLayout ? MarkupFlexAttributes.RootSize(root, "h") : F(root, "h");
+        float? authoredMinW = hasLayout ? MarkupFlexAttributes.RootSize(root, "minw") : null;
+        float? authoredMinH = hasLayout ? MarkupFlexAttributes.RootSize(root, "minh") : null;
+        float contentW = authoredW ?? 0f, contentH = authoredH ?? 0f;
         panel.Left = F(root, "x"); panel.Top = F(root, "y");
         panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
 
@@ -84,6 +96,7 @@ public static class MarkupDocument
         string? title = (string?)root.Attribute("title");
         Vector4 titleColor = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
         UiElement contentParent = panel;
+        UiPluginContentHost? content = null;
         PluginTitleBar? titleBar = null;
         if (hasTitleBar)
         {
@@ -97,22 +110,13 @@ public static class MarkupDocument
             titleBar.Close.AuthoredTooltipLayoutDid = RuntimeTooltipLayoutDid;
             titleBar.Close.AuthoredTooltipEnabled = true;
             panel.AddChild(titleBar);
-            var content = new UiPluginContentHost
-            {
-                Left = PluginWindowChrome.Border,
-                Top = PluginWindowChrome.TitleBarHeight,
-                Width = contentW,
-                Height = contentH,
-            };
-            panel.AddChild(content);
-            contentParent = content;
             if (panel is UiPluginMarkupPanel barPanel)
             {
                 barPanel.HasTitle = true;
                 PluginMarkupTheme.RegisterTitleBar(barPanel, titleBar);
             }
         }
-        else if (!string.IsNullOrEmpty(title))
+        else if (!hasLayout && !string.IsNullOrEmpty(title))
         {
             panel.AddChild(new UiLabel
             {
@@ -125,9 +129,45 @@ public static class MarkupDocument
                 PluginMarkupTheme.RegisterTitle(titlePanel, titleLabel);
             }
         }
+        if (hasContentArea)
+        {
+            content = new UiPluginContentHost
+            {
+                Left = PluginWindowChrome.Border,
+                Top = PluginWindowChrome.TopInset(hasTitleBar),
+                Width = contentW,
+                Height = contentH,
+            };
+            panel.AddChild(content);
+            contentParent = content;
+        }
+
+        UiFlexBox? rootFlex = null;
+        if (hasLayout)
+        {
+            rootFlex = content!.UseFlex();
+            MarkupFlexAttributes.ReadContainer(root, rootFlex.Node);
+        }
 
         foreach (var el in root.Elements())
-            AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes);
+            AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, rootFlex);
+
+        if (rootFlex is not null)
+        {
+            // The window's first measurement, with the fonts and theme known
+            // now: it sizes a root that states no w/h, and sets the minimum, so
+            // mounting and registration see real geometry. An authored size
+            // below the content's minimum opens at the minimum.
+            FlexMeasurement measured = rootFlex.MeasureNow();
+            float minW = authoredMinW ?? measured.Minimum.Width;
+            float minH = authoredMinH ?? measured.Minimum.Height;
+            contentW = MathF.Max(authoredW ?? measured.Preferred.Width, minW);
+            contentH = MathF.Max(authoredH ?? measured.Preferred.Height, minH);
+            panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
+            panel.MinWidth = minW + chromeW; panel.MinHeight = minH + chromeH;
+            content!.Width = contentW; content.Height = contentH;
+            titleBar?.SetFrameWidth(panel.Width);
+        }
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -137,21 +177,24 @@ public static class MarkupDocument
         // time it is opened.
         panel.CaptureAuthoredAnchorBaselines();
 
-        int revision = hasTitleBar
+        int revision = hasContentArea
             ? RetailWindowManager.ComputeAuthoredGeometryRevision(PluginWindowChrome.AuthoredInputs(root))
             : RetailWindowManager.ComputeAuthoredGeometryRevision(
                 panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
-        return new MarkupWindow(panel, contentParent, titleBar, revision);
+        var window = new MarkupWindow(panel, contentParent, titleBar, revision);
+        if (rootFlex is not null)
+            window.TrackContentMinimum(content!, chromeW, chromeH, authoredMinW, authoredMinH);
+        return window;
     }
 
     /// <summary>
-    /// Whether the root asks for the host title bar. Off unless
-    /// <c>titlebar="true"</c>; PR 3 turns it on by default for roots with
-    /// <c>layout</c>.
+    /// Whether the root asks for the host title bar: <c>titlebar</c> when it
+    /// is given, else on exactly when the root uses <c>layout</c>.
     /// </summary>
-    private static bool TitleBar(XElement root) => (string?)root.Attribute("titlebar") switch
+    private static bool TitleBar(XElement root, bool hasLayout) => (string?)root.Attribute("titlebar") switch
     {
-        null or "false" => false,
+        null => hasLayout,
+        "false" => false,
         "true" => true,
         string other => throw new FormatException(
             $"<panel titlebar=\"{other}\"> must be true or false"),
@@ -163,9 +206,11 @@ public static class MarkupDocument
         object binding,
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
-        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes)
+        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
+        UiFlexBox? flex = null)
     {
         int firstChild = parent.Children.Count;
+        if (flex is null) MarkupFlexAttributes.RejectItem(el);
         void BindColorSource(string? expression, object model, Action<Vector4> setValue,
             Action<Func<Vector4>> setSource)
         {
@@ -182,21 +227,32 @@ public static class MarkupDocument
         switch (el.Name.LocalName)
         {
             case "group":
-                var group = new UiPanel
+                UiFlexBox? groupFlex = null;
+                UiPanel group;
+                if (MarkupFlexAttributes.IsContainer(el))
                 {
-                    Left = F(el, "x"),
-                    Top = F(el, "y"),
-                    Width = F(el, "w"),
-                    Height = F(el, "h"),
-                    BackgroundColor = el.Attribute("background") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("background")),
-                    BorderColor = el.Attribute("border") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("border")),
-                    BorderThickness = el.Attribute("border") is null ? 0f : 1f,
-                    ClickThrough = true,
-                };
+                    var flexGroup = new UiFlexGroup();
+                    MarkupFlexAttributes.ReadContainer(el, flexGroup.Flex.Node);
+                    groupFlex = flexGroup.Flex;
+                    group = flexGroup;
+                }
+                else
+                {
+                    MarkupFlexAttributes.RejectContainer(el);
+                    group = new UiPanel();
+                }
+                group.Left = F(el, "x");
+                group.Top = F(el, "y");
+                group.Width = F(el, "w");
+                group.Height = F(el, "h");
+                group.BackgroundColor = el.Attribute("background") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("background"));
+                group.BorderColor = el.Attribute("border") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("border"));
+                group.BorderThickness = el.Attribute("border") is null ? 0f : 1f;
+                group.ClickThrough = true;
                 BindColorSource(
                     (string?)el.Attribute("background"), binding,
                     value => group.BackgroundColor = value,
@@ -208,7 +264,7 @@ public static class MarkupDocument
                 ApplyCommon(group, el, binding);
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
-                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes);
+                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, groupFlex);
                 break;
 
             case "meter":
@@ -759,6 +815,38 @@ public static class MarkupDocument
         }
         if (themedPanel is not null && parent.Children.Count > firstChild)
             PluginMarkupTheme.Register(themedPanel, parent.Children[firstChild], el);
+        if (flex is not null && parent.Children.Count > firstChild)
+            AddFlexItem(flex, parent.Children[firstChild], el);
+    }
+
+    /// <summary>
+    /// Enters <paramref name="element"/>, just built from <paramref name="el"/>
+    /// under a flex container, into that container's layout: a flex group as an
+    /// inner node, an absolute group as a leaf of its authored size, any other
+    /// control as a leaf measured by <see cref="MarkupContentSize"/>. The
+    /// container places it, so it keeps no anchors.
+    /// </summary>
+    private static void AddFlexItem(UiFlexBox flex, UiElement element, XElement el)
+    {
+        UiFlexItem item = element is UiFlexGroup group
+            ? flex.AddContainer(group, group.Flex)
+            : flex.AddLeaf(element, new FlexNode(),
+                el.Name.LocalName == "group" ? new FlexSize(element.Width, element.Height) : null);
+        MarkupFlexAttributes.ReadItem(el, item.Node);
+        element.Anchors = AnchorEdges.None;
+        if (element is UiLabel label) label.SizedByLayout = true;
+        if (element is UiMenu menu)
+        {
+            // A flex menu has no authored w (the container sizes it), so its
+            // popup column would stay at the 20-point minimum; match the popup
+            // to the laid-out menu on every open, as an absolute menu's is.
+            Action? refresh = menu.BeforeOpen;
+            menu.BeforeOpen = () =>
+            {
+                refresh?.Invoke();
+                menu.ColumnWidth = MathF.Max(20f, menu.Width);
+            };
+        }
     }
 
     private static string ValidateIconKind(string? iconKind, string context = "iconkind") =>

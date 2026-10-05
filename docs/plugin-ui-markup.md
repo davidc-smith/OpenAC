@@ -230,8 +230,8 @@ Unknown or miscased element names throw at build time.
 
 | Element | Purpose | Attributes |
 |---|---|---|
-| `panel` (root) | The window | `x y w h title visible resizable minw minh resize titlebar` |
-| `group` | Layout container | `x y w h background border` |
+| `panel` (root) | The window | `x y w h title visible resizable minw minh resize titlebar`, and the flex container attributes |
+| `group` | Layout container | `x y w h background border`, and the flex container attributes |
 | `label` | Text | `x y text color` |
 | `button` | Button with caption and optional icon | `x y w h text color background border onclick icon iconkind` |
 | `icon` | An icon | `x y w h did` or `spell` or `item`, `tooltip` |
@@ -245,7 +245,8 @@ Unknown or miscased element names throw at build time.
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
-a binding.
+a binding. Inside a flex container elements take the flex item attributes
+instead of `x`, `y` and `anchor` (see [Flex layout](#flex-layout)).
 
 A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
@@ -283,7 +284,9 @@ when the entries overflow, the popup shows the game's scrollbar.
 
 ## Title bar
 
-`titlebar="true"` on the root `<panel>` gives the window a host title bar:
+`titlebar="true"` on the root `<panel>` gives the window a host title bar
+(a root with `layout` has it unless it says `titlebar="false"`; see
+[Flex layout](#flex-layout)):
 the window's name on the left and a close button on the right, drawn in the
 window's look (the game's close art in Classic; the header band and a ghost
 X in the shared themes). The name is the panel's `title`, or the title the
@@ -371,6 +374,119 @@ An unknown anchor token, or a value that is present and names no edge at all,
 throws at build time naming the element and the value. Changing a panel's authored
 size or limits in a later plugin version resets each user's stored size once;
 their saved position is kept.
+
+## Flex layout
+
+`layout="row"` or `layout="column"` on a `<group>` or on the root `<panel>`
+makes it a **flex container**: it places its children itself, one after
+another along its main axis, sized to their content and sharing out the
+space that is left. A container without `layout` keeps absolute placement.
+The rules are a practical subset of CSS flexbox.
+
+```xml
+<panel title="Buff Bot" layout="column" padding="8" gap="6" resizable="true">
+  <group layout="row" gap="4">
+    <field grow="1" text="{Search}" onchange="{SetSearch}" />
+    <button text="Find" onclick="{Find}" />
+  </group>
+  <list grow="1" items="{Results}" selected="{Selected}" onchange="{Select}" />
+  <group layout="row" justify="end" gap="4">
+    <button text="OK" onclick="{Ok}" />
+    <button text="Cancel" onclick="{Cancel}" />
+  </group>
+</panel>
+```
+
+### Container attributes
+
+| Attribute | Values | Default |
+|---|---|---|
+| `layout` | `row`, `column` | absent: absolute placement |
+| `gap` | points between items, and between wrapped lines | `0` |
+| `padding` | 1, 2 or 4 numbers in CSS order: all; vertical horizontal; top right bottom left | `0` |
+| `justify` | `start`, `center`, `end`, `space-between` | `start` |
+| `align` | `start`, `center`, `end`, `stretch` (across the line) | `stretch` |
+| `wrap` | `true`, `false` (rows only) | `false` |
+
+`gap`, `padding`, `justify`, `align` and `wrap` need `layout` on the same
+element. Only rows wrap in this version: `wrap="true"` on a column fails the
+build.
+
+### Item attributes
+
+Every child of a flex container may carry:
+
+| Attribute | Meaning | Default |
+|---|---|---|
+| `grow` | share of the space left over on the main axis | `0` |
+| `shrink` | share of the space missing, weighted by the item's basis | `1` |
+| `basis` | `auto` or points: the item's starting size on the main axis | `auto`: its `w`/`h` on that axis, else its content size |
+| `w`, `h` | preferred size, in place of the content size | the content size |
+| `minw`, `maxw`, `minh`, `maxh` | limits | min: the content minimum; max: none |
+| `alignself` | `start`, `center`, `end`, `stretch` | the container's `align` |
+
+An item never shrinks below its content (a button below its caption) unless
+`minw`/`minh` allow it. `x`, `y` and `anchor` on a flex item fail the build,
+and so do `grow`, `shrink`, `basis`, `alignself` and the limits on a child
+of a container without `layout`.
+
+### Content sizes
+
+| Element | Size |
+|---|---|
+| `label` | its text, one line tall |
+| `button`, `tab` | its caption with 12 points either side (and a square for its icon); at least 24 points tall, taller when the font's line plus 8 is more |
+| `toggle` | lamp or switch, then its caption; at least 20 points tall, taller when the font's line plus 4 is more |
+| `icon` | 32 × 32 |
+| `field`, `menu` | 120 wide (40 at least); tall as a button (at least 24, or the font's line plus 8) |
+| `slider` / `meter` | 120 wide (40 at least), 16 / 12 tall (fixed) |
+| `list`, `log` | 160 × 80 (60 × 40 at least) |
+| `group` with `layout` | what its own items need |
+| `group` without `layout` | its `w` × `h` |
+
+Sizes follow what is shown: a bound caption that gets longer, a hidden item
+(which takes no space), or a switch of the shared appearance lays the
+container out again on the next frame. A label inside a flex container
+draws in the box it is given, its line centred top to bottom.
+
+### Mixing absolute and flex
+
+The two nest freely. A group without `layout` inside a flex container is an
+item of its authored `w` × `h`; when the container gives it another size, its
+own children follow their `anchor`s exactly as in a resized window. A
+`<group layout>` inside an absolute container is placed by its `x`, `y`,
+`w`, `h` and `anchor` like any element, and lays out its children in
+whatever size that gives it. It needs its own `w` and `h` for that: without
+them it is empty and shows nothing.
+
+### Flex windows
+
+`layout` on the root `<panel>` lays out the window's content area:
+
+- the window gets the [title bar](#title-bar) unless the root says
+  `titlebar="false"` (without it the content area is inset by the 5-point
+  border on every side);
+- `w` and `h` may be left out: the window then opens at the size its
+  content needs. A size below what the content needs opens at the latter;
+- `minw` and `minh` default to what the content needs, so a window never
+  shrinks (by dragging, or by a restored layout) to a size that cuts its
+  content off. When the content needs more later (a longer caption), the
+  window grows to fit, even when it is not resizable, and stays on screen;
+- as with the title bar, the window's saved size is reset once when its
+  markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout` or
+  `titlebar` change. Captions and appearance never reset it.
+
+Windows only grow to fit: when the content later needs less room, the window
+keeps its size. A wrapping root's minimum height is the height of its
+narrowest layout, so a wide wrapping window cannot be made shorter than that.
+
+A layout root with `titlebar="false"` shows no title text in the window (its
+`title` still names it in the dock). A docked window without a bar keeps the
+dock's "–" button at its top-right corner, over the corner of the content
+area, so leave room there.
+
+A root that wraps should state its `w`: without it the window opens one
+line wide.
 
 ## Icon ids
 
