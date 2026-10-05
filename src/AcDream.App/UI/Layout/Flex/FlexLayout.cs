@@ -161,10 +161,12 @@ public static class FlexLayout
 
     // ── Arrange ─────────────────────────────────────────────────────────
 
-    // Per-container scratch, in quarters of FlexNode.Scratch for `count` children:
+    // Per-container scratch, in sixths of FlexNode.Scratch for `count` children:
     // [0, c) resolved main size, [c, 2c) frozen flag, [2c, 3c) flex base size,
-    // [3c, 4c) minimum main size.
-    private const int TargetSlot = 0, FrozenSlot = 1, BaseSlot = 2, MinSlot = 3;
+    // [3c, 4c) minimum main size, [4c, 5c) preferred cross size (for a child
+    // sized across, the cross size it is given), [5c, 6c) cross size a
+    // stretch never goes below.
+    private const int TargetSlot = 0, FrozenSlot = 1, BaseSlot = 2, MinSlot = 3, CrossSlot = 4, CrossFloorSlot = 5;
 
     private static void ArrangeChildren(FlexNode node, float width, float height)
     {
@@ -188,7 +190,7 @@ public static class FlexLayout
         bool singleLine = !node.Wrap || availableMain is null;
 
         int count = node.Children.Count;
-        if (node.Scratch.Length < count * 4) node.Scratch = new float[count * 4];
+        if (node.Scratch.Length < count * 6) node.Scratch = new float[count * 6];
         ResolveBases(node, row, count, availableCross, contentCross, singleLine);
 
         BreakLines(node, row, count, availableMain, gap);
@@ -200,6 +202,7 @@ public static class FlexLayout
         {
             int lineEnd = node.LineEnds[line];
             ResolveFlexibleLengths(node, row, count, lineStart, lineEnd, availableMain, gap);
+            ResolveAlongCross(node, row, count, lineStart, lineEnd);
             linesCross += LineCross(node, row, lineStart, lineEnd);
             lineStart = lineEnd;
         }
@@ -248,9 +251,12 @@ public static class FlexLayout
     }
 
     /// <summary>
-    /// Fills each visible child's flex base size and minimum main size. Most
-    /// children use their measurement; a wrapping child laid across this
-    /// container's main axis is measured at the cross size it will be given.
+    /// Fills each visible child's flex base size, minimum main size and cross
+    /// sizes. Most children use their measurement; a wrapping child laid
+    /// across this container's main axis gets its one cross size here, and
+    /// its main size is the extent of the lines it makes at that size. The
+    /// place pass gives it exactly that cross size, so its rect always holds
+    /// the lines its extent was computed for.
     /// </summary>
     private static void ResolveBases(
         FlexNode node, bool row, int count, float? availableCross, float contentCross, bool singleLine)
@@ -265,12 +271,16 @@ public static class FlexLayout
             {
                 s[BaseSlot * count + i] = MeasuredBase(child, row);
                 s[MinSlot * count + i] = MainOf(child.MinimumSize, row);
+                s[CrossSlot * count + i] = CrossOf(child.Measured.Preferred, row);
+                s[CrossFloorSlot * count + i] = CrossOf(child.MinimumSize, row);
                 continue;
             }
 
             // The child's own main axis is our cross axis: find the cross size it
-            // gets (stretched over a single line, else its preferred size within
-            // the space), then the extent its lines make along our main axis.
+            // gets (stretched over a non-wrapping line, else its preferred size
+            // within the space), then the extent its lines make along our main
+            // axis. A wrapping line is not known yet, so it never stretches the
+            // child: a wider line would leave the extent made for fewer lines.
             float? explicitCross = row ? child.Height : child.Width;
             float minCross = CrossOf(child.MinimumSize, row), maxCross = CrossOf(child.MaximumSize, row);
             FlexAlign align = child.AlignSelf ?? node.Align;
@@ -278,8 +288,10 @@ public static class FlexLayout
             float cross = stretched ? contentCross : CrossOf(child.Measured.Preferred, row);
             if (!stretched && availableCross is { } limit) cross = MathF.Min(cross, limit);
             cross = Math.Clamp(cross, minCross, MathF.Max(minCross, maxCross));
+            s[CrossSlot * count + i] = cross;
+            s[CrossFloorSlot * count + i] = cross;
 
-            float extent = WrappedExtent(child, cross);
+            float extent = WrappedExtent(child, MathF.Floor(cross));
             float? explicitMain = row ? child.Width : child.Height;
             float? explicitMin = row ? child.MinWidth : child.MinHeight;
             float maxMain = MainOf(child.MaximumSize, row);
@@ -300,9 +312,21 @@ public static class FlexLayout
         && !child.ScrollX && !child.ScrollY;
 
     /// <summary>
+    /// Whether <paramref name="child"/> is a wrapping container along
+    /// <paramref name="parent"/>'s main axis (a wrapping row inside a row), so
+    /// its cross size depends on the main size the line resolves for it. A
+    /// child that scrolls along either axis keeps its measured size instead.
+    /// </summary>
+    private static bool IsSizedAlong(FlexNode parent, FlexNode child) =>
+        child.Measure is null && child.Wrap && child.Direction == parent.Direction
+        && !child.ScrollX && !child.ScrollY;
+
+    /// <summary>
     /// The extent of <paramref name="node"/>'s wrapped lines across its own
     /// main axis when its main size is <paramref name="mainSize"/>, padding
-    /// included. Uses the same line breaking as the arrange pass.
+    /// included. Uses the same line breaking as the arrange pass. Callers pass
+    /// the floor of the size the node will get: snapping never gives it less,
+    /// and given more it makes no more lines, so its content still fits.
     /// </summary>
     private static float WrappedExtent(FlexNode node, float mainSize)
     {
@@ -398,6 +422,10 @@ public static class FlexLayout
             s[frozen + i] = isFrozen ? 1f : 0f;
         }
 
+        // CSS: the initial free space is taken once, after the initial freeze;
+        // factors summing below 1 take that share of it whenever it is smaller
+        // than the space actually left.
+        float initialFree = 0f;
         for (int pass = 0; pass <= visible; pass++)
         {
             float used = gaps, factorSum = 0f, scaledShrinkSum = 0f;
@@ -413,7 +441,8 @@ public static class FlexLayout
             if (factorSum == 0f) break;
 
             float free = available - used;
-            if (factorSum < 1f) free *= factorSum; // CSS: factors summing below 1 take only that share
+            if (pass == 0) initialFree = free;
+            if (factorSum < 1f && MathF.Abs(initialFree * factorSum) < MathF.Abs(free)) free = initialFree * factorSum;
 
             float violation = 0f;
             for (int i = start; i < end; i++)
@@ -447,14 +476,43 @@ public static class FlexLayout
         }
     }
 
+    /// <summary>
+    /// Once a line's main sizes are resolved, gives each wrapping child laid
+    /// along this container's main axis the cross size of the lines it makes
+    /// at its resolved main size: that is its preferred cross size, and the
+    /// floor a stretch never goes below (its measured minimum, the lines at
+    /// its narrowest, would overflow a line it does not need).
+    /// </summary>
+    private static void ResolveAlongCross(FlexNode node, bool row, int count, int start, int end)
+    {
+        float[] s = node.Scratch;
+        for (int i = start; i < end; i++)
+        {
+            FlexNode child = node.Children[i];
+            if (child.Hidden || !IsSizedAlong(node, child)) continue;
+            float extent = WrappedExtent(child, MathF.Floor(s[TargetSlot * count + i]));
+
+            // Explicit cross sizes keep their meaning, as in the measure pass,
+            // with the extent standing in for the content minimum.
+            float? explicitCross = row ? child.Height : child.Width;
+            float? explicitMin = row ? child.MinHeight : child.MinWidth;
+            float maxCross = CrossOf(child.MaximumSize, row);
+            float autoMin = explicitCross is { } e ? MathF.Min(Positive(e), extent) : extent;
+            float minCross = MathF.Min(explicitMin is { } m ? Positive(m) : autoMin, maxCross);
+            s[CrossFloorSlot * count + i] = minCross;
+            s[CrossSlot * count + i] = Math.Clamp(explicitCross is { } ec ? Positive(ec) : extent, minCross, MathF.Max(minCross, maxCross));
+        }
+    }
+
     private static float LineCross(FlexNode node, bool row, int start, int end)
     {
         float cross = 0f;
+        int crossSlot = CrossSlot * node.Children.Count;
         for (int i = start; i < end; i++)
         {
             FlexNode child = node.Children[i];
             if (child.Hidden) continue;
-            cross = MathF.Max(cross, CrossOf(child.Measured.Preferred, row));
+            cross = MathF.Max(cross, node.Scratch[crossSlot + i]);
         }
         return cross;
     }
@@ -494,12 +552,15 @@ public static class FlexLayout
             float mainStart = cursor, mainEnd = cursor + s[TargetSlot * count + i];
             cursor = mainEnd + between;
 
+            // A child sized across already has the one cross size its extent
+            // was made for; any other child stretches (never below its floor)
+            // or keeps its preferred cross size.
             FlexAlign align = child.AlignSelf ?? node.Align;
             float? explicitCross = row ? child.Height : child.Width;
-            float minCross = CrossOf(child.MinimumSize, row), maxCross = CrossOf(child.MaximumSize, row);
-            float cross = align == FlexAlign.Stretch && explicitCross is null
+            float minCross = s[CrossFloorSlot * count + i], maxCross = CrossOf(child.MaximumSize, row);
+            float cross = !IsSizedAcross(node, child) && align == FlexAlign.Stretch && explicitCross is null
                 ? Math.Clamp(lineCross, minCross, MathF.Max(minCross, maxCross))
-                : CrossOf(child.Measured.Preferred, row);
+                : s[CrossSlot * count + i];
             float crossOffset = align switch
             {
                 FlexAlign.Center => (lineCross - cross) / 2f,

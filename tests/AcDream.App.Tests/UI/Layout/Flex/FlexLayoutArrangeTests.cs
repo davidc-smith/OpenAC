@@ -47,6 +47,24 @@ public sealed class FlexLayoutArrangeTests
     }
 
     [Fact]
+    public void Factors_summing_below_one_take_that_share_of_the_initial_free_space()
+    {
+        FlexNode a = Leaf(50f, 10f, minWidth: 0f), b = Leaf(50f, 10f, minWidth: 0f);
+        a.Grow = 0.5f;
+        a.MaxWidth = 100f;
+        b.Grow = 0.25f;
+
+        Arrange(Row(a, b), 300f, 10f);
+
+        // Initial free space 300 - 100 = 200; factors sum to 0.75, so 150 is
+        // shared: a 50 + 100 = 150 clamps to 100 and freezes. Then b alone has
+        // factor 0.25: 0.25 x 200 (initial) = 50 is less than the 150 left, so
+        // b gets 50 + 50 = 100 (not 0.25 x 150 = 37.5 of the remaining space).
+        Assert.Equal(new FlexRect(0f, 0f, 100f, 10f), a.Rect);
+        Assert.Equal(new FlexRect(100f, 0f, 100f, 10f), b.Rect);
+    }
+
+    [Fact]
     public void Shrink_is_weighted_by_basis()
     {
         FlexNode a = Leaf(100f, 10f, minWidth: 0f), b = Leaf(50f, 10f, minWidth: 0f);
