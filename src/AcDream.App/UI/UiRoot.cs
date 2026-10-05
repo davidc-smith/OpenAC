@@ -957,8 +957,17 @@ public sealed class UiRoot : UiElement
         {
             var gained = new UiEvent(e.EventId, e, UiEventType.FocusGained);
             e.OnEvent(in gained);
+            RevealInScrollingAncestors(e);
         }
         KeyboardFocusChanged?.Invoke(previous, e);
+    }
+
+    /// <summary>Scrolls each scrolling ancestor of <paramref name="e"/>, innermost first, just far enough to show it.</summary>
+    private static void RevealInScrollingAncestors(UiElement e)
+    {
+        for (UiElement? p = e.Parent; p is not null; p = p.Parent)
+            if (p is IUiScrollHost { ScrollArea: { } area })
+                area.Reveal(e);
     }
 
     public void SetCapture(UiElement e)

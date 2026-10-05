@@ -229,17 +229,20 @@ public static class MarkupDocument
             case "group":
                 UiFlexBox? groupFlex = null;
                 UiPanel group;
+                var (scrollX, scrollY) = MarkupFlexAttributes.Scroll(el);
+                bool scrolls = scrollX || scrollY;
                 if (MarkupFlexAttributes.IsContainer(el))
                 {
                     var flexGroup = new UiFlexGroup();
                     MarkupFlexAttributes.ReadContainer(el, flexGroup.Flex.Node);
+                    if (scrolls) flexGroup.UseScroll(scrollX, scrollY, resolve);
                     groupFlex = flexGroup.Flex;
                     group = flexGroup;
                 }
                 else
                 {
                     MarkupFlexAttributes.RejectContainer(el);
-                    group = new UiPanel();
+                    group = scrolls ? new UiScrollPanel(scrollX, scrollY, resolve) : new UiPanel();
                 }
                 group.Left = F(el, "x");
                 group.Top = F(el, "y");
@@ -252,7 +255,8 @@ public static class MarkupDocument
                     ? Vector4.Zero
                     : Color((string?)el.Attribute("border"));
                 group.BorderThickness = el.Attribute("border") is null ? 0f : 1f;
-                group.ClickThrough = true;
+                // A scrolling group is hit-testable so the wheel reaches it over empty space.
+                group.ClickThrough = !scrolls;
                 BindColorSource(
                     (string?)el.Attribute("background"), binding,
                     value => group.BackgroundColor = value,
@@ -831,7 +835,7 @@ public static class MarkupDocument
         UiFlexItem item = element is UiFlexGroup group
             ? flex.AddContainer(group, group.Flex)
             : flex.AddLeaf(element, new FlexNode(),
-                el.Name.LocalName == "group" ? new FlexSize(element.Width, element.Height) : null);
+                el.Name.LocalName == "group" ? AbsoluteGroupSize(element) : null);
         MarkupFlexAttributes.ReadItem(el, item.Node);
         element.Anchors = AnchorEdges.None;
         if (element is UiLabel label) label.SizedByLayout = true;
@@ -847,6 +851,20 @@ public static class MarkupDocument
                 menu.ColumnWidth = MathF.Max(20f, menu.Width);
             };
         }
+    }
+
+    /// <summary>
+    /// An absolute group's content size in a flex container: its authored
+    /// size, which is also its minimum, except along an axis it scrolls, where
+    /// it can shrink to a 40-point viewport (plus the other axis's bar).
+    /// </summary>
+    private static FlexMeasurement AbsoluteGroupSize(UiElement group)
+    {
+        var size = new FlexSize(group.Width, group.Height);
+        if (group is not UiScrollPanel { ScrollArea: var area }) return new FlexMeasurement(size, size);
+        float minW = area.ScrollsX ? FlexLayout.MinimumScrollViewport + (area.ScrollsY ? UiScrollArea.BarSize : 0f) : size.Width;
+        float minH = area.ScrollsY ? FlexLayout.MinimumScrollViewport + (area.ScrollsX ? UiScrollArea.BarSize : 0f) : size.Height;
+        return new FlexMeasurement(size, new FlexSize(MathF.Min(minW, size.Width), MathF.Min(minH, size.Height)));
     }
 
     private static string ValidateIconKind(string? iconKind, string context = "iconkind") =>
