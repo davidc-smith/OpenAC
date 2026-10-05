@@ -4118,13 +4118,15 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 string xml = panel.MarkupContent
                     ?? File.ReadAllText(panel.MarkupPath);
-                UiNineSlicePanel element = MarkupDocument.Build(
+                MarkupWindow window = MarkupDocument.BuildWindow(
                     xml,
                     panel.Binding,
                     _bindings.Assets.ResolveSprite,
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
-                    iconResolver, _pluginThemes);
+                    iconResolver, _pluginThemes,
+                    fallbackTitle: panel.Descriptor.Title);
+                UiNineSlicePanel element = window.Frame;
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
                 {
@@ -4145,14 +4147,7 @@ public sealed class RetailUiRuntime : IDisposable
                 // later registration/sidepanel failure then rolls the mounted
                 // subtree back through FailMount instead of leaking it.
                 _bindings.Plugins.CompleteMount(panel, Host.Root, element);
-                int authoredGeometryRevision = RetailWindowManager.ComputeAuthoredGeometryRevision(
-                    element.Width, element.Height, element.MinWidth, element.MinHeight, element.Resizable);
-                RetailWindowHandle handle = Host.WindowManager.Register(
-                    panel.WindowName,
-                    element,
-                    element,
-                    visibility,
-                    authoredGeometryRevision: authoredGeometryRevision);
+                RetailWindowHandle handle = window.Register(Host.WindowManager, panel.WindowName, visibility);
                 _bindings.Plugins.CompleteWindowMount(
                     panel,
                     () => Host.WindowManager.Unregister(panel.WindowName));

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Numerics;
 using AcDream.Plugin.Abstractions;
 using static AcDream.App.UI.PluginUiStyle;
@@ -163,15 +164,26 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                     handle.Show();
             };
 
-            var minimize = new PluginMinimizeButton(handle, _font, _themes)
+            // A window with a title bar already has a close button, which does
+            // what "-" would; the bar's X takes its place and says where the
+            // window went.
+            PluginMinimizeButton? minimize = null;
+            if (handle.OuterFrame.Children.OfType<PluginTitleBar>().FirstOrDefault() is { } titleBar)
             {
-                Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
-                Top = 3f,
-                Width = 18f,
-                Height = 17f,
-                Anchors = AnchorEdges.Top | AnchorEdges.Right,
-            };
-            handle.OuterFrame.AddChild(minimize);
+                titleBar.Close.Tooltip = PluginWindowChrome.DockedCloseTooltip;
+            }
+            else
+            {
+                minimize = new PluginMinimizeButton(handle, _font, _themes)
+                {
+                    Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
+                    Top = 3f,
+                    Width = 18f,
+                    Height = 17f,
+                    Anchors = AnchorEdges.Top | AnchorEdges.Right,
+                };
+                handle.OuterFrame.AddChild(minimize);
+            }
 
             _entries.Add(handle, new ShelfEntry(button, minimize));
             handedOver = true;
@@ -539,8 +551,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         _order.Remove(handle);
         entry.Button.ReleaseSvgIcon();
         RemoveChild(entry.Button);
-        if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
-            handle.OuterFrame.RemoveChild(entry.Minimize);
+        if (entry.Minimize is { } minimize && ReferenceEquals(minimize.Parent, handle.OuterFrame))
+            handle.OuterFrame.RemoveChild(minimize);
         Reflow();
     }
 
@@ -628,8 +640,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         foreach ((RetailWindowHandle handle, ShelfEntry entry) in _entries)
         {
             entry.Button.ReleaseSvgIcon();
-            if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
-                handle.OuterFrame.RemoveChild(entry.Minimize);
+            if (entry.Minimize is { } minimize && ReferenceEquals(minimize.Parent, handle.OuterFrame))
+                handle.OuterFrame.RemoveChild(minimize);
         }
         _entries.Clear();
         _order.Clear();
@@ -638,7 +650,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
     private readonly record struct ShelfEntry(
         PluginShelfButton Button,
-        PluginMinimizeButton Minimize);
+        PluginMinimizeButton? Minimize);
 
     /// <summary>The move handle: three dots, shown while the pointer is over the dock or it is collapsed.</summary>
     private sealed class DockGrip(PluginSidePanel dock) : UiPanel
