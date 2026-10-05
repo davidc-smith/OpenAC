@@ -14,10 +14,6 @@ public sealed class ChatLog
     private long _revision;
     private long _sequence;
 
-    private string _lastSystemText = "";
-    private DateTime _lastSystemAt = DateTime.MinValue;
-    private static readonly TimeSpan SystemDedupWindow = TimeSpan.FromSeconds(1);
-
     public ChatLog(int maxEntries = 500)
     {
         if (maxEntries < 1) throw new ArgumentOutOfRangeException(nameof(maxEntries));
@@ -47,8 +43,6 @@ public sealed class ChatLog
     public void ResetSessionIdentity()
     {
         _localPlayerGuid = 0u;
-        _lastSystemText = string.Empty;
-        _lastSystemAt = DateTime.MinValue;
     }
 
     // ── Inbound adapters ─────────────────────────────────────────────────────
@@ -165,18 +159,7 @@ public sealed class ChatLog
 
     public void OnSystemMessage(string text, uint chatType)
     {
-        var now = DateTime.UtcNow;
-        if (text == _lastSystemText && (now - _lastSystemAt) < SystemDedupWindow)
-        {
-            // Suppress the dup — the wire-level duplicate isn't a
-            // user-meaningful signal. Reset the timer so a long burst
-            // of the same text still skips.
-            _lastSystemAt = now;
-            return;
-        }
-        _lastSystemText = text;
-        _lastSystemAt = now;
-
+        // Identical text can describe distinct events and must retain each occurrence.
         Append(new ChatEntry(
             Kind: ChatKind.System,
             Sender: "",
