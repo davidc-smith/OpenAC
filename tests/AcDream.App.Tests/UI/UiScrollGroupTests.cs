@@ -339,6 +339,42 @@ public sealed class UiScrollGroupTests
     }
 
     [Fact]
+    public void A_short_list_inside_a_scrolling_group_lets_the_group_scroll()
+    {
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="200" h="100" scroll="y">
+              <list name="l" x="0" y="0" w="150" h="80" items="{Choices}" selected="{Selected}" />
+              <button x="0" y="250" w="50" h="24" text="Far" />
+            </group>
+            """);
+
+        Wheel(root, 20, 20, dy: -1);
+
+        Assert.Equal(3 * UiScrollArea.LineStep, Area(Find(frame, "g")).Y.ScrollY);
+    }
+
+    [Fact]
+    public void Scrolling_a_group_closes_a_menu_open_inside_it()
+    {
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="200" h="100" scroll="y">
+              <menu name="m" x="0" y="0" w="100" h="24" items="{Choices}" selected="{Choice}" />
+              <button x="0" y="250" w="50" h="24" text="Far" />
+            </group>
+            """);
+        var menu = (UiMenu)Find(frame, "m");
+        root.OnMouseDown(UiMouseButton.Left, 10, 10);
+        root.OnMouseUp(UiMouseButton.Left, 10, 10);
+        Frame(root);
+        Assert.True(menu.IsOpen);
+
+        Wheel(root, 150, 80, dy: -1);
+
+        Assert.Equal(3 * UiScrollArea.LineStep, Area(Find(frame, "g")).Y.ScrollY);
+        Assert.False(menu.IsOpen);
+    }
+
+    [Fact]
     public void A_horizontal_step_scrolls_a_horizontal_group_and_passes_a_vertical_one()
     {
         var (root, frame) = Mount("""

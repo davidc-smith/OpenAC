@@ -7,7 +7,9 @@ namespace AcDream.App.Tests.UI;
 /// routing, horizontal steps travel as <see cref="UiEventType.ScrollHorizontal"/>
 /// to whatever consumes them, Shift turns a vertical step horizontal, and a
 /// Shift step nothing takes horizontally is routed as the vertical step it was
-/// (to the interface, else the world).
+/// (to the interface, else the world). A step the interface takes outside an
+/// open popup closes the popup, and the hover follows whatever the step moved
+/// under the pointer.
 /// </summary>
 public sealed class UiRootWheelRoutingTests
 {
@@ -16,13 +18,19 @@ public sealed class UiRootWheelRoutingTests
     {
         public bool TakesVertical { get; init; }
         public bool TakesHorizontal { get; init; }
+        /// <summary>How far a step it takes moves it, as content scrolled out from under the pointer.</summary>
+        public float ShiftOnTake { get; init; }
         public List<(int Type, int Step)> Seen { get; } = [];
+        public List<int> Hover { get; } = [];
 
         public override bool OnEvent(in UiEvent e)
         {
+            if (e.Type is UiEventType.HoverEnter or UiEventType.HoverLeave) Hover.Add(e.Type);
             if (e.Type is not (UiEventType.Scroll or UiEventType.ScrollHorizontal)) return false;
             Seen.Add((e.Type, e.Data0));
-            return e.Type == UiEventType.Scroll ? TakesVertical : TakesHorizontal;
+            bool takes = e.Type == UiEventType.Scroll ? TakesVertical : TakesHorizontal;
+            if (takes) Left += ShiftOnTake;
+            return takes;
         }
     }
 
@@ -117,5 +125,55 @@ public sealed class UiRootWheelRoutingTests
 
         Assert.Contains((UiEventType.ScrollHorizontal, 1), outer.Seen);
         Assert.Contains((UiEventType.Scroll, -1), inner.Seen);
+    }
+
+    [Fact]
+    public void A_step_taken_outside_an_open_popup_closes_it()
+    {
+        var (root, _, _, _) = Tree(outerH: true, innerV: true);
+        var popup = new Wheel { Left = 300, Top = 10, Width = 50, Height = 50, TakesVertical = true };
+        root.AddChild(popup);
+        int dismissed = 0;
+        root.SetActivePopup(popup, () => dismissed++);
+
+        root.OnScroll(0, -1, shift: false);
+
+        Assert.Equal(1, dismissed);
+    }
+
+    [Fact]
+    public void A_step_over_the_popup_or_left_untaken_keeps_it_open()
+    {
+        var (root, _, _, world) = Tree(outerH: false, innerV: false);
+        var popup = new Wheel { Left = 300, Top = 10, Width = 50, Height = 50, TakesVertical = true };
+        root.AddChild(popup);
+        int dismissed = 0;
+        root.SetActivePopup(popup, () => dismissed++);
+
+        root.OnScroll(0, -1, shift: false);   // over inner: nothing takes it
+        root.OnMouseMove(320, 20);
+        root.OnScroll(0, -1, shift: false);   // over the popup itself
+        root.OnMouseMove(390, 290);
+        root.OnScroll(0, -1, shift: false);   // over the world
+
+        Assert.Equal(0, dismissed);
+        Assert.Equal([-1], world);
+    }
+
+    [Fact]
+    public void Hover_follows_content_a_step_moves_from_under_the_pointer()
+    {
+        var root = new UiRoot { Width = 400, Height = 300 };
+        var outer = new Wheel { Width = 200, Height = 200 };
+        var inner = new Wheel { Left = 10, Top = 10, Width = 50, Height = 50, TakesVertical = true, ShiftOnTake = 100 };
+        outer.AddChild(inner);
+        root.AddChild(outer);
+        root.OnMouseMove(20, 20);
+        Assert.Equal([UiEventType.HoverEnter], inner.Hover);
+
+        root.OnScroll(0, -1, shift: false);
+
+        Assert.Equal([UiEventType.HoverEnter, UiEventType.HoverLeave], inner.Hover);
+        Assert.Equal([UiEventType.HoverEnter], outer.Hover);
     }
 }

@@ -253,4 +253,49 @@ public sealed class UiMarkupListScrollbarTests
         list.OnEvent(new UiEvent { Type = UiEventType.MouseDown, Data1 = 10, Data2 = 2 });
         Assert.Equal(2, selected);
     }
+
+    [Fact]
+    public void A_list_that_fits_leaves_the_wheel_to_its_parent()
+    {
+        var list = new UiMarkupList
+        {
+            Width = 100f, Height = 40f, RowHeight = 18f, // 2 visible rows
+            SpriteResolve = Resolve,
+            SelectedIndexSource = () => -1,
+            ItemsSource = () => new[] { "one", "two" },
+        };
+
+        Assert.False(list.OnEvent(new UiEvent { Type = UiEventType.Scroll, Data0 = -1 }));
+    }
+
+    [Fact]
+    public void A_list_that_overflows_takes_the_wheel()
+    {
+        var list = new UiMarkupList
+        {
+            Width = 100f, Height = 40f, RowHeight = 18f,
+            SpriteResolve = Resolve,
+            SelectedIndexSource = () => -1,
+            ItemsSource = () => new[] { "one", "two", "three" },
+        };
+
+        Assert.True(list.OnEvent(new UiEvent { Type = UiEventType.Scroll, Data0 = -1 }));
+        Assert.Equal(1, list.TopRowForTest);
+    }
+
+    [Fact]
+    public void A_column_list_that_fits_leaves_the_wheel_to_its_parent()
+    {
+        var list = new UiMarkupList
+        {
+            Width = 100f, Height = 40f, RowHeight = 18f,
+            SpriteResolve = Resolve,
+            SelectedIndexSource = () => -1,
+            Columns = new[] { UiMarkupListColumn.Text(0f, () => new[] { "one" }, null) },
+        };
+        var (_, ctx) = MakeContext(200f, 200f);
+        list.DrawSelfAndChildren(ctx);
+
+        Assert.False(list.OnEvent(new UiEvent { Type = UiEventType.Scroll, Data0 = -1 }));
+    }
 }
