@@ -714,3 +714,36 @@ Found while prototyping the markup PR (see the PR 3 plan's "Spec corrections"):
 - **No theme case is needed for `UiFlexGroup`**: groups have none.
 - **FlexDemo** ships a finder (window 1) and a settings form (window 3,
   without scrolling); the scrolling grid comes with PR 4.
+
+## Planning corrections (PR 4)
+
+Found while prototyping the scroll PR (see the PR 4 plan's "Spec corrections"):
+
+- **Bars settle inside the engine**, opt-in by `FlexNode.ScrollbarSize`:
+  a scrolling container lays its items out in the viewport beside its bars
+  and reports `ScrollbarX`, `ScrollbarY` and `Viewport`. Nested scrolling
+  groups settle in their flex root's pass (settles the second 4.3a
+  follow-up). A scrolling wrapping row in a column prefers the extent of its
+  lines and may shrink to its 40-point view (the first 4.3a follow-up).
+- **The shared bar is the existing `UiScrollbar` element** (already used by
+  `log`); `list` keeps its own bar code. The themed horizontal model bar
+  draws a slim thumb.
+- **Content offset** is `UiElement.ContentViewport` / `ContentOffset`, with
+  `ScrollChrome` marking the bars, which neither move nor clip.
+- **Scrolling groups are hit-testable** so the wheel reaches them; a group
+  takes a wheel step only while it overflows on that axis; a step is 48
+  points. The surface reports `(dx, dy)` and the binding adds Shift from
+  `UiRoot.ShiftHeld`. A Shift step over no interface reaches the world as
+  vertical; a native horizontal step never does.
+- **A scrolling root needs a content area** (`layout` or
+  `titlebar="true"`); otherwise `scroll` on the root is a build error.
+  `scroll` enters the saved-size revision only when present.
+- **Items do not grow along a scrolling axis** (it is unbounded). An absolute
+  scrolling group in a flex container may shrink to the 40-point view.
+- **Focus reveal settles first**, innermost ancestor first, so a group
+  scrolled out of view still reveals.
+- **PR 3 backlog**: a window with a title bar has a 96-point frame minimum;
+  a layout window without a bar gets no dock "–".
+- **FlexDemo window 2** is a "Flex Gallery": a scrolling grid of 30 spell
+  icons over a sideways-scrolling strip of 12; the settings window is
+  resizable and scrolls.
