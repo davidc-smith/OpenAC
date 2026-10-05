@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace AcDream.App.UI.Layout.Flex;
 
@@ -193,28 +194,9 @@ public static class FlexLayout
         return new FlexMeasurement(preferred, new FlexSize(minW, minH));
     }
 
-    private static float WrappedMinimumCross(FlexNode node, bool row, float available, float gap)
-    {
-        float total = 0f, lineMain = 0f, lineCross = 0f;
-        int lines = 0, inLine = 0;
-        for (int i = 0; i < node.Children.Count; i++)
-        {
-            FlexNode child = node.Children[i];
-            if (child.Hidden) continue;
-            float main = MainOf(child.MinimumSize, row);
-            if (inLine > 0 && lineMain + gap + main > available)
-            {
-                total += lineCross;
-                lines++;
-                lineMain = 0f; lineCross = 0f; inLine = 0;
-            }
-            lineMain += (inLine > 0 ? gap : 0f) + main;
-            lineCross = MathF.Max(lineCross, CrossOf(child.MinimumSize, row));
-            inLine++;
-        }
-        if (inLine > 0) { total += lineCross; lines++; }
-        return total + (lines > 1 ? gap * (lines - 1) : 0f);
-    }
+    /// <summary>The cross size of the lines a wrapping container makes from its items' minimum sizes at <paramref name="available"/>.</summary>
+    private static float WrappedMinimumCross(FlexNode node, bool row, float available, float gap) =>
+        BreakLines(node, row, available, gap, LineSizes.Minimum, null);
 
     // ── Arrange ─────────────────────────────────────────────────────────
 
@@ -259,7 +241,9 @@ public static class FlexLayout
         if (node.Scratch.Length < count * 6) node.Scratch = new float[count * 6];
         ResolveBases(node, row, count, availableCross, singleLine);
 
-        BreakLines(node, row, count, availableMain, gap);
+        node.LineEnds.Clear();
+        if (!node.Wrap || availableMain is not { } available) node.LineEnds.Add(count);
+        else BreakLines(node, row, available, gap, LineSizes.Hypothetical, node.LineEnds);
 
         int lineCount = node.LineEnds.Count;
         float linesCross = 0f;
@@ -422,33 +406,50 @@ public static class FlexLayout
         return node.ContentSize.Width;
     }
 
-    /// <summary>Fills <see cref="FlexNode.LineEnds"/> with the exclusive end index of each line.</summary>
-    private static void BreakLines(FlexNode node, bool row, int count, float? availableMain, float gap)
+    /// <summary>Which sizes <see cref="BreakLines"/> reads for each item.</summary>
+    private enum LineSizes
     {
-        node.LineEnds.Clear();
-        if (!node.Wrap || availableMain is not { } available)
-        {
-            node.LineEnds.Add(count);
-            return;
-        }
+        /// <summary>The measured minimum sizes: the measure pass's narrowest layout.</summary>
+        Minimum,
 
-        float lineMain = 0f;
-        int inLine = 0;
+        /// <summary>The arrange pass's hypothetical main sizes and cross sizes from the scratch.</summary>
+        Hypothetical,
+    }
+
+    /// <summary>
+    /// The one greedy line breaker, shared by both passes so they can never
+    /// disagree on where lines break: an item starts a new line when, with
+    /// the gap before it, it would take the line past
+    /// <paramref name="available"/>. Fills <paramref name="ends"/>, when
+    /// given, with each line's exclusive end index, and returns the lines'
+    /// cross sizes (each its largest item) plus the gaps between them.
+    /// </summary>
+    private static float BreakLines(FlexNode node, bool row, float available, float gap, LineSizes sizes, List<int>? ends)
+    {
+        int count = node.Children.Count;
+        bool minimum = sizes == LineSizes.Minimum;
+        float total = 0f, lineMain = 0f, lineCross = 0f;
+        int lines = 0, inLine = 0;
         for (int i = 0; i < count; i++)
         {
             FlexNode child = node.Children[i];
             if (child.Hidden) continue;
-            float main = Hypothetical(node, child, row, count, i);
+            float main = minimum ? MainOf(child.MinimumSize, row) : Hypothetical(node, child, row, count, i);
+            float cross = minimum ? CrossOf(child.MinimumSize, row) : node.Scratch[CrossSlot * count + i];
             if (inLine > 0 && lineMain + gap + main > available)
             {
-                node.LineEnds.Add(i);
-                lineMain = 0f;
-                inLine = 0;
+                ends?.Add(i);
+                total += lineCross;
+                lines++;
+                lineMain = 0f; lineCross = 0f; inLine = 0;
             }
             lineMain += (inLine > 0 ? gap : 0f) + main;
+            lineCross = MathF.Max(lineCross, cross);
             inLine++;
         }
-        node.LineEnds.Add(count);
+        if (inLine > 0) { total += lineCross; lines++; }
+        ends?.Add(count);
+        return total + (lines > 1 ? gap * (lines - 1) : 0f);
     }
 
     /// <summary>
