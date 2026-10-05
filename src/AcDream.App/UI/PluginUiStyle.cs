@@ -157,6 +157,14 @@ internal static partial class PluginUiStyle
         ctx.FillRoundedRect(x + (laneWidth - w) / 2f, y, w, h, w / 2f, active ? p.Text with { W = 0.7f } : p.Muted);
     }
 
+    /// <summary>A slim rounded scroll thumb <paramref name="w"/> long, centred in a horizontal lane <paramref name="laneHeight"/> tall.</summary>
+    internal static void ScrollThumbHorizontal(
+        UiRenderContext ctx, PluginUiPalette p, float x, float y, float w, float laneHeight, bool active)
+    {
+        float h = active ? ScrollThumbActiveWidth : ScrollThumbWidth;
+        ctx.FillRoundedRect(x, y + (laneHeight - h) / 2f, w, h, h / 2f, active ? p.Text with { W = 0.7f } : p.Muted);
+    }
+
     /// <summary>A row highlight inset from the container's sides.</summary>
     internal static void Row(UiRenderContext ctx, float x, float y, float w, float h, Vector4 color) =>
         ctx.FillRoundedRect(x + RowInset, y + 1f, w - 2f * RowInset, h - 2f, RowRadius, color);

@@ -255,4 +255,30 @@ public sealed class PluginThemeControlTests
         root.Tick(0.016, 2);
         Assert.All(Palettes(), Assert.Null);
     }
+
+    [Fact]
+    public void A_themed_horizontal_scroll_bar_draws_a_slim_thumb_along_its_track()
+    {
+        var model = new UiScrollable();
+        model.SetExtents(400, 100);
+        var bar = new UiScrollbar
+        {
+            Model = model, Horizontal = true, RetailArt = false, ThemePalette = P,
+            Width = 100f, Height = 16f,
+        };
+        var root = new UiRoot { Width = 200, Height = 100 };
+        root.AddChild(bar);
+
+        (var renderer, var context) = ThemeDrawCapture.Context(200f, 100f);
+        root.Draw(context);
+        var thumb = ThemeDrawCapture.Vertices(renderer)
+            .Where(v => v.Color.W > 0.05f && MathF.Abs(v.Color.X - P.Muted.X) < 0.004f && MathF.Abs(v.Color.Y - P.Muted.Y) < 0.004f)
+            .ToList();
+
+        // A 4-point thumb centred in the 16-point lane, a quarter of the 68-point track long.
+        Assert.NotEmpty(thumb);
+        Assert.InRange(thumb.Min(v => v.Position.Y), 5.5f, 6.5f);
+        Assert.InRange(thumb.Max(v => v.Position.Y), 9.5f, 10.5f);
+        Assert.InRange(thumb.Max(v => v.Position.X) - thumb.Min(v => v.Position.X), 16f, 18f);
+    }
 }

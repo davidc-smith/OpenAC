@@ -198,4 +198,11 @@ internal sealed class UiScrollArea
         if (start + size > offset + view) return (int)MathF.Ceiling(MathF.Min(start, start + size - view));
         return offset;
     }
+
+    /// <summary>Gives both bars the window's theme (null: Classic art).</summary>
+    internal void RegisterTheme(UiPluginMarkupPanel panel)
+    {
+        PluginMarkupTheme.Register(panel, Vertical, new System.Xml.Linq.XElement("scroll"));
+        PluginMarkupTheme.Register(panel, Horizontal, new System.Xml.Linq.XElement("scroll"));
+    }
 }

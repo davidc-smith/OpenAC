@@ -334,6 +334,15 @@ public sealed class UiScrollbar : UiElement
     private void DrawThemedPlain(UiRenderContext ctx, PluginUiPalette palette)
     {
         bool active = _draggingThumb || _hoveredThumb;
+        if (Horizontal && Model is { } horizontalModel)
+        {
+            float trackLeft = AxisExtent(DecrementButtonExtent, Width);
+            float trackLength = MathF.Max(0f,
+                Width - AxisExtent(DecrementButtonExtent, Width) - AxisExtent(IncrementButtonExtent, Width));
+            var (tx, tw) = ModelThumbRect(horizontalModel, trackLeft, trackLength);
+            PluginUiStyle.ScrollThumbHorizontal(ctx, palette, tx, 0f, tw, Height, active);
+            return;
+        }
         if (Horizontal)
         {
             float thumbWidth = ScalarThumbWidth(SpriteResolve);

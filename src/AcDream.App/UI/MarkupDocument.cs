@@ -244,6 +244,8 @@ public static class MarkupDocument
                     MarkupFlexAttributes.RejectContainer(el);
                     group = scrolls ? new UiScrollPanel(scrollX, scrollY, resolve) : new UiPanel();
                 }
+                if (themedPanel is not null && group is IUiScrollHost { ScrollArea: { } groupScroll })
+                    groupScroll.RegisterTheme(themedPanel);
                 group.Left = F(el, "x");
                 group.Top = F(el, "y");
                 group.Width = F(el, "w");

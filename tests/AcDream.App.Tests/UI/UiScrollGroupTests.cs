@@ -417,6 +417,27 @@ public sealed class UiScrollGroupTests
         Assert.Equal(100, Area(Find(frame, "g")).Y.ScrollY);
     }
 
+    [Fact]
+    public void Bars_take_the_window_theme_and_go_back_to_classic_art()
+    {
+        var themes = new PluginUiThemeSettings();
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="100" h="100" scroll="both" />
+            """, themes: themes, panel: "w=\"300\" h=\"200\" theme=\"plugin\"");
+        UiScrollArea area = Area(Find(frame, "g"));
+
+        themes.Theme = PluginUiTheme.Moss;
+        Frame(root);
+        Assert.NotNull(area.Vertical.ThemePalette);
+        Assert.NotNull(area.Horizontal.ThemePalette);
+        Assert.False(area.Vertical.RetailArt);
+
+        themes.Theme = PluginUiTheme.Classic;
+        Frame(root);
+        Assert.Null(area.Vertical.ThemePalette);
+        Assert.True(area.Vertical.RetailArt);
+    }
+
     // ── Position ────────────────────────────────────────────────────────
 
     [Fact]
