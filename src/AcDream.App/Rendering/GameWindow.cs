@@ -609,6 +609,9 @@ public sealed class GameWindow :
         // in: leaving the world, by any way out, takes every plugin's markers
         // down. The layers stay, so plugins set them again on the next stay.
         _ = _uiRegistry?.WorldMarkerStore.ClearOn(_worldEvents);
+        // World labels too: this window keeps one runtime for every stay, so
+        // the automation surface never rebinds and would keep them otherwise.
+        _ = _automation?.ClearWorldLabelsOn(_worldEvents);
         _renderPackRegistry = renderPackRegistry;
         _animatedEntities = new LiveEntityAnimationRuntimeView<LiveEntityAnimationState>(
             _liveEntityRuntimeSlot);

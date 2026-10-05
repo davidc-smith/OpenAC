@@ -3169,6 +3169,42 @@ internal sealed class RuntimeAutomationSurface
         }
     }
 
+    /// <summary>
+    /// Takes every plugin's labels down whenever <paramref name="events"/>
+    /// raises <see cref="IEvents.Logoff"/>, until the returned subscription is
+    /// disposed. A host that keeps one runtime across stays never rebinds the
+    /// surface, so leaving the world is what ends the session the labels'
+    /// objects lived in. Owners keep their scopes and show labels again on the
+    /// next stay.
+    /// </summary>
+    internal IDisposable ClearWorldLabelsOn(IEvents events)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+        Action clear = ClearWorldLabels;
+        events.Logoff += clear;
+        return new LogoffSubscription(events, clear);
+    }
+
+    private void ClearWorldLabels()
+    {
+        lock (_gate)
+        {
+            _worldLabels.Clear();
+            _worldLabelsMerged = Array.Empty<PluginWorldLabel>();
+        }
+    }
+
+    private sealed class LogoffSubscription(IEvents events, Action clear) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                events.Logoff -= clear;
+        }
+    }
+
     private sealed class OwnedWorldLabels(RuntimeAutomationSurface surface, string ownerId)
         : IWorldLabelAutomation
     {
