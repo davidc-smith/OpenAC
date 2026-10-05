@@ -205,6 +205,23 @@ public sealed class MarkupFlexTests
     }
 
     [Fact]
+    public void A_flex_menu_opens_a_popup_as_wide_as_the_menu()
+    {
+        var (_, frame) = Mount("""
+            <group x="0" y="0" w="300" h="30" layout="row">
+              <label text="AB" />
+              <menu name="m" grow="1" items="{Lines}" selected="{Caption}" />
+            </group>
+            """, new Binding());
+        var menu = Assert.IsType<UiMenu>(Find(frame, "m"));
+
+        menu.BeforeOpen?.Invoke();
+
+        Assert.Equal(286f, menu.Width);
+        Assert.Equal(menu.Width, menu.ColumnWidth);
+    }
+
+    [Fact]
     public void A_label_in_flex_keeps_the_size_it_is_given()
     {
         var (_, frame) = Mount("""

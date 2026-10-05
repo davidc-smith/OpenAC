@@ -818,6 +818,18 @@ public static class MarkupDocument
         MarkupFlexAttributes.ReadItem(el, item.Node);
         element.Anchors = AnchorEdges.None;
         if (element is UiLabel label) label.SizedByLayout = true;
+        if (element is UiMenu menu)
+        {
+            // A flex menu has no authored w (the container sizes it), so its
+            // popup column would stay at the 20-point minimum; match the popup
+            // to the laid-out menu on every open, as an absolute menu's is.
+            Action? refresh = menu.BeforeOpen;
+            menu.BeforeOpen = () =>
+            {
+                refresh?.Invoke();
+                menu.ColumnWidth = MathF.Max(20f, menu.Width);
+            };
+        }
     }
 
     private static string ValidateIconKind(string? iconKind, string context = "iconkind") =>
