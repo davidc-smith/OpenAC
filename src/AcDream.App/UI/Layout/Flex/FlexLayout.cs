@@ -95,9 +95,11 @@ public static class FlexLayout
             FlexNode child = node.Children[i];
             if (child.Hidden) continue;
             MeasureNode(child);
-            prefMain += MeasuredBase(child, row);
-            prefCross = MathF.Max(prefCross, CrossOf(child.Measured.Preferred, row));
+            // Each item counts at its hypothetical size, as the arrange pass
+            // starts it: its base clamped to its limits.
             float childMinMain = MainOf(child.MinimumSize, row);
+            prefMain += Math.Clamp(MeasuredBase(child, row), childMinMain, MathF.Max(childMinMain, MainOf(child.MaximumSize, row)));
+            prefCross = MathF.Max(prefCross, CrossOf(child.Measured.Preferred, row));
             minMainSum += childMinMain;
             minMainMax = MathF.Max(minMainMax, childMinMain);
             minCross = MathF.Max(minCross, CrossOf(child.MinimumSize, row));

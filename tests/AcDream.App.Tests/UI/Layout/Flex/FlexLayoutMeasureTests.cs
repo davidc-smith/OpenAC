@@ -95,6 +95,35 @@ public sealed class FlexLayoutMeasureTests
         Assert.Equal(new FlexSize(40f, 10f + 12f + 8f + 8f), m.Minimum);
     }
 
+    [Fact]
+    public void Preferred_size_adds_each_item_clamped_to_its_limits()
+    {
+        FlexNode capped = Leaf(200f, 10f);
+        capped.MaxWidth = 100f;
+        FlexNode row = Row(capped, Leaf(50f, 10f));
+
+        // The capped item contributes its 100 maximum, not its 200 content.
+        Assert.Equal(150f, FlexLayout.Measure(row).Preferred.Width);
+    }
+
+    [Fact]
+    public void A_basis_below_the_content_minimum_counts_as_the_minimum_so_the_preferred_size_shrinks_nothing()
+    {
+        FlexNode b = Leaf(50f, 10f);
+        b.Basis = 10f;
+        FlexNode c = Leaf(100f, 10f, minWidth: 20f);
+        FlexNode row = Row(b, c);
+
+        FlexMeasurement m = FlexLayout.Measure(row);
+        Arrange(row, m.Preferred.Width, 10f);
+
+        // b's basis 10 is lifted to its 50 content minimum, as its hypothetical
+        // size is: 50 + 100 = 150. Arranged at 150 nothing has to shrink.
+        Assert.Equal(150f, m.Preferred.Width);
+        Assert.Equal(new FlexRect(0f, 0f, 50f, 10f), b.Rect);
+        Assert.Equal(new FlexRect(50f, 0f, 100f, 10f), c.Rect);
+    }
+
     [Theory]
     [InlineData(false, true, 316f, 40f, 316f, 400f)]
     [InlineData(true, false, 40f, 416f, 300f, 416f)]
