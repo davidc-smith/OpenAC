@@ -1,7 +1,7 @@
 # Plugin flex layout, title bars and scrolling groups — design
 
-Date: 2026-10-05. Status: approved in brainstorming; written spec awaiting
-review.
+Date: 2026-10-05. Status: approved in brainstorming; revised after a Codex
+review (2026-10-05) — see "Review changes" at the end; awaiting user review.
 
 ## Goal
 
@@ -154,6 +154,18 @@ bar (section 2). For such a panel:
 - a root with `layout` may omit `w`/`h`: the window opens at its content
   size (section 3.4).
 
+**Tree ownership.** A root with a content area builds two layers under the
+frame: a **content host** (`UiPluginContentHost`, a `UiElement` placed at the
+content area's rectangle) that owns every plugin-authored child, and a
+**chrome layer** that owns the title bar and close button. Only the content
+host takes part in flex layout, scroll extent, scroll offset and content
+clipping; the chrome layer never scrolls, never enters the flex tree, and
+comes before the content in Tab order. The content host is what is passed to
+`RetailWindowManager.Register` as the window's `ContentRoot`. `FindByName`
+(used by `ControlExists`/`SetControlLabel`/`SetControlVisible`) still finds
+authored controls, since it searches the whole tree; chrome controls carry no
+authored name.
+
 A root panel with neither `layout` nor a title bar is unchanged: no content
 area, coordinates from the frame corner, `w`/`h` the frame size.
 
@@ -170,7 +182,14 @@ area, coordinates from the frame corner, `w`/`h` the frame size.
 - **Close button**, right-aligned, square, the height of the bar. Clicking
   it does exactly what the dock slot does when the window is open: it clears
   the player's request through `PluginWindowVisibilityController`. The plugin
-  keeps running; the dock reopens the window. It is keyboard-focusable like
+  keeps running; the dock reopens the window.
+- **Wiring.** `MarkupDocument.Build` runs before the window is registered,
+  so the close button cannot call the window manager directly. The built
+  panel exposes an internal `CloseRequested` event; `RetailUiRuntime.MountPlugins`
+  subscribes to it after `Host.WindowManager.Register` and calls
+  `RetailWindowManager.Close(panel.WindowName)`, the same path a dock slot
+  takes, so the visibility controller's player request is cleared and the
+  handle's normal `Hidden`/`Closed` notifications fire. It is keyboard-focusable like
   other markup buttons (Tab, then Enter/Space) and does not take focus from
   the game on click.
 - **Dragging** the bar moves the window (windows already drag from any
@@ -222,6 +241,10 @@ A pure module in `src/AcDream.App/UI/Layout/Flex/` with no dependency on
   settings (grow, shrink, basis, preferred w/h, min/max, alignself, hidden),
   and, for a leaf, a measure callback `Measure(float? availableWidth)`
   returning `(Size preferred, Size minimum)`.
+- **Unbounded is explicit.** "No limit" is represented as `null`
+  (`float?` available sizes and nullable maximums), never as infinity. A
+  scrolling axis lays out with a `null` available size; an absent `maxw` is a
+  `null` maximum.
 - **Output**: a rectangle per node, relative to its parent's content box,
   plus the container's content size (for scrolling) and its content minimum.
 - **Measure** (bottom-up): content size and content minimum for every node.
@@ -244,12 +267,19 @@ A pure module in `src/AcDream.App/UI/Layout/Flex/` with no dependency on
      takes the container's cross size.
   5. Main-axis position from `justify` and `gap`; cross-axis position from
      `align`/`alignself`.
-  6. Snap final positions and sizes to whole points (edges are rounded, sizes
-     derived from rounded edges), so adjacent items never overlap or gap by a
-     subpixel.
+  6. Snap to whole points by **cumulative edges**: start from the line's
+     unsnapped start, accumulate the unsnapped item sizes and gaps, round each
+     successive edge, and derive each item's size from its two rounded edges.
+     Rounding error is therefore spread across the line instead of piling up
+     at its end, the last edge lands where the unsnapped one would, and
+     adjacent items never overlap or gap by a subpixel. The cross axis rounds
+     each item's two edges the same way.
 - Free space that cannot be satisfied (items at their minimums) overflows
   the container's end and is clipped (or scrolls, section 4).
-- Never throws: NaN, infinity and negative results clamp to 0.
+- Never throws. Authored numbers are finite by construction (section 5);
+  a computed result that is non-finite or negative (a defect, not an
+  expected path) is clamped to 0. `null` constraints are not affected by
+  this rule.
 
 ### 3.2 Content sizes
 
@@ -281,12 +311,31 @@ Labels in absolute layouts keep today's behaviour.
 - In `DrawSelfAndChildren`, where `ApplyAnchor` runs for children today, a
   flex container calls `EnsureLayout()` and assigns its children's
   `Left/Top/Width/Height` from the result instead of applying anchors.
-- The cache is invalidated when the container's size changes, a child's
-  visibility changes, a child's content size changes, or the theme changes
-  (fonts and paddings change). Content size changes are detected cheaply in
-  tick: a control whose measured inputs changed (bound caption text, font)
-  marks itself dirty, and dirtiness propagates up to the nearest flex root
-  whose size depends on it.
+- **Invalidation protocol.** `UiElement` gains `InvalidateMeasure()` and a
+  measure version. Calling it marks the element's measurement stale and walks
+  up the parent chain: every flex container on the way is marked for
+  re-layout, and the walk continues past a container only while that
+  container's own size depends on its content (it is a flex item with
+  `basis="auto"` and no `w`/`h` on the main axis, or it sits in a
+  content-sized root). It stops at the first container with a fixed size, and
+  at the root content host, which also re-evaluates the window minimum
+  (section 3.4).
+- **Measurement dependencies**, each of which calls `InvalidateMeasure()` when
+  it changes:
+
+  | Dependency | Detected |
+  |---|---|
+  | bound or literal text (label, button, tab, toggle) | each tick, comparing the resolved string with the last measured one |
+  | icon presence on a button | each tick, comparing the resolved id's zero-ness |
+  | font (theme switch, sharper bake) | the theme-change action registered by `PluginMarkupTheme` |
+  | theme paddings and control heights | same theme-change action |
+  | visibility of a flex item | the `Visible` setter, when the element's parent is a flex container |
+  | a nested container's content size | propagated by the walk above |
+  | the container's own size | compared with the size of the last layout in `EnsureLayout()` |
+
+  Setting geometry or text from code inside the host (for example
+  `SetControlLabel`) goes through the same properties, so it invalidates the
+  same way.
 - Hidden subtrees stay dirty until shown and lay out on their first draw,
   preserving the existing guarantee that whether and when an element was
   visible never changes where it lands.
@@ -296,18 +345,42 @@ Labels in absolute layouts keep today's behaviour.
 
 ### 3.4 Window size and minimum
 
+- **Eager first measurement.** At the end of `MarkupDocument.Build`, a root
+  with a content area runs one full measure and layout pass (with the fonts
+  and theme known at build time) before it is returned. That pass fixes the
+  frame's starting `Width`/`Height` (for a root without `w`/`h`) and its
+  `MinWidth`/`MinHeight`, so mounting and `RetailWindowManager.Register`
+  see real geometry and layout persistence restores against it. Later
+  layouts stay lazy (section 3.3).
 - When the root uses `layout`, the window's `MinWidth`/`MinHeight` are the
   content minimum plus chrome, unless `minw`/`minh` are authored (authored
   values win, as content-area sizes plus chrome).
 - A root without `w`/`h` opens at its content size plus chrome.
-- The minimum is recomputed when the content minimum changes (a longer
-  caption). If the window is now smaller than its minimum, it grows to the
-  minimum through `RetailWindowManager.ResizeTo`, which also keeps it on
-  screen.
-- `ComputeAuthoredGeometryRevision` also covers the root's `layout` and
-  `titlebar` settings and whether `w`/`h` were authored, so changing a
-  window's design resets each player's stored size once (position kept), as
-  authored size changes do today. Saved sizes are frame sizes and stay so.
+- **Enforcing a changed minimum.** The minimum is recomputed when the content
+  minimum changes (a longer caption). `ResizeTo` cannot be used for this: it
+  leaves an axis alone when `ResizeX`/`ResizeY` is false (markup windows are
+  not resizable by default) and never moves the window. A new
+  `RetailWindowManager.EnforceMinimumSize(name)` instead:
+  1. grows each axis whose size is below the minimum, regardless of
+     `ResizeX`/`ResizeY` (a non-resizable flex window simply tracks its
+     content minimum);
+  2. if the grown frame's right or bottom edge is now past the screen, moves
+     the frame left or up by the excess, no further than the screen's left or
+     top edge;
+  3. if the minimum itself is larger than the screen on an axis, sets that
+     axis to the screen size and pins the frame to the screen's origin on it;
+     content beyond that clips (or scrolls);
+  4. rebases anchors and raises `WindowResized` (and a move notification if
+     it moved) like `ResizeTo`, so the new geometry is persisted.
+- **Saved-size revision from authored inputs only.** For a root with a
+  content area, `ComputeAuthoredGeometryRevision` hashes what the markup
+  states, never measured sizes: each of `w`, `h`, `minw`, `minh` as the
+  authored value or "absent", `resizable`, `resize`, `layout`, `titlebar`, and
+  a `PluginWindowChrome.Version` constant bumped whenever the chrome insets
+  change. Bound captions and theme metrics therefore never reset a player's
+  saved size; changing the window's design resets it once (position kept), as
+  authored size changes do today. Windows without a content area keep today's
+  hash unchanged. Saved sizes are frame sizes and stay so.
 
 ## 4. Scrolling groups
 
@@ -323,11 +396,21 @@ today. Any other value is a build error.
   unbounded for layout. A scrolling `column` does not shrink its items; a
   `row wrap` with `scroll="y"` keeps its width and grows downward. The
   scroll extent is the laid-out content size.
-- **Absolute**: the extent is the bounding box of the visible children
-  (plus nothing else; authors add their own trailing margin).
-- **Minimum**: along a scrolled axis, the group's content minimum is the
-  scrollbar width plus 40 points, so a scrolling area never pushes the
-  window's minimum up.
+- **Absolute**: the extent is the union of the group's own origin (0, 0) and
+  the rectangles of its visible children, measured after the children's
+  anchors have been applied for the group's current viewport size. The
+  union's right and bottom edges give the extent; children at negative
+  coordinates are not reachable by scrolling (the offset never goes below
+  0), matching how they clip today. Authors add their own trailing margin.
+- **Order**: within a frame, a scrolling group first lays out its children
+  (flex) or applies their anchors (absolute) against its viewport, then
+  computes the extent, then settles the scrollbars (4.3), then draws. Extent
+  is never read from a previous frame's geometry.
+- **Minimum**: on each scrollable axis the group's content minimum is a
+  40-point viewport along that axis. The scrollbar's thickness is added to
+  the *other* axis's minimum when that bar can appear (a `scroll="y"` group's
+  minimum width includes the 16-point vertical bar). A scrolling area
+  therefore never pushes the window's minimum up along the axis it scrolls.
 
 ### 4.3 Mechanics
 
@@ -336,14 +419,37 @@ today. Any other value is a build error.
   `ScreenPosition`, so popups (a `menu` inside a scrolled group) open in the
   right place.
 - **Scrollbar**: a 16-point bar per scrolling axis, reserved only while
-  content overflows on that axis (the `list` rule). The bar drawing, thumb
+  content overflows on that axis (the `list` rule).
+- **Settling the bars.** A vertical bar narrows the viewport, which can make
+  content overflow horizontally, and a horizontal bar does the reverse. The
+  group starts with no bars, lays out (or measures the extent) for the
+  current viewport, adds every bar whose axis now overflows, and repeats
+  with the reduced viewport until the set of bars stops changing. Bars are
+  only ever added during one settle, so it ends after at most three layouts.
+  For a flex group whose scrolling axis is unbounded, only the
+  non-scrolling axis narrows; the extent is recomputed at the narrower size. The bar drawing, thumb
   maths and thumb dragging in `UiMarkupList` (on `UiScrollable`) move into a
   shared helper used by `list`, `log` and scrolling groups. Classic uses the
   game's scrollbar art; modern themes use the themed rounded bar. When both
   axes overflow, the corner square is left empty.
 - **Wheel**: delivered to the innermost element under the pointer that
   consumes it; a list inside a scrolling group scrolls itself, the group
-  scrolls elsewhere. Shift+wheel scrolls horizontally on `x`/`both` groups.
+  scrolls elsewhere.
+- **Horizontal wheel (input change in scope).** Today
+  `RetainedUiInputBinding.OnScroll` keeps only the sign of the vertical delta
+  and `UiRoot.OnScroll(int dy)` takes nothing else. PR 4 extends the path to
+  carry a horizontal step and the Shift modifier: the binding passes
+  `(dx, dy, shift)` with each component reduced to -1, 0 or +1 as today, and
+  `UiRoot` gains an `OnScroll(int dx, int dy, bool shift)` overload; the
+  existing `OnScroll(int dy)` forwards to it with `dx = 0`. Routing:
+  - a native horizontal delta (trackpad sideways swipe, tilt wheel) goes to
+    the innermost element under the pointer that consumes horizontal
+    scrolling — only `x`/`both` groups do in v1;
+  - Shift with a vertical delta is remapped to horizontal *before* routing,
+    and then follows the horizontal rule; elements that consume only vertical
+    scrolling (lists, logs, `y` groups) do not see it;
+  - an unmodified vertical delta keeps today's routing.
+  Existing controls that override vertical wheel handling are unchanged.
 - **Focus**: when keyboard focus moves to a control (Tab, or a field taking
   focus), each scrolling ancestor scrolls the minimum distance to bring it
   into view.
@@ -368,7 +474,13 @@ Build-time `FormatException`, naming the element and the offending value:
 - item attributes on a child of an absolute container (section 1.3);
 - negative `grow`, `shrink`, `gap` or `padding`;
 - `minw` greater than `maxw`, or `minh` greater than `maxh`;
-- `padding` with other than 1, 2 or 4 numbers, or a non-number.
+- `padding` with other than 1, 2 or 4 numbers, or a non-number;
+- any numeric value introduced by this spec (`gap`, `padding`, `grow`,
+  `shrink`, `basis`, `w`, `h`, `minw`, `maxw`, `minh`, `maxh`) that is
+  `NaN` or infinite. .NET parses `NaN` and `Infinity` as numbers, so they are
+  checked explicitly; the parse helpers used for these attributes reject
+  non-finite values with the element, attribute and value in the message.
+  (Existing attributes keep today's lenient parsing.)
 
 Run-time layout never throws (section 3.1).
 
@@ -388,23 +500,40 @@ All headless, against fake resolvers, under `tests/AcDream.App.Tests/UI/`:
 - `Layout/Flex/FlexLayoutTests`: table-driven cases with hand-computed CSS
   results — grow, shrink (basis-weighted), basis forms, min/max clamping and
   re-resolution, wrap line breaking, each `justify` and `align`, `alignself`,
-  gap, padding, hidden items, nesting, whole-point snapping, overflow, NaN
-  inputs.
-- `MarkupFlexTests`: parsing of every attribute, every error in section 5,
-  mixed nesting (absolute group in flex and the reverse), label behaviour in
+  gap, padding, hidden items, nesting, cumulative-edge snapping (odd widths,
+  fractional gaps, `space-between` with remainders), overflow, `null`
+  (unbounded) constraints, and defensive clamping of a non-finite computed
+  value.
+- `MarkupFlexTests`: parsing of every attribute, every error in section 5
+  (including `NaN`/`Infinity`), mixed nesting (absolute group in flex and the reverse), label behaviour in
   and out of flex, reflow on visibility and caption change, theme switch.
 - `MarkupTitleBarTests`: the default table in 2.2, title fallback to the
-  descriptor, the content-area offset and chrome sizing, close button
-  clearing the player's request, keyboard activation, Classic and modern
-  looks.
-- `UiScrollGroupTests`: extent (flex and absolute), bar reservation,
-  offset in draw and hit-testing, `ScreenPosition` and popup placement, wheel
-  routing with a nested list, Shift+wheel, focus scrolling into view,
-  clamping on resize, position across hide/show.
-- Window minimum flow, open-at-content-size, grow-to-minimum, and the
-  persistence revision reset (extending `RetailWindowLayoutPersistenceTests`).
-- A budget test: a 200-icon wrapping grid relaid out every frame during a
-  simulated resize stays within a fixed time budget.
+  descriptor, the content-area offset and chrome sizing, the content host /
+  chrome layer split (chrome outside flex, scroll and offset; chrome first in
+  Tab order; content host as `ContentRoot`), `CloseRequested` wired through
+  `RetailWindowManager.Close` clearing the player's request and raising
+  `Hidden`/`Closed`, keyboard activation, Classic and modern looks.
+- `UiScrollGroupTests`: extent (flex and absolute, negative coordinates,
+  anchored children after a resize), bar settling (vertical bar causing
+  horizontal overflow and the reverse), minimums per axis, offset in draw and
+  hit-testing, `ScreenPosition` and popup placement, wheel routing with a
+  nested list, native horizontal delta, Shift+wheel remapping, focus
+  scrolling into view, clamping on resize, position across hide/show.
+- Input: `RetainedUiInputBinding` passing horizontal steps and Shift, and the
+  `UiRoot.OnScroll(int dy)` forwarder.
+- Invalidation: each dependency in the 3.3 table invalidates; the walk stops
+  at a fixed-size container and continues through content-sized ones.
+- Window minimum flow, the eager first measurement (a root without `w`/`h`
+  registers with its content size), `EnforceMinimumSize` (non-resizable
+  window grows, frame moves back on screen, minimum larger than the screen),
+  and the authored-inputs revision (a bound caption changing does not change
+  it; a `layout` or `w` change does), extending
+  `RetailWindowManagerTests` and `RetailWindowLayoutPersistenceTests`.
+- Scaling, not wall-clock: a wrapping grid laid out at 50, 100 and 200 items
+  performs a number of measure calls linear in the item count (counted with
+  an instrumented measure callback), a cached layout with no invalidation
+  performs none, and a steady-state re-layout allocates nothing (checked
+  with `GC.GetAllocatedBytesForCurrentThread` around a warmed-up call).
 
 ## 8. Sample
 
@@ -423,15 +552,17 @@ review:
 
 1. **`flex/engine`**: `FlexLayout`, `FlexNode` and `FlexLayoutTests`. No
    markup change.
-2. **`flex/titlebar`**: `PluginWindowChrome`, the content area, the title
-   bar and close button, `titlebar` on absolute windows, the docs correction
+2. **`flex/titlebar`**: `PluginWindowChrome`, the content host and chrome
+   layer, the eager root measurement, the authored-inputs revision, the
+   title bar and close button (`CloseRequested`), `titlebar` on absolute windows, the docs correction
    (2.4). Fixes the title/content clash in existing plugins by a one-attribute
    opt-in.
 3. **`flex/markup`**: `layout` and item attributes, `IUiContentSize`,
-   `UiFlexGroup`, window minimum flow, docs section "Flex layout", the
+   `InvalidateMeasure()`, `UiFlexGroup`, window minimum flow and
+   `EnforceMinimumSize`, docs section "Flex layout", the
    `FlexDemo` sample (windows 1 and 3 without scrolling).
-4. **`flex/scroll`**: scrolling groups, the shared scrollbar helper, docs
-   section "Scrolling groups", `FlexDemo` window 2 and scrolling in window 3.
+4. **`flex/scroll`**: scrolling groups, the shared scrollbar helper, the
+   horizontal-wheel input change (4.3), docs section "Scrolling groups", `FlexDemo` window 2 and scrolling in window 3.
 
 Gates: each PR passes the App test suite with no new failures against the
 fork-main baseline; PRs 2–4 are checked live on the local ACE test server
@@ -441,3 +572,24 @@ both modern themes.
 ## Open questions
 
 None at the time of writing.
+
+## Review changes
+
+A Codex review of the first draft (2026-10-05) raised 13 findings; all were
+accepted:
+
+| Finding | Change |
+|---|---|
+| Minimum growth via `ResizeTo` ignores non-resizable axes and never moves the window | `EnforceMinimumSize` (3.4) |
+| Unsized root registered before its first (lazy) layout | Eager first measurement in `Build` (3.4) |
+| Close button had no path to the window manager | `CloseRequested` wired after registration (2.1) |
+| Saved-size revision would hash content-derived sizes | Authored-inputs revision (3.4) |
+| Circular scrollbar reservation; minimum added bar thickness on the wrong axis | Bar settling and per-axis minimum (4.2, 4.3) |
+| Shift+wheel not representable in the input path | Horizontal wheel input change in PR 4 (4.3) |
+| Chrome and content shared one tree | Content host and chrome layer (1.4) |
+| "Unbounded" clashed with "infinity clamps to 0" | `null` constraints (3.1) |
+| Absolute scroll extent underspecified | Origin policy and ordering (4.2) |
+| Invalidation ownership vague | `InvalidateMeasure()` protocol and dependency table (3.3) |
+| Snapping error distribution unspecified | Cumulative-edge snapping (3.1) |
+| `NaN`/`Infinity` parse as numbers | Build-time error (5) |
+| Wall-clock performance test flaky | Scaling and allocation tests (7) |
