@@ -46,12 +46,23 @@ public static class MarkupDocument
             ? new UiPluginMarkupPanel(resolve, themes ?? new PluginUiThemeSettings())
             : new UiNineSlicePanel(resolve);
 
-        // A window with chrome has a content area: its authored sizes are the
-        // area inside the border and title bar, and the frame adds the chrome.
-        bool hasTitleBar = TitleBar(root);
-        float chromeW = hasTitleBar ? PluginWindowChrome.HorizontalInsets : 0f;
-        float chromeH = hasTitleBar ? PluginWindowChrome.VerticalInsets : 0f;
-        float contentW = F(root, "w"), contentH = F(root, "h");
+        // A window with chrome or a flex layout has a content area: its authored
+        // sizes are the area inside the border (and title bar), and the frame
+        // adds the chrome. A root with layout gets the title bar by default.
+        bool hasLayout = MarkupFlexAttributes.IsContainer(root);
+        bool hasTitleBar = TitleBar(root, hasLayout);
+        bool hasContentArea = hasLayout || hasTitleBar;
+        float chromeW = hasContentArea ? PluginWindowChrome.HorizontalInsets : 0f;
+        float chromeH = hasContentArea ? PluginWindowChrome.VerticalInsetsFor(hasTitleBar) : 0f;
+        if (!hasLayout) MarkupFlexAttributes.RejectContainer(root);
+
+        // A layout root may leave its size to its content; it is measured once
+        // its children exist (below), so these are provisional for it.
+        float? authoredW = hasLayout ? MarkupFlexAttributes.RootSize(root, "w") : F(root, "w");
+        float? authoredH = hasLayout ? MarkupFlexAttributes.RootSize(root, "h") : F(root, "h");
+        float? authoredMinW = hasLayout ? MarkupFlexAttributes.RootSize(root, "minw") : null;
+        float? authoredMinH = hasLayout ? MarkupFlexAttributes.RootSize(root, "minh") : null;
+        float contentW = authoredW ?? 0f, contentH = authoredH ?? 0f;
         panel.Left = F(root, "x"); panel.Top = F(root, "y");
         panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
 
@@ -85,6 +96,7 @@ public static class MarkupDocument
         string? title = (string?)root.Attribute("title");
         Vector4 titleColor = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
         UiElement contentParent = panel;
+        UiPluginContentHost? content = null;
         PluginTitleBar? titleBar = null;
         if (hasTitleBar)
         {
@@ -98,15 +110,6 @@ public static class MarkupDocument
             titleBar.Close.AuthoredTooltipLayoutDid = RuntimeTooltipLayoutDid;
             titleBar.Close.AuthoredTooltipEnabled = true;
             panel.AddChild(titleBar);
-            var content = new UiPluginContentHost
-            {
-                Left = PluginWindowChrome.Border,
-                Top = PluginWindowChrome.TitleBarHeight,
-                Width = contentW,
-                Height = contentH,
-            };
-            panel.AddChild(content);
-            contentParent = content;
             if (panel is UiPluginMarkupPanel barPanel)
             {
                 barPanel.HasTitle = true;
@@ -126,9 +129,45 @@ public static class MarkupDocument
                 PluginMarkupTheme.RegisterTitle(titlePanel, titleLabel);
             }
         }
+        if (hasContentArea)
+        {
+            content = new UiPluginContentHost
+            {
+                Left = PluginWindowChrome.Border,
+                Top = PluginWindowChrome.TopInset(hasTitleBar),
+                Width = contentW,
+                Height = contentH,
+            };
+            panel.AddChild(content);
+            contentParent = content;
+        }
+
+        UiFlexBox? rootFlex = null;
+        if (hasLayout)
+        {
+            rootFlex = content!.UseFlex();
+            MarkupFlexAttributes.ReadContainer(root, rootFlex.Node);
+        }
 
         foreach (var el in root.Elements())
-            AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes);
+            AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, rootFlex);
+
+        if (rootFlex is not null)
+        {
+            // The window's first measurement, with the fonts and theme known
+            // now: it sizes a root that states no w/h, and sets the minimum, so
+            // mounting and registration see real geometry. An authored size
+            // below the content's minimum opens at the minimum.
+            FlexMeasurement measured = rootFlex.MeasureNow();
+            float minW = authoredMinW ?? measured.Minimum.Width;
+            float minH = authoredMinH ?? measured.Minimum.Height;
+            contentW = MathF.Max(authoredW ?? measured.Preferred.Width, minW);
+            contentH = MathF.Max(authoredH ?? measured.Preferred.Height, minH);
+            panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
+            panel.MinWidth = minW + chromeW; panel.MinHeight = minH + chromeH;
+            content!.Width = contentW; content.Height = contentH;
+            titleBar?.SetFrameWidth(panel.Width);
+        }
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -138,21 +177,24 @@ public static class MarkupDocument
         // time it is opened.
         panel.CaptureAuthoredAnchorBaselines();
 
-        int revision = hasTitleBar
+        int revision = hasContentArea
             ? RetailWindowManager.ComputeAuthoredGeometryRevision(PluginWindowChrome.AuthoredInputs(root))
             : RetailWindowManager.ComputeAuthoredGeometryRevision(
                 panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
-        return new MarkupWindow(panel, contentParent, titleBar, revision);
+        var window = new MarkupWindow(panel, contentParent, titleBar, revision);
+        if (rootFlex is not null)
+            window.TrackContentMinimum(content!, chromeW, chromeH, authoredMinW, authoredMinH);
+        return window;
     }
 
     /// <summary>
-    /// Whether the root asks for the host title bar. Off unless
-    /// <c>titlebar="true"</c>; PR 3 turns it on by default for roots with
-    /// <c>layout</c>.
+    /// Whether the root asks for the host title bar: <c>titlebar</c> when it
+    /// is given, else on exactly when the root uses <c>layout</c>.
     /// </summary>
-    private static bool TitleBar(XElement root) => (string?)root.Attribute("titlebar") switch
+    private static bool TitleBar(XElement root, bool hasLayout) => (string?)root.Attribute("titlebar") switch
     {
-        null or "false" => false,
+        null => hasLayout,
+        "false" => false,
         "true" => true,
         string other => throw new FormatException(
             $"<panel titlebar=\"{other}\"> must be true or false"),
