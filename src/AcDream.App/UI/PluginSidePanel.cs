@@ -7,7 +7,7 @@ namespace AcDream.App.UI;
 
 /// <summary>
 /// The plugin dock: one slot per plugin window, a move handle, a collapse
-/// button and a gear that opens plugin appearance. It draws the same shape in
+/// button and a gear that opens and closes plugin appearance. It draws the same shape in
 /// every theme, in the theme's palette or the dock's own Classic colours
 /// (<see cref="PluginUiThemeSettings.DockPalette"/>). Where things go is
 /// worked out by <see cref="PluginDockLayout"/>.
@@ -688,7 +688,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         }
     }
 
-    /// <summary>The gear slot at the bottom of the dock, which opens plugin appearance.</summary>
+    /// <summary>The gear slot at the bottom of the dock, which opens and closes plugin appearance.</summary>
     private sealed class DockGearButton(PluginSidePanel dock) : UiSimpleButton
     {
         internal UiControlState State => ThemeState;

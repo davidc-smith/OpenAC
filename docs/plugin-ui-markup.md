@@ -650,7 +650,7 @@ widget works in 0..1 internally. They default to 0 and 1.
 ## The plugin dock
 
 The dock holds one slot per plugin window, with a divider between plugins and
-a gear at the bottom that opens **Plugin appearance**. Hovering a slot names
+a gear at the bottom that opens and closes **Plugin appearance**. Hovering a slot names
 the window and its plugin; an open window gets an accent dot. It draws the
 same shape in every theme, in Classic's black and gold or the theme's colours.
 
