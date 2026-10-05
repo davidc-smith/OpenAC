@@ -518,6 +518,68 @@ public class InventoryControllerTests
     }
 
     [Fact]
+    public void AugmentedPackCapacityOnLogin_includesEmptyEighthSlot()
+    {
+        var (layout, _, containers, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player, ContainersCapacity = 8 });
+
+        Bind(layout, objects);
+
+        Assert.Equal(8, containers.GetNumUIItems());
+        Assert.Equal(0u, containers.GetItem(7)!.ItemId);
+        Assert.Equal(288, containers.Scroll.ContentHeight);
+    }
+
+    [Fact]
+    public void LivePackCapacityUpdate_addsEighthSlotAndPreservesItOnRefresh()
+    {
+        var (layout, _, containers, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player, ContainersCapacity = 7 });
+        Bind(layout, objects);
+        Assert.Equal(7, containers.GetNumUIItems());
+
+        Assert.True(objects.UpdateIntProperty(Player, 7u, 8));
+
+        Assert.Equal(8, containers.GetNumUIItems());
+        UiItemSlot eighth = containers.GetItem(7)!;
+        Assert.True(objects.NotifyObjectUpdated(Player));
+        Assert.Same(eighth, containers.GetItem(7));
+    }
+
+    [Fact]
+    public void EighthPack_canBeScrolledIntoViewAndOpenedWithMouseInput()
+    {
+        var (layout, grid, containers, top, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player, ContainersCapacity = 8 });
+        for (uint i = 0; i < 8; i++) SeedBag(objects, 0xC0u + i, slot: (int)i);
+        SeedContained(objects, 0xD0u, 0xC7u, slot: 0);
+        var uses = new List<uint>();
+        InventoryController controller = Bind(layout, objects, uses: uses);
+        grid.Left = 40;
+        top.Left = 240;
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(layout.Root);
+
+        UiItemSlot eighth = containers.GetItem(7)!;
+        Assert.False(eighth.Visible);
+        containers.OnEvent(new UiEvent(0u, containers, UiEventType.Scroll, Data0: -1));
+        containers.LayoutCells();
+        Assert.Equal(36, containers.Scroll.ScrollY);
+        Assert.True(eighth.Visible);
+        var (x, y) = AbsoluteCentre(eighth);
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseUp(UiMouseButton.Left, x, y);
+
+        Assert.Equal(0xC7u, controller.CurrentOpenContainerId);
+        Assert.Contains(0xC7u, uses);
+        Assert.Equal(0xD0u, grid.GetItem(0)!.ItemId);
+    }
+
+    [Fact]
     public void Empty_sprites_and_drop_feedback_are_applied_per_list_role()
     {
         var (layout, grid, containers, top, _, _, _, _) = BuildLayout();

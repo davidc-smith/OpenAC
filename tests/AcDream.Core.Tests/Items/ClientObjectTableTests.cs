@@ -330,6 +330,54 @@ public sealed class ClientObjectTableTests
     }
 
     [Fact]
+    public void LiveCapacityUpdates_publishTypedCapacitiesBeforeNotification()
+    {
+        var repo = new ClientObjectTable();
+        const uint player = 0x500000AEu;
+        repo.AddOrUpdate(new ClientObject { ObjectId = player, ContainersCapacity = 7 });
+        var observed = new List<(int items, int packs)>();
+        repo.ObjectUpdated += item => observed.Add((item.ItemsCapacity, item.ContainersCapacity));
+
+        Assert.True(repo.UpdateIntProperty(player, 7u, 8));
+        Assert.True(repo.UpdateIntProperty(player, 6u, 102));
+
+        Assert.Equal(new[] { (0, 8), (102, 8) }, observed);
+        Assert.Equal(8, repo.Get(player)!.Properties.Ints[7u]);
+        Assert.Equal(102, repo.Get(player)!.Properties.Ints[6u]);
+    }
+
+    [Theory]
+    [InlineData("login")]
+    [InlineData("update")]
+    [InlineData("appraisal")]
+    public void CapacityPropertyBundles_updateTypedFieldsAndPreserveOmittedValues(string path)
+    {
+        var repo = new ClientObjectTable();
+        const uint player = 0x500000AEu;
+        repo.AddOrUpdate(new ClientObject { ObjectId = player, ItemsCapacity = 102, ContainersCapacity = 7 });
+        var incoming = new PropertyBundle();
+        incoming.Ints[7u] = 8;
+        incoming.Ints[6u] = 120;
+        repo.ObjectUpdated += item =>
+        {
+            Assert.Equal(8, item.ContainersCapacity);
+            Assert.Equal(120, item.ItemsCapacity);
+        };
+
+        void Apply(PropertyBundle properties)
+        {
+            if (path == "login") repo.UpsertProperties(player, properties);
+            else if (path == "update") Assert.True(repo.UpdateProperties(player, properties));
+            else Assert.True(repo.UpdateAppraisal(player, properties, Array.Empty<uint>()));
+        }
+
+        Apply(incoming);
+        Apply(new PropertyBundle());
+        Assert.Equal(8, repo.Get(player)!.ContainersCapacity);
+        Assert.Equal(120, repo.Get(player)!.ItemsCapacity);
+    }
+
+    [Fact]
     public void UpdateIntProperty_currentWieldedLocation_updatesTypedEquipLocation()
     {
         var repo = new ClientObjectTable();

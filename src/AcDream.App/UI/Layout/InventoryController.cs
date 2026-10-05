@@ -482,11 +482,8 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
 
         if (_containerList is not null)
         {
-            int capacity = _objects.Get(p)?.ContainersCapacity ?? 0;
             int bags = _containerList.GetNumUIItems();
-            int slots = capacity > 0 ? capacity : SideBagSlots;
-            slots = Math.Max(slots, bags);
-            slots = Math.Min(slots, SideBagSlots);
+            int slots = ContainerSlotTarget(p, bags);
             while (_containerList.GetNumUIItems() < slots) AddEmptyCell(_containerList);
         }
 
@@ -687,8 +684,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         if (_containerList is null) return 0;
         int capacity = _objects.Get(player)?.ContainersCapacity ?? 0;
         int slots = capacity > 0 ? capacity : SideBagSlots;
-        slots = Math.Max(slots, bagCount);
-        return Math.Min(slots, SideBagSlots);
+        return Math.Max(slots, bagCount);
     }
 
     private int ContentsSlotTarget(uint open, uint player)
