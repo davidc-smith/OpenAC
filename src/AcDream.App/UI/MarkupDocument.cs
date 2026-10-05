@@ -9,8 +9,8 @@ namespace AcDream.App.UI;
 
 public static class MarkupDocument
 {
-    private const uint RuntimeTooltipRootElementId = 0x10000397u;
-    private const uint RuntimeTooltipLayoutDid = 0x21000041u;
+    internal const uint RuntimeTooltipRootElementId = 0x10000397u;
+    internal const uint RuntimeTooltipLayoutDid = 0x21000041u;
 
     /// <summary>
     /// What separates the edge names in an anchor attribute. An author writes
@@ -93,6 +93,9 @@ public static class MarkupDocument
                 DatFont = datFont,
                 TextColor = titleColor,
             };
+            titleBar.Close.AuthoredTooltipRootElementId = RuntimeTooltipRootElementId;
+            titleBar.Close.AuthoredTooltipLayoutDid = RuntimeTooltipLayoutDid;
+            titleBar.Close.AuthoredTooltipEnabled = true;
             panel.AddChild(titleBar);
             var content = new UiPluginContentHost
             {

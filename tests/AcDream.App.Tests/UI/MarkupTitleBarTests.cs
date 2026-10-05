@@ -1,5 +1,6 @@
 using System.Numerics;
 using AcDream.App.UI;
+using AcDream.App.UI.Layout;
 using Silk.NET.Input;
 
 namespace AcDream.App.Tests.UI;
@@ -210,5 +211,40 @@ public sealed class MarkupTitleBarTests
         settings.Theme = PluginUiTheme.Classic;
         Frame(3);
         Assert.Equal(5f, close.Top);
+    }
+
+    [Fact]
+    public void TheCloseButtonCarriesTheMarkupTooltipSkin()
+    {
+        PluginCloseButton close = Window("titlebar=\"true\"").TitleBar!.Close;
+        Assert.Equal(0x10000397u, close.AuthoredTooltipRootElementId);
+        Assert.Equal(0x21000041u, close.AuthoredTooltipLayoutDid);
+        Assert.True(close.AuthoredTooltipEnabled);
+        Assert.Equal("Close", close.GetTooltipText());
+    }
+
+    [Fact]
+    public void HoveringTheCloseButtonMakesThePresenterBuildAPopup()
+    {
+        MarkupWindow window = Window("titlebar=\"true\"");
+        UiRoot root = Mount(window);
+        var requests = new List<(uint, uint)>();
+        var presenter = new RetailTooltipPresenter(root, (layoutDid, rootId) =>
+        {
+            requests.Add((layoutDid, rootId));
+            var rootInfo = new ElementInfo
+            {
+                Id = 0x900u, Type = 3, X = 0, Y = 0, Width = 30, Height = 30,
+                TooltipTextChildElementId = 0x901u,
+            };
+            var text = new ElementInfo { Id = 0x901u, Type = 12, X = 2, Y = 2, Width = 26, Height = 26 };
+            return LayoutImporter.BuildFromInfos(rootInfo, [text], _ => (0u, 0, 0), null);
+        });
+        GC.KeepAlive(presenter);
+        PluginCloseButton close = window.TitleBar!.Close;
+        root.OnMouseMove((int)(100 + close.Left + 9), (int)(50 + close.Top + 9));
+        root.Tick(0.016, 0);
+        root.Tick(0.016, root.TooltipDelayMs);
+        Assert.Single(requests, r => r == (0x21000041u, 0x10000397u));
     }
 }

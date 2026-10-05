@@ -30,8 +30,11 @@ internal static class PluginWindowChrome
     /// </summary>
     internal const int Version = 1;
 
-    /// <summary>The retail inventory close button's art (element 0x100001D2 of layout 0x21000023).</summary>
+    /// <summary>The retail inventory close button's art, 24x25 (element 0x100001D2 of layout 0x21000023).</summary>
     internal const uint ClassicCloseSprite = 0x06004D0Cu;
+
+    /// <summary>The same element's pressed-state art (Normal_pressed), 24x25. The retail art has no hover state.</summary>
+    internal const uint ClassicClosePressedSprite = 0x06004D0Du;
 
     internal const string CloseTooltip = "Close";
     internal const string DockedCloseTooltip = "Close (reopen from the dock)";

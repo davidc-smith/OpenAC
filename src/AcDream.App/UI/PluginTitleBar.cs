@@ -109,6 +109,8 @@ internal sealed class PluginTitleBar : UiElement
 /// </summary>
 internal sealed class PluginCloseButton : UiSimpleButton
 {
+    private static readonly Vector4 ClassicCloseHover = new(1f, 1f, 1f, 0.18f);
+
     private readonly Func<uint, (uint, int, int)> _resolve;
 
     public PluginCloseButton(Func<uint, (uint, int, int)> resolve)
@@ -134,12 +136,19 @@ internal sealed class PluginCloseButton : UiSimpleButton
             PluginUiStyle.CloseButton(ctx, palette, Width, Height, ThemeState, KeyboardFocused);
             return;
         }
-        var (tex, tw, th) = _resolve(PluginWindowChrome.ClassicCloseSprite);
+        var (tex, tw, th) = (0u, 0, 0);
+        if (ThemeState == UiControlState.Pressed)
+            (tex, tw, th) = _resolve(PluginWindowChrome.ClassicClosePressedSprite);
+        if (tex == 0u)
+            (tex, tw, th) = _resolve(PluginWindowChrome.ClassicCloseSprite);
         if (tex != 0u && tw > 0 && th > 0)
         {
             float scale = MathF.Min(Width / tw, Height / th);
             float w = tw * scale, h = th * scale;
-            ctx.DrawSprite(tex, (Width - w) / 2f, (Height - h) / 2f, w, h, 0f, 0f, 1f, 1f, Vector4.One);
+            float x = (Width - w) / 2f, y = (Height - h) / 2f;
+            ctx.DrawSprite(tex, x, y, w, h, 0f, 0f, 1f, 1f, Vector4.One);
+            if (ThemeState == UiControlState.Hovered)
+                ctx.DrawFill(x, y, w, h, ClassicCloseHover);
         }
         if (KeyboardFocused)
             ctx.DrawRectOutline(1f, 1f, Width - 2f, Height - 2f, new Vector4(1f, 0.82f, 0.25f, 1f), 1f);

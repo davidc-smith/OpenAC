@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.App.Rendering;
 using AcDream.App.UI;
 using Silk.NET.Input;
 
@@ -8,8 +9,15 @@ public sealed class PluginTitleBarTests
 {
     private const uint CloseTexture = 77u;
 
+    private const uint PressedTexture = 78u;
+
     private static (uint, int, int) Resolve(uint id) =>
-        id == PluginWindowChrome.ClassicCloseSprite ? (CloseTexture, 24, 23) : (0u, 0, 0);
+        id == PluginWindowChrome.ClassicCloseSprite ? (CloseTexture, 24, 25)
+        : id == PluginWindowChrome.ClassicClosePressedSprite ? (PressedTexture, 24, 25)
+        : (0u, 0, 0);
+
+    private static bool HasHoverWhite(TextRenderer r) => ThemeDrawCapture.Vertices(r)
+        .Any(v => v.Color.X > 0.99f && v.Color.Y > 0.99f && v.Color.Z > 0.99f && Math.Abs(v.Color.W - 0.18f) < 0.01f);
 
     private static (UiRoot Root, UiPanel Frame, PluginTitleBar Bar) Mount(string title = "Buffs")
     {
@@ -82,6 +90,39 @@ public sealed class PluginTitleBarTests
         var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
         root.Draw(ctx);
         Assert.Contains(renderer.DebugSpriteSegmentVerts, s => s.Texture == CloseTexture);
+    }
+
+    [Fact]
+    public void Classic_AtRestDrawsTheNormalArtWithNoHoverFill()
+    {
+        var (root, _, _) = Mount();
+        var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        root.Draw(ctx);
+        Assert.Contains(renderer.DebugSpriteSegmentVerts, s => s.Texture == CloseTexture);
+        Assert.DoesNotContain(renderer.DebugSpriteSegmentVerts, s => s.Texture == PressedTexture);
+        Assert.False(HasHoverWhite(renderer));
+    }
+
+    [Fact]
+    public void Classic_HoverBrightensTheRetailArt()
+    {
+        var (root, _, _) = Mount();
+        root.OnMouseMove(100 + 276 + 9, 100 + 5 + 9);
+        var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        root.Draw(ctx);
+        Assert.Contains(renderer.DebugSpriteSegmentVerts, s => s.Texture == CloseTexture);
+        Assert.True(HasHoverWhite(renderer));
+    }
+
+    [Fact]
+    public void Classic_PressedDrawsTheRetailPressedArt()
+    {
+        var (root, _, _) = Mount();
+        root.OnMouseDown(UiMouseButton.Left, 100 + 276 + 9, 100 + 5 + 9);
+        var (renderer, ctx) = ThemeDrawCapture.Context(800, 600);
+        root.Draw(ctx);
+        Assert.Contains(renderer.DebugSpriteSegmentVerts, s => s.Texture == PressedTexture);
+        Assert.DoesNotContain(renderer.DebugSpriteSegmentVerts, s => s.Texture == CloseTexture);
     }
 
     [Fact]
