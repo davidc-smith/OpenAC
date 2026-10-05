@@ -52,6 +52,11 @@ public static class MarkupDocument
         bool hasLayout = MarkupFlexAttributes.IsContainer(root);
         bool hasTitleBar = TitleBar(root, hasLayout);
         bool hasContentArea = hasLayout || hasTitleBar;
+        var (rootScrollX, rootScrollY) = MarkupFlexAttributes.Scroll(root);
+        if ((rootScrollX || rootScrollY) && !hasContentArea)
+            throw new FormatException(
+                $"<panel scroll=\"{(string?)root.Attribute("scroll")}\"> scrolls the window's content area, "
+                + "which needs layout=\"row|column\" or titlebar=\"true\" on the panel");
         float chromeW = hasContentArea ? PluginWindowChrome.HorizontalInsets : 0f;
         float chromeH = hasContentArea ? PluginWindowChrome.VerticalInsetsFor(hasTitleBar) : 0f;
         if (!hasLayout) MarkupFlexAttributes.RejectContainer(root);
@@ -147,6 +152,11 @@ public static class MarkupDocument
         {
             rootFlex = content!.UseFlex();
             MarkupFlexAttributes.ReadContainer(root, rootFlex.Node);
+        }
+        if (rootScrollX || rootScrollY)
+        {
+            content!.UseScroll(rootScrollX, rootScrollY, resolve);
+            if (panel is UiPluginMarkupPanel scrollPanel) content.ScrollArea!.RegisterTheme(scrollPanel);
         }
 
         foreach (var el in root.Elements())

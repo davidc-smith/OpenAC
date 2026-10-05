@@ -56,10 +56,14 @@ internal static class PluginWindowChrome
     /// </summary>
     internal static string?[] AuthoredInputs(XElement root)
     {
-        var inputs = new string?[GeometryAttributes.Length + 1];
+        // scroll changes the window's minimum; it is added only when present,
+        // so the revision of every window without it is what it was.
+        string? scroll = (string?)root.Attribute("scroll");
+        var inputs = new string?[GeometryAttributes.Length + (scroll is null ? 1 : 2)];
         for (int i = 0; i < GeometryAttributes.Length; i++)
             inputs[i] = (string?)root.Attribute(GeometryAttributes[i]);
-        inputs[^1] = Version.ToString(CultureInfo.InvariantCulture);
+        inputs[GeometryAttributes.Length] = Version.ToString(CultureInfo.InvariantCulture);
+        if (scroll is not null) inputs[^1] = "scroll=" + scroll;
         return inputs;
     }
 

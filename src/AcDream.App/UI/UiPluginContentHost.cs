@@ -9,7 +9,7 @@ namespace AcDream.App.UI;
 /// window still drags from any empty point. When the root panel has
 /// <c>layout</c> it is the root of the window's flex tree.
 /// </summary>
-internal sealed class UiPluginContentHost : UiElement
+internal sealed class UiPluginContentHost : UiElement, IUiScrollHost
 {
     private FlexSize? _pendingMinimum;
 
@@ -21,6 +21,9 @@ internal sealed class UiPluginContentHost : UiElement
 
     /// <summary>The content area's flex layout, or null when its children are placed by coordinates.</summary>
     public UiFlexBox? Flex { get; private set; }
+
+    /// <summary>The content area's scrolling (root <c>scroll</c>), or null.</summary>
+    public UiScrollArea? ScrollArea { get; private set; }
 
     /// <summary>
     /// Raised on the tick after a layout found that the smallest size the
@@ -39,6 +42,24 @@ internal sealed class UiPluginContentHost : UiElement
         return Flex;
     }
 
+    /// <summary>Makes the content area scroll on the given axes; call after <see cref="UseFlex"/> for a flex root.</summary>
+    internal void UseScroll(bool scrollsX, bool scrollsY, Func<uint, (uint, int, int)> resolve)
+    {
+        ScrollArea = new UiScrollArea(this, scrollsX, scrollsY, resolve, Settle);
+        if (Flex is not { } flex) return;
+        flex.Node.ScrollX = scrollsX;
+        flex.Node.ScrollY = scrollsY;
+        flex.Node.ScrollbarSize = UiScrollArea.BarSize;
+    }
+
+    private void Settle(UiScrollArea area)
+    {
+        if (Flex is { } flex) area.ApplyFlex(flex.Node);
+        else area.SettleAbsolute();
+    }
+
+    public override bool OnEvent(in UiEvent e) => ScrollArea?.OnEvent(e) == true || base.OnEvent(e);
+
     protected override void OnTick(double deltaSeconds)
     {
         if (_pendingMinimum is not { } minimum) return;
@@ -48,7 +69,14 @@ internal sealed class UiPluginContentHost : UiElement
 
     private protected override void LayoutChildren()
     {
-        Flex?.EnsureLayout(Width, Height);
-        base.LayoutChildren();
+        if (Flex is { } flex)
+        {
+            flex.EnsureLayout(Width, Height);
+            ScrollArea?.ApplyFlex(flex.Node);
+            base.LayoutChildren();
+            return;
+        }
+        if (ScrollArea is { } area) Settle(area);
+        else base.LayoutChildren();
     }
 }
