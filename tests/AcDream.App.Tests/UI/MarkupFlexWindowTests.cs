@@ -169,4 +169,28 @@ public sealed class MarkupFlexWindowTests
         Assert.All(content.Flex.Items, item => Assert.Same(content, item.Element.Parent));
         Assert.Same(window.Frame, window.TitleBar!.Parent);
     }
+
+    [Fact]
+    public void A_layout_root_without_a_title_bar_has_no_legacy_title_label()
+    {
+        MarkupWindow window = Window("layout=\"column\" titlebar=\"false\" title=\"T\"");
+
+        Assert.Null(window.TitleBar);
+        Assert.DoesNotContain(window.Frame.Children, child => child is UiLabel);
+    }
+
+    [Fact]
+    public void A_restored_size_below_the_build_time_minimum_stops_at_the_minimum()
+    {
+        MarkupWindow window = Window("layout=\"row\" resizable=\"true\"");
+        UiRoot root = Mount(window, "plugin:demo:main");
+        Assert.True(root.WindowManager.TryGet("plugin:demo:main", out RetailWindowHandle handle));
+
+        // Row: 38 (OK button) + 28 (ABCD) wide, 24 tall; chrome 10 wide, 29 tall.
+        Assert.Equal((76f, 53f), (window.Frame.MinWidth, window.Frame.MinHeight));
+
+        Assert.True(handle.ResizeTo(1, 1));
+
+        Assert.Equal((76f, 53f), (window.Frame.Width, window.Frame.Height));
+    }
 }

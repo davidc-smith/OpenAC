@@ -259,9 +259,13 @@ public sealed class RetailWindowManager : IDisposable
         return true;
     }
 
-    /// <summary>Keeps one axis of a window inside a parent <paramref name="space"/> long.</summary>
+    /// <summary>
+    /// Keeps one axis of a window inside a parent <paramref name="space"/> long.
+    /// A parent with no extent yet (not laid out) leaves the axis alone.
+    /// </summary>
     private static (float Start, float Size) FitAxis(float start, float size, float space)
     {
+        if (space <= 0f) return (start, size);
         if (size > space) return (0f, MathF.Max(0f, space));
         if (start + size > space) start = MathF.Max(0f, space - size);
         return (start, size);

@@ -418,11 +418,11 @@ of a container without `layout`.
 | Element | Size |
 |---|---|
 | `label` | its text, one line tall |
-| `button`, `tab` | its caption with 12 points either side (and a square for its icon), 24 points tall or the font's line plus 8 |
-| `toggle` | lamp or switch, then its caption; 20 points tall |
+| `button`, `tab` | its caption with 12 points either side (and a square for its icon); at least 24 points tall, taller when the font's line plus 8 is more |
+| `toggle` | lamp or switch, then its caption; at least 20 points tall, taller when the font's line plus 4 is more |
 | `icon` | 32 × 32 |
-| `field`, `menu` | 120 wide (40 at least), control height |
-| `slider` / `meter` | 120 wide (40 at least), 16 / 12 tall |
+| `field`, `menu` | 120 wide (40 at least); tall as a button (at least 24, or the font's line plus 8) |
+| `slider` / `meter` | 120 wide (40 at least), 16 / 12 tall (fixed) |
 | `list`, `log` | 160 × 80 (60 × 40 at least) |
 | `group` with `layout` | what its own items need |
 | `group` without `layout` | its `w` × `h` |
@@ -439,7 +439,8 @@ item of its authored `w` × `h`; when the container gives it another size, its
 own children follow their `anchor`s exactly as in a resized window. A
 `<group layout>` inside an absolute container is placed by its `x`, `y`,
 `w`, `h` and `anchor` like any element, and lays out its children in
-whatever size that gives it.
+whatever size that gives it. It needs its own `w` and `h` for that: without
+them it is empty and shows nothing.
 
 ### Flex windows
 
@@ -457,6 +458,15 @@ whatever size that gives it.
 - as with the title bar, the window's saved size is reset once when its
   markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout` or
   `titlebar` change. Captions and appearance never reset it.
+
+Windows only grow to fit: when the content later needs less room, the window
+keeps its size. A wrapping root's minimum height is the height of its
+narrowest layout, so a wide wrapping window cannot be made shorter than that.
+
+A layout root with `titlebar="false"` shows no title text in the window (its
+`title` still names it in the dock). A docked window without a bar keeps the
+dock's "–" button at its top-right corner, over the corner of the content
+area, so leave room there.
 
 A root that wraps should state its `w`: without it the window opens one
 line wide.

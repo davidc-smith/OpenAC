@@ -116,7 +116,7 @@ public static class MarkupDocument
                 PluginMarkupTheme.RegisterTitleBar(barPanel, titleBar);
             }
         }
-        else if (!string.IsNullOrEmpty(title))
+        else if (!hasLayout && !string.IsNullOrEmpty(title))
         {
             panel.AddChild(new UiLabel
             {

@@ -73,4 +73,18 @@ public sealed class RetailWindowManagerMinimumTests
         Assert.Equal((300f, 200f), (frame.Width, frame.Height));
         Assert.Empty(events);
     }
+
+    [Fact]
+    public void A_parent_with_no_extent_leaves_the_window_at_its_minimum_not_zero()
+    {
+        var (root, frame, _, _) = Window(10f, 10f);
+        root.Width = 0;
+        root.Height = 0;
+        frame.MinWidth = 400f;
+        frame.MinHeight = 250f;
+
+        root.WindowManager.EnforceMinimumSize("plugin-min");
+
+        Assert.Equal((10f, 10f, 400f, 250f), (frame.Left, frame.Top, frame.Width, frame.Height));
+    }
 }

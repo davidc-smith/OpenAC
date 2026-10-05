@@ -7,6 +7,6 @@
   <group layout="row" gap="4" align="center">
     <label grow="1" text="{Status}" color="theme:muted|#FF9AA99E" />
     <button text="Clear" onclick="{Clear}" />
-    <button text="Close" onclick="{Done}" />
+    <button text="Done" onclick="{Done}" />
   </group>
 </panel>
