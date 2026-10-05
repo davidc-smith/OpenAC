@@ -89,7 +89,7 @@ public sealed class MainWindowViewTests
 
             MenuItem[] items = [.. menu.Items.OfType<MenuItem>()];
             Assert.Equal(
-                ["Logon commands…", "Plugins for this character…", "Console", "Open logs folder", "Remove character"],
+                ["Logon commands…", "Plugins for this account…", "Plugins for this character…", "Console", "Open logs folder", "Remove character"],
                 items.Select(item => (string?)item.Header));
             Assert.All(items, item => Assert.Same(options.DataContext, item.DataContext));
 

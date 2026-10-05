@@ -974,14 +974,16 @@ public sealed partial class LauncherWindowViewModelTests
         FakeLauncherOrchestrator orchestrator,
         ILauncherInstaller? installer = null,
         AcDream.Launcher.Core.Plugins.PluginInventory? pluginInventory = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        LauncherCheckedAccountStore? checkedAccountStore = null)
     {
         var viewModel = new LauncherWindowViewModel(
             orchestrator,
             new ImmediateUiDispatcher(),
             installer,
             pluginInventory: pluginInventory,
-            timeProvider: timeProvider);
+            timeProvider: timeProvider,
+            checkedAccountStore: checkedAccountStore);
         viewModel.Initialize();
         return viewModel;
     }

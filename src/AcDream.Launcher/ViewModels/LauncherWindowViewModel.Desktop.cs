@@ -71,7 +71,11 @@ public sealed partial class LauncherWindowViewModel
     {
         TextEditor = new ProfileTextEditorViewModel(_orchestrator);
         TextEditor.PropertyChanged += OnModalPropertyChanged;
-        AddServerDialog = new AddServerDialogViewModel(_orchestrator);
+        AddServerDialog = new AddServerDialogViewModel(_orchestrator, () =>
+        {
+            ShowOnlyCheckedAccounts = false;
+            RefreshFromCore();
+        });
         AddServerDialog.PropertyChanged += OnModalPropertyChanged;
         OpenAddServerCommand = new AsyncRelayCommand(() => AddServerDialog.OpenAsync(), () => CanInteract);
         UpdatePrompt.PropertyChanged += OnDesktopUpdateChanged;

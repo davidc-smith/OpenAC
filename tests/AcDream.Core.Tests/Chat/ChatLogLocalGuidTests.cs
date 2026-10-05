@@ -67,7 +67,7 @@ public sealed class ChatLogLocalGuidTests
     }
 
     [Fact]
-    public void ResetSessionIdentity_RetainsTranscriptButClearsGuidAndDedupeWindow()
+    public void ResetSessionIdentity_RetainsTranscriptButClearsGuid()
     {
         var log = new ChatLog();
         const uint oldGuid = 0x50000001u;

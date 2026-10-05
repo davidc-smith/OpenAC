@@ -334,6 +334,33 @@ public sealed partial class LauncherWindowViewModelTests
     }
 
     [Fact]
+    public void AccountPluginOptionsApplyToTheSelectedServerRow()
+    {
+        using var fixture = new PluginChecklistFixture();
+        fixture.WriteManifest("plugin.both", ["graphical", "headless"]);
+        using var orchestrator = AccountWithPlugins([]);
+        LauncherServerSnapshot first = orchestrator.ServersOverride![0];
+        orchestrator.ServersOverride =
+        [
+            first,
+            new LauncherServerSnapshot("Second", "second.example", 9000,
+            [new LauncherAccountSnapshot("Second", "testaccount", [], false, "Ready")]),
+        ];
+        using var viewModel = CreateInitialized(orchestrator, pluginInventory: fixture.Inventory);
+        LauncherAccountGroupViewModel group = Assert.Single(viewModel.Accounts);
+        Assert.Equal(["Local ACE", "Second"], group.Rows.Select(row => row.ServerName));
+
+        group.Rows[1].AccountPluginsCommand.Execute(null);
+        Assert.True(viewModel.IsAccountRowOptions);
+        viewModel.CharacterPluginChoices.Single(choice => choice.Id == "plugin.both").IsChecked = true;
+        viewModel.SaveRowOptionsCommand.Execute(null);
+
+        var update = Assert.Single(orchestrator.AccountPluginUpdates);
+        Assert.Equal("Second", update.Server);
+        Assert.Equal("testaccount", update.Account);
+    }
+
+    [Fact]
     public void ACharacterFollowsItsAccountUntilGivenItsOwnList()
     {
         using var fixture = new PluginChecklistFixture();

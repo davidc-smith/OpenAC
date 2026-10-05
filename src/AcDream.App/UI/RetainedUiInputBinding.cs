@@ -102,8 +102,12 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
         _upCallback?.Invoke(button, (int)sender.Position.X, (int)sender.Position.Y);
     private void OnMove(IMouse _, Vector2 position) =>
         _moveCallback?.Invoke((int)position.X, (int)position.Y);
-    private void OnScroll(IMouse _, ScrollWheel scroll) =>
-        _scrollCallback?.Invoke((int)scroll.Y);
+    private void OnScroll(IMouse _, ScrollWheel scroll)
+    {
+        // Each wheel event is a directional action, including small trackpad deltas.
+        if (scroll.Y > 0f) _scrollCallback?.Invoke(1);
+        else if (scroll.Y < 0f) _scrollCallback?.Invoke(-1);
+    }
 }
 
 internal sealed class RetainedMouseInputBinding : IRetainedUiInputBinding

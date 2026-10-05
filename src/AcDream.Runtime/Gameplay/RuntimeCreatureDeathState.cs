@@ -64,6 +64,13 @@ public sealed class RuntimeCreatureDeathState
     /// <summary>Drops whatever was known about <paramref name="objectId"/>.</summary>
     public void Forget(uint objectId) => _dead.Remove(objectId);
 
+    /// <summary>Drops a death only when the deleted incarnation is the one recorded.</summary>
+    public void Forget(uint objectId, ushort incarnation)
+    {
+        if (IsDead(objectId, incarnation))
+            _dead.Remove(objectId);
+    }
+
     /// <summary>Drops everything known, for a session that is starting over.</summary>
     public void Clear() => _dead.Clear();
 

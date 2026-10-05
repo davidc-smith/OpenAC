@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using AcDream.Launcher.Core;
 using AcDream.Launcher.Core.Profiles;
 
@@ -58,6 +59,94 @@ public sealed class LauncherProfileStoreTests : IDisposable
         Assert.Equal("127.0.0.1", server.Host);
         Assert.Equal(9000, server.Port);
         Assert.Empty(server.Accounts);
+    }
+
+    [Fact]
+    public void AddingServerCopiesEachKnownAccountCredentialOnceWithoutCopyingCharacters()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "secret");
+        store.AddServer("Second", "second.example", 9000);
+        store.EditAccount("Second", "shared", newPassword: "second-secret");
+        store.AddAccount("Second", "second-only", "other-secret");
+
+        ServerProfile third = store.AddServer("Third", "third.example", 9000);
+
+        Assert.Equal(2, third.Accounts.Count);
+        Assert.Equal("secret", Assert.Single(third.Accounts, account => account.Account == "shared").Password);
+        Assert.Equal("other-secret", Assert.Single(third.Accounts, account => account.Account == "second-only").Password);
+        Assert.All(third.Accounts, account => Assert.Empty(account.Characters));
+        Assert.Equal("second-secret", Assert.Single(store.Document.Servers[1].Accounts,
+            account => account.Account == "shared").Password);
+    }
+
+    [Fact]
+    public void LoadingExistingEmptyServerPopulatesItWithKnownAccountsAndPersistsThem()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "secret");
+        store.AddServer("Empty", "empty.example", 9000);
+        store.Save();
+        JsonObject legacy = JsonNode.Parse(File.ReadAllText(_filePath))!.AsObject();
+        JsonObject empty = legacy["servers"]!.AsArray()[1]!.AsObject();
+        empty["accounts"] = new JsonArray();
+        empty.Remove("accountListInitialized");
+        File.WriteAllText(_filePath, legacy.ToJsonString());
+
+        var reloaded = new LauncherProfileStore(_filePath);
+        reloaded.Load();
+
+        Assert.Equal("secret", Assert.Single(reloaded.Document.Servers[1].Accounts).Password);
+        var persisted = new LauncherProfileStore(_filePath);
+        persisted.Load();
+        Assert.Single(persisted.Document.Servers[1].Accounts);
+    }
+
+    [Fact]
+    public void LoadingOlderPartialServersAddsMissingAccountsWithoutChangingExistingPasswords()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "first-secret");
+        store.AddServer("Second", "second.example", 9000);
+        store.EditAccount("Second", "shared", newPassword: "second-secret");
+        store.AddAccount("Second", "second-only", "other-secret");
+        store.Save();
+        JsonObject legacy = JsonNode.Parse(File.ReadAllText(_filePath))!.AsObject();
+        foreach (JsonNode? server in legacy["servers"]!.AsArray())
+            server!.AsObject().Remove("accountListInitialized");
+        File.WriteAllText(_filePath, legacy.ToJsonString());
+
+        var reloaded = new LauncherProfileStore(_filePath);
+        reloaded.Load();
+
+        Assert.Equal(["shared", "second-only"], reloaded.Document.Servers[0].Accounts.Select(account => account.Account));
+        Assert.Equal("first-secret", reloaded.Document.Servers[0].Accounts[0].Password);
+        Assert.Equal("other-secret", reloaded.Document.Servers[0].Accounts[1].Password);
+        Assert.Equal("second-secret", reloaded.Document.Servers[1].Accounts[0].Password);
+    }
+
+    [Fact]
+    public void IntentionallyRemovingLastAccountStaysRemovedAfterRestart()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("First", "first.example", 9000);
+        store.AddAccount("First", "shared", "secret");
+        store.AddServer("Second", "second.example", 9000);
+        store.RemoveAccount("Second", "shared");
+        store.Save();
+
+        var reloaded = new LauncherProfileStore(_filePath);
+        reloaded.Load();
+
+        Assert.Empty(reloaded.Document.Servers[1].Accounts);
+        Assert.Single(reloaded.Document.Servers[0].Accounts);
     }
 
     [Fact]

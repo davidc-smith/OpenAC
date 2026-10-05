@@ -65,6 +65,7 @@ public sealed class AddServerDialogViewModel : ObservableObject
     public const string AllTypes = "All types";
 
     private readonly ILauncherOrchestrator _orchestrator;
+    private readonly Action? _serverAdded;
     private KnownServerCatalog? _catalog;
     private IReadOnlyList<KnownServerRowViewModel> _all = [];
     private bool _isOpen;
@@ -78,9 +79,10 @@ public sealed class AddServerDialogViewModel : ObservableObject
     private string _listStatus = "";
     private string? _notice;
 
-    public AddServerDialogViewModel(ILauncherOrchestrator orchestrator)
+    public AddServerDialogViewModel(ILauncherOrchestrator orchestrator, Action? serverAdded = null)
     {
         _orchestrator = orchestrator;
+        _serverAdded = serverAdded;
         AddOwnCommand = new RelayCommand(AddOwn);
         CloseCommand = new RelayCommand(Close);
     }
@@ -269,8 +271,13 @@ public sealed class AddServerDialogViewModel : ObservableObject
         try
         {
             _orchestrator.AddServer(name, host, port);
+            _serverAdded?.Invoke();
             Error = null;
-            Notice = $"Added {name}. Add your accounts on it with Accounts.";
+            int accountCount = _orchestrator.GetSnapshot().Servers
+                .First(server => server.Name == name).Accounts.Count;
+            Notice = accountCount == 0
+                ? $"Added {name}. Add your accounts on it with Accounts."
+                : $"Added {name} with {accountCount} saved accounts. Character lists will refresh on that server.";
             return true;
         }
         catch (Exception ex) when (ex is LauncherProfileException or LauncherOperationException or ArgumentException or IOException or UnauthorizedAccessException)

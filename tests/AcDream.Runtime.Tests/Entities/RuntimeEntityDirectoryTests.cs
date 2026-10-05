@@ -99,6 +99,25 @@ public sealed class RuntimeEntityDirectoryTests
     }
 
     [Fact]
+    public void ForgottenGuidCannotReuseAnEarlierOperationToken()
+    {
+        var directory = new RuntimeEntityDirectory();
+        const uint guid = 0x70000008u;
+        RuntimeEntityRecord first = directory.AddActive(Spawn(guid, 1));
+        ulong staleOperation = directory.AdvanceLifetimeMutation(guid);
+
+        Assert.True(directory.RemoveActive(first));
+        directory.ForgetLifetimeMutationIfInactive(guid, staleOperation);
+        Assert.Equal(0UL, directory.CurrentLifetimeMutation(guid));
+
+        directory.AddActive(Spawn(guid, 2));
+        ulong replacementOperation = directory.AdvanceLifetimeMutation(guid);
+        Assert.NotEqual(staleOperation, replacementOperation);
+        directory.ForgetLifetimeMutationIfInactive(guid, staleOperation);
+        Assert.Equal(replacementOperation, directory.CurrentLifetimeMutation(guid));
+    }
+
+    [Fact]
     public void AcceptedCreateSnapshotAndAuthorityLiveOnCanonicalRecord()
     {
         var directory = new RuntimeEntityDirectory();

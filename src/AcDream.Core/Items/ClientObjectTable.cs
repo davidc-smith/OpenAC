@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using AcDream.Core.Properties;
 
 namespace AcDream.Core.Items;
 
@@ -654,6 +655,10 @@ public sealed class ClientObjectTable
         foreach (var kv in incoming.Strings)  item.Properties.Strings[kv.Key] = kv.Value;
         foreach (var kv in incoming.DataIds)  item.Properties.DataIds[kv.Key] = kv.Value;
         foreach (var kv in incoming.InstanceIds) item.Properties.InstanceIds[kv.Key] = kv.Value;
+        if (incoming.Ints.TryGetValue((uint)PropertyInt.ItemsCapacity, out int itemsCapacity))
+            item.ItemsCapacity = itemsCapacity;
+        if (incoming.Ints.TryGetValue((uint)PropertyInt.ContainersCapacity, out int containersCapacity))
+            item.ContainersCapacity = containersCapacity;
     }
 
     /// <summary>
@@ -696,13 +701,7 @@ public sealed class ClientObjectTable
             RetainObject(item);
         }
         ServerShowedObject(item);
-        foreach (var kv in incoming.Ints)        item.Properties.Ints[kv.Key] = kv.Value;
-        foreach (var kv in incoming.Int64s)      item.Properties.Int64s[kv.Key] = kv.Value;
-        foreach (var kv in incoming.Bools)       item.Properties.Bools[kv.Key] = kv.Value;
-        foreach (var kv in incoming.Floats)      item.Properties.Floats[kv.Key] = kv.Value;
-        foreach (var kv in incoming.Strings)     item.Properties.Strings[kv.Key] = kv.Value;
-        foreach (var kv in incoming.DataIds)     item.Properties.DataIds[kv.Key] = kv.Value;
-        foreach (var kv in incoming.InstanceIds) item.Properties.InstanceIds[kv.Key] = kv.Value;
+        MergeProperties(item, incoming);
         ApplyCooldownProperties(item, incoming);
         if (!existed) ObjectAdded?.Invoke(item); else ObjectUpdated?.Invoke(item);
     }
@@ -713,6 +712,8 @@ public sealed class ClientObjectTable
         ServerShowedObject(item);
         ClientObjectPlacement previous = ClientObjectPlacement.From(item);
         item.Properties.Ints[propertyId] = value;
+        if (propertyId == (uint)PropertyInt.ItemsCapacity) item.ItemsCapacity = value;
+        if (propertyId == (uint)PropertyInt.ContainersCapacity) item.ContainersCapacity = value;
         if (propertyId == UiEffectsPropertyId) item.Effects = (uint)value;
         if (propertyId == SharedCooldownPropertyId) item.CooldownId = (uint)value;
         if (propertyId == CurrentWieldedLocationPropertyId)

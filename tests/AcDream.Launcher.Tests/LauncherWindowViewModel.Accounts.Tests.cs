@@ -112,14 +112,16 @@ public sealed partial class LauncherWindowViewModelTests
     }
 
     [Fact]
-    public void EachAccountOnEachServerIsItsOwnGroupInProfileOrder()
+    public void EachAccountShowsItsConfiguredServersInProfileOrder()
     {
         using var core = ProfiledOrchestrator();
         using var vm = CreateInitialized(core);
 
         Assert.Equal(
-            [("One", "Alice"), ("One", "Bob"), ("Two", "Alice")],
+            [("One", "Alice"), ("One", "Bob")],
             vm.Accounts.Select(group => (group.ServerName, group.AccountName)));
+        Assert.Equal(["One", "Two"], vm.Accounts[0].Rows.Select(row => row.ServerName));
+        Assert.Equal(["One"], vm.Accounts[1].Rows.Select(row => row.ServerName));
         Assert.Equal(["All", "Main", "bots", "Mules"], vm.ProfileFilters.Select(chip => chip.Label));
         Assert.True(vm.ProfileFilters[0].IsSelected);
     }
@@ -137,10 +139,12 @@ public sealed partial class LauncherWindowViewModelTests
         vm.ProfileFilters.Single(chip => chip.Label == "bots").SelectCommand.Execute(null);
 
         Assert.Equal("bots", vm.ProfileFilter);
-        Assert.Equal([false, true, true], vm.Accounts.Select(group => group.IsVisible));
+        Assert.Equal([true, true], vm.Accounts.Select(group => group.IsVisible));
+        Assert.Equal([false, true], vm.Accounts[0].Rows.Select(row => row.IsVisible));
+        Assert.Equal([true], vm.Accounts[1].Rows.Select(row => row.IsVisible));
         Assert.Equal("Play selected (2)", vm.PlayCheckedText);
         await vm.LaunchCheckedCommand.ExecuteAsync();
-        Assert.Equal([("One", "Bob"), ("Two", "Alice")], core.LaunchRequests.Select(request => (request.Server, request.Account)));
+        Assert.Equal([("Two", "Alice"), ("One", "Bob")], core.LaunchRequests.Select(request => (request.Server, request.Account)));
 
         vm.ProfileFilters[0].SelectCommand.Execute(null);
         Assert.All(vm.Accounts, group => Assert.True(group.IsVisible));
