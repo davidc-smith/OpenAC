@@ -123,20 +123,27 @@ public static class FlexLayout
     {
         node.SizeDependent = false;
         node.HeightForWidth = false;
-        if (node.Measure is not null || node.ScrollX || node.ScrollY) return;
+        node.ScrollsDependentContent = false;
+        if (node.Measure is not null) return;
+        bool dependent = false, heightForWidth = false;
         if (node.Wrap)
         {
-            node.SizeDependent = true;
-            node.HeightForWidth = node.Direction == FlexDirection.Row;
-            return;
+            dependent = true;
+            heightForWidth = node.Direction == FlexDirection.Row;
         }
-        for (int i = 0; i < node.Children.Count; i++)
+        else
         {
-            FlexNode child = node.Children[i];
-            if (child.Hidden || !child.SizeDependent) continue;
-            node.SizeDependent = true;
-            node.HeightForWidth |= child.HeightForWidth;
+            for (int i = 0; i < node.Children.Count; i++)
+            {
+                FlexNode child = node.Children[i];
+                if (child.Hidden || !child.SizeDependent) continue;
+                dependent = true;
+                heightForWidth |= child.HeightForWidth;
+            }
         }
+        node.HeightForWidth = heightForWidth;
+        if (node.ScrollX || node.ScrollY) node.ScrollsDependentContent = dependent;
+        else node.SizeDependent = dependent;
     }
 
     private static FlexMeasurement MeasureChildren(FlexNode node)
@@ -218,6 +225,56 @@ public static class FlexLayout
     /// them and lays out the rest of the subtree.
     /// </summary>
     private static void ArrangeChildren(FlexNode node, float? width, float? height, bool descend)
+    {
+        node.ScrollbarX = false;
+        node.ScrollbarY = false;
+        if (node.Measure is null && (node.ScrollX || node.ScrollY) && Positive(node.ScrollbarSize) > 0f
+            && width is { } w && height is { } h)
+        {
+            SettleScrollbars(node, w, h, descend);
+            return;
+        }
+        node.Viewport = new FlexSize(width ?? 0f, height ?? 0f);
+        ArrangeContent(node, width, height, descend);
+    }
+
+    /// <summary>
+    /// Lays a scrolling container out with the bars its content needs. It
+    /// starts with none, lays its items out in the viewport, adds every bar
+    /// whose axis now overflows, and repeats in the smaller viewport until
+    /// the bars stop changing. A vertical bar narrows the viewport, which can
+    /// make the content overflow horizontally, and a horizontal bar does the
+    /// reverse; bars are only ever added, so this ends after at most three
+    /// layouts of the container's own items. Its subtree is then laid out
+    /// once, in the settled viewport.
+    /// </summary>
+    private static void SettleScrollbars(FlexNode node, float width, float height, bool descend)
+    {
+        float bar = Positive(node.ScrollbarSize);
+        bool barX = false, barY = false;
+        float viewW = Positive(width), viewH = Positive(height);
+        for (int pass = 0; pass < 3; pass++)
+        {
+            ArrangeContent(node, viewW, viewH, descend: false);
+            bool needX = barX || (node.ScrollX && node.ContentSize.Width > viewW);
+            bool needY = barY || (node.ScrollY && node.ContentSize.Height > viewH);
+            if (needX == barX && needY == barY) break;
+            barX = needX;
+            barY = needY;
+            viewW = Positive(width - (barY ? bar : 0f));
+            viewH = Positive(height - (barX ? bar : 0f));
+        }
+        ArrangeContent(node, viewW, viewH, descend);
+        node.ScrollbarX = barX;
+        node.ScrollbarY = barY;
+        node.Viewport = new FlexSize(viewW, viewH);
+    }
+
+    /// <summary>
+    /// <see cref="ArrangeChildren"/> without the scrollbars: lays the items
+    /// out in exactly <paramref name="width"/> x <paramref name="height"/>.
+    /// </summary>
+    private static void ArrangeContent(FlexNode node, float? width, float? height, bool descend)
     {
         if (node.Measure is not null)
         {
@@ -319,7 +376,7 @@ public static class FlexLayout
             FlexNode child = node.Children[i];
             if (child.Hidden) continue;
 
-            if (!IsSizedAcross(node, child))
+            if (!IsLaidAcross(node, child))
             {
                 s[BaseSlot * count + i] = MeasuredBase(child, row);
                 s[MinSlot * count + i] = MainOf(child.MinimumSize, row);
@@ -348,7 +405,9 @@ public static class FlexLayout
             float? explicitMain = row ? child.Width : child.Height;
             float? explicitMin = row ? child.MinWidth : child.MinHeight;
             float maxMain = MainOf(child.MaximumSize, row);
-            float autoMin = explicitMain is { } e ? MathF.Min(Positive(e), extent) : extent;
+            // A scrolling child prefers its whole content but may shrink to its viewport minimum.
+            float contentMin = child.SizeDependent ? extent : MainOf(child.MinimumSize, row);
+            float autoMin = explicitMain is { } e ? MathF.Min(Positive(e), contentMin) : contentMin;
             s[BaseSlot * count + i] = child.Basis is { } basis ? Positive(basis) : explicitMain is { } em ? Positive(em) : extent;
             s[MinSlot * count + i] = MathF.Min(explicitMin is { } m ? Positive(m) : autoMin, maxMain);
         }
@@ -362,6 +421,26 @@ public static class FlexLayout
     /// </summary>
     private static bool IsSizedAcross(FlexNode parent, FlexNode child) =>
         child.SizeDependent && child.HeightForWidth == (parent.Direction == FlexDirection.Column);
+
+    /// <summary>
+    /// Whether <paramref name="child"/> scrolls along <paramref name="parent"/>'s
+    /// main axis (and not across it) over content that is size-dependent along
+    /// that axis: a <c>scroll="y"</c> wrapping row in a column. It is sized like
+    /// a child sized across, by the extent of its content at the cross size it
+    /// gets, so it shows all of it when there is room; its minimum stays its
+    /// scroll viewport, so it scrolls when there is not.
+    /// </summary>
+    private static bool IsScrolledAcross(FlexNode parent, FlexNode child)
+    {
+        if (!child.ScrollsDependentContent) return false;
+        bool column = parent.Direction == FlexDirection.Column;
+        if (child.HeightForWidth != column) return false;
+        return column ? child.ScrollY && !child.ScrollX : child.ScrollX && !child.ScrollY;
+    }
+
+    /// <summary>Whether the child's main size is found by laying its content out at the cross size it gets.</summary>
+    private static bool IsLaidAcross(FlexNode parent, FlexNode child) =>
+        IsSizedAcross(parent, child) || IsScrolledAcross(parent, child);
 
     /// <summary>
     /// Whether <paramref name="child"/> is size-dependent along
@@ -626,7 +705,7 @@ public static class FlexLayout
             FlexAlign align = child.AlignSelf ?? node.Align;
             float? explicitCross = row ? child.Height : child.Width;
             float minCross = s[CrossFloorSlot * count + i], maxCross = CrossOf(child.MaximumSize, row);
-            float cross = !IsSizedAcross(node, child) && align == FlexAlign.Stretch && explicitCross is null
+            float cross = !IsLaidAcross(node, child) && align == FlexAlign.Stretch && explicitCross is null
                 ? Math.Clamp(lineCross, minCross, MathF.Max(minCross, maxCross))
                 : s[CrossSlot * count + i];
             float crossOffset = align switch
