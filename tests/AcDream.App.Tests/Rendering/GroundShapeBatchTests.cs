@@ -44,7 +44,7 @@ public sealed class GroundShapeBatchTests
         batch.Begin();
         batch.AddTriangle(new Vector3(1f, 2f, 3f), new Vector3(4f, 5f, 6f), new Vector3(7f, 8f, 9f), HalfOrange);
         using (IGpuPassEncoder encoder = frame.BeginPass(WorldPass(withDepth: true)))
-            batch.Flush(encoder, Matrix4x4.Identity, 1280, 720);
+            batch.Flush(encoder, Matrix4x4.Identity);
 
         Assert.Contains(new GpuRecordedPipelineBind("ground-shape"), device.Calls);
         Assert.Contains(new GpuRecordedDepthWrite(false), device.Calls);
@@ -54,6 +54,24 @@ public sealed class GroundShapeBatchTests
             device.RingBytes.Slice((int)upload.OffsetBytes, upload.ByteCount)).ToArray();
         Assert.Equal(3 * GroundShapeBatch.FloatsPerVertex, floats.Length);
         Assert.Equal(new[] { 1f, 2f, 3f, 1f, 0.5f, 0f, 0.25f }, floats[..7]);
+    }
+
+    [Fact]
+    public void AFlushCoversTheWholeWorldPassInPixels()
+    {
+        // On a high-density display the window measures half the world
+        // pass's pixels; the shapes must still cover the whole pass.
+        var device = new RecordingGpuDevice(ringCapacityBytes: 1024 * 1024);
+        IGpuFrame frame = device.BeginFrame();
+        using var batch = new GroundShapeBatch(device, new FixedFrame(frame), new FourSampleWorldPass(3024, 1842));
+
+        batch.Begin();
+        batch.AddTriangle(Vector3.Zero, Vector3.UnitX, Vector3.UnitY, HalfOrange);
+        using (IGpuPassEncoder encoder = frame.BeginPass(WorldPass(withDepth: true)))
+            batch.Flush(encoder, Matrix4x4.Identity);
+
+        Assert.Equal(new GpuRecordedViewport(0, 0, 3024, 1842), device.Calls.OfType<GpuRecordedViewport>().Last());
+        Assert.Equal(new GpuRecordedScissor(0, 0, 3024, 1842), device.Calls.OfType<GpuRecordedScissor>().Last());
     }
 
     [Fact]
@@ -68,7 +86,7 @@ public sealed class GroundShapeBatchTests
             batch.AddTriangle(Vector3.Zero, Vector3.UnitX, Vector3.UnitY, HalfOrange);
         Assert.Equal(GroundShapeBatch.VertexBudget % 3, batch.RemainingVertexBudget);
         using (IGpuPassEncoder encoder = frame.BeginPass(WorldPass(withDepth: true)))
-            batch.Flush(encoder, Matrix4x4.Identity, 1280, 720);
+            batch.Flush(encoder, Matrix4x4.Identity);
 
         // Every whole triangle that fits, and not one more.
         uint drawn = Assert.Single(device.Calls.OfType<GpuRecordedDraw>()).VertexCount;
@@ -84,10 +102,10 @@ public sealed class GroundShapeBatchTests
 
         batch.Begin();
         using (IGpuPassEncoder encoder = frame.BeginPass(WorldPass(withDepth: true)))
-            batch.Flush(encoder, Matrix4x4.Identity, 1280, 720);
+            batch.Flush(encoder, Matrix4x4.Identity);
         batch.AddTriangle(Vector3.Zero, Vector3.UnitX, Vector3.UnitY, HalfOrange);
         using (IGpuPassEncoder encoder = frame.BeginPass(WorldPass(withDepth: false)))
-            batch.Flush(encoder, Matrix4x4.Identity, 1280, 720);
+            batch.Flush(encoder, Matrix4x4.Identity);
 
         Assert.Empty(device.Calls.OfType<GpuRecordedDraw>());
     }
@@ -115,15 +133,15 @@ public sealed class GroundShapeBatchTests
         public IGpuFrame? CurrentFrame => frame;
     }
 
-    private sealed class FourSampleWorldPass : IWorldPassScope
+    private sealed class FourSampleWorldPass(int width = 1280, int height = 720) : IWorldPassScope
     {
         public int SampleCount => 4;
 
         public IGpuPassEncoder? CurrentEncoder => null;
 
-        public int AttachmentWidth => 1280;
+        public int AttachmentWidth => width;
 
-        public int AttachmentHeight => 720;
+        public int AttachmentHeight => height;
 
         public WorldFrameSections Sections { get; } = new();
 

@@ -87,7 +87,7 @@ internal sealed class PluginGroundShapeRenderer(
             Draw(in planned, frame.Position);
         }
         _planned.Clear();
-        batch.Flush(encoder, frame.ViewProjection, width, height);
+        batch.Flush(encoder, frame.ViewProjection);
     }
 
     /// <summary>

@@ -247,15 +247,16 @@ public sealed class DebugLineRenderer : IDisposable
     /// Draws the accumulated solid triangles into the open world pass, with
     /// its depth, so they sit in the scene like the world does.
     /// </summary>
-    internal void FlushWorld(IGpuPassEncoder encoder, Matrix4x4 viewProjection, int width, int height)
+    internal void FlushWorld(IGpuPassEncoder encoder, Matrix4x4 viewProjection)
     {
-        if (_solidVertexCount == 0 || _worldSolidPipeline is null || encoder.Pass.Depth is null)
+        if (_solidVertexCount == 0 || _worldSolidPipeline is null || _worldPass is null || encoder.Pass.Depth is null)
             return;
         IGpuFrame frame = _frameSource.CurrentFrame
             ?? throw new InvalidOperationException("World lines require an active frame.");
         encoder.BindPipeline(_worldSolidPipeline);
-        encoder.SetViewport(0, 0, width, height);
-        encoder.SetScissor(0, 0, width, height);
+        // The whole world pass in its pixels, not the window's points, which a high-density display halves.
+        encoder.SetViewport(0, 0, _worldPass.AttachmentWidth, _worldPass.AttachmentHeight);
+        encoder.SetScissor(0, 0, _worldPass.AttachmentWidth, _worldPass.AttachmentHeight);
         encoder.SetDepthWrite(true);
         encoder.SetStencil(GpuStencilState.Default);
         GpuPushConstants constants = GpuPushConstants.Default;
