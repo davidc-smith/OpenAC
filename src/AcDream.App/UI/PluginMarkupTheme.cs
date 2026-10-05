@@ -21,6 +21,25 @@ internal static class PluginMarkupTheme
         });
     }
 
+    /// <summary>
+    /// Themes a window's title bar: the palette for its band and close button,
+    /// the title weight without outline under a theme, and Classic's own font,
+    /// title colour and outline back under Classic. The modern fonts are read
+    /// only once a theme is on, so a Classic window never loads them.
+    /// </summary>
+    public static void RegisterTitleBar(UiPluginMarkupPanel panel, PluginTitleBar bar)
+    {
+        UiDatFont? classicFont = bar.DatFont;
+        var classicColor = bar.TextColor;
+        panel.AddThemeAction(p =>
+        {
+            bar.ThemePalette = p;
+            bar.DatFont = p is null ? classicFont : panel.ModernTitleFont ?? panel.ModernFont ?? classicFont;
+            bar.TextColor = p?.Text ?? classicColor;
+            bar.Outline = p is null;
+        });
+    }
+
     public static void Register(UiPluginMarkupPanel panel, UiElement element, XElement xml)
     {
         if (panel.HasModernFont)
