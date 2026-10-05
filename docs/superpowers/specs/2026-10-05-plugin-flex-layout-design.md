@@ -1,7 +1,7 @@
 # Plugin flex layout, title bars and scrolling groups — design
 
-Date: 2026-10-05. Status: approved in brainstorming; revised after a Codex
-review (2026-10-05) — see "Review changes" at the end; awaiting user review.
+Date: 2026-10-05. Status: approved; revised after a Codex review and while
+planning PR 1 — see "Planning corrections" and "Review changes" at the end.
 
 ## Goal
 
@@ -261,10 +261,13 @@ A pure module in `src/AcDream.App/UI/Layout/Flex/` with no dependency on
   3. Per line, resolve flexible lengths: distribute positive free space by
      `grow`, or negative free space by `shrink × basis`; clamp to min/max;
      freeze violators and repeat until stable (at most item-count passes).
-  4. Cross size per item: `stretch` fills the line's cross size (respecting
-     `minh`/`maxh` or `minw`/`maxw`), others use their preferred cross size.
-     Line cross size is the largest item; without `wrap` the single line
-     takes the container's cross size.
+  4. Cross size per item: `stretch` fills the line's cross size (clamped to
+     the item's limits; the minimum is its content minimum, so stretch never
+     squashes an item below its content, unlike CSS's cross-axis
+     `min-height: auto` of 0), others use their preferred cross size. A
+     line's cross size starts as its largest item; without `wrap` the single
+     line takes the container's cross size, and with `wrap` spare cross space
+     is shared equally between the lines (CSS's default `align-content`).
   5. Main-axis position from `justify` and `gap`; cross-axis position from
      `align`/`alignself`.
   6. Snap to whole points by **cumulative edges**: start from the line's
@@ -274,6 +277,14 @@ A pure module in `src/AcDream.App/UI/Layout/Flex/` with no dependency on
      at its end, the last edge lands where the unsnapped one would, and
      adjacent items never overlap or gap by a subpixel. The cross axis rounds
      each item's two edges the same way.
+- **Height-for-width.** A wrapping container whose own main axis is its
+  parent's cross axis (a wrapping row inside a column) and that does not
+  scroll is sized, along the parent's main axis, by the lines it makes at the
+  cross size it is actually given (stretched over a single line, else its
+  preferred cross size within the space); its minimum along that axis is the
+  same extent. Its measured minimum (the lines at its narrowest) still feeds
+  the window minimum but does not lift its preferred cross size, which is
+  one line.
 - Free space that cannot be satisfied (items at their minimums) overflows
   the container's end and is clipped (or scrolls, section 4).
 - Never throws. Authored numbers are finite by construction (section 5);
@@ -572,6 +583,14 @@ both modern themes.
 ## Open questions
 
 None at the time of writing.
+
+## Planning corrections (PR 1)
+
+Found while prototyping the engine (see the PR 1 plan's "Spec corrections"):
+height-for-width for wrapping containers laid across their parent (3.1),
+wrapped lines sharing spare cross space and stretch keeping the content
+minimum (3.1 step 4), and the flex types being `public` (xUnit theories
+take enum parameters; `UiElement` is public too).
 
 ## Review changes
 
