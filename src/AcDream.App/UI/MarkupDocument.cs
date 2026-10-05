@@ -447,6 +447,15 @@ public static class MarkupDocument
                         + $"Action<string> property on {binding.GetType().Name}");
                 }
 
+                string? blurName = (string?)el.Attribute("onblur");
+                Action<string>? blurred = BindStringAction(blurName, binding);
+                if (blurName is not null && blurred is null)
+                {
+                    throw new FormatException(
+                        $"<field onblur=\"{blurName}\"> did not resolve to an "
+                        + $"Action<string> property on {binding.GetType().Name}");
+                }
+
                 string? upName = (string?)el.Attribute("onup");
                 Action? onUp = BindAction(upName, binding);
                 if (upName is not null && onUp is null)
@@ -485,6 +494,14 @@ public static class MarkupDocument
                     OnUp = onUp,
                     OnDown = onDown,
                 };
+                // onsubmit has already handled the text an Enter submit leaves with.
+                if (blurred is not null)
+                {
+                    field.OnFocusLost = text =>
+                    {
+                        if (!field.LosingFocusToSubmit) blurred(text);
+                    };
+                }
                 BindColorSource(
                     (string?)el.Attribute("background"), binding,
                     value => field.BackgroundColor = value,
