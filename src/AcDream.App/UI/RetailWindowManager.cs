@@ -222,6 +222,51 @@ public sealed class RetailWindowManager : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Brings a window up to its <see cref="UiElement.MinWidth"/> and
+    /// <see cref="UiElement.MinHeight"/> after its minimum grew (a plugin
+    /// window whose content needs more room). Unlike <see cref="ResizeTo"/> it
+    /// grows an axis even when the window cannot be resized along it, and it
+    /// keeps the window on screen: a frame that would reach past the parent's
+    /// right or bottom edge moves left or up, no further than the parent's
+    /// origin, and an axis whose minimum is larger than the parent takes the
+    /// parent's size at its origin. The new geometry is announced (and so
+    /// persisted) like a resize, and a move when the frame moved.
+    /// </summary>
+    public bool EnforceMinimumSize(string name)
+    {
+        if (!_byName.TryGetValue(name, out var handle)) return false;
+        var frame = handle.OuterFrame;
+        float width = MathF.Max(frame.Width, frame.MinWidth);
+        float height = MathF.Max(frame.Height, frame.MinHeight);
+        float left = frame.Left, top = frame.Top;
+        if (frame.Parent is { } parent)
+        {
+            (left, width) = FitAxis(left, width, parent.Width);
+            (top, height) = FitAxis(top, height, parent.Height);
+        }
+
+        bool resized = width != frame.Width || height != frame.Height;
+        bool moved = left != frame.Left || top != frame.Top;
+        if (!resized && !moved) return true;
+        frame.Width = width;
+        frame.Height = height;
+        frame.Left = left;
+        frame.Top = top;
+        frame.ResetAnchorCapture();
+        if (resized) _root.NotifyWindowResized(frame);
+        if (moved) _root.NotifyWindowMoved(frame);
+        return true;
+    }
+
+    /// <summary>Keeps one axis of a window inside a parent <paramref name="space"/> long.</summary>
+    private static (float Start, float Size) FitAxis(float start, float size, float space)
+    {
+        if (size > space) return (0f, MathF.Max(0f, space));
+        if (start + size > space) start = MathF.Max(0f, space - size);
+        return (start, size);
+    }
+
     public bool SetOpacity(string name, float opacity)
     {
         if (!_byName.TryGetValue(name, out var handle)) return false;
