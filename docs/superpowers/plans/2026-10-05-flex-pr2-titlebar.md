@@ -1556,3 +1556,15 @@ Run the client with the Theme Gallery plugin against the local ACE test server (
 - [ ] **Step 4: Finish**
 
 Use superpowers-extended-cc:finishing-a-development-branch. Delivery as for PR 1: merge `flex/titlebar` into local main with `--no-ff` after review, keep the branch locally, push nothing without the user's word.
+
+## Execution notes (2026-10-05)
+
+Branch `flex/titlebar`, head ad953c38 (8 commits). Tasks 1–5 reviewed clean;
+the final review's fix wave (46ec8946) re-captures the close button's anchor
+baseline on theme switch and documents that non-docked bar windows reopen only
+through `ShowPanel` (ruling: they keep the X). The live gate on 10.10.20.20
+(player account) found the close button had no tooltip (it lacked the markup
+tooltip skin, root 0x10000397 / layout 0x21000041) and no Classic hover. The fix (ad953c38)
+adds the skin and, by user decision, keeps the retail sprite 0x06004D0C
+(24×25), adds its pressed sprite 0x06004D0D and a hover highlight. App suite:
+the same 166 environment failures as main, no new ones.

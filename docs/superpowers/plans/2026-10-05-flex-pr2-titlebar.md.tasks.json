@@ -46,12 +46,12 @@
     {
       "id": 5,
       "subject": "Task 6: Full verification and live gate",
-      "status": "in_progress",
+      "status": "completed",
       "description": "**Goal:** The branch builds at 0 warnings and passes the App suite with no new failures against main, and the title bar is seen working in the real client in Classic, Moss and Brass at 2\u00d7.\n\n**Files:**\n- None created; evidence (captures) saved to the scratchpad, not the repo.\n\n**Acceptance Criteria:**\n- [ ] `dotnet build -c Release` \u2192 0 warnings, 0 errors.\n- [ ] `dotnet test tests/AcDream.App.Tests` \u2192 the failure set equals main's (166 environment failures at 0991b97c, by name), with no new failures.\n- [ ] Live, on the local ACE server (10.10.20.20 via `~/OpenAC-dev/dev-client.env`): the Theme Gallery window shows the bar with \"Theme Gallery\" and an X, and its content is not overlapped. Captures at 2\u00d7 in Classic, Moss and Brass.\n- [ ] Live: the X closes the gallery and its dock slot reopens it; the bar drags the window; hovering the X in Moss shows the text-colour X and the \"Close (reopen from the dock)\" tooltip; the gallery has no \"\u2013\".\n\n**Verify:** the two commands above, plus the three captures shown to the user.\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"dotnet build -c Release && dotnet test tests/AcDream.App.Tests\", \"modelTier\": \"standard\", \"acceptanceCriteria\": [\"`dotnet build -c Release` \\u2192 0 warnings, 0 errors.\", \"`dotnet test tests/AcDream.App.Tests` \\u2192 the failure set equals main's (166 environment failures at 0991b97c, by name), with no new failures.\", \"Live, on the local ACE server (10.10.20.20 via `~/OpenAC-dev/dev-client.env`): the Theme Gallery window shows the bar with \\\"Theme Gallery\\\" and an X, and its content is not overlapped. Captures at 2\\u00d7 in Classic, Moss and Brass.\", \"Live: the X closes the gallery and its dock slot reopens it; the bar drags the window; hovering the X in Moss shows the text-colour X and the \\\"Close (reopen from the dock)\\\" tooltip; the gallery has no \\\"\\u2013\\\".\"]}\n```",
       "blockedBy": [
         4
       ]
     }
   ],
-  "lastUpdated": "2026-10-05T13:54:35"
+  "lastUpdated": "2026-10-05T14:42:42"
 }
