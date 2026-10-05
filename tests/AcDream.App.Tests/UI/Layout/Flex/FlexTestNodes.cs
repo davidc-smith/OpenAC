@@ -23,4 +23,7 @@ internal static class FlexTestNodes
         node.Children.AddRange(children);
         return node;
     }
+
+    public static void Arrange(FlexNode root, float width, float height) =>
+        FlexLayout.Arrange(root, new FlexRect(0f, 0f, width, height));
 }
