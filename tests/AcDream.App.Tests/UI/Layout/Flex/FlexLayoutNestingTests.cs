@@ -282,4 +282,16 @@ public sealed class FlexLayoutNestingTests
 
         Assert.Equal(new FlexSize(4f + 70f + 2f, 1f + 20f + 3f), row.ContentSize);
     }
+
+    [Fact]
+    public void An_empty_container_reaches_across_its_padding()
+    {
+        FlexNode row = Row();
+        row.Padding = FlexEdges.All(8f);
+
+        Arrange(row, 100f, 100f);
+
+        // No items: the leading 8 plus the trailing 8 on each axis.
+        Assert.Equal(new FlexSize(16f, 16f), row.ContentSize);
+    }
 }

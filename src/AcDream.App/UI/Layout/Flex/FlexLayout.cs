@@ -220,7 +220,9 @@ public static class FlexLayout
                 : MathF.Max(0f, (crossSpace - linesCross - lineGaps) / lineCount);
         }
 
-        float maxMainEdge = 0f, maxCrossEdge = 0f;
+        // Edges start at the leading padding, so an empty container still
+        // reaches across its padding on both sides.
+        float maxMainEdge = originMain, maxCrossEdge = originCross;
         float crossCursor = originCross;
         lineStart = 0;
         for (int line = 0; line < lineCount; line++)
