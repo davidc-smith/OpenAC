@@ -51,6 +51,11 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
     private readonly float _authoredBackpackHeight;
     private readonly float _authoredInventoryHeight;
     private readonly float _authoredInventoryMinHeight;
+    // The window frame the client mounts the inventory in, when it has one: the
+    // contents stretch with it, so the frame is what a longer pack column grows.
+    private readonly UiElement? _frame;
+    private readonly float _frameChrome;
+    private readonly float _authoredFrameMinHeight;
 
     private float _burdenFill;
     private int   _burdenPercent;
@@ -143,6 +148,12 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         _authoredBackpackHeight = _backpackWindow?.Height ?? 0;
         _authoredInventoryHeight = _inventoryWindow.Height;
         _authoredInventoryMinHeight = _inventoryWindow.MinHeight;
+        if (_inventoryWindow.Parent is { } frame and not UiRoot)
+        {
+            _frame = frame;
+            _frameChrome = frame.Height - _inventoryWindow.Height;
+            _authoredFrameMinHeight = frame.MinHeight;
+        }
 
         if (_contentsGrid is not null)
         {
@@ -547,8 +558,21 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             _backpackWindow.ResetAnchorCapture();
         }
         _inventoryWindow.MinHeight = MathF.Max(_authoredInventoryMinHeight, _authoredInventoryHeight + extension);
-        _inventoryWindow.Height = MathF.Max(_inventoryWindow.Height, _inventoryWindow.MinHeight);
-        _inventoryWindow.ResetAnchorCapture();
+        if (_frame is not null)
+        {
+            // Resizing the contents directly would re-measure their anchors against
+            // whatever height the frame has right now, and they would stop following it.
+            _frame.MinHeight = MathF.Max(_authoredFrameMinHeight, _inventoryWindow.MinHeight + _frameChrome);
+            _frame.MaxHeight = MathF.Max(_frame.MaxHeight, _frame.MinHeight);
+            _frame.Height = MathF.Max(_frame.Height, _frame.MinHeight);
+            _frame.ResetAnchorCapture();
+            _inventoryWindow.ApplyAnchor(_frame.Width, _frame.Height);
+        }
+        else
+        {
+            _inventoryWindow.Height = MathF.Max(_inventoryWindow.Height, _inventoryWindow.MinHeight);
+            _inventoryWindow.ResetAnchorCapture();
+        }
         _containerList.CaptureCurrentAnchorBaseline();
     }
 
