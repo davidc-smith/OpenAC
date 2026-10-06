@@ -116,6 +116,29 @@ public sealed class WorldLabelAutomationTests
     }
 
     [Fact]
+    public void LeavingTheWorldTakesEveryOnesLabelsDownUntilTheSubscriptionIsDisposed()
+    {
+        // The graphical client keeps one runtime for the whole process, so
+        // the surface never rebinds between stays; leaving the world is what
+        // ends the session the labels hung in.
+        using var surface = new RuntimeAutomationSurface();
+        var events = new WorldEvents();
+        IWorldLabelAutomation mine = ((IScopedWorldLabelSource)surface).ScopeTo("mine");
+        Assert.True(mine.ShowLabels([Label(0x7000_0001u)]));
+        Assert.True(surface.Labels.ShowLabels([Label(0x7000_0002u)]));
+        IDisposable subscription = surface.ClearWorldLabelsOn(events);
+
+        events.FireLogoff();
+        Assert.Empty(surface.CaptureWorldLabels());
+
+        Assert.True(mine.ShowLabels([Label(0x7000_0003u)]));
+        Assert.Single(surface.CaptureWorldLabels());
+        subscription.Dispose();
+        events.FireLogoff();
+        Assert.Single(surface.CaptureWorldLabels());
+    }
+
+    [Fact]
     public void TheMergedViewIsSharedUntilASetChanges()
     {
         using var surface = new RuntimeAutomationSurface();
