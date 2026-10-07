@@ -90,6 +90,10 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     private readonly List<CanvasTarget> _targets = [];
     private CanvasTarget? _shown;
     private bool _targetsUnavailable;
+
+    /// <summary>The canvas size the targets were made for.</summary>
+    private int _targetsWidth;
+    private int _targetsHeight;
     private bool _released;
     private PluginPointerButton _heldButton;
     private readonly Action? _pointerRelease;
@@ -145,8 +149,9 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         // plugin's, held until the button comes up, wherever the pointer went.
         CapturesPointerDrag = registration.AcceptsPointerInput;
         Anchors = AnchorEdges.None;
-        Width = registration.Width;
-        Height = registration.Height;
+        (_targetsWidth, _targetsHeight) = registration.Size;
+        Width = _targetsWidth;
+        Height = _targetsHeight;
         // Read by the tree before the visibility check, so a canvas the
         // plugin hid and shows again is ticked and drawn on the next frame.
         VisibleSource = () => _registration.IsVisible && !_registration.IsDropped && !_released;
@@ -477,6 +482,9 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     /// </summary>
     internal void Layout()
     {
+        (int width, int height) = _registration.Size;
+        Width = width;
+        Height = height;
         float layerWidth = Parent?.Width ?? 0f;
         float layerHeight = Parent?.Height ?? 0f;
         float x = (float)_registration.Offset.X;
@@ -517,6 +525,7 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         int? frameSlot = _surface.CurrentFrameSlot;
         if (frameSlot is { } slot)
         {
+            FollowSize();
             FollowPixelScale();
             RepaintIfInvalidated(slot);
             if (_shown is not null)
@@ -682,6 +691,24 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
             _surface.Services.Device.Capabilities.MaxImageDimension2D);
         if (scale == _pixelScale) return;
         _pixelScale = scale;
+        GiveBackTargets();
+        _targetsUnavailable = false;
+        _registration.Invalidate();
+    }
+
+    /// <summary>
+    /// Reads the size the plugin last asked for. A change gives every target
+    /// back, as a change of pixel scale does, and the repaint the resize
+    /// asked for paints at the new size in this same draw.
+    /// </summary>
+    private void FollowSize()
+    {
+        (int width, int height) = _registration.Size;
+        if (width == _targetsWidth && height == _targetsHeight) return;
+        _targetsWidth = width;
+        _targetsHeight = height;
+        Width = width;
+        Height = height;
         GiveBackTargets();
         _targetsUnavailable = false;
         _registration.Invalidate();

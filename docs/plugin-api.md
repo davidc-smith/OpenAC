@@ -1647,8 +1647,18 @@ may register at most 8 canvases, each with an id unique within the plugin;
 `ZOrder` can be set at any time; disposing the canvas removes it, and everything a
 plugin still holds is removed when the plugin unloads.
 
+`TryResize(width, height)` changes a canvas's size without registering it
+again: the host makes a surface at the new size and paints it on the next
+frame, and the anchor, offset, visibility and handlers stay as they were, so
+a canvas anchored at the bottom right keeps that corner in place while it
+grows up and to the left. `Width` and `Height` read the new size at once. It
+answers false, and changes nothing, for a size below 1 or a disposed canvas,
+and on a host that cannot resize. A plugin that shows one of two layouts can
+keep one canvas and resize it, rather than register both and show one.
+
 Without a window the canvas is accepted, `IsAvailable` is false, the
-state the plugin sets is kept, and the paint callback is never called.
+state the plugin sets is kept (a resize included), and the paint callback is
+never called.
 
 ### Image regions
 

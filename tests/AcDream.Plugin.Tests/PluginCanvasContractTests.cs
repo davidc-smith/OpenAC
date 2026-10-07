@@ -207,6 +207,22 @@ public sealed class PluginCanvasContractTests
     }
 
     [Fact]
+    public void TheInertCanvasKeepsANewSizeAndAnOlderHostsCanvasRefusesIt()
+    {
+        IPluginCanvas inert = new NoOpPluginCanvas(Descriptor());
+        Assert.True(inert.TryResize(300, 50));
+        Assert.Equal((300, 50), (inert.Width, inert.Height));
+        Assert.False(inert.TryResize(0, 50));
+        Assert.Equal((300, 50), (inert.Width, inert.Height));
+        inert.Dispose();
+        Assert.False(inert.TryResize(10, 10));
+
+        // A canvas written before resizing answers with the default.
+        IPluginCanvas older = new PointerOnlyCanvas();
+        Assert.False(older.TryResize(300, 50));
+    }
+
+    [Fact]
     public void TheFakeHostAcceptsACanvasInertly()
     {
         var host = new FakePluginHost();

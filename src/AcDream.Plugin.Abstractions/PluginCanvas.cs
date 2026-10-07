@@ -571,14 +571,32 @@ public interface IPluginCanvas : IDisposable
     /// <summary>The plugin's own name for this canvas, as registered.</summary>
     string CanvasId { get; }
 
-    /// <summary>The canvas's width in pixels, as registered.</summary>
+    /// <summary>The canvas's width in pixels: as registered, or as last resized.</summary>
     int Width { get; }
 
-    /// <summary>The canvas's height in pixels, as registered.</summary>
+    /// <summary>The canvas's height in pixels: as registered, or as last resized.</summary>
     int Height { get; }
 
     /// <summary>Whether the host draws this canvas at all: false without a window.</summary>
     bool IsAvailable => false;
+
+    /// <summary>
+    /// Changes the canvas's size. The host gives up the old surface, makes
+    /// one at the new size and calls the paint callback again on the next
+    /// frame; <see cref="Anchor"/>, <see cref="Offset"/>, visibility and
+    /// handlers are kept, so a canvas anchored at a right or bottom edge
+    /// keeps that edge where it was. <see cref="Width"/> and
+    /// <see cref="Height"/> report the new size at once. Resizing to the size
+    /// the canvas already has changes nothing and answers true.
+    /// </summary>
+    /// <param name="width">The new width in pixels, at least 1.</param>
+    /// <param name="height">The new height in pixels, at least 1.</param>
+    /// <returns>
+    /// True when the canvas now has that size. False for a width or height
+    /// below 1, on a disposed canvas, and on a host that cannot resize, which
+    /// is what the default implementation answers; the canvas is unchanged.
+    /// </returns>
+    bool TryResize(int width, int height) => false;
 
     /// <summary>Whether the canvas is shown. Set it to show or hide the canvas; what was painted is kept while hidden.</summary>
     bool IsVisible { get; set; }
@@ -719,10 +737,26 @@ public sealed class NoOpPluginCanvas : IPluginCanvas
     public string CanvasId { get; }
 
     /// <inheritdoc/>
-    public int Width { get; }
+    public int Width { get; private set; }
 
     /// <inheritdoc/>
-    public int Height { get; }
+    public int Height { get; private set; }
+
+    /// <summary>
+    /// Records the new size, so the plugin's own logic runs unchanged; there
+    /// is nothing to paint at it.
+    /// </summary>
+    /// <param name="width">The new width in pixels, at least 1.</param>
+    /// <param name="height">The new height in pixels, at least 1.</param>
+    /// <returns>False for a size below 1 or a disposed canvas; true otherwise.</returns>
+    public bool TryResize(int width, int height)
+    {
+        if (width < 1 || height < 1 || IsDisposed)
+            return false;
+        Width = width;
+        Height = height;
+        return true;
+    }
 
     /// <inheritdoc/>
     public bool IsVisible { get; set; }

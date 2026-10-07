@@ -2339,6 +2339,8 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             public int Height => inner.Height;
             public bool IsAvailable => inner.IsAvailable;
 
+            public bool TryResize(int width, int height) => inner.TryResize(width, height);
+
             public bool IsVisible
             {
                 get => inner.IsVisible;
