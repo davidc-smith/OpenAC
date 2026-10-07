@@ -338,7 +338,6 @@ internal sealed class WorldIconLayerElement : UiElement
 /// </summary>
 internal sealed class WorldIconOverlayController
 {
-    private readonly UiOverlayHost _host;
     private readonly UiOverlayLayer _layer;
     private readonly WorldIconLayerElement _element;
     private readonly WorldIconLayout _layout = new();
@@ -357,7 +356,6 @@ internal sealed class WorldIconOverlayController
     private List<WorldIconPlacement> _back = [];
 
     private WorldIconOverlayController(
-        UiOverlayHost host,
         UiOverlayLayer layer,
         WorldIconLayerElement element,
         Func<IReadOnlyList<WorldIconEntry>> icons,
@@ -368,7 +366,6 @@ internal sealed class WorldIconOverlayController
         Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera,
         Func<bool>? hidden)
     {
-        _host = host;
         _layer = layer;
         _element = element;
         _icons = icons;
@@ -424,7 +421,7 @@ internal sealed class WorldIconOverlayController
         };
         layer.AddChild(element);
         return new WorldIconOverlayController(
-            host, layer, element, icons, anchor, position, labels, labelLineHeight, camera, hidden);
+            layer, element, icons, anchor, position, labels, labelLineHeight, camera, hidden);
     }
 
     internal void Tick()
@@ -445,7 +442,6 @@ internal sealed class WorldIconOverlayController
             return;
         }
 
-        _host.SetViewport(camera.Viewport);
         _element.Width = camera.Viewport.X;
         _element.Height = camera.Viewport.Y;
         CountLabelLines();

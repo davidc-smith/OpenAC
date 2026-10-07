@@ -114,8 +114,9 @@ internal class UiOverlayLayer : UiPanel
 /// <para>Children are clipped to their parent's rectangle by default, so an
 /// overlay whose rectangle is still zero-sized shows nothing at all. That is
 /// why the host seeds its rectangle from the interface root at mount and
-/// re-applies it to the root and every layer on
-/// <see cref="SetViewport(Vector2)"/>.</para>
+/// re-applies it to the root and every layer on <see cref="FollowRoot"/>.
+/// The interface root is the one source of that rectangle: a world overlay
+/// projects into its camera's viewport but never resizes the layers.</para>
 /// </summary>
 internal sealed class UiOverlayHost
 {
@@ -191,14 +192,17 @@ internal sealed class UiOverlayHost
     }
 
     /// <summary>
-    /// Points the host at the rectangle the world is being drawn into. Every
-    /// layer covers the same rectangle: an overlay is by definition the whole
-    /// screen, and one shared value keeps two owners from clipping each other.
+    /// Brings the root and every layer to the interface root's current size.
+    /// The interface calls it every frame, after sizing its root to the
+    /// screen: the root can also be resized elsewhere (restoring the layout
+    /// on entering the world does), so the host follows the root rather than
+    /// waiting to be told of a change.
     /// </summary>
-    internal void SetViewport(Vector2 viewport)
+    internal void FollowRoot()
     {
-        if (_viewport == viewport) return;
-        _viewport = viewport;
+        var size = new Vector2(_host.Width, _host.Height);
+        if (_viewport == size) return;
+        _viewport = size;
         ApplyViewport();
     }
 

@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using AcDream.App.UI;
 using AcDream.App.UI.Layout;
+using AcDream.Plugin.Abstractions;
 
 namespace AcDream.App.Tests.UI.Layout;
 
@@ -151,18 +153,51 @@ public sealed class UiOverlayHostTests
     }
 
     [Fact]
-    public void ANewViewportReachesTheRootAndEveryLayerIncludingOnesAddedLater()
+    public void ANewRootSizeReachesTheRootAndEveryLayerIncludingOnesAddedLater()
     {
-        UiOverlayHost host = UiOverlayHost.Mount(Root());
+        UiRoot interfaceRoot = Root();
+        UiOverlayHost host = UiOverlayHost.Mount(interfaceRoot);
         UiOverlayLayer first = host.AddLayer("First");
+        UiOverlayLayer above = host.AddLayerAboveWindows("Above");
 
-        host.SetViewport(new Vector2(1920f, 1080f));
+        // Resized behind the host's back, the way restoring the layout on
+        // entering the world resizes it: the host is never told the size.
+        interfaceRoot.Width = 1920f;
+        interfaceRoot.Height = 1080f;
+        host.FollowRoot();
         UiOverlayLayer second = host.AddLayer("Second");
 
-        foreach (UiElement element in new UiElement[] { host.Root, first, second })
+        Assert.Equal(new Vector2(1920f, 1080f), host.Viewport);
+        foreach (UiElement element in new UiElement[] { host.Root, first, above, second })
         {
             Assert.Equal(0f, element.Left);
             Assert.Equal(0f, element.Top);
+            Assert.Equal(1920f, element.Width);
+            Assert.Equal(1080f, element.Height);
+        }
+    }
+
+    [Fact]
+    public void AWorldOverlayDrawingIntoADifferentViewportLeavesTheLayersAtTheScreenSize()
+    {
+        var interfaceRoot = new UiRoot { Width = 1920f, Height = 1080f };
+        UiOverlayHost host = UiOverlayHost.Mount(interfaceRoot);
+        UiOverlayLayer above = host.AddLayerAboveWindows("Above");
+        var samples = new List<PluginProjectileDebugSample>
+        {
+            new(new Vector3(0f, 0f, -10f), true, 0.4f),
+        };
+        ProjectileDebugOverlayController overlay = ProjectileDebugOverlayController.Mount(
+            host,
+            () => samples,
+            () => (Matrix4x4.Identity,
+                Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2f, 4f / 3f, 0.1f, 100f),
+                new Vector2(800f, 600f)));
+
+        overlay.Tick();
+
+        foreach (UiElement element in new UiElement[] { host.Root, above })
+        {
             Assert.Equal(1920f, element.Width);
             Assert.Equal(1080f, element.Height);
         }

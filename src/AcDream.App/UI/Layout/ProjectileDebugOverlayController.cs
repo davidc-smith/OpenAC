@@ -9,7 +9,6 @@ internal sealed class ProjectileDebugOverlayController
     private static readonly Vector4 ClearColor = new(0f, 1f, 0f, 0.95f);
     private static readonly Vector4 BlockedColor = new(1f, 0f, 0f, 0.95f);
 
-    private readonly UiOverlayHost _host;
     private readonly UiPanel _root;
     private readonly Func<IReadOnlyList<PluginProjectileDebugSample>> _samples;
     private readonly Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)>
@@ -17,12 +16,10 @@ internal sealed class ProjectileDebugOverlayController
     private readonly List<UiPanel> _markers = [];
 
     private ProjectileDebugOverlayController(
-        UiOverlayHost host,
         UiPanel root,
         Func<IReadOnlyList<PluginProjectileDebugSample>> samples,
         Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera)
     {
-        _host = host;
         _root = root;
         _samples = samples;
         _camera = camera;
@@ -42,7 +39,7 @@ internal sealed class ProjectileDebugOverlayController
         ArgumentNullException.ThrowIfNull(samples);
         ArgumentNullException.ThrowIfNull(camera);
         UiPanel root = host.AddLayer("PluginProjectileDebugOverlay");
-        return new ProjectileDebugOverlayController(host, root, samples, camera);
+        return new ProjectileDebugOverlayController(root, samples, camera);
     }
 
     internal void Tick()
@@ -58,7 +55,6 @@ internal sealed class ProjectileDebugOverlayController
         }
 
         EnsureMarkerCount(samples.Count);
-        _host.SetViewport(camera.Viewport);
         int visible = 0;
         for (int index = 0; index < samples.Count; index++)
         {
