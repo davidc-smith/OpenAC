@@ -29,6 +29,9 @@ internal sealed class PluginFonts : IPluginFonts, IDisposable
     public PluginFont Bundled(float pixelSize) =>
         _disposed ? PluginFont.None : _table.AcquireBundled(pixelSize);
 
+    public PluginFont Bundled(float pixelSize, PluginFontWeight weight) =>
+        _disposed ? PluginFont.None : _table.AcquireBundled(pixelSize, weight);
+
     public PluginFont FromStream(string name, Func<Stream> open, float pixelSize, PluginFontOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);

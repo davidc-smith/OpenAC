@@ -24,6 +24,16 @@ public readonly record struct PluginFont(int Handle, float PixelSize, float Line
 /// <param name="Last">The last code point in the range; at least <paramref name="First"/>.</param>
 public readonly record struct PluginCodepointRange(int First, int Last);
 
+/// <summary>The weights the client's bundled sans-serif font comes in.</summary>
+public enum PluginFontWeight
+{
+    /// <summary>The regular weight, used for body text.</summary>
+    Regular,
+
+    /// <summary>The semibold weight themed window titles are set in.</summary>
+    SemiBold,
+}
+
 /// <summary>How a font the plugin ships is prepared.</summary>
 public sealed record PluginFontOptions
 {
@@ -80,6 +90,18 @@ public interface IPluginFonts
     /// <param name="pixelSize">The size in canvas pixels, from <see cref="MinimumPixelSize"/> to <see cref="MaximumPixelSize"/>, prepared to the nearest quarter pixel.</param>
     /// <returns>The font, or <see cref="PluginFont.None"/> when the request was refused.</returns>
     PluginFont Bundled(float pixelSize) => PluginFont.None;
+
+    /// <summary>
+    /// The client's bundled sans-serif font, Noto Sans, in a weight and at a
+    /// size. <see cref="PluginFontWeight.SemiBold"/> is the weight themed
+    /// window titles are set in. Each weight and size is its own font, held
+    /// and counted like any other.
+    /// </summary>
+    /// <param name="pixelSize">The size in canvas pixels, from <see cref="MinimumPixelSize"/> to <see cref="MaximumPixelSize"/>, prepared to the nearest quarter pixel.</param>
+    /// <param name="weight">The weight; <see cref="PluginFontWeight.Regular"/> is the same font as <see cref="Bundled(float)"/>.</param>
+    /// <returns>The font, or <see cref="PluginFont.None"/> when the request was refused or the host has no such weight.</returns>
+    PluginFont Bundled(float pixelSize, PluginFontWeight weight) =>
+        weight == PluginFontWeight.Regular ? Bundled(pixelSize) : PluginFont.None;
 
     /// <summary>
     /// A font the plugin ships, opened through <paramref name="open"/> only

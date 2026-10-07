@@ -56,7 +56,9 @@ internal interface IPluginFontBackend
 /// </summary>
 internal sealed class PluginFontTable : IDisposable
 {
-    private readonly record struct Key(bool Bundled, string Name, float PixelSize, string Ranges);
+    private readonly record struct Key(
+        bool Bundled, string Name, float PixelSize, string Ranges,
+        PluginFontWeight Weight = PluginFontWeight.Regular);
 
     private sealed class Entry(Key key, int id, CanvasFont font, long ownedBytes, IReadOnlyList<(int First, int Last)> ranges)
     {
@@ -82,6 +84,7 @@ internal sealed class PluginFontTable : IDisposable
     private readonly HashSet<string> _reported = [];
     private IPluginFontBackend? _backend;
     private BundledCanvasFontCache? _bundled;
+    private BundledCanvasFontCache? _bundledSemiBold;
     private int _uiThreadId;
     private int _nextId;
     private long _ownedBytes;
@@ -116,7 +119,10 @@ internal sealed class PluginFontTable : IDisposable
     /// </summary>
     internal bool IsPainting { get; set; }
 
-    internal void Bind(IPluginFontBackend backend, BundledCanvasFontCache bundled, int uiThreadId)
+    /// <param name="bundledSemiBold">The shared bakes of the bundled font's semibold weight; null refuses that weight.</param>
+    internal void Bind(
+        IPluginFontBackend backend, BundledCanvasFontCache bundled, int uiThreadId,
+        BundledCanvasFontCache? bundledSemiBold = null)
     {
         ArgumentNullException.ThrowIfNull(backend);
         ArgumentNullException.ThrowIfNull(bundled);
@@ -125,6 +131,7 @@ internal sealed class PluginFontTable : IDisposable
             throw new InvalidOperationException("The font table is already bound.");
         _backend = backend;
         _bundled = bundled;
+        _bundledSemiBold = bundledSemiBold;
         _uiThreadId = uiThreadId;
     }
 
@@ -135,24 +142,31 @@ internal sealed class PluginFontTable : IDisposable
         Clear();
         _backend = null;
         _bundled = null;
+        _bundledSemiBold = null;
     }
 
-    internal PluginFont AcquireBundled(float pixelSize)
+    internal PluginFont AcquireBundled(float pixelSize, PluginFontWeight weight = PluginFontWeight.Regular)
     {
-        if (!TryEnter(out _, out BundledCanvasFontCache? bundled) || !IsSizeAllowed(pixelSize))
+        if (!TryEnter(out _, out _) || !IsSizeAllowed(pixelSize))
             return PluginFont.None;
+        if (BundledCache(weight) is not { } bundled)
+        {
+            ReportOnce($"weight:{weight}", $"the bundled font has no {weight} weight here");
+            return PluginFont.None;
+        }
         pixelSize = RoundSize(pixelSize);
-        var key = new Key(Bundled: true, Name: "", pixelSize, Ranges: "");
+        var key = new Key(Bundled: true, Name: "", pixelSize, Ranges: "", weight);
         if (TryHoldAgain(key, out PluginFont again))
             return again;
         if (RefusedWhilePainting())
             return PluginFont.None;
-        if (!HasRoomForOneMore(FormattableString.Invariant($"the bundled font at {pixelSize} px")))
+        string what = BundledName(pixelSize, weight);
+        if (!HasRoomForOneMore(what))
             return PluginFont.None;
         CanvasFont? font = bundled.Acquire(pixelSize, out string? failure);
         if (font is null)
         {
-            ReportOnce(FormattableString.Invariant($"bundled:{pixelSize}"), FormattableString.Invariant($"the bundled font at {pixelSize} px could not be prepared: {failure}"));
+            ReportOnce(FormattableString.Invariant($"bundled:{weight}:{pixelSize}"), $"{what} could not be prepared: {failure}");
             return PluginFont.None;
         }
         return Add(key, font, ownedBytes: 0L, CanvasFontBaker.DefaultRanges).Handle;
@@ -238,7 +252,7 @@ internal sealed class PluginFontTable : IDisposable
             string? shortfall;
             if (entry.Key.Bundled)
             {
-                bundled.PrepareScale(font, scale, out shortfall);
+                (BundledCache(entry.Key.Weight) ?? bundled).PrepareScale(font, scale, out shortfall);
             }
             else
             {
@@ -256,7 +270,7 @@ internal sealed class PluginFontTable : IDisposable
             if (shortfall is not null)
             {
                 string what = entry.Key.Bundled
-                    ? FormattableString.Invariant($"the bundled font at {entry.Key.PixelSize} px")
+                    ? BundledName(entry.Key.PixelSize, entry.Key.Weight)
                     : FormattableString.Invariant($"font '{entry.Key.Name}' at {entry.Key.PixelSize} px");
                 ReportOnce(
                     FormattableString.Invariant($"sharp:{entry.Id}:{scale}"),
@@ -306,8 +320,20 @@ internal sealed class PluginFontTable : IDisposable
         Clear();
         _backend = null;
         _bundled = null;
+        _bundledSemiBold = null;
         _disposed = true;
     }
+
+    private BundledCanvasFontCache? BundledCache(PluginFontWeight weight) => weight switch
+    {
+        PluginFontWeight.Regular => _bundled,
+        PluginFontWeight.SemiBold => _bundledSemiBold,
+        _ => null,
+    };
+
+    private static string BundledName(float pixelSize, PluginFontWeight weight) => weight == PluginFontWeight.Regular
+        ? FormattableString.Invariant($"the bundled font at {pixelSize} px")
+        : FormattableString.Invariant($"the bundled font's {weight} weight at {pixelSize} px");
 
     private static byte[]? ReadAtMost(Stream stream, long limit)
     {
@@ -400,7 +426,7 @@ internal sealed class PluginFontTable : IDisposable
         _byId.Remove(entry.Id);
         if (entry.Key.Bundled)
         {
-            _bundled?.Release(entry.Font);
+            BundledCache(entry.Key.Weight)?.Release(entry.Font);
             return;
         }
         _ownedBytes -= entry.OwnedBytes;

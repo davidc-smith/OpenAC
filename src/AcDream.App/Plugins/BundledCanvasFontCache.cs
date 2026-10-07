@@ -15,13 +15,18 @@ internal sealed class BundledCanvasFontCache : IDisposable
     private readonly IPluginFontBackend _backend;
     private readonly Func<byte[]> _readFontBytes;
     private readonly int _maximumGlyphs;
+    private readonly string _debugName;
     private readonly Dictionary<float, (CanvasFont Font, int Holds)> _bySize = [];
     private byte[]? _fontBytes;
     private CanvasFontFace? _face;
     private bool _disposed;
 
-    internal BundledCanvasFontCache(IPluginFontBackend backend, Func<byte[]> readFontBytes, int maximumGlyphs)
+    /// <param name="debugName">What the cache's textures are called, such as <c>bundled</c> or <c>bundled-semibold</c>.</param>
+    internal BundledCanvasFontCache(
+        IPluginFontBackend backend, Func<byte[]> readFontBytes, int maximumGlyphs, string debugName = "bundled")
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(debugName);
+        _debugName = debugName;
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
         _readFontBytes = readFontBytes ?? throw new ArgumentNullException(nameof(readFontBytes));
         _maximumGlyphs = maximumGlyphs;
@@ -76,8 +81,8 @@ internal sealed class BundledCanvasFontCache : IDisposable
             _backend, DebugName(font.PixelSize), out shortfall);
     }
 
-    private static string DebugName(float pixelSize) =>
-        FormattableString.Invariant($"plugin-font-bundled-{pixelSize}px");
+    private string DebugName(float pixelSize) =>
+        FormattableString.Invariant($"plugin-font-{_debugName}-{pixelSize}px");
 
     /// <summary>Lets go of one hold; the last one gives the texture back.</summary>
     internal void Release(CanvasFont font)

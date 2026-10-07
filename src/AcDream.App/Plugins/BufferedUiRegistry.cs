@@ -209,6 +209,92 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
         return WorldMarkerStore.For(owner.Id);
     }
 
+    // The plugin theme, told to the registry by the interface: the one the
+    // player saved when the interface comes up, then each one they pick. It
+    // outlives the interface, so a reconnect keeps answering the same theme.
+    private PluginUiThemeInfo _theme = PluginUiThemeInfo.Classic;
+    private Action<PluginUiThemeInfo>? _themeChanged;
+
+    public PluginUiThemeInfo Theme
+    {
+        get
+        {
+            lock (_gate)
+                return _theme;
+        }
+    }
+
+    public event Action<PluginUiThemeInfo> ThemeChanged
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_gate)
+                _themeChanged += value;
+        }
+        remove
+        {
+            lock (_gate)
+                _themeChanged -= value;
+        }
+    }
+
+    /// <summary>
+    /// Publishes the theme the player saved and then every one they pick,
+    /// until the returned token is disposed. The interface calls this once it
+    /// has its appearance settings, and disposes the token when it goes.
+    /// </summary>
+    internal IDisposable FollowTheme(PluginUiThemeSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        Action publish = () => PublishTheme(settings.ThemeInfo);
+        publish();
+        settings.ThemeChanged += publish;
+        return new ThemeFollow(settings, publish);
+    }
+
+    private sealed class ThemeFollow(PluginUiThemeSettings settings, Action publish) : IDisposable
+    {
+        private Action? _publish = publish;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _publish, null) is { } held)
+                settings.ThemeChanged -= held;
+        }
+    }
+
+    /// <summary>
+    /// Takes the selected theme and, when it differs from the last one, tells
+    /// every plugin on the calling thread, the interface thread. One plugin's
+    /// handler throwing does not stop the next from hearing.
+    /// </summary>
+    internal void PublishTheme(PluginUiThemeInfo theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        Action<PluginUiThemeInfo>? handlers;
+        lock (_gate)
+        {
+            if (_theme == theme)
+                return;
+            _theme = theme;
+            handlers = _themeChanged;
+        }
+        if (handlers is null)
+            return;
+        foreach (Delegate handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((Action<PluginUiThemeInfo>)handler)(theme);
+            }
+            catch (Exception error)
+            {
+                Serilog.Log.Warning(error, "A plugin's theme handler threw");
+            }
+        }
+    }
+
     // Font tables, one per plugin, following the image tables' lifecycle:
     // made on first request, bound when the interface's texture services
     // arrive, unbound when they go. The bundled font's bakes are shared by
@@ -216,6 +302,7 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
     private readonly Dictionary<string, PluginFonts> _fonts = [];
     private IPluginFontBackend? _fontBackend;
     private BundledCanvasFontCache? _bundledFonts;
+    private BundledCanvasFontCache? _bundledSemiBoldFonts;
     private int _fontUiThreadId;
 
     /// <summary>The per-plugin font ceiling every table is made with.</summary>
@@ -230,7 +317,7 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 return existing;
             var table = new PluginFontTable(owner.Id, FontBudget);
             if (_fontBackend is { } backend && _bundledFonts is { } bundled)
-                table.Bind(backend, bundled, _fontUiThreadId);
+                table.Bind(backend, bundled, _fontUiThreadId, _bundledSemiBoldFonts);
             var fonts = new PluginFonts(table, ForgetFonts);
             _fonts.Add(owner.Id, fonts);
             return fonts;
@@ -267,9 +354,14 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
             _fontBackend = backend;
             _bundledFonts = new BundledCanvasFontCache(
                 backend, AcDream.App.UI.BundledUiFont.ReadEmbeddedFontBytes, FontBudget.MaximumGlyphs);
+            _bundledSemiBoldFonts = new BundledCanvasFontCache(
+                backend,
+                () => AcDream.App.UI.BundledUiFont.ReadEmbeddedFontBytes(AcDream.App.UI.BundledUiFontWeight.SemiBold),
+                FontBudget.MaximumGlyphs,
+                "bundled-semibold");
             _fontUiThreadId = Environment.CurrentManagedThreadId;
             foreach (PluginFonts fonts in _fonts.Values)
-                fonts.Table.Bind(backend, _bundledFonts, _fontUiThreadId);
+                fonts.Table.Bind(backend, _bundledFonts, _fontUiThreadId, _bundledSemiBoldFonts);
         }
     }
 
@@ -290,6 +382,8 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 fonts.Table.Unbind();
             _bundledFonts?.Dispose();
             _bundledFonts = null;
+            _bundledSemiBoldFonts?.Dispose();
+            _bundledSemiBoldFonts = null;
             _fontBackend = null;
         }
     }

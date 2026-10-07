@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.Plugin.Abstractions;
 using AcDream.UI.Abstractions.Panels.Settings;
 
 namespace AcDream.App.UI;
@@ -46,8 +47,20 @@ public sealed class PluginUiThemeSettings
             if (_theme == value) return;
             _theme = value;
             Save();
+            ThemeChanged?.Invoke();
         }
     }
+
+    /// <summary>Raised from the <see cref="Theme"/> setter when the player picks another theme.</summary>
+    public event Action? ThemeChanged;
+
+    /// <summary>What the Appearance picker calls each theme, in <see cref="PluginUiTheme"/> order.</summary>
+    internal static IReadOnlyList<string> ThemeNames { get; } = ["Classic", "Charcoal + moss", "Warm graphite + brass"];
+
+    /// <summary>The selected theme as plugins read it: its kind, name and colours.</summary>
+    public PluginUiThemeInfo ThemeInfo => Theme == PluginUiTheme.Classic
+        ? PluginUiThemeInfo.Classic
+        : new PluginUiThemeInfo((PluginUiThemeKind)Theme, ThemeNames[(int)Theme], Palette?.ToPluginPalette());
 
     /// <summary>Where the plugin dock sits. Saved with the theme.</summary>
     public PluginDockMode Dock
@@ -104,6 +117,16 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
     /// </summary>
     internal static PluginUiPalette ClassicDock { get; } = new(C(0x000000) with { W = 0.88f }, C(0x060605),
         C(0x9E7A29), C(0xF0EBDD), C(0xA8925C), C(0xDBB852), C(0x17300E));
+    /// <summary>The palette as plugins read it, each channel rounded to a byte.</summary>
+    public PluginThemePalette ToPluginPalette() => new(
+        ToColor(Background), ToColor(Field), ToColor(Border),
+        ToColor(Text), ToColor(Muted), ToColor(Accent), ToColor(Selected));
+
+    private static PluginColor ToColor(Vector4 c) => new(Byte(c.X), Byte(c.Y), Byte(c.Z), Byte(c.W));
+
+    private static byte Byte(float channel) =>
+        (byte)MathF.Round(Math.Clamp(channel, 0f, 1f) * 255f, MidpointRounding.AwayFromZero);
+
     public Vector4 Token(string name) => name switch
     {
         "text" => Text, "muted" => Muted, "field" => Field,
