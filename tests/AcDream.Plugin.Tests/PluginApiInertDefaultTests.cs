@@ -36,6 +36,23 @@ public sealed class PluginApiInertDefaultTests
     }
 
     [Fact]
+    public void ExperienceReadsAsNotYetSentByDefault()
+    {
+        ICharacterInfo character = new MinimalCharacter();
+        Assert.False(character.HasExperience);
+        Assert.Equal(0L, character.TotalExperience);
+        Assert.Equal(0L, character.UnassignedExperience);
+        Assert.Null(character.ExperienceToNextLevel);
+        Assert.Equal(0L, character.AvailableLuminance);
+        Assert.Equal(0L, character.MaximumLuminance);
+
+        // Subscribing to a host that never raises it is harmless.
+        Action handler = static () => { };
+        character.ExperienceChanged += handler;
+        character.ExperienceChanged -= handler;
+    }
+
+    [Fact]
     public void TitlesReadAsNoneByDefault()
     {
         ICharacterInfo character = new MinimalCharacter();
