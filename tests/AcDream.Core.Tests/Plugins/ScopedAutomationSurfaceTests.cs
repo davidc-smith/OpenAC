@@ -50,10 +50,12 @@ public sealed class ScopedAutomationSurfaceTests
             // Chat is deliberately wrapped, not forwarded, so the scoped
             // host can revoke a plugin's filters and subscriptions on
             // unload.
-            // Trade, Vendor and Equipment are wrapped too, so the handlers a
-            // plugin adds to their events come off with it; that they still
-            // answer from the host is covered by ScopedPluginHostReleaseTests.
+            // Trade, Vendor, Equipment and Character are wrapped too, so the
+            // handlers a plugin adds to their events come off with it; that
+            // they still answer from the host is covered by
+            // ScopedPluginHostReleaseTests.
             if (property.Name == nameof(IAutomationSurface.IsAvailable)
+                || property.Name == nameof(IAutomationSurface.Character)
                 || property.Name == nameof(IAutomationSurface.Network)
                 || property.Name == nameof(IAutomationSurface.Chat)
                 || property.Name == nameof(IAutomationSurface.Trade)
@@ -94,7 +96,7 @@ public sealed class ScopedAutomationSurfaceTests
         // Every property this loop actually walked should be one of the
         // known forwarders, guarding against the loop silently checking zero
         // properties if reflection ever returned nothing.
-        Assert.Equal(21, checkedMembers.Count);
+        Assert.Equal(20, checkedMembers.Count);
 
         scoped.Dispose();
     }
@@ -103,22 +105,23 @@ public sealed class ScopedAutomationSurfaceTests
     public void SwappingTheHostsAutomationSurfaceIsObservedByTheScopedSurface()
     {
         var mutableHost = new MutableStubHost();
-        var surfaceA = new FakeAutomationSurface();
-        var surfaceB = new FakeAutomationSurface();
+        var surfaceA = new FakeAutomationSurface { Character = new FakeCharacterInfo { Level = 5 } };
+        var surfaceB = new FakeAutomationSurface { Character = new FakeCharacterInfo { Level = 9 } };
         mutableHost.Automation = surfaceA;
 
         var scoped = new ScopedPluginHost(mutableHost, "example.plugin", "Example");
 
         // The wrapper must not have pinned surfaceA at construction: once
         // the host swaps in surfaceB, every forwarded member should follow.
-        Assert.Same(surfaceA.Character, scoped.Automation.Character);
+        // Character is wrapped, so it is followed by what it answers.
+        Assert.Equal(5, scoped.Automation.Character.Level);
         Assert.Same(surfaceA.Combat, scoped.Automation.Combat);
         IPluginChat firstChatWrapper = scoped.Automation.Chat;
         INetworkAutomation firstNetworkWrapper = scoped.Automation.Network;
 
         mutableHost.Automation = surfaceB;
 
-        Assert.Same(surfaceB.Character, scoped.Automation.Character);
+        Assert.Equal(9, scoped.Automation.Character.Level);
         Assert.Same(surfaceB.Combat, scoped.Automation.Combat);
 
         // Chat is wrapped, not forwarded: swapping the live chat instance
@@ -378,7 +381,7 @@ public sealed class ScopedAutomationSurfaceTests
     private sealed class FakeAutomationSurface : IAutomationSurface
     {
         public bool IsAvailable => true;
-        public ICharacterInfo Character { get; } = new FakeCharacterInfo();
+        public ICharacterInfo Character { get; init; } = new FakeCharacterInfo();
         public ISpellCatalog Spells { get; } = new FakeSpellCatalog();
         public IMagicCommands Magic { get; } = new FakeMagicCommands();
         public IPluginChat Chat { get; } = new FakeChat();
@@ -413,6 +416,7 @@ public sealed class ScopedAutomationSurfaceTests
 
     private sealed class FakeCharacterInfo : ICharacterInfo
     {
+        public int Level { get; init; }
         public bool IsInWorld => true;
         public uint ObjectId => 0u;
         public uint CurrentHealth => 0u;

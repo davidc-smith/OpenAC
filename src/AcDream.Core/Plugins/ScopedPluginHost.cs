@@ -214,7 +214,8 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         private IAutomationSurface Inner => host.Automation;
 
         public bool IsAvailable => Inner.IsAvailable;
-        public ICharacterInfo Character => Inner.Character;
+        public ICharacterInfo Character =>
+            _character ??= new ScopedCharacter(() => Inner.Character, _eventLeases);
         public ISpellCatalog Spells => Inner.Spells;
         public IMagicCommands Magic => Inner.Magic;
 
@@ -247,6 +248,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         // The handlers a plugin adds to these surfaces' events are tracked
         // and removed with the plugin, like every other event it can reach.
         private readonly EventLeases _eventLeases = new();
+        private ScopedCharacter? _character;
         private ScopedEquipment? _equipment;
         private ScopedTrade? _trade;
         private ScopedVendor? _vendor;
@@ -431,6 +433,74 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 catch { }
             }
         }
+    }
+
+    /// <summary>
+    /// The host's character, read through as it is, with the handlers a plugin
+    /// adds to <see cref="ICharacterInfo.ExperienceChanged"/> tracked and
+    /// removed with the plugin. Every member forwards, the defaulted ones
+    /// included, so a host's own answers are never hidden behind the defaults.
+    /// </summary>
+    private sealed class ScopedCharacter(
+        Func<ICharacterInfo> source,
+        EventLeases leases) : ICharacterInfo
+    {
+        public bool IsInWorld => source().IsInWorld;
+        public string Name => source().Name;
+        public string WorldName => source().WorldName;
+        public int ServerPopulation => source().ServerPopulation;
+        public string AccountName => source().AccountName;
+        public int CharacterIndex => source().CharacterIndex;
+        public int Level => source().Level;
+        public bool HasExperience => source().HasExperience;
+        public long TotalExperience => source().TotalExperience;
+        public long UnassignedExperience => source().UnassignedExperience;
+        public long? ExperienceToNextLevel => source().ExperienceToNextLevel;
+        public long AvailableLuminance => source().AvailableLuminance;
+        public long MaximumLuminance => source().MaximumLuminance;
+
+        public event Action ExperienceChanged
+        {
+            add
+            {
+                ICharacterInfo inner = source();
+                leases.Add(value, () => inner.ExperienceChanged += value, () => inner.ExperienceChanged -= value);
+            }
+            remove => leases.Remove(value);
+        }
+
+        public int MainPackFreeSlots => source().MainPackFreeSlots;
+        public uint ObjectId => source().ObjectId;
+        public uint CurrentHealth => source().CurrentHealth;
+        public uint MaxHealth => source().MaxHealth;
+        public uint CurrentStamina => source().CurrentStamina;
+        public uint MaxStamina => source().MaxStamina;
+        public uint CurrentMana => source().CurrentMana;
+        public uint MaxMana => source().MaxMana;
+        public uint BaseHealth => source().BaseHealth;
+        public uint BaseStamina => source().BaseStamina;
+        public uint BaseMana => source().BaseMana;
+        public int SummoningMastery => source().SummoningMastery;
+        public float VitaeMultiplier => source().VitaeMultiplier;
+        public uint CurrentTitleId => source().CurrentTitleId;
+        public IReadOnlyList<PluginCharacterTitle> Titles => source().Titles;
+        public int VitaePenaltyPercent => source().VitaePenaltyPercent;
+        public IReadOnlyList<PluginSkillInfo> Skills => source().Skills;
+        public IReadOnlyList<PluginAttributeInfo> Attributes => source().Attributes;
+        public IReadOnlyList<PluginVitalInfo> Vitals => source().Vitals;
+        public bool TryGetVital(int kind, out PluginVitalInfo vital) =>
+            source().TryGetVital(kind, out vital);
+        public PluginAdvancementResult RequestAdvancement(
+            PluginAdvancementKind kind,
+            uint statId,
+            ulong cost) =>
+            source().RequestAdvancement(kind, statId, cost);
+        public IReadOnlyList<PluginActiveEnchantment> ActiveEnchantments =>
+            source().ActiveEnchantments;
+        public IReadOnlyList<PluginActiveEnchantment> TimedEnchantments =>
+            source().TimedEnchantments;
+        public bool TryGetSkill(uint skillId, out PluginSkillInfo skill) =>
+            source().TryGetSkill(skillId, out skill);
     }
 
     private sealed class ScopedEquipment(
@@ -2268,6 +2338,8 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             public int Width => inner.Width;
             public int Height => inner.Height;
             public bool IsAvailable => inner.IsAvailable;
+
+            public bool TryResize(int width, int height) => inner.TryResize(width, height);
 
             public bool IsVisible
             {

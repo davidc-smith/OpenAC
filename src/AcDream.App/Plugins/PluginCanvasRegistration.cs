@@ -23,6 +23,9 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     private volatile IPluginCanvasKeyboardFocus? _keyboardFocus;
     private volatile bool _invalidated = true;
     private volatile int _zOrder;
+    // Width in the high half, height in the low half, so the interface never
+    // reads the width of one size with the height of another.
+    private long _size;
     private Action? _teardown;
     private Action? _releasePointer;
 
@@ -43,6 +46,7 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
         Anchor = descriptor.Anchor;
         Offset = descriptor.Offset;
         _zOrder = descriptor.ZOrder;
+        _size = Pack(descriptor.Width, descriptor.Height);
     }
 
     internal long Id { get; }
@@ -129,9 +133,32 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
 
     public void ReleaseKeyboardFocus() => _keyboardFocus?.ReleaseFocus();
 
-    public int Width => Descriptor.Width;
+    public int Width => Size.Width;
 
-    public int Height => Descriptor.Height;
+    public int Height => Size.Height;
+
+    /// <summary>The canvas's size, read whole; the interface reads it once a frame.</summary>
+    internal (int Width, int Height) Size
+    {
+        get
+        {
+            long size = Interlocked.Read(ref _size);
+            return ((int)(size >> 32), (int)size);
+        }
+    }
+
+    public bool TryResize(int width, int height)
+    {
+        if (width < 1 || height < 1 || _paint is null)
+            return false;
+        long size = Pack(width, height);
+        if (Interlocked.Exchange(ref _size, size) != size)
+            Invalidate();
+        return true;
+    }
+
+    private static long Pack(int width, int height) =>
+        ((long)width << 32) | (uint)height;
 
     public bool IsAvailable => IsMounted && !IsDropped && _paint is not null;
 

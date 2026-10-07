@@ -214,6 +214,8 @@ internal static class RuntimeAutomationBindings
                 nameof(RuntimeAutomationHostCapabilities.Content),
             ["BindDungeonMap"] =
                 nameof(RuntimeAutomationHostCapabilities.Content),
+            ["BindExperienceLevels"] =
+                nameof(RuntimeAutomationHostCapabilities.Content),
         };
 
     /// <summary>
@@ -507,6 +509,17 @@ internal static class RuntimeAutomationBindings
         // are only opened when a plan is first asked for.
         surface.BindDungeonMap(dats, datLock);
         bound.Add(nameof(surface.BindDungeonMap));
+
+        // How far the character is from its next level is measured on the
+        // level curve in the same files. Read the first time it is asked for.
+        var experienceLevels = new Lazy<IReadOnlyList<ulong>?>(
+            () =>
+            {
+                lock (datLock)
+                    return AcDream.Content.ExperienceTableReader.Load(dats, warn)?.Levels;
+            });
+        surface.BindExperienceLevels(() => experienceLevels.Value);
+        bound.Add(nameof(surface.BindExperienceLevels));
 
         DatReaderWriter.DBObjs.SkillTable? skillTable;
         lock (datLock)

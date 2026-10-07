@@ -360,6 +360,54 @@ to display, or `0` for none. The server sends the whole list when the
 character enters the world and one more title each time one is earned; both
 read empty and `0` before that.
 
+### Character experience
+
+The character's experience and luminance, as the server keeps them:
+
+```csharp
+ICharacterInfo character = host.Automation.Character;
+
+character.ExperienceChanged += () =>
+{
+    if (!character.HasExperience)
+        return; // logged out, or not described yet
+
+    long earned    = character.TotalExperience;       // never goes down
+    long unspent   = character.UnassignedExperience;
+    long? toLevel  = character.ExperienceToNextLevel; // null at the top
+    long luminance = character.AvailableLuminance;
+    long lumCap    = character.MaximumLuminance;      // 0 before luminance is unlocked
+};
+```
+
+| Member | What it reads |
+|---|---|
+| `HasExperience` | true once the server has sent the character's description at login |
+| `TotalExperience` | every point of experience ever earned; spending does not lower it |
+| `UnassignedExperience` | experience not yet spent on a stat |
+| `ExperienceToNextLevel` | experience still needed for the next level |
+| `AvailableLuminance` | luminance held now |
+| `MaximumLuminance` | the cap on luminance; 0 for a character that cannot earn it yet |
+
+Every member reads `0` (or `null`) while `HasExperience` is false: before
+login, from the moment the character leaves the world until the next
+character's description arrives, and on a host that does not track it.
+
+`ExperienceToNextLevel` is measured on the experience table in the installed
+data files, the way the character sheet measures it. It is `null` at the top
+of the table, where the sheet shows "Infinity!", and when the files hold no
+table. The server sends a new total before it sends the new level, so for a
+moment after a level's worth of experience lands it reads `0`; it moves on to
+the following level once the level arrives.
+
+`ExperienceChanged` is raised on the same thread as `Tick` whenever any of the
+values above differs from what it was last raised for: when the description
+arrives, on each update the server sends, on a level-up, and when the
+character leaves the world. An update that changes nothing here -- a skill, a
+position, an experience total the server restates unchanged -- raises nothing.
+Session rates, such as experience per hour, are the plugin's to work out from
+`TotalExperience` and its own clock.
+
 ## Spells
 
 `host.Automation.Spells` gains the whole table, not just what the character
@@ -1599,8 +1647,18 @@ may register at most 8 canvases, each with an id unique within the plugin;
 `ZOrder` can be set at any time; disposing the canvas removes it, and everything a
 plugin still holds is removed when the plugin unloads.
 
+`TryResize(width, height)` changes a canvas's size without registering it
+again: the host makes a surface at the new size and paints it on the next
+frame, and the anchor, offset, visibility and handlers stay as they were, so
+a canvas anchored at the bottom right keeps that corner in place while it
+grows up and to the left. `Width` and `Height` read the new size at once. It
+answers false, and changes nothing, for a size below 1 or a disposed canvas,
+and on a host that cannot resize. A plugin that shows one of two layouts can
+keep one canvas and resize it, rather than register both and show one.
+
 Without a window the canvas is accepted, `IsAvailable` is false, the
-state the plugin sets is kept, and the paint callback is never called.
+state the plugin sets is kept (a resize included), and the paint callback is
+never called.
 
 ### Image regions
 
