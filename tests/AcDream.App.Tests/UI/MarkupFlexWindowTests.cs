@@ -17,6 +17,22 @@ public sealed class MarkupFlexWindowTests
         public string Caption { get; set; } = "AB";
     }
 
+    private sealed class Pages
+    {
+        public bool First { get; set; } = true;
+        public bool Second => !First;
+        public bool Broken => throw new InvalidOperationException("not ready");
+    }
+
+    // Two 100-wide pages that need 300 and 500 of height, only one shown at a time, in an
+    // 8-point padded column: one page is 316 of content, both would be 816.
+    private const string TwoPages =
+        "<group name=\"first\" layout=\"column\" w=\"100\" h=\"300\" minh=\"300\" visible=\"{First}\" />"
+        + "<group name=\"second\" layout=\"column\" w=\"100\" h=\"500\" minh=\"500\" visible=\"{Second}\" />";
+
+    private static UiElement Named(UiElement parent, string name) =>
+        parent.Children.Single(child => child.Name == name);
+
     private const string Body = "<button text=\"OK\" /><label text=\"ABCD\" />";
 
     private static MarkupWindow Window(string attrs, string body = Body, object? binding = null) =>
@@ -206,5 +222,63 @@ public sealed class MarkupFlexWindowTests
         Assert.Equal(86f, absolute.ContentRoot.Width);
         Assert.Equal(96f - PluginWindowChrome.TitleBarHeight, absolute.TitleBar!.Close.Left);
         Assert.Equal(17f, bare.Frame.Width);   // 7 + 10: no bar, no floor
+    }
+
+    [Fact]
+    public void The_first_measurement_skips_a_page_whose_bound_visible_is_false()
+    {
+        MarkupWindow window = Window("layout=\"column\" padding=\"8\"", TwoPages, new Pages());
+
+        Assert.Equal(316f, window.ContentRoot.Height);
+        Assert.Equal((345f, 345f), (window.Frame.Height, window.Frame.MinHeight));
+        Assert.True(Named(window.ContentRoot, "first").Visible);
+        Assert.False(Named(window.ContentRoot, "second").Visible);
+    }
+
+    [Fact]
+    public void A_stated_size_above_the_shown_page_minimum_is_kept()
+    {
+        MarkupWindow window = Window("layout=\"column\" padding=\"8\" w=\"400\" h=\"350\"", TwoPages, new Pages());
+
+        Assert.Equal((410f, 379f), (window.Frame.Width, window.Frame.Height));
+        Assert.Equal(345f, window.Frame.MinHeight);
+    }
+
+    [Fact]
+    public void Showing_a_taller_page_after_mounting_grows_the_window()
+    {
+        var pages = new Pages();
+        MarkupWindow window = Window("layout=\"column\" padding=\"8\" resizable=\"true\"", TwoPages, pages);
+        UiRoot root = Mount(window, "plugin:demo:main");
+        Assert.Equal(345f, window.Frame.Height);
+
+        pages.First = false;
+        Frame(root);
+        Frame(root);
+
+        Assert.Equal((545f, 545f), (window.Frame.Height, window.Frame.MinHeight));
+        Assert.False(Named(window.ContentRoot, "first").Visible);
+        Assert.True(Named(window.ContentRoot, "second").Visible);
+    }
+
+    [Fact]
+    public void Bound_enabled_is_read_at_build_time()
+    {
+        MarkupWindow window = Window(
+            "layout=\"column\"", "<button name=\"go\" text=\"OK\" enabled=\"{Second}\" />", new Pages());
+
+        Assert.False(Named(window.ContentRoot, "go").Enabled);
+    }
+
+    [Fact]
+    public void A_visible_binding_that_throws_at_build_time_leaves_the_element_shown_until_the_first_tick()
+    {
+        MarkupWindow window = Window(
+            "layout=\"column\" padding=\"8\"",
+            "<group name=\"page\" layout=\"column\" w=\"100\" h=\"300\" minh=\"300\" visible=\"{Broken}\" />",
+            new Pages());
+
+        Assert.True(Named(window.ContentRoot, "page").Visible);
+        Assert.Equal(316f, window.ContentRoot.Height);
     }
 }

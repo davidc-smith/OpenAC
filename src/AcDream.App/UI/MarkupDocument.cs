@@ -1278,7 +1278,18 @@ public static class MarkupDocument
                 $"{expression} did not resolve to a bool property on "
                 + binding.GetType().Name);
         }
-        setSource(() => property.GetValue(binding) is true);
+        Func<bool> source = () => property.GetValue(binding) is true;
+        setSource(source);
+
+        // Ticks apply the source, but the window's first measurement comes
+        // before any tick: seed the value it reports now so that measurement
+        // leaves out what is bound hidden (a tabbed window's other pages). A
+        // getter that throws this early leaves the default; the first tick
+        // reads it again as usual.
+        bool seeded;
+        try { seeded = source(); }
+        catch (TargetInvocationException) { return; }
+        setLiteral(seeded);
     }
 
     private static Func<bool> BindRequiredBoolReader(

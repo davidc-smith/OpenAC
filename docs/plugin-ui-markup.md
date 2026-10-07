@@ -474,6 +474,11 @@ them it is empty and shows nothing.
   shrinks (by dragging, or by a restored layout) to a size that cuts its
   content off. When the content needs more later (a longer caption), the
   window grows to fit, even when it is not resizable, and stays on screen;
+- the opening size and minimum follow bound `visible` (and `enabled`) as the
+  bindings read when the window is built: a tabbed window whose pages are
+  sibling groups with `visible="{XTabSelected}"` opens sized for the shown
+  page, not every page stacked. A binding that throws at that point counts
+  as visible until the first frame reads it;
 - as with the title bar, the window's saved size is reset once when its
   markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout`,
   `titlebar` or `scroll` change. Captions and appearance never reset it.
