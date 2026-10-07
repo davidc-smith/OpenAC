@@ -209,6 +209,26 @@ public interface IUiRegistry
     IPluginWorldMarkers WorldMarkers => NoOpPluginWorldMarkers.Instance;
 
     /// <summary>
+    /// The plugin theme the player picked under Appearance, and its colours,
+    /// so a canvas can draw like the plugin's themed windows. The host
+    /// restyles markup windows itself; a canvas reads this and repaints on
+    /// <see cref="ThemeChanged"/>. <see cref="PluginUiThemeInfo.Classic"/> on
+    /// a host without themes or without a window.
+    /// </summary>
+    PluginUiThemeInfo Theme => PluginUiThemeInfo.Classic;
+
+    /// <summary>
+    /// Raised on the thread the plugin's own callbacks run on when the player
+    /// picks another theme, with the new <see cref="Theme"/>. Never raised on
+    /// a host without themes or without a window.
+    /// </summary>
+    event Action<PluginUiThemeInfo> ThemeChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Registers a canvas the plugin paints, shown over the world and under
     /// every window. The paint callback runs on the tick thread, at most
     /// once per frame, only after <see cref="IPluginCanvas.Invalidate"/>,

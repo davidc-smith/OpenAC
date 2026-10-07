@@ -8,7 +8,7 @@ throwing. `docs/plugin-ui-markup.md` covers the panel markup separately.
 A plugin that draws for itself, rather than through panel markup, starts
 at [World labels](#world-labels) and [World markers](#world-markers)
 (text, icons and ground shapes in the world), [Images](#images),
-[Fonts](#fonts) and [Canvases](#canvases), whose subsections cover
+[Fonts](#fonts), [Plugin theme](#plugin-theme) and [Canvases](#canvases), whose subsections cover
 [image regions](#image-regions), [shapes](#shapes),
 [high-density displays](#high-density-displays),
 [layers and order](#layers-and-order), [pointer input](#pointer-input) and
@@ -1442,6 +1442,13 @@ painter.DrawText("\uE8B8", new PluginPoint(8, 34), PluginColor.White, icons); //
 fonts.Release(title);
 ```
 
+The bundled sans also comes in the SemiBold weight themed window titles are
+set in: `fonts.Bundled(16, PluginFontWeight.SemiBold)`. Each weight and size
+is its own `PluginFont`, held and counted like any other, and shared with
+every plugin like the regular weight. A host that predates weights answers
+`PluginFont.None` for SemiBold, and `Regular` is the same font as
+`Bundled(size)`.
+
 Each size of each font is its own `PluginFont`, carrying its `PixelSize`,
 `LineHeight` and `Ascent` (how far below the top of a line the baseline
 sits) so text in different fonts can share a baseline. Sizes are prepared
@@ -1487,6 +1494,57 @@ every request, and `DrawText` and `MeasureText` given a font draw and measure
 in the interface font instead, so the canvas still shows its text. A plugin
 whose look depends on its fonts declares a `minHostVersion` (see the
 [manifest guide](plugin-manifest.md)) of a client that has them.
+
+## Plugin theme
+
+The player picks **Classic**, **Charcoal + moss** or **Warm graphite +
+brass** under the dock's Plugin appearance. The client restyles markup
+windows that opt in (see the [markup guide](plugin-ui-markup.md)) itself,
+but a canvas paints its own pixels, so it reads the choice and repaints
+when it changes:
+
+```csharp
+PluginUiThemeInfo theme = host.Ui.Theme;
+PluginFont title = host.Ui.Fonts.Bundled(14, PluginFontWeight.SemiBold);
+
+host.Ui.ThemeChanged += next =>
+{
+    theme = next;
+    canvas.Invalidate();
+};
+
+// in a paint callback:
+if (theme.Palette is { } p)
+{
+    painter.FillRoundedRect(new PluginRect(0, 0, painter.Width, painter.Height),
+        PluginCornerRadii.Uniform(PluginThemeMetrics.WindowRadius), p.Background);
+    painter.DrawText("Golem", new PluginPoint(10, 5), p.Text, title);
+}
+else
+{
+    // Classic: the plugin's own look.
+}
+```
+
+`Theme.Kind` says which theme is selected and `Theme.DisplayName` what the
+picker calls it. `Theme.Palette` holds the seven colours themed windows draw
+in -- `Background`, `Field`, `Border`, `Text`, `Muted`, `Accent` and
+`Selected` -- and is null under Classic, where themed windows draw
+unthemed. `PluginThemeMetrics` carries the sizes themed windows use: the
+window and control corner radii, the title band's height, and a switch's
+track and knob. They are constants, so a plugin takes the values of the
+contract it was built against.
+
+`ThemeChanged` is raised on the tick thread, once for each change, with the
+new theme; reading `Theme` inside the handler gives the same value. A
+handler that throws is logged and does not stop the next plugin from
+hearing. The plugin's handlers are removed when it is unloaded. The client
+keeps the choice across a reconnect, and it is the saved choice from the
+moment the interface comes up; before that, `Theme` answers Classic, and a
+plugin loaded early hears the saved theme arrive through `ThemeChanged`.
+
+Without a window, and on a host that predates themes, `Theme` answers
+`PluginUiThemeInfo.Classic` and `ThemeChanged` is never raised.
 
 ## Canvases
 

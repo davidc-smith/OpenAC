@@ -143,6 +143,12 @@ the fallback uses `#AARRGGBB`.
 The `samples/AcDream.Plugins.ThemeGallery` plugin shows every control in one
 opted-in window; switch themes from the dock's gear to compare them.
 
+Canvases are not restyled: a plugin reads the theme, its palette and the
+window sizes from `host.Ui.Theme`, repaints on `host.Ui.ThemeChanged`, and
+can set titles in the same SemiBold sans with
+`host.Ui.Fonts.Bundled(size, PluginFontWeight.SemiBold)`. See "Plugin theme"
+in the plugin API guide.
+
 Set `searchable="true"` on a menu to add an editable search band. Each typed
 word must match its label, ignoring case. Filtering does not select an item;
 click a result or press Enter to select it, use arrows to navigate, or Escape
@@ -747,6 +753,10 @@ Canvas fonts are covered by `CanvasFontBakerTests`, `CanvasFontTests`,
 `Rendering/TextureCacheReleasableUiTextureTests`, by
 `ScopedUiRegistryFontsTests` for the scoped forwarder, and by
 `PluginFontsContractTests` and the headless suite for the inert answers.
+The theme plugins read, and the SemiBold sans, are covered by
+`BufferedUiRegistryThemeTests` under `tests/AcDream.App.Tests/`, by
+`ScopedUiRegistryThemeTests` for the scoped forwarder, and by
+`PluginThemeContractTests` and the headless suite for the Classic answer.
 Canvas shapes are covered by `UI/CanvasGeometryTests`,
 `Rendering/ColoredTriangleClipperTests`, `Rendering/TextRendererTrianglesTests`,
 `UI/UiRenderContextTrianglesTests` and the shape cases in

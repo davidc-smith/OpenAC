@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.Plugin.Abstractions;
 
 namespace AcDream.App.UI;
 
@@ -13,17 +14,18 @@ namespace AcDream.App.UI;
 /// </summary>
 internal static partial class PluginUiStyle
 {
-    internal const float WindowRadius = 10f;
-    internal const float ControlRadius = 6f;
+    // The sizes plugins can read come from the contract, so the two cannot drift apart.
+    internal const float WindowRadius = PluginThemeMetrics.WindowRadius;
+    internal const float ControlRadius = PluginThemeMetrics.ControlRadius;
     internal const float SmallRadius = 4f;
     internal const float CloseGlyphSize = 8f;
     internal const float ContainerRadius = 8f;
     internal const float RowRadius = 5f;
     internal const float RowInset = 3f;
-    internal const float HeaderHeight = 24f;
-    internal const float SwitchWidth = 26f;
-    internal const float SwitchHeight = 14f;
-    internal const float SwitchKnob = 8f;
+    internal const float HeaderHeight = PluginThemeMetrics.HeaderHeight;
+    internal const float SwitchWidth = PluginThemeMetrics.SwitchWidth;
+    internal const float SwitchHeight = PluginThemeMetrics.SwitchHeight;
+    internal const float SwitchKnob = PluginThemeMetrics.SwitchKnob;
     internal const float SwitchCaptionGap = 8f;
     internal const float CheckSize = 11f;
     internal const float SliderTrackHeight = 4f;

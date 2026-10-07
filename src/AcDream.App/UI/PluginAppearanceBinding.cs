@@ -2,7 +2,7 @@ namespace AcDream.App.UI;
 
 public sealed class PluginAppearanceBinding(PluginUiThemeSettings settings)
 {
-    public IReadOnlyList<string> Themes { get; } = ["Classic", "Charcoal + moss", "Warm graphite + brass"];
+    public IReadOnlyList<string> Themes { get; } = PluginUiThemeSettings.ThemeNames;
     public string Selected => Themes[(int)settings.Theme];
     public Action<string> Select => name =>
     {

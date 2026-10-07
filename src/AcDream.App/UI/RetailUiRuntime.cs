@@ -409,6 +409,7 @@ public sealed class RetailUiRuntime : IDisposable
     private CharacterCreationUiMountCoordinator? _characterCreationMount;
     private PluginSidePanel? _pluginSidePanel;
     private PluginUiThemeSettings? _pluginThemes;
+    private IDisposable? _pluginThemeFollow;
     private PluginAppearanceWindow? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
     private PluginSvgIconCache? _pluginSvgIcons;
@@ -4106,8 +4107,14 @@ public sealed class RetailUiRuntime : IDisposable
     {
         if (_bindings.Plugins is null) return;
 
-        _pluginThemes ??= new PluginUiThemeSettings(
-            _bindings.Chat.Store, _bindings.Assets.ModernFont, _bindings.Assets.ModernTitleFont);
+        if (_pluginThemes is null)
+        {
+            _pluginThemes = new PluginUiThemeSettings(
+                _bindings.Chat.Store, _bindings.Assets.ModernFont, _bindings.Assets.ModernTitleFont);
+            // Canvases paint their own pixels, so plugins are told the theme
+            // the player saved and every one they pick after it.
+            _pluginThemeFollow = _bindings.Plugins.FollowTheme(_pluginThemes);
+        }
 
         IMarkupIconResolver iconResolver = new RetailMarkupIconResolver(
             _bindings.Assets.Dats,
@@ -5229,6 +5236,8 @@ public sealed class RetailUiRuntime : IDisposable
                 if (SalvageController is { } salvage)
                     _bindings.Inventory.ItemInteraction.PolicyActionRequested -= salvage.HandlePolicyAction;
                 _bindings.Plugins?.UnbindClientWindowControl();
+                _pluginThemeFollow?.Dispose();
+                _pluginThemeFollow = null;
                 // Canvases come down before their images: a canvas may be
                 // showing one. Both hand the plugins' handles back to the
                 // registry for the next interface to mount again.
