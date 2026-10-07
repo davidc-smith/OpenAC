@@ -1300,6 +1300,51 @@ call. Without a window, or before the client's interface is up,
 images are dropped when the interface is torn down (for example on a
 reconnect), after which the plugin asks again.
 
+## Plugin theme
+
+The player picks **Classic**, **Charcoal + moss** or **Warm graphite +
+brass** under Plugin appearance. The client restyles markup windows that
+opt in (see the [markup guide](plugin-ui-markup.md)) itself, but a canvas
+paints its own pixels, so it reads the choice and repaints when it changes:
+
+```csharp
+PluginUiThemeInfo theme = host.Ui.Theme;
+
+host.Ui.ThemeChanged += next =>
+{
+    theme = next;
+    canvas.Invalidate();
+};
+
+// in a paint callback:
+if (theme.Palette is { } p)
+{
+    painter.FillRect(new PluginRect(0, 0, painter.Width, painter.Height), p.Background);
+    painter.DrawText("Golem", new PluginPoint(8, 6), p.Text);
+}
+else
+{
+    // Classic: the plugin's own look.
+}
+```
+
+`Theme.Kind` says which theme is selected and `Theme.DisplayName` what the
+picker calls it. `Theme.Palette` holds the seven colours themed windows draw
+in -- `Background`, `Field`, `Border`, `Text`, `Muted`, `Accent` and
+`Selected` -- and is null under Classic, where themed windows draw
+unthemed.
+
+`ThemeChanged` is raised on the tick thread, once for each change, with the
+new theme; reading `Theme` inside the handler gives the same value. A
+handler that throws is logged and does not stop the next plugin from
+hearing. The plugin's handlers are removed when it is unloaded. The client
+keeps the choice across a reconnect, and it is the saved choice from the
+moment the interface comes up; before that, `Theme` answers Classic, and a
+plugin loaded early hears the saved theme arrive through `ThemeChanged`.
+
+Without a window, and on a host that predates themes, `Theme` answers
+`PluginUiThemeInfo.Classic` and `ThemeChanged` is never raised.
+
 ## Canvases
 
 A canvas is a rectangle the plugin paints, shown over the world and under

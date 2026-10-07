@@ -991,6 +991,25 @@ public sealed class HeadlessPluginApiSurfaceTests
     }
 
     /// <summary>
+    /// The theme is asked of the same surface on both hosts. Without a window
+    /// there is no Appearance picker, so the plugin reads Classic, a handler
+    /// is accepted and never called.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowTheThemeIsClassicAndNeverChanges()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        Action<PluginUiThemeInfo> handler = _ => throw new InvalidOperationException("never raised");
+
+        pluginHost.Ui.ThemeChanged += handler;
+        pluginHost.Ui.ThemeChanged -= handler;
+
+        Assert.Same(PluginUiThemeInfo.Classic, pluginHost.Ui.Theme);
+    }
+
+    /// <summary>
     /// The same canvas registration a plugin makes with a window is
     /// accepted without one: the plugin keeps its handle, sets what it
     /// likes, and the paint callback is never called because there is

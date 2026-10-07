@@ -2075,6 +2075,58 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
 
+        public PluginUiThemeInfo Theme => _inner.Theme;
+
+        // Each handler is added to the host's event behind a guard that drops
+        // calls once the plugin is gone, and its removal is tracked like any
+        // other registration, so an unloaded plugin is never told of a theme.
+        private readonly List<(Action<PluginUiThemeInfo> Handler, IDisposable Subscription)> _themeHandlers = [];
+
+        public event Action<PluginUiThemeInfo> ThemeChanged
+        {
+            add
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                Action<PluginUiThemeInfo> guarded = theme =>
+                {
+                    if (!Volatile.Read(ref _disposed))
+                        value(theme);
+                };
+                _inner.ThemeChanged += guarded;
+                var subscription = new ThemeSubscription(_inner, guarded);
+                IDisposable tracked = TrackRegistration(subscription);
+                lock (_gate)
+                    _themeHandlers.Add((value, tracked));
+            }
+            remove
+            {
+                if (value is null)
+                    return;
+                IDisposable? tracked = null;
+                lock (_gate)
+                {
+                    int index = _themeHandlers.FindLastIndex(entry => entry.Handler == value);
+                    if (index < 0)
+                        return;
+                    tracked = _themeHandlers[index].Subscription;
+                    _themeHandlers.RemoveAt(index);
+                }
+                tracked.Dispose();
+            }
+        }
+
+        private sealed class ThemeSubscription(IScopedUiRegistry inner, Action<PluginUiThemeInfo> handler)
+            : IDisposable
+        {
+            private Action<PluginUiThemeInfo>? _handler = handler;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _handler, null) is { } held)
+                    inner.ThemeChanged -= held;
+            }
+        }
+
         public IPluginCanvas RegisterCanvas(
             PluginCanvasDescriptor descriptor,
             Action<IPluginPainter> paint)
@@ -2135,6 +2187,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 _disposed = true;
                 registrations = _registrations.ToArray();
                 _registrations.Clear();
+                _themeHandlers.Clear();
             }
 
             for (int index = registrations.Length - 1; index >= 0; index--)

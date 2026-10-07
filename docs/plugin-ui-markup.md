@@ -58,6 +58,10 @@ original Classic fallback, for example `color="theme:text|#FFE8DEC3"` or
 `background="theme:field|#FF0C0906"`. Tokens are `text`, `muted`, `field`,
 `border`, `accent`, and `background`; the fallback uses `#AARRGGBB`.
 
+Canvases are not restyled: a plugin reads the theme and its palette from
+`host.Ui.Theme` and repaints on `host.Ui.ThemeChanged`. See "Plugin theme"
+in the plugin API guide.
+
 Set `searchable="true"` on a menu to add an editable search band. Each typed
 word must match its label, ignoring case. Filtering does not select an item;
 click a result or press Enter to select it, use arrows to navigate, or Escape
@@ -400,6 +404,10 @@ and canvases (see the plugin API guide) are covered by
 under `tests/AcDream.App.Tests/`, by `ScopedUiRegistryImagesTests` and
 `ScopedUiRegistryCanvasTests` for the scoped forwarder, and by the contract
 and headless suites for the inert answers a host without a window gives.
+The theme plugins read is covered by `BufferedUiRegistryThemeTests` under
+`tests/AcDream.App.Tests/`, by `ScopedUiRegistryThemeTests` for the scoped
+forwarder, and by `PluginThemeContractTests` and the headless suite for the
+Classic answer.
 
 ## Scrolling transcripts
 
