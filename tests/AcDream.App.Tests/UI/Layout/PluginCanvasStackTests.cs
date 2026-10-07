@@ -140,7 +140,9 @@ public sealed class PluginCanvasStackTests
         Assert.True(harness.AboveWindows.Layer.Visible);
         Assert.Equal((800f, 600f), (harness.AboveWindows.Layer.Width, harness.AboveWindows.Layer.Height));
 
-        harness.Host.SetViewport(new System.Numerics.Vector2(1024f, 768f));
+        harness.Root.Width = 1024f;
+        harness.Root.Height = 768f;
+        harness.Host.FollowRoot();
         Assert.Equal((1024f, 768f), (harness.AboveWindows.Layer.Width, harness.AboveWindows.Layer.Height));
     }
 

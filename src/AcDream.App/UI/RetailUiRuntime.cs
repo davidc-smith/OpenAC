@@ -786,10 +786,12 @@ public sealed class RetailUiRuntime : IDisposable
             _persistence?.SetGameplayActive(gameplay);
             if (gameplay) _persistence?.ReflowToScreen();
             _lastScreenSize = screenSize;
-            // The overlay band covers the whole screen; a canvas anchored to
-            // a right or bottom edge is placed against this rectangle.
-            _overlayHost?.SetViewport(screenSize);
         }
+        // The overlay band covers the whole screen; a canvas anchored to a
+        // right or bottom edge is placed against this rectangle. Followed
+        // every frame, not only on a change seen above: restoring the layout
+        // resizes the root without passing through here.
+        _overlayHost?.FollowRoot();
 
         // Themed plugin windows draw their soft edges and sharp text at the
         // display's density; the canvas services already know it.
