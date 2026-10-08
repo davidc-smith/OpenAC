@@ -16,6 +16,27 @@
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' != ''">$(MSBuildProjectDirectory)/packages.$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
   </PropertyGroup>
 
+  <!-- SixLabors.ImageSharp advisories (October 2026), fixed only in 4.1.2. From 4.x
+       ImageSharp refuses to build without a Six Labors license key, and
+       Chorizite.Core brings ImageSharp 3.x in as well, so we stay on 3.x and
+       suppress exactly these five. None is reachable here: we never decode TIFF
+       or use HistogramEqualization, and the ICC profile case needs an
+       untrusted image, while we decode only our own window icon and PNGs a
+       developer points the CLI tools at. Remove these once ImageSharp can be
+       upgraded. -->
+  <ItemGroup>
+    <!-- ICC CLUT parsing allocates from unvalidated channel and grid counts (moderate). -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-gwg2-r3hj-4w44" />
+    <!-- BigTIFF IFD count can keep a decoder thread busy (moderate). -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-wmxv-xphr-5c9g" />
+    <!-- HistogramEqualization indexes with an unvalidated luminance (high). -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j3p4-wp97-rph4" />
+    <!-- TIFF CCITT T4 encoder writes past its output buffer (high). -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-j9gm-c75j-xc9q" />
+    <!-- TIFF CCITT T6 encoder writes past an undersized output buffer (high). -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-jjfr-hcj7-qf5w" />
+  </ItemGroup>
+
   <!-- XML documentation files of our own assemblies feed the IDE and the plugin
        SDK; they are never runtime assets, so no publish payload carries them
        (the macOS bundle signer rejects an unsigned non-code file in the

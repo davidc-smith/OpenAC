@@ -199,6 +199,39 @@ public sealed class MeshExtractorSolidFaceExtractionTests
         Assert.Equal(0.75f, batch.SurfaceOpacity);
     }
 
+    [Fact]
+    public void PrepareMeshData_DecodedDxtPixelsAreRgbaInRowOrder()
+    {
+        // One DXT1 block: colour 0 pure red, colour 1 pure blue, and each row
+        // of indices 0, 1, 2, 3 -- red, blue, then the two blends between. A
+        // clip map is decoded, and none of these is the black it clears.
+        byte[] block = [0x00, 0xF8, 0x1F, 0x00, 0xE4, 0xE4, 0xE4, 0xE4];
+        var dats = new FakeMeshExtractorDats();
+        RegisterTexturedQuad(
+            dats,
+            SurfaceType.Base1Image | SurfaceType.Base1ClipMap,
+            PixelFormat.PFID_DXT1,
+            block);
+
+        var extractor = new MeshExtractor(dats, NullLogger.Instance, sideStagedSink: null);
+        ObjectMeshData mesh = Assert.IsType<ObjectMeshData>(
+            extractor.PrepareMeshData(GfxObjId, isSetup: false));
+
+        byte[] pixels = Assert.Single(Assert.Single(mesh.TextureBatches).Value).TextureData;
+        BCnEncoder.Shared.ColorRgba32[] expected =
+            new BCnEncoder.Decoder.BcDecoder().DecodeRaw(block, 4, 4, BCnEncoder.Shared.CompressionFormat.Bc1);
+        Assert.Equal(expected.Length * 4, pixels.Length);
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.Equal(
+                (expected[i].r, expected[i].g, expected[i].b, expected[i].a),
+                (pixels[i * 4], pixels[i * 4 + 1], pixels[i * 4 + 2], pixels[i * 4 + 3]));
+        }
+        Assert.Equal(new byte[] { 255, 0, 0, 255 }, pixels[0..4]);
+        Assert.Equal(new byte[] { 0, 0, 255, 255 }, pixels[4..8]);
+        Assert.Equal(new byte[] { 255, 0, 0, 255 }, pixels[16..20]);
+    }
+
     [Theory]
     [InlineData(0f, 1f)]
     [InlineData(0.25f, 0.75f)]
