@@ -277,7 +277,8 @@ public sealed class TextureCache
     }
 
     private GpuUiTextureEntry UploadUiTexture(
-        DecodedTexture decoded, bool nearest, string debugName, bool clamp = false)
+        DecodedTexture decoded, bool nearest, string debugName, bool clamp = false,
+        IReadOnlyList<DecodedTexture>? mipLevels = null)
     {
         IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(
             debugName,
@@ -286,10 +287,18 @@ public sealed class TextureCache
             Width: decoded.Width,
             Height: decoded.Height,
             LayerCount: 1,
-            MipLevelCount: 1));
+            MipLevelCount: mipLevels?.Count ?? 1));
         try
         {
-            texture.Upload(0, 0, decoded.Rgba8);
+            if (mipLevels is null)
+            {
+                texture.Upload(0, 0, decoded.Rgba8);
+            }
+            else
+            {
+                for (int level = 0; level < mipLevels.Count; level++)
+                    texture.Upload(level, 0, mipLevels[level].Rgba8);
+            }
             uint glName = UploadAccountingName(texture);
             TrackUploadedTexture(glName, decoded.Width, decoded.Height);
 
@@ -786,14 +795,18 @@ public sealed class TextureCache
     /// the life of the cache; this one is for art whose owner comes and goes,
     /// such as a plugin's own images. It is sampled linearly and clamped, so
     /// a part cut from the edge of a sheet does not pick up the opposite
-    /// edge.
+    /// edge. <paramref name="mipmapped"/> also uploads every smaller level,
+    /// so art drawn far below its own size, such as a large plugin image in
+    /// a small icon, shrinks smoothly instead of breaking up.
     /// </summary>
-    internal uint UploadReleasableRgba8(byte[] rgba, int width, int height, string debugName)
+    internal uint UploadReleasableRgba8(
+        byte[] rgba, int width, int height, string debugName, bool mipmapped = false)
     {
         ArgumentNullException.ThrowIfNull(rgba);
         ArgumentException.ThrowIfNullOrWhiteSpace(debugName);
         GpuUiTextureEntry entry = UploadUiTexture(
-            new DecodedTexture(rgba, width, height), nearest: false, debugName, clamp: true);
+            new DecodedTexture(rgba, width, height), nearest: false, debugName, clamp: true,
+            mipLevels: mipmapped ? RgbaMipChain.Build(rgba, width, height) : null);
         uint handle = UiTextureTableHandle.FromSlot(entry.Slot);
         _releasableUiTextures.Add(handle, entry);
         return handle;

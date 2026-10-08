@@ -626,9 +626,14 @@ property. On `<button>`, `<list>` and an icon `<column>`, set
 - **Limits:** at most 1 MiB per file and 512 pixels on a side; the file's
   own bytes must be a PNG or a JPEG, whatever its name. A plugin holds at most
   256 file images at once.
-- **Drawing:** the image keeps its aspect ratio, is centred in the element,
-  and is scaled smoothly (linear filtering), unlike client art. PNG
-  transparency is kept. The image's own colours are drawn as they are.
+- **Drawing:** the element's `w` and `h` set the size; the image keeps its
+  aspect ratio, is centred in the element, and is scaled smoothly, unlike
+  client art. The client keeps smaller copies of every image (mipmaps), so a
+  large image in a small icon shrinks cleanly: a 512 x 512 file drawn at 24 x 24
+  looks right. Detail finer than the drawn size is still lost, so art made for
+  its size, at twice that for high-density displays (48 x 48 for a 24-point
+  icon), stays the sharpest. PNG transparency is kept, without dark fringes
+  where it shrinks; the image's own colours are drawn as they are.
 - **Bindings** are read every draw, so a window can switch icons by changing
   the path it returns. A null or blank path draws nothing. Each file is
   decoded once and shared by every element that shows it.

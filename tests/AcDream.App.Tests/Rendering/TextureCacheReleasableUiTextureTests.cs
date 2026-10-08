@@ -53,6 +53,35 @@ public sealed class TextureCacheReleasableUiTextureTests
     }
 
     [Fact]
+    public void AMipmappedUploadSendsEveryLevelAndSamplesThemTrilinearly()
+    {
+        (RecordingGpuDevice device, TextureCache cache, HeldGpuRetirementQueue queue) = Build();
+
+        uint handle = cache.UploadReleasableRgba8(new byte[8 * 4 * 4], 8, 4, "test-image", mipmapped: true);
+
+        RecordingGpuTexture texture = Assert.Single(device.CreatedTextures);
+        Assert.Equal(4, texture.MipLevelCount);
+        Assert.Equal([(0, 0, 8 * 4 * 4), (1, 0, 4 * 2 * 4), (2, 0, 2 * 1 * 4), (3, 0, 1 * 1 * 4)], texture.Uploads);
+        Assert.False(texture.MipChainGenerated);
+        GpuRecordedTextureRegistration registration = Assert.Single(device.OfKind<GpuRecordedTextureRegistration>());
+        Assert.Equal(GpuSamplerDescription.WorldClamp, registration.Sampler);
+        Assert.False(cache.IsNearestUiTexture(handle));
+
+        Assert.True(cache.ReleaseUiTexture(handle));
+        Assert.Single(queue.Pending);
+    }
+
+    [Fact]
+    public void APlainUploadHasOneLevel()
+    {
+        (RecordingGpuDevice device, TextureCache cache, _) = Build();
+
+        cache.UploadReleasableRgba8(new byte[8 * 4 * 4], 8, 4, "test-image");
+
+        Assert.Equal(1, Assert.Single(device.CreatedTextures).MipLevelCount);
+    }
+
+    [Fact]
     public void ASecondReleaseOfTheSameHandleIsRefused()
     {
         (_, TextureCache cache, HeldGpuRetirementQueue queue) = Build();

@@ -4129,7 +4129,10 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.Assets.Icons,
             _bindings.Toolbar.Objects);
         TextureCache textures = _bindings.Assets.TextureCache;
-        _pluginFileIcons ??= new PluginFileIconCache(textures.UploadReleasableRgba8, textures.ReleaseUiTexture);
+        // Mipmapped: plugin art is often drawn far below its own size.
+        _pluginFileIcons ??= new PluginFileIconCache(
+            (rgba, width, height, name) => textures.UploadReleasableRgba8(rgba, width, height, name, mipmapped: true),
+            textures.ReleaseUiTexture);
 
         foreach (var panel in _bindings.Plugins.Drain())
         {
