@@ -162,6 +162,44 @@ public class MarkupDocumentTests
         Assert.Equal(["abc"], binding.Blurred);
     }
 
+    [Theory]
+    [InlineData("empty space", "hide")]
+    [InlineData("escape", "hide")]
+    [InlineData("hide", "hide")]
+    [InlineData("empty space", "remove")]
+    [InlineData("remove", "remove")]
+    public void FieldOnBlurThatClosesItsOwnPanelRunsOnce(string how, string close)
+    {
+        var binding = new BlurBinding();
+        var (root, panel, _) = BuildFocused(BlurPanel, binding);
+        void Close()
+        {
+            if (close == "hide") panel.Visible = false;
+            else root.RemoveChild(panel);
+        }
+        UiField field = (UiField)panel.Children[0];
+        Action<string> blur = field.OnFocusLost!;
+        field.OnFocusLost = text =>
+        {
+            blur(text);
+            // Stop after a few so a regression fails the test, not the test host.
+            if (binding.Blurred.Count < 4) Close();
+        };
+        Type(root, "abc");
+
+        switch (how)
+        {
+            case "empty space": ClickAt(root, 200, 100); break;
+            case "escape": PressKey(root, Silk.NET.Input.Key.Escape); break;
+            default: Close(); break;
+        }
+
+        Assert.Equal(["abc"], binding.Blurred);
+        Assert.Null(root.KeyboardFocus);
+        if (close == "hide") Assert.False(panel.Visible);
+        else Assert.DoesNotContain(panel, root.Children);
+    }
+
     [Fact]
     public void FieldOnBlurThatDoesNotResolveThrows()
     {

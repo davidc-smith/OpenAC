@@ -184,6 +184,8 @@ A `field` has three ways to hand its text back, each an `Action<string>`:
   that moment: the player clicks another control or empty space, presses Escape
   or Tab, or the panel hides or closes while the field is focused. Use it to
   apply a value the way an ordinary text box does, without requiring Enter.
+  It fires once per focus loss, even when the callback itself hides or
+  removes the panel.
 
 The focus loss that Enter causes does not fire `onblur` when `onsubmit` has
 just received the text or `clearonsubmit` has just emptied the field, so a
