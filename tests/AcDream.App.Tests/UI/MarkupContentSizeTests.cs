@@ -62,6 +62,13 @@ public sealed class MarkupContentSizeTests
     }
 
     [Fact]
+    public void A_tab_icon_adds_the_same_square_column_as_a_button()
+    {
+        var tab = new UiMarkupTabButton { Text = "OK", IconSource = () => (0u, 0, 0) };
+        Assert.Equal(Size(62f, 24f, 62f, 24f), Measure(tab));
+    }
+
+    [Fact]
     public void A_tall_font_makes_controls_taller()
     {
         Assert.Equal(24f, MarkupContentSize.ControlHeightFor(Font(16f)));
