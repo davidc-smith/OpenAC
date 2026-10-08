@@ -394,7 +394,7 @@
           "AcDream.Runtime": "[0.1.24, )",
           "AcDream.UI.Abstractions": "[0.1.24, )",
           "Arch": "[2.1.0, )",
-          "BCnEncoder.Net.ImageSharp": "[1.1.2, )",
+          "BCnEncoder.Net": "[2.2.1, )",
           "Chorizite.Core": "[0.0.18, )",
           "Serilog": "[4.0.2, )",
           "Serilog.Sinks.Console": "[6.0.0, )",
@@ -415,8 +415,7 @@
         "type": "Project",
         "dependencies": {
           "AcDream.Core": "[0.1.24, )",
-          "BCnEncoder.Net.ImageSharp": "[1.1.2, )",
-          "SixLabors.ImageSharp": "[3.1.12, )"
+          "BCnEncoder.Net": "[2.2.1, )"
         }
       },
       "acdream.core": {
@@ -497,17 +496,6 @@
         "contentHash": "tI5+/OQo0kciLqWrViRjpOH+IL3FjexYnoWZajiGV41g/EM9CGbWsxsPzBDmpoxNkrV9uox/EtIhCIi9chBSFw==",
         "dependencies": {
           "CommunityToolkit.HighPerformance": "8.4.0"
-        }
-      },
-      "BCnEncoder.Net.ImageSharp": {
-        "type": "CentralTransitive",
-        "requested": "[1.1.2, )",
-        "resolved": "1.1.2",
-        "contentHash": "qUi8L+bNfHJii95BMBcV6MhBchkKU2VV6sd6D1yyzgm77YhMt+aFT0keh5uf70bvTsRrq/ZKQnE4UQScNU6XAA==",
-        "dependencies": {
-          "BCnEncoder.Net": "2.2.0",
-          "CommunityToolkit.HighPerformance": "8.4.0",
-          "SixLabors.ImageSharp": "3.1.7"
         }
       },
       "Chorizite.Core": {

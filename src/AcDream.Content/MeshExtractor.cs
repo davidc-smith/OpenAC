@@ -2,7 +2,6 @@ using AcDream.Core.Rendering.Wb;
 using AcDream.Core.Meshing;
 using AcDream.Content.Vfx;
 using BCnEncoder.Decoder;
-using BCnEncoder.ImageSharp;
 using BCnEncoder.Shared;
 using Chorizite.Core.Lib;
 using Chorizite.Core.Render.Enums;
@@ -1090,12 +1089,19 @@ public sealed class MeshExtractor {
                 $"Unsupported compressed format: {renderSurface.Format}"),
         };
 
-        using var image = _bcDecoder.Value!.DecodeRawToImageRgba32(
+        ColorRgba32[] pixels = _bcDecoder.Value!.DecodeRaw(
             renderSurface.SourceData,
             width,
             height,
             compressionFormat);
-        image.CopyPixelDataTo(textureData);
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            int at = i * 4;
+            textureData[at + 0] = pixels[i].r;
+            textureData[at + 1] = pixels[i].g;
+            textureData[at + 2] = pixels[i].b;
+            textureData[at + 3] = pixels[i].a;
+        }
         return textureData;
     }
 

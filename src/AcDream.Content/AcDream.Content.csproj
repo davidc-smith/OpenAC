@@ -15,8 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="BCnEncoder.Net.ImageSharp" />
-    <PackageReference Include="SixLabors.ImageSharp" />
+    <PackageReference Include="BCnEncoder.Net" />
   </ItemGroup>
 
   <ItemGroup>
