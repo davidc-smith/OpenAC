@@ -413,6 +413,7 @@ public sealed class RetailUiRuntime : IDisposable
     private PluginAppearanceWindow? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
     private PluginSvgIconCache? _pluginSvgIcons;
+    private PluginFileIconCache? _pluginFileIcons;
     private bool _pluginsMounted;
     private IDisposable? _characterSheetSubscription;
     private Layout.CharacterTitlesController? _characterTitlesController;
@@ -4127,6 +4128,11 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.Assets.Dats,
             _bindings.Assets.Icons,
             _bindings.Toolbar.Objects);
+        TextureCache textures = _bindings.Assets.TextureCache;
+        // Mipmapped: plugin art is often drawn far below its own size.
+        _pluginFileIcons ??= new PluginFileIconCache(
+            (rgba, width, height, name) => textures.UploadReleasableRgba8(rgba, width, height, name, mipmapped: true),
+            textures.ReleaseUiTexture);
 
         foreach (var panel in _bindings.Plugins.Drain())
         {
@@ -4140,7 +4146,8 @@ public sealed class RetailUiRuntime : IDisposable
                     _bindings.Assets.ResolveSprite,
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
-                    iconResolver, _pluginThemes,
+                    new PluginMarkupIconResolver(iconResolver, _pluginFileIcons, panel.Owner.Id, panel.PluginDirectory),
+                    _pluginThemes,
                     fallbackTitle: panel.Descriptor.Title);
                 UiNineSlicePanel element = window.Frame;
 
@@ -5246,6 +5253,8 @@ public sealed class RetailUiRuntime : IDisposable
                 // After the dock has given back its holds, while the texture cache is still here.
                 _pluginSvgIcons?.Dispose();
                 _pluginSvgIcons = null;
+                _pluginFileIcons?.Dispose();
+                _pluginFileIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;
                 WindowLockPresentation.Dispose();
                 WindowOpacity.Dispose();
