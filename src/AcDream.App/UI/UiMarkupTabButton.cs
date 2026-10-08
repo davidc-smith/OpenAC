@@ -15,9 +15,15 @@ public sealed class UiMarkupTabButton : UiSimpleButton
 
     public PluginUiPalette? ThemePalette { get; set; }
 
+    /// <summary>The alpha an unselected tab draws its icon at, so it recedes like its caption.</summary>
+    internal const float InactiveIconAlpha = 0.55f;
+
     public Func<bool>? SelectedSource { get; set; }
 
     public bool IsSelected => SelectedSource?.Invoke() ?? false;
+
+    private protected override Vector4 IconTint =>
+        IsSelected ? base.IconTint : base.IconTint with { W = base.IconTint.W * InactiveIconAlpha };
 
     public UiMarkupTabButton()
     {
