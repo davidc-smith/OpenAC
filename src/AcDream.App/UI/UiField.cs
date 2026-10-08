@@ -159,6 +159,7 @@ public sealed class UiField : UiElement
     public int HistoryCount => SharedHistory?.Count ?? _history.Count;
 
     private bool _focused;
+    private bool _dispatchingFocusLost;
     private bool _selecting;   // mouse drag in progress
     private bool _preserveFocusSelectionOnMouseDown;
     private float _scrollX;
@@ -804,7 +805,12 @@ public sealed class UiField : UiElement
                 OnFocusGained?.Invoke();
                 return true;
             case UiEventType.FocusLost:
-                OnFocusLost?.Invoke(_text);
+                // A callback that hides or removes this field's panel must not
+                // report the same focus loss again while it is still running.
+                if (_dispatchingFocusLost) return true;
+                _dispatchingFocusLost = true;
+                try { OnFocusLost?.Invoke(_text); }
+                finally { _dispatchingFocusLost = false; }
                 _focused = false; ResetRecall();
                 _selAnchor = null; _selecting = false; _repeatKey = null;
                 _preserveFocusSelectionOnMouseDown = false;

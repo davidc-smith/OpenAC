@@ -977,8 +977,17 @@ public sealed class UiRoot : UiElement
         UiElement? previous = KeyboardFocus;
         if (previous is not null)
         {
+            // Focus is already gone when the old element hears it is lost, so a
+            // handler that hides, removes or refocuses does not lose it again.
+            KeyboardFocus = null;
             var lost = new UiEvent(previous.EventId, previous, UiEventType.FocusLost);
             previous.OnEvent(in lost);
+            if (KeyboardFocus is not null)
+            {
+                // The handler moved focus itself; its choice stands.
+                KeyboardFocusChanged?.Invoke(previous, KeyboardFocus);
+                return;
+            }
         }
         KeyboardFocus = e;
         if (e is not null)

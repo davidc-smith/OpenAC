@@ -1091,4 +1091,72 @@ public class UiRootInputTests
         Assert.Equal("lifted", root.DragPayload);
         Assert.Equal((30, 20), lift);
     }
+
+    [Fact]
+    public void FocusLostHandlerThatClearsFocusDoesNotLoseFocusAgain()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var field = new UiField { Width = 100, Height = 20 };
+        root.AddChild(field);
+        root.SetKeyboardFocus(field);
+        int lost = 0;
+        var changes = new List<(UiElement?, UiElement?)>();
+        root.KeyboardFocusChanged += (from, to) => changes.Add((from, to));
+        field.OnFocusLost = _ =>
+        {
+            if (++lost < 4) root.SetKeyboardFocus(null);
+        };
+
+        root.SetKeyboardFocus(null);
+
+        Assert.Equal(1, lost);
+        Assert.Null(root.KeyboardFocus);
+        Assert.Equal([((UiElement?)field, (UiElement?)null)], changes);
+    }
+
+    [Fact]
+    public void FocusLostHandlerThatMovesFocusKeepsItsChoice()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var a = new UiField { Width = 100, Height = 20 };
+        var b = new UiField { Width = 100, Height = 20 };
+        var c = new UiField { Width = 100, Height = 20 };
+        root.AddChild(a);
+        root.AddChild(b);
+        root.AddChild(c);
+        root.SetKeyboardFocus(a);
+        int aLost = 0, bGained = 0, cGained = 0;
+        var changes = new List<(UiElement?, UiElement?)>();
+        root.KeyboardFocusChanged += (from, to) => changes.Add((from, to));
+        a.OnFocusLost = _ =>
+        {
+            if (++aLost < 4) root.SetKeyboardFocus(c);
+        };
+        b.OnFocusGained = () => bGained++;
+        c.OnFocusGained = () => cGained++;
+
+        root.SetKeyboardFocus(b);
+
+        Assert.Equal(1, aLost);
+        Assert.Same(c, root.KeyboardFocus);
+        Assert.Equal(0, bGained);
+        Assert.Equal(1, cGained);
+        Assert.Equal((a, c), changes[^1]);
+    }
+
+    [Fact]
+    public void FieldIgnoresAFocusLostThatArrivesWhileItsCallbackRuns()
+    {
+        var field = new UiField { Width = 100, Height = 20 };
+        var lostEvent = new UiEvent(field.EventId, field, UiEventType.FocusLost);
+        int lost = 0;
+        field.OnFocusLost = _ =>
+        {
+            if (++lost < 4) field.OnEvent(in lostEvent);
+        };
+
+        field.OnEvent(in lostEvent);
+
+        Assert.Equal(1, lost);
+    }
 }
