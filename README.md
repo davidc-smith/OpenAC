@@ -180,6 +180,21 @@ The project welcomes AI-assisted contributions on exactly those terms. Use whate
 tools you like; submit changes you understand, that build, that pass the tests,
 and that you can explain in the pull request.
 
+## Image and data dependencies
+
+Image loading uses StbImageSharp; screenshots and PNG exports use
+StbImageWriteSharp. Both are managed C# libraries and require no native image
+library or build-time license key. Texture block decoding uses BCnEncoder.Net
+directly. CLI image tools retain cropping, nearest-neighbor zoom, bicubic
+scaling, alpha compositing, and pixel comparisons.
+
+Chorizite.DatReaderWriter remains the DAT reader. Mesh bounds and texture-format
+values are owned by OpenAC, retaining the existing PAK binary format; existing
+prepared content does not need rebaking for this dependency change.
+Chorizite.Core, ImageSharp, and the BCnEncoder ImageSharp adapter are no longer
+required. See [third-party notices](NOTICE.md) for dependencies and attribution,
+and [image pipeline checks](docs/image-pipeline-testing.md) for verification.
+
 ## Contributing
 
 OpenAC is meant to be built by the community, not by one person. The code is

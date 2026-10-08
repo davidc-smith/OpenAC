@@ -21,7 +21,7 @@ internal sealed class DevToolsInputCaptureSource
     public bool WantCaptureKeyboard => false;
 }
 
-internal sealed class RetainedUiInputCaptureSlot
+internal sealed class RetainedUiInputCaptureSlot : IHotkeyFocusSource
 {
     public UiRoot? Root { get; private set; }
 
@@ -36,6 +36,9 @@ internal sealed class RetainedUiInputCaptureSlot
 
     public bool WantCaptureMouse => Root?.WantsMouse ?? false;
     public bool WantCaptureKeyboard => Root?.WantsKeyboard ?? false;
+
+    public bool HasKeyboardFocus => Root?.KeyboardFocus is not null;
+    public bool IsModalOpen => Root?.Modal is not null;
 
     private void Unbind(UiRoot expected)
     {

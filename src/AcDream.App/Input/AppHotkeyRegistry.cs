@@ -22,6 +22,7 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
     private IKeyboardSource? _keyboard;
     private KeyBindings? _clientBindings;
     private InputDispatcher? _dispatcher;
+    private IHotkeyFocusSource? _focus;
     private bool _keyboardHooked;
 
     public AppHotkeyRegistry(string? overridesFilePath)
@@ -32,24 +33,28 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
 
     /// <summary>
     /// Wires the registry to the live keyboard source and the client's own
-    /// bindings (for collision detection) and the dispatcher (for the
-    /// active-scope chat-focus check). Every hotkey registered before this
-    /// call is resolved and armed now.
+    /// bindings (for collision detection), the dispatcher (for rebind
+    /// capture and its input scopes) and the interface's focus state (for
+    /// keyboard focus and modals). Every hotkey registered before this call
+    /// is resolved and armed now.
     /// </summary>
     public void Bind(
         IKeyboardSource keyboard,
         KeyBindings clientBindings,
-        InputDispatcher dispatcher)
+        InputDispatcher dispatcher,
+        IHotkeyFocusSource focus)
     {
         ArgumentNullException.ThrowIfNull(keyboard);
         ArgumentNullException.ThrowIfNull(clientBindings);
         ArgumentNullException.ThrowIfNull(dispatcher);
+        ArgumentNullException.ThrowIfNull(focus);
         Entry[] pending;
         lock (_gate)
         {
             _keyboard = keyboard;
             _clientBindings = clientBindings;
             _dispatcher = dispatcher;
+            _focus = focus;
             if (!_keyboardHooked)
             {
                 _keyboardHooked = true;
@@ -162,27 +167,34 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
     // Not routed through InputDispatcher's action/scope machinery -- a
     // dynamic per-plugin action space large enough for that would be a much
     // bigger change (see the plugin-api.md Hotkeys note for the recorded
-    // deviation). This still honours the two conditions that matter most:
-    // a rebind capture in progress (BeginCapture) and a modal scope
-    // (Dialog/EditField, not just Chat) both suppress every hotkey, the
-    // same way the dispatcher itself would refuse to route a client
-    // action into a text field or a capture-in-progress rebind screen.
+    // deviation). A rebind capture in progress (BeginCapture), an open
+    // modal and a modal scope (Dialog/EditField) suppress every hotkey;
+    // while anything holds keyboard focus (chat, a text field) only a chord
+    // with Ctrl or Alt fires, so typed letters are never hotkey presses.
+    // The interface's focus is the live signal: no production code pushes
+    // a dispatcher scope. This handler runs before the interface's own key
+    // handler (the keyboard source attaches in HostInputCameraComposition,
+    // before the retained UI's UiHost.WireKeyboard), so it sees the focus
+    // from before this key is handled.
     private void OnKeyDown(Key key, ModifierMask modifiers)
     {
         Entry[] snapshot;
         InputDispatcher? dispatcher;
+        IHotkeyFocusSource? focus;
         lock (_gate)
         {
             snapshot = _entries.ToArray();
             dispatcher = _dispatcher;
+            focus = _focus;
         }
         if (dispatcher is not null && dispatcher.IsCapturing)
             return;
         InputScope? activeScope = dispatcher?.ActiveScope;
-        bool chatFocused = activeScope == InputScope.Chat;
         bool modalScope = activeScope is InputScope.Dialog or InputScope.EditField;
-        if (modalScope)
+        if (modalScope || focus?.IsModalOpen == true)
             return;
+        bool typing = activeScope == InputScope.Chat
+            || focus?.HasKeyboardFocus == true;
 
         foreach (Entry entry in snapshot)
         {
@@ -206,7 +218,7 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
                 && ((modifiers & ModifierMask.Shift) != 0) == chord.Shift;
             if (!modsMatch) continue;
 
-            if (chatFocused && !chord.Ctrl && !chord.Alt) continue;
+            if (typing && !chord.Ctrl && !chord.Alt) continue;
 
             try { handler(); }
             catch { /* plugin errors do not propagate out of event dispatch */ }

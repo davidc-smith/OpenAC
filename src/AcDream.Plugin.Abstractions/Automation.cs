@@ -447,6 +447,54 @@ public interface ICharacterInfo
     /// <summary>The character's level; 0 before the server has said.</summary>
     int Level => 0;
 
+    /// <summary>
+    /// True once the server has sent the character's experience (its
+    /// PlayerDescription); false before login, after logout or a character
+    /// switch until the next description arrives, and on a host that does not
+    /// track it. While false, the experience members below read 0 or null.
+    /// </summary>
+    bool HasExperience => false;
+
+    /// <summary>
+    /// Total experience ever earned (PropertyInt64 TotalExperience). Spending
+    /// experience does not lower it.
+    /// </summary>
+    long TotalExperience => 0;
+
+    /// <summary>Experience not yet spent (PropertyInt64 AvailableExperience).</summary>
+    long UnassignedExperience => 0;
+
+    /// <summary>
+    /// Experience still needed to reach the next level, or null at the top of
+    /// the level table (the character sheet's "Infinity!"), while
+    /// <see cref="HasExperience"/> is false, and when the host has no
+    /// experience table loaded. 0 when the character already holds enough
+    /// experience and the server has not yet sent the new level.
+    /// </summary>
+    long? ExperienceToNextLevel => null;
+
+    /// <summary>
+    /// Luminance the character holds now (PropertyInt64 AvailableLuminance);
+    /// 0 when it has none.
+    /// </summary>
+    long AvailableLuminance => 0;
+
+    /// <summary>
+    /// The cap on luminance (PropertyInt64 MaximumLuminance); 0 for a
+    /// character that cannot earn luminance yet.
+    /// </summary>
+    long MaximumLuminance => 0;
+
+    /// <summary>
+    /// Raised on the same thread as <see cref="IEvents.Tick"/> when any of
+    /// the experience members above changes, including the first time
+    /// <see cref="HasExperience"/> becomes true, when it goes back to false on
+    /// logout, and on a level-up (<see cref="ExperienceToNextLevel"/>
+    /// changes). Not raised for unrelated character changes. The default
+    /// implementation never raises it.
+    /// </summary>
+    event Action ExperienceChanged { add { } remove { } }
+
     /// <summary>Unused ordinary slots in the main pack.</summary>
     int MainPackFreeSlots => 0;
 

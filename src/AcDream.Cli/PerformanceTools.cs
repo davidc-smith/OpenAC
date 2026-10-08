@@ -1,8 +1,7 @@
+using AcDream.Core.Textures;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace AcDream.Cli;
 
@@ -142,11 +141,11 @@ public static partial class PerformanceTools
         if (maxDifferentFraction is < 0 or > 1 || double.IsNaN(maxDifferentFraction))
             throw new ArgumentOutOfRangeException(nameof(maxDifferentFraction));
 
-        using Image<Rgba32> expected = Image.Load<Rgba32>(expectedPath);
-        using Image<Rgba32> actual = Image.Load<Rgba32>(actualPath);
-        using Image<Rgba32>? mask = maskPath is null
+        using RgbaImage expected = RgbaImage.Load(expectedPath);
+        using RgbaImage actual = RgbaImage.Load(actualPath);
+        using RgbaImage? mask = maskPath is null
             ? null
-            : Image.Load<Rgba32>(maskPath);
+            : RgbaImage.Load(maskPath);
 
         if (expected.Width != actual.Width || expected.Height != actual.Height)
         {
@@ -195,8 +194,8 @@ public static partial class PerformanceTools
                 }
 
                 comparedPixels++;
-                Rgba32 left = expected[x, y];
-                Rgba32 right = actual[x, y];
+                RgbaPixel left = expected[x, y];
+                RgbaPixel right = actual[x, y];
                 int redDelta = Math.Abs(left.R - right.R);
                 int greenDelta = Math.Abs(left.G - right.G);
                 int blueDelta = Math.Abs(left.B - right.B);

@@ -1,5 +1,5 @@
 using System.Linq;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Types;
 
@@ -170,7 +170,7 @@ public static class ObjectMeshDataEquality {
             $"got SurfaceId=0x{actual.SurfaceId:X8} PaletteId=0x{actual.PaletteId:X8} Stippling={actual.Stippling} IsSolid={actual.IsSolid}");
     }
 
-    private static void AssertBoundingBoxEqual(Chorizite.Core.Lib.BoundingBox expected, Chorizite.Core.Lib.BoundingBox actual, string path) {
+    private static void AssertBoundingBoxEqual(AcDream.Core.Rendering.Wb.BoundingBox expected, AcDream.Core.Rendering.Wb.BoundingBox actual, string path) {
         AssertVector3Equal(expected.Min, actual.Min, $"{path}.Min");
         AssertVector3Equal(expected.Max, actual.Max, $"{path}.Max");
     }

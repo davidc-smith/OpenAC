@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <PackageReference Include="Chorizite.DatReaderWriter" />
-    <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,4 @@
-using Chorizite.Core.Lib;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using AcDream.Core.Meshing;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Types;
@@ -8,7 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using BoundingBox = Chorizite.Core.Lib.BoundingBox;
+using BoundingBox = AcDream.Core.Rendering.Wb.BoundingBox;
 
 namespace AcDream.Content;
 

@@ -2,7 +2,6 @@ using AcDream.App.Rendering.Gpu;
 using AcDream.App.Rendering.Gpu.Vk;
 using AcDream.Content;
 using AcDream.Core.Rendering.Wb;
-using Chorizite.Core.Render.Enums;
 using Microsoft.Extensions.Logging;
 
 namespace AcDream.App.Rendering.Wb;

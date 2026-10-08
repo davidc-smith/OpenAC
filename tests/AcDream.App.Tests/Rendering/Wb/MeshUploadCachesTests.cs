@@ -1,6 +1,6 @@
 using AcDream.App.Rendering.Wb;
 using AcDream.Content;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 
 namespace AcDream.App.Tests.Rendering.Wb;
 

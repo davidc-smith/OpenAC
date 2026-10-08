@@ -1,6 +1,4 @@
-using Chorizite.Core.Lib;
-using Chorizite.Core.Render;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Enums;
 using CullMode = DatReaderWriter.Enums.CullMode;
@@ -16,8 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AcDream.Content;
 using AcDream.App.Rendering.Residency;
-using AcDream.Core.Rendering.Wb;
-using BoundingBox = Chorizite.Core.Lib.BoundingBox;
+using BoundingBox = AcDream.Core.Rendering.Wb.BoundingBox;
 
 namespace AcDream.App.Rendering.Wb
 {

@@ -553,6 +553,79 @@ public class InventoryControllerTests
         Assert.Same(eighth, containers.GetItem(7));
     }
 
+    // The client mounts the inventory inside a resizable window frame. The longer pack
+    // column has to grow that frame, and the contents must keep filling it at any height.
+    private static (UiRoot root, UiElement frame) MountInFrame(ImportedLayout layout)
+    {
+        var root = new UiRoot { Width = 1920, Height = 1080 };
+        UiElement content = layout.Root;
+        RetailWindowHandle handle = RetailWindowFrame.Mount(root, content, static _ => (0u, 0, 0),
+            new RetailWindowFrame.Options
+            {
+                WindowName = "inventory",
+                Chrome = RetailWindowChrome.NineSlice,
+                ResizeX = false,
+                ResizeY = true,
+                ResizableEdges = ResizeEdges.Bottom,
+                ContentAnchors = AnchorEdges.Left | AnchorEdges.Top | AnchorEdges.Bottom,
+            });
+        return (root, handle.OuterFrame);
+    }
+
+    private static void ApplyAnchors(UiElement parent)
+    {
+        foreach (UiElement child in parent.Children)
+        {
+            child.ApplyAnchor(parent.Width, parent.Height);
+            ApplyAnchors(child);
+        }
+    }
+
+    private static void AssertContentFillsFrame(UiElement frame, UiElement content, float chrome)
+        => Assert.Equal(frame.Height - chrome, content.Height);
+
+    [Fact]
+    public void AugmentedPackColumn_growsTheWindowFrameItIsMountedIn()
+    {
+        var (layout, _, containers, _, _, _, _, _) = BuildLayout();
+        var (root, frame) = MountInFrame(layout);
+        float chrome = frame.Height - layout.Root.Height;
+        float authoredFrameHeight = frame.Height;
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player, ContainersCapacity = 10 });
+
+        Bind(layout, objects);
+        ApplyAnchors(root);
+
+        float extension = 10 * 36 - 252;
+        Assert.Equal(authoredFrameHeight + extension, frame.MinHeight);
+        Assert.Equal(authoredFrameHeight + extension, frame.Height);
+        AssertContentFillsFrame(frame, layout.Root, chrome);
+        Assert.True(containers.Top + containers.Height <= layout.Root.Height);
+    }
+
+    [Fact]
+    public void AugmentedPackColumn_arrivingAfterATallerSavedHeight_keepsTheContentsFillingTheFrame()
+    {
+        var (layout, _, _, _, _, _, _, _) = BuildLayout();
+        var (root, frame) = MountInFrame(layout);
+        float chrome = frame.Height - layout.Root.Height;
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player });
+        InventoryController controller = Bind(layout, objects);
+        ApplyAnchors(root);
+
+        // The saved height lands, and the pack capacity arrives before the next layout pass.
+        frame.Height = 651;
+        frame.ResetAnchorCapture();
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player, ContainersCapacity = 10 });
+        controller.Populate();
+        ApplyAnchors(root);
+
+        Assert.Equal(651, frame.Height);
+        AssertContentFillsFrame(frame, layout.Root, chrome);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

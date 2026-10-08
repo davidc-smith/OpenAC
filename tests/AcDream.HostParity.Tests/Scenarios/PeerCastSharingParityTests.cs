@@ -109,10 +109,11 @@ public sealed class PeerCastSharingParityTests
 
             // The other client wrote its note five seconds ago, which is the
             // whole reason a total duration is the wrong thing to hand a
-            // reader: this one is polling a file, not hearing an event.
+            // reader: the effect was already aging before it was shared.
             using (var other = new ParityPeerClient(
                 arm.PeerDirectory, new FiveSecondsAgo(), OtherClient))
             {
+                DateTimeOffset beforeCast = DateTimeOffset.UtcNow;
                 Assert.True(other.RecordCast(new LocalPluginCast(
                     CasterObjectId: OtherCharacter,
                     TargetObjectId: ParityWorld.Monster,
@@ -126,6 +127,7 @@ public sealed class PeerCastSharingParityTests
                 PluginPeerCast[] read = arm.Host.Automation.Network
                     .CaptureCasts(0L)
                     .ToArray();
+                double elapsed = (DateTimeOffset.UtcNow - beforeCast).TotalSeconds;
                 Assert.True(
                     read.Length == 1,
                     $"{arm.Name} did not read the other client's cast: "
@@ -140,10 +142,15 @@ public sealed class PeerCastSharingParityTests
                 // it believe a lapsed debuff was still running. Asserted
                 // rather than only recorded: two clients agreeing on a wrong
                 // number is still wrong.
+                // Include the actual scheduling/transport time, not an assumed
+                // one-second CI budget. Wire timestamps have millisecond precision.
+                double minimumRemaining = Math.Max(0d, 55d - elapsed - 0.002d);
+                const double maximumRemaining = 55.002d;
                 transcript.Record(
                     "fiveSecondsHaveComeOffTheSixtyPublished",
-                    read[0].SecondsRemaining is > 54d and < 56d);
-                Assert.InRange(read[0].SecondsRemaining, 54d, 56d);
+                    read[0].SecondsRemaining >= minimumRemaining
+                        && read[0].SecondsRemaining <= maximumRemaining);
+                Assert.InRange(read[0].SecondsRemaining, minimumRemaining, maximumRemaining);
 
                 // A plugin's own cursor, not the host's: reading again from
                 // where it left off hands back nothing.

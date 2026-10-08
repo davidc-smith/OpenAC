@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 using AcDream.Content;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
 
