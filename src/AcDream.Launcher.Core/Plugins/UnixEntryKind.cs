@@ -20,7 +20,12 @@ internal static partial class UnixEntryKind
 
     private static int MacMode(string path)
     {
-        if (LStatMac(path, out MacStat stat) != 0)
+        // Intel exports the 64-bit-inode layout under a versioned symbol;
+        // Apple silicon uses that layout for the unversioned symbol too.
+        int result = RuntimeInformation.ProcessArchitecture == Architecture.X64
+            ? LStatMacInode64(path, out MacStat stat)
+            : LStatMac(path, out stat);
+        if (result != 0)
         {
             throw new IOException(
                 $"lstat failed for '{path}' ({Marshal.GetLastPInvokeError()}).");
@@ -50,6 +55,13 @@ internal static partial class UnixEntryKind
         StringMarshalling = StringMarshalling.Utf8,
         SetLastError = true)]
     private static partial int LStatMac(string path, out MacStat buffer);
+
+    [LibraryImport(
+        "/usr/lib/libSystem.B.dylib",
+        EntryPoint = "lstat$INODE64",
+        StringMarshalling = StringMarshalling.Utf8,
+        SetLastError = true)]
+    private static partial int LStatMacInode64(string path, out MacStat buffer);
 
     [LibraryImport(
         "libc",
