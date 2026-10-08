@@ -4,10 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Types;
-using BoundingBox = Chorizite.Core.Lib.BoundingBox;
+using BoundingBox = AcDream.Core.Rendering.Wb.BoundingBox;
 using CullMode = DatReaderWriter.Enums.CullMode;
 
 namespace AcDream.Content.Pak;

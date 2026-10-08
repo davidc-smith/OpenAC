@@ -72,7 +72,7 @@ public sealed class EnvCellUnboundSurfaceGuardTests
         IndexCount = 6,
         TextureIndex = 0,
         TextureSize = (256, 512),
-        TextureFormat = Chorizite.Core.Render.Enums.TextureFormat.DXT1,
+        TextureFormat = AcDream.Core.Rendering.Wb.TextureFormat.DXT1,
         Key = new TextureKey { SurfaceId = UnboundSurfaceId },
         CullMode = CullMode.Clockwise,
         // TextureSlot is left at its default, which is GpuTextureSlot.Unassigned.

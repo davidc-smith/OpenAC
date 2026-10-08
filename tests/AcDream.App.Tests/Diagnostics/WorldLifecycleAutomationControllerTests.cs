@@ -1,3 +1,4 @@
+using AcDream.Core.Textures;
 using System.Text.Json;
 using AcDream.App.Diagnostics;
 using AcDream.App.Rendering;
@@ -8,7 +9,6 @@ using AcDream.App.Streaming;
 using AcDream.App.UI.Testing;
 using AcDream.Runtime;
 using AcDream.Runtime.World;
-using SixLabors.ImageSharp;
 
 namespace AcDream.App.Tests.Diagnostics;
 
@@ -46,7 +46,7 @@ public sealed class WorldLifecycleAutomationControllerTests
 
             Assert.True(controller.IsComplete("login_stable"));
             string path = Path.Combine(directory, "login_stable.png");
-            using Image image = Image.Load(path);
+            using RgbaImage image = RgbaImage.Load(path);
             Assert.Equal(2, image.Width);
             Assert.Equal(2, image.Height);
             Assert.Contains(logs, line => line.Contains("screenshot-complete", StringComparison.Ordinal));

@@ -1,7 +1,6 @@
+using AcDream.Core.Textures;
 using System.Text.Json;
 using AcDream.Cli;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace AcDream.Cli.Tests;
 
@@ -15,15 +14,15 @@ public sealed class PerformanceToolsTests
         string actualPath = Path.Combine(directory.Path, "actual.png");
         string maskPath = Path.Combine(directory.Path, "mask.png");
 
-        using (var expected = new Image<Rgba32>(2, 1))
-        using (var actual = new Image<Rgba32>(2, 1))
-        using (var mask = new Image<Rgba32>(2, 1))
+        using (var expected = new RgbaImage(2, 1))
+        using (var actual = new RgbaImage(2, 1))
+        using (var mask = new RgbaImage(2, 1))
         {
-            expected[0, 0] = new Rgba32(10, 20, 30, 255);
-            expected[1, 0] = new Rgba32(40, 50, 60, 255);
-            actual[0, 0] = new Rgba32(12, 20, 30, 255);
-            actual[1, 0] = new Rgba32(200, 50, 60, 255);
-            mask[1, 0] = new Rgba32(0, 0, 0, 255);
+            expected[0, 0] = new RgbaPixel(10, 20, 30, 255);
+            expected[1, 0] = new RgbaPixel(40, 50, 60, 255);
+            actual[0, 0] = new RgbaPixel(12, 20, 30, 255);
+            actual[1, 0] = new RgbaPixel(200, 50, 60, 255);
+            mask[1, 0] = new RgbaPixel(0, 0, 0, 255);
             expected.SaveAsPng(expectedPath);
             actual.SaveAsPng(actualPath);
             mask.SaveAsPng(maskPath);
@@ -56,10 +55,10 @@ public sealed class PerformanceToolsTests
         string expectedPath = Path.Combine(directory.Path, "expected.png");
         string actualPath = Path.Combine(directory.Path, "actual.png");
         string maskPath = Path.Combine(directory.Path, "mask.png");
-        using (var image = new Image<Rgba32>(1, 1))
-        using (var mask = new Image<Rgba32>(1, 1))
+        using (var image = new RgbaImage(1, 1))
+        using (var mask = new RgbaImage(1, 1))
         {
-            mask[0, 0] = new Rgba32(0, 0, 0, 255);
+            mask[0, 0] = new RgbaPixel(0, 0, 0, 255);
             image.SaveAsPng(expectedPath);
             image.SaveAsPng(actualPath);
             mask.SaveAsPng(maskPath);
@@ -83,8 +82,8 @@ public sealed class PerformanceToolsTests
         string expectedPath = Path.Combine(directory.Path, "expected.png");
         string actualPath = Path.Combine(directory.Path, "actual.png");
         string outputPath = Path.Combine(directory.Path, "comparison.json");
-        using (var expected = new Image<Rgba32>(1, 1))
-        using (var actual = new Image<Rgba32>(2, 1))
+        using (var expected = new RgbaImage(1, 1))
+        using (var actual = new RgbaImage(2, 1))
         {
             expected.SaveAsPng(expectedPath);
             actual.SaveAsPng(actualPath);

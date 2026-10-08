@@ -1,21 +1,21 @@
 using AcDream.Content;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using System;
 
 namespace AcDream.App.Rendering.Wb {
     public static class TextureFormatExtensions {
 
-        public static UploadPixelFormat ToPixelFormat(this Chorizite.Core.Render.Enums.TextureFormat format) {
+        public static UploadPixelFormat ToPixelFormat(this AcDream.Core.Rendering.Wb.TextureFormat format) {
             return format switch {
-                Chorizite.Core.Render.Enums.TextureFormat.RGBA8 => UploadPixelFormat.Rgba,
-                Chorizite.Core.Render.Enums.TextureFormat.RGB8 => UploadPixelFormat.Rgb,
-                Chorizite.Core.Render.Enums.TextureFormat.A8 => UploadPixelFormat.Red,
-                Chorizite.Core.Render.Enums.TextureFormat.Rgba32f => UploadPixelFormat.Rgba,
+                AcDream.Core.Rendering.Wb.TextureFormat.RGBA8 => UploadPixelFormat.Rgba,
+                AcDream.Core.Rendering.Wb.TextureFormat.RGB8 => UploadPixelFormat.Rgb,
+                AcDream.Core.Rendering.Wb.TextureFormat.A8 => UploadPixelFormat.Red,
+                AcDream.Core.Rendering.Wb.TextureFormat.Rgba32f => UploadPixelFormat.Rgba,
                 _ => throw new NotSupportedException($"Texture format {format} is not supported."),
             };
         }
 
-        public static UploadPixelType ToPixelType(this Chorizite.Core.Render.Enums.TextureFormat format) {
+        public static UploadPixelType ToPixelType(this AcDream.Core.Rendering.Wb.TextureFormat format) {
             return format switch {
                 TextureFormat.RGBA8 => UploadPixelType.UnsignedByte,
                 TextureFormat.RGB8 => UploadPixelType.UnsignedByte,

@@ -8,9 +8,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="BCnEncoder.Net" />
-    <PackageReference Include="Chorizite.Core" />
     <PackageReference Include="Chorizite.DatReaderWriter" />
     <PackageReference Include="Serilog" />
+    <PackageReference Include="StbImageWriteSharp" />
     <PackageReference Include="StbImageSharp" />
   </ItemGroup>
   <ItemGroup>

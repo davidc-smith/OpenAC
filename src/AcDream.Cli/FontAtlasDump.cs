@@ -3,9 +3,6 @@ using DatReaderWriter;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Options;
 using DatReaderWriter.Types;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 
 namespace AcDream.Cli;
 
@@ -36,9 +33,9 @@ public static class FontAtlasDump
         var glyphs = new Dictionary<char, FontCharDesc>();
         foreach (var cd in font.CharDescs) glyphs[(char)cd.Unicode] = cd;
 
-        var panel = new Rgba32(28, 28, 32, 255);
-        var fill = new Rgba32(255, 255, 255, 255);   // white fill, like System default-ish
-        var outline = new Rgba32(0, 0, 0, 255);
+        var panel = new RgbaPixel(28, 28, 32, 255);
+        var fill = new RgbaPixel(255, 255, 255, 255);   // white fill, like System default-ish
+        var outline = new RgbaPixel(0, 0, 0, 255);
 
         int lineH = Math.Max((int)font.MaxCharHeight, 8);
 
@@ -58,10 +55,10 @@ public static class FontAtlasDump
         return 0;
     }
 
-    private static Image<Rgba32> RenderSample(
+    private static RgbaImage RenderSample(
         string text, Dictionary<char, FontCharDesc> glyphs,
         DecodedTexture fg, DecodedTexture? bg, int lineH,
-        Rgba32 panel, Rgba32 fill, Rgba32 outline, float originYExtra, bool snapOnce)
+        RgbaPixel panel, RgbaPixel fill, RgbaPixel outline, float originYExtra, bool snapOnce)
     {
         // First pass: measure pen width.
         float pen = 0; float maxX = 0;
@@ -69,7 +66,7 @@ public static class FontAtlasDump
             if (glyphs.TryGetValue(ch, out var g)) { maxX = Math.Max(maxX, pen + g.HorizontalOffsetBefore + g.Width); pen += g.HorizontalOffsetBefore + g.Width + g.HorizontalOffsetAfter; }
         int w = Math.Max(8, (int)MathF.Ceiling(Math.Max(maxX, pen)) + 4);
         int h = lineH + 6;
-        var img = new Image<Rgba32>(w, h, panel);
+        var img = new RgbaImage(w, h, panel);
 
         float originY = 3f + originYExtra;
         float baseY = MathF.Round(originY);   // snapped line baseline (the fix)
@@ -91,13 +88,13 @@ public static class FontAtlasDump
         return img;
     }
 
-    private static void Save6x(Image<Rgba32> native, string outBase)
+    private static void Save6x(RgbaImage native, string outBase)
     {
-        using var zoom = native.Clone(c => c.Resize(native.Width * 6, native.Height * 6, KnownResamplers.NearestNeighbor));
+        using var zoom = native.Clone().Resize(native.Width * 6, native.Height * 6, nearest: true);
         zoom.SaveAsPng($"{outBase}-6x.png");
     }
 
-    private static void BlitGlyph(Image<Rgba32> dst, DecodedTexture atlas, FontCharDesc g, int dx, int dy, Rgba32 tint)
+    private static void BlitGlyph(RgbaImage dst, DecodedTexture atlas, FontCharDesc g, int dx, int dy, RgbaPixel tint)
     {
         for (int sy = 0; sy < g.Height; sy++)
         {
@@ -115,7 +112,7 @@ public static class FontAtlasDump
                 float cov = atlas.Rgba8[idx + 3] / 255f;
                 if (cov <= 0f) continue;
                 var bgpx = dst[px, py];
-                dst[px, py] = new Rgba32(
+                dst[px, py] = new RgbaPixel(
                     (byte)(tint.R * cov + bgpx.R * (1 - cov)),
                     (byte)(tint.G * cov + bgpx.G * (1 - cov)),
                     (byte)(tint.B * cov + bgpx.B * (1 - cov)),
@@ -124,16 +121,16 @@ public static class FontAtlasDump
         }
     }
 
-    private static Image<Rgba32> AlphaLuma(DecodedTexture t)
+    private static RgbaImage AlphaLuma(DecodedTexture t)
     {
-        var img = new Image<Rgba32>(t.Width, t.Height);
+        var img = new RgbaImage(t.Width, t.Height);
         for (int y = 0; y < t.Height; y++)
             for (int x = 0; x < t.Width; x++)
             {
                 byte a = t.Rgba8[(y * t.Width + x) * 4 + 3];
-                img[x, y] = new Rgba32(a, a, a, 255);
+                img[x, y] = new RgbaPixel(a, a, a, 255);
             }
-        img.Mutate(c => c.Resize(t.Width * 4, t.Height * 4, KnownResamplers.NearestNeighbor));
+        img.Resize(t.Width * 4, t.Height * 4, nearest: true);
         return img;
     }
 

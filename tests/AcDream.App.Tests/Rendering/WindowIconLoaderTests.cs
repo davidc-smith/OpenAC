@@ -1,8 +1,7 @@
+using AcDream.Core.Textures;
 using System.Reflection;
 using AcDream.App.Rendering;
 using AcDream.App.Tests.Architecture;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace AcDream.App.Tests.Rendering;
@@ -45,7 +44,7 @@ public class WindowIconLoaderTests
             using Stream? stream = assembly.GetManifestResourceStream(name);
             Assert.NotNull(stream);
 
-            using var image = Image.Load<Rgba32>(stream!);
+            using var image = RgbaImage.Load(stream!);
             Assert.Equal(image.Width, image.Height);
 
             // The trailing "-<size>.png" must match the actual pixel size, or
