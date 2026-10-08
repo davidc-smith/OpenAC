@@ -313,6 +313,95 @@ public sealed class MarkupIconTests
         Assert.Null(button.IconSource);
     }
 
+    // ── <tab icon>: same attributes and resolver dispatch as <button icon> ──
+
+    private sealed class TabIconBinding
+    {
+        public bool Selected { get; set; }
+        public uint SpellId { get; set; } = 42u;
+    }
+
+    [Fact]
+    public void TabIcon_DefaultsToDidKind_AndResolvesThroughTheResolver()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" " +
+            "selected=\"{Selected}\" icon=\"7735\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+
+        var panel = MarkupDocument.Build(xml, new TabIconBinding(), Sprite, icons: resolver);
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        Assert.NotNull(tab.IconSource);
+        (uint tex, _, _) = tab.IconSource!();
+        Assert.Equal(resolver.DidTexture, tex);
+        Assert.Equal(("did", 0x06001E37u), resolver.Calls[^1]);
+    }
+
+    [Fact]
+    public void TabIcon_BoundSpell_ReReadsTheBindingEveryFrame()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"20\" h=\"20\" selected=\"{Selected}\" " +
+            "icon=\"{SpellId}\" iconkind=\"spell\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+        var binding = new TabIconBinding();
+
+        var panel = MarkupDocument.Build(xml, binding, Sprite, icons: resolver);
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        tab.IconSource!();
+        Assert.Equal(("spell", 42u), resolver.Calls[^1]);
+
+        binding.SpellId = 99u;
+        tab.IconSource!();
+        Assert.Equal(("spell", 99u), resolver.Calls[^1]);
+    }
+
+    [Fact]
+    public void TabWithoutIconAttribute_HasNoIconSource()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" selected=\"{Selected}\"/>" +
+            "</panel>";
+
+        var panel = MarkupDocument.Build(xml, new TabIconBinding(), Sprite, icons: new FakeIconResolver());
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        Assert.Null(tab.IconSource);
+    }
+
+    [Fact]
+    public void TabIcon_UnknownIconKind_ThrowsAtBuild_EvenWithNoResolverWired()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" selected=\"{Selected}\" " +
+            "icon=\"1\" iconkind=\"spel\"/>" +
+            "</panel>";
+
+        Assert.Throws<FormatException>(
+            () => MarkupDocument.Build(xml, new TabIconBinding(), Sprite));
+    }
+
+    [Fact]
+    public void TabIcon_MalformedBinding_ThrowsAtBuild_EvenWithNoResolverWired()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" selected=\"{Selected}\" " +
+            "icon=\"{Typo}\"/>" +
+            "</panel>";
+
+        Assert.Throws<FormatException>(
+            () => MarkupDocument.Build(xml, new TabIconBinding(), Sprite));
+    }
+
     private sealed class IntIconBinding
     {
         public int IconIdInt { get; set; } = 42;

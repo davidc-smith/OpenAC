@@ -1,6 +1,6 @@
 <panel x="120" y="120" w="420" h="402" title="Theme Gallery" theme="plugin" resizable="true" minw="420" minh="402" titlebar="true">
-  <tab x="12" y="4" w="90" h="24" text="Status" selected="{StatusTab}" onclick="{ShowStatus}" />
-  <tab x="106" y="4" w="90" h="24" text="Spells" selected="{SpellsTab}" onclick="{ShowSpells}" />
+  <tab x="12" y="4" w="90" h="24" text="Status" icon="0x06002D14" selected="{StatusTab}" onclick="{ShowStatus}" />
+  <tab x="106" y="4" w="90" h="24" text="Spells" icon="7735" selected="{SpellsTab}" onclick="{ShowSpells}" />
   <tab x="200" y="4" w="90" h="24" text="Settings" selected="{SettingsTab}" onclick="{ShowSettings}" />
 
   <label x="12" y="42" text="Target" color="theme:muted|#FF9AA99E" />
