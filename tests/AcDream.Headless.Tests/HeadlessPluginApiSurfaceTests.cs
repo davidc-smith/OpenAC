@@ -1053,6 +1053,54 @@ public sealed class HeadlessPluginApiSurfaceTests
     }
 
     /// <summary>
+    /// The screen size is asked of the same surface on both hosts. Without a
+    /// window there is no screen: the plugin reads 0×0, and a handler is
+    /// accepted and never called.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowTheScreenSizeIsZeroAndNeverChanges()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        Action<PluginSize> handler = _ => throw new InvalidOperationException("never raised");
+
+        pluginHost.Ui.ScreenSizeChanged += handler;
+        pluginHost.Ui.ScreenSizeChanged -= handler;
+
+        Assert.Equal(new PluginSize(0, 0), pluginHost.Ui.ScreenSize);
+    }
+
+    /// <summary>
+    /// A canvas that asked for outside presses is accepted without a window:
+    /// the handler is kept and never called.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowACanvasWantingOutsidePressesHearsNothing()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        int calls = 0;
+        Action<PluginPointerEvent> handler = _ => calls++;
+
+        var descriptor = new PluginCanvasDescriptor("menu", 120, 80)
+        {
+            Layer = PluginCanvasLayer.AboveWindows,
+            AcceptsPointerInput = true,
+            WantsOutsidePresses = true,
+        };
+        IPluginCanvas canvas = pluginHost.Ui.RegisterCanvas(descriptor, _ => { });
+        canvas.PointerHandler = handler;
+
+        Assert.True(descriptor.WantsOutsidePresses);
+        Assert.False(canvas.IsAvailable);
+        Assert.Same(handler, canvas.PointerHandler);
+        Assert.Equal(0, calls);
+        canvas.Dispose();
+    }
+
+    /// <summary>
     /// The same canvas registration a plugin makes with a window is
     /// accepted without one: the plugin keeps its handle, sets what it
     /// likes, and the paint callback is never called because there is

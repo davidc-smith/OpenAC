@@ -793,6 +793,13 @@ public sealed class RetailUiRuntime : IDisposable
         // every frame, not only on a change seen above: restoring the layout
         // resizes the root without passing through here.
         _overlayHost?.FollowRoot();
+        // Plugins place canvases against that same rectangle, so they are
+        // told its size; the registry raises the change only when it moves.
+        if (_bindings.Plugins is { } plugins)
+        {
+            System.Numerics.Vector2 viewport = Layout.UiOverlayHost.ViewportOf(Host.Root);
+            plugins.PublishScreenSize(new PluginSize(viewport.X, viewport.Y));
+        }
 
         // Themed plugin windows draw their soft edges and sharp text at the
         // display's density; the canvas services already know it.
@@ -4220,11 +4227,25 @@ public sealed class RetailUiRuntime : IDisposable
     /// use. Anything but <see cref="PluginCanvasLayer.AboveWindows"/> is the
     /// world layer under every window.
     /// </summary>
-    private Layout.PluginCanvasStack CanvasStack(PluginCanvasLayer layer) =>
-        layer == PluginCanvasLayer.AboveWindows
+    private Layout.PluginCanvasStack CanvasStack(PluginCanvasLayer layer)
+    {
+        if (_worldCanvases is null && _canvasesAboveWindows is null)
+            Host.Root.PressStarting += ReportPressToCanvases;
+        return layer == PluginCanvasLayer.AboveWindows
             ? _canvasesAboveWindows ??= new Layout.PluginCanvasStack(
                 OverlayHost.AddLayerAboveWindows("PluginCanvasesAboveWindows"))
             : _worldCanvases ??= new Layout.PluginCanvasStack(OverlayHost.AddLayer("PluginCanvases"));
+    }
+
+    /// <summary>
+    /// Every press, before the root routes it: the canvases that asked are
+    /// told of one outside them, the topmost layer first.
+    /// </summary>
+    private void ReportPressToCanvases(UiMouseButton button, int x, int y)
+    {
+        _canvasesAboveWindows?.ReportPress(button, x, y);
+        _worldCanvases?.ReportPress(button, x, y);
+    }
 
     /// <summary>
     /// Mounts every canvas registered since the last drain in its layer's
@@ -5238,6 +5259,7 @@ public sealed class RetailUiRuntime : IDisposable
                 _bindings.Plugins?.UnbindClientWindowControl();
                 _pluginThemeFollow?.Dispose();
                 _pluginThemeFollow = null;
+                Host.Root.PressStarting -= ReportPressToCanvases;
                 // Canvases come down before their images: a canvas may be
                 // showing one. Both hand the plugins' handles back to the
                 // registry for the next interface to mount again.

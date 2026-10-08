@@ -80,6 +80,9 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     /// <summary>Whether the plugin asked for keyboard input when it registered the canvas.</summary>
     internal bool AcceptsKeyboardInput => Descriptor.AcceptsKeyboardInput;
 
+    /// <summary>Whether the plugin asked to hear about presses outside the canvas.</summary>
+    internal bool WantsOutsidePresses => Descriptor.WantsOutsidePresses;
+
     /// <summary>
     /// The mounted element's answer to the keyboard focus calls; set by
     /// the element when it mounts, cleared by it when it comes down.

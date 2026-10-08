@@ -41,6 +41,21 @@ internal sealed class PluginCanvasStack
         group.Add(element);
     }
 
+    /// <summary>
+    /// Tells every canvas here that asked for outside presses about a press
+    /// at (<paramref name="x"/>, <paramref name="y"/>) in interface
+    /// coordinates; each canvas decides whether it was outside. A handler
+    /// may hide, add or remove canvases, so the canvases are listed first.
+    /// </summary>
+    internal void ReportPress(UiMouseButton button, int x, int y)
+    {
+        var canvases = new List<PluginCanvasElement>();
+        foreach (PluginCanvasGroup group in _groups.Values)
+            group.CollectOutsidePressListeners(canvases);
+        foreach (PluginCanvasElement canvas in canvases)
+            canvas.ReportPress(button, x, y);
+    }
+
     /// <summary>Takes <paramref name="element"/> out of its group; does nothing if it is not in one.</summary>
     internal static void Remove(PluginCanvasElement element)
     {
@@ -76,6 +91,15 @@ internal sealed class PluginCanvasGroup : UiOverlayLayer
             Rank();
         }
         return true;
+    }
+
+    internal void CollectOutsidePressListeners(List<PluginCanvasElement> into)
+    {
+        foreach (PluginCanvasElement canvas in _canvases)
+        {
+            if (canvas.Registration.WantsOutsidePresses)
+                into.Add(canvas);
+        }
     }
 
     /// <summary>Before the canvases tick: follow the layer's size, then pick up any change of a plugin's order.</summary>

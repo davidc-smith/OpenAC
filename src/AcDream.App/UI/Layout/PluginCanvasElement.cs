@@ -49,6 +49,12 @@ namespace AcDream.App.UI.Layout;
 /// root tells it, so exactly one focus lost follows each focus gained,
 /// whichever way focus goes. While focused it hands the plugin keys,
 /// typed text and its own key repeat, under a third guard.</para>
+///
+/// <para>A canvas that asked for outside presses is told of every press
+/// that starts outside its rectangle, through the same handler and guard
+/// as its own pointer events. The stack it sits in hears of each press
+/// from the root before the press is routed, and asks each such canvas in
+/// turn; the press then goes where it would have gone.</para>
 /// </summary>
 internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocus
 {
@@ -367,6 +373,31 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         _heldButton = PluginPointerButton.None;
         Deliver(PluginPointerEventKind.Up, localX, localY, button);
         return true;
+    }
+
+    /// <summary>
+    /// A press went down somewhere, at (<paramref name="x"/>,
+    /// <paramref name="y"/>) in interface coordinates, before it reaches its
+    /// target. Reported to the plugin as a press outside when it asked for
+    /// those, the canvas is shown, someone is listening, the press is not
+    /// inside the canvas, and the canvas is not holding the pointer from a
+    /// press of its own.
+    /// </summary>
+    internal void ReportPress(UiMouseButton button, int x, int y)
+    {
+        if (!_registration.WantsOutsidePresses || _heldButton != PluginPointerButton.None) return;
+        if (_released || !VisibleSource!() || !IsShownInTree()) return;
+        Vector2 screen = ScreenPosition;
+        int localX = x - (int)screen.X;
+        int localY = y - (int)screen.Y;
+        if (localX >= 0 && localY >= 0 && localX < Width && localY < Height) return;
+        PluginPointerButton pressed = button switch
+        {
+            UiMouseButton.Right => PluginPointerButton.Right,
+            UiMouseButton.Middle => PluginPointerButton.Middle,
+            _ => PluginPointerButton.Left,
+        };
+        Deliver(PluginPointerEventKind.PressedOutside, localX, localY, pressed);
     }
 
     /// <summary>

@@ -1660,6 +1660,36 @@ Without a window the canvas is accepted, `IsAvailable` is false, the
 state the plugin sets is kept (a resize included), and the paint callback is
 never called.
 
+### Screen size
+
+`host.Ui.ScreenSize` is the interface's size, in the same pixels as canvas
+offsets and sizes: it is the rectangle both layers are laid out in, so a
+`TopLeft` canvas of size w×h at `Offset` (`Width - w`, `Height - h`) sits in
+the bottom-right corner. A plugin that places a canvas itself, such as a menu
+opened at the cursor, reads it to keep the canvas on screen near an edge.
+`ScreenSizeChanged` is raised on the tick thread with the new size when it
+changes (the window resized, or the display or interface scale changed), and
+not when it stays the same.
+
+```csharp
+// open the menu at a point on the screen, flipped left or up near an edge
+void OpenMenuAt(PluginPoint at)
+{
+    PluginSize screen = host.Ui.ScreenSize;
+    double x = at.X + menu.Width > screen.Width ? at.X - menu.Width : at.X;
+    double y = at.Y + menu.Height > screen.Height ? at.Y - menu.Height : at.Y;
+    menu.Offset = new PluginPoint(
+        Math.Clamp(x, 0, Math.Max(0, screen.Width - menu.Width)),
+        Math.Clamp(y, 0, Math.Max(0, screen.Height - menu.Height)));
+    menu.IsVisible = true;
+}
+
+host.Ui.ScreenSizeChanged += _ => menu.IsVisible = false;
+```
+
+The size is 0×0 until the interface first draws, and always on a host
+without a window, where `ScreenSizeChanged` is never raised.
+
 ### Image regions
 
 Part of an image, such as one frame of a sprite sheet or one icon of an
@@ -1895,7 +1925,8 @@ map.PointerHandler = e =>
 ```
 
 Every event arrives on the tick thread as a `PluginPointerEvent`: its
-`Kind` (`Down`, `Up`, `Move`, `Wheel`, `Cancelled`), its `Position` in
+`Kind` (`Down`, `Up`, `Move`, `Wheel`, `Cancelled`, and `PressedOutside`
+below), its `Position` in
 the canvas's own pixels from its top-left corner, whatever anchor, offset
 or interface scale the canvas is shown at, the `Button` it is about
 (`Left`, `Right`, `Middle`, or `None` for the wheel), the `Modifiers`
@@ -1920,6 +1951,54 @@ handler is dropped with the paint callback when the canvas is disposed.
 
 Without a window `AcceptsPointerInput` and the handler are kept, the
 handler is never called, and `ReleasePointer()` does nothing.
+
+### Presses outside a canvas
+
+A menu or popup drawn on a canvas closes when the player clicks anywhere
+else. A canvas registered with `WantsOutsidePresses` gets a
+`PressedOutside` event whenever any mouse button goes down outside its
+rectangle while it is shown and has a `PointerHandler`: over the world, a
+window, a dialog, or another canvas, the same plugin's included. The press
+is only reported; it still goes where it would have gone, after the report,
+so a press on another of the plugin's canvases arrives there as a `Down`
+right after the `PressedOutside`. Its `Position` is in the canvas's own
+pixels, so it is negative or past the canvas's size on at least one axis;
+`Button` and `Modifiers` are set and `WheelDelta` is 0. The canvas does not
+hold the pointer: no `Move` or `Up` follows.
+
+```csharp
+IPluginCanvas menu = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("menu", 140, 96)
+    {
+        Layer = PluginCanvasLayer.AboveWindows,
+        StartVisible = false,
+        AcceptsPointerInput = true,
+        WantsOutsidePresses = true,
+    },
+    painter => DrawMenu(painter));
+
+menu.PointerHandler = e =>
+{
+    switch (e.Kind)
+    {
+        case PluginPointerEventKind.PressedOutside:
+            menu.IsVisible = false;
+            break;
+        case PluginPointerEventKind.Up when e.Button == PluginPointerButton.Left:
+            Choose(ItemAt(e.Position));
+            menu.IsVisible = false;
+            break;
+    }
+};
+```
+
+Nothing is reported for a press inside the rectangle, while the canvas is
+hidden, or while it holds the pointer from a press of its own (a second
+button pressed during its drag). The flag works with or without
+`AcceptsPointerInput`, which decides only what happens inside the
+rectangle. The handler's 2 ms budget and its dropping apply as for every
+other pointer event. Without a window the flag and the handler are kept and
+nothing is delivered.
 
 ### Keyboard input
 
