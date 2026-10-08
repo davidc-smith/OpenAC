@@ -86,10 +86,14 @@ public sealed class LauncherControlTests
         Assert.Empty(spy.ConsoleLines);
     }
 
+    // On Unix a pipe is a socket under the temp folder; macOS limits that path
+    // to 104 characters and its temp folder already takes ~50.
+    private static string PipeName() => "lt-" + Guid.NewGuid().ToString("N")[..12];
+
     [Fact]
     public async Task DeadlineReleasesConnectionEvenWhenHandlerHasNotReturned()
     {
-        string name = "launcher-test-" + Guid.NewGuid().ToString("N");
+        string name = PipeName();
         var pending = new TaskCompletionSource<ControlReply>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var server = new LauncherControlServer(name,
             (request, _) => request.Command == "pending" ? pending.Task : Task.FromResult(new ControlReply(true)),
@@ -102,7 +106,7 @@ public sealed class LauncherControlTests
     [Fact]
     public async Task PipeHandlesFramingMalformedRequestsAndCancellation()
     {
-        string name = "launcher-test-" + Guid.NewGuid().ToString("N");
+        string name = PipeName();
         int calls = 0;
         using var server = new LauncherControlServer(name, (request, _) =>
         {
