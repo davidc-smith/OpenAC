@@ -151,7 +151,7 @@ Unknown or miscased element names throw at build time.
 | `button` | Button with caption and optional icon | `x y w h text color background border onclick icon iconkind` |
 | `icon` | An icon | `x y w h did` or `spell` or `item`, `tooltip` |
 | `meter` | Nine-slice bar | `x y w h fill cur max color` plus the nine-slice `backleft backtile backright frontleft fronttile frontright` |
-| `tab` | Tab button | `x y w h text selected onclick` |
+| `tab` | Tab button with optional icon | `x y w h text selected onclick icon iconkind` |
 | `toggle` | Checkbox | `x y w h text checked onclick color` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onup ondown color background` |
@@ -249,7 +249,7 @@ Do not add the prefix to them.
 ## Icon sources
 
 An icon comes from one of three sources. On `<icon>` the source is whichever
-attribute is set; on `<button>` and `<list>` it is `iconkind` (default `did`).
+attribute is set; on `<button>`, `<tab>` and `<list>` it is `iconkind` (default `did`).
 
 | Source | Draws |
 |---|---|
@@ -261,6 +261,7 @@ attribute is set; on `<button>` and `<list>` it is `iconkind` (default `did`).
 <icon x="8"  y="8" w="32" h="32" did="7735" tooltip="An icon"/>
 <icon x="48" y="8" w="32" h="32" spell="{SpellId}" tooltip="{SpellName}"/>
 <button x="12" y="68" w="120" h="24" text="Report" icon="0x06002D14" onclick="{Report}"/>
+<tab x="140" y="68" w="90" h="24" text="Spells" icon="{SpellId}" iconkind="spell" selected="{SpellsTab}" onclick="{ShowSpells}"/>
 <list x="12" y="100" w="256" h="108" items="{SpellRows}" icons="{SpellIds}" iconkind="spell" selected="{SelectedIndex}"/>
 ```
 
@@ -272,6 +273,9 @@ Rules:
   and centered. An id of 0 or an unresolvable id draws nothing.
 - An `<icon>` with a `tooltip` is hit-testable; without one it is
   click-through.
+- A `<button>` or `<tab>` with `icon` draws it in a square column at the
+  left and centers the caption in the rest. Leave out `text` for an
+  icon-only control.
 - A `<list>` with `icons` draws one square icon column at the left, one
   icon per row, using one `iconkind` for the whole list. Rows without a
   matching icon draw text only.
