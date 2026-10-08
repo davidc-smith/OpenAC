@@ -295,6 +295,67 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
         }
     }
 
+    // The interface's size, told to the registry by the interface each frame
+    // it draws. Like the theme it outlives the interface, so a reconnect
+    // keeps answering the last size until the next draw.
+    private PluginSize _screenSize;
+    private Action<PluginSize>? _screenSizeChanged;
+
+    public PluginSize ScreenSize
+    {
+        get
+        {
+            lock (_gate)
+                return _screenSize;
+        }
+    }
+
+    public event Action<PluginSize> ScreenSizeChanged
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_gate)
+                _screenSizeChanged += value;
+        }
+        remove
+        {
+            lock (_gate)
+                _screenSizeChanged -= value;
+        }
+    }
+
+    /// <summary>
+    /// Takes the size the canvas layers are laid out in and, when it differs
+    /// from the last one, tells every plugin on the calling thread, the
+    /// interface thread. One plugin's handler throwing does not stop the next
+    /// from hearing.
+    /// </summary>
+    internal void PublishScreenSize(PluginSize size)
+    {
+        Action<PluginSize>? handlers;
+        lock (_gate)
+        {
+            if (_screenSize == size)
+                return;
+            _screenSize = size;
+            handlers = _screenSizeChanged;
+        }
+        if (handlers is null)
+            return;
+        foreach (Delegate handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((Action<PluginSize>)handler)(size);
+            }
+            catch (Exception error)
+            {
+                Serilog.Log.Warning(error, "A plugin's screen size handler threw");
+            }
+        }
+    }
+
     // Font tables, one per plugin, following the image tables' lifecycle:
     // made on first request, bound when the interface's texture services
     // arrive, unbound when they go. The bundled font's bakes are shared by

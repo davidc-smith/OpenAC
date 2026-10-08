@@ -53,6 +53,29 @@ public sealed class PluginThemeContractTests
     }
 
     [Fact]
+    public void AHostThatPredatesTheScreenSizeAnswersZeroAndIgnoresHandlers()
+    {
+        IUiRegistry ui = new BareRegistry();
+        Action<PluginSize> handler = _ => { };
+
+        ui.ScreenSizeChanged += handler;
+        ui.ScreenSizeChanged -= handler;
+
+        Assert.Equal(default, ui.ScreenSize);
+        Assert.Equal(new PluginSize(0, 0), ((IUiRegistry)NoOpUiRegistry.Instance).ScreenSize);
+    }
+
+    [Fact]
+    public void OutsidePressesAreOffByDefaultAndTheNewKindKeepsTheOldNumbers()
+    {
+        Assert.False(new PluginCanvasDescriptor("menu", 10, 10).WantsOutsidePresses);
+        Assert.Equal(
+            [0, 1, 2, 3, 4, 5],
+            Enum.GetValues<PluginPointerEventKind>().Select(kind => (int)kind));
+        Assert.Equal(PluginPointerEventKind.Cancelled + 1, PluginPointerEventKind.PressedOutside);
+    }
+
+    [Fact]
     public void TheNoOpRegistryAnswersClassic() =>
         Assert.Same(PluginUiThemeInfo.Classic, ((IUiRegistry)NoOpUiRegistry.Instance).Theme);
 

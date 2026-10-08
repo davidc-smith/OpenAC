@@ -147,7 +147,7 @@ internal sealed class UiOverlayHost
             ZOrder = UiOverlayZOrder.SharedHostRoot,
         };
         host.AddChild(root);
-        var overlayHost = new UiOverlayHost(host, root, new Vector2(host.Width, host.Height));
+        var overlayHost = new UiOverlayHost(host, root, ViewportOf(host));
         overlayHost.ApplyViewport();
         return overlayHost;
     }
@@ -200,11 +200,18 @@ internal sealed class UiOverlayHost
     /// </summary>
     internal void FollowRoot()
     {
-        var size = new Vector2(_host.Width, _host.Height);
+        Vector2 size = ViewportOf(_host);
         if (_viewport == size) return;
         _viewport = size;
         ApplyViewport();
     }
+
+    /// <summary>
+    /// The rectangle the root and every layer cover for an interface root:
+    /// the root's own size. Plugins are told the same size as their screen
+    /// size, so a canvas placed against it lands where they expect.
+    /// </summary>
+    internal static Vector2 ViewportOf(UiRoot host) => new(host.Width, host.Height);
 
     private void ApplyViewport()
     {

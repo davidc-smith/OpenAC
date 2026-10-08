@@ -237,6 +237,13 @@ public sealed class UiRoot : UiElement
 
     public long NowMs => _nowMs;
 
+    /// <summary>
+    /// Raised for every press, in interface coordinates, before anything
+    /// else sees it: before a dialog, a popup or the hit-test decides where
+    /// it goes. Listeners only observe; the press is routed as usual after.
+    /// </summary>
+    internal event Action<UiMouseButton, int, int>? PressStarting;
+
     public event Action<UiMouseButton, int, int, uint>? WorldMouseFallThrough;
 
     public event Action<int /*vk*/, uint /*lparam*/>? WorldKeyFallThrough;
@@ -563,6 +570,7 @@ public sealed class UiRoot : UiElement
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: true);
         _pressX = x; _pressY = y;
+        PressStarting?.Invoke(btn, x, y);
 
         if (Modal is not null && !ContainsAbsolute(Modal, x, y))
             return;

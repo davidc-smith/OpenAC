@@ -2000,6 +2000,10 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             _directoryInner = inner as IPluginDirectoryUiRegistry;
             _owner = owner;
             _pluginDirectory = pluginDirectory;
+            _themeChanged = new ForwardedEvent<PluginUiThemeInfo>(
+                this, handler => _inner.ThemeChanged += handler, handler => _inner.ThemeChanged -= handler);
+            _screenSizeChanged = new ForwardedEvent<PluginSize>(
+                this, handler => _inner.ScreenSizeChanged += handler, handler => _inner.ScreenSizeChanged -= handler);
         }
 
         public void AddMarkupPanel(string markupPath, object binding)
@@ -2195,53 +2199,83 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
 
         public PluginUiThemeInfo Theme => _inner.Theme;
 
-        // Each handler is added to the host's event behind a guard that drops
-        // calls once the plugin is gone, and its removal is tracked like any
-        // other registration, so an unloaded plugin is never told of a theme.
-        private readonly List<(Action<PluginUiThemeInfo> Handler, IDisposable Subscription)> _themeHandlers = [];
+        private readonly ForwardedEvent<PluginUiThemeInfo> _themeChanged;
 
         public event Action<PluginUiThemeInfo> ThemeChanged
         {
-            add
+            add => _themeChanged.Add(value);
+            remove => _themeChanged.Remove(value);
+        }
+
+        public PluginSize ScreenSize => _inner.ScreenSize;
+
+        private readonly ForwardedEvent<PluginSize> _screenSizeChanged;
+
+        public event Action<PluginSize> ScreenSizeChanged
+        {
+            add => _screenSizeChanged.Add(value);
+            remove => _screenSizeChanged.Remove(value);
+        }
+
+        /// <summary>
+        /// One of the host's events as the plugin subscribes to it. Each
+        /// handler is added to the host's event behind a guard that drops
+        /// calls once the plugin is gone, and its removal is tracked like any
+        /// other registration, so an unloaded plugin is never called.
+        /// </summary>
+        private sealed class ForwardedEvent<T>(
+            ScopedUiRegistry owner,
+            Action<Action<T>> subscribe,
+            Action<Action<T>> unsubscribe)
+        {
+            private readonly List<(Action<T> Handler, IDisposable Subscription)> _handlers = [];
+
+            internal void Add(Action<T> value)
             {
                 ArgumentNullException.ThrowIfNull(value);
-                Action<PluginUiThemeInfo> guarded = theme =>
+                Action<T> guarded = argument =>
                 {
-                    if (!Volatile.Read(ref _disposed))
-                        value(theme);
+                    if (!Volatile.Read(ref owner._disposed))
+                        value(argument);
                 };
-                _inner.ThemeChanged += guarded;
-                var subscription = new ThemeSubscription(_inner, guarded);
-                IDisposable tracked = TrackRegistration(subscription);
-                lock (_gate)
-                    _themeHandlers.Add((value, tracked));
+                subscribe(guarded);
+                IDisposable tracked = owner.TrackRegistration(new Subscription(unsubscribe, guarded));
+                lock (owner._gate)
+                    _handlers.Add((value, tracked));
             }
-            remove
+
+            internal void Remove(Action<T>? value)
             {
                 if (value is null)
                     return;
                 IDisposable? tracked = null;
-                lock (_gate)
+                lock (owner._gate)
                 {
-                    int index = _themeHandlers.FindLastIndex(entry => entry.Handler == value);
+                    int index = _handlers.FindLastIndex(entry => entry.Handler == value);
                     if (index < 0)
                         return;
-                    tracked = _themeHandlers[index].Subscription;
-                    _themeHandlers.RemoveAt(index);
+                    tracked = _handlers[index].Subscription;
+                    _handlers.RemoveAt(index);
                 }
                 tracked.Dispose();
             }
-        }
 
-        private sealed class ThemeSubscription(IScopedUiRegistry inner, Action<PluginUiThemeInfo> handler)
-            : IDisposable
-        {
-            private Action<PluginUiThemeInfo>? _handler = handler;
-
-            public void Dispose()
+            /// <summary>Forgets every handler; the tracked registrations take them off the host.</summary>
+            internal void Clear()
             {
-                if (Interlocked.Exchange(ref _handler, null) is { } held)
-                    inner.ThemeChanged -= held;
+                lock (owner._gate)
+                    _handlers.Clear();
+            }
+
+            private sealed class Subscription(Action<Action<T>> unsubscribe, Action<T> handler) : IDisposable
+            {
+                private Action<T>? _handler = handler;
+
+                public void Dispose()
+                {
+                    if (Interlocked.Exchange(ref _handler, null) is { } held)
+                        unsubscribe(held);
+                }
             }
         }
 
@@ -2305,8 +2339,9 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 _disposed = true;
                 registrations = _registrations.ToArray();
                 _registrations.Clear();
-                _themeHandlers.Clear();
             }
+            _themeChanged.Clear();
+            _screenSizeChanged.Clear();
 
             for (int index = registrations.Length - 1; index >= 0; index--)
             {

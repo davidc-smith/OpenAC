@@ -229,6 +229,29 @@ public interface IUiRegistry
     }
 
     /// <summary>
+    /// The interface's size, in the same pixels as canvas offsets and sizes:
+    /// a <see cref="PluginCanvasAnchor.TopLeft"/> canvas of size w×h at
+    /// <see cref="PluginCanvasDescriptor.Offset"/> (Width - w, Height - h)
+    /// sits in the bottom-right corner. It is the rectangle both canvas
+    /// layers are laid out in, and follows window resizes and display or
+    /// interface scale changes; <see cref="ScreenSizeChanged"/> says when.
+    /// 0×0 on a host without a window, and before the interface first draws.
+    /// </summary>
+    PluginSize ScreenSize => default;
+
+    /// <summary>
+    /// Raised on the thread the plugin's own callbacks run on when
+    /// <see cref="ScreenSize"/> changes (a window resize, a display or
+    /// interface scale change), with the new size. Not raised when the size
+    /// stays the same, and never on a host without a window.
+    /// </summary>
+    event Action<PluginSize> ScreenSizeChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
     /// Registers a canvas the plugin paints, shown over the world and under
     /// every window. The paint callback runs on the tick thread, at most
     /// once per frame, only after <see cref="IPluginCanvas.Invalidate"/>,

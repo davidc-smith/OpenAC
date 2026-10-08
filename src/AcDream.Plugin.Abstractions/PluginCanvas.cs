@@ -120,6 +120,23 @@ public sealed record PluginCanvasDescriptor(string CanvasId, int Width, int Heig
     /// without a window the flag is kept and the canvas never takes focus.
     /// </summary>
     public bool AcceptsKeyboardInput { get; init; }
+
+    /// <summary>
+    /// Whether the canvas hears about presses outside it, to close a menu or
+    /// popup when the player clicks anywhere else. On, a shown canvas with an
+    /// <see cref="IPluginCanvas.PointerHandler"/> gets
+    /// <see cref="PluginPointerEventKind.PressedOutside"/> whenever any mouse
+    /// button goes down outside its rectangle: over the world, a window, a
+    /// dialog, or another canvas, the same plugin's included. The press is
+    /// only reported: it still goes where it would have gone, after the
+    /// report. Nothing is reported for a press inside the rectangle, while
+    /// the canvas is hidden, or while it is holding the pointer from a press
+    /// of its own. This works with or without
+    /// <see cref="AcceptsPointerInput"/>, which decides only what happens
+    /// inside the rectangle. Off, the default, nothing changes. On a host
+    /// without a window the flag is kept and nothing is ever delivered.
+    /// </summary>
+    public bool WantsOutsidePresses { get; init; }
 }
 
 /// <summary>Which mouse button a pointer event is about.</summary>
@@ -155,7 +172,7 @@ public enum PluginKeyModifiers
     Alt = 4,
 }
 
-/// <summary>What the pointer did over a canvas that takes input.</summary>
+/// <summary>What the pointer did over a canvas that takes input, or, for <see cref="PluginPointerEventKind.PressedOutside"/>, outside one that asked.</summary>
 public enum PluginPointerEventKind
 {
     /// <summary>A button went down inside the canvas. The canvas holds the pointer until the button comes up.</summary>
@@ -177,6 +194,17 @@ public enum PluginPointerEventKind
     /// <see cref="IPluginCanvas.ReleasePointer"/> is not reported.
     /// </summary>
     Cancelled,
+
+    /// <summary>
+    /// A button went down outside the canvas, on a canvas registered with
+    /// <see cref="PluginCanvasDescriptor.WantsOutsidePresses"/>. Reported
+    /// before the press reaches whatever it landed on, which still gets it.
+    /// <see cref="PluginPointerEvent.Position"/> is in the canvas's own
+    /// pixels, so it is negative or past the canvas's size on one axis at
+    /// least. The canvas does not hold the pointer: no
+    /// <see cref="Move"/> or <see cref="Up"/> follows.
+    /// </summary>
+    PressedOutside,
 }
 
 /// <summary>
@@ -185,7 +213,7 @@ public enum PluginPointerEventKind
 /// scale the canvas is shown at.
 /// </summary>
 /// <param name="Kind">What the pointer did.</param>
-/// <param name="Position">Where, in the canvas's own pixels; outside the canvas's rectangle only during a drag.</param>
+/// <param name="Position">Where, in the canvas's own pixels; outside the canvas's rectangle only during a drag and for <see cref="PluginPointerEventKind.PressedOutside"/>.</param>
 /// <param name="Button">The button the event is about: the one pressed, released or held during a move; <see cref="PluginPointerButton.None"/> for a wheel turn.</param>
 /// <param name="Modifiers">The modifier keys held at the time.</param>
 /// <param name="WheelDelta">How far the wheel turned, in notches, positive away from the user; zero for everything but <see cref="PluginPointerEventKind.Wheel"/>.</param>
@@ -615,18 +643,20 @@ public interface IPluginCanvas : IDisposable
 
     /// <summary>
     /// Where pointer events go, on a canvas registered with
-    /// <see cref="PluginCanvasDescriptor.AcceptsPointerInput"/>. Null, the
+    /// <see cref="PluginCanvasDescriptor.AcceptsPointerInput"/> or
+    /// <see cref="PluginCanvasDescriptor.WantsOutsidePresses"/>. Null, the
     /// default, and the canvas is click-through whatever the descriptor
     /// said: nobody is listening, so nothing is taken. Set, and every
     /// press, held move, release and wheel turn over the canvas arrives
-    /// here, on the tick thread, in the canvas's own pixels.
+    /// here, on the tick thread, in the canvas's own pixels, as does every
+    /// press outside it on a canvas that asked for those.
     ///
     /// <para>The handler is measured like the paint callback: one that
     /// keeps running over its budget on several events in a row, or
     /// throws, is dropped for the rest of the session and the canvas goes
     /// back to click-through; painting continues and the client's log says
-    /// why. Setting the handler on a canvas that did not opt in, or on a
-    /// host without a window, keeps the value and delivers nothing; a host
+    /// why. Setting the handler on a canvas that opted in to neither, or on
+    /// a host without a window, keeps the value and delivers nothing; a host
     /// that predates pointer input answers null and ignores the set.</para>
     /// </summary>
     Action<PluginPointerEvent>? PointerHandler
