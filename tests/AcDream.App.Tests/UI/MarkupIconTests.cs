@@ -362,6 +362,61 @@ public sealed class MarkupIconTests
         Assert.Equal(("spell", 99u), resolver.Calls[^1]);
     }
 
+    private static List<Vector4> IconColors(UiElement element, uint texture)
+    {
+        var device = new RecordingGpuDevice();
+        var renderer = new TextRenderer(device, new NullGpuFrameSource(), "unused");
+        renderer.Begin(new Vector2(800f, 600f));
+        element.DrawSelfAndChildren(new UiRenderContext(renderer, new Vector2(800f, 600f)));
+
+        var colors = new List<Vector4>();
+        foreach ((uint drawn, IReadOnlyList<float> verts) in renderer.DebugSpriteSegmentVerts)
+        {
+            if (drawn != texture) continue;
+            for (int i = 0; i + 8 <= verts.Count; i += 8)
+                colors.Add(new Vector4(verts[i + 4], verts[i + 5], verts[i + 6], verts[i + 7]));
+        }
+        return colors;
+    }
+
+    [Fact]
+    public void TabIcon_DrawsFullWhenSelected_AndDimmedWhenNot()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" " +
+            "selected=\"{Selected}\" icon=\"7735\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+        var binding = new TabIconBinding { Selected = true };
+        var panel = MarkupDocument.Build(xml, binding, Sprite, icons: resolver);
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        List<Vector4> selected = IconColors(tab, resolver.DidTexture);
+        Assert.NotEmpty(selected);
+        Assert.All(selected, c => Assert.Equal(1f, c.W, 3));
+
+        binding.Selected = false;
+        List<Vector4> unselected = IconColors(tab, resolver.DidTexture);
+        Assert.NotEmpty(unselected);
+        Assert.All(unselected, c => Assert.Equal(UiMarkupTabButton.InactiveIconAlpha, c.W, 3));
+    }
+
+    [Fact]
+    public void ButtonIcon_IsNotDimmed()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<button x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Go\" icon=\"7735\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+        var panel = MarkupDocument.Build(xml, new IconBinding(), Sprite, icons: resolver);
+
+        List<Vector4> colors = IconColors(panel.Children[0], resolver.DidTexture);
+        Assert.NotEmpty(colors);
+        Assert.All(colors, c => Assert.Equal(1f, c.W, 3));
+    }
+
     [Fact]
     public void TabWithoutIconAttribute_HasNoIconSource()
     {
