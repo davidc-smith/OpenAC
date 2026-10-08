@@ -124,6 +124,9 @@ public class UiSimpleButton : UiPanel
 
     public Func<(uint tex, int w, int h)>? IconSource { get; set; }
 
+    /// <summary>The color the icon is drawn in; white draws it as authored.</summary>
+    private protected virtual Vector4 IconTint => Vector4.One;
+
     public event System.Action? Click;
 
     private readonly UiKeyboardActivation _keyboardActivation = new();
@@ -191,7 +194,7 @@ public class UiSimpleButton : UiPanel
                     3f + (extent - drawWidth) * 0.5f,
                     (Height - drawHeight) * 0.5f,
                     drawWidth, drawHeight,
-                    0f, 0f, 1f, 1f, fade ? PluginUiStyle.Faded(Vector4.One) : Vector4.One);
+                    0f, 0f, 1f, 1f, fade ? PluginUiStyle.Faded(IconTint) : IconTint);
             }
         }
 

@@ -13,9 +13,15 @@ public sealed class UiMarkupTabButton : UiSimpleButton
     private static readonly Vector4 Underline =
         new(0.77f, 0.59f, 0.12f, 1f);
 
+    /// <summary>The alpha an unselected tab draws its icon at, so it recedes like its caption.</summary>
+    internal const float InactiveIconAlpha = 0.55f;
+
     public Func<bool>? SelectedSource { get; set; }
 
     public bool IsSelected => SelectedSource?.Invoke() ?? false;
+
+    private protected override Vector4 IconTint =>
+        IsSelected ? base.IconTint : base.IconTint with { W = base.IconTint.W * InactiveIconAlpha };
 
     public UiMarkupTabButton()
     {
