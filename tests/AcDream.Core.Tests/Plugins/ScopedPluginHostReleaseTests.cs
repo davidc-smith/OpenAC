@@ -16,6 +16,8 @@ public sealed class ScopedPluginHostReleaseTests
     /// <summary>
     /// Mutation (2026-09-26): handing the plugin the host's own surfaces, as
     /// before, left every handler attached after the plugin was released.
+    /// Mutation (2026-10-07): forwarding Character unchanged left the
+    /// experience handler attached.
     /// </summary>
     [Fact]
     public void TradeVendorAndEquipmentHandlersComeOffWithThePlugin()
@@ -32,7 +34,8 @@ public sealed class ScopedPluginHostReleaseTests
         automation.Vendor.Closed += () => { };
         automation.Vendor.TransactionCompleted += _ => { };
         automation.Equipment.PlacementObserved += _ => { };
-        Assert.Equal(8, surfaces.HandlerCount);
+        automation.Character.ExperienceChanged += () => { };
+        Assert.Equal(9, surfaces.HandlerCount);
 
         scope.Dispose();
 
@@ -61,6 +64,11 @@ public sealed class ScopedPluginHostReleaseTests
         Assert.True(scope.Automation.Trade.IsOpen);
         Assert.Equal("Vendor Bob", scope.Automation.Vendor.VendorName);
         Assert.True(scope.Automation.Equipment.IsBusy);
+        // The defaulted members forward too, not just the required ones.
+        Assert.True(scope.Automation.Character.HasExperience);
+        Assert.Equal(1234L, scope.Automation.Character.TotalExperience);
+        Assert.Equal(56L, scope.Automation.Character.ExperienceToNextLevel);
+        Assert.Equal(0.9f, scope.Automation.Character.VitaeMultiplier);
     }
 
     /// <summary>
@@ -105,7 +113,7 @@ public sealed class ScopedPluginHostReleaseTests
 
     private sealed class EventSurfaces :
         IAutomationSurface, ITradeAutomation, IVendorAutomation, IEquipmentAutomation,
-        IPluginMapRegistry, IPluginRenderRegistry
+        ICharacterInfo, IPluginMapRegistry, IPluginRenderRegistry
     {
         private readonly List<Delegate> _handlers = [];
 
@@ -113,7 +121,7 @@ public sealed class ScopedPluginHostReleaseTests
         internal List<Registration> Registrations { get; } = [];
 
         public bool IsAvailable => true;
-        public ICharacterInfo Character => NoOpAutomationSurface.Instance;
+        public ICharacterInfo Character => this;
         public ISpellCatalog Spells => NoOpAutomationSurface.Instance;
         public IMagicCommands Magic => NoOpAutomationSurface.Instance;
         public IPluginChat Chat => NoOpAutomationSurface.Instance;
@@ -133,6 +141,28 @@ public sealed class ScopedPluginHostReleaseTests
         event Action IVendorAutomation.Closed { add => _handlers.Add(value); remove => _handlers.Remove(value); }
         event Action<PluginVendorTransaction> IVendorAutomation.TransactionCompleted { add => _handlers.Add(value); remove => _handlers.Remove(value); }
         event Action<PluginEquipmentObservation> IEquipmentAutomation.PlacementObserved { add => _handlers.Add(value); remove => _handlers.Remove(value); }
+        event Action ICharacterInfo.ExperienceChanged { add => _handlers.Add(value); remove => _handlers.Remove(value); }
+
+        bool ICharacterInfo.IsInWorld => true;
+        bool ICharacterInfo.HasExperience => true;
+        long ICharacterInfo.TotalExperience => 1234L;
+        long? ICharacterInfo.ExperienceToNextLevel => 56L;
+        float ICharacterInfo.VitaeMultiplier => 0.9f;
+        uint ICharacterInfo.ObjectId => 0u;
+        uint ICharacterInfo.CurrentHealth => 0u;
+        uint ICharacterInfo.MaxHealth => 0u;
+        uint ICharacterInfo.CurrentStamina => 0u;
+        uint ICharacterInfo.MaxStamina => 0u;
+        uint ICharacterInfo.CurrentMana => 0u;
+        uint ICharacterInfo.MaxMana => 0u;
+        IReadOnlyList<PluginSkillInfo> ICharacterInfo.Skills => [];
+        IReadOnlyList<PluginAttributeInfo> ICharacterInfo.Attributes => [];
+        IReadOnlyList<PluginActiveEnchantment> ICharacterInfo.ActiveEnchantments => [];
+        bool ICharacterInfo.TryGetSkill(uint skillId, out PluginSkillInfo skill)
+        {
+            skill = default;
+            return false;
+        }
 
         public IPluginMapSurface AddMap(string mapId, PluginMapViewport initialViewport) =>
             Add(new Registration());

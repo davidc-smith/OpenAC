@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.Plugin.Abstractions;
 using AcDream.UI.Abstractions.Panels.Settings;
 
 namespace AcDream.App.UI;
@@ -27,8 +28,20 @@ public sealed class PluginUiThemeSettings
             if (_theme == value) return;
             _store?.SavePluginUiTheme(value.ToString());
             _theme = value;
+            ThemeChanged?.Invoke();
         }
     }
+
+    /// <summary>Raised from the <see cref="Theme"/> setter when the player picks another theme.</summary>
+    public event Action? ThemeChanged;
+
+    /// <summary>What the Appearance picker calls each theme, in <see cref="PluginUiTheme"/> order.</summary>
+    internal static IReadOnlyList<string> ThemeNames { get; } = ["Classic", "Charcoal + moss", "Warm graphite + brass"];
+
+    /// <summary>The selected theme as plugins read it: its kind, name and colours.</summary>
+    public PluginUiThemeInfo ThemeInfo => Theme == PluginUiTheme.Classic
+        ? PluginUiThemeInfo.Classic
+        : new PluginUiThemeInfo((PluginUiThemeKind)Theme, ThemeNames[(int)Theme], Palette?.ToPluginPalette());
     public PluginUiPalette? Palette => Theme switch
     {
         PluginUiTheme.Moss => PluginUiPalette.Moss,
@@ -46,6 +59,16 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
         C(0x35443B), C(0xE0E8E2), C(0x9AA99E), C(0x97BE81), C(0x344B37));
     public static PluginUiPalette Brass { get; } = new(C(0x221F1B), C(0x181612),
         C(0x4C4335), C(0xE9E2D5), C(0xB2A58E), C(0xC9A665), C(0x51442D));
+    /// <summary>The palette as plugins read it, each channel rounded to a byte.</summary>
+    public PluginThemePalette ToPluginPalette() => new(
+        ToColor(Background), ToColor(Field), ToColor(Border),
+        ToColor(Text), ToColor(Muted), ToColor(Accent), ToColor(Selected));
+
+    private static PluginColor ToColor(Vector4 c) => new(Byte(c.X), Byte(c.Y), Byte(c.Z), Byte(c.W));
+
+    private static byte Byte(float channel) =>
+        (byte)MathF.Round(Math.Clamp(channel, 0f, 1f) * 255f, MidpointRounding.AwayFromZero);
+
     public Vector4 Token(string name) => name switch
     {
         "text" => Text, "muted" => Muted, "field" => Field,

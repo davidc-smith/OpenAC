@@ -223,7 +223,6 @@ internal sealed class WorldLabelLayerElement : UiElement
 /// </summary>
 internal sealed class WorldLabelOverlayController
 {
-    private readonly UiOverlayHost _host;
     private readonly UiOverlayLayer _layer;
     private readonly WorldLabelLayerElement _element;
     private readonly UiDatFont _font;
@@ -234,7 +233,6 @@ internal sealed class WorldLabelOverlayController
     private List<WorldLabelPlacement> _back = [];
 
     private WorldLabelOverlayController(
-        UiOverlayHost host,
         UiOverlayLayer layer,
         WorldLabelLayerElement element,
         UiDatFont font,
@@ -242,7 +240,6 @@ internal sealed class WorldLabelOverlayController
         Func<uint, WorldLabelAnchor?> anchor,
         Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)> camera)
     {
-        _host = host;
         _layer = layer;
         _element = element;
         _font = font;
@@ -277,7 +274,7 @@ internal sealed class WorldLabelOverlayController
         };
         layer.AddChild(element);
         return new WorldLabelOverlayController(
-            host, layer, element, font, labels, anchor, camera);
+            layer, element, font, labels, anchor, camera);
     }
 
     internal void Tick()
@@ -293,7 +290,6 @@ internal sealed class WorldLabelOverlayController
             return;
         }
 
-        _host.SetViewport(camera.Viewport);
         _element.Width = camera.Viewport.X;
         _element.Height = camera.Viewport.Y;
         WorldLabelLayout.Place(

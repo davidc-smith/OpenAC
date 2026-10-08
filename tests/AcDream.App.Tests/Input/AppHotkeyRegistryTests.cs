@@ -22,7 +22,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         Assert.True(handle.IsBound);
 
@@ -38,7 +38,7 @@ public sealed class AppHotkeyRegistryTests
         KeyBindings bindings = KeyBindings.RetailDefaults();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         // Escape with no modifiers is a real retail default binding
         // (EscapeKey); a plugin asking for the exact same chord must be
@@ -61,7 +61,7 @@ public sealed class AppHotkeyRegistryTests
         KeyBindings bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         int fired = 0;
         IPluginHotkeyRegistration handle = registry.Register(
@@ -81,7 +81,7 @@ public sealed class AppHotkeyRegistryTests
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
         dispatcher.PushScope(InputScope.Chat);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         int plainFired = 0;
         int ctrlFired = 0;
@@ -106,7 +106,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         int firstFired = 0;
         int secondFired = 0;
@@ -137,7 +137,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         int firstFired = 0;
         int secondFired = 0;
@@ -175,7 +175,7 @@ public sealed class AppHotkeyRegistryTests
             var bindings = new KeyBindings();
             InputDispatcher dispatcher = InputDispatcher.CreateDetached(
                 keyboard, new FakeMouse(), bindings);
-            registry.Bind(keyboard, bindings, dispatcher);
+            registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
             int fired = 0;
             IPluginHotkeyRegistration handle = registry.Register(
@@ -194,7 +194,7 @@ public sealed class AppHotkeyRegistryTests
             var bindings2 = new KeyBindings();
             InputDispatcher dispatcher2 = InputDispatcher.CreateDetached(
                 keyboard2, new FakeMouse(), bindings2);
-            restarted.Bind(keyboard2, bindings2, dispatcher2);
+            restarted.Bind(keyboard2, bindings2, dispatcher2, new FakeFocus());
             IPluginHotkeyRegistration reloaded = restarted.Register(
                 "quick-heal", "Quick Heal", new PluginKeyChord(PluginKey.H, Ctrl: true), () => { });
             Assert.Equal(new PluginKeyChord(PluginKey.J, Ctrl: true), reloaded.EffectiveChord);
@@ -218,8 +218,8 @@ public sealed class AppHotkeyRegistryTests
         registry.Register(
             "test", "Test", new PluginKeyChord(PluginKey.F9), () => fired++);
 
-        registry.Bind(keyboard, bindings, dispatcher);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         keyboard.Fire(Key.F9, ModifierMask.None);
         Assert.Equal(1, fired);
@@ -233,7 +233,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         int fired = 0;
         // Ctrl+H would normally fire even with chat focused; a capture in
@@ -260,7 +260,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         int fired = 0;
         registry.Register(
@@ -273,6 +273,79 @@ public sealed class AppHotkeyRegistryTests
         dispatcher.PopScope(InputScope.Dialog);
         keyboard.Fire(Key.H, ModifierMask.Ctrl);
         Assert.Equal(1, fired);
+    }
+
+    [Fact]
+    public void APlainChordDoesNotFireWhileAnInterfaceElementHasKeyboardFocus()
+    {
+        var registry = new AppHotkeyRegistry(overridesFilePath: null);
+        var keyboard = new FakeKeyboard();
+        var bindings = new KeyBindings();
+        InputDispatcher dispatcher = InputDispatcher.CreateDetached(
+            keyboard, new FakeMouse(), bindings);
+        var focus = new FakeFocus();
+        registry.Bind(keyboard, bindings, dispatcher, focus);
+
+        int plainFired = 0;
+        int shiftFired = 0;
+        int ctrlFired = 0;
+        int altFired = 0;
+        registry.Register(
+            "plain", "Plain", new PluginKeyChord(PluginKey.F9), () => plainFired++);
+        registry.Register(
+            "shift", "Shift", new PluginKeyChord(PluginKey.F9, Shift: true), () => shiftFired++);
+        registry.Register(
+            "ctrl", "Ctrl", new PluginKeyChord(PluginKey.F10, Ctrl: true), () => ctrlFired++);
+        registry.Register(
+            "alt", "Alt", new PluginKeyChord(PluginKey.F11, Alt: true), () => altFired++);
+
+        // Chat, a text field or a focused canvas: no dispatcher scope is
+        // pushed, only the interface's focus says the player is typing.
+        focus.HasKeyboardFocus = true;
+        keyboard.Fire(Key.F9, ModifierMask.None);
+        keyboard.Fire(Key.F9, ModifierMask.Shift);
+        keyboard.Fire(Key.F10, ModifierMask.Ctrl);
+        keyboard.Fire(Key.F11, ModifierMask.Alt);
+        Assert.Equal(0, plainFired);
+        Assert.Equal(0, shiftFired);
+        Assert.Equal(1, ctrlFired);
+        Assert.Equal(1, altFired);
+
+        focus.HasKeyboardFocus = false;
+        keyboard.Fire(Key.F9, ModifierMask.None);
+        Assert.Equal(1, plainFired);
+    }
+
+    [Fact]
+    public void NoHotkeyFiresWhileAModalIsOpen()
+    {
+        var registry = new AppHotkeyRegistry(overridesFilePath: null);
+        var keyboard = new FakeKeyboard();
+        var bindings = new KeyBindings();
+        InputDispatcher dispatcher = InputDispatcher.CreateDetached(
+            keyboard, new FakeMouse(), bindings);
+        var focus = new FakeFocus();
+        registry.Bind(keyboard, bindings, dispatcher, focus);
+
+        int plainFired = 0;
+        int ctrlFired = 0;
+        registry.Register(
+            "plain", "Plain", new PluginKeyChord(PluginKey.F9), () => plainFired++);
+        registry.Register(
+            "quick-heal", "Quick Heal", new PluginKeyChord(PluginKey.H, Ctrl: true), () => ctrlFired++);
+
+        // A modal blocks Ctrl and Alt chords too, unlike keyboard focus.
+        focus.IsModalOpen = true;
+        keyboard.Fire(Key.F9, ModifierMask.None);
+        keyboard.Fire(Key.H, ModifierMask.Ctrl);
+        Assert.Equal(0, plainFired);
+        Assert.Equal(0, ctrlFired);
+
+        focus.IsModalOpen = false;
+        keyboard.Fire(Key.F9, ModifierMask.None);
+        keyboard.Fire(Key.H, ModifierMask.Ctrl);
+        Assert.Equal(1, plainFired);
+        Assert.Equal(1, ctrlFired);
     }
 
     [Theory]
@@ -288,7 +361,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         int fired = 0;
         IPluginHotkeyRegistration handle = registry.Register(
@@ -307,7 +380,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         // PluginKey.Unknown has no Silk.NET equivalent and can never be
         // mapped -- a plugin that ends up requesting it (a default() chord,
@@ -327,7 +400,7 @@ public sealed class AppHotkeyRegistryTests
         var bindings = new KeyBindings();
         InputDispatcher dispatcher = InputDispatcher.CreateDetached(
             keyboard, new FakeMouse(), bindings);
-        registry.Bind(keyboard, bindings, dispatcher);
+        registry.Bind(keyboard, bindings, dispatcher, new FakeFocus());
 
         IPluginHotkeyRegistration a = registry.Register(
             "plugin-a/heal", "Heal", new PluginKeyChord(PluginKey.X, Ctrl: true), () => { });
@@ -356,6 +429,12 @@ public sealed class AppHotkeyRegistryTests
 
         public void Fire(Key key, ModifierMask modifiers) =>
             KeyDown?.Invoke(key, modifiers);
+    }
+
+    private sealed class FakeFocus : IHotkeyFocusSource
+    {
+        public bool HasKeyboardFocus { get; set; }
+        public bool IsModalOpen { get; set; }
     }
 
     private sealed class FakeMouse : IMouseSource

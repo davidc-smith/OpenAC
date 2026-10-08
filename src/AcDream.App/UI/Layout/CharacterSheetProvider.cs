@@ -321,56 +321,14 @@ public sealed class CharacterSheetProvider
     }
 
     public static DatReaderWriter.DBObjs.ExperienceTable? LoadExperienceTable(
-        IDatReaderWriter dats, Action<string>? log = null)
-    {
-        if (dats is null) return null;
-
-        try
-        {
-            var table = dats.Get<DatReaderWriter.DBObjs.ExperienceTable>(0x0E000018u);
-            if (table is not null) return table;
-        }
-        catch (Exception ex)
-        {
-            log?.Invoke($"[UI] ExperienceTable 0x0E000018 read failed ({ex.GetType().Name}: {ex.Message}); trying type scan.");
-        }
-
-        try
-        {
-            foreach (uint id in dats.GetAllIdsOfType<DatReaderWriter.DBObjs.ExperienceTable>())
-            {
-                var table = dats.Get<DatReaderWriter.DBObjs.ExperienceTable>(id);
-                if (table is not null) return table;
-            }
-        }
-        catch (Exception ex)
-        {
-            log?.Invoke($"[UI] ExperienceTable type scan failed ({ex.GetType().Name}: {ex.Message}); raise costs unavailable.");
-        }
-
-        return null;
-    }
+        IDatReaderWriter dats, Action<string>? log = null) =>
+        ExperienceTableReader.Load(dats, log);
 
     private (long toNext, float fraction, bool noNextLevel) ComputeLevelXp(
-        int level, long totalXp)
-    {
-        var levels = ExperienceTable?.Levels;
-        if (levels is null || level < 0)
-            return (0L, 0f, false);
-        // The top of the table: there is no next level to measure towards.
-        if (level + 1 >= levels.Length)
-            return (0L, 0f, true);
-
-        long current = ClampToLong(levels[level]);
-        long next = ClampToLong(levels[level + 1]);
-        if (next <= current) return (0L, 0f, true);
-
-        long clampedXp = totalXp < current ? current : totalXp > next ? next : totalXp;
-        long toNext = next - clampedXp;
-        float fraction = (float)(clampedXp - current) / (next - current);
-        // Nothing left to earn reads the same way as no next level at all.
-        return (toNext, fraction, toNext <= 0L);
-    }
+        int level, long totalXp) =>
+        LevelProgress.Measure(ExperienceTable?.Levels, level, totalXp) is { } progress
+            ? (progress.ToNext, progress.Fraction, progress.NoNextLevel)
+            : (0L, 0f, false);
 
     private long[] BuildAttributeRaiseCosts(int amount)
     {

@@ -345,10 +345,26 @@ public sealed class LocalPlayerState
         CharacterChanged?.Invoke();
     }
 
+    /// <summary>
+    /// True once a PlayerDescription has replaced the property snapshot, and
+    /// false again after <see cref="Clear"/>. Updates that arrive on their own
+    /// before the description do not count.
+    /// </summary>
+    public bool HasDescription { get; private set; }
+
+    /// <summary>
+    /// How many PlayerDescriptions have landed in this state's life. It never
+    /// goes back, so a reader can tell a fresh description from the one it
+    /// had already seen.
+    /// </summary>
+    public long DescriptionRevision { get; private set; }
+
     /// <summary>Replace the local player's top-level property snapshot from PlayerDescription.</summary>
     public void OnProperties(PropertyBundle properties)
     {
         _properties = properties.Clone();
+        HasDescription = true;
+        DescriptionRevision++;
         CharacterChanged?.Invoke();
     }
 
@@ -438,6 +454,7 @@ public sealed class LocalPlayerState
         _skills.Clear();
         _positions.Clear();
         _properties = new PropertyBundle();
+        HasDescription = false;
 
         Changed?.Invoke(VitalKind.Health);
         Changed?.Invoke(VitalKind.Stamina);
