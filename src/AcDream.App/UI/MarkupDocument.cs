@@ -387,30 +387,7 @@ public static class MarkupDocument
                         (string?)el.Attribute("border"), binding,
                         value => button.BorderColor = value,
                         source => button.BorderColorSource = source);
-                    string? buttonIcon = (string?)el.Attribute("icon");
-                    if (buttonIcon is not null)
-                    {
-                        string? buttonIconKind = (string?)el.Attribute("iconkind");
-                        if (ValidateIconKind(buttonIconKind) == "file")
-                        {
-                            Func<string?> buttonPathReader =
-                                BindPathLiteralOrBinding(buttonIcon, binding, "button icon");
-                            if (icons is not null)
-                                button.IconSource = BuildFileIconSource(buttonPathReader, icons);
-                        }
-                        else
-                        {
-                            Func<uint> buttonIconReader =
-                                BindUintLiteralOrBinding(buttonIcon, binding, "button icon");
-                            if (icons is not null)
-                            {
-                                button.IconSource = BuildIconSource(
-                                    buttonIconKind,
-                                    buttonIconReader,
-                                    icons);
-                            }
-                        }
-                    }
+                    ApplyButtonIcon(button, el, binding, icons, "button icon");
                     ApplyCommon(button, el, binding);
                     if (onClick is not null)
                         button.Click += onClick;
@@ -422,7 +399,7 @@ public static class MarkupDocument
                     if (el.Attribute("iconkind") is not null)
                     {
                         throw new FormatException(
-                            "iconkind applies to button and list; icon derives its kind from did/spell/item/file");
+                            "iconkind applies to button, tab and list; icon derives its kind from did/spell/item/file");
                     }
 
                     string? didAttr = (string?)el.Attribute("did");
@@ -497,6 +474,7 @@ public static class MarkupDocument
                         binding,
                         "tab selected"),
                 };
+                ApplyButtonIcon(tab, el, binding, icons, "tab icon");
                 ApplyCommon(tab, el, binding);
                 if (tabClick is not null)
                     tab.Click += tabClick;
@@ -919,6 +897,31 @@ public static class MarkupDocument
         float minW = area.ScrollsX ? FlexLayout.MinimumScrollViewport + (area.ScrollsY ? UiScrollArea.BarSize : 0f) : size.Width;
         float minH = area.ScrollsY ? FlexLayout.MinimumScrollViewport + (area.ScrollsX ? UiScrollArea.BarSize : 0f) : size.Height;
         return new FlexMeasurement(size, new FlexSize(MathF.Min(minW, size.Width), MathF.Min(minH, size.Height)));
+    }
+
+    /// <summary>
+    /// Reads a button-like control's optional icon/iconkind pair. Both are
+    /// validated at build even with no resolver wired, so a typo fails early.
+    /// </summary>
+    private static void ApplyButtonIcon(
+        UiSimpleButton button, XElement el, object binding,
+        IMarkupIconResolver? icons, string context)
+    {
+        string? iconExpression = (string?)el.Attribute("icon");
+        if (iconExpression is null)
+            return;
+        string? iconKind = (string?)el.Attribute("iconkind");
+        if (ValidateIconKind(iconKind) == "file")
+        {
+            Func<string?> pathReader = BindPathLiteralOrBinding(iconExpression, binding, context);
+            if (icons is not null)
+                button.IconSource = BuildFileIconSource(pathReader, icons);
+            return;
+        }
+
+        Func<uint> iconReader = BindUintLiteralOrBinding(iconExpression, binding, context);
+        if (icons is not null)
+            button.IconSource = BuildIconSource(iconKind, iconReader, icons);
     }
 
     private static string ValidateIconKind(string? iconKind, string context = "iconkind") =>
