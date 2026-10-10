@@ -465,7 +465,9 @@ public sealed class PluginCanvasElementTests
 
         registration.Anchor = PluginCanvasAnchor.BottomRight;
         registration.Offset = new PluginPoint(-10, -10);
-        harness.Host.SetViewport(new Vector2(1024f, 768f));
+        harness.Root.Width = 1024f;
+        harness.Root.Height = 768f;
+        harness.Host.FollowRoot();
         harness.Frame();
         Assert.Equal((814f, 658f), (element.Left, element.Top));
     }

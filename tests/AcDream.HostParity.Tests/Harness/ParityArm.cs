@@ -69,11 +69,13 @@ internal abstract class ParityArm : IDisposable
         // by writing into the player's own data folder. Each arm gets a
         // scratch folder of its own instead, so a scenario can read what this
         // client announced without touching anything the player owns and
-        // without the two arms seeing each other.
+        // without the two arms seeing each other. The folder name stays short:
+        // the peer hub's socket lives inside it, and macOS limits a socket
+        // path to 104 characters under a temp folder that already takes ~50.
         DataDirectory = Path.Combine(
             Path.GetTempPath(),
             "acdream-parity",
-            $"{name}-{Guid.NewGuid():N}");
+            Guid.NewGuid().ToString("N")[..12]);
         Operations = new ParitySessionOperations();
         Dependencies = buildDependencies(Operations);
         Runtime = new GameRuntime(Dependencies);

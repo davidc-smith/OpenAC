@@ -81,6 +81,7 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
         if (!ReferenceEquals(_moveCallback, callback)) return;
         _mouse.MouseMove -= _move;
         _moveCallback = null;
+        _lastMovePosition = null;
     }
 
     public void AddScroll(Action<int> callback)
@@ -96,12 +97,28 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
         _scrollCallback = null;
     }
 
-    private void OnDown(IMouse sender, MouseButton button) =>
-        _downCallback?.Invoke(button, (int)sender.Position.X, (int)sender.Position.Y);
-    private void OnUp(IMouse sender, MouseButton button) =>
-        _upCallback?.Invoke(button, (int)sender.Position.X, (int)sender.Position.Y);
-    private void OnMove(IMouse _, Vector2 position) =>
+    // IMouse.Position asks the window where the pointer is now, which during a quick
+    // press-and-drag is already past the cell that was pressed. The move events arrive
+    // in order with the buttons, so the last one says where the button went down.
+    private Vector2? _lastMovePosition;
+
+    private Vector2 ButtonPosition(IMouse sender) => _lastMovePosition ?? sender.Position;
+
+    private void OnDown(IMouse sender, MouseButton button)
+    {
+        Vector2 p = ButtonPosition(sender);
+        _downCallback?.Invoke(button, (int)p.X, (int)p.Y);
+    }
+    private void OnUp(IMouse sender, MouseButton button)
+    {
+        Vector2 p = ButtonPosition(sender);
+        _upCallback?.Invoke(button, (int)p.X, (int)p.Y);
+    }
+    private void OnMove(IMouse _, Vector2 position)
+    {
+        _lastMovePosition = position;
         _moveCallback?.Invoke((int)position.X, (int)position.Y);
+    }
     private void OnScroll(IMouse _, ScrollWheel scroll)
     {
         // Each wheel event is a directional action, including small trackpad deltas.

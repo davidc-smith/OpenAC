@@ -44,6 +44,34 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Chorizite mesh primitives
+
+The bounding-box representation and texture-format values in
+`src/AcDream.Core/Rendering/Wb/BoundingBox.cs` and `TextureFormat.cs` are
+adapted from Chorizite (https://github.com/Chorizite/Chorizite), revision
+`3c475149b0edcd34672fb81a0dabe5a4f097d616`. OpenAC no longer depends on the
+Chorizite.Core package. The separate Chorizite.DatReaderWriter package remains.
+
+Copyright 2024 Chorizite
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 ## NuGet dependencies
 
 OpenAC's published payloads redistribute the following packages under their
@@ -53,13 +81,13 @@ own licenses. Each license text ships inside the package.
 |---|---|
 | Silk.NET (Vulkan, Windowing, Input, OpenAL) | MIT |
 | Avalonia, Avalonia.Desktop, Avalonia.Themes.Fluent | MIT |
-| Chorizite.Core, Chorizite.DatReaderWriter | MIT |
+| Chorizite.DatReaderWriter | MIT |
 | Arch | Apache-2.0 |
 | DotRecast.Core, DotRecast.Detour, DotRecast.Recast, DotRecast.Recast.Toolset | Zlib (https://github.com/ikpil/DotRecast) |
 | Serilog, Serilog.Sinks.Console | Apache-2.0 |
-| SixLabors.ImageSharp | Six Labors Split License (Apache-2.0 terms for open-source use) |
-| BCnEncoder.Net, BCnEncoder.Net.ImageSharp | MIT OR Unlicense |
+| BCnEncoder.Net | MIT OR Unlicense |
 | StbImageSharp, StbTrueTypeSharp | MIT OR Unlicense |
+| StbImageWriteSharp | Public domain ([upstream declaration](https://github.com/StbSharp/StbImageWriteSharp#license)) |
 | Microsoft.Extensions.Logging.Abstractions | MIT |
 | OpenAL Soft (via Silk.NET.OpenAL.Soft.Native) | LGPL-2.1 (dynamically linked native library; source at https://github.com/kcat/openal-soft) |
 | .NET runtime (self-contained payloads) | MIT |
@@ -71,9 +99,8 @@ versions, records the formula source and bottle SHA-256 values in the client
 payload, and includes the installed license texts in
 `Resources/vulkan/licenses/`.
 
-SixLabors.ImageSharp's Split License grants Apache-2.0 terms to open-source
-projects; a commercial product built on OpenAC may need its own ImageSharp
-license.
+Image decoding and PNG writing use managed stb ports; no image-library
+license key is required to build OpenAC.
 
 ## Reference projects
 

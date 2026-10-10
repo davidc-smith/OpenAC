@@ -792,7 +792,7 @@ public sealed class GameWindow :
                 + "plugin hotkeys would silently never bind. Composition must "
                 + "publish the keyboard source first.");
         }
-        _hotkeyRegistry.Bind(_kbSource, _keyBindings, value);
+        _hotkeyRegistry.Bind(_kbSource, _keyBindings, value, _retainedInputCapture);
     }
 
     void IGameWindowHostInputCameraPublication.PublishCameraController(

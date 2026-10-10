@@ -93,7 +93,24 @@ public sealed class DirectInstallCheckTests : IDisposable
 
         string? refusal = await check.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.NotNull(refusal);
+        Assert.Equal("'icon.png' is not a regular file or folder.", refusal);
+    }
+
+    [Fact]
+    [Trait("Lane", "Unix")]
+    public void NativeFileKindAcceptsRegularFilesAndDirectoriesButNotLinks()
+    {
+        if (!LauncherOperatingSystem.IsUnix)
+            throw new PlatformNotSupportedException("Lane=Unix requires a native Unix host.");
+
+        string directory = WriteValidPlugin("native-kinds");
+        string file = Path.Combine(directory, "plugin.json");
+        string link = Path.Combine(directory, "manifest-link");
+        File.CreateSymbolicLink(link, file);
+
+        Assert.True(UnixEntryKind.IsRegularOrDirectory(directory));
+        Assert.True(UnixEntryKind.IsRegularOrDirectory(file));
+        Assert.False(UnixEntryKind.IsRegularOrDirectory(link));
     }
 
     [Fact]

@@ -5,7 +5,7 @@ using AcDream.App.Rendering.Wb;
 using AcDream.App.Tests.Rendering.Gpu;
 using System.Threading;
 using AcDream.Content;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AcDream.App.Tests.Rendering.Wb;
@@ -203,8 +203,8 @@ public sealed class MeshPipelineDeviceSeamTests
             Vertices = new VertexPositionNormalTexture[6],
             TextureBatches =
             {
-                [(8, 8, Chorizite.Core.Render.Enums.TextureFormat.RGBA8)] = [CellBatch(5, 0x08000005u, 8, [0, 1, 2])],
-                [(16, 16, Chorizite.Core.Render.Enums.TextureFormat.RGBA8)] = [CellBatch(2, 0x08000002u, 16, [3, 4, 5])],
+                [(8, 8, AcDream.Core.Rendering.Wb.TextureFormat.RGBA8)] = [CellBatch(5, 0x08000005u, 8, [0, 1, 2])],
+                [(16, 16, AcDream.Core.Rendering.Wb.TextureFormat.RGBA8)] = [CellBatch(2, 0x08000002u, 16, [3, 4, 5])],
             },
         };
 

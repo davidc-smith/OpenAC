@@ -1077,6 +1077,7 @@ internal sealed class RuntimeAutomationSurface
             _character = character;
             _cast = cast;
             _spellbook = spellbook;
+            AttachExperienceLocked(runtime, character);
             spellbook.SpellbookChanged += OnSpellbookChanged;
             spellbook.EnchantmentsChanged += OnEnchantmentsChanged;
             runtime.InventoryOwner.Transactions.RequestCompleted +=
@@ -1090,6 +1091,7 @@ internal sealed class RuntimeAutomationSurface
 
         RebuildSpellbook();
         RebuildEnchantments();
+        RefreshExperience();
     }
 
     public void BindSkillNames(IReadOnlyDictionary<uint, string> skillNames)
@@ -1294,6 +1296,7 @@ internal sealed class RuntimeAutomationSurface
     {
         lock (_gate)
             DetachLocked();
+        RefreshExperience();
         _peerTransport?.Withdraw();
         _peers.Withdraw();
         _knownSelfBuffs = Array.Empty<PluginSpellInfo>();
@@ -1363,6 +1366,7 @@ internal sealed class RuntimeAutomationSurface
             _spellbook.SpellbookChanged -= OnSpellbookChanged;
             _spellbook.EnchantmentsChanged -= OnEnchantmentsChanged;
         }
+        DetachExperienceLocked();
         _spellbook = null;
         _character = null;
         _cast = null;
@@ -2075,6 +2079,173 @@ internal sealed class RuntimeAutomationSurface
         }
     }
 
+    // ── Character experience ──────────────────────────────────────────────
+    // Read from the local player's own property bundle, which PlayerDescription
+    // fills at login and the private Int64 updates keep current. The object
+    // table is not a substitute: the login values do not always reach it.
+
+    private const uint LevelPropertyId = (uint)PropertyInt.Level;
+
+    /// <summary>What a plugin last heard about the character's experience.</summary>
+    private readonly record struct ExperienceReading(
+        bool HasExperience,
+        long Total,
+        long Unassigned,
+        long? ToNextLevel,
+        long AvailableLuminance,
+        long MaximumLuminance);
+
+    private Func<IReadOnlyList<ulong>?>? _experienceLevels;
+    private Action? _experienceChanged;
+    private ExperienceReading _lastExperience;
+
+    /// <summary>
+    /// The local player's description revision when the character last left
+    /// the world. A description is only this character's once a newer one has
+    /// arrived, so values left over from the last character are not reported.
+    /// </summary>
+    private long _experienceBaseline;
+    private LocalPlayerState? _experiencePlayer;
+    private ClientObjectTable? _experienceObjects;
+
+    public bool HasExperience => ReadExperience().HasExperience;
+    public long TotalExperience => ReadExperience().Total;
+    public long UnassignedExperience => ReadExperience().Unassigned;
+    public long? ExperienceToNextLevel => ReadExperience().ToNextLevel;
+    public long AvailableLuminance => ReadExperience().AvailableLuminance;
+    public long MaximumLuminance => ReadExperience().MaximumLuminance;
+
+    public event Action ExperienceChanged
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_gate)
+                _experienceChanged += value;
+        }
+        remove
+        {
+            if (value is null)
+                return;
+            lock (_gate)
+                _experienceChanged -= value;
+        }
+    }
+
+    /// <summary>
+    /// Lends the surface the experience table's level curve, so it can say how
+    /// far the character is from its next level. Without it
+    /// <see cref="ExperienceToNextLevel"/> reads null.
+    /// </summary>
+    public void BindExperienceLevels(Func<IReadOnlyList<ulong>?> levels)
+    {
+        ArgumentNullException.ThrowIfNull(levels);
+        lock (_gate)
+            _experienceLevels = levels;
+        RefreshExperience();
+    }
+
+    private ExperienceReading ReadExperience()
+    {
+        GameRuntime? runtime;
+        RuntimeCharacterState? character;
+        Func<IReadOnlyList<ulong>?>? levels;
+        long baseline;
+        lock (_gate)
+        {
+            if (_disposed)
+                return default;
+            runtime = _runtime;
+            character = _character;
+            levels = _experienceLevels;
+            baseline = _experienceBaseline;
+        }
+        if (runtime is null || character is null)
+            return default;
+        LocalPlayerState player = character.LocalPlayer;
+        if (!player.HasDescription || player.DescriptionRevision <= baseline)
+            return default;
+
+        PropertyBundle properties = player.Properties;
+        long total = properties.GetInt64((uint)PropertyInt64.TotalExperience);
+        // A level-up arrives as an update to the player object, not to the
+        // description, so the object's level wins when it has one.
+        int level = runtime.InventoryOwner.Objects
+            .Get(runtime.PlayerIdentity.ServerGuid)?
+            .Properties.Ints.TryGetValue(LevelPropertyId, out int objectLevel) == true
+            ? objectLevel
+            : properties.GetInt(LevelPropertyId);
+        LevelProgress? progress = LevelProgress.Measure(levels?.Invoke(), level, total);
+        return new ExperienceReading(
+            HasExperience: true,
+            Total: total,
+            Unassigned: properties.GetInt64((uint)PropertyInt64.AvailableExperience),
+            ToNextLevel: progress is { AtTopOfTable: false } measured
+                ? measured.ToNext
+                : null,
+            AvailableLuminance: properties.GetInt64((uint)PropertyInt64.AvailableLuminance),
+            MaximumLuminance: properties.GetInt64((uint)PropertyInt64.MaximumLuminance));
+    }
+
+    /// <summary>
+    /// Raises <see cref="ExperienceChanged"/> when what a plugin would read now
+    /// differs from what it was last told, and only then.
+    /// </summary>
+    private void RefreshExperience()
+    {
+        ExperienceReading reading = ReadExperience();
+        Action? handlers;
+        lock (_gate)
+        {
+            if (_disposed || reading == _lastExperience)
+                return;
+            _lastExperience = reading;
+            handlers = _experienceChanged;
+        }
+        if (handlers is null)
+            return;
+        foreach (Delegate handler in handlers.GetInvocationList())
+        {
+            try { ((Action)handler)(); }
+            catch { /* plugin errors do not propagate out of event dispatch */ }
+        }
+    }
+
+    private void OnExperienceSourceChanged() => RefreshExperience();
+
+    private void OnExperienceObjectChanged(ClientObject item)
+    {
+        uint playerId;
+        lock (_gate)
+            playerId = _runtime?.PlayerIdentity.ServerGuid ?? 0u;
+        if (playerId != 0u && item.ObjectId == playerId)
+            RefreshExperience();
+    }
+
+    private void AttachExperienceLocked(GameRuntime runtime, RuntimeCharacterState character)
+    {
+        _experienceBaseline = 0;
+        _experiencePlayer = character.LocalPlayer;
+        _experiencePlayer.CharacterChanged += OnExperienceSourceChanged;
+        _experienceObjects = runtime.InventoryOwner.Objects;
+        _experienceObjects.ObjectAdded += OnExperienceObjectChanged;
+        _experienceObjects.ObjectUpdated += OnExperienceObjectChanged;
+    }
+
+    private void DetachExperienceLocked()
+    {
+        if (_experiencePlayer is not null)
+            _experiencePlayer.CharacterChanged -= OnExperienceSourceChanged;
+        _experiencePlayer = null;
+        if (_experienceObjects is not null)
+        {
+            _experienceObjects.ObjectAdded -= OnExperienceObjectChanged;
+            _experienceObjects.ObjectUpdated -= OnExperienceObjectChanged;
+        }
+        _experienceObjects = null;
+        _experienceBaseline = 0;
+    }
+
     private (uint Current, uint Maximum) Vital(LocalPlayerState.VitalKind kind)
     {
         RuntimeCharacterState? character;
@@ -2424,6 +2595,11 @@ internal sealed class RuntimeAutomationSurface
                 return;
             _wasInWorld = isInWorld;
 
+            // What the character that left was told it had is not the next
+            // one's: only a description that arrives after this counts.
+            if (!isInWorld && _character is { } leaving)
+                _experienceBaseline = leaving.LocalPlayer.DescriptionRevision;
+
             // Clear pending activations on logoff.
             if (!isInWorld && _pendingActivationObjectIds.Count > 0)
             {
@@ -2449,6 +2625,7 @@ internal sealed class RuntimeAutomationSurface
             // one says.
             _peers.ForgetOwnAnnouncements();
         }
+        RefreshExperience();
     }
 
     void IRuntimeEventObserver.OnCommand(in RuntimeCommandDelta delta) { }

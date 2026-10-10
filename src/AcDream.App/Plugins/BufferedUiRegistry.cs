@@ -200,6 +200,92 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
             return _images.GetValueOrDefault(owner.Id);
     }
 
+    // The plugin theme, told to the registry by the interface: the one the
+    // player saved when the interface comes up, then each one they pick. It
+    // outlives the interface, so a reconnect keeps answering the same theme.
+    private PluginUiThemeInfo _theme = PluginUiThemeInfo.Classic;
+    private Action<PluginUiThemeInfo>? _themeChanged;
+
+    public PluginUiThemeInfo Theme
+    {
+        get
+        {
+            lock (_gate)
+                return _theme;
+        }
+    }
+
+    public event Action<PluginUiThemeInfo> ThemeChanged
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_gate)
+                _themeChanged += value;
+        }
+        remove
+        {
+            lock (_gate)
+                _themeChanged -= value;
+        }
+    }
+
+    /// <summary>
+    /// Publishes the theme the player saved and then every one they pick,
+    /// until the returned token is disposed. The interface calls this once it
+    /// has its appearance settings, and disposes the token when it goes.
+    /// </summary>
+    internal IDisposable FollowTheme(PluginUiThemeSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        Action publish = () => PublishTheme(settings.ThemeInfo);
+        publish();
+        settings.ThemeChanged += publish;
+        return new ThemeFollow(settings, publish);
+    }
+
+    private sealed class ThemeFollow(PluginUiThemeSettings settings, Action publish) : IDisposable
+    {
+        private Action? _publish = publish;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _publish, null) is { } held)
+                settings.ThemeChanged -= held;
+        }
+    }
+
+    /// <summary>
+    /// Takes the selected theme and, when it differs from the last one, tells
+    /// every plugin on the calling thread, the interface thread. One plugin's
+    /// handler throwing does not stop the next from hearing.
+    /// </summary>
+    internal void PublishTheme(PluginUiThemeInfo theme)
+    {
+        ArgumentNullException.ThrowIfNull(theme);
+        Action<PluginUiThemeInfo>? handlers;
+        lock (_gate)
+        {
+            if (_theme == theme)
+                return;
+            _theme = theme;
+            handlers = _themeChanged;
+        }
+        if (handlers is null)
+            return;
+        foreach (Delegate handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((Action<PluginUiThemeInfo>)handler)(theme);
+            }
+            catch (Exception error)
+            {
+                Serilog.Log.Warning(error, "A plugin's theme handler threw");
+            }
+        }
+    }
+
     // Canvases follow the same path as windows: registered at any time,
     // drained by the interface once, taken down through the registration
     // when the plugin disposes it, and handed back to be mounted again when

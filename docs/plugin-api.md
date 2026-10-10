@@ -351,6 +351,54 @@ to display, or `0` for none. The server sends the whole list when the
 character enters the world and one more title each time one is earned; both
 read empty and `0` before that.
 
+### Character experience
+
+The character's experience and luminance, as the server keeps them:
+
+```csharp
+ICharacterInfo character = host.Automation.Character;
+
+character.ExperienceChanged += () =>
+{
+    if (!character.HasExperience)
+        return; // logged out, or not described yet
+
+    long earned    = character.TotalExperience;       // never goes down
+    long unspent   = character.UnassignedExperience;
+    long? toLevel  = character.ExperienceToNextLevel; // null at the top
+    long luminance = character.AvailableLuminance;
+    long lumCap    = character.MaximumLuminance;      // 0 before luminance is unlocked
+};
+```
+
+| Member | What it reads |
+|---|---|
+| `HasExperience` | true once the server has sent the character's description at login |
+| `TotalExperience` | every point of experience ever earned; spending does not lower it |
+| `UnassignedExperience` | experience not yet spent on a stat |
+| `ExperienceToNextLevel` | experience still needed for the next level |
+| `AvailableLuminance` | luminance held now |
+| `MaximumLuminance` | the cap on luminance; 0 for a character that cannot earn it yet |
+
+Every member reads `0` (or `null`) while `HasExperience` is false: before
+login, from the moment the character leaves the world until the next
+character's description arrives, and on a host that does not track it.
+
+`ExperienceToNextLevel` is measured on the experience table in the installed
+data files, the way the character sheet measures it. It is `null` at the top
+of the table, where the sheet shows "Infinity!", and when the files hold no
+table. The server sends a new total before it sends the new level, so for a
+moment after a level's worth of experience lands it reads `0`; it moves on to
+the following level once the level arrives.
+
+`ExperienceChanged` is raised on the same thread as `Tick` whenever any of the
+values above differs from what it was last raised for: when the description
+arrives, on each update the server sends, on a level-up, and when the
+character leaves the world. An update that changes nothing here -- a skill, a
+position, an experience total the server restates unchanged -- raises nothing.
+Session rates, such as experience per hour, are the plugin's to work out from
+`TotalExperience` and its own clock.
+
 ## Spells
 
 `host.Automation.Spells` gains the whole table, not just what the character
@@ -1133,19 +1181,21 @@ key binding is refused rather than silently stealing it: `handle.IsBound` is
 binding; the host also revokes every hotkey a plugin registered when that
 plugin unloads.
 
-A hotkey does not fire while the chat bar has keyboard focus unless Ctrl or
-Alt is part of the chord — otherwise every letter typed into chat would also
-be a candidate hotkey press.
+While anything in the interface has keyboard focus (the chat bar, a text
+field, a control reached with Tab), a hotkey fires only if Ctrl or Alt is
+part of the chord; otherwise every letter typed would also be a candidate
+hotkey press. Clicking a button does not give it keyboard focus. While a
+modal dialog is open, or a key rebind is being captured
+(`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
+chords included.
 
 Plugin hotkeys are a raw keyboard subscription, not a route through
 InputDispatcher's action/scope engine (a dynamic per-plugin action space
 large enough to fit that machinery would be a much bigger change than the
-rest of this surface) -- documented deviation. Two dispatcher states still
-suppress every hotkey, matching how the dispatcher itself would refuse to
-route a client action in the same situations: a rebind capture in progress
-(`InputDispatcher.BeginCapture`) and a modal `Dialog`/`EditField` scope
-pushed on top (not just `Chat`, which has its own Ctrl/Alt carve-out
-above).
+rest of this surface) -- documented deviation. Plugin hotkeys see each key
+before the interface handles it, so a key is judged by the focus from before
+that key: a key press that moves focus into or out of a text field is judged
+by where focus was.
 
 The graphical host may receive a `Register` call before its keyboard and
 input dispatcher exist yet (plugin loading is not strictly ordered against
@@ -1299,6 +1349,51 @@ call. Without a window, or before the client's interface is up,
 `IsAvailable` is false and every request answers `PluginImage.None`;
 images are dropped when the interface is torn down (for example on a
 reconnect), after which the plugin asks again.
+
+## Plugin theme
+
+The player picks **Classic**, **Charcoal + moss** or **Warm graphite +
+brass** under Plugin appearance. The client restyles markup windows that
+opt in (see the [markup guide](plugin-ui-markup.md)) itself, but a canvas
+paints its own pixels, so it reads the choice and repaints when it changes:
+
+```csharp
+PluginUiThemeInfo theme = host.Ui.Theme;
+
+host.Ui.ThemeChanged += next =>
+{
+    theme = next;
+    canvas.Invalidate();
+};
+
+// in a paint callback:
+if (theme.Palette is { } p)
+{
+    painter.FillRect(new PluginRect(0, 0, painter.Width, painter.Height), p.Background);
+    painter.DrawText("Golem", new PluginPoint(8, 6), p.Text);
+}
+else
+{
+    // Classic: the plugin's own look.
+}
+```
+
+`Theme.Kind` says which theme is selected and `Theme.DisplayName` what the
+picker calls it. `Theme.Palette` holds the seven colours themed windows draw
+in -- `Background`, `Field`, `Border`, `Text`, `Muted`, `Accent` and
+`Selected` -- and is null under Classic, where themed windows draw
+unthemed.
+
+`ThemeChanged` is raised on the tick thread, once for each change, with the
+new theme; reading `Theme` inside the handler gives the same value. A
+handler that throws is logged and does not stop the next plugin from
+hearing. The plugin's handlers are removed when it is unloaded. The client
+keeps the choice across a reconnect, and it is the saved choice from the
+moment the interface comes up; before that, `Theme` answers Classic, and a
+plugin loaded early hears the saved theme arrive through `ThemeChanged`.
+
+Without a window, and on a host that predates themes, `Theme` answers
+`PluginUiThemeInfo.Classic` and `ThemeChanged` is never raised.
 
 ## Canvases
 

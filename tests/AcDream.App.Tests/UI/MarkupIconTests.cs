@@ -313,6 +313,150 @@ public sealed class MarkupIconTests
         Assert.Null(button.IconSource);
     }
 
+    // ── <tab icon>: same attributes and resolver dispatch as <button icon> ──
+
+    private sealed class TabIconBinding
+    {
+        public bool Selected { get; set; }
+        public uint SpellId { get; set; } = 42u;
+    }
+
+    [Fact]
+    public void TabIcon_DefaultsToDidKind_AndResolvesThroughTheResolver()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" " +
+            "selected=\"{Selected}\" icon=\"7735\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+
+        var panel = MarkupDocument.Build(xml, new TabIconBinding(), Sprite, icons: resolver);
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        Assert.NotNull(tab.IconSource);
+        (uint tex, _, _) = tab.IconSource!();
+        Assert.Equal(resolver.DidTexture, tex);
+        Assert.Equal(("did", 0x06001E37u), resolver.Calls[^1]);
+    }
+
+    [Fact]
+    public void TabIcon_BoundSpell_ReReadsTheBindingEveryFrame()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"20\" h=\"20\" selected=\"{Selected}\" " +
+            "icon=\"{SpellId}\" iconkind=\"spell\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+        var binding = new TabIconBinding();
+
+        var panel = MarkupDocument.Build(xml, binding, Sprite, icons: resolver);
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        tab.IconSource!();
+        Assert.Equal(("spell", 42u), resolver.Calls[^1]);
+
+        binding.SpellId = 99u;
+        tab.IconSource!();
+        Assert.Equal(("spell", 99u), resolver.Calls[^1]);
+    }
+
+    private static List<Vector4> IconColors(UiElement element, uint texture)
+    {
+        var device = new RecordingGpuDevice();
+        var renderer = new TextRenderer(device, new NullGpuFrameSource(), "unused");
+        renderer.Begin(new Vector2(800f, 600f));
+        element.DrawSelfAndChildren(new UiRenderContext(renderer, new Vector2(800f, 600f)));
+
+        var colors = new List<Vector4>();
+        foreach ((uint drawn, IReadOnlyList<float> verts) in renderer.DebugSpriteSegmentVerts)
+        {
+            if (drawn != texture) continue;
+            for (int i = 0; i + 8 <= verts.Count; i += 8)
+                colors.Add(new Vector4(verts[i + 4], verts[i + 5], verts[i + 6], verts[i + 7]));
+        }
+        return colors;
+    }
+
+    [Fact]
+    public void TabIcon_DrawsFullWhenSelected_AndDimmedWhenNot()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" " +
+            "selected=\"{Selected}\" icon=\"7735\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+        var binding = new TabIconBinding { Selected = true };
+        var panel = MarkupDocument.Build(xml, binding, Sprite, icons: resolver);
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        List<Vector4> selected = IconColors(tab, resolver.DidTexture);
+        Assert.NotEmpty(selected);
+        Assert.All(selected, c => Assert.Equal(1f, c.W, 3));
+
+        binding.Selected = false;
+        List<Vector4> unselected = IconColors(tab, resolver.DidTexture);
+        Assert.NotEmpty(unselected);
+        Assert.All(unselected, c => Assert.Equal(UiMarkupTabButton.InactiveIconAlpha, c.W, 3));
+    }
+
+    [Fact]
+    public void ButtonIcon_IsNotDimmed()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<button x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Go\" icon=\"7735\"/>" +
+            "</panel>";
+        var resolver = new FakeIconResolver();
+        var panel = MarkupDocument.Build(xml, new IconBinding(), Sprite, icons: resolver);
+
+        List<Vector4> colors = IconColors(panel.Children[0], resolver.DidTexture);
+        Assert.NotEmpty(colors);
+        Assert.All(colors, c => Assert.Equal(1f, c.W, 3));
+    }
+
+    [Fact]
+    public void TabWithoutIconAttribute_HasNoIconSource()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" selected=\"{Selected}\"/>" +
+            "</panel>";
+
+        var panel = MarkupDocument.Build(xml, new TabIconBinding(), Sprite, icons: new FakeIconResolver());
+        var tab = Assert.IsType<UiMarkupTabButton>(panel.Children[0]);
+
+        Assert.Null(tab.IconSource);
+    }
+
+    [Fact]
+    public void TabIcon_UnknownIconKind_ThrowsAtBuild_EvenWithNoResolverWired()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" selected=\"{Selected}\" " +
+            "icon=\"1\" iconkind=\"spel\"/>" +
+            "</panel>";
+
+        Assert.Throws<FormatException>(
+            () => MarkupDocument.Build(xml, new TabIconBinding(), Sprite));
+    }
+
+    [Fact]
+    public void TabIcon_MalformedBinding_ThrowsAtBuild_EvenWithNoResolverWired()
+    {
+        const string xml =
+            "<panel x=\"0\" y=\"0\" w=\"100\" h=\"60\">" +
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Spells\" selected=\"{Selected}\" " +
+            "icon=\"{Typo}\"/>" +
+            "</panel>";
+
+        Assert.Throws<FormatException>(
+            () => MarkupDocument.Build(xml, new TabIconBinding(), Sprite));
+    }
+
     private sealed class IntIconBinding
     {
         public int IconIdInt { get; set; } = 42;

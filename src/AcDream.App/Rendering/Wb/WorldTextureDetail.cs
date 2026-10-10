@@ -4,7 +4,7 @@ using AcDream.UI.Abstractions.Panels.Settings;
 using BCnEncoder.Decoder;
 using BCnEncoder.Encoder;
 using BCnEncoder.Shared;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 
 namespace AcDream.App.Rendering.Wb;
 

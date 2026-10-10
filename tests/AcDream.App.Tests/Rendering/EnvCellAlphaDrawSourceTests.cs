@@ -9,7 +9,7 @@ using AcDream.App.Rendering.Wb;
 using AcDream.App.Tests.Rendering.Gpu;
 using AcDream.Content;
 using AcDream.Core.Meshing;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using DatReaderWriter.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
 using CullMode = DatReaderWriter.Enums.CullMode;

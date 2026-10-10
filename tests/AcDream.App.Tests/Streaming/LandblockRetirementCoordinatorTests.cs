@@ -766,12 +766,16 @@ public sealed class LandblockRetirementCoordinatorTests
         new(
             enqueueLoad: (_, _, _) => { },
             enqueueUnload: (_, _) => { },
-            drainCompletions: drain ?? (_ => Array.Empty<LandblockStreamResult>()),
-            applyTerrain: apply ?? ((_, _) => { }),
+            completionSource: new DelegateLandblockCompletionSource(
+                drain ?? (_ => Array.Empty<LandblockStreamResult>())),
             state: state,
             nearRadius: 0,
             farRadius: 0,
-            retirementCoordinator: coordinator,
+            presentationPipeline: new LandblockPresentationPipeline(
+                apply ?? ((_, _) => { }), state, retirementCoordinator: coordinator),
+            // These tests assert frame ordering and operation budgets, not wall time.
+            workTimestamp: static () => 0,
+            workTimestampFrequency: 1_000,
             workBudgetOptions: workBudgetOptions ?? GenerousWorkBudget());
 
     private static StreamingWorkBudgetOptions GenerousWorkBudget() => new(

@@ -130,6 +130,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           dotnet build src/AcDream.Launcher/AcDream.Launcher.csproj -c Release --nologo
           dotnet build tests/AcDream.Launcher.Core.Tests/AcDream.Launcher.Core.Tests.csproj -c Release --nologo
           dotnet build tests/AcDream.Platform.Tests/AcDream.Platform.Tests.csproj -c Release --nologo
@@ -139,6 +140,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $filter = 'Lane!=InstalledDat&Lane!=PreparedPackage&Lane!=Live&Lane!=Manual&Lane!=Timing&Lane!=Windows&Lane!=Linux&Lane!=Vulkan&Lane!=SystemFont&Purpose!=Diagnostic&Status!=KnownFailure'
           dotnet test tests/AcDream.Launcher.Core.Tests/AcDream.Launcher.Core.Tests.csproj -c Release --no-build --nologo --filter $filter
           dotnet test tests/AcDream.Launcher.Tests/AcDream.Launcher.Tests.csproj -c Release --nologo --filter $filter
@@ -238,6 +240,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           dotnet build src/AcDream.Launcher/AcDream.Launcher.csproj -c Release --nologo
           dotnet build tests/AcDream.Launcher.Core.Tests/AcDream.Launcher.Core.Tests.csproj -c Release --nologo
           dotnet build tests/AcDream.Platform.Tests/AcDream.Platform.Tests.csproj -c Release --nologo
@@ -247,6 +250,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $filter = 'Lane!=InstalledDat&Lane!=PreparedPackage&Lane!=Live&Lane!=Manual&Lane!=Timing&Lane!=Windows&Lane!=Linux&Lane!=Vulkan&Lane!=SystemFont&Purpose!=Diagnostic&Status!=KnownFailure'
           dotnet test tests/AcDream.Launcher.Core.Tests/AcDream.Launcher.Core.Tests.csproj -c Release --no-build --nologo --filter $filter
           dotnet test tests/AcDream.Launcher.Tests/AcDream.Launcher.Tests.csproj -c Release --nologo --filter $filter

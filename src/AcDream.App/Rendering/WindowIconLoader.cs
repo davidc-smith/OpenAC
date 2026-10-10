@@ -1,7 +1,6 @@
+using AcDream.Core.Textures;
 using Silk.NET.Core;
 using Silk.NET.Windowing;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace AcDream.App.Rendering;
 
@@ -76,7 +75,7 @@ internal static class WindowIconLoader
                 continue;
             }
 
-            using var image = Image.Load<Rgba32>(stream);
+            using var image = RgbaImage.Load(stream);
             var pixels = new byte[image.Width * image.Height * 4];
             image.CopyPixelDataTo(pixels);
             decoded.Add(new RawImage(image.Width, image.Height, pixels));

@@ -18,11 +18,38 @@ internal sealed class ParityPeerHub : IDisposable
         Arm = arm;
         Endpoint = PeerHubEndpoint.ForDirectory(arm.PeerDirectory);
         _server = Task.Run(() => new PeerHubServer(Endpoint).RunAsync(_lifetime.Token));
+        WaitUntilListening();
         Active[arm.PeerDirectory] = this;
         _subscription = arm.Host.Automation.Network.Subscribe(
             PluginPeerCapabilities.ClientState | PluginPeerCapabilities.Casts | PluginPeerCapabilities.Commands)!;
         Assert.NotNull(_subscription);
         arm.Advance();
+    }
+    // A transport whose first connect is refused asks for a hub to be started,
+    // which the parity clients treat as fatal; nothing connects before the hub
+    // accepts connections.
+    private void WaitUntilListening()
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (true)
+        {
+            if (_server.IsCompleted)
+            {
+                _server.GetAwaiter().GetResult();
+                throw new InvalidOperationException("The parity peer hub stopped before it was listening.");
+            }
+            try
+            {
+                using Stream probe = Endpoint.ConnectAsync(CancellationToken.None).GetAwaiter().GetResult();
+                return;
+            }
+            catch (Exception e) when (e is IOException or System.Net.Sockets.SocketException or TimeoutException)
+            {
+                if (DateTime.UtcNow >= deadline)
+                    throw new TimeoutException("The parity peer hub did not start listening.");
+                Thread.Sleep(1);
+            }
+        }
     }
     internal static ParityPeerHub Find(string directory) => Active[directory];
     internal void Until(Func<bool> ready)
