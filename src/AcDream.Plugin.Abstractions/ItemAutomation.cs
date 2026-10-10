@@ -714,6 +714,14 @@ public interface IItemAutomation
     PluginInventoryCompletion LastInventoryCompletion => default;
 
     /// <summary>
+    /// True when the server has listed the player's inventory and every nested
+    /// pack, and no optimistic inventory move is pending. False during login,
+    /// disconnection, or on hosts that do not expose inventory completeness.
+    /// Only a complete snapshot can establish that an absent item is no longer owned.
+    /// </summary>
+    bool IsOwnedInventoryComplete => false;
+
+    /// <summary>
     /// Lists everything the player owns, including what is inside their packs
     /// and what they have equipped, ordered by name. Returns an empty list
     /// when the session is not in the world.

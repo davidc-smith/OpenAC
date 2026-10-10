@@ -4479,6 +4479,19 @@ internal sealed class RuntimeAutomationSurface
         }
     }
 
+    public bool IsOwnedInventoryComplete
+    {
+        get
+        {
+            GameRuntime? runtime;
+            lock (_gate)
+                runtime = _runtime;
+            return runtime is not null && IsAvailable
+                && !runtime.InventoryOwner.Transactions.HasPendingRequest
+                && runtime.InventoryOwner.Objects.HasCompleteInventory(runtime.PlayerIdentity.ServerGuid);
+        }
+    }
+
     public IReadOnlyList<PluginInventoryItem> CaptureOwnedItems()
     {
         GameRuntime? runtime;
