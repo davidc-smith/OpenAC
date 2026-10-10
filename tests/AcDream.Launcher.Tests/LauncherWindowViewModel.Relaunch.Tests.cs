@@ -93,17 +93,23 @@ public sealed partial class LauncherWindowViewModelTests
         var first = FakeLauncherOrchestrator.CreateSession() with { ServerName = "One", AccountName = "Alice", HasLiveProcess = true };
         var second = first with { SessionId = "second", AccountName = "Bob" };
         core.SessionsOverride = [first, second];
-        var pending = new TaskCompletionSource();
+        var firstCompletion = new TaskCompletionSource();
+        var secondCompletion = new TaskCompletionSource();
         int requested = 0;
-        core.StopHandler = _ => { requested++; return pending.Task; };
+        core.StopHandler = _ => ++requested == 1 ? firstCompletion.Task : secondCompletion.Task;
         using var vm = CreateInitialized(core);
         Task firstStop = vm.Accounts[0].Rows[0].StopCommand.ExecuteAsync();
         Assert.False(firstStop.IsCompleted);
         Assert.True(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
         Task secondStop = vm.Accounts[1].Rows[0].StopCommand.ExecuteAsync();
         Assert.Equal(2, requested);
-        pending.SetResult();
-        await Task.WhenAll(firstStop, secondStop);
+        Assert.False(secondStop.IsCompleted);
+        // Requests overlap; their UI callbacks execute serially in the application.
+        firstCompletion.SetResult();
+        await firstStop;
+        Assert.False(secondStop.IsCompleted);
+        secondCompletion.SetResult();
+        await secondStop;
     }
 
     [Fact]
@@ -134,8 +140,10 @@ public sealed partial class LauncherWindowViewModelTests
         Assert.True(vm.OpenSettingsCommand.CanExecute(null));
         Assert.True(vm.Accounts[0].Rows[1].PlayCommand.CanExecute(null));
         stop.SetResult();
+        await stoppingTask;
+        Assert.False(startingTask.IsCompleted);
         launch.SetResult(core.Session);
-        await Task.WhenAll(stoppingTask, startingTask);
+        await startingTask;
     }
 
     [Fact]
