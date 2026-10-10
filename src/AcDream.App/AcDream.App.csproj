@@ -17,9 +17,6 @@
     <InternalsVisibleTo Include="$(AdditionalTestAssembly)" Condition="'$(AdditionalTestAssembly)' != ''" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Chorizite.Core" />
-    <PackageReference Include="BCnEncoder.Net" />
-    <PackageReference Include="SixLabors.ImageSharp" />
     <PackageReference Include="Arch" />
     <PackageReference Include="Silk.NET.Vulkan" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />

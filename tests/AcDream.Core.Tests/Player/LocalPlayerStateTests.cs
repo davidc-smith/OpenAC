@@ -175,7 +175,7 @@ public sealed class LocalPlayerStateTests
     }
 
     [Fact]
-    public void GetMaxApprox_SecondaryAttributeModifierTruncatesLikeRetail()
+    public void GetMaxApprox_SecondaryAttributeModifierRoundsToNearest()
     {
         var book = new Spellbook(SpellTable.Create([TestSpell(1u)]));
         book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
@@ -195,7 +195,44 @@ public sealed class LocalPlayerStateTests
             xp: 0u,
             current: 100u);
 
-        Assert.Equal(100u, s.GetMaxApprox(LocalPlayerState.VitalKind.Health));
+        Assert.Equal(101u, s.GetMaxApprox(LocalPlayerState.VitalKind.Health));
+    }
+
+    [Theory]
+    [InlineData(1u, LocalPlayerState.VitalKind.Health)]
+    [InlineData(3u, LocalPlayerState.VitalKind.Stamina)]
+    [InlineData(5u, LocalPlayerState.VitalKind.Mana)]
+    public void VitalMaximumAndVitaePenaltyRoundBeforePresentation(uint key, LocalPlayerState.VitalKind kind)
+    {
+        var book = new Spellbook(SpellTable.Create([TestSpell(1u), TestSpell(2u)]));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
+            1u, 1u, -1d, 0u, StatModType: 0u, StatModKey: 0u, StatModValue: 0.97f, Bucket: 4u));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
+            2u, 2u, 60d, 0u, StatModType: (uint)EnchantmentMath.EnchantmentTypeFlag.SecondAtt,
+            StatModKey: key, StatModValue: 23f, Bucket: 2u));
+        var state = new LocalPlayerState(book);
+        state.OnVitalUpdate(key, 180u, 0u, 0u, 198u);
+
+        Assert.Equal(198u, state.GetMaxApprox(kind));
+        Assert.Equal(-5, state.GetVitalVitaeModifier(kind));
+        Assert.Equal(180u, state.GetBaseMaxApprox(kind));
+    }
+
+    [Theory]
+    [InlineData(1u, 0.1f, 1u, -1)]
+    [InlineData(5u, 0.6f, 5u, -2)]
+    [InlineData(100u, 0.975f, 98u, -2)]
+    [InlineData(100u, 0.974f, 97u, -3)]
+    [InlineData(100u, 1f, 100u, 0)]
+    public void VitalRoundingPreservesMinimumAndHalfUpBoundary(uint baseValue, float vitae, uint maximum, int delta)
+    {
+        var book = new Spellbook(SpellTable.Create([TestSpell(1u)]));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
+            1u, 1u, -1d, 0u, StatModType: 0u, StatModKey: 0u, StatModValue: vitae, Bucket: 4u));
+        var state = new LocalPlayerState(book);
+        state.OnVitalUpdate(1u, baseValue, 0u, 0u, 0u);
+        Assert.Equal(maximum, state.GetMaxApprox(LocalPlayerState.VitalKind.Health));
+        Assert.Equal(delta, state.GetVitalVitaeModifier(LocalPlayerState.VitalKind.Health));
     }
 
     [Fact]

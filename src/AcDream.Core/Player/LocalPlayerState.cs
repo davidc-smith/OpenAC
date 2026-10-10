@@ -231,7 +231,9 @@ public sealed class LocalPlayerState
         float buffed = (unbuffed * mod.Multiplier) + mod.Additive;
         uint minFloor = unbuffed >= 5 ? 5u : 1u;
         if (buffed < minFloor) buffed = minFloor;
-        return (uint)buffed;
+        // Add half before conversion so fractional maxima agree with the
+        // rounded vital values, including those reduced by vitae.
+        return (uint)((double)buffed + 0.5d);
     }
 
     public uint? GetBaseMaxApprox(VitalKind kind)
@@ -262,10 +264,10 @@ public sealed class LocalPlayerState
             return 0;
         }
 
-        return EnchantmentMath.SkillVitaeModifier(
-            EnchantmentMath.GetVitaeMultiplier(
-                _spellbook.ActiveEnchantments),
-            baseValue);
+        float vitae = EnchantmentMath.GetVitaeMultiplier(_spellbook.ActiveEnchantments);
+        if (vitae >= 1f) return 0;
+        float penalized = baseValue * vitae;
+        return (int)((double)penalized + 0.5d) - (int)baseValue;
     }
 
     private static uint StatKeyForKind(VitalKind kind) => kind switch

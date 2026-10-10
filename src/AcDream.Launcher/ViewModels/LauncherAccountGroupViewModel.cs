@@ -134,7 +134,7 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
         Func<LauncherAccountServerRowViewModel, string?> disabledReason, Action changed,
         Func<LauncherAccountServerRowViewModel, Task> launch,
         Func<string, Task> stop, LauncherRowActions actions,
-        Func<bool> canInteract)
+        Func<bool> canInteract, Func<string, bool>? canStop = null)
     {
         AccountName = accountName;
         ServerName = serverName;
@@ -143,7 +143,7 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
         _canInteract = canInteract;
         PlayCommand = new AsyncRelayCommand(() => launch(this), () => CanPlay);
         StopCommand = new AsyncRelayCommand(() => _activeSessionId is { } id ? stop(id) : Task.CompletedTask,
-            () => IsActive && canInteract());
+            () => IsActive && _activeSessionId is { } id && (canStop?.Invoke(id) ?? canInteract()));
         LogonCommandsCommand = new RelayCommand(() => actions.LogonCommands(this), canInteract);
         AccountPluginsCommand = new RelayCommand(() => actions.AccountPlugins(this), canInteract);
         CharacterPluginsCommand = new RelayCommand(

@@ -149,6 +149,10 @@ can set titles in the same SemiBold sans with
 `host.Ui.Fonts.Bundled(size, PluginFontWeight.SemiBold)`. See "Plugin theme"
 in the plugin API guide.
 
+Canvases are not restyled: a plugin reads the theme and its palette from
+`host.Ui.Theme` and repaints on `host.Ui.ThemeChanged`. See "Plugin theme"
+in the plugin API guide.
+
 Set `searchable="true"` on a menu to add an editable search band. Each typed
 word must match its label, ignoring case. Filtering does not select an item;
 click a result or press Enter to select it, use arrows to navigate, or Escape

@@ -1,4 +1,4 @@
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using DatReaderWriter.DBObjs;
 
 namespace AcDream.Core.Rendering.Wb {

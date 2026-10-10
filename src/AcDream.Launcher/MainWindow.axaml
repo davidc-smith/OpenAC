@@ -469,7 +469,7 @@
               </StackPanel></Flyout></Button.Flyout>
             </Button>
             <Button Content="Log" Command="{Binding OpenSessionLogCommand}" />
-            <Button Content="Cancel" IsVisible="{Binding IsBusy}" Command="{Binding CancelOperationCommand}" />
+            <Button Content="Cancel" IsVisible="{Binding HasCancelableOperation}" Command="{Binding CancelOperationCommand}" />
           </StackPanel>
         </Grid>
         <TextBlock Grid.Row="1" Text="{Binding LastError}" Foreground="#FFB0A0" IsVisible="{Binding HasError}" TextWrapping="Wrap" MaxHeight="56" />

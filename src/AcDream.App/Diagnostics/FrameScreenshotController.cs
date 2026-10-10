@@ -1,5 +1,4 @@
-﻿using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using AcDream.Core.Textures;
 
 using System.Text.Json;
 using AcDream.App.Rendering.Packs;
@@ -136,7 +135,7 @@ internal sealed class FrameScreenshotController
             Directory.CreateDirectory(_directory);
             string path = Path.Combine(_directory, name + ".png");
             string temporaryPath = path + ".tmp";
-            using (Image<Rgba32> image = Image.LoadPixelData<Rgba32>(flipped, width, height))
+            using (RgbaImage image = RgbaImage.FromPixels(flipped, width, height))
                 image.SaveAsPng(temporaryPath);
 
             string? metadataPath = null;

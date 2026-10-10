@@ -2,9 +2,6 @@ using AcDream.Core.Textures;
 using DatReaderWriter;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Options;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 
 namespace AcDream.Cli;
 
@@ -37,17 +34,17 @@ public static class VitalsMockup
 
         int winW = BarW + 2 * Border;          // 160
         int winH = 3 * BarH + 2 * Border;       // 58
-        using var canvas = new Image<Rgba32>(winW, winH, new Rgba32(20, 20, 24, 255));
+        using var canvas = new RgbaImage(winW, winH, new RgbaPixel(20, 20, 24, 255));
 
         DrawWindow(canvas, dats, 0, winW, winH, tileMid: true);
 
-        canvas.Mutate(c => c.Resize(canvas.Width * Zoom, canvas.Height * Zoom, KnownResamplers.NearestNeighbor));
+        canvas.Resize(canvas.Width * Zoom, canvas.Height * Zoom, nearest: true);
         canvas.SaveAsPng(outPath);
         Console.WriteLine($"wrote {outPath} ({canvas.Width}x{canvas.Height}) — faithful default vitals window 0x2100006C");
         return 0;
     }
 
-    private static void DrawWindow(Image<Rgba32> canvas, DatCollection dats, int offY, int winW, int winH, bool tileMid)
+    private static void DrawWindow(RgbaImage canvas, DatCollection dats, int offY, int winW, int winH, bool tileMid)
     {
         using (var cf = Load(dats, CenterFill))
             Blit(canvas, cf, Border, offY + Border, winW - 2 * Border, winH - 2 * Border);
@@ -93,7 +90,7 @@ public static class VitalsMockup
     }
 
     private static void DrawHBar(
-        Image<Rgba32> canvas, Image<Rgba32> left, Image<Rgba32> mid, Image<Rgba32> right,
+        RgbaImage canvas, RgbaImage left, RgbaImage mid, RgbaImage right,
         int x, int y, int w, int h, int clipW, bool tileMid)
     {
         if (w <= 0 || clipW <= 0) return;
@@ -108,7 +105,7 @@ public static class VitalsMockup
     }
 
     private static void TileMiddle(
-        Image<Rgba32> canvas, Image<Rgba32> mid, int x, int y, int midLocalX, int midW, int h, int clipW)
+        RgbaImage canvas, RgbaImage mid, int x, int y, int midLocalX, int midW, int h, int clipW)
     {
         int tileW = Math.Max(1, mid.Width);
         for (int mx = 0; mx < midW; mx += tileW)
@@ -118,28 +115,28 @@ public static class VitalsMockup
             int visible = Math.Min(segW, clipW - localX);
             if (visible <= 0) break;
             int cropW = Math.Min(visible, mid.Width);
-            using var seg = mid.Clone(c => c.Crop(new Rectangle(0, 0, cropW, mid.Height)).Resize(visible, h));
-            canvas.Mutate(c => c.DrawImage(seg, new Point(x + localX, y), 1f));
+            using var seg = mid.Clone().Crop(0, 0, cropW, mid.Height).Resize(visible, h);
+            canvas.DrawImage(seg, x + localX, y);
         }
     }
 
     private static void DrawClippedPiece(
-        Image<Rgba32> canvas, Image<Rgba32> src, int x, int y, int pieceLocalX, int pieceW, int h, int clipW)
+        RgbaImage canvas, RgbaImage src, int x, int y, int pieceLocalX, int pieceW, int h, int clipW)
     {
         if (pieceW <= 0) return;
         int visibleW = Math.Min(pieceW, clipW - pieceLocalX);
         if (visibleW <= 0) return;
         int srcCropW = Math.Max(1, (int)MathF.Round(src.Width * (visibleW / (float)pieceW)));
         srcCropW = Math.Min(srcCropW, src.Width);
-        using var piece = src.Clone(c => c.Crop(new Rectangle(0, 0, srcCropW, src.Height)).Resize(visibleW, h));
-        canvas.Mutate(c => c.DrawImage(piece, new Point(x + pieceLocalX, y), 1f));
+        using var piece = src.Clone().Crop(0, 0, srcCropW, src.Height).Resize(visibleW, h);
+        canvas.DrawImage(piece, x + pieceLocalX, y);
     }
 
-    private static void Blit(Image<Rgba32> canvas, Image<Rgba32> src, int x, int y, int dw, int dh)
+    private static void Blit(RgbaImage canvas, RgbaImage src, int x, int y, int dw, int dh)
     {
         if (dw <= 0 || dh <= 0) return;
-        using var s = src.Clone(c => c.Resize(dw, dh));
-        canvas.Mutate(c => c.DrawImage(s, new Point(x, y), 1f));
+        using var s = src.Clone().Resize(dw, dh);
+        canvas.DrawImage(s, x, y);
     }
 
     public static int ExportSheet(string datDir, string idsCsv, string outPath)
@@ -155,14 +152,14 @@ public static class VitalsMockup
         const int pad = 6, zoom = 10;
         int totalW = pad + imgs.Sum(i => i.Width + pad);
         int maxH = imgs.Max(i => i.Height);
-        using var canvas = new Image<Rgba32>(totalW, maxH + 2 * pad, new Rgba32(64, 64, 72, 255));
+        using var canvas = new RgbaImage(totalW, maxH + 2 * pad, new RgbaPixel(64, 64, 72, 255));
         int x = pad;
         foreach (var im in imgs)
         {
-            canvas.Mutate(c => c.DrawImage(im, new Point(x, pad), 1f));
+            canvas.DrawImage(im, x, pad);
             x += im.Width + pad;
         }
-        canvas.Mutate(c => c.Resize(canvas.Width * zoom, canvas.Height * zoom, KnownResamplers.NearestNeighbor));
+        canvas.Resize(canvas.Width * zoom, canvas.Height * zoom, nearest: true);
         canvas.SaveAsPng(outPath);
         Console.WriteLine("order (L→R): " + string.Join("  ", ids.Zip(imgs, (id, im) => $"0x{id:X8}={im.Width}x{im.Height}")));
         foreach (var im in imgs) im.Dispose();
@@ -180,25 +177,25 @@ public static class VitalsMockup
         int elemH = Math.Min(back.Height, fill.Height);
         float[] fracs = { 1.0f, 0.9f, 0.7f, 0.5f, 0.0f };
         int rowH = elemH + gap;
-        using var canvas = new Image<Rgba32>(elemW, rowH * fracs.Length, new Rgba32(20, 20, 24, 255));
+        using var canvas = new RgbaImage(elemW, rowH * fracs.Length, new RgbaPixel(20, 20, 24, 255));
 
         for (int i = 0; i < fracs.Length; i++)
         {
             int y = i * rowH;
             float p = fracs[i];
             int backCrop = Math.Min(elemW, back.Width);
-            using (var b = back.Clone(c => c.Crop(new Rectangle(0, 0, backCrop, elemH))))
-                canvas.Mutate(c => c.DrawImage(b, new Point(0, y), 1f));
+            using (var b = back.Clone().Crop(0, 0, backCrop, elemH))
+                canvas.DrawImage(b, 0, y);
             int fillW = (int)MathF.Round(elemW * p);
             if (fillW > 0)
             {
                 int fillCrop = Math.Min(fillW, fill.Width);
-                using var f = fill.Clone(c => c.Crop(new Rectangle(0, 0, fillCrop, elemH)));
-                canvas.Mutate(c => c.DrawImage(f, new Point(0, y), 1f));
+                using var f = fill.Clone().Crop(0, 0, fillCrop, elemH);
+                canvas.DrawImage(f, 0, y);
             }
         }
 
-        canvas.Mutate(c => c.Resize(canvas.Width * zoom, canvas.Height * zoom, KnownResamplers.NearestNeighbor));
+        canvas.Resize(canvas.Width * zoom, canvas.Height * zoom, nearest: true);
         canvas.SaveAsPng(outPath);
         Console.WriteLine($"wrote {outPath} — selbar composite, rows = health 1.0 / 0.9 / 0.7 / 0.5 / 0.0");
         return 0;
@@ -208,7 +205,7 @@ public static class VitalsMockup
     public static int Probe(string inPath, int x0, int y0, int x1, int y1)
     {
         if (!File.Exists(inPath)) { Console.Error.WriteLine($"not found: {inPath}"); return 2; }
-        using var img = Image.Load<Rgba32>(inPath);
+        using var img = RgbaImage.Load(inPath);
         x0 = Math.Clamp(x0, 0, img.Width - 1); x1 = Math.Clamp(x1, 0, img.Width - 1);
         y0 = Math.Clamp(y0, 0, img.Height - 1); y1 = Math.Clamp(y1, 0, img.Height - 1);
         Console.WriteLine($"{inPath} {img.Width}x{img.Height}  cols x={x0}..{x1}");
@@ -224,13 +221,13 @@ public static class VitalsMockup
     public static int Crop(string inPath, int x, int y, int w, int h, int zoom, string outPath)
     {
         if (!File.Exists(inPath)) { Console.Error.WriteLine($"not found: {inPath}"); return 2; }
-        using var img = Image.Load<Rgba32>(inPath);
+        using var img = RgbaImage.Load(inPath);
         x = Math.Clamp(x, 0, img.Width - 1);
         y = Math.Clamp(y, 0, img.Height - 1);
         w = Math.Clamp(w, 1, img.Width - x);
         h = Math.Clamp(h, 1, img.Height - y);
         if (zoom < 1) zoom = 1;
-        img.Mutate(c => c.Crop(new Rectangle(x, y, w, h)).Resize(w * zoom, h * zoom, KnownResamplers.NearestNeighbor));
+        img.Crop(x, y, w, h).Resize(w * zoom, h * zoom, nearest: true);
         img.SaveAsPng(outPath);
         Console.WriteLine($"wrote {outPath} ({w * zoom}x{h * zoom}) from {inPath} region ({x},{y},{w},{h})");
         return 0;
@@ -273,12 +270,12 @@ public static class VitalsMockup
         return 0;
     }
 
-    private static Image<Rgba32> Load(DatCollection dats, uint id)
+    private static RgbaImage Load(DatCollection dats, uint id)
     {
         var rs = dats.Get<RenderSurface>(id);
-        if (rs is null) { Console.Error.WriteLine($"  missing RenderSurface 0x{id:X8}"); return new Image<Rgba32>(1, 1); }
+        if (rs is null) { Console.Error.WriteLine($"  missing RenderSurface 0x{id:X8}"); return new RgbaImage(1, 1); }
         var dt = SurfaceDecoder.DecodeRenderSurface(rs);
-        return Image.LoadPixelData<Rgba32>(dt.Rgba8, dt.Width, dt.Height);
+        return RgbaImage.FromPixels(dt.Rgba8, dt.Width, dt.Height);
     }
 
     private static uint ParseHex(string s)

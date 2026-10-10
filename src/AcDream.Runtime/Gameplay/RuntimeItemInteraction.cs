@@ -1462,14 +1462,49 @@ public sealed class RuntimeItemInteraction : IDisposable
         if (!compatible)
             return false;
 
+        if (RequiresManaStoneConfirmation(source))
+        {
+            if (IsRetained(target))
+            {
+                ReportClientLocal("You cannot drain the mana of this item because it is retained.");
+                return false;
+            }
+            return ExecuteUseActions([new ItemPolicyAction(
+                ItemPolicyActionKind.ConfirmManaStoneDrain,
+                sourceGuid,
+                targetGuid,
+                Message: $"Are you sure you want to attempt to destroy your {target!.Name} and drain its mana into this stone?")]);
+        }
+
+        return DispatchAcquiredTarget(sourceGuid, targetGuid);
+    }
+
+    private static bool RequiresManaStoneConfirmation(ClientObject source)
+        => (source.Type & ItemType.ManaStone) != 0 && (source.Effects & 1u) == 0u;
+
+    private static bool IsRetained(ClientObject? target)
+        => ((target?.PublicWeenieBitfield ?? 0u) & (uint)PublicWeenieFlags.Retained) != 0u;
+
+    public bool ExecuteConfirmedManaStoneDrain(uint sourceGuid, uint targetGuid)
+    {
+        if (_disposed || _objects.Get(sourceGuid) is not { } source
+            || !RequiresManaStoneConfirmation(source)
+            || _objects.Get(targetGuid) is not { } target
+            || IsRetained(target) || !TargetCompatible(source, targetGuid))
+            return false;
+
+        return DispatchAcquiredTarget(sourceGuid, targetGuid);
+    }
+
+    private bool DispatchAcquiredTarget(uint sourceGuid, uint targetGuid)
+    {
         if (!EnsureInventoryRequestReady())
             return false;
-        _runtimeTransactions.TryDispatchTargetedUse(
+        return _runtimeTransactions.TryDispatchTargetedUse(
             sourceGuid,
             targetGuid,
             _sendUseWithTarget,
             incrementBusy: true);
-        return true;
     }
 
     public bool AcquireSelfTarget()
@@ -1815,6 +1850,8 @@ public sealed class RuntimeItemInteraction : IDisposable
                 "Confirm using this Non-Player Killer altar before continuing.",
             ItemPolicyActionKind.ConfirmVolatileRare =>
                 "Confirm using this volatile rare before continuing.",
+            ItemPolicyActionKind.ConfirmManaStoneDrain =>
+                "Confirm destroying the item to charge the mana stone before continuing.",
             ItemPolicyActionKind.OpenSecureTrade or ItemPolicyActionKind.StartSecureTrade =>
                 "Secure trade is not open.",
             ItemPolicyActionKind.OpenSalvage => "Open the salvage panel to use that item.",

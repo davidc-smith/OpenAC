@@ -2748,3 +2748,13 @@ describes what can be typed at it.
 ## Demand-driven peers
 
 See [local peer communication](peer-communication.md) for capability subscriptions, lifetime, readiness and command delivery semantics.
+
+### Inventory completeness
+
+`host.Automation.Items.IsOwnedInventoryComplete` is false until the server has
+listed the player inventory and every nested pack. It is also false during
+optimistic moves, pending inventory transactions, and outside an in-world session.
+A plugin retaining item identities must not treat an absent item as sold or
+dropped while this is false. This additive property defaults to false on other
+hosts and uses the same runtime implementation in graphical and headless clients.
+A complete listing establishes ownership, not appraisal readiness.

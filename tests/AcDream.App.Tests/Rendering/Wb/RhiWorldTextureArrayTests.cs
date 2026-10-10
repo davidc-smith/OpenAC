@@ -4,7 +4,7 @@ using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
 using AcDream.App.Rendering.Wb;
 using AcDream.App.Tests.Rendering.Gpu;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 
 namespace AcDream.App.Tests.Rendering.Wb;
 

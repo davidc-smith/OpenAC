@@ -30,6 +30,72 @@ public sealed class ClientVersionStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatesReuseOneClientPathAndRetainOnlyOneRollbackCopy()
+    {
+        var store = new ClientVersionStore(_paths);
+        string? directory = (await PromoteAsync(store, "1.0.0", "first")).Directory;
+        Assert.Equal(Path.Combine(store.AppDirectory, "client"), directory);
+        foreach (string version in new[] { "2.0.0", "3.0.0", "4.0.0" })
+            Assert.Equal(directory, (await PromoteAsync(store, version, version)).Directory);
+        Assert.Equal(new[] { "client", "client-previous" },
+            Directory.GetDirectories(store.AppDirectory).Select(Path.GetFileName).Order().ToArray());
+        Assert.Equal(directory, (await store.RollbackAsync(_rid)).Directory);
+        Assert.Equal("3.0.0", store.CachedResolution.Version!.Value);
+        Assert.Equal(directory, (await store.RollbackAsync(_rid)).Directory);
+        Assert.Equal("4.0.0", store.CachedResolution.Version!.Value);
+    }
+
+    [Fact]
+    public async Task LegacyVersionFolderMigratesDuringUpdateWithoutTouchingUserData()
+    {
+        var store = new ClientVersionStore(_paths);
+        ClientVersionResolution first = await PromoteAsync(store, "1.0.0", "first");
+        string legacy = Path.Combine(store.AppDirectory, "1.0.0");
+        Directory.Move(first.Directory!, legacy);
+        string userFile = Path.Combine(_root, "profile.usd");
+        await File.WriteAllTextAsync(userFile, "personal items");
+        Assert.Equal(legacy, (await store.LoadAndRecoverAsync(_rid)).Directory);
+        Assert.Equal(store.ClientDirectory, (await PromoteAsync(store, "2.0.0", "second")).Directory);
+        Assert.False(Directory.Exists(legacy));
+        Assert.Equal("personal items", await File.ReadAllTextAsync(userFile));
+        Assert.Equal("1.0.0", (await store.RollbackAsync(_rid)).Version!.Value);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public async Task StartupCompletesInterruptedReplacementAtEveryDirectoryBoundary(int stage)
+    {
+        var store = new ClientVersionStore(_paths);
+        await PromoteAsync(store, "1.0.0", "first");
+        await PromoteAsync(store, "2.0.0", "second");
+        string journal = Path.Combine(store.AppDirectory, ".client-replacement.json");
+        const string pointer = "{\"schemaVersion\":1,\"currentVersion\":\"1.0.0\",\"previousVersion\":\"2.0.0\"}";
+        await File.WriteAllTextAsync(journal,
+            "{\"incomingName\":\"client-previous\",\"oldName\":\"client\",\"pointer\":" + pointer + ",\"keepPrevious\":false}");
+        if (stage >= 1)
+            Directory.Move(store.ClientDirectory, Path.Combine(store.AppDirectory, ".client-replaced"));
+        if (stage >= 2)
+            Directory.Move(store.BackupDirectory, store.ClientDirectory);
+        if (stage >= 3)
+            await File.WriteAllTextAsync(store.CurrentPointerPath, pointer);
+
+        if (stage >= 4)
+            Directory.Move(Path.Combine(store.AppDirectory, ".client-replaced"), store.BackupDirectory);
+        Assert.Equal(ClientVersionState.Invalid, (await store.LoadCurrentReadOnlyAsync(_rid)).State);
+        Assert.False(store.CachedResolution.IsVerified);
+        ClientVersionResolution result = await new ClientVersionStore(_paths).LoadAndRecoverAsync(_rid);
+        Assert.True(result.IsVerified, result.Status);
+        Assert.Equal("1.0.0", result.Version!.Value);
+        Assert.Equal(store.ClientDirectory, result.Directory);
+        Assert.Equal("2.0.0", (await store.RollbackAsync(_rid)).Version!.Value);
+        Assert.False(File.Exists(journal));
+    }
+
+    [Fact]
     public async Task AtomicPromotionPublishesStrictPointerAndRetainsPreviousForRollback()
     {
         var store = new ClientVersionStore(_paths);

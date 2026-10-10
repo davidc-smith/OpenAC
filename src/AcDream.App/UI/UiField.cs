@@ -805,15 +805,16 @@ public sealed class UiField : UiElement
                 OnFocusGained?.Invoke();
                 return true;
             case UiEventType.FocusLost:
+                // Finish the old edit before the callback can start a new one.
+                _focused = false; ResetRecall();
+                _selAnchor = null; _selecting = false; _repeatKey = null;
+                _preserveFocusSelectionOnMouseDown = false;
                 // A callback that hides or removes this field's panel must not
                 // report the same focus loss again while it is still running.
                 if (_dispatchingFocusLost) return true;
                 _dispatchingFocusLost = true;
                 try { OnFocusLost?.Invoke(_text); }
                 finally { _dispatchingFocusLost = false; }
-                _focused = false; ResetRecall();
-                _selAnchor = null; _selecting = false; _repeatKey = null;
-                _preserveFocusSelectionOnMouseDown = false;
                 return true;
 
             case UiEventType.Char:

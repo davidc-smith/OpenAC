@@ -301,7 +301,8 @@ public sealed class LauncherUpdater : ILauncherUpdater
             finally
             {
                 VerifiedArtifactDownloader.TryDelete(archive);
-                SafeZipExtractor.TryDeleteDirectory(staging);
+                if (!_versions.HasPendingReplacement)
+                    SafeZipExtractor.TryDeleteDirectory(staging);
             }
         }
         finally

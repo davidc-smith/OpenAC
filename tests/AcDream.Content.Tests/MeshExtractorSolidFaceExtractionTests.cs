@@ -5,7 +5,7 @@ using System.Linq;
 using System.Numerics;
 using AcDream.Content;
 using AcDream.Core.Meshing;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using DatReaderWriter;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Enums;
@@ -154,6 +154,31 @@ public sealed class MeshExtractorSolidFaceExtractionTests
         Assert.Same(blocks, batch.TextureData);
         Assert.Null(batch.UploadPixelFormat);
         Assert.Null(batch.UploadPixelType);
+    }
+
+    [Theory]
+    [InlineData(PixelFormat.PFID_DXT1, 191)]
+    [InlineData(PixelFormat.PFID_DXT3, 191)]
+    [InlineData(PixelFormat.PFID_DXT5, 96)]
+    public void PrepareMeshData_DxtDecodePreservesRgbaChannels(PixelFormat format, byte alpha)
+    {
+        byte[] colorBlock = [0, 248, 0, 0, 0, 0, 0, 0];
+        byte[] block = format switch
+        {
+            PixelFormat.PFID_DXT3 => [255,255,255,255,255,255,255,255, ..colorBlock],
+            PixelFormat.PFID_DXT5 => [128,128,0,0,0,0,0,0, ..colorBlock],
+            _ => colorBlock,
+        };
+        var dats = new FakeMeshExtractorDats();
+        RegisterTexturedQuad(dats, SurfaceType.Base1Image | SurfaceType.Translucent,
+            format, block, translucency: 0.25f);
+        var extractor = new MeshExtractor(dats, NullLogger.Instance, sideStagedSink: null);
+        ObjectMeshData mesh = Assert.IsType<ObjectMeshData>(extractor.PrepareMeshData(GfxObjId, isSetup: false));
+        var group = Assert.Single(mesh.TextureBatches);
+        Assert.Equal(TextureFormat.RGBA8, group.Key.Format);
+        // The existing surface-opacity step multiplies decoded alpha by 0.75.
+        byte[] expected = Enumerable.Range(0, 16).SelectMany(_ => new byte[] {255,0,0,alpha}).ToArray();
+        Assert.Equal(expected, Assert.Single(group.Value).TextureData);
     }
 
     [Fact]

@@ -64,13 +64,13 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             dispatcher,
             OnInstallCompleted,
             () => CanInteract,
-            () => !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive));
+            () => _rowLaunches.Count == 0 && !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive));
         UpdatePrompt = new LauncherUpdateViewModel(
             updater ?? new UnavailableLauncherUpdater(),
             dispatcher,
             OnClientVersionChanged,
             () => CanInteract,
-            () => !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive),
+            () => _rowLaunches.Count == 0 && !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive),
             applyLauncherUpdateAsync,
             requestShutdown);
 
@@ -99,7 +99,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             () => CanLaunchHeadless);
         CancelOperationCommand = new RelayCommand(
             CancelOperation,
-            () => !IsModalOpen && IsBusy && _operationCancellation is not null);
+            () => !IsModalOpen && HasCancelableOperation);
         ClearFinishedSessionsCommand = new RelayCommand(
             _orchestrator.ClearFinishedSessions,
             () => Sessions.Any(session => !session.IsActive) && CanInteract);
@@ -173,7 +173,9 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         || Plugins.InstallDialog.IsOpen
         || Plugins.IsRemoveDialogOpen;
 
-    private bool CanInteract => !IsBusy && !IsModalOpen && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching;
+    public bool HasCancelableOperation => (_operationCancellation is not null && IsBusy) || _rowLaunches.Count > 0;
+
+    private bool CanInteract => !IsBusy && !IsModalOpen;
 
     public string OperationStatus
     {
@@ -243,6 +245,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         && !_isClientCompatibilityCheckBlocking
         && IsAccountSelected
         && TryGetSelectedAccount(out string server, out string account)
+        && !_startingRows.Contains((server, account))
         && _orchestrator.GetAccountLaunchCapability(
             server,
             account,
@@ -378,7 +381,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         _automaticRelaunch.LaunchFailed -= OnAutomaticRelaunchFailed;
         _automaticRelaunch.Dispose();
         _startupCancellation.Cancel();
-        _operationCancellation?.Cancel();
+        CancelOperation();
         _operationCancellation?.Dispose();
         _operationCancellation = null;
         _orchestrator.StateChanged -= OnOrchestratorStateChanged;
@@ -588,7 +591,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             Sessions.Add(new LauncherSessionRowViewModel(
                 session,
                 StopSessionAsync,
-                () => CanInteract));
+                () => CanStopSession(session.SessionId)));
         }
 
         LauncherTreeNodeViewModel? restored = previousSelection is null
@@ -910,6 +913,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
 
         return RunOperationAsync(
+            character.ServerName, character.AccountName,
             token => _orchestrator.LaunchAsync(
                 character.ServerName,
                 character.AccountName,
@@ -928,6 +932,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
 
         return RunOperationAsync(
+            serverName, accountName,
             token => _orchestrator.LaunchAsync(
                 serverName,
                 accountName,
@@ -939,18 +944,19 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
     }
 
     private async Task RunOperationAsync(
+        string server, string account,
         Func<CancellationToken, Task<LauncherSessionSnapshot>> operation,
         string activeStatus,
         string completedStatus)
     {
-        if (!CanInteract)
+        if (!CanInteract || !_startingRows.Add((server, account)))
         {
             return;
         }
 
         using var cancellation = new CancellationTokenSource();
-        _operationCancellation = cancellation;
-        IsBusy = true;
+        _rowLaunches.Add(cancellation);
+        NotifyCommandStates();
         LastError = null;
         OperationStatus = activeStatus;
         try
@@ -969,26 +975,25 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
         finally
         {
-            if (ReferenceEquals(_operationCancellation, cancellation))
-            {
-                _operationCancellation = null;
-            }
-
-            IsBusy = false;
+            _rowLaunches.Remove(cancellation);
+            _startingRows.Remove((server, account));
+            NotifyCommandStates();
             RefreshFromCore();
         }
     }
 
+    private bool CanStopSession(string sessionId) =>
+        !IsBusy && !IsModalOpen && !_stopGate.IsStopping(sessionId);
+
     private async Task StopSessionAsync(string sessionId)
     {
-        if (!CanInteract || !_stopGate.TryBegin(sessionId, _orchestrator.GetSnapshot()))
+        if (!CanStopSession(sessionId) || !_stopGate.TryBegin(sessionId, _orchestrator.GetSnapshot()))
         {
             return;
         }
 
         using var cancellation = new CancellationTokenSource();
-        _operationCancellation = cancellation;
-        IsBusy = true;
+        NotifyCommandStates();
         LastError = null;
         OperationStatus = "Logging out…";
         try
@@ -1011,23 +1016,22 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
         finally
         {
-            if (ReferenceEquals(_operationCancellation, cancellation))
-            {
-                _operationCancellation = null;
-            }
-
-            IsBusy = false;
             RefreshFromCore();
         }
     }
 
-    private void CancelOperation() => _operationCancellation?.Cancel();
+    private void CancelOperation()
+    {
+        _operationCancellation?.Cancel();
+        foreach (var launch in _rowLaunches.ToArray()) launch.Cancel();
+    }
 
     private bool CanLaunch(LaunchMode mode) =>
         CanInteract
         && !_isClientCompatibilityCheckBlocking
         && IsCharacterSelected
         && TryGetSelectedAccount(out string server, out string account)
+        && !_startingRows.Contains((server, account))
         && _orchestrator.GetAccountLaunchCapability(server, account, mode).IsAvailable;
 
     private LauncherCapability GetSelectedAccountLaunchCapability(LaunchMode mode) =>
@@ -1274,6 +1278,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         LaunchGuiCommand.NotifyCanExecuteChanged();
         LaunchAccountGuiSelectCommand.NotifyCanExecuteChanged();
         LaunchHeadlessCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(HasCancelableOperation));
         CancelOperationCommand.NotifyCanExecuteChanged();
         ClearFinishedSessionsCommand.NotifyCanExecuteChanged();
         VerifyContentCommand.NotifyCanExecuteChanged();

@@ -1,6 +1,5 @@
 using AcDream.App.Diagnostics;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using StbImageSharp;
 
 namespace AcDream.App.Tests.Diagnostics;
 
@@ -30,7 +29,8 @@ public sealed class FrameScreenshotControllerTests
             Assert.True(controller.CapturePending(2, 1));
 
             Assert.Equal((2, 1), asked);
-            using Image<Rgba32> image = Image.Load<Rgba32>(Path.Combine(directory, "retina.png"));
+            ImageResult image = ImageResult.FromMemory(
+                File.ReadAllBytes(Path.Combine(directory, "retina.png")), ColorComponents.RedGreenBlueAlpha);
             Assert.Equal((4, 2), (image.Width, image.Height));
         }
         finally

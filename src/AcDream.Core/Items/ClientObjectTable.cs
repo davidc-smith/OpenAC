@@ -71,6 +71,7 @@ public sealed class ClientObjectTable
 {
     private readonly ConcurrentDictionary<uint, ClientObject> _objects = new();
     private readonly ConcurrentDictionary<uint, Container> _containers = new();
+    private readonly HashSet<uint> _describedContainers = [];
     private readonly Dictionary<uint, List<uint>> _containerIndex = new();
     private readonly Dictionary<uint, List<uint>> _equipmentIndex = new();
     private readonly HashSet<ClientObject> _restrictionObservedObjects =
@@ -548,6 +549,7 @@ public sealed class ClientObjectTable
         bool notifyObjectRemoved)
     {
         if (!_objects.TryRemove(itemId, out var item)) return false;
+        _describedContainers.Remove(itemId);
         UnbindRestrictionAuthority(item);
         List<uint>? changedContainers = RemoveFromOtherContainerIndexes(
             itemId,
@@ -1204,6 +1206,32 @@ public sealed class ClientObjectTable
                 .ToArray()
             : Array.Empty<ClientObject>();
 
+    /// <summary>Whether server listings cover the owner and every nested pack.</summary>
+    public bool HasCompleteInventory(uint ownerId)
+    {
+        if (ownerId == 0 || _pendingMoves.Count != 0)
+            return false;
+        var pending = new Stack<uint>();
+        var visited = new HashSet<uint>();
+        pending.Push(ownerId);
+        while (pending.TryPop(out uint container))
+        {
+            if (!visited.Add(container))
+                return false;
+            if (!_describedContainers.Contains(container)
+                || !_containerIndex.TryGetValue(container, out List<uint>? contents))
+                return false;
+            foreach (uint id in contents)
+            {
+                if (!_objects.TryGetValue(id, out ClientObject? item))
+                    return false;
+                if (IsContainerListMember(item))
+                    pending.Push(id);
+            }
+        }
+        return true;
+    }
+
     public void ReplaceContents(uint containerId, IReadOnlyList<uint> guids)
     {
         ArgumentNullException.ThrowIfNull(guids);
@@ -1242,6 +1270,7 @@ public sealed class ClientObjectTable
         }
 
         _containerIndex[containerId] = ordered;
+        _describedContainers.Add(containerId);
         foreach (ClientObject item in added)
             ObjectAdded?.Invoke(item);
         if (shown is not null)
@@ -1256,6 +1285,7 @@ public sealed class ClientObjectTable
     {
         if (containerId == 0u || !_containerIndex.Remove(containerId, out List<uint>? contents))
             return false;
+        _describedContainers.Remove(containerId);
         ContentsViewEnded?.Invoke(new ClientObjectContentsViewEnd(containerId, contents, IsNested: false));
         ContainerContentsReplaced?.Invoke(containerId);
         return true;
@@ -1283,6 +1313,7 @@ public sealed class ClientObjectTable
                     pending.Push(childId);
             }
             _containerIndex.Remove(containerId);
+            _describedContainers.Remove(containerId);
             removed.Add((containerId, contents));
         }
 
@@ -1359,6 +1390,7 @@ public sealed class ClientObjectTable
         }
 
         _containerIndex[ownerId] = ordered;
+        _describedContainers.Add(ownerId);
         foreach ((ClientObject item, bool existed) in notifications)
         {
             if (!existed) ObjectAdded?.Invoke(item);
@@ -1396,6 +1428,7 @@ public sealed class ClientObjectTable
         _objects.Clear();
         _containers.Clear();
         _containerIndex.Clear();
+        _describedContainers.Clear();
         _equipmentIndex.Clear();
         _pendingMoves.Clear();   // B-Drag: drop in-flight optimistic snapshots (a recycled guid must not mis-rollback)
         _pendingUnresolvedPlacements.Clear();   // G4: drop stashed placements for a session that's ending anyway

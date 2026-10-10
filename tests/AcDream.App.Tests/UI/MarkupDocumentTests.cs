@@ -200,6 +200,35 @@ public class MarkupDocumentTests
         else Assert.DoesNotContain(panel, root.Children);
     }
 
+    [Theory]
+    [InlineData("click", "hide")]
+    [InlineData("click", "remove")]
+    [InlineData("tab", "hide")]
+    [InlineData("tab", "remove")]
+    public void FieldOnBlurClosingPanelDoesNotFocusOrCaptureTheNextField(string move, string close)
+    {
+        var binding = new BlurBinding();
+        var (root, panel, field) = BuildFocused(BlurPanel, binding);
+        var next = Assert.IsType<UiField>(panel.Children[1]);
+        field.OnFocusLost = text =>
+        {
+            binding.Blur(text);
+            if (close == "hide") panel.Visible = false;
+            else root.RemoveChild(panel);
+        };
+        Type(root, "abc");
+
+        if (move == "click") root.OnMouseDown(UiMouseButton.Left, 20, 40);
+        else PressKey(root, Silk.NET.Input.Key.Tab);
+
+        Assert.Equal(["abc"], binding.Blurred);
+        Assert.Null(root.KeyboardFocus);
+        Assert.Null(root.Captured);
+        Assert.False(next.IsFocused);
+        Type(root, "invisible");
+        Assert.Equal(string.Empty, next.Text);
+    }
+
     [Fact]
     public void FieldOnBlurThatDoesNotResolveThrows()
     {

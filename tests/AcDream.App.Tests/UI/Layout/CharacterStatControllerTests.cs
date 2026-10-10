@@ -1871,6 +1871,43 @@ public class CharacterStatControllerTests
         Assert.Equal("Stamina: 300/300", runs[0].Text);
     }
 
+    [Theory]
+    [InlineData(6, "Health")]
+    [InlineData(7, "Stamina")]
+    [InlineData(8, "Mana")]
+    public void VitalFooter_ShowsVitaeBeforeBuffAndUpdatesAfterRecovery(int row, string name)
+    {
+        Vector4 vitaeColor = new(0.2f, 0.7f, 0.8f, 1f);
+        var title = new UiText
+        {
+            ElementId = CharacterStatController.FooterTitleId,
+            FontColorPalette = [Vector4.One, Vector4.UnitY, Vector4.UnitX, vitaeColor],
+        };
+        var footer = new UiPanel();
+        footer.AddChild(title);
+        var list = new UiPanel();
+        var layout = Fake((CharacterStatController.FooterStateBId, footer),
+            (CharacterStatController.ListBoxId, list));
+        var sheet = new CharacterSheet
+        {
+            HealthCurrent = 198, HealthMax = 198,
+            StaminaCurrent = 198, StaminaMax = 198,
+            ManaCurrent = 198, ManaMax = 198,
+            VitalBaseMaxValues = [180, 180, 180],
+            VitalVitaeModifiers = [-5, -5, -5],
+        };
+        CharacterStatController.Bind(layout, () => sheet);
+        Descendants(list).OfType<UiClickablePanel>().ToList()[row].OnClick!();
+
+        var runs = title.RunsProvider!();
+        Assert.Equal($"{name}: 198/198 (-5) (+23)", string.Concat(runs.Select(r => r.Text)));
+        Assert.Equal(vitaeColor, runs[1].Color);
+        Assert.Equal(Vector4.UnitY, runs[2].Color);
+
+        sheet.VitalVitaeModifiers[row - 6] = 0;
+        Assert.Equal($"{name}: 198/198 (+18)", string.Concat(title.RunsProvider!().Select(r => r.Text)));
+    }
+
     [Fact]
     public void SkillClick_BuffedSkill_FooterStateBTitle_HasOneLineRunsWithBuffColor()
     {

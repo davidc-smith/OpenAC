@@ -1,10 +1,9 @@
+using AcDream.Core.Textures;
 using System.Reflection;
 using AcDream.App.Diagnostics;
 using AcDream.App.Rendering;
 using AcDream.Core.Rendering;
 using AcDream.UI.Abstractions.Panels.Settings;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace AcDream.App.Tests.Rendering;
 
@@ -126,7 +125,7 @@ public sealed class RenderFrameOrchestratorTests
                 buildingDegrades: null,
                 screenshots: new PrivateFrameScreenshot(controller));
 
-            Rgba32[] startup =
+            RgbaPixel[] startup =
             [
                 new(1, 2, 3, 4), new(5, 6, 7, 8),
                 new(9, 10, 11, 12), new(13, 14, 15, 16),
@@ -142,7 +141,7 @@ public sealed class RenderFrameOrchestratorTests
             AssertSubmittedCaptureOrder(calls);
 
             calls.Clear();
-            Rgba32[] resized =
+            RgbaPixel[] resized =
             [
                 new(21, 22, 23, 24), new(25, 26, 27, 28), new(29, 30, 31, 32),
                 new(33, 34, 35, 36), new(37, 38, 39, 40), new(41, 42, 43, 44),
@@ -192,7 +191,7 @@ public sealed class RenderFrameOrchestratorTests
                 phases,
                 buildingDegrades: null,
                 screenshots: new PrivateFrameScreenshot(controller));
-            Rgba32[] pixels = [new(51, 52, 53, 54)];
+            RgbaPixel[] pixels = [new(51, 52, 53, 54)];
             lifetime.NextFrame(1, 1, pixels);
             Assert.True(controller.TryRequest("queued", out string error), error);
 
@@ -292,7 +291,7 @@ public sealed class RenderFrameOrchestratorTests
                 phases,
                 buildingDegrades: null,
                 screenshots: new PrivateFrameScreenshot(controller));
-            Rgba32[] pixels = [new(61, 62, 63, 64)];
+            RgbaPixel[] pixels = [new(61, 62, 63, 64)];
             lifetime.NextFrame(1, 1, pixels);
             Assert.True(controller.TryRequest("after-close", out string error), error);
 
@@ -689,12 +688,12 @@ public sealed class RenderFrameOrchestratorTests
         string path,
         int width,
         int height,
-        Rgba32[] expected)
+        RgbaPixel[] expected)
     {
-        using Image<Rgba32> image = Image.Load<Rgba32>(path);
+        using RgbaImage image = RgbaImage.Load(path);
         Assert.Equal(width, image.Width);
         Assert.Equal(height, image.Height);
-        var actual = new Rgba32[checked(width * height)];
+        var actual = new RgbaPixel[checked(width * height)];
         image.CopyPixelDataTo(actual);
         Assert.Equal(expected, actual);
     }
@@ -708,7 +707,7 @@ public sealed class RenderFrameOrchestratorTests
         public byte[] SubmittedPixels { get; private set; } = [];
         public (int Width, int Height) SubmittedSize { get; private set; }
 
-        public void NextFrame(int width, int height, Rgba32[] pixels)
+        public void NextFrame(int width, int height, RgbaPixel[] pixels)
         {
             Assert.Equal(checked(width * height), pixels.Length);
             if (SubmittedSize != (width, height) || SubmittedPixels.Length == 0)

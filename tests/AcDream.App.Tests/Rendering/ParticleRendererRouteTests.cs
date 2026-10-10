@@ -10,7 +10,7 @@ using AcDream.App.Tests.Rendering.Gpu;
 using AcDream.Content;
 using AcDream.Core.Meshing;
 using AcDream.Core.Vfx;
-using Chorizite.Core.Render.Enums;
+using AcDream.Core.Rendering.Wb;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AcDream.App.Tests.Rendering;
