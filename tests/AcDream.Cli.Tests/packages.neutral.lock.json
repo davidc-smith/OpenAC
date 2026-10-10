@@ -111,14 +111,14 @@
       "acdream.cli": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Core": "[0.1.24, )",
+          "AcDream.Core": "[0.1.25, )",
           "Chorizite.DatReaderWriter": "[2.1.7, )"
         }
       },
       "acdream.core": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Plugin.Abstractions": "[0.1.24, )",
+          "AcDream.Plugin.Abstractions": "[0.1.25, )",
           "BCnEncoder.Net": "[2.2.1, )",
           "Chorizite.DatReaderWriter": "[2.1.7, )",
           "Serilog": "[4.0.2, )",
