@@ -103,6 +103,7 @@ public enum ItemPolicyActionKind
     SplitToWorld,
     DropToWorld,
     Reject,
+    ConfirmManaStoneDrain,
 }
 
 public readonly record struct ItemPolicyAction(

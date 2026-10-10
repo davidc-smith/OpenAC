@@ -39,6 +39,7 @@ public sealed class RetailItemConfirmationController : IDisposable
             ItemPolicyActionKind.ConfirmPlayerKillerSwitch => PlayerKillerMessage,
             ItemPolicyActionKind.ConfirmNonPlayerKillerSwitch => NonPlayerKillerMessage,
             ItemPolicyActionKind.ConfirmVolatileRare => VolatileRareMessage,
+            ItemPolicyActionKind.ConfirmManaStoneDrain => action.Message,
             _ => null,
         };
         if (message is null)
@@ -46,14 +47,22 @@ public sealed class RetailItemConfirmationController : IDisposable
 
         RetailDialogData data = RetailDialogData.Confirmation(message)
             .Set(RetailDialogProperty.UsageObjectId, action.ObjectId);
+        if (action.Kind == ItemPolicyActionKind.ConfirmManaStoneDrain)
+            data.Set(RetailDialogProperty.UsageTargetId, action.TargetId);
         _dialogs.MakeDialog(data, OnUsageDialogDone);
     }
 
     private void OnUsageDialogDone(RetailDialogData data)
     {
-        if (!data.GetBoolean(RetailDialogProperty.ConfirmationResult))
+        if (_disposed || !data.GetBoolean(RetailDialogProperty.ConfirmationResult))
             return;
         uint objectId = data.GetUInt32(RetailDialogProperty.UsageObjectId);
+        if (data.Contains(RetailDialogProperty.UsageTargetId))
+        {
+            _items.ExecuteConfirmedManaStoneDrain(
+                objectId, data.GetUInt32(RetailDialogProperty.UsageTargetId));
+            return;
+        }
         _items.ExecuteConfirmedUse(objectId);
     }
 }

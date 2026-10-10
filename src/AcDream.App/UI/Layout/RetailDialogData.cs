@@ -19,6 +19,7 @@ public static class RetailDialogProperty
     public const uint QueueKey = 0xC3u;
     public const uint Message = 0xC5u;
     public const uint UsageObjectId = 0x1000003Du;
+    public const uint UsageTargetId = 0x1000003Eu;
     public const uint TrainSkillId = 0x10000040u;
     public const uint TrainSkillCredits = 0x10000041u;
 }
