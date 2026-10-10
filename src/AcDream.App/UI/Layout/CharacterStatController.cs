@@ -1295,8 +1295,17 @@ public static class CharacterStatController
         CharacterSheet sheet = data();
         string name = GetRowName(attrSel[0]);
         string value = GetRowValueString(sheet, attrSel[0]);
+        string vitae = FormatVitaeDelta(GetSelectedRowVitae(sheet, attrSel[0]));
         string delta = FormatBuffDelta(GetSelectedRowDelta(sheet, attrSel[0]));
-        return $"{name}: {value}{delta}";
+        return $"{name}: {value}{vitae}{delta}";
+    }
+
+    private static int GetSelectedRowVitae(CharacterSheet sheet, int index)
+    {
+        int vitalIndex = index - AttrRows.Length;
+        return (uint)vitalIndex < (uint)sheet.VitalVitaeModifiers.Length
+            ? sheet.VitalVitaeModifiers[vitalIndex]
+            : 0;
     }
 
     private static int GetSelectedRowDelta(CharacterSheet sheet, int index) =>
@@ -1354,6 +1363,9 @@ public static class CharacterStatController
                 $"{GetRowName(attrSel[0])}: {GetRowValueString(sheet, attrSel[0])}",
                 Color(0)),
         };
+        int vitaeDelta = GetSelectedRowVitae(sheet, attrSel[0]);
+        if (vitaeDelta < 0)
+            attributeRuns.Add(new(FormatVitaeDelta(vitaeDelta), Color(3)));
         int delta = GetSelectedRowDelta(sheet, attrSel[0]);
         if (delta != 0)
             attributeRuns.Add(new(
