@@ -64,13 +64,13 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             dispatcher,
             OnInstallCompleted,
             () => CanInteract,
-            () => !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive));
+            () => _rowLaunches.Count == 0 && !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive));
         UpdatePrompt = new LauncherUpdateViewModel(
             updater ?? new UnavailableLauncherUpdater(),
             dispatcher,
             OnClientVersionChanged,
             () => CanInteract,
-            () => !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive),
+            () => _rowLaunches.Count == 0 && !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive),
             applyLauncherUpdateAsync,
             requestShutdown);
 
@@ -99,7 +99,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             () => CanLaunchHeadless);
         CancelOperationCommand = new RelayCommand(
             CancelOperation,
-            () => !IsModalOpen && IsBusy && _operationCancellation is not null);
+            () => !IsModalOpen && ((_operationCancellation is not null && IsBusy) || _rowLaunches.Count > 0));
         ClearFinishedSessionsCommand = new RelayCommand(
             _orchestrator.ClearFinishedSessions,
             () => Sessions.Any(session => !session.IsActive) && CanInteract);
@@ -173,7 +173,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         || Plugins.InstallDialog.IsOpen
         || Plugins.IsRemoveDialogOpen;
 
-    private bool CanInteract => !IsBusy && !IsModalOpen && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching;
+    private bool CanInteract => _rowLaunches.Count == 0 && !IsBusy && !IsModalOpen && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching;
 
     public string OperationStatus
     {
@@ -378,7 +378,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         _automaticRelaunch.LaunchFailed -= OnAutomaticRelaunchFailed;
         _automaticRelaunch.Dispose();
         _startupCancellation.Cancel();
-        _operationCancellation?.Cancel();
+        CancelOperation();
         _operationCancellation?.Dispose();
         _operationCancellation = null;
         _orchestrator.StateChanged -= OnOrchestratorStateChanged;
@@ -1017,7 +1017,11 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
     }
 
-    private void CancelOperation() => _operationCancellation?.Cancel();
+    private void CancelOperation()
+    {
+        _operationCancellation?.Cancel();
+        foreach (var launch in _rowLaunches.ToArray()) launch.Cancel();
+    }
 
     private bool CanLaunch(LaunchMode mode) =>
         CanInteract

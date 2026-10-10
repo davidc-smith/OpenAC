@@ -429,3 +429,11 @@ These external population counts are separate from endpoint reachability.
 
 Failed launches stay visible on their account/server row. Play refreshes when
 the reconnect delay expires, even if no further session event arrives.
+
+### Independent account starts
+
+A row's Play action reserves only that account on that server while it starts.
+Other accounts can be launched immediately, including headless clients. Duplicate
+starts for the same account are blocked, including accounts queued by Launch checked.
+Cancel cancels all pending manual starts. Profile editing, installation changes and
+updates wait until those starts finish.

@@ -145,7 +145,7 @@ public sealed partial class LauncherWindowViewModel
 
     private void InitializeAccountCommands() => LaunchCheckedCommand = new AsyncRelayCommand(
         () => LaunchRowsAsync([.. CheckedRows]),
-        () => CanInteract && CheckedRows.Any(row => row.CanPlay));
+        () => CanStartRows && CheckedRows.Any(row => row.CanPlay));
 
     public void RefreshProfiles() => RefreshFromCore();
 
@@ -285,8 +285,13 @@ public sealed partial class LauncherWindowViewModel
         }
     }
 
+    private readonly HashSet<(string Server, string Account)> _startingRows = new();
+    private readonly HashSet<CancellationTokenSource> _rowLaunches = new();
+    private bool CanStartRows => !IsBusy && !IsModalOpen && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching;
+
     private string? GetRowDisabledReason(LauncherAccountServerRowViewModel row) =>
-        !CanInteract ? "Finish the current operation or close the dialog first."
+        !CanStartRows ? "Finish the current operation or close the dialog first."
+        : _startingRows.Contains((row.ServerName, row.AccountName)) ? "This account is starting."
         : GetRowLaunchBlock(row);
 
     private string? GetRowLaunchBlock(LauncherAccountServerRowViewModel row) => GetRowLaunchBlock(row, row.CharacterName, row.Mode);
@@ -314,13 +319,14 @@ public sealed partial class LauncherWindowViewModel
 
     private async Task LaunchRowsAsync(LauncherAccountServerRowViewModel[] rows)
     {
-        if (!CanInteract) return;
-        var pending = rows.Select(row => (Row: row, Character: row.CharacterName, Mode: row.Mode)).ToArray();
+        if (!CanStartRows) return;
+        var pending = rows.Where(row => !_startingRows.Contains((row.ServerName, row.AccountName))).Distinct().Select(row => (Row: row, Character: row.CharacterName, Mode: row.Mode)).ToArray();
         if (pending.Length == 0) return;
         using var cancellation = new CancellationTokenSource();
         CancellationToken token = cancellation.Token;
-        _operationCancellation = cancellation;
-        IsBusy = true;
+        _rowLaunches.Add(cancellation);
+        foreach (var item in pending) _startingRows.Add((item.Row.ServerName, item.Row.AccountName));
+        NotifyCommandStates();
         LastError = null;
         int started = 0;
         var errors = new List<string>();
@@ -348,10 +354,11 @@ public sealed partial class LauncherWindowViewModel
         finally
         {
             LastError = errors.Count == 0 ? null : string.Join(Environment.NewLine, errors);
-            _operationCancellation = null;
+            _rowLaunches.Remove(cancellation);
+            foreach (var item in pending) _startingRows.Remove((item.Row.ServerName, item.Row.AccountName));
             if (!_disposed)
             {
-                IsBusy = false;
+                NotifyCommandStates();
                 RefreshFromCore();
             }
         }

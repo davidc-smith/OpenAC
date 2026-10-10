@@ -444,6 +444,33 @@ public sealed partial class LauncherWindowViewModelTests
     }
 
     [Fact]
+    public async Task DifferentAccountsCanStartConcurrentlyAndCancelCoversBoth()
+    {
+        using var core = BatchOrchestrator();
+        using var vm = CreateInitialized(core);
+        await vm.StartBackgroundInitializationAsync();
+        vm.CloseActiveModal();
+        var first = vm.Accounts[0].Rows[0];
+        var second = vm.Accounts[1].Rows[0];
+        var tokens = new List<CancellationToken>();
+        var pending = new TaskCompletionSource<LauncherSessionSnapshot>();
+        core.LaunchHandler = token => { tokens.Add(token); return pending.Task; };
+        Task one = first.PlayCommand.ExecuteAsync();
+        Assert.False(one.IsCompleted);
+        Assert.False(first.PlayCommand.CanExecute(null));
+        Assert.True(second.PlayCommand.CanExecute(null));
+        Task two = second.PlayCommand.ExecuteAsync();
+        Assert.Equal(2, core.LaunchRequests.Count);
+        Assert.False(vm.AddServerCommand.CanExecute(null));
+        Assert.True(vm.CancelOperationCommand.CanExecute(null));
+        vm.CancelOperationCommand.Execute(null);
+        Assert.All(tokens, token => Assert.True(token.IsCancellationRequested));
+        pending.SetResult(core.Session);
+        await Task.WhenAll(one, two);
+        Assert.True(vm.AddServerCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task MixedCheckedRowsReportInvalidSelectionWithoutDroppingReadyLaunches()
     {
         using var core = BatchOrchestrator();
