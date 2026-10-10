@@ -438,3 +438,19 @@ starts for the same account are blocked, including accounts queued by Launch che
 Cancel cancels all pending manual starts. Only the starting account's selection is
 locked; routine controls and other accounts remain usable. Installation changes and
 updates still wait for active clients and pending starts.
+
+## Installation and updates
+
+Client updates replace the installation at `app/client` under the OpenAC root.
+The path stays the same across releases; updates do not create a new version
+folder. One previous client is kept in `app/client-previous` for rollback and
+replaced by the next update. Existing version-folder installations migrate on
+their next client update; unrelated older folders are left untouched.
+
+Downloads are verified in a temporary staging folder before replacement. A
+durable replacement record lets startup finish an interrupted update. Updates
+wait until all clients exit. Rollback also restores the fixed `app/client` path.
+The launcher replaces itself in its existing installation folder.
+
+Account settings, character profiles, plugin files and logs live outside these
+client installation folders and are preserved by updates.

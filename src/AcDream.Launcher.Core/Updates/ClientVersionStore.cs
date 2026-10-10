@@ -53,7 +53,7 @@ public sealed record ClientVersionResolution(
 /// Strict installed-version and activation-pointer authority. LA9's DAT/pak
 /// record is intentionally not represented here.
 /// </summary>
-public sealed class ClientVersionStore
+public sealed partial class ClientVersionStore
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -107,8 +107,19 @@ public sealed class ClientVersionStore
         }
     }
 
-    public string GetVersionDirectory(LauncherVersion version) =>
-        Path.Combine(AppDirectory, version.Value);
+    public string GetVersionDirectory(LauncherVersion version)
+    {
+        foreach (string directory in new[] { ClientDirectory, BackupDirectory })
+        {
+            if (InstalledVersion(directory) == version.Value)
+                return directory;
+        }
+        if (Directory.Exists(ClientDirectory) && File.Exists(CurrentPointerPath)
+            && ParsePointer(File.ReadAllBytes(CurrentPointerPath)).Pointer?.CurrentVersion == version.Value)
+            return ClientDirectory;
+        // Existing installations migrate on their next update.
+        return Path.Combine(AppDirectory, version.Value);
+    }
 
     public static string GetMetadataPath(string versionDirectory) =>
         Path.Combine(Path.GetFullPath(versionDirectory), "install.json");
@@ -126,9 +137,8 @@ public sealed class ClientVersionStore
         catch (LauncherUpdateException ex) when (ex.InnerException is IOException)
         {
             // Another launcher may legitimately hold a shared session lease.
-            // Pointer publication is atomic and old versions are retained, so
-            // a read-only verification remains safe; mutation/recovery waits
-            // for the next startup without active sessions.
+            // The shared session lease prevents installation replacement, so
+            // read-only verification is safe while mutation waits for idle.
             return await LoadCurrentReadOnlyAsync(rid, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -139,6 +149,12 @@ public sealed class ClientVersionStore
         CancellationToken cancellationToken = default)
     {
         RequireRid(rid);
+        if (HasPendingReplacement)
+        {
+            ClientVersionResolution pending = Invalid("Client replacement is incomplete; close running sessions and restart the launcher to recover.");
+            SetCached(pending);
+            return pending;
+        }
         PointerRead current = await ReadPointerAsync(CurrentPointerPath, cancellationToken)
             .ConfigureAwait(false);
         ClientVersionResolution resolution = current.Pointer is null
@@ -163,6 +179,7 @@ public sealed class ClientVersionStore
     {
         RequireRid(rid);
         Directory.CreateDirectory(AppDirectory);
+        await RecoverReplacementAsync(rid).ConfigureAwait(false);
         CleanupOwnedResidue();
 
         PointerRead current = await ReadPointerAsync(CurrentPointerPath, cancellationToken)
@@ -189,6 +206,18 @@ public sealed class ClientVersionStore
                 .ConfigureAwait(false);
             if (recovered.IsVerified)
             {
+                if (recovered.Directory == BackupDirectory
+                    && LauncherVersion.TryParse(InstalledVersion(ClientDirectory), out LauncherVersion? installedVersion))
+                {
+                    var old = new ClientActivationPointer(1, installedVersion.Value, null);
+                    var restored = previous.Pointer with { PreviousVersion = installedVersion.Value };
+                    await ReplaceInstallationAsync(BackupDirectory, old, restored, rid, cancellationToken)
+                        .ConfigureAwait(false);
+                    recovered = await ResolvePointerAsync(restored, rid, cancellationToken).ConfigureAwait(false);
+                    recovered = recovered with { Status = "Recovered the last valid client activation pointer." };
+                    SetCached(recovered);
+                    return recovered;
+                }
                 await WritePointerFileAsync(
                         CurrentPointerPath,
                         previous.Pointer,
@@ -287,60 +316,20 @@ public sealed class ClientVersionStore
                 CurrentPointerPath,
                 cancellationToken)
             .ConfigureAwait(false)).Pointer;
-        string target = GetVersionDirectory(version);
-        if (Directory.Exists(target))
+        if (oldPointer?.CurrentVersion == version.Value)
         {
-            ClientVersionResolution existing = await VerifyVersionDirectoryAsync(
-                    target,
-                    version,
-                    rid,
-                    cancellationToken)
+            ClientVersionResolution existing = await ResolvePointerAsync(oldPointer, rid, cancellationToken)
                 .ConfigureAwait(false);
-            if (existing.IsVerified
-                && existing.Record is not null
-                && string.Equals(
-                    existing.Record.ArchiveSha256,
-                    artifact.Sha256,
-                    StringComparison.OrdinalIgnoreCase)
-                && existing.Record.ArchiveSize == artifact.Size)
+            if (!existing.IsVerified || existing.Record?.ArchiveSha256 != record.ArchiveSha256
+                || existing.Record.ArchiveSize != record.ArchiveSize)
+                throw new LauncherUpdateException("The active client version cannot be replaced with different or corrupt content.");
+            if (existing.Directory == ClientDirectory)
             {
                 SafeZipExtractor.TryDeleteDirectory(staging);
-            }
-            else
-            {
-                if (oldPointer is not null
-                    && string.Equals(
-                        oldPointer.CurrentVersion,
-                        version.Value,
-                        StringComparison.Ordinal))
-                {
-                    throw new LauncherUpdateException(
-                        "The active client version is corrupt and cannot be replaced in place. "
-                        + "Roll back before repairing it.");
-                }
-
-                string quarantine = Path.Combine(
-                    AppDirectory,
-                    $".client-corrupt-{Guid.NewGuid():N}");
-                Directory.Move(target, quarantine);
-                try
-                {
-                    Directory.Move(staging, target);
-                }
-                catch
-                {
-                    Directory.Move(quarantine, target);
-                    throw;
-                }
-
-                SafeZipExtractor.TryDeleteDirectory(quarantine);
+                SetCached(existing);
+                return existing;
             }
         }
-        else
-        {
-            Directory.Move(staging, target);
-        }
-
         string? previousVersion = oldPointer is null
             || string.Equals(
                 oldPointer.CurrentVersion,
@@ -352,7 +341,8 @@ public sealed class ClientVersionStore
             ClientActivationPointer.CurrentSchemaVersion,
             version.Value,
             previousVersion);
-        await SavePointerAsync(pointer, cancellationToken).ConfigureAwait(false);
+        await ReplaceInstallationAsync(staging, oldPointer, pointer, rid, cancellationToken)
+            .ConfigureAwait(false);
         ClientVersionResolution resolution = await ResolvePointerAsync(
                 pointer,
                 rid,
@@ -400,7 +390,8 @@ public sealed class ClientVersionStore
             ClientActivationPointer.CurrentSchemaVersion,
             previous.Value,
             pointer.CurrentVersion);
-        await SavePointerAsync(swapped, cancellationToken).ConfigureAwait(false);
+        await ReplaceInstallationAsync(verified.Directory!, pointer, swapped, rid, cancellationToken)
+            .ConfigureAwait(false);
         ClientVersionResolution resolution = await ResolvePointerAsync(
                 swapped,
                 rid,
