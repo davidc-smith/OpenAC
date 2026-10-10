@@ -588,7 +588,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             Sessions.Add(new LauncherSessionRowViewModel(
                 session,
                 StopSessionAsync,
-                () => CanInteract));
+                () => CanStopSession(session.SessionId)));
         }
 
         LauncherTreeNodeViewModel? restored = previousSelection is null
@@ -979,16 +979,18 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
     }
 
+    private bool CanStopSession(string sessionId) =>
+        !IsBusy && !IsModalOpen && !_stopGate.IsStopping(sessionId);
+
     private async Task StopSessionAsync(string sessionId)
     {
-        if (!CanInteract || !_stopGate.TryBegin(sessionId, _orchestrator.GetSnapshot()))
+        if (!CanStopSession(sessionId) || !_stopGate.TryBegin(sessionId, _orchestrator.GetSnapshot()))
         {
             return;
         }
 
         using var cancellation = new CancellationTokenSource();
-        _operationCancellation = cancellation;
-        IsBusy = true;
+        NotifyCommandStates();
         LastError = null;
         OperationStatus = "Logging out…";
         try
@@ -1011,12 +1013,6 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
         finally
         {
-            if (ReferenceEquals(_operationCancellation, cancellation))
-            {
-                _operationCancellation = null;
-            }
-
-            IsBusy = false;
             RefreshFromCore();
         }
     }

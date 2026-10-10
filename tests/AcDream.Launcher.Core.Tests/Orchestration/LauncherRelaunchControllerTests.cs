@@ -142,14 +142,18 @@ public sealed class LauncherRelaunchControllerTests
         using var host = new Host(); var gate = new LauncherStopGate();
         host.Sessions = [Session(1, true), Session(2, true) with { AccountName = "Other" }];
         Assert.True(gate.TryBegin("1", host.GetSnapshot()));
-        Assert.False(gate.TryBegin("2", host.GetSnapshot()));
+        Assert.True(gate.TryBegin("2", host.GetSnapshot()));
+        Assert.False(gate.TryBegin("1", host.GetSnapshot()));
         host.Sessions[0] = Session(1, true) with { State = LauncherActivityState.Exited };
         gate.Observe(host.GetSnapshot()); Assert.True(gate.IsPending);
         host.Sessions[0] = Session(1, false) with { StartupInFlight = true };
         gate.Observe(host.GetSnapshot()); Assert.True(gate.IsPending);
         host.Sessions[0] = Session(1, false);
+        gate.Observe(host.GetSnapshot()); Assert.True(gate.IsPending);
+        Assert.False(gate.IsStopping("1"));
+        Assert.True(gate.IsStopping("2"));
+        host.Sessions[1] = Session(2, false);
         gate.Observe(host.GetSnapshot()); Assert.False(gate.IsPending);
-        Assert.True(gate.TryBegin("2", host.GetSnapshot()));
     }
 
     private static LauncherSessionSnapshot Session(int id, bool live) => new(id.ToString(), LauncherActivityKind.Play,

@@ -190,7 +190,7 @@ public sealed partial class LauncherWindowViewModel
                             StopSessionAsync,
                             new LauncherRowActions(OpenLogonCommandsFor, OpenAccountPlugins,
                                 OpenCharacterPlugins, OpenLogsFolder, RemoveRowCharacter),
-                            () => CanInteract);
+                            () => CanInteract, CanStopSession);
                         row.UseSelectionStore(SaveRowSelection);
                         row.UseCheckedSelectionStore(
                             _checkedAccountsLoaded && _checkedAccountStore?.Contains(server.Name, account.AccountName) == true,

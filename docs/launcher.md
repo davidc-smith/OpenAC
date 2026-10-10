@@ -45,8 +45,9 @@ Uncheck an account, remove it, turn automatic relaunch off, or close the launche
 to cancel its pending relaunch. The automatic relaunch switch, display filter,
 and delay last only for the current launcher session.
 
-While a requested Stop is still completing, all Stop buttons and other session
-operations are disabled until that process and any startup work actually end,
+While a requested Stop is still completing, only that session's Stop button is
+disabled. Other running characters can be stopped immediately. Launch and install
+operations remain disabled until all requested processes and startup work end,
 even if an early exit notice arrived or the stop operation returned an error.
 The existing graceful-stop timeout (30 seconds before forced termination) is
 separate from the automatic relaunch delay.

@@ -51,7 +51,7 @@ public sealed partial class LauncherWindowViewModelTests
     [InlineData("return")]
     [InlineData("throw")]
     [InlineData("cancel")]
-    public async Task AllStopButtonsStayDisabledUntilActualRequestedProcessExit(string result)
+    public async Task OnlyRequestedStopButtonStaysDisabledUntilActualProcessExit(string result)
     {
         using var core = BatchOrchestrator();
         var first = FakeLauncherOrchestrator.CreateSession() with { ServerName = "One", AccountName = "Alice", HasLiveProcess = true };
@@ -67,20 +67,41 @@ public sealed partial class LauncherWindowViewModelTests
         var row = vm.Accounts[0].Rows[0];
         await row.StopCommand.ExecuteAsync();
         Assert.False(vm.IsBusy);
-        Assert.All(vm.Accounts.SelectMany(group => group.Rows), item => Assert.False(item.StopCommand.CanExecute(null)));
-        Assert.All(vm.Sessions, item => Assert.False(item.StopCommand.CanExecute(null)));
+        Assert.False(row.StopCommand.CanExecute(null));
+        Assert.True(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
+        Assert.True(vm.Sessions.Single(item => item.SessionId == "second").StopCommand.CanExecute(null));
         core.SessionsOverride = [first with { State = LauncherActivityState.Exited }, second];
         core.RaiseStateChanged();
-        Assert.False(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
+        Assert.True(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
         Assert.False(vm.Accounts[0].Rows[1].PlayCommand.CanExecute(null));
         // A stopped session still finishing startup retains the gate too.
         core.SessionsOverride = [first with { State = LauncherActivityState.Cancelled, HasLiveProcess = false, StartupInFlight = true }, second];
         core.RaiseStateChanged();
-        Assert.False(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
+        Assert.True(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
         core.SessionsOverride = [first with { State = LauncherActivityState.Exited, HasLiveProcess = false }, second];
         core.RaiseStateChanged();
         Assert.True(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
         Assert.True(vm.Sessions.Single(item => item.SessionId == "second").StopCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task CanStopSecondClientWhileFirstStopIsStillAwaitingExit()
+    {
+        using var core = BatchOrchestrator();
+        var first = FakeLauncherOrchestrator.CreateSession() with { ServerName = "One", AccountName = "Alice", HasLiveProcess = true };
+        var second = first with { SessionId = "second", AccountName = "Bob" };
+        core.SessionsOverride = [first, second];
+        var pending = new TaskCompletionSource();
+        int requested = 0;
+        core.StopHandler = _ => { requested++; return pending.Task; };
+        using var vm = CreateInitialized(core);
+        Task firstStop = vm.Accounts[0].Rows[0].StopCommand.ExecuteAsync();
+        Assert.False(firstStop.IsCompleted);
+        Assert.True(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
+        Task secondStop = vm.Accounts[1].Rows[0].StopCommand.ExecuteAsync();
+        Assert.Equal(2, requested);
+        pending.SetResult();
+        await Task.WhenAll(firstStop, secondStop);
     }
 
     [Fact]
