@@ -585,6 +585,8 @@ public sealed class UiRoot : UiElement
         if (btn == UiMouseButton.Left)
             SetKeyboardFocus(target.AcceptsFocus && target.FocusOnMouseClick ? target : null);
 
+        // Losing focus can close the panel that supplied this mouse target.
+        if (!IsAvailableInputTarget(target)) return;
         SetCapture(target);
 
         var window = FindWindow(target);
@@ -904,6 +906,8 @@ public sealed class UiRoot : UiElement
                 KeyboardFocusChanged?.Invoke(previous, KeyboardFocus);
                 return;
             }
+            // The callback may have hidden, disabled or removed the destination.
+            if (e is not null && !IsAvailableInputTarget(e)) e = null;
         }
         KeyboardFocus = e;
         if (e is not null)
@@ -912,6 +916,16 @@ public sealed class UiRoot : UiElement
             e.OnEvent(in gained);
         }
         KeyboardFocusChanged?.Invoke(previous, e);
+    }
+
+    private bool IsAvailableInputTarget(UiElement element)
+    {
+        for (UiElement? current = element; current is not null; current = current.Parent)
+        {
+            if (!current.Visible || !current.Enabled) return false;
+            if (ReferenceEquals(current, this)) return true;
+        }
+        return false;
     }
 
     public void SetCapture(UiElement e)

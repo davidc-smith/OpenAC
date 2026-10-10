@@ -1145,6 +1145,33 @@ public class UiRootInputTests
     }
 
     [Fact]
+    public void FocusLostHandlerRefocusingItsOwnFieldPreservesFocusAndSelection()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var field = new UiField { Width = 100, Height = 20, SelectAllOnFocus = true };
+        var other = new UiField { Width = 100, Height = 20 };
+        field.SetText("abc");
+        root.AddChild(field);
+        root.AddChild(other);
+        root.SetKeyboardFocus(field);
+        int lost = 0;
+        field.OnFocusLost = _ =>
+        {
+            lost++;
+            root.SetKeyboardFocus(field);
+        };
+
+        root.SetKeyboardFocus(other);
+
+        Assert.Equal(1, lost);
+        Assert.Same(field, root.KeyboardFocus);
+        Assert.True(field.IsFocused);
+        Assert.False(other.IsFocused);
+        root.OnChar('z');
+        Assert.Equal("z", field.Text);
+    }
+
+    [Fact]
     public void FieldIgnoresAFocusLostThatArrivesWhileItsCallbackRuns()
     {
         var field = new UiField { Width = 100, Height = 20 };
