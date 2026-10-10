@@ -678,7 +678,8 @@ public sealed partial class LauncherWindowViewModelTests
             return FakeLauncherOrchestrator.CreateSession();
         };
         Task launch = viewModel.LaunchGuiCommand.ExecuteAsync();
-        Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.HasCancelableOperation);
         Assert.True(viewModel.CancelOperationCommand.CanExecute(null));
         viewModel.CancelOperationCommand.Execute(null);
         await launch;

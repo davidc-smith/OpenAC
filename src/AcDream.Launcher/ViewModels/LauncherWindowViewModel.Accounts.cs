@@ -190,7 +190,7 @@ public sealed partial class LauncherWindowViewModel
                             StopSessionAsync,
                             new LauncherRowActions(OpenLogonCommandsFor, OpenAccountPlugins,
                                 OpenCharacterPlugins, OpenLogsFolder, RemoveRowCharacter),
-                            () => CanInteract, CanStopSession);
+                            () => CanInteract && !_startingRows.Contains((server.Name, account.AccountName)), CanStopSession);
                         row.UseSelectionStore(SaveRowSelection);
                         row.UseCheckedSelectionStore(
                             _checkedAccountsLoaded && _checkedAccountStore?.Contains(server.Name, account.AccountName) == true,
@@ -287,7 +287,7 @@ public sealed partial class LauncherWindowViewModel
 
     private readonly HashSet<(string Server, string Account)> _startingRows = new();
     private readonly HashSet<CancellationTokenSource> _rowLaunches = new();
-    private bool CanStartRows => !IsBusy && !IsModalOpen && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching;
+    private bool CanStartRows => CanInteract;
 
     private string? GetRowDisabledReason(LauncherAccountServerRowViewModel row) =>
         !CanStartRows ? "Finish the current operation or close the dialog first."

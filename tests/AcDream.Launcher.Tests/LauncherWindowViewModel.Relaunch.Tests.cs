@@ -64,6 +64,8 @@ public sealed partial class LauncherWindowViewModelTests
             _ => Task.CompletedTask,
         };
         using var vm = CreateInitialized(core);
+        await vm.StartBackgroundInitializationAsync();
+        vm.CloseActiveModal();
         var row = vm.Accounts[0].Rows[0];
         await row.StopCommand.ExecuteAsync();
         Assert.False(vm.IsBusy);
@@ -73,7 +75,7 @@ public sealed partial class LauncherWindowViewModelTests
         core.SessionsOverride = [first with { State = LauncherActivityState.Exited }, second];
         core.RaiseStateChanged();
         Assert.True(vm.Accounts[1].Rows[0].StopCommand.CanExecute(null));
-        Assert.False(vm.Accounts[0].Rows[1].PlayCommand.CanExecute(null));
+        Assert.True(vm.Accounts[0].Rows[1].PlayCommand.CanExecute(null));
         // A stopped session still finishing startup retains the gate too.
         core.SessionsOverride = [first with { State = LauncherActivityState.Cancelled, HasLiveProcess = false, StartupInFlight = true }, second];
         core.RaiseStateChanged();
@@ -102,6 +104,38 @@ public sealed partial class LauncherWindowViewModelTests
         Assert.Equal(2, requested);
         pending.SetResult();
         await Task.WhenAll(firstStop, secondStop);
+    }
+
+    [Fact]
+    public async Task StopAndPlayOnDifferentAccountsDoNotBlockEachOtherOrSettings()
+    {
+        using var core = BatchOrchestrator();
+        var first = FakeLauncherOrchestrator.CreateSession() with { ServerName = "One", AccountName = "Alice", HasLiveProcess = true };
+        core.SessionsOverride = [first];
+        var stop = new TaskCompletionSource();
+        var launch = new TaskCompletionSource<LauncherSessionSnapshot>();
+        core.StopHandler = _ => stop.Task;
+        core.LaunchHandler = _ => launch.Task;
+        using var vm = CreateInitialized(core);
+        await vm.StartBackgroundInitializationAsync();
+        vm.CloseActiveModal();
+        var stopping = vm.Accounts[0].Rows[0];
+        var starting = vm.Accounts[1].Rows[0];
+        Task stoppingTask = stopping.StopCommand.ExecuteAsync();
+        Assert.False(stoppingTask.IsCompleted);
+        Assert.False(stopping.PlayCommand.CanExecute(null));
+        Assert.True(starting.PlayCommand.CanExecute(null));
+        Assert.True(starting.CanEditSelection);
+        Assert.True(vm.OpenSettingsCommand.CanExecute(null));
+        Task startingTask = starting.PlayCommand.ExecuteAsync();
+        Assert.Single(core.LaunchRequests);
+        Assert.False(startingTask.IsCompleted);
+        Assert.False(starting.CanEditSelection);
+        Assert.True(vm.OpenSettingsCommand.CanExecute(null));
+        Assert.True(vm.Accounts[0].Rows[1].PlayCommand.CanExecute(null));
+        stop.SetResult();
+        launch.SetResult(core.Session);
+        await Task.WhenAll(stoppingTask, startingTask);
     }
 
     [Fact]

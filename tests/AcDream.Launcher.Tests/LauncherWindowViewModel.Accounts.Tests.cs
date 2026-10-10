@@ -461,7 +461,7 @@ public sealed partial class LauncherWindowViewModelTests
         Assert.True(second.PlayCommand.CanExecute(null));
         Task two = second.PlayCommand.ExecuteAsync();
         Assert.Equal(2, core.LaunchRequests.Count);
-        Assert.False(vm.AddServerCommand.CanExecute(null));
+        Assert.True(vm.AddServerCommand.CanExecute(null));
         Assert.True(vm.CancelOperationCommand.CanExecute(null));
         vm.CancelOperationCommand.Execute(null);
         Assert.All(tokens, token => Assert.True(token.IsCancellationRequested));

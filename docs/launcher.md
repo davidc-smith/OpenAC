@@ -46,8 +46,8 @@ to cancel its pending relaunch. The automatic relaunch switch, display filter,
 and delay last only for the current launcher session.
 
 While a requested Stop is still completing, only that session's Stop button is
-disabled. Other running characters can be stopped immediately. Launch and install
-operations remain disabled until all requested processes and startup work end,
+disabled. Other accounts can be started or stopped immediately, and routine launcher
+controls remain available. Installation changes wait until active processes and startup work end,
 even if an early exit notice arrived or the stop operation returned an error.
 The existing graceful-stop timeout (30 seconds before forced termination) is
 separate from the automatic relaunch delay.
@@ -435,5 +435,6 @@ the reconnect delay expires, even if no further session event arrives.
 A row's Play action reserves only that account on that server while it starts.
 Other accounts can be launched immediately, including headless clients. Duplicate
 starts for the same account are blocked, including accounts queued by Launch checked.
-Cancel cancels all pending manual starts. Profile editing, installation changes and
-updates wait until those starts finish.
+Cancel cancels all pending manual starts. Only the starting account's selection is
+locked; routine controls and other accounts remain usable. Installation changes and
+updates still wait for active clients and pending starts.

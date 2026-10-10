@@ -70,7 +70,7 @@ public sealed partial class LauncherWindowViewModel
 
     private void InitializePlugins()
     {
-        Plugins = new LauncherPluginsViewModel(_orchestrator, _dispatcher, () => CanInteract);
+        Plugins = new LauncherPluginsViewModel(_orchestrator, _dispatcher, () => CanInteract && _rowLaunches.Count == 0);
         Plugins.InstallDialog.PropertyChanged += OnModalPropertyChanged;
         Plugins.PropertyChanged += OnModalPropertyChanged;
         // The account rows name their plugins; an install, update or removal renames them.
