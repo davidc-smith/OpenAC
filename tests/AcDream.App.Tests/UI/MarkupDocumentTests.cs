@@ -88,6 +88,251 @@ public class MarkupDocumentTests
         Assert.Equal(1, binding.DownCount);
     }
 
+    private sealed class BlurBinding
+    {
+        public List<string> Submitted { get; } = [];
+        public List<string> Blurred { get; } = [];
+        public Action<string> Submit => Submitted.Add;
+        public Action<string> Blur => Blurred.Add;
+        public Action Press => () => { };
+    }
+
+    private const string BlurPanel = """
+        <panel x="0" y="0" w="240" h="120">
+          <field x="4" y="4" w="120" h="20" onblur="{Blur}" />
+          <field x="4" y="32" w="120" h="20" />
+          <button x="4" y="60" w="60" h="20" text="Go" onclick="{Press}" />
+        </panel>
+        """;
+
+    private static (UiRoot Root, UiNineSlicePanel Panel, UiField Field) BuildFocused(
+        string xml, object binding)
+    {
+        UiNineSlicePanel panel = MarkupDocument.Build(xml, binding, _ => (1u, 32, 32));
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(panel);
+        UiField field = Assert.IsType<UiField>(panel.Children[0]);
+        ClickAt(root, 20, 10);
+        Assert.Same(field, root.KeyboardFocus);
+        return (root, panel, field);
+    }
+
+    private static void ClickAt(UiRoot root, int x, int y)
+    {
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseUp(UiMouseButton.Left, x, y);
+    }
+
+    private static void Type(UiRoot root, string text)
+    {
+        foreach (char c in text)
+            root.OnChar(c);
+    }
+
+    private static void PressKey(UiRoot root, Silk.NET.Input.Key key)
+    {
+        root.OnKeyDown((int)key);
+        root.OnKeyUp((int)key);
+    }
+
+    [Theory]
+    [InlineData("empty space")]
+    [InlineData("other field")]
+    [InlineData("button")]
+    [InlineData("escape")]
+    [InlineData("tab")]
+    [InlineData("hide")]
+    public void FieldOnBlurReceivesTheTypedTextWhenFocusMovesAway(string how)
+    {
+        var binding = new BlurBinding();
+        var (root, panel, _) = BuildFocused(BlurPanel, binding);
+        Type(root, "abc");
+        Assert.Empty(binding.Blurred);
+
+        switch (how)
+        {
+            case "empty space": ClickAt(root, 200, 100); break;
+            case "other field": ClickAt(root, 20, 40); break;
+            case "button": ClickAt(root, 20, 68); break;
+            case "escape": PressKey(root, Silk.NET.Input.Key.Escape); break;
+            case "tab": PressKey(root, Silk.NET.Input.Key.Tab); break;
+            case "hide": panel.Visible = false; break;
+        }
+
+        Assert.Equal(["abc"], binding.Blurred);
+    }
+
+    [Theory]
+    [InlineData("empty space", "hide")]
+    [InlineData("escape", "hide")]
+    [InlineData("hide", "hide")]
+    [InlineData("empty space", "remove")]
+    [InlineData("remove", "remove")]
+    public void FieldOnBlurThatClosesItsOwnPanelRunsOnce(string how, string close)
+    {
+        var binding = new BlurBinding();
+        var (root, panel, _) = BuildFocused(BlurPanel, binding);
+        void Close()
+        {
+            if (close == "hide") panel.Visible = false;
+            else root.RemoveChild(panel);
+        }
+        UiField field = (UiField)panel.Children[0];
+        Action<string> blur = field.OnFocusLost!;
+        field.OnFocusLost = text =>
+        {
+            blur(text);
+            // Stop after a few so a regression fails the test, not the test host.
+            if (binding.Blurred.Count < 4) Close();
+        };
+        Type(root, "abc");
+
+        switch (how)
+        {
+            case "empty space": ClickAt(root, 200, 100); break;
+            case "escape": PressKey(root, Silk.NET.Input.Key.Escape); break;
+            default: Close(); break;
+        }
+
+        Assert.Equal(["abc"], binding.Blurred);
+        Assert.Null(root.KeyboardFocus);
+        if (close == "hide") Assert.False(panel.Visible);
+        else Assert.DoesNotContain(panel, root.Children);
+    }
+
+    [Theory]
+    [InlineData("click", "hide")]
+    [InlineData("click", "remove")]
+    [InlineData("tab", "hide")]
+    [InlineData("tab", "remove")]
+    public void FieldOnBlurClosingPanelDoesNotFocusOrCaptureTheNextField(string move, string close)
+    {
+        var binding = new BlurBinding();
+        var (root, panel, field) = BuildFocused(BlurPanel, binding);
+        var next = Assert.IsType<UiField>(panel.Children[1]);
+        field.OnFocusLost = text =>
+        {
+            binding.Blur(text);
+            if (close == "hide") panel.Visible = false;
+            else root.RemoveChild(panel);
+        };
+        Type(root, "abc");
+
+        if (move == "click") root.OnMouseDown(UiMouseButton.Left, 20, 40);
+        else PressKey(root, Silk.NET.Input.Key.Tab);
+
+        Assert.Equal(["abc"], binding.Blurred);
+        Assert.Null(root.KeyboardFocus);
+        Assert.Null(root.Captured);
+        Assert.False(next.IsFocused);
+        Type(root, "invisible");
+        Assert.Equal(string.Empty, next.Text);
+    }
+
+    [Fact]
+    public void FieldOnBlurThatDoesNotResolveThrows()
+    {
+        const string xml = """
+            <panel x="0" y="0" w="240" h="120">
+              <field x="4" y="4" w="120" h="20" onblur="{Missing}" />
+            </panel>
+            """;
+
+        var ex = Assert.Throws<FormatException>(() =>
+            MarkupDocument.Build(xml, new BlurBinding(), _ => (1u, 32, 32)));
+        Assert.Equal(
+            "<field onblur=\"{Missing}\"> did not resolve to an Action<string> "
+            + "property on BlurBinding",
+            ex.Message);
+    }
+
+    [Fact]
+    public void EnterSubmitsOnceAndDoesNotAlsoBlur()
+    {
+        const string xml = """
+            <panel x="0" y="0" w="240" h="120">
+              <field x="4" y="4" w="120" h="20" onsubmit="{Submit}" onblur="{Blur}" />
+            </panel>
+            """;
+        var binding = new BlurBinding();
+        var (root, _, field) = BuildFocused(xml, binding);
+        Type(root, "abc");
+
+        PressKey(root, Silk.NET.Input.Key.Enter);
+
+        Assert.Null(root.KeyboardFocus);
+        Assert.Equal(["abc"], binding.Submitted);
+        Assert.Empty(binding.Blurred);
+        Assert.Equal("abc", field.Text);
+
+        // Editing again and leaving reports the new text.
+        ClickAt(root, 20, 10);
+        PressKey(root, Silk.NET.Input.Key.End);
+        Type(root, "d");
+        ClickAt(root, 200, 100);
+        Assert.Equal(["abc"], binding.Submitted);
+        Assert.Equal(["abcd"], binding.Blurred);
+    }
+
+    [Fact]
+    public void EnterOnAClearingFieldDoesNotBlurWithTheClearedText()
+    {
+        const string xml = """
+            <panel x="0" y="0" w="240" h="120">
+              <field x="4" y="4" w="120" h="20" clearonsubmit="true"
+                     onsubmit="{Submit}" onblur="{Blur}" />
+            </panel>
+            """;
+        var binding = new BlurBinding();
+        var (root, _, field) = BuildFocused(xml, binding);
+        Type(root, "abc");
+
+        PressKey(root, Silk.NET.Input.Key.Enter);
+
+        Assert.Equal(["abc"], binding.Submitted);
+        Assert.Empty(binding.Blurred);
+        Assert.Equal("", field.Text);
+
+        ClickAt(root, 20, 10);
+        Type(root, "xyz");
+        ClickAt(root, 200, 100);
+        Assert.Equal(["xyz"], binding.Blurred);
+    }
+
+    [Fact]
+    public void FieldWithOnlyOnBlurAppliesTheTextWhenEnterLeavesIt()
+    {
+        var binding = new BlurBinding();
+        var (root, _, _) = BuildFocused(BlurPanel, binding);
+        Type(root, "abc");
+
+        PressKey(root, Silk.NET.Input.Key.Enter);
+
+        Assert.Null(root.KeyboardFocus);
+        Assert.Equal(["abc"], binding.Blurred);
+    }
+
+    [Fact]
+    public void FocusLostWhileOnSubmitRunsDoesNotAlsoBlur()
+    {
+        const string xml = """
+            <panel x="0" y="0" w="240" h="120">
+              <field x="4" y="4" w="120" h="20" onsubmit="{Submit}" onblur="{Blur}" />
+            </panel>
+            """;
+        var binding = new BlurBinding();
+        var (root, panel, _) = BuildFocused(xml, binding);
+        UiField field = (UiField)panel.Children[0];
+        Action<string> submit = field.OnSubmit!;
+        field.OnSubmit = text => { submit(text); panel.Visible = false; };
+        Type(root, "abc");
+
+        PressKey(root, Silk.NET.Input.Key.Enter);
+
+        Assert.Equal(["abc"], binding.Submitted);
+        Assert.Empty(binding.Blurred);
+    }
+
     private sealed class LateValueBinding
     {
         public string Range { get; set; } = "5";
