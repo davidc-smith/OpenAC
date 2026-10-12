@@ -29,13 +29,18 @@ public sealed record PluginPanelDescriptor(string WindowId, string Title)
     public uint IconSurfaceId { get; init; }
 
     /// <summary>
-    /// An SVG icon for this window's dock button: a path relative to the
-    /// plugin's install folder, such as <c>"icons/loot.svg"</c>. Null uses the
-    /// plugin's own <c>icon.svg</c>, if it ships one. A file that is missing or
-    /// outside the supported subset falls back to the next icon. The icon is
-    /// drawn in one colour that follows the plugin theme. Must be a relative
-    /// <c>.svg</c> path that stays inside the plugin folder (links included);
-    /// ignored when the registration has no plugin folder.
+    /// This window's own dock icon: a path relative to the plugin's install
+    /// folder, such as <c>"icons/loot.svg"</c> or <c>"icons/combat.png"</c>.
+    /// An <c>.svg</c> is drawn in one colour that follows the plugin theme. A
+    /// <c>.png</c> is drawn in its own colours and follows the same rules as the
+    /// plugin's <c>icon.png</c>: exactly 64x64 pixels, at most 64 KiB, not
+    /// animated. Null uses the plugin's own <c>icon.svg</c>, then its
+    /// <c>icon.png</c>. A file that is missing, breaks a rule or is outside the
+    /// supported SVG subset is logged once and falls back to the next icon.
+    /// Must be a relative path that stays inside the plugin folder (links
+    /// included); ignored when the registration has no plugin folder. A host
+    /// that predates PNG dock icons takes only <c>.svg</c> and falls back past
+    /// a <c>.png</c>.
     /// </summary>
     public string? IconFile { get; init; }
 

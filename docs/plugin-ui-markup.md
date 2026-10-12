@@ -14,7 +14,7 @@ host.Ui.AddPanel(
     {
         IconText = "MP",             // dock monogram letters, the last resort
         IconSurfaceId = 0x06002C41,  // an icon id (see "Icon ids")
-        IconFile = "icons/main.svg", // a one-colour SVG (see "SVG icons")
+        IconFile = "icons/main.svg", // a one-colour SVG (see "SVG icons"), or a full-colour .png
         StartVisible = true,
         ShowInSidePanel = true,      // default: a slot in the plugin dock
     },
@@ -30,9 +30,11 @@ host.Ui.AddPanel(
 
 The plugin dock picks a slot's icon in order:
 
-1. the window's own `IconFile`, an SVG path relative to the install folder. It
-   must end in `.svg` and stay inside the folder: rooted paths, drive letters,
-   `..` that leaves the folder, and links that point out are refused;
+1. the window's own `IconFile`, a path relative to the install folder. It
+   must end in `.svg` or `.png` and stay inside the folder: rooted paths,
+   drive letters, `..` that leaves the folder, and links that point out are
+   refused. An `.svg` follows the theme (see [SVG icons](#svg-icons)); a
+   `.png` keeps its own colours (see [PNG dock icons](#png-dock-icons));
 2. the plugin's `icon.svg`, at the root of its install folder;
 3. the plugin's `icon.png`, at the root of its install folder;
 4. `IconSurfaceId`;
@@ -42,12 +44,35 @@ The plugin dock picks a slot's icon in order:
 An icon that cannot be used is skipped, and the next one in the list is
 drawn. Two cases differ slightly:
 
-- If a window's own `IconFile` cannot be read or parsed, the plugin's
-  `icon.svg` is tried next. If it parses but cannot be drawn at some display
+- If a window's own `IconFile` cannot be read, parsed or decoded, the
+  plugin's `icon.svg` is tried next. If an SVG parses but cannot be drawn at some display
   size (it has too many points for that size, or the graphics upload fails),
   the dock goes to `icon.png`, then `IconSurfaceId`, then the monogram; it
   does not try `icon.svg` in that case.
 - `IconFile` is ignored for a registration that has no plugin folder.
+- A window's `IconFile` or the plugin's `icon.svg` that cannot be used is
+  logged once, as `[UI] plugin icon '<id>/<path>' ignored: <reason>`.
+
+## PNG dock icons
+
+A window whose `IconFile` names a `.png` gets that picture on its dock slot,
+in its own colours: the theme does not tint it, and it dims while the window
+is closed, as `icon.png` does. Use it when each window wants its own
+full-colour art rather than the plugin's one `icon.png`.
+
+```csharp
+host.Ui.AddPanel(
+    new PluginPanelDescriptor("combat", "Combat") { IconFile = "icons/combat.png" },
+    Path.Combine(pluginDirectory, "combat.xml"),
+    binding);
+```
+
+The file follows the same rules as `icon.png`: PNG only (by its signature,
+not just its name), exactly 64x64 pixels, at most 64 KiB, not animated.
+Windows that name the same file share one copy of it. The client lets go of
+the icons when the interface is torn down, and loads a file again if it has
+changed on disk. A host that predates PNG dock icons takes only `.svg`
+here; it logs a `.png` and falls back to the next icon.
 
 ## SVG icons
 

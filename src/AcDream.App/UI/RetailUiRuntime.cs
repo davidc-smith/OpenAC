@@ -414,6 +414,7 @@ public sealed class RetailUiRuntime : IDisposable
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
     private PluginSvgIconCache? _pluginSvgIcons;
     private PluginFileIconCache? _pluginFileIcons;
+    private PluginFileIconCache? _pluginDockImages;
     private bool _pluginsMounted;
     private IDisposable? _characterSheetSubscription;
     private Layout.CharacterTitlesController? _characterTitlesController;
@@ -4133,6 +4134,12 @@ public sealed class RetailUiRuntime : IDisposable
         _pluginFileIcons ??= new PluginFileIconCache(
             (rgba, width, height, name) => textures.UploadReleasableRgba8(rgba, width, height, name, mipmapped: true),
             textures.ReleaseUiTexture);
+        _pluginDockImages ??= new PluginFileIconCache(
+            (rgba, width, height, name) => textures.UploadReleasableRgba8(rgba, width, height, name, mipmapped: true),
+            textures.ReleaseUiTexture,
+            rules: PluginFileIconCache.Rules.DockIcons);
+        _pluginSvgIcons ??= new PluginSvgIconCache(new RetailPluginFontBackend(textures));
+        var dockIcons = new PluginDockIconSource(_pluginSvgIcons, _pluginDockImages, ResolvePluginFileIcon);
 
         foreach (var panel in _bindings.Plugins.Drain())
         {
@@ -4194,8 +4201,7 @@ public sealed class RetailUiRuntime : IDisposable
                         panel.Owner,
                         panel.Descriptor,
                         handle,
-                        ResolvePluginFileIcon(panel.Owner.Id, panel.PluginDirectory),
-                        ResolvePluginSvgIcon(panel.Owner.Id, panel.Descriptor, panel.PluginDirectory));
+                        dockIcons.Resolve(panel.Owner.Id, panel.Descriptor, panel.PluginDirectory));
                 }
 
                 Console.WriteLine(
@@ -4339,40 +4345,6 @@ public sealed class RetailUiRuntime : IDisposable
 
         _pluginIcons[pluginId] = icon;
         return icon;
-    }
-
-    /// <summary>
-    /// The window's SVG icon with one hold taken, or null: the descriptor's
-    /// <c>IconFile</c> first, then the plugin's own <c>icon.svg</c>. Any file that
-    /// cannot be used is logged once and the next icon is tried.
-    /// </summary>
-    private PluginSvgIconCache.PluginSvgIconEntry? ResolvePluginSvgIcon(
-        string pluginId,
-        PluginPanelDescriptor descriptor,
-        string? pluginDirectory)
-    {
-        if (pluginDirectory is null)
-            return null;
-        _pluginSvgIcons ??= new PluginSvgIconCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
-
-        if (descriptor.IconFile is { } iconFile
-            && AcquirePluginSvgIcon(pluginId, pluginDirectory, iconFile) is { } own)
-            return own;
-        return File.Exists(Path.Combine(pluginDirectory, PluginSvgIcon.FileName))
-            ? AcquirePluginSvgIcon(pluginId, pluginDirectory, PluginSvgIcon.FileName)
-            : null;
-    }
-
-    private PluginSvgIconCache.PluginSvgIconEntry? AcquirePluginSvgIcon(
-        string pluginId, string pluginDirectory, string relative)
-    {
-        string label = $"{pluginId}/{relative.Replace('\\', '/')}";
-        if (!PluginSvgIcon.TryResolvePath(pluginDirectory, relative, out string? fullPath, out string? reason))
-        {
-            _pluginSvgIcons!.Reject(label, Path.Combine(pluginDirectory, relative), reason);
-            return null;
-        }
-        return _pluginSvgIcons!.Acquire(label, fullPath);
     }
 
     private void MountInventory()
@@ -5255,6 +5227,8 @@ public sealed class RetailUiRuntime : IDisposable
                 _pluginSvgIcons = null;
                 _pluginFileIcons?.Dispose();
                 _pluginFileIcons = null;
+                _pluginDockImages?.Dispose();
+                _pluginDockImages = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;
                 WindowLockPresentation.Dispose();
                 WindowOpacity.Dispose();

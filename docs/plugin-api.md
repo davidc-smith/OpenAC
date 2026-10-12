@@ -1456,6 +1456,10 @@ taller than `MaximumDimension` (2048). A request past any of these answers
 and composed icons are shared with the client's own windows and every
 other plugin, so they cost nothing against the byte budget.
 
+A window's dock icon is not an image handle: name its PNG or SVG with
+`PluginPanelDescriptor.IconFile` (see
+[the markup guide](plugin-ui-markup.md#png-dock-icons)).
+
 `FromStream` accepts PNG, JPEG, BMP, TGA and GIF; the stream is opened only
 when the host does not already hold an image under that name, and disposed
 by the host. Call all of this from the tick thread, as with every other UI
