@@ -137,8 +137,20 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         PluginPanelDescriptor descriptor,
         RetailWindowHandle handle,
         (uint Texture, int Width, int Height)? fileIcon,
-        PluginSvgIconCache.PluginSvgIconEntry? svgIcon)
+        PluginSvgIconCache.PluginSvgIconEntry? svgIcon) =>
+        Add(owner, descriptor, handle, new PluginDockIcons(null, svgIcon, fileIcon));
+
+    /// <summary>
+    /// The same, with every icon the window may draw (<see cref="PluginDockIconSource"/>).
+    /// The caller's hold on the SVG passes to the dock, which gives it back when the window goes.
+    /// </summary>
+    internal void Add(
+        PluginUiOwner owner,
+        PluginPanelDescriptor descriptor,
+        RetailWindowHandle handle,
+        PluginDockIcons icons)
     {
+        PluginSvgIconCache.PluginSvgIconEntry? svgIcon = icons.Svg;
         bool handedOver = false;
         try
         {
@@ -151,7 +163,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             handle.OuterFrame.ConstrainResizeToParent = true;
             KeepWindowReachable(handle);
 
-            var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, fileIcon, svgIcon)
+            var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, icons.PluginImage, svgIcon,
+                icons.WindowImage)
             {
                 Width = DockSlot,
                 Height = DockSlot,
@@ -719,6 +732,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         private bool _iconResolveAttempted;
         private bool _iconAvailable;
         private PluginSvgIconCache.PluginSvgIconEntry? _svgIcon;
+        private PluginFileIconCache.Entry? _windowImage;
 
         internal PluginShelfButton(
             PluginSidePanel dock,
@@ -727,10 +741,12 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             RetailWindowHandle handle,
             Func<uint, (uint tex, int width, int height)> resolve,
             (uint Texture, int Width, int Height)? fileIcon = null,
-            PluginSvgIconCache.PluginSvgIconEntry? svgIcon = null)
+            PluginSvgIconCache.PluginSvgIconEntry? svgIcon = null,
+            PluginFileIconCache.Entry? windowImage = null)
         {
             _dock = dock;
             _svgIcon = svgIcon;
+            _windowImage = windowImage;
             _handle = handle;
             _resolve = resolve;
             _fileIcon = fileIcon;
@@ -740,7 +756,9 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             _iconSurfaceId = PluginIcons.Normalize(descriptor.IconSurfaceId);
             _initialsFallback = Initials(descriptor.IconText, descriptor.Title);
             _monogramHue = MonogramHue(owner.Id);
-            Text = _svgIcon is null && _fileIcon is null && _iconSurfaceId == 0 ? _initialsFallback : string.Empty;
+            Text = _windowImage is null && _svgIcon is null && _fileIcon is null && _iconSurfaceId == 0
+                ? _initialsFallback
+                : string.Empty;
             Anchors = AnchorEdges.None;
         }
 
@@ -773,14 +791,28 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         }
 
         /// <summary>
-        /// Draws this window's icon in the <paramref name="extent"/> box at (x, y): its
-        /// SVG, else its file icon, else its DAT surface, else its monogram. The SVG is
+        /// Draws this window's icon in the <paramref name="extent"/> box at (x, y): its own
+        /// PNG, else its SVG, else its file icon, else its DAT surface, else its monogram. The SVG is
         /// one colour, drawn in <paramref name="colour"/> and snapped to the device grid.
         /// RGBA art ignores the hue of <paramref name="colour"/> and keeps its own
         /// colours (dimmer while closed).
         /// </summary>
         internal void DrawIcon(UiRenderContext ctx, float x, float y, float extent, Vector4 colour)
         {
+            float alpha = IsOpen || ThemeState != UiControlState.Normal ? 1f : ClosedArtAlpha;
+            if (_windowImage is { } image)
+            {
+                if (image.Texture != 0u)
+                {
+                    ctx.DrawSprite(image.Texture, x, y, extent, extent, 0f, 0f, 1f, 1f, Vector4.One with { W = alpha });
+                    return;
+                }
+                // Given back with its cache: the next icon is drawn from now on.
+                _windowImage = null;
+                if (_svgIcon is null && _fileIcon is null && _iconSurfaceId == 0)
+                    Text = _initialsFallback;
+            }
+
             if (_svgIcon is { } svg)
             {
                 int pixels = PluginSvgIconCache.DevicePixels(extent, ctx.PixelScale);
@@ -806,7 +838,6 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                     Text = _initialsFallback;
             }
 
-            float alpha = IsOpen || ThemeState != UiControlState.Normal ? 1f : ClosedArtAlpha;
             uint texture = 0;
             int width = 0, height = 0;
             if (_fileIcon is { } file)

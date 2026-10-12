@@ -304,9 +304,14 @@ loads locally. The headlines:
 - Managed files only, by extension allowlist; no `runtimes/` folder.
 - An optional `icon.png` at the zip root: PNG, exactly 64x64, at most 64 KiB,
   not animated. No icon is fine; a broken one refuses the whole install.
-- Optional SVG icons (`icon.svg` at the root, or any path a window's
+- Optional SVG icons (`icon.svg` at the root, or any `.svg` path a window's
   `IconFile` names): at most 16 KiB each. See
   [SVG icons](plugin-ui-markup.md#svg-icons) for what the client draws.
+- Optional per-window PNG icons (any `.png` path a window's `IconFile`
+  names): the client applies the `icon.png` rules (64x64, at most 64 KiB) and
+  falls back to the next icon if one breaks them; the launcher checks them
+  only as ordinary `.png` files. See
+  [PNG dock icons](plugin-ui-markup.md#png-dock-icons).
 - Declare [capabilities](plugin-manifest.md#capabilities) for anything the
   player would want to know about — network access, chat, input automation.
   The launcher shows them before installing and asks again when an update

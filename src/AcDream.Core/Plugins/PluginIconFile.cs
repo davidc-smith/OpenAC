@@ -76,25 +76,75 @@ public static class PluginIconFile
     /// falls back instead of failing the plugin.</summary>
     public static bool TryLoad(string pluginDirectory, [NotNullWhen(true)] out DecodedTexture? texture)
     {
+        try
+        {
+            return TryLoadFile(Path.Combine(pluginDirectory, FileName), out texture, out _);
+        }
+        catch
+        {
+            texture = null;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Resolves a window's own PNG icon (<c>PluginPanelDescriptor.IconFile</c>) against the
+    /// plugin folder: relative, ending in <c>.png</c>, and inside the folder after links are
+    /// followed.
+    /// </summary>
+    public static bool TryResolvePath(
+        string pluginDirectory, string iconFile,
+        [NotNullWhen(true)] out string? fullPath, [NotNullWhen(false)] out string? reason) =>
+        PluginFilePath.TryResolve(pluginDirectory, iconFile, [".png"], "a .png file", out fullPath, out reason);
+
+    /// <summary>Decodes the PNG at <paramref name="fullPath"/> under the same rules as
+    /// <c>icon.png</c>. Never throws: every refusal is a reason.</summary>
+    public static bool TryLoadFile(
+        string fullPath, [NotNullWhen(true)] out DecodedTexture? texture, [NotNullWhen(false)] out string? reason)
+    {
         texture = null;
         try
         {
-            var file = new FileInfo(Path.Combine(pluginDirectory, FileName));
-            if (!file.Exists || file.Length > MaximumBytes)
+            var file = new FileInfo(fullPath);
+            if (!file.Exists)
+            {
+                reason = "does not exist";
                 return false;
+            }
+            if (file.Length > MaximumBytes)
+            {
+                reason = "the icon is larger than 64 KiB";
+                return false;
+            }
 
             byte[] bytes = File.ReadAllBytes(file.FullName);
             ValidateHeader(bytes);
 
             ImageResult decoded = ImageResult.FromMemory(bytes, ColorComponents.RedGreenBlueAlpha);
-            if (decoded.Width != Extent || decoded.Height != Extent)
+            if (decoded.Width != Extent || decoded.Height != Extent || decoded.Data is null)
+            {
+                reason = "could not be decoded";
                 return false;
+            }
 
             texture = new DecodedTexture(decoded.Data, decoded.Width, decoded.Height);
+            reason = null;
             return true;
         }
-        catch
+        catch (PluginIconException ex)
         {
+            reason = ex.Message;
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                                       or NotSupportedException)
+        {
+            reason = "could not be read: " + ex.Message;
+            return false;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            reason = "could not be decoded: " + ex.Message;
             return false;
         }
     }

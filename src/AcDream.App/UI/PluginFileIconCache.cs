@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using AcDream.Core.Plugins;
 using AcDream.Core.Textures;
 
@@ -27,12 +28,32 @@ internal sealed class PluginFileIconCache : IDisposable
 
     private readonly record struct Key(string PluginId, string FullPath);
 
+    internal delegate bool PathResolver(
+        string pluginDirectory, string relativePath,
+        [NotNullWhen(true)] out string? fullPath, [NotNullWhen(false)] out string? reason);
+
+    internal delegate bool ImageLoader(
+        string fullPath, [NotNullWhen(true)] out DecodedTexture? texture, [NotNullWhen(false)] out string? reason);
+
+    /// <summary>Which files a cache takes and what it calls them in the log.</summary>
+    internal sealed record Rules(string Noun, PathResolver Resolve, ImageLoader Load)
+    {
+        /// <summary>Markup images: PNG or JPEG, up to 512 pixels a side and 1 MiB.</summary>
+        internal static Rules MarkupImages { get; } =
+            new("image", PluginImageFile.TryResolvePath, PluginImageFile.TryLoad);
+
+        /// <summary>A window's own dock icon: the <c>icon.png</c> rules, at any path.</summary>
+        internal static Rules DockIcons { get; } =
+            new("icon", PluginIconFile.TryResolvePath, PluginIconFile.TryLoadFile);
+    }
+
     public const int DefaultMaximumPerPlugin = 256;
 
     private readonly Func<byte[], int, int, string, uint> _upload;
     private readonly Func<uint, bool> _release;
     private readonly Action<string> _report;
     private readonly int _maximumPerPlugin;
+    private readonly Rules _rules;
     private readonly Dictionary<Key, Entry> _entries = [];
     private readonly Dictionary<string, int> _countByPlugin = new(StringComparer.Ordinal);
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
@@ -42,12 +63,14 @@ internal sealed class PluginFileIconCache : IDisposable
         Func<byte[], int, int, string, uint> upload,
         Func<uint, bool> release,
         Action<string>? report = null,
-        int maximumPerPlugin = DefaultMaximumPerPlugin)
+        int maximumPerPlugin = DefaultMaximumPerPlugin,
+        Rules? rules = null)
     {
         _upload = upload ?? throw new ArgumentNullException(nameof(upload));
         _release = release ?? throw new ArgumentNullException(nameof(release));
         _report = report ?? Console.WriteLine;
         _maximumPerPlugin = maximumPerPlugin;
+        _rules = rules ?? Rules.MarkupImages;
     }
 
     /// <summary>
@@ -58,7 +81,7 @@ internal sealed class PluginFileIconCache : IDisposable
     {
         if (_disposed) return null;
         string label = $"{pluginId}/{relativePath.Replace('\\', '/')}";
-        if (!PluginImageFile.TryResolvePath(pluginDirectory, relativePath, out string? fullPath, out string? reason))
+        if (!_rules.Resolve(pluginDirectory, relativePath, out string? fullPath, out string? reason))
         {
             Reject(label, reason);
             return null;
@@ -88,11 +111,11 @@ internal sealed class PluginFileIconCache : IDisposable
 
         if (_countByPlugin.GetValueOrDefault(pluginId) >= _maximumPerPlugin)
         {
-            Reject($"{pluginId}/*", $"the plugin already holds {_maximumPerPlugin} images, the most it may");
+            Reject($"{pluginId}/*", $"the plugin already holds {_maximumPerPlugin} {_rules.Noun}s, the most it may");
             return null;
         }
 
-        if (!PluginImageFile.TryLoad(fullPath, out DecodedTexture? decoded, out reason))
+        if (!_rules.Load(fullPath, out DecodedTexture? decoded, out reason))
         {
             Reject(label, reason);
             return null;
@@ -124,7 +147,7 @@ internal sealed class PluginFileIconCache : IDisposable
     internal void Reject(string label, string reason)
     {
         if (_reported.Add(label + "\n" + reason))
-            _report($"[UI] plugin image '{label}' ignored: {reason}");
+            _report($"[UI] plugin {_rules.Noun} '{label}' ignored: {reason}");
     }
 
     public void Dispose()
@@ -147,7 +170,7 @@ internal sealed class PluginFileIconCache : IDisposable
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            _report($"[UI] plugin image texture {texture} could not be released: {ex.Message}");
+            _report($"[UI] plugin {_rules.Noun} texture {texture} could not be released: {ex.Message}");
         }
     }
 }
