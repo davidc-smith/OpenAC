@@ -74,6 +74,117 @@ public sealed class RuntimeChatFeedTests
                 .Select(span => span.Text)));
     }
 
+    // -- Coordinate links -------------------------------------------------
+
+    private static ChatTextSpan CoordinateSpan(RuntimeChatLine line) =>
+        Assert.Single(line.Spans!, span => span.Tag is { Type: "COORD" });
+
+    [Fact]
+    public void ACoordinateAPlayerTypesIsALinkAndTheTextIsUnchanged()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnLocalSpeech("Bob", "meet at 42.1N 33.5E", OtherPlayerGuid, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal("Bob says, \"meet at 42.1N 33.5E\"", line.Text);
+        Assert.Equal("Bob", line.Spans![0].Text);
+        ChatTextSpan coordinate = CoordinateSpan(line);
+        Assert.Equal("42.1N 33.5E", coordinate.Text);
+        Assert.True(coordinate.Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
+        Assert.Equal(33.5, eastWest);
+        Assert.Equal(42.1, northSouth);
+    }
+
+    [Fact]
+    public void ACoordinateInTheCharactersOwnLineAndInAServerLineIsALink()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnLocalSpeech("You", "here 1N 2E", 0u, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+        log.OnSystemMessage("Your corpse is located at (42.1N, 33.5E).", chatType: 0u);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("1N 2E", CoordinateSpan(lines[0]).Text);
+        Assert.Equal("42.1N, 33.5E", CoordinateSpan(lines[1]).Text);
+        Assert.Equal("Your corpse is located at (42.1N, 33.5E).", lines[1].Text);
+    }
+
+    [Fact]
+    public void ACombatLineIsNotSearchedForCoordinates()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnCombatLine("You hit 3N 4E for 9 points.", (uint)RetailLogTextType.CombatSelf);
+
+        Assert.Null(Assert.Single(feed.Snapshot()).Spans);
+    }
+
+    [Fact]
+    public void ATimestampedLineKeepsItsStampAndLinksTheCoordinate()
+    {
+        var log = new ChatLog { DisplayTimestampsSource = static () => true };
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("at 5S 6W", chatType: 0u);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal(ChatSpanRole.Timestamp, line.Spans![0].Role);
+        Assert.Equal("5S 6W", CoordinateSpan(line).Text);
+        Assert.Equal(line.Text, string.Concat(line.Spans.Select(span => span.Text)));
+    }
+
+    // -- A plugin's markup ------------------------------------------------
+
+    [Fact]
+    public void APluginLinesMarkupIsReadAsALink()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage(
+            "Waypoint: <COORD:World:12.5N, 3.25W>the bridge<\\COORD>.",
+            chatType: 0u,
+            allowsMarkup: true);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal("Waypoint: the bridge.", line.Text);
+        ChatTextSpan coordinate = CoordinateSpan(line);
+        Assert.Equal("the bridge", coordinate.Text);
+        Assert.True(coordinate.Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
+        Assert.Equal(-3.25, eastWest);
+        Assert.Equal(12.5, northSouth);
+        Assert.Equal("Waypoint: the bridge.", RuntimeChatFeed.Format(log.Snapshot()[0]));
+    }
+
+    [Fact]
+    public void AServerLinesMarkupIsShownAsItArrived()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell>", chatType: 0u);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal("<Tell:IIDString:1:Bob>Bob<\\Tell>", line.Text);
+        Assert.Null(line.Spans);
+    }
+
+    [Fact]
+    public void APluginLineWithNoTagKeepsItsAngleBrackets()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("a < b > c <none>", chatType: 0u, allowsMarkup: true);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal("a < b > c <none>", line.Text);
+        Assert.Null(line.Spans);
+    }
+
     // -- Pull -------------------------------------------------------------
 
     [Fact]

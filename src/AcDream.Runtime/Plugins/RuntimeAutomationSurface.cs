@@ -3128,7 +3128,7 @@ internal sealed class RuntimeAutomationSurface
         RuntimeCommunicationState? communication;
         lock (_gate)
             communication = _communication;
-        communication?.AddText(
+        communication?.AddPluginText(
             text,
             RetailLogTextTypeCodec.FromPluginValue(logTextType));
     }

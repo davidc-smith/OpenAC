@@ -77,6 +77,30 @@ public readonly record struct ChatTextSpan(
 
 public static class ChatTagMarkup
 {
+    /// <summary>
+    /// Whether the text holds at least one start tag (<c>&lt;TYPE:FORMAT…&gt;</c>).
+    /// Text a plugin writes is read as markup only when it does, so a stray
+    /// <c>&lt;</c> in an ordinary line is shown as it was written.
+    /// </summary>
+    public static bool ContainsTag(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+        for (int open = text.IndexOf('<'); open >= 0; open = text.IndexOf('<', open + 1))
+        {
+            int close = text.IndexOf('>', open + 1);
+            if (close < 0)
+                return false;
+            if (TryParseStartTag(text[(open + 1)..close]) is not null)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>The text with its markup removed: what <see cref="Parse"/> shows.</summary>
+    public static string ToPlainText(string? text) =>
+        string.Concat(Parse(text).Select(static span => span.Text));
+
     public static IReadOnlyList<ChatTextSpan> Parse(string? text)
     {
         if (string.IsNullOrEmpty(text))

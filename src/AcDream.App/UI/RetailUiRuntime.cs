@@ -53,7 +53,8 @@ public sealed record ChatRuntimeBindings(
     Func<ICommandBus> CommandBus,
     ChatWindowState Windows,
     AcDream.Runtime.Chat.RuntimeChatEntryOwner Entry,
-    SettingsStore? Store = null);
+    SettingsStore? Store = null,
+    Action<PluginChatLinkClicked>? LinkClicked = null);
 
 public sealed record RadarRuntimeBindings(
     Func<UiRadarSnapshot> Snapshot,
@@ -1667,6 +1668,7 @@ public sealed class RetailUiRuntime : IDisposable
 
         controller.Transcript.Keyboard = Host.Keyboard;
         controller.Input.Keyboard = Host.Keyboard;
+        controller.ChatLinkClicked = _bindings.Chat.LinkClicked;
         UiElement root = controller.Root;
         RetailWindowHandle handle = RetailWindowFrame.Mount(
             Host.Root,

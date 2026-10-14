@@ -17,8 +17,9 @@ namespace AcDream.Runtime.Chat;
 /// The text class the line belongs to; what a chat window's filter is keyed on.
 /// </param>
 /// <param name="Spans">
-/// The line split at its clickable sender, or null when it has none. The spans
-/// always rejoin to <paramref name="Text"/>.
+/// The line split at its links (a clickable sender, a coordinate, a plugin's
+/// own markup), or null when it has none. The spans always rejoin to
+/// <paramref name="Text"/>.
 /// </param>
 public readonly record struct RuntimeChatLine(
     long Sequence,
@@ -118,11 +119,16 @@ public sealed class RuntimeChatFeed : IDisposable
 
     private RuntimeChatLine BuildLine(ChatEntry entry, bool timestamps)
     {
-        bool tagged = ShouldTagSender(entry);
+        bool tagged = ShouldTagSender(entry) || ChatLineWording.CarriesMarkup(entry);
         string markup = FormatTagged(entry);
         IReadOnlyList<ChatTextSpan>? spans = tagged
             ? ChatTagMarkup.Parse(markup)
             : null;
+        // A coordinate pair written anywhere in the line is a link too, except
+        // in combat text, which never carries one.
+        if (entry.Kind != ChatKind.Combat)
+            spans = ChatCoordinateLinks.Link(spans ?? new[] { new ChatTextSpan(markup, null) })
+                ?? spans;
         string text = spans is null
             ? markup
             : string.Concat(spans.Select(span => span.Text));

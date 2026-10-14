@@ -134,6 +134,36 @@ writes in one of the client's own text classes, so a plugin's own output can
 use the colour the class carries. `Submit(text)` still runs the full chat
 pipeline, commands included.
 
+A line a plugin posts may carry a coordinate link. The tag's caption is shown
+in the link colour, and clicking it raises `LinkClicked`:
+
+```csharp
+host.Automation.Chat.PostSystemMessage(
+    @"Next waypoint: <COORD:World:42.1N, 33.5E>the Holtburg bridge<\COORD>");
+```
+
+A plugin's line is read as markup only when it holds a tag of the form
+`<TYPE:FORMAT…>`, so an ordinary `<` in a line is shown as written. Server
+text is never read as markup.
+
+### Chat links
+
+`LinkClicked` is raised when the player clicks a coordinate link in the main
+chat window. Every coordinate pair `PluginChatCoordinateParser` reads is a
+link, in any line except combat text: what players say, tell and post on
+channels, the server's own lines ("Your corpse is located at (42.1N, 33.5E).")
+and plugins' lines. `PluginChatCoordinateLinkRouter` hands just the
+coordinates to a callback:
+
+```csharp
+var router = new PluginChatCoordinateLinkRouter(
+    host.Automation.Chat,
+    coordinate => SetWaypoint(coordinate.NorthSouth, coordinate.EastWest));
+```
+
+Clicking a player's name still starts a tell and raises nothing. The floating
+chat windows show no links.
+
 ### Intercepting what the player types
 
 ```csharp
