@@ -1199,6 +1199,9 @@ public interface IAutomationSurface
     /// <summary>The shape of the dungeon the character is in, for drawing a map of it.</summary>
     IDungeonMapAutomation DungeonMap => NoOpAutomationSurface.Instance;
 
+    /// <summary>The outdoor ground: height, slope and water.</summary>
+    ITerrainAutomation Terrain => NoOpAutomationSurface.Instance;
+
     /// <summary>What the player has selected, and acting on it.</summary>
     ISelectionAutomation Selection => NoOpAutomationSurface.Instance;
 
@@ -1225,7 +1228,7 @@ public sealed class NoOpAutomationSurface
       IFellowshipAutomation, IAllegianceAutomation, IEnchantmentAutomation, INavigationAutomation
       , IWorldObjectAutomation, IRecallAutomation, IWorldTimeAutomation, ILoginAutomation,
       INetworkAutomation, IRecoveryAutomation, IProjectileAutomation
-      , IWorldLabelAutomation, IDungeonMapAutomation
+      , IWorldLabelAutomation, IDungeonMapAutomation, ITerrainAutomation
       , ISelectionAutomation, IDialogAutomation, ITradeAutomation,
       IVendorAutomation, ICharacterOptionsAutomation
 {
@@ -1304,6 +1307,9 @@ public sealed class NoOpAutomationSurface
 
     /// <inheritdoc/>
     public IDungeonMapAutomation DungeonMap => this;
+
+    /// <inheritdoc/>
+    public ITerrainAutomation Terrain => this;
 
     /// <inheritdoc/>
     public ISelectionAutomation Selection => this;

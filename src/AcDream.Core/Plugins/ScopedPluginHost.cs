@@ -338,6 +338,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
         public IDungeonMapAutomation DungeonMap => Inner.DungeonMap;
+        public ITerrainAutomation Terrain => Inner.Terrain;
         public ISelectionAutomation Selection => Inner.Selection;
         public ITradeAutomation Trade =>
             _trade ??= new ScopedTrade(() => Inner.Trade, _eventLeases);

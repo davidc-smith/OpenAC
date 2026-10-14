@@ -44,6 +44,7 @@ internal sealed class RuntimeAutomationSurface
     private readonly RuntimeInventorySnapshotCache _ownedInventorySnapshots = new();
     private readonly AcDream.Runtime.Navigation.RuntimeNavigationAutomation _navigation;
     private readonly AcDream.Runtime.Maps.RuntimeDungeonMapAutomation _dungeonMap = new();
+    private readonly AcDream.Runtime.Maps.RuntimeTerrainAutomation _terrain = new();
     private readonly AcDream.Core.Plugins.IPluginEventSink? _events;
     private static readonly double PeerCommandPollSeconds =
         LocalPluginPeerRegistry.CommandPollPeriod.TotalSeconds;
@@ -375,6 +376,7 @@ internal sealed class RuntimeAutomationSurface
     public IProjectileAutomation Projectiles => this;
     public IWorldLabelAutomation Labels => this;
     public IDungeonMapAutomation DungeonMap => _dungeonMap;
+    public ITerrainAutomation Terrain => _terrain;
     public ISelectionAutomation Selection => this;
     public ITradeAutomation Trade
     {
@@ -1139,6 +1141,13 @@ internal sealed class RuntimeAutomationSurface
     /// </summary>
     public void BindDungeonMap(AcDream.Core.Content.IDatObjectSource content, object contentLock) =>
         _dungeonMap.BindContent(content, contentLock);
+
+    /// <summary>
+    /// Lends the terrain the game files, read under <paramref name="contentLock"/>,
+    /// so it can read any landblock's ground.
+    /// </summary>
+    public void BindTerrain(AcDream.Core.Content.IDatObjectSource content, object contentLock) =>
+        _terrain.BindContent(content, contentLock);
 
     /// <summary>The runtime navigation this surface hands to plugins; a host binds its walk controller and commands to it.</summary>
     internal AcDream.Runtime.Navigation.RuntimeNavigationAutomation NavigationAutomation => _navigation;
