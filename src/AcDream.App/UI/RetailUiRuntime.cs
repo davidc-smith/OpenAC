@@ -393,6 +393,8 @@ public sealed class RetailUiRuntime : IDisposable
     private WorldIconOverlayController? _worldIconOverlay;
     private WorldLabelOverlayController? _worldLabelOverlay;
     private Layout.PluginCanvasSurface? _pluginCanvasSurface;
+    private Layout.PluginMarkupCanvases? _markupCanvases;
+    private bool _reportingPressesToCanvases;
     private Layout.PluginCanvasStack? _worldCanvases;
     private Layout.PluginCanvasStack? _canvasesAboveWindows;
 
@@ -4180,9 +4182,19 @@ public sealed class RetailUiRuntime : IDisposable
                 // subtree back through FailMount instead of leaking it.
                 _bindings.Plugins.CompleteMount(panel, Host.Root, element);
                 RetailWindowHandle handle = window.Register(Host.WindowManager, panel.WindowName, visibility);
+                // Before the cleanup is published: a plugin that disposed the
+                // window meanwhile runs the cleanup at once, which takes them out again.
+                IReadOnlyList<UiMarkupCanvas> canvases = window.Canvases;
+                if (canvases.Count > 0)
+                    MarkupCanvases().AddWindow(panel.Owner.Id, canvases);
                 _bindings.Plugins.CompleteWindowMount(
                     panel,
-                    () => Host.WindowManager.Unregister(panel.WindowName));
+                    () =>
+                    {
+                        Host.WindowManager.Unregister(panel.WindowName);
+                        if (canvases.Count > 0)
+                            _markupCanvases?.RemoveWindow(canvases);
+                    });
 
                 if (panel.Descriptor.ShowInSidePanel)
                 {
@@ -4244,12 +4256,32 @@ public sealed class RetailUiRuntime : IDisposable
     /// </summary>
     private Layout.PluginCanvasStack CanvasStack(PluginCanvasLayer layer)
     {
-        if (_worldCanvases is null && _canvasesAboveWindows is null)
-            Host.Root.PressStarting += ReportPressToCanvases;
+        ReportPressesToCanvases();
         return layer == PluginCanvasLayer.AboveWindows
             ? _canvasesAboveWindows ??= new Layout.PluginCanvasStack(
                 OverlayHost.AddLayerAboveWindows("PluginCanvasesAboveWindows"))
             : _worldCanvases ??= new Layout.PluginCanvasStack(OverlayHost.AddLayer("PluginCanvases"));
+    }
+
+    /// <summary>Starts telling canvases of presses, once, whichever kind of canvas comes first.</summary>
+    private void ReportPressesToCanvases()
+    {
+        if (_reportingPressesToCanvases) return;
+        _reportingPressesToCanvases = true;
+        Host.Root.PressStarting += ReportPressToCanvases;
+    }
+
+    /// <summary>The table pairing markup canvases with their windows' <c>&lt;canvas&gt;</c> elements, made on first use.</summary>
+    private Layout.PluginMarkupCanvases MarkupCanvases()
+    {
+        if (_markupCanvases is not null) return _markupCanvases;
+        ReportPressesToCanvases();
+        BufferedUiRegistry plugins = _bindings.Plugins
+            ?? throw new InvalidOperationException("markup canvases need the plugin registry");
+        return _markupCanvases = new Layout.PluginMarkupCanvases(
+            canvas => CreateCanvasElement(canvas, hosted: true),
+            plugins.FindCanvas,
+            line => Console.WriteLine($"[UI] {line}"));
     }
 
     /// <summary>
@@ -4259,6 +4291,7 @@ public sealed class RetailUiRuntime : IDisposable
     private void ReportPressToCanvases(UiMouseButton button, int x, int y)
     {
         _canvasesAboveWindows?.ReportPress(button, x, y);
+        _markupCanvases?.ReportPress(button, x, y);
         _worldCanvases?.ReportPress(button, x, y);
     }
 
@@ -4277,21 +4310,21 @@ public sealed class RetailUiRuntime : IDisposable
         {
             try
             {
-                if (_bindings.PluginCanvases is not { } services)
+                if (canvas.Descriptor.InMarkup)
                 {
-                    throw new InvalidOperationException(
-                        "this interface was built without renderer services for plugin canvases");
+                    // Checked here so a host without renderer services fails
+                    // the canvas now, as it does a screen canvas, rather than
+                    // when a window would host it.
+                    RequireCanvasServices();
+                    Layout.PluginMarkupCanvases markup = MarkupCanvases();
+                    markup.AddCanvas(canvas);
+                    plugins.CompleteCanvasMount(canvas, () => markup.RemoveCanvas(canvas));
+                    Console.WriteLine(
+                        $"[UI] plugin canvas registered for markup: {canvas.Owner.Id}/{canvas.CanvasId}");
+                    continue;
                 }
-                _pluginCanvasSurface ??= new Layout.PluginCanvasSurface(services, _bindings.Assets.DefaultFont);
                 Layout.PluginCanvasStack stack = CanvasStack(canvas.Layer);
-                PluginUiOwner owner = canvas.Owner;
-                var element = new Layout.PluginCanvasElement(
-                    canvas,
-                    _pluginCanvasSurface,
-                    () => plugins.FindImages(owner),
-                    modifiers: HeldPointerModifiers,
-                    fonts: () => plugins.FindFonts(owner),
-                    keyboardCaptured: () => _bindings.Keyboard?.Dispatcher?.IsCapturing == true);
+                Layout.PluginCanvasElement element = CreateCanvasElement(canvas, hosted: false);
                 stack.Add(element);
                 plugins.CompleteCanvasMount(canvas, () =>
                 {
@@ -4309,6 +4342,30 @@ public sealed class RetailUiRuntime : IDisposable
                     $"[UI] plugin canvas '{canvas.Owner.Id}/{canvas.CanvasId}' failed to mount: {ex.Message}");
             }
         }
+    }
+
+    private PluginCanvasHostServices RequireCanvasServices() =>
+        _bindings.PluginCanvases ?? throw new InvalidOperationException(
+            "this interface was built without renderer services for plugin canvases");
+
+    /// <summary>
+    /// The element that draws <paramref name="canvas"/>: on its layer, or,
+    /// <paramref name="hosted"/>, inside the markup <c>&lt;canvas&gt;</c> that hosts it.
+    /// </summary>
+    private Layout.PluginCanvasElement CreateCanvasElement(PluginCanvasRegistration canvas, bool hosted)
+    {
+        PluginCanvasHostServices services = RequireCanvasServices();
+        BufferedUiRegistry plugins = _bindings.Plugins!;
+        _pluginCanvasSurface ??= new Layout.PluginCanvasSurface(services, _bindings.Assets.DefaultFont);
+        PluginUiOwner owner = canvas.Owner;
+        return new Layout.PluginCanvasElement(
+            canvas,
+            _pluginCanvasSurface,
+            () => plugins.FindImages(owner),
+            modifiers: HeldPointerModifiers,
+            fonts: () => plugins.FindFonts(owner),
+            keyboardCaptured: () => _bindings.Keyboard?.Dispatcher?.IsCapturing == true,
+            hosted: hosted);
     }
 
     /// <summary>
@@ -5245,10 +5302,13 @@ public sealed class RetailUiRuntime : IDisposable
                 _pluginThemeFollow?.Dispose();
                 _pluginThemeFollow = null;
                 Host.Root.PressStarting -= ReportPressToCanvases;
+                _reportingPressesToCanvases = false;
                 // Canvases come down before their images: a canvas may be
                 // showing one. Both hand the plugins' handles back to the
                 // registry for the next interface to mount again.
                 _bindings.Plugins?.UnbindCanvasHost();
+                // Every markup canvas left the table through its teardown just now.
+                _markupCanvases = null;
                 _pluginCanvasSurface?.Dispose();
                 _pluginCanvasSurface = null;
                 // Before the texture cache can go: every plugin's own images
