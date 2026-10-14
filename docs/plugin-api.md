@@ -2264,6 +2264,31 @@ rounding. Cells without geometry, which the floorplan leaves out, are here
 too. The list is read once per landblock and the same list is handed back
 after; it is empty whenever the floorplan would be.
 
+Each cell's `Doorways` are the landblock's cell graph: every opening the data
+authors as a cell portal, whether a doorway, a stairwell or a shaft, as a
+`PluginCellDoorway` with the `OtherCellId` it leads to (zero, and
+`LeadsOutside` true, for an opening onto the landscape) and its `Center` in
+the same landblock-local metres, the middle of the box around the opening's
+corners. Following doorways from cell to cell walks a dungeon the way its
+rooms join, which distance alone does not. A door is an object standing in a
+doorway, not part of it, so a doorway is listed whether its door is open or
+shut; match the door objects you see against `Center` to tell a room behind
+a shut door from one that is closed off. Every doorway between two cells is
+listed from both sides, almost always at the same `Center`. The exception is
+one opening shared by several cells, such as a big room's ceiling under
+smaller cells: the room lists the whole opening once for each of them, while
+each of them lists only its own piece, sometimes in several parts. So one
+neighbour can appear more than once, and the two sides' centres can be up to
+about seven metres apart. `Doorways` needs contract `0.1.25-fork.6`; an older
+host leaves it empty.
+
+```csharp
+IReadOnlyList<PluginIndoorCell> cells = host.Automation.DungeonMap.CaptureIndoorCells(here.CellId);
+var neighbours = cells.ToDictionary(
+    cell => cell.CellId,
+    cell => cell.Doorways.Where(d => !d.LeadsOutside).Select(d => d.OtherCellId).Distinct().ToArray());
+```
+
 ## Terrain
 
 ```csharp
