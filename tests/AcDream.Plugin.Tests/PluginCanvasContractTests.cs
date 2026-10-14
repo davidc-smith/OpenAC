@@ -236,6 +236,14 @@ public sealed class PluginCanvasContractTests
     }
 
     [Fact]
+    public void InMarkupIsOffByDefaultAndKeptWhenSet()
+    {
+        var descriptor = new PluginCanvasDescriptor("map", 10, 10);
+        Assert.False(descriptor.InMarkup);
+        Assert.True((descriptor with { InMarkup = true }).InMarkup);
+    }
+
+    [Fact]
     public void WhiteAndTransparentAreWhatTheyClaim()
     {
         Assert.Equal(new PluginColor(255, 255, 255, 255), PluginColor.White);

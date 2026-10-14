@@ -26,6 +26,7 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     // Width in the high half, height in the low half, so the interface never
     // reads the width of one size with the height of another.
     private long _size;
+    private volatile bool _hosted;
     private Action? _teardown;
     private Action? _releasePointer;
 
@@ -150,7 +151,17 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
         }
     }
 
-    public bool TryResize(int width, int height)
+    public bool TryResize(int width, int height) =>
+        !Descriptor.InMarkup && Resize(width, height);
+
+    /// <summary>
+    /// Takes the size the canvas's markup element was laid out at. The same
+    /// write as <see cref="TryResize"/>, which a markup canvas refuses because
+    /// its element, not the plugin, decides its size.
+    /// </summary>
+    internal bool SetLaidOutSize(int width, int height) => Resize(width, height);
+
+    private bool Resize(int width, int height)
     {
         if (width < 1 || height < 1 || _paint is null)
             return false;
@@ -160,10 +171,21 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
         return true;
     }
 
+    /// <summary>
+    /// Whether a markup element hosts the canvas now; set by the interface's
+    /// pairing table. Always false for a canvas not registered in markup.
+    /// </summary>
+    internal bool IsHosted
+    {
+        get => _hosted;
+        set => _hosted = value;
+    }
+
     private static long Pack(int width, int height) =>
         ((long)width << 32) | (uint)height;
 
-    public bool IsAvailable => IsMounted && !IsDropped && _paint is not null;
+    public bool IsAvailable =>
+        IsMounted && !IsDropped && _paint is not null && (!Descriptor.InMarkup || _hosted);
 
     public bool IsVisible { get; set; }
 

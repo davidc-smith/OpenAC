@@ -97,6 +97,10 @@ internal static class MarkupContentSize
                 return Range(FieldWidth, FieldMinWidth, MeterHeight);
             case UiMarkupList or UiMarkupLog:
                 return new FlexMeasurement(new FlexSize(ListWidth, ListHeight), new FlexSize(ListMinWidth, ListMinHeight));
+            case UiMarkupCanvas:
+                // Nothing of its own: its w/h, basis or grow, or the container's
+                // stretch, decide its size.
+                return Fixed(0f, 0f);
             default:
                 return null;
         }

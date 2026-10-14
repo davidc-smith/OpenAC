@@ -278,6 +278,7 @@ Unknown or miscased element names throw at build time.
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
 | `list` | Scrolling rows | `x y w h selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children |
+| `canvas` | Hosts the plugin canvas registered with `InMarkup` | `id` (required), `x y w h`, and the flex item attributes (see [`<canvas>`](#canvas-a-plugin-drawing-inside-the-window)) |
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
@@ -414,6 +415,50 @@ An unknown anchor token, or a value that is present and names no edge at all,
 throws at build time naming the element and the value. Changing a panel's authored
 size or limits in a later plugin version resets each user's stored size once;
 their saved position is kept.
+
+## `<canvas>`: a plugin drawing inside the window
+
+A `<canvas id="...">` shows a plugin canvas inside the window, where the layout puts it. The plugin registers the
+canvas as usual, with `InMarkup = true`, and keeps the `IPluginCanvas` it gets back: `Invalidate`, `PointerHandler`,
+`KeyHandler`, `ReleasePointer` and outside presses work as for any canvas. Pointer events are `Down`, `Up`, `Move`
+(while a button is held), `Wheel`, `Cancelled` and `PressedOutside`, as for a screen canvas; there is no hover. The
+`<canvas>` element takes the common attributes (`name`/`id`, `visible`, `enabled`, `tooltip`, `anchor`) and, in a flex
+container, the flex item attributes. It needs contract `0.1.25-fork.5` or later.
+
+```csharp
+IPluginCanvas map = Host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("dungeon-map", 200, 200) { InMarkup = true, AcceptsPointerInput = true },
+    PaintMap);
+```
+
+```xml
+<group layout="column" grow="1">
+  <label text="Dungeon" />
+  <canvas id="dungeon-map" grow="1" />
+</group>
+```
+
+- **Size.** The element is sized like any leaf: `w`/`h`, or `grow`, `basis`, `min*`/`max*` and the container's
+  stretch in a flex container. On its own it measures 0×0. The canvas fills it, rounded to whole pixels;
+  `painter.Width`/`Height` and `map.Width`/`Height` report that size, and a change repaints the canvas. Below 1×1 the
+  canvas keeps its last size. The descriptor's size counts only until the first layout. `TryResize` answers false,
+  and `Anchor`, `Offset`, `Layer` and `ZOrder` are ignored.
+- **Shown.** The canvas is drawn and takes input only while `IsVisible` is true and the element is shown: its window
+  open and no ancestor (a hidden tab page, a `visible="{...}"` group) hidden. Inside a scrolling group it scrolls and
+  clips with the content; pointer positions stay in the canvas's own pixels.
+- **Pairing.** The id is the canvas's `CanvasId`, matched within the plugin only. Either may come first. A canvas
+  with no element yet is not drawn (`IsAvailable` is false) and the client log says it is waiting. An element with
+  no canvas draws nothing. A `<canvas>` without an id, or the same id twice in one window, is a markup error. With
+  the same id in two windows, the first one mounted shows the canvas, and the other takes over if that window goes.
+  The log also says once when an element shows nothing because another window shows its canvas, or because the
+  canvas was registered without `InMarkup`.
+- **Input details.** `id` is the canvas id; `name` is accepted when `id` is absent. A canvas with pointer input takes
+  every wheel step over it, so inside a scroll group the group does not scroll under the pointer; a canvas without
+  pointer input lets the wheel through. `enabled="false"` stops pointer input on the canvas (and hover), but not
+  outside presses or the plugin's keyboard focus requests. `tooltip` shows only over a canvas that takes pointer
+  input: a canvas without it lets clicks and hover through, so no tooltip can appear.
+- **Lifetime.** When the window goes, the canvas waits for another element; the plugin's handle keeps working.
+  Disposing the canvas empties the element. Markup canvases count toward the 8 canvases a plugin may hold.
 
 ## Flex layout
 
@@ -891,6 +936,11 @@ by `Plugins/ScopedUiRegistryWorldMarkersTests` and
 `Physics/TerrainHeightSamplerTests` under `tests/AcDream.Core.Tests/`, and by
 `PluginWorldMarkersContractTests` under `tests/AcDream.Plugin.Tests/` for the
 inert answers of an older host.
+
+Markup canvases are covered by `UI/MarkupCanvasTests`,
+`UI/Layout/PluginCanvasElementTests.Markup` and
+`UI/Layout/PluginCanvasElementTests.MarkupPairing` under
+`tests/AcDream.App.Tests/`.
 
 SVG icons are covered by `Plugins/PluginSvgIconTests`, `Plugins/SvgOutlineTests`
 and `Plugins/SvgStrokerTests` under `tests/AcDream.Core.Tests/`, and by

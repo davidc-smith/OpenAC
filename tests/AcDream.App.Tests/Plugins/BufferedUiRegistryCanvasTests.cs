@@ -227,4 +227,69 @@ public sealed class BufferedUiRegistryCanvasTests
         Assert.Equal(-7, registration.ZOrder);
         Assert.Equal(PluginCanvasLayer.AboveWindows, registration.Layer);
     }
+
+    private static PluginCanvasDescriptor Markup(string id) => new(id, 10, 10) { InMarkup = true };
+
+    [Fact]
+    public void AMarkupCanvasRefusesTryResizeButTakesItsLaidOutSize()
+    {
+        var registry = new BufferedUiRegistry();
+        var canvas = (PluginCanvasRegistration)registry.RegisterCanvas(A, Markup("map"), Paint);
+        Assert.True(canvas.TakeInvalidation()); // the first paint every canvas starts with
+
+        Assert.False(canvas.TryResize(40, 30));
+        Assert.Equal((10, 10), (canvas.Width, canvas.Height));
+        Assert.False(canvas.TakeInvalidation());
+
+        Assert.True(canvas.SetLaidOutSize(40, 30));
+        Assert.Equal((40, 30), (canvas.Width, canvas.Height));
+        Assert.True(canvas.TakeInvalidation());
+
+        Assert.True(canvas.SetLaidOutSize(40, 30));
+        Assert.False(canvas.TakeInvalidation());
+
+        Assert.False(canvas.SetLaidOutSize(0, 30));
+        Assert.Equal((40, 30), (canvas.Width, canvas.Height));
+    }
+
+    [Fact]
+    public void AMarkupCanvasIsAvailableOnlyWhileHosted()
+    {
+        var registry = new BufferedUiRegistry();
+        var canvas = (PluginCanvasRegistration)registry.RegisterCanvas(A, Markup("map"), Paint);
+        Assert.Same(canvas, Assert.Single(registry.DrainCanvases()));
+        registry.CompleteCanvasMount(canvas, () => { });
+
+        Assert.False(canvas.IsAvailable);
+        canvas.IsHosted = true;
+        Assert.True(canvas.IsAvailable);
+        canvas.IsHosted = false;
+        Assert.False(canvas.IsAvailable);
+    }
+
+    [Fact]
+    public void APlainCanvasIsAvailableOnceMountedAsBefore()
+    {
+        var registry = new BufferedUiRegistry();
+        var canvas = (PluginCanvasRegistration)registry.RegisterCanvas(A, Canvas("hud"), Paint);
+        registry.DrainCanvases();
+        registry.CompleteCanvasMount(canvas, () => { });
+        Assert.True(canvas.IsAvailable);
+        Assert.True(canvas.TryResize(20, 20));
+    }
+
+    [Fact]
+    public void FindCanvasLooksOnlyAtTheGivenPlugin()
+    {
+        var registry = new BufferedUiRegistry();
+        IPluginCanvas mine = registry.RegisterCanvas(A, Markup("map"), Paint);
+        registry.RegisterCanvas(B, Canvas("other"), Paint);
+
+        Assert.Same(mine, registry.FindCanvas("a", "map"));
+        Assert.Null(registry.FindCanvas("b", "map"));
+        Assert.Null(registry.FindCanvas("a", "other"));
+
+        mine.Dispose();
+        Assert.Null(registry.FindCanvas("a", "map"));
+    }
 }

@@ -2079,6 +2079,28 @@ rectangle. The handler's 2 ms budget and its dropping apply as for every
 other pointer event. Without a window the flag and the handler are kept and
 nothing is delivered.
 
+### Canvases in markup
+
+A canvas registered with `InMarkup = true` does not sit on the screen: a
+`<canvas id="...">` element in one of the plugin's markup windows hosts it, and
+the layout decides where it goes and how big it is. The id is the canvas's
+`CanvasId`. Until an element hosts it `IsAvailable` is false and nothing is
+drawn; the client's log says the canvas is waiting. `TryResize` answers false,
+since the element decides the size, and `Width` and `Height` report the
+element's laid-out size in whole pixels; `Anchor`, `Offset`, `Layer` and
+`ZOrder` are ignored. Painting, pointer and keyboard input, outside presses
+and `Dispose` work as for any canvas, in the canvas's own pixels. Needs contract
+`0.1.25-fork.5`; a host without a window keeps the flag and draws nothing.
+
+```csharp
+IPluginCanvas map = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("dungeon-map", 200, 200) { InMarkup = true },
+    painter => DrawMap(painter));
+```
+
+Pairing, sizing, visibility and lifetime are described under
+[`<canvas>` in the markup guide](plugin-ui-markup.md#canvas-a-plugin-drawing-inside-the-window).
+
 ### Keyboard input
 
 A canvas that wants keys (a text box, a widget driven by the arrow keys)

@@ -1131,6 +1131,30 @@ public sealed class HeadlessPluginApiSurfaceTests
     }
 
     /// <summary>
+    /// A canvas registered for a markup <c>&lt;canvas&gt;</c> is accepted
+    /// without a window like any other: it is not available, cannot be
+    /// resized, and nothing is ever painted.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowAnInMarkupCanvasIsAcceptedAndNeverPainted()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        int paints = 0;
+
+        IPluginCanvas canvas = pluginHost.Ui.RegisterCanvas(
+            new PluginCanvasDescriptor("map", 200, 100) { InMarkup = true },
+            _ => paints++);
+        canvas.Invalidate();
+
+        Assert.False(canvas.IsAvailable);
+        Assert.False(canvas.TryResize(300, 150));
+        Assert.Equal(0, paints);
+        canvas.Dispose();
+    }
+
+    /// <summary>
     /// A canvas that opted in to pointer input is accepted without a
     /// window in the same way: the handler is kept so the plugin's own
     /// logic runs unchanged, nothing ever calls it, and releasing the

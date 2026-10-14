@@ -17,6 +17,9 @@ internal sealed class MarkupWindow(
     public PluginTitleBar? TitleBar { get; } = titleBar;
     public int AuthoredGeometryRevision { get; } = authoredGeometryRevision;
 
+    /// <summary>The window's <c>&lt;canvas&gt;</c> elements in document order; each hosts the plugin canvas with its id.</summary>
+    public IReadOnlyList<UiMarkupCanvas> Canvases { get; init; } = [];
+
     /// <summary>
     /// Registers the mounted frame under <paramref name="name"/>, with the
     /// content root and the authored revision, and connects the close button
