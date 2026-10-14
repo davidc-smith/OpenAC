@@ -137,6 +137,34 @@ public sealed record PluginCanvasDescriptor(string CanvasId, int Width, int Heig
     /// without a window the flag is kept and nothing is ever delivered.
     /// </summary>
     public bool WantsOutsidePresses { get; init; }
+
+    /// <summary>
+    /// Whether the canvas sits inside one of the plugin's markup windows
+    /// instead of on the screen by itself. On, a <c>&lt;canvas id="..."&gt;</c>
+    /// element whose id is this canvas's <see cref="CanvasId"/> hosts it: the
+    /// window's layout decides where it is and how large (<c>w</c>, <c>h</c>,
+    /// <c>grow</c> and the other flex item attributes), and the canvas fills
+    /// that rectangle, rounded to whole pixels. <see cref="Width"/> and
+    /// <see cref="Height"/> are its size only until it is first laid out;
+    /// after that <see cref="IPluginCanvas.Width"/> and
+    /// <see cref="IPluginCanvas.Height"/> report the laid-out size, and a
+    /// change of it repaints the canvas. <see cref="IPluginCanvas.TryResize"/>
+    /// answers false, and <see cref="Anchor"/>, <see cref="Offset"/>,
+    /// <see cref="Layer"/> and <see cref="ZOrder"/> are kept but ignored.
+    /// The canvas is drawn and takes input only while
+    /// <see cref="IPluginCanvas.IsVisible"/> is true and its element is shown:
+    /// its window open, its tab or group not hidden.
+    /// <see cref="IPluginCanvas.IsAvailable"/> is true only while an element
+    /// hosts it. Either may come first: a canvas waits for its element, and
+    /// an element draws nothing until its canvas is registered. When two of
+    /// the plugin's windows have an element with the same id, the first one
+    /// mounted hosts the canvas, and the other takes over if that window goes
+    /// away. When the window goes, the canvas waits for another element;
+    /// pointer, keyboard and outside-press input work as for any canvas, in
+    /// the canvas's own pixels. Off, the default, nothing changes. On a host
+    /// without a window the flag is kept and nothing is drawn.
+    /// </summary>
+    public bool InMarkup { get; init; }
 }
 
 /// <summary>Which mouse button a pointer event is about.</summary>
@@ -605,7 +633,7 @@ public interface IPluginCanvas : IDisposable
     /// <summary>The canvas's height in pixels: as registered, or as last resized.</summary>
     int Height { get; }
 
-    /// <summary>Whether the host draws this canvas at all: false without a window.</summary>
+    /// <summary>Whether the host draws this canvas at all: false without a window, and for an <see cref="PluginCanvasDescriptor.InMarkup"/> canvas while no markup element hosts it.</summary>
     bool IsAvailable => false;
 
     /// <summary>
@@ -621,8 +649,10 @@ public interface IPluginCanvas : IDisposable
     /// <param name="height">The new height in pixels, at least 1.</param>
     /// <returns>
     /// True when the canvas now has that size. False for a width or height
-    /// below 1, on a disposed canvas, and on a host that cannot resize, which
-    /// is what the default implementation answers; the canvas is unchanged.
+    /// below 1, on a disposed canvas, for a canvas registered with
+    /// <see cref="PluginCanvasDescriptor.InMarkup"/> (its element decides its
+    /// size), and on a host that cannot resize, which is what the default
+    /// implementation answers; the canvas is unchanged.
     /// </returns>
     bool TryResize(int width, int height) => false;
 
