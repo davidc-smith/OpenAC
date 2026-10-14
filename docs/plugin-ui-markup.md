@@ -727,13 +727,14 @@ selection alone. A click past a column's own data does nothing.
 
 A `button` cell is drawn as a button one pixel inside its cell, or at
 `buttonw` by `buttonh` centred in the cell (never larger than the cell; set
-either alone to size only that side), with its caption centred: the theme's button face, border, hover and press, or under
-Classic the same face and border as a markup `<button>`. It fires like a
-`<button>`, when the left button comes up over the button it went down on, so a
-press dragged off the button cancels it; a click beside a smaller button does
-nothing. A cell with an empty caption is not a
-button and ignores clicks. On a host older than button columns, a
-`type="button"` column fails the build of its window as an unknown type.
+either alone to size only that side), with its caption centred. It has the
+theme's button face, border, hover and press, or under Classic the face and
+border of a markup `<button>`. It fires like a `<button>`, when the left
+button comes up over the button it went down on, so a press dragged off the
+button cancels it; a click beside a smaller button does nothing. A cell with
+an empty caption is not a button and ignores clicks. On a host older than
+button columns, a `type="button"` column fails the build of its window as an
+unknown type.
 
 There is no header row; place `<label>` elements above the list. A `check`
 cell draws the same lamp glyph as `<toggle>`. When rows overflow the list's
