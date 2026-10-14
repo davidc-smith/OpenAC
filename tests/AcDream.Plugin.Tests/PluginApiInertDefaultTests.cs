@@ -108,6 +108,12 @@ public sealed class PluginApiInertDefaultTests
     private sealed class EmptyTerrain : ITerrainAutomation;
 
     [Fact]
+    public void WorldTrianglesDrawNothingByDefault()
+    {
+        Assert.Null(NoOpPluginWorldTriangles.Instance.CreateLayer());
+    }
+
+    [Fact]
     public void TheStatusBoardKeepsNothingByDefault()
     {
         IPluginStatusBoard board = NoOpPluginStatusBoard.Instance;

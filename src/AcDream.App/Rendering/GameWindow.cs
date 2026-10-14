@@ -120,6 +120,7 @@ public sealed class GameWindow :
     private AcDream.App.Interaction.SelectionInteractionController? _selectionInteractions;
     private DebugLineRenderer? _debugLines;
     public AcDream.App.Plugins.PluginWorldLineStore WorldLines { get; } = new();
+    public AcDream.App.Plugins.PluginWorldTriangleStore WorldTriangles { get; } = new();
     private readonly AcDream.App.Rendering.WorldSceneDebugState
         _worldSceneDebugState = new();
 
@@ -1591,7 +1592,8 @@ public sealed class GameWindow :
                         Console.WriteLine,
                         _renderPackDiagnostics,
                         WorldLines,
-                        _uiRegistry?.WorldMarkerStore),
+                        _uiRegistry?.WorldMarkerStore,
+                        WorldTriangles),
                     this).Compose(
                         platformResult,
                         hostInputCamera,

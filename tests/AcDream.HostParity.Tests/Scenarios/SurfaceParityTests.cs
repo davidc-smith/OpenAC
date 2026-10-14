@@ -154,6 +154,15 @@ public sealed class SurfaceParityTests
                 Safely(() => layer?.SetLines(Array.Empty<PluginWorldLine>())));
             transcript.Record("layer.released", Safely(() => layer?.Dispose()));
 
+            transcript.Step("world triangles");
+            IPluginWorldTriangleLayer? triangles = null;
+            transcript.Record(
+                "layer", Safely(() => triangles = host.WorldTriangles.CreateLayer()));
+            transcript.Record(
+                "layer.used",
+                Safely(() => triangles?.SetTriangles(Array.Empty<PluginWorldTriangle>())));
+            transcript.Record("layer.released", Safely(() => triangles?.Dispose()));
+
             transcript.Step("clipboard");
             transcript.Record(
                 "set", Safely(() => _ = host.Clipboard.TrySetText("parity")));

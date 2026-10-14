@@ -17,6 +17,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
     private readonly IPluginStatusBoard _statusBoardView;
     private bool _disposed;
     private readonly ScopedWorldLines _worldLines;
+    private readonly ScopedWorldTriangles _worldTriangles;
     private readonly string? _pluginDirectory;
     private readonly bool _isHotReload;
     private readonly ScopedMapRegistry _maps;
@@ -35,6 +36,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         _pluginDirectory = pluginDirectory;
         _isHotReload = isHotReload;
         _worldLines = new ScopedWorldLines(inner.WorldLines);
+        _worldTriangles = new ScopedWorldTriangles(inner.WorldTriangles);
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginDisplayName);
         _pluginId = pluginId;
@@ -67,6 +69,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
     public ISelectionService Selection => _selection;
     public IUiRegistry Ui => _ui;
     public IPluginWorldLines WorldLines => _worldLines;
+    public IPluginWorldTriangles WorldTriangles => _worldTriangles;
     public IPluginStorage Storage => _storage;
     public IPluginStorage VtankProfiles => _inner.VtankProfiles;
     public IPluginCommandRegistry Commands => _commands;
@@ -179,6 +182,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         _disposed = true;
         _events.Dispose();
         _worldLines.Dispose();
+        _worldTriangles.Dispose();
         _selection.Dispose();
         _ui.Dispose();
         _commands.Dispose();
@@ -1025,6 +1029,32 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         {
             _disposed = true;
             foreach (IPluginWorldLineLayer layer in _layers)
+                layer.Dispose();
+            _layers.Clear();
+        }
+    }
+
+    /// <summary>
+    /// The triangle layers one plugin drew, let go together when the plugin is.
+    /// </summary>
+    private sealed class ScopedWorldTriangles(IPluginWorldTriangles inner) : IPluginWorldTriangles, IDisposable
+    {
+        private readonly List<IPluginWorldTriangleLayer> _layers = [];
+        private bool _disposed;
+
+        public IPluginWorldTriangleLayer? CreateLayer()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            IPluginWorldTriangleLayer? layer = inner.CreateLayer();
+            if (layer is not null)
+                _layers.Add(layer);
+            return layer;
+        }
+
+        public void Dispose()
+        {
+            _disposed = true;
+            foreach (IPluginWorldTriangleLayer layer in _layers)
                 layer.Dispose();
             _layers.Clear();
         }

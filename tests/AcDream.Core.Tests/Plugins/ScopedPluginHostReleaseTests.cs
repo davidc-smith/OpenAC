@@ -91,6 +91,26 @@ public sealed class ScopedPluginHostReleaseTests
         Assert.All(surfaces.Registrations, static registration => Assert.True(registration.IsDisposed));
     }
 
+    /// <summary>
+    /// Mutation (2026-10-14): forwarding WorldTriangles unchanged left the
+    /// plugin's triangle layer in the world after it was released.
+    /// </summary>
+    [Fact]
+    public void WorldTriangleLayersAreLetGoWithThePlugin()
+    {
+        var surfaces = new EventSurfaces();
+        var scope = new ScopedPluginHost(new StubHost(surfaces), "acdream.events", "Events");
+
+        IPluginWorldTriangleLayer? layer = scope.WorldTriangles.CreateLayer();
+        Assert.NotNull(layer);
+        Assert.Single(surfaces.Registrations, static registration => !registration.IsDisposed);
+
+        scope.Dispose();
+
+        Assert.All(surfaces.Registrations, static registration => Assert.True(registration.IsDisposed));
+        Assert.Throws<ObjectDisposedException>(() => scope.WorldTriangles.CreateLayer());
+    }
+
     private sealed class StubHost(EventSurfaces surfaces) : IPluginHost
     {
         public bool HasUi => false;
@@ -102,6 +122,7 @@ public sealed class ScopedPluginHostReleaseTests
         public IAutomationSurface Automation => surfaces;
         public IPluginMapRegistry Maps => surfaces;
         public IPluginRenderRegistry Rendering => surfaces;
+        public IPluginWorldTriangles WorldTriangles => surfaces;
     }
 
     private sealed class StubLogger : IPluginLogger
@@ -113,7 +134,7 @@ public sealed class ScopedPluginHostReleaseTests
 
     private sealed class EventSurfaces :
         IAutomationSurface, ITradeAutomation, IVendorAutomation, IEquipmentAutomation,
-        ICharacterInfo, IPluginMapRegistry, IPluginRenderRegistry
+        ICharacterInfo, IPluginMapRegistry, IPluginRenderRegistry, IPluginWorldTriangles
     {
         private readonly List<Delegate> _handlers = [];
 
@@ -173,6 +194,9 @@ public sealed class ScopedPluginHostReleaseTests
         public IPluginTexture? LoadTexture(string resourceId) =>
             Add(new Registration());
 
+        public IPluginWorldTriangleLayer? CreateLayer() =>
+            Add(new Registration());
+
         private Registration Add(Registration registration)
         {
             Registrations.Add(registration);
@@ -180,7 +204,8 @@ public sealed class ScopedPluginHostReleaseTests
         }
     }
 
-    private sealed class Registration : IPluginMapSurface, IPluginHudRegistration, IPluginTexture
+    private sealed class Registration :
+        IPluginMapSurface, IPluginHudRegistration, IPluginTexture, IPluginWorldTriangleLayer
     {
         internal bool IsDisposed { get; private set; }
 
@@ -201,6 +226,7 @@ public sealed class ScopedPluginHostReleaseTests
         public void SetBackground(PluginMapImage image) { }
         public void SetMarkers(IReadOnlyList<PluginMapMarker> markers) { }
         public void SetRoute(IReadOnlyList<PluginMapPoint> points) { }
+        public void SetTriangles(IReadOnlyList<PluginWorldTriangle> triangles) { }
         public void Dispose() => IsDisposed = true;
     }
 }

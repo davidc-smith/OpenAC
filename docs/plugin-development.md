@@ -120,11 +120,13 @@ constructor. The host creates it with no arguments, then calls:
   `Enable`: unsubscribe events, release hotkeys, stop timers.
 
 `IPluginHost` gives you `State`, `Events`, `Commands`, `Storage`, `Log`,
-`Ui`, `Window`, `Clipboard`, `Hotkeys`, `WorldLines` and `Automation`.
-`WorldLines` draws lines in the world (a route, say) in layers the plugin
-owns; a host without a window hands out no layer. Only the parts of lines
-within 250 m of the camera are drawn, and a frame draws a fixed amount of
-them: past that, the lines nearest the camera are kept. `Ui` registers
+`Ui`, `Window`, `Clipboard`, `Hotkeys`, `WorldLines`, `WorldTriangles` and
+`Automation`. `WorldLines` draws lines in the world (a route, say) in layers
+the plugin owns; a host without a window hands out no layer. Only the parts
+of lines within 250 m of the camera are drawn, and a frame draws a fixed
+amount of them: past that, the lines nearest the camera are kept.
+`WorldTriangles` fills see-through triangles the same way, such as ground a
+plugin shades (see [World triangles](plugin-api.md#world-triangles)). `Ui` registers
 windows and also hands out what a plugin draws for itself:
 `Ui.WorldMarkers` (icons over objects and shapes on the ground), `Ui.Images`,
 `Ui.Fonts` and canvases (`Ui.RegisterCanvas`), all covered in the
