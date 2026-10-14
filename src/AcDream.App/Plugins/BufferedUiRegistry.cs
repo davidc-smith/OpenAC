@@ -562,6 +562,25 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
     }
 
     /// <summary>
+    /// The canvas <paramref name="ownerId"/> registered as
+    /// <paramref name="canvasId"/>, or null. Read by the interface to say why
+    /// a markup <c>&lt;canvas&gt;</c> shows nothing.
+    /// </summary>
+    internal PluginCanvasRegistration? FindCanvas(string ownerId, string canvasId)
+    {
+        lock (_gate)
+        {
+            foreach (PluginCanvasRegistration registration in _canvases.Values)
+            {
+                if (registration.Owner.Id.Equals(ownerId, StringComparison.Ordinal)
+                    && registration.CanvasId.Equals(canvasId, StringComparison.Ordinal))
+                    return registration;
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Records how a mounted canvas comes down. A plugin can dispose its
     /// canvas between the drain and this call; the teardown then runs at
     /// once instead of leaving the element in the tree with no owner.
