@@ -125,6 +125,19 @@ public sealed class TerrainSurface
         BlockWaterType = !anyWater ? (byte)0 : everyCellFlooded ? (byte)2 : (byte)1;
     }
 
+    /// <summary>The resolved height of corner (x, y), each 0 to 8.</summary>
+    internal float CornerHeight(int x, int y) => _z[x, y];
+
+    /// <summary>Whether corner (x, y), each 0 to 8, is water.</summary>
+    internal bool IsWaterCorner(int x, int y) => _cornerIsWater[x, y];
+
+    /// <summary>Cell (x, y)'s water, each 0 to 7: 0 none, 1 partly, 2 entirely.</summary>
+    internal byte CellWaterType(int cellX, int cellY) => _cellWaterType[cellX, cellY];
+
+    /// <summary>Whether cell (x, y), each 0 to 7, is cut from its south-west corner to its north-east one.</summary>
+    internal bool IsCellSplitSWtoNE(int cellX, int cellY) =>
+        IsSplitSWtoNE(_landblockX, (uint)cellX, _landblockY, (uint)cellY);
+
     public float SampleZ(float localX, float localY)
     {
         float fx = Math.Clamp(localX / CellSize, 0f, CellsPerSide - 0.001f);

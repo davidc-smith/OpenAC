@@ -37,9 +37,9 @@ public sealed class ScopedAutomationSurfaceTests
         // change; a number that no longer matches means one of the two was
         // forgotten.
         Assert.True(
-            properties.Length == 27,
+            properties.Length == 28,
             "IAutomationSurface has "
-                + $"{properties.Length} members rather than the 27 this "
+                + $"{properties.Length} members rather than the 28 this "
                 + "census was written for. Forward the new one in "
                 + "ScopedPluginHost and say so here.");
 
@@ -96,7 +96,7 @@ public sealed class ScopedAutomationSurfaceTests
         // Every property this loop actually walked should be one of the
         // known forwarders, guarding against the loop silently checking zero
         // properties if reflection ever returned nothing.
-        Assert.Equal(20, checkedMembers.Count);
+        Assert.Equal(21, checkedMembers.Count);
 
         scoped.Dispose();
     }
@@ -407,6 +407,7 @@ public sealed class ScopedAutomationSurfaceTests
         public IProjectileAutomation Projectiles { get; } = new FakeProjectileAutomation();
         public IWorldLabelAutomation Labels { get; } = new FakeWorldLabelAutomation();
         public IDungeonMapAutomation DungeonMap { get; } = new FakeDungeonMapAutomation();
+        public ITerrainAutomation Terrain { get; } = new FakeTerrainAutomation();
         public ISelectionAutomation Selection { get; } = new FakeSelectionAutomation();
         public ITradeAutomation Trade { get; } = new FakeTradeAutomation();
         public IVendorAutomation Vendor { get; } = new FakeVendorAutomation();
@@ -534,6 +535,8 @@ public sealed class ScopedAutomationSurfaceTests
     private sealed class FakeWorldLabelAutomation : IWorldLabelAutomation;
 
     private sealed class FakeDungeonMapAutomation : IDungeonMapAutomation;
+
+    private sealed class FakeTerrainAutomation : ITerrainAutomation;
 
     private sealed class FakeSelectionAutomation : ISelectionAutomation;
 

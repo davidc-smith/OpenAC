@@ -2167,6 +2167,56 @@ rounding. Cells without geometry, which the floorplan leaves out, are here
 too. The list is read once per landblock and the same list is handed back
 after; it is empty whenever the floorplan would be.
 
+## Terrain
+
+```csharp
+ITerrainAutomation terrain = host.Automation.Terrain;
+PluginNavigationPosition here = host.Automation.Navigation.Snapshot.Position;
+PluginLandblockTerrain ground = terrain.CaptureLandblockTerrain(here.CellId);
+Vector3 local = PluginLandblockTerrain.ToLandblockLocal(here);
+PluginTerrainSample underfoot = ground.Sample(local.X, local.Y);
+foreach (PluginTerrainCell cell in ground.Cells)
+{
+    if (!cell.First.Walkable || !cell.Second.Walkable)
+        ShadeCliff(cell);
+    else if (cell.Water != PluginTerrainWater.None)
+        ShadeWater(cell);
+}
+```
+
+`Terrain` is a landblock's outdoor ground, read from the game data for any
+landblock, near the character or not. The data stores a 9 by 9 grid of
+corner heights 24 metres apart; the ground is that grid cut into 8 by 8
+cells of two triangles each, and the game picks the diagonal per cell.
+`CaptureLandblockTerrain` hands back the `Heights` of the 81 corners in
+metres, their `TerrainTypes` (0 to 31) and `WaterCorners`, corner (x, y) at
+index x * 9 + y, and the 64 `Cells`, cell (x, y) at index x * 8 + y so the
+cell with low id n is at n - 1. Each `PluginTerrainCell` has its `CellId`,
+its `Water` (`None`, `Partial` for a shore, `Entire`), which diagonal it is
+cut along, and its two triangles with their corners, unit normal and
+`Walkable`: true when the normal's z is at least
+`PluginLandblockTerrain.WalkableNormalZ` (0.6642, a slope of about 48
+degrees), the rule the physics applies to every floor.
+
+`Sample(x, y)` reads the ground at a point: the height, the normal, whether
+it is walkable, whether it is in water and the outdoor cell id, on the same
+triangle and with the same numbers the physics finds there. A point is in
+water anywhere in an `Entire` cell, and in a shore cell where the corner
+nearest it is water. A point outside the landblock is read at the nearest
+point on its edge.
+
+The frame is the dungeon map's: x east and y north from the landblock's
+south-west corner, in metres, and `PluginLandblockTerrain.ToLandblockLocal`
+puts a `Navigation` position into it. Only the ground is described:
+buildings, rocks and trees stand on it unseen, so walkable means the slope
+allows standing, not that the spot is free. A sealed dungeon's landblock has
+a terrain record too, usually open sea at height 0, which says nothing about
+the dungeon. Each landblock is read once and the same object handed back
+while it is kept (the last 64); it never changes, so it is safe to keep and
+to read from any thread. `PluginLandblockTerrain.Empty` comes back for a
+landblock the data does not have and on a client with no lease on the game
+data.
+
 ## Clients on this computer
 
 ```csharp
@@ -2663,6 +2713,8 @@ with a window does the work:
   same files. Without them `IsSealedDungeon` is false and `CaptureFloorplan`
   is empty; `CurrentLandblockId` comes from the character's body and is real
   either way.
+- `Terrain` reads the ground out of the same files. Without them
+  `CaptureLandblockTerrain` is empty.
 - `Network`'s cast sharing classifies every spell in the same catalogue, so
   without it `AnnounceCastAttempt` and `AnnounceCastSuccess` return false
   and `CaptureCasts` is empty. `CaptureClients` and this client's own note

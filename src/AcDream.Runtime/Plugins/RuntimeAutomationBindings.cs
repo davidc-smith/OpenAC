@@ -214,6 +214,8 @@ internal static class RuntimeAutomationBindings
                 nameof(RuntimeAutomationHostCapabilities.Content),
             ["BindDungeonMap"] =
                 nameof(RuntimeAutomationHostCapabilities.Content),
+            ["BindTerrain"] =
+                nameof(RuntimeAutomationHostCapabilities.Content),
             ["BindExperienceLevels"] =
                 nameof(RuntimeAutomationHostCapabilities.Content),
         };
@@ -509,6 +511,11 @@ internal static class RuntimeAutomationBindings
         // are only opened when a plan is first asked for.
         surface.BindDungeonMap(dats, datLock);
         bound.Add(nameof(surface.BindDungeonMap));
+
+        // So is the outdoor ground, for any landblock: a plugin shading cliffs
+        // and water reads it from here, on either host.
+        surface.BindTerrain(dats, datLock);
+        bound.Add(nameof(surface.BindTerrain));
 
         // How far the character is from its next level is measured on the
         // level curve in the same files. Read the first time it is asked for.
