@@ -4327,6 +4327,7 @@ public sealed class RetailUiRuntime : IDisposable
                 Layout.PluginCanvasStack stack = CanvasStack(canvas.Layer);
                 Layout.PluginCanvasElement element = CreateCanvasElement(canvas, hosted: false);
                 stack.Add(element);
+                _markupCanvases?.ScreenCanvasMounted();
                 plugins.CompleteCanvasMount(canvas, () =>
                 {
                     Layout.PluginCanvasStack.Remove(element);

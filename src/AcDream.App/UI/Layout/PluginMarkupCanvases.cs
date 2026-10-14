@@ -14,7 +14,14 @@ namespace AcDream.App.UI.Layout;
 ///
 /// <para>What shows nothing says why once: a canvas waiting for its element,
 /// an element whose canvas another window already shows, and an element
-/// naming a canvas that was registered to sit on the screen.</para>
+/// naming a canvas that was registered to sit on the screen. A canvas left
+/// waiting because its window went says nothing: the plugin closed that
+/// window itself, or the client is shutting down.</para>
+///
+/// <para>A plugin on the older, unscoped registration calls has no id of its
+/// own: its canvases arrive as <c>unscoped</c> and the windows
+/// <c>RegisterMarkupPanel</c> makes as <c>legacy</c>. Both pair as one
+/// plugin.</para>
 /// </summary>
 internal sealed class PluginMarkupCanvases
 {
@@ -33,6 +40,10 @@ internal sealed class PluginMarkupCanvases
         // Once per registration, however often it comes back to waiting.
         internal bool ReportedWaiting { get; set; }
     }
+
+    // The owner ids BufferedUiRegistry gives the older registration calls.
+    private const string UnscopedOwnerId = "unscoped";
+    private const string LegacyOwnerId = "legacy";
 
     private readonly Func<PluginCanvasRegistration, PluginCanvasElement> _createElement;
     private readonly Func<string, string, PluginCanvasRegistration?> _findCanvas;
@@ -56,7 +67,7 @@ internal sealed class PluginMarkupCanvases
     {
         ArgumentNullException.ThrowIfNull(registration);
         _entries.Add(new Entry(registration));
-        Pair();
+        Pair(reportWaiting: true);
         ReportIdle();
     }
 
@@ -76,7 +87,7 @@ internal sealed class PluginMarkupCanvases
         ArgumentNullException.ThrowIfNull(elements);
         foreach (UiMarkupCanvas element in elements)
             _slots.Add(new Slot(ownerId, element));
-        Pair();
+        Pair(reportWaiting: true);
         ReportIdle();
     }
 
@@ -97,8 +108,14 @@ internal sealed class PluginMarkupCanvases
             }
             _slots.Remove(slot);
         }
-        Pair();
+        Pair(reportWaiting: false);
     }
+
+    /// <summary>
+    /// A canvas registered without <c>InMarkup</c> was mounted on the screen:
+    /// an element already naming it now knows why it shows nothing.
+    /// </summary>
+    internal void ScreenCanvasMounted() => ReportIdle();
 
     /// <summary>A press went down at interface (<paramref name="x"/>, <paramref name="y"/>): hosted canvases that asked hear of it.</summary>
     internal void ReportPress(UiMouseButton button, int x, int y)
@@ -110,7 +127,7 @@ internal sealed class PluginMarkupCanvases
         }
     }
 
-    private void Pair()
+    private void Pair(bool reportWaiting)
     {
         foreach (Entry entry in _entries.ToArray())
         {
@@ -118,7 +135,7 @@ internal sealed class PluginMarkupCanvases
             Slot? slot = _slots.Find(s => s.Element.Hosted is null && Matches(s, entry.Registration));
             if (slot is null)
             {
-                if (!entry.ReportedWaiting)
+                if (reportWaiting && !entry.ReportedWaiting)
                 {
                     entry.ReportedWaiting = true;
                     _report(
@@ -169,7 +186,7 @@ internal sealed class PluginMarkupCanvases
                     $"{where} shows nothing: another window of the plugin already shows that canvas. "
                     + "It takes over if that window goes away.");
             }
-            else if (_findCanvas(slot.OwnerId, slot.Element.CanvasId) is { Descriptor.InMarkup: false })
+            else if (_findCanvas(PairingId(slot.OwnerId), slot.Element.CanvasId) is { Descriptor.InMarkup: false })
             {
                 slot.Reported = true;
                 _report(
@@ -180,8 +197,11 @@ internal sealed class PluginMarkupCanvases
     }
 
     private static bool Matches(Slot slot, PluginCanvasRegistration registration) =>
-        slot.OwnerId.Equals(registration.Owner.Id, StringComparison.Ordinal)
+        PairingId(slot.OwnerId).Equals(PairingId(registration.Owner.Id), StringComparison.Ordinal)
         && slot.Element.CanvasId.Equals(registration.CanvasId, StringComparison.Ordinal);
+
+    private static string PairingId(string ownerId) =>
+        ownerId.Equals(LegacyOwnerId, StringComparison.Ordinal) ? UnscopedOwnerId : ownerId;
 
     private static string Name(PluginCanvasRegistration registration) =>
         $"{registration.Owner.Id}/{registration.CanvasId}";
