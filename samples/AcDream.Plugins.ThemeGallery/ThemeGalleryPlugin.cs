@@ -78,6 +78,9 @@ public sealed class ThemeGalleryPlugin : IAcDreamPlugin
             ["Strength Self VII", "Invulnerability Self VII", "Impregnability Self VII", "Focus Self VII"];
         public IReadOnlyList<bool> SpellEnabled => _spellEnabled;
         public Action<int> ToggleSpell => index => { if (index >= 0 && index < _spellEnabled.Length) _spellEnabled[index] = !_spellEnabled[index]; };
+        // A disabled spell has no Cast button: an empty caption draws none.
+        public IReadOnlyList<string> CastCaptions => _spellEnabled.Select(on => on ? "Cast" : "").ToArray();
+        public Action<int> Cast => index => Write($"Cast: {Spells[index]}");
         public int Spell { get; private set; } = 1;
         public Action<int> SelectSpell => index => Spell = index;
 

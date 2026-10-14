@@ -133,10 +133,13 @@ internal static class PluginMarkupTheme
             case UiMarkupList list:
                 var lb = list.BackgroundColor; var le = list.BorderColor; var lt = list.TextColor;
                 var ls = list.SelectedColor; var band = list.SelectionBandEnabled;
+                var lbf = list.ButtonColor; var lbe = list.ButtonBorderColor;
                 panel.AddThemeAction(p => {
                     list.ThemePalette = p; list.BackgroundColor = p?.Field ?? lb;
                     list.BorderColor = p?.Border ?? le; list.TextColor = p?.Text ?? lt;
                     list.SelectedColor = p?.Selected ?? ls; list.SelectionBandEnabled = p is not null || band;
+                    // The list's own ground is the field colour, so its buttons take the window's.
+                    list.ButtonColor = p?.Background ?? lbf; list.ButtonBorderColor = p?.Border ?? lbe;
                 });
                 break;
             case UiMeter meter:

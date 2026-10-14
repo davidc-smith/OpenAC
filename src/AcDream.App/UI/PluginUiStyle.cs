@@ -62,7 +62,12 @@ internal static partial class PluginUiStyle
         ctx.StrokeRoundedRect(2f, 2f, w - 4f, h - 4f, MathF.Max(0f, radius - 2f), FocusRingColor(p), 2f);
 
     internal static void Button(
-        UiRenderContext ctx, PluginUiPalette p, float w, float h, Vector4 fill, Vector4 edge, UiControlState state)
+        UiRenderContext ctx, PluginUiPalette p, float w, float h, Vector4 fill, Vector4 edge, UiControlState state) =>
+        Button(ctx, p, 0f, 0f, w, h, fill, edge, state);
+
+    internal static void Button(
+        UiRenderContext ctx, PluginUiPalette p, float x, float y, float w, float h,
+        Vector4 fill, Vector4 edge, UiControlState state)
     {
         (fill, edge) = state switch
         {
@@ -71,7 +76,7 @@ internal static partial class PluginUiStyle
             UiControlState.Disabled => (Faded(fill), Faded(edge)),
             _ => (fill, edge),
         };
-        Surface(ctx, 0f, 0f, w, h, ControlRadius, fill, edge);
+        Surface(ctx, x, y, w, h, ControlRadius, fill, edge);
     }
 
     /// <summary>A button with no face until the pointer is over it.</summary>
