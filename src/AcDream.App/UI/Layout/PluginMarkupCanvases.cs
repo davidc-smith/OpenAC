@@ -57,6 +57,7 @@ internal sealed class PluginMarkupCanvases
         ArgumentNullException.ThrowIfNull(registration);
         _entries.Add(new Entry(registration));
         Pair();
+        ReportIdle();
     }
 
     /// <summary>The canvas was disposed or its interface is going away: its element is emptied.</summary>
@@ -87,7 +88,9 @@ internal sealed class PluginMarkupCanvases
         {
             Slot? slot = _slots.Find(s => ReferenceEquals(s.Element, element));
             if (slot is null) continue;
-            foreach (Entry entry in _entries)
+            // A snapshot: leaving the tree tells the plugin synchronously, and
+            // a handler that disposes its canvas then takes it off the table.
+            foreach (Entry entry in _entries.ToArray())
             {
                 if (ReferenceEquals(entry.Slot, slot))
                     Unhost(entry);
@@ -109,7 +112,7 @@ internal sealed class PluginMarkupCanvases
 
     private void Pair()
     {
-        foreach (Entry entry in _entries)
+        foreach (Entry entry in _entries.ToArray())
         {
             if (entry.Slot is not null) continue;
             Slot? slot = _slots.Find(s => s.Element.Hosted is null && Matches(s, entry.Registration));

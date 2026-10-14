@@ -246,10 +246,12 @@ public sealed partial class PluginCanvasElementTests
     {
         var harness = new Harness();
         PluginMarkupCanvases table = Table(harness);
-        PluginCanvasRegistration registration = MapCanvas(harness, table, []);
+        var sizes = new List<(int, int)>();
+        PluginCanvasRegistration registration = MapCanvas(harness, table, sizes);
         MarkupWindow first = MountWindow(harness, table, GrowMap);
         MarkupWindow second = MountWindow(harness, table, GrowMap, x: 400);
         harness.Frame();
+        Assert.Single(sizes);
 
         Assert.NotNull(Assert.Single(first.Canvases).Hosted);
         Assert.Null(Assert.Single(second.Canvases).Hosted);
@@ -259,6 +261,47 @@ public sealed partial class PluginCanvasElementTests
 
         Assert.NotNull(Assert.Single(second.Canvases).Hosted);
         Assert.True(registration.IsAvailable);
+        harness.Frame();
+        Assert.Equal(2, sizes.Count);
+    }
+
+    [Fact]
+    public void AnElementShadowedBeforeItsCanvasArrivesSaysWhyOnce()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        MarkupWindow first = MountWindow(harness, table, GrowMap);
+        MarkupWindow second = MountWindow(harness, table, GrowMap, x: 400);
+
+        MapCanvas(harness, table, []);
+        harness.Frame();
+
+        Assert.NotNull(Assert.Single(first.Canvases).Hosted);
+        Assert.Null(Assert.Single(second.Canvases).Hosted);
+        Assert.Single(harness.Reports, line => line.Contains("another window"));
+    }
+
+    [Fact]
+    public void ACanvasDisposedWhileItsWindowIsTornDownLeavesCleanly()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        MarkupWindow window = MountWindow(harness, table, GrowMap);
+        PluginCanvasRegistration registration = MapCanvas(harness, table, [], pointer: true);
+        var events = new List<PluginPointerEventKind>();
+        registration.PointerHandler = e =>
+        {
+            events.Add(e.Kind);
+            if (e.Kind == PluginPointerEventKind.Cancelled) registration.Dispose();
+        };
+        harness.Frame();
+        harness.Root.OnMouseDown(UiMouseButton.Left, 40, 40);
+
+        UnmountWindow(harness, table, window);
+
+        Assert.Contains(PluginPointerEventKind.Cancelled, events);
+        Assert.False(registration.IsAvailable);
+        Assert.Null(Assert.Single(window.Canvases).Hosted);
     }
 
     [Fact]
