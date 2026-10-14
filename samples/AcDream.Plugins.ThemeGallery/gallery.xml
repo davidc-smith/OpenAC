@@ -18,6 +18,7 @@
   <list x="12" y="162" w="396" h="96" selected="{Spell}" onchange="{SelectSpell}" selectionband="true">
     <column type="check" width="22" values="{SpellEnabled}" onchange="{ToggleSpell}" />
     <column type="text" width="*" items="{Spells}" />
+    <column type="button" width="64" items="{CastCaptions}" onclick="{Cast}" buttonw="40" buttonh="14" />
   </list>
 
   <log x="12" y="266" w="396" h="72" items="{Log}" />
