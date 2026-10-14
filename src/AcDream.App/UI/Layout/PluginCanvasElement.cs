@@ -96,6 +96,7 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     private readonly List<CanvasTarget> _targets = [];
     private CanvasTarget? _shown;
     private bool _targetsUnavailable;
+    private readonly bool _hosted;
 
     /// <summary>The canvas size the targets were made for.</summary>
     private int _targetsWidth;
@@ -112,6 +113,9 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     private PluginKey _repeatKey;
     private double _repeatTimer;
 
+    /// <summary>True for a canvas a markup <c>&lt;canvas&gt;</c> hosts: it fills its host instead of anchoring.</summary>
+    internal bool IsHosted => _hosted;
+
     internal PluginCanvasElement(
         PluginCanvasRegistration registration,
         PluginCanvasSurface surface,
@@ -120,8 +124,10 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         Func<double>? nowMilliseconds = null,
         Func<PluginKeyModifiers>? modifiers = null,
         Func<PluginFonts?>? fonts = null,
-        Func<bool>? keyboardCaptured = null)
+        Func<bool>? keyboardCaptured = null,
+        bool hosted = false)
     {
+        _hosted = hosted;
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
         _images = images ?? throw new ArgumentNullException(nameof(images));
@@ -513,6 +519,11 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     /// </summary>
     internal void Layout()
     {
+        if (_hosted)
+        {
+            FillHost(Parent?.Width ?? 0f, Parent?.Height ?? 0f);
+            return;
+        }
         (int width, int height) = _registration.Size;
         Width = width;
         Height = height;
@@ -548,6 +559,25 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         }
         Left = MathF.Floor(x + 0.5f);
         Top = MathF.Floor(y + 0.5f);
+    }
+
+    /// <summary>
+    /// Fills a host of <paramref name="hostWidth"/> by
+    /// <paramref name="hostHeight"/>: the canvas takes that size rounded to
+    /// whole pixels, which repaints it when it changed. A host under one pixel
+    /// either way leaves the canvas at its last size; the host clips it away.
+    /// </summary>
+    internal void FillHost(float hostWidth, float hostHeight)
+    {
+        Left = 0f;
+        Top = 0f;
+        int width = (int)MathF.Floor(hostWidth + 0.5f);
+        int height = (int)MathF.Floor(hostHeight + 0.5f);
+        if (width >= 1 && height >= 1)
+            _registration.SetLaidOutSize(width, height);
+        (int sizedWidth, int sizedHeight) = _registration.Size;
+        Width = sizedWidth;
+        Height = sizedHeight;
     }
 
     protected override void OnDraw(UiRenderContext ctx)
