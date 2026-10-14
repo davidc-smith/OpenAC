@@ -34,12 +34,13 @@ public sealed partial class PluginCanvasElementTests
             harness.Reports.Add);
 
     private static MarkupWindow MountWindow(
-        Harness harness, PluginMarkupCanvases table, string body, object? binding = null, int x = 0)
+        Harness harness, PluginMarkupCanvases table, string body, object? binding = null, int x = 0,
+        string? ownerId = null)
     {
         MarkupWindow window = MarkupDocument.BuildWindow(
             $"<panel x=\"{x}\" y=\"0\" w=\"300\" h=\"200\">{body}</panel>", binding ?? new object(), _ => (0u, 0, 0));
         harness.Root.AddChild(window.Frame);
-        table.AddWindow(harness.Owner.Id, window.Canvases);
+        table.AddWindow(ownerId ?? harness.Owner.Id, window.Canvases);
         return window;
     }
 
@@ -361,6 +362,69 @@ public sealed partial class PluginCanvasElementTests
         harness.Root.Tick(0.016, harness.Root.TooltipDelayMs);
 
         Assert.Same(hosted, Assert.Single(shown));
+    }
+
+    [Fact]
+    public void AnElementNamingAPlainCanvasRegisteredLaterSaysWhyOnce()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        MarkupWindow window = MountWindow(harness, table, GrowMap);
+        harness.Frame();
+        Assert.Empty(harness.Reports);
+
+        harness.Registry.RegisterCanvas(harness.Owner, new PluginCanvasDescriptor("map", 50, 50), _ => { });
+        table.ScreenCanvasMounted();
+        table.ScreenCanvasMounted();
+
+        Assert.Null(Assert.Single(window.Canvases).Hosted);
+        Assert.Single(harness.Reports, line => line.Contains("without InMarkup"));
+    }
+
+    [Fact]
+    public void ACanvasLeftWithoutAWindowAtShutdownSaysNothing()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        MarkupWindow window = MountWindow(harness, table, GrowMap);
+        PluginCanvasRegistration registration = MapCanvas(harness, table, []);
+        harness.Frame();
+
+        // The client takes windows down before canvases.
+        UnmountWindow(harness, table, window);
+
+        Assert.False(registration.IsAvailable);
+        Assert.Empty(harness.Reports);
+    }
+
+    [Fact]
+    public void AnUnscopedCanvasPairsWithALegacyMarkupPanel()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        MarkupWindow window = MountWindow(harness, table, GrowMap, ownerId: "legacy");
+        var sizes = new List<(int, int)>();
+        var registration = (PluginCanvasRegistration)harness.Registry.RegisterCanvas(
+            new PluginCanvasDescriptor("map", 50, 50) { InMarkup = true },
+            painter => sizes.Add((painter.Width, painter.Height)));
+        Assert.Contains(registration, harness.Registry.DrainCanvases());
+        AddToTable(harness, table, registration);
+        harness.Frame();
+
+        Assert.NotNull(Assert.Single(window.Canvases).Hosted);
+        Assert.Equal([(300, 186)], sizes);
+        Assert.Empty(harness.Reports);
+    }
+
+    [Fact]
+    public void ALegacyMarkupPanelNamingAPlainUnscopedCanvasSaysWhy()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        harness.Registry.RegisterCanvas(new PluginCanvasDescriptor("map", 50, 50), _ => { });
+        MountWindow(harness, table, GrowMap, ownerId: "legacy");
+
+        Assert.Single(harness.Reports, line => line.Contains("without InMarkup"));
     }
 
     private static UiElement Find(UiElement root, string name)

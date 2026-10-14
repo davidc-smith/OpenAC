@@ -451,7 +451,9 @@ IPluginCanvas map = Host.Ui.RegisterCanvas(
   no canvas draws nothing. A `<canvas>` without an id, or the same id twice in one window, is a markup error. With
   the same id in two windows, the first one mounted shows the canvas, and the other takes over if that window goes.
   The log also says once when an element shows nothing because another window shows its canvas, or because the
-  canvas was registered without `InMarkup`.
+  canvas was registered without `InMarkup`, whichever of the two came first. A plugin on the older calls without a
+  `PluginUiOwner` counts as one plugin: its `RegisterCanvas` canvases pair with its `RegisterMarkupPanel` and
+  `RegisterPanel` windows.
 - **Input details.** `id` is the canvas id; `name` is accepted when `id` is absent. A canvas with pointer input takes
   every wheel step over it, so inside a scroll group the group does not scroll under the pointer; a canvas without
   pointer input lets the wheel through. `enabled="false"` stops pointer input on the canvas (and hover), but not

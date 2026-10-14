@@ -109,8 +109,8 @@ internal sealed class PluginCanvasSurface : IDisposable
     /// than half of one over the last. A paint that asked for more shape
     /// vertices than one paint may counts against the guard as an overrun.
     ///
-    /// <para>At a <paramref name="pixelScale"/> above 1 the target is that
-    /// many times the canvas's size. The context, the clip and the painter
+    /// <para>At a <paramref name="pixelScale"/> above 1 the target is at
+    /// least that many times the canvas's size. The context, the clip and the painter
     /// stay in canvas pixels, as the interface does on the fixed canvas:
     /// only the renderer multiplies, as the vertices go out.</para>
     /// </summary>
@@ -131,8 +131,9 @@ internal sealed class PluginCanvasSurface : IDisposable
         int height = registration.Height;
         var size = new Vector2(width, height);
 
-        _renderer.Begin(new Vector2(
-            CanvasPixelScale.DeviceSize(width, pixelScale), CanvasPixelScale.DeviceSize(height, pixelScale)));
+        // The projection covers the whole target; a target made with headroom
+        // for a resize is larger than the canvas, which paints at its top left.
+        _renderer.Begin(new Vector2(target.Description.Width, target.Description.Height));
         _renderer.CanvasScale = new Vector2(pixelScale);
         _context.Begin(size, null);
         _context.PushClip(0f, 0f, width, height);

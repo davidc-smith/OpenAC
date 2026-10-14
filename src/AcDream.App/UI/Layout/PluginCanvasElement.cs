@@ -98,9 +98,21 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     private bool _targetsUnavailable;
     private readonly bool _hosted;
 
-    /// <summary>The canvas size the targets were made for.</summary>
+    /// <summary>The canvas size last read from the registration.</summary>
     private int _targetsWidth;
     private int _targetsHeight;
+
+    /// <summary>
+    /// The device size new targets are made at; zero for the canvas's own.
+    /// A resize that outgrows the targets sets it with headroom, so a drag
+    /// that keeps growing the canvas makes targets once per step of
+    /// <see cref="ResizeHeadroom"/> rather than once a frame.
+    /// </summary>
+    private int _allocatedWidth;
+    private int _allocatedHeight;
+
+    /// <summary>The device pixels a target made for a resize is rounded up to.</summary>
+    internal const int ResizeHeadroom = 64;
     private bool _released;
     private PluginPointerButton _heldButton;
     private readonly Action? _pointerRelease;
@@ -594,8 +606,12 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         }
 
         if (_shown is not { HasContent: true } shown) return;
-        // The target holds premultiplied colour (see PluginCanvasSurface).
-        ctx.DrawSpritePremultiplied(shown.Handle, 0f, 0f, Width, Height, 0f, 0f, 1f, 1f, Vector4.One);
+        // The target holds premultiplied colour (see PluginCanvasSurface), the
+        // canvas at its top left: a target made with headroom is larger.
+        GpuRenderTargetDescription made = shown.Target.Description;
+        float u = MathF.Min(1f, CanvasPixelScale.DeviceSize(_registration.Width, _pixelScale) / (float)made.Width);
+        float v = MathF.Min(1f, CanvasPixelScale.DeviceSize(_registration.Height, _pixelScale) / (float)made.Height);
+        ctx.DrawSpritePremultiplied(shown.Handle, 0f, 0f, Width, Height, 0f, 0f, u, v, Vector4.One);
     }
 
     private void RepaintIfInvalidated(int frameSlot)
@@ -647,8 +663,17 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
             return null;
 
         IGpuDevice device = _surface.Services.Device;
-        int width = CanvasPixelScale.DeviceSize(_registration.Width, _pixelScale);
-        int height = CanvasPixelScale.DeviceSize(_registration.Height, _pixelScale);
+        // Every target is one size: the canvas's, or the headroom a resize
+        // made the first at, which a canvas since shrunk still uses.
+        int width;
+        int height;
+        if (_targets.Count > 0)
+            (width, height) = (_targets[0].Target.Description.Width, _targets[0].Target.Description.Height);
+        else
+        {
+            width = Math.Max(CanvasPixelScale.DeviceSize(_registration.Width, _pixelScale), _allocatedWidth);
+            height = Math.Max(CanvasPixelScale.DeviceSize(_registration.Height, _pixelScale), _allocatedHeight);
+        }
         IGpuRenderTarget target;
         try
         {
@@ -753,14 +778,19 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         if (scale == _pixelScale) return;
         _pixelScale = scale;
         GiveBackTargets();
+        _allocatedWidth = 0;
+        _allocatedHeight = 0;
         _targetsUnavailable = false;
         _registration.Invalidate();
     }
 
     /// <summary>
-    /// Reads the size the plugin last asked for. A change gives every target
-    /// back, as a change of pixel scale does, and the repaint the resize
-    /// asked for paints at the new size in this same draw.
+    /// Reads the size the plugin last asked for, or the host laid the canvas
+    /// out at, and the repaint the change asked for paints at the new size in
+    /// this same draw. Targets the canvas still fits are kept, painted at
+    /// their top left. Ones it outgrows, or that are four times the size it
+    /// would be given now, go back, and the next are made with
+    /// <see cref="ResizeHeadroom"/>.
     /// </summary>
     private void FollowSize()
     {
@@ -770,10 +800,31 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         _targetsHeight = height;
         Width = width;
         Height = height;
+        _registration.Invalidate();
+        if (_targets.Count == 0) return;
+
+        GpuRenderTargetDescription made = _targets[0].Target.Description;
+        int deviceWidth = CanvasPixelScale.DeviceSize(width, _pixelScale);
+        int deviceHeight = CanvasPixelScale.DeviceSize(height, _pixelScale);
+        uint limit = _surface.Services.Device.Capabilities.MaxImageDimension2D;
+        int nextWidth = WithHeadroom(deviceWidth, limit);
+        int nextHeight = WithHeadroom(deviceHeight, limit);
+        bool fits = deviceWidth <= made.Width && deviceHeight <= made.Height;
+        // Measured against the headroom size, so a small canvas whose
+        // headroom alone is most of its target is not remade every frame.
+        bool wasteful = (long)nextWidth * nextHeight * 4 <= (long)made.Width * made.Height;
+        if (fits && !wasteful) return;
+
         GiveBackTargets();
         _targetsUnavailable = false;
-        _registration.Invalidate();
+        _allocatedWidth = nextWidth;
+        _allocatedHeight = nextHeight;
     }
+
+    private static int WithHeadroom(int devicePixels, uint limit) =>
+        (int)Math.Min(
+            Math.Max(devicePixels, limit),
+            (devicePixels + ResizeHeadroom - 1L) / ResizeHeadroom * ResizeHeadroom);
 
     private void GiveBackTargets()
     {

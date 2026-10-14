@@ -81,7 +81,8 @@ public sealed partial class PluginCanvasElementTests
 
         Assert.Equal([(120, 81), (200, 50)], sizes);
         GpuRecordedRenderTargetCreate created = Assert.Single(harness.Device.OfKind<GpuRecordedRenderTargetCreate>());
-        Assert.Equal((200, 50), (created.Description.Width, created.Description.Height));
+        // Outgrown: made with headroom for the next step of a drag.
+        Assert.Equal((256, 64), (created.Description.Width, created.Description.Height));
     }
 
     [Fact]
