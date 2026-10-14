@@ -35,6 +35,22 @@ internal sealed class UiMarkupCanvas : UiElement
         Hosted = canvas;
         AddChild(canvas);
         canvas.FillHost(Width, Height);
+        CopyTooltipTo(canvas);
+    }
+
+    // This element lets clicks through, so the root's hover never reaches it;
+    // the tooltip authored on <canvas> is shown by the element that answers
+    // for the rectangle instead.
+    private void CopyTooltipTo(PluginCanvasElement canvas)
+    {
+        if (RuntimeTooltipTextSource is null) return;
+        canvas.RuntimeTooltipTextSource = RuntimeTooltipTextSource;
+        canvas.AuthoredTooltipEnabled = AuthoredTooltipEnabled;
+        canvas.AuthoredTooltipText = AuthoredTooltipText;
+        canvas.AuthoredTooltipRootElementId = AuthoredTooltipRootElementId;
+        canvas.AuthoredTooltipLayoutDid = AuthoredTooltipLayoutDid;
+        canvas.AuthoredTooltipTextChildElementId = AuthoredTooltipTextChildElementId;
+        canvas.AuthoredTooltipDelaySeconds = AuthoredTooltipDelaySeconds;
     }
 
     /// <summary>

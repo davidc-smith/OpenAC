@@ -4323,6 +4323,7 @@ public sealed class RetailUiRuntime : IDisposable
                         $"[UI] plugin canvas registered for markup: {canvas.Owner.Id}/{canvas.CanvasId}");
                     continue;
                 }
+                RequireCanvasServices();
                 Layout.PluginCanvasStack stack = CanvasStack(canvas.Layer);
                 Layout.PluginCanvasElement element = CreateCanvasElement(canvas, hosted: false);
                 stack.Add(element);

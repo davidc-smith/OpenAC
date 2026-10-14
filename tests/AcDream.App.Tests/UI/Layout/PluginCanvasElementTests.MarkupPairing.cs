@@ -317,6 +317,52 @@ public sealed partial class PluginCanvasElementTests
         Assert.Single(harness.Reports, line => line.Contains("without InMarkup"));
     }
 
+    [Fact]
+    public void AWheelInAScrolledGroupArrivesInCanvasPixelsAndTheGroupStaysPut()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        MarkupWindow window = MountWindow(harness, table, """
+            <group name="g" x="0" y="0" w="100" h="100" scroll="y">
+              <canvas id="map" x="0" y="150" w="80" h="40" />
+            </group>
+            """);
+        PluginCanvasRegistration registration = MapCanvas(harness, table, [], pointer: true);
+        var events = new List<PluginPointerEvent>();
+        registration.PointerHandler = events.Add;
+        harness.Frame();
+
+        UiScrollArea area = ((IUiScrollHost)Find(window.Frame, "g")).ScrollArea!;
+        area.Y.SetScrollY(90);
+        harness.Frame();
+        harness.Root.OnMouseMove(10, 70);
+        harness.Root.OnScroll(0, -1, shift: false);
+
+        Assert.Equal(new PluginPoint(10, 10), Assert.Single(events, e => e.Kind == PluginPointerEventKind.Wheel).Position);
+        Assert.Equal(90, area.Y.ScrollY);
+    }
+
+    [Fact]
+    public void ATooltipOnTheCanvasElementShowsOverAHostedPointerCanvas()
+    {
+        var harness = new Harness();
+        PluginMarkupCanvases table = Table(harness);
+        MarkupWindow window = MountWindow(harness, table, """<canvas id="map" x="0" y="0" w="80" h="40" tooltip="Map" />""");
+        PluginCanvasRegistration registration = MapCanvas(harness, table, [], pointer: true);
+        registration.PointerHandler = _ => { };
+        var shown = new List<UiElement>();
+        harness.Root.TooltipShow += shown.Add;
+        harness.Frame();
+
+        PluginCanvasElement hosted = Assert.Single(window.Canvases).Hosted!;
+        Assert.Equal("Map", hosted.GetTooltipText());
+        harness.Root.Tick(0.016, 0);
+        harness.Root.OnMouseMove(10, 10);
+        harness.Root.Tick(0.016, harness.Root.TooltipDelayMs);
+
+        Assert.Same(hosted, Assert.Single(shown));
+    }
+
     private static UiElement Find(UiElement root, string name)
     {
         if (root.Name == name) return root;

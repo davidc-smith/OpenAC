@@ -791,7 +791,10 @@ public sealed class NoOpPluginCanvas : IPluginCanvas
         Anchor = descriptor.Anchor;
         Offset = descriptor.Offset;
         ZOrder = descriptor.ZOrder;
+        _inMarkup = descriptor.InMarkup;
     }
+
+    private readonly bool _inMarkup;
 
     /// <inheritdoc/>
     public string CanvasId { get; }
@@ -808,10 +811,13 @@ public sealed class NoOpPluginCanvas : IPluginCanvas
     /// </summary>
     /// <param name="width">The new width in pixels, at least 1.</param>
     /// <param name="height">The new height in pixels, at least 1.</param>
-    /// <returns>False for a size below 1 or a disposed canvas; true otherwise.</returns>
+    /// <returns>
+    /// False for a size below 1, a disposed canvas or a canvas registered with
+    /// <see cref="PluginCanvasDescriptor.InMarkup"/>; true otherwise.
+    /// </returns>
     public bool TryResize(int width, int height)
     {
-        if (width < 1 || height < 1 || IsDisposed)
+        if (width < 1 || height < 1 || IsDisposed || _inMarkup)
             return false;
         Width = width;
         Height = height;

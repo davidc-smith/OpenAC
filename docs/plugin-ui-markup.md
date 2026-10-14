@@ -452,6 +452,11 @@ IPluginCanvas map = Host.Ui.RegisterCanvas(
   the same id in two windows, the first one mounted shows the canvas, and the other takes over if that window goes.
   The log also says once when an element shows nothing because another window shows its canvas, or because the
   canvas was registered without `InMarkup`.
+- **Input details.** `id` is the canvas id; `name` is accepted when `id` is absent. A canvas with pointer input takes
+  every wheel step over it, so inside a scroll group the group does not scroll under the pointer; a canvas without
+  pointer input lets the wheel through. `enabled="false"` stops pointer input on the canvas (and hover), but not
+  outside presses or the plugin's keyboard focus requests. `tooltip` shows only over a canvas that takes pointer
+  input: a canvas without it lets clicks and hover through, so no tooltip can appear.
 - **Lifetime.** When the window goes, the canvas waits for another element; the plugin's handle keeps working.
   Disposing the canvas empties the element. Markup canvases count toward the 8 canvases a plugin may hold.
 
