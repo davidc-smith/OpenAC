@@ -199,7 +199,7 @@ public static class MarkupDocument
             ? RetailWindowManager.ComputeAuthoredGeometryRevision(PluginWindowChrome.AuthoredInputs(root))
             : RetailWindowManager.ComputeAuthoredGeometryRevision(
                 panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
-        var window = new MarkupWindow(panel, contentParent, titleBar, revision);
+        var window = new MarkupWindow(panel, contentParent, titleBar, revision) { Canvases = CollectCanvases(panel) };
         if (rootFlex is not null)
             window.TrackContentMinimum(content!, chromeH, authoredMinW, authoredMinH);
         return window;
@@ -846,6 +846,26 @@ public static class MarkupDocument
                 parent.AddChild(list);
                 break;
 
+            case "canvas":
+            {
+                string? canvasId = (string?)el.Attribute("id") ?? (string?)el.Attribute("name");
+                if (string.IsNullOrWhiteSpace(canvasId))
+                {
+                    throw new FormatException(
+                        "<canvas> needs an id: the CanvasId of the plugin canvas, registered with InMarkup, it shows");
+                }
+                var canvas = new UiMarkupCanvas(canvasId)
+                {
+                    Left = F(el, "x"),
+                    Top = F(el, "y"),
+                    Width = F(el, "w"),
+                    Height = F(el, "h"),
+                };
+                ApplyCommon(canvas, el, binding);
+                parent.AddChild(canvas);
+                break;
+            }
+
             default:
                 throw new FormatException($"unknown element <{el.Name.LocalName}>");
         }
@@ -882,6 +902,33 @@ public static class MarkupDocument
                 refresh?.Invoke();
                 menu.ColumnWidth = MathF.Max(20f, menu.Width);
             };
+        }
+    }
+
+    /// <summary>
+    /// The window's <c>&lt;canvas&gt;</c> elements in document order. One
+    /// window shows a canvas once, so an id used twice is an authoring error.
+    /// </summary>
+    private static IReadOnlyList<UiMarkupCanvas> CollectCanvases(UiElement root)
+    {
+        var canvases = new List<UiMarkupCanvas>();
+        Collect(root);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (UiMarkupCanvas canvas in canvases)
+        {
+            if (!seen.Add(canvas.CanvasId))
+            {
+                throw new FormatException(
+                    $"more than one <canvas id=\"{canvas.CanvasId}\"> in one window; a canvas is shown in one place");
+            }
+        }
+        return canvases;
+
+        void Collect(UiElement element)
+        {
+            if (element is UiMarkupCanvas canvas) canvases.Add(canvas);
+            foreach (UiElement child in element.Children)
+                Collect(child);
         }
     }
 
