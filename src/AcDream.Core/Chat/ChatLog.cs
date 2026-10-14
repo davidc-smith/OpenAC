@@ -158,6 +158,13 @@ public sealed class ChatLog
     }
 
     public void OnSystemMessage(string text, uint chatType)
+        => OnSystemMessage(text, chatType, allowsMarkup: false);
+
+    /// <param name="allowsMarkup">
+    /// True for a line the client itself wrote on a plugin's behalf, whose
+    /// <c>&lt;TYPE:FORMAT:data&gt;</c> tags are read as links. Server text never is.
+    /// </param>
+    public void OnSystemMessage(string text, uint chatType, bool allowsMarkup)
     {
         // Identical text can describe distinct events and must retain each occurrence.
         Append(new ChatEntry(
@@ -168,6 +175,7 @@ public sealed class ChatLog
             ChannelId: chatType)
         {
             LogTextType = chatType,
+            AllowsMarkup = allowsMarkup,
         });
     }
 
@@ -314,6 +322,12 @@ public readonly record struct ChatEntry(
     public string ChannelName { get; init; } = "";
 
     public uint LogTextType { get; init; } = 0x00u;
+
+    /// <summary>
+    /// Whether <see cref="Text"/> may carry chat markup (a link such as
+    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;…</c>). Only a line a plugin wrote does.
+    /// </summary>
+    public bool AllowsMarkup { get; init; }
 
     /// <summary>
     /// Who a received tell was addressed to; 0 on every other line, and when

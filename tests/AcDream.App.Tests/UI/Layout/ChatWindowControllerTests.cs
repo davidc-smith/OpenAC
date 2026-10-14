@@ -575,6 +575,31 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
+    public void ClickingACoordinateSomeoneTypedRaisesACoordinateLink()
+    {
+        var log = new ChatLog();
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+        ctrl.ChatLinkClicked = clicked.Add;
+
+        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u);
+        UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+        int column = line.Text.IndexOf("42.1N", StringComparison.Ordinal);
+
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, 2)));
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, column + 3)));
+
+        var link = Assert.Single(clicked);
+        Assert.Equal(AcDream.Plugin.Abstractions.PluginChatLinkKind.Coordinate, link.Kind);
+        Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(-33.5, 42.1), link.Coordinate);
+    }
+
+    [Fact]
     public void TranscriptLines_OutOfRangeLogTextType_CarriesPreviousLinesColor()
     {
         var log = new ChatLog();

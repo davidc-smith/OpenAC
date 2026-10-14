@@ -927,9 +927,11 @@ public interface IPluginChat
         Array.Empty<PluginChatMessage>();
 
     /// <summary>
-    /// Raised for every line the client takes delivery of, in order, on the
-    /// thread that raises <see cref="IEvents.Tick"/>. Unlike
-    /// <see cref="CaptureMessages"/>, nothing is dropped between polls.
+    /// Raised when the player clicks a link in the chat window. A coordinate
+    /// pair written in any line but combat text ("meet at 42.1N 33.5E") is a
+    /// link, and so is a <c>&lt;COORD:World:42.1N, 33.5E&gt;…&lt;\COORD&gt;</c>
+    /// tag in a line a plugin posted. Clicking a player's name starts a tell
+    /// instead and raises nothing.
     /// </summary>
     event Action<PluginChatLinkClicked> LinkClicked
     {
@@ -937,7 +939,11 @@ public interface IPluginChat
         remove { }
     }
 
-    /// <summary>Raised for each delivered chat line.</summary>
+    /// <summary>
+    /// Raised for every line the client takes delivery of, in order, on the
+    /// thread that raises <see cref="IEvents.Tick"/>. Unlike
+    /// <see cref="CaptureMessages"/>, nothing is dropped between polls.
+    /// </summary>
     event Action<PluginChatMessage> Received
     {
         add { }
@@ -998,13 +1004,16 @@ public interface IPluginChat
 
     /// <summary>
     /// Writes a line into the client's own text, visible only to this
-    /// player. Nothing is sent to the server.
+    /// player. Nothing is sent to the server. A
+    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;caption&lt;\COORD&gt;</c> tag in the
+    /// line shows its caption as a link that raises <see cref="LinkClicked"/>.
     /// </summary>
     void PostSystemMessage(string text);
 
     /// <summary>
     /// Writes a line in one of the client's own text classes, so a plugin can
-    /// print in the colour that class carries.
+    /// print in the colour that class carries. Tags are read as in
+    /// <see cref="PostSystemMessage"/>.
     /// </summary>
     void PostMessage(string text, int logTextType) => PostSystemMessage(text);
 

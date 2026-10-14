@@ -373,6 +373,23 @@ public sealed class RuntimeAutomationSurfacePluginApiTests
     }
 
     [Fact]
+    public void PostMessageMarksTheLineAsCarryingMarkupAndServerTextDoesNot()
+    {
+        using var runtime = GameRuntimeTestFactory.Create();
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        surface.Chat.PostMessage("<COORD:World:1N, 2E>here<\\COORD>", (int)RetailLogTextType.Magic);
+        surface.Chat.PostSystemMessage("<COORD:World:1N, 2E>there<\\COORD>");
+        runtime.CommunicationOwner.AddText("<COORD:World:1N, 2E>server<\\COORD>", RetailLogTextType.Default);
+
+        IReadOnlyList<ChatEntry> entries = runtime.CommunicationOwner.Chat.Snapshot();
+        Assert.True(entries[0].AllowsMarkup);
+        Assert.True(entries[1].AllowsMarkup);
+        Assert.False(entries[2].AllowsMarkup);
+    }
+
+    [Fact]
     public void PostMessageRejectsTheStatusOnlyClientLocalClassAndFallsBackToDefault()
     {
         using var runtime = GameRuntimeTestFactory.Create();
