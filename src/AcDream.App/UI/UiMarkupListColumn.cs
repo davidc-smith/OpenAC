@@ -5,6 +5,7 @@ public enum UiMarkupListColumnKind
     Text,
     Check,
     Icon,
+    Button,
 }
 
 public sealed class UiMarkupListColumn
@@ -23,6 +24,12 @@ public sealed class UiMarkupListColumn
     public Func<IReadOnlyList<uint>>? IconValuesSource { get; internal init; }
     public Func<uint, (uint tex, int w, int h)>? IconResolve { get; internal init; }
     public Action<int>? IconClicked { get; internal init; }
+
+    public Action<int>? ButtonClicked { get; internal init; }
+
+    /// <summary>A button's size inside its cell; 0 fills the cell. Never larger than the cell.</summary>
+    public float ButtonWidth { get; internal init; }
+    public float ButtonHeight { get; internal init; }
 
     public static UiMarkupListColumn Text(
         float width,
@@ -67,9 +74,33 @@ public sealed class UiMarkupListColumn
         IconClicked = onClick,
     };
 
+    /// <summary>
+    /// A column of buttons: each row's caption is drawn on a button face, an
+    /// empty caption draws no button, and a click on one fires
+    /// <paramref name="onClick"/> with the row index without selecting the row.
+    /// A button <paramref name="buttonWidth"/> by <paramref name="buttonHeight"/>
+    /// is centred in its cell; 0 fills the cell that way.
+    /// </summary>
+    public static UiMarkupListColumn Button(
+        float width,
+        Func<IReadOnlyList<string>> captionSource,
+        Action<int> onClick,
+        bool isAutoWidth = false,
+        float buttonWidth = 0f,
+        float buttonHeight = 0f) => new()
+    {
+        Kind = UiMarkupListColumnKind.Button,
+        Width = width,
+        IsAutoWidth = isAutoWidth,
+        TextSource = captionSource,
+        ButtonClicked = onClick,
+        ButtonWidth = buttonWidth,
+        ButtonHeight = buttonHeight,
+    };
+
     public int RowCount() => Kind switch
     {
-        UiMarkupListColumnKind.Text => TextSource?.Invoke().Count ?? 0,
+        UiMarkupListColumnKind.Text or UiMarkupListColumnKind.Button => TextSource?.Invoke().Count ?? 0,
         UiMarkupListColumnKind.Check => CheckSource?.Invoke().Count ?? 0,
         UiMarkupListColumnKind.Icon => IconValuesSource?.Invoke().Count ?? 0,
         _ => 0,
