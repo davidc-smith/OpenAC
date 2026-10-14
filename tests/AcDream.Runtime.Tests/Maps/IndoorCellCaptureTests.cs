@@ -53,6 +53,66 @@ public sealed class IndoorCellCaptureTests
     }
 
     [Fact]
+    public void EachCellListsTheDoorwaysItOpensThrough()
+    {
+        var content = new TwoRoomLandblock();
+        var map = new RuntimeDungeonMapAutomation();
+        map.BindContent(content, content.Lock);
+
+        IReadOnlyList<PluginIndoorCell> cells =
+            map.CaptureIndoorCells(TwoRoomLandblock.Landblock);
+
+        // The turned room's east wall, the middle of it at (10, 4, 1.5) in
+        // the piece's frame, turned a quarter towards north and moved to the
+        // cell's origin.
+        PluginCellDoorway east = Assert.Single(cells[0].Doorways);
+        Assert.Equal(TwoRoomLandblock.UpstairsRoom, east.OtherCellId);
+        Assert.Equal(16f, east.Center.X, 3);
+        Assert.Equal(40f, east.Center.Y, 3);
+        Assert.Equal(2f, east.Center.Z, 3);
+
+        // A way out to the landscape names no cell; a doorway whose polygon
+        // the piece lacks stands at the cell's origin.
+        PluginCellDoorway outside = Assert.Single(cells[1].Doorways);
+        Assert.Equal(0u, outside.OtherCellId);
+        Assert.True(outside.LeadsOutside);
+        Assert.Equal(new Vector3(40f, 30f, 7.2f), outside.Center);
+
+        Assert.Empty(cells[2].Doorways);
+        Assert.Equal(0, content.ReadsOutsideTheLock);
+    }
+
+    [Fact]
+    public void ACellMadeWithoutDoorwaysHasAnEmptyList()
+    {
+        Assert.Empty(default(PluginIndoorCell).Doorways);
+        Assert.Empty(new PluginIndoorCell(
+            0x01230100u, 1u, 0u, Vector3.Zero, Quaternion.Identity, false).Doorways);
+    }
+
+    [Fact]
+    public void CellsWithTheSameDoorwaysAreEqual()
+    {
+        var first = new PluginIndoorCell(
+            0x01230100u, 1u, 0u, Vector3.Zero, Quaternion.Identity, false)
+        {
+            Doorways = [new PluginCellDoorway(0x01230101u, Vector3.One)],
+        };
+        var second = first with
+        {
+            Doorways = [new PluginCellDoorway(0x01230101u, Vector3.One)],
+        };
+        var other = first with
+        {
+            Doorways = [new PluginCellDoorway(0x01230102u, Vector3.One)],
+        };
+
+        Assert.Equal(first, second);
+        Assert.Equal(first.GetHashCode(), second.GetHashCode());
+        Assert.NotEqual(first, other);
+    }
+
+    [Fact]
     public void ALandblockWithoutCellsOrWithoutFilesHasNone()
     {
         var content = new TwoRoomLandblock();
