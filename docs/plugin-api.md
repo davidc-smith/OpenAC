@@ -7,7 +7,8 @@ throwing. `docs/plugin-ui-markup.md` covers the panel markup separately.
 
 A plugin that draws for itself, rather than through panel markup, starts
 at [World labels](#world-labels) and [World markers](#world-markers)
-(text, icons and ground shapes in the world), [Images](#images),
+(text, icons and ground shapes in the world), [World triangles](#world-triangles)
+(filled areas of the world), [Images](#images),
 [Fonts](#fonts), [Plugin theme](#plugin-theme) and [Canvases](#canvases), whose subsections cover
 [image regions](#image-regions), [shapes](#shapes),
 [high-density displays](#high-density-displays),
@@ -1427,6 +1428,50 @@ answers null: there is no layer to keep a set in, unlike
 [world labels](#world-labels), which a windowless client keeps. A plugin that
 needs markers declares a `minHostVersion` (see the
 [manifest guide](plugin-manifest.md)) of a client that has them.
+
+## World triangles
+
+```csharp
+IPluginWorldTriangleLayer? shading = host.WorldTriangles.CreateLayer();
+var red = new PluginColor(220, 40, 40, 90);
+var triangles = new List<PluginWorldTriangle>();
+foreach (PluginTerrainCell cell in ground.Cells)
+{
+    if (!cell.First.Walkable)
+        triangles.Add(Lifted(cell.First, red));
+    if (!cell.Second.Walkable)
+        triangles.Add(Lifted(cell.Second, red));
+}
+shading?.SetTriangles(triangles);
+// ...
+shading?.Dispose();
+```
+
+`WorldTriangles` fills areas of the world: each `PluginWorldTriangle` is
+three `PluginNavigationPosition` corners and a `PluginColor` whose alpha is
+how opaque the fill is. The positions work exactly as world lines' do. A
+triangle is drawn flat between its corners, from both sides and unlit, in
+the world pass after the world: hills and walls in front of it hide it, but
+it writes no depth, so overlapping triangles blend rather than hide each
+other. It does not follow the ground; a triangle meant to lie on the ground
+is lifted a little off it by the plugin. The terrain's own triangles (see
+[Terrain](#terrain)) raised about 0.1 m lie exactly on it.
+
+Like world lines, triangles come in layers the plugin owns. `CreateLayer`
+returns null on a host without a window, so a plugin holds a may-be-null.
+`SetTriangles` copies the list and replaces the layer's set (up to 65,536
+triangles; the rest are dropped), and `Dispose` takes them out of the
+world. Layers are let go with the plugin. A set of a few thousand,
+replaced a few times a second as the character moves, is what the layer is
+for; there is no need to set it every frame.
+
+The host bounds the draw: a triangle no part of which is within 250 m of
+the camera, or which lies wholly out of view, is skipped, and a frame
+draws at most about 12,000 triangles across every layer of every plugin.
+Past that, the triangles nearest the camera are drawn and the farthest are
+left out. A triangle with a corner that is not a finite number is dropped.
+On a host that predates world triangles `WorldTriangles` is the inert
+default and `CreateLayer` returns null.
 
 ## Images
 

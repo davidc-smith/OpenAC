@@ -8,7 +8,8 @@ namespace AcDream.App.Rendering;
 /// See-through coloured triangles drawn into the open world pass with its
 /// depth: tested against the world, so walls and hills hide them, but never
 /// written to it, so they never hide each other or what is drawn after them.
-/// Plugins' ground shapes are drawn with it.
+/// Plugins' ground shapes are drawn with one, and their world triangles with
+/// another.
 /// </summary>
 internal sealed class GroundShapeBatch : IDisposable
 {
@@ -33,17 +34,36 @@ internal sealed class GroundShapeBatch : IDisposable
     private readonly IWorldPassScope _worldPass;
     private readonly IGpuPipeline _pipeline;
     private readonly List<float> _buffer = new(4096);
+    private readonly int _vertexBudget;
     private int _vertexCount;
 
     internal GroundShapeBatch(IGpuDevice device, ICurrentGpuFrameSource frameSource, IWorldPassScope worldPass)
+        : this(device, frameSource, worldPass, "ground-shape", VertexBudget)
     {
+    }
+
+    /// <summary>
+    /// A batch with its own pipeline name and a vertex budget of its own, no
+    /// more than <see cref="VertexBudget"/>.
+    /// </summary>
+    internal GroundShapeBatch(
+        IGpuDevice device,
+        ICurrentGpuFrameSource frameSource,
+        IWorldPassScope worldPass,
+        string name,
+        int vertexBudget)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(vertexBudget);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(vertexBudget, VertexBudget);
+        _vertexBudget = vertexBudget;
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(worldPass);
         _frameSource = frameSource ?? throw new ArgumentNullException(nameof(frameSource));
         _worldPass = worldPass;
         _pipeline = device.CreatePipeline(new GpuPipelineDescription
         {
-            Name = "ground-shape",
+            Name = name,
             Shaders = new GpuShaderSet("ground_shape"),
             VertexLayout = VertexLayout,
             Topology = GpuPrimitiveTopology.TriangleList,
@@ -57,7 +77,7 @@ internal sealed class GroundShapeBatch : IDisposable
     }
 
     /// <summary>How many more vertices this batch takes before it is full.</summary>
-    internal int RemainingVertexBudget => VertexBudget - _vertexCount;
+    internal int RemainingVertexBudget => _vertexBudget - _vertexCount;
 
     internal void Begin()
     {

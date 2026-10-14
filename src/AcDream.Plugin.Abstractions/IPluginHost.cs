@@ -37,6 +37,13 @@ public interface IPluginHost
     IPluginWorldLines WorldLines => NoOpPluginWorldLines.Instance;
 
     /// <summary>
+    /// Filled, see-through triangles a plugin draws in the world, such as
+    /// ground it shades. A host without a window hands out no layer, and the
+    /// plugin draws nothing.
+    /// </summary>
+    IPluginWorldTriangles WorldTriangles => NoOpPluginWorldTriangles.Instance;
+
+    /// <summary>
     /// Registers chat commands this plugin answers to. Inert on a host that
     /// has no command line.
     /// </summary>

@@ -59,7 +59,8 @@ internal sealed record FrameRootDependencies(
     AcDream.App.Rendering.Packs.DeferredRenderPackDiagnosticsSource?
         RenderPackDiagnostics = null,
     AcDream.App.Plugins.PluginWorldLineStore? WorldLines = null,
-    AcDream.App.Plugins.PluginWorldMarkerStore? WorldMarkers = null)
+    AcDream.App.Plugins.PluginWorldMarkerStore? WorldMarkers = null,
+    AcDream.App.Plugins.PluginWorldTriangleStore? WorldTriangles = null)
 {
     public RuntimeLocalPlayerMovementState PlayerController =>
         Runtime.MovementOwner;
@@ -533,6 +534,23 @@ internal sealed class FrameRootCompositionPhase
                     // One sampler for every shape: the points of a shape mostly share a landblock.
                     d.PhysicsEngine.CreateTerrainHeightSampler().SampleZ);
             }
+            PluginWorldTriangleRenderer? worldTriangles = null;
+            if (d.WorldTriangles is { } triangleStore)
+            {
+                // The ground shapes' see-through pipeline, in a batch of its own.
+                var triangleBatch = new GroundShapeBatch(
+                    host.GpuDevice,
+                    host.GpuFrameLifetime,
+                    worldPassScope!,
+                    "plugin-world-triangle",
+                    PluginWorldTriangleRenderer.VertexBudget);
+                bindings.Adopt("plugin world triangle batch", triangleBatch);
+                worldTriangles = new PluginWorldTriangleRenderer(
+                    triangleStore,
+                    triangleBatch,
+                    new RuntimeWorldFrameCameraSource(host.CameraController, session.LocalTeleport.ApplyViewPlane),
+                    d.WorldOrigin);
+            }
             worldSceneRenderer =
                 new AcDream.App.Rendering.Gpu.Vk.VulkanWorldScenePhase(
                     host.GpuFrameLifetime,
@@ -554,7 +572,8 @@ internal sealed class FrameRootCompositionPhase
                         d.WorldLines, foundation.DebugLines,
                         new RuntimeWorldFrameCameraSource(host.CameraController, session.LocalTeleport.ApplyViewPlane),
                         d.WorldOrigin, d.PhysicsEngine),
-                    groundShapes);
+                    groundShapes,
+                    worldTriangles);
         }
         Fault(FrameRootCompositionPoint.WorldRendererCreated);
         WorldLifecycleAutomationController? lifecycleAutomation = null;
