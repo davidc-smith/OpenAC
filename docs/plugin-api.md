@@ -2079,6 +2079,38 @@ rectangle. The handler's 2 ms budget and its dropping apply as for every
 other pointer event. Without a window the flag and the handler are kept and
 nothing is delivered.
 
+### Remembered position
+
+A canvas the player can move can ask the client to remember where it was
+left. Register it with `RemembersPosition` and move it as usual by setting
+`Offset` (and `Anchor`, if you change it):
+
+```csharp
+IPluginCanvas hud = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("hud", 200, 60)
+    {
+        Anchor = PluginCanvasAnchor.TopLeft,
+        Offset = new PluginPoint(40, 40),   // where it starts the first time
+        AcceptsPointerInput = true,
+        RemembersPosition = true,
+    },
+    painter => DrawHud(painter));
+```
+
+The client saves the anchor and offset for the logged-in character and puts
+them back when that character next enters the world; a canvas registered
+while the character is already in the world gets its position when it is first drawn, on the next frame. A
+position put back is kept on screen. A move is saved once the canvas has
+stayed put for half a second with no press held on it, so a drag is saved
+once, after the release; a move made in code is saved the same way.
+
+Read `Anchor` and `Offset` when you need them rather than keeping your own
+copy: the client may change them when a character enters the world.
+Nothing is saved or put back before a character has logged in, and the
+flag does nothing for a canvas registered with `InMarkup` (its element
+places it). `RemembersPosition` needs contract `0.1.25-fork.7`; an older
+host ignores it, and a host without a window keeps the flag.
+
 ### Canvases in markup
 
 A canvas registered with `InMarkup = true` does not sit on the screen: a

@@ -378,6 +378,7 @@ public sealed class RetailUiRuntime : IDisposable
 
     private StackSplitQuantityState StackSplitQuantity => _bindings.StackSplitQuantity;
     private RetailWindowLayoutPersistence? _persistence;
+    private PluginCanvasPositionPersistence? _canvasPositions;
     private RetailUiAutomationScriptRunner? _automation;
     private readonly RetailPanelUiController _panelUi;
     private ChatWindowController? _chatWindowController;
@@ -545,6 +546,14 @@ public sealed class RetailUiRuntime : IDisposable
                 ]);
             _persistence.ResetToDefaults();
             _persistence.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
+            _canvasPositions = new PluginCanvasPositionPersistence(
+                persistence?.Store,
+                persistence?.CharacterKey ?? (() => "default"),
+                () =>
+                {
+                    System.Numerics.Vector2 viewport = Layout.UiOverlayHost.ViewportOf(Host.Root);
+                    return (viewport.X, viewport.Y);
+                });
         }
 
         if (bindings.Probe.Enabled)
@@ -775,6 +784,7 @@ public sealed class RetailUiRuntime : IDisposable
             MountPlugins();
         if (_pluginsMounted && _bindings.Plugins is { HasUndrainedCanvases: true })
             MountPluginCanvases();
+        _canvasPositions?.Tick(deltaSeconds);
         Host.Tick(deltaSeconds);
         TooltipPresenter?.Tick();
         _automation?.Tick(deltaSeconds);
@@ -1193,6 +1203,9 @@ public sealed class RetailUiRuntime : IDisposable
             _lastScreenSize = new System.Numerics.Vector2(screen.Width, screen.Height);
         }
         _persistence?.RestoreAll();
+        // Root is sized to the screen above, so a restored canvas is kept
+        // on the screen it will be drawn on.
+        _canvasPositions?.RestoreAll();
     }
 
     public void SaveLayout()
@@ -4328,11 +4341,15 @@ public sealed class RetailUiRuntime : IDisposable
                 Layout.PluginCanvasElement element = CreateCanvasElement(canvas, hosted: false);
                 stack.Add(element);
                 _markupCanvases?.ScreenCanvasMounted();
+                bool remembered = PluginCanvasPositionPersistence.Tracks(canvas.Descriptor);
                 plugins.CompleteCanvasMount(canvas, () =>
                 {
+                    if (remembered) _canvasPositions?.Remove(canvas);
                     Layout.PluginCanvasStack.Remove(element);
                     element.ReleaseTargets();
                 });
+                if (remembered && canvas.IsMounted)
+                    _canvasPositions?.Add(canvas);
                 Console.WriteLine(
                     $"[UI] plugin canvas mounted: {canvas.Owner.Id}/{canvas.CanvasId} "
                     + $"({canvas.Width}x{canvas.Height})");
@@ -5277,7 +5294,12 @@ public sealed class RetailUiRuntime : IDisposable
 
         _shutdown ??= CreateShutdownTransaction(
             () => _automation?.Dispose(),
-            () => _persistence?.Dispose(),
+            () =>
+            {
+                // Flushes a pending canvas move through the same store, so first.
+                try { _canvasPositions?.Dispose(); }
+                finally { _persistence?.Dispose(); }
+            },
             () =>
             {
                 _characterSheetSubscription?.Dispose();
