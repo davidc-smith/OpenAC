@@ -11,6 +11,13 @@ namespace AcDream.UI.Abstractions.Panels.Settings;
 
 public readonly record struct UiWindowPosition(float X, float Y);
 
+/// <summary>
+/// Where a plugin canvas was left: its anchor's name and its offset from
+/// that anchor, in interface pixels. The anchor is kept by name so the
+/// settings file needs nothing from the plugin contract.
+/// </summary>
+public readonly record struct PluginCanvasPosition(string Anchor, double X, double Y);
+
 public sealed class SettingsStore
 {
     private const int CurrentSchemaVersion = 4;
@@ -525,6 +532,60 @@ public sealed class SettingsStore
         JsonObject resolution = GetOrCreateObject(
             GetOrCreateObject(GetOrCreateObject(root, "windowLayouts"), toonKey), resolutionKey);
         resolution[windowName] = SerializeWindowLayout(placement.Layout);
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
+    /// <summary>
+    /// The position saved for one plugin canvas of one character, under
+    /// <c>pluginCanvasPositions[toonKey][canvasKey]</c>; null when there is
+    /// none or it can't be read.
+    /// </summary>
+    public PluginCanvasPosition? LoadPluginCanvasPosition(string toonKey, string canvasKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(canvasKey);
+        if (!File.Exists(_path)) return null;
+        try
+        {
+            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            if ((root?["pluginCanvasPositions"] as JsonObject)?[toonKey] is not JsonObject toon
+                || toon[canvasKey] is not JsonObject node
+                || node["anchor"] is not JsonValue anchorValue
+                || !anchorValue.TryGetValue(out string? anchor)
+                || node["x"] is not JsonValue xValue
+                || !xValue.TryGetValue(out double x)
+                || node["y"] is not JsonValue yValue
+                || !yValue.TryGetValue(out double y)
+                || !double.IsFinite(x)
+                || !double.IsFinite(y))
+                return null;
+            return new PluginCanvasPosition(anchor, x, y);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load plugin canvas position from {_path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Saves one plugin canvas's position for one character under
+    /// <c>pluginCanvasPositions[toonKey][canvasKey]</c>, preserving all other sections.
+    /// </summary>
+    public void SavePluginCanvasPosition(string toonKey, string canvasKey, PluginCanvasPosition position)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(canvasKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(position.Anchor);
+        JsonObject root = LoadMutableRoot();
+        JsonObject toon = GetOrCreateObject(GetOrCreateObject(root, "pluginCanvasPositions"), toonKey);
+        toon[canvasKey] = new JsonObject
+        {
+            ["anchor"] = position.Anchor,
+            ["x"] = position.X,
+            ["y"] = position.Y,
+        };
         root["version"] = CurrentSchemaVersion;
         WriteMutableRoot(root);
     }
