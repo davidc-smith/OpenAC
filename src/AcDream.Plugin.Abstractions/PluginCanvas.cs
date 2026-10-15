@@ -139,6 +139,25 @@ public sealed record PluginCanvasDescriptor(string CanvasId, int Width, int Heig
     public bool WantsOutsidePresses { get; init; }
 
     /// <summary>
+    /// Whether the host remembers where the canvas was left. On, the host
+    /// saves the canvas's <see cref="IPluginCanvas.Anchor"/> and
+    /// <see cref="IPluginCanvas.Offset"/> for the logged-in character and
+    /// puts them back when that character next enters the world, or at
+    /// once for a canvas registered while the character is already in it;
+    /// a position put back is kept on screen. A move is saved once the
+    /// canvas has stayed put for half a second with no press held on it,
+    /// so a drag is saved once, after the release. Read
+    /// <see cref="IPluginCanvas.Anchor"/> and <see cref="IPluginCanvas.Offset"/>
+    /// rather than keeping your own copy: the host may change them when a
+    /// character enters the world. Nothing is saved or put back before a
+    /// character has logged in, for a canvas registered with
+    /// <see cref="InMarkup"/> (its element places it), or on a host without
+    /// a window, which keeps the flag. Off, the default, nothing changes.
+    /// A host before contract <c>0.1.25-fork.7</c> ignores it.
+    /// </summary>
+    public bool RemembersPosition { get; init; }
+
+    /// <summary>
     /// Whether the canvas sits inside one of the plugin's markup windows
     /// instead of on the screen by itself. On, a <c>&lt;canvas id="..."&gt;</c>
     /// element whose id is this canvas's <see cref="CanvasId"/> hosts it: the
