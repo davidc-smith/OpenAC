@@ -1,3 +1,4 @@
+using AcDream.App.UI;
 using AcDream.Plugin.Abstractions;
 
 namespace AcDream.App.Plugins;
@@ -14,7 +15,7 @@ namespace AcDream.App.Plugins;
 /// code that the interface holds, and a plugin assembly cannot unload
 /// while anything still points into it.</para>
 /// </summary>
-internal sealed class PluginCanvasRegistration : IPluginCanvas
+internal sealed class PluginCanvasRegistration : IPluginCanvas, IRememberedCanvas
 {
     private readonly BufferedUiRegistry _registry;
     private Action<IPluginPainter>? _paint;
@@ -119,6 +120,12 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
 
     /// <summary>Whether the canvas holds a press right now: between a press on it and its release or cancel.</summary>
     internal bool IsHoldingPointer => _holdingPointer?.Invoke() ?? false;
+
+    string IRememberedCanvas.Key => $"{Owner.Id}/{CanvasId}";
+
+    (int Width, int Height) IRememberedCanvas.Size => Size;
+
+    bool IRememberedCanvas.IsHoldingPointer => IsHoldingPointer;
 
     public string CanvasId => Descriptor.CanvasId;
 
