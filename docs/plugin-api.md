@@ -2099,7 +2099,7 @@ IPluginCanvas hud = host.Ui.RegisterCanvas(
 
 The client saves the anchor and offset for the logged-in character and puts
 them back when that character next enters the world; a canvas registered
-while the character is already in the world gets its position at once. A
+while the character is already in the world gets its position when it is first drawn, on the next frame. A
 position put back is kept on screen. A move is saved once the canvas has
 stayed put for half a second with no press held on it, so a drag is saved
 once, after the release; a move made in code is saved the same way.

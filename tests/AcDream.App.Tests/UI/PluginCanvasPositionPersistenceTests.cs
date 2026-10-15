@@ -68,6 +68,24 @@ public sealed class PluginCanvasPositionPersistenceTests : IDisposable
         persistence.RestoreAll();
 
         Assert.Equal(new PluginPoint(600, 0), canvas.Offset);
+        persistence.Tick(1.0);
+        persistence.Tick(1.0);
+        Assert.Equal(new PluginCanvasPosition("TopLeft", 5000, -10), Saved());
+    }
+
+    [Fact]
+    public void ADefaultCharacterNeverRestores()
+    {
+        _store.SavePluginCanvasPosition("default", "p/hud", new PluginCanvasPosition("Center", 3, 4));
+        _character = "default";
+        var canvas = new FakeCanvas("p/hud");
+        using var persistence = Create();
+        persistence.Add(canvas);
+
+        persistence.RestoreAll();
+
+        Assert.Equal(PluginCanvasAnchor.TopLeft, canvas.Anchor);
+        Assert.Equal(new PluginPoint(10, 20), canvas.Offset);
     }
 
     [Fact]
