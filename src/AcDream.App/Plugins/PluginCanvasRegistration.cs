@@ -105,6 +105,21 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
         set => _releasePointer = value;
     }
 
+    private volatile Func<bool>? _holdingPointer;
+
+    /// <summary>
+    /// Asks the mounted element whether it holds a press; set by the element
+    /// when it mounts with pointer input, cleared by it when it comes down.
+    /// </summary>
+    internal Func<bool>? HoldingPointer
+    {
+        get => _holdingPointer;
+        set => _holdingPointer = value;
+    }
+
+    /// <summary>Whether the canvas holds a press right now: between a press on it and its release or cancel.</summary>
+    internal bool IsHoldingPointer => _holdingPointer?.Invoke() ?? false;
+
     public string CanvasId => Descriptor.CanvasId;
 
     public Action<PluginPointerEvent>? PointerHandler

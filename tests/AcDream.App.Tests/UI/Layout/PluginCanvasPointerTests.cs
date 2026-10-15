@@ -385,4 +385,44 @@ public sealed class PluginCanvasPointerTests
         Assert.Null(harness.Root.Captured);
         Assert.Equal([PluginPointerEventKind.Down, PluginPointerEventKind.Cancelled], events.ConvertAll(e => e.Kind));
     }
+
+    [Fact]
+    public void TheRegistrationKnowsWhileItsCanvasHoldsAPress()
+    {
+        (Harness harness, PluginCanvasRegistration registration, _, _) = MountedMap();
+        Assert.False(registration.IsHoldingPointer);
+
+        harness.Root.OnMouseDown(UiMouseButton.Left, 100, 60);
+        Assert.True(registration.IsHoldingPointer);
+        harness.Root.OnMouseMove(150, 80);
+        Assert.True(registration.IsHoldingPointer);
+        harness.Root.OnMouseUp(UiMouseButton.Left, 150, 80);
+        Assert.False(registration.IsHoldingPointer);
+    }
+
+    [Fact]
+    public void ACancelOrAPluginReleaseEndsTheHold()
+    {
+        (Harness harness, PluginCanvasRegistration registration, _, _) = MountedMap();
+
+        harness.Root.OnMouseDown(UiMouseButton.Left, 100, 60);
+        registration.IsVisible = false;
+        harness.Tick();
+        Assert.False(registration.IsHoldingPointer);
+
+        registration.IsVisible = true;
+        harness.Tick();
+        harness.Root.OnMouseDown(UiMouseButton.Left, 100, 60);
+        registration.ReleasePointer();
+        Assert.False(registration.IsHoldingPointer);
+    }
+
+    [Fact]
+    public void AClickThroughCanvasNeverHolds()
+    {
+        (Harness harness, PluginCanvasRegistration registration, _, _) = MountedMap(input: false);
+        harness.Root.OnMouseDown(UiMouseButton.Left, 100, 60);
+        Assert.False(registration.IsHoldingPointer);
+        harness.Root.OnMouseUp(UiMouseButton.Left, 100, 60);
+    }
 }

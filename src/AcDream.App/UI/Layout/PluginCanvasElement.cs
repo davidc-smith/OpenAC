@@ -116,6 +116,7 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
     private bool _released;
     private PluginPointerButton _heldButton;
     private readonly Action? _pointerRelease;
+    private readonly Func<bool>? _holdingPointer;
     private readonly Action<CanvasShapeProblem, string> _shapeProblems;
     private bool _reportedBadShape;
     private bool _reportedShapeBudget;
@@ -184,6 +185,8 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         {
             _pointerRelease = ReleasePointer;
             registration.PointerRelease = _pointerRelease;
+            _holdingPointer = () => _heldButton != PluginPointerButton.None;
+            registration.HoldingPointer = _holdingPointer;
         }
         if (registration.AcceptsKeyboardInput)
         {
@@ -541,34 +544,8 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         Height = height;
         float layerWidth = Parent?.Width ?? 0f;
         float layerHeight = Parent?.Height ?? 0f;
-        float x = (float)_registration.Offset.X;
-        float y = (float)_registration.Offset.Y;
-        switch (_registration.Anchor)
-        {
-            case PluginCanvasAnchor.TopCenter:
-            case PluginCanvasAnchor.Center:
-            case PluginCanvasAnchor.BottomCenter:
-                x += (layerWidth - Width) * 0.5f;
-                break;
-            case PluginCanvasAnchor.TopRight:
-            case PluginCanvasAnchor.CenterRight:
-            case PluginCanvasAnchor.BottomRight:
-                x += layerWidth - Width;
-                break;
-        }
-        switch (_registration.Anchor)
-        {
-            case PluginCanvasAnchor.CenterLeft:
-            case PluginCanvasAnchor.Center:
-            case PluginCanvasAnchor.CenterRight:
-                y += (layerHeight - Height) * 0.5f;
-                break;
-            case PluginCanvasAnchor.BottomLeft:
-            case PluginCanvasAnchor.BottomCenter:
-            case PluginCanvasAnchor.BottomRight:
-                y += layerHeight - Height;
-                break;
-        }
+        (float x, float y) = PluginCanvasPlacement.TopLeft(
+            _registration.Anchor, _registration.Offset, Width, Height, layerWidth, layerHeight);
         Left = MathF.Floor(x + 0.5f);
         Top = MathF.Floor(y + 0.5f);
     }
@@ -753,6 +730,8 @@ internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocu
         _released = true;
         if (ReferenceEquals(_registration.PointerRelease, _pointerRelease))
             _registration.PointerRelease = null;
+        if (ReferenceEquals(_registration.HoldingPointer, _holdingPointer))
+            _registration.HoldingPointer = null;
         // Focus needs nothing here: the element left the tree first, and
         // the root took focus back from it on the way out.
         if (ReferenceEquals(_registration.KeyboardFocus, this))
