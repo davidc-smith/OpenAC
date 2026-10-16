@@ -42,4 +42,17 @@ public sealed class InventoryCompletenessTests
         table.InitializeInventoryManifest(1, Array.Empty<ContainerContentEntry>());
         Assert.True(table.HasCompleteInventory(1));
     }
+
+    [Fact]
+    public void SpellFocusNeverListedDoesNotBlockCompleteness()
+    {
+        // ACE lists a focus (container type 2) in the container slots but
+        // never sends its contents, since a focus holds nothing.
+        var table = new ClientObjectTable();
+        table.InitializeInventoryManifest(1,
+            [new ContainerContentEntry(2, 1), new ContainerContentEntry(3, 2)]);
+        Assert.False(table.HasCompleteInventory(1));
+        table.ReplaceContents(2, Array.Empty<uint>());
+        Assert.True(table.HasCompleteInventory(1));
+    }
 }
