@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\AcDream.Runtime\AcDream.Runtime.csproj" />
+    <ProjectReference Include="..\AcDream.ClientExtensions\AcDream.ClientExtensions.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.Sdk\AcDream.Rynth.Sdk.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthTracker\AcDream.Rynth.Plugin.RynthTracker.csproj" />
   </ItemGroup>

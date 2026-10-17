@@ -119,6 +119,12 @@
         "resolved": "0.1.1",
         "contentHash": "QEti4O7dwRcOb9zbnLuudSrt2IT61OYjq0R7lcJb+EzUm5N6djOVGU/cp+FZIZzJUnaFIntwrpwiuRvhpS7ZHg=="
       },
+      "acdream.clientextensions": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Runtime": "[0.1.25, )"
+        }
+      },
       "acdream.content": {
         "type": "Project",
         "dependencies": {
@@ -162,6 +168,7 @@
       "acdream.rynth.host": {
         "type": "Project",
         "dependencies": {
+          "AcDream.ClientExtensions": "[0.1.25, )",
           "AcDream.Runtime": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthTracker": "[0.1.25, )",
           "AcDream.Rynth.Sdk": "[0.1.25, )"
