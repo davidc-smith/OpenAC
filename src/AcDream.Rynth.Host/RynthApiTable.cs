@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using RynthCore.Engine.Plugins;
+using RynthCore.Engine.UI.ScriptWindows;
 using RynthCore.PluginSdk;
 
 namespace AcDream.Rynth.Host;
@@ -27,7 +29,7 @@ public sealed unsafe class RynthApiTable : IDisposable
     private readonly Action<string> _log;
     private IntPtr _nameBuffer;
 
-    public RynthApiTable(IRynthGameView view, Action<string> log)
+    public RynthApiTable(IRynthGameView view, Action<string> log, bool scriptWindows = false)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(log);
@@ -46,6 +48,13 @@ public sealed unsafe class RynthApiTable : IDisposable
             (IntPtr)(delegate* unmanaged[Cdecl]<uint, uint, long*, int>)&GetObjectQuadProperty;
         Native->InvokeChatParserFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, int>)&InvokeChatParser;
         Native->GetSelectedItemIdFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint>)&GetSelectedItemId;
+        if (scriptWindows)
+        {
+            Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;
+            Native->UiPollEventsFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int*, int>)&UiPollEvents;
+            Native->UiGetInfoFn = (IntPtr)(delegate* unmanaged[Cdecl]<RynthCore.Engine.Plugins.UiInfoNative*, int>)&UiGetInfo;
+            EngineSettings.EnableImGuiBackend = true;
+        }
     }
 
     /// <summary>The table, in native memory, for as long as this object lives.</summary>
@@ -63,6 +72,7 @@ public sealed unsafe class RynthApiTable : IDisposable
             _nameBuffer = IntPtr.Zero;
         }
 
+        EngineSettings.EnableImGuiBackend = false;
         Interlocked.CompareExchange(ref _current, null, this);
     }
 
@@ -188,6 +198,60 @@ public sealed unsafe class RynthApiTable : IDisposable
         catch (Exception error)
         {
             table.Fail(nameof(GetSelectedItemId), error);
+            return 0;
+        }
+    }
+
+    // RynthCore return codes: 0 ok, -1 malformed or threw, -2 not inside a plugin call,
+    // -3 over a limit, -4 unsupported format (the last three from the registry).
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int UiSubmit(byte* data, int length)
+    {
+        RynthApiTable? table = _current;
+        if (table is null)
+            return -2;
+        try
+        {
+            RynthPlugin? owner = RynthDispatch.Current;
+            return owner is null ? -2 : ScriptWindowRegistry.Submit(owner.Owner, data, length);
+        }
+        catch (Exception error)
+        {
+            table.Fail(nameof(UiSubmit), error);
+            return -1;
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int UiPollEvents(byte* buffer, int capacity, int* remaining)
+    {
+        RynthApiTable? table = _current;
+        if (remaining != null)
+            *remaining = 0;
+        if (table is null)
+            return 0;
+        try
+        {
+            RynthPlugin? owner = RynthDispatch.Current;
+            return owner is null ? -2 : ScriptWindowRegistry.PollEvents(owner.Owner, buffer, capacity, remaining);
+        }
+        catch (Exception error)
+        {
+            table.Fail(nameof(UiPollEvents), error);
+            return 0;
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int UiGetInfo(RynthCore.Engine.Plugins.UiInfoNative* info)
+    {
+        RynthApiTable? table = _current;
+        if (table is null || info is null)
+            return 0;
+        try { return ScriptWindowRegistry.GetInfo(info); }
+        catch (Exception error)
+        {
+            table.Fail(nameof(UiGetInfo), error);
             return 0;
         }
     }

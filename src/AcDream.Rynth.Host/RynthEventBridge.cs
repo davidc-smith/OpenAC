@@ -18,6 +18,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         if (delta.Current == RuntimeLifecycleState.InWorld
             && delta.Previous != RuntimeLifecycleState.InWorld)
         {
+            RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
             foreach (RynthPlugin plugin in _plugins)
                 plugin.OnLoginComplete();
         }
@@ -26,6 +27,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     // Raised while the session's state is still intact, once per stay in the world.
     public void OnLeavingWorld()
     {
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
         foreach (RynthPlugin plugin in _plugins)
             plugin.OnLogout();
     }

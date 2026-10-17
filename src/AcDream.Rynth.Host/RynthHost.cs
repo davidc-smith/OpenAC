@@ -13,12 +13,14 @@ public sealed unsafe class RynthHost : IDisposable
 
     /// <param name="log">Gets every host and plugin log line, prefixed "[Rynth] ".</param>
     /// <param name="exportsTypes">Each plugin's exports class (its PluginExports).</param>
-    public RynthHost(IRynthGameView view, Action<string> log, IEnumerable<Type> exportsTypes)
+    public RynthHost(IRynthGameView view, Action<string> log, IEnumerable<Type> exportsTypes, bool scriptWindows = false)
     {
         ArgumentNullException.ThrowIfNull(exportsTypes);
         ArgumentNullException.ThrowIfNull(log);
         _log = line => log($"[Rynth] {line}");
-        _table = new RynthApiTable(view, _log);
+        _table = new RynthApiTable(view, _log, scriptWindows);
+        RynthCore.Engine.RynthLog.Sink = _log;
+        RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log = _log;
         foreach (Type exportsType in exportsTypes)
             Load(exportsType);
         Bridge = new RynthEventBridge(_plugins);
@@ -38,8 +40,13 @@ public sealed unsafe class RynthHost : IDisposable
     public void Dispose()
     {
         foreach (RynthPlugin plugin in _plugins)
+        {
             plugin.Shutdown();
+            RynthCore.Engine.UI.ScriptWindows.ScriptWindowRegistry.DropOwner(plugin.Owner);
+        }
+
         _plugins.Clear();
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
         _table.Dispose();
     }
 
