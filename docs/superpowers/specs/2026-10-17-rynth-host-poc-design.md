@@ -78,7 +78,7 @@ Changes to upstream files (target: about 11 lines, including the `GameEventWirin
   dispose them on shutdown.
 - `AcDream.slnx`: the new projects.
 
-New App file: `src/AcDream.App/Extensions/ClientExtensionList.cs`, which
+New App file: `src/AcDream.App/Extensions/ClientExtensionHost.cs`, which
 lists the extensions to create.
 
 ### Building their code
@@ -112,11 +112,11 @@ host, which read the live `GameRuntime`:
 
 | Slot | Source |
 |---|---|
-| `LogFn` | Serilog, prefixed `[Rynth:<plugin>]` |
+| `LogFn` | Serilog, prefixed `[Rynth] ` (plugin lines read `[Rynth] [RynthTracker] ...`) |
 | `WriteToChatFn` | the client chat window |
 | `GetPlayerIdFn` | `GameRuntime` player identity |
 | `GetObjectNameFn` | the client object table |
-| `GetObjectQuadPropertyFn` | the character's Int64 properties (TotalExperience 1, AvailableLuminance 6); other objects and ids return 0 (not found) |
+| `GetObjectQuadPropertyFn` | the character's Int64 properties (TotalExperience 1, AvailableLuminance 6); any other known object's Int64 properties come from the client object table; unknown objects and ids return 0 (not found) |
 
 All other slots stay zero.
 
@@ -185,11 +185,22 @@ in all.
    and logs, and a plugin whose `RynthPluginInit` fails is skipped while
    the others run.
 
+The test runtime cannot reach `InWorld` without a live session, so the
+lifecycle-to-login join (`RuntimeLifecycleDelta` into `OnLoginComplete`) is
+covered only by the live check; the host tests raise login directly on the
+bridge. `RynthClientExtensionTests` covers the rest of the real-runtime join
+(player id, XP property, kill event, ticks, the `rynth` command).
+
 Live check: RynthTracker on the local ACE server (10.10.20.20). Kill a
 few monsters, then `/rynth tracker` matches. The client is only launched
 when the user is available.
 
 ## Taking their updates
+
+**Cloning.** Clone with `git clone --recursive`, or run
+`git submodule update --init` in an existing clone. The upstream CI workflow
+(`.github/workflows/ci.yml`) does not check out submodules, so the wrapper
+globs match nothing and CI on this repo builds red until that changes.
 
 ```
 git submodule update --remote external/RynthCore external/RynthSuite

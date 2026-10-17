@@ -1,5 +1,8 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using AcDream.Runtime;
 using AcDream.Rynth.Host;
+using RynthCore.PluginSdk;
 
 namespace AcDream.Rynth.Host.Tests;
 
@@ -74,6 +77,19 @@ public sealed class RynthHostTests
             && line.Contains("no RynthPluginInit", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void APluginWhoseInitFailsIsSkippedAndTheOthersRun()
+    {
+        using var host = new RynthHost(
+            _view,
+            _log.Add,
+            [typeof(FailingInit), typeof(RynthCore.Plugin.RynthTracker.PluginExports)]);
+
+        RynthPlugin plugin = Assert.Single(host.Plugins);
+        Assert.True(plugin.IsActive);
+        Assert.Contains(_log, line => line.Contains("RynthPluginInit returned 1, skipped", StringComparison.Ordinal));
+    }
+
     private static void EnterWorld(RynthHost host) =>
         host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
             default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
@@ -87,5 +103,11 @@ public sealed class RynthHostTests
 
     private static class NoExports
     {
+    }
+
+    private static unsafe class FailingInit
+    {
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginInit", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static int Init(RynthCoreApiNative* api) => 1;
     }
 }

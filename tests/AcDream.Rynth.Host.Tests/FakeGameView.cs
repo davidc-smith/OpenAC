@@ -6,7 +6,13 @@ namespace AcDream.Rynth.Host.Tests;
 
 internal sealed class FakeGameView : IRynthGameView
 {
-    public uint PlayerId { get; set; }
+    public uint PlayerId
+    {
+        get => Throw ? throw new InvalidOperationException("view failed") : _playerId;
+        set => _playerId = value;
+    }
+
+    private uint _playerId;
     public Dictionary<uint, string> Names { get; } = new();
     public Dictionary<(uint Object, uint Property), long> Int64s { get; } = new();
     public List<(string Text, int ChatType)> ChatLines { get; } = new();
@@ -24,5 +30,9 @@ internal sealed class FakeGameView : IRynthGameView
         return Int64s.TryGetValue((objectId, propertyId), out value);
     }
 
-    public void WriteChatLine(string text, int chatType) => ChatLines.Add((text, chatType));
+    public void WriteChatLine(string text, int chatType)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        ChatLines.Add((text, chatType));
+    }
 }

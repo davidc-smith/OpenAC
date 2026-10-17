@@ -55,7 +55,11 @@ public sealed unsafe class RynthApiTableTests
 
         Assert.False(host.TryGetObjectName(1, out _));
         Assert.False(host.TryGetObjectQuadProperty(1, 1, out _));
+        Assert.Equal(0u, host.GetPlayerId());
+        Assert.False(host.WriteToChat("hello", 3));
         Assert.Contains(_log, line => line.Contains("GetObjectName threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("GetPlayerId threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("WriteToChat threw", StringComparison.Ordinal));
     }
 
     [Fact]
