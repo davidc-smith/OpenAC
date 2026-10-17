@@ -2184,7 +2184,8 @@ internal sealed class RuntimeAutomationSurface
             .Properties.Ints.TryGetValue(LevelPropertyId, out int objectLevel) == true
             ? objectLevel
             : properties.GetInt(LevelPropertyId);
-        LevelProgress? progress = LevelProgress.Measure(levels?.Invoke(), level, total);
+        LevelProgress? progress = LevelProgress.Measure(
+            character.LevelCurve(levels?.Invoke()), level, total);
         return new ExperienceReading(
             HasExperience: true,
             Total: total,

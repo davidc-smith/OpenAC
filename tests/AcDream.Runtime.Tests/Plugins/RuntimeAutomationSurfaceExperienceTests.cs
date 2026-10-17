@@ -105,6 +105,18 @@ public sealed class RuntimeAutomationSurfaceExperienceTests
     }
 
     [Fact]
+    public void AnExtendedCurveMeasuresPastTheTopOfTheTable()
+    {
+        using var world = World.InWorld();
+        world.Runtime.CharacterOwner.ExtendedLevelCurve = true;
+        world.Describe(level: 3, total: 7_000L);
+
+        // The table's last step is 3,000; the next costs 1.42% more, so
+        // level 4 starts at 6,000 + 3,042.7.
+        Assert.Equal(2_042L, world.Surface.Character.ExperienceToNextLevel);
+    }
+
+    [Fact]
     public void WithoutAnExperienceTableTheDistanceIsUnknown()
     {
         using var world = World.InWorld(bindLevels: false);

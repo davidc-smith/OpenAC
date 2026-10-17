@@ -31,6 +31,7 @@ public sealed class CharacterSheetProviderTests
         public (uint statId, ulong cost)? SentAttribute;
         public (uint skillId, uint credits)? SentTrain;
         public bool CanSend = true;
+        public bool Extended;
 
         public Harness()
         {
@@ -43,7 +44,8 @@ public sealed class CharacterSheetProviderTests
                 sendRaiseAttribute: (statId, cost) => SentAttribute = (statId, cost),
                 sendRaiseVital: (_, _) => { },
                 sendRaiseSkill: (_, _) => { },
-                sendTrainSkill: (skillId, credits) => SentTrain = (skillId, credits))
+                sendTrainSkill: (skillId, credits) => SentTrain = (skillId, credits),
+                extendedLevels: () => Extended)
             {
                 ExperienceTable = MakeXpTable(),
             };
@@ -108,6 +110,22 @@ public sealed class CharacterSheetProviderTests
         var sheet = h.Provider.BuildSheet();
 
         Assert.Equal("Infinity!", sheet.XpToNextLevelText);
+    }
+
+    [Fact]
+    public void BuildSheet_OnAnExtendedCurve_MeasuresPastTheTopOfTheTable()
+    {
+        var h = new Harness { Extended = true };
+        ClientObject player = h.AddPlayerObject();
+        player.Properties.Ints[0x19u] = 3;          // the table's last level
+        player.Properties.Int64s[1u] = 500L;
+
+        var sheet = h.Provider.BuildSheet();
+
+        // The table's last step is 200; the next costs 1.42% more, so level
+        // 4 starts at 450 + 202.8.
+        Assert.Null(sheet.XpToNextLevelText);
+        Assert.Equal(152L, sheet.XpToNextLevel);
     }
 
     [Fact]

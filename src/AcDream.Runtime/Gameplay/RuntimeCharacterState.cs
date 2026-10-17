@@ -87,6 +87,28 @@ public sealed class RuntimeCharacterState : IDisposable
     public IRuntimeCharacterView View { get; }
     public bool IsDisposed => _disposed;
 
+    /// <summary>
+    /// Whether this server raises characters past the experience table on
+    /// ACECustom's curve (<see cref="AcDream.Core.Player.ExtendedLevelCurve"/>).
+    /// A player choice, not something the server announces; off by default.
+    /// </summary>
+    public bool ExtendedLevelCurve
+    {
+        get => Volatile.Read(ref _extendedLevelCurve);
+        set => Volatile.Write(ref _extendedLevelCurve, value);
+    }
+
+    private bool _extendedLevelCurve;
+
+    /// <summary>
+    /// The level curve to measure this character on: the table itself, or
+    /// the table extended when <see cref="ExtendedLevelCurve"/> is on.
+    /// </summary>
+    public IReadOnlyList<ulong>? LevelCurve(IReadOnlyList<ulong>? table) =>
+        table is not null && ExtendedLevelCurve
+            ? AcDream.Core.Player.ExtendedLevelCurve.Extend(table)
+            : table;
+
     public bool IsOlthoiPlayer
     {
         get

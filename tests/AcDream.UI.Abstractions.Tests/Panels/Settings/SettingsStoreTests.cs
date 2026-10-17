@@ -732,6 +732,17 @@ public sealed class SettingsStoreTests : System.IDisposable
     }
 
     [Fact]
+    public void Extended_levels_are_off_by_default_and_round_trip()
+    {
+        var store = new SettingsStore(_tempPath);
+        Assert.False(MiscSettings.Default.ExtendedLevels);
+
+        store.SaveMisc(MiscSettings.Default with { ExtendedLevels = true });
+
+        Assert.True(store.LoadMisc().ExtendedLevels);
+    }
+
+    [Fact]
     public void LoadMisc_falls_back_per_field_when_keys_missing()
     {
         File.WriteAllText(_tempPath, """

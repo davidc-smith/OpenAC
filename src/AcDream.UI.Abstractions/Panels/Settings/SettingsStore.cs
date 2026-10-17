@@ -296,7 +296,8 @@ public sealed class SettingsStore
             var d = MiscSettings.Default;
             return new MiscSettings(
                 TooltipEnable:       ReadBool (misc, "tooltipEnable",       d.TooltipEnable),
-                TooltipDelaySeconds: ReadFloat(misc, "tooltipDelaySeconds", d.TooltipDelaySeconds));
+                TooltipDelaySeconds: ReadFloat(misc, "tooltipDelaySeconds", d.TooltipDelaySeconds),
+                ExtendedLevels:      ReadBool (misc, "extendedLevels",      d.ExtendedLevels));
         }
         catch (Exception ex)
         {
@@ -305,7 +306,7 @@ public sealed class SettingsStore
         }
     }
 
-    /// <summary>Save the tooltip preferences, preserving all other top-level keys.</summary>
+    /// <summary>Save the tooltip and level-curve preferences, preserving all other top-level keys.</summary>
     public void SaveMisc(MiscSettings misc)
         => SaveSection("misc", BuildMiscObject(misc));
 
@@ -827,6 +828,7 @@ public sealed class SettingsStore
     private static SortedDictionary<string, object> BuildMiscObject(MiscSettings m)
         => new(StringComparer.Ordinal)
         {
+            ["extendedLevels"]      = m.ExtendedLevels,
             ["tooltipDelaySeconds"] = m.TooltipDelaySeconds,
             ["tooltipEnable"]       = m.TooltipEnable,
         };
