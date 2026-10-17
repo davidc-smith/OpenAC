@@ -60,9 +60,10 @@ public sealed class RynthClientExtensionTests
         {
             Runtime = runtime,
             Log = _ => { },
-            RegisterChatCommand = (_, handler) =>
+            RegisterChatCommand = (verb, handler) =>
             {
-                command = handler;
+                if (verb == "rynth")
+                    command = handler;
                 return new Registration();
             },
         };

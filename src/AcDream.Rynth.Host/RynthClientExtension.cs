@@ -1,47 +1,64 @@
 using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
+using RynthCore.Engine.ImGuiBackend;
 
 namespace AcDream.Rynth.Host;
 
 /// <summary>
-/// Runs RynthCore plugins (this PoC: RynthTracker) inside the client:
-/// the API table reads the runtime, runtime events become plugin callbacks,
-/// and <c>/rynth tracker</c> prints the tracker's numbers.
+/// Runs RynthCore plugins (RynthTracker, RynthOracle) inside the client: the
+/// API table reads the runtime, runtime events become plugin callbacks,
+/// script windows draw on the client's ImGui overlay when it has one, and
+/// <c>/rynth tracker</c> and <c>/ro</c> reach the plugins.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
 {
     private RynthHost? _host;
     private IDisposable? _runtimeSubscription;
-    private IDisposable? _command;
+    private IDisposable? _frameCallback;
+    private readonly List<IDisposable> _commands = new();
     private CombatState? _combat;
 
     public void Attach(ClientExtensionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var view = new RuntimeRynthGameView(context.Runtime);
+        var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand);
+        bool scriptWindows = context.Overlay is not null;
         _host = new RynthHost(
             view,
             context.Log,
-            [typeof(RynthCore.Plugin.RynthTracker.PluginExports)]);
+            [
+                typeof(RynthCore.Plugin.RynthTracker.PluginExports),
+                typeof(RynthCore.Plugin.RynthOracle.PluginExports),
+            ],
+            scriptWindows);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
         _combat.HealthChanged += OnHealthChanged;
         _combat.KillLanded += OnKillLanded;
-        _command = context.RegisterChatCommand("rynth", arguments => OnCommand(view, arguments));
+        _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
+        _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
+        if (context.Overlay is { } overlay)
+            _frameCallback = overlay.AddFrameCallback(ImGuiPanelHost.DrawAll);
     }
 
     public void Tick(double deltaSeconds) => _host?.Tick();
 
     public void Dispose()
     {
-        _command?.Dispose();
+        _frameCallback?.Dispose();
+        _frameCallback = null;
+        foreach (IDisposable command in _commands)
+            command.Dispose();
+        _commands.Clear();
         if (_combat is not null)
         {
             _combat.HealthChanged -= OnHealthChanged;
             _combat.KillLanded -= OnKillLanded;
+            _combat = null;
         }
 
         _runtimeSubscription?.Dispose();
+        _runtimeSubscription = null;
         _host?.Dispose();
         _host = null;
     }
@@ -52,7 +69,19 @@ public sealed class RynthClientExtension : IClientExtension
     private void OnKillLanded(string deathMessage, uint victimId) =>
         _host?.Bridge.OnKillLanded(deathMessage);
 
-    private void OnCommand(IRynthGameView view, string arguments)
+    /// <summary>Offers chat-bar text to each plugin until one eats it.</summary>
+    private void OfferChatBarText(string text)
+    {
+        if (_host is null)
+            return;
+        foreach (RynthPlugin plugin in _host.Plugins)
+        {
+            if (plugin.OnChatBarEnter(text.TrimEnd()))
+                return;
+        }
+    }
+
+    private void OnRynthCommand(IRynthGameView view, string arguments)
     {
         if (!string.Equals(arguments.Trim(), "tracker", StringComparison.OrdinalIgnoreCase))
         {

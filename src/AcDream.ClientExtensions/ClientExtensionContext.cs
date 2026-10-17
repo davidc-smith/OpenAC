@@ -16,4 +16,13 @@ public sealed class ClientExtensionContext
     /// text after the word. Dispose the result to give the word up.
     /// </summary>
     public required Func<string, Action<string>, IDisposable> RegisterChatCommand { get; init; }
+
+    /// <summary>The ImGui overlay, or null when the client has none.</summary>
+    public IClientOverlay? Overlay { get; init; }
+
+    /// <summary>
+    /// Runs text as if typed in the chat bar (commands, tells, say). True when
+    /// the client accepted it. Null when the client offers no submission.
+    /// </summary>
+    public Func<string, bool>? SubmitChatCommand { get; init; }
 }
