@@ -74,4 +74,8 @@
     <EmbeddedResource Include="..\..\assets\icons\acdream-client-256.png"
                       LogicalName="AcDream.App.Rendering.Icons.acdream-client-256.png" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Extensions\Overlay\Shaders\imgui_overlay.vert.spv" LogicalName="AcDream.App.Overlay.imgui_overlay.vert.spv" />
+    <EmbeddedResource Include="Extensions\Overlay\Shaders\imgui_overlay.frag.spv" LogicalName="AcDream.App.Overlay.imgui_overlay.frag.spv" />
+  </ItemGroup>
 </Project>
