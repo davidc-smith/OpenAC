@@ -2183,6 +2183,17 @@ internal sealed partial class NavigationWalkController
             Say($"Walk to {Label(requester)}: {round}");
             return;
         }
+        if (route.Outcome != NavRouteOutcome.Routed
+            && requester.Corridor is not null
+            && requester.AvoidedDoor is null
+            && requester.AvoidedObject is null
+            && requester.Replans == 0
+            && _body.TrySample(out NavigationWalkBodySample stuckAt))
+        {
+            // A stage of the way round, the last one included, found no route at all.
+            StageMissed(requester, stuckAt);
+            return;
+        }
         if (route.Outcome != NavRouteOutcome.Routed)
         {
             if (requester.AvoidedDoor is { } avoided)
@@ -2226,9 +2237,12 @@ internal sealed partial class NavigationWalkController
         }
         if (requester.Staged && requester.StageTarget is { } aimed)
         {
-            if (HorizontalDistance(route.Legs[^1], aimed) > NavCorridor.StageMiss)
+            // A stage that ends short of its point, or near it but out of sight of it, such
+            // as across a wall, has not found the way along this stretch of the way round.
+            if (HorizontalDistance(route.Legs[^1], aimed) > NavCorridor.StageMiss || !route.EndsInSight)
             {
-                End(requester, NavigationWalkState.NoRoute, $"no way along the planned way round was found near {Point(aimed)}");
+                if (_body.TrySample(out NavigationWalkBodySample missedAt))
+                    StageMissed(requester, missedAt);
                 return;
             }
             if (!requester.Walk)

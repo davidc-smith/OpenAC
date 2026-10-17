@@ -108,6 +108,49 @@ public sealed class NavigationWalkControllerTests
         Assert.Contains(body.Path, point => point.X > 320f);
     }
 
+    /// <summary>A way round straight from the start to the goal, as a coarse grid that missed a wall would plan it.</summary>
+    private static NavCorridor StraightThroughTheWall(NavCorridor planned)
+    {
+        var points = new List<Vector3>();
+        for (float y = 150f; y <= 260f; y += 1f)
+            points.Add(new Vector3(60f, y, 0f));
+        return new NavCorridor(NavCorridorOutcome.Reaches, "routed", points, planned.OriginX, planned.OriginY, planned.Size, planned.CellSize, 0d);
+    }
+
+    [Fact]
+    public void AWayRoundThatLeadsNowhereIsKeptOutOfAndAnotherIsPlanned()
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals(), said.Add);
+        int plans = 0;
+        walk.CorridorPlanned = planned => plans++ == 0 ? StraightThroughTheWall(planned) : planned;
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavigationWalkState.Arrived, report.State);
+        Assert.Contains(said, line => line.Contains("planning another way round"));
+        Assert.Equal(2, plans);
+    }
+
+    [Fact]
+    public void AWalkGivesUpAfterEveryWayRoundLeadsNowhere()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals());
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return StraightThroughTheWall(planned); };
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.StartsWith("no way along the planned way round was found near", report.Reason);
+        Assert.Contains("searched 384 m around the start and goal", report.Reason);
+        Assert.Equal(NavigationWalkController.MaximumCorridorPlans, plans);
+    }
+
     [Fact]
     public void AWayRoundIsPlannedOverWhatIsLoadedAndHoldsTheCharacter()
     {

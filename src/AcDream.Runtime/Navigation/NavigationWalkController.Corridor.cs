@@ -111,7 +111,7 @@ internal sealed partial class NavigationWalkController
                 $"the way round could not be planned: {planning.Exception?.GetBaseException().Message ?? "it was cancelled"}");
             return;
         }
-        NavCorridor corridor = planning.Result;
+        NavCorridor corridor = CorridorPlanned?.Invoke(planning.Result) ?? planning.Result;
         Corridor = corridor;
         Say(Inv(
             $"Way round: {corridor.Outcome} over {corridor.Size:0} m at {corridor.CellSize:0.##} m cells, {corridor.Length:0} m, in {corridor.Milliseconds:0} ms"));
@@ -187,6 +187,39 @@ internal sealed partial class NavigationWalkController
                 $"{(final ? "Last stage" : $"Stage {active.Stages + 1}")} toward {Point(target)}, {corridor.AlongAt(targetIndex):0} m along the way round, {corridor.RemainingFrom(targetIndex):0} m left"));
         }
         SearchRoute(active, usable, sample, final ? null : target, detour: false);
+    }
+
+    /// <summary>Lets a test stand in for the way round a search found. Never set outside tests.</summary>
+    internal Func<NavCorridor, NavCorridor>? CorridorPlanned { get; set; }
+
+    /// <summary>
+    /// A stage of the way round found no route to its point, or ended short of it: the coarse
+    /// grid saw a way the fine one does not, such as a gap narrower than a body. Keeps the next
+    /// way round out of the middle of that stretch and plans one, or, after
+    /// <see cref="MaximumCorridorPlans"/>, gives up.
+    /// </summary>
+    private void StageMissed(Request active, in NavigationWalkBodySample sample)
+    {
+        NavCorridor corridor = active.Corridor!;
+        int middle = (active.CorridorIndex + Math.Max(active.CorridorIndex, active.StageTargetIndex)) / 2;
+        Vector3 near = corridor.Points.Count > 0 ? corridor.Points[Math.Min(middle, corridor.Points.Count - 1)] : active.Goal;
+        _driver = null;
+        active.Staged = false;
+        active.StageTarget = null;
+        active.Builds = 0;
+        float radius = MathF.Min(CorridorKeepOutRadius, HorizontalDistance(near, sample.Position) - 2f);
+        if (active.CorridorPlans >= MaximumCorridorPlans || radius < 2f)
+        {
+            End(active, NavigationWalkState.NoRoute,
+                Inv($"no way along the planned way round was found near {Point(near)}; searched {corridor.Size:0} m around the start and goal"));
+            return;
+        }
+        active.CorridorKeepOut.Add(new NavAvoidance(near, radius));
+        active.Corridor = null;
+        active.WantsCorridor = true;
+        string again = $"no way along the planned way round was found near {Point(near)}; planning another way round";
+        Publish(active, NavigationWalkState.Planning, again, float.NaN);
+        Say($"Walk to {Label(active)}: {again}");
     }
 
     /// <summary>What is left of the way round beyond the stage under way, and on to the goal past its end.</summary>
