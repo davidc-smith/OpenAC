@@ -61,6 +61,22 @@ public sealed class NavigationWalkControllerTests
         Assert.Equal(0, body.MovesBegun);
     }
 
+    /// <summary>A debugging listener still hears what the one square looked at when no way round is found either.</summary>
+    [Fact]
+    public void ANarratedWalkWithNoWayRoundSaysWhatItsOneSquareLookedAt()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals());
+        var heard = new List<string>();
+        walk.Narration = heard.Add;
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        RunUntilSettled(walk, body);
+
+        Assert.Contains(heard, line => line.StartsWith("No route to ", StringComparison.Ordinal));
+        Assert.Contains(heard, line => line.StartsWith("Way round: NoPath", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void AWalkThatFitsOneSquarePlansNoWayRound()
     {

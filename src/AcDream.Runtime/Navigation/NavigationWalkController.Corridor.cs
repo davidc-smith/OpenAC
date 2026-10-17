@@ -117,6 +117,8 @@ internal sealed partial class NavigationWalkController
             $"Way round: {corridor.Outcome} over {corridor.Size:0} m at {corridor.CellSize:0.##} m cells, {corridor.Length:0} m, in {corridor.Milliseconds:0} ms"));
         if (corridor.Outcome is not (NavCorridorOutcome.Reaches or NavCorridorOutcome.TowardEdge))
         {
+            if (Narration is not null && requester.SquareNoRoute is { } square)
+                NarrateNoRoute(requester, square);
             End(requester, NavigationWalkState.NoRoute, corridor.Reason);
             return;
         }

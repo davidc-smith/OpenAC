@@ -2198,6 +2198,7 @@ internal sealed partial class NavigationWalkController
             // One square around the character and the goal holds no way there, but a way
             // round may leave the square: plan one over everything loaded before giving up.
             requester.WantsCorridor = true;
+            requester.SquareNoRoute = route;
             requester.Builds = 0;
             string round = "no route within one square; planning a way round";
             Publish(requester, NavigationWalkState.Planning, round, float.NaN);
@@ -2292,10 +2293,13 @@ internal sealed partial class NavigationWalkController
     /// <summary>
     /// Whether a walk that found no route in its one square plans a way round: a walk or
     /// route to a place or object outdoors, not yet on a way round, that has not met a door,
-    /// an object or a stop that a way round would not get it past.
+    /// an object or a stop that a way round would not get it past. Standing on an object
+    /// never does: a way round is planned over the ground, so it cannot show a way up onto
+    /// a top the one square found none onto.
     /// </summary>
     private bool WantsCorridorAfter(Request request) =>
         !request.Follow
+        && !request.Onto
         && !request.Staged
         && request.Corridor is null
         && request.CorridorPlans == 0
@@ -2361,6 +2365,7 @@ internal sealed partial class NavigationWalkController
         }
         _active = request;
         Route = null;
+        Corridor = null;
         if (Narration is not null && _body.TrySample(out NavigationWalkBodySample start))
         {
             Detail(Inv(
@@ -3121,6 +3126,9 @@ internal sealed partial class NavigationWalkController
         /// <summary>The way round the walk follows, and how many it has planned.</summary>
         public NavCorridor? Corridor { get; set; }
         public int CorridorPlans { get; set; }
+
+        /// <summary>The search of the walk's one square that found no route, which a way round that finds none narrates.</summary>
+        public NavRoute? SquareNoRoute { get; set; }
 
         /// <summary>Stretches of earlier ways round that led nowhere, which the next one keeps out of.</summary>
         public List<NavAvoidance> CorridorKeepOut { get; } = [];
