@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\AcDream.Rynth.Host\AcDream.Rynth.Host.csproj" />
+    <ProjectReference Include="..\..\src\AcDream.Rynth.ScriptWindows\AcDream.Rynth.ScriptWindows.csproj" />
   </ItemGroup>
 </Project>

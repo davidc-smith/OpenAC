@@ -16,6 +16,7 @@
     <Project Path="src/AcDream.Runtime/AcDream.Runtime.csproj" />
     <Project Path="src/AcDream.Rynth.Host/AcDream.Rynth.Host.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthTracker/AcDream.Rynth.Plugin.RynthTracker.csproj" />
+    <Project Path="src/AcDream.Rynth.ScriptWindows/AcDream.Rynth.ScriptWindows.csproj" />
     <Project Path="src/AcDream.Rynth.Sdk/AcDream.Rynth.Sdk.csproj" />
     <Project Path="src/AcDream.UI.Abstractions/AcDream.UI.Abstractions.csproj" />
   </Folder>

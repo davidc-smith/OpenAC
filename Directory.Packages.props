@@ -5,6 +5,7 @@
 
   <ItemGroup>
     <PackageVersion Include="Arch" Version="2.1.0" />
+    <PackageVersion Include="ImGui.NET" Version="1.91.6.1" />
     <PackageVersion Include="Avalonia" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Headless.XUnit" Version="12.1.1" />
