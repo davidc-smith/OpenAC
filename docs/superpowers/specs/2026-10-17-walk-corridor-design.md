@@ -54,11 +54,11 @@ Plain C#, no client state, testable from shapes built in code.
 
 - `NavCorridor.Plan(NavGrid coarse, Vector3 from, Vector3 goal, float arrival, bool arriveOnGoalFloor, IReadOnlyList<NavAvoidance>? avoid)` returns a `NavCorridor` result:
   - `Outcome`: `Reaches` (the goal, or its floor for places), `TowardEdge` (the goal lies beyond the coarse grid; the corridor ends at the edge nearest it), `NoPath`, `NoStart`.
-  - `Waypoints`: a simplified polyline, start to end.
+  - `Points`: the coarse route's standing points, start to end (dense: one per coarse cell, so no segment crosses a wall).
   - `Length`, `Reason`, `Milliseconds`, plus the grid's `OriginX/OriginY/Size/CellSize` for narration and reasons.
 - It reuses `NavRouter.Find`, or `FindToward` when the goal is outside the grid, with `leaps: null` and no crowd. No new search algorithm.
-- Simplification: drop path nodes while the straight line between kept points stays walkable on the coarse grid (`CanWalkStraight`), with a cap of about 40 m per segment, so stage targets stay close to real ground.
-- `NavCorridor.TargetAhead(Vector3 position, float lookahead)` returns the point on the polyline `lookahead` metres beyond the point nearest `position`, measured along the polyline. It also reports the remaining length from that nearest point to the end.
+- `NearestIndex(position, fromIndex)` finds the point nearest the character, never behind `fromIndex` and at most 200 m along from it, so an out-and-back way round is never followed from its return leg. `IndexAhead(fromIndex, meters)` finds the stage target along the polyline. `RemainingFrom(index)` gives the length left.
+- `Stitch(geometry, body, corridor, from, goal, search, maximumStages)` plans the fine stages over squares cropped from captured geometry and joins them. Preview and the installed-dat tests use it.
 
 ### Runtime: `NavigationWalkController` (changed; corridor logic in a new partial, `NavigationWalkController.Corridor.cs`)
 
@@ -75,7 +75,7 @@ Plain C#, no client state, testable from shapes built in code.
 `Staged` keeps its meaning: "the route being walked is one stage".
 
 **Stage targets.**
-- With a corridor, each stage aims at `TargetAhead(position, StageLookahead = 120 m)`.
+- With a corridor, each stage aims at `the point `IndexAhead(NearestIndex(position), StageLookahead = 120 m)``.
 - The stage square is `TryChooseSquare(position, target)`, which is always ≤ 320 m.
 - The fine search is `NavRouter.Find(grid, from, target, StageArrival = 4 m, ..., arriveOnGoalFloor: false)` with leaps. Coarse waypoints can sit on spots the fine grid treats as unclear, which is why the arrival tolerance is generous.
 - If the goal itself lies inside the stage square with margin (`grid.Contains(goal, CoverMargin)`), the stage is instead the request's normal final search.
@@ -115,10 +115,10 @@ Plain C#, no client state, testable from shapes built in code.
 ### Narration and overlay
 
 - `/nav debug` adds corridor lines:
-  - region, cell size, build and search ms, outcome, length, up to 24 waypoints;
+  - region, cell size, build and search ms, outcome, length, up to 24 points;
   - "stage N toward {point}, {d:0} m along the way round, {left:0} m left";
   - each keep-out-and-replan.
-- The graphical client's route overlay draws `Corridor.Waypoints` as a fainter line under the fine route, while a corridor walk is active or after `/nav route`. Headless draws nothing, as now.
+- The graphical client's route overlay draws `Corridor.Points` as a fainter line under the fine route, while a corridor walk is active or after `/nav route`. Headless draws nothing, as now.
 
 ## Constraints
 
@@ -133,8 +133,7 @@ Plain C#, no client state, testable from shapes built in code.
 1. A walled plateau whose only ramp starts outside the first `TryChooseRegion` square: `Reaches`, with the waypoints passing the ramp.
 2. The same plateau without a ramp: `NoPath`.
 3. A goal beyond the coarse grid: `TowardEdge`, ending at the edge nearest the goal.
-4. Simplification: no segment crosses a wall; segments are ≤ 40 m.
-5. `TargetAhead` measures along the polyline and clamps at the end.
+4. `NearestIndex` never steps back or across to a parallel return leg; `IndexAhead` measures along the polyline and clamps at the end.
 
 **Runtime, `tests/AcDream.App.Tests/Navigation/NavigationWalkControllerTests.cs`:**
 1. A near goal whose fine search fails with `NoPath` escalates to a corridor and arrives through stages.
