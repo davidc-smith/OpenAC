@@ -48,6 +48,51 @@ public sealed class NavigationWalkControllerTests
     }
 
     [Fact]
+    public void AWalkWithNoWayRoundAnywhereLoadedEndsBeforeMovingAndSaysWhereItLooked()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals());
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.EndsWith("within 384 m around the start and goal", report.Reason);
+        Assert.Equal(0, body.MovesBegun);
+    }
+
+    [Fact]
+    public void AWalkThatFitsOneSquarePlansNoWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var walk = new NavigationWalkController(FlatWorld(), body, new Goals { [Target] = new Vector3(60f, 75f, 0f) });
+
+        walk.WalkTo(Target);
+
+        Assert.Equal(NavigationWalkState.Arrived, RunUntilSettled(walk, body).State);
+        Assert.Null(walk.Corridor);
+    }
+
+    [Fact]
+    public void AWayRoundIsPlannedOverWhatIsLoadedAndHoldsTheCharacter()
+    {
+        var low = new Vector2(0f, 0f);
+        var high = new Vector2(384f, 384f);
+
+        Assert.True(NavigationWalkController.TryChooseCorridorRegion(new Vector3(60f, 150f, 0f), new Vector3(60f, 260f, 0f), low, high,
+            out float x, out float y, out float size));
+        Assert.Equal((0f, 0f, 384f), (x, y, size));
+
+        var wide = new Vector2(4000f, 4000f);
+        Assert.True(NavigationWalkController.TryChooseCorridorRegion(new Vector3(100f, 100f, 0f), new Vector3(3900f, 3900f, 0f), low, wide,
+            out x, out y, out size));
+        Assert.Equal(NavigationWalkController.MaximumCorridorRegion, size);
+        Assert.InRange(100f - x, NavigationWalkController.RegionMargin, size - NavigationWalkController.RegionMargin);
+        Assert.InRange(100f - y, NavigationWalkController.RegionMargin, size - NavigationWalkController.RegionMargin);
+        Assert.True(x >= 0f && y >= 0f);
+    }
+
+    [Fact]
     public async Task PreviewDoesNotReplaceAnActiveWalk()
     {
         var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
@@ -2100,6 +2145,29 @@ public sealed class NavigationWalkControllerTests
             Thread.Sleep(1);
         }
         return false;
+    }
+
+    /// <summary>
+    /// Four flat landblocks, 384 m square, crossed east-west at y = 200 by a wall 5 m high
+    /// from x = 0 to <paramref name="gapFromX"/>, or the whole way when null.
+    /// </summary>
+    private static PhysicsEngine WallWorld(float? gapFromX)
+    {
+        float end = gapFromX ?? 384f;
+        var wall = new Dictionary<ushort, Vector3>
+        {
+            [0] = new(0f, 200f, 0f),
+            [1] = new(end, 200f, 0f),
+            [2] = new(end, 200f, 5f),
+            [3] = new(0f, 200f, 5f),
+        };
+        var physics = new PhysicsEngine();
+        physics.AddLandblock(0xA9B4FFFFu, new TerrainSurface(new byte[81], new float[256]),
+            [new CellSurface(0xA9B40100u, wall, [[0, 1, 2, 3]])], [], 0f, 0f);
+        physics.AddLandblock(0xAAB4FFFFu, new TerrainSurface(new byte[81], new float[256]), [], [], 192f, 0f);
+        physics.AddLandblock(0xA9B5FFFFu, new TerrainSurface(new byte[81], new float[256]), [], [], 0f, 192f);
+        physics.AddLandblock(0xAAB5FFFFu, new TerrainSurface(new byte[81], new float[256]), [], [], 192f, 192f);
+        return physics;
     }
 
     private static PhysicsEngine FlatWorld(int landblocksNorth = 1)

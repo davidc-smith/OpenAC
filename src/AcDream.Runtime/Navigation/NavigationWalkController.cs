@@ -662,10 +662,11 @@ internal sealed partial class NavigationWalkController
     public bool IsStaged => _active is { Staged: true };
 
     /// <summary>Whether a grid is being built or a route searched for, off the update thread.</summary>
-    internal bool IsSearching => _routing is not null || _building is not null;
+    internal bool IsSearching => _routing is not null || _building is not null || _corridoring is not null;
 
     /// <summary>Whether a grid build or route search under way has finished, so the next tick takes it up.</summary>
-    internal bool SearchFinished => _building is { IsCompleted: true } || _routing is { IsCompleted: true };
+    internal bool SearchFinished =>
+        _building is { IsCompleted: true } || _routing is { IsCompleted: true } || _corridoring is { IsCompleted: true };
 
     /// <summary>Whether a request is waiting, being planned or being walked.</summary>
     public bool IsBusy
@@ -748,6 +749,7 @@ internal sealed partial class NavigationWalkController
             _seconds += elapsedSeconds;
         CollectBuild();
         CollectRoute();
+        CollectCorridor();
 
         Request? incoming;
         bool stop;
@@ -902,6 +904,7 @@ internal sealed partial class NavigationWalkController
         }
         _active = request;
         Route = null;
+        Corridor = null;
         Goal = (goal, request.ArrivalMeters);
         Publish(request, NavigationWalkState.Planning, "planning", float.NaN);
     }
@@ -924,7 +927,7 @@ internal sealed partial class NavigationWalkController
             Drive(active, driver, sample);
             return;
         }
-        if (_building is not null || _routing is not null)
+        if (_building is not null || _routing is not null || _corridoring is not null)
             return;
         if (sample.InPortalSpace)
         {
@@ -936,6 +939,13 @@ internal sealed partial class NavigationWalkController
         if (sample.Airborne)
         {
             Publish(active, NavigationWalkState.Planning, "waiting for the character to land", float.NaN);
+            return;
+        }
+
+        if (active.WantsCorridor)
+        {
+            active.WantsCorridor = false;
+            StartCorridor(active, sample);
             return;
         }
 
@@ -2183,6 +2193,17 @@ internal sealed partial class NavigationWalkController
             Say($"{(requester.Follow ? "Follow" : "Walk to")} {Label(requester)}: {again}");
             return;
         }
+        if (route.Outcome == NavRouteOutcome.NoPath && WantsCorridorAfter(requester))
+        {
+            // One square around the character and the goal holds no way there, but a way
+            // round may leave the square: plan one over everything loaded before giving up.
+            requester.WantsCorridor = true;
+            requester.Builds = 0;
+            string round = "no route within one square; planning a way round";
+            Publish(requester, NavigationWalkState.Planning, round, float.NaN);
+            Say($"Walk to {Label(requester)}: {round}");
+            return;
+        }
         if (route.Outcome != NavRouteOutcome.Routed)
         {
             if (requester.AvoidedDoor is { } avoided)
@@ -2267,6 +2288,21 @@ internal sealed partial class NavigationWalkController
         _driver = Drive(requester, new RuntimeRouteDriver(route.Legs, LeapsOf(route), canCutAlong: CornerCuts(), aimLeapFrom: AimLeapFrom, aimOnward: AimOnward, sameFloor: SameFloor));
         Publish(requester, NavigationWalkState.Walking, "walking", route.Length);
     }
+
+    /// <summary>
+    /// Whether a walk that found no route in its one square plans a way round: a walk or
+    /// route to a place or object outdoors, not yet on a way round, that has not met a door,
+    /// an object or a stop that a way round would not get it past.
+    /// </summary>
+    private bool WantsCorridorAfter(Request request) =>
+        !request.Follow
+        && !request.Staged
+        && request.Corridor is null
+        && request.CorridorPlans == 0
+        && request.AvoidedDoor is null
+        && request.AvoidedObject is null
+        && request.Replans == 0
+        && _gridDungeon == 0u;
 
     private static string BlockedReason(Request request) =>
         request.BlockedBy is { } blocker
@@ -3078,6 +3114,16 @@ internal sealed partial class NavigationWalkController
 
         /// <summary>Whether the route planned or walked is one stage of a walk to a goal beyond it.</summary>
         public bool Staged { get; set; }
+
+        /// <summary>Whether the walk plans a way round before it plans again.</summary>
+        public bool WantsCorridor { get; set; }
+
+        /// <summary>The way round the walk follows, and how many it has planned.</summary>
+        public NavCorridor? Corridor { get; set; }
+        public int CorridorPlans { get; set; }
+
+        /// <summary>Stretches of earlier ways round that led nowhere, which the next one keeps out of.</summary>
+        public List<NavAvoidance> CorridorKeepOut { get; } = [];
 
         /// <summary>The stages of the walk already walked.</summary>
         public int Stages { get; set; }
