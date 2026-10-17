@@ -2499,6 +2499,7 @@ internal sealed partial class NavigationWalkController
                 active.FollowReplannedAt = _seconds;
                 Vector3 planned = active.Goal;
                 SeeLeader(active, leader);
+                ForgetCorridor(active);
                 Detail($"Follow {Label(active)}: the player moved from {Point(planned)} to {Point(leader)}; planning again on the way");
                 StartDetour(active, sample);
                 if (_routing is null)
@@ -2581,6 +2582,7 @@ internal sealed partial class NavigationWalkController
     private void KeepFollowing(Request request, NavigationWalkState state, string reason)
     {
         _driver = null;
+        ForgetCorridor(request);
         request.Builds = 0;
         request.Replans = 0;
         request.Avoid.Clear();
@@ -2703,8 +2705,9 @@ internal sealed partial class NavigationWalkController
     }
 
     /// <summary>Starts a follow's next plan afresh.</summary>
-    private static void RestartFollow(Request request)
+    private void RestartFollow(Request request)
     {
+        ForgetCorridor(request);
         request.Settled = false;
         request.Builds = 0;
         request.Replans = 0;

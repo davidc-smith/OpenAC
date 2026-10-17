@@ -226,6 +226,29 @@ internal sealed partial class NavigationWalkController
         Say($"Walk to {Label(active)}: {again}");
     }
 
+    /// <summary>
+    /// Lets go of a follow's way round, and of one still being planned for it, when it plans
+    /// toward the player afresh: the player has moved since it was planned, perhaps back within
+    /// one square, and a way round toward where they stood leads on past where they are now.
+    /// </summary>
+    private void ForgetCorridor(Request request)
+    {
+        if (ReferenceEquals(_corridorFor, request))
+            _corridorFor = null;
+        if (ReferenceEquals(_active, request))
+            Corridor = null;
+        request.Corridor = null;
+        request.CorridorPlans = 0;
+        request.CorridorKeepOut.Clear();
+        request.WantsCorridor = false;
+        request.SquareNoRoute = null;
+        request.CorridorIndex = 0;
+        request.StageTargetIndex = 0;
+        request.StageTarget = null;
+        request.Staged = false;
+        request.StageBudget = MaximumStages;
+    }
+
     /// <summary>What is left of the way round beyond the stage under way, and on to the goal past its end.</summary>
     private static float CorridorBeyond(Request request) =>
         request.Corridor is not { } corridor

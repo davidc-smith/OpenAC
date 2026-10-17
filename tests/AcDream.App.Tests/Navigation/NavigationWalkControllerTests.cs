@@ -880,6 +880,34 @@ public sealed class NavigationWalkControllerTests
         Assert.Contains(heard, line => line.Contains("the player moved", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A follow toward a player beyond one square plans a way round; once the player comes
+    /// back within one square, the follow plans straight to them, not along the old way round.
+    /// </summary>
+    [Fact]
+    public void FollowingAPlayerWhoComesBackWithinOneSquareDropsTheWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f) };
+        goals.Players.Add(Target);
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+
+        walk.Follow(Target, 3f);
+        RunUntil(walk, body, report => report.State == NavigationWalkState.Walking && report.Reason == "walking", seconds: 30f);
+        Assert.NotNull(walk.Corridor);
+        Assert.True(walk.IsStaged);
+        Run(walk, body, seconds: 1f);
+
+        goals[Target] = new Vector3(40f, 70f, 0f);
+        NavigationWalkReport report = RunUntil(walk, body, report => report.Reason.StartsWith("keeping behind", StringComparison.Ordinal), seconds: 60f);
+
+        Assert.StartsWith("keeping behind", report.Reason);
+        Assert.Null(walk.Corridor);
+        Assert.False(walk.IsStaged);
+        Assert.InRange(Vector2.Distance(body.Flat, new Vector2(40f, 70f)), 0f, 4.5f);
+        Assert.DoesNotContain(body.Path, point => point.Y > 90f);
+    }
+
     [Fact]
     public void FollowingAPlayerOutOfSightWaitsAndGoesOnOnceTheyAreSeen()
     {
