@@ -1,6 +1,4 @@
-using System.Collections.Immutable;
 using System.Numerics;
-using System.Reflection;
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
 using ImGuiNET;
@@ -17,6 +15,12 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
 {
     internal const float FontSizePoints = 13f;
 
+    /// <summary>Largest vertex + index upload drawn in one frame; bigger frames are skipped.</summary>
+    internal const int MaxFrameUploadBytes = 4 * 1024 * 1024;
+
+    /// <summary>How many distinct bad texture ids are logged before going quiet.</summary>
+    private const int MaxReportedBadTextures = 16;
+
     internal static readonly GpuVertexLayout VertexLayout = GpuVertexLayout.Interleaved(
         strideBytes: 20,
         [
@@ -31,11 +35,16 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
     private IGpuTexture? _atlas;
     private GpuTextureSlot _atlasSlot = GpuTextureSlot.Unassigned;
     private float _atlasScale;
+    private readonly Action<string>? _log;
+    private readonly HashSet<IntPtr> _reportedBadTextures = [];
+    private bool _reportedOversize;
+    private bool _reportedCallback;
 
-    public ImGuiVulkanRenderer(IGpuDevice device, ICurrentGpuFrameSource frames)
+    public ImGuiVulkanRenderer(IGpuDevice device, ICurrentGpuFrameSource frames, Action<string>? log = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
+        _log = log;
         _pipeline = device.CreatePipeline(new GpuPipelineDescription
         {
             Name = "imgui-overlay",
@@ -61,6 +70,14 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
         return memory.ToArray();
     }
 
+    /// <summary>
+    /// True only for a texture id this renderer issued (today: the font atlas).
+    /// Anything else, such as a foreign plugin pointer, 0 or a stale id, would
+    /// index the bindless table out of range, so it is never drawn.
+    /// </summary>
+    internal static bool IsDrawableTexture(IntPtr textureId, GpuTextureSlot atlas) =>
+        atlas.IsAssigned && textureId == (IntPtr)atlas.Index;
+
     public void PrepareFrame(ImGuiIOPtr io, Vector2 framebufferScale)
     {
         float scale = MathF.Max(1f, framebufferScale.X);
@@ -71,6 +88,9 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
         io.Fonts.Clear();
         ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
         config.SizePixels = FontSizePoints * scale;
+        config.OversampleH = 1;
+        config.OversampleV = 1;
+        config.PixelSnapH = true;
         io.Fonts.AddFontDefault(config);
         config.Destroy();
         io.FontGlobalScale = 1f / scale;
@@ -108,6 +128,17 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
 
         int vertexBytes = drawData.TotalVtxCount * sizeof(ImDrawVert);
         int indexBytes = drawData.TotalIdxCount * sizeof(ushort);
+        if ((long)vertexBytes + indexBytes > MaxFrameUploadBytes)
+        {
+            if (!_reportedOversize)
+            {
+                _reportedOversize = true;
+                _log?.Invoke($"ImGui overlay: skipping a frame of {vertexBytes + (long)indexBytes} bytes (limit {MaxFrameUploadBytes}).");
+            }
+
+            return;
+        }
+
         GpuRingAllocation vertices = frame.AllocateRing(vertexBytes, GpuRingUsage.Vertex);
         GpuRingAllocation indices = frame.AllocateRing(indexBytes, GpuRingUsage.Index);
         int vtxWritten = 0;
@@ -146,11 +177,28 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
             for (int c = 0; c < list.CmdBuffer.Size; c++)
             {
                 ImDrawCmdPtr cmd = list.CmdBuffer[c];
-                if (cmd.UserCallback != IntPtr.Zero || cmd.ElemCount == 0)
+                if (cmd.UserCallback != IntPtr.Zero)
+                {
+                    if (!_reportedCallback)
+                    {
+                        _reportedCallback = true;
+                        _log?.Invoke("ImGui overlay: draw callbacks are not supported; skipping them.");
+                    }
+
                     continue;
+                }
+
+                if (cmd.ElemCount == 0)
+                    continue;
+                if (!IsDrawableTexture(cmd.TextureId, _atlasSlot))
+                {
+                    ReportBadTexture(cmd.TextureId);
+                    continue;
+                }
+
                 if (!ImGuiScissor.TryMap(cmd.ClipRect, drawData.DisplayPos, drawData.FramebufferScale, fbWidth, fbHeight, out var s))
                     continue;
-                uint texture = (uint)cmd.TextureId;
+                uint texture = _atlasSlot.Index;
                 if (texture != boundTexture)
                 {
                     constants.TextureIndexA = texture;
@@ -165,6 +213,13 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
             listVtxBase += list.VtxBuffer.Size;
             listIdxBase += list.IdxBuffer.Size;
         }
+    }
+
+    private void ReportBadTexture(IntPtr textureId)
+    {
+        if (_reportedBadTextures.Count >= MaxReportedBadTextures || !_reportedBadTextures.Add(textureId))
+            return;
+        _log?.Invoke($"ImGui overlay: skipping draws with unknown texture id 0x{textureId:X}; only the font atlas can be drawn.");
     }
 
     public void Dispose()
