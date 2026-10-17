@@ -23,7 +23,10 @@ internal static class ImGuiPanelHost
         public bool Open;
         public Vector2? RequestedSize;
         public Vector2? RequestedPos;
+        public int Failures;
     }
+
+    private const int MaxFailures = 3;
 
     private static readonly object _gate = new();
     private static readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
@@ -34,6 +37,15 @@ internal static class ImGuiPanelHost
     internal static int OpenCount
     {
         get { lock (_gate) return _entries.Values.Count(e => e.Open); }
+    }
+
+    private static void Guard(string what, Action action)
+    {
+        try { action(); }
+        catch (Exception error)
+        {
+            Log?.Invoke($"[ScriptWindows] {what}: {error.GetType().Name}: {error.Message}");
+        }
     }
 
     public static void RegisterDynamic(string key, string displayTitle, PanelSpec spec, Func<IImGuiPanel> factory)
@@ -67,7 +79,11 @@ internal static class ImGuiPanelHost
         }
 
         if (removed.Open)
-            removed.Instance?.OnHidden();
+        {
+            IImGuiPanel? instance = removed.Instance;
+            if (instance is not null)
+                Guard(removed.Title + " OnHidden", instance.OnHidden);
+        }
     }
 
     public static bool IsOpen(string key)
@@ -83,10 +99,22 @@ internal static class ImGuiPanelHost
             if (!_entries.TryGetValue(key, out Entry? entry) || entry.Open)
                 return;
             entry.Open = true;
-            shown = entry.Instance ??= entry.Factory();
+            entry.Failures = 0;
+            if (entry.Instance is null)
+            {
+                try { entry.Instance = entry.Factory(); }
+                catch (Exception error)
+                {
+                    entry.Open = false;
+                    Log?.Invoke($"[ScriptWindows] {entry.Title} factory: {error.GetType().Name}: {error.Message}");
+                    return;
+                }
+            }
+
+            shown = entry.Instance;
         }
 
-        shown.OnShown();
+        Guard(key + " OnShown", shown.OnShown);
     }
 
     public static void Close(string key)
@@ -100,7 +128,8 @@ internal static class ImGuiPanelHost
             hidden = entry.Instance;
         }
 
-        hidden?.OnHidden();
+        if (hidden is not null)
+            Guard(key + " OnHidden", hidden.OnHidden);
     }
 
     public static void RequestSize(string key, Vector2 logicalSize)
@@ -132,26 +161,34 @@ internal static class ImGuiPanelHost
     /// <summary>Draws every open window. Call between ImGui.NewFrame and ImGui.Render.</summary>
     internal static void DrawAll()
     {
-        KeyValuePair<string, Entry>[] open;
-        lock (_gate) open = _entries.Where(pair => pair.Value.Open).ToArray();
+        List<(string Key, Entry Entry, Vector2? Size, Vector2? Pos)> open = new();
+        lock (_gate)
+        {
+            foreach (KeyValuePair<string, Entry> pair in _entries)
+            {
+                if (!pair.Value.Open)
+                    continue;
+                open.Add((pair.Key, pair.Value, pair.Value.RequestedSize, pair.Value.RequestedPos));
+                pair.Value.RequestedSize = null;
+                pair.Value.RequestedPos = null;
+            }
+        }
 
-        foreach ((string key, Entry entry) in open)
+        foreach ((string key, Entry entry, Vector2? requestedSize, Vector2? requestedPos) in open)
         {
             float s = EngineFrameController.FontScale;
-            if (entry.RequestedSize is { } size)
+            if (requestedSize is { } size)
             {
                 ImGui.SetNextWindowSize(size * s, ImGuiCond.Always);
-                entry.RequestedSize = null;
             }
             else
             {
                 ImGui.SetNextWindowSize(entry.Spec.DefaultSize * s, ImGuiCond.FirstUseEver);
             }
 
-            if (entry.RequestedPos is { } pos)
+            if (requestedPos is { } pos)
             {
                 ImGui.SetNextWindowPos(pos * s, ImGuiCond.Always);
-                entry.RequestedPos = null;
             }
             else if (entry.Spec.DefaultPos is { } defaultPos)
             {
@@ -174,11 +211,18 @@ internal static class ImGuiPanelHost
             try
             {
                 if (visible)
-                    entry.Instance?.Draw();
+                {
+                    if (entry.Failures >= MaxFailures)
+                        ImGui.TextDisabled("This window failed and was stopped.");
+                    else
+                        entry.Instance?.Draw();
+                }
             }
             catch (Exception error)
             {
-                Log?.Invoke($"[ScriptWindows] {entry.Title}: {error.GetType().Name}: {error.Message}");
+                entry.Failures++;
+                string tail = entry.Failures >= MaxFailures ? " (stopped after repeated failures)" : "";
+                Log?.Invoke($"[ScriptWindows] {entry.Title}: {error.GetType().Name}: {error.Message}{tail}");
             }
             finally
             {
