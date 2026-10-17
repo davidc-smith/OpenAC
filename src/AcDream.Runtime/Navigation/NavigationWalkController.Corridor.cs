@@ -196,9 +196,11 @@ internal sealed partial class NavigationWalkController
     /// A stage of the way round found no route to its point, or ended short of it: the coarse
     /// grid saw a way the fine one does not, such as a gap narrower than a body. Keeps the next
     /// way round out of the middle of that stretch and plans one, or, after
-    /// <see cref="MaximumCorridorPlans"/>, gives up.
+    /// <see cref="MaximumCorridorPlans"/>, gives up. The keep-out is centred midway along the
+    /// missed stretch, so a block at the far end of a long stage may take more than one plan
+    /// to get round.
     /// </summary>
-    private void StageMissed(Request active, in NavigationWalkBodySample sample)
+    private void StageMissed(Request active, in NavigationWalkBodySample sample, NavRoute? failed = null)
     {
         NavCorridor corridor = active.Corridor!;
         int middle = (active.CorridorIndex + Math.Max(active.CorridorIndex, active.StageTargetIndex)) / 2;
@@ -210,6 +212,8 @@ internal sealed partial class NavigationWalkController
         float radius = MathF.Min(CorridorKeepOutRadius, HorizontalDistance(near, sample.Position) - 2f);
         if (active.CorridorPlans >= MaximumCorridorPlans || radius < 2f)
         {
+            if (Narration is not null && failed is not null)
+                NarrateNoRoute(active, failed);
             End(active, NavigationWalkState.NoRoute,
                 Inv($"no way along the planned way round was found near {Point(near)}; searched {corridor.Size:0} m around the start and goal"));
             return;

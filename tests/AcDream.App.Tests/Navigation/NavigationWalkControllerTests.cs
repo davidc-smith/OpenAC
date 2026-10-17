@@ -152,6 +152,24 @@ public sealed class NavigationWalkControllerTests
     }
 
     [Fact]
+    public void AFarObjectWithNothingToStandOnEndsWithTheRoutersReasonAfterOneWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f) };
+        goals.Surfaces[Target] = new NavSurfaces([], []);
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.StandOn(Target);
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 300f);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.Equal("nothing on top of the object can be stood on", report.Reason);
+        Assert.Equal(1, plans);
+    }
+
+    [Fact]
     public void AWayRoundIsPlannedOverWhatIsLoadedAndHoldsTheCharacter()
     {
         var low = new Vector2(0f, 0f);
