@@ -317,6 +317,53 @@ public sealed class NavigationWalkControllerTests
         Assert.Equal(2, plans);
     }
 
+    /// <summary>A way round that finishes planning after its walk was stopped is let go, not taken up.</summary>
+    [Fact]
+    public void AWayRoundPlannedForAStoppedWalkIsLetGo()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, new Goals { [Target] = new Vector3(60f, 520f, 0f) });
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.WalkTo(Target);
+        walk.Tick(Frame);
+        Assert.StartsWith("planning a way round over", walk.Report.Reason);
+        Assert.True(walk.IsSearching);
+        walk.Stop();
+        TickFor(walk, 2f);
+
+        Assert.Equal(NavigationWalkState.Stopped, walk.Report.State);
+        Assert.False(walk.IsSearching);
+        Assert.False(walk.IsBusy);
+        Assert.Null(walk.Corridor);
+        Assert.Equal(0, plans);
+        Assert.Equal(0, body.MovesBegun);
+    }
+
+    /// <summary>A way round that finishes planning after a newer request replaced its walk is let go; the newer walk goes on.</summary>
+    [Fact]
+    public void AWayRoundPlannedForAReplacedWalkIsLetGoAndTheNewerWalkArrives()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f), [Other] = new Vector3(60f, 75f, 0f) };
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.WalkTo(Target);
+        walk.Tick(Frame);
+        Assert.StartsWith("planning a way round over", walk.Report.Reason);
+        long second = walk.WalkTo(Other);
+        NavigationWalkReport report = RunUntilSettled(walk, body);
+
+        Assert.Equal(second, report.Sequence);
+        Assert.Equal(NavigationWalkState.Arrived, report.State);
+        Assert.Null(walk.Corridor);
+        Assert.Equal(0, plans);
+        Assert.InRange(Vector2.Distance(body.Flat, new Vector2(60f, 75f)), 0f, NavigationWalkController.DefaultArrivalMeters + 0.05f);
+    }
+
     [Fact]
     public void AWayRoundIsPlannedOverWhatIsLoadedAndHoldsTheCharacter()
     {
