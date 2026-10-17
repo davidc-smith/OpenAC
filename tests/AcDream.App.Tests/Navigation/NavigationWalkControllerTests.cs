@@ -209,6 +209,41 @@ public sealed class NavigationWalkControllerTests
         Assert.Equal(1, plans);
     }
 
+    /// <summary>A way round south off the loaded world, whose first stage aims at a point with no floor.</summary>
+    private static NavCorridor SouthOffTheWorld(NavCorridor planned)
+    {
+        var points = new List<Vector3>();
+        for (float y = 40f; y >= -300f; y -= 1f)
+            points.Add(new Vector3(40f, y, 0f));
+        return new NavCorridor(NavCorridorOutcome.Reaches, "routed", points, planned.OriginX, planned.OriginY, planned.Size, planned.CellSize, 0d);
+    }
+
+    /// <summary>
+    /// A stage short of the goal aims at a point of the way round, not the goal, so finding nothing
+    /// to stand on there is the way round's fault, for a walk onto an object as for any other.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AStageThatFindsNoFloorAtItsPointPlansAnotherWayRound(bool onto)
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f) };
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals, said.Add);
+        int plans = 0;
+        walk.CorridorPlanned = planned => plans++ == 0 ? SouthOffTheWorld(planned) : planned;
+
+        if (onto)
+            walk.StandOn(Target);
+        else
+            walk.WalkTo(Target);
+        RunUntil(walk, body, report => plans >= 2 || report.State is not (NavigationWalkState.Planning or NavigationWalkState.Walking), seconds: 60f);
+
+        Assert.Contains(said, line => line.Contains("planning another way round", StringComparison.Ordinal));
+        Assert.Equal(2, plans);
+    }
+
     [Fact]
     public void AWayRoundIsPlannedOverWhatIsLoadedAndHoldsTheCharacter()
     {
