@@ -281,6 +281,7 @@ public sealed class GameWindow :
     private readonly AcDream.App.Input.AppHotkeyRegistry? _hotkeyRegistry;
     private readonly GameRuntime _runtime;
     private readonly AcDream.App.Extensions.ClientExtensionHost _extensions = new();
+    private readonly AcDream.App.Extensions.Overlay.ImGuiOverlay _overlay = new(line => Serilog.Log.Information("{OverlayLine}", line));
     private readonly IDisposable _runtimeHostLease;
     private RuntimeCommunicationState _runtimeCommunication =>
         _runtime.CommunicationOwner;
@@ -534,7 +535,7 @@ public sealed class GameWindow :
         _runtimeHostLease = _runtime.AcquireHostLease(
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
-        _extensions.Attach(_runtime, _automation?.PluginCommands);
+        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true);
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
@@ -559,7 +560,7 @@ public sealed class GameWindow :
                 AcDream.Core.Net.Messages.CharacterOptionId.DisplayTimeStamps);
         _retainedInputCapture = new AcDream.App.Input.RetainedUiInputCaptureSlot();
         _inputCapture = new AcDream.App.Input.CompositeInputCaptureSource(
-            new AcDream.App.Input.DevToolsInputCaptureSource(options.DevTools),
+            new AcDream.App.Input.DevToolsInputCaptureSource(options.DevTools, () => _overlay.WantsMouse, () => _overlay.WantsKeyboard),
             _retainedInputCapture);
         _movementInput = new AcDream.App.Input.DispatcherMovementInputSource(
             _playerControllerSlot,
@@ -1575,7 +1576,7 @@ public sealed class GameWindow :
                         _frameGraphs,
                         Console.WriteLine,
                         _renderPackDiagnostics,
-                        WorldLines),
+                        WorldLines) { Overlay = _overlay },
                     this).Compose(
                         platformResult,
                         hostInputCamera,

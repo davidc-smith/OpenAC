@@ -63,6 +63,9 @@ internal sealed class ImGuiInputQueue
 
     public void Character(char value) => Add(io => io.AddInputCharacterUTF16(value));
 
+    /// <summary>Window focus; losing it makes ImGui release every held key and button.</summary>
+    public void Focus(bool focused) => Add(io => io.AddFocusEvent(focused));
+
     /// <summary>Applies everything queued since the last call.</summary>
     public void ApplyTo(ImGuiIOPtr io)
     {

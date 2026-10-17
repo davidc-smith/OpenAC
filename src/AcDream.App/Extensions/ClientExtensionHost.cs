@@ -17,7 +17,11 @@ internal sealed class ClientExtensionHost : IDisposable
         new AcDream.Rynth.Host.RynthClientExtension(),
     ];
 
-    public void Attach(GameRuntime runtime, IPluginCommandRegistry? commands)
+    public void Attach(
+        GameRuntime runtime,
+        IPluginCommandRegistry? commands,
+        IClientOverlay? overlay = null,
+        Func<string, bool>? submitChatCommand = null)
     {
         var context = new ClientExtensionContext
         {
@@ -26,6 +30,8 @@ internal sealed class ClientExtensionHost : IDisposable
             RegisterChatCommand = (verb, handler) =>
                 commands?.Register(verb, command => handler(command.Arguments))
                 ?? new NoRegistration(),
+            Overlay = overlay,
+            SubmitChatCommand = submitChatCommand,
         };
 
         foreach (IClientExtension extension in _extensions.ToArray())

@@ -174,6 +174,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     {
         Input.Accepting = false;
         Input.Clear();
+        WantsMouse = false;
+        WantsKeyboard = false;
         AbortFrame();
         _callbacks.Clear();
         try
@@ -191,6 +193,67 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         }
     }
 
+    /// <summary>
+    /// Starts the overlay on the client's GPU, window and input. Returns what
+    /// must be released before the GPU device goes away; null if it couldn't start.
+    /// </summary>
+    public IDisposable? Start(
+        AcDream.App.Rendering.Gpu.IGpuDevice device,
+        AcDream.App.Rendering.ICurrentGpuFrameSource frames,
+        Silk.NET.Windowing.IWindow window,
+        Silk.NET.Input.IInputContext input)
+    {
+        ImGuiVulkanRenderer? renderer = null;
+        try
+        {
+            renderer = new ImGuiVulkanRenderer(device, frames, _log);
+            Initialize(renderer, () => (
+                new Vector2(window.Size.X, window.Size.Y),
+                new Vector2(window.FramebufferSize.X, window.FramebufferSize.Y)));
+            if (!IsAvailable)
+            {
+                ReleaseUnstarted(renderer);
+                return null;
+            }
+
+            var feed = new ImGuiInputFeed(input, Input, window);
+            OverlayInputGate.Bind(this);
+            return new Started(this, feed);
+        }
+        catch (Exception error)
+        {
+            _failed = true;
+            _log($"[ImGui] overlay unavailable: {error.GetType().Name}: {error.Message}");
+            if (renderer is not null)
+                ReleaseUnstarted(renderer);
+            return null;
+        }
+    }
+
+    // A start that didn't finish still owns GPU resources: release them now,
+    // while the device is alive, and leave the overlay inert.
+    private void ReleaseUnstarted(ImGuiVulkanRenderer renderer)
+    {
+        bool ownedByOverlay = ReferenceEquals(_renderer, renderer);
+        try
+        {
+            Dispose();
+        }
+        catch (Exception error)
+        {
+            _log($"[ImGui] overlay release failed: {error.GetType().Name}: {error.Message}");
+        }
+
+        if (!ownedByOverlay)
+        {
+            try { renderer.Dispose(); }
+            catch (Exception error)
+            {
+                _log($"[ImGui] renderer release failed: {error.GetType().Name}: {error.Message}");
+            }
+        }
+    }
+
     private void Fail(string stage, Exception error)
     {
         _failed = true;
@@ -199,6 +262,16 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         WantsMouse = false;
         WantsKeyboard = false;
         _log($"[ImGui] overlay stopped at {stage}: {error.GetType().Name}: {error.Message}");
+    }
+
+    private sealed class Started(ImGuiOverlay overlay, ImGuiInputFeed feed) : IDisposable
+    {
+        public void Dispose()
+        {
+            OverlayInputGate.Bind(null);
+            feed.Dispose();
+            overlay.Dispose();
+        }
     }
 
     private sealed class CallbackRegistration(ImGuiOverlay owner, Action draw) : IDisposable
