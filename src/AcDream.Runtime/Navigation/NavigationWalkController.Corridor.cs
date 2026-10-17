@@ -119,10 +119,80 @@ internal sealed partial class NavigationWalkController
         {
             if (Narration is not null && requester.SquareNoRoute is { } square)
                 NarrateNoRoute(requester, square);
-            End(requester, NavigationWalkState.NoRoute, corridor.Reason);
+            // A way round planned again from the loaded edge, where the coarse grid may find
+            // no start, ends as a far walk that can get no nearer.
+            NavigationWalkBodySample rolledAt = default;
+            bool rolled = requester.Stages > 0 && _body.TrySample(out rolledAt);
+            End(requester, NavigationWalkState.NoRoute, rolled
+                ? Inv($"no way on toward the goal was found; it is {HorizontalDistance(rolledAt.Position, requester.Goal):0} m away")
+                : corridor.Reason);
             return;
         }
-        // Task 4 replaces this line with walking the way round.
-        End(requester, NavigationWalkState.NoRoute, "following a way round is not supported yet");
+        if (corridor.Outcome == NavCorridorOutcome.TowardEdge && _body.TrySample(out NavigationWalkBodySample here))
+        {
+            float away = HorizontalDistance(here.Position, requester.Goal);
+            if (away - HorizontalDistance(corridor.Points[^1], requester.Goal) < MinimumStageProgress)
+            {
+                End(requester, NavigationWalkState.NoRoute, Inv($"no way on toward the goal was found; it is {away:0} m away"));
+                return;
+            }
+        }
+        requester.Corridor = corridor;
+        requester.CorridorIndex = 0;
+        requester.Builds = 0;
+        requester.StageBudget = Math.Max(MaximumStages, requester.Stages + corridor.StageBudget);
+        if (Narration is not null)
+        {
+            int step = Math.Max(1, corridor.Points.Count / 24);
+            Detail("Way round points: " + string.Join(" -> ",
+                corridor.Points.Where((_, index) => index % step == 0 || index == corridor.Points.Count - 1).Select(Point)));
+        }
+        Publish(requester, NavigationWalkState.Planning, Inv($"following a way round of {corridor.Length:0} m"), float.NaN);
     }
+
+    /// <summary>
+    /// Plans the next stage along the way round: toward the point <see cref="NavCorridor.StageLookahead"/>
+    /// further along it, or, once no more than <see cref="NavCorridor.FinalStretch"/> of it is left,
+    /// to the goal itself, arriving as the walk asks.
+    /// </summary>
+    private void AdvanceAlongCorridor(Request active, NavCorridor corridor, NavGrid? usable, in NavigationWalkBodySample sample)
+    {
+        active.CorridorIndex = corridor.NearestIndex(sample.Position, active.CorridorIndex);
+        bool final = corridor.Outcome == NavCorridorOutcome.Reaches
+            && corridor.RemainingFrom(active.CorridorIndex) <= NavCorridor.FinalStretch;
+        int targetIndex = final ? corridor.Points.Count - 1 : corridor.IndexAhead(active.CorridorIndex, NavCorridor.StageLookahead);
+        Vector3 target = final ? active.Goal : corridor.Points[targetIndex];
+        // The square the stage is planned over holds the whole stretch of the way round it
+        // follows, not just its ends: a way round that bends out past a square holding both
+        // ends goes round something that square cannot show the way round.
+        if (usable is null
+            || !usable.Contains(sample.Position, CoverMargin)
+            || !usable.Contains(target, CoverMargin)
+            || !corridor.Span(active.CorridorIndex, targetIndex).All(point => usable.Contains(point, CoverMargin)))
+        {
+            if (!NavCorridor.TrySquareOver(
+                    [sample.Position, target, .. corridor.Span(active.CorridorIndex, targetIndex)],
+                    RegionMargin, MinimumRegion, MaximumRegion, out float originX, out float originY, out float size))
+            {
+                End(active, NavigationWalkState.NoRoute, $"the way round bends too far for one stage near {Point(target)}");
+                return;
+            }
+            BuildGrid(active, sample, originX, originY, size, dungeon: 0u);
+            return;
+        }
+        active.StageTargetIndex = targetIndex;
+        if (Narration is not null)
+        {
+            Detail(Inv(
+                $"{(final ? "Last stage" : $"Stage {active.Stages + 1}")} toward {Point(target)}, {corridor.AlongAt(targetIndex):0} m along the way round, {corridor.RemainingFrom(targetIndex):0} m left"));
+        }
+        SearchRoute(active, usable, sample, final ? null : target, detour: false);
+    }
+
+    /// <summary>What is left of the way round beyond the stage under way, and on to the goal past its end.</summary>
+    private static float CorridorBeyond(Request request) =>
+        request.Corridor is not { } corridor
+            ? 0f
+            : corridor.RemainingFrom(request.StageTargetIndex)
+                + (corridor.Outcome == NavCorridorOutcome.TowardEdge ? HorizontalDistance(corridor.Points[^1], request.Goal) : 0f);
 }

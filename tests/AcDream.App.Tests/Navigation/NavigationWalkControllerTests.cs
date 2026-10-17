@@ -90,6 +90,25 @@ public sealed class NavigationWalkControllerTests
     }
 
     [Fact]
+    public void AWalkWhoseWayRoundLeavesItsSquareGoesRoundTheWallAndArrives()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals());
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport first = RunUntil(walk, body, report => report.State == NavigationWalkState.Walking, seconds: 30f);
+        NavCorridor corridor = Assert.IsType<NavCorridor>(walk.Corridor);
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavCorridorOutcome.Reaches, corridor.Outcome);
+        Assert.InRange(first.RemainingMeters, corridor.Length * 0.85f, corridor.Length * 1.15f);
+        Assert.True(first.RemainingMeters > 165f);
+        Assert.Equal(NavigationWalkState.Arrived, report.State);
+        Assert.InRange(Vector2.Distance(body.Flat, new Vector2(60f, 260f)), 0f, NavigationWalkController.DefaultArrivalMeters + 0.05f);
+        Assert.Contains(body.Path, point => point.X > 320f);
+    }
+
+    [Fact]
     public void AWayRoundIsPlannedOverWhatIsLoadedAndHoldsTheCharacter()
     {
         var low = new Vector2(0f, 0f);
@@ -1621,24 +1640,6 @@ public sealed class NavigationWalkControllerTests
         Assert.Equal(NavigationWalkState.NoRoute, report.State);
         Assert.Contains("no way on toward the goal", report.Reason);
         Assert.True(body.Position.Y > 150f);
-    }
-
-    [Fact]
-    public void AStageRegionHoldsTheCharacterAndReachesTowardTheGoal()
-    {
-        var from = new Vector3(500f, 500f, 0f);
-        float margin = NavigationWalkController.RegionMargin - NavGrid.DefaultCellSize;
-        foreach (Vector3 goal in new[] { new Vector3(1500f, 500f, 0f), new Vector3(-400f, -600f, 0f), new Vector3(700f, 1400f, 0f) })
-        {
-            NavigationWalkController.ChooseStageRegion(from, goal, out float originX, out float originY, out float size);
-
-            Assert.Equal(NavigationWalkController.MaximumRegion, size);
-            Assert.InRange(from.X - originX, margin, size - margin);
-            Assert.InRange(from.Y - originY, margin, size - margin);
-            var centre = new Vector2(originX + (size * 0.5f), originY + (size * 0.5f));
-            var flatGoal = new Vector2(goal.X, goal.Y);
-            Assert.True(Vector2.Distance(centre, flatGoal) < Vector2.Distance(new Vector2(from.X, from.Y), flatGoal) - 100f);
-        }
     }
 
     [Fact]

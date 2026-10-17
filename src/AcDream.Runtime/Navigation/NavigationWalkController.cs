@@ -806,28 +806,6 @@ internal sealed partial class NavigationWalkController
             out originY,
             out size);
 
-    /// <summary>
-    /// The region one stage of a walk to a goal too far away for one region is
-    /// planned over: the largest region, holding the character with room behind
-    /// it and reaching as far toward the goal as it can.
-    /// </summary>
-    internal static void ChooseStageRegion(
-        Vector3 from,
-        Vector3 to,
-        out float originX,
-        out float originY,
-        out float size)
-    {
-        size = MaximumRegion;
-        float half = size * 0.5f;
-        var toward = new Vector2(to.X - from.X, to.Y - from.Y);
-        float longest = MathF.Max(MathF.Abs(toward.X), MathF.Abs(toward.Y));
-        Vector2 centre = new Vector2(from.X, from.Y)
-            + (longest > 1e-3f ? toward * ((half - RegionMargin) / longest) : Vector2.Zero);
-        originX = Snap(centre.X - half);
-        originY = Snap(centre.Y - half);
-    }
-
     /// <summary>A square region holding a rectangle with room around it, or false when it would be larger than <paramref name="largest"/>.</summary>
     private static bool TryChooseSquare(
         Vector2 minimum,
@@ -964,7 +942,11 @@ internal sealed partial class NavigationWalkController
             active.RebuildWhy = "the goal stands on something the grid has none of";
             usable = null;
         }
-        bool staged = false;
+        if (!inDungeon && active.Corridor is { } corridor)
+        {
+            AdvanceAlongCorridor(active, corridor, usable, sample);
+            return;
+        }
         if (usable is null || !usable.Contains(active.Goal, CoverMargin))
         {
             if (inDungeon)
@@ -993,16 +975,12 @@ internal sealed partial class NavigationWalkController
                 BuildGrid(active, sample, originX, originY, size, dungeon: 0u);
                 return;
             }
-            if (usable is null || !ReachesToward(usable, sample.Position, active.Goal))
-            {
-                ChooseStageRegion(sample.Position, active.Goal, out originX, out originY, out size);
-                BuildGrid(active, sample, originX, originY, size, dungeon: 0u);
-                return;
-            }
-            staged = true;
+            // Too far for one square: find the way round first, then walk it in stages.
+            StartCorridor(active, sample);
+            return;
         }
 
-        SearchRoute(active, usable, sample, staged, detour: false);
+        SearchRoute(active, usable, sample, stageTarget: null, detour: false);
     }
 
     /// <summary>
@@ -1010,10 +988,11 @@ internal sealed partial class NavigationWalkController
     /// goal, or toward it for one stage, passing the creatures and players near the
     /// character where they stand now. A detour is searched while the walk goes on.
     /// </summary>
-    private void SearchRoute(Request active, NavGrid grid, in NavigationWalkBodySample sample, bool staged, bool detour)
+    private void SearchRoute(Request active, NavGrid grid, in NavigationWalkBodySample sample, Vector3? stageTarget, bool detour)
     {
+        bool staged = stageTarget is not null;
         Vector3 from = sample.Position;
-        Vector3 to = active.Goal;
+        Vector3 to = stageTarget ?? active.Goal;
         float arrival = PlanningRadius(active.Chasing is null ? active.ArrivalMeters : PortalArrivalMeters);
         NavAvoidance[] avoid = [.. active.Avoid, .. active.StuckSpots, .. active.PassingAvoid, .. Portals(grid, sample.Body, active.GoalObjectId, to)];
         active.PassingAvoid.Clear();
@@ -1042,6 +1021,7 @@ internal sealed partial class NavigationWalkController
             onto = surfaces;
         }
         active.Staged = staged;
+        active.StageTarget = stageTarget;
         if (Narration is not null && !detour)
         {
             Detail(string.Create(
@@ -1056,7 +1036,7 @@ internal sealed partial class NavigationWalkController
         ConcurrentQueue<string>? notes = active.StuckSpots.Count > 0 ? null : _searchNotes;
         _routingFor = active;
         _routing = staged
-            ? Task.Run(() => AroundObstacles(to, avoid, obstacles, spots => NavRouter.FindToward(grid, from, to, RegionMargin, spots, leaps, crowd)))
+            ? Task.Run(() => AroundObstacles(to, avoid, obstacles, spots => NavRouter.Find(grid, from, to, NavCorridor.StageArrival, spots, leaps, crowd)))
             : onto is not null
                 ? Task.Run(() => AroundObstacles(to, avoid, obstacles, spots => NavRouter.FindOnto(grid, from, onto, arrival, spots, leaps, crowd)))
                 : followFloor
@@ -1111,12 +1091,12 @@ internal sealed partial class NavigationWalkController
         if (_grid is not { } grid
             || grid.Body != sample.Body
             || !grid.Contains(sample.Position, CoverMargin)
-            || (!active.Staged && !grid.Contains(active.Goal, CoverMargin)))
+            || !grid.Contains(active.StageTarget ?? active.Goal, CoverMargin))
         {
             return;
         }
         active.DetouredAt = _seconds;
-        SearchRoute(active, grid, sample, active.Staged, detour: true);
+        SearchRoute(active, grid, sample, active.Staged ? active.StageTarget : null, detour: true);
     }
 
     /// <summary>
@@ -1676,18 +1656,27 @@ internal sealed partial class NavigationWalkController
     {
         _driver = null;
         active.Staged = false;
+        active.StageTarget = null;
         active.Builds = 0;
         active.Stages++;
         active.Goal = Locate(active);
         Goal = (active.Goal, active.ArrivalMeters);
         float away = HorizontalDistance(sample.Position, active.Goal);
-        if (active.Stages >= MaximumStages)
+        if (active.Stages >= active.StageBudget)
         {
             End(active, NavigationWalkState.NoRoute, Inv($"the goal was still {away:0} m away after {active.Stages} stages"));
             return;
         }
         active.BuiltForObjects = false;
         active.RebuildWhy = null;
+        if (active.Corridor is { Outcome: NavCorridorOutcome.TowardEdge } edge && active.StageTargetIndex >= edge.Points.Count - 1)
+        {
+            // At the end of a way round toward a goal beyond what was loaded: plan the next
+            // one from here, over what has loaded since.
+            active.Corridor = null;
+            active.CorridorPlans = 0;
+            active.CorridorKeepOut.Clear();
+        }
         string next = Inv($"stage {active.Stages} walked; planning the next toward the goal, {away:0} m away");
         Publish(active, NavigationWalkState.Planning, next, float.NaN);
         Say($"Walk to {Label(active)}: {next}");
@@ -1793,17 +1782,6 @@ internal sealed partial class NavigationWalkController
         return HorizontalDistance(around.Legs[^1], goal) <= HorizontalDistance(through.Legs[^1], goal) + ObstacleDetourReach
             ? around
             : through;
-    }
-
-    /// <summary>Whether a grid reaches far enough toward a goal beyond it to plan a stage over from where the character stands.</summary>
-    private static bool ReachesToward(NavGrid grid, Vector3 from, Vector3 goal)
-    {
-        if (grid.Size <= 2f * RegionMargin)
-            return false;
-        float x = Math.Clamp(goal.X, grid.OriginX + RegionMargin, grid.OriginX + grid.Size - RegionMargin);
-        float y = Math.Clamp(goal.Y, grid.OriginY + RegionMargin, grid.OriginY + grid.Size - RegionMargin);
-        return HorizontalDistance(from, goal) - HorizontalDistance(new Vector3(x, y, 0f), goal)
-            >= 2f * MinimumStageProgress;
     }
 
     private bool Apply(in RuntimeRouteDriveStep step)
@@ -2246,15 +2224,11 @@ internal sealed partial class NavigationWalkController
                     string.Create(System.Globalization.CultureInfo.InvariantCulture, $"leg {leap.LegIndex} at {leap.Power:0.00} power {(leap.Run ? "running" : "walking")}")));
             Detail($"Route points: {points}{more}; {leaps}; {(route.EndsInSight ? "ends in sight of the goal" : "ends out of sight of the goal")}");
         }
-        if (requester.Staged)
+        if (requester.Staged && requester.StageTarget is { } aimed)
         {
-            float left = HorizontalDistance(route.Legs[^1], requester.Goal);
-            float before = _body.TrySample(out NavigationWalkBodySample here)
-                ? HorizontalDistance(here.Position, requester.Goal)
-                : left;
-            if (before - left < MinimumStageProgress)
+            if (HorizontalDistance(route.Legs[^1], aimed) > NavCorridor.StageMiss)
             {
-                End(requester, NavigationWalkState.NoRoute, Inv($"no way on toward the goal was found; it is {before:0} m away"));
+                End(requester, NavigationWalkState.NoRoute, $"no way along the planned way round was found near {Point(aimed)}");
                 return;
             }
             if (!requester.Walk)
@@ -2266,7 +2240,7 @@ internal sealed partial class NavigationWalkController
                 return;
             }
             _driver = Drive(requester, new RuntimeRouteDriver(route.Legs, LeapsOf(route), canCutAlong: CornerCuts(), aimLeapFrom: AimLeapFrom, aimOnward: AimOnward, sameFloor: SameFloor));
-            Publish(requester, NavigationWalkState.Walking, "walking", route.Length + left);
+            Publish(requester, NavigationWalkState.Walking, "walking", route.Length + CorridorBeyond(requester));
             return;
         }
         if (!requester.Walk)
@@ -2856,7 +2830,7 @@ internal sealed partial class NavigationWalkController
         return $"{MathF.Abs(northSouth):0.000}{(northSouth < 0f ? 'S' : 'N')}, {MathF.Abs(eastWest):0.000}{(eastWest < 0f ? 'W' : 'E')}";
     }
 
-    /// <summary>The route left to walk, and for one stage of a longer walk the straight line on from its end to the goal.</summary>
+    /// <summary>The route left to walk, and for one stage of a longer walk what is left of the way round beyond it.</summary>
     private static float Remaining(Request request, RuntimeRouteDriver driver, Vector3 position)
     {
         float remaining = 0f;
@@ -2868,7 +2842,9 @@ internal sealed partial class NavigationWalkController
             at = end;
         }
         return request.Staged
-            ? remaining + Vector2.Distance(at, new Vector2(request.Goal.X, request.Goal.Y))
+            ? remaining + (request.Corridor is not null
+                ? CorridorBeyond(request)
+                : Vector2.Distance(at, new Vector2(request.Goal.X, request.Goal.Y)))
             : remaining;
     }
 
@@ -3135,6 +3111,14 @@ internal sealed partial class NavigationWalkController
 
         /// <summary>The stages of the walk already walked.</summary>
         public int Stages { get; set; }
+
+        /// <summary>The point of the way round nearest the character, and the one the stage under way aims at.</summary>
+        public int CorridorIndex { get; set; }
+        public int StageTargetIndex { get; set; }
+        public Vector3? StageTarget { get; set; }
+
+        /// <summary>How many stages the walk may take in all.</summary>
+        public int StageBudget { get; set; } = MaximumStages;
 
         /// <summary>The objects and doors in the way, which later plans keep out of.</summary>
         public List<NavAvoidance> Avoid { get; } = [];
