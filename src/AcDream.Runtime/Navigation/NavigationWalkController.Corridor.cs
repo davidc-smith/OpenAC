@@ -89,7 +89,7 @@ internal sealed partial class NavigationWalkController
         NavAvoidance[] keepOut = [.. active.CorridorKeepOut];
         float cell = CorridorCellSize(size);
         _corridorFor = active;
-        _corridoring = Task.Run(() => NavCorridor.Plan(NavGrid.Build(geometry, body, cell), from, goal, arrival, onGoalFloor, keepOut));
+        _corridoring = Task.Run(() => NavCorridor.Plan(NavGrid.Build(geometry, NavCorridor.CoarseBody(body, cell), cell), from, goal, arrival, onGoalFloor, keepOut));
         string planning = Inv($"planning a way round over {size:0} m around the start and goal");
         Publish(active, NavigationWalkState.Planning, planning, float.NaN);
         Say($"{(active.Follow ? "Follow" : "Walk to")} {Label(active)}: {planning}");

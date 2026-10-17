@@ -44,7 +44,7 @@ public sealed class WalkCorridorInstalledDatTests
         var goal = new Vector3(flatGoal, world.Engine.SampleTerrainZ(flatGoal.X, flatGoal.Y) ?? float.NaN);
         NavGeometry geometry = Assert.IsType<NavGeometry>(NavGeometry.Capture(world.Engine, 0f, 0f, 1344f));
 
-        NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(geometry, world.Body, 1f), from, goal, 2f, arriveOnGoalFloor: true);
+        NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(geometry, NavCorridor.CoarseBody(world.Body, 1f), 1f), from, goal, 2f, arriveOnGoalFloor: true);
         _output.WriteLine($"{corridor.Outcome}: {corridor.Length:0} m in {corridor.Milliseconds:0} ms");
         Assert.Equal(NavCorridorOutcome.Reaches, corridor.Outcome);
 
@@ -70,7 +70,7 @@ public sealed class WalkCorridorInstalledDatTests
         var goal = new Vector3(flatGoal, world.Engine.SampleTerrainZ(flatGoal.X, flatGoal.Y) ?? float.NaN);
         NavGeometry geometry = Assert.IsType<NavGeometry>(NavGeometry.Capture(world.Engine, 0f, 0f, 1344f));
 
-        NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(geometry, world.Body, 1f), from, goal, 2f, arriveOnGoalFloor: true);
+        NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(geometry, NavCorridor.CoarseBody(world.Body, 1f), 1f), from, goal, 2f, arriveOnGoalFloor: true);
 
         Assert.Equal(NavCorridorOutcome.NoPath, corridor.Outcome);
         Assert.EndsWith("within 1344 m around the start and goal", corridor.Reason);

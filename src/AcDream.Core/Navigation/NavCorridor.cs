@@ -163,6 +163,24 @@ public sealed class NavCorridor
     }
 
     /// <summary>
+    /// The body a coarse grid is built for: the walker's own, but stepping up and down as far
+    /// as a floor as steep as the game lets anyone walk rises over one coarse cell. A grid
+    /// joins neighbouring cells only where the rise between them is a step, so at a metre a
+    /// cell the walker's own step would turn back every slope steeper than about 30 degrees,
+    /// where the game walks up to nearly 50. The coarse grid must err open: a way round it
+    /// shows that the fine stages cannot walk is found out and planned again, but one it
+    /// wrongly shuts is never tried.
+    /// </summary>
+    public static NavBody CoarseBody(NavBody body, float cellSize) => body with
+    {
+        StepUpHeight = MathF.Max(body.StepUpHeight, cellSize * CoarseRisePerMeter),
+        StepDownHeight = MathF.Max(body.StepDownHeight, cellSize * CoarseRisePerMeter),
+    };
+
+    /// <summary>How far a floor as steep as the game lets anyone walk rises over a metre, a little over 48 degrees.</summary>
+    public const float CoarseRisePerMeter = 1.12f;
+
+    /// <summary>
     /// Searches a coarse grid for a walked way from <paramref name="from"/> to the goal: onto
     /// the floor the goal stands on for a place, or near it for an object. A goal outside the
     /// grid gets a way to the grid's edge nearest it. Nothing is leapt and no creatures are

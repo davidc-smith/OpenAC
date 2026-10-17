@@ -56,6 +56,49 @@ public sealed class NavCorridorTests
         Assert.EndsWith("within 400 m around the start and goal", corridor.Reason);
     }
 
+    /// <summary>
+    /// A ramp at 38 degrees, rising 0.78 m a metre, climbs the cliff at the far east end: walkable
+    /// in the game, though each metre of it rises more than the body's own step.
+    /// </summary>
+    private static NavGeometry SteepRampPlateau()
+    {
+        const float rise = 0.78f;
+        const float foot = 200f - (6f / rise);
+        var triangles = new List<NavTriangle>();
+        triangles.AddRange(Floor(0f, 0f, Size, 190f, 0f));
+        triangles.AddRange(Floor(0f, 200f, Size, Size, 6f));
+        triangles.AddRange(Floor(0f, 190f, 370f, 200f, 0f));
+        triangles.AddRange(Floor(370f, 190f, Size, foot, 0f));
+        triangles.AddRange(Wall(0f, 200f, 370f, 200f, 0f, 6f));
+        triangles.AddRange(Ramp(370f, foot, Size, 200f, 0f, 6f));
+        triangles.AddRange(Wall(370f, foot, 370f, 200f, 0f, 6f));
+        return new NavGeometry(0f, 0f, Size, [], triangles, [], []);
+    }
+
+    [Fact]
+    public void AWayRoundUpARampSteeperThanAStepPerCellStillReachesThePlateau()
+    {
+        NavGrid coarse = NavGrid.Build(SteepRampPlateau(), NavCorridor.CoarseBody(Body, 1f), 1f);
+
+        NavCorridor corridor = NavCorridor.Plan(coarse, new Vector3(60f, 150f, 0f), new Vector3(60f, 260f, 6f), 2f, arriveOnGoalFloor: true);
+
+        Assert.Equal(NavCorridorOutcome.Reaches, corridor.Outcome);
+        Assert.Contains(corridor.Points, point => point.X > 370f);
+        Assert.InRange(corridor.Points[^1].Z, 5.5f, 6.5f);
+    }
+
+    [Fact]
+    public void TheCoarseBodyStepsAsFarAsTheSteepestFloorRisesOverACell()
+    {
+        NavBody coarse = NavCorridor.CoarseBody(Body, 1f);
+
+        Assert.Equal(1.12f, coarse.StepUpHeight, 3);
+        Assert.Equal(1.12f, coarse.StepDownHeight, 3);
+        Assert.Equal(Body.Radius, coarse.Radius);
+        Assert.Equal(Body.Height, coarse.Height);
+        Assert.Equal(Body, NavCorridor.CoarseBody(Body, 0.25f));
+    }
+
     [Fact]
     public void AGoalBeyondTheCoarseGridGetsACorridorToItsEdge()
     {

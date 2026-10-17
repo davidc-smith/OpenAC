@@ -155,7 +155,8 @@ internal sealed partial class NavigationWalkController
                 NavRoute? route = square && geometry is not null ? Final(NavGrid.Build(geometry, body), start) : null;
                 if ((route is null || route.Outcome == NavRouteOutcome.NoPath) && round is not null)
                 {
-                    NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(round, body, CorridorCellSize(roundSize)), start, goal,
+                    float cell = CorridorCellSize(roundSize);
+                    NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(round, NavCorridor.CoarseBody(body, cell), cell), start, goal,
                         PlanningRadius(arrivalMeters), onGoalFloor);
                     if (corridor.Outcome == NavCorridorOutcome.TowardEdge)
                         return new PluginNavigationPlan(PluginNavigationPlanStatus.NoRoute, [],
