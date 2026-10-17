@@ -2504,7 +2504,11 @@ internal sealed partial class NavigationWalkController
                 active.FollowReplannedAt = _seconds;
                 Vector3 planned = active.Goal;
                 SeeLeader(active, leader);
-                ForgetCorridor(active);
+                // A player still far off, near where the way round leads, is followed along it:
+                // the stage under way is planned again toward its point. One back within one
+                // square, or gone well off where it leads, is planned toward afresh.
+                if (active.Corridor is not { } way || !CorridorStillLeadsTo(active, way, sample.Position, leader))
+                    ForgetCorridor(active);
                 Detail($"Follow {Label(active)}: the player moved from {Point(planned)} to {Point(leader)}; planning again on the way");
                 StartDetour(active, sample);
                 if (_routing is null)
@@ -3129,6 +3133,9 @@ internal sealed partial class NavigationWalkController
         /// <summary>The way round the walk follows, and how many it has planned.</summary>
         public NavCorridor? Corridor { get; set; }
         public int CorridorPlans { get; set; }
+
+        /// <summary>The goal the latest way round was planned toward, where a player being followed stood then.</summary>
+        public Vector3 CorridorToward { get; set; }
 
         /// <summary>The search of the walk's one square that found no route, which a way round that finds none narrates.</summary>
         public NavRoute? SquareNoRoute { get; set; }

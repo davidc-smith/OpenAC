@@ -1063,6 +1063,64 @@ public sealed class NavigationWalkControllerTests
         Assert.DoesNotContain(body.Path, point => point.Y > 90f);
     }
 
+    /// <summary>
+    /// A follow toward a player beyond one square who keeps running on keeps the way round it
+    /// planned, planning again on the way toward its stage rather than planning the whole way
+    /// round afresh each time the player has moved, and so keeps walking.
+    /// </summary>
+    [Fact]
+    public void FollowingAFarPlayerWhoKeepsRunningKeepsTheWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var leader = new Vector3(60f, 450f, 0f);
+        var goals = new Goals { [Target] = leader };
+        goals.Players.Add(Target);
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 4), body, goals);
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.Follow(Target, 3f);
+        RunUntil(walk, body, report => report.State == NavigationWalkState.Walking && report.Reason == "walking", seconds: 30f);
+        Assert.Equal(1, plans);
+
+        // The player runs on north at a running pace for 20 s of game time; time stands still
+        // while the follower plans, as a frame would take that long.
+        var wall = Stopwatch.StartNew();
+        float simulated = 0f;
+        float startY = body.Flat.Y;
+        float stalledFor = 0f;
+        float longestStall = 0f;
+        Vector2 lastMoved = body.Flat;
+        while (simulated < 20f && wall.Elapsed < TimeSpan.FromSeconds(120))
+        {
+            walk.Tick(Frame);
+            if (walk.Report.State == NavigationWalkState.Planning || walk.IsSearching)
+            {
+                Thread.Sleep(1);
+                continue;
+            }
+            body.Integrate(Frame);
+            leader += new Vector3(0f, 4f * Frame, 0f);
+            goals[Target] = leader;
+            simulated += Frame;
+            if (Vector2.Distance(body.Flat, lastMoved) >= 1f)
+            {
+                lastMoved = body.Flat;
+                stalledFor = 0f;
+            }
+            else
+            {
+                stalledFor += Frame;
+                longestStall = MathF.Max(longestStall, stalledFor);
+            }
+        }
+
+        Assert.True(walk.IsBusy);
+        Assert.InRange(plans, 1, 2);
+        Assert.InRange(longestStall, 0f, 3f);
+        Assert.True(body.Flat.Y - startY > 50f, $"the follower went only {body.Flat.Y - startY:0.0} m north");
+    }
+
     [Fact]
     public void FollowingAPlayerOutOfSightWaitsAndGoesOnOnceTheyAreSeen()
     {

@@ -81,6 +81,7 @@ internal sealed partial class NavigationWalkController
             return;
         }
         active.CorridorPlans++;
+        active.CorridorToward = active.Goal;
         NavBody body = sample.Body;
         Vector3 from = sample.Position;
         Vector3 goal = active.Goal;
@@ -254,6 +255,32 @@ internal sealed partial class NavigationWalkController
         request.StageTarget = null;
         request.Staged = false;
         request.StageBudget = MaximumStages;
+    }
+
+    /// <summary>
+    /// How far a player being followed may move from where the way round leads before the
+    /// follow lets it go and plans another: one stage's reach. Closer than that, the stage
+    /// under way still leads toward them, and the last stage plans to wherever they then stand.
+    /// </summary>
+    internal const float FollowCorridorDrift = NavCorridor.StageLookahead;
+
+    /// <summary>
+    /// Whether a follow's way round still leads to the player, now standing at
+    /// <paramref name="leader"/>: they are still beyond one square of the character, and no
+    /// more than <see cref="FollowCorridorDrift"/> from where the way round leads. A way round
+    /// that reaches its goal leads to its last point. One that ends at the edge of what was
+    /// loaded, with the player beyond it, leads toward where the player stood when it was
+    /// planned; its last point lies far short of them by design, so it is the player's drift
+    /// from where they stood that tells whether it still leads their way.
+    /// </summary>
+    private static bool CorridorStillLeadsTo(Request request, NavCorridor corridor, Vector3 from, Vector3 leader)
+    {
+        if (TryChooseRegion(from, leader, out _, out _, out _))
+            return false;
+        Vector3 leadsTo = corridor.Outcome == NavCorridorOutcome.Reaches && corridor.Points.Count > 0
+            ? corridor.Points[^1]
+            : request.CorridorToward;
+        return HorizontalDistance(leadsTo, leader) <= FollowCorridorDrift;
     }
 
     /// <summary>What a walk's narration calls it: a follow, a walk, or a route asked for alone.</summary>
