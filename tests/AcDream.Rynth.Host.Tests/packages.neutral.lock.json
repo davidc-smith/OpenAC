@@ -191,7 +191,7 @@
       "acdream.rynth.scriptwindows": {
         "type": "Project",
         "dependencies": {
-          "ImGui.NET": "[1.91.6.1, )"
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
         }
       },
       "acdream.rynth.sdk": {
@@ -218,7 +218,7 @@
       },
       "ImGui.NET": {
         "type": "CentralTransitive",
-        "requested": "[1.91.6.1, )",
+        "requested": "[1.91.6.1, 1.91.6.1]",
         "resolved": "1.91.6.1",
         "contentHash": "Ph3j8pO6UM28PPJWP+5LEJSPVPkd8ivpVS8tRyY9b0IHn1HDIrMZ2o/FdiXaYW6YhNxMHmbevw6Jcfs+IDKi0Q=="
       },

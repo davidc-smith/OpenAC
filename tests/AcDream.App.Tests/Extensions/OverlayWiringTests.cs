@@ -71,6 +71,17 @@ public sealed class OverlayWiringTests
             Assert.Equal(1, clicks);
             Assert.True(focused);
             Assert.False(overlay.WantsKeyboard);
+
+            // Space and Enter belong to the game: they must not re-activate the button.
+            foreach (Silk.NET.Input.Key key in new[] { Silk.NET.Input.Key.Space, Silk.NET.Input.Key.Enter })
+            {
+                overlay.Input.KeyChange(key, true);
+                RunFrame(overlay);
+                overlay.Input.KeyChange(key, false);
+                RunFrame(overlay);
+            }
+
+            Assert.Equal(1, clicks);
         }
         finally
         {

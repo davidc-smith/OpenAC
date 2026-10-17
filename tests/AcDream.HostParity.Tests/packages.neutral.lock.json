@@ -233,7 +233,7 @@
           "AcDream.Rynth.Host": "[0.1.25, )",
           "AcDream.UI.Abstractions": "[0.1.25, )",
           "Arch": "[2.1.0, )",
-          "ImGui.NET": "[1.91.6.1, )",
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]",
           "Serilog": "[4.0.2, )",
           "Serilog.Sinks.Console": "[6.0.0, )",
           "Silk.NET.Input": "[2.23.0, )",
@@ -326,7 +326,7 @@
       "acdream.rynth.scriptwindows": {
         "type": "Project",
         "dependencies": {
-          "ImGui.NET": "[1.91.6.1, )"
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
         }
       },
       "acdream.rynth.sdk": {
@@ -374,7 +374,7 @@
       },
       "ImGui.NET": {
         "type": "CentralTransitive",
-        "requested": "[1.91.6.1, )",
+        "requested": "[1.91.6.1, 1.91.6.1]",
         "resolved": "1.91.6.1",
         "contentHash": "Ph3j8pO6UM28PPJWP+5LEJSPVPkd8ivpVS8tRyY9b0IHn1HDIrMZ2o/FdiXaYW6YhNxMHmbevw6Jcfs+IDKi0Q=="
       },

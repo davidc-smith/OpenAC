@@ -32,4 +32,12 @@ public sealed class ImGuiScissorTests
         Assert.True(ImGuiScissor.TryMap(new Vector4(-20, -10, 30, 40), Vector2.Zero, Vector2.One, 800, 600, out var s));
         Assert.Equal((0, 560, 30, 40), s);
     }
+
+    [Fact]
+    public void NonFiniteClipValuesAreRejected()
+    {
+        Assert.False(ImGuiScissor.TryMap(new Vector4(float.NaN, 0, 50, 50), Vector2.Zero, Vector2.One, 800, 600, out _));
+        Assert.False(ImGuiScissor.TryMap(new Vector4(0, 0, 50, float.PositiveInfinity), Vector2.Zero, Vector2.One, 800, 600, out _));
+        Assert.False(ImGuiScissor.TryMap(new Vector4(0, 0, 50, 50), Vector2.Zero, new Vector2(float.NaN, 1), 800, 600, out _));
+    }
 }

@@ -101,6 +101,23 @@ public sealed class RynthHostTests
             host.Tick();
     }
 
+    [Fact]
+    public void AFailedStartReleasesEverythingAndLeavesANewHostConstructible()
+    {
+        static IEnumerable<Type> TrackerThenThrow()
+        {
+            yield return typeof(RynthCore.Plugin.RynthTracker.PluginExports);
+            throw new InvalidOperationException("discovery failed");
+        }
+
+        Assert.Throws<InvalidOperationException>(() => new RynthHost(_view, _log.Add, TrackerThenThrow()));
+
+        Assert.Null(RynthCore.Engine.RynthLog.Sink);
+        Assert.Null(RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log);
+        using RynthHost host = CreateTrackerHost();
+        Assert.True(Assert.Single(host.Plugins).IsActive);
+    }
+
     private static class NoExports
     {
     }

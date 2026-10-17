@@ -38,6 +38,7 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
     private readonly Action<string>? _log;
     private readonly HashSet<IntPtr> _reportedBadTextures = [];
     private bool _reportedOversize;
+    private bool _reportedRingFull;
     private bool _reportedCallback;
 
     public ImGuiVulkanRenderer(IGpuDevice device, ICurrentGpuFrameSource frames, Action<string>? log = null)
@@ -110,6 +111,7 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
         }
 
         _atlas = texture;
+        _log?.Invoke($"[ImGui] font atlas {width}x{height} at scale {scale}");
         _atlasScale = scale;
         io.Fonts.SetTexID((IntPtr)_atlasSlot.Index);
         io.Fonts.ClearTexData();
@@ -133,14 +135,30 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
             if (!_reportedOversize)
             {
                 _reportedOversize = true;
-                _log?.Invoke($"ImGui overlay: skipping a frame of {vertexBytes + (long)indexBytes} bytes (limit {MaxFrameUploadBytes}).");
+                _log?.Invoke($"[ImGui] skipping a frame of {vertexBytes + (long)indexBytes} bytes (limit {MaxFrameUploadBytes}).");
             }
 
             return;
         }
 
-        GpuRingAllocation vertices = frame.AllocateRing(vertexBytes, GpuRingUsage.Vertex);
-        GpuRingAllocation indices = frame.AllocateRing(indexBytes, GpuRingUsage.Index);
+        GpuRingAllocation vertices;
+        GpuRingAllocation indices;
+        try
+        {
+            vertices = frame.AllocateRing(vertexBytes, GpuRingUsage.Vertex);
+            indices = frame.AllocateRing(indexBytes, GpuRingUsage.Index);
+        }
+        catch (InvalidOperationException error)
+        {
+            if (!_reportedRingFull)
+            {
+                _reportedRingFull = true;
+                _log?.Invoke($"[ImGui] skipping a frame: upload ring full ({error.Message}).");
+            }
+
+            return;
+        }
+
         int vtxWritten = 0;
         int idxWritten = 0;
         for (int n = 0; n < drawData.CmdListsCount; n++)
@@ -182,7 +200,7 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
                     if (!_reportedCallback)
                     {
                         _reportedCallback = true;
-                        _log?.Invoke("ImGui overlay: draw callbacks are not supported; skipping them.");
+                        _log?.Invoke("[ImGui] draw callbacks are not supported; skipping them.");
                     }
 
                     continue;
@@ -219,7 +237,7 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
     {
         if (_reportedBadTextures.Count >= MaxReportedBadTextures || !_reportedBadTextures.Add(textureId))
             return;
-        _log?.Invoke($"ImGui overlay: skipping draws with unknown texture id 0x{textureId:X}; only the font atlas can be drawn.");
+        _log?.Invoke($"[ImGui] skipping draws with unknown texture id 0x{textureId:X}; only the font atlas can be drawn.");
     }
 
     public void Dispose()

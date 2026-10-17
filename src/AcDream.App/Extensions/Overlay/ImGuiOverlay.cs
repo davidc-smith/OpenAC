@@ -19,6 +19,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     private readonly Action<string> _log;
     private readonly List<Action> _callbacks = new();
     private readonly Stopwatch _summaryClock = Stopwatch.StartNew();
+    private const int MaxFrameSummaries = 5;
+    private int _summariesLogged;
     private IImGuiDrawRenderer? _renderer;
     private Func<(Vector2 Points, Vector2 Pixels)>? _windowSize;
     private IntPtr _context;
@@ -60,11 +62,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             ImGui.SetCurrentContext(_context);
             ImGuiIOPtr io = ImGui.GetIO();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-            io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
-            // Nav focus alone mustn't take the keyboard from the game: only a
-            // focused text field does (WantTextInput), so WASD keeps working
-            // after a click on a script window's button.
-            io.ConfigNavCaptureKeyboard = false;
+            // No keyboard navigation (like RynthCore): arrows, Space and Enter
+            // stay with the game; only a focused text field takes the keyboard.
             io.ConfigErrorRecovery = true;
             io.ConfigErrorRecoveryEnableAssert = false;
             unsafe { io.NativePtr->IniFilename = null; }
@@ -146,9 +145,10 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             ImDrawDataPtr drawData = ImGui.GetDrawData();
             (Vector2 _, Vector2 pixels) = _windowSize!();
             _renderer!.Render(drawData, pixels);
-            if (drawData.TotalVtxCount > 0 && _summaryClock.Elapsed.TotalSeconds >= 1)
+            if (drawData.TotalVtxCount > 0 && _summariesLogged < MaxFrameSummaries && _summaryClock.Elapsed.TotalSeconds >= 1)
             {
                 _summaryClock.Restart();
+                _summariesLogged++;
                 _log($"[ImGui] frame: lists={drawData.CmdListsCount} vtx={drawData.TotalVtxCount}");
             }
         }
@@ -275,8 +275,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         public void Dispose()
         {
             OverlayInputGate.Bind(null);
-            feed.Dispose();
-            overlay.Dispose();
+            try { feed.Dispose(); }
+            finally { overlay.Dispose(); }
         }
     }
 

@@ -21,9 +21,19 @@ public sealed unsafe class RynthHost : IDisposable
         _table = new RynthApiTable(view, _log, scriptWindows);
         RynthCore.Engine.RynthLog.Sink = _log;
         RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log = _log;
-        foreach (Type exportsType in exportsTypes)
-            Load(exportsType);
-        Bridge = new RynthEventBridge(_plugins);
+        try
+        {
+            foreach (Type exportsType in exportsTypes)
+                Load(exportsType);
+            Bridge = new RynthEventBridge(_plugins);
+        }
+        catch
+        {
+            // Leave nothing behind: initialised plugins, owners, sinks, flags and the table.
+            try { Dispose(); }
+            catch (Exception cleanup) { _log($"cleanup after a failed start also failed: {cleanup.Message}"); }
+            throw;
+        }
     }
 
     public IReadOnlyList<RynthPlugin> Plugins => _plugins;

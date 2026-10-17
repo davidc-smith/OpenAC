@@ -8,7 +8,7 @@
     <ProjectReference Include="..\AcDream.ClientExtensions\AcDream.ClientExtensions.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.Sdk\AcDream.Rynth.Sdk.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthTracker\AcDream.Rynth.Plugin.RynthTracker.csproj" />
-      <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthOracle\AcDream.Rynth.Plugin.RynthOracle.csproj" />
+    <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthOracle\AcDream.Rynth.Plugin.RynthOracle.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.ScriptWindows\AcDream.Rynth.ScriptWindows.csproj" />
   </ItemGroup>
 </Project>
