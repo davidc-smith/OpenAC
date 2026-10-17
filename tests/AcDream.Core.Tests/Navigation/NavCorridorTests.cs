@@ -206,6 +206,24 @@ public sealed class NavCorridorTests
         Assert.StartsWith("no way along the way round reaches (", route.Reason);
     }
 
+    [Fact]
+    public void AStageThatEndsOutOfSightOfItsPointMissesIt()
+    {
+        NavGeometry geometry = Plateau(ramp: true);
+        var from = new Vector3(60f, 150f, 0f);
+        var goal = new Vector3(60f, 260f, 6f);
+        NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(geometry, NavCorridor.CoarseBody(Body, 1f), 1f), from, goal, 2f, arriveOnGoalFloor: true);
+
+        NavRoute route = NavCorridor.Stitch(geometry, Body, corridor, from, goal,
+            (grid, start, to, final) => final
+                ? NavRouter.Find(grid, start, to, 2f, arriveOnGoalFloor: true)
+                : NavRouter.Find(grid, start, to, NavCorridor.StageArrival) with { EndsInSight = false },
+            corridor.StageBudget);
+
+        Assert.Equal(NavRouteOutcome.NoPath, route.Outcome);
+        Assert.StartsWith("no way along the way round reaches (", route.Reason);
+    }
+
     private static NavTriangle[] Floor(float x0, float y0, float x1, float y1, float z) =>
         Quad(new Vector3(x0, y0, z), new Vector3(x1, y0, z), new Vector3(x1, y1, z), new Vector3(x0, y1, z));
 

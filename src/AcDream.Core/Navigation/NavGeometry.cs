@@ -440,8 +440,9 @@ public sealed class NavGeometry
     }
 
     /// <summary>
-    /// The square the terrain of every resident landblock spans together, or false
-    /// when none is resident: the most a way round can be planned over.
+    /// The lowest and highest corners of the box, not always square, that the terrain of
+    /// every resident landblock spans together, or false when none is resident: the most a
+    /// way round can be planned over.
     /// </summary>
     public static bool TryMeasureResident(PhysicsEngine engine, out Vector2 minimum, out Vector2 maximum)
     {

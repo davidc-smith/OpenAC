@@ -259,7 +259,8 @@ public sealed class NavCorridor
     /// <summary>
     /// Plans the fine stages along a way round that reaches its goal, each over its own
     /// square cropped from <paramref name="geometry"/>, and joins their legs into one route.
-    /// A stage that ends farther than <see cref="StageMiss"/> from its point misses it. The
+    /// A stage that ends farther than <see cref="StageMiss"/> from its point, or near it but out
+    /// of sight of it, such as across a wall, misses it, as it does on a walk. The
     /// joined route carries no leaps: it is for previews, which only show the way.
     /// </summary>
     public static NavRoute Stitch(
@@ -294,7 +295,7 @@ public sealed class NavCorridor
             expansions += route.Expansions;
             if (route.Outcome != NavRouteOutcome.Routed)
                 return Failed(final ? route.Reason : $"no way along the way round reaches {Format(target)}");
-            if (!final && Flat(route.Legs[^1] - target).Length() > StageMiss)
+            if (!final && (Flat(route.Legs[^1] - target).Length() > StageMiss || !route.EndsInSight))
                 return Failed($"no way along the way round reaches {Format(target)}");
             for (int leg = 1; leg < route.Legs.Count; leg++)
                 legs.Add(route.Legs[leg]);
