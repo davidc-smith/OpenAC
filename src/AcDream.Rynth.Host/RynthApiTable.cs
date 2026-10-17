@@ -27,6 +27,7 @@ public sealed unsafe class RynthApiTable : IDisposable
 
     private readonly IRynthGameView _view;
     private readonly Action<string> _log;
+    private readonly bool _scriptWindows;
     private IntPtr _nameBuffer;
 
     public RynthApiTable(IRynthGameView view, Action<string> log, bool scriptWindows = false)
@@ -38,6 +39,7 @@ public sealed unsafe class RynthApiTable : IDisposable
 
         _view = view;
         _log = log;
+        _scriptWindows = scriptWindows;
         Native = (RynthCoreApiNative*)NativeMemory.AllocZeroed((nuint)sizeof(RynthCoreApiNative));
         Native->Version = ApiVersion;
         Native->LogFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, void>)&Log;
@@ -72,7 +74,8 @@ public sealed unsafe class RynthApiTable : IDisposable
             _nameBuffer = IntPtr.Zero;
         }
 
-        EngineSettings.EnableImGuiBackend = false;
+        if (_scriptWindows)
+            EngineSettings.EnableImGuiBackend = false;
         Interlocked.CompareExchange(ref _current, null, this);
     }
 

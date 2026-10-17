@@ -47,6 +47,10 @@ public sealed unsafe class RynthHost : IDisposable
 
         _plugins.Clear();
         RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
+        if (RynthCore.Engine.RynthLog.Sink == _log)
+            RynthCore.Engine.RynthLog.Sink = null;
+        if (RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log == _log)
+            RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log = null;
         _table.Dispose();
     }
 

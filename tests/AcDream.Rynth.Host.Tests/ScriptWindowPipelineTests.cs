@@ -32,7 +32,11 @@ public sealed unsafe class ScriptWindowPipelineTests : IDisposable
     private RynthHost CreateOracleHost() =>
         new(_view, _log.Add, [typeof(RynthCore.Plugin.RynthOracle.PluginExports)], scriptWindows: true);
 
-    private string Diag() => ScriptWindowRegistry.Describe() + "\n" + string.Join("\n", _log);
+    private string Diag() => string.Join("\n", ScriptWindowRegistry.Describe()) + "\n" + string.Join("\n", _log);
+
+    // Describe() prints the owner's last submitted flag as "visible=True/False".
+    private static string OracleLine() =>
+        ScriptWindowRegistry.Describe().FirstOrDefault(l => l.Contains(OracleKey)) ?? "(no oracle window)";
 
     [Fact]
     public void HasUiFollowsTheScriptWindowsFlag()
@@ -76,11 +80,16 @@ public sealed unsafe class ScriptWindowPipelineTests : IDisposable
         _imgui.Frame(ImGuiPanelHost.DrawAll);
         _imgui.Frame(ImGuiPanelHost.DrawAll);
 
+        Assert.True(ScriptWindowRegistry.IsOpen(OracleKey), Diag());
+        Assert.Contains("visible=True", OracleLine());
+
         ImGuiPanelHost.Close("script:" + OracleKey);
         for (int i = 0; i < 5; i++)
             host.Tick();
 
         Assert.False(ScriptWindowRegistry.IsOpen(OracleKey), Diag());
+        // The plugin heard the Visibility event and now submits the window as hidden.
+        Assert.Contains("visible=False", OracleLine());
     }
 
     [Fact]
@@ -90,6 +99,8 @@ public sealed unsafe class ScriptWindowPipelineTests : IDisposable
         host.Plugins[0].OnChatBarEnter("/ro");
         host.Tick();
         host.Tick();
+        Assert.True(ScriptWindowRegistry.IsOpen(OracleKey), Diag());
+        Assert.Equal(1, ImGuiPanelHost.OpenCount);
 
         host.Dispose();
 
