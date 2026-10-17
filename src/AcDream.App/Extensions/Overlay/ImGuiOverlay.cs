@@ -61,6 +61,10 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             ImGuiIOPtr io = ImGui.GetIO();
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
             io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
+            // Nav focus alone mustn't take the keyboard from the game: only a
+            // focused text field does (WantTextInput), so WASD keeps working
+            // after a click on a script window's button.
+            io.ConfigNavCaptureKeyboard = false;
             io.ConfigErrorRecovery = true;
             io.ConfigErrorRecoveryEnableAssert = false;
             unsafe { io.NativePtr->IniFilename = null; }
@@ -203,6 +207,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         Silk.NET.Windowing.IWindow window,
         Silk.NET.Input.IInputContext input)
     {
+        if (IsAvailable || _context != IntPtr.Zero || _renderer is not null)
+            return null;
         ImGuiVulkanRenderer? renderer = null;
         try
         {

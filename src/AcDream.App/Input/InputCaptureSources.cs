@@ -11,11 +11,13 @@ internal interface IInputCaptureSource
 
 internal sealed class DevToolsInputCaptureSource
 {
+    private readonly Func<bool>? _wantsMouse, _wantsKeyboard;
     public DevToolsInputCaptureSource(bool enabled, Func<bool>? wantsMouse = null, Func<bool>? wantsKeyboard = null)
     {
-        (_, _wantsMouse, _wantsKeyboard) = (enabled, wantsMouse, wantsKeyboard);
+        _ = enabled;
+        _wantsMouse = wantsMouse;
+        _wantsKeyboard = wantsKeyboard;
     }
-    private readonly Func<bool>? _wantsMouse, _wantsKeyboard;
 
     public bool WantCaptureMouse => _wantsMouse?.Invoke() == true;
 
