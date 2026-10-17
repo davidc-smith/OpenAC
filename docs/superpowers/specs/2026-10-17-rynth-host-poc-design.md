@@ -66,11 +66,10 @@ public interface IClientExtension : IDisposable
 }
 ```
 
-`ClientExtensionContext` carries the live `GameRuntime`, a logger, the
-application data directory, a way to write a line to the chat window, and
+`ClientExtensionContext` carries the live `GameRuntime`, a log action and
 a way to register a chat command.
 
-Changes to upstream files (target: about 10 lines):
+Changes to upstream files (target: about 11 lines, including the `GameEventWiring.cs` line below):
 
 - `src/AcDream.App/AcDream.App.csproj`: project references to the
   contract and to `AcDream.Rynth.Host`.
@@ -142,17 +141,33 @@ model, so no locking is needed.
 calls `RynthTrackerGetSnapshotJson` and prints kills, XP per hour and
 luminance per hour into chat.
 
-**Errors.** An exception from any export call is caught and logged, and the
-plugin is disabled. A non-zero `RynthPluginInit` is logged and the plugin
-is skipped. A Rynth plugin never takes the client down.
+**Errors.** An exception cannot cross an `[UnmanagedCallersOnly]` boundary:
+the runtime terminates the process instead. So the host cannot catch a
+plugin's exceptions. Their `RynthPluginRuntime` already catches and logs
+inside every export, as it must under RynthCore too. The host's own table
+functions catch everything and return 0 ("not available"). A non-zero
+`RynthPluginInit` is logged and the plugin is skipped.
 
-### Open detail for the plan
+### Kill notifications (settled while planning)
 
 OpenAC turns the killer notification (`GameEventType.KillerNotification`)
-into a chat combat line (`GameEventWiring.cs`, about line 520) and keeps no
-separate event. The plan checks whether the session's game-event
-registrar accepts a second handler for that type. If not, the host
-recognises the Info combat line instead.
+into a chat combat line (`GameEventWiring.cs`, about line 520). A second
+handler is not possible, because `GameEventDispatcher.RegisterOwned`
+shadows the previous one. `CombatState` already has a `KillLanded` event
+that nothing raises. One added line in `GameEventWiring` raises it with
+the death message, and the host forwards that to
+`RynthPluginOnKillNotification`. This makes about 11 changed upstream lines
+in all.
+
+### Settled while planning
+
+- `ClientExtensionContext` carries the runtime, a log action and a
+  chat-command registration. The host writes chat lines itself through
+  `GameRuntime.CommunicationOwner.Chat`. The data directory was dropped
+  (YAGNI).
+- Logout is raised from `IRuntimeEventObserver.OnLeavingWorld`, while the
+  session state is still intact. Login is raised on the lifecycle change
+  into `InWorld`.
 
 ## Testing
 
@@ -166,8 +181,9 @@ recognises the Info combat line instead.
    `tests/AcDream.App.Tests/GameRuntimeTestFactory.cs`), the host
    attached, then login, an XP property change, a kill and ticks. The
    snapshot JSON shows the expected kill and XP counts.
-4. **Fault isolation:** a fixture plugin that throws in `Tick` is disabled
-   and logged, and nothing else fails.
+4. **Fault isolation:** a table function whose game view throws returns 0
+   and logs, and a plugin whose `RynthPluginInit` fails is skipped while
+   the others run.
 
 Live check: RynthTracker on the local ACE server (10.10.20.20). Kill a
 few monsters, then `/rynth tracker` matches. The client is only launched
@@ -193,7 +209,7 @@ git commit -am "chore: update Rynth submodules"
 - RynthTracker's unmodified source runs inside OpenAC on macOS.
 - The tests above pass.
 - The live check matches.
-- The diff to upstream files stays at about 10 lines.
+- The diff to upstream files stays at about 11 lines.
 
 ## Out of scope
 
