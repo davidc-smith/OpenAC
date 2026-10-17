@@ -92,7 +92,7 @@ internal sealed partial class NavigationWalkController
         _corridoring = Task.Run(() => NavCorridor.Plan(NavGrid.Build(geometry, NavCorridor.CoarseBody(body, cell), cell), from, goal, arrival, onGoalFloor, keepOut));
         string planning = Inv($"planning a way round over {size:0} m around the start and goal");
         Publish(active, NavigationWalkState.Planning, planning, float.NaN);
-        Say($"{(active.Follow ? "Follow" : "Walk to")} {Label(active)}: {planning}");
+        Say($"{Doing(active)} {Label(active)}: {planning}");
     }
 
     /// <summary>Takes up a way round planned off the update thread.</summary>
@@ -120,12 +120,15 @@ internal sealed partial class NavigationWalkController
             if (Narration is not null && requester.SquareNoRoute is { } square)
                 NarrateNoRoute(requester, square);
             // A way round planned again from the loaded edge, where the coarse grid may find
-            // no start, ends as a far walk that can get no nearer.
+            // no start, ends as a far walk that can get no nearer; one planned again around
+            // where the last led nowhere says where that was and how far it searched.
             NavigationWalkBodySample rolledAt = default;
-            bool rolled = requester.Stages > 0 && _body.TrySample(out rolledAt);
-            End(requester, NavigationWalkState.NoRoute, rolled
-                ? Inv($"no way on toward the goal was found; it is {HorizontalDistance(rolledAt.Position, requester.Goal):0} m away")
-                : corridor.Reason);
+            string reason = requester.MissedNear is { } near
+                ? Inv($"no way along the planned way round was found near {Point(near)}; searched {corridor.Size:0} m around the start and goal")
+                : requester.RolledFromEdge && _body.TrySample(out rolledAt)
+                    ? Inv($"no way on toward the goal was found; it is {HorizontalDistance(rolledAt.Position, requester.Goal):0} m away")
+                    : corridor.Reason;
+            End(requester, NavigationWalkState.NoRoute, reason);
             return;
         }
         if (corridor.Outcome == NavCorridorOutcome.TowardEdge && _body.TrySample(out NavigationWalkBodySample here))
@@ -221,9 +224,11 @@ internal sealed partial class NavigationWalkController
         active.CorridorKeepOut.Add(new NavAvoidance(near, radius));
         active.Corridor = null;
         active.WantsCorridor = true;
+        active.MissedNear = near;
+        active.RolledFromEdge = false;
         string again = $"no way along the planned way round was found near {Point(near)}; planning another way round";
         Publish(active, NavigationWalkState.Planning, again, float.NaN);
-        Say($"Walk to {Label(active)}: {again}");
+        Say($"{Doing(active)} {Label(active)}: {again}");
     }
 
     /// <summary>
@@ -242,12 +247,18 @@ internal sealed partial class NavigationWalkController
         request.CorridorKeepOut.Clear();
         request.WantsCorridor = false;
         request.SquareNoRoute = null;
+        request.RolledFromEdge = false;
+        request.MissedNear = null;
         request.CorridorIndex = 0;
         request.StageTargetIndex = 0;
         request.StageTarget = null;
         request.Staged = false;
         request.StageBudget = MaximumStages;
     }
+
+    /// <summary>What a walk's narration calls it: a follow, a walk, or a route asked for alone.</summary>
+    private static string Doing(Request request) =>
+        request.Follow ? "Follow" : request.Walk ? "Walk to" : "Route to";
 
     /// <summary>What is left of the way round beyond the stage under way, and on to the goal past its end.</summary>
     private static float CorridorBeyond(Request request) =>

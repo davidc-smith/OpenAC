@@ -1676,10 +1676,12 @@ internal sealed partial class NavigationWalkController
             active.Corridor = null;
             active.CorridorPlans = 0;
             active.CorridorKeepOut.Clear();
+            active.RolledFromEdge = true;
+            active.MissedNear = null;
         }
         string next = Inv($"stage {active.Stages} walked; planning the next toward the goal, {away:0} m away");
         Publish(active, NavigationWalkState.Planning, next, float.NaN);
-        Say($"Walk to {Label(active)}: {next}");
+        Say($"{Doing(active)} {Label(active)}: {next}");
     }
 
     private void BuildGrid(
@@ -2178,9 +2180,10 @@ internal sealed partial class NavigationWalkController
             requester.WantsCorridor = true;
             requester.SquareNoRoute = route;
             requester.Builds = 0;
+            Route = null;
             string round = "no route within one square; planning a way round";
             Publish(requester, NavigationWalkState.Planning, round, float.NaN);
-            Say($"Walk to {Label(requester)}: {round}");
+            Say($"{Doing(requester)} {Label(requester)}: {round}");
             return;
         }
         if ((route.Outcome == NavRouteOutcome.NoPath || (route.Outcome == NavRouteOutcome.NoGoal && requester.Staged))
@@ -3129,6 +3132,13 @@ internal sealed partial class NavigationWalkController
 
         /// <summary>The search of the walk's one square that found no route, which a way round that finds none narrates.</summary>
         public NavRoute? SquareNoRoute { get; set; }
+
+        /// <summary>
+        /// Why the way round being planned is planned again: from the end of one toward a goal
+        /// beyond what was loaded, or around where the last one led nowhere, near this point.
+        /// </summary>
+        public bool RolledFromEdge { get; set; }
+        public Vector3? MissedNear { get; set; }
 
         /// <summary>Stretches of earlier ways round that led nowhere, which the next one keeps out of.</summary>
         public List<NavAvoidance> CorridorKeepOut { get; } = [];

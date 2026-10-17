@@ -148,6 +148,41 @@ public sealed class NavigationWalkControllerTests
         Assert.Contains(body.Path, point => point.X > 320f);
     }
 
+    /// <summary>
+    /// A route asked for alone says so as it turns to a way round, and draws no route while the
+    /// way round is planned, rather than the one square's search that found none.
+    /// </summary>
+    [Fact]
+    public void ARouteAskedForAloneThatNeedsAWayRoundSaysRouteAndDrawsNoRouteWhilePlanningIt()
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        NavigationWalkController? walk = null;
+        NavRoute? drawnWhileTurning = null;
+        bool turned = false;
+        walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals { [Target] = new Vector3(60f, 260f, 0f) }, line =>
+        {
+            said.Add(line);
+            if (line.Contains("no route within one square", StringComparison.Ordinal))
+            {
+                turned = true;
+                drawnWhileTurning = walk!.Route;
+            }
+        });
+
+        walk.RouteTo(Target);
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 60f);
+
+        Assert.True(turned);
+        Assert.Null(drawnWhileTurning);
+
+        Assert.Equal(NavigationWalkState.Planned, report.State);
+        Assert.Contains(said, line => line.StartsWith("Route to 0x50000001: no route within one square; planning a way round", StringComparison.Ordinal));
+        Assert.Contains(said, line => line.StartsWith("Route to 0x50000001: planning a way round over", StringComparison.Ordinal));
+        Assert.DoesNotContain(said, line => line.StartsWith("Walk to", StringComparison.Ordinal));
+        Assert.Equal(0, body.MovesBegun);
+    }
+
     /// <summary>A way round straight from the start to the goal, as a coarse grid that missed a wall would plan it.</summary>
     private static NavCorridor StraightThroughTheWall(NavCorridor planned)
     {
@@ -189,6 +224,44 @@ public sealed class NavigationWalkControllerTests
         Assert.StartsWith("no way along the planned way round was found near", report.Reason);
         Assert.Contains("searched 384 m around the start and goal", report.Reason);
         Assert.Equal(NavigationWalkController.MaximumCorridorPlans, plans);
+    }
+
+    /// <summary>
+    /// A way round east along the wall and then north through it, as a coarse grid that missed
+    /// the wall's far end would plan it: its first stages are walked before the last one misses.
+    /// </summary>
+    private static NavCorridor AlongThenThroughTheWall(NavCorridor planned)
+    {
+        var points = new List<Vector3>();
+        for (float x = 60f; x < 260f; x += 1f)
+            points.Add(new Vector3(x, 150f, 0f));
+        for (float y = 150f; y <= 260f; y += 1f)
+            points.Add(new Vector3(260f, y, 0f));
+        return new NavCorridor(NavCorridorOutcome.Reaches, "routed", points, planned.OriginX, planned.OriginY, planned.Size, planned.CellSize, 0d);
+    }
+
+    /// <summary>
+    /// Stages walked, then a missed stage whose next way round finds nothing: the walk says
+    /// where the way round led nowhere and how far it searched, not that it got no nearer.
+    /// </summary>
+    [Fact]
+    public void AWayRoundPlannedAgainAfterAMissThatFindsNothingSaysWhereTheLastLedNowhere()
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals(), said.Add);
+        int plans = 0;
+        walk.CorridorPlanned = planned => plans++ == 0 ? AlongThenThroughTheWall(planned) : planned;
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.Equal(2, plans);
+        Assert.Contains(said, line => line.Contains("stage 1 walked", StringComparison.Ordinal));
+        Assert.Contains(said, line => line.Contains("planning another way round", StringComparison.Ordinal));
+        Assert.StartsWith("no way along the planned way round was found near (", report.Reason);
+        Assert.EndsWith("; searched 384 m around the start and goal", report.Reason);
     }
 
     [Fact]
