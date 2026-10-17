@@ -76,7 +76,7 @@ Each layer knows only the one below it. The contract is plain .NET so plugins bu
      |  1. locate the goal (object, place, top, player)
      |  2. capture geometry: NavGeometry.Capture reads the physics world  (update thread)
      |  3. build the grid:   NavGrid.Build                               (worker task)
-     |  4. search a route:   NavRouter.Find / FindOnto / FindToward      (worker task)
+     |  4. search a route:   NavRouter.Find / FindOnto (stages, last leg); NavCorridor.Plan for a way round (worker task)
      |  5. collect the route next frame, narrate it, hand it to a driver
      v
   RuntimeRouteDriver  -- each frame: sample the body, return moves to begin or stop, a jump to charge
@@ -350,7 +350,7 @@ The planning layer, `AcDream.Core.Navigation`, is plain C# with no client state,
 | `NavGrid.Build` | Turns that geometry into 0.25 m columns of solid spans. A node is the top of a walkable span with headroom for the whole body. A link joins nodes in neighbouring columns within the body's step-up and step-down heights. A node is clear when no wall comes nearer than the body's radius less a quarter column, and it is not on the very edge of a ledge. Tops too small to walk on are perches a jump can land on. |
 | `NavRouter.Find` | A* from a node the start can walk to, within 1.5 m, to a clear node near the goal that can see it, or on the goal's own floor. It plans three ways in parallel, from the shortest to one well clear of walls, and keeps the tidiest route that arrives. It takes spots to keep out of and creatures to pass, and plans leaps only when no walked route arrives. It gives up at 4,000,000 expanded nodes. |
 | `NavRouter.FindOnto` | The same, ending on an object's top. |
-| `NavRouter.FindToward` | The same, toward a goal beyond the grid: to the grid's edge nearest the goal, for staged walks. |
+| `NavRouter.FindToward` | The same, toward a goal beyond the grid: to the grid's edge nearest the goal. Used on the coarse grid for a way round to the loaded edge. |
 | `NavCorridor` | A walked way round over a coarse grid: `Plan` finds one onto the goal's floor, or to the grid's edge toward a goal beyond it; `Stitch` plans the fine stages along it and joins them, for previews. |
 | `NavRoute` | `Outcome` (`Routed`, `NoStart`, `NoGoal` or `NoPath`) with a `Reason`; the `Path` of nodes; straight `Legs`, with corners moved up to 1.5 m to keep 1 m from walls; `Leaps`; `Length`; `EndsInSight`; `Scrape`; `Crowding`; and `Milliseconds`. |
 
@@ -416,11 +416,12 @@ MossTank walks its routes the reference way: straight at each point with held ke
 
 ## Seeing it in the client
 
-`/nav grid` shows the grid around the character, or over the whole dungeon inside one; `/nav route` draws a route without walking it. `/nav route` and walks also draw the way round as a fainter line under the route.
+`/nav grid` shows the grid around the character, or over the whole dungeon inside one; `/nav route` draws a route without walking it.
 
 - Green points: clear floor, every 0.5 m.
 - Red points: beside a ledge or too near a wall.
 - Magenta line: the route being walked.
+- Purple line: the way round, drawn 0.3 m up, above the route, every 4th point, during any walk and after `/nav route`.
 
 The grid and the route line are hidden behind walls, floors and ceilings, as the world is. `/nav debug` narrates the rest.
 
