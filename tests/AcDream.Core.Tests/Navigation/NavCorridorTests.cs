@@ -126,6 +126,43 @@ public sealed class NavCorridorTests
         Assert.Equal(NavRouteOutcome.Routed, route.Outcome);
     }
 
+    [Fact]
+    public void StagesStitchedAlongTheWayRoundArriveOnThePlateau()
+    {
+        NavGeometry geometry = Plateau(ramp: true);
+        var from = new Vector3(60f, 150f, 0f);
+        var goal = new Vector3(60f, 260f, 6f);
+        NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(geometry, Body, 1f), from, goal, 2f, arriveOnGoalFloor: true);
+
+        NavRoute route = NavCorridor.Stitch(geometry, Body, corridor, from, goal,
+            (grid, start, to, final) => final
+                ? NavRouter.Find(grid, start, to, 2f, arriveOnGoalFloor: true)
+                : NavRouter.Find(grid, start, to, NavCorridor.StageArrival),
+            corridor.StageBudget);
+
+        Assert.Equal(NavRouteOutcome.Routed, route.Outcome);
+        Assert.Equal(from.X, route.Legs[0].X, 1);
+        Assert.InRange(Vector2.Distance(new(route.Legs[^1].X, route.Legs[^1].Y), new(goal.X, goal.Y)), 0f, 2.5f);
+        Assert.InRange(route.Legs[^1].Z, 5.5f, 6.5f);
+        Assert.True(route.Length > 500f, $"length {route.Length}");
+    }
+
+    [Fact]
+    public void AStageThatEndsShortOfItsPointMissesIt()
+    {
+        NavGeometry geometry = Plateau(ramp: true);
+        var from = new Vector3(60f, 150f, 0f);
+        var goal = new Vector3(60f, 260f, 6f);
+        NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(geometry, Body, 1f), from, goal, 2f, arriveOnGoalFloor: true);
+
+        NavRoute route = NavCorridor.Stitch(geometry, Body, corridor, from, goal,
+            (grid, start, to, final) => NavRouter.Find(grid, start, start + new Vector3(1f, 0f, 0f), 0.5f),
+            corridor.StageBudget);
+
+        Assert.Equal(NavRouteOutcome.NoPath, route.Outcome);
+        Assert.StartsWith("no way along the way round reaches (", route.Reason);
+    }
+
     private static NavTriangle[] Floor(float x0, float y0, float x1, float y1, float z) =>
         Quad(new Vector3(x0, y0, z), new Vector3(x1, y0, z), new Vector3(x1, y1, z), new Vector3(x0, y1, z));
 

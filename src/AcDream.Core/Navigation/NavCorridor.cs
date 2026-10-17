@@ -21,6 +21,12 @@ public enum NavCorridorOutcome
 }
 
 /// <summary>
+/// Searches one stage's fine grid from a start to a point: the stage's point along the way
+/// round, or, for the <paramref name="final"/> stage, the goal with the walk's own arrival.
+/// </summary>
+public delegate NavRoute NavStageSearch(NavGrid grid, Vector3 from, Vector3 to, bool final);
+
+/// <summary>
 /// A way round planned over a coarse grid of everything loaded, walking only, that a
 /// walk too long or too twisty for one planning square follows in fine stages. The
 /// coarse grid answers which way round; each stage's own fine grid answers where the
@@ -231,6 +237,69 @@ public sealed class NavCorridor
         originY = Snap(((low.Y + high.Y) * 0.5f) - (size * 0.5f));
         return true;
     }
+
+    /// <summary>
+    /// Plans the fine stages along a way round that reaches its goal, each over its own
+    /// square cropped from <paramref name="geometry"/>, and joins their legs into one route.
+    /// A stage that ends farther than <see cref="StageMiss"/> from its point misses it. The
+    /// joined route carries no leaps: it is for previews, which only show the way.
+    /// </summary>
+    public static NavRoute Stitch(
+        NavGeometry geometry,
+        NavBody body,
+        NavCorridor corridor,
+        Vector3 from,
+        Vector3 goal,
+        NavStageSearch search,
+        int maximumStages)
+    {
+        ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentNullException.ThrowIfNull(corridor);
+        ArgumentNullException.ThrowIfNull(search);
+        var clock = Stopwatch.StartNew();
+        var legs = new List<Vector3> { from };
+        float length = 0f;
+        int expansions = 0;
+        Vector3 at = from;
+        int index = corridor.NearestIndex(from, 0);
+        for (int stage = 0; stage < maximumStages; stage++)
+        {
+            bool final = corridor.Outcome == NavCorridorOutcome.Reaches && corridor.RemainingFrom(index) <= FinalStretch;
+            int targetIndex = final ? corridor.Points.Count - 1 : corridor.IndexAhead(index, StageLookahead);
+            Vector3 target = final ? goal : corridor.Points[targetIndex];
+            if (!TrySquareOver([at, target, .. corridor.Span(index, targetIndex)], StageMargin, MinimumStageSquare, MaximumStageSquare,
+                    out float originX, out float originY, out float size))
+            {
+                return Failed($"the way round bends too far for one stage near {Format(target)}");
+            }
+            NavRoute route = search(NavGrid.Build(geometry.Crop(originX, originY, size), body), at, target, final);
+            expansions += route.Expansions;
+            if (route.Outcome != NavRouteOutcome.Routed)
+                return Failed(final ? route.Reason : $"no way along the way round reaches {Format(target)}");
+            if (!final && Flat(route.Legs[^1] - target).Length() > StageMiss)
+                return Failed($"no way along the way round reaches {Format(target)}");
+            for (int leg = 1; leg < route.Legs.Count; leg++)
+                legs.Add(route.Legs[leg]);
+            length += route.Length;
+            at = route.Legs[^1];
+            if (final)
+            {
+                return new NavRoute(NavRouteOutcome.Routed, route.Reason, [], legs, length, expansions, clock.Elapsed.TotalMilliseconds)
+                {
+                    EndsInSight = route.EndsInSight,
+                };
+            }
+            index = corridor.NearestIndex(at, index);
+        }
+        return Failed(string.Create(CultureInfo.InvariantCulture,
+            $"the goal was still {Flat(goal - at).Length():0} m away after {maximumStages} stages"));
+
+        NavRoute Failed(string reason) =>
+            new(NavRouteOutcome.NoPath, reason, [], [], 0f, expansions, clock.Elapsed.TotalMilliseconds);
+    }
+
+    private static string Format(Vector3 point) =>
+        string.Create(CultureInfo.InvariantCulture, $"({point.X:0}, {point.Y:0})");
 
     private static float Snap(float coordinate) =>
         MathF.Floor(coordinate / NavGrid.DefaultCellSize) * NavGrid.DefaultCellSize;
