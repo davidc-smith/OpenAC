@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AcDream.Runtime\AcDream.Runtime.csproj" />
+    <ProjectReference Include="..\AcDream.Rynth.Sdk\AcDream.Rynth.Sdk.csproj" />
+    <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthTracker\AcDream.Rynth.Plugin.RynthTracker.csproj" />
+  </ItemGroup>
+</Project>

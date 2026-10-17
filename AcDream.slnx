@@ -13,6 +13,7 @@
     <Project Path="src/AcDream.PluginCheck/AcDream.PluginCheck.csproj" />
     <Project Path="src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj" />
     <Project Path="src/AcDream.Runtime/AcDream.Runtime.csproj" />
+    <Project Path="src/AcDream.Rynth.Host/AcDream.Rynth.Host.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthTracker/AcDream.Rynth.Plugin.RynthTracker.csproj" />
     <Project Path="src/AcDream.Rynth.Sdk/AcDream.Rynth.Sdk.csproj" />
     <Project Path="src/AcDream.UI.Abstractions/AcDream.UI.Abstractions.csproj" />
@@ -50,6 +51,7 @@
     <Project Path="tests/AcDream.Plugin.Tests/AcDream.Plugin.Tests.csproj" />
     <Project Path="tests/AcDream.RenderPackValidator.Tests/AcDream.RenderPackValidator.Tests.csproj" />
     <Project Path="tests/AcDream.Runtime.Tests/AcDream.Runtime.Tests.csproj" />
+    <Project Path="tests/AcDream.Rynth.Host.Tests/AcDream.Rynth.Host.Tests.csproj" />
     <Project Path="tests/AcDream.UI.Abstractions.Tests/AcDream.UI.Abstractions.Tests.csproj" />
   </Folder>
 </Solution>
