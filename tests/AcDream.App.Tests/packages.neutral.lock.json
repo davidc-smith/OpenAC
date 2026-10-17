@@ -227,6 +227,7 @@
           "AcDream.Rynth.Host": "[0.1.25, )",
           "AcDream.UI.Abstractions": "[0.1.25, )",
           "Arch": "[2.1.0, )",
+          "ImGui.NET": "[1.91.6.1, )",
           "Serilog": "[4.0.2, )",
           "Serilog.Sinks.Console": "[6.0.0, )",
           "Silk.NET.Input": "[2.23.0, )",

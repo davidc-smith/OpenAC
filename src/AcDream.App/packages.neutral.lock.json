@@ -15,6 +15,12 @@
           "ZeroAllocJobScheduler": "1.1.2"
         }
       },
+      "ImGui.NET": {
+        "type": "Direct",
+        "requested": "[1.91.6.1, )",
+        "resolved": "1.91.6.1",
+        "contentHash": "Ph3j8pO6UM28PPJWP+5LEJSPVPkd8ivpVS8tRyY9b0IHn1HDIrMZ2o/FdiXaYW6YhNxMHmbevw6Jcfs+IDKi0Q=="
+      },
       "Serilog": {
         "type": "Direct",
         "requested": "[4.0.2, )",
@@ -340,12 +346,6 @@
           "DotNet.Standard.Common": "2.0.1",
           "ZLibDotNet": "0.1.1"
         }
-      },
-      "ImGui.NET": {
-        "type": "CentralTransitive",
-        "requested": "[1.91.6.1, )",
-        "resolved": "1.91.6.1",
-        "contentHash": "Ph3j8pO6UM28PPJWP+5LEJSPVPkd8ivpVS8tRyY9b0IHn1HDIrMZ2o/FdiXaYW6YhNxMHmbevw6Jcfs+IDKi0Q=="
       },
       "Microsoft.Extensions.Logging.Abstractions": {
         "type": "CentralTransitive",

@@ -27,6 +27,7 @@
     <PackageReference Include="Silk.NET.OpenAL.Extensions.Creative" />
     <PackageReference Include="Silk.NET.OpenAL.Extensions.EXT" />
     <PackageReference Include="Silk.NET.OpenAL.Soft.Native" />
+    <PackageReference Include="ImGui.NET" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="StbTrueTypeSharp" />
