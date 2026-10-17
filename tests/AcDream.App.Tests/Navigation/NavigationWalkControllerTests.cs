@@ -48,6 +48,46 @@ public sealed class NavigationWalkControllerTests
     }
 
     [Fact]
+    public async Task PreviewOfAWayRoundStitchesItsStages()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals());
+
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(0xA9B50001u, new Vector3(60f, 260f, 0f), 2.5f);
+
+        Assert.Equal(PluginNavigationPlanStatus.Routed, plan.Status);
+        Assert.True(plan.LengthMeters > 500f, $"length {plan.LengthMeters}");
+        double east = (plan.Path[^1].EastWest - plan.Path[0].EastWest) * 240d;
+        double north = (plan.Path[^1].NorthSouth - plan.Path[0].NorthSouth) * 240d;
+        Assert.True(Math.Sqrt((east * east) + ((north - 110d) * (north - 110d))) <= 2.5d, $"ends {east:0.0}, {north:0.0} from the start");
+        Assert.Equal(0, walk.Report.Sequence);
+    }
+
+    [Fact]
+    public async Task PreviewWithNoWayRoundSaysWhereItLooked()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals());
+
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(0xA9B50001u, new Vector3(60f, 260f, 0f), 2.5f);
+
+        Assert.Equal(PluginNavigationPlanStatus.NoRoute, plan.Status);
+        Assert.EndsWith("within 384 m around the start and goal", plan.Reason);
+    }
+
+    [Fact]
+    public async Task PreviewBeyondTheLoadedAreaSaysSo()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var walk = new NavigationWalkController(FlatWorld(), body, new Goals());
+
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(0xA9B40001u, new Vector3(40f, 900f, 0f), 2.5f);
+
+        Assert.Equal(PluginNavigationPlanStatus.NoRoute, plan.Status);
+        Assert.StartsWith("the destination is beyond the loaded area", plan.Reason);
+    }
+
+    [Fact]
     public void AWalkWithNoWayRoundAnywhereLoadedEndsBeforeMovingAndSaysWhereItLooked()
     {
         var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
