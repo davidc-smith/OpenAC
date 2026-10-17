@@ -73,7 +73,9 @@ public interface IClientOverlay
 
 - `IClientOverlay? Overlay`: null when the overlay can't start.
 - `Action<string> SubmitChatCommand`: runs text as if typed in the chat bar.
-- `Func<uint> GetSelectedObjectId`: the client's current selection, 0 if none.
+- (Settled while planning: no selection delegate is needed. The Rynth view
+  reads `GameRuntime.ActionOwner.Selection.SelectedObjectId` from the
+  runtime it already holds.)
 
 **New App files** (`src/AcDream.App/Extensions/Overlay/`):
 
@@ -116,7 +118,11 @@ public interface IClientOverlay
   pinned to an exact version at least two weeks old. Regenerate the lock files.
 
 **Fail-safe:** if the ImGui native library can't load or the renderer fails
-to start, the overlay logs once and `Overlay` is null. An exception inside a
+to start, the overlay logs once and stays inert. (Settled while planning:
+extensions attach before the GPU exists, so the overlay object is always
+passed. When it never starts, its callbacks never run and script windows
+simply don't draw. Plugins still see `HasUi`, because the table is built at
+attach.) An exception inside a
 frame callback is caught and logged, the callback is removed, and the frame
 still ends balanced.
 
@@ -140,6 +146,17 @@ still ends balanced.
 | `PluginManager.CurrentDispatch` | the owner currently inside a UI call |
 | `LoadedPlugin` | our owner record (plugin name) |
 | `PanelStateStore` | in-memory only (positions aren't saved) |
+
+Settled while planning: `ImGui/Panels/ScriptWindowFace.cs` (the window body
+that calls the replay) also compiles unchanged, with one more tiny stand-in
+(`ImGuiFonts.Get` returns the current font). The full stand-in list is
+`RynthLog`, `UiBackgroundWriter`, `ImGuiTextFocus`, `ScriptIcons`,
+`EngineFrameController`, `ImGuiFonts`/`UiFont`, `LoadedPlugin`,
+`EngineSettings`, `LoginLifecycleHooks`, `UiInfoNative` (layout copied from
+the engine), `PanelChrome`, `PanelSpec`, `IImGuiPanel` and
+`ImGuiPanelHost`. The owner of a UI call is tracked by the host's own
+dispatch scope (RynthCore's `PluginManager.CurrentDispatch` is only
+mentioned in comments in these files).
 
 If their files need more than this, the plan adds stand-ins in the same
 pattern. A stand-in that would need real logic stops the work for a decision.
@@ -175,8 +192,12 @@ Headless, with no GPU:
    - Send `/ro` through `OnChatBarEnter` and tick until their registry
      holds a visible window with a list.
    - Run one ImGui frame with their replay and check the draw data has vertices.
-   - Feed a click on a button and check that a `Clicked` event reaches the
-     plugin through `UiPollEvents`.
+   - Check that events flow back from ImGui to the plugin through
+     `UiPollEvents`. The headless test does this by closing the window as a
+     player would (the plugin then hides it, and it stays closed) and by
+     checking that ImGui's geometry events reach the plugin. Clicking a
+     specific button is left to the user's visual check, because locating
+     a button's screen position headlessly would make the test brittle.
 2. **Table:** the UI slots appear only with an overlay. Return codes match
    RynthCore's (`-100` without UI). `InvokeChatParser` and
    `GetSelectedItemId` reach the context.
