@@ -106,7 +106,7 @@ public sealed class NavCorridor
     public int StageBudget => (int)MathF.Ceiling(Length / (StageLookahead * 0.75f)) + 4;
 
     /// <summary>How far along the way round a point lies.</summary>
-    public float AlongAt(int index) => _along[Math.Clamp(index, 0, _along.Length - 1)];
+    public float AlongAt(int index) => _along.Length == 0 ? 0f : _along[Math.Clamp(index, 0, _along.Length - 1)];
 
     /// <summary>How much of the way round is left from a point on it.</summary>
     public float RemainingFrom(int index) => _along.Length == 0 ? 0f : Length - AlongAt(index);

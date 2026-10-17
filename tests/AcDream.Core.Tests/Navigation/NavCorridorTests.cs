@@ -87,6 +87,17 @@ public sealed class NavCorridorTests
     }
 
     [Fact]
+    public void ACorridorWithNoPointsMeasuresZeroWithoutThrowing()
+    {
+        var corridor = new NavCorridor(NavCorridorOutcome.NoPath, "none", [], 0f, 0f, 400f, 1f, 0d);
+
+        Assert.Equal(0f, corridor.AlongAt(3));
+        Assert.Equal(0f, corridor.RemainingFrom(3));
+        Assert.Equal(0, corridor.NearestIndex(new Vector3(1f, 1f, 0f), fromIndex: 5));
+        Assert.Equal(0, corridor.IndexAhead(5, 100f));
+    }
+
+    [Fact]
     public void ASquareOverPointsHoldsThemWithRoomAndSnaps()
     {
         Vector3[] points = [new(10.1f, 20.3f, 0f), new(130.7f, 60.2f, 0f)];
