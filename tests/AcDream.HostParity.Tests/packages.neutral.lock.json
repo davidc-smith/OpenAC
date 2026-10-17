@@ -224,11 +224,13 @@
       "acdream.app": {
         "type": "Project",
         "dependencies": {
+          "AcDream.ClientExtensions": "[0.1.25, )",
           "AcDream.Content": "[0.1.25, )",
           "AcDream.Core": "[0.1.25, )",
           "AcDream.Core.Net": "[0.1.25, )",
           "AcDream.Platform": "[0.1.25, )",
           "AcDream.Runtime": "[0.1.25, )",
+          "AcDream.Rynth.Host": "[0.1.25, )",
           "AcDream.UI.Abstractions": "[0.1.25, )",
           "Arch": "[2.1.0, )",
           "Serilog": "[4.0.2, )",
@@ -243,6 +245,12 @@
           "Silk.NET.Vulkan.Extensions.KHR": "[2.23.0, )",
           "Silk.NET.Windowing": "[2.23.0, )",
           "StbTrueTypeSharp": "[1.26.12, )"
+        }
+      },
+      "acdream.clientextensions": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Runtime": "[0.1.25, )"
         }
       },
       "acdream.content": {
@@ -290,6 +298,24 @@
           "AcDream.Platform": "[0.1.25, )",
           "AcDream.Plugin.Abstractions": "[0.1.25, )"
         }
+      },
+      "acdream.rynth.host": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.ClientExtensions": "[0.1.25, )",
+          "AcDream.Runtime": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthTracker": "[0.1.25, )",
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthtracker": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.sdk": {
+        "type": "Project"
       },
       "acdream.ui.abstractions": {
         "type": "Project",

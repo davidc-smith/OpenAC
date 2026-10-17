@@ -650,6 +650,20 @@ public sealed class GameEventWiringTests
     }
 
     [Fact]
+    public void WireAll_KillerNotification_RaisesKillLanded()
+    {
+        var (d, _, combat, _, _) = MakeAll();
+        string? landed = null;
+        combat.KillLanded += (deathMessage, _) => landed = deathMessage;
+        byte[] payload = MakeString16L("You killed the drudge!");
+
+        var env = GameEventEnvelope.TryParse(WrapEnvelope(GameEventType.KillerNotification, payload));
+        d.Dispatch(env!.Value);
+
+        Assert.Equal("You killed the drudge!", landed);
+    }
+
+    [Fact]
     public void WireAll_CombatCommenceAttack_FiresCombatStateEvent()
     {
         var (d, _, combat, _, _) = MakeAll();

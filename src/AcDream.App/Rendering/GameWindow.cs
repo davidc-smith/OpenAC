@@ -280,6 +280,7 @@ public sealed class GameWindow :
     private readonly AcDream.Runtime.Plugins.RuntimeAutomationSurface? _automation;
     private readonly AcDream.App.Input.AppHotkeyRegistry? _hotkeyRegistry;
     private readonly GameRuntime _runtime;
+    private readonly AcDream.App.Extensions.ClientExtensionHost _extensions = new();
     private readonly IDisposable _runtimeHostLease;
     private RuntimeCommunicationState _runtimeCommunication =>
         _runtime.CommunicationOwner;
@@ -533,6 +534,7 @@ public sealed class GameWindow :
         _runtimeHostLease = _runtime.AcquireHostLease(
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
+        _extensions.Attach(_runtime, _automation?.PluginCommands);
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
@@ -1605,6 +1607,7 @@ public sealed class GameWindow :
                     == RuntimeCharacterSelectionLifecycle.InWorld);
         }
         _pluginTick.Feed(dt);
+        _extensions.Tick(dt);
         _renderLoopArmed = false;
     }
 
@@ -1663,6 +1666,7 @@ public sealed class GameWindow :
         if (!_lifetime.HasShutdownRoots)
         {
             PersistKeyBindingsAtShutdown();
+            _extensions.Dispose();
             _audioMixerCommand?.Dispose();
             if (_runtime.Session.IsInWorld)
                 _statusWriter.Disconnected(_options.SessionId ?? "app", "stopped");

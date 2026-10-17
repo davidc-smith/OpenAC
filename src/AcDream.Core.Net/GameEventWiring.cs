@@ -522,6 +522,7 @@ public static class GameEventWiring
             var p = GameEvents.ParseKillerNotification(e.Payload.Span);
             // Same handler/type as VictimNotification above — 0x00 Default.
             if (p is not null) chat.OnCombatLine(p.Value.DeathMessage, logTextType: 0x00u, kind: CombatLineKind.Info);
+            if (p is not null) combat.OnKillerNotification(p.Value.DeathMessage, 0u);
         });
 
         // ── Spells ────────────────────────────────────────────────

@@ -38,6 +38,8 @@
     <ProjectReference Include="..\AcDream.Content\AcDream.Content.csproj" />
     <ProjectReference Include="..\AcDream.Platform\AcDream.Platform.csproj" />
     <ProjectReference Include="..\AcDream.UI.Abstractions\AcDream.UI.Abstractions.csproj" />
+    <ProjectReference Include="..\AcDream.ClientExtensions\AcDream.ClientExtensions.csproj" />
+    <ProjectReference Include="..\AcDream.Rynth.Host\AcDream.Rynth.Host.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="Rendering\Shaders\*.*">
