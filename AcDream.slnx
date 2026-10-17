@@ -13,6 +13,8 @@
     <Project Path="src/AcDream.PluginCheck/AcDream.PluginCheck.csproj" />
     <Project Path="src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj" />
     <Project Path="src/AcDream.Runtime/AcDream.Runtime.csproj" />
+    <Project Path="src/AcDream.Rynth.Plugin.RynthTracker/AcDream.Rynth.Plugin.RynthTracker.csproj" />
+    <Project Path="src/AcDream.Rynth.Sdk/AcDream.Rynth.Sdk.csproj" />
     <Project Path="src/AcDream.UI.Abstractions/AcDream.UI.Abstractions.csproj" />
   </Folder>
   <Folder Name="/samples/">

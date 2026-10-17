@@ -1,0 +1,6 @@
+<Project>
+  <!-- external/ holds third-party submodules (RynthCore, RynthSuite) that are compiled
+       through our own wrapper projects under src/. This file stops the repo-wide
+       Directory.Build.props (warnings as errors, lock files) from reaching their
+       own project files. -->
+</Project>
