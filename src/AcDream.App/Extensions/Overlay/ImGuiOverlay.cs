@@ -52,6 +52,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     {
         ArgumentNullException.ThrowIfNull(renderer);
         ArgumentNullException.ThrowIfNull(windowSize);
+        if (_context != IntPtr.Zero || _renderer is not null)
+            throw new InvalidOperationException("ImGuiOverlay is already initialized.");
         try
         {
             _context = ImGui.CreateContext();
@@ -64,6 +66,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             unsafe { io.NativePtr->IniFilename = null; }
             _renderer = renderer;
             _windowSize = windowSize;
+            Input.Accepting = true;
             _log($"[ImGui] overlay started (ImGui {ImGui.GetVersion()})");
         }
         catch (Exception error)
@@ -75,7 +78,13 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
     public void BeginFrame(float deltaSeconds)
     {
-        if (!IsAvailable || _frameOpen)
+        if (!IsAvailable)
+        {
+            Input.Clear();
+            return;
+        }
+
+        if (_frameOpen)
             return;
         try
         {
@@ -83,7 +92,13 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             ImGuiIOPtr io = ImGui.GetIO();
             (Vector2 points, Vector2 pixels) = _windowSize!();
             if (points.X <= 0 || points.Y <= 0)
+            {
+                Input.Clear();
+                WantsMouse = false;
+                WantsKeyboard = false;
                 return;
+            }
+
             Vector2 scale = pixels / points;
             io.DisplaySize = points;
             io.DisplayFramebufferScale = scale;
@@ -121,6 +136,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
         try
         {
+            ImGui.SetCurrentContext(_context);
             ImGui.Render();
             _frameOpen = false;
             ImDrawDataPtr drawData = ImGui.GetDrawData();
@@ -156,20 +172,30 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
     public void Dispose()
     {
+        Input.Accepting = false;
+        Input.Clear();
         AbortFrame();
         _callbacks.Clear();
-        _renderer?.Dispose();
-        _renderer = null;
-        if (_context != IntPtr.Zero)
+        try
         {
-            ImGui.DestroyContext(_context);
-            _context = IntPtr.Zero;
+            _renderer?.Dispose();
+        }
+        finally
+        {
+            _renderer = null;
+            if (_context != IntPtr.Zero)
+            {
+                ImGui.DestroyContext(_context);
+                _context = IntPtr.Zero;
+            }
         }
     }
 
     private void Fail(string stage, Exception error)
     {
         _failed = true;
+        Input.Accepting = false;
+        Input.Clear();
         WantsMouse = false;
         WantsKeyboard = false;
         _log($"[ImGui] overlay stopped at {stage}: {error.GetType().Name}: {error.Message}");

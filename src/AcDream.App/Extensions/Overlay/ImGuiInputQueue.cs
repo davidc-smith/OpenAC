@@ -13,6 +13,16 @@ internal sealed class ImGuiInputQueue
     private readonly object _gate = new();
     private readonly List<Action<ImGuiIOPtr>> _pending = new();
 
+    /// <summary>Events are dropped while false (overlay inert), so nothing piles up.</summary>
+    public bool Accepting { get; set; }
+
+    /// <summary>Discards everything queued.</summary>
+    public void Clear()
+    {
+        lock (_gate)
+            _pending.Clear();
+    }
+
     public void MouseMove(Vector2 points) => Add(io => io.AddMousePosEvent(points.X, points.Y));
 
     public void MouseButton(MouseButton button, bool down)
@@ -51,7 +61,7 @@ internal sealed class ImGuiInputQueue
         });
     }
 
-    public void Character(char value) => Add(io => io.AddInputCharacter(value));
+    public void Character(char value) => Add(io => io.AddInputCharacterUTF16(value));
 
     /// <summary>Applies everything queued since the last call.</summary>
     public void ApplyTo(ImGuiIOPtr io)
@@ -70,6 +80,9 @@ internal sealed class ImGuiInputQueue
     private void Add(Action<ImGuiIOPtr> apply)
     {
         lock (_gate)
-            _pending.Add(apply);
+        {
+            if (Accepting)
+                _pending.Add(apply);
+        }
     }
 }

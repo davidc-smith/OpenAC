@@ -55,8 +55,10 @@ public sealed class ImGuiOverlayTests : IDisposable
     {
         Start();
         RunFrame();
-        Assert.Equal(1, _renderer.Prepared);
-        Assert.Equal(1, _renderer.Rendered);
+        RunFrame();
+        Assert.Equal(2, _renderer.Prepared);
+        Assert.Equal(new[] { true, true }, _renderer.PreparedBeforeNewFrame);
+        Assert.Equal(new[] { true, true }, _renderer.RenderedAfterOneNewFrame);
     }
 
     [Fact]
@@ -76,6 +78,9 @@ public sealed class ImGuiOverlayTests : IDisposable
     public void AnUnbalancedCallbackDoesNotCrashAndTheNextFrameRenders()
     {
         Start();
+        ImGuiIOPtr io = ImGui.GetIO();
+        Assert.True(io.ConfigErrorRecovery);
+        Assert.False(io.ConfigErrorRecoveryEnableAssert);
         int calls = 0;
         _overlay.AddFrameCallback(() =>
         {
@@ -93,12 +98,18 @@ public sealed class ImGuiOverlayTests : IDisposable
     public void AbortLeavesImGuiBalancedAndIsIdempotent()
     {
         Start();
+        int calls = 0;
+        _overlay.AddFrameCallback(() => { calls++; ImGui.Begin("t"); ImGui.Text("hello"); ImGui.End(); });
         _overlay.AbortFrame();
         _overlay.BeginFrame(1f / 60f);
         _overlay.AbortFrame();
         _overlay.AbortFrame();
+        Assert.Equal(0, calls);
+        Assert.Equal(0, _renderer.Rendered);
         RunFrame();
-        Assert.True(_renderer.Rendered >= 1);
+        RunFrame();
+        Assert.Equal(2, calls);
+        Assert.True(_renderer.LastVertexCount > 0);
     }
 
     [Fact]
@@ -119,9 +130,34 @@ public sealed class ImGuiOverlayTests : IDisposable
         Assert.True(_overlay.WantsMouse);
     }
 
+    [Fact]
+    public void InputQueuedBeforeInitializeNeverReachesImGui()
+    {
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        Start();
+        RunFrame();
+        Vector2 pos = ImGui.GetIO().MousePos;
+        Assert.NotEqual(new Vector2(150, 150), pos);
+    }
+
+    [Fact]
+    public void InitializeTwiceIsRejectedWithoutASecondContext()
+    {
+        Start();
+        IntPtr context = ImGui.GetCurrentContext();
+        Assert.Throws<InvalidOperationException>(Start);
+        Assert.Equal(context, ImGui.GetCurrentContext());
+        RunFrame();
+        Assert.Equal(1, _renderer.Rendered);
+    }
+
     private sealed class FakeRenderer : IImGuiDrawRenderer
     {
         private bool _built;
+        private int _frameCountAfterRender;
+        private int _frameCountAtPrepare;
+        public List<bool> PreparedBeforeNewFrame { get; } = new();
+        public List<bool> RenderedAfterOneNewFrame { get; } = new();
         public int Prepared { get; private set; }
         public int Rendered { get; private set; }
         public int LastVertexCount { get; private set; }
@@ -130,6 +166,8 @@ public sealed class ImGuiOverlayTests : IDisposable
         public void PrepareFrame(ImGuiIOPtr io, Vector2 framebufferScale)
         {
             Prepared++;
+            _frameCountAtPrepare = ImGui.GetFrameCount();
+            PreparedBeforeNewFrame.Add(_frameCountAtPrepare == _frameCountAfterRender);
             LastScale = framebufferScale;
             if (!_built)
             {
@@ -142,6 +180,8 @@ public sealed class ImGuiOverlayTests : IDisposable
         public void Render(ImDrawDataPtr drawData, Vector2 framebufferSize)
         {
             Rendered++;
+            _frameCountAfterRender = ImGui.GetFrameCount();
+            RenderedAfterOneNewFrame.Add(_frameCountAfterRender == _frameCountAtPrepare + 1);
             LastVertexCount = drawData.TotalVtxCount;
         }
 
