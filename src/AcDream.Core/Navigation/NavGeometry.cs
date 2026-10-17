@@ -408,6 +408,57 @@ public sealed class NavGeometry
     }
 
     /// <summary>
+    /// The part of this geometry over a smaller square: the terrains, triangles and
+    /// cylinders that overlap it. A walk planned in stages along a way round builds each
+    /// stage's grid from the geometry captured once for the whole way.
+    /// </summary>
+    public NavGeometry Crop(float originX, float originY, float size)
+    {
+        float right = originX + size;
+        float top = originY + size;
+        bool Overlaps(NavTriangle t) =>
+            MathF.Min(t.A.X, MathF.Min(t.B.X, t.C.X)) < right
+            && MathF.Max(t.A.X, MathF.Max(t.B.X, t.C.X)) > originX
+            && MathF.Min(t.A.Y, MathF.Min(t.B.Y, t.C.Y)) < top
+            && MathF.Max(t.A.Y, MathF.Max(t.B.Y, t.C.Y)) > originY;
+        return new NavGeometry(
+            originX,
+            originY,
+            size,
+            [.. Terrains.Where(t => t.OriginX < right && t.OriginX + LandblockSize > originX
+                && t.OriginY < top && t.OriginY + LandblockSize > originY)],
+            [.. CellTriangles.Where(Overlaps)],
+            [.. ObjectTriangles.Where(Overlaps)],
+            [.. Cylinders.Where(c => c.Base.X + c.Radius > originX && c.Base.X - c.Radius < right
+                && c.Base.Y + c.Radius > originY && c.Base.Y - c.Radius < top)],
+            [.. ShellTriangles.Where(Overlaps)])
+        {
+            LandblockIds = LandblockIds,
+            ObjectFingerprint = ObjectFingerprint,
+            ObjectIds = ObjectIds,
+        };
+    }
+
+    /// <summary>
+    /// The square the terrain of every resident landblock spans together, or false
+    /// when none is resident: the most a way round can be planned over.
+    /// </summary>
+    public static bool TryMeasureResident(PhysicsEngine engine, out Vector2 minimum, out Vector2 maximum)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        minimum = new Vector2(float.PositiveInfinity);
+        maximum = new Vector2(float.NegativeInfinity);
+        foreach (uint landblockId in engine.LandblockIds)
+        {
+            if (!engine.TryGetLandblockCollision(landblockId, out _, out _, out Vector3 offset))
+                continue;
+            minimum = Vector2.Min(minimum, new Vector2(offset.X, offset.Y));
+            maximum = Vector2.Max(maximum, new Vector2(offset.X + LandblockSize, offset.Y + LandblockSize));
+        }
+        return minimum.X <= maximum.X;
+    }
+
+    /// <summary>
     /// The horizontal extent of a resident landblock's interior cells, or false
     /// when the physics world holds none for it.
     /// </summary>
