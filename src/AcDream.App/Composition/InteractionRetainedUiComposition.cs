@@ -462,6 +462,11 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
             d.Communication.FilterLanguageSource = () =>
                 d.Character.Options.GetOptionBit(CharacterOptionId.FilterLanguage);
 
+            // Whether this server's levels run past the experience table is
+            // the player's choice on the Config page, remembered between runs.
+            d.Character.ExtendedLevelCurve =
+                d.Settings.LayoutStore?.LoadMisc().ExtendedLevels ?? false;
+
             var characterTitleResolver = new CharacterTitleResolver(d.Dats);
             var characterUiStrings = new DatStringResolver(d.Dats);
             var characterSheet = new CharacterSheetProvider(
@@ -492,6 +497,7 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                         statId,
                         credits),
                 titles: d.Character.Titles,
+                extendedLevels: () => d.Character.ExtendedLevelCurve,
                 resolveDisplayTitle: titleId =>
                 {
                     lock (d.DatLock) return characterTitleResolver.Resolve(titleId);
@@ -895,7 +901,15 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                         : () => d.RenderPackCatalog.Revision,
                     LoadRenderPackFailureNotice: d.RenderPackDiagnostics is null
                         ? null
-                        : () => d.RenderPackDiagnostics().FailureReason),
+                        : () => d.RenderPackDiagnostics().FailureReason,
+                    ExtendedLevels: new ConfigOptionsPageController.ExtendedLevelsBindings(
+                        Load: () => d.Character.ExtendedLevelCurve,
+                        Save: value =>
+                        {
+                            d.Character.ExtendedLevelCurve = value;
+                            if (d.Settings.LayoutStore is { } store)
+                                store.SaveMisc(store.LoadMisc() with { ExtendedLevels = value });
+                        })),
                 Social: new SocialRuntimeBindings(
                     () => d.Runtime.Fellowship.Snapshot,
                     () => d.Runtime.Allegiance.Snapshot,

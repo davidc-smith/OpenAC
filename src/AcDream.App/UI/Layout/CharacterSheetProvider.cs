@@ -33,6 +33,8 @@ public sealed class CharacterSheetProvider
 
     private readonly Func<string, string?>? _resolveUiString;
 
+    private readonly Func<bool>? _extendedLevels;
+
     public DatReaderWriter.DBObjs.SkillTable? SkillTable { get; set; }
 
     public DatReaderWriter.DBObjs.ExperienceTable? ExperienceTable { get; set; }
@@ -50,7 +52,8 @@ public sealed class CharacterSheetProvider
         Action<uint, uint>? sendTrainSkill = null,
         RuntimeCharacterTitleState? titles = null,
         Func<uint, string?>? resolveDisplayTitle = null,
-        Func<string, string?>? resolveUiString = null)
+        Func<string, string?>? resolveUiString = null,
+        Func<bool>? extendedLevels = null)
     {
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _localPlayer = localPlayer ?? throw new ArgumentNullException(nameof(localPlayer));
@@ -65,6 +68,7 @@ public sealed class CharacterSheetProvider
         _titles = titles;
         _resolveDisplayTitle = resolveDisplayTitle;
         _resolveUiString = resolveUiString;
+        _extendedLevels = extendedLevels;
     }
 
     public IDisposable SubscribeChanged(Action changed)
@@ -326,9 +330,15 @@ public sealed class CharacterSheetProvider
 
     private (long toNext, float fraction, bool noNextLevel) ComputeLevelXp(
         int level, long totalXp) =>
-        LevelProgress.Measure(ExperienceTable?.Levels, level, totalXp) is { } progress
+        LevelProgress.Measure(LevelCurve(), level, totalXp) is { } progress
             ? (progress.ToNext, progress.Fraction, progress.NoNextLevel)
             : (0L, 0f, false);
+
+    /// <summary>The table's level curve, extended past its top when the player has chosen that.</summary>
+    private IReadOnlyList<ulong>? LevelCurve() =>
+        ExperienceTable?.Levels is { } levels && _extendedLevels?.Invoke() == true
+            ? ExtendedLevelCurve.Extend(levels)
+            : ExperienceTable?.Levels;
 
     private long[] BuildAttributeRaiseCosts(int amount)
     {

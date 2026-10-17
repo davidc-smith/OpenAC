@@ -121,7 +121,17 @@ public static class ConfigOptionsPageController
         /// <summary>Applies a chat face/size pair to the live chat windows, called after
         /// <see cref="SaveChat"/> so the choice is both stored and live.</summary>
         public Action<int, int>? ApplyChatFont { get; init; }
+
+        /// <summary>The Extended Levels row's switch; the row is left out without it.</summary>
+        public ExtendedLevelsBindings? ExtendedLevels { get; init; }
     }
+
+    /// <summary>
+    /// Whether levels past the experience table are measured on ACECustom's
+    /// curve. <c>Save</c> both remembers the choice and applies it, so the
+    /// character sheet changes as the box is ticked.
+    /// </summary>
+    public sealed record ExtendedLevelsBindings(Func<bool> Load, Action<bool> Save);
 
     /// <summary>
     /// How the mixer rows read and change the mixer settings: the same
@@ -1324,6 +1334,30 @@ public static class ConfigOptionsPageController
             defaultValue: 1,
             storeOnly: false,
             resolveSprite, datFont, debugFont);
+
+        // Extended Levels: servers built on ACECustom raise characters past
+        // 275, which the retail client cannot measure. Not a retail option,
+        // so it is built with explicit text like the Graphics rows.
+        if (bindings.ExtendedLevels is { } extendedLevels)
+        {
+            BuildExplicitToggleRow(
+                listBox,
+                "Extended Levels",
+                MiscSettings.Default.ExtendedLevels,
+                page,
+                read: extendedLevels.Load,
+                apply: value =>
+                {
+                    extendedLevels.Save(value);
+                    return true;
+                },
+                isCurrent: static () => true,
+                tooltip:
+                    "Measure levels past 275 the way ACECustom servers raise "
+                    + "them, so the experience meter and the experience to the "
+                    + "next level keep counting. Leave off on other servers: "
+                    + "past 275 they show nothing to earn.");
+        }
 
         chat = bindings.LoadChat();
     }

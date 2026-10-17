@@ -953,6 +953,46 @@ public sealed class ConfigOptionsPageControllerTests
     }
 
     [Fact]
+    public void ExtendedLevelsBindings_append_one_toggle_that_writes_through_them()
+    {
+        ImportedLayout layout = FixtureLoader.LoadOptionsPanelHost();
+        OptionsPanelController controller = OptionsPanelController.Bind(
+            layout,
+            new OptionsPanelController.Callbacks(
+                Toggle: () => { },
+                RequestExitToCharacterSelection: () => { },
+                ExitGame: () => { },
+                UseMouseTurningSettings: () => { },
+                DisplaySystemMessage: _ => { }))!;
+        bool extended = false;
+        var saves = new List<bool>();
+        var fake = new FakeBindings();
+
+        bool bound = ConfigOptionsPageController.Bind(
+            layout,
+            controller.ConfigPage,
+            MakeTemplateResolver(),
+            (_, _) => null,
+            fake.ToBindings() with
+            {
+                ExtendedLevels = new ConfigOptionsPageController.ExtendedLevelsBindings(
+                    Load: () => extended,
+                    Save: value => { extended = value; saves.Add(value); }),
+            });
+
+        Assert.True(bound);
+        Assert.Equal(40, controller.ConfigPage.Rows.Count);
+        var row = Assert.IsType<BoolOptionRow>(controller.ConfigPage.Rows[^1]);
+        Assert.False(row.DefaultValue);
+        Assert.False(row.Current);
+
+        row.SetCurrentValue(true);
+
+        Assert.True(extended);
+        Assert.Equal([true], saves);
+    }
+
+    [Fact]
     public void MenuRow_ChatFontFace_ReachesApplyChatFont_WithNoApplyButton_Issue72()
     {
         (OptionsPanelController controller, FakeBindings bindings, _) = BindReal();

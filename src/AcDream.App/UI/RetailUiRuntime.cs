@@ -154,7 +154,8 @@ public sealed record OptionsRuntimeBindings(
     Func<IReadOnlyList<Layout.ConfigOptionsPageController.RenderPackChoice>>?
         LoadRenderPackChoices = null,
     Func<long>? LoadRenderPackCatalogRevision = null,
-    Func<string?>? LoadRenderPackFailureNotice = null);
+    Func<string?>? LoadRenderPackFailureNotice = null,
+    Layout.ConfigOptionsPageController.ExtendedLevelsBindings? ExtendedLevels = null);
 
 public sealed record SocialRuntimeBindings(
     Func<AcDream.Runtime.RuntimeFellowshipSnapshot> FellowshipSnapshot,
@@ -2835,6 +2836,7 @@ public sealed class RetailUiRuntime : IDisposable
                         }
                         : null,
                     ApplyChatFont = ApplyChatFont,
+                    ExtendedLevels = _bindings.Options.ExtendedLevels,
                 },
                 resolveSprite: _bindings.Assets.ResolveSprite,
                 datFont: _bindings.Assets.DefaultFont,
@@ -3290,14 +3292,12 @@ public sealed class RetailUiRuntime : IDisposable
     }
 
     /// <summary>The experience a fellow needs to go from their level to the next.</summary>
-    private static long ExperienceToRaiseLevel(
-        DatReaderWriter.DBObjs.ExperienceTable? table, uint level)
+    private static long ExperienceToRaiseLevel(IReadOnlyList<ulong>? levels, uint level)
     {
-        var levels = table?.Levels;
-        if (levels is null || level + 1 >= levels.Length)
+        if (levels is null || level + 1 >= levels.Count)
             return 0L;
-        ulong current = levels[level];
-        ulong next = levels[level + 1];
+        ulong current = levels[(int)level];
+        ulong next = levels[(int)level + 1];
         return next > current ? (long)Math.Min(next - current, (ulong)long.MaxValue) : 0L;
     }
 
@@ -3379,7 +3379,12 @@ public sealed class RetailUiRuntime : IDisposable
                         return fellowshipStrings.ResolveTemplate(tableId, keyHash, variables);
                     }
                 },
-                ExperienceToRaiseLevel: level => ExperienceToRaiseLevel(experienceTable, level)),
+                ExperienceToRaiseLevel: level => ExperienceToRaiseLevel(
+                    experienceTable?.Levels is { } levels
+                        && _bindings.Options.ExtendedLevels?.Load() == true
+                            ? AcDream.Core.Player.ExtendedLevelCurve.Extend(levels)
+                            : experienceTable?.Levels,
+                    level)),
             Allegiance: new Layout.SocialAllegiancePageController.Bindings(
                 Snapshot: _bindings.Social.AllegianceSnapshot,
                 Monarch: _bindings.Social.AllegianceMonarch,
