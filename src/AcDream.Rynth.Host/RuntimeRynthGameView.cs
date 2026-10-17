@@ -8,8 +8,17 @@ public sealed class RuntimeRynthGameView : IRynthGameView
 {
     private readonly GameRuntime _runtime;
 
-    public RuntimeRynthGameView(GameRuntime runtime) =>
+    private readonly Func<string, bool>? _submitChatCommand;
+
+    public RuntimeRynthGameView(GameRuntime runtime, Func<string, bool>? submitChatCommand = null)
+    {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _submitChatCommand = submitChatCommand;
+    }
+
+    public uint SelectedObjectId => _runtime.ActionOwner.Selection.SelectedObjectId ?? 0u;
+
+    public bool SubmitChatCommand(string text) => _submitChatCommand?.Invoke(text) ?? false;
 
     public uint PlayerId => _runtime.PlayerIdentity.ServerGuid;
 

@@ -44,6 +44,8 @@ public sealed unsafe class RynthApiTable : IDisposable
         Native->GetObjectNameFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint, IntPtr>)&GetObjectName;
         Native->GetObjectQuadPropertyFn =
             (IntPtr)(delegate* unmanaged[Cdecl]<uint, uint, long*, int>)&GetObjectQuadProperty;
+        Native->InvokeChatParserFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, int>)&InvokeChatParser;
+        Native->GetSelectedItemIdFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint>)&GetSelectedItemId;
     }
 
     /// <summary>The table, in native memory, for as long as this object lives.</summary>
@@ -153,6 +155,39 @@ public sealed unsafe class RynthApiTable : IDisposable
         catch (Exception error)
         {
             table.Fail(nameof(GetObjectQuadProperty), error);
+            return 0;
+        }
+    }
+
+    // RynthCore: runs the text as if typed (ClientHelperHooks.InvokeParser); 1 = handled.
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int InvokeChatParser(IntPtr textUtf16)
+    {
+        RynthApiTable? table = _current;
+        if (table is null || textUtf16 == IntPtr.Zero)
+            return 0;
+        try
+        {
+            string text = Marshal.PtrToStringUni(textUtf16) ?? string.Empty;
+            return text.Trim().Length > 0 && table._view.SubmitChatCommand(text.Trim()) ? 1 : 0;
+        }
+        catch (Exception error)
+        {
+            table.Fail(nameof(InvokeChatParser), error);
+            return 0;
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static uint GetSelectedItemId()
+    {
+        RynthApiTable? table = _current;
+        if (table is null)
+            return 0;
+        try { return table._view.SelectedObjectId; }
+        catch (Exception error)
+        {
+            table.Fail(nameof(GetSelectedItemId), error);
             return 0;
         }
     }

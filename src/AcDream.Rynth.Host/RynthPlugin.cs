@@ -16,10 +16,14 @@ public sealed unsafe class RynthPlugin
     public RynthPlugin(string name, RynthPluginExports exports)
     {
         Name = name;
+        Owner.DisplayName = name;
         _exports = exports;
     }
 
     public string Name { get; }
+
+    /// <summary>This plugin's identity in RynthCore's script-window registry.</summary>
+    internal RynthCore.Engine.Plugins.LoadedPlugin Owner { get; } = new();
 
     /// <summary>Initialised and not yet shut down.</summary>
     public bool IsActive { get; private set; }
@@ -29,7 +33,9 @@ public sealed unsafe class RynthPlugin
     {
         if (!_exports.TryGet("RynthPluginInit", out IntPtr init))
             return -1;
-        int result = ((delegate* unmanaged[Cdecl]<RynthCoreApiNative*, int>)init)(api);
+        int result;
+        using (RynthDispatch.Enter(this))
+            result = ((delegate* unmanaged[Cdecl]<RynthCoreApiNative*, int>)init)(api);
         IsActive = result == 0;
         return result;
     }
@@ -51,7 +57,10 @@ public sealed unsafe class RynthPlugin
     public void OnUpdateHealth(uint targetId, float healthRatio)
     {
         if (IsActive && _exports.TryGet("RynthPluginOnUpdateHealth", out IntPtr export))
+        {
+            using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
             ((delegate* unmanaged[Cdecl]<uint, float, uint, uint, void>)export)(targetId, healthRatio, 0, 0);
+        }
     }
 
     /// <summary>The eat flag is passed but ignored (the client shows the line regardless).</summary>
@@ -60,6 +69,7 @@ public sealed unsafe class RynthPlugin
         if (!IsActive || !_exports.TryGet("RynthPluginOnChatWindowText", out IntPtr export))
             return;
         int eat = 0;
+        using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
         fixed (char* textUtf16 = text)
         {
             ((delegate* unmanaged[Cdecl]<IntPtr, int, IntPtr, void>)export)(
@@ -67,10 +77,29 @@ public sealed unsafe class RynthPlugin
         }
     }
 
+    /// <summary>
+    /// Text typed in the chat bar, offered to the plugin before the client
+    /// handles it. Returns true when the plugin ate it. Like RynthCore, this
+    /// runs outside the dispatch scope.
+    /// </summary>
+    public bool OnChatBarEnter(string text)
+    {
+        if (!IsActive || !_exports.TryGet("RynthPluginOnChatBarEnter", out IntPtr export))
+            return false;
+        int eat = 0;
+        fixed (char* textUtf16 = text)
+        {
+            ((delegate* unmanaged[Cdecl]<IntPtr, IntPtr, void>)export)((IntPtr)textUtf16, (IntPtr)(&eat));
+        }
+
+        return eat != 0;
+    }
+
     public void OnKillNotification(string deathMessage)
     {
         if (!IsActive || !_exports.TryGet("RynthPluginOnKillNotification", out IntPtr export))
             return;
+        using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
         fixed (char* textUtf16 = deathMessage)
         {
             ((delegate* unmanaged[Cdecl]<IntPtr, void>)export)((IntPtr)textUtf16);
@@ -82,6 +111,7 @@ public sealed unsafe class RynthPlugin
     {
         if (!IsActive || !_exports.TryGet(entryPoint, out IntPtr export))
             return null;
+        using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
         IntPtr result = ((delegate* unmanaged[Cdecl]<IntPtr>)export)();
         return result == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(result);
     }
@@ -97,12 +127,18 @@ public sealed unsafe class RynthPlugin
     private void CallVoid(string entryPoint)
     {
         if (IsActive && _exports.TryGet(entryPoint, out IntPtr export))
+        {
+            using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
             ((delegate* unmanaged[Cdecl]<void>)export)();
+        }
     }
 
     private void CallObject(string entryPoint, uint objectId)
     {
         if (IsActive && _exports.TryGet(entryPoint, out IntPtr export))
+        {
+            using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
             ((delegate* unmanaged[Cdecl]<uint, void>)export)(objectId);
+        }
     }
 }

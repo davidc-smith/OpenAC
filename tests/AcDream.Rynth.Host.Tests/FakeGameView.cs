@@ -17,6 +17,14 @@ internal sealed class FakeGameView : IRynthGameView
     public Dictionary<(uint Object, uint Property), long> Int64s { get; } = new();
     public List<(string Text, int ChatType)> ChatLines { get; } = new();
     public bool Throw { get; set; }
+    public uint SelectedObjectId { get; set; }
+    public List<string> SubmittedCommands { get; } = new();
+
+    public bool SubmitChatCommand(string text)
+    {
+        SubmittedCommands.Add(text);
+        return true;
+    }
 
     public bool TryGetObjectName(uint objectId, out string name)
     {
