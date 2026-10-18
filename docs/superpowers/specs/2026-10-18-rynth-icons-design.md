@@ -74,6 +74,8 @@ Every returned value is an ImGui texture id for `ImGui.Image`. Game thread only
   `ObjectIcon` use the backend's methods of the same name.
 - A UI texture handle `h` becomes ImGui texture id `h`; the handle-to-slot rule
   (`UiTextureTableHandle.ToSlot`, slot = h - 1) is applied in the renderer.
+  The font atlas's id becomes its handle too (slot + 1), so an icon handle can
+  never equal the atlas id.
 - Each handle it hands out goes into a set the renderer reads (`IsIssued`).
 - Exceptions from the backend are caught, logged once per id and kind, and
   give 0 (the replay then draws its placeholder).
@@ -87,8 +89,8 @@ binds it (once; later calls are ignored and logged). Keeps the merged-font
 list and passes it to the renderer.
 
 **`ImGuiVulkanRenderer`**:
-- `IsDrawableTexture` becomes: the atlas slot, or an id the icon service
-  issued (then the slot is `id - 1`). Everything else is still skipped and
+- `IsDrawableTexture` becomes `TryGetDrawSlot`: the atlas's handle, or an id
+  the icon service issued; either way the slot is `id - 1`. Everything else is still skipped and
   reported once.
 - `PrepareFrame` merges each registered font after `AddFontDefault`, at
   `FontSizePoints * scale * font.Scale`, with `MergeMode = true`,
