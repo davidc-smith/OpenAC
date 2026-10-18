@@ -1,5 +1,7 @@
 # RynthAi Combat and Buffs Live (RynthAi sub-project #3) Implementation Plan
 
+> **Status (2026-10-18):** Tasks 1–4 done and reviewed, plus a final whole-branch review and one fix wave (1c600393): the retail no-components line, CastSpell answers 1 unless Unavailable, and status lines are delivered once per tick. Task 5 (live check) not yet run.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** RynthAi's combat manager and buff manager work against a live server. The RynthCore table fills the cast, cast-gate, attack, cancel, target-vitals, use-on and object-enchantment slots. The host raises the callbacks RynthAi's combat and buffing read: busy count, selected target, combat mode, combat damage, enchantments, absolute health, and client status lines.
@@ -1565,6 +1567,9 @@ git commit -m "feat(rynth): forward busy, selection, mode, damage, enchantment, 
 - [ ] A healing kit is used on self when health drops (if a kit is in the pack).
 - [ ] The client log has no `threw` lines from `RynthApiTable`.
 - [ ] #2 items: the dashboard shows vitals and combat mode, and `/ra` basic actions work.
+- [ ] With a buff and a war spell whose components are missing, RynthAi shows "You don't have all the components for this spell." once, then backs off (a family cooldown for buffs, a lower tier for war). There is no retry every 400 ms.
+- [ ] Casting while walking: the cast gate (pending motions) does not hold casts for long, and RynthAi's own pre-cast stop takes over.
+- [ ] Cancelling during a melee swing the server is repeating stops the swing, and the next attack goes out.
 
 **Verify:** the live run above, with the user watching. Capture the client log lines (`grep -i "rynth\|threw"`) and the user's confirmation for each criterion.
 
