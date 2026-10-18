@@ -45,6 +45,7 @@ public sealed unsafe class RynthHost : IDisposable
     public void Tick()
     {
         Bridge.DeliverQueued();
+        _table.Holds.Sync();
         foreach (RynthPlugin plugin in _plugins)
             plugin.Tick();
     }

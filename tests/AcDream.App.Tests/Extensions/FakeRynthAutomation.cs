@@ -169,9 +169,18 @@ internal sealed class FakeRecovery : IRecoveryAutomation
 internal sealed class FakeNavigation : INavigationAutomation
 {
     public PluginNavigationSnapshot Snapshot { get; set; }
-    public PluginNavigationCommandStatus SetMovementIntent(in PluginMovementIntent intent) =>
-        PluginNavigationCommandStatus.Unavailable;
-    public PluginNavigationCommandStatus ClearMovementIntent() => PluginNavigationCommandStatus.Unavailable;
+    public List<PluginMovementIntent?> Intents { get; } = new();
+    public PluginNavigationCommandStatus Answer { get; set; } = PluginNavigationCommandStatus.Accepted;
+    public PluginNavigationCommandStatus SetMovementIntent(in PluginMovementIntent intent)
+    {
+        Intents.Add(intent);
+        return Answer;
+    }
+    public PluginNavigationCommandStatus ClearMovementIntent()
+    {
+        Intents.Add(null);
+        return Answer;
+    }
     public bool TryGetObject(uint objectId, out PluginNavigationObject value)
     {
         value = default;

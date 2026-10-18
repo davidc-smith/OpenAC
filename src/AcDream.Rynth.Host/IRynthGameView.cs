@@ -151,4 +151,31 @@ public interface IRynthGameView
 
     /// <summary>Uses one object on another (a kit on the player, a mana stone on an item). True when sent.</summary>
     bool UseObjectOn(uint sourceObjectId, uint targetObjectId);
+
+    /// <summary>True while the player's autorun is on.</summary>
+    bool AutoRunActive { get; }
+
+    /// <summary>Turns autorun on or off. True when taken.</summary>
+    bool SetAutoRun(bool enabled);
+
+    /// <summary>Turns the player to a compass heading at once (0 north, clockwise). True when taken.</summary>
+    bool SnapHeading(float headingDegrees);
+
+    /// <summary>Holds movement keys for the player, replacing the keyboard while held. True when taken.</summary>
+    bool SetMovementIntent(in AcDream.Plugin.Abstractions.PluginMovementIntent intent);
+
+    /// <summary>Lets go of every held movement key. True when taken.</summary>
+    bool ClearMovementIntent();
+
+    /// <summary>Stops the player completely, autorun included. True when taken.</summary>
+    bool StopCompletely();
+
+    /// <summary>Charges a jump to a power of 0..1 over the frames that takes, then releases it. True when taken.</summary>
+    bool BeginJump(float power);
+
+    /// <summary>An object's raw physics-state bits (0x4 ethereal: an open door); false when the object is unknown.</summary>
+    bool TryGetObjectState(uint objectId, out uint state);
+
+    /// <summary>Whether an object's last motion was On (true) or Off (false); false when neither has been seen.</summary>
+    bool TryGetObjectMotionOn(uint objectId, out bool isOn);
 }

@@ -26,6 +26,9 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     private static RynthApiTable? _current;
 
     private readonly IRynthGameView _view;
+
+    /// <summary>The held movement keys RynthCore's SetMotion and jump slots keep.</summary>
+    internal RynthMotionHolds Holds { get; }
     private readonly Action<string> _log;
     private readonly bool _scriptWindows;
     private IntPtr _nameBuffer;
@@ -41,6 +44,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
             throw new InvalidOperationException("Only one RynthApiTable can be live at a time.");
 
         _view = view;
+        Holds = new RynthMotionHolds(view);
         _log = log;
         _scriptWindows = scriptWindows;
         Native = (RynthCoreApiNative*)NativeMemory.AllocZeroed((nuint)sizeof(RynthCoreApiNative));
@@ -71,6 +75,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         BindStateSlots();
         BindActionSlots();
         BindCombatSlots();
+        BindMovementSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;

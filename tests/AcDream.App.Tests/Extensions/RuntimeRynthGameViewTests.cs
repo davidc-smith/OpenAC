@@ -437,6 +437,50 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal(cell, objectCell);
     }
 
+    [Fact]
+    public void MovementGoesThroughTheSurfaceAndTheMovementOwner()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var automation = new FakeRynthAutomation();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.SetMovementIntent(new PluginMovementIntent(Forward: true)));
+        Assert.True(view.ClearMovementIntent());
+        Assert.Equal(new PluginMovementIntent?[] { new PluginMovementIntent(Forward: true), null }, automation.NavigationArea.Intents);
+
+        Assert.True(view.SetAutoRun(true));
+        Assert.True(view.AutoRunActive);
+        Assert.True(view.StopCompletely());
+        Assert.False(view.AutoRunActive);
+
+        automation.Available = false;
+        Assert.False(view.SetAutoRun(true));
+        Assert.False(view.SnapHeading(90f));
+        Assert.False(view.StopCompletely());
+        Assert.False(view.BeginJump(0.5f));
+    }
+
+    [Fact]
+    public void DoorStateComesFromTheEntityRecord()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.False(view.TryGetObjectState(0x7A9B4001, out _));
+        Assert.False(view.TryGetObjectMotionOn(0x7A9B4001, out _));
+
+        RuntimeEntityRecord record = runtime.EntityObjects.Entities.AddActive(Spawn(0x7A9B4001));
+        Assert.True(view.TryGetObjectState(0x7A9B4001, out uint state));
+        Assert.Equal(record.RawPhysicsState, state);
+        Assert.False(view.TryGetObjectMotionOn(0x7A9B4001, out _));
+
+        record.Snapshot = record.Snapshot with { MotionState = new CreateObject.ServerMotionState(Stance: 0x3D, ForwardCommand: 0x000B) };
+        Assert.True(view.TryGetObjectMotionOn(0x7A9B4001, out bool open));
+        Assert.True(open);
+        record.Snapshot = record.Snapshot with { MotionState = new CreateObject.ServerMotionState(Stance: 0x3D, ForwardCommand: 0x000C) };
+        Assert.True(view.TryGetObjectMotionOn(0x7A9B4001, out bool closed));
+        Assert.False(closed);
+    }
+
     private static WorldSession.EntitySpawn Spawn(uint guid)
     {
         var position = new CreateObject.ServerPosition(0x0101FFFFu, 10f, 20f, 5f, 1f, 0f, 0f, 0f);
