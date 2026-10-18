@@ -21,7 +21,7 @@ public static class RynthObjectProperties
             19 => info.Value,
             91 => info.MaxStructure,
             92 => info.Structure,
-            105 => (int)MathF.Round(info.Workmanship),
+            105 => (int)MathF.Round(info.Workmanship, MidpointRounding.AwayFromZero),
             131 => info.MaterialType is uint material ? unchecked((int)material) : null,
             _ => null,
         };

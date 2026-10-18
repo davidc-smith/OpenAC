@@ -1,3 +1,4 @@
+using System.Numerics;
 using AcDream.Core.Items;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
@@ -64,6 +65,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             return false;
         }
 
+        // These tables are the client's live ones, read by plugins on the game thread only.
         PropertyBundle properties = item.Properties;
         // The player's own tables come from the player description first, as
         // TryGetInt64Property reads them.
@@ -112,7 +114,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return [.. ids];
     }
 
-    public bool TryGetObjectPosition(uint objectId, out uint cellId, out System.Numerics.Vector3 origin)
+    public bool TryGetObjectPosition(uint objectId, out uint cellId, out Vector3 origin)
     {
         if (_runtime.EntityObjects.Entities.TryGetActive(objectId, out RuntimeEntityRecord record)
             && record.PhysicsBody is { } body

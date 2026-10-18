@@ -7,7 +7,8 @@ public sealed class RynthObjectPropertiesTests
     private static RynthObjectInfo Item(
         Dictionary<uint, int>? ints = null,
         Dictionary<uint, uint>? dataIds = null,
-        Dictionary<uint, uint>? instanceIds = null) => new()
+        Dictionary<uint, uint>? instanceIds = null,
+        float workmanship = 6.6f) => new()
     {
         ContainerId = 0x50000001,
         WielderId = 0,
@@ -27,7 +28,7 @@ public sealed class RynthObjectPropertiesTests
         ItemsCapacity = 24,
         Structure = 7,
         MaxStructure = 10,
-        Workmanship = 6.6f,
+        Workmanship = workmanship,
         MaterialType = null,
         Identified = false,
         AppraisedSpellIds = [],
@@ -50,6 +51,16 @@ public sealed class RynthObjectPropertiesTests
     public void IntsComeFromTheTypedFields(uint stat, int expected)
     {
         Assert.True(RynthObjectProperties.TryGetInt(Item(), stat, out int value));
+        Assert.Equal(expected, value);
+    }
+
+    [Theory]
+    [InlineData(6.5f, 7)]
+    [InlineData(5.5f, 6)]
+    [InlineData(6.4f, 6)]
+    public void WorkmanshipRoundsHalfAwayFromZero(float workmanship, int expected)
+    {
+        Assert.True(RynthObjectProperties.TryGetInt(Item(workmanship: workmanship), 105, out int value));
         Assert.Equal(expected, value);
     }
 

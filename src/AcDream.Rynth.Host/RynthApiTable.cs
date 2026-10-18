@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RynthCore.Engine.Plugins;
@@ -462,7 +463,7 @@ public sealed unsafe class RynthApiTable : IDisposable
             return 0;
         try
         {
-            if (!table._view.TryGetObjectPosition(objectId, out uint cell, out System.Numerics.Vector3 origin))
+            if (!table._view.TryGetObjectPosition(objectId, out uint cell, out Vector3 origin))
                 return 0;
             *cellId = cell;
             *x = origin.X;
@@ -487,7 +488,7 @@ public sealed unsafe class RynthApiTable : IDisposable
             return 0;
         try
         {
-            if (!table._view.TryGetObjectPosition(table._view.PlayerId, out uint cell, out System.Numerics.Vector3 origin))
+            if (!table._view.TryGetObjectPosition(table._view.PlayerId, out uint cell, out Vector3 origin))
                 return 0;
             *eastWest = (((cell >> 24) & 0xFF) * 8.0 + origin.X / 24.0 - 1019.5) / 10.0;
             *northSouth = (((cell >> 16) & 0xFF) * 8.0 + origin.Y / 24.0 - 1019.5) / 10.0;

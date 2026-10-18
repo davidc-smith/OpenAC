@@ -102,6 +102,22 @@ public sealed unsafe class RynthInventoryTableTests
     }
 
     [Fact]
+    public void TheNativeContentsFunctionReturnsTheFullCountWhenTheBufferIsSmaller()
+    {
+        _view.Contents[Player] = [Sword, Pack, 0x80000030];
+        var (table, _) = Create();
+        using (table)
+        {
+            uint* buffer = stackalloc uint[2];
+            int count = ((delegate* unmanaged[Cdecl]<uint, uint*, int, int>)table.Native->GetContainerContentsFn)(
+                Player, buffer, 2);
+
+            Assert.Equal(3, count);
+            Assert.Equal((Sword, Pack), (buffer[0], buffer[1]));
+        }
+    }
+
+    [Fact]
     public void NamesAndCoordinates()
     {
         _view.AccountName = "acct";
@@ -132,11 +148,22 @@ public sealed unsafe class RynthInventoryTableTests
         var (table, host) = Create();
         using (table)
         {
-            Assert.False(host.TryGetObjectOwnershipInfo(Pack, out _, out _, out _));
             Assert.False(host.TryGetObjectIntProperty(Pack, 6, out _));
+            Assert.False(host.TryGetObjectDataIdProperty(Pack, 8, out _));
+            Assert.False(host.TryGetObjectInstanceIdProperty(Pack, 3, out _));
             Assert.Equal(0, host.GetContainerContents(Player, new uint[4]));
-            Assert.False(host.TryGetWorldName(out _));
+            Assert.False(host.TryGetObjectOwnershipInfo(Pack, out _, out _, out _));
+            Assert.False(host.TryGetObjectWielderInfo(Sword, out _, out _));
+            Assert.False(host.TryGetItemType(Pack, out _));
+            Assert.False(host.TryGetObjectWcid(Pack, out _));
+            Assert.True(host.TryGetObjectBitfield(Pack, out uint bitfield));
+            Assert.Equal(0u, bitfield);
+            Assert.False(host.HasAppraisalData(Sword));
+            Assert.Equal(-1, host.GetObjectSpellIds(Sword, new uint[4], 4));
+            Assert.False(host.TryGetObjectPosition(Player, out _, out _, out _, out _));
             Assert.False(host.TryGetCurCoords(out _, out _));
+            Assert.False(host.TryGetAccountName(out _));
+            Assert.False(host.TryGetWorldName(out _));
             Assert.Contains(_log, line => line.Contains("threw InvalidOperationException", StringComparison.Ordinal));
         }
     }

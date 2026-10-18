@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace AcDream.Rynth.Host;
 
 /// <summary>
@@ -40,5 +42,5 @@ public interface IRynthGameView
     string WorldName { get; }
 
     /// <summary>A world object's cell and its position inside that cell.</summary>
-    bool TryGetObjectPosition(uint objectId, out uint cellId, out System.Numerics.Vector3 origin);
+    bool TryGetObjectPosition(uint objectId, out uint cellId, out Vector3 origin);
 }
