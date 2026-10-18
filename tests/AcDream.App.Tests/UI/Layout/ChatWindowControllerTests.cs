@@ -160,6 +160,38 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
+    public void ExtensionHiddenHidesAndRestoresTheWindow()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.SetExtensionHidden(true);
+        Assert.False(ctrl.Root.Visible);
+        ctrl.SetExtensionHidden(false);
+        Assert.True(ctrl.Root.Visible);
+    }
+
+    [Fact]
+    public void AWindowHiddenBeforeStaysHidden()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.Root.Visible = false;
+        ctrl.SetExtensionHidden(true);
+        ctrl.SetExtensionHidden(false);
+        Assert.False(ctrl.Root.Visible);
+    }
+
+    [Fact]
+    public void AToggleThatShowsTheWindowWhileExtensionHiddenIsUndoneNextTick()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.SetExtensionHidden(true);
+        ctrl.Root.Visible = true;
+        ctrl.SetExtensionHidden(true);
+        Assert.False(ctrl.Root.Visible);
+        ctrl.SetExtensionHidden(false);
+        Assert.True(ctrl.Root.Visible);
+    }
+
+    [Fact]
     public void TypingInThePanelIsTheSharedEntrysDraft()
     {
         var (ctrl, _, entry) = BindOverSharedEntry();

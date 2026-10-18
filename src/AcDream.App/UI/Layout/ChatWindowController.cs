@@ -415,6 +415,33 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
 
     // ── Max/min implementation ─────────────────────────────────────────────
 
+    private bool _extensionHidden;
+    private bool _visibleBeforeExtensionHid;
+
+    /// <summary>
+    /// An extension's chat window took over (IClientChat.SetChatWindowHidden):
+    /// hide this one, and on release put back whatever it was before. Called
+    /// every frame, so a toggle that shows the window meanwhile is undone.
+    /// </summary>
+    internal void SetExtensionHidden(bool hidden)
+    {
+        if (hidden)
+        {
+            if (!_extensionHidden)
+            {
+                _extensionHidden = true;
+                _visibleBeforeExtensionHid = Root.Visible;
+            }
+
+            Root.Visible = false;
+        }
+        else if (_extensionHidden)
+        {
+            _extensionHidden = false;
+            Root.Visible = _visibleBeforeExtensionHid;
+        }
+    }
+
     public void AttachWindow(RetailWindowHandle handle)
     {
         ArgumentNullException.ThrowIfNull(handle);
