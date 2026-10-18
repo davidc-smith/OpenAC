@@ -18,8 +18,13 @@ from the Rynth bar's "Chat" button and sits beside OpenAC's own chat window.
   more stand-in member.
 - **Full input now.** Typing into their input line works (Enter, characters, Esc,
   arrows, Home/End, Up/Down history, Ctrl+V/C/X, Tell, `/r` and `/rt`).
-- **OpenAC's chat window stays.** `ChatHooks.RynthChatOwnsChat` is false, so nothing is
-  hidden or suppressed.
+- **Their chat-ownership rule, unchanged.** Our `ChatHooks` stand-in keeps RynthCore's
+  formula: `RynthChatOwnsChat = SuppressOriginalChat && ChatPanelShown && logged in`.
+  `SuppressOriginalChat` is the "Hide retail chat" box in their chat settings. Ticked,
+  with the Rynth chat open, OpenAC's chat window is hidden and the chat-entry key
+  (Enter) starts typing in Rynth chat. Unticked, OpenAC's chat keeps Enter and Rynth
+  chat is read-only, as in RynthCore. (Their `ChatModel.BeginTyping` and Enter both
+  check this rule, so typing needs it.)
 - **Off in OpenAC:** Discord bridge, RynthNav "Arrow to" / "Go to" links (no RynthNav
   host), the RynthAi dashboard drawer state, Avalonia click-through.
 
@@ -28,7 +33,18 @@ from the Rynth bar's "Chat" button and sits beside OpenAC's own chat window.
 RynthCore's real `ImGui/Win32Backend.cs` and `Compatibility/ChatHooks.cs` exist to run
 injected into retail `acclient.exe`: they subclass AC's window procedure and hook the
 client's memory. OpenAC is not acclient — on Windows, macOS and Linux it is our own
-Silk.NET/GLFW window. Neither file is compiled anywhere. Their chat code references
+Silk.NET/GLFW window. Neither file is compiled anywhere.
+
+Their compiled chat files do contain a few direct Windows calls of their own:
+`ChatData.cs` uses the Win32 clipboard (`OpenClipboard`, `GetClipboardData`, …) and
+`MessageBeep` for mentions. These are ordinary Windows APIs, not acclient hooks: on
+Windows they work in OpenAC's process as written. On macOS and Linux they throw
+`DllNotFoundException` when called. Their beep is already wrapped in `try/catch`. For
+the input line, our keyboard code does paste/copy/cut through the overlay's clipboard
+on non-Windows (paste is fed in through `OnChatChar`). Their "copy lines" (drag or
+menu) and the rule editor's import/export buttons call the Win32 clipboard directly, so
+on macOS/Linux they do nothing. Our panel host logs a `DllNotFoundException` once and
+doesn't count it towards closing the window. Their chat code references
 `Win32Backend.ChatCaptureActive` and the `Win32Backend.OnChat*` hooks by name, so our
 stand-in carries that name, but it is a plain class of those fields with no P/Invoke and
 no window procedure, fed by OpenAC's own keyboard input on every platform. Its doc
@@ -51,8 +67,10 @@ comment says so.
    and `PanelRouter`/`ImGuiPopOuts` if they are self-contained; otherwise stand-ins).
    Warnings-as-errors and analyzers off for this project only, as in ScriptWindows.
 3. **Shared stand-ins.** Engine types used by both ScriptWindows and the chat window
-   (`IImGuiPanel`, `PanelSpec`, `UiFont`, `ImGuiFonts`, `ImGuiPanelHost`, `RynthLog`, …)
-   live in one place so there is one definition of each. They grow to fit their usage
+   (`IImGuiPanel`, `PanelSpec`, `UiFont`, `ImGuiFonts`, `ImGuiPanelHost`, `RynthLog`,
+   `LoginLifecycleHooks`, `PhosphorIcons`) stay in `AcDream.Rynth.ScriptWindows`, which
+   gives `AcDream.Rynth.ChatWindow` access (`InternalsVisibleTo`), so there is one
+   definition of each. They grow to fit their usage
    (`UiFont.Ui9/Ui10/Ui14/Dash9-11`, `ImGuiFonts.Chat`, `PanelSpec.EdgeToEdge`,
    `ImGuiPanelHost.Register/HasFace/BodyGripReserve`). The chat window project's own
    `StandIns/` holds the chat-only ones.
@@ -62,12 +80,17 @@ comment says so.
      `ClientObjectHooks.TryGetObjectName/TryGetItemType`,
      `SessionStateRegistry.LastCharacterName` → `IRynthGameView`.
    - `PanelRouter.Toggle` → the panel host's toggle (Chat ↔ Filters).
-5. **Stand-ins that are off:** `ChatHooks` (`SuppressOriginalChat` false,
-   `RynthChatOwnsChat` false), `Discord.ChatDiscord` (disabled; `ChatDiscordFace` draws
+   - `UiSources.Chat` → their `ChatSource`. Our `RynthChatWindow` polls it on the
+     game thread each tick the way their `UiDataHub.Step` does (only while subscribed,
+     when due), and resets it when the host stops. Start-up does what their
+     `EntryPoint` does: `ChatModel.EnsureSettingsLoaded()`, `ChatModel.InstallInput()`,
+     `ChatFace.Register()`, `ChatFiltersFace.Register()`.
+5. **Stand-ins that are off:** `Discord.ChatDiscord` (disabled; `ChatDiscordFace` draws
    nothing), `RynthNavCommands`/`RynthNavFace` (no-ops), `RynthAiDashboardState`,
    `AvaloniaOverlay.ChatCtrlGatedClickThrough` (false).
-6. **Window and layout.** The chat panel registers with `ImGuiPanelHost` so the bar's
-   "Chat" button (Phosphor icon already mapped) opens it; position and open state go in
+6. **Window and layout.** The chat panel registers with `ImGuiPanelHost`. The bar gets a
+   "Chat" button for it (Phosphor icon already mapped; our bar learns panel buttons
+   beside script-window buttons); position and open state go in
    the existing per-install layout store. Settings and history save where their code
    saves them, under the RynthCore application-data folder like the other plugins.
 
@@ -85,11 +108,22 @@ Right/Home/End/Up/Down/Paste/Copy/Cut/TellSelected/CaptureActivated` and reads
   `Win32Backend` maps them: Enter clears capture and runs `OnChatSend` on the next
   frame (their deferred dispatch), Esc clears capture and runs `OnChatCancel`, Ctrl+V /
   Ctrl+C / Ctrl+X, Shift+Insert / Ctrl+Insert, Backspace, Delete, arrows, Home, End.
-- **Starting capture.** With the chat window open, Enter starts capture
-  (`ChatCaptureActive = true`, `OnChatCaptureActivated`) instead of reaching OpenAC —
-  only when no OpenAC text field has focus and no ImGui text input is active. Clicking
-  their input box starts it too (their own code).
-- **Clipboard** goes through ImGui's clipboard, which works on all three platforms.
+- **Swallowing the Enter tail.** After Enter or Esc ends capture, the sink keeps
+  reporting capture until that key comes back up, so the same keypress can't reach
+  OpenAC and reopen a chat bar (their `_swallowEnterTail`). Control characters are not
+  typed in.
+- **Starting capture.** OpenAC gains a chat seam, `IClientChat` on the extension
+  context: `ClaimChatEntry(Func<bool>)` and `SetChatWindowHidden(bool)`. When OpenAC's
+  `ChatStartCommand` action fires (Enter by default, respecting key bindings; OpenAC
+  already holds actions back while one of its text fields has focus), a claim runs
+  first. Ours succeeds when `RynthChatOwnsChat` is true and capture is off: it sets
+  `ChatCaptureActive` and calls `OnChatCaptureActivated`, and OpenAC's chat bar stays
+  shut. Clicking their input box starts capture too (their own code).
+- **Hiding OpenAC's chat.** Each tick the host passes `RynthChatOwnsChat` to
+  `SetChatWindowHidden`; OpenAC hides or shows its main chat window.
+- **Clipboard.** `IClientOverlay` gains `ClipboardText`, backed by the window's
+  keyboard clipboard (as OpenAC's own text fields use). On Windows our sink calls
+  their `OnChatPaste/Copy/Cut`; elsewhere it uses `ClipboardText` as described above.
 
 ## Testing
 
@@ -105,8 +139,10 @@ Right/Home/End/Up/Down/Paste/Copy/Cut/TellSelected/CaptureActivated` and reads
 - Tests sandbox HOME, XDG and `CFFIXED_USER_HOME` like the other plugin tests.
 - Live check on local ACE (ask first): tabs fill; a filter rule and a colour persist
   across a restart; typing and sending a line and a `/` command work; Esc leaves the
-  game keys working; OpenAC's chat window is unaffected.
+  game keys working; with "Hide retail chat" ticked OpenAC's chat window hides and
+  Enter types in Rynth chat; unticked, OpenAC's chat keeps Enter.
 
 ## Out of scope
 
-Discord bridge, RynthNav links, hiding OpenAC's chat window, the Avalonia chat panel.
+Discord bridge, RynthNav links, the Avalonia chat panel, a native clipboard shim for their
+Win32 clipboard calls on macOS/Linux.
