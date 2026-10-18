@@ -78,12 +78,14 @@ only the `IPanelLayout` interface and the panel host changes.
 New interface in the ScriptWindows project:
 
 ```csharp
+internal readonly record struct PanelRect(Vector2 Pos, Vector2 Size);
+internal readonly record struct PanelPlacement(PanelRect? Rect, bool Open);  // Rect null = never placed by the player
 internal interface IPanelLayout
 {
     PanelPlacement? Get(string key);           // null = nothing saved
-    void Set(string key, PanelPlacement placement);
+    void SetRect(string key, PanelRect rect);  // keeps Open
+    void SetOpen(string key, bool open);       // keeps Rect
 }
-internal readonly record struct PanelPlacement(Vector2 Pos, Vector2 Size, bool Open);
 ```
 
 `ImGuiPanelHost.Layout` (`internal static IPanelLayout? Layout`) is set by the
@@ -99,10 +101,9 @@ Rynth host and cleared at its dispose, like `Log`.
   baseline, so only a later player move or resize saves.
 - **Every frame, after `Begin`:** the host reads `GetWindowPos`/`GetWindowSize`.
   When they differ from the baseline and the left mouse button is up, it calls
-  `Layout.Set` with the new rectangle and `Open = true`, and updates the
-  baseline. That is one save per finished drag or resize.
-- **Open/close:** `Open` and `Close` record the open state with `Layout.Set`
-  (keeping the saved rectangle). Closing by the title bar's X goes through
+  `Layout.SetRect` with the new rectangle and updates the baseline. That is one save per finished drag or resize.
+- **Open/close:** `Open` and `Close` record the open state with
+  `Layout.SetOpen` (the saved rectangle is kept). Closing by the title bar's X goes through
   `Close`, so it's covered.
 - **Unregister** (logout, plugin unload) and **Reset** don't touch the
   layout: a window removed while open stays saved as open.
@@ -164,8 +165,8 @@ Headless ImGui tests (`tests/AcDream.Rynth.Host.Tests`, `HeadlessImGui`):
 - Panel host with a fake `IPanelLayout`:
   - a saved placement positions the window on its first frame;
   - a simulated drag (set `io.MousePos`/`MouseDown` across frames, or
-    `ImGui.SetWindowPos` inside the body) then mouse-up calls `Set` once;
-  - a plugin `RequestPos` is applied and does not call `Set`;
+    `ImGui.SetWindowPos` inside the body) then mouse-up calls `SetRect` once;
+  - a plugin `RequestPos` is applied and does not call `SetRect`;
   - `Open`/`Close` record the open state; `Unregister` doesn't;
   - a saved-open key registered through the real registry (Oracle pipeline,
     as in `ScriptWindowPipelineTests`) is open after the next `DrawAll`, and
@@ -173,7 +174,8 @@ Headless ImGui tests (`tests/AcDream.Rynth.Host.Tests`, `HeadlessImGui`):
 - `RynthBar`: with a `BarItems` entry it draws a window; a click toggles the
   window (drive via the toggle method directly rather than a screen click);
   with no entries it draws nothing.
-- `ClientExtensionHost` passes `StateDirectory` through (App tests).
+- The extension sets `ImGuiPanelHost.Layout` while attached with an overlay
+  and clears it at dispose (App tests).
 
 Live check (asks the user first; local ACE only): `/ro`, move and resize the
 Oracle window, log out and in → it's back in place and open; close it,
