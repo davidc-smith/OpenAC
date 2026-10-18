@@ -100,4 +100,31 @@ public interface IRynthGameView
 
     /// <summary>The server's UseDone and refusal counters.</summary>
     ServerReplySnapshot ServerReplies { get; }
+
+    /// <summary>Selects an object (0 clears). True when it is selected afterwards.</summary>
+    bool SelectObject(uint objectId);
+
+    /// <summary>Uses an object, approaching it first when out of reach. True when sent.</summary>
+    bool UseObject(uint objectId);
+
+    /// <summary>Asks the server to identify (appraise) an object. True when sent.</summary>
+    bool RequestIdentify(uint objectId);
+
+    /// <summary>Asks the server for a creature's health. True when sent.</summary>
+    bool QueryHealth(uint objectId);
+
+    /// <summary>Changes combat mode, in RynthCore's 1/2/4/8. True when sent.</summary>
+    bool ChangeCombatMode(int rynthMode);
+
+    /// <summary>Moves (or, with an amount below the stack, splits) an owned item into a container slot.</summary>
+    bool MoveItem(uint objectId, uint containerId, int slot, int amount);
+
+    /// <summary>Merges one stack into another.</summary>
+    bool MergeStack(uint sourceObjectId, uint targetObjectId);
+
+    /// <summary>Clears every busy reference the client holds.</summary>
+    void ResetBusyCount();
+
+    /// <summary>Wields an item into the given equip slot mask.</summary>
+    bool WieldItem(uint objectId, uint equipMask);
 }

@@ -154,4 +154,25 @@ internal sealed class FakeGameView : IRynthGameView
     public bool IsAttackable(uint objectId) => Read(Attackable).Contains(objectId);
     public uint OpenContainerId => Read(OpenContainer);
     public AcDream.Core.Items.ServerReplySnapshot ServerReplies => Read(Replies);
+
+    public List<string> Actions { get; } = new();
+    public bool ActionAnswer { get; set; } = true;
+
+    private bool Act(string call)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        Actions.Add(call);
+        return ActionAnswer;
+    }
+
+    public bool SelectObject(uint objectId) => Act($"select {objectId:X8}");
+    public bool UseObject(uint objectId) => Act($"use {objectId:X8}");
+    public bool RequestIdentify(uint objectId) => Act($"id {objectId:X8}");
+    public bool QueryHealth(uint objectId) => Act($"health {objectId:X8}");
+    public bool ChangeCombatMode(int rynthMode) => Act($"mode {rynthMode}");
+    public bool MoveItem(uint objectId, uint containerId, int slot, int amount) =>
+        Act($"move {objectId:X8} {containerId:X8} {slot} {amount}");
+    public bool MergeStack(uint sourceObjectId, uint targetObjectId) => Act($"merge {sourceObjectId:X8} {targetObjectId:X8}");
+    public void ResetBusyCount() => Act("reset busy");
+    public bool WieldItem(uint objectId, uint equipMask) => Act($"wield {objectId:X8} {equipMask:X8}");
 }

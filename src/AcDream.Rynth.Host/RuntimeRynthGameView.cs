@@ -1,6 +1,7 @@
 using System.Numerics;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
+using AcDream.Core.Selection;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
@@ -308,4 +309,46 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             merged.Strings[pair.Key] = pair.Value;
         return merged;
     }
+
+    public bool SelectObject(uint objectId)
+    {
+        SelectionState selection = _runtime.ActionOwner.Selection;
+        selection.Select(objectId, SelectionChangeSource.Plugin);
+        // RynthCore answers 1 for a repeat select too; OpenAC's Select is false when nothing changed.
+        return (selection.SelectedObjectId ?? 0u) == objectId;
+    }
+
+    public bool UseObject(uint objectId) => _automation.Items.Use(objectId).Accepted;
+
+    public bool RequestIdentify(uint objectId) => _automation.Objects.Identify(objectId).Accepted;
+
+    public bool QueryHealth(uint objectId)
+    {
+        if (_runtime.Session.CurrentSession is not { } session)
+            return false;
+        session.SendQueryHealth(objectId);
+        return true;
+    }
+
+    public bool ChangeCombatMode(int rynthMode) =>
+        RynthTranslate.FromRynthCombatMode(rynthMode) is { } mode && _automation.Combat.EnterMode(mode).Accepted;
+
+    public bool MoveItem(uint objectId, uint containerId, int slot, int amount) =>
+        amount > 0 && _automation.Items.MoveToContainer(objectId, containerId, (uint)amount, slot).Accepted;
+
+    public bool MergeStack(uint sourceObjectId, uint targetObjectId) =>
+        _automation.Items.Merge(sourceObjectId, targetObjectId).Accepted;
+
+    // RynthCore zeroes the busy count at once; OpenAC releases one reference per call.
+    public void ResetBusyCount()
+    {
+        for (int i = 0; i < 64; i++)
+        {
+            PluginRecoveryResult result = _automation.Recovery.ClearOneBusyReference();
+            if (!result.Accepted || result.CurrentCount <= 0)
+                return;
+        }
+    }
+
+    public bool WieldItem(uint objectId, uint equipMask) => _automation.Equipment.Equip(objectId, equipMask).Accepted;
 }

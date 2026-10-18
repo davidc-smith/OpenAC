@@ -20,7 +20,7 @@ public sealed unsafe class RynthApiTableTests
         Assert.True(host.HasGetObjectName);
         Assert.True(host.HasGetObjectQuadProperty);
         Assert.False(host.HasCastSpell);
-        Assert.False(host.HasUseObject);
+        Assert.True(host.HasUseObject);
     }
 
     [Fact]
@@ -213,4 +213,63 @@ public sealed unsafe class RynthApiTableTests
         InstanceIds = new Dictionary<uint, uint>(),
         Bools = bools, Floats = floats, Strings = strings,
     };
+
+    [Fact]
+    public void ActionSlots_CallTheGameView()
+    {
+        var view = new FakeGameView();
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.SelectItem(0x80000010));
+        Assert.True(host.UseObject(0x80000010));
+        Assert.True(host.RequestId(0x80000011));
+        Assert.True(host.QueryHealth(0x80000012));
+        Assert.True(host.ChangeCombatMode(8));
+        Assert.True(host.MoveItemInternal(0x80000013, 0x50000001, 2, 5));
+        Assert.True(host.SplitStackInternal(0x80000014, 0x80000020, 0, 3));
+        Assert.True(host.MergeStackInternal(0x80000015, 0x80000016));
+        host.ForceResetBusyCount();
+        Assert.True(host.WieldItem(0x80000017, 0x00200000));
+
+        Assert.Equal(
+            new[]
+            {
+                "select 80000010", "use 80000010", "id 80000011", "health 80000012", "mode 8",
+                "move 80000013 50000001 2 5", "move 80000014 80000020 0 3", "merge 80000015 80000016",
+                "reset busy", "wield 80000017 00200000",
+            },
+            view.Actions);
+
+        view.ActionAnswer = false;
+        Assert.False(host.UseObject(0x80000010));
+    }
+
+    [Fact]
+    public void ActionSlots_RefuseBadArgumentsWithoutCallingTheView()
+    {
+        var view = new FakeGameView();
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.False(host.ChangeCombatMode(3));
+        Assert.False(host.MoveItemInternal(0x80000013, 0x50000001, 0, 0));
+        Assert.False(host.SplitStackInternal(0x80000013, 0x50000001, 0, -1));
+        Assert.Empty(view.Actions);
+    }
+
+    [Fact]
+    public void ActionSlots_ReturnFalseWhenTheViewThrows()
+    {
+        var view = new FakeGameView { Throw = true };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.False(host.UseObject(1));
+        Assert.False(host.SelectItem(1));
+        Assert.False(host.WieldItem(1, 1));
+        host.ForceResetBusyCount();
+        Assert.Contains(_log, line => line.Contains("UseObject threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("ForceResetBusyCount threw", StringComparison.Ordinal));
+    }
 }

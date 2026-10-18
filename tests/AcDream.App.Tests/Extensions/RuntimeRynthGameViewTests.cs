@@ -204,4 +204,46 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal(0.25, info.Floats[5]);
         Assert.Equal("A wand", info.Strings[16]);
     }
+
+    [Fact]
+    public void ActionsGoThroughTheSurface()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var automation = new FakeRynthAutomation();
+        automation.RecoveryArea.Busy = 3;
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.UseObject(0x80000010));
+        Assert.True(view.MoveItem(0x80000011, 0x50000001, 2, 5));
+        Assert.False(view.MoveItem(0x80000011, 0x50000001, 2, 0));
+        Assert.True(view.MergeStack(0x80000012, 0x80000013));
+        Assert.Equal(
+            new[] { "use 80000010", "move 80000011 50000001 5 2", "merge 80000012 80000013 0" },
+            automation.ItemArea.Calls);
+        Assert.True(view.RequestIdentify(0x80000014));
+        Assert.Equal(new[] { 0x80000014u }, automation.ObjectArea.Identified);
+        Assert.True(view.WieldItem(0x80000015, 0x00200000));
+        Assert.Equal(new[] { (0x80000015u, 0x00200000u) }, automation.EquipmentArea.Equipped);
+        Assert.True(view.ChangeCombatMode(8));
+        Assert.False(view.ChangeCombatMode(3));
+        Assert.Equal(new[] { PluginCombatMode.Magic }, automation.CombatArea.ModesRequested);
+
+        view.ResetBusyCount();
+        Assert.Equal(0, automation.RecoveryArea.Busy);
+
+        automation.ItemArea.Answer = PluginItemCommandStatus.Busy;
+        Assert.False(view.UseObject(0x80000010));
+    }
+
+    [Fact]
+    public void SelectIsTrueWhenTheObjectEndsUpSelectedAndQueryHealthNeedsASession()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.True(view.SelectObject(0x80000010));
+        Assert.True(view.SelectObject(0x80000010));   // already selected: still true, as in RynthCore
+        Assert.Equal(0x80000010u, view.SelectedObjectId);
+        Assert.False(view.QueryHealth(0x80000010));   // the test runtime has no session
+    }
 }
