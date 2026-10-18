@@ -68,6 +68,12 @@
           "AcDream.Plugin.Abstractions": "[0.1.25, )"
         }
       },
+      "acdream.rynth.plugin.rynthinventory": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
       "acdream.rynth.plugin.rynthoracle": {
         "type": "Project",
         "dependencies": {

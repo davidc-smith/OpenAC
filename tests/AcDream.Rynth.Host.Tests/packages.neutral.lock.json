@@ -170,9 +170,16 @@
         "dependencies": {
           "AcDream.ClientExtensions": "[0.1.25, )",
           "AcDream.Runtime": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthInventory": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthOracle": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthTracker": "[0.1.25, )",
           "AcDream.Rynth.ScriptWindows": "[0.1.25, )",
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthinventory": {
+        "type": "Project",
+        "dependencies": {
           "AcDream.Rynth.Sdk": "[0.1.25, )"
         }
       },
