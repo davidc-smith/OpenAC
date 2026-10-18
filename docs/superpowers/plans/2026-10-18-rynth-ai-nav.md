@@ -179,7 +179,7 @@ new PluginWorldTriangle(bottomLeft, bottomRight, topRight, solid) { ColorC = cle
 - [ ] **Step 6: Run the triangle tests**
 
 Run: `~/.dotnet/dotnet test tests/AcDream.App.Tests --filter "FullyQualifiedName~PluginWorldTriangle"`
-Expected: all pass. Also build the Golem/Aethrix-facing abstractions: `~/.dotnet/dotnet build src/AcDream.Plugin.Abstractions` → 0 warnings.
+Expected: all pass. Also build the Aethrix-facing abstractions: `~/.dotnet/dotnet build src/AcDream.Plugin.Abstractions` → 0 warnings.
 
 - [ ] **Step 7: Commit**
 

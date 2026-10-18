@@ -106,7 +106,7 @@ RynthAi submits every tick (`NavMarkerRenderer.SubmitNav3D`) and never calls
 
 - `PluginWorldTriangle` gains optional `ColorB` and `ColorC` init properties
   (`PluginColor?`). When unset, a corner uses `Color`. The positional constructor is
-  unchanged, so existing callers (Aethrix terrain shading, Golem) keep compiling and
+  unchanged, so existing callers (Aethrix terrain shading) keep compiling and
   drawing as before.
 - `PluginWorldTriangleRenderer` and `PlannedTriangle` carry three colours;
   `GroundShapeBatch` gets an `AddTriangle` overload with a colour per corner (its
