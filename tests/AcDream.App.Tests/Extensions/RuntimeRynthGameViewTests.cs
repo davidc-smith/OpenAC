@@ -1,4 +1,6 @@
+using System.Numerics;
 using AcDream.Core.Items;
+using AcDream.Plugin.Abstractions;
 using AcDream.Rynth.Host;
 
 namespace AcDream.App.Tests.Extensions;
@@ -132,5 +134,138 @@ public sealed class RuntimeRynthGameViewTests
 
         Assert.True(view.TryGetObject(0x80000010, out RynthObjectInfo info));
         Assert.Equal(expected, info.Identified);
+    }
+
+    [Fact]
+    public void StateComesFromTheSurfaceInRynthCoresUnits()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var automation = new FakeRynthAutomation();
+        automation.CombatArea.Snapshot = default(PluginCombatSnapshot) with { Mode = PluginCombatMode.Missile };
+        automation.CharacterArea.MaxHealth = 100;
+        automation.CharacterArea.CurrentHealth = 40;
+        automation.CharacterArea.EnchantmentList.Add(new PluginActiveEnchantment(2, 1, 1, 60));
+        automation.CharacterArea.EnchantmentList.Add(new PluginActiveEnchantment(3, 1, 1, double.PositiveInfinity));
+        automation.CharacterArea.SkillList.Add(new PluginSkillInfo(6, "Melee Defense", PluginSkillTraining.Specialized, 250) { Base = 200 });
+        automation.SpellArea.Known.Add(2);
+        automation.RecoveryArea.Busy = 3;
+        automation.ObjectArea.OpenContainer = 0x80000044;
+        runtime.InventoryOwner.ServerReplies.RecordUseDone(0x36);
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.Equal(4, view.CombatMode);
+        Assert.True(view.TryGetPlayerVitals(out RynthVitals vitals));
+        Assert.Equal((40u, 100u), (vitals.Health, vitals.MaxHealth));
+        Assert.Equal(3, view.BusyCount);
+        Assert.Equal(0x80000044u, view.OpenContainerId);
+        Assert.Equal(1, view.IsSpellKnown(0x50000001, 2));
+        Assert.Equal(0, view.IsSpellKnown(0x50000001, 9));
+        Assert.Equal(-1, view.IsSpellKnown(0x80000010, 2));
+        Assert.True(view.TryGetSkill(0x50000001, 6, out int buffed, out int baseLevel, out int training));
+        Assert.Equal((250, 200, 3), (buffed, baseLevel, training));
+        Assert.False(view.TryGetSkill(0x80000010, 6, out _, out _, out _));
+        Assert.Equal((1, 0x36u), (view.ServerReplies.UseDoneSequence, view.ServerReplies.LastUseDoneError));
+
+        IReadOnlyList<RynthEnchantment> enchantments = view.PlayerEnchantments!;
+        double now = view.ServerTime;
+        Assert.InRange(enchantments[0].ExpiryServerTime - now, 59.0, 60.0);
+        Assert.Equal(double.MaxValue, enchantments[1].ExpiryServerTime);
+    }
+
+    [Fact]
+    public void BeforeLoginTheStateReadsAsNotAvailable()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);   // no surface: the no-op one
+
+        Assert.Equal(0, view.ServerTime);
+        Assert.Null(view.KnownSpells);
+        Assert.Null(view.PlayerEnchantments);
+        Assert.Equal(1, view.CombatMode);
+        Assert.False(view.TryGetPlayerVitals(out _));
+        Assert.False(view.TryGetPlayerPose(out _, out _, out _));
+        Assert.Equal(-1, view.IsSpellKnown(0, 1));
+    }
+
+    [Fact]
+    public void ObjectBoolsFloatsAndStringsComeThroughTryGetObject()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var item = new ClientObject { ObjectId = 0x80000010, Name = "Wand" };
+        item.Properties.Bools[22] = true;
+        item.Properties.Floats[5] = 0.25;
+        item.Properties.Strings[16] = "A wand";
+        runtime.InventoryOwner.Objects.AddOrUpdate(item);
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.True(view.TryGetObject(0x80000010, out RynthObjectInfo info));
+        Assert.True(info.Bools[22]);
+        Assert.Equal(0.25, info.Floats[5]);
+        Assert.Equal("A wand", info.Strings[16]);
+    }
+
+    [Fact]
+    public void ActionsGoThroughTheSurface()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var automation = new FakeRynthAutomation();
+        automation.RecoveryArea.Busy = 3;
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.UseObject(0x80000010));
+        Assert.True(view.MoveItem(0x80000011, 0x50000001, 2, 5));
+        Assert.False(view.MoveItem(0x80000011, 0x50000001, 2, 0));
+        Assert.True(view.MergeStack(0x80000012, 0x80000013));
+        Assert.Equal(
+            new[] { "use 80000010", "move 80000011 50000001 5 2", "merge 80000012 80000013 0" },
+            automation.ItemArea.Calls);
+        Assert.True(view.RequestIdentify(0x80000014));
+        Assert.Equal(new[] { 0x80000014u }, automation.ObjectArea.Identified);
+        Assert.True(view.WieldItem(0x80000015, 0x00200000));
+        Assert.Equal(new[] { (0x80000015u, 0x00200000u) }, automation.EquipmentArea.Equipped);
+        Assert.True(view.ChangeCombatMode(8));
+        Assert.False(view.ChangeCombatMode(3));
+        Assert.Equal(new[] { PluginCombatMode.Magic }, automation.CombatArea.ModesRequested);
+
+        view.ResetBusyCount();
+        Assert.Equal(0, automation.RecoveryArea.Busy);
+
+        automation.ItemArea.Answer = PluginItemCommandStatus.Busy;
+        Assert.False(view.UseObject(0x80000010));
+    }
+
+    [Fact]
+    public void SelectIsTrueWhenTheObjectEndsUpSelectedAndQueryHealthNeedsASession()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.True(view.SelectObject(0x80000010));
+        Assert.True(view.SelectObject(0x80000010));   // already selected: still true, as in RynthCore
+        Assert.Equal(0x80000010u, view.SelectedObjectId);
+        Assert.False(view.QueryHealth(0x80000010));   // the test runtime has no session
+    }
+
+    [Fact]
+    public void TryGetVitalBase_MapsRynthCoreStatIdsToVitalKinds()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var automation = new FakeRynthAutomation();
+        automation.CharacterArea.VitalList.Add(new PluginVitalInfo(0, "Health", 10, 100) { Base = 90 });
+        automation.CharacterArea.VitalList.Add(new PluginVitalInfo(1, "Stamina", 10, 110) { Base = 95 });
+        automation.CharacterArea.VitalList.Add(new PluginVitalInfo(2, "Mana", 10, 120) { Base = 99 });
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.TryGetVitalBase(0x50000001, 1, out uint health));
+        Assert.Equal(90u, health);
+        Assert.True(view.TryGetVitalBase(0x50000001, 3, out uint stamina));
+        Assert.Equal(95u, stamina);
+        Assert.True(view.TryGetVitalBase(0x50000001, 5, out uint mana));
+        Assert.Equal(99u, mana);
+        Assert.False(view.TryGetVitalBase(0x50000001, 2, out _));
+        Assert.False(view.TryGetVitalBase(0x50000001, 6, out _));
+        Assert.False(view.TryGetVitalBase(0x80000010, 1, out _));
     }
 }

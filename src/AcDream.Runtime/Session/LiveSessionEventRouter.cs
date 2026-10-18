@@ -41,7 +41,8 @@ public sealed record LiveInventorySessionBindings(
     Action<AppraiseInfoParser.Parsed>? OnAppraisal = null,
     VendorState? Vendor = null,
     RuntimeBookState? Book = null,
-    Func<string>? PlayerName = null);
+    Func<string>? PlayerName = null,
+    ServerReplyLog? ServerReplies = null);
 
 public sealed record LiveCharacterSessionBindings(
     CombatState Combat,
@@ -276,6 +277,7 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                 vendor: inventory.Vendor,
                 onInterfaceText: social.AddText,
                 onLocalPlayerDeath: social.OnLocalPlayerDeath,
+                serverReplies: inventory.ServerReplies,
                 accepting: IsAccepting,
                 onBookOpen: inventory.Book is { } bookOpen
                     ? book =>

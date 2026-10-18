@@ -23,7 +23,8 @@ internal sealed class ClientExtensionHost : IDisposable
         IClientOverlay? overlay = null,
         Func<string, bool>? submitChatCommand = null,
         string? stateDirectory = null,
-        IClientChat? chat = null)
+        IClientChat? chat = null,
+        IAutomationSurface? automation = null)
     {
         var context = new ClientExtensionContext
         {
@@ -36,6 +37,7 @@ internal sealed class ClientExtensionHost : IDisposable
             SubmitChatCommand = submitChatCommand,
             StateDirectory = stateDirectory,
             Chat = chat,
+            Automation = automation,
         };
 
         foreach (IClientExtension extension in _extensions.ToArray())

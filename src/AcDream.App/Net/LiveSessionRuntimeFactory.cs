@@ -360,7 +360,8 @@ internal sealed class LiveSessionRuntimeFactory
         Book: _domain.Runtime.BookOwner,
         PlayerName: () =>
             _domain.Inventory.Objects.Get(_player.Identity.ServerGuid)?.Name
-            ?? string.Empty);
+            ?? string.Empty,
+        ServerReplies: _domain.Inventory.ServerReplies);
 
     private LiveCharacterSessionBindings CreateCharacterBindings(
         SkillTable? skillTable)

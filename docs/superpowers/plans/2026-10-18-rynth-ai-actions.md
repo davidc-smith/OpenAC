@@ -1,5 +1,8 @@
 # RynthAi State and Action Slots (RynthAi sub-project #2) Implementation Plan
 
+> **Status (2026-10-18):** Tasks 1–5 done and reviewed, plus a final whole-branch review and one fix wave (25b0189d). Task 6 (live check) not yet run.
+> Corrections made during execution: the action slots use one try/catch per function instead of the `Send(lambda)` helper (same style as the state slots, no per-call allocation). `ReadPlayerEnchantments`/`ReadKnownSpells` return the number written, not the total; Task 4's test text was wrong on that point (RynthCore's contract, PluginContract.cs:201-204, 530-532). `PlayerEnchantments` is null until the player id is known.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The RynthCore API table that every Rynth plugin gets fills the state slots RynthAi reads (pose, heading, portaling, busy, combat mode, vitals, enchantments, skills, attributes, spells, bool/double/string properties, attackable, open container, server time, UseDone and WeenieError counters) and the basic action slots (select, use, identify, query health, change combat mode, move/split/merge items, reset busy, wield). The client serves them from OpenAC's `IAutomationSurface`, falling back to `GameRuntime` where the surface lacks the data.
