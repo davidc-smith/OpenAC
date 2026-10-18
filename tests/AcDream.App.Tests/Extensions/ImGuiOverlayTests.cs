@@ -14,7 +14,11 @@ public sealed class ImGuiOverlayTests : IDisposable
 
     public ImGuiOverlayTests() => _overlay = new ImGuiOverlay(_log.Add);
 
-    public void Dispose() => _overlay.Dispose();
+    public void Dispose()
+    {
+        _renderer.ThrowOnDispose = false;
+        _overlay.Dispose();
+    }
 
     private void Start() =>
         _overlay.Initialize(_renderer, () => (new Vector2(800, 600), new Vector2(1600, 1200)));
@@ -152,10 +156,74 @@ public sealed class ImGuiOverlayTests : IDisposable
     }
 
     [Fact]
-    public void IconsAreTheOverlaysAndBindToTheBackend()
+    public void IconsAnswerOnceBoundToTheBackend()
     {
-        Assert.IsType<OverlayIcons>(_overlay.Icons);
         Assert.Equal(IntPtr.Zero, _overlay.Icons.SpellIcon(1));
+
+        _overlay.BindIcons(new SpellBackend(31));
+
+        IntPtr icon = _overlay.Icons.SpellIcon(1);
+        Assert.Equal((IntPtr)31, icon);
+        Assert.True(((OverlayIcons)_overlay.Icons).IsIssued(icon));
+    }
+
+    [Fact]
+    public void FontsAreFreedEvenWhenTheRendererFailsToDispose()
+    {
+        _renderer.ThrowOnDispose = true;
+        Start();
+        _overlay.AddMergedFont(
+            RynthCore.Engine.ImGuiBackend.PhosphorFont.Load()!, RynthCore.Engine.ImGuiBackend.PhosphorIcons.Baked, 1.2f);
+        Assert.Equal(1, _overlay.Fonts.Count);
+
+        Assert.Throws<InvalidOperationException>(_overlay.Dispose);
+
+        Assert.Equal(0, _overlay.Fonts.Count);
+    }
+
+    [Fact]
+    public void AnOverlayWithoutIconsOrFontsUsesTheInterfaceDefaults()
+    {
+        AcDream.ClientExtensions.IClientOverlay bare = new BareOverlay();
+
+        Assert.NotNull(bare.Icons);
+        Assert.Equal(IntPtr.Zero, bare.Icons.Icon(0x06001234u));
+        Assert.Equal(IntPtr.Zero, bare.Icons.SpellIcon(1));
+        Assert.Equal(IntPtr.Zero, bare.Icons.ObjectIcon(0x80000001u));
+        bare.AddMergedFont(new byte[] { 1 }, "x", 1f);
+    }
+
+    private sealed class BareOverlay : AcDream.ClientExtensions.IClientOverlay
+    {
+        public bool WantsMouse => false;
+        public bool WantsKeyboard => false;
+
+        public IDisposable AddFrameCallback(Action draw) => throw new NotSupportedException();
+    }
+
+    private sealed class SpellBackend(uint texture) : AcDream.App.Plugins.IPluginImageBackend
+    {
+        public bool TryGetClientArt(uint surfaceId, out uint texture2, out int width, out int height) => None(out texture2, out width, out height);
+
+        public bool TryGetSpellIcon(uint spellId, out uint result, out int width, out int height)
+        {
+            result = texture;
+            width = height = 32;
+            return true;
+        }
+
+        public bool TryGetObjectIcon(uint objectId, out uint texture2, out int width, out int height) => None(out texture2, out width, out height);
+
+        public uint UploadOwned(byte[] rgba, int width, int height, string debugName) => throw new NotSupportedException();
+
+        public bool ReleaseOwned(uint texture2) => throw new NotSupportedException();
+
+        private static bool None(out uint texture2, out int width, out int height)
+        {
+            texture2 = 0;
+            width = height = 0;
+            return false;
+        }
     }
 
     [Fact]
@@ -178,6 +246,7 @@ public sealed class ImGuiOverlayTests : IDisposable
         public int Rendered { get; private set; }
         public int LastVertexCount { get; private set; }
         public Vector2 LastScale { get; private set; }
+        public bool ThrowOnDispose { get; set; }
 
         public void PrepareFrame(ImGuiIOPtr io, Vector2 framebufferScale)
         {
@@ -203,6 +272,8 @@ public sealed class ImGuiOverlayTests : IDisposable
 
         public void Dispose()
         {
+            if (ThrowOnDispose)
+                throw new InvalidOperationException("renderer dispose failed");
         }
     }
 }

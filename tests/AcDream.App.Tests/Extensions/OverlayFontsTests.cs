@@ -65,8 +65,10 @@ public sealed unsafe class OverlayFontsTests : IDisposable
         _fonts.Add(new byte[] { 1 }, "", 1f);
         _fonts.Add(new byte[] { 1 }, "x", 0f);
         _fonts.Add(new byte[] { 1 }, "x", float.PositiveInfinity);
+        _fonts.Add(new byte[] { 1 }, "\0\0", 1f);
         Assert.Equal(start, _fonts.Version);
-        Assert.Equal(4, _log.Count(line => line.Contains("ignored", StringComparison.Ordinal)));
+        Assert.Equal(0, _fonts.Count);
+        Assert.Equal(5, _log.Count(line => line.Contains("ignored", StringComparison.Ordinal)));
 
         _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
         Assert.Equal(start + 1, _fonts.Version);
@@ -79,11 +81,38 @@ public sealed unsafe class OverlayFontsTests : IDisposable
     }
 
     [Fact]
-    public void AfterDisposeNothingIsMerged()
+    public void AfterDisposeNothingIsKeptOrMerged()
     {
         _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
+        Assert.Equal(1, _fonts.Count);
         _fonts.Dispose();
+        Assert.Equal(0, _fonts.Count);
         Build();
         Assert.False(HasGlyph(PhosphorIcons.Sparkle));
+        _fonts.Dispose();
+    }
+
+    [Fact]
+    public void AFontAddedAfterDisposeIsIgnored()
+    {
+        _fonts.Dispose();
+        int version = _fonts.Version;
+        _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
+        Assert.Equal(0, _fonts.Count);
+        Assert.Equal(version, _fonts.Version);
+        Assert.Contains(_log, line => line.Contains("disposed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheSameFontTwiceIsMergedOnce()
+    {
+        _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
+        int version = _fonts.Version;
+        _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
+        Assert.Equal(1, _fonts.Count);
+        Assert.Equal(version, _fonts.Version);
+
+        _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Sparkle, 1.2f);
+        Assert.Equal(2, _fonts.Count);
     }
 }

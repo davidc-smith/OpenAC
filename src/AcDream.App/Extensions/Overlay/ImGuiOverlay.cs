@@ -212,9 +212,10 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
                 ImGui.DestroyContext(_context);
                 _context = IntPtr.Zero;
             }
-        }
 
-        _fonts.Dispose();
+            // Last: the atlas reads the font copies until the context is gone.
+            _fonts.Dispose();
+        }
     }
 
     /// <summary>

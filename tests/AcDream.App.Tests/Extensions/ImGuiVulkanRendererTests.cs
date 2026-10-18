@@ -58,3 +58,56 @@ public sealed class ImGuiVulkanRendererTests
         Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot((IntPtr)8, none, null, out _));
     }
 }
+
+[Collection("Rynth")]
+public sealed class ImGuiVulkanRendererAtlasTests : IDisposable
+{
+    private readonly IntPtr _context;
+    private readonly AcDream.App.Tests.Rendering.Gpu.RecordingGpuDevice _device = new();
+    private readonly OverlayFonts _fonts = new(_ => { });
+
+    public ImGuiVulkanRendererAtlasTests()
+    {
+        _context = ImGuiNET.ImGui.CreateContext();
+        ImGuiNET.ImGui.SetCurrentContext(_context);
+    }
+
+    public void Dispose()
+    {
+        ImGuiNET.ImGui.DestroyContext(_context);
+        _fonts.Dispose();
+    }
+
+    private uint[] AtlasSlots() => _device.Calls
+        .OfType<AcDream.App.Tests.Rendering.Gpu.GpuRecordedTextureRegistration>()
+        .Where(call => call.TextureName == "imgui-font-atlas")
+        .Select(call => call.Slot)
+        .ToArray();
+
+    [Fact]
+    public void TheAtlasIdIsItsHandleAndANewFontRebuildsIt()
+    {
+        using var renderer = new ImGuiVulkanRenderer(_device, new NoFrames(), null, _fonts);
+        ImGuiNET.ImGuiIOPtr io = ImGuiNET.ImGui.GetIO();
+
+        renderer.PrepareFrame(io, System.Numerics.Vector2.One);
+        uint slot = Assert.Single(AtlasSlots());
+        Assert.Equal((IntPtr)(slot + 1), io.Fonts.TexID);
+        Assert.True(ImGuiVulkanRenderer.TryGetDrawSlot(io.Fonts.TexID, new GpuTextureSlot(slot), null, out uint drawn));
+        Assert.Equal(slot, drawn);
+
+        renderer.PrepareFrame(io, System.Numerics.Vector2.One);
+        Assert.Single(AtlasSlots());
+
+        _fonts.Add(RynthCore.Engine.ImGuiBackend.PhosphorFont.Load()!, RynthCore.Engine.ImGuiBackend.PhosphorIcons.Baked, 1.2f);
+        renderer.PrepareFrame(io, System.Numerics.Vector2.One);
+        uint[] slots = AtlasSlots();
+        Assert.Equal(2, slots.Length);
+        Assert.Equal((IntPtr)(slots[1] + 1), io.Fonts.TexID);
+    }
+
+    private sealed class NoFrames : AcDream.App.Rendering.ICurrentGpuFrameSource
+    {
+        public IGpuFrame? CurrentFrame => null;
+    }
+}

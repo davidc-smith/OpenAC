@@ -27,32 +27,38 @@ public sealed class RynthBarIconsTests
     public unsafe void WithTheIconFontTheLabelIsTheIcon()
     {
         IntPtr context = ImGui.CreateContext();
-        ImGui.SetCurrentContext(context);
-        byte[] ttf = PhosphorFont.Load()!;
-        ushort sparkle = PhosphorIcons.Sparkle[0];
-        fixed (byte* data = ttf)
-        {
-            ImFontAtlasPtr atlas = ImGui.GetIO().Fonts;
-            atlas.AddFontDefault();
-            ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
-            config.MergeMode = true;
-            config.FontDataOwnedByAtlas = false;
-            ushort* ranges = stackalloc ushort[] { sparkle, sparkle, 0 };
-            atlas.AddFontFromMemoryTTF((IntPtr)data, ttf.Length, 13f, config, (IntPtr)ranges);
-            atlas.GetTexDataAsRGBA32(out IntPtr _, out int _, out int _, out int _);
-            config.Destroy();
-        }
-
-        ImGui.GetIO().DisplaySize = new System.Numerics.Vector2(800, 600);
-        ImGui.NewFrame();
         try
         {
-            Assert.Equal(PhosphorIcons.Sparkle, RynthBarIcons.Label("Oracle"));
-            Assert.Equal("T", RynthBarIcons.Label("Tracker"));
+            ImGui.SetCurrentContext(context);
+            byte[] ttf = PhosphorFont.Load()!;
+            ushort sparkle = PhosphorIcons.Sparkle[0];
+            fixed (byte* data = ttf)
+            {
+                ImFontAtlasPtr atlas = ImGui.GetIO().Fonts;
+                atlas.AddFontDefault();
+                ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
+                config.MergeMode = true;
+                config.FontDataOwnedByAtlas = false;
+                ushort* ranges = stackalloc ushort[] { sparkle, sparkle, 0 };
+                atlas.AddFontFromMemoryTTF((IntPtr)data, ttf.Length, 13f, config, (IntPtr)ranges);
+                atlas.GetTexDataAsRGBA32(out IntPtr _, out int _, out int _, out int _);
+                config.Destroy();
+            }
+
+            ImGui.GetIO().DisplaySize = new System.Numerics.Vector2(800, 600);
+            ImGui.NewFrame();
+            try
+            {
+                Assert.Equal(PhosphorIcons.Sparkle, RynthBarIcons.Label("Oracle"));
+                Assert.Equal("T", RynthBarIcons.Label("Tracker"));
+            }
+            finally
+            {
+                ImGui.EndFrame();
+            }
         }
         finally
         {
-            ImGui.EndFrame();
             ImGui.DestroyContext(context);
         }
     }

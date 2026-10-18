@@ -129,33 +129,47 @@ public sealed class OverlayIconsTests
         Assert.Equal((IntPtr)23, _icons.SpellIcon(3));
     }
 
+    [Fact]
+    public void AFoundAnswerWithNoTextureIsZeroAndNotIssued()
+    {
+        _icons.Bind(_backend);
+        _backend.AlwaysFound = true;
+        _backend.Answer = 0;
+
+        Assert.Equal(IntPtr.Zero, _icons.SpellIcon(5));
+        Assert.Equal(IntPtr.Zero, _icons.ObjectIcon(0x80000005u));
+        Assert.False(_icons.IsIssued(IntPtr.Zero));
+    }
+
     private sealed class FakeBackend : IPluginImageBackend
     {
         public uint Answer { get; set; }
         public bool Throw { get; set; }
+        /// <summary>Report success even with a zero texture (a backend that "finds" nothing).</summary>
+        public bool AlwaysFound { get; set; }
         public List<string> Asked { get; } = new();
 
         public bool TryGetClientArt(uint surfaceId, out uint texture, out int width, out int height) =>
-            Answer2($"art:{surfaceId:X8}", out texture, out width, out height);
+            Reply($"art:{surfaceId:X8}", out texture, out width, out height);
 
         public bool TryGetSpellIcon(uint spellId, out uint texture, out int width, out int height) =>
-            Answer2($"spell:{spellId:X8}", out texture, out width, out height);
+            Reply($"spell:{spellId:X8}", out texture, out width, out height);
 
         public bool TryGetObjectIcon(uint objectId, out uint texture, out int width, out int height) =>
-            Answer2($"object:{objectId:X8}", out texture, out width, out height);
+            Reply($"object:{objectId:X8}", out texture, out width, out height);
 
         public uint UploadOwned(byte[] rgba, int width, int height, string debugName) => throw new NotSupportedException();
 
         public bool ReleaseOwned(uint texture) => throw new NotSupportedException();
 
-        private bool Answer2(string what, out uint texture, out int width, out int height)
+        private bool Reply(string what, out uint texture, out int width, out int height)
         {
             if (Throw)
                 throw new InvalidOperationException("dat read failed");
             Asked.Add(what);
             texture = Answer;
             width = height = Answer == 0 ? 0 : 32;
-            return Answer != 0;
+            return AlwaysFound || Answer != 0;
         }
     }
 }
