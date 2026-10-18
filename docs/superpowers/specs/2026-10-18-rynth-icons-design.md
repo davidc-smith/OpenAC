@@ -37,7 +37,7 @@ ImGuiVulkanRenderer: draws atlas + handed-out handles; merges fonts at each atla
                                         ▲
 RynthClientExtension.Attach ─ ScriptIcons.Source = overlay.Icons (ScriptWindows stand-in)
                             ─ overlay.AddMergedFont(Phosphor.ttf, PhosphorIcons.Baked, 1.2)
-RynthBar ─ RynthBarIcons.For(title) → Phosphor glyph or first letter
+RynthBar ─ RynthBarIcons.Label(title) → Phosphor glyph or first letter
 ```
 
 ### Client (`AcDream.ClientExtensions`, `AcDream.App`)
@@ -79,10 +79,12 @@ Every returned value is an ImGui texture id for `ImGui.Image`. Game thread only
 - Each handle it hands out goes into a set the renderer reads (`IsIssued`).
 - Exceptions from the backend are caught, logged once per id and kind, and
   give 0 (the replay then draws its placeholder).
-- Caching is the backend's (`IconComposer` and `TextureCache` already cache by
-  id and by layer tuple), so a lookup each frame costs dictionary hits. An
-  object's icon is looked up again every frame, so a changed overlay or
-  effect shows at once.
+- `Icon` and `SpellIcon` answers are memoised in `OverlayIcons`, hits and
+  misses (zero), keyed by kind and normalised id, once a backend is bound
+  (unbound answers are not cached). The replay asks every frame and each
+  backend call takes the dat lock; issued handles are never released during a
+  session, so this is safe. `ObjectIcon` is not memoised: an object's icon,
+  overlay and effects can change, and that path is cheap.
 
 **`ImGuiOverlay`**: owns one `OverlayIcons`; `BindIcons(IPluginImageBackend)`
 binds it (once; later calls are ignored and logged). Keeps the merged-font
@@ -115,9 +117,10 @@ runtime.
   `ImGui/PhosphorIcons.cs` and embeds `Assets/Fonts/Phosphor.ttf`. Its MIT
   licence is added to `NOTICE.md`.
 - **`RynthBarIcons`** (new, Host): RynthCore's `PanelIcons` table and
-  `For(string title, out bool letter)` - the Phosphor glyph, else the first
-  letter or digit upper-cased (today's `Letter`), else `?`.
-- **`RynthBar`**: buttons draw `RynthBarIcons.For(title)`; the grip draws
+  `Icon(title)` (RynthCore's glyph or null), `Label(title)` (the glyph when
+  the font has it, else the first letter or digit upper-cased, else `?`) and
+  `InFont(glyph)`.
+- **`RynthBar`**: buttons draw `RynthBarIcons.Label(title)`; the grip draws
   `DotsSixVertical`; menu entries are prefixed with their icon. Tooltips keep
   the title.
 - **`RynthClientExtension.Attach`**: with an overlay, sets
