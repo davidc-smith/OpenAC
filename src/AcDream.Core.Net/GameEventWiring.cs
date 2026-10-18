@@ -863,12 +863,15 @@ public static class GameEventWiring
             else if (!p.Value.Success)
                 items.RecordUnsuccessfulAppraisal(p.Value.Guid);
             if (p.Value.CreatureProfile is { HealthMax: > 0u } creature)
-                combat.OnUpdateHealth(
+                combat.OnCreatureProfile(
                     p.Value.Guid,
-                    Math.Clamp(
-                        (float)creature.Health / creature.HealthMax,
-                        0f,
-                        1f));
+                    new CombatState.CreatureVitals(
+                        creature.Health,
+                        creature.HealthMax,
+                        creature.Stamina,
+                        creature.StaminaMax,
+                        creature.Mana,
+                        creature.ManaMax));
             onAppraisal?.Invoke(p.Value);
         });
 

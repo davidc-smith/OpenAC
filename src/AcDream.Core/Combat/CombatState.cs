@@ -6,6 +6,7 @@ namespace AcDream.Core.Combat;
 public sealed class CombatState
 {
     private readonly ConcurrentDictionary<uint, float> _healthByGuid = new();
+    private readonly ConcurrentDictionary<uint, CreatureVitals> _vitalsByGuid = new();
 
     public CombatMode CurrentMode { get; private set; } = CombatMode.NonCombat;
 
@@ -36,6 +37,18 @@ public sealed class CombatState
     /// guid, so <c>victimGuid</c> is 0 when it comes from the wire.
     /// </summary>
     public event Action<string /*deathMessage*/, uint /*victimGuid*/>? KillLanded;
+
+    /// <summary>
+    /// A creature's vitals as its last appraisal reported them. Stamina and
+    /// mana are null unless the appraisal showed attributes.
+    /// </summary>
+    public readonly record struct CreatureVitals(
+        uint Health,
+        uint HealthMax,
+        uint? Stamina,
+        uint? StaminaMax,
+        uint? Mana,
+        uint? ManaMax);
 
     public readonly record struct DamageIncoming(
         string AttackerName,
@@ -71,6 +84,25 @@ public sealed class CombatState
         _healthByGuid[targetGuid] = healthPercent;
         HealthChanged?.Invoke(targetGuid, healthPercent);
     }
+
+    /// <summary>
+    /// An appraisal's creature profile: kept as the creature's last known
+    /// vitals, and its health share applied as a health update.
+    /// </summary>
+    public void OnCreatureProfile(uint targetGuid, in CreatureVitals vitals)
+    {
+        if (vitals.HealthMax == 0u)
+            return;
+
+        _vitalsByGuid[targetGuid] = vitals;
+        OnUpdateHealth(
+            targetGuid,
+            Math.Clamp((float)vitals.Health / vitals.HealthMax, 0f, 1f));
+    }
+
+    /// <summary>The vitals of the creature's last appraisal; false when none was seen.</summary>
+    public bool TryGetCreatureVitals(uint guid, out CreatureVitals vitals) =>
+        _vitalsByGuid.TryGetValue(guid, out vitals);
 
     public void SetCombatMode(CombatMode mode)
     {
@@ -143,6 +175,7 @@ public sealed class CombatState
     public void Clear()
     {
         _healthByGuid.Clear();
+        _vitalsByGuid.Clear();
         CurrentMode = CombatMode.NonCombat;
         ServerMode = null;
 

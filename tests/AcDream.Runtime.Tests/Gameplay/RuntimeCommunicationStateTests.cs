@@ -431,4 +431,31 @@ public sealed class RuntimeCommunicationStateTests
         public void OnChat(in RuntimeCommunicationEvent delta) =>
             throw new InvalidOperationException("observer");
     }
+
+    [Fact]
+    public void AddText_ClientLocal_RaisesStatusTextShownWithTheTrimmedText()
+    {
+        using var state = new RuntimeCommunicationState();
+        var shown = new List<string>();
+        state.StatusTextShown += shown.Add;
+
+        state.AddText("  You're too busy!  ", RetailLogTextType.ClientLocal);
+        state.AddText("Your spell fizzled.", RetailLogTextType.Magic);
+
+        Assert.Equal(["You're too busy!"], shown);
+    }
+
+    [Fact]
+    public void AddText_FilteredStatusLine_RaisesNoStatusTextShown()
+    {
+        using var state = new RuntimeCommunicationState();
+        var shown = new List<string>();
+        state.StatusTextShown += shown.Add;
+        using IDisposable filter = state.Chat.Filters.Register(
+            candidate => candidate.Kind == AcDream.Plugin.Abstractions.PluginChatMessage.StatusTextKind);
+
+        state.AddText("Out of Range!", RetailLogTextType.ClientLocal);
+
+        Assert.Empty(shown);
+    }
 }

@@ -168,4 +168,34 @@ public sealed class CombatStateTests
         state.Clear();
         Assert.Equal(2, delivered);
     }
+
+    [Fact]
+    public void CreatureProfile_IsKeptAndAppliesItsHealthRatio()
+    {
+        var combat = new CombatState();
+        var seen = new List<(uint, float)>();
+        combat.HealthChanged += (guid, ratio) => seen.Add((guid, ratio));
+        var vitals = new CombatState.CreatureVitals(75u, 100u, 40u, 80u, null, null);
+
+        combat.OnCreatureProfile(0x80000010u, vitals);
+
+        Assert.True(combat.TryGetCreatureVitals(0x80000010u, out CombatState.CreatureVitals kept));
+        Assert.Equal(vitals, kept);
+        Assert.Equal([(0x80000010u, 0.75f)], seen);
+        Assert.Equal(0.75f, combat.GetHealthPercent(0x80000010u), 3);
+        Assert.False(combat.TryGetCreatureVitals(0x80000011u, out _));
+    }
+
+    [Fact]
+    public void CreatureProfile_WithoutAMaximumIsIgnoredAndClearForgetsProfiles()
+    {
+        var combat = new CombatState();
+        combat.OnCreatureProfile(0x80000010u, new CombatState.CreatureVitals(5u, 0u, null, null, null, null));
+        Assert.False(combat.TryGetCreatureVitals(0x80000010u, out _));
+        Assert.False(combat.HasHealth(0x80000010u));
+
+        combat.OnCreatureProfile(0x80000010u, new CombatState.CreatureVitals(5u, 10u, null, null, null, null));
+        combat.Clear();
+        Assert.False(combat.TryGetCreatureVitals(0x80000010u, out _));
+    }
 }
