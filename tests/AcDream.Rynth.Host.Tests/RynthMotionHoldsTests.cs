@@ -145,4 +145,105 @@ public sealed class RynthMotionHoldsTests
         Assert.Equal(2, _view.Intents.Count);
         Assert.DoesNotContain("stop", _view.Actions);
     }
+
+    [Fact]
+    public void SyncResendsHeldKeysTheClientDropped()
+    {
+        _view.AutoRun = true;
+        var holds = new RynthMotionHolds(_view);
+        holds.SetMotion(TurnRight, true);
+        var held = new PluginMovementIntent(Forward: true, TurnRight: true, Run: true);
+        Assert.Equal(held, _view.Intents[^1]);
+        int sent = _view.Intents.Count;
+
+        _view.HeldIntent = null; // a portal clears the client's command input
+        holds.Sync();
+
+        Assert.Equal(sent + 1, _view.Intents.Count);
+        Assert.Equal(held, _view.Intents[^1]);
+        Assert.Equal(held, _view.HeldIntent);
+    }
+
+    [Fact]
+    public void SyncResendsHeldKeysAnotherPartyReplaced()
+    {
+        var holds = new RynthMotionHolds(_view);
+        holds.SetMotion(TurnLeft, true);
+        int sent = _view.Intents.Count;
+
+        _view.HeldIntent = new PluginMovementIntent(Backward: true);
+        holds.Sync();
+
+        Assert.Equal(sent + 1, _view.Intents.Count);
+        Assert.Equal(new PluginMovementIntent(TurnLeft: true, Run: false), _view.Intents[^1]);
+    }
+
+    [Fact]
+    public void ARepeatHoldResendsWhatTheClientDropped()
+    {
+        var holds = new RynthMotionHolds(_view);
+        holds.SetMotion(RunForward, true);
+        int sent = _view.Intents.Count;
+
+        _view.HeldIntent = null;
+        Assert.True(holds.SetMotion(RunForward, true));
+
+        Assert.Equal(sent + 1, _view.Intents.Count);
+        Assert.Equal(new PluginMovementIntent(Forward: true, Run: true), _view.Intents[^1]);
+    }
+
+    [Fact]
+    public void ARepeatHoldSendsNothingWhileTheClientStillHoldsIt()
+    {
+        var holds = new RynthMotionHolds(_view);
+        holds.SetMotion(RunForward, true);
+        int sent = _view.Intents.Count;
+
+        Assert.True(holds.SetMotion(RunForward, true));
+
+        Assert.Equal(sent, _view.Intents.Count);
+    }
+
+    [Fact]
+    public void WithNothingHeldAnotherPartysIntentIsLeftAlone()
+    {
+        var holds = new RynthMotionHolds(_view);
+        var theirs = new PluginMovementIntent(Forward: true);
+        _view.HeldIntent = theirs;
+
+        holds.Sync();
+        Assert.True(holds.SetMotion(TurnLeft, false));
+        holds.Refresh();
+
+        Assert.Empty(_view.Intents);
+        Assert.Equal(theirs, _view.HeldIntent);
+    }
+
+    [Fact]
+    public void AfterLettingGoAnotherPartysLaterIntentIsLeftAlone()
+    {
+        var holds = new RynthMotionHolds(_view);
+        holds.SetMotion(TurnLeft, true);
+        holds.SetMotion(TurnLeft, false);
+        int sent = _view.Intents.Count;
+
+        _view.HeldIntent = new PluginMovementIntent(Forward: true);
+        holds.Sync();
+
+        Assert.Equal(sent, _view.Intents.Count);
+    }
+
+    [Fact]
+    public void StopCompletelyAfterTheClientDroppedTheKeysStillStops()
+    {
+        var holds = new RynthMotionHolds(_view);
+        holds.SetMotion(RunForward, true);
+        _view.HeldIntent = null;
+        int sent = _view.Intents.Count;
+
+        Assert.True(holds.StopCompletely());
+
+        Assert.Equal(sent, _view.Intents.Count);
+        Assert.Contains("stop", _view.Actions);
+    }
 }

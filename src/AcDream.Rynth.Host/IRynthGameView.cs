@@ -167,6 +167,12 @@ public interface IRynthGameView
     /// <summary>Lets go of every held movement key. True when taken.</summary>
     bool ClearMovementIntent();
 
+    /// <summary>
+    /// The movement keys the client holds for a plugin right now, null when none are held.
+    /// The client clears them on its own (portal, relog, stop commands, another plugin).
+    /// </summary>
+    AcDream.Plugin.Abstractions.PluginMovementIntent? CurrentMovementIntent { get; }
+
     /// <summary>Stops the player completely, autorun included. True when taken.</summary>
     bool StopCompletely();
 

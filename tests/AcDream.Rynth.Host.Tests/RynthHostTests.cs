@@ -227,6 +227,79 @@ public sealed class RynthHostTests
         Assert.Empty(ContainerRecorder.Calls);
     }
 
+    [Fact]
+    public void Nav3DAPluginAddsDuringTickReachesTheLayer()
+    {
+        _view.Pose = (0xA9B40001, new System.Numerics.Vector3(50, 60, 10), System.Numerics.Quaternion.Identity);
+        var layer = new FakeTriangleLayer();
+        using var host = new RynthHost(_view, _log.Add, [typeof(TriangleTicker)], nav3DLayer: layer);
+
+        TriangleTicker.Layer = layer;
+        TriangleTicker.Add = true;
+        TriangleTicker.SetsSeenAtTick = -1;
+        host.Tick();
+
+        Assert.Equal(0, TriangleTicker.SetsSeenAtTick); // nothing committed before the plugin ticked
+        AcDream.Plugin.Abstractions.PluginWorldTriangle[] set = Assert.Single(layer.Sets);
+        Assert.Single(set);                              // the tick's own triangle, not cleared by Begin
+
+        TriangleTicker.Add = false;
+        host.Tick();
+
+        Assert.Equal(2, layer.Sets.Count);
+        Assert.Empty(layer.Sets[^1]);                    // the next tick began empty
+    }
+
+    [Fact]
+    public void AViewFaultInTheTickIsLoggedAndThePluginsStillTick()
+    {
+        _view.Pose = (0xA9B40001, new System.Numerics.Vector3(50, 60, 10), System.Numerics.Quaternion.Identity);
+        using var host = new RynthHost(_view, _log.Add, [typeof(TriangleTicker)], nav3DLayer: new FakeTriangleLayer());
+        host.Holds.SetMotion(0x41000003, true);
+        TriangleTicker.Layer = null;
+        TriangleTicker.Add = false;
+        TriangleTicker.SetsSeenAtTick = -1;
+        _view.Throw = true;
+
+        host.Tick();
+
+        _view.Throw = false;
+        Assert.NotEqual(-1, TriangleTicker.SetsSeenAtTick);
+        Assert.Contains(_log, line => line.Contains("holding movement failed: view failed", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("Nav3D begin failed: view failed", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("Nav3D commit failed: view failed", StringComparison.Ordinal));
+    }
+
+    private sealed class FakeTriangleLayer : AcDream.Plugin.Abstractions.IPluginWorldTriangleLayer
+    {
+        public List<AcDream.Plugin.Abstractions.PluginWorldTriangle[]> Sets { get; } = new();
+        public void SetTriangles(IReadOnlyList<AcDream.Plugin.Abstractions.PluginWorldTriangle> triangles) => Sets.Add([.. triangles]);
+        public void Dispose() { }
+    }
+
+    private static unsafe class TriangleTicker
+    {
+        private static RynthCoreHost s_host;
+        public static bool Add;
+        public static FakeTriangleLayer? Layer;
+        public static int SetsSeenAtTick;
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginInit", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static int Init(RynthCoreApiNative* api)
+        {
+            s_host = new RynthCoreHost(*api);
+            return 0;
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginTick", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void Tick()
+        {
+            SetsSeenAtTick = Layer?.Sets.Count ?? 0;
+            if (Add)
+                s_host.Nav3DAddTriangle(1, 2, 3, 4, 5, 6, 7, 8, 9, 0xC0FF0000);
+        }
+    }
+
     private static class NoExports
     {
     }

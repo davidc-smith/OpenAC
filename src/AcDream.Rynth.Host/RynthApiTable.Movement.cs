@@ -132,6 +132,7 @@ public sealed unsafe partial class RynthApiTable
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static int DoJump(int autonomous)
     {
+        // autonomous is ignored: OpenAC's jump is always the player's own.
         RynthApiTable? table = _current;
         if (table is null)
             return 0;

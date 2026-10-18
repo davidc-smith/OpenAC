@@ -84,7 +84,7 @@ RynthAi submits every tick (`NavMarkerRenderer.SubmitNav3D`) and never calls
   - Ring: a 32-segment cylinder wall of the given height (minimum 0.1 m), bottom corners
     in the ring colour, top corners at about 6% alpha (`(c & 0x00FFFFFF) | 0x10000000`);
     plus a flat annulus on the ground from `radius - thickness` (minimum 0.01 m) to
-    `radius`.
+    `radius + thickness`.
   - Line: a flat quad on the ground `thickness` wide, plus a 0.15 m vertical wall that
     fades to the top the same way.
   - Triangle: passed through.

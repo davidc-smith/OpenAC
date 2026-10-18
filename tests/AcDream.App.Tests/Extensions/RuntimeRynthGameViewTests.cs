@@ -461,6 +461,29 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
+    public void CurrentMovementIntentIsTheMovementOwnersCommandInput()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.Null(view.CurrentMovementIntent);
+
+        runtime.MovementOwner.SetCommandInput(new AcDream.Runtime.Gameplay.MovementInput(
+            Forward: true, StrafeRight: true, TurnLeft: true, Run: true, MouseDeltaX: 3f, Jump: true,
+            IsPersistentCommand: true, JumpExtent: 0.5f));
+        Assert.Equal(
+            new PluginMovementIntent(Forward: true, StrafeRight: true, TurnLeft: true, Run: true, Jump: true),
+            view.CurrentMovementIntent);
+
+        runtime.MovementOwner.SetCommandInput(new AcDream.Runtime.Gameplay.MovementInput(Backward: true, StrafeLeft: true, TurnRight: true));
+        Assert.Equal(
+            new PluginMovementIntent(Backward: true, StrafeLeft: true, TurnRight: true, Run: false),
+            view.CurrentMovementIntent);
+
+        runtime.MovementOwner.ClearCommandInput();
+        Assert.Null(view.CurrentMovementIntent);
+    }
+
+    [Fact]
     public void DoorStateComesFromTheEntityRecord()
     {
         var runtime = GameRuntimeTestFactory.Create();

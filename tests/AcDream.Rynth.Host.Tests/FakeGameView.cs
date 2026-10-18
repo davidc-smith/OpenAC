@@ -207,14 +207,21 @@ internal sealed class FakeGameView : IRynthGameView
     {
         if (Throw) throw new InvalidOperationException("view failed");
         Intents.Add(intent);
+        if (ActionAnswer)
+            HeldIntent = intent;
         return ActionAnswer;
     }
     public bool ClearMovementIntent()
     {
         if (Throw) throw new InvalidOperationException("view failed");
         Intents.Add(null);
+        if (ActionAnswer)
+            HeldIntent = null;
         return ActionAnswer;
     }
+    /// <summary>What the client holds now; tests clear or replace it to act as the client or another plugin.</summary>
+    public AcDream.Plugin.Abstractions.PluginMovementIntent? HeldIntent { get; set; }
+    public AcDream.Plugin.Abstractions.PluginMovementIntent? CurrentMovementIntent => Read(HeldIntent);
     public bool StopCompletely() => Act("stop");
     public bool BeginJump(float power) => Act(FormattableString.Invariant($"jump {power:0.###}"));
     public bool TryGetObjectState(uint objectId, out uint state)

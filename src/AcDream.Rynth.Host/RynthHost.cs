@@ -48,11 +48,22 @@ public sealed unsafe class RynthHost : IDisposable
     public void Tick()
     {
         Bridge.DeliverQueued();
-        _table.Holds.Sync();
-        _table.Nav3D.BeginTick();
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.Tick();
-        _table.Nav3D.CommitTick();
+        // A view fault here must not cost the plugins their tick.
+        try { _table.Holds.Sync(); }
+        catch (Exception error) { _log($"holding movement failed: {error.Message}"); }
+        try { _table.Nav3D.BeginTick(); }
+        catch (Exception error) { _log($"Nav3D begin failed: {error.Message}"); }
+        try
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.Tick();
+        }
+        finally
+        {
+            // RynthCore commits Nav3D after TickAll.
+            try { _table.Nav3D.CommitTick(); }
+            catch (Exception error) { _log($"Nav3D commit failed: {error.Message}"); }
+        }
     }
 
     public void Dispose()

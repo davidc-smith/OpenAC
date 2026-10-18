@@ -444,6 +444,20 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     public bool ClearMovementIntent() =>
         _automation.Navigation.ClearMovementIntent() == PluginNavigationCommandStatus.Accepted;
 
+    public PluginMovementIntent? CurrentMovementIntent
+    {
+        get
+        {
+            RuntimeLocalPlayerMovementState movement = _runtime.MovementOwner;
+            if (!movement.HasCommandInput)
+                return null;
+            MovementInput input = movement.CommandInput;
+            return new PluginMovementIntent(
+                input.Forward, input.Backward, input.StrafeLeft, input.StrafeRight,
+                input.TurnLeft, input.TurnRight, input.Run, input.Jump);
+        }
+    }
+
     public bool StopCompletely() =>
         _automation.IsAvailable && _runtime.MovementOwner.Execute(RuntimeMovementCommand.StopCompletely);
 

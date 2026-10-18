@@ -22,8 +22,12 @@ internal sealed class RynthMotionHolds(IRynthGameView view)
     {
         if (motion is not (WalkForward or WalkBackward or RunForward or TurnRight or TurnLeft or SidestepRight or SidestepLeft))
             return false;
-        bool changed = enabled ? _held.Add(motion) : _held.Remove(motion);
-        return !changed || Apply();
+        if (enabled)
+            _held.Add(motion);
+        else
+            _held.Remove(motion);
+        // Even when the set did not change: the client may have dropped what was sent.
+        return Apply();
     }
 
     /// <summary>Presses the jump key: the client charges as it does for a held space bar.</summary>
@@ -51,6 +55,7 @@ internal sealed class RynthMotionHolds(IRynthGameView view)
             Backward = held.Backward || backward,
             StrafeLeft = held.StrafeLeft || strafeLeft,
             StrafeRight = held.StrafeRight || strafeRight,
+            // Shift cannot force a walk while Run is already held (autorun / RunForward), as RynthCore's held run.
             Run = held.Run || (!shift && (forward || backward || strafeLeft || strafeRight)),
         };
         return Apply();
@@ -87,6 +92,10 @@ internal sealed class RynthMotionHolds(IRynthGameView view)
 
     private bool Apply()
     {
+        // The client's command input is shared and is cleared without telling us
+        // (portal, relog, stop commands, another plugin), so check what it holds.
+        if (_sent is not null && view.CurrentMovementIntent != _sent)
+            _sent = null;
         PluginMovementIntent? wanted = _launch ?? (_held.Count == 0 && !_jump ? null : Held());
         if (wanted == _sent)
             return true;
