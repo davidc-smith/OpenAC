@@ -29,7 +29,7 @@ public sealed class OverlayIconsTests
         Assert.Equal((IntPtr)11, _icons.Icon(0x1234u));
         Assert.Equal((IntPtr)11, _icons.Icon(0x06001234u));
         Assert.Equal(IntPtr.Zero, _icons.Icon(0));
-        Assert.Equal(new[] { "art:06001234", "art:06001234" }, _backend.Asked);
+        Assert.Equal(new[] { "art:06001234" }, _backend.Asked);
     }
 
     [Fact]
