@@ -1,3 +1,4 @@
+using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
 
 namespace AcDream.ClientExtensions;
@@ -34,4 +35,10 @@ public sealed class ClientExtensionContext
     /// extension creates it when it first writes). Null: don't save anything.
     /// </summary>
     public string? StateDirectory { get; init; }
+
+    /// <summary>
+    /// The client's plugin automation surface, bound to <see cref="Runtime"/>.
+    /// Null when the client has none (tests); it answers unavailable before login.
+    /// </summary>
+    public IAutomationSurface? Automation { get; init; }
 }

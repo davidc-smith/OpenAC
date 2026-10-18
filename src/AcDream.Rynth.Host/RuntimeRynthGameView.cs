@@ -1,5 +1,6 @@
 using System.Numerics;
 using AcDream.Core.Items;
+using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
 
@@ -9,13 +10,16 @@ namespace AcDream.Rynth.Host;
 public sealed class RuntimeRynthGameView : IRynthGameView
 {
     private readonly GameRuntime _runtime;
+    private readonly IAutomationSurface _automation;
 
     private readonly Func<string, bool>? _submitChatCommand;
 
-    public RuntimeRynthGameView(GameRuntime runtime, Func<string, bool>? submitChatCommand = null)
+    public RuntimeRynthGameView(GameRuntime runtime, Func<string, bool>? submitChatCommand = null,
+        IAutomationSurface? automation = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _submitChatCommand = submitChatCommand;
+        _automation = automation ?? NoOpAutomationSurface.Instance;
     }
 
     public uint SelectedObjectId => _runtime.ActionOwner.Selection.SelectedObjectId ?? 0u;

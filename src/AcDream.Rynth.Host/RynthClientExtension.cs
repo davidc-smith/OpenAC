@@ -67,7 +67,7 @@ public sealed class RynthClientExtension : IClientExtension
         }
 
         RynthInstallFolders.Apply();
-        var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand);
+        var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand, context.Automation);
         bool scriptWindows = context.Overlay is not null;
         _host = new RynthHost(
             view,
