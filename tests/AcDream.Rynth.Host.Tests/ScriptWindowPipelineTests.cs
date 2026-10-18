@@ -93,6 +93,25 @@ public sealed unsafe class ScriptWindowPipelineTests : IDisposable
     }
 
     [Fact]
+    public void AWindowSavedAsOpenIsReopenedAndThePluginHearsOfIt()
+    {
+        var layout = new FakePanelLayout();
+        layout.Saved["script:" + OracleKey] = new RynthCore.Engine.ImGuiBackend.PanelPlacement(null, true);
+        ImGuiPanelHost.Layout = layout;
+        using RynthHost host = CreateOracleHost();
+        host.Tick();
+        host.Tick();
+        Assert.Contains("visible=False", OracleLine());
+
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        for (int i = 0; i < 5; i++)
+            host.Tick();
+
+        Assert.True(ScriptWindowRegistry.IsOpen(OracleKey), Diag());
+        Assert.Contains("visible=True", OracleLine());
+    }
+
+    [Fact]
     public void DisposingTheHostRemovesItsWindows()
     {
         RynthHost host = CreateOracleHost();

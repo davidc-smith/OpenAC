@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using ImGuiNET;
+using RynthCore.Engine.UI.ScriptWindows;
 
 namespace RynthCore.Engine.ImGuiBackend;
 
 /// <summary>
 /// Our stand-in for RynthCore's ImGuiPanelHost: keeps each script window's
-/// open state and draws the open ones as ImGui windows. Open and Close apply
+/// open state and draws the open ones as ImGui windows, and restores and
+/// records each window's placement (rectangle, open state) through Layout. Open and Close apply
 /// at once (RynthCore queues them to the next frame), so nothing is ever
 /// "transitioning". Every Begin has its End, even when a body throws.
 /// </summary>
@@ -24,6 +26,12 @@ internal static class ImGuiPanelHost
         public Vector2? RequestedSize;
         public Vector2? RequestedPos;
         public int Failures;
+        /// <summary>Apply the saved rectangle on the next draw (set by Open).</summary>
+        public bool PlacePending;
+        /// <summary>Saved as open when first registered: reopen it on the next draw, as the bar would.</summary>
+        public bool RestoreOpen;
+        /// <summary>The rectangle last seen (logical units); a player change from it is saved.</summary>
+        public PanelRect? Baseline;
     }
 
     private const int MaxFailures = 3;
@@ -33,6 +41,24 @@ internal static class ImGuiPanelHost
 
     /// <summary>Where a body's exception is reported.</summary>
     internal static Action<string>? Log { get; set; }
+
+    /// <summary>Where window placement is kept between sessions; null keeps nothing.</summary>
+    internal static IPanelLayout? Layout { get; set; }
+
+    /// <summary>Reopens a window that was left open (tests replace it). Default: as the bar does.</summary>
+    internal static Action<string> RestoreOpener { get; set; } = OpenLikeTheBar;
+
+    /// <summary>
+    /// Opens a script window the way RynthCore's bar does, so the plugin gets a
+    /// Visibility event and its own earlier "hidden" flag is stale.
+    /// </summary>
+    private static void OpenLikeTheBar(string key)
+    {
+        if (key.StartsWith(ScriptWindowRegistry.PanelKeyPrefix, StringComparison.OrdinalIgnoreCase))
+            ScriptWindowRegistry.PlayerSetVisible(key.Substring(ScriptWindowRegistry.PanelKeyPrefix.Length), true);
+        else
+            Open(key);
+    }
 
     internal static int OpenCount
     {
@@ -53,7 +79,10 @@ internal static class ImGuiPanelHost
         lock (_gate)
         {
             if (!_entries.TryGetValue(key, out Entry? entry))
+            {
                 _entries[key] = entry = new Entry();
+                entry.RestoreOpen = Layout?.Get(key) is { Open: true };
+            }
             entry.Title = displayTitle;
             entry.Spec = spec;
             entry.Factory = factory;
@@ -100,6 +129,9 @@ internal static class ImGuiPanelHost
                 return;
             entry.Open = true;
             entry.Failures = 0;
+            entry.PlacePending = true;
+            entry.Baseline = null;
+            entry.RestoreOpen = false;
             if (entry.Instance is null)
             {
                 try { entry.Instance = entry.Factory(); }
@@ -114,6 +146,7 @@ internal static class ImGuiPanelHost
             shown = entry.Instance;
         }
 
+        Layout?.SetOpen(key, true);
         Guard(key + " OnShown", shown.OnShown);
     }
 
@@ -128,6 +161,7 @@ internal static class ImGuiPanelHost
             hidden = entry.Instance;
         }
 
+        Layout?.SetOpen(key, false);
         if (hidden is not null)
             Guard(key + " OnHidden", hidden.OnHidden);
     }
@@ -152,34 +186,64 @@ internal static class ImGuiPanelHost
 
     public static bool IsTransitioning(string key) => false;
 
-    /// <summary>Forgets every window (tests, and host shutdown).</summary>
+    /// <summary>Forgets every window and the layout hookups (tests, and host shutdown).</summary>
     internal static void Reset()
     {
         lock (_gate) _entries.Clear();
+        Layout = null;
+        RestoreOpener = OpenLikeTheBar;
     }
 
     /// <summary>Draws every open window. Call between ImGui.NewFrame and ImGui.Render.</summary>
     internal static void DrawAll()
     {
-        List<(string Key, Entry Entry, Vector2? Size, Vector2? Pos)> open = new();
+        List<string> restore = new();
         lock (_gate)
         {
             foreach (KeyValuePair<string, Entry> pair in _entries)
             {
-                if (!pair.Value.Open)
+                if (!pair.Value.RestoreOpen)
                     continue;
-                open.Add((pair.Key, pair.Value, pair.Value.RequestedSize, pair.Value.RequestedPos));
-                pair.Value.RequestedSize = null;
-                pair.Value.RequestedPos = null;
+                pair.Value.RestoreOpen = false;
+                if (!pair.Value.Open)
+                    restore.Add(pair.Key);
             }
         }
 
-        foreach ((string key, Entry entry, Vector2? requestedSize, Vector2? requestedPos) in open)
+        // Outside the lock: the registry opens the window through Open.
+        foreach (string key in restore)
+            Guard(key + " restore", () => RestoreOpener(key));
+
+        List<(string Key, Entry Entry, Vector2? Size, Vector2? Pos, PanelRect? Saved)> open = new();
+        lock (_gate)
+        {
+            foreach (KeyValuePair<string, Entry> pair in _entries)
+            {
+                Entry e = pair.Value;
+                if (!e.Open)
+                    continue;
+                PanelRect? saved = e.PlacePending ? Layout?.Get(pair.Key)?.Rect : null;
+                open.Add((pair.Key, e, e.RequestedSize, e.RequestedPos, saved));
+                e.RequestedSize = null;
+                e.RequestedPos = null;
+                e.PlacePending = false;
+            }
+        }
+
+        foreach ((string key, Entry entry, Vector2? requestedSize, Vector2? requestedPos, PanelRect? saved) in open)
         {
             float s = EngineFrameController.FontScale;
+            // A frame that places the window (saved spot, plugin request) only takes a new baseline.
+            bool placed = false;
             if (requestedSize is { } size)
             {
                 ImGui.SetNextWindowSize(size * s, ImGuiCond.Always);
+                placed = true;
+            }
+            else if (saved is { } savedSize)
+            {
+                ImGui.SetNextWindowSize(savedSize.Size * s, ImGuiCond.Always);
+                placed = true;
             }
             else
             {
@@ -189,6 +253,12 @@ internal static class ImGuiPanelHost
             if (requestedPos is { } pos)
             {
                 ImGui.SetNextWindowPos(pos * s, ImGuiCond.Always);
+                placed = true;
+            }
+            else if (saved is { } savedPos)
+            {
+                ImGui.SetNextWindowPos(ClampToDisplay(savedPos.Pos * s, savedPos.Size * s), ImGuiCond.Always);
+                placed = true;
             }
             else if (entry.Spec.DefaultPos is { } defaultPos)
             {
@@ -216,6 +286,7 @@ internal static class ImGuiPanelHost
                         ImGui.TextDisabled("This window failed and was stopped.");
                     else
                         entry.Instance?.Draw();
+                    TrackPlacement(key, entry, placed, s);
                 }
             }
             catch (Exception error)
@@ -232,5 +303,35 @@ internal static class ImGuiPanelHost
             if (!keepOpen)
                 Close(key);
         }
+    }
+
+    /// <summary>
+    /// Saves the window's rectangle when the player moved or resized it: it
+    /// differs from the last one seen and the left mouse button is up, so once
+    /// per finished drag. A frame that placed the window only takes the new
+    /// rectangle as its baseline. Inside the window, after its body.
+    /// </summary>
+    private static void TrackPlacement(string key, Entry entry, bool placed, float s)
+    {
+        var now = new PanelRect(ImGui.GetWindowPos() / s, ImGui.GetWindowSize() / s);
+        if (placed || entry.Baseline is null)
+        {
+            entry.Baseline = now;
+            return;
+        }
+
+        if (now == entry.Baseline || ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            return;
+        entry.Baseline = now;
+        Layout?.SetRect(key, now);
+    }
+
+    /// <summary>Keeps a window of this size wholly on the display (when the display is known).</summary>
+    private static Vector2 ClampToDisplay(Vector2 pos, Vector2 size)
+    {
+        Vector2 display = ImGui.GetIO().DisplaySize;
+        if (display.X <= 1 || display.Y <= 1)
+            return pos;
+        return Vector2.Clamp(pos, Vector2.Zero, Vector2.Max(Vector2.Zero, display - size));
     }
 }

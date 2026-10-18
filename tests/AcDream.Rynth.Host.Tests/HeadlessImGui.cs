@@ -13,6 +13,8 @@ internal sealed class HeadlessImGui : IDisposable
         _context = ImGui.CreateContext();
         ImGui.SetCurrentContext(_context);
         ImGuiIOPtr io = ImGui.GetIO();
+        // No imgui.ini: a window's size or position must not carry over from an earlier test.
+        unsafe { io.NativePtr->IniFilename = null; }
         io.DisplaySize = new Vector2(1280, 800);
         io.Fonts.GetTexDataAsRGBA32(out IntPtr _, out int _, out int _, out int _);
         io.Fonts.SetTexID(1);
