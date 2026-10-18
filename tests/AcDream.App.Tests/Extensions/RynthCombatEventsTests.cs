@@ -97,6 +97,20 @@ public sealed class RynthCombatEventsTests : IDisposable
     }
 
     [Fact]
+    public void AServerRemovalOfASpellTheClientDoesNotHoldIsForwarded()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        CombatRecorder.Calls.Clear();
+
+        runtime.CharacterOwner.Spellbook.OnEnchantmentRemoved(1u, 0x1234u);
+        host.Bridge.DeliverQueued();
+
+        Assert.Equal(["ench- 4660"], Recorded());   // RynthCore reports whatever the server removes
+    }
+
+    [Fact]
     public void AStatusLineIsHeldUntilTheDelivery()
     {
         var runtime = GameRuntimeTestFactory.Create();

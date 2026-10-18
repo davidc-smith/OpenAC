@@ -113,8 +113,8 @@ public sealed class RynthCombatEvents : IDisposable
         _bridge.OnEnchantmentAdded(record.SpellId & 0xFFFFu, record.Duration);
 
     // RynthCore reports the server's removals, cooldowns included, never a local expiry.
-    private void OnEnchantmentRemoved(ActiveEnchantmentRecord record) =>
-        _bridge.OnEnchantmentRemoved(record.SpellId & 0xFFFFu);
+    // The spell id arrives with its layer already stripped.
+    private void OnEnchantmentRemoved(uint spellId) => _bridge.OnEnchantmentRemoved(spellId);
 
     private void OnTransactionsChanged()
     {

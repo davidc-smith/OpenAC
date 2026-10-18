@@ -418,6 +418,98 @@ public sealed class SpellbookTests
     }
 
     [Fact]
+    public void OnEnchantmentRemoved_OfASpellTheClientDoesNotHold_IsStillReportedByTheServer()
+    {
+        var book = new Spellbook();
+        List<string> events = Record(book);
+        int changes = 0;
+        book.EnchantmentsChanged += () => changes++;
+
+        book.OnEnchantmentRemoved(7, 42);
+
+        Assert.Equal(["server 42"], events);
+        Assert.Equal(0, changes);
+    }
+
+    [Fact]
+    public void OnEnchantmentRemoved_ReportsTheSpellIdWithTheLayerStripped()
+    {
+        var book = new Spellbook();
+        List<string> events = Record(book);
+
+        book.OnEnchantmentRemoved(7, 0x0007002Au);
+
+        Assert.Equal(["server 42"], events);
+    }
+
+    [Fact]
+    public void OnEnchantmentRemoved_OfSpellZero_IsNotReported()
+    {
+        var book = new Spellbook();
+        List<string> events = Record(book);
+
+        book.OnEnchantmentRemoved(7, 0);
+
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public void OnEnchantmentsRemoved_ReportsEveryEntrySent_HeldOrNot_WithoutDeduping()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(42, 7, 300f, 0);
+        book.OnEnchantmentAdded(42, 8, 300f, 0);
+        List<string> events = Record(book);
+
+        book.OnEnchantmentsRemoved([(42u, 7u), (99u, 1u), (42u, 8u), (0u, 1u)]);
+
+        Assert.Equal(["removed 42", "server 42", "server 99", "removed 42", "server 42"], events);
+    }
+
+    [Fact]
+    public void OnPurgeAll_TwoLayersOfOneSpell_IsReportedOnce()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(new(1, 1, 100, 0, Bucket: 1));
+        book.OnEnchantmentAdded(new(1, 2, 100, 0, Bucket: 1));
+        book.OnEnchantmentAdded(new(2, 1, 100, 0, Bucket: 2));
+        List<string> events = Record(book);
+
+        book.OnPurgeAll();
+
+        Assert.Equal(["removed 1", "removed 1", "removed 2", "server 1", "server 2"], events);
+    }
+
+    [Fact]
+    public void OnPurgeAll_ThatLeavesALayerOfTheSpell_DoesNotReportIt()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(new(1, 1, 100, 0, Bucket: 1));
+        book.OnEnchantmentAdded(new(1, 2, -1, 0, Bucket: 1));   // permanent: the purge leaves it
+        List<string> events = Record(book);
+
+        book.OnPurgeAll();
+
+        Assert.Equal(["removed 1"], events);
+    }
+
+    [Fact]
+    public void OnPurgeBadEnchantments_TwoLayersOfOneSpell_IsReportedOnce_AndAKeptLayerIsNot()
+    {
+        const uint Beneficial = 0x02000000u;
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(new(1, 1, 100, 0, StatModType: 0, Bucket: 1));
+        book.OnEnchantmentAdded(new(1, 2, 100, 0, StatModType: 0, Bucket: 1));
+        book.OnEnchantmentAdded(new(3, 1, 100, 0, StatModType: 0, Bucket: 1));
+        book.OnEnchantmentAdded(new(3, 2, 100, 0, StatModType: Beneficial, Bucket: 1));
+        List<string> events = Record(book);
+
+        book.OnPurgeBadEnchantments();
+
+        Assert.Equal(["removed 1", "removed 1", "removed 3", "server 1"], events);
+    }
+
+    [Fact]
     public void OnCooldown_LocalExpiry_RaisesRemovedOnly()
     {
         var book = new Spellbook();
@@ -439,7 +531,7 @@ public sealed class SpellbookTests
     {
         List<string> events = [];
         book.EnchantmentRemoved += record => events.Add($"removed {record.SpellId}");
-        book.EnchantmentRemovedByServer += record => events.Add($"server {record.SpellId}");
+        book.EnchantmentRemovedByServer += spellId => events.Add($"server {spellId}");
         return events;
     }
 

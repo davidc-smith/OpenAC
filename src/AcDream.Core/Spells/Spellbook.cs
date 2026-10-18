@@ -114,11 +114,16 @@ public sealed class Spellbook
     public event Action<ActiveEnchantmentRecord>? EnchantmentRemoved;
 
     /// <summary>
-    /// An enchantment the server removed (remove, dispel, purge). Raised after
-    /// <see cref="EnchantmentRemoved"/>; a cooldown the client drops on its own
-    /// when it expires raises only <see cref="EnchantmentRemoved"/>.
+    /// A spell id (layer stripped) the server removed, reported as RynthCore's
+    /// SmartBoxHooks does. A remove or dispel, single or multiple, reports each
+    /// id the server sent, whether or not the client held it, without deduping
+    /// (spell id 0 is skipped). A purge reports, once each, the spell ids that
+    /// left the player entirely; a spell with a layer still active is not
+    /// reported. Raised after <see cref="EnchantmentRemoved"/>, which fires only
+    /// for records actually removed; a cooldown the client drops on its own when
+    /// it expires raises only <see cref="EnchantmentRemoved"/>.
     /// </summary>
-    public event Action<ActiveEnchantmentRecord>? EnchantmentRemovedByServer;
+    public event Action<uint>? EnchantmentRemovedByServer;
 
     public event Action? StateChanged;
 
@@ -219,12 +224,12 @@ public sealed class Spellbook
     public void OnEnchantmentRemoved(uint layerId, uint spellId)
     {
         uint identity = ActiveEnchantmentRecord.MakeIdentity(spellId, layerId);
-        if (RemoveActiveEnchantment(identity, out ActiveEnchantmentRecord record))
-        {
+        bool removed = RemoveActiveEnchantment(identity, out ActiveEnchantmentRecord record);
+        if (removed)
             EnchantmentRemoved?.Invoke(record);
-            EnchantmentRemovedByServer?.Invoke(record);
+        RaiseRemovedByServer(spellId);
+        if (removed)
             NotifyEnchantmentsChanged();
-        }
     }
 
     public void OnEnchantmentsAdded(IEnumerable<ActiveEnchantmentRecord> records)
@@ -243,10 +248,12 @@ public sealed class Spellbook
         foreach ((uint spellId, uint layer) in spells)
         {
             uint identity = ActiveEnchantmentRecord.MakeIdentity(spellId, layer);
-            if (!RemoveActiveEnchantment(identity, out ActiveEnchantmentRecord record)) continue;
-            changed = true;
-            EnchantmentRemoved?.Invoke(record);
-            EnchantmentRemovedByServer?.Invoke(record);
+            if (RemoveActiveEnchantment(identity, out ActiveEnchantmentRecord record))
+            {
+                changed = true;
+                EnchantmentRemoved?.Invoke(record);
+            }
+            RaiseRemovedByServer(spellId);
         }
         if (changed) NotifyEnchantmentsChanged();
     }
@@ -294,10 +301,8 @@ public sealed class Spellbook
         foreach (ActiveEnchantmentRecord record in removed)
             RemoveActiveEnchantment(record.Identity, out _);
         foreach (var rec in removed)
-        {
             EnchantmentRemoved?.Invoke(rec);
-            EnchantmentRemovedByServer?.Invoke(rec);
-        }
+        RaisePurgedByServer(removed);
         if (removed.Length != 0) NotifyEnchantmentsChanged();
     }
 
@@ -311,11 +316,33 @@ public sealed class Spellbook
         foreach (ActiveEnchantmentRecord record in removed)
             RemoveActiveEnchantment(record.Identity, out _);
         foreach (ActiveEnchantmentRecord record in removed)
-        {
             EnchantmentRemoved?.Invoke(record);
-            EnchantmentRemovedByServer?.Invoke(record);
-        }
+        RaisePurgedByServer(removed);
         if (removed.Length != 0) NotifyEnchantmentsChanged();
+    }
+
+    // RynthCore queues a removal per id the server sent (layer stripped), skipping 0.
+    private void RaiseRemovedByServer(uint spellId)
+    {
+        uint id = spellId & 0xFFFFu;
+        if (id != 0u)
+            EnchantmentRemovedByServer?.Invoke(id);
+    }
+
+    // A purge carries no ids: RynthCore diffs the player's spell ids before and after
+    // and reports, once each, those no longer held at any layer.
+    private void RaisePurgedByServer(ActiveEnchantmentRecord[] removed)
+    {
+        if (removed.Length == 0 || EnchantmentRemovedByServer is null)
+            return;
+        var remaining = new HashSet<uint>(_activeById.Values.Select(record => record.SpellId & 0xFFFFu));
+        var reported = new HashSet<uint>();
+        foreach (ActiveEnchantmentRecord record in removed)
+        {
+            uint id = record.SpellId & 0xFFFFu;
+            if (!remaining.Contains(id) && reported.Add(id))
+                EnchantmentRemovedByServer?.Invoke(id);
+        }
     }
 
     private static bool IsPurgeable(ActiveEnchantmentRecord record) =>
