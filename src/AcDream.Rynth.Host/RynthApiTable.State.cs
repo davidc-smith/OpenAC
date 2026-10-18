@@ -213,7 +213,7 @@ public sealed unsafe partial class RynthApiTable
         }
     }
 
-    // RynthCore: copies at most max, returns how many there are; -1 when not available.
+    // RynthCore: copies at most max, returns how many it wrote; -1 when not available.
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static int ReadPlayerEnchantments(uint* spellIds, double* expiryTimes, int max)
     {
@@ -231,7 +231,7 @@ public sealed unsafe partial class RynthApiTable
                 expiryTimes[i] = enchantments[i].ExpiryServerTime;
             }
 
-            return enchantments.Count;
+            return count;
         }
         catch (Exception error)
         {
@@ -425,7 +425,7 @@ public sealed unsafe partial class RynthApiTable
             int count = Math.Min(known.Count, max);
             for (int i = 0; i < count; i++)
                 spellIds[i] = known[i];
-            return known.Count;
+            return count;
         }
         catch (Exception error)
         {

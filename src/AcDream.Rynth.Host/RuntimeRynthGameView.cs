@@ -214,7 +214,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     {
         get
         {
-            if (!_automation.IsAvailable)
+            if (!_automation.IsAvailable || PlayerId == 0)
                 return null;
             double now = ServerTime;
             return

@@ -121,7 +121,7 @@ public sealed unsafe class RynthApiTableTests
 
         var spellIds = new uint[1];
         var expiries = new double[1];
-        Assert.Equal(2, host.ReadPlayerEnchantments(spellIds, expiries, 1));   // count exceeds max
+        Assert.Equal(1, host.ReadPlayerEnchantments(spellIds, expiries, 1));   // clamped to max, as RynthCore does
         Assert.Equal((2u, 1_300.0), (spellIds[0], expiries[0]));
 
         Assert.True(host.TryGetObjectBoolProperty(0x80000010, 1, out bool flag));
@@ -150,6 +150,7 @@ public sealed unsafe class RynthApiTableTests
         var knownIds = new uint[8];
         Assert.Equal(3, host.ReadKnownSpells(knownIds, 8));
         Assert.Equal(new uint[] { 1, 2, 3 }, knownIds[..3]);
+        Assert.Equal(2, host.ReadKnownSpells(new uint[2], 2));
 
         Assert.True(host.ObjectIsAttackable(0x80000010));
         Assert.False(host.ObjectIsAttackable(0x80000011));

@@ -123,6 +123,7 @@ public sealed unsafe partial class RynthApiTable
         }
     }
 
+    // OpenAC splits by moving an amount smaller than the stack, so this is the same call as MoveItemInternal.
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static int SplitStackInternal(uint objectId, uint containerId, int slot, int amount)
     {
@@ -170,7 +171,6 @@ public sealed unsafe partial class RynthApiTable
         catch (Exception error)
         {
             table.Fail(nameof(ForceResetBusyCount), error);
-            return;
         }
     }
 

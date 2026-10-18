@@ -246,4 +246,26 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal(0x80000010u, view.SelectedObjectId);
         Assert.False(view.QueryHealth(0x80000010));   // the test runtime has no session
     }
+
+    [Fact]
+    public void TryGetVitalBase_MapsRynthCoreStatIdsToVitalKinds()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var automation = new FakeRynthAutomation();
+        automation.CharacterArea.VitalList.Add(new PluginVitalInfo(0, "Health", 10, 100) { Base = 90 });
+        automation.CharacterArea.VitalList.Add(new PluginVitalInfo(1, "Stamina", 10, 110) { Base = 95 });
+        automation.CharacterArea.VitalList.Add(new PluginVitalInfo(2, "Mana", 10, 120) { Base = 99 });
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.TryGetVitalBase(0x50000001, 1, out uint health));
+        Assert.Equal(90u, health);
+        Assert.True(view.TryGetVitalBase(0x50000001, 3, out uint stamina));
+        Assert.Equal(95u, stamina);
+        Assert.True(view.TryGetVitalBase(0x50000001, 5, out uint mana));
+        Assert.Equal(99u, mana);
+        Assert.False(view.TryGetVitalBase(0x50000001, 2, out _));
+        Assert.False(view.TryGetVitalBase(0x50000001, 6, out _));
+        Assert.False(view.TryGetVitalBase(0x80000010, 1, out _));
+    }
 }
