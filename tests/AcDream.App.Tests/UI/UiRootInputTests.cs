@@ -20,6 +20,26 @@ public class UiRootInputTests
     }
 
     [Fact]
+    public void RawEnterAndTab_DoNotFocusAHiddenDefaultTextInput()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var window = new UiPanel { Width = 200, Height = 50 };
+        var field = new UiField { Width = 100, Height = 20 };
+        window.AddChild(field);
+        root.AddChild(window);
+        window.Visible = false;
+        root.DefaultTextInput = field;       // set after its window was hidden
+
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Tab);
+        Assert.Null(root.KeyboardFocus);
+
+        window.Visible = true;
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        Assert.Same(field, root.KeyboardFocus);
+    }
+
+    [Fact]
     public void SemanticChatActivation_OnAPrintableKey_SwallowsOnlyThatKeysOwnChar()
     {
         // The action can be bound to a letter; the letter must not be typed

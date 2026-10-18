@@ -22,7 +22,8 @@ internal sealed class ClientExtensionHost : IDisposable
         IPluginCommandRegistry? commands,
         IClientOverlay? overlay = null,
         Func<string, bool>? submitChatCommand = null,
-        string? stateDirectory = null)
+        string? stateDirectory = null,
+        IClientChat? chat = null)
     {
         var context = new ClientExtensionContext
         {
@@ -34,6 +35,7 @@ internal sealed class ClientExtensionHost : IDisposable
             Overlay = overlay,
             SubmitChatCommand = submitChatCommand,
             StateDirectory = stateDirectory,
+            Chat = chat,
         };
 
         foreach (IClientExtension extension in _extensions.ToArray())

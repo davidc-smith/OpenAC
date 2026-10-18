@@ -113,14 +113,16 @@ Right/Home/End/Up/Down/Paste/Copy/Cut/TellSelected/CaptureActivated` and reads
   OpenAC and reopen a chat bar (their `_swallowEnterTail`). Control characters are not
   typed in.
 - **Starting capture.** OpenAC gains a chat seam, `IClientChat` on the extension
-  context: `ClaimChatEntry(Func<bool>)` and `SetChatWindowHidden(bool)`. When OpenAC's
-  `ChatStartCommand` action fires (Enter by default, respecting key bindings; OpenAC
-  already holds actions back while one of its text fields has focus), a claim runs
-  first. Ours succeeds when `RynthChatOwnsChat` is true and capture is off: it sets
+  context: `ClaimChatEntry(Func<bool>)` and `SetChatWindowHidden(bool)`. When any OpenAC
+  action that would focus its chat entry fires (`EnterChatMode`, Enter by default;
+  `ToggleChatEntry`, `FocusChatEntry`, `ChatStartCommand`, the reply and tell-to-selected
+  actions; respecting key bindings; OpenAC already holds actions back while one of its
+  text fields has focus), a claim runs first. Ours succeeds when `RynthChatOwnsChat` is true and capture is off: it sets
   `ChatCaptureActive` and calls `OnChatCaptureActivated`, and OpenAC's chat bar stays
   shut. Clicking their input box starts capture too (their own code).
 - **Hiding OpenAC's chat.** Each tick the host passes `RynthChatOwnsChat` to
-  `SetChatWindowHidden`; OpenAC hides or shows its main chat window.
+  `SetChatWindowHidden`; OpenAC hides or shows its main chat window. The hide is not the player's
+  choice: OpenAC's saved layout keeps the visibility the player chose, not the hidden state.
 - **Clipboard.** `IClientOverlay` gains `ClipboardText`, backed by the window's
   keyboard clipboard (as OpenAC's own text fields use). On Windows our sink calls
   their `OnChatPaste/Copy/Cut`; elsewhere it uses `ClipboardText` as described above.

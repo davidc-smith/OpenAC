@@ -3,6 +3,7 @@ using AcDream.ClientExtensions;
 using AcDream.TestSupport;
 using AcDream.Rynth.Host;
 using ImGuiNET;
+using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.ScriptWindows;
 
@@ -38,7 +39,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         _sandbox.Dispose();
     }
 
-    private ClientExtensionContext Context(AcDream.Runtime.GameRuntime runtime, IClientOverlay? overlay, string? stateDirectory = null) => new()
+    private ClientExtensionContext Context(AcDream.Runtime.GameRuntime runtime, IClientOverlay? overlay, string? stateDirectory = null, IClientChat? chat = null) => new()
     {
         Runtime = runtime,
         Log = _log.Add,
@@ -49,6 +50,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         },
         Overlay = overlay,
         StateDirectory = stateDirectory,
+        Chat = chat,
     };
 
     [Fact]
@@ -154,6 +156,52 @@ public sealed class RynthOverlayExtensionTests : IDisposable
             entry.Text.Contains("can't show plugin windows", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void TheChatKeyboardAndClaimAreHookedUpUntilDispose()
+    {
+        var overlay = new FakeOverlay();
+        var chat = new FakeChat();
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay, chat: chat));
+        Assert.Single(overlay.Sinks);
+        Assert.Single(chat.Claims);
+
+        extension.Dispose();
+        Assert.Empty(overlay.Sinks);
+        Assert.Empty(chat.Claims);
+    }
+
+    [Fact]
+    public void OpenACsChatWindowIsHiddenWhileRynthChatOwnsChat()
+    {
+        var chat = new FakeChat();
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), new FakeOverlay(), chat: chat));
+        try
+        {
+            extension.Tick(1 / 60.0);
+            extension.Tick(1 / 60.0);
+            Assert.Equal([false], chat.Hidden);
+
+            ChatHooks.SuppressOriginalChat = true;
+            ChatHooks.ChatPanelShown = true;
+            LoginLifecycleHooks.HasObservedLoginComplete = true;
+            extension.Tick(1 / 60.0);
+            extension.Tick(1 / 60.0);
+            Assert.Equal([false, true], chat.Hidden);
+
+            extension.Dispose();
+            Assert.Equal([false, true, false], chat.Hidden);
+        }
+        finally
+        {
+            ChatHooks.SuppressOriginalChat = false;
+            ChatHooks.ChatPanelShown = false;
+            LoginLifecycleHooks.HasObservedLoginComplete = false;
+            extension.Dispose();
+        }
+    }
+
     private static int Frame(Action draw)
     {
         ImGui.GetIO().DeltaTime = 1f / 60f;
@@ -180,6 +228,28 @@ public sealed class RynthOverlayExtensionTests : IDisposable
             Callbacks.Add(draw);
             return new Registration(() => { Callbacks.Remove(draw); CallbackRemoved = true; });
         }
+
+        public List<IOverlayKeyboardSink> Sinks { get; } = new();
+
+        public IDisposable AddKeyboardSink(IOverlayKeyboardSink sink)
+        {
+            Sinks.Add(sink);
+            return new Registration(() => Sinks.Remove(sink));
+        }
+    }
+
+    private sealed class FakeChat : IClientChat
+    {
+        public List<Func<bool>> Claims { get; } = new();
+        public List<bool> Hidden { get; } = new();
+
+        public IDisposable ClaimChatEntry(Func<bool> tryClaim)
+        {
+            Claims.Add(tryClaim);
+            return new Registration(() => Claims.Remove(tryClaim));
+        }
+
+        public void SetChatWindowHidden(bool hidden) => Hidden.Add(hidden);
     }
 
     private sealed class FakeIcons : AcDream.ClientExtensions.IClientOverlayIcons

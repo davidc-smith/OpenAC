@@ -359,6 +359,7 @@ public sealed class GameWindow :
     private AcDream.UI.Abstractions.Panels.Chat.ChatVM? _retailChatVm;
     private AcDream.App.UI.UiHost? _uiHost;
     private AcDream.App.UI.RetailUiRuntime? _retailUiRuntime;
+    private readonly AcDream.App.Extensions.ClientChatSeam _chatSeam = new(line => Serilog.Log.Information("{ExtensionLine}", line));
     private readonly AcDream.App.UI.RetailUiRuntimeLease _retailUiLease = new();
     private InteractionUiLateBindings? _interactionUiLateBindings;
     private readonly DeferredRenderFrameDiagnosticsSource _uiFrameDiagnostics = new();
@@ -535,7 +536,7 @@ public sealed class GameWindow :
         _runtimeHostLease = _runtime.AcquireHostLease(
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
-        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"));
+        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam);
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
@@ -994,6 +995,7 @@ public sealed class GameWindow :
         {
             _uiHost = retained.Host;
             _retailUiRuntime = retained.Runtime;
+            _retailUiRuntime.ExtensionChat = _chatSeam;
             _overlay.BindIcons(retained.Runtime.ImageBackend);
             _retailChatVm = retained.Chat;
             _characterSheetProvider = retained.CharacterSheet;

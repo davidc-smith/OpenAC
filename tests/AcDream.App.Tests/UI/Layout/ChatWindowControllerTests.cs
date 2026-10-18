@@ -160,6 +160,112 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
+    public void ExtensionHiddenHidesAndRestoresTheWindow()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.SetExtensionHidden(true);
+        Assert.False(ctrl.Root.Visible);
+        ctrl.SetExtensionHidden(false);
+        Assert.True(ctrl.Root.Visible);
+    }
+
+    [Fact]
+    public void AWindowHiddenBeforeStaysHidden()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.Root.Visible = false;
+        ctrl.SetExtensionHidden(true);
+        ctrl.SetExtensionHidden(false);
+        Assert.False(ctrl.Root.Visible);
+    }
+
+    [Fact]
+    public void AToggleThatShowsTheWindowWhileExtensionHiddenIsUndoneNextTick()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.SetExtensionHidden(true);
+        ctrl.Root.Visible = true;
+        ctrl.SetExtensionHidden(true);
+        Assert.False(ctrl.Root.Visible);
+        ctrl.SetExtensionHidden(false);
+        Assert.True(ctrl.Root.Visible);
+    }
+
+    [Fact]
+    public void ExtensionHidingClearsFocusInsideTheWindow()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        var root = new UiRoot();
+        root.AddChild(ctrl.Root);
+        ctrl.SetExtensionHidden(true);
+        ctrl.Root.Visible = true;            // a toggle showed it and focused the entry
+        root.SetKeyboardFocus(ctrl.Input);
+        ctrl.Root.Visible = false;           // hidden again, but the entry kept focus
+        root.SetKeyboardFocus(ctrl.Input);
+        Assert.Same(ctrl.Input, root.KeyboardFocus);
+
+        ctrl.SetExtensionHidden(true);
+
+        Assert.Null(root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void ClaimedEntryActionsDoNotFocusTheChatEntry()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        var root = new UiRoot();
+        root.AddChild(ctrl.Root);
+        int asked = 0;
+        ctrl.ExtensionEntryClaim = () => { asked++; return true; };
+
+        ctrl.EnterChatMode();
+        ctrl.ToggleChatEntry();
+        ctrl.StartCommand();
+        ctrl.StartTell("Bob");
+        ctrl.StartReply("Bob");
+
+        Assert.Equal(5, asked);
+        Assert.NotSame(ctrl.Input, root.KeyboardFocus);
+        Assert.Equal("", ctrl.Input.Text);
+
+        ctrl.ExtensionEntryClaim = () => false;
+        ctrl.EnterChatMode();
+        Assert.Same(ctrl.Input, root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void ClosingTheEntryWithToggleDoesNotAskTheClaim()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        var root = new UiRoot();
+        root.AddChild(ctrl.Root);
+        ctrl.EnterChatMode();
+        ctrl.ExtensionEntryClaim = () => throw new InvalidOperationException("asked");
+        ctrl.ToggleChatEntry();
+        Assert.NotSame(ctrl.Input, root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void CaptureWhileExtensionHiddenReportsThePlayersVisibility()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        Assert.Null(ctrl.CaptureWindowState().RequestedVisible);
+        ctrl.SetExtensionHidden(true);
+        Assert.True(ctrl.CaptureWindowState().RequestedVisible);
+    }
+
+    [Fact]
+    public void RestoreWhileExtensionHiddenUpdatesTheRememberedChoiceAndStaysHidden()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.SetExtensionHidden(true);
+        ctrl.RestoreWindowState(new RetainedWindowState(RequestedVisible: false));
+        Assert.False(ctrl.Root.Visible);
+        ctrl.SetExtensionHidden(false);
+        Assert.False(ctrl.Root.Visible);
+    }
+
+    [Fact]
     public void TypingInThePanelIsTheSharedEntrysDraft()
     {
         var (ctrl, _, entry) = BindOverSharedEntry();

@@ -165,15 +165,30 @@
           "AcDream.Plugin.Abstractions": "[0.1.25, )"
         }
       },
+      "acdream.rynth.chatwindow": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.ScriptWindows": "[0.1.25, )",
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
+        }
+      },
       "acdream.rynth.host": {
         "type": "Project",
         "dependencies": {
           "AcDream.ClientExtensions": "[0.1.25, )",
           "AcDream.Runtime": "[0.1.25, )",
+          "AcDream.Rynth.ChatWindow": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthChat": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthInventory": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthOracle": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthTracker": "[0.1.25, )",
           "AcDream.Rynth.ScriptWindows": "[0.1.25, )",
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthchat": {
+        "type": "Project",
+        "dependencies": {
           "AcDream.Rynth.Sdk": "[0.1.25, )"
         }
       },

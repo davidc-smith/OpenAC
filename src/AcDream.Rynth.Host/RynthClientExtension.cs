@@ -2,6 +2,7 @@ using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Player;
+using AcDream.Rynth.ChatWindow;
 using AcDream.Runtime;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.ScriptWindows;
@@ -9,15 +10,18 @@ using RynthCore.Engine.UI.ScriptWindows;
 namespace AcDream.Rynth.Host;
 
 /// <summary>
-/// Runs RynthCore plugins (RynthTracker, RynthOracle, RynthInventory) inside the client: the
+/// Runs RynthCore plugins (RynthTracker, RynthOracle, RynthInventory, RynthChat) inside the client: the
 /// API table reads the runtime, runtime events become plugin callbacks,
 /// script windows draw on the client's ImGui overlay when it has one, with a
-/// launcher bar and their layout saved per install, and
+/// launcher bar and their layout saved per install, RynthCore's chat window
+/// (over RynthChat's scrollback) with a Chat button on the bar, and
 /// <c>/rynth tracker</c>, <c>/ro</c> and <c>/ginv</c> reach the plugins.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
 {
     private RynthHost? _host;
+    private RynthChatHookup? _chatHookup;
+    private Action<string>? _log;
     private IDisposable? _runtimeSubscription;
     private IDisposable? _frameCallback;
     private readonly List<IDisposable> _commands = new();
@@ -26,6 +30,11 @@ public sealed class RynthClientExtension : IClientExtension
     private RynthLayoutStore? _layout;
     private RynthBar? _bar;
     private Func<ScriptIconKind, uint, IntPtr>? _iconSource;
+    private RynthChatKeyboard? _chatKeyboard;
+    private IDisposable? _keyboardSink;
+    private IDisposable? _chatClaim;
+    private IClientChat? _clientChat;
+    private bool? _chatHidden;
 
     /// <summary>Test seam: extra plugin exports types loaded beside the shipped plugins.</summary>
     internal IReadOnlyList<Type> AdditionalPluginExports { get; init; } = [];
@@ -33,11 +42,12 @@ public sealed class RynthClientExtension : IClientExtension
     public void Attach(ClientExtensionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        _log = context.Log;
         if (context.Overlay is not null)
         {
             _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
             ImGuiPanelHost.Layout = _layout;
-            _bar = new RynthBar(_layout, context.Log);
+            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title] };
             IClientOverlayIcons icons = context.Overlay.Icons;
             _iconSource = (kind, id) => kind switch
             {
@@ -62,9 +72,13 @@ public sealed class RynthClientExtension : IClientExtension
                 typeof(RynthCore.Plugin.RynthTracker.PluginExports),
                 typeof(RynthCore.Plugin.RynthOracle.PluginExports),
                 typeof(RynthCore.Plugin.RynthInventory.PluginExports),
+                typeof(RynthCore.Plugin.RynthChat.PluginExports),
                 .. AdditionalPluginExports,
             ],
             scriptWindows);
+        _chatHookup = new RynthChatHookup(_host, view, context.Log);
+        if (context.Overlay is { } chatOverlay)
+            StartChat(context, chatOverlay);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
         _combat.HealthChanged += OnHealthChanged;
@@ -81,6 +95,60 @@ public sealed class RynthClientExtension : IClientExtension
             _frameCallback = overlay.AddFrameCallback(DrawFrame);
     }
 
+    /// <summary>
+    /// RynthCore's chat window, typed into through the overlay keyboard, and
+    /// OpenAC's chat-entry key offered to it first. A bad chat settings file
+    /// is logged; the rest of the extension carries on.
+    /// </summary>
+    private void StartChat(ClientExtensionContext context, IClientOverlay overlay)
+    {
+        if (!GuardChat(RynthChatWindow.Start))
+            return;
+        _chatKeyboard = new RynthChatKeyboard(
+            context.Log,
+            () => overlay.ClipboardText,
+            text => overlay.ClipboardText = text,
+            OperatingSystem.IsWindows(),
+            () => RynthCore.Engine.UI.Data.ChatModel.InputText);
+        _keyboardSink = overlay.AddKeyboardSink(_chatKeyboard);
+        if (context.Chat is { } chat)
+        {
+            _clientChat = chat;
+            _chatClaim = chat.ClaimChatEntry(_chatKeyboard.TryClaimEntry);
+        }
+    }
+
+    /// <summary>Runs chat work; a throw is logged as a chat failure. True when it ran clean.</summary>
+    private bool GuardChat(Action work)
+    {
+        try
+        {
+            work();
+            return true;
+        }
+        catch (Exception error)
+        {
+            _log?.Invoke($"[Rynth] chat: {error.GetType().Name}: {error.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Each tick: the chat source, the deferred send and Tell, and OpenAC's chat window hidden while Rynth chat owns chat.</summary>
+    private void TickChat()
+    {
+        RynthChatWindow.Tick();
+        _chatKeyboard?.Tick();
+        if (_clientChat is { } clientChat)
+        {
+            bool hide = RynthCore.Engine.Compatibility.ChatHooks.RynthChatOwnsChat;
+            if (_chatHidden != hide)
+            {
+                _chatHidden = hide;
+                clientChat.SetChatWindowHidden(hide);
+            }
+        }
+    }
+
     /// <summary>The overlay frame: the script windows, then the bar over them.</summary>
     private void DrawFrame()
     {
@@ -88,10 +156,27 @@ public sealed class RynthClientExtension : IClientExtension
         _bar?.Draw();
     }
 
-    public void Tick(double deltaSeconds) => _host?.Tick();
+    public void Tick(double deltaSeconds)
+    {
+        _host?.Tick();
+        GuardChat(TickChat);
+    }
 
     public void Dispose()
     {
+        // The chat seams go first, each on its own, so a failure in one still lets
+        // the rest (and the plugin host below) shut down.
+        if (_chatClaim is { } claim)
+            GuardChat(claim.Dispose);
+        if (_keyboardSink is { } sink)
+            GuardChat(sink.Dispose);
+        if (_chatHidden == true && _clientChat is { } clientChat)
+            GuardChat(() => clientChat.SetChatWindowHidden(false));
+        _chatClaim = null;
+        _keyboardSink = null;
+        _clientChat = null;
+        _chatHidden = null;
+        _chatKeyboard = null;
         _frameCallback?.Dispose();
         _frameCallback = null;
         foreach (IDisposable command in _commands)
@@ -115,8 +200,18 @@ public sealed class RynthClientExtension : IClientExtension
 
         _runtimeSubscription?.Dispose();
         _runtimeSubscription = null;
-        _host?.Dispose();
-        _host = null;
+        try
+        {
+            GuardChat(RynthChatWindow.Stop);
+            _chatHookup?.Dispose();
+            _chatHookup = null;
+        }
+        finally
+        {
+            _host?.Dispose();
+            _host = null;
+        }
+
         if (_layout is not null && ImGuiPanelHost.Layout == _layout)
             ImGuiPanelHost.Layout = null;
         _layout = null;

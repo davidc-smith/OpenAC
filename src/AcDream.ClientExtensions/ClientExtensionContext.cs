@@ -26,6 +26,9 @@ public sealed class ClientExtensionContext
     /// </summary>
     public Func<string, bool>? SubmitChatCommand { get; init; }
 
+    /// <summary>The client's chat; null without a retail UI (tests, headless).</summary>
+    public IClientChat? Chat { get; init; }
+
     /// <summary>
     /// A folder the extension may keep its own files in (one per install; the
     /// extension creates it when it first writes). Null: don't save anything.

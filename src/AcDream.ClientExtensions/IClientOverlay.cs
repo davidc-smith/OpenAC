@@ -27,6 +27,26 @@ public interface IClientOverlay
     void AddMergedFont(byte[] ttf, string glyphs, float scale)
     {
     }
+
+    /// <summary>Adds a keyboard sink. Dispose the result to remove it.</summary>
+    IDisposable AddKeyboardSink(IOverlayKeyboardSink sink) => NoKeyboardSink.Instance;
+
+    /// <summary>The system clipboard's text; "" when there is none or no keyboard.</summary>
+    string ClipboardText
+    {
+        get => string.Empty;
+        set { }
+    }
+}
+
+/// <summary>The registration an overlay without keyboard sinks returns.</summary>
+internal sealed class NoKeyboardSink : IDisposable
+{
+    public static readonly NoKeyboardSink Instance = new();
+
+    public void Dispose()
+    {
+    }
 }
 
 /// <summary>An overlay without icons: every lookup is zero.</summary>
