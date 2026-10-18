@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
 using ImGuiNET;
 
@@ -67,6 +68,8 @@ internal sealed unsafe class OverlayFonts : IDisposable
                 config.OversampleH = 1;
                 config.OversampleV = 1;
                 config.GlyphMinAdvanceX = pixels;
+                // Icon glyphs sit a quarter of their size above the text's middle; this lines them up with capitals.
+                config.GlyphOffset = new Vector2(0, MathF.Round(pixels * 0.25f));
                 atlas.AddFontFromMemoryTTF(entry.Data, entry.Length, pixels, config, entry.Ranges);
             }
             catch (Exception error)

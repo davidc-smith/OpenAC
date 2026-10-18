@@ -57,6 +57,35 @@ public sealed unsafe class OverlayFontsTests : IDisposable
         Assert.True(HasGlyph("A"));
     }
 
+    private static float MiddleY(string glyph)
+    {
+        ImFontGlyph* found = ImGuiNative.ImFont_FindGlyphNoFallback(ImGui.GetIO().Fonts.Fonts[0].NativePtr, glyph[0]);
+        Assert.True(found != null);
+        // Native layout: one bitfield uint, AdvanceX, X0, Y0, X1, Y1 (ImGui.NET's struct has three uints, so its Y0/Y1 are off).
+        float* native = (float*)found;
+        return (native[3] + native[5]) / 2f;
+    }
+
+    [Theory]
+    [InlineData(13f)]
+    [InlineData(26f)]
+    public void IconsSitLevelWithCapitals(float basePixels)
+    {
+        _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
+        ImFontAtlasPtr atlas = ImGui.GetIO().Fonts;
+        atlas.Clear();
+        ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
+        config.SizePixels = basePixels;
+        atlas.AddFontDefault(config);
+        config.Destroy();
+        _fonts.MergeInto(atlas, basePixels);
+        atlas.GetTexDataAsRGBA32(out IntPtr _, out int _, out int _, out int _);
+
+        float capital = MiddleY("O");
+        Assert.InRange(MiddleY(PhosphorIcons.Sparkle), capital - basePixels / 13f, capital + basePixels / 13f);
+        Assert.InRange(MiddleY(PhosphorIcons.DotsSixVertical), capital - basePixels / 13f, capital + basePixels / 13f);
+    }
+
     [Fact]
     public void AddingBumpsTheVersionAndBadInputIsIgnored()
     {
