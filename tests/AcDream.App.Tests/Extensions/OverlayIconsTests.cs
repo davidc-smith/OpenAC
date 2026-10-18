@@ -91,6 +91,44 @@ public sealed class OverlayIconsTests
         Assert.Single(_log, line => line.Contains("already bound", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void RepeatedIconAndSpellLookupsAreMemoisedHitsAndMisses()
+    {
+        _icons.Bind(_backend);
+        _backend.Answer = 21;
+        Assert.Equal((IntPtr)21, _icons.Icon(0x1234u));
+        Assert.Equal((IntPtr)21, _icons.Icon(0x06001234u));
+        Assert.Equal((IntPtr)21, _icons.SpellIcon(7));
+        Assert.Equal((IntPtr)21, _icons.SpellIcon(7));
+        _backend.Answer = 0;
+        Assert.Equal(IntPtr.Zero, _icons.Icon(0x2222u));
+        Assert.Equal(IntPtr.Zero, _icons.Icon(0x2222u));
+        Assert.Equal(IntPtr.Zero, _icons.SpellIcon(8));
+        Assert.Equal(IntPtr.Zero, _icons.SpellIcon(8));
+        Assert.Equal(new[] { "art:06001234", "spell:00000007", "art:06002222", "spell:00000008" }, _backend.Asked);
+    }
+
+    [Fact]
+    public void ObjectIconsAreNeverMemoised()
+    {
+        _icons.Bind(_backend);
+        _backend.Answer = 22;
+        _icons.ObjectIcon(0x80000001u);
+        _icons.ObjectIcon(0x80000001u);
+        Assert.Equal(new[] { "object:80000001", "object:80000001" }, _backend.Asked);
+    }
+
+    [Fact]
+    public void LookupsBeforeBindAreNotMemoised()
+    {
+        Assert.Equal(IntPtr.Zero, _icons.Icon(0x1234u));
+        Assert.Equal(IntPtr.Zero, _icons.SpellIcon(3));
+        _icons.Bind(_backend);
+        _backend.Answer = 23;
+        Assert.Equal((IntPtr)23, _icons.Icon(0x1234u));
+        Assert.Equal((IntPtr)23, _icons.SpellIcon(3));
+    }
+
     private sealed class FakeBackend : IPluginImageBackend
     {
         public uint Answer { get; set; }
