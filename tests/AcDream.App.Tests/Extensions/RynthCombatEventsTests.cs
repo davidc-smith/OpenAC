@@ -178,7 +178,9 @@ public sealed class RynthCombatEventsTests : IDisposable
 
         host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
             default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
-        Assert.Equal(["login"], Recorded());   // login at once; the pushes after it wait for the delivery
+        Assert.Empty(Recorded());              // the login waits for the delivery, as RynthCore's frame drain
+        host.Bridge.DeliverQueued();
+        Assert.Equal(["login"], Recorded());   // the pushes after it are queued for the next delivery
         host.Bridge.DeliverQueued();
 
         Assert.Equal(["login", "mode 8 1", "select 80000010 00000000"], Recorded());

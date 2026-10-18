@@ -41,15 +41,41 @@ public sealed class RynthEventQueueTests
     }
 
     [Fact]
-    public void LoginIsDeliveredAtOnce()
+    public void LoginArrivesOnTheDeliveryAfterThatDeliverysQueuedEvents()
     {
         QueueRecorder.Calls.Clear();
         using var host = new RynthHost(_view, _ => { }, [typeof(QueueRecorder)]);
 
         host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
             default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+        host.Bridge.OnEntity(new RuntimeEntityDelta(
+            default, RuntimeEntityChange.Registered,
+            new RuntimeEntitySnapshot(new RuntimeEntityIdentity(0x80000020, 1, 1), 0, 0, null)));
 
-        Assert.Equal(["login"], QueueRecorder.Calls);
+        Assert.True(RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete);
+        Assert.Empty(QueueRecorder.Calls);
+
+        host.Bridge.DeliverQueued();
+        Assert.Equal(["create 80000020", "login"], QueueRecorder.Calls);
+        host.Bridge.DeliverQueued();
+        Assert.Equal(["create 80000020", "login"], QueueRecorder.Calls);
+    }
+
+    [Fact]
+    public void ALogoutBeforeTheDeliveryMeansNoLoginIsDelivered()
+    {
+        QueueRecorder.Calls.Clear();
+        using var host = new RynthHost(_view, _ => { }, [typeof(QueueRecorder)]);
+        int loggedIn = 0;
+        host.Bridge.LoggedIn += () => loggedIn++;
+
+        host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
+            default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+        host.Bridge.OnLeavingWorld();
+        host.Bridge.DeliverQueued();
+
+        Assert.Equal(["logout"], QueueRecorder.Calls);
+        Assert.Equal(0, loggedIn);
     }
 
     [Fact]
@@ -77,6 +103,9 @@ public sealed class RynthEventQueueTests
 
         [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnLoginComplete", CallConvs = new[] { typeof(CallConvCdecl) })]
         private static void Login() => Calls.Add("login");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnLogout", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void Logout() => Calls.Add("logout");
 
         [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnBusyCountIncremented", CallConvs = new[] { typeof(CallConvCdecl) })]
         private static void BusyUp() => Calls.Add("busy+");

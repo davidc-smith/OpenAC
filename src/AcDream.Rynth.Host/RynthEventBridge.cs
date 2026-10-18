@@ -14,7 +14,10 @@ namespace AcDream.Rynth.Host;
 /// never hears of an event inside the call that caused it, and same-frame events
 /// arrive grouped by type. This bridge does the same: each event waits in its
 /// type's queue until <see cref="DeliverQueued"/>, which the host calls each tick
-/// before the plugins' own tick. Login and logout are told at once.
+/// before the plugins' own tick. Login is told after the queues of that delivery,
+/// as RynthCore dispatches it at the end of the frame's drain, so the entering-world
+/// create flood reaches the plugins first. Logout is told at once, as RynthCore
+/// dispatches it before the queues.
 /// </remarks>
 public sealed class RynthEventBridge : IRuntimeEventObserver
 {
@@ -42,6 +45,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
 
     private readonly IReadOnlyList<RynthPlugin> _plugins;
     private readonly List<Action>[] _queues = new List<Action>[KindCount];
+    private bool _loginPending;
 
     public RynthEventBridge(IReadOnlyList<RynthPlugin> plugins)
     {
@@ -59,9 +63,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             && delta.Previous != RuntimeLifecycleState.InWorld)
         {
             RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
-            foreach (RynthPlugin plugin in _plugins)
-                plugin.OnLoginComplete();
-            LoggedIn?.Invoke();
+            _loginPending = true;
         }
     }
 
@@ -69,6 +71,9 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     public void OnLeavingWorld()
     {
         RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
+        // A login not yet delivered is dropped: the plugins never saw it, so they
+        // must not see it after logging out.
+        _loginPending = false;
         foreach (RynthPlugin plugin in _plugins)
             plugin.OnLogout();
     }
@@ -262,7 +267,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// Delivers the queued events, type by type in RynthCore's order and each type in
     /// arrival order. An event raised while delivering joins this delivery when its
     /// type has not run yet and waits for the next one otherwise, as with RynthCore's
-    /// per-type queues.
+    /// per-type queues. A pending login is told last, as RynthCore's frame does.
     /// </summary>
     public void DeliverQueued()
     {
@@ -274,6 +279,14 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             _queues[i] = [];
             foreach (Action deliver in pending)
                 deliver();
+        }
+
+        if (_loginPending)
+        {
+            _loginPending = false;
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnLoginComplete();
+            LoggedIn?.Invoke();
         }
     }
 
