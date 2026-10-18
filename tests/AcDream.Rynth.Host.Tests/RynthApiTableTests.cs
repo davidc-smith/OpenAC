@@ -182,6 +182,17 @@ public sealed unsafe class RynthApiTableTests
         Assert.Equal(-1, host.ReadKnownSpells(new uint[4], 4));
         Assert.False(host.ObjectIsAttackable(1));
         Assert.Equal(0, host.GetUseDoneSeq());
+        Assert.False(host.TryGetPlayerHeading(out _));
+        Assert.False(host.TryGetObjectHeading(0x80000010, out _));
+        Assert.False(host.TryGetPlayerBaseVitals(out _, out _, out _));
+        Assert.False(host.TryGetObjectDoubleProperty(0x80000010, 5, out _));
+        Assert.False(host.TryGetObjectStringProperty(0x80000010, 1, out _));
+        Assert.False(host.TryGetObjectSkill(1, 6, out _, out _));
+        Assert.False(host.TryGetObjectSkillLevel(1, 6, 1, out _));
+        Assert.False(host.TryGetObjectAttribute(1, 1, 1, out _));
+        Assert.False(host.TryGetObjectAttribute2ndBaseLevel(1, 1, out _));
+        Assert.Equal(0u, host.GetGroundContainerId());
+        Assert.False(host.TryGetLastUseDone(out _, out _));
         Assert.False(host.TryGetLastWeenieError(out _, out _, out _, out _));
         Assert.Contains(_log, line => line.Contains("GetCurrentCombatMode threw", StringComparison.Ordinal));
         Assert.Contains(_log, line => line.Contains("ReadPlayerEnchantments threw", StringComparison.Ordinal));
