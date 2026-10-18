@@ -11,4 +11,8 @@
     <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthOracle\AcDream.Rynth.Plugin.RynthOracle.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.ScriptWindows\AcDream.Rynth.ScriptWindows.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AcDream.Rynth.Host.Tests" />
+    <InternalsVisibleTo Include="AcDream.App.Tests" />
+  </ItemGroup>
 </Project>
