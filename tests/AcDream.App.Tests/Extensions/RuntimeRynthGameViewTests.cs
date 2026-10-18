@@ -169,7 +169,6 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal((250, 200, 3), (buffed, baseLevel, training));
         Assert.False(view.TryGetSkill(0x80000010, 6, out _, out _, out _));
         Assert.Equal((1, 0x36u), (view.ServerReplies.UseDoneSequence, view.ServerReplies.LastUseDoneError));
-
     }
 
     [Fact]
@@ -185,6 +184,8 @@ public sealed class RuntimeRynthGameViewTests
         book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1300, 1, -1, 0x50000001, Bucket: 2, StartTime: clock));
         book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
             Spellbook.CooldownSpellOffset + 5, 1, 30, 0x50000001, Bucket: Spellbook.CooldownBucket, StartTime: clock));
+        // Id 0 once masked to 16 bits: RynthCore's walk skips it.
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x10000, 1, 60, 0x50000001, Bucket: 1, StartTime: clock));
         book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1400, 1, -1, 0x50000001, Bucket: 4, StartTime: clock));
         var view = new RuntimeRynthGameView(runtime, automation: new FakeRynthAutomation());
 
@@ -202,8 +203,9 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
-    public void QueryHealthIsFalseUnlessInWorld()
+    public void QueryHealthIsFalseWhenNotInWorld()
     {
+        // The test runtime has no session, so this pins the contract only; it does not cover the in-world gate against a live session.
         var runtime = GameRuntimeTestFactory.Create();
         var automation = new FakeRynthAutomation { Available = false };
         var view = new RuntimeRynthGameView(runtime, automation: automation);

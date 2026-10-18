@@ -224,7 +224,8 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             return
             [
                 .. _runtime.CharacterOwner.Spellbook.ActiveEnchantmentSnapshot
-                    .Where(record => record.Bucket is 1u or 2u or Spellbook.CooldownBucket)
+                    .Where(record => record.Bucket is 1u or 2u or Spellbook.CooldownBucket
+                        && (record.SpellId & 0xFFFFu) != 0)
                     .Select(record => new RynthEnchantment(
                         record.SpellId & 0xFFFFu,
                         record.Duration > 0
