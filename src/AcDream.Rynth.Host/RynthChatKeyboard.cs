@@ -1,6 +1,7 @@
 using AcDream.ClientExtensions;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
+using RynthCore.Engine.UI.Data;
 
 namespace AcDream.Rynth.Host;
 
@@ -150,7 +151,18 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
             return;
         }
 
-        foreach (char c in _getClipboard())
+        // Their OnChatPaste's rules (ChatInputPaste.Insert): one line, breaks and tabs
+        // made spaces, cut to the room left under MaxLineChars without splitting a pair.
+        string add = ChatInputPaste.Clean(_getClipboard());
+        int room = Math.Max(0, ChatInputPaste.MaxLineChars - _inputText().Length);
+        if (add.Length > room)
+        {
+            add = add[..room];
+            if (add.Length > 0 && char.IsHighSurrogate(add[^1]))
+                add = add[..^1];
+        }
+
+        foreach (char c in add)
             Type(c);
     }
 

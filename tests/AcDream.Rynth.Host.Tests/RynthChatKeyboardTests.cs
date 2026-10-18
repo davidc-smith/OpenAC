@@ -113,6 +113,25 @@ public sealed class RynthChatKeyboardTests : IDisposable
         _clipboard = "a\nb";
         Win32Backend.ChatCaptureActive = true;
         _keys.KeyDown(OverlayKey.V, OverlayModifiers.Control);
+        Assert.Equal(["char:a", "char: ", "char:b"], _calls);
+    }
+
+    // Their ChatInputPaste: the line never grows past MaxLineChars by pasting.
+    [Fact]
+    public void OffWindowsPasteIsCutToTheRoomLeft()
+    {
+        var keys = new RynthChatKeyboard(_log.Add, () => new string('x', 10), _ => { }, isWindows: false, inputText: () => new string('y', 995));
+        Win32Backend.ChatCaptureActive = true;
+        keys.KeyDown(OverlayKey.V, OverlayModifiers.Control);
+        Assert.Equal(5, _calls.Count);
+    }
+
+    [Fact]
+    public void OffWindowsPasteDoesNotSplitASurrogatePairAtTheCut()
+    {
+        var keys = new RynthChatKeyboard(_log.Add, () => "ab\U0001F600", _ => { }, isWindows: false, inputText: () => new string('y', 997));
+        Win32Backend.ChatCaptureActive = true;
+        keys.KeyDown(OverlayKey.V, OverlayModifiers.Control);
         Assert.Equal(["char:a", "char:b"], _calls);
     }
 
