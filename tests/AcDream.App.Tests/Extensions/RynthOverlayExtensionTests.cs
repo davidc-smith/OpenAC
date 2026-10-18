@@ -33,7 +33,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         ImGui.DestroyContext(_imgui);
     }
 
-    private ClientExtensionContext Context(AcDream.Runtime.GameRuntime runtime, IClientOverlay? overlay) => new()
+    private ClientExtensionContext Context(AcDream.Runtime.GameRuntime runtime, IClientOverlay? overlay, string? stateDirectory = null) => new()
     {
         Runtime = runtime,
         Log = _log.Add,
@@ -43,7 +43,55 @@ public sealed class RynthOverlayExtensionTests : IDisposable
             return new Registration(() => _commands.Remove(verb));
         },
         Overlay = overlay,
+        StateDirectory = stateDirectory,
     };
+
+    [Fact]
+    public void WithAnOverlayTheLayoutIsHookedUpUntilDispose()
+    {
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), new FakeOverlay()));
+        Assert.NotNull(ImGuiPanelHost.Layout);
+
+        extension.Dispose();
+        Assert.Null(ImGuiPanelHost.Layout);
+    }
+
+    [Fact]
+    public void WithoutAnOverlayThereIsNoLayout()
+    {
+        using var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay: null));
+
+        Assert.Null(ImGuiPanelHost.Layout);
+    }
+
+    [Fact]
+    public void AnOpenedWindowIsSavedInTheStateFolder()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "rynth-ext-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var overlay = new FakeOverlay();
+            var extension = new RynthClientExtension();
+            extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay, dir));
+            _commands["ro"]("");
+            extension.Tick(1 / 60.0);
+            extension.Tick(1 / 60.0);
+            Frame(Assert.Single(overlay.Callbacks));
+            // Read before Dispose: shutting the plugin down may record its window as closed.
+            string json = File.ReadAllText(Path.Combine(dir, "rynth-layout.json"));
+            extension.Dispose();
+
+            Assert.Contains("script:RynthOracle/Oracle", json, StringComparison.Ordinal);
+            Assert.Contains("\"open\": true", json, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
 
     [Fact]
     public void WithAnOverlayOraclesWindowDrawsFromTheFrameCallback()

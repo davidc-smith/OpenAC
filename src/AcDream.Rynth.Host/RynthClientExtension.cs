@@ -7,7 +7,8 @@ namespace AcDream.Rynth.Host;
 /// <summary>
 /// Runs RynthCore plugins (RynthTracker, RynthOracle) inside the client: the
 /// API table reads the runtime, runtime events become plugin callbacks,
-/// script windows draw on the client's ImGui overlay when it has one, and
+/// script windows draw on the client's ImGui overlay when it has one, with a
+/// launcher bar and their layout saved per install, and
 /// <c>/rynth tracker</c> and <c>/ro</c> reach the plugins.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
@@ -17,10 +18,19 @@ public sealed class RynthClientExtension : IClientExtension
     private IDisposable? _frameCallback;
     private readonly List<IDisposable> _commands = new();
     private CombatState? _combat;
+    private RynthLayoutStore? _layout;
+    private RynthBar? _bar;
 
     public void Attach(ClientExtensionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        if (context.Overlay is not null)
+        {
+            _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
+            ImGuiPanelHost.Layout = _layout;
+            _bar = new RynthBar(_layout, context.Log);
+        }
+
         var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand);
         bool scriptWindows = context.Overlay is not null;
         _host = new RynthHost(
@@ -38,7 +48,14 @@ public sealed class RynthClientExtension : IClientExtension
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
         _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
         if (context.Overlay is { } overlay)
-            _frameCallback = overlay.AddFrameCallback(ImGuiPanelHost.DrawAll);
+            _frameCallback = overlay.AddFrameCallback(DrawFrame);
+    }
+
+    /// <summary>The overlay frame: the script windows, then the bar over them.</summary>
+    private void DrawFrame()
+    {
+        ImGuiPanelHost.DrawAll();
+        _bar?.Draw();
     }
 
     public void Tick(double deltaSeconds) => _host?.Tick();
@@ -61,6 +78,10 @@ public sealed class RynthClientExtension : IClientExtension
         _runtimeSubscription = null;
         _host?.Dispose();
         _host = null;
+        if (_layout is not null && ImGuiPanelHost.Layout == _layout)
+            ImGuiPanelHost.Layout = null;
+        _layout = null;
+        _bar = null;
     }
 
     private void OnHealthChanged(uint targetId, float healthRatio) =>
