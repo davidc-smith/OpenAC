@@ -24,7 +24,8 @@ public static class TrackerSnapshotText
                 || !TryLong(root, "xt", out long xp)
                 || !TryLong(root, "xh", out long xpPerHour)
                 || !TryLong(root, "lt", out long lum)
-                || !TryLong(root, "lh", out long lumPerHour))
+                || !TryLong(root, "lh", out long lumPerHour)
+                || !TryLong(root, "dt", out long deaths))
             {
                 return Unreadable;
             }
@@ -32,13 +33,14 @@ public static class TrackerSnapshotText
             var session = TimeSpan.FromSeconds(sessionSeconds);
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "Rynth tracker: {0:N0} kills ({1:0.0}/h), {2:N0} XP ({3:N0}/h), {4:N0} lum ({5:N0}/h), session {6}m {7}s",
+                "Rynth tracker: {0:N0} kills ({1:0.0}/h), {2:N0} XP ({3:N0}/h), {4:N0} lum ({5:N0}/h), {6:N0} deaths, session {7}m {8}s",
                 kills,
                 killsPerHour,
                 xp,
                 xpPerHour,
                 lum,
                 lumPerHour,
+                deaths,
                 (int)session.TotalMinutes,
                 session.Seconds);
         }

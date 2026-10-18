@@ -8,10 +8,10 @@ public sealed class TrackerSnapshotTextTests
     public void Format_SummarisesTheSnapshot()
     {
         const string json =
-            "{\"ss\":1800.0,\"xt\":600,\"xh\":1200,\"lt\":0,\"lh\":0,\"kt\":1,\"kh\":2.0,\"xk\":600,\"dt\":0}";
+            "{\"ss\":1800.0,\"xt\":600,\"xh\":1200,\"lt\":0,\"lh\":0,\"kt\":1,\"kh\":2.0,\"xk\":600,\"dt\":2}";
 
         Assert.Equal(
-            "Rynth tracker: 1 kills (2.0/h), 600 XP (1,200/h), 0 lum (0/h), session 30m 0s",
+            "Rynth tracker: 1 kills (2.0/h), 600 XP (1,200/h), 0 lum (0/h), 2 deaths, session 30m 0s",
             TrackerSnapshotText.Format(json));
     }
 

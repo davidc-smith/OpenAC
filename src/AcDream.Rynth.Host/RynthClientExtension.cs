@@ -1,5 +1,7 @@
 using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
+using AcDream.Core.Player;
+using AcDream.Runtime;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.ScriptWindows;
 
@@ -19,6 +21,7 @@ public sealed class RynthClientExtension : IClientExtension
     private IDisposable? _frameCallback;
     private readonly List<IDisposable> _commands = new();
     private CombatState? _combat;
+    private GameRuntime? _runtime;
     private RynthLayoutStore? _layout;
     private RynthBar? _bar;
     private Func<ScriptIconKind, uint, IntPtr>? _iconSource;
@@ -60,6 +63,8 @@ public sealed class RynthClientExtension : IClientExtension
         _combat = context.Runtime.ActionOwner.Combat;
         _combat.HealthChanged += OnHealthChanged;
         _combat.KillLanded += OnKillLanded;
+        _runtime = context.Runtime;
+        _runtime.CommunicationOwner.LocalPlayerDied += OnLocalPlayerDied;
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
         _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
         if (context.Overlay is { } overlay)
@@ -89,6 +94,12 @@ public sealed class RynthClientExtension : IClientExtension
             _combat = null;
         }
 
+        if (_runtime is not null)
+        {
+            _runtime.CommunicationOwner.LocalPlayerDied -= OnLocalPlayerDied;
+            _runtime = null;
+        }
+
         _runtimeSubscription?.Dispose();
         _runtimeSubscription = null;
         _host?.Dispose();
@@ -107,6 +118,16 @@ public sealed class RynthClientExtension : IClientExtension
 
     private void OnKillLanded(string deathMessage, uint victimId) =>
         _host?.Bridge.OnKillLanded(deathMessage);
+
+    // The death message is the server's word that the player died, so the
+    // tracker is told even before the player's vitals (and so its max) arrive.
+    private void OnLocalPlayerDied(string deathMessage)
+    {
+        if (_runtime is not { } runtime)
+            return;
+        uint maxHealth = runtime.CharacterOwner.LocalPlayer.GetMaxApprox(LocalPlayerState.VitalKind.Health) ?? 0;
+        _host?.Bridge.OnLocalPlayerDied(runtime.PlayerIdentity.ServerGuid, Math.Max(maxHealth, 1));
+    }
 
     /// <summary>Offers chat-bar text to each plugin until one eats it.</summary>
     private void OfferChatBarText(string text)

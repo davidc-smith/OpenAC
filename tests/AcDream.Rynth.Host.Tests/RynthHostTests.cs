@@ -50,6 +50,19 @@ public sealed class RynthHostTests
     }
 
     [Fact]
+    public void TrackerCountsTheLocalPlayersDeath()
+    {
+        using RynthHost host = CreateTrackerHost();
+        EnterWorld(host);
+
+        host.Bridge.OnLocalPlayerDied(_view.PlayerId, 250);
+        TickHalfASecond(host);
+
+        string json = host.Plugins[0].CallStringExport("RynthTrackerGetSnapshotJson")!;
+        Assert.Contains("\"dt\":1", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LeavingTheWorldEndsTheSession()
     {
         using RynthHost host = CreateTrackerHost();

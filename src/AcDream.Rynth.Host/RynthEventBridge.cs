@@ -62,6 +62,16 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             plugin.OnUpdateHealth(targetId, healthRatio);
     }
 
+    /// <summary>
+    /// From <c>RuntimeCommunicationState.LocalPlayerDied</c>: the player's health
+    /// reaching zero, which is the death RynthTracker counts.
+    /// </summary>
+    public void OnLocalPlayerDied(uint playerId, uint maxHealth)
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnUpdateHealth(playerId, 0f, 0, maxHealth);
+    }
+
     /// <summary>From <c>CombatState.KillLanded</c>: the server's killer notification text.</summary>
     public void OnKillLanded(string deathMessage)
     {

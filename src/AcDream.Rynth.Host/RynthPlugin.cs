@@ -51,15 +51,16 @@ public sealed unsafe class RynthPlugin
     public void OnDeleteObject(uint objectId) => CallObject("RynthPluginOnDeleteObject", objectId);
 
     /// <summary>
-/// OpenAC knows the health ratio only, so current and max are passed as 0.
-/// Deaths are therefore not tracked: RynthTracker's death check needs maxHealth > 0.
-/// </summary>
-    public void OnUpdateHealth(uint targetId, float healthRatio)
+    /// A target's health. The server's health updates carry a ratio only, so
+    /// current and max are 0 unless the caller knows them (the player's own death).
+    /// </summary>
+    public void OnUpdateHealth(uint targetId, float healthRatio, uint currentHealth = 0, uint maxHealth = 0)
     {
         if (IsActive && _exports.TryGet("RynthPluginOnUpdateHealth", out IntPtr export))
         {
             using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
-            ((delegate* unmanaged[Cdecl]<uint, float, uint, uint, void>)export)(targetId, healthRatio, 0, 0);
+            ((delegate* unmanaged[Cdecl]<uint, float, uint, uint, void>)export)(
+                targetId, healthRatio, currentHealth, maxHealth);
         }
     }
 

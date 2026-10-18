@@ -38,6 +38,7 @@ public sealed class RynthClientExtensionTests
         Assert.Contains("[Rynth] [RynthTracker] Plugin initialized.", log);
 
         runtime.ActionOwner.Combat.OnUpdateHealth(0x80000010, 0.5f);
+        runtime.CommunicationOwner.ReportLocalPlayerDeath("You died.");
 
         extension.Dispose();
         Assert.True(registration.Disposed);
