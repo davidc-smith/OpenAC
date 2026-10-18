@@ -1,5 +1,11 @@
 # RynthChat Implementation Plan
 
+> **Status (2026-10-18):** Tasks 1–7 done, each reviewed, plus a final whole-branch review and one fix wave (clean).
+> Task 8 (live check on local ACE) not yet run: the user deferred it. Branch `feat/rynth-chat`, local, not pushed.
+> Plan corrections made during execution: OpenAC's Enter is `EnterChatMode` (not `ChatStartCommand`), so the
+> chat-entry claim covers every action that focuses the chat entry; the extension's hide is not saved as the
+> player's chat visibility; off-Windows paste uses RynthCore's `ChatInputPaste`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** RynthSuite's RynthChat plugin and RynthCore's own ImGui chat window (tabs, filters, colours, search, copy, input line) run inside OpenAC, compiled unchanged from the submodules.
