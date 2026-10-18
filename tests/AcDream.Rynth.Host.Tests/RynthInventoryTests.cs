@@ -1,29 +1,38 @@
 using AcDream.Rynth.Host;
+using AcDream.TestSupport;
 
 namespace AcDream.Rynth.Host.Tests;
 
 public sealed class RynthInventoryTests : IDisposable
 {
     private readonly List<string> _log = new();
-    private readonly string _config = Directory.CreateTempSubdirectory("rynth-inventory-").FullName;
-    private readonly string? _previousConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+    private readonly RynthConfigSandbox _sandbox = new("rynth-inventory-");
+    private string _config => _sandbox.Root;
     private readonly FakeGameView _view = new()
     {
         PlayerId = 0x50000000u | (uint)Random.Shared.Next(1, 0xFFFF),
     };
 
-    // RynthInventory saves under ApplicationData, which .NET reads from XDG_CONFIG_HOME here.
-    public RynthInventoryTests() => Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _config);
-
-    public void Dispose()
-    {
-        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _previousConfig);
-        try { Directory.Delete(_config, recursive: true); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-    }
+    public void Dispose() => _sandbox.Dispose();
 
     private RynthHost CreateInventoryHost() =>
         new(_view, _log.Add, [typeof(RynthCore.Plugin.RynthInventory.PluginExports)]);
+
+    [Fact]
+    public void InventoryStoreLivesUnderTheSandbox()
+    {
+        using RynthHost host = CreateInventoryHost();
+
+        string line = Assert.Single(_log, l => l.Contains("[RynthInventory]", StringComparison.Ordinal)
+            && l.Contains("Files:", StringComparison.Ordinal));
+        string files = line[(line.IndexOf("Files:", StringComparison.Ordinal) + "Files:".Length)..].Trim();
+        string root = Path.GetFullPath(_config).TrimEnd(Path.DirectorySeparatorChar);
+        // The temp dir may be reached through a symlink (/var -> /private/var on macOS).
+        string realRoot = Directory.ResolveLinkTarget(root, returnFinalTarget: true)?.FullName ?? root;
+        Assert.True(
+            files.StartsWith(root, StringComparison.Ordinal) || files.StartsWith(realRoot, StringComparison.Ordinal),
+            $"Files path '{files}' is outside the sandbox '{root}'");
+    }
 
     [Fact]
     public void InventoryLoads()

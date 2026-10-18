@@ -1,4 +1,5 @@
 using AcDream.ClientExtensions;
+using AcDream.TestSupport;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using AcDream.Rynth.Host;
@@ -9,18 +10,9 @@ namespace AcDream.App.Tests.Extensions;
 [Collection("Rynth")]
 public sealed class RynthClientExtensionTests : IDisposable
 {
-    private readonly string _config = Directory.CreateTempSubdirectory("rynth-ext-").FullName;
-    private readonly string? _previousConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+    private readonly RynthConfigSandbox _sandbox = new("rynth-ext-");
 
-    // RynthInventory saves under ApplicationData, which .NET reads from XDG_CONFIG_HOME here.
-    public RynthClientExtensionTests() => Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _config);
-
-    public void Dispose()
-    {
-        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _previousConfig);
-        try { Directory.Delete(_config, recursive: true); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-    }
+    public void Dispose() => _sandbox.Dispose();
 
     private sealed class Registration : IDisposable
     {

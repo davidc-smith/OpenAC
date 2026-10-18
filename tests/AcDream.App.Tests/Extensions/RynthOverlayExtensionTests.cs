@@ -1,5 +1,6 @@
 using System.Numerics;
 using AcDream.ClientExtensions;
+using AcDream.TestSupport;
 using AcDream.Rynth.Host;
 using ImGuiNET;
 using RynthCore.Engine.ImGuiBackend;
@@ -13,13 +14,10 @@ public sealed class RynthOverlayExtensionTests : IDisposable
     private readonly Dictionary<string, Action<string>> _commands = new();
     private readonly List<string> _log = new();
     private readonly IntPtr _imgui;
-    private readonly string _config = Directory.CreateTempSubdirectory("rynth-ovl-").FullName;
-    private readonly string? _previousConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+    private readonly RynthConfigSandbox _sandbox = new("rynth-ovl-");
 
     public RynthOverlayExtensionTests()
     {
-        // RynthInventory saves under ApplicationData, which .NET reads from XDG_CONFIG_HOME here.
-        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _config);
         ScriptIcons.Source = null;
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
@@ -37,9 +35,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
         ImGui.DestroyContext(_imgui);
-        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _previousConfig);
-        try { Directory.Delete(_config, recursive: true); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        _sandbox.Dispose();
     }
 
     private ClientExtensionContext Context(AcDream.Runtime.GameRuntime runtime, IClientOverlay? overlay, string? stateDirectory = null) => new()
