@@ -13,12 +13,13 @@ public sealed unsafe class RynthHost : IDisposable
 
     /// <param name="log">Gets every host and plugin log line, prefixed "[Rynth] ".</param>
     /// <param name="exportsTypes">Each plugin's exports class (its PluginExports).</param>
-    public RynthHost(IRynthGameView view, Action<string> log, IEnumerable<Type> exportsTypes, bool scriptWindows = false)
+    public RynthHost(IRynthGameView view, Action<string> log, IEnumerable<Type> exportsTypes, bool scriptWindows = false,
+        AcDream.Plugin.Abstractions.IPluginWorldTriangleLayer? nav3DLayer = null)
     {
         ArgumentNullException.ThrowIfNull(exportsTypes);
         ArgumentNullException.ThrowIfNull(log);
         _log = line => log($"[Rynth] {line}");
-        _table = new RynthApiTable(view, _log, scriptWindows);
+        _table = new RynthApiTable(view, _log, scriptWindows, nav3DLayer);
         RynthCore.Engine.RynthLog.Sink = _log;
         RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log = _log;
         try
@@ -43,13 +44,15 @@ public sealed unsafe class RynthHost : IDisposable
     /// <summary>The runtime observer that feeds the plugins.</summary>
     public RynthEventBridge Bridge { get; }
 
-    /// <summary>Delivers the frame's queued events, then ticks each plugin, as RynthCore's frame does.</summary>
+    /// <summary>Delivers the frame's queued events, then ticks each plugin inside one Nav3D frame, as RynthCore's frame does.</summary>
     public void Tick()
     {
         Bridge.DeliverQueued();
         _table.Holds.Sync();
+        _table.Nav3D.BeginTick();
         foreach (RynthPlugin plugin in _plugins)
             plugin.Tick();
+        _table.Nav3D.CommitTick();
     }
 
     public void Dispose()

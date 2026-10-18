@@ -41,4 +41,7 @@ public sealed class ClientExtensionContext
     /// Null when the client has none (tests); it answers unavailable before login.
     /// </summary>
     public IAutomationSurface? Automation { get; init; }
+
+    /// <summary>The client's world-triangle layers; null in a host that draws no world.</summary>
+    public AcDream.Plugin.Abstractions.IPluginWorldTriangles? WorldTriangles { get; init; }
 }

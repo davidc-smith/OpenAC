@@ -81,7 +81,8 @@ public sealed class RynthClientExtension : IClientExtension
                 typeof(RynthCore.Plugin.RynthAi.PluginExports),
                 .. AdditionalPluginExports,
             ],
-            scriptWindows);
+            scriptWindows,
+            nav3DLayer: context.WorldTriangles?.CreateLayer());
         _chatHookup = new RynthChatHookup(_host, view, context.Log);
         _aiHookup = new RynthAiHookup(_host, view, context.Log);
         if (context.Overlay is not null)

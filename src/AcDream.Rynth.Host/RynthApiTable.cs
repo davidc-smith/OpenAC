@@ -29,6 +29,9 @@ public sealed unsafe partial class RynthApiTable : IDisposable
 
     /// <summary>The held movement keys RynthCore's SetMotion and jump slots keep.</summary>
     internal RynthMotionHolds Holds { get; }
+
+    /// <summary>The Nav3D buffer the table's Nav3D slots fill and the host commits each tick.</summary>
+    internal RynthNav3D Nav3D { get; }
     private readonly Action<string> _log;
     private readonly bool _scriptWindows;
     private IntPtr _nameBuffer;
@@ -36,7 +39,8 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     private IntPtr _worldBuffer;
     private IntPtr _stringBuffer;
 
-    public RynthApiTable(IRynthGameView view, Action<string> log, bool scriptWindows = false)
+    public RynthApiTable(IRynthGameView view, Action<string> log, bool scriptWindows = false,
+        AcDream.Plugin.Abstractions.IPluginWorldTriangleLayer? nav3DLayer = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(log);
@@ -45,6 +49,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
 
         _view = view;
         Holds = new RynthMotionHolds(view);
+        Nav3D = new RynthNav3D(view, nav3DLayer);
         _log = log;
         _scriptWindows = scriptWindows;
         Native = (RynthCoreApiNative*)NativeMemory.AllocZeroed((nuint)sizeof(RynthCoreApiNative));
@@ -76,6 +81,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         BindActionSlots();
         BindCombatSlots();
         BindMovementSlots();
+        BindNav3DSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;
@@ -92,6 +98,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     {
         if (Native is null)
             return;
+        Nav3D.Dispose();
         NativeMemory.Free(Native);
         Native = null;
         if (_nameBuffer != IntPtr.Zero)

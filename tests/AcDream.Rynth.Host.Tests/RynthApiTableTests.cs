@@ -438,4 +438,22 @@ public sealed unsafe class RynthApiTableTests
         Assert.Contains(_log, line => line.Contains("GetTargetVitals threw", StringComparison.Ordinal));
         Assert.Contains(_log, line => line.Contains("ReadObjectEnchantments threw", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Nav3DSlotsFillTheBuffer()
+    {
+        var view = new FakeGameView { Pose = (0xA9B40001, new Vector3(50, 60, 10), Quaternion.Identity) };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+        Assert.True(host.HasNav3D && host.HasNav3DTriangle && host.HasNav3DRingHeight);
+    
+        table.Nav3D.BeginTick();
+        host.Nav3DAddRing(1, 2, 3, 1, 0.1f, 0xFFFF0000);
+        host.Nav3DAddRingEx(1, 2, 3, 1, 0.1f, 2f, 0xFFFF0000);
+        host.Nav3DAddLine(0, 0, 0, 5, 0, 0, 0.1f, 0xFFFF0000);
+        host.Nav3DAddTriangle(0, 0, 0, 1, 0, 0, 0, 0, 1, 0xFFFF0000);
+        Assert.Equal((2, 1, 1), table.Nav3D.Counts);
+        host.Nav3DClear();
+        Assert.Equal((0, 0, 0), table.Nav3D.Counts);
+    }
 }
