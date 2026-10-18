@@ -81,6 +81,29 @@ public sealed class RynthClientExtensionTests : IDisposable
         Assert.Equal(["view 80000100"], ContainerRecorder.Calls);
     }
 
+    [Fact]
+    public void EventsQueuedBeforeDisposeAreNeverDelivered()
+    {
+        ContainerRecorder.Calls.Clear();
+        var runtime = GameRuntimeTestFactory.Create();
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (_, _) => new Registration(),
+        };
+        var extension = new RynthClientExtension { AdditionalPluginExports = [typeof(ContainerRecorder)] };
+        extension.Attach(context);
+        var containers = runtime.InventoryOwner.ExternalContainers;
+        Assert.True(containers.RequestOpen(0x80000100));
+        Assert.True(containers.ApplyViewContents(0x80000100));   // queued, not yet delivered
+
+        extension.Dispose();
+        extension.Tick(1.0 / 60);
+
+        Assert.Empty(ContainerRecorder.Calls);
+    }
+
     // RynthInventory (loaded before any additional plugin) eats every /ginv line, so a
     // recorder after it never sees the text; the proof of forwarding is the plugin's own
     // answer to "/ginv help", which only the argument can produce.

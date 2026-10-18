@@ -130,6 +130,79 @@ public sealed class RynthEventQueueTests
         Assert.Equal(["busy+", "busy-", "tick"], QueueRecorder.Calls);
     }
 
+    [Fact]
+    public void AnEventRaisedWhileDeliveringJoinsThisDeliveryWhenLaterAndTheNextOneOtherwise()
+    {
+        ReentrantRecorder.Calls.Clear();
+        using var host = new RynthHost(_view, _ => { }, [typeof(ReentrantRecorder)]);
+        ReentrantRecorder.Bridge = host.Bridge;
+        try
+        {
+            host.Bridge.OnEntity(Created(0x80000020));   // its callback raises kill, busy+ and another create
+            host.Bridge.DeliverQueued();
+
+            Assert.Equal(["create 80000020", "kill raised while delivering"], ReentrantRecorder.Calls);
+
+            host.Bridge.DeliverQueued();
+            Assert.Equal(
+                ["create 80000020", "kill raised while delivering", "busy+", "create 80000021"],
+                ReentrantRecorder.Calls);
+        }
+        finally
+        {
+            ReentrantRecorder.Bridge = null;
+        }
+    }
+
+    [Fact]
+    public void QueuedEventsAreNeverDeliveredAfterTheHostIsDisposed()
+    {
+        QueueRecorder.Calls.Clear();
+        var host = new RynthHost(_view, _ => { }, [typeof(QueueRecorder)]);
+        RynthEventBridge bridge = host.Bridge;
+        bridge.OnBusyCountIncremented();
+        bridge.OnKillLanded("You killed the drudge!");
+        bridge.OnLifecycle(new RuntimeLifecycleDelta(
+            default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+
+        host.Dispose();
+        bridge.DeliverQueued();
+        host.Tick();
+
+        Assert.Empty(QueueRecorder.Calls);
+    }
+
+    private static RuntimeEntityDelta Created(uint objectId) =>
+        new(default, RuntimeEntityChange.Registered,
+            new RuntimeEntitySnapshot(new RuntimeEntityIdentity(objectId, 1, 1), 0, 0, null));
+
+    // Raises bridge events from inside its own create callback, once.
+    private static unsafe class ReentrantRecorder
+    {
+        public static readonly List<string> Calls = new();
+        public static RynthEventBridge? Bridge;
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginInit", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static int Init(RynthCoreApiNative* api) => 0;
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnBusyCountIncremented", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void BusyUp() => Calls.Add("busy+");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnCreateObject", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void Create(uint id)
+        {
+            Calls.Add($"create {id:X8}");
+            if (id != 0x80000020 || Bridge is null)
+                return;
+            Bridge.OnKillLanded("raised while delivering");   // a later kind: this delivery
+            Bridge.OnBusyCountIncremented();                  // an earlier kind: the next one
+            Bridge.OnEntity(Created(0x80000021));             // the same kind: the next one
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnKillNotification", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void Kill(IntPtr text) => Calls.Add($"kill {Marshal.PtrToStringUni(text)}");
+    }
+
     private static unsafe class QueueRecorder
     {
         public static readonly List<string> Calls = new();
