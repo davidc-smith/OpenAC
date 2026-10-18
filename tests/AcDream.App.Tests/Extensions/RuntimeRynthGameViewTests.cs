@@ -1,5 +1,6 @@
 using System.Numerics;
 using AcDream.Core.Items;
+using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
 using AcDream.Rynth.Host;
 
@@ -145,8 +146,6 @@ public sealed class RuntimeRynthGameViewTests
         automation.CombatArea.Snapshot = default(PluginCombatSnapshot) with { Mode = PluginCombatMode.Missile };
         automation.CharacterArea.MaxHealth = 100;
         automation.CharacterArea.CurrentHealth = 40;
-        automation.CharacterArea.EnchantmentList.Add(new PluginActiveEnchantment(2, 1, 1, 60));
-        automation.CharacterArea.EnchantmentList.Add(new PluginActiveEnchantment(3, 1, 1, double.PositiveInfinity));
         automation.CharacterArea.SkillList.Add(new PluginSkillInfo(6, "Melee Defense", PluginSkillTraining.Specialized, 250) { Base = 200 });
         automation.SpellArea.Known.Add(2);
         automation.RecoveryArea.Busy = 3;
@@ -167,10 +166,35 @@ public sealed class RuntimeRynthGameViewTests
         Assert.False(view.TryGetSkill(0x80000010, 6, out _, out _, out _));
         Assert.Equal((1, 0x36u), (view.ServerReplies.UseDoneSequence, view.ServerReplies.LastUseDoneError));
 
+    }
+
+    [Fact]
+    public void PlayerEnchantmentsComeFromTheFullRegistryAsRynthCoreReadsThem()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        double clock = runtime.EffectClock.NowSeconds;
+        Spellbook book = runtime.CharacterOwner.Spellbook;
+        // Two layers of one spell: the stronger covers the weaker, and both are reported.
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1234, 1, 60, 0x50000001, Bucket: 1, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1234, 2, 90, 0x50000001, Bucket: 1, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1300, 1, -1, 0x50000001, Bucket: 2, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
+            Spellbook.CooldownSpellOffset + 5, 1, 30, 0x50000001, Bucket: Spellbook.CooldownBucket, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1400, 1, -1, 0x50000001, Bucket: 4, StartTime: clock));
+        var view = new RuntimeRynthGameView(runtime, automation: new FakeRynthAutomation());
+
         IReadOnlyList<RynthEnchantment> enchantments = view.PlayerEnchantments!;
+
+        Assert.Equal(4, enchantments.Count);   // vitae (bucket 4) is not in the three lists
         double now = view.ServerTime;
-        Assert.InRange(enchantments[0].ExpiryServerTime - now, 59.0, 60.0);
-        Assert.Equal(double.MaxValue, enchantments[1].ExpiryServerTime);
+        RynthEnchantment[] byId = [.. enchantments.OrderBy(e => e.SpellId)];
+        Assert.Equal([0x1234u, 0x1234u, 0x1300u, 0x8005u], byId.Select(e => (uint)e.SpellId));
+        Assert.Equal(double.MaxValue, byId[2].ExpiryServerTime);
+        Assert.InRange(byId[3].ExpiryServerTime - now, 29.0, 30.0);
+        double[] layers = [.. byId.Take(2).Select(e => e.ExpiryServerTime - now).Order()];
+        Assert.InRange(layers[0], 59.0, 60.0);
+        Assert.InRange(layers[1], 89.0, 90.0);
     }
 
     [Fact]
