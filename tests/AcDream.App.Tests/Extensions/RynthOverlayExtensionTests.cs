@@ -172,6 +172,27 @@ public sealed class RynthOverlayExtensionTests : IDisposable
     }
 
     [Fact]
+    public void TheirChatClipboardIsTheOverlaysUntilDispose()
+    {
+        var overlay = new FakeOverlay { ClipboardText = "from elsewhere" };
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay));
+        try
+        {
+            Assert.Equal("from elsewhere", RynthCore.Engine.UI.Data.ChatModel.GetClipboardText());
+            Assert.Equal("Copied 1 line", RynthCore.Engine.UI.Data.ChatModel.CopyLines(["a line"]));
+            Assert.Equal("a line", overlay.ClipboardText);
+        }
+        finally
+        {
+            extension.Dispose();
+        }
+
+        Assert.Null(AcDream.Rynth.ChatWindow.Win32ClipboardStandIn.GetText);
+        Assert.Null(AcDream.Rynth.ChatWindow.Win32ClipboardStandIn.SetText);
+    }
+
+    [Fact]
     public void OpenACsChatWindowIsHiddenWhileRynthChatOwnsChat()
     {
         var chat = new FakeChat();
@@ -220,6 +241,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         public FakeIcons FakeIcons { get; } = new();
         public AcDream.ClientExtensions.IClientOverlayIcons Icons => FakeIcons;
         public List<(int Bytes, string Glyphs, float Scale)> Fonts { get; } = new();
+        public string ClipboardText { get; set; } = "";
 
         public void AddMergedFont(byte[] ttf, string glyphs, float scale) => Fonts.Add((ttf.Length, glyphs, scale));
 

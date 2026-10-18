@@ -38,6 +38,34 @@
     <ProjectReference Include="..\AcDream.Rynth.ScriptWindows\AcDream.Rynth.ScriptWindows.csproj" />
   </ItemGroup>
 
+  <!-- Their ChatModel calls the Win32 clipboard through user32/kernel32
+       P/Invokes. After compile, the redirect tool points those at the
+       Win32ClipboardStandIn of the same names, so copy lines and the filter
+       editor's Import/Export use OpenAC's clipboard on every OS. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\RynthInteropRedirect\AcDream.Tools.RynthInteropRedirect.csproj"
+                      ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
+  <Target Name="RedirectWin32Clipboard"
+          AfterTargets="CoreCompile"
+          Inputs="@(IntermediateAssembly)"
+          Outputs="$(IntermediateOutputPath)win32-redirect.stamp"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="..\..\tools\RynthInteropRedirect\AcDream.Tools.RynthInteropRedirect.csproj"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" PropertyName="_RedirectTool" />
+    </MSBuild>
+    <PropertyGroup>
+      <_RedirectHost>$(DOTNET_HOST_PATH)</_RedirectHost>
+      <_RedirectHost Condition="'$(_RedirectHost)' == ''">dotnet</_RedirectHost>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)win32-redirect.refs" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
+    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.ChatWindow.Win32ClipboardStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot;" />
+    <Touch Files="$(IntermediateOutputPath)win32-redirect.stamp" AlwaysCreate="true" />
+  </Target>
+
   <ItemGroup>
     <InternalsVisibleTo Include="AcDream.Rynth.Host" />
     <InternalsVisibleTo Include="AcDream.Rynth.Host.Tests" />

@@ -31,6 +31,8 @@ public sealed class RynthClientExtension : IClientExtension
     private RynthBar? _bar;
     private Func<ScriptIconKind, uint, IntPtr>? _iconSource;
     private RynthChatKeyboard? _chatKeyboard;
+    private Func<string>? _clipboardText;
+    private Action<string>? _setClipboardText;
     private IDisposable? _keyboardSink;
     private IDisposable? _chatClaim;
     private IClientChat? _clientChat;
@@ -104,12 +106,11 @@ public sealed class RynthClientExtension : IClientExtension
     {
         if (!GuardChat(RynthChatWindow.Start))
             return;
-        _chatKeyboard = new RynthChatKeyboard(
-            context.Log,
-            () => overlay.ClipboardText,
-            text => overlay.ClipboardText = text,
-            OperatingSystem.IsWindows(),
-            () => RynthCore.Engine.UI.Data.ChatModel.InputText);
+        _clipboardText = () => overlay.ClipboardText;
+        _setClipboardText = text => overlay.ClipboardText = text;
+        Win32ClipboardStandIn.GetText = _clipboardText;
+        Win32ClipboardStandIn.SetText = _setClipboardText;
+        _chatKeyboard = new RynthChatKeyboard(context.Log);
         _keyboardSink = overlay.AddKeyboardSink(_chatKeyboard);
         if (context.Chat is { } chat)
         {
@@ -177,6 +178,12 @@ public sealed class RynthClientExtension : IClientExtension
         _clientChat = null;
         _chatHidden = null;
         _chatKeyboard = null;
+        if (_clipboardText is not null && Win32ClipboardStandIn.GetText == _clipboardText)
+            Win32ClipboardStandIn.GetText = null;
+        if (_setClipboardText is not null && Win32ClipboardStandIn.SetText == _setClipboardText)
+            Win32ClipboardStandIn.SetText = null;
+        _clipboardText = null;
+        _setClipboardText = null;
         _frameCallback?.Dispose();
         _frameCallback = null;
         foreach (IDisposable command in _commands)

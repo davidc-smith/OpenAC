@@ -1,7 +1,6 @@
 using AcDream.ClientExtensions;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
-using RynthCore.Engine.UI.Data;
 
 namespace AcDream.Rynth.Host;
 
@@ -12,33 +11,22 @@ namespace AcDream.Rynth.Host;
 /// their ChatModel through the Win32Backend stand-in's OnChat* hooks. Enter
 /// and Esc end capture at once but keep the keyboard until they come back up
 /// (their _swallowEnterTail), so the same keypress never reaches OpenAC. The
-/// send runs on the next tick (their deferred WM_RYNTHCORE_CHAT). Off Windows,
-/// paste/copy/cut use the overlay clipboard: their ChatModel uses the Win32
-/// clipboard. Game thread.
+/// send runs on the next tick (their deferred WM_RYNTHCORE_CHAT). Paste, copy
+/// and cut are theirs too: their Win32 clipboard calls reach OpenAC's
+/// clipboard through the chat window's Win32ClipboardStandIn. Game thread.
 /// </summary>
 internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
 {
     private readonly Action<string> _log;
-    private readonly Func<string> _getClipboard;
-    private readonly Action<string> _setClipboard;
-    private readonly bool _isWindows;
-    private readonly Func<string> _inputText;
     private OverlayKey? _swallowUntilUp;
     private bool _sendPending;
     private bool _enterDown;
     private bool _ignoreEnterUntilUp;
 
-    public RynthChatKeyboard(Action<string> log, Func<string> getClipboard, Action<string> setClipboard, bool isWindows, Func<string> inputText)
+    public RynthChatKeyboard(Action<string> log)
     {
         ArgumentNullException.ThrowIfNull(log);
-        ArgumentNullException.ThrowIfNull(getClipboard);
-        ArgumentNullException.ThrowIfNull(setClipboard);
-        ArgumentNullException.ThrowIfNull(inputText);
         _log = log;
-        _getClipboard = getClipboard;
-        _setClipboard = setClipboard;
-        _isWindows = isWindows;
-        _inputText = inputText;
     }
 
     public bool Capturing => Win32Backend.ChatCaptureActive || _swallowUntilUp is not null;
@@ -58,21 +46,20 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
         // it started typing, it doesn't send, until it comes back up.
         if (_ignoreEnterUntilUp && key == OverlayKey.Enter)
             return;
-        // Paste/copy/cut go through Run too: off Windows they touch the overlay clipboard.
         bool ctrl = (modifiers & OverlayModifiers.Control) != 0;
         bool shift = (modifiers & OverlayModifiers.Shift) != 0;
         switch (key)
         {
             case OverlayKey.V when ctrl:
             case OverlayKey.Insert when shift && !ctrl:
-                Run(Paste, "paste");
+                Run(Win32Backend.OnChatPaste, "paste");
                 break;
             case OverlayKey.C when ctrl:
             case OverlayKey.Insert when ctrl:
-                Run(Copy, "copy");
+                Run(Win32Backend.OnChatCopy, "copy");
                 break;
             case OverlayKey.X when ctrl:
-                Run(Cut, "cut");
+                Run(Win32Backend.OnChatCut, "cut");
                 break;
             case OverlayKey.Enter:
                 Win32Backend.ChatCaptureActive = false;
@@ -157,57 +144,6 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
             return;
         try { hook(value); }
         catch (Exception error) { Fail("char", error); }
-    }
-
-    private void Paste()
-    {
-        if (_isWindows)
-        {
-            Run(Win32Backend.OnChatPaste, "paste");
-            return;
-        }
-
-        // Their OnChatPaste's rules (ChatInputPaste.Insert): one line, breaks and tabs
-        // made spaces, cut to the room left under MaxLineChars without splitting a pair.
-        string add = ChatInputPaste.Clean(_getClipboard());
-        int room = Math.Max(0, ChatInputPaste.MaxLineChars - _inputText().Length);
-        if (add.Length > room)
-        {
-            add = add[..room];
-            if (add.Length > 0 && char.IsHighSurrogate(add[^1]))
-                add = add[..^1];
-        }
-
-        foreach (char c in add)
-            Type(c);
-    }
-
-    private void Copy()
-    {
-        if (_isWindows)
-        {
-            Run(Win32Backend.OnChatCopy, "copy");
-            return;
-        }
-
-        string text = _inputText();
-        if (text.Length > 0)
-            _setClipboard(text);
-    }
-
-    private void Cut()
-    {
-        if (_isWindows)
-        {
-            Run(Win32Backend.OnChatCut, "cut");
-            return;
-        }
-
-        string text = _inputText();
-        if (text.Length == 0)
-            return;
-        _setClipboard(text);
-        Run(Win32Backend.OnChatCancel, "cut");
     }
 
     private void Run(Action? hook, string what)
