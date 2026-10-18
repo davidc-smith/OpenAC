@@ -7,10 +7,11 @@ namespace AcDream.ClientExtensions;
 public interface IClientChat
 {
     /// <summary>
-    /// Adds a claim on the chat-entry key (the ChatStartCommand action, Enter
-    /// by default). When the player presses it, claims run in order before the
-    /// client's chat bar opens; the first that returns true takes the key and
-    /// the chat bar stays shut. Dispose the result to remove the claim.
+    /// Adds a claim on any action that focuses the client's chat entry
+    /// (EnterChatMode, Enter by default; ToggleChatEntry; FocusChatEntry;
+    /// ChatStartCommand; the replies; tell-to-selected). Claims run in order
+    /// before the chat bar opens; the first that returns true takes the action
+    /// and the chat bar stays shut. Dispose the result to remove the claim.
     /// </summary>
     IDisposable ClaimChatEntry(Func<bool> tryClaim);
 

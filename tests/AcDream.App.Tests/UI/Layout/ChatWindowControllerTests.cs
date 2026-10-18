@@ -192,6 +192,62 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
+    public void ClaimedEntryActionsDoNotFocusTheChatEntry()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        var root = new UiRoot();
+        root.AddChild(ctrl.Root);
+        int asked = 0;
+        ctrl.ExtensionEntryClaim = () => { asked++; return true; };
+
+        ctrl.EnterChatMode();
+        ctrl.ToggleChatEntry();
+        ctrl.StartCommand();
+        ctrl.StartTell("Bob");
+        ctrl.StartReply("Bob");
+
+        Assert.Equal(5, asked);
+        Assert.NotSame(ctrl.Input, root.KeyboardFocus);
+        Assert.Equal("", ctrl.Input.Text);
+
+        ctrl.ExtensionEntryClaim = () => false;
+        ctrl.EnterChatMode();
+        Assert.Same(ctrl.Input, root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void ClosingTheEntryWithToggleDoesNotAskTheClaim()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        var root = new UiRoot();
+        root.AddChild(ctrl.Root);
+        ctrl.EnterChatMode();
+        ctrl.ExtensionEntryClaim = () => throw new InvalidOperationException("asked");
+        ctrl.ToggleChatEntry();
+        Assert.NotSame(ctrl.Input, root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void CaptureWhileExtensionHiddenReportsThePlayersVisibility()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        Assert.Null(ctrl.CaptureWindowState().RequestedVisible);
+        ctrl.SetExtensionHidden(true);
+        Assert.True(ctrl.CaptureWindowState().RequestedVisible);
+    }
+
+    [Fact]
+    public void RestoreWhileExtensionHiddenUpdatesTheRememberedChoiceAndStaysHidden()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        ctrl.SetExtensionHidden(true);
+        ctrl.RestoreWindowState(new RetainedWindowState(RequestedVisible: false));
+        Assert.False(ctrl.Root.Visible);
+        ctrl.SetExtensionHidden(false);
+        Assert.False(ctrl.Root.Visible);
+    }
+
+    [Fact]
     public void TypingInThePanelIsTheSharedEntrysDraft()
     {
         var (ctrl, _, entry) = BindOverSharedEntry();

@@ -378,7 +378,7 @@ public sealed class RetailUiRuntime : IDisposable
     private readonly RetailPanelUiController _panelUi;
     private ChatWindowController? _chatWindowController;
 
-    /// <summary>Chat seam for client extensions: entry-key claims and the hide switch.</summary>
+    /// <summary>Chat seam for client extensions: claims on any action that focuses the chat entry (EnterChatMode, ToggleChatEntry, FocusChatEntry, ChatStartCommand, replies, tell-to-selected) and the hide switch.</summary>
     internal AcDream.App.Extensions.ClientChatSeam? ExtensionChat { get; set; }
     private readonly FloatingChatWindowController?[] _floatingChatControllers = new FloatingChatWindowController?[4];
     private GameplayConfirmationController? _gameplayConfirmationController;
@@ -847,8 +847,6 @@ public sealed class RetailUiRuntime : IDisposable
                 _chatWindowController?.StartReply(_bindings.Chat.ViewModel.LastPatronSender);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatStartCommand:
-                if (ExtensionChat?.TryClaimEntry() == true)
-                    return true;
                 _chatWindowController?.StartCommand();
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatTellToSelected:
@@ -1027,6 +1025,8 @@ public sealed class RetailUiRuntime : IDisposable
 
     public void FocusChatEntry()
     {
+        if (ExtensionChat?.TryClaimEntry() == true)
+            return;
         if (Host.Root.DefaultTextInput is { } input)
             Host.Root.SetKeyboardFocus(input);
     }
@@ -1649,6 +1649,7 @@ public sealed class RetailUiRuntime : IDisposable
         controller.AttachWindow(handle);
         Host.Root.DefaultTextInput = controller.Input;
         _chatWindowController = controller;
+        controller.ExtensionEntryClaim = () => ExtensionChat?.TryClaimEntry() == true;
         controller.BindIndicatorClicks(ToggleFloatingChatWindow);
         Console.WriteLine("[UI] retail chat window from LayoutDesc importer (0x2100006F).");
     }
