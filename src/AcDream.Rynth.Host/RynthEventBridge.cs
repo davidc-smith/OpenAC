@@ -1,3 +1,4 @@
+using AcDream.Core.Chat;
 using AcDream.Runtime;
 
 namespace AcDream.Rynth.Host;
@@ -13,6 +14,9 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
 
     public RynthEventBridge(IReadOnlyList<RynthPlugin> plugins) => _plugins = plugins;
 
+    /// <summary>Raised once the plugins have been told of the login, for pushes that follow it.</summary>
+    public event Action? LoggedIn;
+
     public void OnLifecycle(in RuntimeLifecycleDelta delta)
     {
         if (delta.Current == RuntimeLifecycleState.InWorld
@@ -21,6 +25,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
             foreach (RynthPlugin plugin in _plugins)
                 plugin.OnLoginComplete();
+            LoggedIn?.Invoke();
         }
     }
 
@@ -55,11 +60,63 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             plugin.OnChatWindowText(text, entry.LogTextType);
     }
 
-    /// <summary>From <c>CombatState.HealthChanged</c>.</summary>
-    public void OnHealthChanged(uint targetId, float healthRatio)
+    /// <summary>From <c>CombatState.HealthChanged</c>; current and max are 0 unless the creature was appraised.</summary>
+    public void OnHealthChanged(uint targetId, float healthRatio, uint currentHealth = 0, uint maxHealth = 0)
     {
         foreach (RynthPlugin plugin in _plugins)
-            plugin.OnUpdateHealth(targetId, healthRatio);
+            plugin.OnUpdateHealth(targetId, healthRatio, currentHealth, maxHealth);
+    }
+
+    public void OnBusyCountIncremented()
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnBusyCountIncremented();
+    }
+
+    public void OnBusyCountDecremented()
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnBusyCountDecremented();
+    }
+
+    public void OnSelectedTargetChange(uint currentTargetId, uint previousTargetId)
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnSelectedTargetChange(currentTargetId, previousTargetId);
+    }
+
+    public void OnCombatModeChange(int currentMode, int previousMode)
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnCombatModeChange(currentMode, previousMode);
+    }
+
+    public void OnCombatDamage(uint damage, uint damageType, uint critical, uint isAttacker)
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnCombatDamage(damage, damageType, critical, isAttacker);
+    }
+
+    public void OnEnchantmentAdded(uint spellId, double durationSeconds)
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnEnchantmentAdded(spellId, durationSeconds);
+    }
+
+    public void OnEnchantmentRemoved(uint spellId)
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnEnchantmentRemoved(spellId);
+    }
+
+    /// <summary>
+    /// A client status line ("You're too busy!"). The retail client shows these in the
+    /// chat window, where RynthCore reads them; OpenAC shows them as floating text only.
+    /// </summary>
+    public void OnStatusText(string text)
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnChatWindowText(text, (int)RetailLogTextType.ClientLocal);
     }
 
     /// <summary>

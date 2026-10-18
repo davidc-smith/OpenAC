@@ -27,6 +27,7 @@ public sealed class RynthClientExtension : IClientExtension
     private IDisposable? _frameCallback;
     private readonly List<IDisposable> _commands = new();
     private CombatState? _combat;
+    private RynthCombatEvents? _combatEvents;
     private GameRuntime? _runtime;
     private RynthLayoutStore? _layout;
     private RynthBar? _bar;
@@ -89,7 +90,7 @@ public sealed class RynthClientExtension : IClientExtension
             StartChat(context, chatOverlay);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
-        _combat.HealthChanged += OnHealthChanged;
+        _combatEvents = new RynthCombatEvents(context.Runtime, _host.Bridge);
         _combat.KillLanded += OnKillLanded;
         _runtime = context.Runtime;
         _runtime.CommunicationOwner.LocalPlayerDied += OnLocalPlayerDied;
@@ -203,7 +204,6 @@ public sealed class RynthClientExtension : IClientExtension
         _commands.Clear();
         if (_combat is not null)
         {
-            _combat.HealthChanged -= OnHealthChanged;
             _combat.KillLanded -= OnKillLanded;
             _combat = null;
         }
@@ -217,6 +217,8 @@ public sealed class RynthClientExtension : IClientExtension
             _runtime = null;
         }
 
+        _combatEvents?.Dispose();
+        _combatEvents = null;
         _runtimeSubscription?.Dispose();
         _runtimeSubscription = null;
         try
@@ -242,9 +244,6 @@ public sealed class RynthClientExtension : IClientExtension
         _iconSource = null;
         _bar = null;
     }
-
-    private void OnHealthChanged(uint targetId, float healthRatio) =>
-        _host?.Bridge.OnHealthChanged(targetId, healthRatio);
 
     private void OnKillLanded(string deathMessage, uint victimId) =>
         _host?.Bridge.OnKillLanded(deathMessage);
