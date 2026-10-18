@@ -85,6 +85,8 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// </summary>
     public void OnContainerOpened(uint previousId, uint containerId)
     {
+        // A guard only: ExternalContainerState raises Opened with previous 0 (the client
+        // reports the replaced container through ReplacementRequested -> OnContainerClosed).
         if (previousId != 0 && previousId != containerId)
             OnContainerClosed(previousId);
         if (containerId == 0)

@@ -19,7 +19,7 @@ public sealed class RynthInventoryTests : IDisposable
     {
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _previousConfig);
         try { Directory.Delete(_config, recursive: true); }
-        catch (IOException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     private RynthHost CreateInventoryHost() =>

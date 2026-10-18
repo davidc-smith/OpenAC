@@ -1,5 +1,8 @@
 using AcDream.ClientExtensions;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using AcDream.Rynth.Host;
+using RynthCore.PluginSdk;
 
 namespace AcDream.App.Tests.Extensions;
 
@@ -16,7 +19,7 @@ public sealed class RynthClientExtensionTests : IDisposable
     {
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _previousConfig);
         try { Directory.Delete(_config, recursive: true); }
-        catch (IOException) { }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     private sealed class Registration : IDisposable
@@ -56,6 +59,46 @@ public sealed class RynthClientExtensionTests : IDisposable
         extension.Dispose();
         Assert.True(containers.RequestOpen(0x80000200));
         Assert.True(containers.ApplyViewContents(0x80000200));
+    }
+
+    [Fact]
+    public void OpeningASecondContainerClosesTheFirstInThePluginsInOrder()
+    {
+        ContainerRecorder.Calls.Clear();
+        var runtime = GameRuntimeTestFactory.Create();
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (_, _) => new Registration(),
+        };
+        using var extension = new RynthClientExtension { AdditionalPluginExports = [typeof(ContainerRecorder)] };
+        extension.Attach(context);
+
+        var containers = runtime.InventoryOwner.ExternalContainers;
+        Assert.True(containers.RequestOpen(0x80000100));
+        Assert.True(containers.ApplyViewContents(0x80000100));
+        Assert.True(containers.RequestOpen(0x80000200));
+        Assert.True(containers.ApplyViewContents(0x80000200));
+        Assert.True(containers.ApplyClose(0x80000200));
+
+        Assert.Equal(
+            ["view 80000100", "stop 80000100", "view 80000200", "stop 80000200"],
+            ContainerRecorder.Calls);
+    }
+
+    private static unsafe class ContainerRecorder
+    {
+        public static readonly List<string> Calls = new();
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginInit", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static int Init(RynthCoreApiNative* api) => 0;
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnViewObjectContents", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void View(uint id) => Calls.Add($"view {id:X8}");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnStopViewingObjectContents", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void Stop(uint id) => Calls.Add($"stop {id:X8}");
     }
 
     [Fact]

@@ -27,6 +27,9 @@ public sealed class RynthClientExtension : IClientExtension
     private RynthBar? _bar;
     private Func<ScriptIconKind, uint, IntPtr>? _iconSource;
 
+    /// <summary>Test seam: extra plugin exports types loaded beside the shipped plugins.</summary>
+    internal IReadOnlyList<Type> AdditionalPluginExports { get; init; } = [];
+
     public void Attach(ClientExtensionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -59,6 +62,7 @@ public sealed class RynthClientExtension : IClientExtension
                 typeof(RynthCore.Plugin.RynthTracker.PluginExports),
                 typeof(RynthCore.Plugin.RynthOracle.PluginExports),
                 typeof(RynthCore.Plugin.RynthInventory.PluginExports),
+                .. AdditionalPluginExports,
             ],
             scriptWindows);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
@@ -147,6 +151,9 @@ public sealed class RynthClientExtension : IClientExtension
             case ExternalContainerTransitionKind.Opened:
                 host.Bridge.OnContainerOpened(transition.PreviousContainerId, transition.ContainerId);
                 break;
+            // Opening B while A is open raises ReplacementRequested(prev=A) and drops A's
+            // contents; the later Opened carries previous 0, so this is where A closes.
+            case ExternalContainerTransitionKind.ReplacementRequested:
             case ExternalContainerTransitionKind.Closed:
             case ExternalContainerTransitionKind.Reset:
                 host.Bridge.OnContainerClosed(transition.PreviousContainerId);
