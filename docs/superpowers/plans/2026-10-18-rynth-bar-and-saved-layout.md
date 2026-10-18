@@ -1443,6 +1443,8 @@ git commit -m "feat(rynth): the extension saves window layout and draws the laun
 
 ### Task 6: Live check on the local ACE server
 
+> **Result (2026-10-18): PASS.** Two runs on 10.10.20.20, same data folder. The user confirmed: the bar's Scripts menu opens and closes Oracle; Oracle stays closed at character select; after a relaunch the bar and Oracle are back where they were left and Oracle reopens after login. `rynth-layout.json` held Oracle's rectangle, `open: true` and the bar position (Void was saved open as well; Oracle opens it itself). No `[Rynth] layout`, `[Rynth] bar:` or exception lines in either log.
+
 **Goal:** In the real client on macOS against the local ACE server 10.10.20.20, the bar opens Oracle, Oracle's window comes back where it was left after a relaunch, and the bar keeps its spot.
 
 **Files:**

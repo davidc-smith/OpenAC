@@ -46,12 +46,12 @@
     {
       "id": 5,
       "subject": "Task 6: Live check on the local ACE server",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** In the real client on macOS against the local ACE server 10.10.20.20, the bar opens Oracle, Oracle's window comes back where it was left after a relaunch, and the bar keeps its spot.\n\n**Files:**\n- None (no code). Results go in the session report.\n\n**Acceptance Criteria:**\n- [ ] The user said they are available before the client was launched.\n- [ ] After login the bar shows at top-left with a \"Scripts\" button; its menu lists Oracle and Void under RynthOracle; clicking Oracle opens the window and clicking it again closes it.\n- [ ] After the user moves and resizes Oracle, leaves it open, and quits and relaunches, Oracle opens at the same place and size after login.\n- [ ] After the user drags the bar and relaunches, the bar is where it was left.\n- [ ] `<scratch root>/plugins/rynth/files/rynth-layout.json` exists and holds Oracle's rectangle and the bar position.\n- [ ] The client log has no `[Rynth] layout`, `[Rynth] bar:` or `[ScriptWindows]` error lines.\n\n**Verify:** `cat \"$ACDREAM_ROOT_DIR/plugins/rynth/files/rynth-layout.json\"` \u2192 JSON with `script:RynthOracle/Oracle` (x, y, w, h, open) and `bar`\n\nFull steps: see plan section \"Task 6\".\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"`cat \\\"$ACDREAM_ROOT_DIR/plugins/rynth/files/rynth-layout.json\\\"` \\u2192 JSON with `script:RynthOracle/Oracle` (x, y, w, h, open) and `bar`\", \"acceptanceCriteria\": [\"The user said they are available before the client was launched.\", \"After login the bar shows at top-left with a \\\"Scripts\\\" button; its menu lists Oracle and Void under RynthOracle; clicking Oracle opens the window and clicking it again closes it.\", \"After the user moves and resizes Oracle, leaves it open, and quits and relaunches, Oracle opens at the same place and size after login.\", \"After the user drags the bar and relaunches, the bar is where it was left.\", \"`<scratch root>/plugins/rynth/files/rynth-layout.json` exists and holds Oracle's rectangle and the bar position.\", \"The client log has no `[Rynth] layout`, `[Rynth] bar:` or `[ScriptWindows]` error lines.\"], \"modelTier\": \"standard\", \"tags\": [\"live\", \"ask-user-first\"]}\n```",
       "blockedBy": [
         4
       ]
     }
   ],
-  "lastUpdated": "2026-10-18T05:53:32.350468+00:00"
+  "lastUpdated": "2026-10-18T06:10:59.506463+00:00"
 }
