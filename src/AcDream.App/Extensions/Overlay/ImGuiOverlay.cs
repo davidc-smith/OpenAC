@@ -3,6 +3,7 @@ using System.Numerics;
 using AcDream.App.Rendering;
 using AcDream.ClientExtensions;
 using ImGuiNET;
+using Silk.NET.Input;
 
 namespace AcDream.App.Extensions.Overlay;
 
@@ -28,6 +29,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     private IntPtr _context;
     private bool _frameOpen;
     private bool _failed;
+    private readonly List<IOverlayKeyboardSink> _sinks = new();
+    private bool _imguiWantsKeyboard;
 
     public ImGuiOverlay(Action<string> log)
     {
@@ -41,7 +44,73 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
     public bool WantsMouse { get; private set; }
 
-    public bool WantsKeyboard { get; private set; }
+    public bool WantsKeyboard => _imguiWantsKeyboard || AnySinkCapturing();
+
+    /// <summary>Where the clipboard lives: the window's keyboard, once the input feed is up.</summary>
+    internal IClipboardSource? ClipboardSource { get; set; }
+
+    public string ClipboardText
+    {
+        get => ClipboardSource?.ClipboardText ?? string.Empty;
+        set
+        {
+            if (ClipboardSource is { } source)
+                source.ClipboardText = value ?? string.Empty;
+        }
+    }
+
+    public IDisposable AddKeyboardSink(IOverlayKeyboardSink sink)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
+        _sinks.Add(sink);
+        return new SinkRegistration(this, sink);
+    }
+
+    internal void SinkKeyDown(Key key, bool ctrl, bool shift)
+    {
+        OverlayKey mapped = OverlayKeyMap.Map(key);
+        OverlayModifiers modifiers = (ctrl ? OverlayModifiers.Control : OverlayModifiers.None)
+            | (shift ? OverlayModifiers.Shift : OverlayModifiers.None);
+        ForEachSink(sink => sink.KeyDown(mapped, modifiers));
+    }
+
+    internal void SinkKeyUp(Key key)
+    {
+        OverlayKey mapped = OverlayKeyMap.Map(key);
+        ForEachSink(sink => sink.KeyUp(mapped));
+    }
+
+    internal void SinkCharacter(char value) => ForEachSink(sink => sink.Character(value));
+
+    private void ForEachSink(Action<IOverlayKeyboardSink> call)
+    {
+        foreach (IOverlayKeyboardSink sink in _sinks.ToArray())
+        {
+            try { call(sink); }
+            catch (Exception error) { DropSink(sink, error); }
+        }
+    }
+
+    private bool AnySinkCapturing()
+    {
+        foreach (IOverlayKeyboardSink sink in _sinks.ToArray())
+        {
+            try
+            {
+                if (sink.Capturing)
+                    return true;
+            }
+            catch (Exception error) { DropSink(sink, error); }
+        }
+
+        return false;
+    }
+
+    private void DropSink(IOverlayKeyboardSink sink, Exception error)
+    {
+        _sinks.Remove(sink);
+        _log($"[ImGui] keyboard sink removed: {error.GetType().Name}: {error.Message}");
+    }
 
     /// <summary>The client's icons for extensions; zero until <see cref="BindIcons"/>.</summary>
     public IClientOverlayIcons Icons => _icons;
@@ -116,7 +185,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             {
                 Input.Clear();
                 WantsMouse = false;
-                WantsKeyboard = false;
+                _imguiWantsKeyboard = false;
                 return;
             }
 
@@ -129,7 +198,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             ImGui.NewFrame();
             _frameOpen = true;
             WantsMouse = io.WantCaptureMouse;
-            WantsKeyboard = io.WantCaptureKeyboard;
+            _imguiWantsKeyboard = io.WantCaptureKeyboard;
         }
         catch (Exception error)
         {
@@ -197,7 +266,9 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         Input.Accepting = false;
         Input.Clear();
         WantsMouse = false;
-        WantsKeyboard = false;
+        _imguiWantsKeyboard = false;
+        _sinks.Clear();
+        ClipboardSource = null;
         AbortFrame();
         _callbacks.Clear();
         try
@@ -243,7 +314,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
                 return null;
             }
 
-            var feed = new ImGuiInputFeed(input, Input, window);
+            var feed = new ImGuiInputFeed(input, Input, window, this);
             OverlayInputGate.Bind(this);
             return new Started(this, feed);
         }
@@ -287,7 +358,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         Input.Accepting = false;
         Input.Clear();
         WantsMouse = false;
-        WantsKeyboard = false;
+        _imguiWantsKeyboard = false;
         _log($"[ImGui] overlay stopped at {stage}: {error.GetType().Name}: {error.Message}");
     }
 
@@ -299,6 +370,11 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             try { feed.Dispose(); }
             finally { overlay.Dispose(); }
         }
+    }
+
+    private sealed class SinkRegistration(ImGuiOverlay owner, IOverlayKeyboardSink sink) : IDisposable
+    {
+        public void Dispose() => owner._sinks.Remove(sink);
     }
 
     private sealed class CallbackRegistration(ImGuiOverlay owner, Action draw) : IDisposable

@@ -20,6 +20,100 @@ public sealed class ImGuiOverlayTests : IDisposable
         _overlay.Dispose();
     }
 
+    private sealed class RecordingSink : AcDream.ClientExtensions.IOverlayKeyboardSink
+    {
+        public bool Capturing { get; set; }
+        public bool ThrowOnKey { get; set; }
+        public List<(AcDream.ClientExtensions.OverlayKey, AcDream.ClientExtensions.OverlayModifiers)> Downs { get; } = new();
+        public List<char> Chars { get; } = new();
+        public void KeyDown(AcDream.ClientExtensions.OverlayKey key, AcDream.ClientExtensions.OverlayModifiers modifiers)
+        {
+            if (ThrowOnKey) throw new InvalidOperationException("sink failed");
+            Downs.Add((key, modifiers));
+        }
+        public void KeyUp(AcDream.ClientExtensions.OverlayKey key) { }
+        public void Character(char value) => Chars.Add(value);
+    }
+
+    private sealed class FakeClipboard : IClipboardSource
+    {
+        public string ClipboardText { get; set; } = "";
+    }
+
+    [Fact]
+    public void ACapturingSinkWantsTheKeyboardAtOnce()
+    {
+        var sink = new RecordingSink();
+        using IDisposable registration = _overlay.AddKeyboardSink(sink);
+        Assert.False(_overlay.WantsKeyboard);
+        sink.Capturing = true;
+        Assert.True(_overlay.WantsKeyboard);
+        sink.Capturing = false;
+        Assert.False(_overlay.WantsKeyboard);
+    }
+
+    [Fact]
+    public void KeysAndCharactersReachEverySink()
+    {
+        var a = new RecordingSink();
+        var b = new RecordingSink { Capturing = true };
+        using IDisposable ra = _overlay.AddKeyboardSink(a);
+        using IDisposable rb = _overlay.AddKeyboardSink(b);
+
+        _overlay.SinkKeyDown(Key.Enter, ctrl: false, shift: false);
+        _overlay.SinkKeyDown(Key.V, ctrl: true, shift: false);
+        _overlay.SinkKeyDown(Key.C, ctrl: false, shift: true);
+        _overlay.SinkCharacter('h');
+
+        foreach (RecordingSink sink in new[] { a, b })
+        {
+            Assert.Equal((AcDream.ClientExtensions.OverlayKey.Enter, AcDream.ClientExtensions.OverlayModifiers.None), sink.Downs[0]);
+            Assert.Equal((AcDream.ClientExtensions.OverlayKey.V, AcDream.ClientExtensions.OverlayModifiers.Control), sink.Downs[1]);
+            Assert.Equal((AcDream.ClientExtensions.OverlayKey.C, AcDream.ClientExtensions.OverlayModifiers.Shift), sink.Downs[2]);
+            Assert.Equal(['h'], sink.Chars);
+        }
+    }
+
+    [Fact]
+    public void AThrowingSinkIsDroppedAndOthersCarryOn()
+    {
+        var bad = new RecordingSink { ThrowOnKey = true };
+        var good = new RecordingSink();
+        _overlay.AddKeyboardSink(bad);
+        using IDisposable r = _overlay.AddKeyboardSink(good);
+        _overlay.SinkKeyDown(Key.Enter, false, false);
+        _overlay.SinkKeyDown(Key.Enter, false, false);
+        Assert.Equal(2, good.Downs.Count);
+        Assert.Single(_log, l => l.Contains("sink failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DisposingTheRegistrationRemovesTheSink()
+    {
+        var sink = new RecordingSink { Capturing = true };
+        _overlay.AddKeyboardSink(sink).Dispose();
+        Assert.False(_overlay.WantsKeyboard);
+        _overlay.SinkKeyDown(Key.Enter, false, false);
+        Assert.Empty(sink.Downs);
+    }
+
+    [Fact]
+    public void ClipboardWithoutAKeyboardIsEmpty()
+    {
+        _overlay.ClipboardText = "ignored";
+        Assert.Equal("", _overlay.ClipboardText);
+    }
+
+    [Fact]
+    public void ClipboardRoundTripsThroughTheKeyboard()
+    {
+        var keyboard = new FakeClipboard();
+        _overlay.ClipboardSource = keyboard;
+        _overlay.ClipboardText = "hello";
+        Assert.Equal("hello", keyboard.ClipboardText);
+        Assert.Equal("hello", _overlay.ClipboardText);
+    }
+
     private void Start() =>
         _overlay.Initialize(_renderer, () => (new Vector2(800, 600), new Vector2(1600, 1200)));
 
@@ -290,4 +384,8 @@ public sealed class ImGuiKeyMapTests
 
     [Fact]
     public void UnknownKeyIsNone() => Assert.Equal(ImGuiKey.None, ImGuiKeyMap.Map(Key.Unknown));
+
+    [Fact]
+    public void OverlayUnknownKeyIsOther() =>
+        Assert.Equal(AcDream.ClientExtensions.OverlayKey.Other, OverlayKeyMap.Map(Key.Unknown));
 }
