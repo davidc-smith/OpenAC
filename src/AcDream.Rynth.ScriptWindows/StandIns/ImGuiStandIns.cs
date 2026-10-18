@@ -59,6 +59,17 @@ namespace RynthCore.Engine.ImGuiBackend
 
         /// <summary>RynthCore's chat font nearest a point size; here, the overlay's current font.</summary>
         public static ImFontPtr Chat(float points) => ImGui.GetFont();
+
+        /// <summary>RynthCore's baked text-size step; the overlay has one font size, so 0 (normal).</summary>
+        public static int CurrentStep;
+
+        /// <summary>The baked step nearest a panel's text size; only normal is baked here.</summary>
+        public static int BakedStepNear(int step) => 0;
+
+        /// <summary>RynthCore re-bakes its fonts for a new text size; the overlay's font doesn't change.</summary>
+        public static void RequestRebuild(int delayMs = 0)
+        {
+        }
     }
 
     internal enum PanelChrome
@@ -67,7 +78,7 @@ namespace RynthCore.Engine.ImGuiBackend
         None,
     }
 
-    /// <summary>The members of RynthCore's PanelSpec that the registry sets.</summary>
+    /// <summary>The members of RynthCore's PanelSpec that their faces set (of Background, BorderColor and Rounding only a zero Background is honoured).</summary>
     internal sealed record PanelSpec(
         Vector2 DefaultSize,
         Vector2 MinSize,
@@ -77,7 +88,9 @@ namespace RynthCore.Engine.ImGuiBackend
         ImGuiWindowFlags BodyFlags = ImGuiWindowFlags.None,
         Vector2? DefaultPos = null,
         bool EdgeToEdge = false,
-        bool GripInBody = false);
+        bool GripInBody = false,
+        uint? BorderColor = null,
+        float Rounding = 0f);
 
     internal interface IImGuiPanel
     {

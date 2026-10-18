@@ -10,11 +10,14 @@ namespace AcDream.TestSupport;
 /// environment on every call), so there it is set with libc setenv, not Environment.SetEnvironmentVariable,
 /// and the directory needs a Library/Application Support folder. Process-wide state: only use from tests that never run
 /// in parallel (this assembly, or the "Rynth" collection).
+/// It also points RYNTHCORE_DIR and RYNTHSUITE_DIR (RynthSuite's install folders) inside the sandbox.
 /// </summary>
 internal sealed class RynthConfigSandbox : IDisposable
 {
     private readonly string? _previousHome = Environment.GetEnvironmentVariable("HOME");
     private readonly string? _previousXdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+    private readonly string? _previousCoreDir = Environment.GetEnvironmentVariable("RYNTHCORE_DIR");
+    private readonly string? _previousSuiteDir = Environment.GetEnvironmentVariable("RYNTHSUITE_DIR");
     private readonly string? _previousCfHome = OperatingSystem.IsMacOS() ? NativeGetEnv("CFFIXED_USER_HOME") : null;
 
     public RynthConfigSandbox(string prefix)
@@ -22,6 +25,11 @@ internal sealed class RynthConfigSandbox : IDisposable
         Root = Directory.CreateTempSubdirectory(prefix).FullName;
         Environment.SetEnvironmentVariable("HOME", Root);
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Root);
+        // RynthSuite plugins (RynthAi) find their folders through these first, on every OS.
+        // Their RynthInstallPaths resolves once per process: the first sandbox's folders stay
+        // in use, which is still a temp folder, never the real C:\Games or ApplicationData one.
+        Environment.SetEnvironmentVariable("RYNTHCORE_DIR", Path.Combine(Root, "RynthCore"));
+        Environment.SetEnvironmentVariable("RYNTHSUITE_DIR", Path.Combine(Root, "RynthSuite"));
         if (OperatingSystem.IsMacOS())
         {
             Directory.CreateDirectory(Path.Combine(Root, "Library", "Application Support"));
@@ -46,6 +54,8 @@ internal sealed class RynthConfigSandbox : IDisposable
     {
         Environment.SetEnvironmentVariable("HOME", _previousHome);
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _previousXdg);
+        Environment.SetEnvironmentVariable("RYNTHCORE_DIR", _previousCoreDir);
+        Environment.SetEnvironmentVariable("RYNTHSUITE_DIR", _previousSuiteDir);
         if (OperatingSystem.IsMacOS())
         {
             if (_previousCfHome is null) NativeUnsetEnv("CFFIXED_USER_HOME");

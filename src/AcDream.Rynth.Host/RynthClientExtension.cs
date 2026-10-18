@@ -2,7 +2,7 @@ using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Player;
-using AcDream.Rynth.ChatWindow;
+using AcDream.Rynth.EngineUi;
 using AcDream.Runtime;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.ScriptWindows;
@@ -10,17 +10,18 @@ using RynthCore.Engine.UI.ScriptWindows;
 namespace AcDream.Rynth.Host;
 
 /// <summary>
-/// Runs RynthCore plugins (RynthTracker, RynthOracle, RynthInventory, RynthChat) inside the client: the
+/// Runs RynthCore plugins (RynthTracker, RynthOracle, RynthInventory, RynthChat, RynthAi) inside the client: the
 /// API table reads the runtime, runtime events become plugin callbacks,
 /// script windows draw on the client's ImGui overlay when it has one, with a
 /// launcher bar and their layout saved per install, RynthCore's chat window
-/// (over RynthChat's scrollback) with a Chat button on the bar, and
-/// <c>/rynth tracker</c>, <c>/ro</c> and <c>/ginv</c> reach the plugins.
+/// (over RynthChat's scrollback) with a Chat button on the bar, RynthCore's RynthAi dashboard with a RynthAi button, and
+/// <c>/rynth tracker</c>, <c>/ro</c>, <c>/ginv</c> and RynthAi's <c>/ra</c>, <c>/mt</c>, <c>/ub</c>, <c>/vt</c> reach the plugins.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
 {
     private RynthHost? _host;
     private RynthChatHookup? _chatHookup;
+    private RynthAiHookup? _aiHookup;
     private Action<string>? _log;
     private IDisposable? _runtimeSubscription;
     private IDisposable? _frameCallback;
@@ -49,7 +50,7 @@ public sealed class RynthClientExtension : IClientExtension
         {
             _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
             ImGuiPanelHost.Layout = _layout;
-            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title] };
+            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title, RynthAiDashboard.Title] };
             IClientOverlayIcons icons = context.Overlay.Icons;
             _iconSource = (kind, id) => kind switch
             {
@@ -65,6 +66,7 @@ public sealed class RynthClientExtension : IClientExtension
                 context.Log("[Rynth] the Phosphor icon font is missing; the bar shows letters.");
         }
 
+        RynthInstallFolders.Apply();
         var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand);
         bool scriptWindows = context.Overlay is not null;
         _host = new RynthHost(
@@ -75,10 +77,14 @@ public sealed class RynthClientExtension : IClientExtension
                 typeof(RynthCore.Plugin.RynthOracle.PluginExports),
                 typeof(RynthCore.Plugin.RynthInventory.PluginExports),
                 typeof(RynthCore.Plugin.RynthChat.PluginExports),
+                typeof(RynthCore.Plugin.RynthAi.PluginExports),
                 .. AdditionalPluginExports,
             ],
             scriptWindows);
         _chatHookup = new RynthChatHookup(_host, view, context.Log);
+        _aiHookup = new RynthAiHookup(_host, view, context.Log);
+        if (context.Overlay is not null)
+            Guard("RynthAi", RynthAiDashboard.Start);
         if (context.Overlay is { } chatOverlay)
             StartChat(context, chatOverlay);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
@@ -93,6 +99,8 @@ public sealed class RynthClientExtension : IClientExtension
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
         _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
         _commands.Add(context.RegisterChatCommand("ginv", arguments => OfferChatBarText("/ginv " + arguments)));
+        foreach (string verb in new[] { "ra", "mt", "ub", "vt" })
+            _commands.Add(context.RegisterChatCommand(verb, arguments => OfferChatBarText($"/{verb} " + arguments)));
         if (context.Overlay is { } overlay)
             _frameCallback = overlay.AddFrameCallback(DrawFrame);
     }
@@ -119,8 +127,8 @@ public sealed class RynthClientExtension : IClientExtension
         }
     }
 
-    /// <summary>Runs chat work; a throw is logged as a chat failure. True when it ran clean.</summary>
-    private bool GuardChat(Action work)
+    /// <summary>Runs extension work; a throw is logged under <paramref name="area"/>. True when it ran clean.</summary>
+    private bool Guard(string area, Action work)
     {
         try
         {
@@ -129,10 +137,13 @@ public sealed class RynthClientExtension : IClientExtension
         }
         catch (Exception error)
         {
-            _log?.Invoke($"[Rynth] chat: {error.GetType().Name}: {error.Message}");
+            _log?.Invoke($"[Rynth] {area}: {error.GetType().Name}: {error.Message}");
             return false;
         }
     }
+
+    /// <summary>Runs chat work; a throw is logged as a chat failure. True when it ran clean.</summary>
+    private bool GuardChat(Action work) => Guard("chat", work);
 
     /// <summary>Each tick: the chat source, the deferred send and Tell, and OpenAC's chat window hidden while Rynth chat owns chat.</summary>
     private void TickChat()
@@ -161,6 +172,7 @@ public sealed class RynthClientExtension : IClientExtension
     {
         _host?.Tick();
         GuardChat(TickChat);
+        Guard("RynthAi", () => RynthAiDashboard.Tick());
     }
 
     public void Dispose()
@@ -209,6 +221,9 @@ public sealed class RynthClientExtension : IClientExtension
         _runtimeSubscription = null;
         try
         {
+            Guard("RynthAi", RynthAiDashboard.Stop);
+            _aiHookup?.Dispose();
+            _aiHookup = null;
             GuardChat(RynthChatWindow.Stop);
             _chatHookup?.Dispose();
             _chatHookup = null;

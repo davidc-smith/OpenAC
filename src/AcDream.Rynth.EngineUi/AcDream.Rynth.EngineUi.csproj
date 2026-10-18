@@ -1,11 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- RynthCore's ImGui chat window (ChatFace, the filter editor, ChatData and
-       friends), compiled unchanged from the submodule against our stand-ins for
-       the engine types they use (StandIns/, plus the shared ones in
-       AcDream.Rynth.ScriptWindows). RynthCore's Win32Backend, ChatHooks,
-       UiSources, UiDataHub, PluginExportBinder and Discord relay are NOT
-       compiled: the stand-ins of those names are plain classes. Their code,
-       their warnings: warnings-as-errors and analyzers are off here. -->
+  <!-- RynthCore's engine UI faces, compiled unchanged from the submodule against
+       our stand-ins for the engine types they use (StandIns/, plus the shared
+       ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
+       filter editor, ChatData and friends) and the RynthAi dashboard (RynthAiFace, its
+       drawers, RynthAiData and the settings it edits). One assembly, as in RynthCore: their
+       faces share static engine classes (UiSources, PanelRouter, ...).
+       RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
+       PluginExportBinder and Discord relay are NOT compiled, nor PluginManager,
+       EntryPoint, D3D9, MonstersPanel, RangesSlideOut or the faces the dashboard
+       only links to (see StandIns/DashboardStandIns.cs): the stand-ins of
+       those names are plain classes. Their code, their warnings:
+       warnings-as-errors and analyzers are off here. -->
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -27,6 +32,18 @@
     <Compile Include="$(RynthEngine)ImGui\Panels\DashboardDrawers.cs" Link="RynthCore\DashboardDrawers.cs" />
     <Compile Include="$(RynthEngine)ImGui\SafeImGui.cs" Link="RynthCore\SafeImGui.cs" />
     <Compile Include="$(RynthEngine)ImGui\RynthTheme.cs" Link="RynthCore\RynthTheme.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\RynthAiFace.cs" Link="RynthCore\RynthAiFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\RynthAiFace.Drawers.cs" Link="RynthCore\RynthAiFace.Drawers.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\SettingsRows.cs" Link="RynthCore\SettingsRows.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\QuickSettingsDrawer.cs" Link="RynthCore\QuickSettingsDrawer.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RynthAiData.cs" Link="RynthCore\Data\RynthAiData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\SettingsData.cs" Link="RynthCore\Data\SettingsData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\NavData.cs" Link="RynthCore\Data\NavData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RynthSortData.cs" Link="RynthCore\Data\RynthSortData.cs" />
+    <Compile Include="$(RynthEngine)UI\RynthAiDashboardState.cs" Link="RynthCore\RynthAiDashboardState.cs" />
+    <Compile Include="$(RynthEngine)UI\PanelTextScale.cs" Link="RynthCore\PanelTextScale.cs" />
+    <Compile Include="$(RynthEngine)UI\QuickSettings.cs" Link="RynthCore\QuickSettings.cs" />
+    <Compile Include="$(RynthEngine)UI\BarLayout.cs" Link="RynthCore\BarLayout.cs" />
     <Compile Include="$(RynthEngine)Compatibility\TellMemory.cs" Link="RynthCore\TellMemory.cs" />
   </ItemGroup>
 
@@ -62,7 +79,7 @@
       <_RedirectHost Condition="'$(_RedirectHost)' == ''">dotnet</_RedirectHost>
     </PropertyGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)win32-redirect.refs" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
-    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.ChatWindow.Win32ClipboardStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot;" />
+    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.EngineUi.Win32ClipboardStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot;" />
     <Touch Files="$(IntermediateOutputPath)win32-redirect.stamp" AlwaysCreate="true" />
   </Target>
 

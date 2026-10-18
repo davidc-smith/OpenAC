@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using AcDream.Rynth.ChatWindow;
+using AcDream.Rynth.EngineUi;
 using AcDream.TestSupport;
 using AcDream.Rynth.Host;
 using RynthCore.Engine.ImGuiBackend;
@@ -176,7 +176,7 @@ public sealed class RynthChatWindowTests : IDisposable
     public void TheProjectCompilesTheirFilesAndHasNoCopies()
     {
         string root = RepoRoot();
-        string project = File.ReadAllText(Path.Combine(root, "src/AcDream.Rynth.ChatWindow/AcDream.Rynth.ChatWindow.csproj"));
+        string project = File.ReadAllText(Path.Combine(root, "src/AcDream.Rynth.EngineUi/AcDream.Rynth.EngineUi.csproj"));
         string[] theirs =
         [
             @"UI\Data\Chat*.cs", @"UI\Data\UiSource.cs", @"UI\Panels\RynthChatPresets.cs",
