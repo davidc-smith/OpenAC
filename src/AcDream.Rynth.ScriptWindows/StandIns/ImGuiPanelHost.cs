@@ -251,6 +251,7 @@ internal static class ImGuiPanelHost
     internal static void Reset()
     {
         lock (_gate) _entries.Clear();
+        _pendingDragDelta = Vector2.Zero;
         Layout = null;
         RestoreOpener = OpenLikeTheBar;
     }
@@ -349,7 +350,10 @@ internal static class ImGuiPanelHost
                     if (entry.Failures >= MaxFailures)
                         ImGui.TextDisabled("This window failed and was stopped.");
                     else
+                    {
+                        _pendingDragDelta = Vector2.Zero;
                         entry.Instance?.Draw();
+                    }
                     if (_pendingDragDelta != Vector2.Zero)
                     {
                         ImGui.SetWindowPos(ImGui.GetWindowPos() + _pendingDragDelta);
