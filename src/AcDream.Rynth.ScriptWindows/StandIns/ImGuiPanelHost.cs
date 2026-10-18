@@ -96,6 +96,42 @@ internal static class ImGuiPanelHost
     /// </summary>
     public static float BodyGripReserve => 0f;
 
+    /// <summary>Client pixels per logical unit; the overlay's UI scale.</summary>
+    internal static float PlacementScale()
+    {
+        float s = EngineFrameController.FontScale;
+        return s > 0f ? s : 1f;
+    }
+
+    private static Vector2 _pendingDragDelta;
+
+    /// <summary>
+    /// Makes the last item a drag handle for its panel window (chromeless
+    /// panels drag from their own title row). DrawAll moves the window after
+    /// the face has drawn.
+    /// </summary>
+    public static void DragWindowWithLastItem()
+    {
+        if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 0f))
+            _pendingDragDelta += ImGui.GetIO().MouseDelta;
+    }
+
+    /// <summary>RynthCore's pop-out button; OpenAC has no pop-out windows (PanelRouter.CanPopOut is false).</summary>
+    public static string PopOutGlyph => RynthCore.Engine.ImGuiBackend.PhosphorIcons.ArrowSquareOut;
+
+    public static string PopOutTooltip => "Pop out (not available in OpenAC)";
+
+    public static void TogglePopOut(string title)
+    {
+    }
+
+    /// <summary>RynthCore's per-panel text size rows; the overlay has one font size, so this says so.</summary>
+    public static void TextSizeRows(string title, float s, string heading = "Text size")
+    {
+        ImGui.TextUnformatted(heading);
+        ImGui.TextDisabled("Uses OpenAC's UI scale.");
+    }
+
     /// <summary>RynthCore's built-in panels (Chat, ChatFilters) register by title.</summary>
     public static void Register(string title, PanelSpec spec, Func<IImGuiPanel> factory) =>
         RegisterDynamic(title, title, spec, factory);
@@ -314,6 +350,11 @@ internal static class ImGuiPanelHost
                         ImGui.TextDisabled("This window failed and was stopped.");
                     else
                         entry.Instance?.Draw();
+                    if (_pendingDragDelta != Vector2.Zero)
+                    {
+                        ImGui.SetWindowPos(ImGui.GetWindowPos() + _pendingDragDelta);
+                        _pendingDragDelta = Vector2.Zero;
+                    }
                     TrackPlacement(key, entry, placed, s);
                 }
             }

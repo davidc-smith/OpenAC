@@ -41,6 +41,14 @@ namespace RynthCore.Engine.Plugins
     {
         /// <summary>True while an ImGui overlay is drawing script windows.</summary>
         public static bool EnableImGuiBackend { get; set; }
+
+        // RynthCore engine settings that their Settings panel shows. They steer
+        // acclient hooks OpenAC doesn't have, so here they are only remembered.
+        public static bool InsertReleasesUi { get; set; }
+
+        public static bool CloseOnServerDisconnect { get; set; }
+
+        public static Compatibility.AutoIdMode AutoIdMode { get; set; } = Compatibility.AutoIdMode.Limited;
     }
 
     /// <summary>Layout copied from RynthCore.Engine/Plugins/PluginContract.cs (480 bytes).</summary>
@@ -72,6 +80,9 @@ namespace RynthCore.Engine.Plugins
 
 namespace RynthCore.Engine.Compatibility
 {
+    /// <summary>RynthCore's background-identify modes (Compatibility/AutoIdPolicy.cs).</summary>
+    internal enum AutoIdMode { All = 0, Limited = 1, Off = 2 }
+
     internal static class LoginLifecycleHooks
     {
         /// <summary>Set by the host's event bridge on login and logout.</summary>

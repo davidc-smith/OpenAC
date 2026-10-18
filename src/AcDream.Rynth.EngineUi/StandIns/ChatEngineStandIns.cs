@@ -72,16 +72,17 @@ namespace RynthCore.Engine.UI
     internal static class PanelRouter
     {
         public static void Toggle(string title) => RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Toggle(title);
-    }
 
-    /// <summary>RynthAi's dashboard drawers; no RynthAi here, so nothing is ever moved.</summary>
-    internal static class RynthAiDashboardState
-    {
-        public static bool DrawerMoved(string key) => false;
+        /// <summary>OpenAC has no pop-out windows.</summary>
+        public static bool CanPopOut => false;
 
-        public static void SetDrawerMoved(string key, bool moved)
+        /// <summary>RynthCore's Monsters panel is not in OpenAC yet; its buttons do nothing.</summary>
+        public static void ToggleMonsters()
         {
         }
+
+        /// <summary>RynthCore maps old panel names to current ones; ours are already current.</summary>
+        public static string Canonical(string title) => title;
     }
 
     /// <summary>RynthCore's Avalonia overlay flag; OpenAC has no Avalonia overlay.</summary>
@@ -102,10 +103,15 @@ namespace RynthCore.Engine.UI.Data
             Resolver?.Invoke(pluginNamePart, exportName) ?? IntPtr.Zero;
     }
 
-    /// <summary>RynthCore's source hub; only the chat source exists here.</summary>
+    /// <summary>RynthCore's source hub; only the sources of the faces OpenAC compiles.</summary>
     internal static class UiSources
     {
         public static readonly ChatSource Chat = new();
+        public static readonly RynthAiSource RynthAi = new();
+        public static readonly PatrolSource Patrol = new();
+        public static readonly NavSource Nav = new();
+        public static readonly SettingsSource Settings = new();
+        public static readonly RynthSortWatch RynthSortWatch = new();
     }
 
     /// <summary>RynthNav's "Arrow to" / "Go to"; no RynthNav in OpenAC.</summary>
@@ -176,6 +182,11 @@ namespace RynthCore.Engine.ImGuiBackend
         internal static bool TellRequested;
 
         public static void RequestTellSelected() => TellRequested = true;
+
+        /// <summary>RynthCore takes keyboard focus back from acclient; OpenAC's overlay already owns it.</summary>
+        public static void ReclaimUi()
+        {
+        }
     }
 
     /// <summary>RynthCore's pop-out windows; OpenAC has none.</summary>
