@@ -51,4 +51,33 @@
   <ItemGroup>
     <ProjectReference Include="..\AcDream.Rynth.Sdk\AcDream.Rynth.Sdk.csproj" />
   </ItemGroup>
+
+  <!-- Their Win32 P/Invokes (fellowship memory reads, launching their editors,
+       PlaySound, the version command's module lookup) become inert after
+       compile: each answers "failed", which their code already handles. In
+       OpenAC's process those calls have no acclient to read and no editors to
+       launch, on any OS. advapi32 (their install-folder registry read) stays. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\RynthInteropRedirect\AcDream.Tools.RynthInteropRedirect.csproj"
+                      ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
+  <Target Name="MakeWin32Inert"
+          AfterTargets="CoreCompile"
+          Inputs="@(IntermediateAssembly)"
+          Outputs="$(IntermediateOutputPath)win32-inert.stamp"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="..\..\tools\RynthInteropRedirect\AcDream.Tools.RynthInteropRedirect.csproj"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" PropertyName="_RedirectTool" />
+    </MSBuild>
+    <PropertyGroup>
+      <_RedirectHost>$(DOTNET_HOST_PATH)</_RedirectHost>
+      <_RedirectHost Condition="'$(_RedirectHost)' == ''">dotnet</_RedirectHost>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)win32-inert.refs" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
+    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; - &quot;$(IntermediateOutputPath)win32-inert.refs&quot; --inert kernel32.dll,user32.dll,shell32.dll,winmm.dll" />
+    <Touch Files="$(IntermediateOutputPath)win32-inert.stamp" AlwaysCreate="true" />
+  </Target>
 </Project>

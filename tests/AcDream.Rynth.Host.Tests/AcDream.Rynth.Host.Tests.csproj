@@ -2,10 +2,8 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- .NET 10 on arm64 (macOS): Tier-0 code throws DataMisalignedException in RynthAi's
-         RynthPluginGetSnapshotJson (Interlocked.Exchange on a [ThreadStatic] inside an
-         UnmanagedCallersOnly export), so the export returns null. Optimised JIT avoids it. -->
-    <TieredCompilationQuickJit>false</TieredCompilationQuickJit>
+    <!-- RynthAi (hosted through AcDream.Rynth.Host) swaps [ThreadStatic] pointers with Interlocked in its exports; on .NET 10 osx-arm64 quick-JIT code faults there (DataMisalignedException). Methods with loops are JIT-optimised from the first call instead (the pre-.NET 7 default). RynthAiInteropTests.TheSnapshotAnswersOnAFreshThread guards it. -->
+    <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
