@@ -26,6 +26,7 @@ internal static class ImGuiPanelHost
         public Vector2? RequestedSize;
         public Vector2? RequestedPos;
         public int Failures;
+        public bool MissingLibraryLogged;
         /// <summary>Apply the saved rectangle on the next draw (set by Open).</summary>
         public bool PlacePending;
         /// <summary>Saved as open when first registered: reopen it on a draw while the player is in the world, as the bar would.</summary>
@@ -87,6 +88,30 @@ internal static class ImGuiPanelHost
             entry.Spec = spec;
             entry.Factory = factory;
         }
+    }
+
+    /// <summary>
+    /// RynthCore's grip reserve in a body's bottom-right corner. Our windows keep
+    /// ImGui's own resize grip, so nothing is reserved.
+    /// </summary>
+    public static float BodyGripReserve => 0f;
+
+    /// <summary>RynthCore's built-in panels (Chat, ChatFilters) register by title.</summary>
+    public static void Register(string title, PanelSpec spec, Func<IImGuiPanel> factory) =>
+        RegisterDynamic(title, title, spec, factory);
+
+    public static bool HasFace(string title)
+    {
+        lock (_gate) return _entries.ContainsKey(title);
+    }
+
+    /// <summary>Opens a closed panel, closes an open one (RynthCore's PanelRouter.Toggle).</summary>
+    public static void Toggle(string title)
+    {
+        if (IsOpen(title))
+            Close(title);
+        else
+            Open(title);
     }
 
     public static void SetDisplayTitle(string key, string displayTitle)
@@ -290,6 +315,16 @@ internal static class ImGuiPanelHost
                     else
                         entry.Instance?.Draw();
                     TrackPlacement(key, entry, placed, s);
+                }
+            }
+            catch (DllNotFoundException error)
+            {
+                // RynthCore's chat calls the Win32 clipboard directly; off Windows that
+                // library is missing. The window keeps working without it.
+                if (!entry.MissingLibraryLogged)
+                {
+                    entry.MissingLibraryLogged = true;
+                    Log?.Invoke($"[ScriptWindows] {entry.Title}: {error.GetType().Name}: {error.Message} (not available on this system)");
                 }
             }
             catch (Exception error)

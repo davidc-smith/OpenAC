@@ -40,13 +40,25 @@ namespace RynthCore.Engine.ImGuiBackend
 
     internal enum UiFont
     {
-        Ui11,
+        Ui10, Ui11, Ui14,
+        UiBold11, UiBold14,
+        Mono9, Mono10, Mono12,
+        Code12,
+        Chat8, Chat10, Chat12, Chat14, Chat16, Chat18,
+        Ui9,
+        Dash9, Dash10, Dash11, Dash14,
+        NumBold24,
+        Ui18, NumBold48,
+        Count,
     }
 
     internal static class ImGuiFonts
     {
         /// <summary>RynthCore's sized UI fonts; here, the overlay's current font.</summary>
         public static ImFontPtr Get(UiFont font) => ImGui.GetFont();
+
+        /// <summary>RynthCore's chat font nearest a point size; here, the overlay's current font.</summary>
+        public static ImFontPtr Chat(float points) => ImGui.GetFont();
     }
 
     internal enum PanelChrome
@@ -63,7 +75,9 @@ namespace RynthCore.Engine.ImGuiBackend
         uint? Background = null,
         bool NoPopOut = false,
         ImGuiWindowFlags BodyFlags = ImGuiWindowFlags.None,
-        Vector2? DefaultPos = null);
+        Vector2? DefaultPos = null,
+        bool EdgeToEdge = false,
+        bool GripInBody = false);
 
     internal interface IImGuiPanel
     {
