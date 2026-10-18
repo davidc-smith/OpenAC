@@ -72,11 +72,12 @@ public sealed class RynthCombatEvents : IDisposable
     }
 
     // The server's health updates carry a share; with an appraised maximum the current
-    // health is that share of it, as RynthCore computes it. 0/0 when never appraised.
+    // health is that share of it, as RynthCore computes it (SmartBoxHooks case 0x01C0): the
+    // share is capped to 0..1 for the current health but forwarded as received. 0/0 when never appraised.
     private void OnHealthChanged(uint targetId, float healthRatio)
     {
         uint max = _combat.TryGetCreatureVitals(targetId, out CombatState.CreatureVitals vitals) ? vitals.HealthMax : 0u;
-        uint current = max == 0 ? 0u : (uint)Math.Round(max * (double)healthRatio);
+        uint current = max == 0 ? 0u : (uint)Math.Round(max * (double)Math.Clamp(healthRatio, 0f, 1f));
         _bridge.OnHealthChanged(targetId, healthRatio, current, max);
     }
 

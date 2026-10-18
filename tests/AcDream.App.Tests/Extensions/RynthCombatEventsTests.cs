@@ -59,6 +59,21 @@ public sealed class RynthCombatEventsTests : IDisposable
     }
 
     [Fact]
+    public void AHealthShareAboveOneForwardsTheRatioWithCurrentHealthCappedAtTheMaximum()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        CombatState combat = runtime.ActionOwner.Combat;
+        combat.OnCreatureProfile(0x80000010, new CombatState.CreatureVitals(100, 100, null, null, null, null));
+        CombatRecorder.Calls.Clear();
+
+        combat.OnUpdateHealth(0x80000010, 1.5f);
+
+        Assert.Equal(["health 80000010 1.50 100 100"], Recorded());
+    }
+
+    [Fact]
     public void ACooldownTheClientDropsOnExpiryIsNotForwarded()
     {
         var runtime = GameRuntimeTestFactory.Create();
