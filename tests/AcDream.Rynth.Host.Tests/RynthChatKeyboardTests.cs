@@ -9,7 +9,6 @@ public sealed class RynthChatKeyboardTests : IDisposable
 {
     private readonly List<string> _calls = new();
     private readonly List<string> _log = new();
-    private string _clipboard = "";
     private readonly RynthChatKeyboard _keys;
     // The hooks are process-wide and ChatModel.InstallInput sets them once per
     // process, so they are put back as they were for the other tests.
@@ -35,7 +34,7 @@ public sealed class RynthChatKeyboardTests : IDisposable
         Win32Backend.OnChatCut = () => _calls.Add("cut");
         Win32Backend.OnChatCaptureActivated = () => _calls.Add("activated");
         Win32Backend.OnChatTellSelected = () => _calls.Add("tell");
-        _keys = new RynthChatKeyboard(_log.Add, () => _clipboard, text => _clipboard = text, isWindows: false, inputText: () => "typed");
+        _keys = new RynthChatKeyboard(_log.Add);
     }
 
     public void Dispose()
@@ -108,56 +107,15 @@ public sealed class RynthChatKeyboardTests : IDisposable
     }
 
     [Fact]
-    public void OffWindowsPasteTypesTheClipboard()
+    public void ClipboardKeysUseTheirHooks()
     {
-        _clipboard = "a\nb";
         Win32Backend.ChatCaptureActive = true;
         _keys.KeyDown(OverlayKey.V, OverlayModifiers.Control);
-        Assert.Equal(["char:a", "char: ", "char:b"], _calls);
-    }
-
-    // Their ChatInputPaste: the line never grows past MaxLineChars by pasting.
-    [Fact]
-    public void OffWindowsPasteIsCutToTheRoomLeft()
-    {
-        var keys = new RynthChatKeyboard(_log.Add, () => new string('x', 10), _ => { }, isWindows: false, inputText: () => new string('y', 995));
-        Win32Backend.ChatCaptureActive = true;
-        keys.KeyDown(OverlayKey.V, OverlayModifiers.Control);
-        Assert.Equal(5, _calls.Count);
-    }
-
-    [Fact]
-    public void OffWindowsPasteDoesNotSplitASurrogatePairAtTheCut()
-    {
-        var keys = new RynthChatKeyboard(_log.Add, () => "ab\U0001F600", _ => { }, isWindows: false, inputText: () => new string('y', 997));
-        Win32Backend.ChatCaptureActive = true;
-        keys.KeyDown(OverlayKey.V, OverlayModifiers.Control);
-        Assert.Equal(["char:a", "char:b"], _calls);
-    }
-
-    [Fact]
-    public void OffWindowsCopyAndCutUseTheClipboard()
-    {
-        Win32Backend.ChatCaptureActive = true;
+        _keys.KeyDown(OverlayKey.Insert, OverlayModifiers.Shift);
         _keys.KeyDown(OverlayKey.C, OverlayModifiers.Control);
-        Assert.Equal("typed", _clipboard);
-        _clipboard = "";
+        _keys.KeyDown(OverlayKey.Insert, OverlayModifiers.Control);
         _keys.KeyDown(OverlayKey.X, OverlayModifiers.Control);
-        Assert.Equal("typed", _clipboard);
-        Assert.Equal(["cancel"], _calls);
-        Assert.True(Win32Backend.ChatCaptureActive);
-    }
-
-    [Fact]
-    public void OnWindowsClipboardKeysUseTheirHooks()
-    {
-        var keys = new RynthChatKeyboard(_log.Add, () => "", _ => { }, isWindows: true, inputText: () => "");
-        Win32Backend.ChatCaptureActive = true;
-        keys.KeyDown(OverlayKey.V, OverlayModifiers.Control);
-        keys.KeyDown(OverlayKey.Insert, OverlayModifiers.Shift);
-        keys.KeyDown(OverlayKey.C, OverlayModifiers.Control);
-        keys.KeyDown(OverlayKey.X, OverlayModifiers.Control);
-        Assert.Equal(["paste", "paste", "copy", "cut"], _calls);
+        Assert.Equal(["paste", "paste", "copy", "copy", "cut"], _calls);
     }
 
     [Fact]
