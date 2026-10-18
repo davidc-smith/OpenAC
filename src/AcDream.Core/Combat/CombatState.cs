@@ -85,6 +85,9 @@ public sealed class CombatState
         HealthChanged?.Invoke(targetGuid, healthPercent);
     }
 
+    // RynthCore's "implausible" bound: a profile's maximum health at or above it is not kept.
+    private const uint ImplausibleHealthMax = 1_000_000u;
+
     /// <summary>
     /// An appraisal's creature profile: kept as the creature's last known
     /// vitals, and its health share applied as a health update.
@@ -94,7 +97,10 @@ public sealed class CombatState
         if (vitals.HealthMax == 0u)
             return;
 
-        _vitalsByGuid[targetGuid] = vitals;
+        // RynthCore (AppraisalHooks.CacheCreatureVitals) keeps vitals only below its
+        // "implausible" bound of 1,000,000, with health capped at the maximum.
+        if (vitals.HealthMax < ImplausibleHealthMax)
+            _vitalsByGuid[targetGuid] = vitals with { Health = Math.Min(vitals.Health, vitals.HealthMax) };
         OnUpdateHealth(
             targetGuid,
             Math.Clamp((float)vitals.Health / vitals.HealthMax, 0f, 1f));

@@ -187,6 +187,32 @@ public sealed class CombatStateTests
     }
 
     [Fact]
+    public void CreatureProfile_WithAnImplausibleMaximumIsNotKeptButStillUpdatesHealth()
+    {
+        var combat = new CombatState();
+        var seen = new List<(uint, float)>();
+        combat.HealthChanged += (guid, ratio) => seen.Add((guid, ratio));
+
+        combat.OnCreatureProfile(0x80000010u, new CombatState.CreatureVitals(500_000u, 2_000_000u, null, null, null, null));
+
+        Assert.False(combat.TryGetCreatureVitals(0x80000010u, out _));
+        Assert.Equal([(0x80000010u, 0.25f)], seen);
+    }
+
+    [Fact]
+    public void CreatureProfile_KeepsHealthClampedToTheMaximum()
+    {
+        var combat = new CombatState();
+
+        combat.OnCreatureProfile(0x80000010u, new CombatState.CreatureVitals(120u, 100u, null, null, null, null));
+
+        Assert.True(combat.TryGetCreatureVitals(0x80000010u, out CombatState.CreatureVitals kept));
+        Assert.Equal(100u, kept.Health);
+        Assert.Equal(100u, kept.HealthMax);
+        Assert.Equal(1f, combat.GetHealthPercent(0x80000010u));
+    }
+
+    [Fact]
     public void CreatureProfile_WithoutAMaximumIsIgnoredAndClearForgetsProfiles()
     {
         var combat = new CombatState();

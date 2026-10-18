@@ -69,6 +69,7 @@ public sealed class RynthClientExtensionTests : IDisposable
         var containers = runtime.InventoryOwner.ExternalContainers;
         Assert.True(containers.RequestOpen(0x80000100));
         Assert.True(containers.ApplyViewContents(0x80000100));
+        extension.Tick(1.0 / 60);
         Assert.Equal(["view 80000100"], ContainerRecorder.Calls);
 
         extension.Dispose();
@@ -78,6 +79,29 @@ public sealed class RynthClientExtensionTests : IDisposable
         Assert.True(containers.ApplyViewContents(0x80000200));
 
         Assert.Equal(["view 80000100"], ContainerRecorder.Calls);
+    }
+
+    [Fact]
+    public void EventsQueuedBeforeDisposeAreNeverDelivered()
+    {
+        ContainerRecorder.Calls.Clear();
+        var runtime = GameRuntimeTestFactory.Create();
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (_, _) => new Registration(),
+        };
+        var extension = new RynthClientExtension { AdditionalPluginExports = [typeof(ContainerRecorder)] };
+        extension.Attach(context);
+        var containers = runtime.InventoryOwner.ExternalContainers;
+        Assert.True(containers.RequestOpen(0x80000100));
+        Assert.True(containers.ApplyViewContents(0x80000100));   // queued, not yet delivered
+
+        extension.Dispose();
+        extension.Tick(1.0 / 60);
+
+        Assert.Empty(ContainerRecorder.Calls);
     }
 
     // RynthInventory (loaded before any additional plugin) eats every /ginv line, so a
@@ -125,12 +149,19 @@ public sealed class RynthClientExtensionTests : IDisposable
         using var extension = new RynthClientExtension { AdditionalPluginExports = [typeof(ContainerRecorder)] };
         extension.Attach(context);
 
+        // A tick after each step, so each change is its own delivery (one delivery would
+        // group them by type, as RynthCore does).
         var containers = runtime.InventoryOwner.ExternalContainers;
         Assert.True(containers.RequestOpen(0x80000100));
+        extension.Tick(1.0 / 60);
         Assert.True(containers.ApplyViewContents(0x80000100));
+        extension.Tick(1.0 / 60);
         Assert.True(containers.RequestOpen(0x80000200));
+        extension.Tick(1.0 / 60);
         Assert.True(containers.ApplyViewContents(0x80000200));
+        extension.Tick(1.0 / 60);
         Assert.True(containers.ApplyClose(0x80000200));
+        extension.Tick(1.0 / 60);
 
         Assert.Equal(
             ["view 80000100", "stop 80000100", "view 80000200", "stop 80000200"],

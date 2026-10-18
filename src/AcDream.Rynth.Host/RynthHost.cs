@@ -25,7 +25,7 @@ public sealed unsafe class RynthHost : IDisposable
         {
             foreach (Type exportsType in exportsTypes)
                 Load(exportsType);
-            Bridge = new RynthEventBridge(_plugins);
+            Bridge = new RynthEventBridge(_plugins, _log);
         }
         catch
         {
@@ -41,8 +41,10 @@ public sealed unsafe class RynthHost : IDisposable
     /// <summary>The runtime observer that feeds the plugins.</summary>
     public RynthEventBridge Bridge { get; }
 
+    /// <summary>Delivers the frame's queued events, then ticks each plugin, as RynthCore's frame does.</summary>
     public void Tick()
     {
+        Bridge.DeliverQueued();
         foreach (RynthPlugin plugin in _plugins)
             plugin.Tick();
     }

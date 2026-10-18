@@ -68,6 +68,7 @@ public sealed class RynthHostTests
         using RynthHost host = CreateTrackerHost();
         EnterWorld(host);
         host.Bridge.OnKillLanded("You killed the drudge!");
+        host.Tick();
 
         host.Bridge.OnLeavingWorld();
         host.Bridge.OnKillLanded("You killed another drudge!");
@@ -103,9 +104,13 @@ public sealed class RynthHostTests
         Assert.Contains(_log, line => line.Contains("RynthPluginInit returned 1, skipped", StringComparison.Ordinal));
     }
 
-    private static void EnterWorld(RynthHost host) =>
+    // The login reaches the plugins on the next delivery, as RynthCore's frame drain.
+    private static void EnterWorld(RynthHost host)
+    {
         host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
             default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+        host.Bridge.DeliverQueued();
+    }
 
     // RynthTracker rebuilds its snapshot and polls XP every 30th tick (0.5 s at 60 Hz).
     private static void TickHalfASecond(RynthHost host)
@@ -137,17 +142,23 @@ public sealed class RynthHostTests
         ContainerRecorder.Calls.Clear();
         using var host = new RynthHost(_view, _log.Add, [typeof(ContainerRecorder)]);
 
+        // Delivered step by step: one delivery would group them by type, as RynthCore does.
         host.Bridge.OnContainerOpened(0, 0x80000100);
+        host.Bridge.DeliverQueued();
         host.Bridge.OnContainerOpened(0x80000100, 0x80000200);
+        host.Bridge.DeliverQueued();
         host.Bridge.OnContainerContentsChanged(0x80000200);
+        host.Bridge.DeliverQueued();
         host.Bridge.OnContainerClosed(0x80000200);
+        host.Bridge.DeliverQueued();
         host.Bridge.OnContainerContentsChanged(0);
+        host.Bridge.DeliverQueued();
 
         Assert.Equal(
             [
                 "view 80000100",
+                "view 80000200",   // one delivery: RynthCore drains view before stop
                 "stop 80000100",
-                "view 80000200",
                 "update 80000200",
                 "stop 80000200",
             ],
@@ -162,6 +173,7 @@ public sealed class RynthHostTests
 
         host.Bridge.OnContainerOpened(0, 0x80000100);
         host.Bridge.OnContainerOpened(0x80000100, 0x80000100);
+        host.Bridge.DeliverQueued();
 
         Assert.Equal(["view 80000100", "view 80000100"], ContainerRecorder.Calls);
     }
@@ -177,8 +189,11 @@ public sealed class RynthHostTests
         Assert.Equal(2, host.Plugins.Count);
 
         host.Bridge.OnContainerOpened(0, 0x80000100);
+        host.Bridge.DeliverQueued();
         host.Bridge.OnContainerContentsChanged(0x80000100);
+        host.Bridge.DeliverQueued();
         host.Bridge.OnContainerClosed(0x80000100);
+        host.Bridge.DeliverQueued();
 
         Assert.Equal(["view 80000100", "update 80000100", "stop 80000100"], ContainerRecorder.Calls);
     }
@@ -195,6 +210,7 @@ public sealed class RynthHostTests
         host.Bridge.OnContainerOpened(0, 0x80000100);
         host.Bridge.OnContainerContentsChanged(0x80000100);
         host.Bridge.OnContainerClosed(0x80000100);
+        host.Bridge.DeliverQueued();
 
         Assert.Empty(ContainerRecorder.Calls);
     }

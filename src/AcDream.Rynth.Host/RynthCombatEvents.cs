@@ -28,7 +28,6 @@ public sealed class RynthCombatEvents : IDisposable
     private int _combatMode;
     private int _busyCount;
     private bool _disposed;
-    private readonly List<string> _statusText = [];
 
     public RynthCombatEvents(GameRuntime runtime, RynthEventBridge bridge)
     {
@@ -47,7 +46,7 @@ public sealed class RynthCombatEvents : IDisposable
         _combat.DamageTaken += OnDamageTaken;
         _selection.Changed += OnSelectionChanged;
         _spellbook.EnchantmentAdded += OnEnchantmentAdded;
-        _spellbook.EnchantmentRemoved += OnEnchantmentRemoved;
+        _spellbook.EnchantmentRemovedByServer += OnEnchantmentRemoved;
         _transactions.StateChanged += OnTransactionsChanged;
         _runtime.CommunicationOwner.StatusTextShown += OnStatusTextShown;
         _bridge.LoggedIn += OnLoggedIn;
@@ -58,25 +57,25 @@ public sealed class RynthCombatEvents : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        _statusText.Clear();
         _combat.HealthChanged -= OnHealthChanged;
         _combat.CombatModeChanged -= OnCombatModeChanged;
         _combat.DamageDealtAccepted -= OnDamageDealt;
         _combat.DamageTaken -= OnDamageTaken;
         _selection.Changed -= OnSelectionChanged;
         _spellbook.EnchantmentAdded -= OnEnchantmentAdded;
-        _spellbook.EnchantmentRemoved -= OnEnchantmentRemoved;
+        _spellbook.EnchantmentRemovedByServer -= OnEnchantmentRemoved;
         _transactions.StateChanged -= OnTransactionsChanged;
         _runtime.CommunicationOwner.StatusTextShown -= OnStatusTextShown;
         _bridge.LoggedIn -= OnLoggedIn;
     }
 
     // The server's health updates carry a share; with an appraised maximum the current
-    // health is that share of it, as RynthCore computes it. 0/0 when never appraised.
+    // health is that share of it, as RynthCore computes it (SmartBoxHooks case 0x01C0): the
+    // share is capped to 0..1 for the current health but forwarded as received. 0/0 when never appraised.
     private void OnHealthChanged(uint targetId, float healthRatio)
     {
         uint max = _combat.TryGetCreatureVitals(targetId, out CombatState.CreatureVitals vitals) ? vitals.HealthMax : 0u;
-        uint current = max == 0 ? 0u : (uint)Math.Round(max * (double)healthRatio);
+        uint current = max == 0 ? 0u : (uint)Math.Round(max * (double)Math.Clamp(healthRatio, 0f, 1f));
         _bridge.OnHealthChanged(targetId, healthRatio, current, max);
     }
 
@@ -113,13 +112,9 @@ public sealed class RynthCombatEvents : IDisposable
     private void OnEnchantmentAdded(ActiveEnchantmentRecord record) =>
         _bridge.OnEnchantmentAdded(record.SpellId & 0xFFFFu, record.Duration);
 
-    // RynthCore reports the server's removals; OpenAC also drops an expired cooldown
-    // locally, which RynthCore never reports, so cooldowns are left out.
-    private void OnEnchantmentRemoved(ActiveEnchantmentRecord record)
-    {
-        if (record.Bucket != Spellbook.CooldownBucket)
-            _bridge.OnEnchantmentRemoved(record.SpellId & 0xFFFFu);
-    }
+    // RynthCore reports the server's removals, cooldowns included, never a local expiry.
+    // The spell id arrives with its layer already stripped.
+    private void OnEnchantmentRemoved(uint spellId) => _bridge.OnEnchantmentRemoved(spellId);
 
     private void OnTransactionsChanged()
     {
@@ -136,19 +131,8 @@ public sealed class RynthCombatEvents : IDisposable
         }
     }
 
-    // RynthCore drains plugin events once per frame, so a refusal line lands after the call that
-    // caused it returns. Lines wait here for the tick's flush.
-    private void OnStatusTextShown(string text) => _statusText.Add(text);
-
-    public void FlushStatusText()
-    {
-        if (_statusText.Count == 0)
-            return;
-        string[] lines = [.. _statusText];
-        _statusText.Clear();
-        foreach (string line in lines)
-            _bridge.OnStatusText(line);
-    }
+    // The bridge queues it for the tick, so a refusal line lands after the call that caused it returns.
+    private void OnStatusTextShown(string text) => _bridge.OnStatusText(text);
 
     // RynthCore tells a plugin the mode (from NonCombat) and any selection once the player is in the world.
     private void OnLoggedIn()

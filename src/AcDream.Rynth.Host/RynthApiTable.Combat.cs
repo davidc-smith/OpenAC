@@ -28,7 +28,11 @@ public sealed unsafe partial class RynthApiTable
             return 0;
         try
         {
-            return spellId > 0 && table._view.CastSpell(targetId, (uint)spellId) ? 1 : 0;
+            if (spellId <= 0)
+                return 0;
+            // RynthCore's CastSpellFn treats target 0 as a self cast (CombatActionHooks "SELF cast").
+            uint target = targetId == 0 ? table._view.PlayerId : targetId;
+            return table._view.CastSpell(target, (uint)spellId) ? 1 : 0;
         }
         catch (Exception error)
         {
