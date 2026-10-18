@@ -198,6 +198,16 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
+    public void QueryHealthIsFalseUnlessInWorld()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var automation = new FakeRynthAutomation { Available = false };
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.False(view.QueryHealth(0x80000010));
+    }
+
+    [Fact]
     public void BeforeLoginTheStateReadsAsNotAvailable()
     {
         var runtime = GameRuntimeTestFactory.Create();

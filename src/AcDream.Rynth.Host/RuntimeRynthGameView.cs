@@ -333,7 +333,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
 
     public bool QueryHealth(uint objectId)
     {
-        if (_runtime.Session.CurrentSession is not { } session)
+        if (!_automation.IsAvailable || _runtime.Session.CurrentSession is not { } session)
             return false;
         session.SendQueryHealth(objectId);
         return true;
