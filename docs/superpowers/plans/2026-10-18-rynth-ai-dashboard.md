@@ -1,5 +1,8 @@
 # RynthAi Dashboard (RynthAi sub-project #1) Implementation Plan
 
+> **Status (2026-10-18):** Tasks 1–5 done, each reviewed, plus a final whole-branch review and one fix wave (re-review clean). Task 6 (live check on local ACE) not yet run: the user deferred it and asked to merge.
+> Corrections made during execution: `LoadedPlugin.VersionString` landed in Task 2, not Task 4. RynthAi's snapshot export faulted on osx-arm64 (.NET 10.0.8 can give an 8-byte `[ThreadStatic]` a 4-byte-aligned address, and `Interlocked` faults there). Tried and dropped: AggressiveOptimization on exports, trampoline exports, and `TieredCompilationQuickJitForLoops=false` (that one only worked by shifting thread-static layout). The fix is the redirect tool's `--plain-threadstatic-swaps`, which turns their two `Interlocked.Exchange` calls on thread statics into plain swaps at build time, guarded by `RynthAiInteropTests.NoInterlockedOnAThreadStaticIsLeft`. The dashboard pump isolates each source's faults the way RynthCore's `UiDataHub.Step` does.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** RynthSuite's RynthAi plugin and RynthCore's RynthAi dashboard (`RynthAiFace`, its drawers and settings) run inside OpenAC, compiled unchanged from the submodules, with a "RynthAi" button on the Rynth bar. The bot takes no game actions yet: every action slot stays unset, so their code reads it as "not available".
