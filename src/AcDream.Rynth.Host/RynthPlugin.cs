@@ -28,6 +28,17 @@ public sealed unsafe class RynthPlugin
     /// <summary>Initialised and not yet shut down.</summary>
     public bool IsActive { get; private set; }
 
+    /// <summary>
+    /// A plugin export by entry-point name, for callers that call it directly
+    /// (RynthCore's chat window binds RynthChat's scrollback exports this way).
+    /// False once the plugin is shut down.
+    /// </summary>
+    public bool TryGetExport(string entryPoint, out IntPtr pointer)
+    {
+        pointer = IntPtr.Zero;
+        return IsActive && _exports.TryGet(entryPoint, out pointer);
+    }
+
     /// <summary>Calls RynthPluginInit; 0 is success.</summary>
     public int Initialize(RynthCoreApiNative* api)
     {
