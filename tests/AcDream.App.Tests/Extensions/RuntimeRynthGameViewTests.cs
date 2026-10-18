@@ -1,3 +1,4 @@
+using AcDream.Core.Combat;
 using System.Numerics;
 using AcDream.Core.Items;
 using AcDream.Core.Net;
@@ -457,5 +458,40 @@ public sealed class RuntimeRynthGameViewTests
             null, null, "fixture", null, null, 0x09000001u,
             PhysicsState: 0x408u, InstanceSequence: 1, MovementSequence: 1,
             ServerControlSequence: 1, PositionSequence: 1, Physics: physics);
+    }
+
+    [Fact]
+    public void CombatReadsComeFromTheRuntime()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var view = new RuntimeRynthGameView(runtime, automation: new FakeRynthAutomation());
+
+        Assert.False(view.IsCastGestureActive);   // the test runtime has no body
+        Assert.False(view.TryGetTargetVitals(0x80000010, out _));
+        runtime.ActionOwner.Combat.OnCreatureProfile(
+            0x80000010, new CombatState.CreatureVitals(75, 100, 40, 80, null, null));
+        Assert.True(view.TryGetTargetVitals(0x80000010, out RynthVitals vitals));
+        Assert.Equal(new RynthVitals(75, 100, 40, 80, 0, 0), vitals);
+        Assert.Null(view.GetObjectEnchantments(0x80000010));
+    }
+
+    [Fact]
+    public void CombatActionsNeedASessionAndUseObjectOnGoesThroughTheItems()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var automation = new FakeRynthAutomation();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.False(view.MeleeAttack(0x80000010, 2, 0.5f));   // the test runtime has no session
+        Assert.False(view.MissileAttack(0x80000010, 2, 0.5f));
+        Assert.False(view.CancelAttack());
+        Assert.False(view.CastSpell(0x80000010, 1));           // not known, and nothing to send on
+        Assert.True(view.UseObjectOn(0x80000020, 0x50000001));
+        Assert.Contains("apply 80000020 50000001", automation.ItemArea.Calls);
+
+        automation.Available = false;
+        Assert.False(view.CastSpell(0x80000010, 1));
     }
 }

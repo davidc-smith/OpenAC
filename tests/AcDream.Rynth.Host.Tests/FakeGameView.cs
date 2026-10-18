@@ -155,6 +155,17 @@ internal sealed class FakeGameView : IRynthGameView
     public uint OpenContainerId => Read(OpenContainer);
     public AcDream.Core.Items.ServerReplySnapshot ServerReplies => Read(Replies);
 
+    public bool CastGesture { get; set; }
+    public Dictionary<uint, RynthVitals> TargetVitals { get; } = new();
+
+    public bool IsCastGestureActive => Read(CastGesture);
+
+    public bool TryGetTargetVitals(uint objectId, out RynthVitals vitals) =>
+        Read(TargetVitals).TryGetValue(objectId, out vitals);
+
+    public IReadOnlyList<RynthEnchantment>? GetObjectEnchantments(uint objectId) =>
+        objectId == _playerId ? Read(Enchantments) : Read((List<RynthEnchantment>?)null);
+
     public List<string> Actions { get; } = new();
     public bool ActionAnswer { get; set; } = true;
 
@@ -175,4 +186,12 @@ internal sealed class FakeGameView : IRynthGameView
     public bool MergeStack(uint sourceObjectId, uint targetObjectId) => Act($"merge {sourceObjectId:X8} {targetObjectId:X8}");
     public void ResetBusyCount() => Act("reset busy");
     public bool WieldItem(uint objectId, uint equipMask) => Act($"wield {objectId:X8} {equipMask:X8}");
+    public bool CastSpell(uint targetId, uint spellId) => Act($"cast {targetId:X8} {spellId}");
+    public bool MeleeAttack(uint targetId, int height, float power) =>
+        Act($"melee {targetId:X8} {height} {power.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
+    public bool MissileAttack(uint targetId, int height, float accuracy) =>
+        Act($"missile {targetId:X8} {height} {accuracy.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}");
+    public bool CancelAttack() => Act("cancel");
+    public bool UseObjectOn(uint sourceObjectId, uint targetObjectId) =>
+        Act($"useon {sourceObjectId:X8} {targetObjectId:X8}");
 }

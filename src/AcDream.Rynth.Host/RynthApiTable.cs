@@ -70,6 +70,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         Native->GetWorldNameFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr>)&GetWorldName;
         BindStateSlots();
         BindActionSlots();
+        BindCombatSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;

@@ -100,6 +100,12 @@ internal sealed class FakeItems : IItemAutomation
     public List<string> Calls { get; } = new();
     public PluginItemCommandStatus Answer { get; set; } = PluginItemCommandStatus.Started;
 
+    public PluginItemCommandResult Apply(uint objectId, uint targetObjectId)
+    {
+        Calls.Add($"apply {objectId:X8} {targetObjectId:X8}");
+        return new(Answer);
+    }
+
     public PluginItemCommandResult Use(uint objectId)
     {
         Calls.Add($"use {objectId:X8}");
