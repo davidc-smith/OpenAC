@@ -35,6 +35,8 @@ public sealed class SecureTradeUiControllerTooltipTests
 
         public IReadOnlyList<uint> GetItems(RuntimeTradeSide side)
             => side == RuntimeTradeSide.Self ? Self : [];
+
+        public RuntimeTradeCounters Counters => default;
     }
 
     [Fact]

@@ -102,6 +102,21 @@ public interface ITradeAutomation
     bool PartnerAccepted => false;
 
     /// <summary>
+    /// The trade event counters. All zero when this host does not provide them
+    /// (before fork contract 0.1.25-fork.9).
+    /// </summary>
+    PluginTradeEventCounters Events => default;
+
+    /// <summary>
+    /// Asks the server to open a trade with another player, the same as the
+    /// client's trade request. <see cref="PluginTradeCommandStatus.Refused"/> while a
+    /// trade is already open; <see cref="PluginTradeCommandStatus.InvalidItem"/> for 0
+    /// or the player. Fork contract 0.1.25-fork.9.
+    /// </summary>
+    PluginTradeCommandResult Open(uint partnerObjectId) =>
+        new(PluginTradeCommandStatus.Unavailable);
+
+    /// <summary>
     /// Asks the server to stage one owned item into the local side of the
     /// trade, the same as dragging it into the window.
     /// </summary>
@@ -173,3 +188,23 @@ public interface ITradeAutomation
         remove { }
     }
 }
+
+/// <summary>
+/// Trade event counters (RynthCore's trade state): Generation counts trades opened,
+/// Sequence every trade event. They only ever grow; compare two reads to see what
+/// happened between them. Fork contract 0.1.25-fork.9.
+/// </summary>
+public readonly record struct PluginTradeEventCounters(
+    uint Generation,
+    uint Sequence,
+    uint InitiatorId,
+    uint LastEventType,
+    uint FailureCount,
+    uint LastFailureItemId,
+    uint LastFailureReason,
+    uint LastCloseReason,
+    uint LastAcceptedBy,
+    uint LastDeclinedBy,
+    uint LastResetBy,
+    uint CompletedCount,
+    uint PartnerAcceptCount);

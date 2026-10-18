@@ -80,6 +80,69 @@ public sealed class RuntimeTradeAutomationTests
     }
 
     [Fact]
+    public void OpenSendsTheTradeRequestToThePartner()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        host.Start();
+        var trade = new RuntimeTradeAutomation(host.Runtime);
+        var captured = new List<byte[]>();
+        host.Runtime.Session.CurrentSession!.GameActionCapture = body => captured.Add(body);
+
+        Assert.Equal(PluginTradeCommandStatus.Sent, trade.Open(0x70000099u).Status);
+        Assert.NotEmpty(captured);
+    }
+
+    [Fact]
+    public void OpenIsUnavailableOutOfWorld()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        var trade = new RuntimeTradeAutomation(host.Runtime);
+
+        Assert.Equal(PluginTradeCommandStatus.Unavailable, trade.Open(0x70000099u).Status);
+    }
+
+    [Fact]
+    public void OpenIsRefusedWhileATradeIsOpenAndForSelfOrZero()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        host.Start();
+        uint self = host.Runtime.PlayerIdentity.ServerGuid;
+        uint partner = 0x70000099u;
+        var trade = new RuntimeTradeAutomation(host.Runtime);
+        var captured = new List<byte[]>();
+        host.Runtime.Session.CurrentSession!.GameActionCapture = body => captured.Add(body);
+
+        host.Runtime.TradeOwner.ApplyRegister(new GameEvents.RegisterTrade(self, partner, 0uL), self);
+        Assert.Equal(PluginTradeCommandStatus.Refused, trade.Open(partner).Status);
+        host.Runtime.TradeOwner.ApplyClose();
+        Assert.Equal(PluginTradeCommandStatus.InvalidItem, trade.Open(0u).Status);
+        Assert.Equal(PluginTradeCommandStatus.InvalidItem, trade.Open(self).Status);
+        Assert.Empty(captured);
+    }
+
+    [Fact]
+    public void EventsMirrorTheRuntimeCounters()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        host.Start();
+        uint self = host.Runtime.PlayerIdentity.ServerGuid;
+        uint partner = 0x70000099u;
+        var trade = new RuntimeTradeAutomation(host.Runtime);
+        Assert.Equal(default, trade.Events);
+
+        host.Runtime.TradeOwner.ApplyRegister(new GameEvents.RegisterTrade(self, partner, 0uL), self);
+        host.Runtime.TradeOwner.ApplyAccept(partner, self);
+
+        RuntimeTradeCounters expected = host.Runtime.Trade.Counters;
+        PluginTradeEventCounters events = trade.Events;
+        Assert.Equal(1u, events.Generation);
+        Assert.Equal(2u, events.Sequence);
+        Assert.Equal(1u, events.PartnerAcceptCount);
+        Assert.Equal(expected.LastEventType, events.LastEventType);
+        Assert.Equal(expected.LastAcceptedBy, events.LastAcceptedBy);
+    }
+
+    [Fact]
     public void RejectsAddingAnInvalidItem()
     {
         using var host = new NoWindowGameRuntimeHost();

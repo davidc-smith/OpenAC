@@ -175,7 +175,7 @@ public sealed class PluginItemBusyTruthfulnessTests
                 items.TryMergeItemsForAutomation,
                 items.TryDropItemForAutomation,
                 items.TryGiveItemForAutomation,
-                items.TryPlaceWorldItemInBackpack,
+                (item, mainPack) => items.TryPlaceWorldItemInBackpack(item, mainPack),
                 items.TryAppraiseForAutomation);
 
             host.Runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject

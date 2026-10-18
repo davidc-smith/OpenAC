@@ -200,6 +200,7 @@ internal static class RuntimeAutomationBindings
             ["BindItems.salvageItems"] = null,
             ["BindItems.sellItem"] = null,
             ["BindItems.moveItemJoiningStack"] = null,
+            ["BindItems.pickupItemInto"] = null,
             ["BindLogout"] = nameof(RuntimeAutomationHostCapabilities.Logout),
             ["BindDialogs"] =
                 nameof(RuntimeAutomationHostCapabilities.AnswerConfirmation),
@@ -341,13 +342,16 @@ internal static class RuntimeAutomationBindings
             itemOwner.TryMergeItemsForAutomation,
             itemOwner.TryDropItemForAutomation,
             itemOwner.TryGiveItemForAutomation,
-            itemOwner.TryPlaceWorldItemInBackpack,
+            (item, mainPack) => itemOwner.TryPlaceWorldItemInBackpack(item, mainPack),
             itemOwner.TryAppraiseForAutomation,
             itemOwner.TrySalvageItemsForAutomation,
             (vendorId, itemId, amount) =>
                 itemOwner.TrySell(vendorId, [(amount, itemId)]),
-            itemOwner.TryMoveItemForAutomation);
+            itemOwner.TryMoveItemForAutomation,
+            pickupItemInto: (item, pack) =>
+                itemOwner.TryPlaceWorldItemInBackpack(item, false, pack));
         bound.Add(nameof(surface.BindItems));
+        bound.Add("BindItems.pickupItemInto");
         bound.Add("BindItems.salvageItems");
         bound.Add("BindItems.sellItem");
         bound.Add("BindItems.moveItemJoiningStack");

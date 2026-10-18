@@ -134,9 +134,65 @@ public sealed class LootPickupOutcomeTests
             .PlaceWorldItemInBackpack(Gem));
     }
 
+    private const uint SidePack = 0x8000D003u;
+
+    [Fact]
+    public void PickupIntoAPackPrefersThatPack()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        uint player = host.Runtime.PlayerIdentity.ServerGuid;
+        host.Runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = SidePack,
+            Name = "Side Pack",
+            Type = ItemType.Container,
+            ContainerId = player,
+            ItemsCapacity = 24,
+        });
+        var asked = new List<(uint Item, uint Pack)>();
+        using RuntimeAutomationSurface surface = OpenCorpseWithAGem(
+            host,
+            RuntimeBackpackPlacementOutcome.Sent,
+            (item, pack) =>
+            {
+                asked.Add((item, pack));
+                return RuntimeBackpackPlacementOutcome.Sent;
+            });
+
+        Assert.Equal(PluginItemCommandStatus.Started, surface.Loot.Pickup(Gem, SidePack).Status);
+        Assert.Equal([(Gem, SidePack)], asked);
+
+        // 0 and the player are the client's own choice: the plain pickup.
+        Assert.Equal(PluginItemCommandStatus.Started, surface.Loot.Pickup(Gem, 0u).Status);
+        Assert.Equal(PluginItemCommandStatus.Started, surface.Loot.Pickup(Gem, player).Status);
+        Assert.Single(asked);
+    }
+
+    [Fact]
+    public void PickupIntoAContainerThePlayerDoesNotOwnIsRefused()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        var asked = new List<(uint Item, uint Pack)>();
+        using RuntimeAutomationSurface surface = OpenCorpseWithAGem(
+            host,
+            RuntimeBackpackPlacementOutcome.Sent,
+            (item, pack) =>
+            {
+                asked.Add((item, pack));
+                return RuntimeBackpackPlacementOutcome.Sent;
+            });
+
+        Assert.Equal(PluginItemCommandStatus.InvalidTarget, surface.Loot.Pickup(Gem, Corpse).Status);
+        Assert.Equal(PluginItemCommandStatus.InvalidTarget, surface.Loot.Pickup(Gem, 0x8000FFFFu).Status);
+        Assert.Empty(asked);
+    }
+
     private static RuntimeAutomationSurface OpenCorpseWithAGem(
         NoWindowGameRuntimeHost host,
-        RuntimeBackpackPlacementOutcome outcome)
+        RuntimeBackpackPlacementOutcome outcome,
+        Func<uint, uint, RuntimeBackpackPlacementOutcome>? pickupInto = null)
     {
         ClientObjectTable objects = host.Runtime.InventoryOwner.Objects;
         AddCorpse(objects, Corpse);
@@ -155,7 +211,8 @@ public sealed class LootPickupOutcomeTests
             host.Runtime.ItemInteractionOwner.TryDropItemForAutomation,
             host.Runtime.ItemInteractionOwner.TryGiveItemForAutomation,
             (_, _) => outcome,
-            host.Runtime.ItemInteractionOwner.TryAppraiseForAutomation);
+            host.Runtime.ItemInteractionOwner.TryAppraiseForAutomation,
+            pickupItemInto: pickupInto);
         Assert.True(host.Runtime.InventoryOwner.ExternalContainers.RequestOpen(
             Corpse,
             isCorpse: true));
