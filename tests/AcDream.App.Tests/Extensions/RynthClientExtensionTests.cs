@@ -4,13 +4,58 @@ using AcDream.Rynth.Host;
 namespace AcDream.App.Tests.Extensions;
 
 [Collection("Rynth")]
-public sealed class RynthClientExtensionTests
+public sealed class RynthClientExtensionTests : IDisposable
 {
+    private readonly string _config = Directory.CreateTempSubdirectory("rynth-ext-").FullName;
+    private readonly string? _previousConfig = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+
+    // RynthInventory saves under ApplicationData, which .NET reads from XDG_CONFIG_HOME here.
+    public RynthClientExtensionTests() => Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _config);
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", _previousConfig);
+        try { Directory.Delete(_config, recursive: true); }
+        catch (IOException) { }
+    }
+
     private sealed class Registration : IDisposable
     {
         public bool Disposed { get; private set; }
 
         public void Dispose() => Disposed = true;
+    }
+
+    [Fact]
+    public void GinvIsRegisteredAndContainerEventsAreWired()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var log = new List<string>();
+        var verbs = new List<string>();
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = log.Add,
+            RegisterChatCommand = (verb, _) =>
+            {
+                verbs.Add(verb);
+                return new Registration();
+            },
+        };
+        var extension = new RynthClientExtension();
+        extension.Attach(context);
+
+        Assert.Contains("ginv", verbs);
+        Assert.Contains(log, line => line.Contains("[RynthInventory]", StringComparison.Ordinal));
+        var containers = runtime.InventoryOwner.ExternalContainers;
+        Assert.True(containers.RequestOpen(0x80000100));
+        Assert.True(containers.ApplyViewContents(0x80000100));
+        runtime.InventoryOwner.Objects.ReplaceContents(0x80000100, [0x80000101u]);
+        Assert.True(containers.ApplyClose(0x80000100));
+
+        extension.Dispose();
+        Assert.True(containers.RequestOpen(0x80000200));
+        Assert.True(containers.ApplyViewContents(0x80000200));
     }
 
     [Fact]

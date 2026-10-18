@@ -1,5 +1,6 @@
 using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
+using AcDream.Core.Items;
 using AcDream.Core.Player;
 using AcDream.Runtime;
 using RynthCore.Engine.ImGuiBackend;
@@ -8,11 +9,11 @@ using RynthCore.Engine.UI.ScriptWindows;
 namespace AcDream.Rynth.Host;
 
 /// <summary>
-/// Runs RynthCore plugins (RynthTracker, RynthOracle) inside the client: the
+/// Runs RynthCore plugins (RynthTracker, RynthOracle, RynthInventory) inside the client: the
 /// API table reads the runtime, runtime events become plugin callbacks,
 /// script windows draw on the client's ImGui overlay when it has one, with a
 /// launcher bar and their layout saved per install, and
-/// <c>/rynth tracker</c> and <c>/ro</c> reach the plugins.
+/// <c>/rynth tracker</c>, <c>/ro</c> and <c>/ginv</c> reach the plugins.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
 {
@@ -57,6 +58,7 @@ public sealed class RynthClientExtension : IClientExtension
             [
                 typeof(RynthCore.Plugin.RynthTracker.PluginExports),
                 typeof(RynthCore.Plugin.RynthOracle.PluginExports),
+                typeof(RynthCore.Plugin.RynthInventory.PluginExports),
             ],
             scriptWindows);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
@@ -65,8 +67,12 @@ public sealed class RynthClientExtension : IClientExtension
         _combat.KillLanded += OnKillLanded;
         _runtime = context.Runtime;
         _runtime.CommunicationOwner.LocalPlayerDied += OnLocalPlayerDied;
+        _runtime.InventoryOwner.ExternalContainers.Changed += OnExternalContainerChanged;
+        _runtime.InventoryOwner.Objects.ContainerContentsReplaced += OnContainerContentsReplaced;
+        _runtime.InventoryOwner.Objects.ObjectMoved += OnObjectMoved;
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
         _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
+        _commands.Add(context.RegisterChatCommand("ginv", arguments => OfferChatBarText("/ginv " + arguments)));
         if (context.Overlay is { } overlay)
             _frameCallback = overlay.AddFrameCallback(DrawFrame);
     }
@@ -97,6 +103,9 @@ public sealed class RynthClientExtension : IClientExtension
         if (_runtime is not null)
         {
             _runtime.CommunicationOwner.LocalPlayerDied -= OnLocalPlayerDied;
+            _runtime.InventoryOwner.ExternalContainers.Changed -= OnExternalContainerChanged;
+            _runtime.InventoryOwner.Objects.ContainerContentsReplaced -= OnContainerContentsReplaced;
+            _runtime.InventoryOwner.Objects.ObjectMoved -= OnObjectMoved;
             _runtime = null;
         }
 
@@ -127,6 +136,34 @@ public sealed class RynthClientExtension : IClientExtension
             return;
         uint maxHealth = runtime.CharacterOwner.LocalPlayer.GetMaxApprox(LocalPlayerState.VitalKind.Health) ?? 0;
         _host?.Bridge.OnLocalPlayerDied(runtime.PlayerIdentity.ServerGuid, Math.Max(maxHealth, 1));
+    }
+
+    private void OnExternalContainerChanged(ExternalContainerTransition transition)
+    {
+        if (_host is not { } host)
+            return;
+        switch (transition.Kind)
+        {
+            case ExternalContainerTransitionKind.Opened:
+                host.Bridge.OnContainerOpened(transition.PreviousContainerId, transition.ContainerId);
+                break;
+            case ExternalContainerTransitionKind.Closed:
+            case ExternalContainerTransitionKind.Reset:
+                host.Bridge.OnContainerClosed(transition.PreviousContainerId);
+                break;
+        }
+    }
+
+    private void OnContainerContentsReplaced(uint containerId) =>
+        _host?.Bridge.OnContainerContentsChanged(containerId);
+
+    private void OnObjectMoved(ClientObjectMove move)
+    {
+        if (_host is not { } host)
+            return;
+        host.Bridge.OnContainerContentsChanged(move.Previous.ContainerId);
+        if (move.Current.ContainerId != move.Previous.ContainerId)
+            host.Bridge.OnContainerContentsChanged(move.Current.ContainerId);
     }
 
     /// <summary>Offers chat-bar text to each plugin until one eats it.</summary>
