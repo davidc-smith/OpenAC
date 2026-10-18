@@ -122,6 +122,17 @@ See [the full license](assets/fonts/NotoSans/OFL.txt) and
 [the pinned source and checksum](assets/fonts/NotoSans/README.md).
 A license copy is included as `licenses/NotoSans-OFL.txt` in client distributions.
 
+## RynthCore and RynthSuite
+
+The Rynth plugin host compiles source files from RynthCore
+(`external/RynthCore`, the script-window parser, registry, ImGui replay and
+icon constants) and the RynthTracker and RynthOracle plugins from RynthSuite
+(`external/RynthSuite`), both unmodified and MIT-licensed.
+RynthCore: Copyright (c) 2026 Tom Bohar; see [its license](external/RynthCore/LICENSE).
+RynthSuite: Copyright (c) 2025 tombohar; see [its license](external/RynthSuite/LICENSE).
+License copies are included as `licenses/RynthCore-LICENSE.txt` and
+`licenses/RynthSuite-LICENSE.txt` in client distributions.
+
 ---
 
 ## Phosphor Icons

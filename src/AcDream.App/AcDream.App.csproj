@@ -67,6 +67,10 @@
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <None Include="..\..\external\RynthCore\src\RynthCore.Engine\Assets\Fonts\Phosphor.LICENSE" Link="licenses\Phosphor-LICENSE.txt"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\external\RynthCore\LICENSE" Link="licenses\RynthCore-LICENSE.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\external\RynthSuite\LICENSE" Link="licenses\RynthSuite-LICENSE.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="..\..\assets\icons\acdream-client-16.png"
                       LogicalName="AcDream.App.Rendering.Icons.acdream-client-16.png" />
     <EmbeddedResource Include="..\..\assets\icons\acdream-client-32.png"
