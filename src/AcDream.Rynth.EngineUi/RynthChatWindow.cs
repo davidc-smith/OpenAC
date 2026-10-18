@@ -4,7 +4,7 @@ using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
 using RynthCore.Engine.UI.Data;
 
-namespace AcDream.Rynth.ChatWindow;
+namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// Runs RynthCore's chat window: Start does what RynthCore's EntryPoint does when

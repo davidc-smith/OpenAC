@@ -31,7 +31,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="AcDream.Rynth.Host" />
-    <InternalsVisibleTo Include="AcDream.Rynth.ChatWindow" />
+    <InternalsVisibleTo Include="AcDream.Rynth.EngineUi" />
     <InternalsVisibleTo Include="AcDream.Rynth.Host.Tests" />
     <InternalsVisibleTo Include="AcDream.App.Tests" />
   </ItemGroup>

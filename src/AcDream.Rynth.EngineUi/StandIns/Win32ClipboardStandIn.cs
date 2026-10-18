@@ -6,7 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-namespace AcDream.Rynth.ChatWindow;
+namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// The Win32 clipboard as ChatModel drives it (open, put or get a

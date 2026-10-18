@@ -1,5 +1,5 @@
 using System.Reflection;
-using AcDream.Rynth.ChatWindow;
+using AcDream.Rynth.EngineUi;
 using RynthCore.Engine.UI.Data;
 
 namespace AcDream.Rynth.Host.Tests;

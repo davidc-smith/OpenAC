@@ -1,11 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- RynthCore's ImGui chat window (ChatFace, the filter editor, ChatData and
-       friends), compiled unchanged from the submodule against our stand-ins for
-       the engine types they use (StandIns/, plus the shared ones in
-       AcDream.Rynth.ScriptWindows). RynthCore's Win32Backend, ChatHooks,
-       UiSources, UiDataHub, PluginExportBinder and Discord relay are NOT
-       compiled: the stand-ins of those names are plain classes. Their code,
-       their warnings: warnings-as-errors and analyzers are off here. -->
+  <!-- RynthCore's engine UI faces, compiled unchanged from the submodule against
+       our stand-ins for the engine types they use (StandIns/, plus the shared
+       ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
+       filter editor, ChatData and friends). One assembly, as in RynthCore: their
+       faces share static engine classes (UiSources, PanelRouter, ...).
+       RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
+       PluginExportBinder and Discord relay are NOT compiled: the stand-ins of
+       those names are plain classes. Their code, their warnings:
+       warnings-as-errors and analyzers are off here. -->
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -62,7 +64,7 @@
       <_RedirectHost Condition="'$(_RedirectHost)' == ''">dotnet</_RedirectHost>
     </PropertyGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)win32-redirect.refs" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
-    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.ChatWindow.Win32ClipboardStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot;" />
+    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.EngineUi.Win32ClipboardStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot;" />
     <Touch Files="$(IntermediateOutputPath)win32-redirect.stamp" AlwaysCreate="true" />
   </Target>
 

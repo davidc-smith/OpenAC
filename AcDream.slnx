@@ -14,7 +14,7 @@
     <Project Path="src/AcDream.PluginCheck/AcDream.PluginCheck.csproj" />
     <Project Path="src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj" />
     <Project Path="src/AcDream.Runtime/AcDream.Runtime.csproj" />
-    <Project Path="src/AcDream.Rynth.ChatWindow/AcDream.Rynth.ChatWindow.csproj" />
+    <Project Path="src/AcDream.Rynth.EngineUi/AcDream.Rynth.EngineUi.csproj" />
     <Project Path="src/AcDream.Rynth.Host/AcDream.Rynth.Host.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthOracle/AcDream.Rynth.Plugin.RynthOracle.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthInventory/AcDream.Rynth.Plugin.RynthInventory.csproj" />

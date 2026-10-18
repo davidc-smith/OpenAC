@@ -2,7 +2,7 @@ using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Player;
-using AcDream.Rynth.ChatWindow;
+using AcDream.Rynth.EngineUi;
 using AcDream.Runtime;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.ScriptWindows;

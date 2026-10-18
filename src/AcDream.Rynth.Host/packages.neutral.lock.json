@@ -68,7 +68,7 @@
           "AcDream.Plugin.Abstractions": "[0.1.25, )"
         }
       },
-      "acdream.rynth.chatwindow": {
+      "acdream.rynth.engineui": {
         "type": "Project",
         "dependencies": {
           "AcDream.Rynth.ScriptWindows": "[0.1.25, )",

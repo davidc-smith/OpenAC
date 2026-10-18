@@ -188,8 +188,8 @@ public sealed class RynthOverlayExtensionTests : IDisposable
             extension.Dispose();
         }
 
-        Assert.Null(AcDream.Rynth.ChatWindow.Win32ClipboardStandIn.GetText);
-        Assert.Null(AcDream.Rynth.ChatWindow.Win32ClipboardStandIn.SetText);
+        Assert.Null(AcDream.Rynth.EngineUi.Win32ClipboardStandIn.GetText);
+        Assert.Null(AcDream.Rynth.EngineUi.Win32ClipboardStandIn.SetText);
     }
 
     [Fact]
