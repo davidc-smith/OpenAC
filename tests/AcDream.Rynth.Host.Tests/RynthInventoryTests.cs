@@ -90,9 +90,9 @@ public sealed class RynthInventoryTests : IDisposable
         host.Bridge.OnLifecycle(new AcDream.Runtime.RuntimeLifecycleDelta(
             default, AcDream.Runtime.RuntimeLifecycleState.Starting, AcDream.Runtime.RuntimeLifecycleState.InWorld));
         host.Tick();
-        host.Plugins[0].OnChatBarEnter("/ginv scan");
+        Assert.True(host.Plugins[0].OnChatBarEnter("/ginv scan"));
         host.Tick();
-        host.Plugins[0].OnChatBarEnter("/ginv status");
+        Assert.True(host.Plugins[0].OnChatBarEnter("/ginv status"));
         host.Tick();
 
         Assert.Contains(_view.ChatLines, line =>

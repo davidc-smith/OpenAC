@@ -154,6 +154,51 @@ public sealed class RynthHostTests
             ContainerRecorder.Calls);
     }
 
+    [Fact]
+    public void ReopeningTheSameContainerViewsItAgainWithoutAStop()
+    {
+        ContainerRecorder.Calls.Clear();
+        using var host = new RynthHost(_view, _log.Add, [typeof(ContainerRecorder)]);
+
+        host.Bridge.OnContainerOpened(0, 0x80000100);
+        host.Bridge.OnContainerOpened(0x80000100, 0x80000100);
+
+        Assert.Equal(["view 80000100", "view 80000100"], ContainerRecorder.Calls);
+    }
+
+    [Fact]
+    public void ContainerCallbacksSkipAPluginWithoutTheExports()
+    {
+        ContainerRecorder.Calls.Clear();
+        using var host = new RynthHost(
+            _view,
+            _log.Add,
+            [typeof(RynthCore.Plugin.RynthTracker.PluginExports), typeof(ContainerRecorder)]);
+        Assert.Equal(2, host.Plugins.Count);
+
+        host.Bridge.OnContainerOpened(0, 0x80000100);
+        host.Bridge.OnContainerContentsChanged(0x80000100);
+        host.Bridge.OnContainerClosed(0x80000100);
+
+        Assert.Equal(["view 80000100", "update 80000100", "stop 80000100"], ContainerRecorder.Calls);
+    }
+
+    [Fact]
+    public void ContainerCallbacksSkipAnInactivePlugin()
+    {
+        ContainerRecorder.Calls.Clear();
+        using var host = new RynthHost(_view, _log.Add, [typeof(ContainerRecorder)]);
+        RynthPlugin plugin = Assert.Single(host.Plugins);
+        plugin.Shutdown();
+        Assert.False(plugin.IsActive);
+
+        host.Bridge.OnContainerOpened(0, 0x80000100);
+        host.Bridge.OnContainerContentsChanged(0x80000100);
+        host.Bridge.OnContainerClosed(0x80000100);
+
+        Assert.Empty(ContainerRecorder.Calls);
+    }
+
     private static class NoExports
     {
     }
