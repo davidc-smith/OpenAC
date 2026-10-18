@@ -343,6 +343,18 @@ public sealed unsafe class RynthApiTableTests
     }
 
     [Fact]
+    public void CastSpell_AtTargetZeroCastsOnThePlayer()
+    {
+        var view = new FakeGameView { PlayerId = 0x50000001 };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.CastSpell(0, 7));
+
+        Assert.Equal(new[] { "cast 50000001 7" }, view.Actions);
+    }
+
+    [Fact]
     public void CombatSlots_RefuseBadArgumentsWithoutCallingTheView()
     {
         var view = new FakeGameView();
