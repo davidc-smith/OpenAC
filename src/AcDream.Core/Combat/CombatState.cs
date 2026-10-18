@@ -30,7 +30,12 @@ public sealed class CombatState
 
     public event Action<CombatMode>? CombatModeChanged;
 
-    public event Action<string /*victimName*/, uint /*victimGuid*/>? KillLanded;
+    /// <summary>
+    /// The server's killer notification. The text is the full death message
+    /// ("You killed the drudge!"), not a bare name; the message carries no
+    /// guid, so <c>victimGuid</c> is 0 when it comes from the wire.
+    /// </summary>
+    public event Action<string /*deathMessage*/, uint /*victimGuid*/>? KillLanded;
 
     public readonly record struct DamageIncoming(
         string AttackerName,
@@ -123,8 +128,8 @@ public sealed class CombatState
     public void OnEvasionAttackerNotification(string defenderName)
         => MissedOutgoing?.Invoke(defenderName);
 
-    public void OnKillerNotification(string victimName, uint victimGuid)
-        => KillLanded?.Invoke(victimName, victimGuid);
+    public void OnKillerNotification(string deathMessage, uint victimGuid)
+        => KillLanded?.Invoke(deathMessage, victimGuid);
 
     public void OnEvasionDefenderNotification(string attackerName)
         => EvadedIncoming?.Invoke(attackerName);

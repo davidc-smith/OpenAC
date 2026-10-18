@@ -1696,6 +1696,8 @@ Claude-Session: https://claude.ai/code/session_013qHSfUa7LKyjkciWdcioQr"
 
 ### Task 6: Live check on the local ACE server
 
+> **Result (2026-10-18): PASS.** The user ran the live check on the local ACE server 10.10.20.20. `/rynth tracker` reported kills and XP, and the log had no Rynth errors. Known gap: deaths aren't tracked yet (health max reads 0).
+
 **Goal:** In the real client on macOS, against the local ACE server 10.10.20.20, RynthTracker counts kills and XP, and `/rynth tracker` shows them.
 
 **Files:**

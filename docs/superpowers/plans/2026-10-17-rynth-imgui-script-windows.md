@@ -2900,6 +2900,8 @@ Claude-Session: https://claude.ai/code/session_013qHSfUa7LKyjkciWdcioQr"
 
 ### Task 8: Offline client run (agent) and the user's visual check
 
+> **Result (2026-10-18): PASS.** The user checked it live on the local ACE server 10.10.20.20. `/ro` opened the Oracle window, it could be dragged, its tabs responded, input didn't leak to the game, and the log had no Rynth or ImGui errors. Known gaps: no window bar, positions aren't saved, and the icons are placeholders.
+
 **Goal:** In the real client on macOS, run offline with no server, the overlay starts, RynthOracle loads, `/ro` opens its window and ImGui frames carry vertices, all without errors. The user then confirms the window looks and behaves right.
 
 **Files:**
