@@ -178,4 +178,28 @@ public sealed class RynthBarTests : IDisposable
         _imgui.Frame(After); // an auto-sized window draws nothing on its first frame
         Assert.True(_imgui.Frame(After) > 0);
     }
+
+    private sealed class NullPanel : IImGuiPanel
+    {
+        public void Draw() { }
+    }
+
+    [Fact]
+    public void AChatPanelButtonShowsWithoutScriptWindowsAndToggles()
+    {
+        ImGuiPanelHost.Register("Chat", new PanelSpec(new Vector2(460, 300), new Vector2(260, 140)), () => new NullPanel());
+        var bar = new RynthBar(_store, _log.Add) { PanelButtons = () => ["Chat"] };
+        Assert.True(bar.HasAnyContent);
+        bar.ClickPanel("Chat");
+        Assert.True(ImGuiPanelHost.IsOpen("Chat"));
+        bar.ClickPanel("Chat");
+        Assert.False(ImGuiPanelHost.IsOpen("Chat"));
+    }
+
+    [Fact]
+    public void AnUnregisteredPanelHasNoButton()
+    {
+        var bar = new RynthBar(_store, _log.Add) { PanelButtons = () => ["Chat"] };
+        Assert.False(bar.HasAnyContent);
+    }
 }

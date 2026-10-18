@@ -2,6 +2,7 @@ using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Player;
+using AcDream.Rynth.ChatWindow;
 using AcDream.Runtime;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.ScriptWindows;
@@ -9,15 +10,18 @@ using RynthCore.Engine.UI.ScriptWindows;
 namespace AcDream.Rynth.Host;
 
 /// <summary>
-/// Runs RynthCore plugins (RynthTracker, RynthOracle, RynthInventory) inside the client: the
+/// Runs RynthCore plugins (RynthTracker, RynthOracle, RynthInventory, RynthChat) inside the client: the
 /// API table reads the runtime, runtime events become plugin callbacks,
 /// script windows draw on the client's ImGui overlay when it has one, with a
-/// launcher bar and their layout saved per install, and
+/// launcher bar and their layout saved per install, RynthCore's chat window
+/// (over RynthChat's scrollback) with a Chat button on the bar, and
 /// <c>/rynth tracker</c>, <c>/ro</c> and <c>/ginv</c> reach the plugins.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
 {
     private RynthHost? _host;
+    private RynthChatHookup? _chatHookup;
+    private Action<string>? _log;
     private IDisposable? _runtimeSubscription;
     private IDisposable? _frameCallback;
     private readonly List<IDisposable> _commands = new();
@@ -33,11 +37,12 @@ public sealed class RynthClientExtension : IClientExtension
     public void Attach(ClientExtensionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
+        _log = context.Log;
         if (context.Overlay is not null)
         {
             _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
             ImGuiPanelHost.Layout = _layout;
-            _bar = new RynthBar(_layout, context.Log);
+            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title] };
             IClientOverlayIcons icons = context.Overlay.Icons;
             _iconSource = (kind, id) => kind switch
             {
@@ -62,9 +67,13 @@ public sealed class RynthClientExtension : IClientExtension
                 typeof(RynthCore.Plugin.RynthTracker.PluginExports),
                 typeof(RynthCore.Plugin.RynthOracle.PluginExports),
                 typeof(RynthCore.Plugin.RynthInventory.PluginExports),
+                typeof(RynthCore.Plugin.RynthChat.PluginExports),
                 .. AdditionalPluginExports,
             ],
             scriptWindows);
+        _chatHookup = new RynthChatHookup(_host, view, context.Log);
+        if (context.Overlay is not null)
+            RynthChatWindow.Start();
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
         _combat.HealthChanged += OnHealthChanged;
@@ -88,7 +97,12 @@ public sealed class RynthClientExtension : IClientExtension
         _bar?.Draw();
     }
 
-    public void Tick(double deltaSeconds) => _host?.Tick();
+    public void Tick(double deltaSeconds)
+    {
+        _host?.Tick();
+        try { RynthChatWindow.Tick(); }
+        catch (Exception error) { _log?.Invoke($"[Rynth] chat: {error.GetType().Name}: {error.Message}"); }
+    }
 
     public void Dispose()
     {
@@ -115,6 +129,9 @@ public sealed class RynthClientExtension : IClientExtension
 
         _runtimeSubscription?.Dispose();
         _runtimeSubscription = null;
+        RynthChatWindow.Stop();
+        _chatHookup?.Dispose();
+        _chatHookup = null;
         _host?.Dispose();
         _host = null;
         if (_layout is not null && ImGuiPanelHost.Layout == _layout)

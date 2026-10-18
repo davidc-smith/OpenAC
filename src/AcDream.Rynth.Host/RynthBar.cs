@@ -46,6 +46,18 @@ internal sealed class RynthBar
     /// <summary>Test seam: replaces <see cref="Toggle"/> for a click, so a test can make it throw.</summary>
     internal Action<ScriptBarItem>? ToggleAction { get; init; }
 
+    /// <summary>RynthCore panels with a bar button (the chat window), by panel title. Only registered ones are drawn.</summary>
+    internal Func<IReadOnlyList<string>>? PanelButtons { get; init; }
+
+    private IEnumerable<string> RegisteredPanels =>
+        (PanelButtons?.Invoke() ?? []).Where(ImGuiPanelHost.HasFace);
+
+    /// <summary>True when anything is on the bar: a panel button or a script window.</summary>
+    internal bool HasAnyContent => RegisteredPanels.Any() || HasContent;
+
+    /// <summary>Opens or closes a panel, as a click on its button does.</summary>
+    internal void ClickPanel(string title) => ImGuiPanelHost.Toggle(title);
+
     /// <summary>True when any window is on the bar.</summary>
     internal static bool HasContent =>
         ScriptWindowRegistry.BarButtons.Length > 0 || ScriptWindowRegistry.BarItems.Length > 0;
@@ -62,7 +74,7 @@ internal sealed class RynthBar
     /// <summary>Draws the bar. Call between ImGui.NewFrame and ImGui.Render, after ImGuiPanelHost.DrawAll.</summary>
     public void Draw()
     {
-        if (_failures >= MaxFailures || !HasContent)
+        if (_failures >= MaxFailures || !HasAnyContent)
             return;
         if (!_placed)
         {
@@ -95,6 +107,20 @@ internal sealed class RynthBar
         if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 0f))
             ImGui.SetWindowPos(ImGui.GetWindowPos() + ImGui.GetIO().MouseDelta);
         Tooltip("Rynth: drag to move");
+
+        foreach (string title in RegisteredPanels)
+        {
+            ImGui.SameLine();
+            bool open = ImGuiPanelHost.IsOpen(title);
+            if (open)
+                ImGui.PushStyleColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.ButtonActive));
+            bool clicked = ImGui.Button(RynthBarIcons.Label(title) + "##panel" + title);
+            if (open)
+                ImGui.PopStyleColor();
+            if (clicked)
+                ClickPanel(title);
+            Tooltip(title);
+        }
 
         foreach (ScriptBarItem item in ButtonSource?.Invoke() ?? ScriptWindowRegistry.BarButtons)
         {

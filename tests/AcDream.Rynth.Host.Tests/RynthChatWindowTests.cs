@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using AcDream.Rynth.ChatWindow;
 using AcDream.TestSupport;
+using AcDream.Rynth.Host;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.Data;
 
@@ -18,6 +19,111 @@ public sealed class RynthChatWindowTests : IDisposable
         PluginExportBinder.Resolver = null;
         ImGuiPanelHost.Reset();
         _sandbox.Dispose();
+    }
+
+    private readonly List<string> _log = new();
+    private readonly FakeGameView _view = new() { PlayerId = 0x50000001u };
+
+    [Fact]
+    public void ALineReachesTheChatSource()
+    {
+        using var host = new RynthHost(_view, _log.Add, [typeof(RynthCore.Plugin.RynthChat.PluginExports)]);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        RynthChatWindow.Start();
+        UiSources.Chat.Subscribe();
+        try
+        {
+            host.Plugins[0].OnChatWindowText("Bob says, \"hi\"", 2);
+            UiSources.Chat.RequestRefresh();
+            RynthChatWindow.Tick();
+            Assert.Contains(UiSources.Chat.Current!.Value, line => line.Text.Contains("hi", StringComparison.Ordinal));
+        }
+        finally { UiSources.Chat.Unsubscribe(); }
+    }
+
+    [Fact]
+    public void TheBinderFindsRynthChatOnlyWhileTheHostRuns()
+    {
+        var host = new RynthHost(_view, _log.Add, [typeof(RynthCore.Plugin.RynthChat.PluginExports)]);
+        var hookup = new RynthChatHookup(host, _view, _log.Add);
+        Assert.NotEqual(IntPtr.Zero, PluginExportBinder.Resolve("RynthChat", "RynthChatSendLine"));
+        hookup.Dispose();
+        host.Dispose();
+        Assert.Equal(IntPtr.Zero, PluginExportBinder.Resolve("RynthChat", "RynthChatSendLine"));
+    }
+
+    [Fact]
+    public void TheBinderAnswersZeroOnceTheHostIsDisposedEvenBeforeTheHookupIs()
+    {
+        var host = new RynthHost(_view, _log.Add, [typeof(RynthCore.Plugin.RynthChat.PluginExports)]);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        host.Dispose();
+        Assert.Equal(IntPtr.Zero, PluginExportBinder.Resolve("RynthChat", "RynthChatSendLine"));
+    }
+
+    [Fact]
+    public void TheHooksAnswerFromTheView()
+    {
+        _view.SelectedObjectId = 0x7000_0001u;
+        _view.Names[0x7000_0001u] = "Drudge";
+        _view.Names[_view.PlayerId] = "Golem";
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+
+        Assert.Equal(_view.PlayerId, RynthCore.Engine.Compatibility.ClientHelperHooks.GetPlayerId());
+        Assert.Equal(0x7000_0001u, RynthCore.Engine.Compatibility.SelectedTargetHooks.ReadCurrentSelectedId());
+        Assert.True(RynthCore.Engine.Compatibility.ClientObjectHooks.TryGetObjectName(0x7000_0001u, out string name));
+        Assert.Equal("Drudge", name);
+        Assert.Equal("Golem", RynthCore.Engine.Compatibility.SessionStateRegistry.LastCharacterName);
+    }
+
+    [Fact]
+    public void AThrowingViewGivesEmptyAnswers()
+    {
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        _view.Throw = true;
+        Assert.Equal(0u, RynthCore.Engine.Compatibility.ClientHelperHooks.GetPlayerId());
+        Assert.Equal(0u, RynthCore.Engine.Compatibility.SelectedTargetHooks.ReadCurrentSelectedId());
+        Assert.False(RynthCore.Engine.Compatibility.ClientObjectHooks.TryGetObjectName(1, out _));
+        Assert.False(RynthCore.Engine.Compatibility.ClientObjectHooks.TryGetItemType(1, out _));
+        Assert.Equal("", RynthCore.Engine.Compatibility.SessionStateRegistry.LastCharacterName);
+        Assert.Contains(_log, l => l.Contains("view failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DisposingTheHookupUnpointsTheStandIns()
+    {
+        using var host = new RynthHost(_view, _log.Add, []);
+        var hookup = new RynthChatHookup(host, _view, _log.Add);
+        hookup.Dispose();
+        Assert.Equal(0u, RynthCore.Engine.Compatibility.ClientHelperHooks.GetPlayerId());
+        Assert.Equal(0u, RynthCore.Engine.Compatibility.SelectedTargetHooks.ReadCurrentSelectedId());
+        Assert.False(RynthCore.Engine.Compatibility.ClientObjectHooks.TryGetObjectName(1, out _));
+        Assert.Equal("", RynthCore.Engine.Compatibility.SessionStateRegistry.LastCharacterName);
+    }
+
+    // Their OnSend trims the box text and passes it as typed (no "/say" prefix) to RynthChatSendLine.
+    [Fact]
+    public void TypedTextIsSentThroughRynthChat()
+    {
+        using var host = new RynthHost(_view, _log.Add, [typeof(RynthCore.Plugin.RynthChat.PluginExports)]);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        RynthChatWindow.Start();
+        UiSources.Chat.Subscribe();
+        try
+        {
+            UiSources.Chat.RequestRefresh();
+            RynthChatWindow.Tick();   // binds SendLinePtr, as their pump does
+            Win32Backend.ChatCaptureActive = true;
+            Win32Backend.OnChatCaptureActivated!();
+            Win32Backend.OnChatChar!('h');
+            Win32Backend.OnChatChar!('i');
+            Win32Backend.ChatCaptureActive = false;
+            Win32Backend.OnChatSend!();
+            Assert.Contains("hi", _view.SubmittedCommands);
+        }
+        finally { UiSources.Chat.Unsubscribe(); }
     }
 
     [Fact]
@@ -54,13 +160,14 @@ public sealed class RynthChatWindowTests : IDisposable
     }
 
     [Fact]
-    public void StopClearsCaptureAndTheSnapshot()
+    public void StopClearsCaptureAndTheBindings()
     {
         RynthChatWindow.Start();
         Win32Backend.ChatCaptureActive = true;
         RynthChatWindow.Stop();
         Assert.False(Win32Backend.ChatCaptureActive);
-        Assert.Null(UiSources.Chat.Current);
+        // Their Reset keeps the lines already shown; it drops the plugin bindings.
+        Assert.Equal(IntPtr.Zero, ChatModel.SendLinePtr);
     }
 
     [Fact]
