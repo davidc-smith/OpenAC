@@ -257,6 +257,9 @@ public sealed unsafe class RynthApiTableTests
         Assert.Equal(IntPtr.Zero, table.Native->MoveItemExternalFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetObjectPalettesFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetNumContainedItemsFn);
+        Assert.Equal(IntPtr.Zero, table.Native->IsPlayerReadyFn);
+        Assert.Equal(IntPtr.Zero, table.Native->GetScreenModeFn);
+        Assert.Equal(IntPtr.Zero, table.Native->GetNumContainedContainersFn);
     }
 
     private static RynthObjectInfo ObjectWith(

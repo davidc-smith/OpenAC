@@ -23,6 +23,18 @@ public sealed class RynthHostTests
         new(_view, _log.Add, [typeof(RynthCore.Plugin.RynthTracker.PluginExports)]);
 
     [Fact]
+    public void DisposeLetsGoOfAHeldMovement()
+    {
+        RynthHost host = CreateTrackerHost();
+        host.Holds.SetMotion(0x41000003, true);
+        Assert.NotNull(_view.Intents[^1]);
+
+        host.Dispose();
+
+        Assert.Null(_view.Intents[^1]);
+    }
+
+    [Fact]
     public void Start_InitialisesRynthTracker()
     {
         using RynthHost host = CreateTrackerHost();

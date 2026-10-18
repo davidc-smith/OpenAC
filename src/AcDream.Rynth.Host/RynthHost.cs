@@ -36,6 +36,8 @@ public sealed unsafe class RynthHost : IDisposable
         }
     }
 
+    internal RynthMotionHolds Holds => _table.Holds;
+
     public IReadOnlyList<RynthPlugin> Plugins => _plugins;
 
     /// <summary>The runtime observer that feeds the plugins.</summary>
@@ -59,6 +61,8 @@ public sealed unsafe class RynthHost : IDisposable
         }
 
         _plugins.Clear();
+        try { _table.Holds.Release(); }
+        catch (Exception error) { _log($"releasing held movement failed: {error.Message}"); }
         RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
         if (RynthCore.Engine.RynthLog.Sink == _log)
             RynthCore.Engine.RynthLog.Sink = null;

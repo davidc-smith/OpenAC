@@ -130,4 +130,19 @@ public sealed class RynthMotionHoldsTests
         holds.Sync();
         Assert.Null(_view.Intents[^1]);
     }
+
+    [Fact]
+    public void ReleaseSendsOneClearAndNothingWhenNothingWasSent()
+    {
+        var holds = new RynthMotionHolds(_view);
+        holds.Release();
+        Assert.Empty(_view.Intents);
+
+        holds.SetMotion(RunForward, true);
+        holds.Release();
+
+        Assert.Null(_view.Intents[^1]);
+        Assert.Equal(2, _view.Intents.Count);
+        Assert.DoesNotContain("stop", _view.Actions);
+    }
 }

@@ -66,6 +66,15 @@ internal sealed class RynthMotionHolds(IRynthGameView view)
         return view.StopCompletely();
     }
 
+    /// <summary>Lets go of every held key without stopping the player: the host is going away and must not leave the keyboard locked out.</summary>
+    public void Release()
+    {
+        _held.Clear();
+        _jump = false;
+        _launch = null;
+        Apply();
+    }
+
     /// <summary>Once a tick, before plugins tick: ends a launch frame and follows autorun.</summary>
     public void Sync()
     {
