@@ -97,8 +97,9 @@ public sealed class RuntimeSpellCastState
 
         if (!_operations.HasRequiredComponents(spellId))
         {
+            // Retail's error 0x400 wording; RynthAi matches it to detect missing components.
             _operations.DisplayMessage(
-                "You do not have all of this spell's components.");
+                "You don't have all the components for this spell.");
             return CastRequestResult.MissingComponents;
         }
 

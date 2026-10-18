@@ -487,7 +487,7 @@ public sealed class RuntimeRynthGameViewTests
         Assert.False(view.MeleeAttack(0x80000010, 2, 0.5f));   // the test runtime has no session
         Assert.False(view.MissileAttack(0x80000010, 2, 0.5f));
         Assert.False(view.CancelAttack());
-        Assert.False(view.CastSpell(0x80000010, 1));           // not known, and nothing to send on
+        Assert.True(view.CastSpell(0x80000010, 1));            // not known: refused locally as chat, so the call still ran
         Assert.True(view.UseObjectOn(0x80000020, 0x50000001));
         Assert.Contains("apply 80000020 50000001", automation.ItemArea.Calls);
 

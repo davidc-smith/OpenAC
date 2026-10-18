@@ -88,6 +88,7 @@ public sealed class RuntimeSpellCastStateTests
         Assert.Equal(CastRequestResult.MissingComponents, state.Cast(1));
         Assert.Equal(0, operations.UntargetedSends);
         Assert.Equal(0, operations.BusyIncrements);
+        Assert.Equal("You don't have all the components for this spell.", operations.LastMessage);
     }
 
     [Fact]

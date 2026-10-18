@@ -46,6 +46,8 @@ public sealed class RynthCombatEventsTests : IDisposable
         combat.OnUpdateHealth(0x80000011, 0.25f);
         runtime.CommunicationOwner.AddText("You're too busy!", RetailLogTextType.ClientLocal);
 
+        events.FlushStatusText();
+
         Assert.Equal(
             [
                 "busy+", "busy-",
@@ -53,6 +55,45 @@ public sealed class RynthCombatEventsTests : IDisposable
                 "chat 1A You're too busy!",
             ],
             Recorded());
+    }
+
+    [Fact]
+    public void AStatusLineIsHeldUntilTheFlush()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        CombatRecorder.Calls.Clear();
+
+        runtime.CommunicationOwner.AddText("You're too busy!", RetailLogTextType.ClientLocal);
+        Assert.DoesNotContain(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
+
+        events.FlushStatusText();
+        Assert.Single(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
+        events.FlushStatusText();
+        Assert.Single(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheExtensionTickFlushesStatusLines()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (_, _) => new Registration(),
+        };
+        var extension = new RynthClientExtension { AdditionalPluginExports = [typeof(CombatRecorder)] };
+        extension.Attach(context);
+        CombatRecorder.Calls.Clear();
+
+        runtime.CommunicationOwner.AddText("You're too busy!", RetailLogTextType.ClientLocal);
+        Assert.DoesNotContain(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
+        extension.Tick(1.0 / 60);
+        extension.Dispose();
+
+        Assert.Contains(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
     }
 
     [Fact]

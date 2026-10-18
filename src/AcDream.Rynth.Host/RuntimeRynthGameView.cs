@@ -385,10 +385,12 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     public IReadOnlyList<RynthEnchantment>? GetObjectEnchantments(uint objectId) =>
         IsPlayer(objectId) ? PlayerEnchantments : null;
 
-    // RynthCore holds casts while the player is in portal space.
+    // RynthCore holds casts while the player is in portal space. It answers 1 once the client's cast
+    // call ran, and a local refusal (unknown spell, no components) reaches the plugin as chat, so
+    // only an unavailable surface is false; a false here would stop RynthAi seeing that line.
     public bool CastSpell(uint targetId, uint spellId) =>
         _automation.IsAvailable && !IsPortaling
-        && _runtime.ActionOwner.SpellCast.Cast(spellId, targetId) == CastRequestResult.Sent;
+        && _runtime.ActionOwner.SpellCast.Cast(spellId, targetId) != CastRequestResult.Unavailable;
 
     // RynthCore sends the attack itself, past the power bar. The body stops first, as OpenAC's own attack does.
     public bool MeleeAttack(uint targetId, int height, float power)

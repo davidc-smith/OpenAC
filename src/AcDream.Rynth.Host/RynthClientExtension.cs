@@ -171,6 +171,7 @@ public sealed class RynthClientExtension : IClientExtension
 
     public void Tick(double deltaSeconds)
     {
+        _combatEvents?.FlushStatusText();
         _host?.Tick();
         GuardChat(TickChat);
         Guard("RynthAi", () => RynthAiDashboard.Tick());
