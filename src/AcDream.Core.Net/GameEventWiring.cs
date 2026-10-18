@@ -69,7 +69,8 @@ public static class GameEventWiring
         Action<BookEvents.PageDataResponse>? onBookPageData = null,
         Action<BookEvents.PageResponse>? onBookAddPageResponse = null,
         Action<BookEvents.Inscription>? onBookInscription = null,
-        Action<string /*deathMessage*/>? onLocalPlayerDeath = null)
+        Action<string /*deathMessage*/>? onLocalPlayerDeath = null,
+        ServerReplyLog? serverReplies = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(items);
@@ -430,6 +431,7 @@ public static class GameEventWiring
         {
             var code = GameEvents.ParseWeenieError(e.Payload.Span);
             if (code is null) return;
+            serverReplies?.RecordWeenieError((uint)GameEventType.WeenieError, code.Value, 0);
             if (WeenieErrorMessages.IsSilentClientControlStatus(code.Value)) return;
             var (text, type) = WeenieErrorMessages.Resolve(code.Value, null);
             if (text is null)
@@ -446,6 +448,7 @@ public static class GameEventWiring
         {
             var p = GameEvents.ParseWeenieErrorWithString(e.Payload.Span);
             if (p is null) return;
+            serverReplies?.RecordWeenieError((uint)GameEventType.WeenieErrorWithString, p.Value.ErrorCode, 0);
             if (WeenieErrorMessages.IsSilentClientControlStatus(p.Value.ErrorCode)) return;
             var (text, type) = WeenieErrorMessages.Resolve(p.Value.ErrorCode, p.Value.Interpolation);
             if (text is null)
@@ -765,6 +768,8 @@ public static class GameEventWiring
         {
             var p = GameEvents.ParseInventoryServerSaveFailed(e.Payload.Span);
             if (p is null) return;
+            serverReplies?.RecordWeenieError(
+                (uint)GameEventType.InventoryServerSaveFailed, p.Value.WeenieError, p.Value.ItemGuid);
             // B-Drag: the server rejected an optimistic move — snap the item back to its pre-move slot.
             var item = items.Get(p.Value.ItemGuid);
             string itemInfo = item is null
@@ -783,6 +788,7 @@ public static class GameEventWiring
                 error: err ?? 0,
                 payloadLength: e.Payload.Length);
             if (err is null) return;
+            serverReplies?.RecordUseDone(err.Value);
             Console.WriteLine($"[use-done] err=0x{err.Value:X4}");
             onUseDone?.Invoke(err.Value);
             if (err.Value == 0) return;
