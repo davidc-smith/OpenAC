@@ -34,4 +34,8 @@ public sealed record RynthObjectInfo
     public required IReadOnlyDictionary<uint, int> Ints { get; init; }
     public required IReadOnlyDictionary<uint, uint> DataIds { get; init; }
     public required IReadOnlyDictionary<uint, uint> InstanceIds { get; init; }
+
+    public IReadOnlyDictionary<uint, bool> Bools { get; init; } = new Dictionary<uint, bool>();
+    public IReadOnlyDictionary<uint, double> Floats { get; init; } = new Dictionary<uint, double>();
+    public IReadOnlyDictionary<uint, string> Strings { get; init; } = new Dictionary<uint, string>();
 }

@@ -69,4 +69,89 @@ internal sealed class FakeGameView : IRynthGameView
         (cellId, origin) = position;
         return found;
     }
+
+    private T Read<T>(T value) => Throw ? throw new InvalidOperationException("view failed") : value;
+
+    public (uint Cell, System.Numerics.Vector3 Origin, System.Numerics.Quaternion Orientation)? Pose { get; set; }
+    public float? PlayerHeading { get; set; }
+    public Dictionary<uint, float> Headings { get; } = new();
+    public bool Portaling { get; set; }
+    public int Busy { get; set; }
+    public int Mode { get; set; } = 1;
+    public RynthVitals? Vitals { get; set; }
+    public (uint Health, uint Stamina, uint Mana)? BaseVitals { get; set; }
+    public float Vitae { get; set; } = 1f;
+    public double Time { get; set; }
+    public List<RynthEnchantment>? Enchantments { get; set; }
+    public Dictionary<(uint Object, uint Skill), (int Buffed, int Base, int Training)> Skills { get; } = new();
+    public Dictionary<(uint Object, uint Attribute), (uint Buffed, uint Base)> Attributes { get; } = new();
+    public Dictionary<(uint Object, uint Vital), uint> VitalBases { get; } = new();
+    public List<uint>? Known { get; set; }
+    public HashSet<uint> Attackable { get; } = new();
+    public uint OpenContainer { get; set; }
+    public AcDream.Core.Items.ServerReplySnapshot Replies { get; set; }
+
+    public bool TryGetPlayerPose(out uint cellId, out System.Numerics.Vector3 origin, out System.Numerics.Quaternion orientation)
+    {
+        var pose = Read(Pose);
+        (cellId, origin, orientation) = pose ?? default;
+        return pose is not null;
+    }
+
+    public bool TryGetPlayerHeading(out float headingDegrees)
+    {
+        float? heading = Read(PlayerHeading);
+        headingDegrees = heading ?? 0;
+        return heading is not null;
+    }
+
+    public bool TryGetObjectHeading(uint objectId, out float headingDegrees) =>
+        Read(Headings).TryGetValue(objectId, out headingDegrees);
+
+    public bool IsPortaling => Read(Portaling);
+    public int BusyCount => Read(Busy);
+    public int CombatMode => Read(Mode);
+
+    public bool TryGetPlayerVitals(out RynthVitals vitals)
+    {
+        RynthVitals? found = Read(Vitals);
+        vitals = found ?? default;
+        return found is not null;
+    }
+
+    public bool TryGetPlayerBaseVitals(out uint health, out uint stamina, out uint mana)
+    {
+        var found = Read(BaseVitals);
+        (health, stamina, mana) = found ?? default;
+        return found is not null;
+    }
+
+    public float VitaeMultiplier => Read(Vitae);
+    public double ServerTime => Read(Time);
+    public IReadOnlyList<RynthEnchantment>? PlayerEnchantments => Read(Enchantments);
+
+    public bool TryGetSkill(uint objectId, uint skillId, out int buffed, out int baseLevel, out int training)
+    {
+        bool found = Read(Skills).TryGetValue((objectId, skillId), out var skill);
+        (buffed, baseLevel, training) = skill;
+        return found;
+    }
+
+    public bool TryGetAttribute(uint objectId, uint attributeId, out uint buffed, out uint baseLevel)
+    {
+        bool found = Read(Attributes).TryGetValue((objectId, attributeId), out var attribute);
+        (buffed, baseLevel) = attribute;
+        return found;
+    }
+
+    public bool TryGetVitalBase(uint objectId, uint vitalStatId, out uint baseMaximum) =>
+        Read(VitalBases).TryGetValue((objectId, vitalStatId), out baseMaximum);
+
+    public int IsSpellKnown(uint objectId, uint spellId) =>
+        Read(Known) is { } known && objectId == _playerId ? (known.Contains(spellId) ? 1 : 0) : -1;
+
+    public IReadOnlyList<uint>? KnownSpells => Read(Known);
+    public bool IsAttackable(uint objectId) => Read(Attackable).Contains(objectId);
+    public uint OpenContainerId => Read(OpenContainer);
+    public AcDream.Core.Items.ServerReplySnapshot ServerReplies => Read(Replies);
 }

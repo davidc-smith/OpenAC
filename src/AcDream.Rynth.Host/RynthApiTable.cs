@@ -31,6 +31,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     private IntPtr _nameBuffer;
     private IntPtr _accountBuffer;
     private IntPtr _worldBuffer;
+    private IntPtr _stringBuffer;
 
     public RynthApiTable(IRynthGameView view, Action<string> log, bool scriptWindows = false)
     {
@@ -67,6 +68,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         Native->GetCurCoordsFn = (IntPtr)(delegate* unmanaged[Cdecl]<double*, double*, int>)&GetCurCoords;
         Native->GetAccountNameFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr>)&GetAccountName;
         Native->GetWorldNameFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr>)&GetWorldName;
+        BindStateSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;
@@ -101,6 +103,12 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         {
             Marshal.FreeHGlobal(_worldBuffer);
             _worldBuffer = IntPtr.Zero;
+        }
+
+        if (_stringBuffer != IntPtr.Zero)
+        {
+            Marshal.FreeHGlobal(_stringBuffer);
+            _stringBuffer = IntPtr.Zero;
         }
 
         if (_scriptWindows)

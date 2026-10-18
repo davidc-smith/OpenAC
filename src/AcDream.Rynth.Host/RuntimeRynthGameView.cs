@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
@@ -106,6 +107,9 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             Ints = properties.Ints,
             DataIds = properties.DataIds,
             InstanceIds = properties.InstanceIds,
+            Bools = properties.Bools,
+            Floats = properties.Floats,
+            Strings = properties.Strings,
         };
         return true;
     }
@@ -134,6 +138,159 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return false;
     }
 
+    public bool TryGetPlayerPose(out uint cellId, out Vector3 origin, out Quaternion orientation)
+    {
+        uint player = PlayerId;
+        if (player != 0
+            && _runtime.EntityObjects.Entities.TryGetActive(player, out RuntimeEntityRecord record)
+            && record.PhysicsBody is { } body
+            && body.CellPosition.ObjCellId != 0)
+        {
+            cellId = body.CellPosition.ObjCellId;
+            origin = body.CellPosition.Frame.Origin;
+            orientation = body.CellPosition.Frame.Orientation;
+            return true;
+        }
+
+        cellId = 0;
+        origin = default;
+        orientation = Quaternion.Identity;
+        return false;
+    }
+
+    public bool TryGetPlayerHeading(out float headingDegrees)
+    {
+        PluginNavigationSnapshot snapshot = _automation.Navigation.Snapshot;
+        headingDegrees = snapshot.IsAvailable ? snapshot.Position.HeadingDegrees : 0;
+        return snapshot.IsAvailable;
+    }
+
+    public bool TryGetObjectHeading(uint objectId, out float headingDegrees)
+    {
+        if (_automation.Objects.TryGet(objectId, out PluginWorldObject found) && found.HasPosition)
+        {
+            headingDegrees = found.Position.HeadingDegrees;
+            return true;
+        }
+
+        headingDegrees = 0;
+        return false;
+    }
+
+    public bool IsPortaling => _automation.Navigation.Snapshot.IsPortalSpace;
+
+    public int BusyCount => _automation.Recovery.CaptureBusyState().BusyCount;
+
+    public int CombatMode => _automation.IsAvailable
+        ? RynthTranslate.ToRynthCombatMode(_automation.Combat.Snapshot.Mode)
+        : RynthTranslate.NonCombat;
+
+    public bool TryGetPlayerVitals(out RynthVitals vitals)
+    {
+        ICharacterInfo character = _automation.Character;
+        vitals = new RynthVitals(
+            character.CurrentHealth, character.MaxHealth,
+            character.CurrentStamina, character.MaxStamina,
+            character.CurrentMana, character.MaxMana);
+        return _automation.IsAvailable && character.MaxHealth > 0;
+    }
+
+    public bool TryGetPlayerBaseVitals(out uint health, out uint stamina, out uint mana)
+    {
+        ICharacterInfo character = _automation.Character;
+        health = character.BaseHealth;
+        stamina = character.BaseStamina;
+        mana = character.BaseMana;
+        return _automation.IsAvailable && health > 0;
+    }
+
+    public float VitaeMultiplier => _automation.IsAvailable ? _automation.Character.VitaeMultiplier : 1f;
+
+    // The server clock as the client last synced it; 0 before login, as RynthCore reports it.
+    public double ServerTime => PlayerId == 0 ? 0 : _runtime.EnvironmentOwner.WorldTime.NowTicks;
+
+    public IReadOnlyList<RynthEnchantment>? PlayerEnchantments
+    {
+        get
+        {
+            if (!_automation.IsAvailable)
+                return null;
+            double now = ServerTime;
+            return
+            [
+                .. _automation.Character.ActiveEnchantments.Select(enchantment => new RynthEnchantment(
+                    enchantment.SpellId, RynthTranslate.ToServerExpiry(now, enchantment.SecondsRemaining))),
+            ];
+        }
+    }
+
+    public bool TryGetSkill(uint objectId, uint skillId, out int buffed, out int baseLevel, out int training)
+    {
+        if (IsPlayer(objectId) && _automation.Character.TryGetSkill(skillId, out PluginSkillInfo skill))
+        {
+            buffed = (int)skill.Current;
+            baseLevel = (int)skill.Base;
+            training = (int)skill.Training;
+            return true;
+        }
+
+        buffed = baseLevel = training = 0;
+        return false;
+    }
+
+    public bool TryGetAttribute(uint objectId, uint attributeId, out uint buffed, out uint baseLevel)
+    {
+        if (IsPlayer(objectId))
+        {
+            foreach (PluginAttributeInfo attribute in _automation.Character.Attributes)
+            {
+                if (attribute.StatId != attributeId)
+                    continue;
+                buffed = attribute.Current;
+                baseLevel = attribute.Base;
+                return true;
+            }
+        }
+
+        buffed = baseLevel = 0;
+        return false;
+    }
+
+    // RynthCore's secondary-attribute ids: 1 max health, 3 max stamina, 5 max mana.
+    public bool TryGetVitalBase(uint objectId, uint vitalStatId, out uint baseMaximum)
+    {
+        if (IsPlayer(objectId) && (vitalStatId is 1 or 3 or 5)
+            && _automation.Character.TryGetVital((int)(vitalStatId - 1) / 2, out PluginVitalInfo vital))
+        {
+            baseMaximum = vital.Base;
+            return true;
+        }
+
+        baseMaximum = 0;
+        return false;
+    }
+
+    public int IsSpellKnown(uint objectId, uint spellId) =>
+        !IsPlayer(objectId) || !_automation.IsAvailable ? -1 : _automation.Spells.IsKnown(spellId) ? 1 : 0;
+
+    public IReadOnlyList<uint>? KnownSpells =>
+        PlayerId == 0 ? null : [.. _runtime.CharacterOwner.Spellbook.LearnedSpells.Order()];
+
+    public bool IsAttackable(uint objectId)
+    {
+        uint player = PlayerId;
+        if (player == 0)
+            return false;
+        ClientObjectTable objects = _runtime.InventoryOwner.Objects;
+        return SelectedObjectHealthPolicy.ObjectIsAttackable(player, objects.Get(player), objectId, objects.Get(objectId));
+    }
+
+    public uint OpenContainerId => _automation.Objects.OpenContainerObjectId;
+
+    public ServerReplySnapshot ServerReplies => _runtime.InventoryOwner.ServerReplies.Snapshot;
+
+    private bool IsPlayer(uint objectId) => objectId != 0 && objectId == PlayerId;
+
     private static PropertyBundle Merge(PropertyBundle objectProperties, PropertyBundle description)
     {
         PropertyBundle merged = objectProperties.Clone();
@@ -143,6 +300,12 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             merged.DataIds[pair.Key] = pair.Value;
         foreach (KeyValuePair<uint, uint> pair in description.InstanceIds)
             merged.InstanceIds[pair.Key] = pair.Value;
+        foreach (KeyValuePair<uint, bool> pair in description.Bools)
+            merged.Bools[pair.Key] = pair.Value;
+        foreach (KeyValuePair<uint, double> pair in description.Floats)
+            merged.Floats[pair.Key] = pair.Value;
+        foreach (KeyValuePair<uint, string> pair in description.Strings)
+            merged.Strings[pair.Key] = pair.Value;
         return merged;
     }
 }
