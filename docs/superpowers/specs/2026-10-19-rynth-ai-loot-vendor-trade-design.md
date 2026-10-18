@@ -17,8 +17,9 @@ This is sub-project #5 of the RynthAi split (#1 dashboard, #2 state and actions,
   everything here is host slots in `AcDream.Rynth.Host`, plus surface members where
   the client lacks one.
 - **One sub-project** covering loot, salvage, vendor, trade and give (user, 2026-10-19).
-- **Loot honours the pack RynthAi names** (as RynthCore does). Target 0 or the player
-  falls back to the client's own pack choice.
+- **Loot honours the pack RynthAi names** when it has room, and falls back to the
+  client's own choice when it is full (as a retail drag onto a full pack does). Target
+  0 or the player uses the client's own choice.
 - **Salvage panel state lives in the host.** OpenAC's retail salvage panel
   (`App/UI/Layout/SalvageUiController`) is not driven; Execute sends one salvage
   request through `Items.Salvage`.
@@ -40,11 +41,11 @@ refuses. A throw becomes the usual "threw" log line and answers 0.
 
 | Slot | Implementation |
 |---|---|
-| `MoveItemExternalFn(uint obj, uint target, int amount)` | Target 0 or the player id: `Loot.Pickup(obj)` (client picks the pack). Otherwise the new `Loot.Pickup(obj, target)`, which sends PutItemInContainer to that pack with the existing busy / no-room / not-ours checks; refused when `target` is not the player's own container. `amount` is passed through as the stack amount (0 = whole stack). Returns 1 when sent. |
-| `GiveObjectToFn(uint obj, uint target, int amount)` | `Items.Give(obj, target, amount)`; 0 = whole stack. |
+| `MoveItemExternalFn(uint obj, uint target, int amount)` | Target 0 or the player id: `Loot.Pickup(obj)` (client picks the pack). Otherwise the new `Loot.Pickup(obj, target)`: the same checks and placement as today's pickup, with `target` as the preferred pack. The client's placement search (`InventoryPlacementSearch.ChooseContainer`) uses it when it has room and otherwise falls back to the main pack, then the other packs, as a retail drag onto a full pack does; a stack the player already holds is still joined first. Refused when `target` is not a container the player owns. RynthAi always passes `amount` 0; any other amount answers 0. Returns 1 when sent. |
+| `GiveObjectToFn(uint obj, uint target, int amount)` | `Items.Give(obj, target, amount)`; 0 = whole stack, negative answers 0. |
 | `CloseContainerFn(uint id)` | `Loot.Close(id)`. |
-| `GetObjectPalettesFn(uint id, uint* subIds, uint* offsets, int max)` | Copies `PluginInventoryItem.Palettes` (sub-palette id, offset) up to `max`; returns the count, 0 for an unknown object or none. |
-| `GetNumContainedItemsFn(uint id)` / `GetNumContainedContainersFn(uint id)` | Count the known contents of the container (items that are not containers / containers). Unknown container: 0. |
+| `GetObjectPalettesFn(uint id, uint* subIds, uint* offsets, int max)` | From `PluginInventoryItem.Palettes`, in offset order: `subIds[i]` = sub-palette id, `offsets[i]` = its offset. Fills up to `max`, returns the total count (may exceed `max`), -1 when the object is unknown (RynthCore's "no data captured"). |
+| `GetNumContainedItemsFn(uint id)` / `GetNumContainedContainersFn(uint id)` | The container's direct contents that are not containers / that are containers (worn items are not contents). -1 when the container is unknown, as RynthCore. |
 
 ### Salvage (`RynthSalvagePanel` + `RynthApiTable.Salvage.cs`)
 
@@ -61,23 +62,27 @@ The panel resets on logoff.
 
 | Slot | Implementation |
 |---|---|
-| `GetVendorInfoFn(VendorInfoNative*)` | From `IVendorAutomation` (`IsOpen`, `VendorObjectId`, `VendorName`, `Profile`, `Items.Count`) plus the player's coins and alt-currency count from inventory. `Generation` +1 per vendor open. Flags: trading available, trade in flight. 0 when no vendor is open. |
-| `GetVendorItemsFn(VendorItemNative*, int max)` | `IVendorAutomation.Items` projected (unit price from the profile's sell rate, unlimited stock flag for ACE stock 0, stackable, needs-container-slot); returns the count. |
-| `VendorBuyFn(uint vendor, VendorTradeEntryNative*, int n)` | Vendor 0 = the open vendor; any other id must match it. `ClearBuyList`, `AddToBuyList` per entry, `BuyAll`. Returns a new request id (non-zero) when sent, 0 otherwise. |
-| `VendorSellFn(uint vendor, uint* ids, int n)` | Same with the sell list and `SellAll`. |
-| `GetVendorTradeStatusFn(VendorTradeStatusNative*)` | The latest request: Sent once `BuyAll`/`SellAll` accepts; Done + Accepted on the next vendor refresh (`VendorState.Changed` Refreshed); Refused when a WeenieError arrives in the reply log while it is out; Done + TimedOut after 5 s. Message carries the surface notice or the error text. |
+| `GetVendorInfoFn(VendorInfoNative*)` | From the client's `VendorState` (id, profile: item types, min/max value, deals magic, buy and sell rates, alt currency wcid / server count / name), the vendor's name, `Items.Count`, the player's coins (int property 20 on the player, -1 unknown) and the alt currency the player holds (-1 when the vendor takes none). `Generation` +1 per vendor open. Flags: 1 trading available (always), 2 a request in flight. 0 when no vendor is open. |
+| `GetVendorItemsFn(VendorItemNative*, int max)` | `VendorState.Items` projected as RynthCore does: `Amount` -1 for unlimited stock (ACE stock 0), stack size, max stack, value and unit value, unit price (`IVendorAutomation.Items[i].UnitPrice`, the client's own vendor-window price), burden, icon; flags 1 unlimited, 2 stackable (max stack > 0), 4 needs a container slot (a container listing). Fills up to `max`; returns the total, -1 when no vendor is open. |
+| `VendorBuyFn(uint vendor, VendorTradeEntryNative*, int n)` | RynthCore's checks (vendor 0 = the open one, any other id must match it; 1..100 lines; no id twice; each id on the list; amount 1..0x7FFFFF and within limited stock), then `ClearBuyList`, `AddToBuyList` per entry, `BuyAll`. Returns the new request id; a refusal (a check, or the surface saying no) returns 0 and sets the status to Refused with the reason. |
+| `VendorSellFn(uint vendor, uint* ids, int n)` | Same checks (no id 0, none the vendor's own, none twice), then the sell list and `SellAll`. |
+| `GetVendorTradeStatusFn(VendorTradeStatusNative*)` | The most recently updated request, RynthCore's states: Sent (2) once `BuyAll`/`SellAll` accepts; Done (3) + Accepted (1) when `IVendorAutomation.TransactionCompleted` reports success; Done + AnsweredNoRefresh (2) with the surface's notice when it reports failure; Done + TimedOut (3) after 10 s with no answer; Refused (4) for a request that never went out. 0 before the first request. |
 
 Events: `OnVendorOpen(vendorId)` / `OnVendorClose(vendorId)` are raised from
-`VendorState.Changed` (Opened / Closed) through the per-type event queue, in
-RynthCore's drain order. A vendor close or logoff finishes any outstanding request as
-Refused.
+`VendorState.Changed` through the per-type event queue, drained after
+StopViewingContents and before UpdateInventory as RynthCore does. As RynthCore's
+OpenVendor hook, an open is raised for Opened and for Refreshed (the server re-sent
+the list, including after a buy or sell); an Opened that replaces another vendor
+raises the previous vendor's close first; Closed and Reset raise a close. A request
+already sent stays in flight when the vendor closes (the server still answers it),
+and logoff clears it.
 
 ### Trade (`RynthApiTable.Trade.cs`)
 
 | Slot | Implementation |
 |---|---|
-| `GetTradeStateFn(TradeStateNative*)` | Projects `ITradeAutomation` + `Events`: Flags (open, you accepted, partner accepted, watching = 1, actions available = 1), Generation, Sequence, Partner, Initiator, item counts, LastEventType, failure fields, close reason, last accepted / declined / reset by, completed count, partner accept count. Honours the caller's `Size`; returns the number of bytes written (≥ 8). |
-| `GetTradeItemsFn(int side, uint* ids, int cap)` | Side 1 = `MyItems`, 2 = `PartnerItems`; returns the count. |
+| `GetTradeStateFn(TradeStateNative*)` | Projects `ITradeAutomation` + `Events`: Flags (open, you accepted, partner accepted, watching = 1, actions available = 1), Generation, Sequence, Partner, Initiator, item counts, LastEventType, failure fields, close reason, last accepted / declined / reset by, completed count, partner accept count. Honours the caller's `Size` (under 8 answers 0); writes at most `sizeof(TradeStateNative)`, sets `Size` to that and returns it. |
+| `GetTradeItemsFn(int side, uint* ids, int cap)` | Side 1 = `MyItems`, 2 = `PartnerItems`; fills up to `cap`, returns that side's total, -1 for any other side. |
 | `TradeOpenFn(uint target)` | New `ITradeAutomation.Open(target)`. |
 | `TradeAddFn(uint item, uint slot)` | `Add(item)`; `slot` is ignored (the server places it). |
 | `TradeAcceptFn` / `TradeDeclineFn` / `TradeResetFn` / `TradeCloseFn` | `Accept` / `Decline` / `Reset` / `End`. |
@@ -91,13 +96,17 @@ Refused.
   InitiatorId, LastEventType (the GameEvent opcode, `0x01FD`–`0x0208`), FailureCount,
   LastFailureItemId, LastFailureReason, LastCloseReason, LastAcceptedBy,
   LastDeclinedBy, LastResetBy, CompletedCount, PartnerAcceptCount.
-  `RuntimeTradeState` updates them in its existing `Apply*` methods: Register
-  (Generation, Initiator), Add, Remove, Accept, Decline, Reset, Close (reason),
-  Failure, ClearAcceptance; every one bumps Sequence. CompletedCount counts the
-  server's "Trade Complete!" notice (the plan pins the exact message from ACE).
-  Counters survive a trade closing; they reset on logoff.
-- `ILootAutomation.Pickup(uint objectId, uint targetContainerObjectId)` → existing
-  pickup checks, then `SendPutItemInContainer` to the named container.
+  `RuntimeTradeState` updates them in its existing `Apply*` methods with RynthCore's
+  rules (`Compatibility/PlayerTrade.cs`): Register (Generation, Initiator), Add,
+  Remove, Accept (PartnerAcceptCount when it is not the player), Decline, Reset (who),
+  Close (reason, from the CloseTrade payload the router now passes on), Failure,
+  ClearAcceptance; every one bumps Sequence and sets LastEventType, whether or not a
+  trade is open. CompletedCount (+ Sequence) counts WeenieError `0x0529`
+  TradeComplete, seen through a new `ServerReplyLog.WeenieErrorRecorded` event. Like
+  RynthCore's, the counters only ever grow; plugins compare them between reads.
+- `ILootAutomation.Pickup(uint objectId, uint preferredContainerObjectId)` → the
+  existing pickup, with `RuntimeItemInteraction.TryPlaceWorldItemInBackpack` taking
+  the preferred pack as the placement search's target.
 - `ForkContractVersion` → `0.1.25-fork.9`; `docs/plugin-api.md` documents the new
   members.
 
@@ -110,11 +119,13 @@ Unit tests, no live client:
 - Salvage: open with a non-tool / unowned tool refused; dedupe; tool excluded; 100
   cap; execute sends once and empties; reset on logoff; SalvageDirect rules.
 - Vendor: native struct layouts and string copies; info/items projection; buy/sell
-  with vendor 0 / matching / other id; each status transition (refresh, WeenieError,
-  timeout, vendor close); open/close events through the queue.
+  checks with vendor 0 / matching / other id; each status transition (success,
+  failure, timeout, refused); open/close events (Opened, Refreshed, switch, Closed,
+  Reset) in drain order.
 - Trade: state projection and `Size` handling; item sides; actions mapped.
-- Runtime: trade counters per message, two events in one frame, reset on logoff;
-  `Open` refusals; `Pickup(id, target)` sends to the named pack.
+- Runtime: trade counters per message, two events in one frame, TradeComplete;
+  `Open` refusals; `Pickup(id, pack)` prefers the named pack and falls back when it
+  is full.
 - `RynthApiTableTests.DeferredSlotsStayUnset` updated: these slots are now set.
 
 Live check on local ACE (with the user, later): loot a corpse into a named pack with a
