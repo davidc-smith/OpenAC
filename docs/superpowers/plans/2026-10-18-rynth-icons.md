@@ -1314,6 +1314,8 @@ git commit -m "feat(rynth): bar draws RynthCore's Phosphor icons; script windows
 
 ### Task 6: Live check on local ACE
 
+> **Status 2026-10-18: not run.** The user chose to skip the live check for now; Tasks 1-5 and the final-review fixes are done and reviewed (build clean, Rynth.Host.Tests 69/69, filtered App tests 92/92). Still to see on screen: overlay text renders (atlas id is now slot+1), the bar's grip and Oracle's Scripts entry show Phosphor icons, icon vertical alignment (Step 3).
+
 **Goal:** In a live client on the local ACE server, the bar's grip shows the six-dot Phosphor icon and the Scripts menu shows Oracle with its Sparkle icon, with no "unknown texture id" lines in the log.
 
 **Files:**
