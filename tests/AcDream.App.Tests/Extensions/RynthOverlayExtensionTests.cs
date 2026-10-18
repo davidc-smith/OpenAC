@@ -65,6 +65,36 @@ public sealed class RynthOverlayExtensionTests : IDisposable
     }
 
     [Fact]
+    public void WithAnOverlayTheBarOffersTheRynthAiDashboard()
+    {
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), new FakeOverlay()));
+        try
+        {
+            Assert.True(ImGuiPanelHost.HasFace("RynthAi"));
+            Assert.Contains(RynthCore.Engine.Plugins.PluginManager.Plugins, p => p.DisplayName.Contains("RynthAi", StringComparison.Ordinal));
+        }
+        finally
+        {
+            extension.Dispose();
+        }
+
+        Assert.Empty(RynthCore.Engine.Plugins.PluginManager.Plugins);
+    }
+
+    [Fact]
+    public void RynthAisChatCommandsAreRegisteredUntilDispose()
+    {
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay: null));
+        foreach (string verb in new[] { "ra", "mt", "ub", "vt" })
+            Assert.True(_commands.ContainsKey(verb), verb);
+
+        extension.Dispose();
+        Assert.Empty(_commands);
+    }
+
+    [Fact]
     public void WithAnOverlayScriptIconsAskTheOverlayAndPhosphorIsMerged()
     {
         var overlay = new FakeOverlay();

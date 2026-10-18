@@ -1,3 +1,5 @@
+using AcDream.Rynth.Host;
+using AcDream.TestSupport;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
@@ -15,18 +17,24 @@ public sealed class RynthAiDashboardTests : IDisposable
     ];
 
     private readonly List<string> _log = new();
+    private readonly RynthConfigSandbox _sandbox = new("rynth-ai-dash-");
+    private readonly FakeGameView _view = new() { PlayerId = 0x50000001u };
 
     public RynthAiDashboardTests()
     {
         ImGuiPanelHost.Reset();
         ImGuiPanelHost.Log = _log.Add;
+        RynthCore.Engine.UI.Data.UiDataHub.Clear();
     }
 
     public void Dispose()
     {
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Stop();
+        RynthCore.Engine.UI.Data.PluginExportBinder.Resolver = null;
         ImGuiPanelHost.Reset();
         ImGuiPanelHost.Log = null;
         LoginLifecycleHooks.HasObservedLoginComplete = false;
+        _sandbox.Dispose();
     }
 
     [Fact]
@@ -61,6 +69,127 @@ public sealed class RynthAiDashboardTests : IDisposable
         }
 
         Assert.Empty(_log);
+    }
+
+    private (RynthHost Host, RynthChatHookup Exports, RynthAiHookup Ai) StartWithRynthAi()
+    {
+        var host = new RynthHost(_view, _log.Add, [typeof(RynthCore.Plugin.RynthAi.PluginExports)]);
+        var exports = new RynthChatHookup(host, _view, _log.Add);
+        var ai = new RynthAiHookup(host, _view, _log.Add);
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        return (host, exports, ai);
+    }
+
+    private static RynthCore.Engine.UI.Data.RynthAiView? Snapshot() => RynthCore.Engine.UI.Data.UiSources.RynthAi.Current?.Value;
+
+    [Fact]
+    public void TheSnapshotReachesTheRynthAiSource()
+    {
+        (RynthHost host, RynthChatHookup exports, RynthAiHookup ai) = StartWithRynthAi();
+        using (host) using (exports) using (ai)
+        {
+            RynthCore.Engine.UI.Data.UiSources.RynthAi.Subscribe();
+            try
+            {
+                RynthCore.Engine.UI.Data.UiSources.RynthAi.RequestRefresh();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                Assert.NotNull(Snapshot());
+                Assert.False(Snapshot()!.Raw.MacroRunning);
+                Assert.Equal(host.Plugins[0].Owner.VersionString, Snapshot()!.Version);
+            }
+            finally { RynthCore.Engine.UI.Data.UiSources.RynthAi.Unsubscribe(); }
+        }
+    }
+
+    [Fact]
+    public void TheMacroToggleRoundTripsThroughThePump()
+    {
+        (RynthHost host, RynthChatHookup exports, RynthAiHookup ai) = StartWithRynthAi();
+        using (host) using (exports) using (ai)
+        {
+            RynthCore.Engine.UI.Data.UiSources.RynthAi.Subscribe();
+            try
+            {
+                RynthCore.Engine.UI.Data.RynthAiCommands.ToggleMacro();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                Assert.True(Snapshot()!.Raw.MacroRunning);
+
+                RynthCore.Engine.UI.Data.RynthAiCommands.ToggleMacro();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                Assert.False(Snapshot()!.Raw.MacroRunning);
+            }
+            finally { RynthCore.Engine.UI.Data.UiSources.RynthAi.Unsubscribe(); }
+        }
+    }
+
+    [Fact]
+    public void PostedWorkThatThrowsIsLoggedAndTheRestRuns()
+    {
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var ai = new RynthAiHookup(host, _view, _log.Add);
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        bool ran = false;
+        RynthCore.Engine.UI.Data.UiDataHub.Post("boom", () => throw new InvalidOperationException("bad"));
+        RynthCore.Engine.UI.Data.UiDataHub.Post("after", () => ran = true);
+
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+
+        Assert.True(ran);
+        Assert.Contains(_log, l => l.Contains("[RynthAi] boom: InvalidOperationException: bad", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void StopClearsPostedWorkAndTheSnapshot()
+    {
+        (RynthHost host, RynthChatHookup exports, RynthAiHookup ai) = StartWithRynthAi();
+        using (host) using (exports) using (ai)
+        {
+            RynthCore.Engine.UI.Data.UiSources.RynthAi.Subscribe();
+            try
+            {
+                RynthCore.Engine.UI.Data.UiSources.RynthAi.RequestRefresh();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                Assert.NotNull(Snapshot());
+                bool ran = false;
+                RynthCore.Engine.UI.Data.UiDataHub.Post("late", () => ran = true);
+
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Stop();
+                Assert.Null(Snapshot());
+
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                Assert.False(ran);
+            }
+            finally { RynthCore.Engine.UI.Data.UiSources.RynthAi.Unsubscribe(); }
+        }
+    }
+
+    [Fact]
+    public void TheHookupPointsTheStandInsUntilDispose()
+    {
+        using var host = new RynthHost(_view, _log.Add, [typeof(RynthCore.Plugin.RynthAi.PluginExports)]);
+        var ai = new RynthAiHookup(host, _view, _log.Add);
+
+        Assert.Same(host.Plugins[0].Owner, Assert.Single(RynthCore.Engine.Plugins.PluginManager.Plugins));
+        RynthCore.Engine.UI.ServerMenus.Run("/ro fellowship");
+        Assert.Contains("/ro fellowship", _view.SubmittedCommands);
+        Assert.True(RynthCore.Engine.Compatibility.AcMainThreadQueue.EnqueueWriteToChat("hello", 1));
+        Assert.Contains(("hello", 1), _view.ChatLines);
+
+        ai.Dispose();
+        Assert.Empty(RynthCore.Engine.Plugins.PluginManager.Plugins);
+        Assert.Null(RynthCore.Engine.UI.ServerMenus.Runner);
+        Assert.False(RynthCore.Engine.Compatibility.AcMainThreadQueue.EnqueueWriteToChat("gone", 1));
+    }
+
+    [Fact]
+    public void AThrowingViewIsLoggedNotThrown()
+    {
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var ai = new RynthAiHookup(host, _view, _log.Add);
+        _view.Throw = true;
+        RynthCore.Engine.Compatibility.AcMainThreadQueue.EnqueueWriteToChat("x", 1);
+        Assert.Contains(_log, l => l.Contains("view failed", StringComparison.Ordinal));
     }
 
     internal static string RepoRoot()
