@@ -113,6 +113,13 @@ public sealed class Spellbook
     /// <summary>Fires when an enchantment is removed (expired / dispelled).</summary>
     public event Action<ActiveEnchantmentRecord>? EnchantmentRemoved;
 
+    /// <summary>
+    /// An enchantment the server removed (remove, dispel, purge). Raised after
+    /// <see cref="EnchantmentRemoved"/>; a cooldown the client drops on its own
+    /// when it expires raises only <see cref="EnchantmentRemoved"/>.
+    /// </summary>
+    public event Action<ActiveEnchantmentRecord>? EnchantmentRemovedByServer;
+
     public event Action? StateChanged;
 
     public event Action? SpellbookChanged;
@@ -215,6 +222,7 @@ public sealed class Spellbook
         if (RemoveActiveEnchantment(identity, out ActiveEnchantmentRecord record))
         {
             EnchantmentRemoved?.Invoke(record);
+            EnchantmentRemovedByServer?.Invoke(record);
             NotifyEnchantmentsChanged();
         }
     }
@@ -238,6 +246,7 @@ public sealed class Spellbook
             if (!RemoveActiveEnchantment(identity, out ActiveEnchantmentRecord record)) continue;
             changed = true;
             EnchantmentRemoved?.Invoke(record);
+            EnchantmentRemovedByServer?.Invoke(record);
         }
         if (changed) NotifyEnchantmentsChanged();
     }
@@ -285,7 +294,10 @@ public sealed class Spellbook
         foreach (ActiveEnchantmentRecord record in removed)
             RemoveActiveEnchantment(record.Identity, out _);
         foreach (var rec in removed)
+        {
             EnchantmentRemoved?.Invoke(rec);
+            EnchantmentRemovedByServer?.Invoke(rec);
+        }
         if (removed.Length != 0) NotifyEnchantmentsChanged();
     }
 
@@ -299,7 +311,10 @@ public sealed class Spellbook
         foreach (ActiveEnchantmentRecord record in removed)
             RemoveActiveEnchantment(record.Identity, out _);
         foreach (ActiveEnchantmentRecord record in removed)
+        {
             EnchantmentRemoved?.Invoke(record);
+            EnchantmentRemovedByServer?.Invoke(record);
+        }
         if (removed.Length != 0) NotifyEnchantmentsChanged();
     }
 

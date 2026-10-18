@@ -368,6 +368,81 @@ public sealed class SpellbookTests
             book.ActiveEnchantmentSnapshot.Select(record => record.SpellId).Order().ToArray());
     }
 
+    [Fact]
+    public void OnEnchantmentRemoved_RaisesRemovedThenRemovedByServer()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(42, 7, 300f, 0);
+        List<string> events = Record(book);
+
+        book.OnEnchantmentRemoved(7, 42);
+
+        Assert.Equal(["removed 42", "server 42"], events);
+    }
+
+    [Fact]
+    public void OnEnchantmentsRemoved_RaisesRemovedThenRemovedByServerForEach()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(42, 7, 300f, 0);
+        book.OnEnchantmentAdded(43, 8, 300f, 0);
+        List<string> events = Record(book);
+
+        book.OnEnchantmentsRemoved([(42u, 7u), (43u, 8u)]);
+
+        Assert.Equal(["removed 42", "server 42", "removed 43", "server 43"], events);
+    }
+
+    [Fact]
+    public void OnPurgeAll_RaisesRemovedThenRemovedByServer()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(new(1, 1, 100, 0, Bucket: 1));
+        List<string> events = Record(book);
+
+        book.OnPurgeAll();
+
+        Assert.Equal(["removed 1", "server 1"], events);
+    }
+
+    [Fact]
+    public void OnPurgeBadEnchantments_RaisesRemovedThenRemovedByServer()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(new(1, 1, 100, 0, StatModType: 0, Bucket: 1));
+        List<string> events = Record(book);
+
+        book.OnPurgeBadEnchantments();
+
+        Assert.Equal(["removed 1", "server 1"], events);
+    }
+
+    [Fact]
+    public void OnCooldown_LocalExpiry_RaisesRemovedOnly()
+    {
+        var book = new Spellbook();
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
+            SpellId: 0x802Au,
+            LayerId: 1u,
+            Duration: 5d,
+            CasterGuid: 0u,
+            Bucket: Spellbook.CooldownBucket,
+            StartTime: 0d));
+        List<string> events = Record(book);
+
+        Assert.False(book.OnCooldown(0x2Au, currentTime: 20d, out _));
+
+        Assert.Equal([$"removed {0x802Au}"], events);
+    }
+
+    private static List<string> Record(Spellbook book)
+    {
+        List<string> events = [];
+        book.EnchantmentRemoved += record => events.Add($"removed {record.SpellId}");
+        book.EnchantmentRemovedByServer += record => events.Add($"server {record.SpellId}");
+        return events;
+    }
+
     private static ActiveEnchantmentRecord Effect(uint spellId, uint layer, uint category)
         => new(
             SpellId: spellId,

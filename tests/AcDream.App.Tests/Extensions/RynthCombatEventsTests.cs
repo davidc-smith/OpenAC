@@ -38,7 +38,8 @@ public sealed class RynthCombatEventsTests : IDisposable
             Bucket: Spellbook.CooldownBucket));
         CombatRecorder.Calls.Clear();   // the cooldown's added line is not under test; its removal is
         spellbook.OnEnchantmentRemoved(1u, 0x8005u);
-        Assert.Empty(Recorded());
+        Assert.Equal(["ench- 32773"], Recorded());   // RynthCore reports the server's cooldown removals
+        CombatRecorder.Calls.Clear();
         runtime.InventoryOwner.Transactions.IncrementBusyCount();
         runtime.InventoryOwner.Transactions.ClearBusy();
         combat.OnCreatureProfile(0x80000010, new CombatState.CreatureVitals(75, 100, null, null, null, null));
@@ -55,6 +56,23 @@ public sealed class RynthCombatEventsTests : IDisposable
                 "chat 1A You're too busy!",
             ],
             Recorded());
+    }
+
+    [Fact]
+    public void ACooldownTheClientDropsOnExpiryIsNotForwarded()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        Spellbook spellbook = runtime.CharacterOwner.Spellbook;
+        spellbook.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x8005u, 1u, 30.0, 0u,
+            Bucket: Spellbook.CooldownBucket, StartTime: 0d));
+        CombatRecorder.Calls.Clear();
+
+        Assert.False(spellbook.OnCooldown(5u, currentTime: 100d, out _));
+
+        Assert.Equal(0, spellbook.ActiveCount);
+        Assert.Empty(Recorded());
     }
 
     [Fact]

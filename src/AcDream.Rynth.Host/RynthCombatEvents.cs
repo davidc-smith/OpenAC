@@ -47,7 +47,7 @@ public sealed class RynthCombatEvents : IDisposable
         _combat.DamageTaken += OnDamageTaken;
         _selection.Changed += OnSelectionChanged;
         _spellbook.EnchantmentAdded += OnEnchantmentAdded;
-        _spellbook.EnchantmentRemoved += OnEnchantmentRemoved;
+        _spellbook.EnchantmentRemovedByServer += OnEnchantmentRemoved;
         _transactions.StateChanged += OnTransactionsChanged;
         _runtime.CommunicationOwner.StatusTextShown += OnStatusTextShown;
         _bridge.LoggedIn += OnLoggedIn;
@@ -65,7 +65,7 @@ public sealed class RynthCombatEvents : IDisposable
         _combat.DamageTaken -= OnDamageTaken;
         _selection.Changed -= OnSelectionChanged;
         _spellbook.EnchantmentAdded -= OnEnchantmentAdded;
-        _spellbook.EnchantmentRemoved -= OnEnchantmentRemoved;
+        _spellbook.EnchantmentRemovedByServer -= OnEnchantmentRemoved;
         _transactions.StateChanged -= OnTransactionsChanged;
         _runtime.CommunicationOwner.StatusTextShown -= OnStatusTextShown;
         _bridge.LoggedIn -= OnLoggedIn;
@@ -113,13 +113,9 @@ public sealed class RynthCombatEvents : IDisposable
     private void OnEnchantmentAdded(ActiveEnchantmentRecord record) =>
         _bridge.OnEnchantmentAdded(record.SpellId & 0xFFFFu, record.Duration);
 
-    // RynthCore reports the server's removals; OpenAC also drops an expired cooldown
-    // locally, which RynthCore never reports, so cooldowns are left out.
-    private void OnEnchantmentRemoved(ActiveEnchantmentRecord record)
-    {
-        if (record.Bucket != Spellbook.CooldownBucket)
-            _bridge.OnEnchantmentRemoved(record.SpellId & 0xFFFFu);
-    }
+    // RynthCore reports the server's removals, cooldowns included, never a local expiry.
+    private void OnEnchantmentRemoved(ActiveEnchantmentRecord record) =>
+        _bridge.OnEnchantmentRemoved(record.SpellId & 0xFFFFu);
 
     private void OnTransactionsChanged()
     {
