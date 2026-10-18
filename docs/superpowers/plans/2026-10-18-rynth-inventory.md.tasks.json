@@ -65,12 +65,12 @@
     {
       "id": 8,
       "subject": "Task 8: Live check on local ACE",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** In the real client against local ACE, `/ginv` lists the character's carried items and an opened storage container is recorded.\n\n**Files:**\n- Modify: `docs/superpowers/plans/2026-10-18-rynth-inventory.md` (status note at the top)\n\n**Acceptance Criteria:**\n- [ ] The user agreed to the launch before it happened.\n- [ ] `/ginv` opens the \"Global Inventory\" window listing items the character carries, with icons.\n- [ ] `/ginv status` prints `<character> on <world> (account <account>)` with a non-zero item count, and after ~10 s a file exists at `~/.config/RynthCore/inventory/<world>/<account>/<character>.json`.\n- [ ] Opening a storage chest (or `/ginv keep` on an opened container) then `/ginv status` shows `1 storage container(s)`.\n- [ ] Findings are written as a status note at the top of this plan.\n\n**Verify:** the user's observations in game plus `ls ~/.config/RynthCore/inventory/*/*/`\n\nFull steps with code: docs/superpowers/plans/2026-10-18-rynth-inventory.md (Task 8: Live check on local ACE).\n\n```json:metadata\n{\"files\": [\"docs/superpowers/plans/2026-10-18-rynth-inventory.md\"], \"verifyCommand\": \"the user's observations in game plus `ls ~/.config/RynthCore/inventory/*/*/`\", \"acceptanceCriteria\": [\"The user agreed to the launch before it happened.\", \"`/ginv` opens the \\\"Global Inventory\\\" window listing items the character carries, with icons.\", \"`/ginv status` prints `<character> on <world> (account <account>)` with a non-zero item count, and after ~10 s a file exists at `~/.config/RynthCore/inventory/<world>/<account>/<character>.json`.\", \"Opening a storage chest (or `/ginv keep` on an opened container) then `/ginv status` shows `1 storage container(s)`.\", \"Findings are written as a status note at the top of this plan.\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         7
       ]
     }
   ],
-  "lastUpdated": "2026-10-18T10:25:41.591706"
+  "lastUpdated": "2026-10-18T12:26:56.649323"
 }

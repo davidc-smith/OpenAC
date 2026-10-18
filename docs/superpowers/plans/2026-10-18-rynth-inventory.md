@@ -1,5 +1,13 @@
 # RynthInventory Implementation Plan
 
+> **Status (2026-10-18):** Tasks 1–8 done. Live check on local ACE (GolemTest, War Mage) passed:
+> `/ginv` lists carried items with icons; `/ginv status` names the character, world and account
+> (62 items carried); a dropped Sack kept with `/ginv keep` is recorded (1 storage container,
+> 47 carried); a monster kill adds 1 to RynthTracker's deaths. Not counted: an `@die` suicide
+> (ACE sends no VictimNotification for it; left as is). On macOS the plugin's files live under
+> `~/Library/Application Support/RynthCore` (not `~/.config`); tests sandbox it via
+> `CFFIXED_USER_HOME` (commit 6b80591d).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `/ginv` opens RynthSuite's RynthInventory "Global Inventory" window inside OpenAC, listing every character's carried items and the storage they opened.
