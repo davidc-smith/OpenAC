@@ -39,6 +39,12 @@ internal sealed class RynthBar
     /// <summary>Runs inside the bar before its contents (tests make the body fail with it).</summary>
     internal Action? ContentsHook { get; init; }
 
+    /// <summary>Test seam: replaces the registry's bar buttons.</summary>
+    internal Func<ScriptBarItem[]>? ButtonSource { get; init; }
+
+    /// <summary>Test seam: replaces <see cref="Toggle"/> for a click, so a test can make it throw.</summary>
+    internal Action<ScriptBarItem>? ToggleAction { get; init; }
+
     /// <summary>True when any window is on the bar.</summary>
     internal static bool HasContent =>
         ScriptWindowRegistry.BarButtons.Length > 0 || ScriptWindowRegistry.BarItems.Length > 0;
@@ -82,23 +88,25 @@ internal sealed class RynthBar
         }
     }
 
-    private static void DrawContents()
+    private void DrawContents()
     {
         ImGui.Button("::");
         if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 0f))
             ImGui.SetWindowPos(ImGui.GetWindowPos() + ImGui.GetIO().MouseDelta);
         Tooltip("Rynth: drag to move");
 
-        foreach (ScriptBarItem item in ScriptWindowRegistry.BarButtons)
+        foreach (ScriptBarItem item in ButtonSource?.Invoke() ?? ScriptWindowRegistry.BarButtons)
         {
             ImGui.SameLine();
             bool open = ImGuiPanelHost.IsOpen(item.PanelKey);
             if (open)
                 ImGui.PushStyleColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.ButtonActive));
-            if (ImGui.Button(Letter(item.Window.Title) + "##" + item.MenuLabel))
-                Toggle(item);
+            bool clicked = ImGui.Button(Letter(item.Window.Title) + "##" + item.MenuLabel);
             if (open)
                 ImGui.PopStyleColor();
+            // Only after the pop: the toggle calls into the plugin and may throw.
+            if (clicked)
+                Click(item);
             Tooltip(item.Window.Title);
         }
 
@@ -122,13 +130,21 @@ internal sealed class RynthBar
                 }
 
                 if (ImGui.MenuItem(item.MenuLabel, string.Empty, ImGuiPanelHost.IsOpen(item.PanelKey)))
-                    Toggle(item);
+                    Click(item);
             }
         }
         finally
         {
             ImGui.EndPopup();
         }
+    }
+
+    private void Click(ScriptBarItem item)
+    {
+        if (ToggleAction is { } action)
+            action(item);
+        else
+            Toggle(item);
     }
 
     /// <summary>Saves the bar's position once the player has moved it and let go.</summary>

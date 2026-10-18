@@ -139,4 +139,43 @@ public sealed class RynthBarTests : IDisposable
         Assert.Equal(3, _log.Count(line => line.Contains("bar", StringComparison.OrdinalIgnoreCase) && line.Contains("boom", StringComparison.Ordinal)));
         Assert.True(_imgui.Frame(After) > 0);
     }
+
+    [Fact]
+    public void AToggleThatThrowsOnAnOpenButtonLeavesImGuiBalanced()
+    {
+        using RynthHost host = CreateOracleHost();
+        ScriptBarItem item = ScriptWindowRegistry.BarItems.First(i => i.PanelKey.EndsWith(OracleKey, StringComparison.OrdinalIgnoreCase));
+        // Open, so the button pushes a style colour around itself.
+        RynthBar.Toggle(item);
+        for (int i = 0; i < 5; i++)
+            host.Tick();
+        Assert.True(ImGuiPanelHost.IsOpen(item.PanelKey));
+        int toggles = 0;
+        var bar = new RynthBar(_store, _log.Add)
+        {
+            ButtonSource = () => [item],
+            ToggleAction = _ => { toggles++; throw new InvalidOperationException("boom"); },
+        };
+        _imgui.Frame(bar.Draw);
+        Vector2 pos = default;
+        _imgui.Frame(() => { bar.Draw(); pos = BarPos(); });
+        // Second button: past the "::" grip button, its spacing and the window padding.
+        ImGuiStylePtr style = ImGui.GetStyle();
+        float grip = ImGui.CalcTextSize("::").X + style.FramePadding.X * 2;
+        var target = pos + new Vector2(style.WindowPadding.X + grip + style.ItemSpacing.X + 6, style.WindowPadding.Y + 6);
+
+        ImGuiIOPtr io = ImGui.GetIO();
+        io.AddMousePosEvent(target.X, target.Y);
+        _imgui.Frame(bar.Draw);
+        io.AddMouseButtonEvent(0, true);
+        _imgui.Frame(bar.Draw);
+        io.AddMouseButtonEvent(0, false);
+        _imgui.Frame(bar.Draw);
+
+        Assert.True(toggles > 0, "the click never reached the toggle");
+        Assert.Contains(_log, line => line.Contains("boom", StringComparison.Ordinal));
+        void After() { ImGui.Begin("after"); ImGui.TextUnformatted("fine"); ImGui.End(); }
+        _imgui.Frame(After); // an auto-sized window draws nothing on its first frame
+        Assert.True(_imgui.Frame(After) > 0);
+    }
 }
