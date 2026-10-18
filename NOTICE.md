@@ -127,6 +127,7 @@ A license copy is included as `licenses/NotoSans-OFL.txt` in client distribution
 ## Phosphor Icons
 
 The launcher bar's icons are the Phosphor icon font (https://phosphoricons.com), MIT-licensed, embedded from `external/RynthCore/src/RynthCore.Engine/Assets/Fonts/Phosphor.ttf`.
+A license copy is included as `licenses/Phosphor-LICENSE.txt` in client distributions.
 
 MIT License
 
