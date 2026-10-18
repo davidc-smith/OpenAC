@@ -75,7 +75,19 @@ public sealed class RuntimeSpellCastState
             : SpellCastGate.TargetIncompatible;
     }
 
-    public CastRequestResult Cast(uint spellId)
+    public CastRequestResult Cast(uint spellId) =>
+        CastAt(spellId, _selection.SelectedObjectId);
+
+    /// <summary>
+    /// Casts at <paramref name="targetId"/> without reading or changing the
+    /// selection, as the original client's FreeHandsAndCastSpell does for a
+    /// plugin. A self or untargeted spell ignores the target, as
+    /// <see cref="Cast(uint)"/> ignores the selection; 0 is no target.
+    /// </summary>
+    public CastRequestResult Cast(uint spellId, uint targetId) =>
+        CastAt(spellId, targetId == 0u ? null : targetId);
+
+    private CastRequestResult CastAt(uint spellId, uint? candidateTarget)
     {
         if (!_spellbook.Knows(spellId) || !_spellbook.TryGetMetadata(spellId, out SpellMetadata spell))
         {
@@ -105,7 +117,7 @@ public sealed class RuntimeSpellCastState
         }
         else
         {
-            target = _selection.SelectedObjectId;
+            target = candidateTarget;
             untargeted = false;
             if (target is null or 0)
             {
