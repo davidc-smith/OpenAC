@@ -93,6 +93,9 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
     private bool AnySinkCapturing()
     {
+        // A failed overlay draws nothing: an invisible input must not hold the keyboard.
+        if (_failed)
+            return false;
         foreach (IOverlayKeyboardSink sink in _sinks.ToArray())
         {
             try

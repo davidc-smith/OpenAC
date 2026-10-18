@@ -25,7 +25,8 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
     private readonly Func<string> _inputText;
     private OverlayKey? _swallowUntilUp;
     private bool _sendPending;
-    private bool _justClaimed;
+    private bool _enterDown;
+    private bool _ignoreEnterUntilUp;
 
     public RynthChatKeyboard(Action<string> log, Func<string> getClipboard, Action<string> setClipboard, bool isWindows, Func<string> inputText)
     {
@@ -44,12 +45,18 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
 
     public void KeyDown(OverlayKey key, OverlayModifiers modifiers)
     {
+        if (key == OverlayKey.Enter)
+            _enterDown = true;
+        // A new keystroke began: the Enter/Esc tail is over (their Win32Backend
+        // stops guarding on any WM_KEYDOWN).
+        if (_swallowUntilUp is { } held && held != key)
+            _swallowUntilUp = null;
         if (!Win32Backend.ChatCaptureActive)
             return;
-        // The keypress OpenAC just handed us through the claim may reach this sink
-        // after OpenAC's input (handler order isn't fixed): it started typing, it
-        // doesn't send.
-        if (_justClaimed && key == OverlayKey.Enter)
+        // The Enter OpenAC just handed us through the claim may reach this sink
+        // after OpenAC's input (handler order isn't fixed), and held it repeats:
+        // it started typing, it doesn't send, until it comes back up.
+        if (_ignoreEnterUntilUp && key == OverlayKey.Enter)
             return;
         // Paste/copy/cut go through Run too: off Windows they touch the overlay clipboard.
         bool ctrl = (modifiers & OverlayModifiers.Control) != 0;
@@ -90,6 +97,12 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
 
     public void KeyUp(OverlayKey key)
     {
+        if (key == OverlayKey.Enter)
+        {
+            _enterDown = false;
+            _ignoreEnterUntilUp = false;
+        }
+
         if (_swallowUntilUp == key)
             _swallowUntilUp = null;
     }
@@ -103,7 +116,10 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
     /// <summary>Runs the deferred send and Tell. Call once per tick.</summary>
     public void Tick()
     {
-        _justClaimed = false;
+        // By now the claiming keypress has reached every handler: a claim made by
+        // another key (a rebound chat key, '/') leaves no Enter to wait out.
+        if (_ignoreEnterUntilUp && !_enterDown)
+            _ignoreEnterUntilUp = false;
         if (_sendPending)
         {
             _sendPending = false;
@@ -127,7 +143,7 @@ internal sealed class RynthChatKeyboard : IOverlayKeyboardSink
         if (Win32Backend.ChatCaptureActive || !ChatHooks.RynthChatOwnsChat || Win32Backend.OnChatCaptureActivated is null)
             return false;
         Win32Backend.ChatCaptureActive = true;
-        _justClaimed = true;
+        _ignoreEnterUntilUp = true;
         Run(Win32Backend.OnChatCaptureActivated, "activate");
         return true;
     }

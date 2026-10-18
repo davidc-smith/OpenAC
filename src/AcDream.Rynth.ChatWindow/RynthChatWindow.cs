@@ -23,9 +23,10 @@ internal static class RynthChatWindow
     {
         if (!_started)
         {
-            _started = true;
             ChatModel.EnsureSettingsLoaded();
             ChatModel.InstallInput();
+            // Only once both took: a Start that threw tries again next time.
+            _started = true;
         }
         // The panel host can be reset (tests, an extension restart): register again then.
         if (!ImGuiPanelHost.HasFace(ChatFace.Title))

@@ -443,6 +443,10 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
             }
 
             Root.Visible = false;
+            // Hiding clears focus only when Visible changes: an input focused while
+            // the window was already hidden would keep typing out of sight.
+            if (FindRootOf(Root) is { } root && IsWithin(root.KeyboardFocus, Root))
+                root.SetKeyboardFocus(null);
         }
         else if (_extensionHidden)
         {
@@ -745,6 +749,14 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
     {
         if (!string.IsNullOrEmpty(name))
             StartTell(name);
+    }
+
+    private static bool IsWithin(UiElement? element, UiElement subtree)
+    {
+        for (UiElement? at = element; at is not null; at = at.Parent)
+            if (ReferenceEquals(at, subtree))
+                return true;
+        return false;
     }
 
     private static UiRoot? FindRootOf(UiElement element)

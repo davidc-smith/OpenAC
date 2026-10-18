@@ -195,9 +195,61 @@ public sealed class RynthChatKeyboardTests : IDisposable
         _keys.Tick();
         Assert.True(Win32Backend.ChatCaptureActive);
         Assert.Equal(["activated"], _calls);
+        _keys.KeyUp(OverlayKey.Enter);
         _keys.KeyDown(OverlayKey.Enter, OverlayModifiers.None);   // a later Enter sends
         _keys.Tick();
         Assert.Equal(["activated", "send"], _calls);
+    }
+
+    [Fact]
+    public void AHeldClaimedEnterRepeatingIsNotASendUntilItComesUp()
+    {
+        OwnTheChat();
+        _keys.KeyDown(OverlayKey.Enter, OverlayModifiers.None);   // the claim's keypress, sink first
+        Assert.True(_keys.TryClaimEntry());
+        _keys.Tick();
+        _keys.KeyDown(OverlayKey.Enter, OverlayModifiers.None);   // key repeat
+        _keys.Tick();
+        _keys.KeyDown(OverlayKey.Enter, OverlayModifiers.None);
+        _keys.Tick();
+        Assert.True(Win32Backend.ChatCaptureActive);
+        Assert.Equal(["activated"], _calls);
+
+        _keys.KeyUp(OverlayKey.Enter);
+        _keys.KeyDown(OverlayKey.Enter, OverlayModifiers.None);
+        _keys.Tick();
+        Assert.False(Win32Backend.ChatCaptureActive);
+        Assert.Equal(["activated", "send"], _calls);
+    }
+
+    [Fact]
+    public void AClaimByAnotherKeyLetsTheFirstEnterSend()
+    {
+        OwnTheChat();
+        Assert.True(_keys.TryClaimEntry());   // a rebound chat key, or '/'
+        _keys.Tick();
+        _keys.KeyDown(OverlayKey.Enter, OverlayModifiers.None);
+        _keys.Tick();
+        Assert.Equal(["activated", "send"], _calls);
+    }
+
+    [Theory]
+    [InlineData(OverlayKey.Enter)]
+    [InlineData(OverlayKey.Escape)]
+    public void AnotherKeyGoingDownEndsTheSwallowedTail(OverlayKey ending)
+    {
+        Win32Backend.ChatCaptureActive = true;
+        _keys.KeyDown(ending, OverlayModifiers.None);
+        Assert.True(_keys.Capturing);
+        _keys.KeyDown(OverlayKey.Other, OverlayModifiers.None);   // a new keystroke, the tail's key-up lost
+        Assert.False(_keys.Capturing);
+    }
+
+    private static void OwnTheChat()
+    {
+        ChatHooks.SuppressOriginalChat = true;
+        ChatHooks.ChatPanelShown = true;
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
     }
 
     [Fact]

@@ -192,6 +192,24 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
+    public void ExtensionHidingClearsFocusInsideTheWindow()
+    {
+        var (ctrl, _, _) = BindOverSharedEntry();
+        var root = new UiRoot();
+        root.AddChild(ctrl.Root);
+        ctrl.SetExtensionHidden(true);
+        ctrl.Root.Visible = true;            // a toggle showed it and focused the entry
+        root.SetKeyboardFocus(ctrl.Input);
+        ctrl.Root.Visible = false;           // hidden again, but the entry kept focus
+        root.SetKeyboardFocus(ctrl.Input);
+        Assert.Same(ctrl.Input, root.KeyboardFocus);
+
+        ctrl.SetExtensionHidden(true);
+
+        Assert.Null(root.KeyboardFocus);
+    }
+
+    [Fact]
     public void ClaimedEntryActionsDoNotFocusTheChatEntry()
     {
         var (ctrl, _, _) = BindOverSharedEntry();

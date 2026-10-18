@@ -33,10 +33,12 @@ public sealed class RynthChatWindowTests : IDisposable
         UiSources.Chat.Subscribe();
         try
         {
-            host.Plugins[0].OnChatWindowText("Bob says, \"hi\"", 2);
+            // Their chat source can keep earlier tests' lines: this line is its own.
+            string token = Guid.NewGuid().ToString("N");
+            host.Plugins[0].OnChatWindowText($"Bob says, \"{token}\"", 2);
             UiSources.Chat.RequestRefresh();
             RynthChatWindow.Tick();
-            Assert.Contains(UiSources.Chat.Current!.Value, line => line.Text.Contains("hi", StringComparison.Ordinal));
+            Assert.Contains(UiSources.Chat.Current!.Value, line => line.Text.Contains(token, StringComparison.Ordinal));
         }
         finally { UiSources.Chat.Unsubscribe(); }
     }

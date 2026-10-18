@@ -53,6 +53,19 @@ public sealed class ImGuiOverlayTests : IDisposable
     }
 
     [Fact]
+    public void ACapturingSinkLetsTheKeyboardGoOnceTheOverlayFails()
+    {
+        Start();
+        var sink = new RecordingSink { Capturing = true };
+        using IDisposable registration = _overlay.AddKeyboardSink(sink);
+        Assert.True(_overlay.WantsKeyboard);
+        _renderer.ThrowOnRender = true;
+        RunFrame();
+        Assert.False(_overlay.IsAvailable);
+        Assert.False(_overlay.WantsKeyboard);
+    }
+
+    [Fact]
     public void KeysAndCharactersReachEverySink()
     {
         var a = new RecordingSink();
@@ -341,6 +354,7 @@ public sealed class ImGuiOverlayTests : IDisposable
         public int LastVertexCount { get; private set; }
         public Vector2 LastScale { get; private set; }
         public bool ThrowOnDispose { get; set; }
+        public bool ThrowOnRender { get; set; }
 
         public void PrepareFrame(ImGuiIOPtr io, Vector2 framebufferScale)
         {
@@ -358,6 +372,8 @@ public sealed class ImGuiOverlayTests : IDisposable
 
         public void Render(ImDrawDataPtr drawData, Vector2 framebufferSize)
         {
+            if (ThrowOnRender)
+                throw new InvalidOperationException("render failed");
             Rendered++;
             _frameCountAfterRender = ImGui.GetFrameCount();
             RenderedAfterOneNewFrame.Add(_frameCountAfterRender == _frameCountAtPrepare + 1);
