@@ -48,15 +48,15 @@ SidestepLeft `0x65000010`.
 | Slot | Implementation |
 |---|---|
 | `SetAutoRunFn(int on)` | Compare with `MovementOwner.AutoRunActive`; toggle with `Execute(ToggleRunLock)` or call `CancelAutoRun()`. A repeat of the current value does nothing (nav repeats it every tick and every 500 ms). Returns 1. |
-| `TurnToHeadingFn(float deg)` | New `RuntimeLocalPlayerMovementState.SnapHeading(deg)` over `PlayerMovementController.Yaw`. It cancels any pending MoveTo turn. Decal convention (0 = North, clockwise) is converted to OpenAC yaw. The next AutonomousPosition carries the new heading to the server. A test checks that `GetPlayerPose` reads back the same heading by their formula `(-2·atan2(qz,qw)·180/π + 720) % 360`. |
+| `TurnToHeadingFn(float deg)` | New `RuntimeLocalPlayerMovementState.SnapHeading(deg)` over `PlayerMovementController.Yaw`. Like RynthCore it only writes the heading; it cancels nothing (a use-approach MoveTo keeps running). Decal convention (0 = North, clockwise) is converted to OpenAC yaw. The next AutonomousPosition carries the new heading to the server. A test checks that `GetPlayerPose` reads back the same heading by their formula `(-2·atan2(qz,qw)·180/π + 720) % 360`. |
 | `SetMotionFn(uint motion, int on)` | The host keeps a set of held motions (the ids above) and maps it to a `MovementInput` through `SetIntent`. Plugin intent replaces keyboard input completely (`DispatcherMovementInputSource.Capture`), so while autorun is on the intent also sets Forward and Run. RunForward sets Forward + Run; WalkForward sets Forward only. An empty set calls `ClearIntent`. Unknown ids return 0. Turning off a motion that is not held does nothing (nav clears both turns every settle tick). |
 | `StopCompletelyFn()` | Clear the held set and the intent, then `Execute(StopCompletely)`. |
-| `JumpNonAutonomousFn(float extent)` | `IRuntimeMovementCommands.Jump(extent)`. |
-| `TapJumpFn()` | `Jump` at full power. |
-| `CommenceJumpFn()` / `DoJumpFn(int autonomous)` | Commence records the charge start time; DoJump releases it with power `min(1, elapsed × PlayerMovementController.JumpChargeRate)` (expose the rate), or full power if Commence was not called. `Jump(power)` itself charges to that power and releases, so it may take a few frames. |
-| `LaunchJumpWithMotionFn(...)` | Set the forward/strafe intent the arguments ask for, jump, and restore the held set on the next tick. |
+| `JumpNonAutonomousFn(float extent)` | `MovementOwner.BeginJump(extent)` (a scripted charge to that power, then release), extent clamped to (0, 1]. |
+| `TapJumpFn()` | `BeginJump` at the smallest charge (1/30). Native TapJump is Commence + DoJump at once, which is a near-zero charge. |
+| `CommenceJumpFn()` / `DoJumpFn(int autonomous)` | The held set gains a jump flag. Commence sets it, so the intent holds Jump and the controller charges at its own rate, exactly as a held space bar does. DoJump clears it, and the controller releases at the charged power. |
+| `LaunchJumpWithMotionFn(shift, w, x, z, c)` | Clears the jump flag and, for that one release frame, adds Forward (w), Backward (x), StrafeLeft (z) and StrafeRight (c), with Run unless shift. The next host tick restores the held set. The controller takes the jump velocity from the motion state on the release frame, as RynthCore writes the motion into CMotionInterp before DoJump. |
 | `GetObjectStateFn(uint id, uint* state)` | `RawPhysicsState` from the active entity record; 0 if the object is unknown. RynthAi reads ETHEREAL `0x4` as "door open". |
-| `GetObjectMotionOnFn(uint id, int* isOn)` | From the object's retained `Snapshot.MotionState`: forward command On (`0x4000000B`) gives 1, Off (`0x4000000C`) gives 0. Answers "known" (1) only once one of those has been seen. |
+| `GetObjectMotionOnFn(uint id, int* isOn)` | From the object's retained `Snapshot.MotionState`: forward command On (low 16 bits `0x000B` of `0x4000000B`) gives 1, Off (`0x000C`) gives 0. Any other (or no) forward command answers 0, "not known". Doors only ever play On/Off, so reading the latest motion is enough. |
 
 `RynthApiTableTests.DeferredSlotsStayUnset` is updated: these slots are now set; the
 left-out slots above stay zero.
@@ -89,13 +89,14 @@ RynthAi submits every tick (`NavMarkerRenderer.SubmitNav3D`) and never calls
     fades to the top the same way.
   - Triangle: passed through.
 - **Coordinates:** each corner converts from (X east, Y up, Z north, metres in the
-  submission landblock) to a `PluginNavigationPosition` through
-  `RuntimeNavigationProjection.Position`, using a cell id in the submission landblock.
+  submission landblock) to a `PluginNavigationPosition` through a new public
+  `RuntimeNavigationPositions.FromCellLocal(cellId, origin)` (over the internal
+  `RuntimeNavigationProjection.Position`), using a cell id in the submission landblock.
   Indoors that is the dungeon landblock, so dungeon routes draw too.
 - **Drawing:** one `IPluginWorldTriangleLayer`, created through a new `WorldTriangles`
   member on `ClientExtensionContext` (passed in from `GameWindow.WorldTriangles` at
   `ClientExtensionHost.Attach`). The host calls `SetTriangles` only when the committed
-  set differs from the last one. The layer is emptied on logoff and on plugin unload,
+  set differs from the last one. The layer is emptied when the player pose is not available (logoff, character select),
   and disposed when the host shuts down. With no window (null layer) the slots still
   accept primitives and draw nothing.
 - **Budget:** the renderer draws about 12k triangles a frame, nearest first. A typical
@@ -124,8 +125,9 @@ Unit tests, no live client:
 - SetMotion held set → intent mapping, with and without autorun; unknown ids; turning
   off an unheld turn; empty set clears the intent.
 - StopCompletely clears the held set and the intent.
-- Jump slots: power from charge time; full power without Commence; LaunchJumpWithMotion
-  restores the held set.
+- Jump slots: Commence/DoJump hold and release Jump in the intent; LaunchJumpWithMotion
+  adds its motion for one tick, then the held set is restored; JumpNonAutonomous and
+  TapJump begin a scripted jump.
 - GetObjectState / GetObjectMotionOn: unknown object, known state, On/Off seen and
   not seen.
 - Nav3D: clear/commit cycle; dropped tick on a landblock change; caps; ring and line
