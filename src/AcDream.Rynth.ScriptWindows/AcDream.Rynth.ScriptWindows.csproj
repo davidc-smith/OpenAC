@@ -18,6 +18,11 @@
     <Compile Include="$(RynthEngine)UI\ScriptWindows\ScriptWindowRegistry.cs" Link="RynthCore\ScriptWindowRegistry.cs" />
     <Compile Include="$(RynthEngine)ImGui\ScriptWindowReplay.cs" Link="RynthCore\ScriptWindowReplay.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\ScriptWindowFace.cs" Link="RynthCore\ScriptWindowFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\PhosphorIcons.cs" Link="RynthCore\PhosphorIcons.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(RynthEngine)Assets\Fonts\Phosphor.ttf" LogicalName="AcDream.Rynth.ScriptWindows.Phosphor.ttf" />
   </ItemGroup>
 
   <ItemGroup>

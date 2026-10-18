@@ -21,11 +21,20 @@ namespace RynthCore.Engine.ImGuiBackend
 
     internal static class ScriptIcons
     {
-        /// <summary>No AC icons yet: the replay draws its placeholder square.</summary>
+        /// <summary>
+        /// The client's icons: a texture id for an icon, object or spell id, or
+        /// zero for none. Set by the host while it has an overlay; null draws
+        /// the replay's placeholder square.
+        /// </summary>
+        public static Func<ScriptIconKind, uint, IntPtr>? Source { get; set; }
+
         public static bool TryGet(ScriptIconKind kind, uint id, out IntPtr texture)
         {
             texture = IntPtr.Zero;
-            return false;
+            if (kind > ScriptIconKind.Spell || id == 0 || Source is not { } source)
+                return false;
+            texture = source(kind, id);
+            return texture != IntPtr.Zero;
         }
     }
 
