@@ -15,4 +15,28 @@ public interface IClientOverlay
 
     /// <summary>True while an ImGui text field has the keyboard.</summary>
     bool WantsKeyboard { get; }
+
+    /// <summary>The client's icons as ImGui texture ids. Never null; all zero until the interface is up.</summary>
+    IClientOverlayIcons Icons => NoOverlayIcons.Instance;
+
+    /// <summary>
+    /// Merges <paramref name="glyphs"/> (BMP code points) from a TrueType
+    /// font into the overlay's font at <paramref name="scale"/> times its
+    /// size, from the next frame on. The overlay keeps a copy of the bytes.
+    /// </summary>
+    void AddMergedFont(byte[] ttf, string glyphs, float scale)
+    {
+    }
+}
+
+/// <summary>An overlay without icons: every lookup is zero.</summary>
+internal sealed class NoOverlayIcons : IClientOverlayIcons
+{
+    public static readonly NoOverlayIcons Instance = new();
+
+    public IntPtr Icon(uint iconId) => IntPtr.Zero;
+
+    public IntPtr SpellIcon(uint spellId) => IntPtr.Zero;
+
+    public IntPtr ObjectIcon(uint objectId) => IntPtr.Zero;
 }
