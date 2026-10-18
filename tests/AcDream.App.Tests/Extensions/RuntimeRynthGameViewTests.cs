@@ -88,4 +88,49 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal(string.Empty, view.WorldName);
         Assert.Equal(string.Empty, view.AccountName);
     }
+
+    [Fact]
+    public void ThePlayerObjectMergesTheDescriptionOverItsOwnTables()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var player = new ClientObject { ObjectId = 0x50000001, Name = "Tester" };
+        player.Properties.Ints[7] = 1;
+        player.Properties.Ints[8] = 3;
+        runtime.InventoryOwner.Objects.AddOrUpdate(player);
+        var description = new PropertyBundle();
+        description.Ints[7] = 2;
+        var view = new RuntimeRynthGameView(runtime);
+
+        // Before a description lands, the object's own table answers.
+        Assert.True(view.TryGetObject(0x50000001, out RynthObjectInfo before));
+        Assert.Equal(1, before.Ints[7]);
+
+        runtime.CharacterOwner.LocalPlayer.OnProperties(description);
+
+        Assert.True(view.TryGetObject(0x50000001, out RynthObjectInfo merged));
+        Assert.Equal(2, merged.Ints[7]);
+        Assert.Equal(3, merged.Ints[8]);
+        Assert.Equal(1, player.Properties.Ints[7]);
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public void IdentifiedNeedsAnAnsweredAppraisalThatSucceeded(bool answered, bool unsuccessful, bool expected)
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var item = new ClientObject
+        {
+            ObjectId = 0x80000010,
+            AppraisalAnswered = answered,
+            LastAppraisalUnsuccessful = unsuccessful,
+        };
+        runtime.InventoryOwner.Objects.AddOrUpdate(item);
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.True(view.TryGetObject(0x80000010, out RynthObjectInfo info));
+        Assert.Equal(expected, info.Identified);
+    }
 }

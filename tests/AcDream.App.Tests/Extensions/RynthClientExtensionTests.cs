@@ -62,6 +62,64 @@ public sealed class RynthClientExtensionTests : IDisposable
     }
 
     [Fact]
+    public void AfterDisposeContainerEventsReachNoPlugin()
+    {
+        ContainerRecorder.Calls.Clear();
+        var runtime = GameRuntimeTestFactory.Create();
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (_, _) => new Registration(),
+        };
+        var extension = new RynthClientExtension { AdditionalPluginExports = [typeof(ContainerRecorder)] };
+        extension.Attach(context);
+        var containers = runtime.InventoryOwner.ExternalContainers;
+        Assert.True(containers.RequestOpen(0x80000100));
+        Assert.True(containers.ApplyViewContents(0x80000100));
+        Assert.Equal(["view 80000100"], ContainerRecorder.Calls);
+
+        extension.Dispose();
+        runtime.InventoryOwner.Objects.ReplaceContents(0x80000100, [0x80000101u]);
+        Assert.True(containers.ApplyClose(0x80000100));
+        Assert.True(containers.RequestOpen(0x80000200));
+        Assert.True(containers.ApplyViewContents(0x80000200));
+
+        Assert.Equal(["view 80000100"], ContainerRecorder.Calls);
+    }
+
+    // RynthInventory (loaded before any additional plugin) eats every /ginv line, so a
+    // recorder after it never sees the text; the proof of forwarding is the plugin's own
+    // answer to "/ginv help", which only the argument can produce.
+    [Fact]
+    public void GinvForwardsItsArgumentsToThePluginsChatBarHandler()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        Action<string>? ginv = null;
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (verb, handler) =>
+            {
+                if (verb == "ginv")
+                    ginv = handler;
+                return new Registration();
+            },
+        };
+        using var extension = new RynthClientExtension();
+        extension.Attach(context);
+        Assert.NotNull(ginv);
+
+        ginv!("help");
+        extension.Tick(1.0 / 60);
+
+        Assert.Contains(
+            runtime.CommunicationOwner.Chat.Snapshot(),
+            entry => entry.Text.Contains("/ginv scan (rescan and save now)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void OpeningASecondContainerClosesTheFirstInThePluginsInOrder()
     {
         ContainerRecorder.Calls.Clear();
