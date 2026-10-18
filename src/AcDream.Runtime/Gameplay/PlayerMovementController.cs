@@ -318,6 +318,13 @@ public sealed class PlayerMovementController
 
     internal bool IsStandingStill => _motion.IsStandingStill();
 
+    /// <summary>
+    /// Whether motions are still queued. A read, so it skips the mutation
+    /// guard <see cref="Motion"/> applies: it is asked every frame, including
+    /// the login window where the controller is not yet live.
+    /// </summary>
+    internal bool MotionsPending => _motion.MotionsPending();
+
     internal void FinishJump()
     {
         _jumpCharging = false;

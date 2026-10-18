@@ -416,7 +416,7 @@ public sealed class RuntimeLocalPlayerMovementState
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return _controller?.Motion.MotionsPending() == true;
+            return _controller?.MotionsPending == true;
         }
     }
 
