@@ -188,7 +188,7 @@ Everything is on `host.Automation.Navigation`. A host without navigation answers
 | `GoTo(objectId, arrivalMeters)` | Walks to an object and ends beside it, facing it, within `arrivalMeters` (above 0, at most 50) at a spot with a line of sight to it. |
 | `GoTo(position, arrivalMeters)` | Walks to a place and ends on the floor that place stands on. Faces nothing on arrival. A position with no cell, such as one read from a route file, is placed by its map coordinates alone, and an elevation of NaN stands it on the ground there. |
 | `PreviewPathAsync(objectId, arrivalMeters)` | Plans a path to an object and returns ordered cell-aware positions with elevation. Does not start or replace a walk. |
-| `PreviewPathAsync(position, arrivalMeters)` | Plans to a place on its specified floor, including inside a dungeon. Does not start or replace a walk. |
+| `PreviewPathAsync(position, arrivalMeters)` | Plans to a place on its specified floor, including inside a dungeon. A place in a dungeon or building cell stands on the floor under it, so a dungeon map cell's `Center` can be given as it is. Does not start or replace a walk. |
 | `StandOn(objectId, arrivalMeters)` | Walks onto an object and ends on its top, jumping up where the character can. |
 | `Follow(playerId, bufferMeters)` | Follows a player until stopped: see [Following](#following). Only players can be followed. |
 | `StopGoTo()` | Ends the walk under way; `Rejected` when there is none. |
@@ -320,7 +320,7 @@ Reports are snapshots, safe to read on any plugin tick. Check that `Sequence` is
 | Goal | Where the walk ends |
 |---|---|
 | An object (`go to`) | Beside it, within the arrival distance of its side, at a spot that can see that side, facing it. An object whose collision is in the grid, such as a life stone or a sign, hides its own middle, so its side is what counts. Failing that, the nearest spot that can see it, up to 10 m away, as `Arrived` with a reason. Failing that, the nearest spot a walk reaches, as `ArrivedWithoutSight`. |
-| A place (`go to` a cell or map point) | On the floor the place stands on, within the arrival distance. A place on a rock top is arrived at on the rock, or not at all: a route that only reaches the ground beside it ends `NoRoute`. A place joined to the ground by a ramp or stairs is reached up them. |
+| A place (`go to` a cell or map point) | On the floor the place stands on, within the arrival distance. A place on a rock top is arrived at on the rock, or not at all: a route that only reaches the ground beside it ends `NoRoute`. A place joined to the ground by a ramp or stairs is reached up them. A place in a dungeon or building cell is first stood on the floor under it: the cell's own floor nearest at or below it (or up to 0.5 m above it), or where the cell has none there, as in the upper half of a tall room authored as a cell on top of a cell, the nearest floor of any cell below it. Preview and walk place it the same way. |
 | A player (`follow`) | Never ends by itself: see [Following](#following). |
 | An object's top (`stand on`) | On the highest floor over the object's own collision that a body stands on, within the arrival distance of that top's middle. A ramp or stair up to a deck is not the deck. An object with nothing on top to stand on, such as a creature or a thin wall, or no way up, ends `NoRoute`. |
 

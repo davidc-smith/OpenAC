@@ -325,6 +325,8 @@ public sealed class ImGuiOverlayTests : IDisposable
 
         public bool ReleaseOwned(uint texture2) => throw new NotSupportedException();
 
+        public bool IsLinearFiltered(uint texture2) => true;
+
         private static bool None(out uint texture2, out int width, out int height)
         {
             texture2 = 0;

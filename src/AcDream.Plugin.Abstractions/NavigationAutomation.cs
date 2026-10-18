@@ -475,7 +475,9 @@ public interface INavigationAutomation
     /// <summary>
     /// Plans a path to a cell-aware position without moving or taking ownership of
     /// the character. Call from the thread that raises <see cref="IEvents.Tick"/>.
-    /// An elevation of NaN selects ground at the destination.
+    /// An elevation of NaN selects ground at the destination. A position in a dungeon or
+    /// building cell stands on the floor under it, so a <see cref="PluginDungeonCell.Center"/>
+    /// may be given as it is.
     /// </summary>
     Task<PluginNavigationPlan> PreviewPathAsync(PluginNavigationPosition position, float arrivalMeters = 2.5f) =>
         Task.FromResult(new PluginNavigationPlan(PluginNavigationPlanStatus.Unavailable, [], "navigation is unavailable"));
@@ -656,7 +658,9 @@ public interface INavigationAutomation
     /// <paramref name="arrivalMeters"/> of <paramref name="position"/> on the floor that
     /// position stands on, and waiting while something else needs the character. A position
     /// on a rock top is arrived at on the rock, or not at all. An elevation of NaN stands the
-    /// position on the ground there, for map coordinates given without a height. It does not turn the character to face
+    /// position on the ground there, for map coordinates given without a height. A position in
+    /// a dungeon or building cell stands on the floor under it, the floor of the cell below
+    /// where its own cell has none there, as in the upper half of a tall room. It does not turn the character to face
     /// anything on arrival. A position with no cell, such as one read from a VTank route
     /// file, is placed by its map coordinates alone. <see cref="GoToReport"/> reports the
     /// walk with no object id.

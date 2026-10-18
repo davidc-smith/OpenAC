@@ -6,18 +6,37 @@ namespace AcDream.App.UI;
 
 public enum PluginUiTheme { Classic, Moss, Brass }
 
+/// <summary>Where the plugin dock sits: floating anywhere, or locked to the left or right screen edge.</summary>
+public enum PluginDockMode { Floating, Left, Right }
+
 /// <summary>One appearance preference shared by opted-in plugin windows.</summary>
 public sealed class PluginUiThemeSettings
 {
     private readonly SettingsStore? _store;
     private PluginUiTheme _theme;
-    public UiDatFont? ModernFont { get; }
-    public PluginUiThemeSettings(SettingsStore? store = null, UiDatFont? modernFont = null)
+    private PluginDockMode _dock;
+    private readonly Lazy<UiDatFont>? _modernFont;
+    private readonly Lazy<UiDatFont>? _modernTitleFont;
+
+    /// <summary>The font themed windows set their text in; loaded the first time it is read.</summary>
+    public UiDatFont? ModernFont => _modernFont?.Value;
+
+    /// <summary>The heavier weight themed windows set their titles in; null falls back to <see cref="ModernFont"/>.</summary>
+    public UiDatFont? ModernTitleFont => _modernTitleFont?.Value;
+
+    /// <summary>Whether there is a <see cref="ModernFont"/>, without loading it.</summary>
+    public bool HasModernFont => _modernFont is not null;
+
+    public PluginUiThemeSettings(
+        SettingsStore? store = null, Lazy<UiDatFont>? modernFont = null, Lazy<UiDatFont>? modernTitleFont = null)
     {
         _store = store;
-        ModernFont = modernFont;
-        _theme = Enum.TryParse<PluginUiTheme>(store?.LoadPluginUiTheme(), out var value)
+        _modernFont = modernFont;
+        _modernTitleFont = modernTitleFont;
+        PluginUiSettings saved = store?.LoadPluginUi() ?? PluginUiSettings.Default;
+        _theme = Enum.TryParse<PluginUiTheme>(saved.Theme, out var value)
             && Enum.IsDefined(value) ? value : PluginUiTheme.Classic;
+        _dock = ParseDock(saved.Dock);
     }
     public PluginUiTheme Theme
     {
@@ -26,8 +45,8 @@ public sealed class PluginUiThemeSettings
         {
             if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
             if (_theme == value) return;
-            _store?.SavePluginUiTheme(value.ToString());
             _theme = value;
+            Save();
             ThemeChanged?.Invoke();
         }
     }
@@ -42,11 +61,43 @@ public sealed class PluginUiThemeSettings
     public PluginUiThemeInfo ThemeInfo => Theme == PluginUiTheme.Classic
         ? PluginUiThemeInfo.Classic
         : new PluginUiThemeInfo((PluginUiThemeKind)Theme, ThemeNames[(int)Theme], Palette?.ToPluginPalette());
+
+    /// <summary>Where the plugin dock sits. Saved with the theme.</summary>
+    public PluginDockMode Dock
+    {
+        get => _dock;
+        set
+        {
+            if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (_dock == value) return;
+            _dock = value;
+            Save();
+        }
+    }
     public PluginUiPalette? Palette => Theme switch
     {
         PluginUiTheme.Moss => PluginUiPalette.Moss,
         PluginUiTheme.Brass => PluginUiPalette.Brass,
         _ => null,
+    };
+
+    /// <summary>The colours the plugin dock draws in: the theme's palette, or the dock's own Classic set.</summary>
+    public PluginUiPalette DockPalette => Palette ?? PluginUiPalette.ClassicDock;
+
+    private void Save() => _store?.SavePluginUi(new PluginUiSettings(_theme.ToString(), DockName(_dock)));
+
+    private static string DockName(PluginDockMode mode) => mode switch
+    {
+        PluginDockMode.Left => "left",
+        PluginDockMode.Right => "right",
+        _ => "floating",
+    };
+
+    private static PluginDockMode ParseDock(string? name) => name?.ToLowerInvariant() switch
+    {
+        "left" => PluginDockMode.Left,
+        "right" => PluginDockMode.Right,
+        _ => PluginDockMode.Floating,
     };
 }
 
@@ -59,6 +110,13 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
         C(0x35443B), C(0xE0E8E2), C(0x9AA99E), C(0x97BE81), C(0x344B37));
     public static PluginUiPalette Brass { get; } = new(C(0x221F1B), C(0x181612),
         C(0x4C4335), C(0xE9E2D5), C(0xB2A58E), C(0xC9A665), C(0x51442D));
+
+    /// <summary>
+    /// The plugin dock's colours under Classic, taken from the Classic dock's old black and gold.
+    /// Only the dock uses it: it is not a theme, and Classic windows still draw unthemed.
+    /// </summary>
+    internal static PluginUiPalette ClassicDock { get; } = new(C(0x000000) with { W = 0.88f }, C(0x060605),
+        C(0x9E7A29), C(0xF0EBDD), C(0xA8925C), C(0xDBB852), C(0x17300E));
     /// <summary>The palette as plugins read it, each channel rounded to a byte.</summary>
     public PluginThemePalette ToPluginPalette() => new(
         ToColor(Background), ToColor(Field), ToColor(Border),
@@ -75,12 +133,8 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
         "border" => Border, "accent" => Accent, "background" => Background,
         _ => throw new FormatException($"Unknown plugin theme color '{name}'."),
     };
-    internal void DrawCheck(UiRenderContext ctx, float x, float y, bool value)
-    {
-        ctx.DrawFill(x, y, 11, 11, value ? Selected : Field);
-        ctx.DrawRectOutline(x, y, 11, 11, value ? Accent : Border, 1);
-        if (value) ctx.DrawFill(x + 3, y + 3, 5, 5, Accent);
-    }
+    internal void DrawCheck(UiRenderContext ctx, float x, float y, bool value) =>
+        PluginUiStyle.Check(ctx, this, x, y, value);
 }
 
 internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
@@ -91,6 +145,8 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
     public UiPluginMarkupPanel(Func<uint, (uint, int, int)> resolve, PluginUiThemeSettings settings)
         : base(resolve) => _settings = settings;
     public UiDatFont? ModernFont => _settings.ModernFont;
+    public UiDatFont? ModernTitleFont => _settings.ModernTitleFont;
+    public bool HasModernFont => _settings.HasModernFont;
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
         _apply.Add(action);
@@ -103,16 +159,21 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
         _last = _settings.Theme;
         foreach (var apply in _apply) apply(_settings.Palette);
     }
+    /// <summary>Whether the window's markup gave it a title, so the header band is drawn.</summary>
+    internal bool HasTitle { get; set; }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
         if (_settings.Palette is not { } p) { base.OnDraw(ctx); return; }
-        ctx.DrawFill(0, 0, Width, Height, p.Background);
+        PluginUiStyle.WindowShadow(ctx, Width, Height);
+        ctx.FillRoundedRect(0, 0, Width, Height, PluginUiStyle.WindowRadius, p.Background);
+        if (HasTitle) PluginUiStyle.Header(ctx, p, Width);
     }
     protected override void OnDrawAfterChildren(UiRenderContext ctx)
     {
         if (_settings.Palette is not { } p) { base.OnDrawAfterChildren(ctx); return; }
-        ctx.DrawRectOutline(0, 0, Width, Height, p.Border, 1);
+        ctx.StrokeRoundedRect(0.5f, 0.5f, Width - 1f, Height - 1f, PluginUiStyle.WindowRadius - 0.5f, p.Border, 1f);
         if (Resizable && DrawResizeAffordances)
-            ctx.DrawFill(Width - 7, Height - 3, 5, 1, p.Muted);
+            PluginUiStyle.ResizeGrip(ctx, p, Width, Height);
     }
 }

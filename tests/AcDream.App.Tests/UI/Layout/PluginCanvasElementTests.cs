@@ -17,7 +17,7 @@ namespace AcDream.App.Tests.UI.Layout;
 /// the guard, with a painter that dies with the call; shown as one quad
 /// on the interface; taken down through the tree and the retirement queue.
 /// </summary>
-public sealed class PluginCanvasElementTests
+public sealed partial class PluginCanvasElementTests
 {
     private sealed class FrameSource : ICurrentGpuFrameSource
     {
@@ -27,6 +27,7 @@ public sealed class PluginCanvasElementTests
     private sealed class FakeImageBackend : IPluginImageBackend
     {
         public const uint ArtTexture = 77u;
+        public const uint IconTexture = 78u;
 
         public bool TryGetClientArt(uint surfaceId, out uint texture, out int width, out int height)
         {
@@ -36,8 +37,8 @@ public sealed class PluginCanvasElementTests
 
         public bool TryGetSpellIcon(uint spellId, out uint texture, out int width, out int height)
         {
-            texture = 0u; width = 0; height = 0;
-            return false;
+            texture = IconTexture; width = 32; height = 32;
+            return true;
         }
 
         public bool TryGetObjectIcon(uint objectId, out uint texture, out int width, out int height)
@@ -48,6 +49,9 @@ public sealed class PluginCanvasElementTests
 
         public uint UploadOwned(byte[] rgba, int width, int height, string debugName) => 0u;
         public bool ReleaseOwned(uint texture) => false;
+
+        // Client art is linear, icons nearest, as the live backend reports them.
+        public bool IsLinearFiltered(uint texture) => texture != IconTexture;
     }
 
     /// <summary>A clock the test advances by hand: each guarded call costs what the test says.</summary>
@@ -70,6 +74,42 @@ public sealed class PluginCanvasElementTests
         }
     }
 
+    [Fact]
+    public void TheCanvasIsPaintedIntoPremultipliedAndShownThroughTheCompositePipeline()
+    {
+        var harness = new Harness();
+        harness.Mount(Hud(), painter =>
+            painter.FillRect(new PluginRect(0, 0, 200, 100), new PluginColor(255, 255, 255, 128)));
+
+        harness.Frame();
+
+        Assert.Contains(
+            harness.Device.CreatedPipelines,
+            pipeline => pipeline.Description.Name == TextRenderer.IntoPremultipliedPipelineName
+                && pipeline.Description.Blend == GpuBlendMode.StraightAlphaIntoPremultiplied);
+        Assert.Equal([true], harness.MainRenderer.DebugSpriteSegmentPremultiplied);
+        Assert.Contains(
+            harness.Device.OfKind<GpuRecordedPipelineBind>(),
+            bind => bind.PipelineName == TextRenderer.PremultipliedPipelineName);
+    }
+
+    [Fact]
+    public void AFadedInterfaceStillFadesTheCanvas()
+    {
+        var harness = new Harness();
+        (_, PluginCanvasElement element) = harness.Mount(Hud(), painter => painter.Clear(PluginColor.White));
+        harness.Frame();
+
+        harness.MainRenderer.Begin(new Vector2(800f, 600f));
+        harness.MainContext.Begin(new Vector2(800f, 600f), null);
+        harness.MainContext.PushAlpha(0.5f);
+        harness.MainContext.DrawSpritePremultiplied(
+            element.ShownTextureHandle, 0f, 0f, 200f, 100f, 0f, 0f, 1f, 1f, Vector4.One);
+
+        (uint _, IReadOnlyList<float> verts) = Assert.Single(harness.MainRenderer.DebugSpriteSegmentVerts);
+        Assert.Equal([0.5f, 0.5f, 0.5f, 0.5f], verts.Skip(4).Take(4).ToArray());
+    }
+
     /// <summary>
     /// The interface as the canvas sees it: a root, the overlay host with a
     /// canvas layer, the registry, the shared surface, and a main renderer
@@ -89,21 +129,29 @@ public sealed class PluginCanvasElementTests
         public TextRenderer MainRenderer { get; }
         public UiRenderContext MainContext { get; }
         public List<string> Reports { get; } = [];
+        public AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend FontBackend { get; } = new();
         public ManualClock Clock { get; } = new();
         public PluginUiOwner Owner { get; } = new("example.plugin", "Example");
         private long _now;
 
-        public Harness()
+        /// <summary>Framebuffer pixels per window point; tests set it to stand in for a high-density display.</summary>
+        public Vector2 FramebufferPerPoint { get; set; } = Vector2.One;
+
+        public Harness(uint maximumImageDimension = 16_384)
         {
-            Device = new RecordingGpuDevice(retirement: Retirement);
+            Device = new RecordingGpuDevice(retirement: Retirement)
+            {
+                Capabilities = RecordingGpuDevice.DefaultCapabilities with { MaxImageDimension2D = maximumImageDimension },
+            };
             Host = UiOverlayHost.Mount(Root);
             Layer = Host.AddLayer("PluginCanvases");
             Layer.Visible = true;
-            var services = new PluginCanvasHostServices(Device, Frames, "unused", null);
+            var services = new PluginCanvasHostServices(Device, Frames, "unused", () => FramebufferPerPoint);
             Surface = new PluginCanvasSurface(services, font: null);
             MainRenderer = new TextRenderer(Device, Frames, "unused");
             MainContext = new UiRenderContext(MainRenderer, new Vector2(800f, 600f));
             Registry.BindImageServices(new FakeImageBackend());
+            Registry.BindFontServices(FontBackend);
             Device.Clear();
         }
 
@@ -114,8 +162,9 @@ public sealed class PluginCanvasElementTests
             PluginCanvasRegistration drained = Assert.Single(Registry.DrainCanvases());
             Assert.Same(registration, drained);
             var element = new PluginCanvasElement(
-                registration, Surface, () => Registry.FindImages(Owner), Reports.Add, Clock.Read);
-            Layer.AddChild(element);
+                registration, Surface, () => Registry.FindImages(Owner), Reports.Add, Clock.Read,
+                fonts: () => Registry.FindFonts(Owner));
+            Layer.AddChild(element, takesInput: descriptor.AcceptsPointerInput);
             Registry.CompleteCanvasMount(registration, () =>
             {
                 Layer.RemoveChild(element);
@@ -518,5 +567,86 @@ public sealed class PluginCanvasElementTests
         Assert.Contains("no offscreen targets here", Assert.Single(harness.Reports), StringComparison.Ordinal);
         Assert.True(registration.IsAvailable);
         Assert.Empty(harness.MainRuns);
+    }
+
+    [Fact]
+    public void TextInAPluginFontKeepsItsPlaceAndMeasuresAsItDraws()
+    {
+        var harness = new Harness();
+        PluginFont font = harness.Registry.FontsFor(harness.Owner).Bundled(16f);
+        Assert.True(font.IsValid);
+        PluginSize measured = default;
+        harness.Mount(Hud(), painter =>
+        {
+            painter.FillRect(new PluginRect(0, 0, 200, 100), new PluginColor(0, 0, 0, 160));
+            painter.DrawText("AV", new PluginPoint(4, 4), PluginColor.White, font);
+            painter.FillRect(new PluginRect(0, 50, 200, 10), PluginColor.White);
+            measured = painter.MeasureText("AV", font);
+        });
+
+        harness.Frame();
+
+        uint atlas = AcDream.App.Tests.Plugins.PluginFontTableTests.FakeFontBackend.FirstTexture;
+        Assert.Equal([0u, atlas, 0u], harness.Surface.Renderer.DebugSpriteSegmentCoverage);
+        Assert.Equal(12, harness.SurfaceRuns[1].VertexCount);
+        Assert.True(harness.Registry.FindFonts(harness.Owner)!.TryResolve(font, out CanvasFont? resolved));
+        Assert.Equal(new PluginSize(resolved.MeasureWidth("AV"), resolved.LineHeight), measured);
+        Assert.Equal(font.LineHeight, (float)measured.Height);
+    }
+
+    [Fact]
+    public void AReleasedFontDrawsNothingAndMeasuresNothing()
+    {
+        var harness = new Harness();
+        IPluginFonts fonts = harness.Registry.FontsFor(harness.Owner);
+        PluginFont font = fonts.Bundled(16f);
+        fonts.Release(font);
+        PluginSize measured = new(1, 1);
+        harness.Mount(Hud(), painter =>
+        {
+            painter.DrawText("AV", new PluginPoint(4, 4), PluginColor.White, font);
+            measured = painter.MeasureText("AV", font);
+        });
+
+        harness.Frame();
+
+        Assert.Empty(harness.SurfaceRuns);
+        Assert.Equal(default, measured);
+    }
+
+    [Fact]
+    public void APainterKeptPastItsCallbackThrowsOnFontTextToo()
+    {
+        var harness = new Harness();
+        PluginFont font = harness.Registry.FontsFor(harness.Owner).Bundled(16f);
+        IPluginPainter? kept = null;
+        harness.Mount(Hud(), painter => kept = painter);
+        harness.Frame();
+
+        Assert.Throws<InvalidOperationException>(() => kept!.DrawText("x", default, PluginColor.White, font));
+        Assert.Throws<InvalidOperationException>(() => kept!.MeasureText("x", font));
+    }
+
+    [Fact]
+    public void AFontFirstAskedForInsideAPaintIsRefusedButOneAlreadyHeldIsNot()
+    {
+        var harness = new Harness();
+        IPluginFonts fonts = harness.Registry.FontsFor(harness.Owner);
+        PluginFont held = fonts.Bundled(16f);
+        PluginFont insideNew = held;
+        PluginFont insideHeld = default;
+        harness.Mount(Hud(), painter =>
+        {
+            insideNew = fonts.Bundled(18f);
+            insideHeld = fonts.Bundled(16f);
+            painter.DrawText("AV", new PluginPoint(4, 4), PluginColor.White, insideNew);
+        });
+
+        harness.Frame();
+
+        Assert.Equal(PluginFont.None, insideNew);
+        Assert.Equal(held, insideHeld);
+        Assert.Empty(harness.SurfaceRuns);
+        Assert.True(fonts.Bundled(18f).IsValid);
     }
 }

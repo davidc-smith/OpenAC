@@ -5,9 +5,9 @@ using AcDream.Plugin.Abstractions;
 namespace AcDream.Core.Tests.Plugins;
 
 /// <summary>
-/// Both hosts hand a plugin the theme through the scoped registry: it reads
-/// the host's theme, hears each change, and stops hearing once the handler is
-/// removed or the plugin goes.
+/// Both hosts hand a plugin the theme and the screen size through the scoped
+/// registry: it reads the host's value, hears each change, and stops hearing
+/// once the handler is removed or the plugin goes.
 /// </summary>
 public sealed class ScopedUiRegistryThemeTests
 {
@@ -30,6 +30,18 @@ public sealed class ScopedUiRegistryThemeTests
         {
             Theme = theme;
             ThemeChanged?.Invoke(theme);
+        }
+
+        public PluginSize ScreenSize { get; set; }
+
+        public event Action<PluginSize>? ScreenSizeChanged;
+
+        public int ScreenSizeHandlerCount => ScreenSizeChanged?.GetInvocationList().Length ?? 0;
+
+        public void Resize(PluginSize size)
+        {
+            ScreenSize = size;
+            ScreenSizeChanged?.Invoke(size);
         }
 
         public void AddMarkupPanel(string markupPath, object binding)
@@ -128,5 +140,54 @@ public sealed class ScopedUiRegistryThemeTests
         scoped.Ui.ThemeChanged += _ => throw new InvalidOperationException("never raised");
 
         Assert.Same(PluginUiThemeInfo.Classic, scoped.Ui.Theme);
+    }
+
+    [Fact]
+    public void ThePluginReadsTheHostsScreenSizeAndHearsEachChangeUntilRemoved()
+    {
+        var inner = new FakeScopedUiRegistry { ScreenSize = new PluginSize(800, 600) };
+        using var scoped = new ScopedPluginHost(new StubHost(inner), "example.plugin", "Example");
+        var heard = new List<PluginSize>();
+        Action<PluginSize> handler = heard.Add;
+
+        Assert.Equal(new PluginSize(800, 600), scoped.Ui.ScreenSize);
+        scoped.Ui.ScreenSizeChanged += handler;
+        inner.Resize(new PluginSize(1280, 720));
+        scoped.Ui.ScreenSizeChanged -= handler;
+        inner.Resize(new PluginSize(1920, 1080));
+
+        Assert.Equal([new PluginSize(1280, 720)], heard);
+        Assert.Equal(new PluginSize(1920, 1080), scoped.Ui.ScreenSize);
+        Assert.Equal(0, inner.ScreenSizeHandlerCount);
+    }
+
+    [Fact]
+    public void DisposingThePluginTakesItsScreenSizeHandlersOffTheHost()
+    {
+        var inner = new FakeScopedUiRegistry();
+        var scoped = new ScopedPluginHost(new StubHost(inner), "example.plugin", "Example");
+        int heard = 0;
+        scoped.Ui.ScreenSizeChanged += _ => heard++;
+        scoped.Ui.ThemeChanged += _ => heard++;
+        Assert.Equal(1, inner.ScreenSizeHandlerCount);
+
+        scoped.Dispose();
+        inner.Resize(new PluginSize(1280, 720));
+        inner.Raise(Moss);
+
+        Assert.Equal(0, heard);
+        Assert.Equal(0, inner.ScreenSizeHandlerCount);
+        Assert.Equal(0, inner.HandlerCount);
+    }
+
+    [Fact]
+    public void OnAHostWithoutAScreenThePluginReadsZero()
+    {
+        using var scoped = new ScopedPluginHost(
+            new StubHost(NoOpUiRegistry.Instance), "example.plugin", "Example");
+
+        scoped.Ui.ScreenSizeChanged += _ => throw new InvalidOperationException("never raised");
+
+        Assert.Equal(new PluginSize(0, 0), scoped.Ui.ScreenSize);
     }
 }

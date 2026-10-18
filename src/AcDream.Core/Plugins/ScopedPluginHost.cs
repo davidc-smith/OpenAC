@@ -17,6 +17,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
     private readonly IPluginStatusBoard _statusBoardView;
     private bool _disposed;
     private readonly ScopedWorldLines _worldLines;
+    private readonly ScopedWorldTriangles _worldTriangles;
     private readonly string? _pluginDirectory;
     private readonly bool _isHotReload;
     private readonly ScopedMapRegistry _maps;
@@ -35,6 +36,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         _pluginDirectory = pluginDirectory;
         _isHotReload = isHotReload;
         _worldLines = new ScopedWorldLines(inner.WorldLines);
+        _worldTriangles = new ScopedWorldTriangles(inner.WorldTriangles);
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginId);
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginDisplayName);
         _pluginId = pluginId;
@@ -67,6 +69,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
     public ISelectionService Selection => _selection;
     public IUiRegistry Ui => _ui;
     public IPluginWorldLines WorldLines => _worldLines;
+    public IPluginWorldTriangles WorldTriangles => _worldTriangles;
     public IPluginStorage Storage => _storage;
     public IPluginStorage VtankProfiles => _inner.VtankProfiles;
     public IPluginCommandRegistry Commands => _commands;
@@ -179,6 +182,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         _disposed = true;
         _events.Dispose();
         _worldLines.Dispose();
+        _worldTriangles.Dispose();
         _selection.Dispose();
         _ui.Dispose();
         _commands.Dispose();
@@ -338,6 +342,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
         public IDungeonMapAutomation DungeonMap => Inner.DungeonMap;
+        public ITerrainAutomation Terrain => Inner.Terrain;
         public ISelectionAutomation Selection => Inner.Selection;
         public ITradeAutomation Trade =>
             _trade ??= new ScopedTrade(() => Inner.Trade, _eventLeases);
@@ -1024,6 +1029,32 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         {
             _disposed = true;
             foreach (IPluginWorldLineLayer layer in _layers)
+                layer.Dispose();
+            _layers.Clear();
+        }
+    }
+
+    /// <summary>
+    /// The triangle layers one plugin drew, let go together when the plugin is.
+    /// </summary>
+    private sealed class ScopedWorldTriangles(IPluginWorldTriangles inner) : IPluginWorldTriangles, IDisposable
+    {
+        private readonly List<IPluginWorldTriangleLayer> _layers = [];
+        private bool _disposed;
+
+        public IPluginWorldTriangleLayer? CreateLayer()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            IPluginWorldTriangleLayer? layer = inner.CreateLayer();
+            if (layer is not null)
+                _layers.Add(layer);
+            return layer;
+        }
+
+        public void Dispose()
+        {
+            _disposed = true;
+            foreach (IPluginWorldTriangleLayer layer in _layers)
                 layer.Dispose();
             _layers.Clear();
         }
@@ -2000,6 +2031,10 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             _directoryInner = inner as IPluginDirectoryUiRegistry;
             _owner = owner;
             _pluginDirectory = pluginDirectory;
+            _themeChanged = new ForwardedEvent<PluginUiThemeInfo>(
+                this, handler => _inner.ThemeChanged += handler, handler => _inner.ThemeChanged -= handler);
+            _screenSizeChanged = new ForwardedEvent<PluginSize>(
+                this, handler => _inner.ScreenSizeChanged += handler, handler => _inner.ScreenSizeChanged -= handler);
         }
 
         public void AddMarkupPanel(string markupPath, object binding)
@@ -2145,55 +2180,133 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
 
+        // The font surface is asked for once and kept, like the image
+        // surface; a disposable one is tracked so the plugin's fonts go with
+        // the plugin.
+        private IPluginFonts? _fonts;
+
+        public IPluginFonts Fonts
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+                    if (_fonts is null)
+                    {
+                        _fonts = _inner.FontsFor(_owner);
+                        if (_fonts is IDisposable disposable)
+                            _registrations.Add(disposable);
+                    }
+                    return _fonts;
+                }
+            }
+        }
+
+        // The world-marker surface is asked for once and kept, like the image
+        // surface; a disposable one is tracked so the plugin's layers go with
+        // the plugin.
+        private IPluginWorldMarkers? _worldMarkers;
+
+        public IPluginWorldMarkers WorldMarkers
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+                    if (_worldMarkers is null)
+                    {
+                        _worldMarkers = _inner.WorldMarkersFor(_owner);
+                        if (_worldMarkers is IDisposable disposable)
+                            _registrations.Add(disposable);
+                    }
+                    return _worldMarkers;
+                }
+            }
+        }
+
         public PluginUiThemeInfo Theme => _inner.Theme;
 
-        // Each handler is added to the host's event behind a guard that drops
-        // calls once the plugin is gone, and its removal is tracked like any
-        // other registration, so an unloaded plugin is never told of a theme.
-        private readonly List<(Action<PluginUiThemeInfo> Handler, IDisposable Subscription)> _themeHandlers = [];
+        private readonly ForwardedEvent<PluginUiThemeInfo> _themeChanged;
 
         public event Action<PluginUiThemeInfo> ThemeChanged
         {
-            add
+            add => _themeChanged.Add(value);
+            remove => _themeChanged.Remove(value);
+        }
+
+        public PluginSize ScreenSize => _inner.ScreenSize;
+
+        private readonly ForwardedEvent<PluginSize> _screenSizeChanged;
+
+        public event Action<PluginSize> ScreenSizeChanged
+        {
+            add => _screenSizeChanged.Add(value);
+            remove => _screenSizeChanged.Remove(value);
+        }
+
+        /// <summary>
+        /// One of the host's events as the plugin subscribes to it. Each
+        /// handler is added to the host's event behind a guard that drops
+        /// calls once the plugin is gone, and its removal is tracked like any
+        /// other registration, so an unloaded plugin is never called.
+        /// </summary>
+        private sealed class ForwardedEvent<T>(
+            ScopedUiRegistry owner,
+            Action<Action<T>> subscribe,
+            Action<Action<T>> unsubscribe)
+        {
+            private readonly List<(Action<T> Handler, IDisposable Subscription)> _handlers = [];
+
+            internal void Add(Action<T> value)
             {
                 ArgumentNullException.ThrowIfNull(value);
-                Action<PluginUiThemeInfo> guarded = theme =>
+                Action<T> guarded = argument =>
                 {
-                    if (!Volatile.Read(ref _disposed))
-                        value(theme);
+                    if (!Volatile.Read(ref owner._disposed))
+                        value(argument);
                 };
-                _inner.ThemeChanged += guarded;
-                var subscription = new ThemeSubscription(_inner, guarded);
-                IDisposable tracked = TrackRegistration(subscription);
-                lock (_gate)
-                    _themeHandlers.Add((value, tracked));
+                subscribe(guarded);
+                IDisposable tracked = owner.TrackRegistration(new Subscription(unsubscribe, guarded));
+                lock (owner._gate)
+                    _handlers.Add((value, tracked));
             }
-            remove
+
+            internal void Remove(Action<T>? value)
             {
                 if (value is null)
                     return;
                 IDisposable? tracked = null;
-                lock (_gate)
+                lock (owner._gate)
                 {
-                    int index = _themeHandlers.FindLastIndex(entry => entry.Handler == value);
+                    int index = _handlers.FindLastIndex(entry => entry.Handler == value);
                     if (index < 0)
                         return;
-                    tracked = _themeHandlers[index].Subscription;
-                    _themeHandlers.RemoveAt(index);
+                    tracked = _handlers[index].Subscription;
+                    _handlers.RemoveAt(index);
                 }
                 tracked.Dispose();
             }
-        }
 
-        private sealed class ThemeSubscription(IScopedUiRegistry inner, Action<PluginUiThemeInfo> handler)
-            : IDisposable
-        {
-            private Action<PluginUiThemeInfo>? _handler = handler;
-
-            public void Dispose()
+            /// <summary>Forgets every handler; the tracked registrations take them off the host.</summary>
+            internal void Clear()
             {
-                if (Interlocked.Exchange(ref _handler, null) is { } held)
-                    inner.ThemeChanged -= held;
+                lock (owner._gate)
+                    _handlers.Clear();
+            }
+
+            private sealed class Subscription(Action<Action<T>> unsubscribe, Action<T> handler) : IDisposable
+            {
+                private Action<T>? _handler = handler;
+
+                public void Dispose()
+                {
+                    if (Interlocked.Exchange(ref _handler, null) is { } held)
+                        unsubscribe(held);
+                }
             }
         }
 
@@ -2257,8 +2370,9 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 _disposed = true;
                 registrations = _registrations.ToArray();
                 _registrations.Clear();
-                _themeHandlers.Clear();
             }
+            _themeChanged.Clear();
+            _screenSizeChanged.Clear();
 
             for (int index = registrations.Length - 1; index >= 0; index--)
             {
@@ -2291,6 +2405,8 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             public int Height => inner.Height;
             public bool IsAvailable => inner.IsAvailable;
 
+            public bool TryResize(int width, int height) => inner.TryResize(width, height);
+
             public bool IsVisible
             {
                 get => inner.IsVisible;
@@ -2318,6 +2434,24 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             public void Invalidate() => inner.Invalidate();
 
             public void ReleasePointer() => inner.ReleasePointer();
+
+            public int ZOrder
+            {
+                get => inner.ZOrder;
+                set => inner.ZOrder = value;
+            }
+
+            public Func<PluginKeyEvent, bool>? KeyHandler
+            {
+                get => inner.KeyHandler;
+                set => inner.KeyHandler = value;
+            }
+
+            public bool HasKeyboardFocus => inner.HasKeyboardFocus;
+
+            public bool RequestKeyboardFocus() => inner.RequestKeyboardFocus();
+
+            public void ReleaseKeyboardFocus() => inner.ReleaseKeyboardFocus();
 
             public void Dispose()
             {

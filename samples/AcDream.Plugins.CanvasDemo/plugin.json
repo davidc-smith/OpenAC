@@ -1,0 +1,9 @@
+{
+  "id": "sample.canvas-demo",
+  "displayName": "Canvas Demo Sample",
+  "version": "1.0.0",
+  "entryDll": "AcDream.Plugins.CanvasDemo.dll",
+  "apiVersion": 1,
+  "kinds": ["gameplay"],
+  "hosts": ["graphical"]
+}

@@ -120,6 +120,7 @@ public sealed class GameWindow :
     private AcDream.App.Interaction.SelectionInteractionController? _selectionInteractions;
     private DebugLineRenderer? _debugLines;
     public AcDream.App.Plugins.PluginWorldLineStore WorldLines { get; } = new();
+    public AcDream.App.Plugins.PluginWorldTriangleStore WorldTriangles { get; } = new();
     private readonly AcDream.App.Rendering.WorldSceneDebugState
         _worldSceneDebugState = new();
 
@@ -609,6 +610,13 @@ public sealed class GameWindow :
             () => _runtimeSettings.DisplayPreview);
         _animationDiagnostics = AnimationPresentationDiagnostics.FromEnvironment();
         _uiRegistry = uiRegistry;
+        // A marker hung over an object belongs to the stay that object lives
+        // in: leaving the world, by any way out, takes every plugin's markers
+        // down. The layers stay, so plugins set them again on the next stay.
+        _ = _uiRegistry?.WorldMarkerStore.ClearOn(_worldEvents);
+        // World labels too: this window keeps one runtime for every stay, so
+        // the automation surface never rebinds and would keep them otherwise.
+        _ = _automation?.ClearWorldLabelsOn(_worldEvents);
         _renderPackRegistry = renderPackRegistry;
         _animatedEntities = new LiveEntityAnimationRuntimeView<LiveEntityAnimationState>(
             _liveEntityRuntimeSlot);
@@ -1225,14 +1233,23 @@ public sealed class GameWindow :
         return platform;
     }
 
-    private static Func<int, int, byte[]> CreateBackbufferReader(
+    // The retained capture is the swapchain's size in pixels; the frame asks
+    // in the window's points, half that on a high-density display.
+    private static Func<int, int, AcDream.App.Diagnostics.FrameCapture> CreateBackbufferReader(
         GameWindowGraphics graphics,
         IGpuDevice device) =>
         (width, height) =>
-            AcDream.App.Diagnostics.FrameScreenshotController.FlipRows(
-                device.CaptureBackbuffer(width, height),
+        {
+            if (graphics.Vulkan is { Width: > 0u, Height: > 0u } vulkan)
+                (width, height) = ((int)vulkan.Width, (int)vulkan.Height);
+            return new AcDream.App.Diagnostics.FrameCapture(
+                AcDream.App.Diagnostics.FrameScreenshotController.FlipRows(
+                    device.CaptureBackbuffer(width, height),
+                    width,
+                    height),
                 width,
                 height);
+        };
 
     private GameWindowGraphics CreateGraphics()
     {
@@ -1400,7 +1417,8 @@ public sealed class GameWindow :
                     _applicationPaths.ScreenshotsDirectory,
                     _automation,
                     GameplayInputFrame: () => _gameplayInputFrame,
-                    JournalDirectory: _applicationPaths.JournalDirectory),
+                    JournalDirectory: _applicationPaths.JournalDirectory,
+                    WorldOrigin: _liveWorldOrigin),
                 _retailUiLease,
                 this).Compose(
                     platformResult,
@@ -1579,7 +1597,9 @@ public sealed class GameWindow :
                         _frameGraphs,
                         Console.WriteLine,
                         _renderPackDiagnostics,
-                        WorldLines) { Overlay = _overlay },
+                        WorldLines,
+                        _uiRegistry?.WorldMarkerStore,
+                        WorldTriangles) { Overlay = _overlay },
                     this).Compose(
                         platformResult,
                         hostInputCamera,

@@ -58,6 +58,8 @@ public sealed class PluginCanvasTeardownOrderTests
             cache.UploadReleasableRgba8(rgba, width, height, debugName);
 
         public bool ReleaseOwned(uint texture) => cache.ReleaseUiTexture(texture);
+
+        public bool IsLinearFiltered(uint texture) => !cache.IsNearestUiTexture(texture);
     }
 
     private sealed class Harness

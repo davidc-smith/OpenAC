@@ -361,7 +361,7 @@ internal sealed class CharacterCreationUiController : IDisposable
         if (_isOpen)
         {
             Root.Visible = true;
-            _host.BringToFront(Root);
+            _host.BringToFront(Root, UiBand.Screens);
         }
         else
         {

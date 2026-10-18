@@ -274,7 +274,7 @@ public sealed class RetailDialogFactory : IDisposable
         {
             if (info.View is { } view)
             {
-                _host.BringToFront(view.Root);
+                _host.BringToFront(view.Root, UiBand.DialogsAndTooltips);
                 view.Tick();
             }
         }
@@ -395,7 +395,7 @@ public sealed class RetailDialogFactory : IDisposable
             };
             info.View = view;
             _host.AddChild(view.Root);
-            _host.BringToFront(view.Root);
+            _host.BringToFront(view.Root, UiBand.DialogsAndTooltips);
             _openOrder.Add(info);
             _host.Modal = view.Root;
             view.Tick();

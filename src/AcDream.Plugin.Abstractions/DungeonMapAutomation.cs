@@ -14,9 +14,38 @@ public readonly record struct PluginDungeonWall(Vector2 Start, Vector2 End);
 /// One cell of a floorplan: where it is and which layer it was drawn in.
 /// </summary>
 /// <param name="CellId">The full cell id, landblock in the high half.</param>
-/// <param name="Center">The middle of the cell's geometry, in landblock-local metres.</param>
+/// <param name="Center">
+/// The middle of the cell's geometry, in landblock-local metres. In a tall room it is well
+/// above the floor; a walk or preview to it stands it on the floor under it.
+/// </param>
 /// <param name="LayerZ">The <see cref="PluginDungeonLayer.Z"/> of the layer the cell is drawn in.</param>
 public readonly record struct PluginDungeonCell(uint CellId, Vector3 Center, float LayerZ);
+
+/// <summary>
+/// One opening of an indoor cell: a doorway, stairwell or other gap the data
+/// authors as a cell portal, through which the cell opens onto its
+/// neighbour. Following a cell's doorways from cell to cell walks the
+/// dungeon the way the rooms join, which straight-line distance does not.
+/// A door is an object standing in a doorway, not part of it: a doorway is
+/// listed whether its door is open, shut or locked, so a plugin that wants
+/// to know matches the door objects it sees against <see cref="Center"/>.
+/// </summary>
+/// <param name="OtherCellId">
+/// The full id of the cell on the other side, landblock in the high half;
+/// zero for an opening onto the landscape, as a building's front door is.
+/// </param>
+/// <param name="Center">
+/// The middle of the doorway, in landblock-local metres (the frame of
+/// <see cref="PluginIndoorCell.Origin"/>): the middle of the box around its
+/// corners, placed as the cell is, so both sides of one doorway give the
+/// same point. The cell's own origin when the data lacks the doorway's
+/// polygon.
+/// </param>
+public readonly record struct PluginCellDoorway(uint OtherCellId, Vector3 Center)
+{
+    /// <summary>True when the doorway opens onto the landscape rather than another cell.</summary>
+    public bool LeadsOutside => OtherCellId == 0u;
+}
 
 /// <summary>
 /// One indoor cell exactly as the game data authors it: which environment
@@ -57,6 +86,52 @@ public readonly record struct PluginIndoorCell(
     Quaternion Orientation,
     bool SeesOutside)
 {
+    private readonly IReadOnlyList<PluginCellDoorway>? _doorways;
+
+    /// <summary>
+    /// The cell's openings onto its neighbours, in the order the data lists
+    /// them; empty for a cell with none. Every doorway between two cells is
+    /// listed from both sides, almost always at the same
+    /// <see cref="PluginCellDoorway.Center"/>. The exception is one opening
+    /// shared by several cells, such as a big room's ceiling under smaller
+    /// cells: the room lists the whole opening once for each of them, while
+    /// each of them lists only its own piece, sometimes in several parts, so
+    /// one neighbour can appear more than once and the two sides' centres
+    /// differ. Two cells are equal only when their
+    /// doorways are equal in the same order. Needs contract
+    /// <c>0.1.25-fork.6</c> or later; an older host leaves it empty.
+    /// </summary>
+    public IReadOnlyList<PluginCellDoorway> Doorways
+    {
+        get => _doorways ?? Array.Empty<PluginCellDoorway>();
+        init => _doorways = value;
+    }
+
+    /// <summary>Compares every member, the doorways item by item.</summary>
+    public bool Equals(PluginIndoorCell other) =>
+        CellId == other.CellId
+        && EnvironmentId == other.EnvironmentId
+        && CellStructure == other.CellStructure
+        && Origin == other.Origin
+        && Orientation == other.Orientation
+        && SeesOutside == other.SeesOutside
+        && Doorways.SequenceEqual(other.Doorways);
+
+    /// <inheritdoc/>
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(CellId);
+        hash.Add(EnvironmentId);
+        hash.Add(CellStructure);
+        hash.Add(Origin);
+        hash.Add(Orientation);
+        hash.Add(SeesOutside);
+        foreach (PluginCellDoorway doorway in Doorways)
+            hash.Add(doorway);
+        return hash.ToHashCode();
+    }
+
     /// <summary>
     /// The turn about the vertical axis <see cref="Orientation"/> describes,
     /// in degrees from 0 up to 360, counted from east towards north. For the
@@ -196,7 +271,9 @@ public interface IDungeonMapAutomation
     /// environment piece each is built from and how it is placed -- in cell
     /// id order, read from the game data the first time it is asked for and
     /// the same list every time after. Unlike the floorplan this is the raw
-    /// placement of every cell the landblock lists, geometry or not. Empty
+    /// placement of every cell the landblock lists, geometry or not, with
+    /// the doorways each one opens through (<see cref="PluginIndoorCell.Doorways"/>),
+    /// which between them are the landblock's cell graph. Empty
     /// for a landblock the data does not have, one with no indoor cells, and
     /// on a host that cannot read the game data, which is what the default
     /// implementation always returns.

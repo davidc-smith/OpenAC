@@ -1,0 +1,9 @@
+{
+  "id": "sample.world-markers-demo",
+  "displayName": "World Markers Demo Sample",
+  "version": "1.0.0",
+  "entryDll": "AcDream.Plugins.WorldMarkersDemo.dll",
+  "apiVersion": 1,
+  "kinds": ["gameplay"],
+  "hosts": ["graphical"]
+}

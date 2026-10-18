@@ -41,6 +41,19 @@ public sealed class CreditsUiControllerTests
     }
 
     [Fact]
+    public void ActivateRaisesThePicturesAndTheTextIntoTheScreensBand()
+    {
+        using var environment = new EnvironmentHarness();
+        CreditsUiController controller = environment.Controller;
+
+        controller.Activate();
+
+        Assert.Equal(UiBand.Screens, UiBands.Of(controller.PictureRoot.ZOrder));
+        Assert.Equal(UiBand.Screens, UiBands.Of(controller.TextRoot.ZOrder));
+        Assert.True(controller.PictureRoot.ZOrder < controller.TextRoot.ZOrder);
+    }
+
+    [Fact]
     public void AnyKey_ShowsWaitForAFrame_ThenReturnsToCharacterManagement()
     {
         using var environment = new EnvironmentHarness();

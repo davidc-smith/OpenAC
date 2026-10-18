@@ -181,6 +181,16 @@ public sealed class RuntimeCommunicationState : IDisposable
     }
 
     public void AddText(string text, RetailLogTextType type, uint windowId = 0)
+        => AddText(text, type, allowsMarkup: false);
+
+    /// <summary>
+    /// Writes a line a plugin posted, whose <c>&lt;TYPE:FORMAT:data&gt;</c>
+    /// tags are read as links in the transcript.
+    /// </summary>
+    public void AddPluginText(string text, RetailLogTextType type)
+        => AddText(text, type, allowsMarkup: true);
+
+    private void AddText(string text, RetailLogTextType type, bool allowsMarkup)
     {
         ArgumentNullException.ThrowIfNull(text);
 
@@ -211,7 +221,7 @@ public sealed class RuntimeCommunicationState : IDisposable
             return;
         }
 
-        Chat.OnSystemMessage(text, (uint)type);
+        Chat.OnSystemMessage(text, (uint)type, allowsMarkup);
     }
 
     public void Dispose()

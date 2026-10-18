@@ -13,8 +13,6 @@ public sealed class UiMarkupTabButton : UiSimpleButton
     private static readonly Vector4 Underline =
         new(0.77f, 0.59f, 0.12f, 1f);
 
-    public PluginUiPalette? ThemePalette { get; set; }
-
     /// <summary>The alpha an unselected tab draws its icon at, so it recedes like its caption.</summary>
     internal const float InactiveIconAlpha = 0.55f;
 
@@ -37,14 +35,21 @@ public sealed class UiMarkupTabButton : UiSimpleButton
     {
         base.OnTick(deltaSeconds);
         TextColor = !Enabled
-            ? DisabledText
-            : IsSelected ? ThemePalette?.Accent ?? ActiveText : ThemePalette?.Muted ?? NormalText;
+            ? ThemePalette?.Muted ?? DisabledText
+            : IsSelected ? ThemePalette?.Text ?? ActiveText : ThemePalette?.Muted ?? NormalText;
+    }
+
+    private protected override void DrawThemedFace(UiRenderContext ctx, PluginUiPalette palette)
+    {
+        PluginUiStyle.Tab(ctx, palette, Width, Height, IsSelected, ThemeState);
+        if (KeyboardFocused)
+            PluginUiStyle.FocusRing(ctx, palette, Width, Height, PluginUiStyle.ControlRadius);
     }
 
     protected override void OnDraw(UiRenderContext ctx)
     {
         base.OnDraw(ctx);
-        if (IsSelected)
-            ctx.DrawFill(2f, Height - 2f, MathF.Max(0f, Width - 4f), 1f, ThemePalette?.Accent ?? Underline);
+        if (IsSelected && ThemePalette is null)
+            ctx.DrawFill(2f, Height - 2f, MathF.Max(0f, Width - 4f), 1f, Underline);
     }
 }

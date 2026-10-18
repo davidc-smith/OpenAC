@@ -43,3 +43,29 @@ public sealed record PluginThemePalette(
     PluginColor Muted,
     PluginColor Accent,
     PluginColor Selected);
+
+/// <summary>
+/// The sizes themed windows are drawn with, in interface pixels, so a canvas
+/// drawn to match uses the same ones. They are constants: a plugin takes the
+/// values of the contract it was built against.
+/// </summary>
+public static class PluginThemeMetrics
+{
+    /// <summary>The corner radius of a themed window.</summary>
+    public const float WindowRadius = 10f;
+
+    /// <summary>The corner radius of a button, input or other control.</summary>
+    public const float ControlRadius = 6f;
+
+    /// <summary>The height of a themed window's title band.</summary>
+    public const float HeaderHeight = 24f;
+
+    /// <summary>The width of a switch's track.</summary>
+    public const float SwitchWidth = 26f;
+
+    /// <summary>The height of a switch's track.</summary>
+    public const float SwitchHeight = 14f;
+
+    /// <summary>The diameter of a switch's knob.</summary>
+    public const float SwitchKnob = 8f;
+}

@@ -120,11 +120,17 @@ constructor. The host creates it with no arguments, then calls:
   `Enable`: unsubscribe events, release hotkeys, stop timers.
 
 `IPluginHost` gives you `State`, `Events`, `Commands`, `Storage`, `Log`,
-`Ui`, `Window`, `Clipboard`, `Hotkeys`, `WorldLines` and `Automation`.
-`WorldLines` draws lines in the world (a route, say) in layers the plugin
-owns; a host without a window hands out no layer. Only the parts of lines
-within 250 m of the camera are drawn, and a frame draws a fixed amount of
-them: past that, the lines nearest the camera are kept. `Automation` is the
+`Ui`, `Window`, `Clipboard`, `Hotkeys`, `WorldLines`, `WorldTriangles` and
+`Automation`. `WorldLines` draws lines in the world (a route, say) in layers
+the plugin owns; a host without a window hands out no layer. Only the parts
+of lines within 250 m of the camera are drawn, and a frame draws a fixed
+amount of them: past that, the lines nearest the camera are kept.
+`WorldTriangles` fills see-through triangles the same way, such as ground a
+plugin shades (see [World triangles](plugin-api.md#world-triangles)). `Ui` registers
+windows and also hands out what a plugin draws for itself:
+`Ui.WorldMarkers` (icons over objects and shapes on the ground), `Ui.Images`,
+`Ui.Fonts` and canvases (`Ui.RegisterCanvas`), all covered in the
+[plugin API guide](plugin-api.md#world-markers). `Automation` is the
 large surface: character, items, spells, combat, world objects, trade,
 vendor, navigation, fellowship, login. Check `IsAvailable` on a surface
 before relying on it; a host that cannot provide something returns an inert
@@ -184,11 +190,11 @@ that failed to start is tried again the same way. The same happens when the
 launcher updates your plugin while a game is running.
 
 A reload switches the running copy off (`Disable`), then releases everything
-the host handed it: panels, canvases and images; commands; hotkeys; handlers
+the host handed it: panels, canvases, images and fonts; commands; hotkeys; handlers
 on `Events` and `Selection`; chat filters, input interceptors and chat
 handlers; the handlers on `Automation.Trade`, `Automation.Vendor`,
 `Automation.Equipment` and `Automation.Navigation`, its walk and its pauses;
-world labels and world lines; maps, HUDs and textures; loot classifiers;
+world labels, world lines and world-marker layers; maps, HUDs and textures; loot classifiers;
 status lines. Then it unloads the old assemblies, creates the new copy, and
 calls `Initialize` and `Enable` as at startup. `IPluginHost.IsHotReload` is
 true for that new copy. If the character is already in the world, the new
@@ -254,6 +260,7 @@ Mode: plugin .zip (a release asset)
 [PASS] manifest satisfies install rules
 [PASS] plugin content policy
 [PASS] plugin icon
+[SKIP] plugin svg icon
 [PASS] sha256 sidecar
 
 Verdict: this plugin would install.
@@ -299,6 +306,14 @@ loads locally. The headlines:
 - Managed files only, by extension allowlist; no `runtimes/` folder.
 - An optional `icon.png` at the zip root: PNG, exactly 64x64, at most 64 KiB,
   not animated. No icon is fine; a broken one refuses the whole install.
+- Optional SVG icons (`icon.svg` at the root, or any `.svg` path a window's
+  `IconFile` names): at most 16 KiB each. See
+  [SVG icons](plugin-ui-markup.md#svg-icons) for what the client draws.
+- Optional per-window PNG icons (any `.png` path a window's `IconFile`
+  names): the client applies the `icon.png` rules (64x64, at most 64 KiB) and
+  falls back to the next icon if one breaks them; the launcher checks them
+  only as ordinary `.png` files. See
+  [PNG dock icons](plugin-ui-markup.md#png-dock-icons).
 - Declare [capabilities](plugin-manifest.md#capabilities) for anything the
   player would want to know about — network access, chat, input automation.
   The launcher shows them before installing and asks again when an update

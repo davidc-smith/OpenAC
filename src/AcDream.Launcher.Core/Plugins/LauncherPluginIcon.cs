@@ -14,6 +14,13 @@ public static class LauncherPluginIcon
     public const int Extent = 64;
     public const int MaximumBytes = 64 * 1024;
 
+    /// <summary>The plugin's optional <c>icon.svg</c>. The launcher never draws it, so it checks
+    /// only the size; the client parses it and falls back to the next icon if it cannot.</summary>
+    public const string SvgFileName = "icon.svg";
+
+    /// <summary>The largest <c>.svg</c> file a plugin may ship, matching the client's limit.</summary>
+    public const int SvgMaximumBytes = 16 * 1024;
+
     private static readonly byte[] Signature = [137, 80, 78, 71, 13, 10, 26, 10];
 
     public static void Validate(ReadOnlySpan<byte> bytes)

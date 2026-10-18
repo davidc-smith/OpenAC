@@ -3,14 +3,15 @@ using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Xml.Linq;
+using AcDream.App.UI.Layout.Flex;
 using AcDream.Plugin.Abstractions;
 
 namespace AcDream.App.UI;
 
 public static class MarkupDocument
 {
-    private const uint RuntimeTooltipRootElementId = 0x10000397u;
-    private const uint RuntimeTooltipLayoutDid = 0x21000041u;
+    internal const uint RuntimeTooltipRootElementId = 0x10000397u;
+    internal const uint RuntimeTooltipLayoutDid = 0x21000041u;
 
     /// <summary>
     /// What separates the edge names in an anchor attribute. An author writes
@@ -22,6 +23,18 @@ public static class MarkupDocument
         string xml, object binding, Func<uint, (uint, int, int)> resolve,
         ControlsIni? style = null, UiDatFont? datFont = null,
         IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null)
+        => BuildWindow(xml, binding, resolve, style, datFont, icons, themes).Frame;
+
+    /// <summary>
+    /// Builds a markup window and what mounting it needs (see
+    /// <see cref="MarkupWindow"/>). <paramref name="fallbackTitle"/> names the
+    /// title bar when the markup has no <c>title</c>: the registration's title.
+    /// </summary>
+    internal static MarkupWindow BuildWindow(
+        string xml, object binding, Func<uint, (uint, int, int)> resolve,
+        ControlsIni? style = null, UiDatFont? datFont = null,
+        IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null,
+        string? fallbackTitle = null)
     {
         var root = XDocument.Parse(xml).Root ?? throw new FormatException("empty markup");
         if (root.Name.LocalName != "panel")
@@ -32,13 +45,38 @@ public static class MarkupDocument
         UiNineSlicePanel panel = themed
             ? new UiPluginMarkupPanel(resolve, themes ?? new PluginUiThemeSettings())
             : new UiNineSlicePanel(resolve);
+
+        // A window with chrome or a flex layout has a content area: its authored
+        // sizes are the area inside the border (and title bar), and the frame
+        // adds the chrome. A root with layout gets the title bar by default.
+        bool hasLayout = MarkupFlexAttributes.IsContainer(root);
+        bool hasTitleBar = TitleBar(root, hasLayout);
+        bool hasContentArea = hasLayout || hasTitleBar;
+        var (rootScrollX, rootScrollY) = MarkupFlexAttributes.Scroll(root);
+        if ((rootScrollX || rootScrollY) && !hasContentArea)
+            throw new FormatException(
+                $"<panel scroll=\"{(string?)root.Attribute("scroll")}\"> scrolls the window's content area, "
+                + "which needs layout=\"row|column\" or titlebar=\"true\" on the panel");
+        float chromeW = hasContentArea ? PluginWindowChrome.HorizontalInsets : 0f;
+        float chromeH = hasContentArea ? PluginWindowChrome.VerticalInsetsFor(hasTitleBar) : 0f;
+        if (!hasLayout) MarkupFlexAttributes.RejectContainer(root);
+
+        // A layout root may leave its size to its content; it is measured once
+        // its children exist (below), so these are provisional for it.
+        float? authoredW = hasLayout ? MarkupFlexAttributes.RootSize(root, "w") : F(root, "w");
+        float? authoredH = hasLayout ? MarkupFlexAttributes.RootSize(root, "h") : F(root, "h");
+        float? authoredMinW = hasLayout ? MarkupFlexAttributes.RootSize(root, "minw") : null;
+        float? authoredMinH = hasLayout ? MarkupFlexAttributes.RootSize(root, "minh") : null;
+        float contentW = authoredW ?? 0f, contentH = authoredH ?? 0f;
         panel.Left = F(root, "x"); panel.Top = F(root, "y");
-        panel.Width = F(root, "w"); panel.Height = F(root, "h");
+        panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
 
         bool resizable = B(root, "resizable", false);
         panel.Resizable = resizable;
-        panel.MinWidth = FOr(root, "minw", panel.Width);
-        panel.MinHeight = FOr(root, "minh", panel.Height);
+        panel.MinWidth = hasContentArea
+            ? PluginWindowChrome.FrameMinimumWidth(FOr(root, "minw", contentW), hasTitleBar)
+            : FOr(root, "minw", contentW);
+        panel.MinHeight = FOr(root, "minh", contentH) + chromeH;
         panel.ResizeX = resizable;
         panel.ResizeY = resizable;
 
@@ -63,20 +101,91 @@ public static class MarkupDocument
         }
 
         string? title = (string?)root.Attribute("title");
-        if (!string.IsNullOrEmpty(title))
+        Vector4 titleColor = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
+        UiElement contentParent = panel;
+        UiPluginContentHost? content = null;
+        PluginTitleBar? titleBar = null;
+        if (hasTitleBar)
         {
-            Vector4 tc = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
+            titleBar = new PluginTitleBar(resolve, panel.Width)
+            {
+                Title = string.IsNullOrEmpty(title) ? fallbackTitle ?? string.Empty : title,
+                DatFont = datFont,
+                TextColor = titleColor,
+            };
+            titleBar.Close.AuthoredTooltipRootElementId = RuntimeTooltipRootElementId;
+            titleBar.Close.AuthoredTooltipLayoutDid = RuntimeTooltipLayoutDid;
+            titleBar.Close.AuthoredTooltipEnabled = true;
+            panel.AddChild(titleBar);
+            if (panel is UiPluginMarkupPanel barPanel)
+            {
+                barPanel.HasTitle = true;
+                PluginMarkupTheme.RegisterTitleBar(barPanel, titleBar);
+            }
+        }
+        else if (!hasLayout && !string.IsNullOrEmpty(title))
+        {
             panel.AddChild(new UiLabel
             {
-                Text = title, Left = 8, Top = 4, TextColor = tc, DatFont = datFont,
+                Text = title, Left = 8, Top = 4, TextColor = titleColor, DatFont = datFont,
             });
+            if (panel is UiPluginMarkupPanel titlePanel && panel.Children[0] is UiLabel titleLabel)
+            {
+                titlePanel.HasTitle = true;
+                PluginMarkupTheme.Register(titlePanel, titleLabel, new XElement("label"));
+                PluginMarkupTheme.RegisterTitle(titlePanel, titleLabel);
+            }
+        }
+        if (hasContentArea)
+        {
+            content = new UiPluginContentHost
+            {
+                Left = PluginWindowChrome.Border,
+                Top = PluginWindowChrome.TopInset(hasTitleBar),
+                Width = contentW,
+                Height = contentH,
+            };
+            panel.AddChild(content);
+            contentParent = content;
         }
 
-        if (panel is UiPluginMarkupPanel titlePanel && panel.Children.Count > 0)
-            PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
+        UiFlexBox? rootFlex = null;
+        if (hasLayout)
+        {
+            rootFlex = content!.UseFlex();
+            MarkupFlexAttributes.ReadContainer(root, rootFlex.Node);
+        }
+        if (rootScrollX || rootScrollY)
+        {
+            content!.UseScroll(rootScrollX, rootScrollY, resolve);
+            if (panel is UiPluginMarkupPanel scrollPanel) content.ScrollArea!.RegisterTheme(scrollPanel);
+        }
 
         foreach (var el in root.Elements())
-            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes);
+            AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, rootFlex);
+
+        if (rootFlex is not null)
+        {
+            // The window's first measurement, with the fonts and theme known
+            // now: it sizes a root that states no w/h, and sets the minimum, so
+            // mounting and registration see real geometry. An authored size
+            // below the content's minimum opens at the minimum.
+            FlexMeasurement measured = rootFlex.MeasureNow();
+            float minW = authoredMinW ?? measured.Minimum.Width;
+            float minH = authoredMinH ?? measured.Minimum.Height;
+            contentW = MathF.Max(authoredW ?? measured.Preferred.Width, minW);
+            contentH = MathF.Max(authoredH ?? measured.Preferred.Height, minH);
+            panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
+            panel.MinWidth = PluginWindowChrome.FrameMinimumWidth(minW, hasTitleBar); panel.MinHeight = minH + chromeH;
+            content!.Width = contentW; content.Height = contentH;
+        }
+        if (hasTitleBar && panel.Width < PluginWindowChrome.MinimumBarFrameWidth)
+        {
+            // A window narrower than its title bar needs opens at the bar's minimum.
+            panel.Width = panel.MinWidth;
+            content!.Width = panel.Width - chromeW;
+        }
+        titleBar?.SetFrameWidth(panel.Width);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -85,8 +194,29 @@ public static class MarkupDocument
         // would otherwise measure its children against the resized parent the first
         // time it is opened.
         panel.CaptureAuthoredAnchorBaselines();
-        return panel;
+
+        int revision = hasContentArea
+            ? RetailWindowManager.ComputeAuthoredGeometryRevision(PluginWindowChrome.AuthoredInputs(root))
+            : RetailWindowManager.ComputeAuthoredGeometryRevision(
+                panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
+        var window = new MarkupWindow(panel, contentParent, titleBar, revision) { Canvases = CollectCanvases(panel) };
+        if (rootFlex is not null)
+            window.TrackContentMinimum(content!, chromeH, authoredMinW, authoredMinH);
+        return window;
     }
+
+    /// <summary>
+    /// Whether the root asks for the host title bar: <c>titlebar</c> when it
+    /// is given, else on exactly when the root uses <c>layout</c>.
+    /// </summary>
+    private static bool TitleBar(XElement root, bool hasLayout) => (string?)root.Attribute("titlebar") switch
+    {
+        null => hasLayout,
+        "false" => false,
+        "true" => true,
+        string other => throw new FormatException(
+            $"<panel titlebar=\"{other}\"> must be true or false"),
+    };
 
     private static void AddElement(
         UiElement parent,
@@ -94,9 +224,11 @@ public static class MarkupDocument
         object binding,
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
-        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes)
+        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
+        UiFlexBox? flex = null)
     {
         int firstChild = parent.Children.Count;
+        if (flex is null) MarkupFlexAttributes.RejectItem(el);
         void BindColorSource(string? expression, object model, Action<Vector4> setValue,
             Action<Func<Vector4>> setSource)
         {
@@ -113,21 +245,38 @@ public static class MarkupDocument
         switch (el.Name.LocalName)
         {
             case "group":
-                var group = new UiPanel
+                UiFlexBox? groupFlex = null;
+                UiPanel group;
+                var (scrollX, scrollY) = MarkupFlexAttributes.Scroll(el);
+                bool scrolls = scrollX || scrollY;
+                if (MarkupFlexAttributes.IsContainer(el))
                 {
-                    Left = F(el, "x"),
-                    Top = F(el, "y"),
-                    Width = F(el, "w"),
-                    Height = F(el, "h"),
-                    BackgroundColor = el.Attribute("background") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("background")),
-                    BorderColor = el.Attribute("border") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("border")),
-                    BorderThickness = el.Attribute("border") is null ? 0f : 1f,
-                    ClickThrough = true,
-                };
+                    var flexGroup = new UiFlexGroup();
+                    MarkupFlexAttributes.ReadContainer(el, flexGroup.Flex.Node);
+                    if (scrolls) flexGroup.UseScroll(scrollX, scrollY, resolve);
+                    groupFlex = flexGroup.Flex;
+                    group = flexGroup;
+                }
+                else
+                {
+                    MarkupFlexAttributes.RejectContainer(el);
+                    group = scrolls ? new UiScrollPanel(scrollX, scrollY, resolve) : new UiPanel();
+                }
+                if (themedPanel is not null && group is IUiScrollHost { ScrollArea: { } groupScroll })
+                    groupScroll.RegisterTheme(themedPanel);
+                group.Left = F(el, "x");
+                group.Top = F(el, "y");
+                group.Width = F(el, "w");
+                group.Height = F(el, "h");
+                group.BackgroundColor = el.Attribute("background") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("background"));
+                group.BorderColor = el.Attribute("border") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("border"));
+                group.BorderThickness = el.Attribute("border") is null ? 0f : 1f;
+                // A scrolling group is hit-testable so the wheel reaches it over empty space.
+                group.ClickThrough = !scrolls;
                 BindColorSource(
                     (string?)el.Attribute("background"), binding,
                     value => group.BackgroundColor = value,
@@ -139,7 +288,7 @@ public static class MarkupDocument
                 ApplyCommon(group, el, binding);
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
-                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes);
+                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, groupFlex);
                 break;
 
             case "meter":
@@ -250,34 +399,46 @@ public static class MarkupDocument
                     if (el.Attribute("iconkind") is not null)
                     {
                         throw new FormatException(
-                            "iconkind applies to button, tab and list; icon derives its kind from did/spell/item");
+                            "iconkind applies to button, tab and list; icon derives its kind from did/spell/item/file");
                     }
 
                     string? didAttr = (string?)el.Attribute("did");
                     string? spellAttr = (string?)el.Attribute("spell");
                     string? itemAttr = (string?)el.Attribute("item");
+                    string? fileAttr = (string?)el.Attribute("file");
                     int sourceCount = (didAttr is not null ? 1 : 0)
                         + (spellAttr is not null ? 1 : 0)
-                        + (itemAttr is not null ? 1 : 0);
+                        + (itemAttr is not null ? 1 : 0)
+                        + (fileAttr is not null ? 1 : 0);
                     if (sourceCount != 1)
                     {
                         throw new FormatException(
-                            "<icon> requires exactly one of did/spell/item");
+                            "<icon> requires exactly one of did/spell/item/file");
                     }
 
-                    string iconKind = didAttr is not null ? "did"
-                        : spellAttr is not null ? "spell"
-                        : "item";
-                    string iconExpression = didAttr ?? spellAttr ?? itemAttr!;
-                    Func<uint> iconReader = BindUintLiteralOrBinding(
-                        iconExpression, binding, $"icon {iconKind}");
+                    Func<(uint tex, int w, int h)> iconSource;
+                    if (fileAttr is not null)
+                    {
+                        iconSource = BuildFileIconSource(
+                            BindPathLiteralOrBinding(fileAttr, binding, "icon file"), icons);
+                    }
+                    else
+                    {
+                        string iconKind = didAttr is not null ? "did"
+                            : spellAttr is not null ? "spell"
+                            : "item";
+                        string iconExpression = didAttr ?? spellAttr ?? itemAttr!;
+                        Func<uint> iconReader = BindUintLiteralOrBinding(
+                            iconExpression, binding, $"icon {iconKind}");
+                        iconSource = BuildIconSource(iconKind, iconReader, icons);
+                    }
                     var icon = new UiMarkupIcon
                     {
                         Left = F(el, "x"),
                         Top = F(el, "y"),
                         Width = FOr(el, "w", 32f),
                         Height = FOr(el, "h", 32f),
-                        IconSource = BuildIconSource(iconKind, iconReader, icons),
+                        IconSource = iconSource,
                     };
                     ApplyCommon(icon, el, binding);
                     string? iconTooltip = (string?)el.Attribute("tooltip");
@@ -658,13 +819,26 @@ public static class MarkupDocument
                     if (!string.IsNullOrWhiteSpace(listIcons))
                     {
                         string? listIconKind = (string?)el.Attribute("iconkind");
-                        ValidateIconKind(listIconKind);
-                        Func<IReadOnlyList<uint>> listIconIdsReader =
-                            BindUintList(listIcons, binding, "list icons");
-                        if (icons is not null)
+                        if (ValidateIconKind(listIconKind) == "file")
                         {
-                            list.IconIdsSource = listIconIdsReader;
-                            list.IconResolve = BuildRowIconResolve(listIconKind, icons);
+                            Func<IReadOnlyList<string>> listPathsReader =
+                                BindStringList(listIcons, binding, "list icons");
+                            if (icons is not null)
+                            {
+                                var fileIds = new FileIconIds(icons);
+                                list.IconIdsSource = fileIds.Ids(listPathsReader);
+                                list.IconResolve = fileIds.Resolve;
+                            }
+                        }
+                        else
+                        {
+                            Func<IReadOnlyList<uint>> listIconIdsReader =
+                                BindUintList(listIcons, binding, "list icons");
+                            if (icons is not null)
+                            {
+                                list.IconIdsSource = listIconIdsReader;
+                                list.IconResolve = BuildRowIconResolve(listIconKind, icons);
+                            }
                         }
                     }
                 }
@@ -672,11 +846,104 @@ public static class MarkupDocument
                 parent.AddChild(list);
                 break;
 
+            case "canvas":
+            {
+                string? canvasId = (string?)el.Attribute("id") ?? (string?)el.Attribute("name");
+                if (string.IsNullOrWhiteSpace(canvasId))
+                {
+                    throw new FormatException(
+                        "<canvas> needs an id: the CanvasId of the plugin canvas, registered with InMarkup, it shows");
+                }
+                var canvas = new UiMarkupCanvas(canvasId)
+                {
+                    Left = F(el, "x"),
+                    Top = F(el, "y"),
+                    Width = F(el, "w"),
+                    Height = F(el, "h"),
+                };
+                ApplyCommon(canvas, el, binding);
+                parent.AddChild(canvas);
+                break;
+            }
+
             default:
                 throw new FormatException($"unknown element <{el.Name.LocalName}>");
         }
         if (themedPanel is not null && parent.Children.Count > firstChild)
             PluginMarkupTheme.Register(themedPanel, parent.Children[firstChild], el);
+        if (flex is not null && parent.Children.Count > firstChild)
+            AddFlexItem(flex, parent.Children[firstChild], el);
+    }
+
+    /// <summary>
+    /// Enters <paramref name="element"/>, just built from <paramref name="el"/>
+    /// under a flex container, into that container's layout: a flex group as an
+    /// inner node, an absolute group as a leaf of its authored size, any other
+    /// control as a leaf measured by <see cref="MarkupContentSize"/>. The
+    /// container places it, so it keeps no anchors.
+    /// </summary>
+    private static void AddFlexItem(UiFlexBox flex, UiElement element, XElement el)
+    {
+        UiFlexItem item = element is UiFlexGroup group
+            ? flex.AddContainer(group, group.Flex)
+            : flex.AddLeaf(element, new FlexNode(),
+                el.Name.LocalName == "group" ? AbsoluteGroupSize(element) : null);
+        MarkupFlexAttributes.ReadItem(el, item.Node);
+        element.Anchors = AnchorEdges.None;
+        if (element is UiLabel label) label.SizedByLayout = true;
+        if (element is UiMenu menu)
+        {
+            // A flex menu has no authored w (the container sizes it), so its
+            // popup column would stay at the 20-point minimum; match the popup
+            // to the laid-out menu on every open, as an absolute menu's is.
+            Action? refresh = menu.BeforeOpen;
+            menu.BeforeOpen = () =>
+            {
+                refresh?.Invoke();
+                menu.ColumnWidth = MathF.Max(20f, menu.Width);
+            };
+        }
+    }
+
+    /// <summary>
+    /// The window's <c>&lt;canvas&gt;</c> elements in document order. One
+    /// window shows a canvas once, so an id used twice is an authoring error.
+    /// </summary>
+    private static IReadOnlyList<UiMarkupCanvas> CollectCanvases(UiElement root)
+    {
+        var canvases = new List<UiMarkupCanvas>();
+        Collect(root);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (UiMarkupCanvas canvas in canvases)
+        {
+            if (!seen.Add(canvas.CanvasId))
+            {
+                throw new FormatException(
+                    $"more than one <canvas id=\"{canvas.CanvasId}\"> in one window; a canvas is shown in one place");
+            }
+        }
+        return canvases;
+
+        void Collect(UiElement element)
+        {
+            if (element is UiMarkupCanvas canvas) canvases.Add(canvas);
+            foreach (UiElement child in element.Children)
+                Collect(child);
+        }
+    }
+
+    /// <summary>
+    /// An absolute group's content size in a flex container: its authored
+    /// size, which is also its minimum, except along an axis it scrolls, where
+    /// it can shrink to a 40-point viewport (plus the other axis's bar).
+    /// </summary>
+    private static FlexMeasurement AbsoluteGroupSize(UiElement group)
+    {
+        var size = new FlexSize(group.Width, group.Height);
+        if (group is not UiScrollPanel { ScrollArea: var area }) return new FlexMeasurement(size, size);
+        float minW = area.ScrollsX ? FlexLayout.MinimumScrollViewport + (area.ScrollsY ? UiScrollArea.BarSize : 0f) : size.Width;
+        float minH = area.ScrollsY ? FlexLayout.MinimumScrollViewport + (area.ScrollsX ? UiScrollArea.BarSize : 0f) : size.Height;
+        return new FlexMeasurement(size, new FlexSize(MathF.Min(minW, size.Width), MathF.Min(minH, size.Height)));
     }
 
     /// <summary>
@@ -691,7 +958,14 @@ public static class MarkupDocument
         if (iconExpression is null)
             return;
         string? iconKind = (string?)el.Attribute("iconkind");
-        ValidateIconKind(iconKind);
+        if (ValidateIconKind(iconKind) == "file")
+        {
+            Func<string?> pathReader = BindPathLiteralOrBinding(iconExpression, binding, context);
+            if (icons is not null)
+                button.IconSource = BuildFileIconSource(pathReader, icons);
+            return;
+        }
+
         Func<uint> iconReader = BindUintLiteralOrBinding(iconExpression, binding, context);
         if (icons is not null)
             button.IconSource = BuildIconSource(iconKind, iconReader, icons);
@@ -700,9 +974,9 @@ public static class MarkupDocument
     private static string ValidateIconKind(string? iconKind, string context = "iconkind") =>
         (iconKind ?? "did") switch
         {
-            "did" or "spell" or "item" => iconKind ?? "did",
+            "did" or "spell" or "item" or "file" => iconKind ?? "did",
             var other => throw new FormatException(
-                $"{context} must be did, spell, or item (got \"{other}\")"),
+                $"{context} must be did, spell, item, or file (got \"{other}\")"),
         };
 
     private static bool ValidateArtStyle(string elementName, string? style) => style switch
@@ -743,6 +1017,82 @@ public static class MarkupDocument
             _ => throw new InvalidOperationException(
                 "unreachable — ValidateIconKind already rejected anything else"),
         };
+    }
+
+    private static Func<(uint tex, int w, int h)> BuildFileIconSource(
+        Func<string?> pathReader, IMarkupIconResolver? icons)
+    {
+        if (icons is null)
+            return static () => (0u, 0, 0);
+        return () => pathReader() is { } path && !string.IsNullOrWhiteSpace(path)
+            ? icons.ResolveFile(path)
+            : (0u, 0, 0);
+    }
+
+    /// <summary>
+    /// A file path written literally or bound to a string property. Like every
+    /// other binding, a missing property or one of the wrong type throws at
+    /// build; a null or blank path at draw time draws nothing.
+    /// </summary>
+    private static Func<string?> BindPathLiteralOrBinding(
+        string expression, object binding, string context)
+    {
+        if (!IsBinding(expression))
+            return () => expression;
+        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        if (property is null || property.PropertyType != typeof(string))
+        {
+            throw new FormatException(
+                $"{expression} did not resolve to a string property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return () => (string?)property.GetValue(binding);
+    }
+
+    /// <summary>
+    /// Lists and columns carry icons as numbers, 0 meaning none. For file icons
+    /// each distinct path gets its own number here, so the list's drawing stays
+    /// the same for every kind of icon; a null or blank path is 0.
+    /// </summary>
+    private sealed class FileIconIds(IMarkupIconResolver? icons)
+    {
+        private const int MaximumPaths = 4096;
+        private readonly Dictionary<string, uint> _ids = new(StringComparer.Ordinal);
+        private readonly List<string> _paths = [];
+
+        internal Func<IReadOnlyList<uint>> Ids(Func<IReadOnlyList<string>> paths) => () =>
+        {
+            IReadOnlyList<string> current = paths();
+            // Forget every path at once rather than mid-list, so no number in
+            // one answer can point at a path a later row replaced.
+            if (_paths.Count + current.Count > MaximumPaths)
+            {
+                _ids.Clear();
+                _paths.Clear();
+            }
+            var ids = new uint[current.Count];
+            for (int i = 0; i < ids.Length; i++)
+                ids[i] = IdFor(current[i]);
+            return ids;
+        };
+
+        internal (uint tex, int w, int h) Resolve(uint id) =>
+            icons is not null && id != 0u && id <= _paths.Count
+                ? icons.ResolveFile(_paths[(int)id - 1])
+                : (0u, 0, 0);
+
+        private uint IdFor(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return 0u;
+            if (!_ids.TryGetValue(path, out uint id))
+            {
+                _paths.Add(path);
+                id = (uint)_paths.Count;
+                _ids[path] = id;
+            }
+            return id;
+        }
     }
 
     private static Func<uint> BindUintLiteralOrBinding(
@@ -998,21 +1348,52 @@ public static class MarkupDocument
             }
             case "icon":
             {
-                var valuesSource = BindRequiredUintList(
-                    (string?)columnEl.Attribute("values"), binding, ColumnContext(index, "icon", "values"));
                 string? iconKind = (string?)columnEl.Attribute("iconkind");
-                ValidateIconKind(iconKind, ColumnContext(index, "icon", "iconkind"));
+                bool fileKind = ValidateIconKind(iconKind, ColumnContext(index, "icon", "iconkind")) == "file";
+                Func<IReadOnlyList<uint>> valuesSource;
+                Func<uint, (uint, int, int)>? resolve = null;
+                if (fileKind)
+                {
+                    string? valuesAttr = (string?)columnEl.Attribute("values");
+                    if (string.IsNullOrWhiteSpace(valuesAttr))
+                        throw new FormatException($"{ColumnContext(index, "icon", "values")} is required");
+                    Func<IReadOnlyList<string>> paths =
+                        BindStringList(valuesAttr, binding, ColumnContext(index, "icon", "values"));
+                    var fileIds = new FileIconIds(icons);
+                    valuesSource = fileIds.Ids(paths);
+                    if (icons is not null) resolve = fileIds.Resolve;
+                }
+                else
+                {
+                    valuesSource = BindRequiredUintList(
+                        (string?)columnEl.Attribute("values"), binding, ColumnContext(index, "icon", "values"));
+                    if (icons is not null) resolve = BuildRowIconResolve(iconKind, icons);
+                }
                 var onClick = BindRequiredIntAction(
                     (string?)columnEl.Attribute("onclick"), binding, ColumnContext(index, "icon", "onclick"));
-                Func<uint, (uint, int, int)>? resolve = icons is not null
-                    ? BuildRowIconResolve(iconKind, icons)
-                    : null;
                 return UiMarkupListColumn.Icon(width, valuesSource, resolve, onClick, isAutoWidth);
+            }
+            case "button":
+            {
+                var captionSource = BindStringList(
+                    (string?)columnEl.Attribute("items"), binding, ColumnContext(index, "button", "items"));
+                var onClick = BindRequiredIntAction(
+                    (string?)columnEl.Attribute("onclick"), binding, ColumnContext(index, "button", "onclick"));
+                return UiMarkupListColumn.Button(width, captionSource, onClick, isAutoWidth,
+                    ButtonSize(columnEl, "buttonw", index), ButtonSize(columnEl, "buttonh", index));
             }
             default:
                 throw new FormatException(
-                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, or icon)");
+                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, icon, or button)");
         }
+    }
+
+    private static float ButtonSize(XElement columnEl, string attribute, int index)
+    {
+        float size = FOr(columnEl, attribute, 0f);
+        if (size < 0f)
+            throw new FormatException($"{ColumnContext(index, "button", attribute)} must not be negative");
+        return size;
     }
 
     private static string ColumnContext(int index, string type, string attribute) =>
@@ -1088,7 +1469,18 @@ public static class MarkupDocument
                 $"{expression} did not resolve to a bool property on "
                 + binding.GetType().Name);
         }
-        setSource(() => property.GetValue(binding) is true);
+        Func<bool> source = () => property.GetValue(binding) is true;
+        setSource(source);
+
+        // Ticks apply the source, but the window's first measurement comes
+        // before any tick: seed the value it reports now so that measurement
+        // leaves out what is bound hidden (a tabbed window's other pages). A
+        // getter that throws this early leaves the default; the first tick
+        // reads it again as usual.
+        bool seeded;
+        try { seeded = source(); }
+        catch (TargetInvocationException) { return; }
+        setLiteral(seeded);
     }
 
     private static Func<bool> BindRequiredBoolReader(

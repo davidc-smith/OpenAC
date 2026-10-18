@@ -71,11 +71,14 @@ installable through the launcher follows a stricter contract than the fields abo
 **Icon:** a plugin may ship one `icon.png` at the root of its zip, PNG only, exactly 64x64, at
 most 64 KiB, not animated. No icon is fine, but an icon that breaks a rule refuses the whole
 install. `icon.jpg` and `icon.jpeg` are never accepted at the zip root, in any case; an icon in a
-subfolder is untouched by this rule.
+subfolder is untouched by this rule. A window's own PNG dock icon (`IconFile`, see
+[PNG dock icons](plugin-ui-markup.md#png-dock-icons)) is an ordinary `.png` to the launcher; the
+client applies the `icon.png` rules when it draws it.
 
 **Managed code only, by allowlist.** Every file in the zip must end in one of: `.dll`, `.pdb`,
-`.json`, `.xml`, `.txt`, `.md`, `.png`, `.jpg`, `.jpeg`, `.ttf`, `.otf`. A `runtimes/` folder is
-rejected.
+`.json`, `.xml`, `.txt`, `.md`, `.png`, `.jpg`, `.jpeg`, `.ttf`, `.otf`, `.svg`. A `runtimes/`
+folder is rejected. An `.svg` file may be at most 16 KiB; the launcher checks only that, and the
+client decides whether it can draw it (see [SVG icons](plugin-ui-markup.md#svg-icons)).
 
 **Caps:** zip at most 64 MiB. Extraction: 2,000 entries, 64 MiB per entry, 256 MiB total,
 compression ratio 200. A hand-installed folder is limited the same way, counting files rather than

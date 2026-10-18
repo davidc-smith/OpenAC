@@ -2,7 +2,7 @@ namespace AcDream.Plugin.Abstractions;
 
 /// <summary>
 /// How a plugin's window should be presented: its identity, its title bar,
-/// its shelf button, and whether it starts open.
+/// its dock button, and whether it starts open.
 /// </summary>
 /// <param name="WindowId">
 /// The plugin's own short name for this window. It is part of the key the
@@ -13,21 +13,41 @@ namespace AcDream.Plugin.Abstractions;
 public sealed record PluginPanelDescriptor(string WindowId, string Title)
 {
     /// <summary>
-    /// A word or two of initials drawn on the shelf button when no icon id
-    /// is given. Null falls back to the host's own default.
+    /// A word or two of initials drawn on the dock button when the window has
+    /// no other icon (<see cref="IconFile"/>, the plugin's <c>icon.svg</c> or
+    /// <c>icon.png</c>, or <see cref="IconSurfaceId"/>). Null falls back to
+    /// the host's own default.
     /// </summary>
     public string? IconText { get; init; }
 
     /// <summary>
-    /// The icon drawn on the shelf button, either a full image id or a bare
-    /// index. 0 means no icon, in which case <see cref="IconText"/> is used.
+    /// The icon drawn on the dock button, either a full image id or a bare
+    /// index, used when the window has no <see cref="IconFile"/> and the
+    /// plugin ships no <c>icon.svg</c> or <c>icon.png</c>. 0 means no icon, in
+    /// which case <see cref="IconText"/> is used.
     /// </summary>
     public uint IconSurfaceId { get; init; }
+
+    /// <summary>
+    /// This window's own dock icon: a path relative to the plugin's install
+    /// folder, such as <c>"icons/loot.svg"</c> or <c>"icons/combat.png"</c>.
+    /// An <c>.svg</c> is drawn in one colour that follows the plugin theme. A
+    /// <c>.png</c> is drawn in its own colours and follows the same rules as the
+    /// plugin's <c>icon.png</c>: exactly 64x64 pixels, at most 64 KiB, not
+    /// animated. Null uses the plugin's own <c>icon.svg</c>, then its
+    /// <c>icon.png</c>. A file that is missing, breaks a rule or is outside the
+    /// supported SVG subset is logged once and falls back to the next icon.
+    /// Must be a relative path that stays inside the plugin folder (links
+    /// included); ignored when the registration has no plugin folder. A host
+    /// that predates PNG dock icons takes only <c>.svg</c> and falls back past
+    /// a <c>.png</c>.
+    /// </summary>
+    public string? IconFile { get; init; }
 
     /// <summary>Whether the window is open as soon as it is registered.</summary>
     public bool StartVisible { get; init; } = true;
 
-    /// <summary>Whether this window receives a button in the shared sidepanel.</summary>
+    /// <summary>Whether this window receives a button in the plugin dock.</summary>
     public bool ShowInSidePanel { get; init; } = true;
 }
 
@@ -52,7 +72,7 @@ public interface IUiRegistry
 
     /// <summary>
     /// Registers a window for the plugin's lifetime, with a descriptor
-    /// giving its id, title and shelf button.
+    /// giving its id, title and dock button.
     /// </summary>
     /// <param name="descriptor">How the window is identified and presented.</param>
     /// <param name="markupPath">Absolute path to the plugin's panel markup file.</param>
@@ -66,7 +86,7 @@ public interface IUiRegistry
     /// <summary>
     /// Registers a window whose lifetime may be ended independently while the
     /// plugin keeps running. Disposing the token removes the retained window
-    /// and its sidepanel entry.
+    /// and its dock button.
     /// </summary>
     IDisposable RegisterPanel(
         PluginPanelDescriptor descriptor,
@@ -99,7 +119,7 @@ public interface IUiRegistry
     bool IsViewVisible(string viewName) => false;
 
     /// <summary>
-    /// Shows one of this plugin's own windows, as its shelf button does --
+    /// Shows one of this plugin's own windows, as its dock button does --
     /// including one the player closed with its close button, which the
     /// plugin setting its own bound visibility back to true does not undo.
     /// A window whose markup binds its visibility to something the plugin
@@ -116,7 +136,7 @@ public interface IUiRegistry
 
     /// <summary>
     /// Hides one of this plugin's own windows, as closing it does: it stays
-    /// registered and <see cref="ShowPanel"/> or its shelf button brings it
+    /// registered and <see cref="ShowPanel"/> or its dock button brings it
     /// back. A window already hidden by its own bound visibility is left as
     /// it is, as a close would leave it: it shows again when the binding
     /// turns true.
@@ -179,6 +199,21 @@ public interface IUiRegistry
     IPluginImages Images => NoOpPluginImages.Instance;
 
     /// <summary>
+    /// The fonts this plugin may draw canvas text with: the bundled sans at a
+    /// chosen size and the plugin's own font files, held to a per-plugin
+    /// budget. Inert on a host that draws nothing.
+    /// </summary>
+    IPluginFonts Fonts => NoOpPluginFonts.Instance;
+
+    /// <summary>
+    /// The markers this plugin hangs in the world -- icons over objects or at
+    /// fixed positions -- in layers it owns. Inert on a host that draws
+    /// nothing, where <see cref="IPluginWorldMarkers.CreateLayer"/> answers
+    /// null.
+    /// </summary>
+    IPluginWorldMarkers WorldMarkers => NoOpPluginWorldMarkers.Instance;
+
+    /// <summary>
     /// The plugin theme the player picked under Appearance, and its colours,
     /// so a canvas can draw like the plugin's themed windows. The host
     /// restyles markup windows itself; a canvas reads this and repaints on
@@ -193,6 +228,29 @@ public interface IUiRegistry
     /// a host without themes or without a window.
     /// </summary>
     event Action<PluginUiThemeInfo> ThemeChanged
+    {
+        add { }
+        remove { }
+    }
+
+    /// <summary>
+    /// The interface's size, in the same pixels as canvas offsets and sizes:
+    /// a <see cref="PluginCanvasAnchor.TopLeft"/> canvas of size w×h at
+    /// <see cref="PluginCanvasDescriptor.Offset"/> (Width - w, Height - h)
+    /// sits in the bottom-right corner. It is the rectangle both canvas
+    /// layers are laid out in, and follows window resizes and display or
+    /// interface scale changes; <see cref="ScreenSizeChanged"/> says when.
+    /// 0×0 on a host without a window, and before the interface first draws.
+    /// </summary>
+    PluginSize ScreenSize => default;
+
+    /// <summary>
+    /// Raised on the thread the plugin's own callbacks run on when
+    /// <see cref="ScreenSize"/> changes (a window resize, a display or
+    /// interface scale change), with the new size. Not raised when the size
+    /// stays the same, and never on a host without a window.
+    /// </summary>
+    event Action<PluginSize> ScreenSizeChanged
     {
         add { }
         remove { }
@@ -305,6 +363,24 @@ public interface IScopedUiRegistry : IUiRegistry
     /// every image the plugin held.
     /// </summary>
     IPluginImages ImagesFor(PluginUiOwner owner) => NoOpPluginImages.Instance;
+
+    /// <summary>
+    /// One plugin's font surface, the same object on every call for the same
+    /// owner until it is disposed. A host that draws nothing hands out the
+    /// inert surface; a host that draws hands out a surface that also
+    /// implements <see cref="IDisposable"/>, and disposing it lets go of every
+    /// font the plugin held.
+    /// </summary>
+    IPluginFonts FontsFor(PluginUiOwner owner) => NoOpPluginFonts.Instance;
+
+    /// <summary>
+    /// One plugin's world-marker surface, the same object on every call for
+    /// the same owner until it is disposed. A host that draws nothing hands
+    /// out the inert surface; a host that draws hands out a surface that also
+    /// implements <see cref="IDisposable"/>, and disposing it takes down every
+    /// layer the plugin made.
+    /// </summary>
+    IPluginWorldMarkers WorldMarkersFor(PluginUiOwner owner) => NoOpPluginWorldMarkers.Instance;
 
     /// <summary>Registers a canvas on behalf of one plugin; see <see cref="IUiRegistry.RegisterCanvas"/>.</summary>
     /// <param name="owner">The plugin the canvas belongs to.</param>

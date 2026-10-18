@@ -168,6 +168,23 @@ public sealed class RetainedUiInputBindingTests
         Assert.True(keyboard.IsDisposalComplete);
     }
 
+    [Fact]
+    public void MouseScrollPassesBothStepsAndTheRootsShiftState()
+    {
+        var surface = new MouseSurface();
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var world = new List<int>();
+        root.WorldScrollFallThrough += world.Add;
+        using var binding = new RetainedMouseInputBinding(surface, root, new HostQuiescenceGate());
+        binding.Attach();
+
+        surface.Scroll(0, -1);   // vertical over the world: falls through
+        surface.Scroll(1, 0);    // horizontal over the world: goes nowhere
+
+        Assert.Equal(new[] { -1 }, world);
+        Assert.False(root.ShiftHeld);   // no keyboard attached
+    }
+
     private sealed class MouseSurface : IRetainedMouseSurface
     {
         public int FailAdd { get; init; }
@@ -180,12 +197,13 @@ public sealed class RetainedUiInputBindingTests
         public Action<MouseButton, int, int>? Down { get; private set; }
         private Action<MouseButton, int, int>? _up;
         private Action<int, int>? _move;
-        private Action<int>? _scroll;
+        private Action<int, int>? _scroll;
 
         public void AddMouseDown(Action<MouseButton, int, int> callback) => Add(() => Down = callback);
         public void AddMouseUp(Action<MouseButton, int, int> callback) => Add(() => _up = callback);
         public void AddMouseMove(Action<int, int> callback) => Add(() => _move = callback);
-        public void AddScroll(Action<int> callback) => Add(() => _scroll = callback);
+        public void AddScroll(Action<int, int> callback) => Add(() => _scroll = callback);
+        public void Scroll(int dx, int dy) => _scroll?.Invoke(dx, dy);
         public void RemoveMouseDown(Action<MouseButton, int, int> callback) => Remove(() => Down = null);
         public void RemoveMouseUp(Action<MouseButton, int, int> callback) => Remove(() => _up = null);
         public void RemoveMouseMove(Action<int, int> callback)
@@ -198,7 +216,7 @@ public sealed class RetainedUiInputBindingTests
             }
             Remove(() => _move = null);
         }
-        public void RemoveScroll(Action<int> callback) => Remove(() => _scroll = null);
+        public void RemoveScroll(Action<int, int> callback) => Remove(() => _scroll = null);
 
         private void Add(Action publish)
         {

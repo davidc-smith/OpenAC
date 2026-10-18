@@ -276,7 +276,9 @@ public sealed class TextureCache
         }
     }
 
-    private GpuUiTextureEntry UploadUiTexture(DecodedTexture decoded, bool nearest, string debugName)
+    private GpuUiTextureEntry UploadUiTexture(
+        DecodedTexture decoded, bool nearest, string debugName, bool clamp = false,
+        IReadOnlyList<DecodedTexture>? mipLevels = null)
     {
         IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(
             debugName,
@@ -285,14 +287,25 @@ public sealed class TextureCache
             Width: decoded.Width,
             Height: decoded.Height,
             LayerCount: 1,
-            MipLevelCount: 1));
+            MipLevelCount: mipLevels?.Count ?? 1));
         try
         {
-            texture.Upload(0, 0, decoded.Rgba8);
+            if (mipLevels is null)
+            {
+                texture.Upload(0, 0, decoded.Rgba8);
+            }
+            else
+            {
+                for (int level = 0; level < mipLevels.Count; level++)
+                    texture.Upload(level, 0, mipLevels[level].Rgba8);
+            }
             uint glName = UploadAccountingName(texture);
             TrackUploadedTexture(glName, decoded.Width, decoded.Height);
 
-            IGpuSampler sampler = _device.CreateSampler(nearest ? UiNearestRepeat : GpuSamplerDescription.WorldRepeat);
+            IGpuSampler sampler = _device.CreateSampler(
+                nearest ? UiNearestRepeat
+                : clamp ? GpuSamplerDescription.WorldClamp
+                : GpuSamplerDescription.WorldRepeat);
             GpuTextureSlot slot = _device.RegisterTexture(texture, sampler);
             uint handle = UiTextureTableHandle.FromSlot(slot);
             if (nearest)
@@ -307,6 +320,13 @@ public sealed class TextureCache
             throw;
         }
     }
+
+    /// <summary>
+    /// True for an interface texture uploaded to be sampled nearest, such as
+    /// a composed icon; false for one sampled linearly, and for any handle
+    /// this cache did not upload that way.
+    /// </summary>
+    internal bool IsNearestUiTexture(uint handle) => _nearestUiTextureSources.ContainsKey(handle);
 
     internal uint GetOrCreateLinearUiTwin(uint handle)
     {
@@ -622,7 +642,7 @@ public sealed class TextureCache
         {
             if (!seen.Add(name)) return;
             if (!_uploadMetadata.TryGetValue(name, out var meta)) return;
-            int bytes = meta.Width * meta.Height * 4;
+            int bytes = meta.Width * meta.Height * BytesPerPixel(meta.Format);
             totalBytes += bytes;
             sb.AppendLine($"0x{surfaceId:X8}, {meta.Width}, {meta.Height}, {meta.Format}, {bytes}");
 
@@ -773,17 +793,64 @@ public sealed class TextureCache
     /// Uploads an interface texture that the caller will give back through
     /// <see cref="ReleaseUiTexture"/>. The ad-hoc path keeps every upload for
     /// the life of the cache; this one is for art whose owner comes and goes,
-    /// such as a plugin's own images.
+    /// such as a plugin's own images. It is sampled linearly and clamped, so
+    /// a part cut from the edge of a sheet does not pick up the opposite
+    /// edge. <paramref name="mipmapped"/> also uploads every smaller level,
+    /// so art drawn far below its own size, such as a large plugin image in
+    /// a small icon, shrinks smoothly instead of breaking up.
     /// </summary>
-    internal uint UploadReleasableRgba8(byte[] rgba, int width, int height, string debugName)
+    internal uint UploadReleasableRgba8(
+        byte[] rgba, int width, int height, string debugName, bool mipmapped = false)
     {
         ArgumentNullException.ThrowIfNull(rgba);
         ArgumentException.ThrowIfNullOrWhiteSpace(debugName);
         GpuUiTextureEntry entry = UploadUiTexture(
-            new DecodedTexture(rgba, width, height), nearest: false, debugName);
+            new DecodedTexture(rgba, width, height), nearest: false, debugName, clamp: true,
+            mipLevels: mipmapped ? RgbaMipChain.Build(rgba, width, height) : null);
         uint handle = UiTextureTableHandle.FromSlot(entry.Slot);
         _releasableUiTextures.Add(handle, entry);
         return handle;
+    }
+
+    /// <summary>
+    /// Uploads a single-channel coverage texture, such as a glyph atlas, that
+    /// the caller gives back through <see cref="ReleaseUiTexture"/>. It is
+    /// sampled linearly and clamped: glyphs are drawn at their own size, and
+    /// their neighbours in the atlas must not bleed in.
+    /// </summary>
+    internal uint UploadReleasableCoverage8(byte[] coverage, int width, int height, string debugName)
+    {
+        ArgumentNullException.ThrowIfNull(coverage);
+        ArgumentException.ThrowIfNullOrWhiteSpace(debugName);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        if (coverage.Length != checked(width * height))
+            throw new ArgumentException("A coverage texture holds one byte per pixel.", nameof(coverage));
+
+        IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(
+            debugName,
+            GpuTextureKind.Texture2D,
+            GpuTextureFormat.R8Unorm,
+            Width: width,
+            Height: height,
+            LayerCount: 1,
+            MipLevelCount: 1));
+        try
+        {
+            texture.Upload(0, 0, coverage);
+            uint glName = UploadAccountingName(texture);
+            TrackUploadedTexture(glName, width, height, CoverageUploadFormat);
+            GpuTextureSlot slot = _device.RegisterTexture(
+                texture, _device.CreateSampler(GpuSamplerDescription.WorldClamp));
+            uint handle = UiTextureTableHandle.FromSlot(slot);
+            _releasableUiTextures.Add(handle, new GpuUiTextureEntry(texture, slot, glName, width, height));
+            return handle;
+        }
+        catch
+        {
+            texture.Dispose();
+            throw;
+        }
     }
 
     /// <summary>How many releasable interface textures are still held.</summary>
@@ -810,10 +877,15 @@ public sealed class TextureCache
         return true;
     }
 
-    private void TrackUploadedTexture(uint name, int width, int height)
+    private const string DecodedUploadFormat = "RGBA8_DECODED";
+    private const string CoverageUploadFormat = "R8_COVERAGE";
+
+    private static int BytesPerPixel(string format) => format == CoverageUploadFormat ? 1 : 4;
+
+    private void TrackUploadedTexture(uint name, int width, int height, string format = DecodedUploadFormat)
     {
-        _uploadMetadata[name] = (width, height, "RGBA8_DECODED");
-        long bytes = checked((long)width * height * 4L);
+        _uploadMetadata[name] = (width, height, format);
+        long bytes = checked((long)width * height * BytesPerPixel(format));
         Wb.GpuMemoryTracker.TrackResourceAllocation(Wb.GpuResourceType.Texture);
         Wb.GpuMemoryTracker.TrackAllocation(bytes, Wb.GpuResourceType.Texture);
     }
@@ -822,7 +894,7 @@ public sealed class TextureCache
     {
         if (_uploadMetadata.Remove(name, out var metadata))
         {
-            long bytes = checked((long)metadata.Width * metadata.Height * 4L);
+            long bytes = checked((long)metadata.Width * metadata.Height * BytesPerPixel(metadata.Format));
             Wb.GpuMemoryTracker.TrackDeallocation(bytes, Wb.GpuResourceType.Texture);
             Wb.GpuMemoryTracker.TrackResourceDeallocation(Wb.GpuResourceType.Texture);
         }

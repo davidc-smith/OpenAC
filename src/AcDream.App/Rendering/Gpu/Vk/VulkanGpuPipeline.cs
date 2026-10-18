@@ -168,14 +168,16 @@ internal sealed unsafe class VulkanGpuPipeline : IGpuPipeline
 
             (BlendFactor source, BlendFactor destination) =
                 VulkanViewportMapping.BlendFactorsOf(description.Blend);
+            (BlendFactor alphaSource, BlendFactor alphaDestination) =
+                VulkanViewportMapping.AlphaBlendFactorsOf(description.Blend);
             var attachment = new PipelineColorBlendAttachmentState
             {
                 BlendEnable = description.Blend != GpuBlendMode.None,
                 SrcColorBlendFactor = source,
                 DstColorBlendFactor = destination,
                 ColorBlendOp = BlendOp.Add,
-                SrcAlphaBlendFactor = source,
-                DstAlphaBlendFactor = destination,
+                SrcAlphaBlendFactor = alphaSource,
+                DstAlphaBlendFactor = alphaDestination,
                 AlphaBlendOp = BlendOp.Add,
                 ColorWriteMask = description.ColorWrite
                     ? ColorComponentFlags.RBit | ColorComponentFlags.GBit

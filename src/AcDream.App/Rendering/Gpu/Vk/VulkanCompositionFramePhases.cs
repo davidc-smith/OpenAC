@@ -75,6 +75,8 @@ internal sealed class VulkanWorldScenePhase : IWorldSceneFramePhase
     private readonly WbDrawDispatcher? _worldMeshes;
     private readonly TerrainModernRenderer? _terrain;
     private readonly PluginWorldLineRenderer? _worldLines;
+    private readonly PluginGroundShapeRenderer? _groundShapes;
+    private readonly PluginWorldTriangleRenderer? _worldTriangles;
 
     public VulkanWorldScenePhase(
         ICurrentGpuFrameSource frames,
@@ -89,7 +91,9 @@ internal sealed class VulkanWorldScenePhase : IWorldSceneFramePhase
         RenderSceneShadowRuntime? renderScene = null,
         WbDrawDispatcher? worldMeshes = null,
         TerrainModernRenderer? terrain = null,
-        PluginWorldLineRenderer? worldLines = null)
+        PluginWorldLineRenderer? worldLines = null,
+        PluginGroundShapeRenderer? groundShapes = null,
+        PluginWorldTriangleRenderer? worldTriangles = null)
     {
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
         _clear = clear ?? throw new ArgumentNullException(nameof(clear));
@@ -103,6 +107,8 @@ internal sealed class VulkanWorldScenePhase : IWorldSceneFramePhase
         _worldMeshes = worldMeshes;
         _terrain = terrain;
         _worldLines = worldLines;
+        _groundShapes = groundShapes;
+        _worldTriangles = worldTriangles;
     }
 
     public WorldRenderFrameOutcome Render(RenderFrameInput input)
@@ -284,7 +290,14 @@ internal sealed class VulkanWorldScenePhase : IWorldSceneFramePhase
                     outcome = _world.Render(input);
                 }
                 if (outcome.NormalWorldDrawn)
+                {
                     _worldLines?.Render(encoder, input.ViewportWidth, input.ViewportHeight);
+                    // After the lines: the triangles and shapes are
+                    // see-through, and the lines' depth hides them too. The
+                    // shapes go last so they read over shaded ground.
+                    _worldTriangles?.Render(encoder, input.ViewportWidth, input.ViewportHeight);
+                    _groundShapes?.Render(encoder, input.ViewportWidth, input.ViewportHeight);
+                }
             }
             catch (Exception error) when (VulkanRenderFailurePolicy.IsFatal(error))
             {
@@ -387,7 +400,14 @@ internal sealed class VulkanWorldScenePhase : IWorldSceneFramePhase
         using IDisposable publication = _scope.Publish(encoder);
         WorldRenderFrameOutcome outcome = _world.Render(input);
         if (outcome.NormalWorldDrawn)
+        {
             _worldLines?.Render(encoder, input.ViewportWidth, input.ViewportHeight);
+            // After the lines: the triangles and shapes are see-through,
+            // and the lines' depth hides them too. The shapes go last so
+            // they read over shaded ground.
+            _worldTriangles?.Render(encoder, input.ViewportWidth, input.ViewportHeight);
+            _groundShapes?.Render(encoder, input.ViewportWidth, input.ViewportHeight);
+        }
         return outcome;
     }
 }

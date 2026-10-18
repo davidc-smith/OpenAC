@@ -41,6 +41,13 @@ public sealed class PluginIconParityTests
         return data;
     }
 
+    [Fact]
+    public void LauncherAndClientShareTheSvgIconLimit()
+    {
+        Assert.Equal(PluginSvgIcon.MaximumBytes, LauncherPluginIcon.SvgMaximumBytes);
+        Assert.Equal(PluginSvgIcon.FileName, LauncherPluginIcon.SvgFileName);
+    }
+
     [Theory]
     [MemberData(nameof(Cases))]
     public void LauncherAndClientAgreeOnEveryRule(string _, byte[] bytes)

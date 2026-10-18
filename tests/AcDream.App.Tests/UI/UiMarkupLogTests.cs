@@ -88,5 +88,13 @@ public sealed class UiMarkupLogTests
         Assert.Equal(entry, log.FirstVisibleEntry);
         Assert.False(log.FollowingEnd);
     }
-}
+    [Fact]
+    public void A_log_that_fits_leaves_the_wheel_to_its_parent()
+    {
+        var (root, log, data) = Create();
+        data.Lines = ["One action"]; root.Tick(.016, 2);
 
+        Assert.False(log.OnEvent(new UiEvent { Type = UiEventType.Scroll, Data0 = 1 }));
+        Assert.Equal(0, log.Scroll.ScrollY);
+    }
+}

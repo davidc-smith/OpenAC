@@ -162,6 +162,8 @@ public sealed class OverlayIconsTests
 
         public bool ReleaseOwned(uint texture) => throw new NotSupportedException();
 
+        public bool IsLinearFiltered(uint texture) => true;
+
         private bool Reply(string what, out uint texture, out int width, out int height)
         {
             if (Throw)

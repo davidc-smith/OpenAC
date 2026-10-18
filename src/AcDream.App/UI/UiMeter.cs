@@ -67,6 +67,9 @@ public sealed class UiMeter : UiElement, IUiDatStateful
     /// <summary>Re-read every frame in place of <see cref="BarColor"/>.</summary>
     public Func<Vector4>? BarColorSource { get; set; }
 
+    /// <summary>The shared plugin theme a meter without sprite art draws in; null draws Classic.</summary>
+    public PluginUiPalette? ThemePalette { get; set; }
+
     public Vector4 BgColor { get; set; } = new(0f, 0f, 0f, 0.5f);
     public Vector4 LabelColor { get; set; } = new(1f, 1f, 1f, 1f);
 
@@ -249,12 +252,20 @@ public sealed class UiMeter : UiElement, IUiDatStateful
         }
         else
         {
-            ctx.DrawRect(0, 0, Width, Height, BgColor);
-            if (pct is not null && p > 0f)
+            if (ThemePalette is { } palette)
             {
-                var (fx, fy, fw, fh) = ComputeFillRect(p, Width, Height);
-                if (fw > 0f)
-                    ctx.DrawRect(fx, fy, fw, fh, BarColorSource?.Invoke() ?? BarColor);
+                var fill = pct is not null && p > 0f ? ComputeFillRect(p, Width, Height) : (0f, 0f, 0f, 0f);
+                PluginUiStyle.Meter(ctx, palette, Width, Height, fill, BarColorSource?.Invoke() ?? BarColor);
+            }
+            else
+            {
+                ctx.DrawRect(0, 0, Width, Height, BgColor);
+                if (pct is not null && p > 0f)
+                {
+                    var (fx, fy, fw, fh) = ComputeFillRect(p, Width, Height);
+                    if (fw > 0f)
+                        ctx.DrawRect(fx, fy, fw, fh, BarColorSource?.Invoke() ?? BarColor);
+                }
             }
         }
 

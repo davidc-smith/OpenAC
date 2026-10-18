@@ -27,7 +27,8 @@ public sealed class AppPluginHost : IPluginHost, IPerPluginSessionSettings
         PluginSessionSettings? sessionSettings = null,
         IPluginMapRegistry? maps = null,
         IPluginMapResourceCatalog? mapResources = null,
-        IPluginRenderRegistry? rendering = null)
+        IPluginRenderRegistry? rendering = null,
+        IPluginWorldTriangles? worldTriangles = null)
     {
         Log = log;
         State = state;
@@ -44,6 +45,7 @@ public sealed class AppPluginHost : IPluginHost, IPerPluginSessionSettings
         Hotkeys = hotkeys ?? NoOpHotkeyRegistry.Instance;
         Window = window ?? NoOpHostWindow.Instance;
         WorldLines = worldLines ?? NoOpPluginWorldLines.Instance;
+        WorldTriangles = worldTriangles ?? NoOpPluginWorldTriangles.Instance;
         _sessionSettings = sessionSettings ?? PluginSessionSettings.Empty;
         Maps = maps ?? NoOpPluginMapRegistry.Instance;
         MapResources = mapResources ?? NoOpPluginMapResourceCatalog.Instance;
@@ -52,6 +54,7 @@ public sealed class AppPluginHost : IPluginHost, IPerPluginSessionSettings
 
     public bool HasUi => true;
     public IPluginWorldLines WorldLines { get; }
+    public IPluginWorldTriangles WorldTriangles { get; }
     public IPluginLogger Log { get; }
     public IGameState State { get; }
     public IEvents Events { get; }

@@ -9,8 +9,8 @@ namespace AcDream.App.Plugins;
 /// handle is this object; the element the interface draws reads it every
 /// frame.
 ///
-/// <para>The paint delegate and the pointer handler are dropped on
-/// dispose. They are the references from the client into the plugin's
+/// <para>The paint delegate and the pointer and key handlers are dropped
+/// on dispose. They are the references from the client into the plugin's
 /// code that the interface holds, and a plugin assembly cannot unload
 /// while anything still points into it.</para>
 /// </summary>
@@ -19,7 +19,14 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     private readonly BufferedUiRegistry _registry;
     private Action<IPluginPainter>? _paint;
     private volatile Action<PluginPointerEvent>? _pointerHandler;
+    private volatile Func<PluginKeyEvent, bool>? _keyHandler;
+    private volatile IPluginCanvasKeyboardFocus? _keyboardFocus;
     private volatile bool _invalidated = true;
+    private volatile int _zOrder;
+    // Width in the high half, height in the low half, so the interface never
+    // reads the width of one size with the height of another.
+    private long _size;
+    private volatile bool _hosted;
     private Action? _teardown;
     private Action? _releasePointer;
 
@@ -39,6 +46,8 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
         IsVisible = descriptor.StartVisible;
         Anchor = descriptor.Anchor;
         Offset = descriptor.Offset;
+        _zOrder = descriptor.ZOrder;
+        _size = Pack(descriptor.Width, descriptor.Height);
     }
 
     internal long Id { get; }
@@ -63,8 +72,27 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     /// <summary>The plugin's paint callback, or null once the canvas is disposed.</summary>
     internal Action<IPluginPainter>? Paint => _paint;
 
+    /// <summary>The layer the plugin chose when it registered the canvas.</summary>
+    internal PluginCanvasLayer Layer => Descriptor.Layer;
+
     /// <summary>Whether the plugin asked for pointer input when it registered the canvas.</summary>
     internal bool AcceptsPointerInput => Descriptor.AcceptsPointerInput;
+
+    /// <summary>Whether the plugin asked for keyboard input when it registered the canvas.</summary>
+    internal bool AcceptsKeyboardInput => Descriptor.AcceptsKeyboardInput;
+
+    /// <summary>Whether the plugin asked to hear about presses outside the canvas.</summary>
+    internal bool WantsOutsidePresses => Descriptor.WantsOutsidePresses;
+
+    /// <summary>
+    /// The mounted element's answer to the keyboard focus calls; set by
+    /// the element when it mounts, cleared by it when it comes down.
+    /// </summary>
+    internal IPluginCanvasKeyboardFocus? KeyboardFocus
+    {
+        get => _keyboardFocus;
+        set => _keyboardFocus = value;
+    }
 
     /// <summary>
     /// Records how the element ends a press the canvas is holding, so the
@@ -87,11 +115,77 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
 
     public void ReleasePointer() => _releasePointer?.Invoke();
 
-    public int Width => Descriptor.Width;
+    /// <summary>
+    /// Read by the canvas's group in the interface every tick, which restacks
+    /// the plugin's canvases when it changes.
+    /// </summary>
+    public int ZOrder
+    {
+        get => _zOrder;
+        set => _zOrder = value;
+    }
 
-    public int Height => Descriptor.Height;
+    public Func<PluginKeyEvent, bool>? KeyHandler
+    {
+        get => _keyHandler;
+        set => _keyHandler = value;
+    }
 
-    public bool IsAvailable => IsMounted && !IsDropped && _paint is not null;
+    public bool HasKeyboardFocus => _keyboardFocus?.HasFocus ?? false;
+
+    public bool RequestKeyboardFocus() => _keyboardFocus?.RequestFocus() ?? false;
+
+    public void ReleaseKeyboardFocus() => _keyboardFocus?.ReleaseFocus();
+
+    public int Width => Size.Width;
+
+    public int Height => Size.Height;
+
+    /// <summary>The canvas's size, read whole; the interface reads it once a frame.</summary>
+    internal (int Width, int Height) Size
+    {
+        get
+        {
+            long size = Interlocked.Read(ref _size);
+            return ((int)(size >> 32), (int)size);
+        }
+    }
+
+    public bool TryResize(int width, int height) =>
+        !Descriptor.InMarkup && Resize(width, height);
+
+    /// <summary>
+    /// Takes the size the canvas's markup element was laid out at. The same
+    /// write as <see cref="TryResize"/>, which a markup canvas refuses because
+    /// its element, not the plugin, decides its size.
+    /// </summary>
+    internal bool SetLaidOutSize(int width, int height) => Resize(width, height);
+
+    private bool Resize(int width, int height)
+    {
+        if (width < 1 || height < 1 || _paint is null)
+            return false;
+        long size = Pack(width, height);
+        if (Interlocked.Exchange(ref _size, size) != size)
+            Invalidate();
+        return true;
+    }
+
+    /// <summary>
+    /// Whether a markup element hosts the canvas now; set by the interface's
+    /// pairing table. Always false for a canvas not registered in markup.
+    /// </summary>
+    internal bool IsHosted
+    {
+        get => _hosted;
+        set => _hosted = value;
+    }
+
+    private static long Pack(int width, int height) =>
+        ((long)width << 32) | (uint)height;
+
+    public bool IsAvailable =>
+        IsMounted && !IsDropped && _paint is not null && (!Descriptor.InMarkup || _hosted);
 
     public bool IsVisible { get; set; }
 
@@ -124,7 +218,7 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
 
     /// <summary>
     /// Runs the teardown once and forgets it. The paint delegate and the
-    /// pointer handler stay unless <paramref name="forget"/> is set: an
+    /// pointer and key handlers stay unless <paramref name="forget"/> is set: an
     /// interface that is going away hands the canvas back to the registry
     /// to be mounted again by the next one, and the plugin's callbacks must
     /// survive that.
@@ -132,13 +226,15 @@ internal sealed class PluginCanvasRegistration : IPluginCanvas
     internal void Unmount(bool forget)
     {
         Action? teardown = Interlocked.Exchange(ref _teardown, null);
-        // The element comes down first: a press it still holds is cancelled
-        // to the plugin's handler on the way, which needs the handler.
+        // The element comes down first: a press it still holds is cancelled,
+        // and keyboard focus it still has is lost, to the plugin's handlers
+        // on the way, which needs the handlers.
         teardown?.Invoke();
         if (forget)
         {
             _paint = null;
             _pointerHandler = null;
+            _keyHandler = null;
         }
     }
 

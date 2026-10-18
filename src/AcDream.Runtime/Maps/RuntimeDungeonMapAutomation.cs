@@ -5,6 +5,7 @@ using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Navigation;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Enums;
+using DatReaderWriter.Types;
 
 namespace AcDream.Runtime.Maps;
 
@@ -141,6 +142,8 @@ internal sealed class RuntimeDungeonMapAutomation : IDungeonMapAutomation
         if (info is null || info.NumCells == 0)
             return [];
         uint firstCell = landblock | 0x0100u;
+        // Hundreds of cells share a few dozen pieces; each piece is read once.
+        var structures = new Dictionary<uint, CellStruct?>();
         for (uint offset = 0; offset < info.NumCells; offset++)
         {
             uint cellId = firstCell + offset;
@@ -151,15 +154,97 @@ internal sealed class RuntimeDungeonMapAutomation : IDungeonMapAutomation
                 envCell = content.Get<EnvCell>(cellId);
             if (envCell is null)
                 continue;
+            Vector3 origin = envCell.Position?.Origin ?? Vector3.Zero;
+            Quaternion orientation = envCell.Position?.Orientation ?? Quaternion.Identity;
             cells.Add(new PluginIndoorCell(
                 cellId,
                 envCell.EnvironmentId,
                 envCell.CellStructure,
-                envCell.Position?.Origin ?? Vector3.Zero,
-                envCell.Position?.Orientation ?? Quaternion.Identity,
-                envCell.Flags.HasFlag(EnvCellFlags.SeenOutside)));
+                origin,
+                orientation,
+                envCell.Flags.HasFlag(EnvCellFlags.SeenOutside))
+            {
+                Doorways = ReadDoorways(
+                    content, contentLock, landblock, envCell, origin, orientation, structures),
+            });
         }
         return cells.ToArray();
+    }
+
+    /// <summary>
+    /// The cell's portals as doorways: the cell each leads to, and the middle
+    /// of its polygon placed as the cell is.
+    /// </summary>
+    private static PluginCellDoorway[] ReadDoorways(
+        IDatObjectSource content,
+        object contentLock,
+        uint landblock,
+        EnvCell envCell,
+        Vector3 origin,
+        Quaternion orientation,
+        Dictionary<uint, CellStruct?> structures)
+    {
+        if (envCell.CellPortals.Count == 0)
+            return [];
+        uint key = ((uint)envCell.EnvironmentId << 16) | envCell.CellStructure;
+        if (!structures.TryGetValue(key, out CellStruct? structure))
+        {
+            DatReaderWriter.DBObjs.Environment? environment;
+            lock (contentLock)
+                environment = content.Get<DatReaderWriter.DBObjs.Environment>(
+                    0x0D000000u | envCell.EnvironmentId);
+            structure = environment is not null
+                && environment.Cells.TryGetValue(envCell.CellStructure, out CellStruct? found)
+                    ? found
+                    : null;
+            structures[key] = structure;
+        }
+
+        var doorways = new PluginCellDoorway[envCell.CellPortals.Count];
+        for (int index = 0; index < doorways.Length; index++)
+        {
+            CellPortal portal = envCell.CellPortals[index];
+            uint other = portal.OtherCellId == 0xFFFF ? 0u : landblock | portal.OtherCellId;
+            Vector3 center = origin;
+            if (structure is not null
+                && structure.Polygons.TryGetValue(portal.PolygonId, out Polygon? polygon)
+                && TryPlacedMiddle(structure, polygon, origin, orientation, out Vector3 middle))
+            {
+                center = middle;
+            }
+            doorways[index] = new PluginCellDoorway(other, center);
+        }
+        return doorways;
+    }
+
+    /// <summary>
+    /// The middle of the box around the polygon's corners once they are
+    /// placed. Not their average: one side of an opening is often a single
+    /// quad and the other the two triangles it splits into, and only the box
+    /// gives both sides the same middle.
+    /// </summary>
+    private static bool TryPlacedMiddle(
+        CellStruct structure,
+        Polygon polygon,
+        Vector3 origin,
+        Quaternion orientation,
+        out Vector3 middle)
+    {
+        middle = Vector3.Zero;
+        if (polygon.VertexIds.Count == 0)
+            return false;
+        var min = new Vector3(float.MaxValue);
+        var max = new Vector3(float.MinValue);
+        foreach (short vertexId in polygon.VertexIds)
+        {
+            if (!structure.VertexArray.Vertices.TryGetValue((ushort)vertexId, out SWVertex? vertex))
+                return false;
+            Vector3 placed = Vector3.Transform(vertex.Origin, orientation) + origin;
+            min = Vector3.Min(min, placed);
+            max = Vector3.Max(max, placed);
+        }
+        middle = (min + max) * 0.5f;
+        return true;
     }
 
     public PluginDungeonFloorplan CaptureFloorplan(uint landblockId)

@@ -36,7 +36,7 @@ namespace AcDream.App.Composition;
 internal sealed record InteractionRetainedUiDependencies(
     RuntimeOptions Options,
     GameWindowGraphics Graphics,
-    Func<int, int, byte[]> BackbufferReader,
+    Func<int, int, AcDream.App.Diagnostics.FrameCapture> BackbufferReader,
     IView Window,
     IInputContext Input,
     string ShadersDirectory,
@@ -78,7 +78,8 @@ internal sealed record InteractionRetainedUiDependencies(
     string? ScreenshotsDirectory = null,
     AcDream.Runtime.Plugins.RuntimeAutomationSurface? Automation = null,
     Func<GameplayInputFrameController?>? GameplayInputFrame = null,
-    string? JournalDirectory = null)
+    string? JournalDirectory = null,
+    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -147,6 +148,7 @@ internal sealed class InteractionUiLateBindings : IDisposable
     public DeferredGameRuntimeStateCommands GameRuntime { get; } = new();
     public DeferredSelectionUiAuthority Selection { get; } = new();
     public DeferredSelectionViewPlaneSource SelectionViewPlane { get; } = new();
+    public DeferredPortalViewportSource PortalViewport { get; } = new();
     public DeferredRadarSnapshotSource Radar { get; } = new();
     public DeferredInventoryContainerSource InventoryContainer { get; } = new();
     public DeferredWorldLifecycleAutomationRuntime Automation { get; } = new();
@@ -202,6 +204,7 @@ internal sealed class InteractionUiLateBindings : IDisposable
         Automation.Deactivate();
         Radar.Deactivate();
         SelectionViewPlane.Deactivate();
+        PortalViewport.Deactivate();
         Selection.Deactivate();
         GameRuntime.Deactivate();
         Session.Deactivate();
@@ -609,7 +612,9 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                 controls,
                 iconComposer,
                 d.TextureCache,
-                BundledUiFont.Load(d.TextureCache));
+                // Baked only once a themed plugin window wants them.
+                new Lazy<UiDatFont>(() => BundledUiFont.Load(d.TextureCache)),
+                new Lazy<UiDatFont>(() => BundledUiFont.Load(d.TextureCache, weight: BundledUiFontWeight.SemiBold)));
             var characterCreationStrings = new DatStringResolver(d.Dats);
             var chargenSkillScoreResolver = new ChargenSkillScoreResolver(
                 d.Runtime.CharacterCreation.Options);
@@ -632,7 +637,10 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     () => late.Session.Commands,
                     d.Communication.ChatWindows,
                     d.Communication.ChatEntryOwner,
-                    layoutStore),
+                    layoutStore,
+                    d.Automation is { } automation
+                        ? automation.RaiseChatLinkClicked
+                        : null),
                 Radar: new RadarRuntimeBindings(
                     late.Radar.Snapshot,
                     d.Actions.Selection,
@@ -1026,6 +1034,12 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                         guid, out AcDream.App.Interaction.WorldLabelAnchor anchor)
                         ? anchor
                         : null,
+                WorldPosition: d.WorldOrigin is not { } worldOrigin
+                    ? null
+                    : position => worldOrigin.IsKnown
+                        ? AcDream.App.World.PluginNavigationProjection.ToWorld(
+                            position, worldOrigin.CenterX, worldOrigin.CenterY)
+                        : null,
                 Connection: new ConnectionRuntimeBindings(
                     () => late.GameRuntime.Connection, d.Window.Close,
                     ShowProgress: d.Options.LiveCharacterSelector is null),
@@ -1058,7 +1072,11 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     d.GpuDevice,
                     d.GpuFrameSource,
                     d.ShadersDirectory,
-                    d.TextureCache.GetOrCreateLinearUiTwin),
+                    () => d.Window.Size is { X: > 0, Y: > 0 } points
+                        ? new System.Numerics.Vector2(
+                            d.Window.FramebufferSize.X / (float)points.X,
+                            d.Window.FramebufferSize.Y / (float)points.Y)
+                        : System.Numerics.Vector2.One),
                 SynchronizeDisplayPhase: () =>
                 {
                     if (late.GameRuntime.Connection?.Snapshot.Status is
@@ -1069,7 +1087,8 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     d.Settings.SetGameplayDisplay(
                         !d.Options.LiveMode || late.GameRuntime.CharacterSelection?.Snapshot.Lifecycle ==
                             AcDream.Runtime.Session.RuntimeCharacterSelectionLifecycle.InWorld);
-                });
+                },
+                IsPortalViewVisible: () => late.PortalViewport.IsPortalViewportVisible);
             RetailUiRuntime runtime = lease.Mount(
                 () => RetailUiRuntime.CreateUninitialized(bindings));
             checkpoint(InteractionRetainedUiCompositionPoint.UiRuntimeMounted);

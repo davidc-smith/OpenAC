@@ -210,6 +210,22 @@
       ]
     },
     {
+      "name": "ground_shape",
+      "vulkanReady": true,
+      "stages": [
+        {
+          "stage": "vert",
+          "sourceSha256": "ee5dff853f6125b0b4a25bb71fa00e786c8940708ef13be39e80946bcaccce4c",
+          "compiled": true
+        },
+        {
+          "stage": "frag",
+          "sourceSha256": "41eee2c39fa60e8a06713806d7956f66d574a802d4963a7d08f7d61dbac79af7",
+          "compiled": true
+        }
+      ]
+    },
+    {
       "name": "mesh_atmospheric",
       "vulkanReady": true,
       "stages": [

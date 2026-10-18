@@ -47,6 +47,76 @@ public sealed class PluginCanvasContractTests
         Assert.Equal(default, descriptor.Offset);
         Assert.True(descriptor.StartVisible);
         Assert.False(descriptor.AcceptsPointerInput);
+        Assert.False(descriptor.AcceptsKeyboardInput);
+    }
+
+    [Fact]
+    public void AKeyEventDefaultsToNoRepeatAndNoText()
+    {
+        var down = new PluginKeyEvent(PluginKeyEventKind.Down, PluginKey.A, PluginKeyModifiers.Shift);
+
+        Assert.False(down.IsRepeat);
+        Assert.Null(down.Text);
+        Assert.Equal(PluginKey.A, down.Key);
+    }
+
+    [Fact]
+    public void ARegistryThatNeverHeardOfKeyboardInputKeepsTheHandlerAndNeverFocuses()
+    {
+        IUiRegistry registry = new BareRegistry();
+
+        IPluginCanvas canvas = registry.RegisterCanvas(
+            new PluginCanvasDescriptor("pad", 64, 64) { AcceptsKeyboardInput = true }, _ => { });
+        canvas.KeyHandler = _ => true;
+        canvas.ReleaseKeyboardFocus();
+
+        // NoOpPluginCanvas keeps the handler; an older host's canvas
+        // answers with the interface defaults.
+        Assert.NotNull(canvas.KeyHandler);
+        Assert.False(canvas.RequestKeyboardFocus());
+        Assert.False(canvas.HasKeyboardFocus);
+    }
+
+    [Fact]
+    public void AnOlderHostsCanvasAnswersTheKeyboardMembersWithTheirDefaults()
+    {
+        IPluginCanvas canvas = new PointerOnlyCanvas();
+
+        canvas.KeyHandler = _ => true;
+        canvas.ReleaseKeyboardFocus();
+
+        Assert.Null(canvas.KeyHandler);
+        Assert.False(canvas.RequestKeyboardFocus());
+        Assert.False(canvas.HasKeyboardFocus);
+    }
+
+    [Fact]
+    public void TheFakeHostKeepsTheKeyHandlerAndNeverFocuses()
+    {
+        var host = new FakePluginHost();
+        int calls = 0;
+
+        IPluginCanvas canvas = host.Ui.RegisterCanvas(
+            new PluginCanvasDescriptor("pad", 8, 8) { AcceptsKeyboardInput = true }, _ => { });
+        canvas.KeyHandler = _ => { calls++; return true; };
+
+        Assert.NotNull(canvas.KeyHandler);
+        Assert.False(canvas.RequestKeyboardFocus());
+        Assert.False(canvas.HasKeyboardFocus);
+        Assert.Equal(0, calls);
+    }
+
+    /// <summary>A canvas written against the contract before keyboard input: it implements none of it.</summary>
+    private sealed class PointerOnlyCanvas : IPluginCanvas
+    {
+        public string CanvasId => "old";
+        public int Width => 8;
+        public int Height => 8;
+        public bool IsVisible { get; set; }
+        public PluginCanvasAnchor Anchor { get; set; }
+        public PluginPoint Offset { get; set; }
+        public void Invalidate() { }
+        public void Dispose() { }
     }
 
     [Fact]
@@ -137,6 +207,22 @@ public sealed class PluginCanvasContractTests
     }
 
     [Fact]
+    public void TheInertCanvasKeepsANewSizeAndAnOlderHostsCanvasRefusesIt()
+    {
+        IPluginCanvas inert = new NoOpPluginCanvas(Descriptor());
+        Assert.True(inert.TryResize(300, 50));
+        Assert.Equal((300, 50), (inert.Width, inert.Height));
+        Assert.False(inert.TryResize(0, 50));
+        Assert.Equal((300, 50), (inert.Width, inert.Height));
+        inert.Dispose();
+        Assert.False(inert.TryResize(10, 10));
+
+        // A canvas written before resizing answers with the default.
+        IPluginCanvas older = new PointerOnlyCanvas();
+        Assert.False(older.TryResize(300, 50));
+    }
+
+    [Fact]
     public void TheFakeHostAcceptsACanvasInertly()
     {
         var host = new FakePluginHost();
@@ -147,6 +233,14 @@ public sealed class PluginCanvasContractTests
 
         Assert.False(canvas.IsAvailable);
         Assert.Equal(0, paints);
+    }
+
+    [Fact]
+    public void InMarkupIsOffByDefaultAndKeptWhenSet()
+    {
+        var descriptor = new PluginCanvasDescriptor("map", 10, 10);
+        Assert.False(descriptor.InMarkup);
+        Assert.True((descriptor with { InMarkup = true }).InMarkup);
     }
 
     [Fact]

@@ -89,6 +89,27 @@ public sealed class DebugLineRendererTests
         Assert.Contains(new GpuRecordedDraw(2, 1, 0, 0), device.Calls);
     }
 
+    [Fact]
+    public void WorldLinesCoverTheWholeWorldPassInPixels()
+    {
+        // On a high-density display the window measures half the world
+        // pass's pixels; the lines must still cover the whole pass.
+        var device = new RecordingGpuDevice();
+        IGpuFrame frame = device.BeginFrame();
+        var scope = new OpenableWorldPass(sampleCount: 4, width: 3024, height: 1842);
+        using var lines = new DebugLineRenderer(device, new FixedFrame(frame), "shaders", scope);
+        using IGpuPassEncoder world = frame.BeginPass(WorldPass(sampleCount: 4));
+        using IDisposable published = scope.Publish(world);
+
+        lines.Begin();
+        lines.AddTriangle(Vector3.Zero, Vector3.UnitX, Vector3.UnitY, new Vector3(1f, 0f, 1f));
+        lines.FlushWorld(world, Matrix4x4.Identity);
+
+        Assert.Contains(new GpuRecordedPipelineBind("world-line-solid"), device.Calls);
+        Assert.Equal(new GpuRecordedViewport(0, 0, 3024, 1842), device.Calls.OfType<GpuRecordedViewport>().Last());
+        Assert.Equal(new GpuRecordedScissor(0, 0, 3024, 1842), device.Calls.OfType<GpuRecordedScissor>().Last());
+    }
+
     private static GpuPassDescription WorldPass(int sampleCount) => new()
     {
         Name = "vk-world",
@@ -110,7 +131,7 @@ public sealed class DebugLineRendererTests
         public IGpuFrame? CurrentFrame => frame;
     }
 
-    private sealed class OpenableWorldPass(int sampleCount) : IWorldPassScope
+    private sealed class OpenableWorldPass(int sampleCount, int width = 1024, int height = 720) : IWorldPassScope
     {
         private IGpuPassEncoder? _encoder;
 
@@ -118,9 +139,9 @@ public sealed class DebugLineRendererTests
 
         public IGpuPassEncoder? CurrentEncoder => _encoder;
 
-        public int AttachmentWidth => 1024;
+        public int AttachmentWidth => width;
 
-        public int AttachmentHeight => 720;
+        public int AttachmentHeight => height;
 
         public WorldFrameSections Sections { get; } = new();
 

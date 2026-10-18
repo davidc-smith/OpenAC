@@ -265,4 +265,40 @@ public sealed class UiDrawCallbackGuardTests
 
     private static (int Clip, int Transform, int Alpha) Depths(UiRenderContext context)
         => (context.ClipStackDepth, context.TransformStackDepth, context.AlphaStackDepth);
+
+    [Fact]
+    public void ACallOverAnotherBudgetCountsAsAnOverrunEvenWhenItIsQuick()
+    {
+        (UiDrawCallbackGuard guard, ManualClock clock, List<string> reports) = Build();
+        UiRenderContext context = Context();
+        clock.NextCallCosts = WithinBudget;
+
+        for (int overrun = 1; overrun < UiDrawCallbackGuard.ConsecutiveOverrunsBeforeTrip; overrun++)
+        {
+            Assert.True(guard.Invoke(context, static _ => { }, static () => true));
+            Assert.Equal(overrun, guard.ConsecutiveOverruns);
+            Assert.False(guard.IsTripped);
+        }
+        Assert.True(guard.Invoke(context, static _ => { }, static () => true));
+
+        Assert.True(guard.IsTripped);
+        string report = Assert.Single(reports);
+        Assert.Contains("went over its drawing budget", report, StringComparison.Ordinal);
+        Assert.DoesNotContain(" ms on ", report, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ACallWithinBothBudgetsClearsTheRun()
+    {
+        (UiDrawCallbackGuard guard, ManualClock clock, _) = Build();
+        UiRenderContext context = Context();
+        clock.NextCallCosts = WithinBudget;
+
+        guard.Invoke(context, static _ => { }, static () => true);
+        guard.Invoke(context, static _ => { }, static () => true);
+        guard.Invoke(context, static _ => { }, static () => false);
+
+        Assert.Equal(0, guard.ConsecutiveOverruns);
+        Assert.False(guard.IsTripped);
+    }
 }

@@ -235,7 +235,8 @@ var host = new AppPluginHost(
         () => window.PluginWindowIsMinimized,
         () => window.ClipboardDispatch),
     window.WorldLines,
-    pluginSessionSettings);
+    pluginSessionSettings,
+    worldTriangles: window.WorldTriangles);
 GraphicalPluginSession pluginSession = GraphicalPluginSession.Create(
     applicationPaths,
     runtimeOptions.Plugins,

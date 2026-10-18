@@ -18,8 +18,8 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         lock (VulkanLock)
         {
             string shaderDirectory = Path.Combine(
-                RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv");
-            using var host = HeadlessVulkanHost.Create(shaderDirectory);
+                HeadlessVulkanTestHost.RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv");
+            using var host = HeadlessVulkanTestHost.Create(shaderDirectory);
 
             (Pixel meshOff, Pixel meshOn) = RenderMeshLightingPair(host);
             (Pixel terrainOff, Pixel terrainOn) = RenderTerrainLightingPair(host);
@@ -35,7 +35,7 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
     public void AtmosphericLightingPixelWitness_IsOwnedByTheDedicatedVulkanLane()
     {
         string source = File.ReadAllText(Path.Combine(
-            RepositoryRoot(), "tests", "AcDream.App.Tests", "Rendering", "Gpu", "Vk",
+            HeadlessVulkanTestHost.RepositoryRoot(), "tests", "AcDream.App.Tests", "Rendering", "Gpu", "Vk",
             "MeshModernSharedIndexOffscreenTests.AtmosphericLighting.cs"));
         Assert.Matches(
             new Regex(
@@ -46,7 +46,7 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         Assert.Equal(1, Count(source, "[Trait(\"Lane\", \"Vulkan\")]"));
     }
 
-    private static (Pixel Disabled, Pixel Enabled) RenderMeshLightingPair(HeadlessVulkanHost host)
+    private static (Pixel Disabled, Pixel Enabled) RenderMeshLightingPair(HeadlessVulkanTestHost host)
     {
         VulkanGpuDevice device = host.Device;
         using IGpuBuffer vertices = device.CreateBuffer(new GpuBufferDescription(
@@ -124,7 +124,7 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         return ReadLightingPair(host, target);
     }
 
-    private static (Pixel Disabled, Pixel Enabled) RenderTerrainLightingPair(HeadlessVulkanHost host)
+    private static (Pixel Disabled, Pixel Enabled) RenderTerrainLightingPair(HeadlessVulkanTestHost host)
     {
         VulkanGpuDevice device = host.Device;
         TerrainVertex[] terrain =
@@ -252,17 +252,19 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
     ];
 
     private static (Pixel Disabled, Pixel Enabled) ReadLightingPair(
-        HeadlessVulkanHost host,
+        HeadlessVulkanTestHost host,
         IGpuRenderTarget target)
     {
         VulkanGpuRenderTarget vkTarget = Assert.IsType<VulkanGpuRenderTarget>(target);
-        byte[] pixels = ReadBack(
+        byte[] pixels = VulkanImageReadback.ReadBack(
             host.Vk,
             host.PhysicalDevice,
             host.LogicalDevice,
             host.Queue,
             host.QueueFamily,
-            vkTarget.ColorResult.Image);
+            vkTarget.ColorResult.Image,
+            Extent,
+            Extent);
         return (PixelAt(pixels, 16, 32), PixelAt(pixels, 48, 32));
     }
 

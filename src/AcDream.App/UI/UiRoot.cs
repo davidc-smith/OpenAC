@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using AcDream.App.Rendering;
 
 namespace AcDream.App.UI;
 
@@ -215,6 +216,9 @@ public sealed class UiRoot : UiElement
     public int TooltipDurationMs { get; set; } = 10_000;
     private bool _tooltipFired;
     private long _tooltipShownMs;
+    // The hover element's tooltip ran its full duration. It stays hidden while
+    // the pointer rests; the next move over the element starts a fresh dwell.
+    private bool _tooltipExpired;
 
     public event Action<UiElement>? TooltipShow;
 
@@ -232,6 +236,13 @@ public sealed class UiRoot : UiElement
     public long MouseIdleMs => _nowMs - _lastMouseMoveMs;
 
     public long NowMs => _nowMs;
+
+    /// <summary>
+    /// Raised for every press, in interface coordinates, before anything
+    /// else sees it: before a dialog, a popup or the hit-test decides where
+    /// it goes. Listeners only observe; the press is routed as usual after.
+    /// </summary>
+    internal event Action<UiMouseButton, int, int>? PressStarting;
 
     public event Action<UiMouseButton, int, int, uint>? WorldMouseFallThrough;
 
@@ -337,6 +348,7 @@ public sealed class UiRoot : UiElement
                 TooltipHide?.Invoke(_hoverWidget);
             _hoverWidget = null;
             _tooltipFired = false;
+            _tooltipExpired = false;
         }
         if (IsWithinSubtree(_lastDragHoverTarget, subtree))
             _lastDragHoverTarget = null;
@@ -370,7 +382,7 @@ public sealed class UiRoot : UiElement
     {
         _nowMs = nowMs;
 
-        if (_hoverWidget is not null && !_tooltipFired && Captured is null
+        if (_hoverWidget is not null && !_tooltipFired && !_tooltipExpired && Captured is null
             && _nowMs - _hoverStartedMs >= EffectiveTooltipDelayMs(_hoverWidget))
         {
             var e = new UiEvent(_hoverWidget.EventId, _hoverWidget, UiEventType.Tooltip);
@@ -382,11 +394,11 @@ public sealed class UiRoot : UiElement
         else if (_hoverWidget is not null && _tooltipFired
             && _nowMs - _tooltipShownMs >= TooltipDurationMs)
         {
-            var leave = new UiEvent(_hoverWidget.EventId, _hoverWidget, UiEventType.HoverLeave);
-            _hoverWidget.OnEvent(in leave);
+            // Only the tooltip goes: the pointer is still over the element,
+            // so it keeps its hover look and gets no HoverLeave.
             TooltipHide?.Invoke(_hoverWidget);
-            _hoverWidget = null;
             _tooltipFired = false;
+            _tooltipExpired = true;
         }
 
         BroadcastGlobalUiTime(this, nowMs / 1000d);
@@ -404,6 +416,16 @@ public sealed class UiRoot : UiElement
         {
             ctx.TextRenderer.CanvasScale = Vector2.One;
         }
+    }
+
+    /// <summary>
+    /// From the plugin canvases drawn over windows upwards, everything is
+    /// drawn in the upper layer, so no window's text shows through them.
+    /// </summary>
+    private protected override void OnDrawingChild(UiRenderContext ctx, UiElement child)
+    {
+        if (child.ZOrder >= UiBands.UpperRenderLayerFloor && ctx.TextRenderer.Layer == UiDrawLayer.Main)
+            ctx.BeginUpperLayer();
     }
 
     private void DrawCore(UiRenderContext ctx)
@@ -477,6 +499,7 @@ public sealed class UiRoot : UiElement
                 left = Math.Clamp(left, 0f, Math.Max(0f, parent.Width - _windowDragTarget.Width));
                 top = Math.Clamp(top, 0f, Math.Max(0f, parent.Height - _windowDragTarget.Height));
             }
+            _windowDragTarget.ConstrainWindowDrag(ref left, ref top, x, y);
             _windowDragTarget.Left = left;
             _windowDragTarget.Top  = top;
             _windowDragTarget.ResetAnchorCapture();
@@ -547,6 +570,7 @@ public sealed class UiRoot : UiElement
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: true);
         _pressX = x; _pressY = y;
+        PressStarting?.Invoke(btn, x, y);
 
         if (Modal is not null && !ContainsAbsolute(Modal, x, y))
             return;
@@ -582,6 +606,9 @@ public sealed class UiRoot : UiElement
             return;
         }
 
+        // Focus may scroll a scrolling ancestor to reveal the target; the
+        // press is reported where it landed, so read the position first.
+        var sp = target.ScreenPosition;
         if (btn == UiMouseButton.Left)
             SetKeyboardFocus(target.AcceptsFocus && target.FocusOnMouseClick ? target : null);
 
@@ -653,7 +680,6 @@ public sealed class UiRoot : UiElement
             UiMouseButton.Middle => UiEventType.MiddleDown,
             _ => UiEventType.MouseDown,
         };
-        var sp = target.ScreenPosition;
         var e = new UiEvent(target.EventId, target, rawType,
                             Data0: (int)flags, Data1: (int)(x - sp.X), Data2: (int)(y - sp.Y));
         BubbleEvent(target, in e);
@@ -753,7 +779,68 @@ public sealed class UiRoot : UiElement
         WorldMouseFallThrough?.Invoke(btn, x, y, flags);
     }
 
-    public void OnScroll(int dy)
+    /// <summary>A vertical wheel step: +1 up, -1 down.</summary>
+    public void OnScroll(int dy) => OnScroll(0, dy, shift: false);
+
+    /// <summary>
+    /// A wheel event with its horizontal and vertical steps (each -1, 0 or +1;
+    /// +1 is left or up) and whether Shift was held. Shift turns a vertical
+    /// step into a horizontal one before routing, as most applications do. A
+    /// vertical step is routed as it always has been: to the element under the
+    /// pointer and up through its parents until one consumes it, else to the
+    /// world. A horizontal step goes the same way as a
+    /// <see cref="UiEventType.ScrollHorizontal"/> event, which only a group
+    /// scrolling horizontally consumes; nothing passes it to the world. A Shift
+    /// step that nothing horizontal takes is routed as the vertical step it was.
+    ///
+    /// <para>A step the interface takes may move content under the pointer, so
+    /// the hover is checked again; and taken anywhere but over an open popup,
+    /// it closes the popup, which may have scrolled away with its group.</para>
+    /// </summary>
+    public void OnScroll(int dx, int dy, bool shift)
+    {
+        bool overPopup = PopupHit(MouseX, MouseY) is not null;
+        bool taken = false;
+        if (shift && dy != 0 && dx == 0)
+        {
+            taken = RouteHorizontal(dy) || RouteVertical(dy);
+        }
+        else
+        {
+            if (dx != 0) taken |= RouteHorizontal(dx);
+            if (dy != 0) taken |= RouteVertical(dy);
+        }
+        if (!taken) return;
+
+        if (!overPopup && _activePopup is not null)
+        {
+            var dismiss = _activePopupDismiss;
+            _activePopup = null;
+            _activePopupDismiss = null;
+            dismiss?.Invoke();
+        }
+        // As a move would: not while a resize, window drag or capture owns the pointer.
+        if (_resizeTarget is null && _windowDragTarget is null && Captured is null)
+            UpdateHover(MouseX, MouseY);
+    }
+
+    /// <summary>Whether shift is held on the attached keyboard.</summary>
+    internal bool ShiftHeld =>
+        Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true;
+
+    private bool RouteHorizontal(int dx)
+    {
+        UiElement? target = PopupHit(MouseX, MouseY) ?? HitTestTopDown(MouseX, MouseY).element;
+        if (target is null) return false;
+        var sp = target.ScreenPosition;
+        var e = new UiEvent(target.EventId, target, UiEventType.ScrollHorizontal, Data0: Math.Sign(dx),
+                            Data1: (int)(MouseX - sp.X), Data2: (int)(MouseY - sp.Y));
+        return BubbleEvent(target, in e);
+    }
+
+    /// <summary>Routes a vertical step; true when the interface took it.</summary>
+    private bool RouteVertical(int dy)
     {
         if (PopupHit(MouseX, MouseY) is { } popupTarget)
         {
@@ -761,19 +848,18 @@ public sealed class UiRoot : UiElement
             var pe = new UiEvent(popupTarget.EventId, popupTarget, UiEventType.Scroll,
                                  Data0: dy,
                                  Data1: (int)(MouseX - pp.X), Data2: (int)(MouseY - pp.Y));
-            BubbleEvent(popupTarget, in pe);
-            return;
+            return BubbleEvent(popupTarget, in pe);
         }
 
         var (target, lx, ly) = HitTestTopDown(MouseX, MouseY);
         if (target is null)
         {
             WorldScrollFallThrough?.Invoke(dy);
-            return;
+            return false;
         }
         var e = new UiEvent(target.EventId, target, UiEventType.Scroll, Data0: dy,
                             Data1: (int)lx, Data2: (int)ly);
-        BubbleEvent(target, in e);
+        return BubbleEvent(target, in e);
     }
 
     public void OnKeyDown(int vk, uint lparam = 0)
@@ -795,9 +881,7 @@ public sealed class UiRoot : UiElement
             return;
         }
 
-        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(
-                Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
-                || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true))
+        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(ShiftHeld))
             return;
 
         // Focus widget first.
@@ -917,8 +1001,17 @@ public sealed class UiRoot : UiElement
         {
             var gained = new UiEvent(e.EventId, e, UiEventType.FocusGained);
             e.OnEvent(in gained);
+            RevealInScrollingAncestors(e);
         }
         KeyboardFocusChanged?.Invoke(previous, e);
+    }
+
+    /// <summary>Scrolls each scrolling ancestor of <paramref name="e"/>, innermost first, just far enough to show it.</summary>
+    private static void RevealInScrollingAncestors(UiElement e)
+    {
+        for (UiElement? p = e.Parent; p is not null; p = p.Parent)
+            if (p is IUiScrollHost { ScrollArea: { } area })
+                area.Reveal(e);
     }
 
     private bool IsAvailableInputTarget(UiElement element)
@@ -999,6 +1092,9 @@ public sealed class UiRoot : UiElement
 
     public void BringToFront(UiElement window)
         => WindowManager.BringToFront(window);
+
+    public void BringToFront(UiElement window, UiBand band)
+        => WindowManager.BringToFront(window, band);
 
     internal void NotifyWindowMoved(UiElement window)
     {
@@ -1107,6 +1203,7 @@ public sealed class UiRoot : UiElement
         {
             if (w?.ReceivesHoverMouseMove == true)
                 DispatchMouseMove(w, x, y);
+            _tooltipExpired = false;
             if (!_tooltipFired)
                 _hoverStartedMs = _nowMs;
             return;
@@ -1122,6 +1219,7 @@ public sealed class UiRoot : UiElement
         _hoverWidget = w;
         _hoverStartedMs = _nowMs;
         _tooltipFired = false;
+        _tooltipExpired = false;
         if (w is not null)
         {
             var screen = w.ScreenPosition;

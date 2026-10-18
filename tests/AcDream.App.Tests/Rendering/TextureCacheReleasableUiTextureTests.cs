@@ -53,6 +53,35 @@ public sealed class TextureCacheReleasableUiTextureTests
     }
 
     [Fact]
+    public void AMipmappedUploadSendsEveryLevelAndSamplesThemTrilinearly()
+    {
+        (RecordingGpuDevice device, TextureCache cache, HeldGpuRetirementQueue queue) = Build();
+
+        uint handle = cache.UploadReleasableRgba8(new byte[8 * 4 * 4], 8, 4, "test-image", mipmapped: true);
+
+        RecordingGpuTexture texture = Assert.Single(device.CreatedTextures);
+        Assert.Equal(4, texture.MipLevelCount);
+        Assert.Equal([(0, 0, 8 * 4 * 4), (1, 0, 4 * 2 * 4), (2, 0, 2 * 1 * 4), (3, 0, 1 * 1 * 4)], texture.Uploads);
+        Assert.False(texture.MipChainGenerated);
+        GpuRecordedTextureRegistration registration = Assert.Single(device.OfKind<GpuRecordedTextureRegistration>());
+        Assert.Equal(GpuSamplerDescription.WorldClamp, registration.Sampler);
+        Assert.False(cache.IsNearestUiTexture(handle));
+
+        Assert.True(cache.ReleaseUiTexture(handle));
+        Assert.Single(queue.Pending);
+    }
+
+    [Fact]
+    public void APlainUploadHasOneLevel()
+    {
+        (RecordingGpuDevice device, TextureCache cache, _) = Build();
+
+        cache.UploadReleasableRgba8(new byte[8 * 4 * 4], 8, 4, "test-image");
+
+        Assert.Equal(1, Assert.Single(device.CreatedTextures).MipLevelCount);
+    }
+
+    [Fact]
     public void ASecondReleaseOfTheSameHandleIsRefused()
     {
         (_, TextureCache cache, HeldGpuRetirementQueue queue) = Build();
@@ -88,5 +117,65 @@ public sealed class TextureCacheReleasableUiTextureTests
         Assert.Contains(
             device.OfKind<GpuRecordedTextureRelease>(),
             call => call.Slot == UiTextureTableHandle.ToSlot(handle).Index);
+    }
+
+    [Fact]
+    public void ACoverageUploadIsOneChannelClampedAndReleasable()
+    {
+        (RecordingGpuDevice device, TextureCache cache, HeldGpuRetirementQueue queue) = Build();
+
+        uint handle = cache.UploadReleasableCoverage8(new byte[8 * 4], 8, 4, "test-glyphs");
+
+        RecordingGpuTexture texture = Assert.Single(device.CreatedTextures, t => t.Name == "test-glyphs");
+        Assert.Equal(GpuTextureFormat.R8Unorm, texture.Format);
+        Assert.Equal((8, 4), (texture.Width, texture.Height));
+        Assert.Equal(32, Assert.Single(texture.Uploads).ByteCount);
+        GpuRecordedTextureRegistration registration = Assert.Single(
+            device.OfKind<GpuRecordedTextureRegistration>(), r => r.TextureName == "test-glyphs");
+        Assert.Equal(GpuSamplerDescription.WorldClamp, registration.Sampler);
+        Assert.Equal(1, cache.ReleasableUiTextureCount);
+
+        Assert.True(cache.ReleaseUiTexture(handle));
+        queue.RunAll();
+
+        Assert.Equal(0, cache.ReleasableUiTextureCount);
+        Assert.Contains(
+            device.OfKind<GpuRecordedTextureRelease>(),
+            call => call.Slot == UiTextureTableHandle.ToSlot(handle).Index);
+    }
+
+    [Fact]
+    public void ACoverageUploadOfTheWrongLengthIsRefused()
+    {
+        (_, TextureCache cache, _) = Build();
+
+        Assert.Throws<ArgumentException>(() => cache.UploadReleasableCoverage8(new byte[8 * 4 * 4], 8, 4, "rgba"));
+        Assert.Equal(0, cache.ReleasableUiTextureCount);
+    }
+
+    [Fact]
+    public void AReleasableUploadIsSampledLinearAndClampedSoASheetsEdgesDoNotWrap()
+    {
+        (RecordingGpuDevice device, TextureCache cache, _) = Build();
+
+        uint handle = cache.UploadReleasableRgba8(new byte[4 * 4 * 4], 4, 4, "test-sheet");
+
+        GpuRecordedTextureRegistration registration = Assert.Single(
+            device.OfKind<GpuRecordedTextureRegistration>(), r => r.TextureName == "test-sheet");
+        Assert.Equal(GpuSamplerDescription.WorldClamp, registration.Sampler);
+        Assert.False(cache.IsNearestUiTexture(handle));
+    }
+
+    [Fact]
+    public void AnAdHocNearestUploadIsReportedNearestAndALinearOneIsNot()
+    {
+        (_, TextureCache cache, _) = Build();
+
+        uint nearest = cache.UploadRgba8(new byte[4 * 4 * 4], 4, 4, nearest: true);
+        uint linear = cache.UploadRgba8(new byte[4 * 4 * 4], 4, 4);
+
+        Assert.True(cache.IsNearestUiTexture(nearest));
+        Assert.False(cache.IsNearestUiTexture(linear));
+        Assert.False(cache.IsNearestUiTexture(0u));
     }
 }

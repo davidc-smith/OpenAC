@@ -1,9 +1,19 @@
-# Plugin API: chat, lifecycle, spells, storage, clipboard, objects, confirmations, session and loot
+# Plugin API: chat, lifecycle, spells, storage, clipboard, objects, confirmations, session, loot and drawing
 
 Everything here lives in `AcDream.Plugin.Abstractions` and has a default
 implementation, so a plugin written against an older build still compiles and
 a host that cannot provide something returns an inert value rather than
 throwing. `docs/plugin-ui-markup.md` covers the panel markup separately.
+
+A plugin that draws for itself, rather than through panel markup, starts
+at [World labels](#world-labels) and [World markers](#world-markers)
+(text, icons and ground shapes in the world), [World triangles](#world-triangles)
+(filled areas of the world), [Images](#images),
+[Fonts](#fonts), [Plugin theme](#plugin-theme) and [Canvases](#canvases), whose subsections cover
+[image regions](#image-regions), [shapes](#shapes),
+[high-density displays](#high-density-displays),
+[layers and order](#layers-and-order), [pointer input](#pointer-input) and
+[keyboard input](#keyboard-input).
 
 ## The tick
 
@@ -123,6 +133,36 @@ kind if a filter should treat them differently from transcript lines.
 writes in one of the client's own text classes, so a plugin's own output can
 use the colour the class carries. `Submit(text)` still runs the full chat
 pipeline, commands included.
+
+A line a plugin posts may carry a coordinate link. The tag's caption is shown
+in the link colour, and clicking it raises `LinkClicked`:
+
+```csharp
+host.Automation.Chat.PostSystemMessage(
+    @"Next waypoint: <COORD:World:42.1N, 33.5E>the Holtburg bridge<\COORD>");
+```
+
+A plugin's line is read as markup only when it holds a tag of the form
+`<TYPE:FORMAT…>`, so an ordinary `<` in a line is shown as written. Server
+text is never read as markup.
+
+### Chat links
+
+`LinkClicked` is raised when the player clicks a coordinate link in the main
+chat window. Every coordinate pair `PluginChatCoordinateParser` reads is a
+link, in any line except combat text: what players say, tell and post on
+channels, the server's own lines ("Your corpse is located at (42.1N, 33.5E).")
+and plugins' lines. `PluginChatCoordinateLinkRouter` hands just the
+coordinates to a callback:
+
+```csharp
+var router = new PluginChatCoordinateLinkRouter(
+    host.Automation.Chat,
+    coordinate => SetWaypoint(coordinate.NorthSouth, coordinate.EastWest));
+```
+
+Clicking a player's name still starts a tell and raises nothing. The floating
+chat windows show no links.
 
 ### Intercepting what the player types
 
@@ -1182,9 +1222,9 @@ binding; the host also revokes every hotkey a plugin registered when that
 plugin unloads.
 
 While anything in the interface has keyboard focus (the chat bar, a text
-field, a control reached with Tab), a hotkey fires only if Ctrl or Alt is
-part of the chord; otherwise every letter typed would also be a candidate
-hotkey press. Clicking a button does not give it keyboard focus. While a
+field, a control reached with Tab, a plugin canvas with keyboard focus), a
+hotkey fires only if Ctrl or Alt is part of the chord; otherwise every
+letter typed would also be a candidate hotkey press. Clicking a button does not give it keyboard focus. While a
 modal dialog is open, or a key rebind is being captured
 (`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
 chords included.
@@ -1314,6 +1354,155 @@ itself, from the object's position and its own knowledge of the place.
 The set belongs to the session: when the character leaves the world, every
 plugin's labels are dropped, and a plugin that is unloaded takes its labels
 with it.
+
+## World markers
+
+```csharp
+IPluginWorldMarkerLayer? layer = host.Ui.WorldMarkers.CreateLayer(); // null without a window
+
+layer?.SetIcons(
+[
+    new PluginWorldIcon(PluginMarkerAnchor.Object(creatureId), images.FromSpellIcon(vulnerabilityId))
+        { Border = new PluginColor(220, 60, 60) },
+    new PluginWorldIcon(PluginMarkerAnchor.At(waypoint), waypointImage)
+        { SizePixels = 32, MaxRange = 200f },
+]);
+
+layer?.SetShapes(
+[
+    PluginGroundShape.Ring(PluginMarkerAnchor.Object(targetId), radius: 2f, width: 0.15f, new PluginColor(220, 60, 60)),
+    PluginGroundShape.Disc(PluginMarkerAnchor.At(blastCentre), radius: 6f, new PluginColor(255, 80, 0, 90)),
+    PluginGroundShape.Arc(PluginMarkerAnchor.Object(creatureId), radius: 5f, startDegrees: -45f, sweepDegrees: 90f,
+        filled: true, new PluginColor(255, 200, 40, 90)) with { FacesObject = true },
+]);
+```
+
+`host.Ui.WorldMarkers` hangs images in the world -- over an object, following
+it wherever it goes, or pinned to a position -- and lays shapes on the ground
+around them. A plugin makes layers and sets each layer's icons and shapes; a
+call replaces that layer's set of that kind, and the list is copied, so it
+can be reused. Disposing a layer takes its markers away.
+
+Over an object, the client lays the object's icons out itself: centred in
+rows of up to eight, two points apart, above the object's head and above any
+[world labels](#world-labels) on it, in the order given, with every plugin's
+icons over one object sharing the rows. An icon pinned to a position is
+centred on it; `PluginMarkerAnchor.At` takes the same position world lines
+and navigation use. A marker over an object the client does not hold is not
+drawn until the object appears.
+
+Icons are drawn at a constant size on the screen. `SizePixels` is the side
+of the square the image is fitted into, keeping its shape, in interface
+points (24 by default, clamped to 8–128), so an icon is as sharp on a
+high-density display as the rest of the interface. `Tint` is multiplied into
+the image and its alpha is the icon's opacity; `Border` draws a thin frame.
+`MaxRange` is the distance from the camera, in metres, past which the icon is
+not drawn; it fades over the last fifth. The image comes from the plugin's
+own [images](#images) -- a spell's icon is `images.FromSpellIcon(spellId)` --
+and is looked up in that plugin's images only.
+
+Each plugin may have at most `IPluginWorldMarkers.MaximumIcons` (256) icons
+set across all its layers. A set whose entries, added to the plugin's other
+layers, come to more is refused as a whole -- `SetIcons` returns false and
+the layer keeps what it had. Inside an accepted set, an icon pinned to
+nothing (object id zero, or a position with a coordinate that is not a
+finite number), with an image that is not valid, or with a size or range
+that is not a finite number (or a range that is not positive) is dropped and
+the rest are shown.
+
+`SetShapes` lays shapes on the ground around an anchor. `Ring` is a band from
+`radius - width` out to `radius`; `Disc` is filled; `Arc` is part of a
+circle -- a wedge filled from the centre, or, unfilled, a band like a ring's
+(`width` wide, 0.15 m unless given: `PluginGroundShape.DefaultWidth`).
+Sizes are metres, and a radius may be 0.1 to 100
+(`PluginGroundShape.MinimumRadius` to `MaximumRadius`). An arc starts at
+`startDegrees`, a compass bearing (0 is north, 90 east), and runs clockwise
+through `sweepDegrees` (more than 0, up to 360). With `FacesObject` an arc
+over an object measures its start from the way the object faces, so a wedge
+in front of a creature turns as it turns. The colour's alpha is the shape's
+opacity.
+
+Shapes are drawn in the world, not over it: walls and hills hide them, and
+they never hide each other. An object or position in an outdoor cell and
+standing on the land -- no more than 1 m above it -- has its shape follow the
+slope of the land; anywhere else (a dungeon, a building, a roof or a bridge)
+the shape lies flat at the object's feet or at the position's height. A shape
+whose centre is more than 250 m from the camera is not drawn, and when a
+frame's shapes come to more than the client draws at once, the nearest are
+drawn.
+
+Each plugin may have at most `IPluginWorldMarkers.MaximumShapes` (256) shapes
+set across all its layers, counted apart from its icons, and refused the same
+way. Inside an accepted set a shape is dropped when it is pinned to nothing,
+of no kind, or has a radius out of range, a ring's or unfilled arc's width
+that is not more than zero or is more than the radius, or an arc's start or
+sweep that is not a finite number or a sweep out of range. A ring's or disc's
+start, sweep and `FacesObject` are ignored.
+
+Like labels, icons are not occluded: they show through walls and hills,
+because the interface is drawn after the world.
+
+Layers belong to the plugin: unloading it takes them down. When the character
+leaves the world -- logging out, losing the connection, reconnecting -- every
+layer's icons and shapes are cleared, because object ids mean nothing in the
+next session; the layers stay usable, so the plugin sets its markers again on
+the next stay. Images are dropped when the interface is torn down (for
+example on a reconnect); an icon whose image is gone is not drawn until the
+plugin asks for its images again and sets its markers again. Call all of this
+from the tick thread, as with every other UI call. `SetIcons` and `SetShapes`
+throw `ArgumentNullException` for a null list and `ObjectDisposedException`
+on a disposed layer.
+
+Without a window, and on a host that predates world markers, `CreateLayer()`
+answers null: there is no layer to keep a set in, unlike
+[world labels](#world-labels), which a windowless client keeps. A plugin that
+needs markers declares a `minHostVersion` (see the
+[manifest guide](plugin-manifest.md)) of a client that has them.
+
+## World triangles
+
+```csharp
+IPluginWorldTriangleLayer? shading = host.WorldTriangles.CreateLayer();
+var red = new PluginColor(220, 40, 40, 90);
+var triangles = new List<PluginWorldTriangle>();
+foreach (PluginTerrainCell cell in ground.Cells)
+{
+    if (!cell.First.Walkable)
+        triangles.Add(Lifted(cell.First, red));
+    if (!cell.Second.Walkable)
+        triangles.Add(Lifted(cell.Second, red));
+}
+shading?.SetTriangles(triangles);
+// ...
+shading?.Dispose();
+```
+
+`WorldTriangles` fills areas of the world: each `PluginWorldTriangle` is
+three `PluginNavigationPosition` corners and a `PluginColor` whose alpha is
+how opaque the fill is. The positions work exactly as world lines' do. A
+triangle is drawn flat between its corners, from both sides and unlit, in
+the world pass after the world: hills and walls in front of it hide it, but
+it writes no depth, so overlapping triangles blend rather than hide each
+other. It does not follow the ground; a triangle meant to lie on the ground
+is lifted a little off it by the plugin. The terrain's own triangles (see
+[Terrain](#terrain)) raised about 0.1 m lie exactly on it.
+
+Like world lines, triangles come in layers the plugin owns. `CreateLayer`
+returns null on a host without a window, so a plugin holds a may-be-null.
+`SetTriangles` copies the list and replaces the layer's set (up to 65,536
+triangles; the rest are dropped), and `Dispose` takes them out of the
+world. Layers are let go with the plugin. A set of a few thousand,
+replaced a few times a second as the character moves, is what the layer is
+for; there is no need to set it every frame.
+
+The host bounds the draw: a triangle no part of which is within 250 m of
+the camera, or which lies wholly out of view, is skipped, and a frame
+draws at most about 12,000 triangles across every layer of every plugin.
+Past that, the triangles nearest the camera are drawn and the farthest are
+left out. A triangle with a corner that is not a finite number is dropped.
+On a host that predates world triangles `WorldTriangles` is the inert
+default and `CreateLayer` returns null.
+
 ## Images
 
 A plugin that draws its own map or HUD gets its images through
@@ -1342,6 +1531,10 @@ taller than `MaximumDimension` (2048). A request past any of these answers
 and composed icons are shared with the client's own windows and every
 other plugin, so they cost nothing against the byte budget.
 
+A window's dock icon is not an image handle: name its PNG or SVG with
+`PluginPanelDescriptor.IconFile` (see
+[the markup guide](plugin-ui-markup.md#png-dock-icons)).
+
 `FromStream` accepts PNG, JPEG, BMP, TGA and GIF; the stream is opened only
 when the host does not already hold an image under that name, and disposed
 by the host. Call all of this from the tick thread, as with every other UI
@@ -1350,15 +1543,96 @@ call. Without a window, or before the client's interface is up,
 images are dropped when the interface is torn down (for example on a
 reconnect), after which the plugin asks again.
 
+## Fonts
+
+Canvas text is drawn in the client's interface font unless the plugin
+passes a font from `host.Ui.Fonts`. There are two sources: the client's
+bundled sans-serif (Noto Sans) at any size, and a TrueType or OpenType font
+the plugin ships.
+
+```csharp
+IPluginFonts fonts = host.Ui.Fonts;
+
+PluginFont body  = fonts.Bundled(16);                         // Noto Sans, 16 px
+PluginFont title = fonts.FromStream("fonts/Inter-Bold.ttf",    // the plugin's own font
+    () => File.OpenRead(Path.Combine(pluginDirectory, "fonts", "Inter-Bold.ttf")), 22);
+PluginFont icons = fonts.FromStream("fonts/MaterialSymbols.ttf",
+    () => File.OpenRead(Path.Combine(pluginDirectory, "fonts", "MaterialSymbols.ttf")), 20,
+    new PluginFontOptions { Ranges = [new PluginCodepointRange(0xE8B8, 0xE8B8),      // settings gear
+                  new PluginCodepointRange(0xE5CD, 0xE5CD)] });  // close
+
+// in a paint callback:
+painter.DrawText("Golem", new PluginPoint(8, 6), PluginColor.White, title);
+PluginSize size = painter.MeasureText("Golem", title);   // width with kerning, and title.LineHeight
+painter.DrawText("\uE8B8", new PluginPoint(8, 34), PluginColor.White, icons); // U+E8B8, the "settings" gear
+
+fonts.Release(title);
+```
+
+The bundled sans also comes in the SemiBold weight themed window titles are
+set in: `fonts.Bundled(16, PluginFontWeight.SemiBold)`. Each weight and size
+is its own `PluginFont`, held and counted like any other, and shared with
+every plugin like the regular weight. A host that predates weights answers
+`PluginFont.None` for SemiBold, and `Regular` is the same font as
+`Bundled(size)`.
+
+Each size of each font is its own `PluginFont`, carrying its `PixelSize`,
+`LineHeight` and `Ascent` (how far below the top of a line the baseline
+sits) so text in different fonts can share a baseline. Sizes are prepared
+to the nearest quarter pixel, and `PixelSize` is the size prepared: asking
+for 16.1 px gives the 16 px font. Preparing a font
+takes some milliseconds and happens when it is asked for, never while a
+canvas paints: ask for fonts up front, not inside the paint callback. A
+request made inside a paint callback for a font not already held answers
+`PluginFont.None` and is reported once; asking again for a font already held
+is allowed, and, like any other request, adds a hold that needs its own
+`Release`. `Count` says how many distinct fonts the plugin holds.
+
+`FromStream` prepares the characters named in `PluginFontOptions.Ranges`,
+or by default U+0020-U+024F, U+0370-U+052F and U+2000-U+206F. Only the
+characters the font actually has are prepared and counted, so an icon font
+can name the whole private-use area, as long as it has no more than
+`MaximumGlyphs` of those characters. A character that was not prepared
+draws as the font's `?` if that was prepared, and as nothing otherwise.
+
+Requests are counted like images: asking twice for the same font, size and
+characters returns the same `PluginFont`, and it takes two releases to let
+it go. A plugin may hold at most `MaximumCount` fonts (16), sized from
+`MinimumPixelSize` to `MaximumPixelSize` (6 to 64 px), each preparing at
+most `MaximumGlyphs` characters (2048); its own fonts may take at most
+`MaximumBytes` (16 MB), counting the font files and the glyph textures made
+from them. The bundled font is shared with every plugin and costs nothing
+against the byte budget. A font file whose structure is malformed
+(truncated, or with a bad table directory) is refused: the client checks
+the file's header, table directory and table extents before reading it. A
+request past any limit, a stream that cannot be read, or a file that is not
+a usable font answers `PluginFont.None` and is reported once in the
+client's log; text drawn with an invalid or released font draws nothing and
+measures `(0, 0)`.
+
+Call all of this from the tick thread; once the client's interface is up,
+another thread gets an `InvalidOperationException`. Without a window, or
+before the client's interface is up, `IsAvailable` is false and every request
+answers `PluginFont.None`; fonts are dropped when the interface is torn down,
+after which the plugin asks again.
+
+On a host that predates fonts, `host.Ui.Fonts` answers `PluginFont.None` to
+every request, and `DrawText` and `MeasureText` given a font draw and measure
+in the interface font instead, so the canvas still shows its text. A plugin
+whose look depends on its fonts declares a `minHostVersion` (see the
+[manifest guide](plugin-manifest.md)) of a client that has them.
+
 ## Plugin theme
 
 The player picks **Classic**, **Charcoal + moss** or **Warm graphite +
-brass** under Plugin appearance. The client restyles markup windows that
-opt in (see the [markup guide](plugin-ui-markup.md)) itself, but a canvas
-paints its own pixels, so it reads the choice and repaints when it changes:
+brass** under the dock's Plugin appearance. The client restyles markup
+windows that opt in (see the [markup guide](plugin-ui-markup.md)) itself,
+but a canvas paints its own pixels, so it reads the choice and repaints
+when it changes:
 
 ```csharp
 PluginUiThemeInfo theme = host.Ui.Theme;
+PluginFont title = host.Ui.Fonts.Bundled(14, PluginFontWeight.SemiBold);
 
 host.Ui.ThemeChanged += next =>
 {
@@ -1369,8 +1643,9 @@ host.Ui.ThemeChanged += next =>
 // in a paint callback:
 if (theme.Palette is { } p)
 {
-    painter.FillRect(new PluginRect(0, 0, painter.Width, painter.Height), p.Background);
-    painter.DrawText("Golem", new PluginPoint(8, 6), p.Text);
+    painter.FillRoundedRect(new PluginRect(0, 0, painter.Width, painter.Height),
+        PluginCornerRadii.Uniform(PluginThemeMetrics.WindowRadius), p.Background);
+    painter.DrawText("Golem", new PluginPoint(10, 5), p.Text, title);
 }
 else
 {
@@ -1382,7 +1657,10 @@ else
 picker calls it. `Theme.Palette` holds the seven colours themed windows draw
 in -- `Background`, `Field`, `Border`, `Text`, `Muted`, `Accent` and
 `Selected` -- and is null under Classic, where themed windows draw
-unthemed.
+unthemed. `PluginThemeMetrics` carries the sizes themed windows use: the
+window and control corner radii, the title band's height, and a switch's
+track and knob. They are constants, so a plugin takes the values of the
+contract it was built against.
 
 `ThemeChanged` is raised on the tick thread, once for each change, with the
 new theme; reading `Theme` inside the handler gives the same value. A
@@ -1397,9 +1675,11 @@ Without a window, and on a host that predates themes, `Theme` answers
 
 ## Canvases
 
-A canvas is a rectangle the plugin paints, shown over the world and under
-every window, taking no input unless it asks for it (see
-[Pointer input](#pointer-input) below). It is positioned by an anchor plus
+A canvas is a rectangle the plugin paints, shown over the world and either
+under every window or over them (see [Layers and order](#layers-and-order)
+below), taking no input unless it asks for it (see
+[Pointer input](#pointer-input) and [Keyboard input](#keyboard-input)
+below). It is positioned by an anchor plus
 an offset, it is exactly its declared size, and everything painted is
 clipped to it; there is no way to draw anywhere else on the screen.
 
@@ -1429,21 +1709,253 @@ frame, on the tick thread. Several `Invalidate()` calls before that frame
 paint once. The painter handed to the callback is valid only for the
 duration of the call; keeping it and drawing later throws. Its primitives
 are `Clear`, `FillRect`, `StrokeRect`, `DrawLine`, `DrawText` with
-`MeasureText` (the client's own interface font, one size), `DrawImage`,
+`MeasureText` (the client's interface font, or a font from
+[Fonts](#fonts)), `DrawImage`,
 `DrawImageTransformed` (scaled and turned about a pivot, for a compass or
-a rotating map) and `PushClip`/`PopClip`; every clip pushed must be popped
-before the callback returns.
+a rotating map) and `PushClip`/`PopClip`, plus
+[image regions](#image-regions) and [shapes](#shapes) below; every clip
+pushed must be popped before the callback returns. Colours with alpha, translucent images and
+text edges are shown at the opacity they were painted with, over whatever
+lies beneath the canvas.
 
 A paint callback is measured. One that stays over its 4 ms budget on three
 frames in a row, throws, or leaves a clip pushed is dropped for the rest
 of the session and the canvas hidden; the client's log says why. A plugin
 may register at most 8 canvases, each with an id unique within the plugin;
-`RegisterCanvas` throws past either. `IsVisible`, `Anchor` and `Offset`
-can be set at any time; disposing the canvas removes it, and everything a
+`RegisterCanvas` throws past either. `IsVisible`, `Anchor`, `Offset` and
+`ZOrder` can be set at any time; disposing the canvas removes it, and everything a
 plugin still holds is removed when the plugin unloads.
 
+`TryResize(width, height)` changes a canvas's size without registering it
+again: the host makes a surface at the new size and paints it on the next
+frame, and the anchor, offset, visibility and handlers stay as they were, so
+a canvas anchored at the bottom right keeps that corner in place while it
+grows up and to the left. `Width` and `Height` read the new size at once. It
+answers false, and changes nothing, for a size below 1 or a disposed canvas,
+and on a host that cannot resize. A plugin that shows one of two layouts can
+keep one canvas and resize it, rather than register both and show one.
+
 Without a window the canvas is accepted, `IsAvailable` is false, the
-state the plugin sets is kept, and the paint callback is never called.
+state the plugin sets is kept (a resize included), and the paint callback is
+never called.
+
+### Screen size
+
+`host.Ui.ScreenSize` is the interface's size, in the same pixels as canvas
+offsets and sizes: it is the rectangle both layers are laid out in, so a
+`TopLeft` canvas of size w×h at `Offset` (`Width - w`, `Height - h`) sits in
+the bottom-right corner. A plugin that places a canvas itself, such as a menu
+opened at the cursor, reads it to keep the canvas on screen near an edge.
+`ScreenSizeChanged` is raised on the tick thread with the new size when it
+changes (the window resized, or the display or interface scale changed), and
+not when it stays the same.
+
+```csharp
+// open the menu at a point on the screen, flipped left or up near an edge
+void OpenMenuAt(PluginPoint at)
+{
+    PluginSize screen = host.Ui.ScreenSize;
+    double x = at.X + menu.Width > screen.Width ? at.X - menu.Width : at.X;
+    double y = at.Y + menu.Height > screen.Height ? at.Y - menu.Height : at.Y;
+    menu.Offset = new PluginPoint(
+        Math.Clamp(x, 0, Math.Max(0, screen.Width - menu.Width)),
+        Math.Clamp(y, 0, Math.Max(0, screen.Height - menu.Height)));
+    menu.IsVisible = true;
+}
+
+host.Ui.ScreenSizeChanged += _ => menu.IsVisible = false;
+```
+
+The size is 0×0 until the interface first draws, and always on a host
+without a window, where `ScreenSizeChanged` is never raised.
+
+### Image regions
+
+Part of an image, such as one frame of a sprite sheet or one icon of an
+atlas, is drawn with `DrawImageRegion`, and a panel or button background
+that keeps its corners at any size with `DrawImageNineSlice`:
+
+```csharp
+// The third 16x16 frame of a strip, at twice its size:
+painter.DrawImageRegion(sheet, new PluginRect(32, 0, 16, 16), new PluginRect(10, 10, 32, 32), PluginColor.White);
+
+// The same frame, turned about its middle:
+painter.DrawImageRegionTransformed(sheet, new PluginRect(32, 0, 16, 16), new PluginRect(50, 10, 32, 32),
+    PluginColor.White, rotationRadians: heading, pivot: new PluginPoint(16, 16));
+
+// A panel from a frame with 8-pixel corners, stretched over the canvas:
+painter.DrawImageNineSlice(panel, new PluginRect(0, 0, painter.Width, painter.Height),
+    PluginInsets.Uniform(8), PluginColor.White);
+```
+
+A source rectangle is in the image's own pixels. It is cut to the
+image's bounds and the destination shrinks with it, so a source that runs
+off the image draws only the part on it, where that part would have been.
+An empty source, or one wholly off the image, draws nothing, and so does
+an empty or non-finite destination.
+
+A nine-slice draws its four corners at the size of the insets, stretches
+the edges along the frame and the middle both ways; nothing is tiled.
+Insets are in the image's pixels. When the destination is narrower or
+shorter than its two corners, those corners shrink to fit in proportion.
+Insets that add up to more than the source are scaled down to fit it, and
+then there is no middle to stretch. The optional `source` picks the frame
+out of a sheet (cut to the image's bounds; the destination is not moved),
+and `drawCenter: false` draws only the frame around the middle. Negative
+or non-finite insets draw nothing.
+
+The client's art and the plugin's own images are smoothed when stretched,
+which would blend in the pixels just outside a region: the neighbouring
+frame on a sheet. A region drawn at its own size on whole pixels,
+nine-slice corners included, is drawn exactly. When it is stretched, or
+turned, its edges that lie inside the image are pulled in just far enough
+(up to half a pixel) to keep the neighbouring frame out, so frames need no
+padding between them. An edge on the image's own border is drawn exactly
+as `DrawImage` draws it, and the seams between a nine-slice's pieces are
+left alone, since what lies across them is the same frame. Spell and object icons are drawn with
+hard pixels, as the client draws them, and are not pulled in.
+
+On a host that predates image regions these calls draw nothing, rather
+than the whole sheet. A plugin that needs them declares a
+`minHostVersion` (see the [manifest guide](plugin-manifest.md)) of a
+client that has them.
+
+### Shapes
+
+Besides rectangles and lines, the painter draws shapes with smooth,
+anti-aliased edges:
+
+```csharp
+painter.FillRoundedRect(new PluginRect(0, 0, 200, 60), PluginCornerRadii.Uniform(8), new PluginColor(0, 0, 0, 160));
+painter.StrokeRoundedRect(new PluginRect(0, 0, 200, 60), PluginCornerRadii.Uniform(8), PluginColor.White, 1.5f);
+painter.FillRectGradient(new PluginRect(8, 40, 184 * healthFraction, 12),
+    new PluginColor(200, 30, 30), new PluginColor(255, 120, 60), PluginGradientDirection.Horizontal);
+painter.FillCircle(new PluginPoint(180, 20), 6, online ? new PluginColor(60, 200, 90) : new PluginColor(120, 120, 120));
+painter.FillPolygon([new PluginPoint(10, 10), new PluginPoint(20, 20), new PluginPoint(10, 30)], PluginColor.White);
+```
+
+`FillPolygon` fills a convex polygon of 3 to 64 points, given in order
+round its outline in either direction; its second overload takes one
+colour per point and blends between them. `FillRoundedRect` and
+`StrokeRoundedRect` take a radius per corner (`PluginCornerRadii`, or
+`PluginCornerRadii.Uniform` for all four). If the radii are too large for
+the rectangle they are scaled down together, as CSS does, and zero gives a
+square corner. `FillEllipse`, `StrokeEllipse` and `FillCircle` draw
+ellipses and circles. `FillRectGradient` fills a rectangle blending from
+one colour to another, across it or down it. Colours blend as given, alpha
+included: to fade a colour out, fade to the same colour with zero alpha
+(`new PluginColor(r, g, b, 0)`), not to `PluginColor.Transparent`, which
+is transparent black and darkens the middle of the fade.
+
+The edges of these shapes are anti-aliased over one screen pixel;
+`FillRect`, `StrokeRect` and `DrawLine` keep their hard edges. Strokes are
+centred on the outline, so half the thickness falls outside the shape. A
+stroke thinner than a screen pixel is drawn one screen pixel wide and
+proportionally fainter. A shape with no area or no thickness simply draws
+nothing.
+
+Some input cannot be drawn: a polygon that is not convex or has too few or
+too many points, a colour count that does not match the point count, a
+negative size, radius or thickness, an unknown gradient direction, or a
+coordinate that is not a finite number. Such a shape draws nothing, never
+throws, and is reported once per canvas in the client's log.
+
+One paint may draw at most 32,768 shape vertices; a large circle takes a
+few hundred, and about 1.4 times as many on a high-density display (see
+[High-density displays](#high-density-displays)). Past that limit the
+remaining shapes are skipped and the log says so once. The paint also
+counts against the paint budget, like a slow one, so a callback that keeps
+going over is dropped. On a host that predates shapes, they draw nothing.
+
+### High-density displays
+
+On a high-density display -- a Retina Mac, or another desktop whose
+window has more framebuffer pixels than points, such as a scaled Wayland
+session -- the host paints each canvas at more than one screen pixel per
+canvas pixel, so shape edges and text in a font from [Fonts](#fonts) come
+out as sharp as the display can show them rather than magnified. Nothing
+changes for the plugin: coordinates, sizes, `Width`, `Height`,
+`MeasureText` and pointer positions stay in canvas pixels, and the canvas
+takes the same room on screen. `painter.PixelScale` says how many screen pixels one canvas pixel
+covers in this paint, for a detail that should be exactly one screen pixel:
+
+```csharp
+painter.FillRect(new PluginRect(0, 40, painter.Width, 1 / painter.PixelScale), divider); // a hairline
+```
+
+The scale is the window's framebuffer pixels per point, rounded up to a
+quarter, from 1 to 4. A canvas too large for the graphics card at that scale is painted
+at the largest quarter that fits. When the scale changes -- the window
+moved to another display -- the host repaints the canvas; the paint
+callback reads the new value then. On a host that does not scale, or one
+that predates high-density displays, `PixelScale` is 1.
+
+The client's interface font keeps its look: it is drawn on whole canvas
+pixels, as the rest of the interface draws it, so on a 2x display each of
+its pixels is a crisp 2 x 2 block. Images are drawn from the same texture
+as before, now at the display's resolution. Fonts from `host.Ui.Fonts` are
+prepared again at the scale before the canvas paints, without the plugin
+asking, and this does not count against `MaximumBytes`: sharper copies of
+the plugin's own fonts may take up to 32 MB, separately; the bundled
+font's are shared and free. A font too large to prepare at the full
+scale (the bundled font at 64 px does not fit at 2x) uses the largest
+quarter that fits, and the client's log says so once.
+
+### Layers and order
+
+A canvas is drawn in one of two layers, chosen with `Layer` on the
+descriptor and fixed from then on:
+
+- `PluginCanvasLayer.World`, the default: over the world and its labels,
+  under every window. A HUD here never hides the interface.
+- `PluginCanvasLayer.AboveWindows`: over every window, under dialogs,
+  tooltips, menus and the item being dragged. It suits something the
+  player must see over their windows, such as a remote-control widget; it
+  also covers whatever window is beneath it, so keep it small or let the
+  player hide it.
+
+From the bottom up the interface stacks the world and world labels,
+`World` canvases, windows, `AboveWindows` canvases, the pre-game screens
+(connecting, character select and creation, credits), dialogs and
+tooltips, and last menus and the drag ghost. No canvas is ever seen over
+a pre-game screen.
+
+Within a layer each plugin's canvases are kept together, and plugins are
+stacked in the order their first canvas there was mounted, so the numbers
+one plugin picks never lift its canvases over another plugin's. Among one
+plugin's canvases in a layer `ZOrder` decides: higher is drawn on top, and
+equal values keep the order the canvases were registered in. It starts at
+the descriptor's `ZOrder` and can be set on the canvas at any time; the
+canvases restack on the next frame.
+
+```csharp
+IPluginCanvas remote = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("remote", 160, 48)
+    {
+        Layer = PluginCanvasLayer.AboveWindows,
+        Anchor = PluginCanvasAnchor.TopCenter,
+        AcceptsPointerInput = true,
+    },
+    painter => DrawRemote(painter));
+IPluginCanvas help = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("help", 160, 120)
+    {
+        Layer = PluginCanvasLayer.AboveWindows,
+        Anchor = PluginCanvasAnchor.TopCenter,
+        Offset = new PluginPoint(0, 40),
+        ZOrder = -1,
+    },
+    painter => DrawHelp(painter));
+
+// while the player hovers the remote's help button, show the help over it
+help.ZOrder = 1;
+```
+
+Without a window the layer and `ZOrder` are kept and nothing is stacked.
+A host that predates layers draws every canvas in the world layer and
+answers `ZOrder` with 0.
+A plugin that needs a canvas over windows declares a `minHostVersion` (see
+the [manifest guide](plugin-manifest.md)) of a client that has layers.
 
 ### Pointer input
 
@@ -1455,7 +1967,11 @@ canvas is shown and has a handler, everything the pointer does inside the
 canvas's rectangle goes to the handler and no further, and the world
 beneath gets no mouse there. Outside the rectangle nothing changes.
 Without a handler an opted-in canvas stays click-through, since nobody is
-listening.
+listening. An `AboveWindows` canvas with input takes the pointer from the
+windows beneath its rectangle in the same way; a `World` canvas gets
+nothing where a window covers it. While a modal dialog is open no canvas
+gets input, and while the player drags an item no canvas answers, so the
+drop reaches the window or the world beneath.
 
 ```csharp
 IPluginCanvas map = host.Ui.RegisterCanvas(
@@ -1488,7 +2004,8 @@ map.PointerHandler = e =>
 ```
 
 Every event arrives on the tick thread as a `PluginPointerEvent`: its
-`Kind` (`Down`, `Up`, `Move`, `Wheel`, `Cancelled`), its `Position` in
+`Kind` (`Down`, `Up`, `Move`, `Wheel`, `Cancelled`, and `PressedOutside`
+below), its `Position` in
 the canvas's own pixels from its top-left corner, whatever anchor, offset
 or interface scale the canvas is shown at, the `Button` it is about
 (`Left`, `Right`, `Middle`, or `None` for the wheel), the `Modifiers`
@@ -1513,6 +2030,178 @@ handler is dropped with the paint callback when the canvas is disposed.
 
 Without a window `AcceptsPointerInput` and the handler are kept, the
 handler is never called, and `ReleasePointer()` does nothing.
+
+### Presses outside a canvas
+
+A menu or popup drawn on a canvas closes when the player clicks anywhere
+else. A canvas registered with `WantsOutsidePresses` gets a
+`PressedOutside` event whenever any mouse button goes down outside its
+rectangle while it is shown and has a `PointerHandler`: over the world, a
+window, a dialog, or another canvas, the same plugin's included. The press
+is only reported; it still goes where it would have gone, after the report,
+so a press on another of the plugin's canvases arrives there as a `Down`
+right after the `PressedOutside`. Its `Position` is in the canvas's own
+pixels, so it is negative or past the canvas's size on at least one axis;
+`Button` and `Modifiers` are set and `WheelDelta` is 0. The canvas does not
+hold the pointer: no `Move` or `Up` follows.
+
+```csharp
+IPluginCanvas menu = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("menu", 140, 96)
+    {
+        Layer = PluginCanvasLayer.AboveWindows,
+        StartVisible = false,
+        AcceptsPointerInput = true,
+        WantsOutsidePresses = true,
+    },
+    painter => DrawMenu(painter));
+
+menu.PointerHandler = e =>
+{
+    switch (e.Kind)
+    {
+        case PluginPointerEventKind.PressedOutside:
+            menu.IsVisible = false;
+            break;
+        case PluginPointerEventKind.Up when e.Button == PluginPointerButton.Left:
+            Choose(ItemAt(e.Position));
+            menu.IsVisible = false;
+            break;
+    }
+};
+```
+
+Nothing is reported for a press inside the rectangle, while the canvas is
+hidden, or while it holds the pointer from a press of its own (a second
+button pressed during its drag). The flag works with or without
+`AcceptsPointerInput`, which decides only what happens inside the
+rectangle. The handler's 2 ms budget and its dropping apply as for every
+other pointer event. Without a window the flag and the handler are kept and
+nothing is delivered.
+
+### Canvases in markup
+
+A canvas registered with `InMarkup = true` does not sit on the screen: a
+`<canvas id="...">` element in one of the plugin's markup windows hosts it, and
+the layout decides where it goes and how big it is. The id is the canvas's
+`CanvasId`. Until an element hosts it `IsAvailable` is false and nothing is
+drawn; the client's log says the canvas is waiting. `TryResize` answers false,
+since the element decides the size, and `Width` and `Height` report the
+element's laid-out size in whole pixels; `Anchor`, `Offset`, `Layer` and
+`ZOrder` are ignored. Painting, pointer and keyboard input, outside presses
+and `Dispose` work as for any canvas, in the canvas's own pixels. Needs contract
+`0.1.25-fork.5`; a host without a window keeps the flag and draws nothing.
+
+```csharp
+IPluginCanvas map = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("dungeon-map", 200, 200) { InMarkup = true },
+    painter => DrawMap(painter));
+```
+
+Pairing, sizing, visibility and lifetime are described under
+[`<canvas>` in the markup guide](plugin-ui-markup.md#canvas-a-plugin-drawing-inside-the-window).
+
+### Keyboard input
+
+A canvas that wants keys (a text box, a widget driven by the arrow keys)
+opts in with `AcceptsKeyboardInput` on the descriptor and sets a
+`KeyHandler`. It then takes the interface's keyboard focus, as the chat
+bar does, in one of two ways: a left press on it (which needs
+`AcceptsPointerInput` and a `PointerHandler` as well, since only a canvas
+that takes the pointer can be clicked), or `RequestKeyboardFocus()`.
+While it has focus, keys go to the handler and not to the game: the
+character does not move, the client's own key bindings do not fire, and
+plugin hotkeys follow the rule in [Hotkeys](#hotkeys) (only chords with
+Ctrl or Alt).
+
+```csharp
+string query = "";
+bool focused = false;
+IPluginCanvas box = host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("search", 240, 24)
+    {
+        AcceptsPointerInput = true,
+        AcceptsKeyboardInput = true,
+    },
+    painter => DrawBox(painter, query, focused));
+
+box.PointerHandler = _ => { };   // a press on the box gives it focus
+box.KeyHandler = e =>
+{
+    switch (e.Kind)
+    {
+        case PluginKeyEventKind.FocusGained or PluginKeyEventKind.FocusLost:
+            focused = e.Kind == PluginKeyEventKind.FocusGained;
+            break;
+        case PluginKeyEventKind.Text:
+            query += e.Text;
+            break;
+        case PluginKeyEventKind.Down when e.Key == PluginKey.Backspace && query.Length > 0:
+            query = query[..^1];
+            break;
+        case PluginKeyEventKind.Down when e.Key == PluginKey.Enter:
+            Search(query);
+            box.ReleaseKeyboardFocus();
+            break;
+        case PluginKeyEventKind.Down when e.Key == PluginKey.Escape:
+            return false;   // not handled: focus goes back to the game
+    }
+    box.Invalidate();
+    return true;
+};
+```
+
+Every event arrives on the tick thread as a `PluginKeyEvent`: its `Kind`
+(`Down`, `Up`, `Text`, `FocusGained`, `FocusLost`), the `Key` for `Down`
+and `Up` (`PluginKey.Unknown` otherwise), the `Modifiers` held, read from
+the same place as for pointer events, `IsRepeat`, and for `Text` the typed
+characters in `Text`. Text is what the player's keyboard layout typed, so
+use it for anything that is typed and `Down` for keys that do something;
+it never holds a control character, so Enter, Tab and Backspace arrive
+only as `Down`. Keys `PluginKey` cannot name, the modifier keys among
+them, arrive as neither `Down` nor `Up`. The last key that went down
+repeats while it is held, as `Down` with `IsRepeat` set, after 0.4 s and
+then every 0.04 s, as in the client's own text fields, until it comes up
+or another key it can name goes down. Every key it can name repeats, Enter
+and the letters included, so check `IsRepeat` for a key that should act
+once. A key already held when the canvas takes focus can arrive as an
+`Up` with no `Down` before it.
+
+The handler answers true when it handled the event. Only one answer
+changes what the host does: an Escape `Down` the handler did not handle
+gives focus back, as Escape leaves a text field, and the game does not see
+that Escape either. A canvas that wants Escape for itself answers true.
+
+`RequestKeyboardFocus()` never takes focus from anything else: it answers
+false, and changes nothing, while the canvas did not opt in, is not
+mounted or shown, has no handler, or while the chat bar, a text field,
+another canvas or a dialog has focus, a modal dialog is open, or a key
+rebind is being captured. It answers true when the canvas has focus
+afterwards, including when it already had it. Ask in answer to something
+the player did, so keys never vanish into a canvas they did not choose.
+
+Focus goes back, with exactly one `FocusLost` to the handler, when an
+Escape is not handled, the player presses the left button anywhere else,
+the canvas is hidden or disposed, the paint callback is dropped, a modal
+dialog opens, the interface is torn down, or the plugin calls
+`ReleaseKeyboardFocus()`. It also goes back when the handler is set to
+null or dropped by its guard, with no `FocusLost`, since no handler is
+left to hear it. `HasKeyboardFocus` says whether the canvas has focus
+right now.
+
+The key handler has its own guard, measured like the pointer handler: one
+that stays over the 2 ms budget on three events in a row, or throws, is
+dropped for the rest of the session and focus goes back; pointer input and
+painting continue, and the client's log says why. The handler is dropped
+with the paint callback when the canvas is disposed.
+
+Without a window `AcceptsKeyboardInput` and the handler are kept, the
+handler is never called, `RequestKeyboardFocus()` answers false and
+`HasKeyboardFocus` is false. A host that predates keyboard input answers
+`KeyHandler` with null and ignores a handler set on it, and
+`RequestKeyboardFocus()` answers false. A plugin that needs keys declares a
+`minHostVersion` (see the [manifest guide](plugin-manifest.md)) of a client
+that has keyboard input.
 
 ## Dungeon map
 
@@ -1574,6 +2263,81 @@ east towards north, which for dungeon pieces is 0, 90, 180 or 270 to within
 rounding. Cells without geometry, which the floorplan leaves out, are here
 too. The list is read once per landblock and the same list is handed back
 after; it is empty whenever the floorplan would be.
+
+Each cell's `Doorways` are the landblock's cell graph: every opening the data
+authors as a cell portal, whether a doorway, a stairwell or a shaft, as a
+`PluginCellDoorway` with the `OtherCellId` it leads to (zero, and
+`LeadsOutside` true, for an opening onto the landscape) and its `Center` in
+the same landblock-local metres, the middle of the box around the opening's
+corners. Following doorways from cell to cell walks a dungeon the way its
+rooms join, which distance alone does not. A door is an object standing in a
+doorway, not part of it, so a doorway is listed whether its door is open or
+shut; match the door objects you see against `Center` to tell a room behind
+a shut door from one that is closed off. Every doorway between two cells is
+listed from both sides, almost always at the same `Center`. The exception is
+one opening shared by several cells, such as a big room's ceiling under
+smaller cells: the room lists the whole opening once for each of them, while
+each of them lists only its own piece, sometimes in several parts. So one
+neighbour can appear more than once, and the two sides' centres can be up to
+about seven metres apart. `Doorways` needs contract `0.1.25-fork.6`; an older
+host leaves it empty.
+
+```csharp
+IReadOnlyList<PluginIndoorCell> cells = host.Automation.DungeonMap.CaptureIndoorCells(here.CellId);
+var neighbours = cells.ToDictionary(
+    cell => cell.CellId,
+    cell => cell.Doorways.Where(d => !d.LeadsOutside).Select(d => d.OtherCellId).Distinct().ToArray());
+```
+
+## Terrain
+
+```csharp
+ITerrainAutomation terrain = host.Automation.Terrain;
+PluginNavigationPosition here = host.Automation.Navigation.Snapshot.Position;
+PluginLandblockTerrain ground = terrain.CaptureLandblockTerrain(here.CellId);
+Vector3 local = PluginLandblockTerrain.ToLandblockLocal(here);
+PluginTerrainSample underfoot = ground.Sample(local.X, local.Y);
+foreach (PluginTerrainCell cell in ground.Cells)
+{
+    if (!cell.First.Walkable || !cell.Second.Walkable)
+        ShadeCliff(cell);
+    else if (cell.Water != PluginTerrainWater.None)
+        ShadeWater(cell);
+}
+```
+
+`Terrain` is a landblock's outdoor ground, read from the game data for any
+landblock, near the character or not. The data stores a 9 by 9 grid of
+corner heights 24 metres apart; the ground is that grid cut into 8 by 8
+cells of two triangles each, and the game picks the diagonal per cell.
+`CaptureLandblockTerrain` hands back the `Heights` of the 81 corners in
+metres, their `TerrainTypes` (0 to 31) and `WaterCorners`, corner (x, y) at
+index x * 9 + y, and the 64 `Cells`, cell (x, y) at index x * 8 + y so the
+cell with low id n is at n - 1. Each `PluginTerrainCell` has its `CellId`,
+its `Water` (`None`, `Partial` for a shore, `Entire`), which diagonal it is
+cut along, and its two triangles with their corners, unit normal and
+`Walkable`: true when the normal's z is at least
+`PluginLandblockTerrain.WalkableNormalZ` (0.6642, a slope of about 48
+degrees), the rule the physics applies to every floor.
+
+`Sample(x, y)` reads the ground at a point: the height, the normal, whether
+it is walkable, whether it is in water and the outdoor cell id, on the same
+triangle and with the same numbers the physics finds there. A point is in
+water anywhere in an `Entire` cell, and in a shore cell where the corner
+nearest it is water. A point outside the landblock is read at the nearest
+point on its edge.
+
+The frame is the dungeon map's: x east and y north from the landblock's
+south-west corner, in metres, and `PluginLandblockTerrain.ToLandblockLocal`
+puts a `Navigation` position into it. Only the ground is described:
+buildings, rocks and trees stand on it unseen, so walkable means the slope
+allows standing, not that the spot is free. A sealed dungeon's landblock has
+a terrain record too, usually open sea at height 0, which says nothing about
+the dungeon. Each landblock is read once and the same object handed back
+while it is kept (the last 64); it never changes, so it is safe to keep and
+to read from any thread. `PluginLandblockTerrain.Empty` comes back for a
+landblock the data does not have and on a client with no lease on the game
+data.
 
 ## Clients on this computer
 
@@ -1935,7 +2699,10 @@ tested; it does not mean the flight is blocked.
 
 `Labels.ShowLabels` is taken on both clients, with the same validation and
 the same cap. A windowless client keeps the set and has nothing to draw it
-with; a plugin cannot tell the two apart through this surface.
+with; a plugin cannot tell the two apart through this surface. World markers,
+which live on `host.Ui` rather than here, differ: without a window
+`host.Ui.WorldMarkers.CreateLayer()` answers null (see
+[World markers](#world-markers)).
 
 ### Walking to something and then using it
 
@@ -2068,6 +2835,8 @@ with a window does the work:
   same files. Without them `IsSealedDungeon` is false and `CaptureFloorplan`
   is empty; `CurrentLandblockId` comes from the character's body and is real
   either way.
+- `Terrain` reads the ground out of the same files. Without them
+  `CaptureLandblockTerrain` is empty.
 - `Network`'s cast sharing classifies every spell in the same catalogue, so
   without it `AnnounceCastAttempt` and `AnnounceCastSuccess` return false
   and `CaptureCasts` is empty. `CaptureClients` and this client's own note

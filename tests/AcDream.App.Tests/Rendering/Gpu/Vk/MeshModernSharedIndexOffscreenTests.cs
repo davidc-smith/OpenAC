@@ -21,14 +21,14 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         lock (VulkanLock)
         {
             string shaderDirectory = Path.Combine(
-                RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv");
+                HeadlessVulkanTestHost.RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv");
             Assert.Equal(
                 Path.GetFullPath(Path.Combine(
-                    RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv")),
+                    HeadlessVulkanTestHost.RepositoryRoot(), "src", "AcDream.App", "Rendering", "Shaders", "spv")),
                 Path.GetFullPath(shaderDirectory));
             Assert.True(File.Exists(Path.Combine(shaderDirectory, "mesh_modern.vert.spv")));
 
-            using var host = HeadlessVulkanHost.Create(shaderDirectory);
+            using var host = HeadlessVulkanTestHost.Create(shaderDirectory);
             byte[] pixels = Render(host.Device, host.Vk, host.PhysicalDevice, host.LogicalDevice, host.Queue, host.QueueFamily);
 
             int dark = CountPixels(pixels, 51);
@@ -44,7 +44,7 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         const ulong byteCount = 16_384;
         var readback = new Buffer(0x470u);
 
-        BufferMemoryBarrier2 barrier = CreateHostReadBarrier(readback, byteCount);
+        BufferMemoryBarrier2 barrier = VulkanImageReadback.CreateHostReadBarrier(readback, byteCount);
         Assert.Equal(StructureType.BufferMemoryBarrier2, barrier.SType);
         Assert.Equal(PipelineStageFlags2.CopyBit, barrier.SrcStageMask);
         Assert.Equal(AccessFlags2.TransferWriteBit, barrier.SrcAccessMask);
@@ -57,10 +57,10 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         Assert.Equal(byteCount, barrier.Size);
 
         string source = File.ReadAllText(Path.Combine(
-            RepositoryRoot(), "tests", "AcDream.App.Tests", "Rendering", "Gpu", "Vk",
-            "MeshModernSharedIndexOffscreenTests.cs"));
-        int readbackStart = source.LastIndexOf("private static byte[] ReadBack(", StringComparison.Ordinal);
-        int readbackEnd = source.LastIndexOf("private static int CountPixels(", StringComparison.Ordinal);
+            HeadlessVulkanTestHost.RepositoryRoot(), "tests", "AcDream.App.Tests", "Rendering", "Gpu", "Vk",
+            "VulkanImageReadback.cs"));
+        int readbackStart = source.LastIndexOf("internal static byte[] ReadBack(", StringComparison.Ordinal);
+        int readbackEnd = source.LastIndexOf("internal static BufferMemoryBarrier2 CreateHostReadBarrier(", StringComparison.Ordinal);
         Assert.True(readbackStart >= 0 && readbackEnd > readbackStart);
         string livePath = source[readbackStart..readbackEnd];
 
@@ -174,13 +174,15 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
 
         device.WaitIdle();
         VulkanGpuRenderTarget vkTarget = Assert.IsType<VulkanGpuRenderTarget>(target);
-        return ReadBack(
+        return VulkanImageReadback.ReadBack(
             vk,
             physicalDevice,
             logicalDevice,
             queue,
             queueFamily,
-            vkTarget.ColorResult.Image);
+            vkTarget.ColorResult.Image,
+            Extent,
+            Extent);
     }
 
     private static void BindStorage<T>(
@@ -207,160 +209,6 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         GpuRingAllocation allocation = frame.AllocateRing(Marshal.SizeOf<T>(), GpuRingUsage.Uniform);
         allocation.AsSpan<T>()[0] = value;
         encoder.BindUniformBuffer(binding, allocation.Buffer, allocation.OffsetBytes, (uint)allocation.Data.Length);
-    }
-
-    private static byte[] ReadBack(
-        Silk.NET.Vulkan.Vk vk,
-        PhysicalDevice physicalDevice,
-        Device device,
-        Queue queue,
-        uint queueFamily,
-        Image image)
-    {
-        uint byteCount = Extent * Extent * 4u;
-        Buffer readback = default;
-        DeviceMemory memory = default;
-        CommandPool pool = default;
-        try
-        {
-            var bufferCreate = new BufferCreateInfo
-            {
-                SType = StructureType.BufferCreateInfo,
-                Size = byteCount,
-                Usage = BufferUsageFlags.TransferDstBit,
-                SharingMode = SharingMode.Exclusive,
-            };
-            VulkanInterop.Check(vk.CreateBuffer(device, &bufferCreate, null, out readback), "vkCreateBuffer (S5-470 readback)");
-            vk.GetBufferMemoryRequirements(device, readback, out MemoryRequirements requirements);
-            uint memoryType = VulkanActiveDeviceProbe.FindMemoryType(
-                vk,
-                physicalDevice,
-                requirements.MemoryTypeBits,
-                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit)
-                ?? throw new NotSupportedException("S5-470 requires coherent host-visible readback memory.");
-            var memoryAllocate = new MemoryAllocateInfo
-            {
-                SType = StructureType.MemoryAllocateInfo,
-                AllocationSize = requirements.Size,
-                MemoryTypeIndex = memoryType,
-            };
-            VulkanInterop.Check(vk.AllocateMemory(device, &memoryAllocate, null, out memory), "vkAllocateMemory (S5-470 readback)");
-            VulkanInterop.Check(vk.BindBufferMemory(device, readback, memory, 0), "vkBindBufferMemory (S5-470 readback)");
-
-            var poolCreate = new CommandPoolCreateInfo
-            {
-                SType = StructureType.CommandPoolCreateInfo,
-                QueueFamilyIndex = queueFamily,
-                Flags = CommandPoolCreateFlags.TransientBit,
-            };
-            VulkanInterop.Check(vk.CreateCommandPool(device, &poolCreate, null, out pool), "vkCreateCommandPool (S5-470 readback)");
-            var commandAllocate = new CommandBufferAllocateInfo
-            {
-                SType = StructureType.CommandBufferAllocateInfo,
-                CommandPool = pool,
-                Level = CommandBufferLevel.Primary,
-                CommandBufferCount = 1,
-            };
-            VulkanInterop.Check(vk.AllocateCommandBuffers(device, &commandAllocate, out CommandBuffer commands), "vkAllocateCommandBuffers (S5-470 readback)");
-            var begin = new CommandBufferBeginInfo
-            {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
-            };
-            VulkanInterop.Check(vk.BeginCommandBuffer(commands, &begin), "vkBeginCommandBuffer (S5-470 readback)");
-
-            var barrier = new ImageMemoryBarrier2
-            {
-                SType = StructureType.ImageMemoryBarrier2,
-                SrcStageMask = PipelineStageFlags2.FragmentShaderBit,
-                SrcAccessMask = AccessFlags2.ShaderReadBit,
-                DstStageMask = PipelineStageFlags2.CopyBit,
-                DstAccessMask = AccessFlags2.TransferReadBit,
-                OldLayout = ImageLayout.ShaderReadOnlyOptimal,
-                NewLayout = ImageLayout.TransferSrcOptimal,
-                SrcQueueFamilyIndex = Silk.NET.Vulkan.Vk.QueueFamilyIgnored,
-                DstQueueFamilyIndex = Silk.NET.Vulkan.Vk.QueueFamilyIgnored,
-                Image = image,
-                SubresourceRange = new ImageSubresourceRange(
-                    ImageAspectFlags.ColorBit, 0, 1, 0, 1),
-            };
-            var dependency = new DependencyInfo
-            {
-                SType = StructureType.DependencyInfo,
-                ImageMemoryBarrierCount = 1,
-                PImageMemoryBarriers = &barrier,
-            };
-            vk.CmdPipelineBarrier2(commands, &dependency);
-            var copy = new BufferImageCopy
-            {
-                ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, 0, 1),
-                ImageExtent = new Extent3D(Extent, Extent, 1),
-            };
-            vk.CmdCopyImageToBuffer(commands, image, ImageLayout.TransferSrcOptimal, readback, 1, &copy);
-            BufferMemoryBarrier2 hostReadBarrier = CreateHostReadBarrier(readback, byteCount);
-            var hostDependency = new DependencyInfo
-            {
-                SType = StructureType.DependencyInfo,
-                BufferMemoryBarrierCount = 1,
-                PBufferMemoryBarriers = &hostReadBarrier,
-            };
-            vk.CmdPipelineBarrier2(commands, &hostDependency);
-            VulkanInterop.Check(vk.EndCommandBuffer(commands), "vkEndCommandBuffer (S5-470 readback)");
-
-            var commandInfo = new CommandBufferSubmitInfo
-            {
-                SType = StructureType.CommandBufferSubmitInfo,
-                CommandBuffer = commands,
-            };
-            var submit = new SubmitInfo2
-            {
-                SType = StructureType.SubmitInfo2,
-                CommandBufferInfoCount = 1,
-                PCommandBufferInfos = &commandInfo,
-            };
-            VulkanInterop.Check(vk.QueueSubmit2(queue, 1, &submit, default), "vkQueueSubmit2 (S5-470 readback)");
-            VulkanInterop.Check(vk.QueueWaitIdle(queue), "vkQueueWaitIdle (S5-470 readback)");
-
-            void* mapped = null;
-            VulkanInterop.Check(vk.MapMemory(device, memory, 0, byteCount, 0, &mapped), "vkMapMemory (S5-470 readback)");
-            try
-            {
-                var pixels = new byte[byteCount];
-                new ReadOnlySpan<byte>(mapped, pixels.Length).CopyTo(pixels);
-                return pixels;
-            }
-            finally
-            {
-                vk.UnmapMemory(device, memory);
-            }
-        }
-        finally
-        {
-            if (pool.Handle != 0)
-                vk.DestroyCommandPool(device, pool, null);
-            if (readback.Handle != 0)
-                vk.DestroyBuffer(device, readback, null);
-            if (memory.Handle != 0)
-                vk.FreeMemory(device, memory, null);
-        }
-    }
-
-    private static BufferMemoryBarrier2 CreateHostReadBarrier(Buffer readback, ulong byteCount)
-    {
-        ArgumentOutOfRangeException.ThrowIfZero(byteCount);
-        return new BufferMemoryBarrier2
-        {
-            SType = StructureType.BufferMemoryBarrier2,
-            SrcStageMask = PipelineStageFlags2.CopyBit,
-            SrcAccessMask = AccessFlags2.TransferWriteBit,
-            DstStageMask = PipelineStageFlags2.HostBit,
-            DstAccessMask = AccessFlags2.HostReadBit,
-            SrcQueueFamilyIndex = Silk.NET.Vulkan.Vk.QueueFamilyIgnored,
-            DstQueueFamilyIndex = Silk.NET.Vulkan.Vk.QueueFamilyIgnored,
-            Buffer = readback,
-            Offset = 0,
-            Size = byteCount,
-        };
     }
 
     private static int CountPixels(ReadOnlySpan<byte> pixels, byte expected)
@@ -397,129 +245,5 @@ public sealed unsafe partial class MeshModernSharedIndexOffscreenTests
         Vector4 ConeAngleEtc)
     {
         internal static GlobalLight Zero { get; } = default;
-    }
-
-    private sealed class HeadlessVulkanHost : IDisposable
-    {
-        private bool _disposed;
-
-        private HeadlessVulkanHost(
-            Silk.NET.Vulkan.Vk vk,
-            Instance instance,
-            PhysicalDevice physicalDevice,
-            Device logicalDevice,
-            Queue queue,
-            uint queueFamily,
-            VulkanGpuDevice device)
-        {
-            Vk = vk;
-            Instance = instance;
-            PhysicalDevice = physicalDevice;
-            LogicalDevice = logicalDevice;
-            Queue = queue;
-            QueueFamily = queueFamily;
-            Device = device;
-        }
-
-        internal Silk.NET.Vulkan.Vk Vk { get; }
-        internal Instance Instance { get; }
-        internal PhysicalDevice PhysicalDevice { get; }
-        internal Device LogicalDevice { get; }
-        internal Queue Queue { get; }
-        internal uint QueueFamily { get; }
-        internal VulkanGpuDevice Device { get; }
-
-        internal static HeadlessVulkanHost Create(string shaderDirectory)
-        {
-            Silk.NET.Vulkan.Vk vk = Silk.NET.Vulkan.Vk.GetApi();
-            Instance instance = default;
-            Device logicalDevice = default;
-            VulkanGpuDevice? gpuDevice = null;
-            try
-            {
-                instance = VulkanInstanceFactory.Create(vk, [], enableOptionalExtensions: false).Instance;
-                IReadOnlyList<VulkanPhysicalDeviceCandidate> candidates =
-                    VulkanPhysicalDeviceInspector.Enumerate(vk, instance, out PhysicalDevice[] handles);
-                VulkanPhysicalDeviceChoice selected = VulkanPhysicalDeviceSelection.Choose(candidates, null)
-                    ?? throw new NotSupportedException("S5-470 offscreen proof found no Vulkan physical device.");
-                PhysicalDevice physicalDevice = handles[selected.Device.Index];
-                VulkanDeviceFeatureSupport features = VulkanPhysicalDeviceInspector.ReadFeatures(vk, physicalDevice);
-                uint queueFamily = VulkanQueueFamilySelection.ChooseGraphicsOnly(
-                    VulkanPhysicalDeviceInspector.ReadQueueFamilies(vk, physicalDevice, surfaceApi: null, default))
-                    ?? throw new NotSupportedException("S5-470 offscreen proof found no graphics queue.");
-                VulkanLogicalDeviceFactory.Created created = VulkanLogicalDeviceFactory.Create(
-                    vk,
-                    physicalDevice,
-                    new VulkanQueueFamilyChoice(queueFamily, queueFamily),
-                    requireSwapchain: false,
-                    features);
-                logicalDevice = created.Device;
-                VulkanDeviceLimitSupport limits = VulkanPhysicalDeviceInspector.ReadLimits(vk, physicalDevice);
-                VulkanFormatSupport formats = VulkanPhysicalDeviceInspector.ReadFormats(
-                    vk, physicalDevice, surfaceOffersUnorm: true);
-                gpuDevice = new VulkanGpuDevice(
-                    vk,
-                    physicalDevice,
-                    logicalDevice,
-                    created.GraphicsQueue,
-                    created.GraphicsQueue,
-                    queueFamily,
-                    features,
-                    limits,
-                    formats,
-                    selected.Device.DeviceName,
-                    VulkanPhysicalDeviceInspector.DescribeDriver(selected.Device),
-                    VulkanApiVersion.Describe(selected.Device.ApiVersion),
-                    VulkanDebugNames.Disabled,
-                    backbuffer: null,
-                    shaderSpirvDirectory: shaderDirectory,
-                    pipelineCacheDirectory: null,
-                    memoryProfile: GpuMemoryProfile.Default with
-                    {
-                        RingCapacityBytesPerSlot = 2 * 1024 * 1024,
-                    },
-                    framesInFlight: 1);
-                return new HeadlessVulkanHost(
-                    vk,
-                    instance,
-                    physicalDevice,
-                    logicalDevice,
-                    created.GraphicsQueue,
-                    queueFamily,
-                    gpuDevice);
-            }
-            catch
-            {
-                gpuDevice?.Dispose();
-                if (logicalDevice.Handle != 0)
-                    vk.DestroyDevice(logicalDevice, null);
-                if (instance.Handle != 0)
-                    vk.DestroyInstance(instance, null);
-                vk.Dispose();
-                throw;
-            }
-        }
-
-        public void Dispose()
-        {
-            if (_disposed)
-                return;
-            _disposed = true;
-            Device.Dispose();
-            if (LogicalDevice.Handle != 0)
-                Vk.DestroyDevice(LogicalDevice, null);
-            if (Instance.Handle != 0)
-                Vk.DestroyInstance(Instance, null);
-            Vk.Dispose();
-        }
-    }
-
-    private static string RepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AcDream.slnx")))
-            directory = directory.Parent;
-        return directory?.FullName
-            ?? throw new InvalidOperationException("Could not locate the repository root.");
     }
 }

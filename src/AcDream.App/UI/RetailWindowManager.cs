@@ -100,6 +100,29 @@ public sealed class RetailWindowManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// The revision of a window whose geometry its markup states rather than
+    /// measures: one entry per authored input, null where it is absent. FNV-1a,
+    /// so the value is the same in every process; it is saved with the window's
+    /// layout.
+    /// </summary>
+    public static int ComputeAuthoredGeometryRevision(IReadOnlyList<string?> authoredInputs)
+    {
+        ArgumentNullException.ThrowIfNull(authoredInputs);
+        const uint Prime = 16777619u;
+        uint hash = 2166136261u;
+        unchecked
+        {
+            foreach (string? input in authoredInputs)
+            {
+                foreach (char c in input ?? "\0absent")
+                    hash = (hash ^ c) * Prime;
+                hash = (hash ^ 0xFFFFu) * Prime;   // between inputs
+            }
+        }
+        return (int)(hash & 0x7FFFFFFFu);
+    }
+
     public bool TryGet(string name, out RetailWindowHandle handle)
         => _byName.TryGetValue(name, out handle!);
 
@@ -199,6 +222,55 @@ public sealed class RetailWindowManager : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Brings a window up to its <see cref="UiElement.MinWidth"/> and
+    /// <see cref="UiElement.MinHeight"/> after its minimum grew (a plugin
+    /// window whose content needs more room). Unlike <see cref="ResizeTo"/> it
+    /// grows an axis even when the window cannot be resized along it, and it
+    /// keeps the window on screen: a frame that would reach past the parent's
+    /// right or bottom edge moves left or up, no further than the parent's
+    /// origin, and an axis whose minimum is larger than the parent takes the
+    /// parent's size at its origin. The new geometry is announced (and so
+    /// persisted) like a resize, and a move when the frame moved.
+    /// </summary>
+    public bool EnforceMinimumSize(string name)
+    {
+        if (!_byName.TryGetValue(name, out var handle)) return false;
+        var frame = handle.OuterFrame;
+        float width = MathF.Max(frame.Width, frame.MinWidth);
+        float height = MathF.Max(frame.Height, frame.MinHeight);
+        float left = frame.Left, top = frame.Top;
+        if (frame.Parent is { } parent)
+        {
+            (left, width) = FitAxis(left, width, parent.Width);
+            (top, height) = FitAxis(top, height, parent.Height);
+        }
+
+        bool resized = width != frame.Width || height != frame.Height;
+        bool moved = left != frame.Left || top != frame.Top;
+        if (!resized && !moved) return true;
+        frame.Width = width;
+        frame.Height = height;
+        frame.Left = left;
+        frame.Top = top;
+        frame.ResetAnchorCapture();
+        if (resized) _root.NotifyWindowResized(frame);
+        if (moved) _root.NotifyWindowMoved(frame);
+        return true;
+    }
+
+    /// <summary>
+    /// Keeps one axis of a window inside a parent <paramref name="space"/> long.
+    /// A parent with no extent yet (not laid out) leaves the axis alone.
+    /// </summary>
+    private static (float Start, float Size) FitAxis(float start, float size, float space)
+    {
+        if (space <= 0f) return (start, size);
+        if (size > space) return (0f, MathF.Max(0f, space));
+        if (start + size > space) start = MathF.Max(0f, space - size);
+        return (start, size);
+    }
+
     public bool SetOpacity(string name, float opacity)
     {
         if (!_byName.TryGetValue(name, out var handle)) return false;
@@ -226,13 +298,61 @@ public sealed class RetailWindowManager : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Raises <paramref name="window"/> over every other root child in the
+    /// band it is already in (see <see cref="UiBands"/>). An element in no
+    /// band -- pinned, or the layer of canvases drawn above windows -- stays
+    /// where it is.
+    /// </summary>
     public void BringToFront(UiElement window)
     {
-        int top = window.ZOrder;
+        if (UiBands.Of(window.ZOrder) is { } band)
+            Raise(window, band);
+    }
+
+    /// <summary>
+    /// Moves <paramref name="window"/> into <paramref name="band"/>, over
+    /// every other root child there. An element in no band -- pinned, or
+    /// the layer of canvases drawn above windows -- stays where it is.
+    /// </summary>
+    public void BringToFront(UiElement window, UiBand band)
+    {
+        if (window.ZOrder != UiBands.Pinned
+            && window.ZOrder != UiBands.CanvasesAboveWindows)
+            Raise(window, band);
+    }
+
+    private void Raise(UiElement window, UiBand band)
+    {
+        (int floor, int ceiling) = UiBands.Range(band);
+        int top = UiBands.Of(window.ZOrder) == band ? window.ZOrder : floor;
         foreach (var child in _root.Children)
-            if (!ReferenceEquals(child, window))
+        {
+            // A band member is below the band's ceiling, so the + 1 cannot overflow.
+            if (!ReferenceEquals(child, window) && UiBands.Of(child.ZOrder) == band)
                 top = Math.Max(top, child.ZOrder + 1);
+        }
+        if (top >= ceiling)
+            top = Compact(window, band, floor);
         window.ZOrder = top;
+    }
+
+    /// <summary>
+    /// Renumbers the band's other members from its floor, in their current
+    /// order, and answers the value above them. Reached only after about a
+    /// billion raises in one band; members below the floor keep their values.
+    /// </summary>
+    private int Compact(UiElement window, UiBand band, int floor)
+    {
+        UiElement[] members = _root.Children
+            .Where(child => !ReferenceEquals(child, window)
+                && UiBands.Of(child.ZOrder) == band
+                && child.ZOrder >= floor)
+            .OrderBy(child => child.ZOrder)
+            .ToArray();
+        for (int index = 0; index < members.Length; index++)
+            members[index].ZOrder = floor + index;
+        return floor + members.Length;
     }
 
     internal void PrepareToHide(UiElement subtree)

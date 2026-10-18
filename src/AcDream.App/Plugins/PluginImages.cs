@@ -55,13 +55,19 @@ internal sealed class PluginImages : IPluginImages, IDisposable
     public int MaximumDimension => _table.Budget.MaximumDimension;
 
     /// <summary>The interface texture behind an image, for the painter.</summary>
-    internal bool TryResolve(PluginImage image, out uint texture, out int width, out int height)
+    internal bool TryResolve(PluginImage image, out uint texture, out int width, out int height) =>
+        TryResolve(image, out texture, out width, out height, out _);
+
+    /// <summary>The interface texture behind an image and whether it is sampled linearly, for the painter.</summary>
+    internal bool TryResolve(
+        PluginImage image, out uint texture, out int width, out int height, out bool linearFiltered)
     {
         if (!_disposed)
-            return _table.TryResolve(ToHandle(image), out texture, out width, out height);
+            return _table.TryResolve(ToHandle(image), out texture, out width, out height, out linearFiltered);
         texture = 0u;
         width = 0;
         height = 0;
+        linearFiltered = false;
         return false;
     }
 

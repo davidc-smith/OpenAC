@@ -12,10 +12,11 @@ depend on `AcDream.App`.
 host.Ui.AddPanel(
     new PluginPanelDescriptor("main", "My Plugin")
     {
-        IconText = "MP",             // shelf button initials, the last resort
+        IconText = "MP",             // dock monogram letters, the last resort
         IconSurfaceId = 0x06002C41,  // an icon id (see "Icon ids")
+        IconFile = "icons/main.svg", // a one-colour SVG (see "SVG icons"), or a full-colour .png
         StartVisible = true,
-        ShowInSidePanel = true,      // default: a button in the plugin shelf
+        ShowInSidePanel = true,      // default: a slot in the plugin dock
     },
     Path.Combine(pluginDirectory, "main.xml"),
     binding);
@@ -27,9 +28,103 @@ host.Ui.AddPanel(
   removes the window on its own.
 - `RegisterPanelContent` takes the markup as a string instead of a file path.
 
-The plugin shelf picks a button's icon in order: the plugin's own `icon.png`
-(one per plugin, at the root of its install folder), else `IconSurfaceId`,
-else the initials from `IconText`.
+The plugin dock picks a slot's icon in order:
+
+1. the window's own `IconFile`, a path relative to the install folder. It
+   must end in `.svg` or `.png` and stay inside the folder: rooted paths,
+   drive letters, `..` that leaves the folder, and links that point out are
+   refused. An `.svg` follows the theme (see [SVG icons](#svg-icons)); a
+   `.png` keeps its own colours (see [PNG dock icons](#png-dock-icons));
+2. the plugin's `icon.svg`, at the root of its install folder;
+3. the plugin's `icon.png`, at the root of its install folder;
+4. `IconSurfaceId`;
+5. a two-letter monogram from `IconText` (or the title) on a colour picked
+   from the plugin id.
+
+An icon that cannot be used is skipped, and the next one in the list is
+drawn. Two cases differ slightly:
+
+- If a window's own `IconFile` cannot be read, parsed or decoded, the
+  plugin's `icon.svg` is tried next. If an SVG parses but cannot be drawn at some display
+  size (it has too many points for that size, or the graphics upload fails),
+  the dock goes to `icon.png`, then `IconSurfaceId`, then the monogram; it
+  does not try `icon.svg` in that case.
+- `IconFile` is ignored for a registration that has no plugin folder.
+- A window's `IconFile` or the plugin's `icon.svg` that cannot be used is
+  logged once, as `[UI] plugin icon '<id>/<path>' ignored: <reason>`.
+
+## PNG dock icons
+
+A window whose `IconFile` names a `.png` gets that picture on its dock slot,
+in its own colours: the theme does not tint it, and it dims while the window
+is closed, as `icon.png` does. Use it when each window wants its own
+full-colour art rather than the plugin's one `icon.png`.
+
+```csharp
+host.Ui.AddPanel(
+    new PluginPanelDescriptor("combat", "Combat") { IconFile = "icons/combat.png" },
+    Path.Combine(pluginDirectory, "combat.xml"),
+    binding);
+```
+
+The file follows the same rules as `icon.png`: PNG only (by its signature,
+not just its name), exactly 64x64 pixels, at most 64 KiB, not animated.
+Windows that name the same file share one copy of it. The client lets go of
+the icons when the interface is torn down, and loads a file again if it has
+changed on disk. A host that predates PNG dock icons takes only `.svg`
+here; it logs a `.png` and falls back to the next icon.
+
+## SVG icons
+
+An SVG icon stays sharp at every display scale and takes the dock's state
+colours: muted while the window is closed, the text colour while the pointer
+is over the slot, and the accent while the window is open (Classic uses the
+dock's own Classic colours). The file supplies only the shape. Any colour in
+it means "draw here", and its hue is ignored. Icon sets drawn on a 24-unit
+grid with a stroke, such as Lucide or Tabler, work as they are.
+
+```xml
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M5.5 8.5h13l-1 11h-11l-1-11Z"/>
+  <path d="M9 8.5V7a3 3 0 0 1 6 0v1.5"/>
+</svg>
+```
+
+The client reads a small, safe part of SVG. A file that uses anything else
+is not drawn at all, so an icon is never drawn wrong:
+
+- **Limits:** at most 16 KiB, 256 elements (title, desc and metadata content
+  and the root `<svg>` count too) nested at most 8 deep, 4,096 path commands, and 65,536
+  flattened points at each size the icon is baked for.
+- **Shapes:** `path` (every command, `M L H V C S Q T A Z`), `circle`,
+  `ellipse`, `rect` (with `rx`/`ry`), `line`, `polyline`, `polygon`, grouped
+  with `g`. `title`, `desc` and `metadata` are skipped, as is an empty
+  `defs`.
+- **Style**, as attributes or in `style="..."`, inherited through `g`:
+  `fill`, `stroke`, `fill-opacity`, `stroke-opacity`, `opacity`,
+  `stroke-width`, `stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`.
+  A paint value must be `none`, `transparent`, `currentColor`, a CSS colour name,
+  `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, or `rgb()`, `rgba()`, `hsl()`,
+  `hsla()`; anything else rejects the file. Keywords and colour names are
+  case-insensitive. A file that draws nothing (no shapes, or everything
+  `fill="none"` with no stroke) is refused too and falls back to the next icon. `opacity` on a `g` is applied to
+  each child separately, so where two children overlap they look slightly
+  darker than a browser would draw them.
+- **Transforms:** `matrix`, `translate`, `scale`, `rotate`, `skewX`,
+  `skewY`. A transform with NaN or infinite numbers, or one that collapses
+  the shape to nothing, rejects the file.
+- **The icon is fitted** into a square and centred, whatever its `viewBox`
+  shape.
+- **Not supported:** `fill-rule="evenodd"`, dashed strokes
+  (any `stroke-dasharray` other than `none`), gradients, patterns, masks,
+  clip paths, filters, text, images, `<use>`, `<style>`, scripts and DTDs.
+
+When a file is skipped, the client log says why, once per file:
+
+```
+[UI] plugin icon 'acme.hello/icons/main.svg' ignored: uses <mask>, which plugin icons do not support
+```
 
 Every window gets drag, an optional resize, the global UI lock, and a
 persisted position keyed `plugin:{pluginId}:{windowId}`. Hiding a window never
@@ -37,10 +132,10 @@ pauses the plugin.
 
 ## Shared plugin appearance
 
-Right-click the plugin shelf or an entry to open **Plugin appearance**. Classic
-is the default. **Charcoal + moss** and **Warm graphite + brass** apply to
-windows whose root uses `<panel theme="plugin" ...>`. The choice is saved in
-the client's settings. Existing windows without this attribute keep their
+Click the gear at the bottom of the plugin dock, or right-click the dock, to
+open **Plugin appearance**. Classic is the default. **Charcoal + moss** and
+**Warm graphite + brass** apply to windows whose root uses `<panel theme="plugin" ...>`. The choice is
+saved in the client's settings. Existing windows without this attribute keep their
 original styling. Both modern themes use the bundled Noto Sans Regular font;
 no operating-system font installation is required. Classic keeps its original
 font. The font loader is shared client infrastructure (`BundledUiFont.Load`),
@@ -48,15 +143,36 @@ so other client panels can use it too; this preference currently changes only
 opted-in plugin windows. The atlas covers Latin, Greek, Cyrillic and common
 punctuation; unsupported characters display a question mark.
 
-Modern shelves are 24 pixels wide; wheel scrolling reaches
-entries that do not fit vertically. Icons keep their full-color composition.
+The floating dock is 48 points wide, with 36-point slots; on a left or right
+edge it becomes a 46-point rail with 46 by 38-point slots. Artwork is 24 points
+in both. Wheel scrolling reaches entries that do not fit vertically. PNG and DAT icons keep
+their full-color composition; SVG icons take the dock's state colours.
 
-Opted-in windows keep their authored layout and use themed labels, buttons,
-tabs, fields, menus, lists, toggles and scrollbars. Literal and bound semantic
-colors remain unchanged. To adapt a decorative color, use a token with its
-original Classic fallback, for example `color="theme:text|#FFE8DEC3"` or
-`background="theme:field|#FF0C0906"`. Tokens are `text`, `muted`, `field`,
-`border`, `accent`, and `background`; the fallback uses `#AARRGGBB`.
+Opted-in windows keep their authored layout. In the modern themes they draw
+in a softer style: the window has rounded corners, a soft shadow and a header
+band behind its title, set in Noto Sans SemiBold; buttons, fields, menus,
+lists and logs are rounded, and buttons, tabs and menus react to the pointer;
+buttons and tabs show an accent ring when focused, and menus show an accent
+edge while open. Tabs are pills and toggles are switches.
+A themed toggle's caption starts 18 points further right than in Classic, so
+give toggles room for it. On high-density displays themed text is drawn from
+a sharper bake of the font; measurements, and so layout, are the same on
+every display.
+
+Literal and bound semantic colours remain unchanged. To adapt a decorative
+colour, use a token with its original Classic fallback, for example
+`color="theme:text|#FFE8DEC3"` or `background="theme:field|#FF0C0906"`.
+Tokens are `text`, `muted`, `field`, `border`, `accent`, and `background`;
+the fallback uses `#AARRGGBB`.
+
+The `samples/AcDream.Plugins.ThemeGallery` plugin shows every control in one
+opted-in window; switch themes from the dock's gear to compare them.
+
+Canvases are not restyled: a plugin reads the theme, its palette and the
+window sizes from `host.Ui.Theme`, repaints on `host.Ui.ThemeChanged`, and
+can set titles in the same SemiBold sans with
+`host.Ui.Fonts.Bundled(size, PluginFontWeight.SemiBold)`. See "Plugin theme"
+in the plugin API guide.
 
 Canvases are not restyled: a plugin reads the theme and its palette from
 `host.Ui.Theme` and repaints on `host.Ui.ThemeChanged`. See "Plugin theme"
@@ -92,8 +208,9 @@ back at runtime instead.
 | `meter fill`, `slider value` | `float` | silent: 0 |
 | `list items`, `menu items` | `IEnumerable<string>` | throws |
 | `list colors` | `IEnumerable<uint>` or `IEnumerable<int>`, `0xRRGGBB` per row | silent when omitted; throws when mistyped |
-| `list icons` | `IEnumerable<uint>` or `IEnumerable<int>` | silent when omitted; throws when mistyped; a negative element draws no icon |
+| `list icons` | `IEnumerable<uint>` or `IEnumerable<int>`; `IEnumerable<string>` paths with `iconkind="file"` | silent when omitted; throws when mistyped; a negative element, or a null or blank path, draws no icon |
 | `icon did` / `spell` / `item`, `button icon` | any integral type | throws at build for a missing member; a negative or out-of-range value draws nothing |
+| `icon file`, `button icon` with `iconkind="file"` | `string`, a path in the plugin folder | throws at build for a missing or non-`string` member; a null or blank path draws nothing |
 | `list selected` | `int` | throws |
 | `tab selected`, `toggle checked`, `visible`, `enabled` | `bool` | throws |
 | `onclick` (button, tab, toggle) | `Action` | throws |
@@ -149,11 +266,11 @@ Unknown or miscased element names throw at build time.
 
 | Element | Purpose | Attributes |
 |---|---|---|
-| `panel` (root) | The window | `x y w h title visible resizable minw minh resize` |
-| `group` | Layout container | `x y w h background border` |
+| `panel` (root) | The window | `x y w h title visible resizable minw minh resize titlebar scroll`, and the flex container attributes |
+| `group` | Layout container | `x y w h background border scroll`, and the flex container attributes |
 | `label` | Text | `x y text color` |
 | `button` | Button with caption and optional icon | `x y w h text color background border onclick icon iconkind` |
-| `icon` | An icon | `x y w h did` or `spell` or `item`, `tooltip` |
+| `icon` | An icon | `x y w h did` or `spell` or `item` or `file`, `tooltip` |
 | `meter` | Nine-slice bar | `x y w h fill cur max color` plus the nine-slice `backleft backtile backright frontleft fronttile frontright` |
 | `tab` | Tab button with optional icon | `x y w h text selected onclick icon iconkind` |
 | `toggle` | Checkbox | `x y w h text checked onclick color` |
@@ -161,10 +278,12 @@ Unknown or miscased element names throw at build time.
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
 | `list` | Scrolling rows | `x y w h selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children |
+| `canvas` | Hosts the plugin canvas registered with `InMarkup` | `id` (required), `x y w h`, and the flex item attributes (see [`<canvas>`](#canvas-a-plugin-drawing-inside-the-window)) |
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
-a binding.
+a binding. Inside a flex container elements take the flex item attributes
+instead of `x`, `y` and `anchor` (see [Flex layout](#flex-layout)).
 
 A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
@@ -201,6 +320,47 @@ text when Enter ends the edit.
 border, no sprite art) or `retail` (the game's own pushbutton or scrollbar
 art). A `menu` always opens as one scrolling column of at most `rows` entries;
 when the entries overflow, the popup shows the game's scrollbar.
+
+## Title bar
+
+`titlebar="true"` on the root `<panel>` gives the window a host title bar
+(a root with `layout` has it unless it says `titlebar="false"`; see
+[Flex layout](#flex-layout)):
+the window's name on the left and a close button on the right, drawn in the
+window's look (the game's close art in Classic; the header band and a ghost
+X in the shared themes). The name is the panel's `title`, or the title the
+window was registered with when the markup has none. `titlebar` takes
+`true` or `false`; anything else fails the build.
+
+With the bar on, the window has a **content area** inside the chrome:
+
+- children's `x`/`y` are measured from the content area's top-left corner,
+  so nothing you place can sit under the title;
+- `w`, `h`, `minw` and `minh` describe the content area, and the host adds
+  the chrome: 5 points left, right and bottom, and the 24-point bar on top
+  (the frame is 10 points wider and 29 points taller);
+- the root's `x`/`y` still position the window's outer frame, while children
+  are placed from the content area's corner;
+- dragging the bar moves the window;
+- the frame is never narrower than 96 points, so the close button always
+  leaves room for the start of the title; a narrower window opens at 96.
+
+```xml
+<panel x="120" y="120" w="300" h="160" title="Buff Bot" titlebar="true">
+  <label x="8" y="8" text="Ready" />
+  <button x="212" y="128" w="80" h="24" text="Start" onclick="{Start}" anchor="right bottom" />
+</panel>
+```
+
+The close button does what the window's dock slot does: it closes the
+window for the player and the plugin keeps running; the dock slot (or
+`ShowPanel`) opens it again. A window with a bar does not get the dock's
+"–" button, since its X does the same thing. A window kept out of the dock
+(registered with `ShowInSidePanel` off) has no dock slot, so after the player
+closes it only the plugin's `ShowPanel` opens it again; give players a way to
+call it, such as a command or a button. Turning the bar on for an
+existing window changes its size, so a size the player saved is reset once
+(the position is kept).
 
 ## Resizable panels and anchors
 
@@ -256,6 +416,229 @@ throws at build time naming the element and the value. Changing a panel's author
 size or limits in a later plugin version resets each user's stored size once;
 their saved position is kept.
 
+## `<canvas>`: a plugin drawing inside the window
+
+A `<canvas id="...">` shows a plugin canvas inside the window, where the layout puts it. The plugin registers the
+canvas as usual, with `InMarkup = true`, and keeps the `IPluginCanvas` it gets back: `Invalidate`, `PointerHandler`,
+`KeyHandler`, `ReleasePointer` and outside presses work as for any canvas. Pointer events are `Down`, `Up`, `Move`
+(while a button is held), `Wheel`, `Cancelled` and `PressedOutside`, as for a screen canvas; there is no hover. The
+`<canvas>` element takes the common attributes (`name`/`id`, `visible`, `enabled`, `tooltip`, `anchor`) and, in a flex
+container, the flex item attributes. It needs contract `0.1.25-fork.5` or later.
+
+```csharp
+IPluginCanvas map = Host.Ui.RegisterCanvas(
+    new PluginCanvasDescriptor("dungeon-map", 200, 200) { InMarkup = true, AcceptsPointerInput = true },
+    PaintMap);
+```
+
+```xml
+<group layout="column" grow="1">
+  <label text="Dungeon" />
+  <canvas id="dungeon-map" grow="1" />
+</group>
+```
+
+- **Size.** The element is sized like any leaf: `w`/`h`, or `grow`, `basis`, `min*`/`max*` and the container's
+  stretch in a flex container. On its own it measures 0×0. The canvas fills it, rounded to whole pixels;
+  `painter.Width`/`Height` and `map.Width`/`Height` report that size, and a change repaints the canvas. Below 1×1 the
+  canvas keeps its last size. The descriptor's size counts only until the first layout. `TryResize` answers false,
+  and `Anchor`, `Offset`, `Layer` and `ZOrder` are ignored.
+- **Shown.** The canvas is drawn and takes input only while `IsVisible` is true and the element is shown: its window
+  open and no ancestor (a hidden tab page, a `visible="{...}"` group) hidden. Inside a scrolling group it scrolls and
+  clips with the content; pointer positions stay in the canvas's own pixels.
+- **Pairing.** The id is the canvas's `CanvasId`, matched within the plugin only. Either may come first. A canvas
+  with no element yet is not drawn (`IsAvailable` is false) and the client log says it is waiting. An element with
+  no canvas draws nothing. A `<canvas>` without an id, or the same id twice in one window, is a markup error. With
+  the same id in two windows, the first one mounted shows the canvas, and the other takes over if that window goes.
+  The log also says once when an element shows nothing because another window shows its canvas, or because the
+  canvas was registered without `InMarkup`, whichever of the two came first. A plugin on the older calls without a
+  `PluginUiOwner` counts as one plugin: its `RegisterCanvas` canvases pair with its `RegisterMarkupPanel` and
+  `RegisterPanel` windows.
+- **Input details.** `id` is the canvas id; `name` is accepted when `id` is absent. A canvas with pointer input takes
+  every wheel step over it, so inside a scroll group the group does not scroll under the pointer; a canvas without
+  pointer input lets the wheel through. `enabled="false"` stops pointer input on the canvas (and hover), but not
+  outside presses or the plugin's keyboard focus requests. `tooltip` shows only over a canvas that takes pointer
+  input: a canvas without it lets clicks and hover through, so no tooltip can appear.
+- **Lifetime.** When the window goes, the canvas waits for another element; the plugin's handle keeps working.
+  Disposing the canvas empties the element. Markup canvases count toward the 8 canvases a plugin may hold.
+
+## Flex layout
+
+`layout="row"` or `layout="column"` on a `<group>` or on the root `<panel>`
+makes it a **flex container**: it places its children itself, one after
+another along its main axis, sized to their content and sharing out the
+space that is left. A container without `layout` keeps absolute placement.
+The rules are a practical subset of CSS flexbox.
+
+```xml
+<panel title="Buff Bot" layout="column" padding="8" gap="6" resizable="true">
+  <group layout="row" gap="4">
+    <field grow="1" text="{Search}" onchange="{SetSearch}" />
+    <button text="Find" onclick="{Find}" />
+  </group>
+  <list grow="1" items="{Results}" selected="{Selected}" onchange="{Select}" />
+  <group layout="row" justify="end" gap="4">
+    <button text="OK" onclick="{Ok}" />
+    <button text="Cancel" onclick="{Cancel}" />
+  </group>
+</panel>
+```
+
+### Container attributes
+
+| Attribute | Values | Default |
+|---|---|---|
+| `layout` | `row`, `column` | absent: absolute placement |
+| `gap` | points between items, and between wrapped lines | `0` |
+| `padding` | 1, 2 or 4 numbers in CSS order: all; vertical horizontal; top right bottom left | `0` |
+| `justify` | `start`, `center`, `end`, `space-between` | `start` |
+| `align` | `start`, `center`, `end`, `stretch` (across the line) | `stretch` |
+| `wrap` | `true`, `false` (rows only) | `false` |
+
+`gap`, `padding`, `justify`, `align` and `wrap` need `layout` on the same
+element. Only rows wrap in this version: `wrap="true"` on a column fails the
+build.
+
+### Item attributes
+
+Every child of a flex container may carry:
+
+| Attribute | Meaning | Default |
+|---|---|---|
+| `grow` | share of the space left over on the main axis | `0` |
+| `shrink` | share of the space missing, weighted by the item's basis | `1` |
+| `basis` | `auto` or points: the item's starting size on the main axis | `auto`: its `w`/`h` on that axis, else its content size |
+| `w`, `h` | preferred size, in place of the content size | the content size |
+| `minw`, `maxw`, `minh`, `maxh` | limits | min: the content minimum; max: none |
+| `alignself` | `start`, `center`, `end`, `stretch` | the container's `align` |
+
+An item never shrinks below its content (a button below its caption) unless
+`minw`/`minh` allow it. `x`, `y` and `anchor` on a flex item fail the build,
+and so do `grow`, `shrink`, `basis`, `alignself` and the limits on a child
+of a container without `layout`.
+
+### Content sizes
+
+| Element | Size |
+|---|---|
+| `label` | its text, one line tall |
+| `button`, `tab` | its caption with 12 points either side (and a square for its icon); at least 24 points tall, taller when the font's line plus 8 is more |
+| `toggle` | lamp or switch, then its caption; at least 20 points tall, taller when the font's line plus 4 is more |
+| `icon` | 32 × 32 |
+| `field`, `menu` | 120 wide (40 at least); tall as a button (at least 24, or the font's line plus 8) |
+| `slider` / `meter` | 120 wide (40 at least), 16 / 12 tall (fixed) |
+| `list`, `log` | 160 × 80 (60 × 40 at least) |
+| `group` with `layout` | what its own items need |
+| `group` without `layout` | its `w` × `h` |
+
+Sizes follow what is shown: a bound caption that gets longer, a hidden item
+(which takes no space), or a switch of the shared appearance lays the
+container out again on the next frame. A label inside a flex container
+draws in the box it is given, its line centred top to bottom.
+
+### Mixing absolute and flex
+
+The two nest freely. A group without `layout` inside a flex container is an
+item of its authored `w` × `h`; when the container gives it another size, its
+own children follow their `anchor`s exactly as in a resized window. A
+`<group layout>` inside an absolute container is placed by its `x`, `y`,
+`w`, `h` and `anchor` like any element, and lays out its children in
+whatever size that gives it. It needs its own `w` and `h` for that: without
+them it is empty and shows nothing.
+
+### Flex windows
+
+`layout` on the root `<panel>` lays out the window's content area:
+
+- the window gets the [title bar](#title-bar) unless the root says
+  `titlebar="false"` (without it the content area is inset by the 5-point
+  border on every side);
+- `w` and `h` may be left out: the window then opens at the size its
+  content needs. A size below what the content needs opens at the latter;
+- `minw` and `minh` default to what the content needs, so a window never
+  shrinks (by dragging, or by a restored layout) to a size that cuts its
+  content off. When the content needs more later (a longer caption), the
+  window grows to fit, even when it is not resizable, and stays on screen;
+- the opening size and minimum follow bound `visible` (and `enabled`) as the
+  bindings read when the window is built: a tabbed window whose pages are
+  sibling groups with `visible="{XTabSelected}"` opens sized for the shown
+  page, not every page stacked. A binding that throws at that point counts
+  as visible until the first frame reads it;
+- as with the title bar, the window's saved size is reset once when its
+  markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout`,
+  `titlebar` or `scroll` change. Captions and appearance never reset it.
+
+Windows only grow to fit: when the content later needs less room, the window
+keeps its size. A wrapping root's minimum height is the height of its
+narrowest layout, so a wide wrapping window cannot be made shorter than that;
+give it `scroll="y"` (see [Scrolling groups](#scrolling-groups)) to let it.
+
+A layout root with `titlebar="false"` shows no title text in the window (its
+`title` still names it in the dock), and gets no dock "–" button either, since
+its content reaches the corner where the button would sit: the player closes
+it from its dock slot, the plugin with `HidePanel`.
+
+A root that wraps should state its `w`: without it the window opens one
+line wide.
+
+## Scrolling groups
+
+`scroll="y"`, `scroll="x"` or `scroll="both"` on a `<group>` makes it scroll
+along those axes when its content does not fit; on the root `<panel>` it
+scrolls the window's content area. Without `scroll` content that does not fit
+is cut off, as before; any other value fails the build.
+
+```xml
+<panel title="Spells" layout="column" padding="8" gap="6" w="240" h="200" resizable="true">
+  <label text="Known spells" />
+  <group layout="row" wrap="true" gap="4" scroll="y" grow="1">
+    <icon spell="{Spell1}" />
+    <icon spell="{Spell2}" />
+    <!-- ... -->
+  </group>
+</panel>
+```
+
+- **Flex groups** lay their items out without a limit along the scrolling
+  axis: a scrolling column keeps every item at its size instead of shrinking
+  it, and a wrapping row with `scroll="y"` keeps its width and grows downward.
+  Items do not grow to fill a scrolling axis either; `grow` there has no space
+  to share.
+- **Groups without `layout`** scroll over their children as placed: the
+  scrolled area reaches the right and bottom edges of the furthest visible
+  child, measured from the group's top-left corner. A child at negative
+  coordinates is not reachable; leave your own margin after the last child if
+  you want one.
+- A **bar** (16 points) appears on each scrolling axis only while the content
+  overflows it, beside the content rather than over it: the content is laid
+  out (or its anchors applied) in the room left, so a right-anchored child
+  moves in beside the bar. When both bars show, the corner square stays empty.
+  Classic uses the game's scrollbar art and the shared themes a slim thumb.
+- **In a flex container** a scrolling group may shrink to a 40-point view
+  along each axis it scrolls (plus the other bar's 16 points), so it never
+  holds its window open. A scrolling wrapping row in a column shows all its
+  lines when the window has room and scrolls when it does not. On the root,
+  the window's minimum along a scrolling axis is that small view too.
+- The root needs a content area to scroll: `scroll` on a root `<panel>`
+  without `layout` and without `titlebar="true"` fails the build.
+
+**The wheel** scrolls the innermost thing under the pointer that can scroll:
+a `list` or `log` inside a scrolling group scrolls itself, and the group
+scrolls everywhere else. A group, list or log with nothing to scroll lets the
+wheel pass to a group around it. Scrolling closes an open menu, unless the
+pointer is over the menu's popup. A sideways swipe, a tilt wheel, or Shift with the wheel
+scrolls horizontally. Only `scroll="x"` and `scroll="both"` groups take a
+horizontal step; a Shift step that no such group takes scrolls vertically as
+before. One wheel step moves 48 points (three 16-point
+lines); the bar's arrows move 16 and a click in its track a page.
+
+**Focus** moves into view: when Tab (or a click) gives a control keyboard
+focus, each scrolling group around it scrolls just far enough to show it.
+
+The scroll position survives hiding and showing the group and a change of
+appearance, is pulled back when the group grows or its content shrinks, and
+is not saved between sessions. Plugins cannot read or set it in this version.
+
 ## Icon ids
 
 An icon id is either a full data-file id (`0x06xxxxxx`) or a bare index below
@@ -271,14 +654,16 @@ Do not add the prefix to them.
 
 ## Icon sources
 
-An icon comes from one of three sources. On `<icon>` the source is whichever
-attribute is set; on `<button>`, `<tab>` and `<list>` it is `iconkind` (default `did`).
+An icon comes from one of four sources. On `<icon>` the source is whichever
+attribute is set; on `<button>`, `<tab>`, `<list>` and an icon `<column>` it is
+`iconkind` (default `did`).
 
 | Source | Draws |
 |---|---|
 | `did` | The art at that id, with the art's pure-white key color replaced the way the inventory draws a plain item |
 | `spell` | The composited spell icon for a spell id: power-level backing, art, tint, and the self/fellow overlay |
 | `item` | The composited icon for a live object id, read from the same object table the inventory uses |
+| `file` | A PNG or JPEG the plugin ships, by its path relative to the plugin's install folder (see "File icons") |
 
 ```xml
 <icon x="8"  y="8" w="32" h="32" did="7735" tooltip="An icon"/>
@@ -290,7 +675,7 @@ attribute is set; on `<button>`, `<tab>` and `<list>` it is `iconkind` (default 
 
 Rules:
 
-- Exactly one of `did`, `spell`, `item` on an `<icon>`; `iconkind` is not
+- Exactly one of `did`, `spell`, `item`, `file` on an `<icon>`; `iconkind` is not
   valid there.
 - `w` and `h` default to 32. Art is drawn nearest-filtered, aspect-preserved,
   and centered. An id of 0 or an unresolvable id draws nothing.
@@ -303,6 +688,47 @@ Rules:
   icon per row, using one `iconkind` for the whole list. Rows without a
   matching icon draw text only.
 
+## File icons
+
+A plugin can draw its own art: a PNG or JPEG in its install folder, named by
+a path relative to that folder, written literally or bound to a `string`
+property. On `<button>`, `<list>` and an icon `<column>`, set
+`iconkind="file"` and give paths where the other kinds take ids.
+
+```xml
+<icon x="8" y="8" w="24" h="24" file="icons/sword.png" tooltip="Melee"/>
+<icon x="40" y="8" w="24" h="24" file="{StatusIcon}"/>
+<button x="12" y="40" w="120" h="24" text="Loot" icon="icons/bag.png" iconkind="file" onclick="{Loot}"/>
+<list x="12" y="72" w="256" h="108" items="{Rows}" icons="{RowIconPaths}" iconkind="file" selected="{Selected}"/>
+```
+
+- **Paths** use `/` or `\`, must end in `.png`, `.jpg` or `.jpeg`, and must stay
+  inside the plugin folder once links are followed. A file icon in a window
+  registered without a plugin folder draws nothing.
+- **Limits:** at most 1 MiB per file and 512 pixels on a side; the file's
+  own bytes must be a PNG or a JPEG, whatever its name. A plugin holds at most
+  256 file images at once.
+- **Drawing:** the element's `w` and `h` set the size; the image keeps its
+  aspect ratio, is centred in the element, and is scaled smoothly, unlike
+  client art. The client keeps smaller copies of every image (mipmaps), so a
+  large image in a small icon shrinks cleanly: a 512 x 512 file drawn at 24 x 24
+  looks right. Detail finer than the drawn size is still lost, so art made for
+  its size, at twice that for high-density displays (48 x 48 for a 24-point
+  icon), stays the sharpest. PNG transparency is kept, without dark fringes
+  where it shrinks; the image's own colours are drawn as they are.
+- **Bindings** are read every draw, so a window can switch icons by changing
+  the path it returns. A null or blank path draws nothing. Each file is
+  decoded once and shared by every element that shows it.
+- **Reloading:** a file that changed on disk is loaded again when its window
+  is built again, for example on a plugin hot reload.
+
+A file that cannot be used draws nothing, and the client log says why, once
+per file:
+
+```
+[UI] plugin image 'acme.hello/icons/sword.png' ignored: is wider or taller than 512 pixels
+```
+
 ## Columns
 
 A `<list>` can declare typed columns instead of the single-column attributes.
@@ -313,22 +739,26 @@ The two forms cannot be mixed on one list.
       selected="{SelectedMonster}" onchange="{SelectMonster}">
   <column type="check" width="20"  values="{MonsterFlags}" onchange="{ToggleFlag}"/>
   <column type="text"  width="127" items="{MonsterNames}"  onclick="{PingMonster}"/>
-  <column type="icon"  width="*"   iconkind="did" values="{MonsterIcons}" onclick="{MoveUp}"/>
+  <column type="icon"  width="20"  iconkind="did" values="{MonsterIcons}" onclick="{MoveUp}"/>
+  <column type="button" width="*"  items="{MonsterActions}" onclick="{ActOnMonster}"/>
 </list>
 ```
 
 | Attribute | Column type | Required | Binding |
 |---|---|---|---|
-| `type` | all | yes | `text`, `check`, or `icon` |
+| `type` | all | yes | `text`, `check`, `icon`, or `button` |
 | `width` | all | see below | pixels, or `*` for auto |
 | `items` | `text` | yes | `IReadOnlyList<string>` |
 | `colors` | `text` | no | `IReadOnlyList<uint>` or `<int>`, `0xRRGGBB` per row |
 | `onclick` | `text` | no | `Action<int>` with the row index; the click then does not select the row |
 | `values` | `check` | yes | `IReadOnlyList<bool>` |
 | `onchange` | `check` | yes | `Action<int>` with the row index; the plugin flips its own value |
-| `values` | `icon` | yes | `IReadOnlyList<uint>` or `<int>` |
-| `iconkind` | `icon` | no | `did` (default), `spell`, or `item` |
+| `values` | `icon` | yes | `IReadOnlyList<uint>` or `<int>`; `IReadOnlyList<string>` paths with `iconkind="file"` |
+| `iconkind` | `icon` | no | `did` (default), `spell`, `item`, or `file` |
 | `onclick` | `icon` | yes | `Action<int>` with the row index |
+| `items` | `button` | yes | `IReadOnlyList<string>`, each row's caption; an empty caption draws no button |
+| `onclick` | `button` | yes | `Action<int>` with the row index; the click does not select the row |
+| `buttonw`, `buttonh` | `button` | no | pixels; the button's size, centred in its cell (default: the whole cell) |
 
 Widths: `*` shares the remaining width equally with every other `*` column.
 The last column is always automatic; it takes the whole remainder unless
@@ -336,11 +766,22 @@ another column is also `*`. Every other column needs a positive `width` or
 `*`. Columns that would overflow the list are clamped and later ones draw
 nothing. Remainder pixels go to the last sharing column.
 
-Rows: the row count is the longest bound column. A `text` or `icon` cell past
-its own column's data draws nothing; a `check` cell draws unchecked. A click
+Rows: the row count is the longest bound column. A `text`, `icon` or `button`
+cell past its own column's data draws nothing; a `check` cell draws unchecked. A click
 in a `text` column without `onclick` selects the row and fires the list's
 `onchange`; any other click fires the column's own callback and leaves the
 selection alone. A click past a column's own data does nothing.
+
+A `button` cell is drawn as a button one pixel inside its cell, or at
+`buttonw` by `buttonh` centred in the cell (never larger than the cell; set
+either alone to size only that side), with its caption centred. It has the
+theme's button face, border, hover and press, or under Classic the face and
+border of a markup `<button>`. It fires like a `<button>`, when the left
+button comes up over the button it went down on, so a press dragged off the
+button cancels it; a click beside a smaller button does nothing. A cell with
+an empty caption is not a button and ignores clicks. On a host older than
+button columns, a `type="button"` column fails the build of its window as an
+unknown type.
 
 There is no header row; place `<label>` elements above the list. A `check`
 cell draws the same lamp glyph as `<toggle>`. When rows overflow the list's
@@ -358,22 +799,36 @@ widget works in 0..1 internally. They default to 0 and 1.
         value="{HealPercent}" onchange="{SetHealPercent}"/>
 ```
 
-## The plugin shelf
+## The plugin dock
 
-The shelf is the strip of plugin-window buttons at the right screen edge. It
-is a normal window: draggable by the grip along its top, collapsible with
-the `>`/`<` toggle at the grip's right end, and persisted like any other.
-`Shift+Ctrl+F1` hides and shows it; hiding the shelf never disables a plugin
-or touches a plugin window's own visibility.
+The dock holds one slot per plugin window, with a divider between plugins and
+a gear at the bottom that opens and closes **Plugin appearance**. Hovering a slot names
+the window and its plugin; an open window gets an accent dot. It draws the
+same shape in every theme, in Classic's black and gold or the theme's colours.
+
+- **Floating** (the default): drag it by the dots that appear along its top
+  while the pointer is over it. The chevron beside them collapses it to a
+  small pill.
+- **Left edge / Right edge**: a rail locked to that screen edge, which slides
+  up and down it. An accent pill on the edge marks open windows, and a taller
+  one the window in front.
+
+Choose the mode under **Dock** in Plugin appearance, or drag the dock to
+within 8 points of a screen edge to lock it there; pull it more than 32 points
+away to float it again. The mode is saved with the theme. When there are more
+windows than fit, the dock scrolls with the mouse wheel. `Shift+Ctrl+F1`
+hides and shows it; hiding the dock never disables a plugin or touches a
+plugin window's own visibility.
 
 ## Showing and hiding your own window
 
 A plugin window is on screen only while two things agree: the player's own
-request (its shelf button and its close button) and, when the markup binds
-the root's `visible`, the plugin's binding. Closing the window with its
-close button clears the player's request, so setting the binding back to
-true does not reopen it. `ShowPanel` and `HidePanel` make that request from
-the plugin, exactly as the shelf button does:
+request and, when the markup binds the root's `visible`, the plugin's
+binding. The player closes a window with its title bar's X (see "Title
+bar"), or, without a bar, with the dock's "–" on its corner (absolute windows
+only) or its dock slot; each clears the player's request, so setting the binding back to true
+does not reopen it. `ShowPanel` and `HidePanel` make that request from the
+plugin, exactly as the dock slot does:
 
 ```csharp
 host.Ui.ShowPanel("main");          // by window id or title
@@ -423,14 +878,76 @@ the same tree, and by `ScopedUiRegistryClientWindowTests` under
 `tests/AcDream.Core.Tests/Plugins/` for the scoped forwarder. Plugin images
 and canvases (see the plugin API guide) are covered by
 `PluginImageTableTests`, `BufferedUiRegistryImagesTests`,
-`BufferedUiRegistryCanvasTests` and `UI/Layout/PluginCanvasElementTests`
+`BufferedUiRegistryCanvasTests`, `UI/Layout/PluginCanvasElementTests`,
+`UI/Layout/PluginCanvasKeyboardTests` and `Input/PluginKeyMapTests`
 under `tests/AcDream.App.Tests/`, by `ScopedUiRegistryImagesTests` and
-`ScopedUiRegistryCanvasTests` for the scoped forwarder, and by the contract
-and headless suites for the inert answers a host without a window gives.
-The theme plugins read is covered by `BufferedUiRegistryThemeTests` under
-`tests/AcDream.App.Tests/`, by `ScopedUiRegistryThemeTests` for the scoped
-forwarder, and by `PluginThemeContractTests` and the headless suite for the
-Classic answer.
+`ScopedUiRegistryCanvasTests` for the scoped forwarder, by the contract
+and headless suites for the inert answers a host without a window gives,
+and, for how a canvas is composited, by `Rendering/TextRendererBlendTests`
+and, on a Vulkan device, `Rendering/Gpu/Vk/PluginCanvasCompositeOffscreenTests`
+(`Lane=Vulkan`).
+Canvas fonts are covered by `CanvasFontBakerTests`, `CanvasFontTests`,
+`PluginFontTableTests`, `BundledCanvasFontCacheTests` and
+`BufferedUiRegistryFontsTests` under `tests/AcDream.App.Tests/`, by
+`Rendering/TextRendererCoverageSpriteTests`, by the font cases in
+`UI/Layout/PluginCanvasElementTests` and
+`Rendering/TextureCacheReleasableUiTextureTests`, by
+`ScopedUiRegistryFontsTests` for the scoped forwarder, and by
+`PluginFontsContractTests` and the headless suite for the inert answers.
+The theme plugins read, and the SemiBold sans, are covered by
+`BufferedUiRegistryThemeTests` under `tests/AcDream.App.Tests/`, by
+`ScopedUiRegistryThemeTests` for the scoped forwarder, and by
+`PluginThemeContractTests` and the headless suite for the Classic answer.
+Canvas shapes are covered by `UI/CanvasGeometryTests`,
+`Rendering/ColoredTriangleClipperTests`, `Rendering/TextRendererTrianglesTests`,
+`UI/UiRenderContextTrianglesTests` and the shape cases in
+`UI/Layout/PluginCanvasElementTests` under `tests/AcDream.App.Tests/`, by
+`PluginCanvasShapesContractTests` for the inert answers of an older host,
+and, on a Vulkan device, by `Rendering/Gpu/Vk/PluginCanvasShapeOffscreenTests`
+(`Lane=Vulkan`).
+Canvases on high-density displays are covered by `UI/Layout/CanvasPixelScaleTests`,
+the high-density cases in `UI/Layout/PluginCanvasElementTests`, the sharper-bake
+cases in `CanvasFontBakerTests`, `CanvasFontTests` and
+`BundledCanvasFontCacheTests`, and `Plugins/PluginFontTableScaleTests` under
+`tests/AcDream.App.Tests/`, by `PluginCanvasPixelScaleContractTests` for the
+answer of an older host, and, on a Vulkan device, by
+`Rendering/Gpu/Vk/PluginCanvasHiDpiOffscreenTests` (`Lane=Vulkan`).
+`samples/AcDream.Plugins.CanvasDemo` paints one canvas with every kind of
+content, for looking at by eye.
+Canvas layers and stacking are covered by `UI/Layout/PluginCanvasStackTests`,
+`UI/UiBandTests` and `Rendering/TextRendererDrawLayerTests` under
+`tests/AcDream.App.Tests/`, by `ScopedUiRegistryCanvasTests` for the scoped
+forwarder, and by `PluginCanvasLayerContractTests` under
+`tests/AcDream.Plugin.Tests/` for the inert answers of a host that predates
+layers.
+Image regions and nine-slices are covered by `UI/CanvasImageRegionsTests`,
+the region cases in `UI/Layout/PluginCanvasElementTests` and the filtering
+cases in `PluginImageTableTests` and
+`Rendering/TextureCacheReleasableUiTextureTests` under
+`tests/AcDream.App.Tests/`, and by `PluginCanvasImageRegionsContractTests`
+under `tests/AcDream.Plugin.Tests/` for the inert answers of a host that
+predates them.
+
+World markers are covered by `Plugins/PluginWorldMarkerStoreTests`,
+`Plugins/PluginWorldMarkerStoreShapeTests`,
+`Plugins/BufferedUiRegistryWorldMarkersTests`,
+`UI/Layout/WorldIconOverlayLayoutTests`, `UI/Layout/WorldIconOverlayDrawTests`,
+`Rendering/GroundShapeTessellatorTests`, `Rendering/GroundShapeBatchTests` and
+`Rendering/PluginGroundShapeRendererTests` under `tests/AcDream.App.Tests/`,
+by `Plugins/ScopedUiRegistryWorldMarkersTests` and
+`Physics/TerrainHeightSamplerTests` under `tests/AcDream.Core.Tests/`, and by
+`PluginWorldMarkersContractTests` under `tests/AcDream.Plugin.Tests/` for the
+inert answers of an older host.
+
+Markup canvases are covered by `UI/MarkupCanvasTests`,
+`UI/Layout/PluginCanvasElementTests.Markup` and
+`UI/Layout/PluginCanvasElementTests.MarkupPairing` under
+`tests/AcDream.App.Tests/`.
+
+SVG icons are covered by `Plugins/PluginSvgIconTests`, `Plugins/SvgOutlineTests`
+and `Plugins/SvgStrokerTests` under `tests/AcDream.Core.Tests/`, and by
+`UI/SvgIconRasterizerTests`, `UI/PluginSvgIconCacheTests` and
+`UI/PluginShelfSvgIconTests` under `tests/AcDream.App.Tests/`.
 
 ## Scrolling transcripts
 

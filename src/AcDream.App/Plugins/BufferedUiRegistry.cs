@@ -200,6 +200,15 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
             return _images.GetValueOrDefault(owner.Id);
     }
 
+    /// <summary>Every plugin's world markers, read by the interface's icon overlay.</summary>
+    internal PluginWorldMarkerStore WorldMarkerStore { get; } = new();
+
+    public IPluginWorldMarkers WorldMarkersFor(PluginUiOwner owner)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
+        return WorldMarkerStore.For(owner.Id);
+    }
+
     // The plugin theme, told to the registry by the interface: the one the
     // player saved when the interface comes up, then each one they pick. It
     // outlives the interface, so a reconnect keeps answering the same theme.
@@ -286,6 +295,167 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
         }
     }
 
+    // The interface's size, told to the registry by the interface each frame
+    // it draws. Like the theme it outlives the interface, so a reconnect
+    // keeps answering the last size until the next draw.
+    private PluginSize _screenSize;
+    private Action<PluginSize>? _screenSizeChanged;
+
+    public PluginSize ScreenSize
+    {
+        get
+        {
+            lock (_gate)
+                return _screenSize;
+        }
+    }
+
+    public event Action<PluginSize> ScreenSizeChanged
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_gate)
+                _screenSizeChanged += value;
+        }
+        remove
+        {
+            lock (_gate)
+                _screenSizeChanged -= value;
+        }
+    }
+
+    /// <summary>
+    /// Takes the size the canvas layers are laid out in and, when it differs
+    /// from the last one, tells every plugin on the calling thread, the
+    /// interface thread. One plugin's handler throwing does not stop the next
+    /// from hearing.
+    /// </summary>
+    internal void PublishScreenSize(PluginSize size)
+    {
+        Action<PluginSize>? handlers;
+        lock (_gate)
+        {
+            if (_screenSize == size)
+                return;
+            _screenSize = size;
+            handlers = _screenSizeChanged;
+        }
+        if (handlers is null)
+            return;
+        foreach (Delegate handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((Action<PluginSize>)handler)(size);
+            }
+            catch (Exception error)
+            {
+                Serilog.Log.Warning(error, "A plugin's screen size handler threw");
+            }
+        }
+    }
+
+    // Font tables, one per plugin, following the image tables' lifecycle:
+    // made on first request, bound when the interface's texture services
+    // arrive, unbound when they go. The bundled font's bakes are shared by
+    // every table and live exactly as long as the binding.
+    private readonly Dictionary<string, PluginFonts> _fonts = [];
+    private IPluginFontBackend? _fontBackend;
+    private BundledCanvasFontCache? _bundledFonts;
+    private BundledCanvasFontCache? _bundledSemiBoldFonts;
+    private int _fontUiThreadId;
+
+    /// <summary>The per-plugin font ceiling every table is made with.</summary>
+    internal PluginFontBudget FontBudget { get; init; } = PluginFontBudget.Default;
+
+    public IPluginFonts FontsFor(PluginUiOwner owner)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
+        lock (_gate)
+        {
+            if (_fonts.TryGetValue(owner.Id, out PluginFonts? existing))
+                return existing;
+            var table = new PluginFontTable(owner.Id, FontBudget);
+            if (_fontBackend is { } backend && _bundledFonts is { } bundled)
+                table.Bind(backend, bundled, _fontUiThreadId, _bundledSemiBoldFonts);
+            var fonts = new PluginFonts(table, ForgetFonts);
+            _fonts.Add(owner.Id, fonts);
+            return fonts;
+        }
+    }
+
+    private void ForgetFonts(PluginFonts fonts)
+    {
+        lock (_gate)
+        {
+            foreach ((string ownerId, PluginFonts held) in _fonts)
+            {
+                if (ReferenceEquals(held, fonts))
+                {
+                    _fonts.Remove(ownerId);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Points every plugin's font table, present and future, at the
+    /// interface's texture services. The calling thread is the one the tables
+    /// then accept requests from.
+    /// </summary>
+    internal void BindFontServices(IPluginFontBackend backend)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        lock (_gate)
+        {
+            if (_fontBackend is not null)
+                throw new InvalidOperationException("Font services are already bound.");
+            _fontBackend = backend;
+            _bundledFonts = new BundledCanvasFontCache(
+                backend, AcDream.App.UI.BundledUiFont.ReadEmbeddedFontBytes, FontBudget.MaximumGlyphs);
+            _bundledSemiBoldFonts = new BundledCanvasFontCache(
+                backend,
+                () => AcDream.App.UI.BundledUiFont.ReadEmbeddedFontBytes(AcDream.App.UI.BundledUiFontWeight.SemiBold),
+                FontBudget.MaximumGlyphs,
+                "bundled-semibold");
+            _fontUiThreadId = Environment.CurrentManagedThreadId;
+            foreach (PluginFonts fonts in _fonts.Values)
+                fonts.Table.Bind(backend, _bundledFonts, _fontUiThreadId, _bundledSemiBoldFonts);
+        }
+    }
+
+    /// <summary>
+    /// Lets every plugin's fonts go, then the shared bundled bakes, and
+    /// forgets the services. Must run before the texture cache goes.
+    /// Idempotent.
+    /// </summary>
+    internal void UnbindFontServices()
+    {
+        lock (_gate)
+        {
+            if (_fontBackend is null)
+                return;
+            // Every table unbinds before the shared bakes go: a cache disposed
+            // under a bound table would leave it resolving released atlases.
+            foreach (PluginFonts fonts in _fonts.Values)
+                fonts.Table.Unbind();
+            _bundledFonts?.Dispose();
+            _bundledFonts = null;
+            _bundledSemiBoldFonts?.Dispose();
+            _bundledSemiBoldFonts = null;
+            _fontBackend = null;
+        }
+    }
+
+    /// <summary>The font surface of one plugin, or null when none was made.</summary>
+    internal PluginFonts? FindFonts(PluginUiOwner owner)
+    {
+        lock (_gate)
+            return _fonts.GetValueOrDefault(owner.Id);
+    }
+
     // Canvases follow the same path as windows: registered at any time,
     // drained by the interface once, taken down through the registration
     // when the plugin disposes it, and handed back to be mounted again when
@@ -357,6 +527,10 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 registration.Drained = true;
                 pending.Add(registration);
             }
+            // Registration order, which the dictionary does not keep once
+            // entries have been removed: plugins' canvas groups stack in the
+            // order their first canvas mounts.
+            pending.Sort(static (a, b) => a.Id.CompareTo(b.Id));
             return pending;
         }
     }
@@ -384,6 +558,25 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
         {
             lock (_gate)
                 return _canvases.Count;
+        }
+    }
+
+    /// <summary>
+    /// The canvas <paramref name="ownerId"/> registered as
+    /// <paramref name="canvasId"/>, or null. Read by the interface to say why
+    /// a markup <c>&lt;canvas&gt;</c> shows nothing.
+    /// </summary>
+    internal PluginCanvasRegistration? FindCanvas(string ownerId, string canvasId)
+    {
+        lock (_gate)
+        {
+            foreach (PluginCanvasRegistration registration in _canvases.Values)
+            {
+                if (registration.Owner.Id.Equals(ownerId, StringComparison.Ordinal)
+                    && registration.CanvasId.Equals(canvasId, StringComparison.Ordinal))
+                    return registration;
+            }
+            return null;
         }
     }
 
@@ -525,6 +718,12 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
 
     public IPluginImages Images =>
         ImagesFor(new PluginUiOwner("unscoped", "Plugin"));
+
+    public IPluginFonts Fonts =>
+        FontsFor(new PluginUiOwner("unscoped", "Plugin"));
+
+    public IPluginWorldMarkers WorldMarkers =>
+        WorldMarkersFor(new PluginUiOwner("unscoped", "Plugin"));
 
     public IDisposable RegisterMarkupPanel(string markupPath, object binding)
         => RegisterPanel(

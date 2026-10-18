@@ -146,6 +146,11 @@ public sealed class UiMenu : UiElement
     public const float PlainPadding = 3f;
 
     public Vector4 PlainSelectedColor { get; set; } = new(0.28f, 0.23f, 0.08f, 0.95f);
+    /// <summary>The shared plugin theme the plain look draws in; null draws Classic plain.</summary>
+    public PluginUiPalette? ThemePalette { get; set; }
+
+    private UiPointerState _pointer;
+
     public Vector4 PlainHoverColor { get; set; } = new(0.40f, 0.33f, 0.14f, 0.95f);
 
     private bool _open;
@@ -254,8 +259,10 @@ public sealed class UiMenu : UiElement
         _searchField.TextColor = RetailButtonArt ? TextColorAvailable : PlainTextColor;
         _searchField.BackgroundColor = PlainBackgroundColor;
         _searchField.SelectionColor = PlainSelectedColor;
+        _searchField.ThemePalette = ThemePalette;
         _searchField.DrawSelfAndChildren(ctx);
-        ctx.DrawRectOutline(Border, PopupTop + Border, InteriorW, SearchHeight - 2f, PlainOpenBorderColor, 1f);
+        if (ThemePalette is null)
+            ctx.DrawRectOutline(Border, PopupTop + Border, InteriorW, SearchHeight - 2f, PlainOpenBorderColor, 1f);
         if (_searchField.Text.Length == 0)
             DrawLabel(ctx, "Search...", Border + 7f, PopupTop + Border + (SearchHeight - LineH()) * 0.5f, TextColorGhosted);
         if (DisplayItems.Count == 0)
@@ -302,9 +309,18 @@ public sealed class UiMenu : UiElement
 
     private void DrawPlainClosedState(UiRenderContext ctx)
     {
-        ctx.DrawFill(0f, 0f, Width, Height, PlainBackgroundColor);
-        Vector4 border = (_open || _facePressed) ? PlainOpenBorderColor : PlainBorderColor;
-        ctx.DrawRectOutline(0f, 0f, Width, Height, border, 1f);
+        bool open = _open || _facePressed;
+        if (ThemePalette is { } palette)
+        {
+            PluginUiStyle.Button(ctx, palette, Width, Height, PlainBackgroundColor,
+                open ? PlainOpenBorderColor : PlainBorderColor,
+                open ? UiControlState.Normal : _pointer.State(Enabled));
+        }
+        else
+        {
+            ctx.DrawFill(0f, 0f, Width, Height, PlainBackgroundColor);
+            ctx.DrawRectOutline(0f, 0f, Width, Height, open ? PlainOpenBorderColor : PlainBorderColor, 1f);
+        }
 
         string caption = ButtonLabelProvider?.Invoke() ?? "";
         UiDatFont? captionFont = ButtonDatFont ?? DatFont;
@@ -315,7 +331,10 @@ public sealed class UiMenu : UiElement
         else
             ctx.DrawString(caption, PlainPadding, textY, PlainTextColor, Font);
 
-        DrawPlainTriangle(ctx);
+        if (ThemePalette is not null)
+            PluginUiStyle.Chevron(ctx, Width - 6f - 8f, (Height - 4f) * 0.5f, 8f, 4f, PlainTriangleColor);
+        else
+            DrawPlainTriangle(ctx);
     }
 
     private void DrawPlainTriangle(UiRenderContext ctx)
@@ -509,13 +528,33 @@ public sealed class UiMenu : UiElement
     }
 
 
+    private void DrawPlainPopupSurface(UiRenderContext ctx, float top)
+    {
+        if (ThemePalette is not null)
+        {
+            PluginUiStyle.PopupShadow(ctx, 0f, top, OuterW, OuterH);
+            PluginUiStyle.Surface(ctx, 0f, top, OuterW, OuterH, PluginUiStyle.ContainerRadius,
+                PlainBackgroundColor, PlainBorderColor);
+            return;
+        }
+        ctx.DrawFill(0f, top, OuterW, OuterH, PlainBackgroundColor);
+        ctx.DrawRectOutline(0f, top, OuterW, OuterH, PlainBorderColor, 1f);
+    }
+
+    private void DrawPlainRowHighlight(UiRenderContext ctx, float x, float y, Vector4 color)
+    {
+        if (ThemePalette is not null)
+            PluginUiStyle.Row(ctx, x, y, ColumnWidth, RowHeight, color);
+        else
+            ctx.DrawFill(x, y, ColumnWidth, RowHeight, color);
+    }
+
     private void DrawGridPopupPlain(UiRenderContext ctx)
     {
         float outerTop = PopupTop;
         float inX = Border, inY = outerTop + Border + SearchHeight;
 
-        ctx.DrawFill(0f, outerTop, OuterW, OuterH, PlainBackgroundColor);
-        ctx.DrawRectOutline(0f, outerTop, OuterW, OuterH, PlainBorderColor, 1f);
+        DrawPlainPopupSurface(ctx, outerTop);
 
         for (int i = 0; i < DisplayItems.Count; i++)
         {
@@ -523,9 +562,9 @@ public sealed class UiMenu : UiElement
             float x = inX + col * ColumnWidth, y = inY + row * RowHeight;
             bool selected = Equals(DisplayItems[i].Payload, Selected) || (Searchable && i == _hoveredPopupIndex);
             if (selected)
-                ctx.DrawFill(x, y, ColumnWidth, RowHeight, PlainSelectedColor);
+                DrawPlainRowHighlight(ctx, x, y, PlainSelectedColor);
             else if (i == _hoveredPopupIndex)
-                ctx.DrawFill(x, y, ColumnWidth, RowHeight, PlainHoverColor);
+                DrawPlainRowHighlight(ctx, x, y, PlainHoverColor);
         }
 
         float textY = (RowHeight - LineH()) * 0.5f;
@@ -546,8 +585,7 @@ public sealed class UiMenu : UiElement
         float outerTop = PopupTop;
         float inX = Border, inY = outerTop + Border + SearchHeight;
 
-        ctx.DrawFill(0f, outerTop, OuterW, OuterH, PlainBackgroundColor);
-        ctx.DrawRectOutline(0f, outerTop, OuterW, OuterH, PlainBorderColor, 1f);
+        DrawPlainPopupSurface(ctx, outerTop);
 
         int start = VisibleTopRow;
         int count = System.Math.Min(EffectiveVisibleRows, DisplayItems.Count - start);
@@ -558,9 +596,9 @@ public sealed class UiMenu : UiElement
             float y = inY + i * RowHeight;
             bool selected = Equals(DisplayItems[idx].Payload, Selected) || (Searchable && idx == _hoveredPopupIndex);
             if (selected)
-                ctx.DrawFill(inX, y, ColumnWidth, RowHeight, PlainSelectedColor);
+                DrawPlainRowHighlight(ctx, inX, y, PlainSelectedColor);
             else if (idx == _hoveredPopupIndex)
-                ctx.DrawFill(inX, y, ColumnWidth, RowHeight, PlainHoverColor);
+                DrawPlainRowHighlight(ctx, inX, y, PlainHoverColor);
         }
         for (int i = 0; i < count; i++)
         {
@@ -580,8 +618,11 @@ public sealed class UiMenu : UiElement
     {
         if (!IsPopupScrollbarPresentationVisible) return;
 
-        ctx.DrawFill(x, y, ScrollbarWidth, InteriorH, PlainBackgroundColor);
-        ctx.DrawRectOutline(x, y, ScrollbarWidth, InteriorH, PlainBorderColor, 1f);
+        if (ThemePalette is null)
+        {
+            ctx.DrawFill(x, y, ScrollbarWidth, InteriorH, PlainBackgroundColor);
+            ctx.DrawRectOutline(x, y, ScrollbarWidth, InteriorH, PlainBorderColor, 1f);
+        }
 
         if (!PopupScroll.HasOverflow) return;
 
@@ -590,7 +631,10 @@ public sealed class UiMenu : UiElement
         float trackTop = decExtent;
         float trackLen = MathF.Max(0f, InteriorH - decExtent - incExtent);
         var (ty, th) = UiScrollbar.ThumbRect(PopupScroll, trackTop, trackLen);
-        ctx.DrawFill(x + 1f, y + ty, MathF.Max(0f, ScrollbarWidth - 2f), th, PlainBorderColor);
+        if (ThemePalette is { } thumbPalette)
+            PluginUiStyle.ScrollThumb(ctx, thumbPalette, x, y + ty, ScrollbarWidth, th, _draggingPopupThumb);
+        else
+            ctx.DrawFill(x + 1f, y + ty, MathF.Max(0f, ScrollbarWidth - 2f), th, PlainBorderColor);
     }
 
     private void UpdatePlainPopupHover(float lx, float ly)
@@ -660,6 +704,7 @@ public sealed class UiMenu : UiElement
 
     public override bool OnEvent(in UiEvent e)
     {
+        _pointer.Observe(in e);
         if (Searchable && e.Type is UiEventType.FocusGained or UiEventType.FocusLost)
         {
             if (e.Type == UiEventType.FocusLost) EndSearchSelection();

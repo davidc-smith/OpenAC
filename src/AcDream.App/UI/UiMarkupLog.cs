@@ -98,8 +98,14 @@ public sealed class UiMarkupLog : UiPanel
     {
         Refresh();
         var p = ThemePalette;
-        ctx.DrawFill(0, 0, Width, Height, p?.Field ?? BackgroundColor);
-        ctx.DrawRectOutline(0, 0, Width, Height, p?.Border ?? BorderColor, 1);
+        if (p is not null)
+            PluginUiStyle.Surface(ctx, 0, 0, Width, Height, PluginUiStyle.ContainerRadius, p.Field, p.Border);
+        else
+        {
+            ctx.DrawFill(0, 0, Width, Height, BackgroundColor);
+            ctx.DrawRectOutline(0, 0, Width, Height, BorderColor, 1);
+        }
+        _bar.ThemePalette = p;
         _bar.RetailArt = p is null;
         _bar.PlainTrackColor = p?.Field ?? BackgroundColor;
         _bar.PlainBorderColor = p?.Border ?? BorderColor;
@@ -123,6 +129,8 @@ public sealed class UiMarkupLog : UiPanel
     {
         if (e.Type != UiEventType.Scroll) return base.OnEvent(e);
         Refresh();
+        // A log with nothing to scroll leaves the wheel to the group around it.
+        if (!Scroll.HasOverflow) return false;
         Scroll.ScrollByLines(-e.Data0 * 3);
         return true;
     }

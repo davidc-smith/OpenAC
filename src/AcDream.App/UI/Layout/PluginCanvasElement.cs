@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Numerics;
+using System.Text;
+using AcDream.App.Input;
 using AcDream.App.Plugins;
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
@@ -24,6 +26,13 @@ namespace AcDream.App.UI.Layout;
 /// painted, so a repaint never tears. The pool grows to the flight depth
 /// plus one and no further.</para>
 ///
+/// <para>Targets are painted at the interface's pixel scale
+/// (<see cref="CanvasPixelScale"/>), so on a high-density display each texel
+/// lands on one device pixel instead of being magnified. The element
+/// reads the scale every frame it draws; when it changes, every target is
+/// given back, the canvas is invalidated, and the next paint allocates at
+/// the new size.</para>
+///
 /// <para>A canvas that opted in to pointer input answers the hit-test for
 /// its own rectangle while it has a handler, and for nothing outside it.
 /// The root gives it the pointer on a press, as it does any element that
@@ -32,8 +41,22 @@ namespace AcDream.App.UI.Layout;
 /// pixels. The handler runs under a guard of its own: one that throws or
 /// stays slow is dropped, and the canvas goes back to click-through while
 /// its painting carries on.</para>
+///
+/// <para>A canvas that opted in to keyboard input takes the interface's
+/// keyboard focus, like a text field, while it is shown and has a key
+/// handler: from a left press on it, or when the plugin asks and nothing
+/// else has focus. Focus is the root's; the canvas only reports what the
+/// root tells it, so exactly one focus lost follows each focus gained,
+/// whichever way focus goes. While focused it hands the plugin keys,
+/// typed text and its own key repeat, under a third guard.</para>
+///
+/// <para>A canvas that asked for outside presses is told of every press
+/// that starts outside its rectangle, through the same handler and guard
+/// as its own pointer events. The stack it sits in hears of each press
+/// from the root before the press is routed, and asks each such canvas in
+/// turn; the press then goes where it would have gone.</para>
 /// </summary>
-internal sealed class PluginCanvasElement : UiElement
+internal sealed class PluginCanvasElement : UiElement, IPluginCanvasKeyboardFocus
 {
     /// <summary>
     /// How long one repaint may take. Twice the frame guard's budget: a
@@ -44,6 +67,12 @@ internal sealed class PluginCanvasElement : UiElement
 
     /// <summary>The most targets a canvas may hold; the flight depth plus one is the real bound.</summary>
     internal const int MaximumTargets = 8;
+
+    /// <summary>How long a key is held before the host repeats it, as a text field does.</summary>
+    internal const double KeyRepeatDelaySeconds = 0.40;
+
+    /// <summary>How often a held key repeats after the delay, as a text field does.</summary>
+    internal const double KeyRepeatIntervalSeconds = 0.04;
 
     private sealed class CanvasTarget(IGpuRenderTarget target, GpuTextureSlot slot)
     {
@@ -57,16 +86,47 @@ internal sealed class PluginCanvasElement : UiElement
     private readonly PluginCanvasRegistration _registration;
     private readonly PluginCanvasSurface _surface;
     private readonly Func<PluginImages?> _images;
+    private readonly Func<PluginFonts?> _fonts;
     private readonly UiDrawCallbackGuard _guard;
     private readonly UiDrawCallbackGuard _inputGuard;
+    private readonly UiDrawCallbackGuard _keyGuard;
     private readonly Func<PluginKeyModifiers> _modifiers;
+    private readonly Func<bool> _keyboardCaptured;
     private readonly Action<string> _report;
     private readonly List<CanvasTarget> _targets = [];
     private CanvasTarget? _shown;
     private bool _targetsUnavailable;
+    private readonly bool _hosted;
+
+    /// <summary>The canvas size last read from the registration.</summary>
+    private int _targetsWidth;
+    private int _targetsHeight;
+
+    /// <summary>
+    /// The device size new targets are made at; zero for the canvas's own.
+    /// A resize that outgrows the targets sets it with headroom, so a drag
+    /// that keeps growing the canvas makes targets once per step of
+    /// <see cref="ResizeHeadroom"/> rather than once a frame.
+    /// </summary>
+    private int _allocatedWidth;
+    private int _allocatedHeight;
+
+    /// <summary>The device pixels a target made for a resize is rounded up to.</summary>
+    internal const int ResizeHeadroom = 64;
     private bool _released;
     private PluginPointerButton _heldButton;
     private readonly Action? _pointerRelease;
+    private readonly Action<CanvasShapeProblem, string> _shapeProblems;
+    private bool _reportedBadShape;
+    private bool _reportedShapeBudget;
+    private float _pixelScale = 1f;
+    private float _interfaceScale = 1f;
+    private bool _focused;
+    private PluginKey _repeatKey;
+    private double _repeatTimer;
+
+    /// <summary>True for a canvas a markup <c>&lt;canvas&gt;</c> hosts: it fills its host instead of anchoring.</summary>
+    internal bool IsHosted => _hosted;
 
     internal PluginCanvasElement(
         PluginCanvasRegistration registration,
@@ -74,13 +134,20 @@ internal sealed class PluginCanvasElement : UiElement
         Func<PluginImages?> images,
         Action<string>? report = null,
         Func<double>? nowMilliseconds = null,
-        Func<PluginKeyModifiers>? modifiers = null)
+        Func<PluginKeyModifiers>? modifiers = null,
+        Func<PluginFonts?>? fonts = null,
+        Func<bool>? keyboardCaptured = null,
+        bool hosted = false)
     {
+        _hosted = hosted;
         _registration = registration ?? throw new ArgumentNullException(nameof(registration));
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
         _images = images ?? throw new ArgumentNullException(nameof(images));
+        _fonts = fonts ?? (static () => null);
         _report = report ?? (line => Serilog.Log.Warning("{Line}", line));
         _modifiers = modifiers ?? (static () => PluginKeyModifiers.None);
+        _shapeProblems = ReportShapeProblem;
+        _keyboardCaptured = keyboardCaptured ?? (static () => false);
         _guard = new UiDrawCallbackGuard(
             $"plugin canvas {registration.Owner.Id}/{registration.CanvasId}",
             _report,
@@ -88,6 +155,12 @@ internal sealed class PluginCanvasElement : UiElement
             RepaintBudgetMilliseconds);
         _inputGuard = new UiDrawCallbackGuard(
             $"plugin canvas {registration.Owner.Id}/{registration.CanvasId} pointer handler",
+            _report,
+            nowMilliseconds,
+            UiDrawCallbackGuard.FrameBudgetMilliseconds,
+            callUnit: "events");
+        _keyGuard = new UiDrawCallbackGuard(
+            $"plugin canvas {registration.Owner.Id}/{registration.CanvasId} key handler",
             _report,
             nowMilliseconds,
             UiDrawCallbackGuard.FrameBudgetMilliseconds,
@@ -100,8 +173,9 @@ internal sealed class PluginCanvasElement : UiElement
         // plugin's, held until the button comes up, wherever the pointer went.
         CapturesPointerDrag = registration.AcceptsPointerInput;
         Anchors = AnchorEdges.None;
-        Width = registration.Width;
-        Height = registration.Height;
+        (_targetsWidth, _targetsHeight) = registration.Size;
+        Width = _targetsWidth;
+        Height = _targetsHeight;
         // Read by the tree before the visibility check, so a canvas the
         // plugin hid and shows again is ticked and drawn on the next frame.
         VisibleSource = () => _registration.IsVisible && !_registration.IsDropped && !_released;
@@ -111,6 +185,13 @@ internal sealed class PluginCanvasElement : UiElement
             _pointerRelease = ReleasePointer;
             registration.PointerRelease = _pointerRelease;
         }
+        if (registration.AcceptsKeyboardInput)
+        {
+            // Typed text reaches only an edit control, and the root sends
+            // keys nowhere else while one has focus.
+            IsEditControl = true;
+            registration.KeyboardFocus = this;
+        }
     }
 
     internal PluginCanvasRegistration Registration => _registration;
@@ -119,11 +200,38 @@ internal sealed class PluginCanvasElement : UiElement
 
     internal int TargetCount => _targets.Count;
 
+    /// <summary>The pixel scale the targets are painted at.</summary>
+    internal float PixelScale => _pixelScale;
+
     /// <summary>The interface texture currently shown, or 0 before the first paint.</summary>
     internal uint ShownTextureHandle => _shown is { HasContent: true } shown ? shown.Handle : 0u;
 
     /// <summary>True once the pointer handler was dropped; the canvas is click-through from then on.</summary>
     internal bool IsInputDropped => _inputGuard.IsTripped;
+
+    /// <summary>True once the key handler was dropped; the canvas cannot take focus from then on.</summary>
+    internal bool IsKeyInputDropped => _keyGuard.IsTripped;
+
+    /// <summary>True while the root's keyboard focus is this canvas.</summary>
+    public bool HasFocus => _focused;
+
+    /// <summary>
+    /// Whether the canvas may hold keyboard focus right now: it opted in,
+    /// is shown, someone is listening, and neither the listener nor the
+    /// paint callback has been dropped. Read by the root on a left press.
+    /// </summary>
+    public override bool AcceptsFocus
+    {
+        get => TakesKeyboard;
+        // Computed from the canvas's own state; nothing sets it from outside.
+        set { }
+    }
+
+    private bool TakesKeyboard =>
+        _registration.AcceptsKeyboardInput
+        && !_keyGuard.IsTripped
+        && _registration.KeyHandler is not null
+        && VisibleSource!();
 
     /// <summary>
     /// Whether the canvas answers for its rectangle right now: it opted in,
@@ -134,10 +242,21 @@ internal sealed class PluginCanvasElement : UiElement
 
     protected override bool ClipsChildren => true;
 
-    protected override void OnTick(double deltaSeconds) => Layout();
+    protected override void OnTick(double deltaSeconds)
+    {
+        Layout();
+        if (!_focused || !KeepsFocus()) return;
+        if (_repeatKey == PluginKey.Unknown) return;
+        _repeatTimer -= deltaSeconds;
+        if (_repeatTimer > 0) return;
+        _repeatTimer = KeyRepeatIntervalSeconds;
+        KeyDown(_repeatKey, isRepeat: true);
+    }
 
+    // While something is being dragged no canvas answers, so the drop
+    // reaches the window or the world beneath.
     protected override bool OnHitTest(float localX, float localY) =>
-        TakesInput && base.OnHitTest(localX, localY);
+        TakesInput && FindRoot()?.DragSource is null && base.OnHitTest(localX, localY);
 
     public override bool OnEvent(in UiEvent e)
     {
@@ -197,6 +316,55 @@ internal sealed class PluginCanvasElement : UiElement
                 return true;
             }
 
+            case UiEventType.FocusGained:
+                _focused = true;
+                DeliverKey(new PluginKeyEvent(PluginKeyEventKind.FocusGained, PluginKey.Unknown, _modifiers()));
+                return true;
+
+            case UiEventType.FocusLost:
+                if (!_focused) return true;
+                _focused = false;
+                _repeatKey = PluginKey.Unknown;
+                DeliverKey(new PluginKeyEvent(PluginKeyEventKind.FocusLost, PluginKey.Unknown, _modifiers()));
+                return true;
+
+            case UiEventType.KeyDown:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                PluginKey key = PluginKeyMap.FromSilk((Silk.NET.Input.Key)e.Data0);
+                // A key the contract cannot name is still the canvas's:
+                // nothing behind a focused canvas acts on keys.
+                if (key == PluginKey.Unknown) return true;
+                _repeatKey = key;
+                _repeatTimer = KeyRepeatDelaySeconds;
+                KeyDown(key, isRepeat: false);
+                return true;
+            }
+
+            case UiEventType.KeyUp:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                PluginKey key = PluginKeyMap.FromSilk((Silk.NET.Input.Key)e.Data0);
+                if (key == PluginKey.Unknown) return true;
+                if (key == _repeatKey) _repeatKey = PluginKey.Unknown;
+                DeliverKey(new PluginKeyEvent(PluginKeyEventKind.Up, key, _modifiers()));
+                return true;
+            }
+
+            case UiEventType.Char:
+            {
+                if (!_focused) return false;
+                if (!KeepsFocus()) return true;
+                // Silk hands over UTF-16 units; a lone surrogate or a control
+                // character is not text a plugin can draw.
+                if (!Rune.IsValid(e.Data0) || Rune.IsControl(new Rune(e.Data0))) return true;
+                DeliverKey(new PluginKeyEvent(
+                    PluginKeyEventKind.Text, PluginKey.Unknown, _modifiers(), Text: new Rune(e.Data0).ToString()));
+                return true;
+            }
+
             // Click, double-click and right-click are the root's reading of a
             // press and release the plugin already saw; nothing beneath the
             // canvas should act on them either.
@@ -223,6 +391,31 @@ internal sealed class PluginCanvasElement : UiElement
         _heldButton = PluginPointerButton.None;
         Deliver(PluginPointerEventKind.Up, localX, localY, button);
         return true;
+    }
+
+    /// <summary>
+    /// A press went down somewhere, at (<paramref name="x"/>,
+    /// <paramref name="y"/>) in interface coordinates, before it reaches its
+    /// target. Reported to the plugin as a press outside when it asked for
+    /// those, the canvas is shown, someone is listening, the press is not
+    /// inside the canvas, and the canvas is not holding the pointer from a
+    /// press of its own.
+    /// </summary>
+    internal void ReportPress(UiMouseButton button, int x, int y)
+    {
+        if (!_registration.WantsOutsidePresses || _heldButton != PluginPointerButton.None) return;
+        if (_released || !VisibleSource!() || !IsShownInTree()) return;
+        Vector2 screen = ScreenPosition;
+        int localX = x - (int)screen.X;
+        int localY = y - (int)screen.Y;
+        if (localX >= 0 && localY >= 0 && localX < Width && localY < Height) return;
+        PluginPointerButton pressed = button switch
+        {
+            UiMouseButton.Right => PluginPointerButton.Right,
+            UiMouseButton.Middle => PluginPointerButton.Middle,
+            _ => PluginPointerButton.Left,
+        };
+        Deliver(PluginPointerEventKind.PressedOutside, localX, localY, pressed);
     }
 
     /// <summary>
@@ -253,6 +446,84 @@ internal sealed class PluginCanvasElement : UiElement
     }
 
     /// <summary>
+    /// Gives focus back when the canvas can no longer hold it: the plugin
+    /// hid it or took its handler away, or a modal dialog opened. Checked
+    /// every tick and before every key, so a key between a change and the
+    /// next tick does not reach the plugin. Removal is the root's to notice.
+    /// </summary>
+    private bool KeepsFocus()
+    {
+        if (TakesKeyboard && FindRoot()?.Modal is null) return true;
+        ReleaseFocus();
+        return false;
+    }
+
+    /// <summary>
+    /// A key went down or repeated: the plugin sees it, and an Escape it
+    /// did not handle gives focus back, as Escape leaves a text field.
+    /// </summary>
+    private void KeyDown(PluginKey key, bool isRepeat)
+    {
+        bool handled = DeliverKey(new PluginKeyEvent(PluginKeyEventKind.Down, key, _modifiers(), isRepeat));
+        if (key == PluginKey.Escape && !handled)
+            ReleaseFocus();
+    }
+
+    /// <summary>
+    /// Hands one event to the key handler under its guard. Returns the
+    /// handler's answer; false when nobody heard it.
+    /// </summary>
+    private bool DeliverKey(PluginKeyEvent key)
+    {
+        Func<PluginKeyEvent, bool>? handler = _registration.KeyHandler;
+        if (handler is null || _keyGuard.IsTripped) return false;
+        bool handled = false;
+        _keyGuard.Invoke(() => handled = handler(key));
+        if (_keyGuard.IsTripped)
+        {
+            // Nobody is listening any more: give the keyboard back.
+            ReleaseFocus();
+            return false;
+        }
+        return handled;
+    }
+
+    /// <summary>
+    /// Takes the keyboard on the plugin's request, which never takes it
+    /// from anything else: the chat bar, a text field, another canvas or a
+    /// dialog keeps it, and so does a key rebind being captured.
+    /// </summary>
+    public bool RequestFocus()
+    {
+        if (_focused) return true;
+        if (_released || !TakesKeyboard || !IsShownInTree()) return false;
+        if (FindRoot() is not { } root) return false;
+        if (root.KeyboardFocus is not null || root.Modal is not null || _keyboardCaptured())
+            return false;
+        root.SetKeyboardFocus(this);
+        return _focused;
+    }
+
+    /// <summary>
+    /// Gives the keyboard back if the canvas still has it; the root's focus
+    /// change delivers the one focus lost.
+    /// </summary>
+    public void ReleaseFocus()
+    {
+        if (FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, this))
+            root.SetKeyboardFocus(null);
+    }
+
+    private bool IsShownInTree()
+    {
+        for (UiElement? element = this; element is not null; element = element.Parent)
+        {
+            if (!element.Visible) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Places the canvas by anchor plus offset inside its layer, which the
     /// overlay host keeps equal to the viewport. Re-run every tick because
     /// the plugin may move the canvas at any time and the viewport can
@@ -260,6 +531,14 @@ internal sealed class PluginCanvasElement : UiElement
     /// </summary>
     internal void Layout()
     {
+        if (_hosted)
+        {
+            FillHost(Parent?.Width ?? 0f, Parent?.Height ?? 0f);
+            return;
+        }
+        (int width, int height) = _registration.Size;
+        Width = width;
+        Height = height;
         float layerWidth = Parent?.Width ?? 0f;
         float layerHeight = Parent?.Height ?? 0f;
         float x = (float)_registration.Offset.X;
@@ -294,19 +573,45 @@ internal sealed class PluginCanvasElement : UiElement
         Top = MathF.Floor(y + 0.5f);
     }
 
+    /// <summary>
+    /// Fills a host of <paramref name="hostWidth"/> by
+    /// <paramref name="hostHeight"/>: the canvas takes that size rounded to
+    /// whole pixels, which repaints it when it changed. A host under one pixel
+    /// either way leaves the canvas at its last size; the host clips it away.
+    /// </summary>
+    internal void FillHost(float hostWidth, float hostHeight)
+    {
+        Left = 0f;
+        Top = 0f;
+        int width = (int)MathF.Floor(hostWidth + 0.5f);
+        int height = (int)MathF.Floor(hostHeight + 0.5f);
+        if (width >= 1 && height >= 1)
+            _registration.SetLaidOutSize(width, height);
+        (int sizedWidth, int sizedHeight) = _registration.Size;
+        Width = sizedWidth;
+        Height = sizedHeight;
+    }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
         if (_released) return;
         int? frameSlot = _surface.CurrentFrameSlot;
         if (frameSlot is { } slot)
         {
+            FollowSize();
+            FollowPixelScale();
             RepaintIfInvalidated(slot);
             if (_shown is not null)
                 _shown.LastUsedFrameSlot = slot;
         }
 
         if (_shown is not { HasContent: true } shown) return;
-        ctx.DrawSprite(shown.Handle, 0f, 0f, Width, Height, 0f, 0f, 1f, 1f, Vector4.One);
+        // The target holds premultiplied colour (see PluginCanvasSurface), the
+        // canvas at its top left: a target made with headroom is larger.
+        GpuRenderTargetDescription made = shown.Target.Description;
+        float u = MathF.Min(1f, CanvasPixelScale.DeviceSize(_registration.Width, _pixelScale) / (float)made.Width);
+        float v = MathF.Min(1f, CanvasPixelScale.DeviceSize(_registration.Height, _pixelScale) / (float)made.Height);
+        ctx.DrawSpritePremultiplied(shown.Handle, 0f, 0f, Width, Height, 0f, 0f, u, v, Vector4.One);
     }
 
     private void RepaintIfInvalidated(int frameSlot)
@@ -322,7 +627,15 @@ internal sealed class PluginCanvasElement : UiElement
             return;
         }
 
-        bool drew = _surface.Repaint(_registration, target.Target, _guard, _images());
+        // Sharper font bakes are made here, outside the guard: baking takes
+        // longer than a paint may. They follow the interface's scale rather
+        // than this canvas's, which is lower only when the canvas is too
+        // large for the device, so two canvases of one plugin never make
+        // its fonts bake back and forth.
+        PluginFonts? fonts = _fonts();
+        fonts?.PrepareScale(_interfaceScale);
+        bool drew = _surface.Repaint(
+            _registration, target.Target, _guard, _images(), fonts, _shapeProblems, _pixelScale);
         target.LastUsedFrameSlot = frameSlot;
         if (_guard.IsTripped)
         {
@@ -350,13 +663,24 @@ internal sealed class PluginCanvasElement : UiElement
             return null;
 
         IGpuDevice device = _surface.Services.Device;
+        // Every target is one size: the canvas's, or the headroom a resize
+        // made the first at, which a canvas since shrunk still uses.
+        int width;
+        int height;
+        if (_targets.Count > 0)
+            (width, height) = (_targets[0].Target.Description.Width, _targets[0].Target.Description.Height);
+        else
+        {
+            width = Math.Max(CanvasPixelScale.DeviceSize(_registration.Width, _pixelScale), _allocatedWidth);
+            height = Math.Max(CanvasPixelScale.DeviceSize(_registration.Height, _pixelScale), _allocatedHeight);
+        }
         IGpuRenderTarget target;
         try
         {
             target = device.CreateRenderTarget(new GpuRenderTargetDescription(
                 $"plugin-canvas-{_registration.Owner.Id}-{_registration.CanvasId}-{_targets.Count}",
-                _registration.Width,
-                _registration.Height,
+                width,
+                height,
                 GpuTextureFormat.Rgba8UnormRenderTarget,
                 DepthFormat: null,
                 SampleCount: 1));
@@ -366,7 +690,7 @@ internal sealed class PluginCanvasElement : UiElement
             _targetsUnavailable = true;
             _report(
                 $"Plugin canvas '{_registration.Owner.Id}/{_registration.CanvasId}' cannot be painted: "
-                + $"no off-screen target ({_registration.Width}x{_registration.Height}): {failure.Message}.");
+                + $"no off-screen target ({width}x{height}): {failure.Message}.");
             return null;
         }
 
@@ -382,6 +706,31 @@ internal sealed class PluginCanvasElement : UiElement
         {
             target.Dispose();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Where the painter says a shape went wrong. Each kind is reported once
+    /// per canvas: the paint callback runs again every time the plugin
+    /// invalidates, and the same bad shape would otherwise fill the log.
+    /// </summary>
+    private void ReportShapeProblem(CanvasShapeProblem problem, string detail)
+    {
+        string canvas = $"{_registration.Owner.Id}/{_registration.CanvasId}";
+        switch (problem)
+        {
+            case CanvasShapeProblem.InvalidInput when !_reportedBadShape:
+                _reportedBadShape = true;
+                _report(
+                    $"Plugin canvas '{canvas}': {detail}, so that shape drew nothing. "
+                    + "A shape given input it cannot draw draws nothing; this is reported once per canvas.");
+                break;
+            case CanvasShapeProblem.VertexBudget when !_reportedShapeBudget:
+                _reportedShapeBudget = true;
+                _report(
+                    $"Plugin canvas '{canvas}': {detail}, and the paint counts as over its budget. "
+                    + "This is reported once per canvas.");
+                break;
         }
     }
 
@@ -402,9 +751,84 @@ internal sealed class PluginCanvasElement : UiElement
     {
         if (_released) return;
         _released = true;
-        _shown = null;
         if (ReferenceEquals(_registration.PointerRelease, _pointerRelease))
             _registration.PointerRelease = null;
+        // Focus needs nothing here: the element left the tree first, and
+        // the root took focus back from it on the way out.
+        if (ReferenceEquals(_registration.KeyboardFocus, this))
+            _registration.KeyboardFocus = null;
+        GiveBackTargets();
+    }
+
+    /// <summary>
+    /// Reads the pixel scale for this frame. A change gives every target
+    /// back -- the one shown too, since the repaint that follows in this
+    /// same draw replaces it -- and invalidates, so the canvas is painted
+    /// again at the new size. A target that could not be made at the old
+    /// size may be possible at the new one, so that is tried afresh.
+    /// </summary>
+    private void FollowPixelScale()
+    {
+        _interfaceScale = CanvasPixelScale.ForInterface(_surface.Services.FramebufferPerPoint());
+        float scale = CanvasPixelScale.ForCanvas(
+            _interfaceScale,
+            _registration.Width,
+            _registration.Height,
+            _surface.Services.Device.Capabilities.MaxImageDimension2D);
+        if (scale == _pixelScale) return;
+        _pixelScale = scale;
+        GiveBackTargets();
+        _allocatedWidth = 0;
+        _allocatedHeight = 0;
+        _targetsUnavailable = false;
+        _registration.Invalidate();
+    }
+
+    /// <summary>
+    /// Reads the size the plugin last asked for, or the host laid the canvas
+    /// out at, and the repaint the change asked for paints at the new size in
+    /// this same draw. Targets the canvas still fits are kept, painted at
+    /// their top left. Ones it outgrows, or that are four times the size it
+    /// would be given now, go back, and the next are made with
+    /// <see cref="ResizeHeadroom"/>.
+    /// </summary>
+    private void FollowSize()
+    {
+        (int width, int height) = _registration.Size;
+        if (width == _targetsWidth && height == _targetsHeight) return;
+        _targetsWidth = width;
+        _targetsHeight = height;
+        Width = width;
+        Height = height;
+        _registration.Invalidate();
+        if (_targets.Count == 0) return;
+
+        GpuRenderTargetDescription made = _targets[0].Target.Description;
+        int deviceWidth = CanvasPixelScale.DeviceSize(width, _pixelScale);
+        int deviceHeight = CanvasPixelScale.DeviceSize(height, _pixelScale);
+        uint limit = _surface.Services.Device.Capabilities.MaxImageDimension2D;
+        int nextWidth = WithHeadroom(deviceWidth, limit);
+        int nextHeight = WithHeadroom(deviceHeight, limit);
+        bool fits = deviceWidth <= made.Width && deviceHeight <= made.Height;
+        // Measured against the headroom size, so a small canvas whose
+        // headroom alone is most of its target is not remade every frame.
+        bool wasteful = (long)nextWidth * nextHeight * 4 <= (long)made.Width * made.Height;
+        if (fits && !wasteful) return;
+
+        GiveBackTargets();
+        _targetsUnavailable = false;
+        _allocatedWidth = nextWidth;
+        _allocatedHeight = nextHeight;
+    }
+
+    private static int WithHeadroom(int devicePixels, uint limit) =>
+        (int)Math.Min(
+            Math.Max(devicePixels, limit),
+            (devicePixels + ResizeHeadroom - 1L) / ResizeHeadroom * ResizeHeadroom);
+
+    private void GiveBackTargets()
+    {
+        _shown = null;
         IGpuDevice device = _surface.Services.Device;
         foreach (CanvasTarget target in _targets)
         {

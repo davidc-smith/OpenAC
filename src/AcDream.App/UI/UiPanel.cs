@@ -61,6 +61,13 @@ public class UiLabel : UiElement
 
     public bool Outline { get; set; } = true;
 
+    /// <summary>
+    /// Set for a label inside a flex container: its size comes from the
+    /// layout (<see cref="MarkupContentSize"/>), so it no longer sizes itself
+    /// to its text when drawn, and its line is centred in the height it is given.
+    /// </summary>
+    internal bool SizedByLayout { get; set; }
+
     public UiLabel() { ClickThrough = true; }
 
     protected override bool ClipsChildren => false;
@@ -69,17 +76,25 @@ public class UiLabel : UiElement
     {
         string text = TextSource?.Invoke() ?? Text;
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
-        float w = DatFont is { } df
-            ? df.MeasureWidth(text)
-            : (ctx.DefaultFont?.MeasureWidth(text) ?? text.Length * 7f);
         float h = DatFont?.LineHeight
             ?? ctx.DefaultFont?.LineHeight ?? 14f;
-        if (w != Width) Width = w;
-        if (h != Height) Height = h;
-        if (DatFont is { } dat)
-            ctx.DrawStringDat(dat, text, 0, 0, textColor, Outline);
+        float y = 0f;
+        if (SizedByLayout)
+        {
+            y = MathF.Floor((Height - h) / 2f + 0.5f);
+        }
         else
-            ctx.DrawString(text, 0, 0, textColor);
+        {
+            float w = DatFont is { } df
+                ? df.MeasureWidth(text)
+                : (ctx.DefaultFont?.MeasureWidth(text) ?? text.Length * 7f);
+            if (w != Width) Width = w;
+            if (h != Height) Height = h;
+        }
+        if (DatFont is { } dat)
+            ctx.DrawStringDat(dat, text, 0, y, textColor, Outline);
+        else
+            ctx.DrawString(text, 0, y, textColor);
     }
 }
 
@@ -96,6 +111,16 @@ public class UiSimpleButton : UiPanel
     public UiDatFont? DatFont { get; set; }
 
     public bool Outline { get; set; } = true;
+
+    /// <summary>The shared plugin theme this button draws in; null draws Classic.</summary>
+    public PluginUiPalette? ThemePalette { get; set; }
+
+    private UiPointerState _pointer;
+
+    /// <summary>The state a themed face shows: hovered, pressed, disabled or normal.</summary>
+    private protected UiControlState ThemeState => _pointer.State(Enabled);
+
+    private protected bool KeyboardFocused => _keyboardActivation.Focused;
 
     public Func<(uint tex, int w, int h)>? IconSource { get; set; }
 
@@ -116,6 +141,7 @@ public class UiSimpleButton : UiPanel
 
     public override bool OnEvent(in UiEvent e)
     {
+        _pointer.Observe(in e);
         if (_keyboardActivation.HandleEvent(in e, TabStop, Enabled, () => Click?.Invoke()))
             return true;
         if (e.Type == UiEventType.Click && Enabled)
@@ -126,13 +152,31 @@ public class UiSimpleButton : UiPanel
         return false;
     }
 
+    /// <summary>The face a themed button draws under its icon and caption.</summary>
+    private protected virtual void DrawThemedFace(UiRenderContext ctx, PluginUiPalette palette)
+    {
+        PluginUiStyle.Button(ctx, palette, Width, Height,
+            BackgroundColorSource?.Invoke() ?? BackgroundColor,
+            BorderColorSource?.Invoke() ?? BorderColor, ThemeState);
+        if (KeyboardFocused)
+            PluginUiStyle.FocusRing(ctx, palette, Width, Height, PluginUiStyle.ControlRadius);
+    }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
-        base.OnDraw(ctx);
-        if (_keyboardActivation.Focused)
-            ctx.DrawRectOutline(1f, 1f, Width - 2f, Height - 2f,
-                new Vector4(1f, 0.82f, 0.25f, 1f), 1f);
+        if (ThemePalette is { } palette)
+        {
+            DrawThemedFace(ctx, palette);
+        }
+        else
+        {
+            base.OnDraw(ctx);
+            if (_keyboardActivation.Focused)
+                ctx.DrawRectOutline(1f, 1f, Width - 2f, Height - 2f,
+                    new Vector4(1f, 0.82f, 0.25f, 1f), 1f);
+        }
 
+        bool fade = ThemePalette is not null && !Enabled;
         float iconColumn = 0f;
         if (IconSource is { } iconSource)
         {
@@ -150,13 +194,14 @@ public class UiSimpleButton : UiPanel
                     3f + (extent - drawWidth) * 0.5f,
                     (Height - drawHeight) * 0.5f,
                     drawWidth, drawHeight,
-                    0f, 0f, 1f, 1f, IconTint);
+                    0f, 0f, 1f, 1f, fade ? PluginUiStyle.Faded(IconTint) : IconTint);
             }
         }
 
         string caption = TextSource?.Invoke() ?? Text;
         if (caption.Length == 0) return;
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
+        if (fade) textColor = PluginUiStyle.Faded(textColor);
 
         float captionAreaX = iconColumn;
         float captionAreaWidth = MathF.Max(0f, Width - iconColumn);

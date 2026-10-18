@@ -43,7 +43,8 @@ public sealed record RetailUiAssets(
     ControlsIni Controls,
     IconComposer Icons,
     TextureCache TextureCache,
-    UiDatFont? ModernFont = null);
+    Lazy<UiDatFont>? ModernFont = null,
+    Lazy<UiDatFont>? ModernTitleFont = null);
 
 public sealed record VitalsRuntimeBindings(VitalsVM ViewModel);
 
@@ -52,7 +53,8 @@ public sealed record ChatRuntimeBindings(
     Func<ICommandBus> CommandBus,
     ChatWindowState Windows,
     AcDream.Runtime.Chat.RuntimeChatEntryOwner Entry,
-    SettingsStore? Store = null);
+    SettingsStore? Store = null,
+    Action<PluginChatLinkClicked>? LinkClicked = null);
 
 public sealed record RadarRuntimeBindings(
     Func<UiRadarSnapshot> Snapshot,
@@ -338,7 +340,9 @@ public sealed record RetailUiRuntimeBindings(
     BookRuntimeBindings? Book = null,
     Func<IReadOnlyList<PluginWorldLabel>>? WorldLabels = null,
     Func<uint, AcDream.App.Interaction.WorldLabelAnchor?>? WorldLabelAnchor = null,
-    PluginCanvasHostServices? PluginCanvases = null);
+    PluginCanvasHostServices? PluginCanvases = null,
+    Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null,
+    Func<bool>? IsPortalViewVisible = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -389,9 +393,13 @@ public sealed class RetailUiRuntime : IDisposable
     private VividTargetIndicatorController? _vividTargetIndicator;
     private Layout.UiOverlayHost? _overlayHost;
     private ProjectileDebugOverlayController? _projectileDebugOverlay;
+    private WorldIconOverlayController? _worldIconOverlay;
     private WorldLabelOverlayController? _worldLabelOverlay;
     private Layout.PluginCanvasSurface? _pluginCanvasSurface;
-    private Layout.UiOverlayLayer? _pluginCanvasLayer;
+    private Layout.PluginMarkupCanvases? _markupCanvases;
+    private bool _reportingPressesToCanvases;
+    private Layout.PluginCanvasStack? _worldCanvases;
+    private Layout.PluginCanvasStack? _canvasesAboveWindows;
 
     /// <summary>
     /// The one click-through overlay band, shared by everything that paints
@@ -408,8 +416,11 @@ public sealed class RetailUiRuntime : IDisposable
     private PluginSidePanel? _pluginSidePanel;
     private PluginUiThemeSettings? _pluginThemes;
     private IDisposable? _pluginThemeFollow;
-    private UiNineSlicePanel? _pluginAppearance;
+    private PluginAppearanceWindow? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
+    private PluginSvgIconCache? _pluginSvgIcons;
+    private PluginFileIconCache? _pluginFileIcons;
+    private PluginFileIconCache? _pluginDockImages;
     private bool _pluginsMounted;
     private IDisposable? _characterSheetSubscription;
     private Layout.CharacterTitlesController? _characterTitlesController;
@@ -442,6 +453,7 @@ public sealed class RetailUiRuntime : IDisposable
             bindings.Assets.Icons,
             bindings.Toolbar.Objects);
         bindings.Plugins?.BindImageServices(ImageBackend);
+        bindings.Plugins?.BindFontServices(new RetailPluginFontBackend(bindings.Assets.TextureCache));
 
         ChatSettings chatSettings = bindings.Chat.Store?.LoadChat() ?? ChatSettings.Default;
         WindowLockPresentation = new RetailWindowLockPresentationController(
@@ -474,6 +486,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountFpsDisplay();
         MountVividTargetIndicator();
         MountProjectileDebugOverlay();
+        MountWorldIconOverlay();
         MountWorldLabelOverlay();
         MountVitals();
         MountRadar();
@@ -735,6 +748,7 @@ public sealed class RetailUiRuntime : IDisposable
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
         _projectileDebugOverlay?.Tick();
+        _worldIconOverlay?.Tick();
         _worldLabelOverlay?.Tick();
         _vitalsSideBySide?.Tick();
         SpellbookWindowController?.Tick();
@@ -792,7 +806,19 @@ public sealed class RetailUiRuntime : IDisposable
         // every frame, not only on a change seen above: restoring the layout
         // resizes the root without passing through here.
         _overlayHost?.FollowRoot();
+        // Plugins place canvases against that same rectangle, so they are
+        // told its size; the registry raises the change only when it moves.
+        if (_bindings.Plugins is { } plugins)
+        {
+            System.Numerics.Vector2 viewport = Layout.UiOverlayHost.ViewportOf(Host.Root);
+            plugins.PublishScreenSize(new PluginSize(viewport.X, viewport.Y));
+        }
 
+        // Themed plugin windows draw their soft edges and sharp text at the
+        // display's density; the canvas services already know it.
+        Host.PixelScale = _bindings.PluginCanvases is { } canvases
+            ? Layout.CanvasPixelScale.ForInterface(canvases.FramebufferPerPoint())
+            : 1f;
         Host.Draw(screenSize);
     }
 
@@ -1430,6 +1456,32 @@ public sealed class RetailUiRuntime : IDisposable
             "[PluginUI] projectile collision debug overlay mounted.");
     }
 
+    private void MountWorldIconOverlay()
+    {
+        if (_bindings.Plugins is not { } plugins
+            || _bindings.WorldLabelAnchor is not { } anchor)
+        {
+            return;
+        }
+        _worldIconOverlay = WorldIconOverlayController.Mount(
+            OverlayHost,
+            plugins.WorldMarkerStore.CaptureIcons,
+            // An icon's image is looked up in its own plugin's images only.
+            (ownerId, image) =>
+                plugins.FindImages(new PluginUiOwner(ownerId, ownerId)) is { } images
+                && images.TryResolve(image, out uint texture, out int width, out int height)
+                    ? new WorldIconTexture(texture, width, height)
+                    : null,
+            anchor,
+            _bindings.WorldPosition ?? (static _ => null),
+            _bindings.WorldLabels,
+            _bindings.Assets.DefaultFont?.LineHeight ?? 0f,
+            _bindings.VividTarget.Camera,
+            // In portal space the world is not on the screen, so neither are its icons.
+            _bindings.IsPortalViewVisible);
+        Console.WriteLine("[PluginUI] world icon overlay mounted.");
+    }
+
     private void MountWorldLabelOverlay()
     {
         if (_bindings.WorldLabels is not { } labels
@@ -1628,6 +1680,7 @@ public sealed class RetailUiRuntime : IDisposable
 
         controller.Transcript.Keyboard = Host.Keyboard;
         controller.Input.Keyboard = Host.Keyboard;
+        controller.ChatLinkClicked = _bindings.Chat.LinkClicked;
         UiElement root = controller.Root;
         RetailWindowHandle handle = RetailWindowFrame.Mount(
             Host.Root,
@@ -3145,14 +3198,14 @@ public sealed class RetailUiRuntime : IDisposable
             .FirstOrDefault();
         if (bound is not { } binding)
         {
-            return "Plugin shelf hidden. Bind Toggle Plugin Manager in "
+            return "Plugin dock hidden. Bind Toggle Plugin Manager in "
                 + "Configure Keyboard to show it again.";
         }
 
         var strings = new DatStringResolver(_bindings.Assets.Dats);
         string chordText = new Layout.RetailKeyNames((tableId, stringId) =>
             strings.Resolve(tableId, stringId)).Describe(binding.Chord);
-        return $"Plugin shelf hidden. Press {chordText} to show it again.";
+        return $"Plugin dock hidden. Press {chordText} to show it again.";
     }
 
     private static string UnmappedKeyBindingsPath(string keyBindingsFilePath)
@@ -4080,7 +4133,8 @@ public sealed class RetailUiRuntime : IDisposable
 
         if (_pluginThemes is null)
         {
-            _pluginThemes = new PluginUiThemeSettings(_bindings.Chat.Store, _bindings.Assets.ModernFont);
+            _pluginThemes = new PluginUiThemeSettings(
+                _bindings.Chat.Store, _bindings.Assets.ModernFont, _bindings.Assets.ModernTitleFont);
             // Canvases paint their own pixels, so plugins are told the theme
             // the player saved and every one they pick after it.
             _pluginThemeFollow = _bindings.Plugins.FollowTheme(_pluginThemes);
@@ -4090,6 +4144,17 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.Assets.Dats,
             _bindings.Assets.Icons,
             _bindings.Toolbar.Objects);
+        TextureCache textures = _bindings.Assets.TextureCache;
+        // Mipmapped: plugin art is often drawn far below its own size.
+        _pluginFileIcons ??= new PluginFileIconCache(
+            (rgba, width, height, name) => textures.UploadReleasableRgba8(rgba, width, height, name, mipmapped: true),
+            textures.ReleaseUiTexture);
+        _pluginDockImages ??= new PluginFileIconCache(
+            (rgba, width, height, name) => textures.UploadReleasableRgba8(rgba, width, height, name, mipmapped: true),
+            textures.ReleaseUiTexture,
+            rules: PluginFileIconCache.Rules.DockIcons);
+        _pluginSvgIcons ??= new PluginSvgIconCache(new RetailPluginFontBackend(textures));
+        var dockIcons = new PluginDockIconSource(_pluginSvgIcons, _pluginDockImages, ResolvePluginFileIcon);
 
         foreach (var panel in _bindings.Plugins.Drain())
         {
@@ -4097,13 +4162,16 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 string xml = panel.MarkupContent
                     ?? File.ReadAllText(panel.MarkupPath);
-                UiNineSlicePanel element = MarkupDocument.Build(
+                MarkupWindow window = MarkupDocument.BuildWindow(
                     xml,
                     panel.Binding,
                     _bindings.Assets.ResolveSprite,
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
-                    iconResolver, _pluginThemes);
+                    new PluginMarkupIconResolver(iconResolver, _pluginFileIcons, panel.Owner.Id, panel.PluginDirectory),
+                    _pluginThemes,
+                    fallbackTitle: panel.Descriptor.Title);
+                UiNineSlicePanel element = window.Frame;
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
                 {
@@ -4124,17 +4192,20 @@ public sealed class RetailUiRuntime : IDisposable
                 // later registration/sidepanel failure then rolls the mounted
                 // subtree back through FailMount instead of leaking it.
                 _bindings.Plugins.CompleteMount(panel, Host.Root, element);
-                int authoredGeometryRevision = RetailWindowManager.ComputeAuthoredGeometryRevision(
-                    element.Width, element.Height, element.MinWidth, element.MinHeight, element.Resizable);
-                RetailWindowHandle handle = Host.WindowManager.Register(
-                    panel.WindowName,
-                    element,
-                    element,
-                    visibility,
-                    authoredGeometryRevision: authoredGeometryRevision);
+                RetailWindowHandle handle = window.Register(Host.WindowManager, panel.WindowName, visibility);
+                // Before the cleanup is published: a plugin that disposed the
+                // window meanwhile runs the cleanup at once, which takes them out again.
+                IReadOnlyList<UiMarkupCanvas> canvases = window.Canvases;
+                if (canvases.Count > 0)
+                    MarkupCanvases().AddWindow(panel.Owner.Id, canvases);
                 _bindings.Plugins.CompleteWindowMount(
                     panel,
-                    () => Host.WindowManager.Unregister(panel.WindowName));
+                    () =>
+                    {
+                        Host.WindowManager.Unregister(panel.WindowName);
+                        if (canvases.Count > 0)
+                            _markupCanvases?.RemoveWindow(canvases);
+                    });
 
                 if (panel.Descriptor.ShowInSidePanel)
                 {
@@ -4143,7 +4214,7 @@ public sealed class RetailUiRuntime : IDisposable
                         _pluginSidePanel = new PluginSidePanel(
                             Host.WindowManager,
                             iconResolver.ResolveDid,
-                            _bindings.Assets.DefaultFont, _pluginThemes, ShowPluginAppearance);
+                            _bindings.Assets.DefaultFont, _pluginThemes, TogglePluginAppearance);
                         Host.Root.AddChild(_pluginSidePanel);
                         Host.WindowManager.Register(
                             WindowNames.PluginShelf,
@@ -4155,7 +4226,7 @@ public sealed class RetailUiRuntime : IDisposable
                         panel.Owner,
                         panel.Descriptor,
                         handle,
-                        ResolvePluginFileIcon(panel.Owner.Id, panel.PluginDirectory));
+                        dockIcons.Resolve(panel.Owner.Id, panel.Descriptor, panel.PluginDirectory));
                 }
 
                 Console.WriteLine(
@@ -4170,31 +4241,74 @@ public sealed class RetailUiRuntime : IDisposable
         }
     }
 
-    private void ShowPluginAppearance()
+    private void TogglePluginAppearance()
     {
-        if (_pluginAppearance is not null)
+        _pluginAppearance ??= new PluginAppearanceWindow(Host.Root, close =>
         {
-            _pluginAppearance.Visible = true;
-            Host.Root.BringToFront(_pluginAppearance);
-            return;
-        }
-        var binding = new PluginAppearanceBinding(_pluginThemes!);
-        _pluginAppearance = MarkupDocument.Build("""
-            <panel x="70" y="90" w="310" h="140" title="Plugin appearance" theme="plugin">
-              <label x="12" y="33" text="Theme" />
-              <menu x="12" y="55" w="286" h="24" items="{Themes}" selected="{Selected}" onchange="{Select}" rows="3" />
-              <button x="226" y="102" w="72" h="24" text="Close" onclick="{Close}" />
-            </panel>
-            """, binding, _bindings.Assets.ResolveSprite, _bindings.Assets.Controls,
-            _bindings.Assets.DefaultFont, themes: _pluginThemes);
-        binding.Close = () => _pluginAppearance.Visible = false;
-        Host.Root.AddChild(_pluginAppearance);
-        Host.Root.BringToFront(_pluginAppearance);
+            var binding = new PluginAppearanceBinding(_pluginThemes!) { Close = close };
+            return MarkupDocument.Build("""
+                <panel x="70" y="90" w="310" h="196" title="Plugin appearance" theme="plugin">
+                  <label x="12" y="33" text="Theme" />
+                  <menu x="12" y="55" w="286" h="24" items="{Themes}" selected="{Selected}" onchange="{Select}" rows="3" />
+                  <label x="12" y="89" text="Dock" />
+                  <menu x="12" y="111" w="286" h="24" items="{Docks}" selected="{SelectedDock}" onchange="{SelectDock}" rows="3" />
+                  <button x="226" y="158" w="72" h="24" text="Close" onclick="{Close}" />
+                </panel>
+                """, binding, _bindings.Assets.ResolveSprite, _bindings.Assets.Controls,
+                _bindings.Assets.DefaultFont, themes: _pluginThemes);
+        });
+        _pluginAppearance.Toggle();
     }
 
     /// <summary>
-    /// Mounts every canvas registered since the last drain on the shared
-    /// overlay layer. The same shape as the window mount: ownership is
+    /// The stack a canvas in <paramref name="layer"/> joins, made on first
+    /// use. Anything but <see cref="PluginCanvasLayer.AboveWindows"/> is the
+    /// world layer under every window.
+    /// </summary>
+    private Layout.PluginCanvasStack CanvasStack(PluginCanvasLayer layer)
+    {
+        ReportPressesToCanvases();
+        return layer == PluginCanvasLayer.AboveWindows
+            ? _canvasesAboveWindows ??= new Layout.PluginCanvasStack(
+                OverlayHost.AddLayerAboveWindows("PluginCanvasesAboveWindows"))
+            : _worldCanvases ??= new Layout.PluginCanvasStack(OverlayHost.AddLayer("PluginCanvases"));
+    }
+
+    /// <summary>Starts telling canvases of presses, once, whichever kind of canvas comes first.</summary>
+    private void ReportPressesToCanvases()
+    {
+        if (_reportingPressesToCanvases) return;
+        _reportingPressesToCanvases = true;
+        Host.Root.PressStarting += ReportPressToCanvases;
+    }
+
+    /// <summary>The table pairing markup canvases with their windows' <c>&lt;canvas&gt;</c> elements, made on first use.</summary>
+    private Layout.PluginMarkupCanvases MarkupCanvases()
+    {
+        if (_markupCanvases is not null) return _markupCanvases;
+        ReportPressesToCanvases();
+        BufferedUiRegistry plugins = _bindings.Plugins
+            ?? throw new InvalidOperationException("markup canvases need the plugin registry");
+        return _markupCanvases = new Layout.PluginMarkupCanvases(
+            canvas => CreateCanvasElement(canvas, hosted: true),
+            plugins.FindCanvas,
+            line => Console.WriteLine($"[UI] {line}"));
+    }
+
+    /// <summary>
+    /// Every press, before the root routes it: the canvases that asked are
+    /// told of one outside them, the topmost layer first.
+    /// </summary>
+    private void ReportPressToCanvases(UiMouseButton button, int x, int y)
+    {
+        _canvasesAboveWindows?.ReportPress(button, x, y);
+        _markupCanvases?.ReportPress(button, x, y);
+        _worldCanvases?.ReportPress(button, x, y);
+    }
+
+    /// <summary>
+    /// Mounts every canvas registered since the last drain in its layer's
+    /// stack. The same shape as the window mount: ownership is
     /// published right after the tree mutation, so a plugin that disposed
     /// its canvas between the drain and here has it taken down at once.
     /// Without renderer services (a host built without them) every canvas
@@ -4207,28 +4321,27 @@ public sealed class RetailUiRuntime : IDisposable
         {
             try
             {
-                if (_bindings.PluginCanvases is not { } services)
+                if (canvas.Descriptor.InMarkup)
                 {
-                    throw new InvalidOperationException(
-                        "this interface was built without renderer services for plugin canvases");
+                    // Checked here so a host without renderer services fails
+                    // the canvas now, as it does a screen canvas, rather than
+                    // when a window would host it.
+                    RequireCanvasServices();
+                    Layout.PluginMarkupCanvases markup = MarkupCanvases();
+                    markup.AddCanvas(canvas);
+                    plugins.CompleteCanvasMount(canvas, () => markup.RemoveCanvas(canvas));
+                    Console.WriteLine(
+                        $"[UI] plugin canvas registered for markup: {canvas.Owner.Id}/{canvas.CanvasId}");
+                    continue;
                 }
-                _pluginCanvasSurface ??= new Layout.PluginCanvasSurface(services, _bindings.Assets.DefaultFont);
-                if (_pluginCanvasLayer is null)
-                {
-                    _pluginCanvasLayer = OverlayHost.AddLayer("PluginCanvases");
-                    _pluginCanvasLayer.Visible = true;
-                }
-                Layout.UiOverlayLayer layer = _pluginCanvasLayer;
-                PluginUiOwner owner = canvas.Owner;
-                var element = new Layout.PluginCanvasElement(
-                    canvas,
-                    _pluginCanvasSurface,
-                    () => plugins.FindImages(owner),
-                    modifiers: HeldPointerModifiers);
-                layer.AddChild(element, takesInput: canvas.AcceptsPointerInput);
+                RequireCanvasServices();
+                Layout.PluginCanvasStack stack = CanvasStack(canvas.Layer);
+                Layout.PluginCanvasElement element = CreateCanvasElement(canvas, hosted: false);
+                stack.Add(element);
+                _markupCanvases?.ScreenCanvasMounted();
                 plugins.CompleteCanvasMount(canvas, () =>
                 {
-                    layer.RemoveChild(element);
+                    Layout.PluginCanvasStack.Remove(element);
                     element.ReleaseTargets();
                 });
                 Console.WriteLine(
@@ -4244,9 +4357,33 @@ public sealed class RetailUiRuntime : IDisposable
         }
     }
 
+    private PluginCanvasHostServices RequireCanvasServices() =>
+        _bindings.PluginCanvases ?? throw new InvalidOperationException(
+            "this interface was built without renderer services for plugin canvases");
+
+    /// <summary>
+    /// The element that draws <paramref name="canvas"/>: on its layer, or,
+    /// <paramref name="hosted"/>, inside the markup <c>&lt;canvas&gt;</c> that hosts it.
+    /// </summary>
+    private Layout.PluginCanvasElement CreateCanvasElement(PluginCanvasRegistration canvas, bool hosted)
+    {
+        PluginCanvasHostServices services = RequireCanvasServices();
+        BufferedUiRegistry plugins = _bindings.Plugins!;
+        _pluginCanvasSurface ??= new Layout.PluginCanvasSurface(services, _bindings.Assets.DefaultFont);
+        PluginUiOwner owner = canvas.Owner;
+        return new Layout.PluginCanvasElement(
+            canvas,
+            _pluginCanvasSurface,
+            () => plugins.FindImages(owner),
+            modifiers: HeldPointerModifiers,
+            fonts: () => plugins.FindFonts(owner),
+            keyboardCaptured: () => _bindings.Keyboard?.Dispatcher?.IsCapturing == true,
+            hosted: hosted);
+    }
+
     /// <summary>
     /// The modifier keys held right now, read from the window's keyboard
-    /// for each pointer event a plugin canvas delivers; none without one.
+    /// for each pointer or key event a plugin canvas delivers; none without one.
     /// </summary>
     private PluginKeyModifiers HeldPointerModifiers()
     {
@@ -5157,6 +5294,13 @@ public sealed class RetailUiRuntime : IDisposable
                 _characterSheetSubscription?.Dispose();
                 _characterTitlesController?.Dispose();
                 _pluginSidePanel?.Dispose();
+                // After the dock has given back its holds, while the texture cache is still here.
+                _pluginSvgIcons?.Dispose();
+                _pluginSvgIcons = null;
+                _pluginFileIcons?.Dispose();
+                _pluginFileIcons = null;
+                _pluginDockImages?.Dispose();
+                _pluginDockImages = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;
                 WindowLockPresentation.Dispose();
                 WindowOpacity.Dispose();
@@ -5170,15 +5314,22 @@ public sealed class RetailUiRuntime : IDisposable
                 _bindings.Plugins?.UnbindClientWindowControl();
                 _pluginThemeFollow?.Dispose();
                 _pluginThemeFollow = null;
+                Host.Root.PressStarting -= ReportPressToCanvases;
+                _reportingPressesToCanvases = false;
                 // Canvases come down before their images: a canvas may be
                 // showing one. Both hand the plugins' handles back to the
                 // registry for the next interface to mount again.
                 _bindings.Plugins?.UnbindCanvasHost();
+                // Every markup canvas left the table through its teardown just now.
+                _markupCanvases = null;
                 _pluginCanvasSurface?.Dispose();
                 _pluginCanvasSurface = null;
                 // Before the texture cache can go: every plugin's own images
                 // are given back through it.
                 _bindings.Plugins?.UnbindImageServices();
+                // Likewise every plugin's glyph atlases and the shared
+                // bundled bakes, while the texture cache is still here.
+                _bindings.Plugins?.UnbindFontServices();
             },
             () => _itemConfirmationController?.Dispose(),
             () =>

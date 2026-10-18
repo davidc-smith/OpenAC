@@ -37,6 +37,8 @@ public sealed class UiRenderContext
 
     private readonly System.Collections.Generic.List<float> _alphaStack = new();
     private float _alpha = 1f;
+    private readonly System.Collections.Generic.List<UiColorVertex> _triangles = new(256);
+    private readonly System.Collections.Generic.List<UiColorVertex> _shape = new(256);
 
     public float AlphaMod => _alpha;
 
@@ -58,6 +60,14 @@ public sealed class UiRenderContext
     }
 
     /// <summary>
+    /// Device pixels per interface point this frame: 1 on a standard display,
+    /// 2 on a typical high-density one. Shapes use it for the width of their
+    /// anti-aliased edge, and fonts that carry a sharp companion use it to
+    /// pick their sharper glyphs. Layout never reads it.
+    /// </summary>
+    public float PixelScale { get; private set; } = 1f;
+
+    /// <summary>
     /// Points the context at a new frame and clears what the last one left.
     /// One context serves every frame instead of one being built per frame:
     /// its three stacks are built empty and grown as the interface nests, so
@@ -66,10 +76,11 @@ public sealed class UiRenderContext
     /// frame rate. A newly constructed context goes through this same reset,
     /// which is what makes a reused one start where a fresh one starts.
     /// </summary>
-    public void Begin(Vector2 screenSize, BitmapFont? defaultFont)
+    public void Begin(Vector2 screenSize, BitmapFont? defaultFont, float pixelScale = 1f)
     {
         ScreenSize = screenSize;
         DefaultFont = defaultFont;
+        PixelScale = float.IsFinite(pixelScale) && pixelScale >= 1f ? pixelScale : 1f;
         _stack.Clear();
         _current = default;
         _clipStack.Clear();
@@ -141,6 +152,12 @@ public sealed class UiRenderContext
     public void BeginOverlayLayer() => TextRenderer.OverlayMode = true;
     public void EndOverlayLayer() => TextRenderer.OverlayMode = false;
 
+    /// <summary>
+    /// Sends what is drawn next to the upper layer, which the frame draws
+    /// after everything before it, text included. The root calls it once,
+    /// at the plugin canvases drawn over windows.
+    /// </summary>
+    internal void BeginUpperLayer() => TextRenderer.Layer = UiDrawLayer.Upper;
 
     public void DrawRect(float x, float y, float w, float h, Vector4 color) => DrawFill(x, y, w, h, color);
 
@@ -168,6 +185,56 @@ public sealed class UiRenderContext
         x += _current.X;
         y += _current.Y;
         DrawSpriteAbsolute(texture, x, y, w, h, u0, v0, u1, v1, tint, applyAlpha: true);
+    }
+
+    /// <summary>
+    /// Draws a texture whose colour is already multiplied by its alpha, such
+    /// as a plugin canvas's target. Translation, clipping and the alpha stack
+    /// apply as they do for <see cref="DrawSprite"/>.
+    /// </summary>
+    internal void DrawSpritePremultiplied(uint texture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 tint)
+    {
+        x += _current.X;
+        y += _current.Y;
+        if (_clip is { } clip
+            && !UiClipRect.TryClipSprite(
+                clip, ref x, ref y, ref w, ref h, ref u0, ref v0, ref u1, ref v1))
+            return;
+        TextRenderer.DrawPremultipliedSprite(texture, x, y, w, h, u0, v0, u1, v1, ApplyAlpha(tint));
+    }
+
+    /// <summary>
+    /// Draws a region of a single-channel texture as the alpha of
+    /// <paramref name="color"/> (see <see cref="TextRenderer.DrawCoverageSprite"/>).
+    /// Translation, clipping and the alpha stack apply as they do for
+    /// <see cref="DrawSprite"/>.
+    /// </summary>
+    internal void DrawCoverageSprite(uint coverageTexture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 color) =>
+        DrawCoverageSpriteAbsolute(coverageTexture, x + _current.X, y + _current.Y, w, h, u0, v0, u1, v1, color);
+
+    /// <summary>
+    /// Draws a coverage icon baked at <paramref name="devicePixels"/>² device
+    /// pixels with its top-left corner at (<paramref name="x"/>, <paramref name="y"/>),
+    /// snapped to the device grid so each texel lands on one device pixel.
+    /// </summary>
+    internal void DrawCoverageIcon(uint texture, float x, float y, int devicePixels, Vector4 color)
+    {
+        float extent = devicePixels / PixelScale;
+        float ax = MathF.Round((_current.X + x) * PixelScale) / PixelScale;
+        float ay = MathF.Round((_current.Y + y) * PixelScale) / PixelScale;
+        DrawCoverageSpriteAbsolute(texture, ax, ay, extent, extent, 0f, 0f, 1f, 1f, color);
+    }
+
+    private void DrawCoverageSpriteAbsolute(uint coverageTexture, float x, float y, float w, float h,
+        float u0, float v0, float u1, float v1, Vector4 color)
+    {
+        if (_clip is { } clip
+            && !UiClipRect.TryClipSprite(
+                clip, ref x, ref y, ref w, ref h, ref u0, ref v0, ref u1, ref v1))
+            return;
+        TextRenderer.DrawCoverageSprite(coverageTexture, x, y, w, h, u0, v0, u1, v1, ApplyAlpha(color));
     }
 
     /// <summary>
@@ -284,6 +351,170 @@ public sealed class UiRenderContext
         TextRenderer.DrawConvexPolygon(texture, clipped[..count], color);
     }
 
+    /// <summary>
+    /// Untextured triangles in local coordinates, three vertices each, with a
+    /// colour at every corner. They are moved by the current origin, faded
+    /// by the alpha stack and cut to the clip in force, with the colour
+    /// blended wherever the clip cuts, then handed to the batcher in one go.
+    /// </summary>
+    internal void DrawTriangles(ReadOnlySpan<UiColorVertex> triangles)
+    {
+        if (triangles.Length < 3 || _clip is { IsEmpty: true }) return;
+
+        _triangles.Clear();
+        Span<UiColorVertex> clipped = stackalloc UiColorVertex[ColoredTriangleClipper.MaxClippedVertices];
+        for (int i = 0; i + 2 < triangles.Length; i += 3)
+        {
+            UiColorVertex a = Place(triangles[i]);
+            UiColorVertex b = Place(triangles[i + 1]);
+            UiColorVertex c = Place(triangles[i + 2]);
+            if (_clip is not { } clip)
+            {
+                _triangles.Add(a);
+                _triangles.Add(b);
+                _triangles.Add(c);
+                continue;
+            }
+
+            int count = ColoredTriangleClipper.Clip(clip.Left, clip.Top, clip.Right, clip.Bottom, a, b, c, clipped);
+            for (int k = 1; k + 1 < count; k++)
+            {
+                _triangles.Add(clipped[0]);
+                _triangles.Add(clipped[k]);
+                _triangles.Add(clipped[k + 1]);
+            }
+        }
+
+        if (_triangles.Count > 0)
+            TextRenderer.DrawTriangles(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_triangles));
+    }
+
+    /// <summary>One device pixel, in interface points: the width of a shape's soft edge.</summary>
+    private float DevicePixel => 1f / PixelScale;
+
+    private void DrawShape()
+    {
+        if (_shape.Count > 0)
+            DrawTriangles(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_shape));
+    }
+
+    /// <summary>A rectangle with rounded corners and a smooth edge, in local coordinates.</summary>
+    internal void FillRoundedRect(float x, float y, float w, float h, CanvasCornerRadii radii, Vector4 color)
+    {
+        _shape.Clear();
+        CanvasGeometry.FillRoundedRect(x, y, w, h, radii, color, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    internal void FillRoundedRect(float x, float y, float w, float h, float radius, Vector4 color) =>
+        FillRoundedRect(x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), color);
+
+    /// <summary>A rounded rectangle's outline, centred on the outline.</summary>
+    internal void StrokeRoundedRect(float x, float y, float w, float h, float radius, Vector4 color, float thickness)
+    {
+        _shape.Clear();
+        CanvasGeometry.StrokeRoundedRect(
+            x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), color, thickness, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    internal void FillEllipse(float x, float y, float w, float h, Vector4 color)
+    {
+        _shape.Clear();
+        CanvasGeometry.FillEllipse(x, y, w, h, color, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    internal void StrokeEllipse(float x, float y, float w, float h, Vector4 color, float thickness)
+    {
+        _shape.Clear();
+        CanvasGeometry.StrokeEllipse(x, y, w, h, color, thickness, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    /// <summary>A straight segment with smooth sides and square, flush ends.</summary>
+    internal void DrawSmoothLine(float x0, float y0, float x1, float y1, Vector4 color, float thickness)
+    {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        float length = MathF.Sqrt(dx * dx + dy * dy);
+        if (!(length > 0f) || !(thickness > 0f)) return;
+        float nx = -dy / length * thickness * 0.5f;
+        float ny = dx / length * thickness * 0.5f;
+        Span<Vector2> corners =
+        [
+            new(x0 + nx, y0 + ny), new(x1 + nx, y1 + ny), new(x1 - nx, y1 - ny), new(x0 - nx, y0 - ny),
+        ];
+        Span<Vector4> colors = [color, color, color, color];
+        _shape.Clear();
+        CanvasGeometry.FillConvexPolygon(corners, colors, DevicePixel, _shape);
+        DrawShape();
+    }
+
+    /// <summary>
+    /// A rounded rectangle whose colour runs from <paramref name="top"/> to
+    /// <paramref name="bottom"/>. Each corner of the shape takes the colour
+    /// at its height; the soft edge keeps its own transparency.
+    /// </summary>
+    internal void FillVerticalGradient(
+        float x, float y, float w, float h, CanvasCornerRadii radii, Vector4 top, Vector4 bottom)
+    {
+        if (!(h > 0f)) return;
+        _shape.Clear();
+        CanvasGeometry.FillRoundedRect(x, y, w, h, radii, Vector4.One, DevicePixel, _shape);
+        for (int i = 0; i < _shape.Count; i++)
+        {
+            UiColorVertex v = _shape[i];
+            float t = Math.Clamp((v.Position.Y - y) / h, 0f, 1f);
+            Vector4 c = Vector4.Lerp(top, bottom, t);
+            _shape[i] = new UiColorVertex(v.Position, c with { W = c.W * v.Color.W });
+        }
+        DrawShape();
+    }
+
+    /// <summary>
+    /// The soft shadow of an opaque rounded rectangle at (x, y), dropped
+    /// <paramref name="drop"/> below it: as dark as six stacked fills, each
+    /// grown by a further sixth of <paramref name="spread"/>, so the darkness
+    /// fades outwards. Only what the caster leaves showing is drawn: the
+    /// bands round the dropped rectangle, and the dropped rectangle itself
+    /// from where the caster's bottom corners start to round off. Drawn with
+    /// the clip lifted to the whole screen, because a shadow lies outside the
+    /// element that casts it.
+    /// </summary>
+    internal void DrawSoftShadow(
+        float x, float y, float w, float h, float radius, float drop, float spread, Vector4 color)
+    {
+        if (!(spread > 0f) || !(color.W > 0f) || !(w > 0f) || !(h > 0f)) return;
+        const int Layers = 6;
+        Vector4 layer = color with { W = color.W / Layers };
+        var radii = new CanvasCornerRadii(radius, radius, radius, radius);
+        float top = y + MathF.Max(drop, 0f);
+        PushClipUnbounded();
+        try
+        {
+            _shape.Clear();
+            CanvasGeometry.ShadowBands(x, top, w, h, radii, spread, Layers, layer, DevicePixel, _shape);
+            DrawShape();
+
+            // Above the caster's bottom corners its straight sides cover the
+            // dropped rectangle edge to edge.
+            float shown = y + h - MathF.Min(radius, h * 0.5f);
+            PushClip(x, shown, w, top + h - shown);
+            _shape.Clear();
+            CanvasGeometry.ShadowCore(x, top, w, h, radii, spread, Layers, layer, DevicePixel, _shape);
+            DrawShape();
+            PopClip();
+        }
+        finally
+        {
+            PopClip();
+        }
+    }
+
+    private UiColorVertex Place(in UiColorVertex vertex) =>
+        new(vertex.Position + _current, ApplyAlpha(vertex.Color));
+
     private void DrawSpriteAbsolute(
         uint texture, float x, float y, float w, float h,
         float u0, float v0, float u1, float v1, Vector4 tint, bool applyAlpha)
@@ -354,11 +585,31 @@ public sealed class UiRenderContext
 
         float baseY = System.MathF.Floor(originY + 0.5f);
 
+        // On a high-density display a bundled font's sharper twin supplies
+        // the glyph images; the pen still advances by this font's own metrics.
+        UiDatFontSharp? sharp = isOutlinePass ? null : font.SharpFor(PixelScale);
+        float grid = sharp is null ? 1f : MathF.Min(PixelScale, sharp.Scale);
+        // The twin's glyphs sit on device pixels, so its baseline must too: a
+        // whole point is half a device pixel out at 1.5, and nearest sampling
+        // there would split every texel. At 2 a whole point is already on one.
+        float sharpBaseY = Snap(baseY, grid);
+
         float pen = originX;
         for (int i = 0; i < text.Length; i++)
         {
             if (!font.TryGetGlyph(text[i], out var g))
                 continue;
+
+            if (sharp is not null && sharp.Font.TryGetGlyph(text[i], out var fine)
+                && fine.Width > 0 && fine.Height > 0)
+            {
+                float texel = 1f / sharp.Scale;
+                float fx = Snap(pen + fine.HorizontalOffsetBefore * texel, grid);
+                float fy = sharpBaseY + MathF.Round(fine.VerticalOffsetBefore * texel * grid) / grid;
+                DrawFillGlyph(sharp.Font, fine, fx, fy, fine.Width * texel, fine.Height * texel, tint);
+                pen += UiDatFont.GlyphAdvance(g);
+                continue;
+            }
 
             // Horizontal: snap each glyph's dest X to a whole pixel (the pen keeps its
             // true fractional advance). Vertical: integer baseline + integer per-glyph
@@ -380,6 +631,85 @@ public sealed class UiRenderContext
             pen += UiDatFont.GlyphAdvance(g);
         }
     }
+
+    /// <summary>
+    /// Draws one line of text in a baked canvas font, its top-left corner at
+    /// (<paramref name="x"/>, <paramref name="y"/>). Glyphs are coverage
+    /// sprites, so the text keeps its place among fills and images. The
+    /// baseline and each glyph's left edge snap to whole pixels while the pen
+    /// keeps its fractional advance, as the interface font does. The outline
+    /// is eight copies one pixel out, drawn first.
+    ///
+    /// <para>On a canvas painted at a <paramref name="pixelScale"/> above 1,
+    /// glyphs come from the font's sharper bake when it has one, and snap
+    /// to that bake's pixels instead: whole device pixels when the bake
+    /// matches the canvas. The pen, and so every position the text is
+    /// measured at, still comes from the font's own bake.</para>
+    /// </summary>
+    internal void DrawStringCanvasFont(
+        CanvasFont font, string text, float x, float y, Vector4 color,
+        bool outline = false, Vector4? outlineColor = null, float pixelScale = 1f)
+    {
+        if (font is null || string.IsNullOrEmpty(text)) return;
+        if (outline)
+        {
+            Vector4 shadow = outlineColor ?? DefaultOutlineColor;
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    if (dx != 0 || dy != 0)
+                        DrawCanvasFontPass(font, text, x + dx, y + dy, shadow, pixelScale);
+                }
+            }
+        }
+        DrawCanvasFontPass(font, text, x, y, color, pixelScale);
+    }
+
+    private void DrawCanvasFontPass(CanvasFont font, string text, float x, float y, Vector4 color, float pixelScale)
+    {
+        CanvasSharpGlyphs? sharp = pixelScale > 1f ? font.Sharp : null;
+        // Pixels per canvas pixel of the grid glyphs snap to: the sharper
+        // bake's, but no finer than the canvas's own device pixels.
+        float grid = sharp is null ? 1f : MathF.Min(pixelScale, sharp.Scale);
+        float pen = _current.X + x;
+        float baseline = Snap(_current.Y + y + font.Ascent, grid);
+        int previous = -1;
+        foreach (System.Text.Rune rune in text.EnumerateRunes())
+        {
+            if (!font.TryGetGlyph(rune.Value, out CanvasGlyph glyph))
+            {
+                previous = -1;
+                continue;
+            }
+            if (previous >= 0)
+                pen += font.Kerning(previous, glyph.GlyphIndex);
+            // Canvas pixels per atlas pixel of the glyph drawn.
+            float texel = 1f;
+            CanvasGlyph drawn = glyph;
+            uint atlas = font.AtlasTexture;
+            if (sharp is not null && sharp.TryGetGlyph(rune.Value, out CanvasGlyph fine))
+            {
+                texel = 1f / sharp.Scale;
+                drawn = fine;
+                atlas = sharp.AtlasTexture;
+            }
+            if (drawn.Width > 0f && drawn.Height > 0f)
+            {
+                float gx = Snap(pen + drawn.OffsetX * texel, grid);
+                float gy = baseline + MathF.Round(drawn.OffsetY * texel * grid) / grid;
+                DrawCoverageSpriteAbsolute(
+                    atlas, gx, gy, drawn.Width * texel, drawn.Height * texel,
+                    drawn.U0, drawn.V0, drawn.U1, drawn.V1, color);
+            }
+            pen += glyph.Advance;
+            previous = glyph.GlyphIndex;
+        }
+    }
+
+    /// <summary>Rounds half up to the nearest multiple of 1 / <paramref name="pixelsPerUnit"/>.</summary>
+    private static float Snap(float value, float pixelsPerUnit) =>
+        MathF.Floor(value * pixelsPerUnit + 0.5f) / pixelsPerUnit;
 
     private void DrawFillGlyph(
         UiDatFont font, DatReaderWriter.Types.FontCharDesc g,

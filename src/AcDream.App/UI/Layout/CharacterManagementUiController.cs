@@ -312,7 +312,7 @@ internal sealed class CharacterManagementUiController : IDisposable
             _active = true;
             Root.Visible = true;
             _host.DeclareFixedCanvas(this, _authoredCanvas);
-            _host.BringToFront(Root);
+            _host.BringToFront(Root, UiBand.Screens);
         }
 
         _lastWorldName = snapshot.WorldName;

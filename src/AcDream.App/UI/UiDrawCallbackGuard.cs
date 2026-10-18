@@ -58,6 +58,7 @@ internal sealed class UiDrawCallbackGuard
     private readonly Action<string> _report;
     private readonly Func<double> _nowMilliseconds;
     private int _consecutiveOverruns;
+    private bool _lastOverrunWasSlow = true;
 
     /// <param name="name">What the callback is called in the report that drops it.</param>
     /// <param name="report">Where the one report goes; the client's log by default.</param>
@@ -109,7 +110,15 @@ internal sealed class UiDrawCallbackGuard
     /// to the end and left the drawing state as it found it -- including on
     /// the overrun that drops it, because that call did draw.
     /// </summary>
-    internal bool Invoke(UiRenderContext context, Action<UiRenderContext> draw)
+    /// <param name="context">The drawing state the callback must leave as it found it.</param>
+    /// <param name="draw">The callback.</param>
+    /// <param name="overBudget">
+    /// Asked after a call that ran to the end and left the state balanced:
+    /// true when the call went over a budget other than time -- a canvas
+    /// paint that drew more shapes than one paint may -- which counts as an
+    /// overrun just as a slow call does.
+    /// </param>
+    internal bool Invoke(UiRenderContext context, Action<UiRenderContext> draw, Func<bool>? overBudget = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(draw);
@@ -147,17 +156,19 @@ internal sealed class UiDrawCallbackGuard
             return false;
         }
 
-        if (LastMilliseconds <= BudgetMilliseconds)
+        bool slow = LastMilliseconds > BudgetMilliseconds;
+        if (!slow && overBudget?.Invoke() != true)
         {
             _consecutiveOverruns = 0;
             return true;
         }
 
         _consecutiveOverruns++;
+        _lastOverrunWasSlow = slow;
         if (_consecutiveOverruns >= ConsecutiveOverrunsBeforeTrip)
             TripForOverruns();
 
-        // It did draw, and it drew correctly -- it was only slow.
+        // It did draw, and it drew correctly -- it was only slow, or drew too much.
         return true;
     }
 
@@ -191,6 +202,7 @@ internal sealed class UiDrawCallbackGuard
             return true;
         }
 
+        _lastOverrunWasSlow = true;
         _consecutiveOverruns++;
         if (_consecutiveOverruns >= ConsecutiveOverrunsBeforeTrip)
             TripForOverruns();
@@ -198,10 +210,11 @@ internal sealed class UiDrawCallbackGuard
     }
 
     private void TripForOverruns() =>
-        Trip(
-            $"took more than {BudgetMilliseconds:0.##} ms on "
-            + $"{_consecutiveOverruns} {_callUnit} in a row "
-            + $"(last {LastMilliseconds:0.##} ms)");
+        Trip(_lastOverrunWasSlow
+            ? $"took more than {BudgetMilliseconds:0.##} ms on "
+                + $"{_consecutiveOverruns} {_callUnit} in a row "
+                + $"(last {LastMilliseconds:0.##} ms)"
+            : $"went over its drawing budget on {_consecutiveOverruns} {_callUnit} in a row");
 
     private static void RestoreDepths(
         UiRenderContext context, int clipDepth, int transformDepth, int alphaDepth)

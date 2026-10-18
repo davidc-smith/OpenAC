@@ -405,11 +405,52 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
             return false;
         }
         AcDream.Core.Physics.Position here = controller.CellPosition;
-        position = OnTheGround(
+        position = OnTheCellFloor(
             _physics,
-            controller.Position + PlaceOffset(cellId, local, here.ObjCellId, here.Frame.Origin),
-            controller.Position.Z);
+            cellId,
+            OnTheGround(
+                _physics,
+                controller.Position + PlaceOffset(cellId, local, here.ObjCellId, here.Frame.Origin),
+                controller.Position.Z));
         return true;
+    }
+
+    /// <summary>
+    /// How far above a floor a place may be given and still stand on it, so a place given at
+    /// its floor's height, a little out, is not dropped to a floor below.
+    /// </summary>
+    internal const float PlaceAboveFloorMeters = 0.5f;
+
+    /// <summary>
+    /// A place in an interior cell stood on the floor under it: the cell's own floor nearest at
+    /// or below the place, or where the cell has none there, as in the upper half of a tall room
+    /// authored as a cell on top of a cell, the nearest floor of any cell in its landblock. A
+    /// place in a cell is often given by the middle of the cell's bounds, which in a tall room
+    /// is metres above the floor, higher than a walk can arrive at. An outdoor place, or one with
+    /// no floor under it, is left as it is.
+    /// </summary>
+    internal static Vector3 OnTheCellFloor(PhysicsEngine physics, uint cellId, Vector3 point)
+    {
+        ArgumentNullException.ThrowIfNull(physics);
+        if ((cellId & 0xFFFFu) < 0x0100u || (cellId & 0xFFFFu) == 0xFFFFu || float.IsNaN(point.Z)
+            || !physics.TryGetLandblockCollision((cellId & 0xFFFF0000u) | 0xFFFFu, out _, out IReadOnlyList<CellSurface> cells, out _))
+        {
+            return point;
+        }
+        float atMost = point.Z + PlaceAboveFloorMeters;
+        float? own = null;
+        float? any = null;
+        foreach (CellSurface cell in cells)
+        {
+            if (cell.SampleLevelZAtOrBelow(point.X, point.Y, atMost) is not { } z)
+                continue;
+            if (cell.CellId == cellId)
+                own = own is null ? z : MathF.Max(own.Value, z);
+            any = any is null ? z : MathF.Max(any.Value, z);
+        }
+        return own is { } floor ? point with { Z = floor }
+            : any is { } below ? point with { Z = below }
+            : point;
     }
 
     /// <summary>

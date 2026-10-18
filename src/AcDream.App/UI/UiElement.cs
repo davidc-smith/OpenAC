@@ -94,15 +94,42 @@ public abstract class UiElement
         get
         {
             var p = new Vector2(Left, Top);
+            UiElement child = this;
             var parent = Parent;
             while (parent is not null)
             {
-                p += new Vector2(parent.Left, parent.Top);
+                p += new Vector2(parent.Left, parent.Top) - parent.OffsetFor(child);
+                child = parent;
                 parent = parent.Parent;
             }
             return p;
         }
     }
+
+    // ── Scrolling ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Set on a child that stays put while its parent scrolls (a scrollbar):
+    /// it is neither offset nor clipped to the parent's viewport.
+    /// </summary>
+    internal bool ScrollChrome { get; set; }
+
+    /// <summary>
+    /// The size of the part of this element its scrolled children are seen
+    /// through, from its top-left corner; null (the default) for an element
+    /// that does not scroll. While set, every child except
+    /// <see cref="ScrollChrome"/> ones is clipped to it and moved by
+    /// <see cref="ContentOffset"/>, in drawing, hit-testing and
+    /// <see cref="ScreenPosition"/> alike.
+    /// </summary>
+    internal Vector2? ContentViewport { get; set; }
+
+    /// <summary>How far this element's content is scrolled, in points; used only while <see cref="ContentViewport"/> is set.</summary>
+    internal Vector2 ContentOffset { get; set; }
+
+    /// <summary>How far <paramref name="child"/> is moved by this element's scrolling.</summary>
+    private Vector2 OffsetFor(UiElement child) =>
+        ContentViewport is null || child.ScrollChrome ? Vector2.Zero : ContentOffset;
 
     // ── State flags ─────────────────────────────────────────────────────
     private bool _visible = true;
@@ -142,7 +169,12 @@ public abstract class UiElement
 
     public Func<bool>? EnabledSource { get; set; }
 
-    public bool AcceptsFocus    { get; set; }
+    /// <summary>
+    /// Whether a left press (or Tab, with <see cref="TabStop"/>) gives this
+    /// element keyboard focus. Virtual so an element whose answer depends
+    /// on live state can compute it when the root asks.
+    /// </summary>
+    public virtual bool AcceptsFocus { get; set; }
     public bool FocusOnMouseClick { get; set; } = true;
     public bool TabStop         { get; set; }
 
@@ -172,6 +204,14 @@ public abstract class UiElement
 
     public bool WindowMoveHandle { get; set; }
 
+    /// <summary>
+    /// Called on each pointer move while this window is being dragged by a
+    /// move handle, with where the drag would put it (already kept inside the
+    /// parent) and the pointer's position. A window that snaps somewhere
+    /// changes <paramref name="left"/> and <paramref name="top"/>. Most windows
+    /// leave them alone.
+    /// </summary>
+    internal virtual void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY) { }
 
     public bool ConstrainResizeToParent { get; set; }
 
@@ -309,6 +349,9 @@ public abstract class UiElement
 
     protected virtual void OnDrawAfterChildren(UiRenderContext ctx) { }
 
+    /// <summary>Called just before each child is drawn, back to front.</summary>
+    private protected virtual void OnDrawingChild(UiRenderContext ctx, UiElement child) { }
+
     protected virtual void OnDrawOverlay(UiRenderContext ctx) { }
 
     protected virtual bool ClipsChildren => true;
@@ -420,14 +463,19 @@ public abstract class UiElement
             {
                 OnDraw(ctx);
 
-                for (int i = 0; i < _children.Count; i++)
-                    _children[i].ApplyAnchor(Width, Height);
+                LayoutChildren();
 
                 if (_children.Count > 0)
                 {
                     UiElement[] ordered = ChildrenBackToFrontSnapshot();
                     for (int i = 0; i < ordered.Length; i++)
-                        ordered[i].DrawSelfAndChildren(ctx);
+                    {
+                        OnDrawingChild(ctx, ordered[i]);
+                        if (ContentViewport is { } viewport && !ordered[i].ScrollChrome)
+                            DrawScrolled(ctx, ordered[i], viewport);
+                        else
+                            ordered[i].DrawSelfAndChildren(ctx);
+                    }
                 }
 
                 OnDrawAfterChildren(ctx);
@@ -439,6 +487,22 @@ public abstract class UiElement
                 ctx.PopClip();
             ctx.PopAlpha();
             ctx.PopTransform();
+        }
+    }
+
+    /// <summary>Draws a scrolled child: clipped to the viewport, moved by the content offset.</summary>
+    private void DrawScrolled(UiRenderContext ctx, UiElement child, Vector2 viewport)
+    {
+        ctx.PushClip(0f, 0f, viewport.X, viewport.Y);
+        ctx.PushTransform(-ContentOffset.X, -ContentOffset.Y);
+        try
+        {
+            child.DrawSelfAndChildren(ctx);
+        }
+        finally
+        {
+            ctx.PopTransform();
+            ctx.PopClip();
         }
     }
 
@@ -468,7 +532,16 @@ public abstract class UiElement
                 {
                     UiElement[] ordered = ChildrenBackToFrontSnapshot();
                     for (int i = 0; i < ordered.Length; i++)
-                        ordered[i].DrawOverlays(ctx);
+                    {
+                        if (ContentViewport is null || ordered[i].ScrollChrome)
+                        {
+                            ordered[i].DrawOverlays(ctx);
+                            continue;
+                        }
+                        ctx.PushTransform(-ContentOffset.X, -ContentOffset.Y);
+                        try { ordered[i].DrawOverlays(ctx); }
+                        finally { ctx.PopTransform(); }
+                    }
                 }
                 finally
                 {
@@ -496,6 +569,17 @@ public abstract class UiElement
             _children[i].TickSelfAndChildren(dt);
     }
 
+    /// <summary>
+    /// Puts the children where they belong for this element's current size,
+    /// just before they are drawn: by default each child's anchors. A flex
+    /// container lays its items out here instead.
+    /// </summary>
+    private protected virtual void LayoutChildren()
+    {
+        for (int i = 0; i < _children.Count; i++)
+            _children[i].ApplyAnchor(Width, Height);
+    }
+
     internal UiElement? HitTest(float localX, float localY)
     {
         if (!Visible || !Enabled) return null;
@@ -509,7 +593,15 @@ public abstract class UiElement
             for (int i = 0; i < ordered.Length; i++)
             {
                 var c = ordered[i];
-                var childHit = c.HitTest(localX - c.Left, localY - c.Top);
+                float x = localX, y = localY;
+                if (ContentViewport is { } viewport && !c.ScrollChrome)
+                {
+                    // Scrolled children are only reachable through the viewport.
+                    if (x < 0f || y < 0f || x >= viewport.X || y >= viewport.Y) continue;
+                    x += ContentOffset.X;
+                    y += ContentOffset.Y;
+                }
+                var childHit = c.HitTest(x - c.Left, y - c.Top);
                 if (childHit is not null) return childHit;
             }
         }

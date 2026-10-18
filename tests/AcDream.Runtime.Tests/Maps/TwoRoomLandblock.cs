@@ -11,8 +11,9 @@ namespace AcDream.Runtime.Tests.Maps;
 /// <summary>
 /// Game files holding one landblock of two box rooms: one turned a quarter
 /// turn with a doorway in its east wall, the other a storey higher with its
-/// north wall authored in two pieces. A third cell has no geometry and sees
-/// outside; a second landblock says it has no cells. Every read has to
+/// north wall authored in two pieces and a way outside through a polygon its
+/// structure does not have. A third cell has no geometry and sees outside; a
+/// second landblock says it has no cells. Every read has to
 /// happen with the lock held; one that does not is counted.
 /// </summary>
 internal sealed class TwoRoomLandblock : IDatObjectSource
@@ -34,6 +35,7 @@ internal sealed class TwoRoomLandblock : IDatObjectSource
     private const ushort WestWall = 4;
     private const ushort EastWall = 5;
     private const ushort NorthWallEast = 6;
+    private const ushort MissingPolygon = 99;
 
     private readonly Dictionary<uint, DBObj> _objects = new();
 
@@ -61,6 +63,12 @@ internal sealed class TwoRoomLandblock : IDatObjectSource
             new Vector3(40f, 30f, 7.2f),
             Quaternion.Identity,
             doorway: false));
+        ((EnvCell)_objects[UpstairsRoom]).CellPortals.Add(new CellPortal
+        {
+            PolygonId = MissingPolygon,
+            OtherCellId = 0xFFFF,
+            OtherPortalId = 0,
+        });
         Add(new EnvCell
         {
             Id = CellSeeingOutside,

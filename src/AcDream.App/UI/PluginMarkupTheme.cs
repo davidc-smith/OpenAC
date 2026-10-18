@@ -3,14 +3,53 @@ namespace AcDream.App.UI;
 
 internal static class PluginMarkupTheme
 {
+    /// <summary>
+    /// Moves a themed window's title into the header band and sets it in the
+    /// title weight. Register's label action has already run for the title,
+    /// so Classic's font is restored there; this only puts the position back.
+    /// </summary>
+    public static void RegisterTitle(UiPluginMarkupPanel panel, UiLabel title)
+    {
+        float left = title.Left, top = title.Top;
+        panel.AddThemeAction(p =>
+        {
+            if (p is null) { title.Left = left; title.Top = top; return; }
+            if (panel.ModernTitleFont is { } bold) title.DatFont = bold;
+            float lineHeight = title.DatFont?.LineHeight ?? 14f;
+            title.Left = 12f;
+            title.Top = MathF.Max(0f, MathF.Round((PluginUiStyle.HeaderHeight - lineHeight) / 2f));
+        });
+    }
+
+    /// <summary>
+    /// Themes a window's title bar: the palette for its band and close button,
+    /// the title weight without outline under a theme, and Classic's own font,
+    /// title colour and outline back under Classic. The modern fonts are read
+    /// only once a theme is on, so a Classic window never loads them.
+    /// </summary>
+    public static void RegisterTitleBar(UiPluginMarkupPanel panel, PluginTitleBar bar)
+    {
+        UiDatFont? classicFont = bar.DatFont;
+        var classicColor = bar.TextColor;
+        panel.AddThemeAction(p =>
+        {
+            bar.ThemePalette = p;
+            bar.DatFont = p is null ? classicFont : panel.ModernTitleFont ?? panel.ModernFont ?? classicFont;
+            bar.TextColor = p?.Text ?? classicColor;
+            bar.Outline = p is null;
+        });
+    }
+
     public static void Register(UiPluginMarkupPanel panel, UiElement element, XElement xml)
     {
-        if (panel.ModernFont is { } modern)
+        if (panel.HasModernFont)
         {
+            // The modern font is read only once a theme is on, so a Classic
+            // window never loads it.
             void Bind(Func<UiDatFont?> get, Action<UiDatFont?> set)
             {
                 UiDatFont? classic = get();
-                panel.AddThemeAction(p => set(p is null ? classic : modern));
+                panel.AddThemeAction(p => set(p is null ? classic : panel.ModernFont ?? classic));
             }
             switch (element)
             {
@@ -42,6 +81,7 @@ internal static class PluginMarkupTheme
                 var bg = button.BackgroundColor; var border = button.BorderColor;
                 var text = button.TextColor; var outline = button.Outline;
                 panel.AddThemeAction(p => {
+                    button.ThemePalette = p;
                     button.Outline = p is null && outline;
                     if (Default("background")) button.BackgroundColor = p?.Field ?? bg;
                     if (Default("border")) button.BorderColor = p?.Border ?? border;
@@ -59,6 +99,7 @@ internal static class PluginMarkupTheme
                 var focus = field.FocusFieldSprite; var left = field.FocusRailLeftSprite;
                 var right = field.FocusRailRightSprite; var selection = field.SelectionColor;
                 panel.AddThemeAction(p => {
+                    field.ThemePalette = p;
                     field.Outline = p is null && fieldOutline;
                     field.BackgroundSprite = p is null ? sprite : 0;
                     field.FocusFieldSprite = p is null ? focus : 0;
@@ -77,12 +118,13 @@ internal static class PluginMarkupTheme
                 var ma = menu.PlainTriangleColor; var ms = menu.PlainSelectedColor;
                 var mh = menu.PlainHoverColor;
                 panel.AddThemeAction(p => {
+                    menu.ThemePalette = p;
                     menu.PlainPopupScrollbar = p is not null || flatScroll;
                     menu.RetailButtonArt = p is null && art; menu.Outline = p is null && menuOutline;
                     menu.PlainBackgroundColor = p?.Field ?? mb; menu.PlainBorderColor = p?.Border ?? me;
                     menu.PlainOpenBorderColor = p?.Accent ?? mo; menu.PlainTextColor = p?.Text ?? mt;
                     menu.PlainTriangleColor = p?.Muted ?? ma; menu.PlainSelectedColor = p?.Selected ?? ms;
-                    menu.PlainHoverColor = p?.Selected ?? mh;
+                    menu.PlainHoverColor = p is null ? mh : PluginUiStyle.Hover(p, p.Field);
                 });
                 break;
             case UiMarkupLog log:
@@ -91,18 +133,24 @@ internal static class PluginMarkupTheme
             case UiMarkupList list:
                 var lb = list.BackgroundColor; var le = list.BorderColor; var lt = list.TextColor;
                 var ls = list.SelectedColor; var band = list.SelectionBandEnabled;
+                var lbf = list.ButtonColor; var lbe = list.ButtonBorderColor;
                 panel.AddThemeAction(p => {
                     list.ThemePalette = p; list.BackgroundColor = p?.Field ?? lb;
                     list.BorderColor = p?.Border ?? le; list.TextColor = p?.Text ?? lt;
                     list.SelectedColor = p?.Selected ?? ls; list.SelectionBandEnabled = p is not null || band;
+                    // The list's own ground is the field colour, so its buttons take the window's.
+                    list.ButtonColor = p?.Background ?? lbf; list.ButtonBorderColor = p?.Border ?? lbe;
                 });
+                break;
+            case UiMeter meter:
+                panel.AddThemeAction(p => meter.ThemePalette = p);
                 break;
             case UiScrollbar scroll:
                 var retail = scroll.RetailArt; var track = scroll.PlainTrackColor;
                 var rail = scroll.PlainBorderColor; var nub = scroll.PlainNubColor;
                 panel.AddThemeAction(p => { scroll.RetailArt = p is null && retail;
                     scroll.PlainTrackColor = p?.Field ?? track; scroll.PlainBorderColor = p?.Border ?? rail;
-                    scroll.PlainNubColor = p?.Muted ?? nub; });
+                    scroll.PlainNubColor = p?.Muted ?? nub; scroll.ThemePalette = p; });
                 break;
         }
     }

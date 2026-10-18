@@ -991,9 +991,51 @@ public sealed class HeadlessPluginApiSurfaceTests
     }
 
     /// <summary>
+    /// World markers are asked of the same surface on both hosts. Without a
+    /// window there is no world to hang them in, so no layer is made.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowWorldMarkersHaveNoLayers()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+
+        Assert.Null(pluginHost.Ui.WorldMarkers.CreateLayer());
+    }
+
+    /// <summary>
+    /// Fonts are asked of the same surface on both hosts. Without a window
+    /// there is nothing to draw text on, so every font request answers "no
+    /// font", nothing is held, and the plugin's stream is never opened.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowTheFontSurfaceAnswersInertly()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        bool opened = false;
+
+        IPluginFonts fonts = pluginHost.Ui.Fonts;
+
+        Assert.False(fonts.IsAvailable);
+        Assert.Equal(PluginFont.None, fonts.Bundled(16f));
+        Assert.Equal(PluginFont.None, fonts.FromStream("fonts/Inter.ttf", () =>
+        {
+            opened = true;
+            return new MemoryStream();
+        }, 16f));
+        Assert.False(opened);
+        Assert.False(fonts.Release(new PluginFont(1, 16f, 22f, 17f)));
+        Assert.Equal(0, fonts.Count);
+    }
+
+    /// <summary>
     /// The theme is asked of the same surface on both hosts. Without a window
     /// there is no Appearance picker, so the plugin reads Classic, a handler
-    /// is accepted and never called.
+    /// is accepted and never called, and the semibold sans is refused like
+    /// every other font.
     /// </summary>
     [Fact]
     public void WithoutAWindowTheThemeIsClassicAndNeverChanges()
@@ -1007,6 +1049,55 @@ public sealed class HeadlessPluginApiSurfaceTests
         pluginHost.Ui.ThemeChanged -= handler;
 
         Assert.Same(PluginUiThemeInfo.Classic, pluginHost.Ui.Theme);
+        Assert.Equal(PluginFont.None, pluginHost.Ui.Fonts.Bundled(16f, PluginFontWeight.SemiBold));
+    }
+
+    /// <summary>
+    /// The screen size is asked of the same surface on both hosts. Without a
+    /// window there is no screen: the plugin reads 0×0, and a handler is
+    /// accepted and never called.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowTheScreenSizeIsZeroAndNeverChanges()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        Action<PluginSize> handler = _ => throw new InvalidOperationException("never raised");
+
+        pluginHost.Ui.ScreenSizeChanged += handler;
+        pluginHost.Ui.ScreenSizeChanged -= handler;
+
+        Assert.Equal(new PluginSize(0, 0), pluginHost.Ui.ScreenSize);
+    }
+
+    /// <summary>
+    /// A canvas that asked for outside presses is accepted without a window:
+    /// the handler is kept and never called.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowACanvasWantingOutsidePressesHearsNothing()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        int calls = 0;
+        Action<PluginPointerEvent> handler = _ => calls++;
+
+        var descriptor = new PluginCanvasDescriptor("menu", 120, 80)
+        {
+            Layer = PluginCanvasLayer.AboveWindows,
+            AcceptsPointerInput = true,
+            WantsOutsidePresses = true,
+        };
+        IPluginCanvas canvas = pluginHost.Ui.RegisterCanvas(descriptor, _ => { });
+        canvas.PointerHandler = handler;
+
+        Assert.True(descriptor.WantsOutsidePresses);
+        Assert.False(canvas.IsAvailable);
+        Assert.Same(handler, canvas.PointerHandler);
+        Assert.Equal(0, calls);
+        canvas.Dispose();
     }
 
     /// <summary>
@@ -1035,6 +1126,30 @@ public sealed class HeadlessPluginApiSurfaceTests
         Assert.Equal((200, 100), (canvas.Width, canvas.Height));
         Assert.Equal(PluginCanvasAnchor.BottomRight, canvas.Anchor);
         Assert.False(canvas.IsVisible);
+        Assert.Equal(0, paints);
+        canvas.Dispose();
+    }
+
+    /// <summary>
+    /// A canvas registered for a markup <c>&lt;canvas&gt;</c> is accepted
+    /// without a window like any other: it is not available, cannot be
+    /// resized, and nothing is ever painted.
+    /// </summary>
+    [Fact]
+    public void WithoutAWindowAnInMarkupCanvasIsAcceptedAndNeverPainted()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var host = NewHost(runtime);
+        IPluginHost pluginHost = host;
+        int paints = 0;
+
+        IPluginCanvas canvas = pluginHost.Ui.RegisterCanvas(
+            new PluginCanvasDescriptor("map", 200, 100) { InMarkup = true },
+            _ => paints++);
+        canvas.Invalidate();
+
+        Assert.False(canvas.IsAvailable);
+        Assert.False(canvas.TryResize(300, 150));
         Assert.Equal(0, paints);
         canvas.Dispose();
     }

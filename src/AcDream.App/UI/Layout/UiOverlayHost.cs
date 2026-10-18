@@ -147,7 +147,7 @@ internal sealed class UiOverlayHost
             ZOrder = UiOverlayZOrder.SharedHostRoot,
         };
         host.AddChild(root);
-        var overlayHost = new UiOverlayHost(host, root, new Vector2(host.Width, host.Height));
+        var overlayHost = new UiOverlayHost(host, root, ViewportOf(host));
         overlayHost.ApplyViewport();
         return overlayHost;
     }
@@ -169,6 +169,29 @@ internal sealed class UiOverlayHost
     }
 
     /// <summary>
+    /// A layer over every window, for the plugin canvases drawn there. It
+    /// is the one layer not under the shared root: it hangs from the
+    /// interface root itself at <see cref="UiBands.CanvasesAboveWindows"/>,
+    /// above the window band and under screens, dialogs and tooltips (see
+    /// <see cref="UiBand"/>). Like every layer it starts hidden, covers the
+    /// viewport and is click-through except where a child takes input.
+    /// </summary>
+    internal UiOverlayLayer AddLayerAboveWindows(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var layer = new UiOverlayLayer
+        {
+            Name = name,
+            Visible = false,
+            ZOrder = UiBands.CanvasesAboveWindows,
+        };
+        _layers.Add(layer);
+        _host.AddChild(layer);
+        ApplyViewport(layer);
+        return layer;
+    }
+
+    /// <summary>
     /// Brings the root and every layer to the interface root's current size.
     /// The interface calls it every frame, after sizing its root to the
     /// screen: the root can also be resized elsewhere (restoring the layout
@@ -177,11 +200,18 @@ internal sealed class UiOverlayHost
     /// </summary>
     internal void FollowRoot()
     {
-        var size = new Vector2(_host.Width, _host.Height);
+        Vector2 size = ViewportOf(_host);
         if (_viewport == size) return;
         _viewport = size;
         ApplyViewport();
     }
+
+    /// <summary>
+    /// The rectangle the root and every layer cover for an interface root:
+    /// the root's own size. Plugins are told the same size as their screen
+    /// size, so a canvas placed against it lands where they expect.
+    /// </summary>
+    internal static Vector2 ViewportOf(UiRoot host) => new(host.Width, host.Height);
 
     private void ApplyViewport()
     {

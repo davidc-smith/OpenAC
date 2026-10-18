@@ -95,6 +95,25 @@ public sealed class PluginApiInertDefaultTests
     private sealed class EmptyDungeonMap : IDungeonMapAutomation;
 
     [Fact]
+    public void TerrainIsEmptyByDefault()
+    {
+        ITerrainAutomation terrain = new EmptyTerrain();
+        PluginLandblockTerrain captured = terrain.CaptureLandblockTerrain(0xA9B40000u);
+        Assert.True(captured.IsEmpty);
+        Assert.False(captured.IsEntirelyWater);
+        Assert.Equal(default, captured.Sample(10f, 10f));
+        Assert.Same(captured, NoOpAutomationSurface.Instance.Terrain.CaptureLandblockTerrain(0xA9B40000u));
+    }
+
+    private sealed class EmptyTerrain : ITerrainAutomation;
+
+    [Fact]
+    public void WorldTrianglesDrawNothingByDefault()
+    {
+        Assert.Null(NoOpPluginWorldTriangles.Instance.CreateLayer());
+    }
+
+    [Fact]
     public void TheStatusBoardKeepsNothingByDefault()
     {
         IPluginStatusBoard board = NoOpPluginStatusBoard.Instance;
