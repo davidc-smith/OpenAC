@@ -64,8 +64,9 @@ public sealed unsafe class OverlayFontsTests : IDisposable
         _fonts.Add(Array.Empty<byte>(), "x", 1f);
         _fonts.Add(new byte[] { 1 }, "", 1f);
         _fonts.Add(new byte[] { 1 }, "x", 0f);
+        _fonts.Add(new byte[] { 1 }, "x", float.PositiveInfinity);
         Assert.Equal(start, _fonts.Version);
-        Assert.Equal(3, _log.Count(line => line.Contains("ignored", StringComparison.Ordinal)));
+        Assert.Equal(4, _log.Count(line => line.Contains("ignored", StringComparison.Ordinal)));
 
         _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
         Assert.Equal(start + 1, _fonts.Version);

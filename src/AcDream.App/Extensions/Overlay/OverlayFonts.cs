@@ -20,7 +20,7 @@ internal sealed unsafe class OverlayFonts : IDisposable
 
     public void Add(byte[] ttf, string glyphs, float scale)
     {
-        if (ttf is null || ttf.Length == 0 || string.IsNullOrEmpty(glyphs) || !(scale > 0))
+        if (ttf is null || ttf.Length == 0 || string.IsNullOrEmpty(glyphs) || !float.IsFinite(scale) || scale <= 0)
         {
             _log("[ImGui] merged font ignored: it needs font bytes, glyphs and a positive scale.");
             return;
