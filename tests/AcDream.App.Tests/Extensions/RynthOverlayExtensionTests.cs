@@ -16,6 +16,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
 
     public RynthOverlayExtensionTests()
     {
+        ScriptIcons.Source = null;
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
         _imgui = ImGui.CreateContext();
@@ -28,6 +29,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
 
     public void Dispose()
     {
+        ScriptIcons.Source = null;
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
         ImGui.DestroyContext(_imgui);
@@ -55,6 +57,27 @@ public sealed class RynthOverlayExtensionTests : IDisposable
 
         extension.Dispose();
         Assert.Null(ImGuiPanelHost.Layout);
+    }
+
+    [Fact]
+    public void WithAnOverlayScriptIconsAskTheOverlayAndPhosphorIsMerged()
+    {
+        var overlay = new FakeOverlay();
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay));
+
+        Assert.True(ScriptIcons.TryGet(ScriptIconKind.Icon, 0x06001234u, out IntPtr icon));
+        Assert.True(ScriptIcons.TryGet(ScriptIconKind.Spell, 7, out IntPtr spell));
+        Assert.True(ScriptIcons.TryGet(ScriptIconKind.Object, 0x80000001u, out IntPtr obj));
+        Assert.Equal(((IntPtr)1, (IntPtr)2, (IntPtr)3), (icon, spell, obj));
+        Assert.Equal(new[] { "icon:06001234", "spell:7", "object:80000001" }, overlay.FakeIcons.Asked);
+        (int bytes, string glyphs, float scale) = Assert.Single(overlay.Fonts);
+        Assert.True(bytes > 10_000);
+        Assert.Equal(PhosphorIcons.Baked, glyphs);
+        Assert.Equal(1.2f, scale);
+
+        extension.Dispose();
+        Assert.Null(ScriptIcons.Source);
     }
 
     [Fact]
@@ -143,12 +166,28 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         public bool CallbackRemoved { get; private set; }
         public bool WantsMouse => false;
         public bool WantsKeyboard => false;
+        public FakeIcons FakeIcons { get; } = new();
+        public AcDream.ClientExtensions.IClientOverlayIcons Icons => FakeIcons;
+        public List<(int Bytes, string Glyphs, float Scale)> Fonts { get; } = new();
+
+        public void AddMergedFont(byte[] ttf, string glyphs, float scale) => Fonts.Add((ttf.Length, glyphs, scale));
 
         public IDisposable AddFrameCallback(Action draw)
         {
             Callbacks.Add(draw);
             return new Registration(() => { Callbacks.Remove(draw); CallbackRemoved = true; });
         }
+    }
+
+    private sealed class FakeIcons : AcDream.ClientExtensions.IClientOverlayIcons
+    {
+        public List<string> Asked { get; } = new();
+
+        public IntPtr Icon(uint iconId) { Asked.Add($"icon:{iconId:X8}"); return (IntPtr)1; }
+
+        public IntPtr SpellIcon(uint spellId) { Asked.Add($"spell:{spellId}"); return (IntPtr)2; }
+
+        public IntPtr ObjectIcon(uint objectId) { Asked.Add($"object:{objectId:X8}"); return (IntPtr)3; }
     }
 
     private sealed class Registration(Action onDispose) : IDisposable

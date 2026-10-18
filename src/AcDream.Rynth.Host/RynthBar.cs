@@ -8,7 +8,8 @@ namespace AcDream.Rynth.Host;
 /// <summary>
 /// The launcher bar: a small draggable strip over the game with a button per
 /// script window that asked for one (BarButton) and a "Scripts" menu for the
-/// other ShowInBar windows (RynthOracle's). A click opens or closes the window
+/// other ShowInBar windows (RynthOracle's). Buttons show RynthCore's Phosphor
+/// icon for a known title, else its first letter. A click opens or closes the window
 /// the way RynthCore's bar does, so the plugin hears of it. Drawn only while
 /// something is on it; its position is kept in the layout store. Game thread.
 /// </summary>
@@ -90,7 +91,7 @@ internal sealed class RynthBar
 
     private void DrawContents()
     {
-        ImGui.Button("::");
+        ImGui.Button(RynthBarIcons.InFont(PhosphorIcons.DotsSixVertical) ? PhosphorIcons.DotsSixVertical : "::");
         if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 0f))
             ImGui.SetWindowPos(ImGui.GetWindowPos() + ImGui.GetIO().MouseDelta);
         Tooltip("Rynth: drag to move");
@@ -101,7 +102,7 @@ internal sealed class RynthBar
             bool open = ImGuiPanelHost.IsOpen(item.PanelKey);
             if (open)
                 ImGui.PushStyleColor(ImGuiCol.Button, ImGui.GetColorU32(ImGuiCol.ButtonActive));
-            bool clicked = ImGui.Button(Letter(item.Window.Title) + "##" + item.MenuLabel);
+            bool clicked = ImGui.Button(RynthBarIcons.Label(item.Window.Title) + "##" + item.MenuLabel);
             if (open)
                 ImGui.PopStyleColor();
             // Only after the pop: the toggle calls into the plugin and may throw.
@@ -129,7 +130,9 @@ internal sealed class RynthBar
                     ImGui.PopStyleColor();
                 }
 
-                if (ImGui.MenuItem(item.MenuLabel, string.Empty, ImGuiPanelHost.IsOpen(item.PanelKey)))
+                string? icon = RynthBarIcons.Icon(item.Window.Title);
+                string label = icon is not null && RynthBarIcons.InFont(icon) ? icon + " " + item.MenuLabel : item.MenuLabel;
+                if (ImGui.MenuItem(label, string.Empty, ImGuiPanelHost.IsOpen(item.PanelKey)))
                     Click(item);
             }
         }
@@ -171,18 +174,6 @@ internal sealed class RynthBar
         ImGui.BeginTooltip();
         ImGui.TextUnformatted(text);
         ImGui.EndTooltip();
-    }
-
-    /// <summary>The button's placeholder icon: the title's first letter.</summary>
-    private static string Letter(string title)
-    {
-        foreach (char c in title)
-        {
-            if (char.IsLetterOrDigit(c))
-                return new string(char.ToUpperInvariant(c), 1);
-        }
-
-        return "?";
     }
 
     private static Vector2 ClampToDisplay(Vector2 pos)

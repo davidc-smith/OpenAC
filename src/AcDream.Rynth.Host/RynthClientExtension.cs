@@ -1,6 +1,7 @@
 using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using RynthCore.Engine.ImGuiBackend;
+using RynthCore.Engine.UI.ScriptWindows;
 
 namespace AcDream.Rynth.Host;
 
@@ -20,6 +21,7 @@ public sealed class RynthClientExtension : IClientExtension
     private CombatState? _combat;
     private RynthLayoutStore? _layout;
     private RynthBar? _bar;
+    private Func<ScriptIconKind, uint, IntPtr>? _iconSource;
 
     public void Attach(ClientExtensionContext context)
     {
@@ -29,6 +31,19 @@ public sealed class RynthClientExtension : IClientExtension
             _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
             ImGuiPanelHost.Layout = _layout;
             _bar = new RynthBar(_layout, context.Log);
+            IClientOverlayIcons icons = context.Overlay.Icons;
+            _iconSource = (kind, id) => kind switch
+            {
+                ScriptIconKind.Icon => icons.Icon(id),
+                ScriptIconKind.Object => icons.ObjectIcon(id),
+                ScriptIconKind.Spell => icons.SpellIcon(id),
+                _ => IntPtr.Zero,
+            };
+            ScriptIcons.Source = _iconSource;
+            if (PhosphorFont.Load() is { } phosphor)
+                context.Overlay.AddMergedFont(phosphor, PhosphorIcons.Baked, 1.2f);
+            else
+                context.Log("[Rynth] the Phosphor icon font is missing; the bar shows letters.");
         }
 
         var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand);
@@ -81,6 +96,9 @@ public sealed class RynthClientExtension : IClientExtension
         if (_layout is not null && ImGuiPanelHost.Layout == _layout)
             ImGuiPanelHost.Layout = null;
         _layout = null;
+        if (_iconSource is not null && ScriptIcons.Source == _iconSource)
+            ScriptIcons.Source = null;
+        _iconSource = null;
         _bar = null;
     }
 
