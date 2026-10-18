@@ -106,6 +106,7 @@ internal sealed class RynthNav3D(IRynthGameView view, IPluginWorldTriangleLayer?
         uint top = Faded(ring.Argb);
         float height = MathF.Max(ring.Height, MinimumRingHeight);
         float inner = MathF.Max(MinimumInnerRadius, ring.Radius - ring.Thickness);
+        float rim = ring.Radius + ring.Thickness;
         for (int i = 0; i < RingSegments; i++)
         {
             float a0 = 2f * MathF.PI * i / RingSegments, a1 = 2f * MathF.PI * (i + 1) / RingSegments;
@@ -114,10 +115,13 @@ internal sealed class RynthNav3D(IRynthGameView view, IPluginWorldTriangleLayer?
             Vector3 up = new(0f, height, 0f);
             _built.Add(Triangle(o0, o1, o1 + up, ring.Argb, ring.Argb, top));
             _built.Add(Triangle(o0, o1 + up, o0 + up, ring.Argb, top, top));
+            // The ground band spans radius - thickness to radius + thickness; the wall stands at radius.
+            Vector3 r0 = ring.Centre + new Vector3(rim * MathF.Cos(a0), 0f, rim * MathF.Sin(a0));
+            Vector3 r1 = ring.Centre + new Vector3(rim * MathF.Cos(a1), 0f, rim * MathF.Sin(a1));
             Vector3 i0 = ring.Centre + new Vector3(inner * MathF.Cos(a0), 0f, inner * MathF.Sin(a0));
             Vector3 i1 = ring.Centre + new Vector3(inner * MathF.Cos(a1), 0f, inner * MathF.Sin(a1));
-            _built.Add(Triangle(o0, o1, i1, ring.Argb));
-            _built.Add(Triangle(o0, i1, i0, ring.Argb));
+            _built.Add(Triangle(r0, r1, i1, ring.Argb));
+            _built.Add(Triangle(r0, i1, i0, ring.Argb));
         }
     }
 

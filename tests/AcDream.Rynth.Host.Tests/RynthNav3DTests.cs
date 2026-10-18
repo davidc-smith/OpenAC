@@ -33,6 +33,24 @@ public sealed class RynthNav3DTests
     }
 
     [Fact]
+    public void TheGroundBandSpansRadiusMinusToRadiusPlusThickness()
+    {
+        RynthNav3D nav = Nav();
+        nav.BeginTick();
+        nav.AddRing(10, 2, 20, radius: 3, thickness: 0.5f, Red);
+        nav.CommitTick();
+
+        PluginNavigationPosition centre = RuntimeNavigationPositions.FromCellLocal(Cell, new Vector3(10, 20, 2));
+        double[] distances = Assert.Single(_layer.Sets)
+            .Where(t => t.ColorB is null && t.ColorC is null)
+            .SelectMany(t => new[] { t.A, t.B, t.C })
+            .Select(p => p.HorizontalDistanceMeters(centre))
+            .ToArray();
+        Assert.Equal(3.5, distances.Max(), precision: 2);
+        Assert.Equal(2.5, distances.Min(), precision: 2);
+    }
+
+    [Fact]
     public void ARingExKeepsATenthOfAMetreWallAtLeast()
     {
         RynthNav3D nav = Nav();

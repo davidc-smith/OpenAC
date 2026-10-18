@@ -446,7 +446,7 @@ public sealed unsafe class RynthApiTableTests
         using var table = new RynthApiTable(view, _log.Add);
         var host = new RynthCoreHost(*table.Native);
         Assert.True(host.HasNav3D && host.HasNav3DTriangle && host.HasNav3DRingHeight);
-    
+
         table.Nav3D.BeginTick();
         host.Nav3DAddRing(1, 2, 3, 1, 0.1f, 0xFFFF0000);
         host.Nav3DAddRingEx(1, 2, 3, 1, 0.1f, 2f, 0xFFFF0000);
