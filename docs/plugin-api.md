@@ -1487,6 +1487,16 @@ other. It does not follow the ground; a triangle meant to lie on the ground
 is lifted a little off it by the plugin. The terrain's own triangles (see
 [Terrain](#terrain)) raised about 0.1 m lie exactly on it.
 
+A triangle can also colour its corners separately: `ColorB` and `ColorC`
+(init-only, `PluginColor?`) set corners B and C, `Color` sets A, and the
+fill blends between them across the face — a wall fading to clear at its
+top edge, say. An unset corner takes `Color`. They need contract
+`0.1.25-fork.8`; an older host fills the whole triangle in `Color`.
+
+```csharp
+new PluginWorldTriangle(bottomLeft, bottomRight, topRight, solid) { ColorC = clear }
+```
+
 Like world lines, triangles come in layers the plugin owns. `CreateLayer`
 returns null on a host without a window, so a plugin holds a may-be-null.
 `SetTriangles` copies the list and replaces the layer's set (up to 65,536

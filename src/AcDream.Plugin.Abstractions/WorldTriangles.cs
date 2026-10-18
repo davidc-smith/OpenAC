@@ -6,6 +6,8 @@ namespace AcDream.Plugin.Abstractions;
 /// and unlit; hills and walls in front of it hide it. It does not follow the
 /// ground: a triangle meant to lie on the ground is lifted a little off it by
 /// the caller, as the terrain's own triangles raised about 0.1 m lie on it.
+/// Its corners can each have a colour (<c>Color</c> for A, <c>ColorB</c>,
+/// <c>ColorC</c>), blended across the face.
 /// </summary>
 /// <param name="A">The first corner.</param>
 /// <param name="B">The second corner.</param>
@@ -15,7 +17,18 @@ public readonly record struct PluginWorldTriangle(
     PluginNavigationPosition A,
     PluginNavigationPosition B,
     PluginNavigationPosition C,
-    PluginColor Color);
+    PluginColor Color)
+{
+    /// <summary>
+    /// Corner <see cref="B"/>'s colour, blended across the face toward the
+    /// other corners; null uses <see cref="Color"/>. A host before contract
+    /// <c>0.1.25-fork.8</c> ignores it and fills the triangle in <see cref="Color"/>.
+    /// </summary>
+    public PluginColor? ColorB { get; init; }
+
+    /// <summary>Corner <see cref="C"/>'s colour, as <see cref="ColorB"/>.</summary>
+    public PluginColor? ColorC { get; init; }
+}
 
 /// <summary>
 /// A set of triangles one caller owns. Setting the triangles replaces the
