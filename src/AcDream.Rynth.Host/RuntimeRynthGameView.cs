@@ -284,7 +284,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         !IsPlayer(objectId) || !_automation.IsAvailable ? -1 : _automation.Spells.IsKnown(spellId) ? 1 : 0;
 
     public IReadOnlyList<uint>? KnownSpells =>
-        PlayerId == 0 ? null : [.. _runtime.CharacterOwner.Spellbook.LearnedSpells.Order()];
+        !_automation.IsAvailable || PlayerId == 0 ? null : [.. _runtime.CharacterOwner.Spellbook.LearnedSpells.Order()];
 
     public bool IsAttackable(uint objectId)
     {

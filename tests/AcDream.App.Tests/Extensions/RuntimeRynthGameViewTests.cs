@@ -208,6 +208,22 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
+    public void KnownSpellsAreAscendingOnceLoggedIn()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        foreach (uint spell in new uint[] { 30, 5, 17 })
+            runtime.CharacterOwner.Spellbook.OnSpellLearned(spell);
+        var automation = new FakeRynthAutomation { Available = false };
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.Null(view.KnownSpells);   // the same gate as IsSpellKnown
+
+        automation.Available = true;
+        Assert.Equal([5u, 17u, 30u], view.KnownSpells);
+    }
+
+    [Fact]
     public void BeforeLoginTheStateReadsAsNotAvailable()
     {
         var runtime = GameRuntimeTestFactory.Create();
