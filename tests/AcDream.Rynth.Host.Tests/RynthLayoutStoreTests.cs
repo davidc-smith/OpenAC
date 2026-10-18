@@ -83,4 +83,68 @@ public sealed class RynthLayoutStoreTests : IDisposable
         store.SetOpen("script:A/Main", false);
         Assert.Equal(new PanelPlacement(rect, false), store.Get("script:A/Main"));
     }
+
+    [Fact]
+    public void AFileWithADuplicateKeyIsLoggedOnceAndTreatedAsEmpty()
+    {
+        Directory.CreateDirectory(_dir);
+        const string json = "{\"windows\":{\"a\":{},\"a\":{}}}";
+        File.WriteAllText(FilePath, json);
+
+        var store = new RynthLayoutStore(_dir, _log.Add);
+
+        Assert.Null(store.Get("a"));
+        Assert.Null(store.BarPosition);
+        Assert.Single(_log, line => line.Contains("layout file unreadable", StringComparison.Ordinal));
+        Assert.Equal(json, File.ReadAllText(FilePath));
+    }
+
+    [Fact]
+    public void ANonFiniteRectOrBarPositionIsIgnored()
+    {
+        var store = new RynthLayoutStore(_dir, _log.Add);
+
+        store.SetRect("script:A/Main", new PanelRect(new Vector2(float.NaN, 1), new Vector2(10, 10)));
+        store.SetRect("script:A/Main", new PanelRect(new Vector2(1, 1), new Vector2(float.PositiveInfinity, 10)));
+        store.SetBarPosition(new Vector2(float.NegativeInfinity, 0));
+
+        Assert.Null(store.Get("script:A/Main"));
+        Assert.Null(store.BarPosition);
+        Assert.False(File.Exists(FilePath));
+        Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void AnOutOfRangeNumberLoadsThatWindowAsUnplaced()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(FilePath,
+            "{\"version\":1,\"bar\":{\"x\":1e300,\"y\":5},\"windows\":{\"a\":{\"x\":1e300,\"y\":2,\"w\":3,\"h\":4,\"open\":true},\"b\":{\"x\":1,\"y\":2,\"w\":3,\"h\":4,\"open\":false}}}");
+
+        var store = new RynthLayoutStore(_dir, _log.Add);
+
+        Assert.Equal(new PanelPlacement(null, true), store.Get("a"));
+        Assert.Equal(new PanelPlacement(new PanelRect(new Vector2(1, 2), new Vector2(3, 4)), false), store.Get("b"));
+        Assert.Null(store.BarPosition);
+        Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void TheFileOnDiskHasTheDocumentedShape()
+    {
+        var store = new RynthLayoutStore(_dir, _log.Add);
+        store.SetOpen("script:A/Unplaced", true);
+        store.SetRect("script:A/Placed", new PanelRect(new Vector2(1, 2), new Vector2(3, 4)));
+        store.SetBarPosition(new Vector2(7, 8));
+
+        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(FilePath))!.AsObject();
+        Assert.Equal(1, (int)root["version"]!);
+        Assert.Equal(7f, (float)root["bar"]!["x"]!);
+        Assert.Equal(8f, (float)root["bar"]!["y"]!);
+        var unplaced = root["windows"]!["script:A/Unplaced"]!.AsObject();
+        Assert.False(unplaced.ContainsKey("x") || unplaced.ContainsKey("y") || unplaced.ContainsKey("w") || unplaced.ContainsKey("h"));
+        Assert.True((bool)unplaced["open"]!);
+        var placed = root["windows"]!["script:A/Placed"]!.AsObject();
+        Assert.Equal([1f, 2f, 3f, 4f], new[] { (float)placed["x"]!, (float)placed["y"]!, (float)placed["w"]!, (float)placed["h"]! });
+    }
 }

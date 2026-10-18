@@ -26,6 +26,7 @@ public sealed unsafe class ScriptWindowPipelineTests : IDisposable
     {
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
         _imgui.Dispose();
     }
 
@@ -103,6 +104,10 @@ public sealed unsafe class ScriptWindowPipelineTests : IDisposable
         host.Tick();
         Assert.Contains("visible=False", OracleLine());
 
+        // Out of the world nothing is restored; at login the saved-open window reopens.
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.False(ScriptWindowRegistry.IsOpen(OracleKey), Diag());
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
         _imgui.Frame(ImGuiPanelHost.DrawAll);
         for (int i = 0; i < 5; i++)
             host.Tick();

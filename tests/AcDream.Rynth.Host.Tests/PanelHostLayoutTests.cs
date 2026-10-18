@@ -14,11 +14,13 @@ public sealed class PanelHostLayoutTests : IDisposable
     {
         ImGuiPanelHost.Reset();
         ImGuiPanelHost.Layout = _layout;
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
     }
 
     public void Dispose()
     {
         ImGuiPanelHost.Reset();
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
         _imgui.Dispose();
     }
 
@@ -113,6 +115,40 @@ public sealed class PanelHostLayoutTests : IDisposable
         _imgui.Frame(ImGuiPanelHost.DrawAll);
 
         Assert.Equal([Key], reopened);
+    }
+
+    [Fact]
+    public void ASavedOpenWindowIsNotReopenedUntilThePlayerIsInTheWorld()
+    {
+        var reopened = new List<string>();
+        ImGuiPanelHost.RestoreOpener = reopened.Add;
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
+        _layout.Saved[Key] = new PanelPlacement(null, true);
+        ImGuiPanelHost.RegisterDynamic(Key, "Test", Spec, () => new MovingPanel());
+
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Empty(reopened);
+
+        RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Equal([Key], reopened);
+    }
+
+    [Fact]
+    public void APluginRequestBeatsASavedPlacementInTheSameFrame()
+    {
+        _layout.Saved[Key] = new PanelPlacement(new PanelRect(new Vector2(40, 50), new Vector2(300, 220)), false);
+        var panel = new MovingPanel();
+        ImGuiPanelHost.RegisterDynamic(Key, "Test", Spec, () => panel);
+        ImGuiPanelHost.RequestPos(Key, new Vector2(400, 300));
+        ImGuiPanelHost.Open(Key);
+
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+
+        Assert.Equal(new Vector2(400, 300), panel.Pos);
+        Assert.Empty(_layout.RectCalls);
     }
 
     [Fact]

@@ -28,7 +28,7 @@ internal static class ImGuiPanelHost
         public int Failures;
         /// <summary>Apply the saved rectangle on the next draw (set by Open).</summary>
         public bool PlacePending;
-        /// <summary>Saved as open when first registered: reopen it on the next draw, as the bar would.</summary>
+        /// <summary>Saved as open when first registered: reopen it on a draw while the player is in the world, as the bar would.</summary>
         public bool RestoreOpen;
         /// <summary>The rectangle last seen (logical units); a player change from it is saved.</summary>
         public PanelRect? Baseline;
@@ -198,11 +198,14 @@ internal static class ImGuiPanelHost
     internal static void DrawAll()
     {
         List<string> restore = new();
+        // Marks wait while out of the world: Oracle resubmits its window at
+        // character select and reopens it itself at login.
+        bool inWorld = RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete;
         lock (_gate)
         {
             foreach (KeyValuePair<string, Entry> pair in _entries)
             {
-                if (!pair.Value.RestoreOpen)
+                if (!inWorld || !pair.Value.RestoreOpen)
                     continue;
                 pair.Value.RestoreOpen = false;
                 if (!pair.Value.Open)

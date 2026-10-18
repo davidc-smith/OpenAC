@@ -44,7 +44,7 @@ internal sealed class RynthLayoutStore : IPanelLayout
     {
         lock (_gate)
         {
-            if (_bar == pos)
+            if (!IsFinite(pos) || _bar == pos)
                 return;
             _bar = pos;
             SaveLocked();
@@ -60,6 +60,8 @@ internal sealed class RynthLayoutStore : IPanelLayout
     {
         lock (_gate)
         {
+            if (!IsFinite(rect.Pos) || !IsFinite(rect.Size))
+                return;
             bool known = _windows.TryGetValue(key, out PanelPlacement prior);
             if (known && prior.Rect == rect)
                 return;
@@ -80,6 +82,8 @@ internal sealed class RynthLayoutStore : IPanelLayout
         }
     }
 
+    private static bool IsFinite(Vector2 v) => float.IsFinite(v.X) && float.IsFinite(v.Y);
+
     private void Load()
     {
         try
@@ -87,66 +91,78 @@ internal sealed class RynthLayoutStore : IPanelLayout
             if (!File.Exists(_path))
                 return;
             JsonNode? root = JsonNode.Parse(File.ReadAllText(_path));
-            if (root?["bar"] is JsonObject bar)
-                _bar = new Vector2(Read(bar, "x"), Read(bar, "y"));
+            if (root?["bar"] is JsonObject bar
+                && TryRead(bar, "x", out float bx) && TryRead(bar, "y", out float by))
+                _bar = new Vector2(bx, by);
             if (root?["windows"] is JsonObject windows)
             {
                 foreach ((string key, JsonNode? node) in windows)
                 {
                     if (node is not JsonObject w)
                         continue;
-                    PanelRect? rect = w.ContainsKey("w")
-                        ? new PanelRect(new Vector2(Read(w, "x"), Read(w, "y")), new Vector2(Read(w, "w"), Read(w, "h")))
+                    PanelRect? rect = TryRead(w, "x", out float x) && TryRead(w, "y", out float y)
+                        && TryRead(w, "w", out float width) && TryRead(w, "h", out float height)
+                        ? new PanelRect(new Vector2(x, y), new Vector2(width, height))
                         : null;
                     _windows[key] = new PanelPlacement(rect, w["open"]?.GetValue<bool>() ?? false);
                 }
             }
         }
-        catch (Exception error) when (error is JsonException or IOException or UnauthorizedAccessException
-            or InvalidOperationException or FormatException)
+        catch (Exception error)
         {
+            // Anything unreadable (bad JSON, duplicate keys, wrong types, IO) is an empty layout.
             _windows.Clear();
             _bar = null;
             _log($"[Rynth] layout file unreadable ({_path}): {error.Message}");
         }
     }
 
-    private static float Read(JsonObject node, string name) => node[name]?.GetValue<float>() ?? 0f;
+    /// <summary>Reads a finite number; a missing or non-finite value fails.</summary>
+    private static bool TryRead(JsonObject node, string name, out float value)
+    {
+        value = 0f;
+        if (node[name] is not JsonValue json)
+            return false;
+        value = json.GetValue<float>();
+        return float.IsFinite(value);
+    }
 
     private void SaveLocked()
     {
         if (_path is null)
             return;
-        var windows = new JsonObject();
-        foreach ((string key, PanelPlacement placement) in _windows)
-        {
-            var w = new JsonObject();
-            if (placement.Rect is { } rect)
-            {
-                w["x"] = rect.Pos.X;
-                w["y"] = rect.Pos.Y;
-                w["w"] = rect.Size.X;
-                w["h"] = rect.Size.Y;
-            }
-
-            w["open"] = placement.Open;
-            windows[key] = w;
-        }
-
-        var root = new JsonObject { ["version"] = Version };
-        if (_bar is { } bar)
-            root["bar"] = new JsonObject { ["x"] = bar.X, ["y"] = bar.Y };
-        root["windows"] = windows;
+        string tmp = _path + ".tmp";
         try
         {
+            var windows = new JsonObject();
+            foreach ((string key, PanelPlacement placement) in _windows)
+            {
+                var w = new JsonObject();
+                if (placement.Rect is { } rect)
+                {
+                    w["x"] = rect.Pos.X;
+                    w["y"] = rect.Pos.Y;
+                    w["w"] = rect.Size.X;
+                    w["h"] = rect.Size.Y;
+                }
+
+                w["open"] = placement.Open;
+                windows[key] = w;
+            }
+
+            var root = new JsonObject { ["version"] = Version };
+            if (_bar is { } bar)
+                root["bar"] = new JsonObject { ["x"] = bar.X, ["y"] = bar.Y };
+            root["windows"] = windows;
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            string tmp = _path + ".tmp";
             File.WriteAllText(tmp, root.ToJsonString(Indented));
             File.Move(tmp, _path, overwrite: true);
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        catch (Exception error)
         {
             _log($"[Rynth] layout not saved ({_path}): {error.Message}");
+            try { File.Delete(tmp); }
+            catch (Exception) { /* a leftover temp file is harmless */ }
         }
     }
 }

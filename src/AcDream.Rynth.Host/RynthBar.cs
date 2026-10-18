@@ -65,7 +65,7 @@ internal sealed class RynthBar
             return;
         if (!_placed)
         {
-            ImGui.SetNextWindowPos(ClampToDisplay(_layout.BarPosition ?? DefaultPos), ImGuiCond.Always);
+            ImGui.SetNextWindowPos(ClampToDisplay((_layout.BarPosition ?? DefaultPos) * EngineFrameController.FontScale), ImGuiCond.Always);
             _placed = true;
         }
 
@@ -160,7 +160,7 @@ internal sealed class RynthBar
         if (pos == _baseline || ImGui.IsMouseDown(ImGuiMouseButton.Left))
             return;
         _baseline = pos;
-        _layout.SetBarPosition(pos);
+        _layout.SetBarPosition(pos / EngineFrameController.FontScale);
     }
 
     /// <summary>A hover tooltip for the last item; the text is never a format string.</summary>
