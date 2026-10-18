@@ -21,8 +21,9 @@ namespace AcDream.Rynth.Host;
 /// </remarks>
 public sealed class RynthEventBridge : IRuntimeEventObserver
 {
-    // RynthCore's drain order.
-    private enum EventKind
+    // RynthCore's drain order. Internal, with Enqueue, so a test can queue a throwing
+    // delivery: a plugin export cannot throw across its UnmanagedCallersOnly boundary.
+    internal enum EventKind
     {
         BusyIncremented,
         BusyDecremented,
@@ -44,12 +45,15 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     private const int KindCount = (int)EventKind.ChatWindowText + 1;
 
     private readonly IReadOnlyList<RynthPlugin> _plugins;
+    private readonly Action<string>? _log;
     private readonly List<Action>[] _queues = new List<Action>[KindCount];
     private bool _loginPending;
 
-    public RynthEventBridge(IReadOnlyList<RynthPlugin> plugins)
+    /// <param name="log">Gets a line for each delivery that threw.</param>
+    public RynthEventBridge(IReadOnlyList<RynthPlugin> plugins, Action<string>? log = null)
     {
         _plugins = plugins;
+        _log = log;
         for (int i = 0; i < KindCount; i++)
             _queues[i] = [];
     }
@@ -268,6 +272,8 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// arrival order. An event raised while delivering joins this delivery when its
     /// type has not run yet and waits for the next one otherwise, as with RynthCore's
     /// per-type queues. A pending login is told last, as RynthCore's frame does.
+    /// A delivery that throws is logged and the rest still run, as RynthCore catches
+    /// each dispatch on its own.
     /// </summary>
     public void DeliverQueued()
     {
@@ -278,19 +284,34 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
                 continue;
             _queues[i] = [];
             foreach (Action deliver in pending)
-                deliver();
+                Run(((EventKind)i).ToString(), deliver);
         }
 
         if (_loginPending)
         {
             _loginPending = false;
-            foreach (RynthPlugin plugin in _plugins)
-                plugin.OnLoginComplete();
-            LoggedIn?.Invoke();
+            Run("Login", () =>
+            {
+                foreach (RynthPlugin plugin in _plugins)
+                    plugin.OnLoginComplete();
+                LoggedIn?.Invoke();
+            });
         }
     }
 
-    private void Enqueue(EventKind kind, Action deliver) => _queues[(int)kind].Add(deliver);
+    private void Run(string kind, Action deliver)
+    {
+        try
+        {
+            deliver();
+        }
+        catch (Exception ex)
+        {
+            _log?.Invoke($"{kind} delivery threw: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    internal void Enqueue(EventKind kind, Action deliver) => _queues[(int)kind].Add(deliver);
 
     public void OnCommand(in RuntimeCommandDelta delta)
     {

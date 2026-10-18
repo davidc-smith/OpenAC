@@ -78,6 +78,45 @@ public sealed class RynthEventQueueTests
         Assert.Equal(0, loggedIn);
     }
 
+    // A plugin export cannot throw across the UnmanagedCallersOnly boundary (the
+    // process would fail fast), so a throwing delivery is queued directly.
+    [Fact]
+    public void AThrowingDeliveryIsLoggedAndTheRestOfTheDeliveryStillRuns()
+    {
+        QueueRecorder.Calls.Clear();
+        var log = new List<string>();
+        using var host = new RynthHost(_view, log.Add, [typeof(QueueRecorder)]);
+
+        host.Bridge.Enqueue(RynthEventBridge.EventKind.BusyIncremented,
+            () => throw new InvalidOperationException("boom"));
+        host.Bridge.OnBusyCountIncremented();
+        host.Bridge.OnKillLanded("You killed the drudge!");
+        host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
+            default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+        host.Bridge.DeliverQueued();
+
+        Assert.Equal(["busy+", "kill You killed the drudge!", "login"], QueueRecorder.Calls);
+        Assert.Contains("[Rynth] BusyIncremented delivery threw: InvalidOperationException: boom", log);
+    }
+
+    [Fact]
+    public void AThrowingLoginFollowUpIsLoggedAndLaterDeliveriesStillRun()
+    {
+        QueueRecorder.Calls.Clear();
+        var log = new List<string>();
+        using var host = new RynthHost(_view, log.Add, [typeof(QueueRecorder)]);
+        host.Bridge.LoggedIn += () => throw new InvalidOperationException("push failed");
+
+        host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
+            default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+        host.Bridge.DeliverQueued();
+        host.Bridge.OnBusyCountIncremented();
+        host.Bridge.DeliverQueued();
+
+        Assert.Equal(["login", "busy+"], QueueRecorder.Calls);
+        Assert.Contains("[Rynth] Login delivery threw: InvalidOperationException: push failed", log);
+    }
+
     [Fact]
     public void TheTickDeliversEventsBeforeThePluginsOwnTick()
     {
