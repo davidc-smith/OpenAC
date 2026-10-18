@@ -28,7 +28,6 @@ public sealed class RynthCombatEvents : IDisposable
     private int _combatMode;
     private int _busyCount;
     private bool _disposed;
-    private readonly List<string> _statusText = [];
 
     public RynthCombatEvents(GameRuntime runtime, RynthEventBridge bridge)
     {
@@ -58,7 +57,6 @@ public sealed class RynthCombatEvents : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        _statusText.Clear();
         _combat.HealthChanged -= OnHealthChanged;
         _combat.CombatModeChanged -= OnCombatModeChanged;
         _combat.DamageDealtAccepted -= OnDamageDealt;
@@ -133,19 +131,8 @@ public sealed class RynthCombatEvents : IDisposable
         }
     }
 
-    // RynthCore drains plugin events once per frame, so a refusal line lands after the call that
-    // caused it returns. Lines wait here for the tick's flush.
-    private void OnStatusTextShown(string text) => _statusText.Add(text);
-
-    public void FlushStatusText()
-    {
-        if (_statusText.Count == 0)
-            return;
-        string[] lines = [.. _statusText];
-        _statusText.Clear();
-        foreach (string line in lines)
-            _bridge.OnStatusText(line);
-    }
+    // The bridge queues it for the tick, so a refusal line lands after the call that caused it returns.
+    private void OnStatusTextShown(string text) => _bridge.OnStatusText(text);
 
     // RynthCore tells a plugin the mode (from NonCombat) and any selection once the player is in the world.
     private void OnLoggedIn()

@@ -36,8 +36,10 @@ public sealed class RynthCombatEventsTests : IDisposable
 
         spellbook.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x8005u, 1u, 30.0, 0x50000001u,
             Bucket: Spellbook.CooldownBucket));
+        host.Bridge.DeliverQueued();
         CombatRecorder.Calls.Clear();   // the cooldown's added line is not under test; its removal is
         spellbook.OnEnchantmentRemoved(1u, 0x8005u);
+        host.Bridge.DeliverQueued();
         Assert.Equal(["ench- 32773"], Recorded());   // RynthCore reports the server's cooldown removals
         CombatRecorder.Calls.Clear();
         runtime.InventoryOwner.Transactions.IncrementBusyCount();
@@ -47,7 +49,7 @@ public sealed class RynthCombatEventsTests : IDisposable
         combat.OnUpdateHealth(0x80000011, 0.25f);
         runtime.CommunicationOwner.AddText("You're too busy!", RetailLogTextType.ClientLocal);
 
-        events.FlushStatusText();
+        host.Bridge.DeliverQueued();
 
         Assert.Equal(
             [
@@ -66,9 +68,11 @@ public sealed class RynthCombatEventsTests : IDisposable
         using var events = new RynthCombatEvents(runtime, host.Bridge);
         CombatState combat = runtime.ActionOwner.Combat;
         combat.OnCreatureProfile(0x80000010, new CombatState.CreatureVitals(100, 100, null, null, null, null));
+        host.Bridge.DeliverQueued();
         CombatRecorder.Calls.Clear();
 
         combat.OnUpdateHealth(0x80000010, 1.5f);
+        host.Bridge.DeliverQueued();
 
         Assert.Equal(["health 80000010 1.50 100 100"], Recorded());
     }
@@ -82,16 +86,18 @@ public sealed class RynthCombatEventsTests : IDisposable
         Spellbook spellbook = runtime.CharacterOwner.Spellbook;
         spellbook.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x8005u, 1u, 30.0, 0u,
             Bucket: Spellbook.CooldownBucket, StartTime: 0d));
+        host.Bridge.DeliverQueued();
         CombatRecorder.Calls.Clear();
 
         Assert.False(spellbook.OnCooldown(5u, currentTime: 100d, out _));
+        host.Bridge.DeliverQueued();
 
         Assert.Equal(0, spellbook.ActiveCount);
         Assert.Empty(Recorded());
     }
 
     [Fact]
-    public void AStatusLineIsHeldUntilTheFlush()
+    public void AStatusLineIsHeldUntilTheDelivery()
     {
         var runtime = GameRuntimeTestFactory.Create();
         using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
@@ -101,9 +107,9 @@ public sealed class RynthCombatEventsTests : IDisposable
         runtime.CommunicationOwner.AddText("You're too busy!", RetailLogTextType.ClientLocal);
         Assert.DoesNotContain(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
 
-        events.FlushStatusText();
+        host.Bridge.DeliverQueued();
         Assert.Single(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
-        events.FlushStatusText();
+        host.Bridge.DeliverQueued();
         Assert.Single(Recorded(), call => call.StartsWith("chat 1A", StringComparison.Ordinal));
     }
 
@@ -147,10 +153,12 @@ public sealed class RynthCombatEventsTests : IDisposable
         runtime.CharacterOwner.Spellbook.OnEnchantmentAdded(
             new ActiveEnchantmentRecord(2u, 1u, 1800.0, 0x50000001u, Bucket: 1u));
         runtime.CharacterOwner.Spellbook.OnEnchantmentRemoved(1u, 2u);
+        host.Bridge.DeliverQueued();
 
+        // One delivery, in RynthCore's order: the mode change drains before the selection.
         Assert.Equal(
             [
-                "select 80000010 00000000", "mode 2 1", "damage 25 4 1 1", "damage 7 1 0 0",
+                "mode 2 1", "select 80000010 00000000", "damage 25 4 1 1", "damage 7 1 0 0",
                 "ench+ 2 1800", "ench- 2",
             ],
             Recorded());
@@ -165,10 +173,13 @@ public sealed class RynthCombatEventsTests : IDisposable
         using var events = new RynthCombatEvents(runtime, host.Bridge);
         runtime.ActionOwner.Selection.Select(0x80000010, SelectionChangeSource.System);
         runtime.ActionOwner.Combat.SetCombatMode(CombatMode.Magic);
+        host.Bridge.DeliverQueued();
         CombatRecorder.Calls.Clear();
 
         host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
             default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+        Assert.Equal(["login"], Recorded());   // login at once; the pushes after it wait for the delivery
+        host.Bridge.DeliverQueued();
 
         Assert.Equal(["login", "mode 8 1", "select 80000010 00000000"], Recorded());
     }
@@ -188,6 +199,7 @@ public sealed class RynthCombatEventsTests : IDisposable
         CombatRecorder.Calls.Clear();
 
         runtime.ActionOwner.Selection.Select(0x80000010, SelectionChangeSource.System);
+        extension.Tick(1.0 / 60);
         extension.Dispose();
         runtime.ActionOwner.Selection.Select(0x80000020, SelectionChangeSource.System);
 

@@ -8,11 +8,47 @@ namespace AcDream.Rynth.Host;
 /// game update thread, which is the thread RynthCore plugins expect (the
 /// retail client's message pump).
 /// </summary>
+/// <remarks>
+/// RynthCore queues every plugin event by type and drains the queues once per
+/// frame in a fixed order (PluginManager.ProcessPendingActions), so a plugin
+/// never hears of an event inside the call that caused it, and same-frame events
+/// arrive grouped by type. This bridge does the same: each event waits in its
+/// type's queue until <see cref="DeliverQueued"/>, which the host calls each tick
+/// before the plugins' own tick. Login and logout are told at once.
+/// </remarks>
 public sealed class RynthEventBridge : IRuntimeEventObserver
 {
-    private readonly IReadOnlyList<RynthPlugin> _plugins;
+    // RynthCore's drain order.
+    private enum EventKind
+    {
+        BusyIncremented,
+        BusyDecremented,
+        CombatMode,
+        ViewContents,
+        StopViewingContents,
+        UpdateInventory,
+        CreateObject,
+        DeleteObject,
+        SelectedTarget,
+        UpdateHealth,
+        CombatDamage,
+        KillNotification,
+        EnchantmentAdded,
+        EnchantmentRemoved,
+        ChatWindowText,
+    }
 
-    public RynthEventBridge(IReadOnlyList<RynthPlugin> plugins) => _plugins = plugins;
+    private const int KindCount = (int)EventKind.ChatWindowText + 1;
+
+    private readonly IReadOnlyList<RynthPlugin> _plugins;
+    private readonly List<Action>[] _queues = new List<Action>[KindCount];
+
+    public RynthEventBridge(IReadOnlyList<RynthPlugin> plugins)
+    {
+        _plugins = plugins;
+        for (int i = 0; i < KindCount; i++)
+            _queues[i] = [];
+    }
 
     /// <summary>Raised once the plugins have been told of the login, for pushes that follow it.</summary>
     public event Action? LoggedIn;
@@ -42,13 +78,19 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         uint objectId = delta.Entity.Identity.ServerGuid;
         if (delta.Change == RuntimeEntityChange.Registered)
         {
-            foreach (RynthPlugin plugin in _plugins)
-                plugin.OnCreateObject(objectId);
+            Enqueue(EventKind.CreateObject, () =>
+            {
+                foreach (RynthPlugin plugin in _plugins)
+                    plugin.OnCreateObject(objectId);
+            });
         }
         else if (delta.Change == RuntimeEntityChange.Deleted && !delta.ReplacedInPlace)
         {
-            foreach (RynthPlugin plugin in _plugins)
-                plugin.OnDeleteObject(objectId);
+            Enqueue(EventKind.DeleteObject, () =>
+            {
+                foreach (RynthPlugin plugin in _plugins)
+                    plugin.OnDeleteObject(objectId);
+            });
         }
     }
 
@@ -56,57 +98,85 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     {
         RuntimeChatEntry entry = delta.Entry;
         string text = entry.DisplayText.Length > 0 ? entry.DisplayText : entry.Text;
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnChatWindowText(text, entry.LogTextType);
+        int chatType = entry.LogTextType;
+        Enqueue(EventKind.ChatWindowText, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnChatWindowText(text, chatType);
+        });
     }
 
     /// <summary>From <c>CombatState.HealthChanged</c>; current and max are 0 unless the creature was appraised.</summary>
     public void OnHealthChanged(uint targetId, float healthRatio, uint currentHealth = 0, uint maxHealth = 0)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnUpdateHealth(targetId, healthRatio, currentHealth, maxHealth);
+        Enqueue(EventKind.UpdateHealth, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnUpdateHealth(targetId, healthRatio, currentHealth, maxHealth);
+        });
     }
 
     public void OnBusyCountIncremented()
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnBusyCountIncremented();
+        Enqueue(EventKind.BusyIncremented, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnBusyCountIncremented();
+        });
     }
 
     public void OnBusyCountDecremented()
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnBusyCountDecremented();
+        Enqueue(EventKind.BusyDecremented, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnBusyCountDecremented();
+        });
     }
 
     public void OnSelectedTargetChange(uint currentTargetId, uint previousTargetId)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnSelectedTargetChange(currentTargetId, previousTargetId);
+        Enqueue(EventKind.SelectedTarget, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnSelectedTargetChange(currentTargetId, previousTargetId);
+        });
     }
 
     public void OnCombatModeChange(int currentMode, int previousMode)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnCombatModeChange(currentMode, previousMode);
+        Enqueue(EventKind.CombatMode, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnCombatModeChange(currentMode, previousMode);
+        });
     }
 
     public void OnCombatDamage(uint damage, uint damageType, uint critical, uint isAttacker)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnCombatDamage(damage, damageType, critical, isAttacker);
+        Enqueue(EventKind.CombatDamage, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnCombatDamage(damage, damageType, critical, isAttacker);
+        });
     }
 
     public void OnEnchantmentAdded(uint spellId, double durationSeconds)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnEnchantmentAdded(spellId, durationSeconds);
+        Enqueue(EventKind.EnchantmentAdded, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnEnchantmentAdded(spellId, durationSeconds);
+        });
     }
 
     public void OnEnchantmentRemoved(uint spellId)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnEnchantmentRemoved(spellId);
+        Enqueue(EventKind.EnchantmentRemoved, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnEnchantmentRemoved(spellId);
+        });
     }
 
     /// <summary>
@@ -115,8 +185,11 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// </summary>
     public void OnStatusText(string text)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnChatWindowText(text, (int)RetailLogTextType.ClientLocal);
+        Enqueue(EventKind.ChatWindowText, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnChatWindowText(text, (int)RetailLogTextType.ClientLocal);
+        });
     }
 
     /// <summary>
@@ -125,15 +198,21 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// </summary>
     public void OnLocalPlayerDied(uint playerId, uint maxHealth)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnUpdateHealth(playerId, 0f, 0, maxHealth);
+        Enqueue(EventKind.UpdateHealth, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnUpdateHealth(playerId, 0f, 0, maxHealth);
+        });
     }
 
     /// <summary>From <c>CombatState.KillLanded</c>: the server's killer notification text.</summary>
     public void OnKillLanded(string deathMessage)
     {
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnKillNotification(deathMessage);
+        Enqueue(EventKind.KillNotification, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnKillNotification(deathMessage);
+        });
     }
 
     /// <summary>
@@ -148,8 +227,11 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             OnContainerClosed(previousId);
         if (containerId == 0)
             return;
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnViewObjectContents(containerId);
+        Enqueue(EventKind.ViewContents, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnViewObjectContents(containerId);
+        });
     }
 
     /// <summary>From <c>ExternalContainerState.Changed</c> (Closed or Reset).</summary>
@@ -157,8 +239,11 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     {
         if (containerId == 0)
             return;
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnStopViewingObjectContents(containerId);
+        Enqueue(EventKind.StopViewingContents, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnStopViewingObjectContents(containerId);
+        });
     }
 
     /// <summary>From the object table: a container's contents were replaced or an item moved in or out.</summary>
@@ -166,9 +251,33 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     {
         if (containerId == 0)
             return;
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnUpdateObjectInventory(containerId);
+        Enqueue(EventKind.UpdateInventory, () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnUpdateObjectInventory(containerId);
+        });
     }
+
+    /// <summary>
+    /// Delivers the queued events, type by type in RynthCore's order and each type in
+    /// arrival order. An event raised while delivering joins this delivery when its
+    /// type has not run yet and waits for the next one otherwise, as with RynthCore's
+    /// per-type queues.
+    /// </summary>
+    public void DeliverQueued()
+    {
+        for (int i = 0; i < KindCount; i++)
+        {
+            List<Action> pending = _queues[i];
+            if (pending.Count == 0)
+                continue;
+            _queues[i] = [];
+            foreach (Action deliver in pending)
+                deliver();
+        }
+    }
+
+    private void Enqueue(EventKind kind, Action deliver) => _queues[(int)kind].Add(deliver);
 
     public void OnCommand(in RuntimeCommandDelta delta)
     {
