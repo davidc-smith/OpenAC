@@ -431,4 +431,60 @@ public sealed class RuntimeRynthGameView : IRynthGameView
 
     public bool UseObjectOn(uint sourceObjectId, uint targetObjectId) =>
         _automation.Items.Apply(sourceObjectId, targetObjectId).Accepted;
+
+    public bool AutoRunActive => _runtime.MovementOwner.AutoRunActive;
+
+    public bool SetAutoRun(bool enabled) => _automation.IsAvailable && _runtime.MovementOwner.SetAutoRun(enabled);
+
+    public bool SnapHeading(float headingDegrees) => _automation.IsAvailable && _runtime.MovementOwner.SnapHeading(headingDegrees);
+
+    public bool SetMovementIntent(in PluginMovementIntent intent) =>
+        _automation.Navigation.SetMovementIntent(intent) == PluginNavigationCommandStatus.Accepted;
+
+    public bool ClearMovementIntent() =>
+        _automation.Navigation.ClearMovementIntent() == PluginNavigationCommandStatus.Accepted;
+
+    public PluginMovementIntent? CurrentMovementIntent
+    {
+        get
+        {
+            RuntimeLocalPlayerMovementState movement = _runtime.MovementOwner;
+            if (!movement.HasCommandInput)
+                return null;
+            MovementInput input = movement.CommandInput;
+            return new PluginMovementIntent(
+                input.Forward, input.Backward, input.StrafeLeft, input.StrafeRight,
+                input.TurnLeft, input.TurnRight, input.Run, input.Jump);
+        }
+    }
+
+    public bool StopCompletely() =>
+        _automation.IsAvailable && _runtime.MovementOwner.Execute(RuntimeMovementCommand.StopCompletely);
+
+    public bool BeginJump(float power) => _automation.IsAvailable && _runtime.MovementOwner.BeginJump(power);
+
+    public bool TryGetObjectState(uint objectId, out uint state)
+    {
+        if (_runtime.EntityObjects.Entities.TryGetActive(objectId, out RuntimeEntityRecord record))
+        {
+            state = record.RawPhysicsState;
+            return true;
+        }
+
+        state = 0;
+        return false;
+    }
+
+    // Doors play On (0x4000000B) to open and Off (0x4000000C) to close; the record keeps the low 16 bits.
+    public bool TryGetObjectMotionOn(uint objectId, out bool isOn)
+    {
+        isOn = false;
+        if (!_runtime.EntityObjects.Entities.TryGetActive(objectId, out RuntimeEntityRecord record)
+            || record.Snapshot.MotionState?.ForwardCommand is not { } command)
+            return false;
+        if (command is not (0x000B or 0x000C))
+            return false;
+        isOn = command == 0x000B;
+        return true;
+    }
 }

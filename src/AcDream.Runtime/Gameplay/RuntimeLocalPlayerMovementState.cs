@@ -370,6 +370,40 @@ public sealed class RuntimeLocalPlayerMovementState
         return true;
     }
 
+    /// <summary>
+    /// Turns autorun on or off, as RynthCore's SetAutoRun does; a repeat of the
+    /// current state changes nothing. Always true.
+    /// </summary>
+    public bool SetAutoRun(bool enabled)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_autoRunActive == enabled)
+            return true;
+        _autoRunActive = enabled;
+        Interlocked.Increment(ref _revision);
+        return true;
+    }
+
+    /// <summary>
+    /// Sets the body's heading at once (compass degrees: 0 north, clockwise), as
+    /// RynthCore's TurnToHeading writes the player's frame. Nothing is cancelled;
+    /// the next position update tells the server. False with no live body.
+    /// </summary>
+    public bool SnapHeading(float headingDegrees)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!float.IsFinite(headingDegrees)
+            || _controller is not { } controller
+            || !controller.CanExecuteLiveMovement)
+            return false;
+        float normalized = headingDegrees % 360f;
+        if (normalized < 0f)
+            normalized += 360f;
+        controller.Yaw = AcDream.Core.Physics.Motion.MoveToMath.YawFromHeading(normalized);
+        Interlocked.Increment(ref _revision);
+        return true;
+    }
+
     public void SetCommandInput(in MovementInput input)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

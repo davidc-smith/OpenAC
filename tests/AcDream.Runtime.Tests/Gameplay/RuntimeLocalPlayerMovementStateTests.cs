@@ -731,4 +731,50 @@ public sealed class RuntimeLocalPlayerMovementStateTests
         Assert.True(controller.IsRuntimeOwnedDormant);
         Assert.False(movement.HasPendingMotions);
     }
+
+    [Fact]
+    public void SetAutoRunSetsTheLatchAndARepeatChangesNothing()
+    {
+        using var movement = new RuntimeLocalPlayerMovementState();
+
+        Assert.True(movement.SetAutoRun(true));
+        Assert.True(movement.AutoRunActive);
+        long revision = movement.Revision;
+        Assert.True(movement.SetAutoRun(true));
+        Assert.Equal(revision, movement.Revision);
+        Assert.True(movement.SetAutoRun(false));
+        Assert.False(movement.AutoRunActive);
+    }
+
+    [Theory]
+    [InlineData(0f, 0f)]
+    [InlineData(90f, 90f)]
+    [InlineData(200f, 200f)]
+    [InlineData(350f, 350f)]
+    [InlineData(-10f, 350f)]
+    public void SnapHeadingTurnsTheBodyAtOnceAsRynthAiReadsIt(float asked, float expected)
+    {
+        var controller = new PlayerMovementController(new PhysicsEngine()) { LocalEntityId = 0x50000001u };
+        controller.SeedPlacementForTest(new Vector3(11f, 12f, 13f), 0xA9B40001u, new Vector3(11f, 12f, 13f));
+        using var movement = new RuntimeLocalPlayerMovementState { Controller = controller };
+
+        Assert.True(movement.SnapHeading(asked));
+
+        Quaternion q = movement.View.Snapshot.Position.Frame.Orientation;
+        Assert.Equal(expected, AcDream.Core.Physics.Motion.MoveToMath.GetHeading(q), precision: 2);
+        float rynth = (float)((-2.0 * Math.Atan2(q.Z, q.W) * 180.0 / Math.PI + 720.0) % 360.0);
+        Assert.Equal(expected, rynth, precision: 2);
+    }
+
+    [Fact]
+    public void SnapHeadingNeedsALiveBodyAndAFiniteHeading()
+    {
+        using var idle = new RuntimeLocalPlayerMovementState();
+        Assert.False(idle.SnapHeading(90f));
+
+        var controller = new PlayerMovementController(new PhysicsEngine()) { LocalEntityId = 0x50000001u };
+        controller.SeedPlacementForTest(new Vector3(11f, 12f, 13f), 0xA9B40001u, new Vector3(11f, 12f, 13f));
+        using var movement = new RuntimeLocalPlayerMovementState { Controller = controller };
+        Assert.False(movement.SnapHeading(float.NaN));
+    }
 }

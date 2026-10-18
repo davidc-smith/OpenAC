@@ -62,7 +62,9 @@ internal sealed class PluginWorldTriangleRenderer(
                 PluginGroundShapeRenderer.TowardCamera(planned.A, frame.Position),
                 PluginGroundShapeRenderer.TowardCamera(planned.B, frame.Position),
                 PluginGroundShapeRenderer.TowardCamera(planned.C, frame.Position),
-                planned.Color);
+                planned.ColorA,
+                planned.ColorB,
+                planned.ColorC);
         }
         _planned.Clear();
         batch.Flush(encoder, frame.ViewProjection);
@@ -98,12 +100,18 @@ internal sealed class PluginWorldTriangleRenderer(
                     continue;
                 if (!FrustumCuller.IsAabbVisible(frustum, Vector3.Min(a, Vector3.Min(b, c)), Vector3.Max(a, Vector3.Max(b, c))))
                     continue;
-                PluginColor color = triangle.Color;
+                Vector4 colorA = Unit(triangle.Color);
                 planned.Add(new PlannedTriangle(
-                    a, b, c, new Vector4(color.R, color.G, color.B, color.A) / 255f, distanceSquared));
+                    a, b, c,
+                    colorA,
+                    triangle.ColorB is { } colorB ? Unit(colorB) : colorA,
+                    triangle.ColorC is { } colorC ? Unit(colorC) : colorA,
+                    distanceSquared));
             }
         }
     }
+
+    private static Vector4 Unit(PluginColor color) => new Vector4(color.R, color.G, color.B, color.A) / 255f;
 
     /// <summary>
     /// The point of triangle <paramref name="a"/>, <paramref name="b"/>,
@@ -154,7 +162,7 @@ internal sealed class PluginWorldTriangleRenderer(
 
 /// <summary>
 /// One world triangle drawn this frame: its corners in the live world's
-/// frame, its colour as 0 to 1, and its squared distance in metres from the
+/// frame, its corners' colours as 0 to 1, and its squared distance in metres from the
 /// camera to its nearest point.
 /// </summary>
-internal readonly record struct PlannedTriangle(Vector3 A, Vector3 B, Vector3 C, Vector4 Color, float DistanceSquared);
+internal readonly record struct PlannedTriangle(Vector3 A, Vector3 B, Vector3 C, Vector4 ColorA, Vector4 ColorB, Vector4 ColorC, float DistanceSquared);

@@ -54,6 +54,27 @@ public sealed class RynthClientExtensionTests : IDisposable
     }
 
     [Fact]
+    public void TheNav3DLayerIsCreatedFromTheContextAndLetGoOnDispose()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var store = new AcDream.App.Plugins.PluginWorldTriangleStore();
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (_, _) => new Registration(),
+            WorldTriangles = store,
+        };
+        var extension = new RynthClientExtension();
+        extension.Attach(context);
+        extension.Tick(0.016);
+        Assert.Single(store.Layers);
+
+        extension.Dispose();
+        Assert.Empty(store.Layers);
+    }
+
+    [Fact]
     public void AfterDisposeContainerEventsReachNoPlugin()
     {
         ContainerRecorder.Calls.Clear();

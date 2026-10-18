@@ -86,13 +86,16 @@ internal sealed class GroundShapeBatch : IDisposable
     }
 
     /// <summary>Adds a triangle of one colour, or nothing once the budget is spent.</summary>
-    internal void AddTriangle(Vector3 a, Vector3 b, Vector3 c, Vector4 color)
+    internal void AddTriangle(Vector3 a, Vector3 b, Vector3 c, Vector4 color) => AddTriangle(a, b, c, color, color, color);
+
+    /// <summary>Adds a triangle with a colour at each corner, or nothing once the budget is spent.</summary>
+    internal void AddTriangle(Vector3 a, Vector3 b, Vector3 c, Vector4 colorA, Vector4 colorB, Vector4 colorC)
     {
         if (RemainingVertexBudget < 3)
             return;
-        AddVertex(a, color);
-        AddVertex(b, color);
-        AddVertex(c, color);
+        AddVertex(a, colorA);
+        AddVertex(b, colorB);
+        AddVertex(c, colorC);
     }
 
     private void AddVertex(Vector3 position, Vector4 color)

@@ -199,20 +199,67 @@ public sealed unsafe class RynthApiTableTests
     }
 
     [Fact]
+    public void MovementSlotsDriveTheView()
+    {
+        var view = new FakeGameView();
+        view.ObjectStates[0x7A9B4001] = 0x4;
+        view.MotionOn[0x7A9B4001] = true;
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasSetAutoRun && host.HasTurnToHeading && host.HasSetMotion && host.HasStopCompletely);
+        Assert.True(host.HasJumpNonAutonomous && host.HasTapJump && host.HasCommenceJump && host.HasDoJump && host.HasLaunchJumpWithMotion);
+        Assert.True(host.HasGetObjectState && host.HasGetObjectMotionOn);
+
+        Assert.True(host.SetAutoRun(true));
+        Assert.True(host.TurnToHeading(123.5f));
+        Assert.True(host.SetMotion(0x41000003, true));
+        Assert.Equal(new AcDream.Plugin.Abstractions.PluginMovementIntent(Forward: true, Run: true), view.Intents[^1]);
+        Assert.False(host.SetMotion(0x41000012, true));
+        Assert.True(host.JumpNonAutonomous(0.5f));
+        Assert.True(host.TapJump());
+        Assert.True(host.CommenceJump());
+        Assert.True(host.DoJump(true));
+        Assert.True(host.CommenceJump());
+        Assert.True(host.LaunchJumpWithMotion(false, true, false, false, false));
+        Assert.True(host.StopCompletely());
+        Assert.Equal(
+            new[] { "autorun 1", "heading 123.5", "jump 0.5", FormattableString.Invariant($"jump {RynthApiTable.TapJumpPower:0.###}"), "stop" },
+            view.Actions);
+
+        Assert.True(host.TryGetObjectState(0x7A9B4001, out uint state));
+        Assert.Equal(0x4u, state);
+        Assert.False(host.TryGetObjectState(0x7A9B4002, out _));
+        Assert.True(host.TryGetObjectMotionOn(0x7A9B4001, out bool on));
+        Assert.True(on);
+        Assert.False(host.TryGetObjectMotionOn(0x7A9B4002, out _));
+
+        view.Throw = true;
+        Assert.False(host.SetAutoRun(false));
+        Assert.False(host.TryGetObjectState(0x7A9B4001, out _));
+        Assert.Contains(_log, line => line.Contains("SetAutoRun threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("GetObjectState threw", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DeferredSlotsStayUnset()
     {
         using var table = new RynthApiTable(new FakeGameView(), _log.Add);
         Assert.Equal(IntPtr.Zero, table.Native->NativeAttackFn);
-        Assert.Equal(IntPtr.Zero, table.Native->SetMotionFn);
-        Assert.Equal(IntPtr.Zero, table.Native->TurnToHeadingFn);
-        Assert.Equal(IntPtr.Zero, table.Native->StopCompletelyFn);
         Assert.Equal(IntPtr.Zero, table.Native->StopMovementFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetObjectStateFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetObjectMotionOnFn);
+        Assert.Equal(IntPtr.Zero, table.Native->DoMovementFn);
+        Assert.Equal(IntPtr.Zero, table.Native->SetAutonomyLevelFn);
         Assert.Equal(IntPtr.Zero, table.Native->WorldToScreenFn);
+        Assert.Equal(IntPtr.Zero, table.Native->GetViewportSizeFn);
+        Assert.Equal(IntPtr.Zero, table.Native->GetRadarRectFn);
+        Assert.Equal(IntPtr.Zero, table.Native->SetRadarSuppressedFn);
+        Assert.Equal(IntPtr.Zero, table.Native->GetPluginInterfaceFn);
         Assert.Equal(IntPtr.Zero, table.Native->MoveItemExternalFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetObjectPalettesFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetNumContainedItemsFn);
+        Assert.Equal(IntPtr.Zero, table.Native->IsPlayerReadyFn);
+        Assert.Equal(IntPtr.Zero, table.Native->GetScreenModeFn);
+        Assert.Equal(IntPtr.Zero, table.Native->GetNumContainedContainersFn);
     }
 
     private static RynthObjectInfo ObjectWith(
@@ -390,5 +437,23 @@ public sealed unsafe class RynthApiTableTests
         Assert.Contains(_log, line => line.Contains("GetCastBusyState threw", StringComparison.Ordinal));
         Assert.Contains(_log, line => line.Contains("GetTargetVitals threw", StringComparison.Ordinal));
         Assert.Contains(_log, line => line.Contains("ReadObjectEnchantments threw", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Nav3DSlotsFillTheBuffer()
+    {
+        var view = new FakeGameView { Pose = (0xA9B40001, new Vector3(50, 60, 10), Quaternion.Identity) };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+        Assert.True(host.HasNav3D && host.HasNav3DTriangle && host.HasNav3DRingHeight);
+
+        table.Nav3D.BeginTick();
+        host.Nav3DAddRing(1, 2, 3, 1, 0.1f, 0xFFFF0000);
+        host.Nav3DAddRingEx(1, 2, 3, 1, 0.1f, 2f, 0xFFFF0000);
+        host.Nav3DAddLine(0, 0, 0, 5, 0, 0, 0.1f, 0xFFFF0000);
+        host.Nav3DAddTriangle(0, 0, 0, 1, 0, 0, 0, 0, 1, 0xFFFF0000);
+        Assert.Equal((2, 1, 1), table.Nav3D.Counts);
+        host.Nav3DClear();
+        Assert.Equal((0, 0, 0), table.Nav3D.Counts);
     }
 }

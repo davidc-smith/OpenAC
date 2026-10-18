@@ -194,4 +194,44 @@ internal sealed class FakeGameView : IRynthGameView
     public bool CancelAttack() => Act("cancel");
     public bool UseObjectOn(uint sourceObjectId, uint targetObjectId) =>
         Act($"useon {sourceObjectId:X8} {targetObjectId:X8}");
+
+    public bool AutoRun { get; set; }
+    public List<AcDream.Plugin.Abstractions.PluginMovementIntent?> Intents { get; } = new();
+    public Dictionary<uint, uint> ObjectStates { get; } = new();
+    public Dictionary<uint, bool> MotionOn { get; } = new();
+
+    public bool AutoRunActive => Read(AutoRun);
+    public bool SetAutoRun(bool enabled) => Act($"autorun {(enabled ? 1 : 0)}");
+    public bool SnapHeading(float headingDegrees) => Act(FormattableString.Invariant($"heading {headingDegrees:0.##}"));
+    public bool SetMovementIntent(in AcDream.Plugin.Abstractions.PluginMovementIntent intent)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        Intents.Add(intent);
+        if (ActionAnswer)
+            HeldIntent = intent;
+        return ActionAnswer;
+    }
+    public bool ClearMovementIntent()
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        Intents.Add(null);
+        if (ActionAnswer)
+            HeldIntent = null;
+        return ActionAnswer;
+    }
+    /// <summary>What the client holds now; tests clear or replace it to act as the client or another plugin.</summary>
+    public AcDream.Plugin.Abstractions.PluginMovementIntent? HeldIntent { get; set; }
+    public AcDream.Plugin.Abstractions.PluginMovementIntent? CurrentMovementIntent => Read(HeldIntent);
+    public bool StopCompletely() => Act("stop");
+    public bool BeginJump(float power) => Act(FormattableString.Invariant($"jump {power:0.###}"));
+    public bool TryGetObjectState(uint objectId, out uint state)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        return ObjectStates.TryGetValue(objectId, out state);
+    }
+    public bool TryGetObjectMotionOn(uint objectId, out bool isOn)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        return MotionOn.TryGetValue(objectId, out isOn);
+    }
 }

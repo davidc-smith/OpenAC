@@ -35,6 +35,25 @@ public sealed class PluginWorldTriangleRendererTests
     }
 
     [Fact]
+    public void CornerColoursAreUploadedPerVertex()
+    {
+        using var scene = new Scene(camera: new Vector3(0f, 0f, 10f));
+        var green = new PluginColor(0, 255, 0, 255);
+        var blue = new PluginColor(0, 0, 255, 16);
+
+        scene.Draw(Triangle(new Vector3(10f, 0f, 0.1f), new Vector3(34f, 0f, 0.1f), new Vector3(10f, 24f, 2.1f), Red)
+            with { ColorB = green, ColorC = blue });
+
+        float[][] vertices = scene.UploadedVertices();
+        Assert.Equal(3, vertices.Length);
+        Assert.Equal(new Vector4(1f, 0f, 0f, 96f / 255f), Colour(vertices[0]));
+        Assert.Equal(new Vector4(0f, 1f, 0f, 1f), Colour(vertices[1]));
+        Assert.Equal(new Vector4(0f, 0f, 1f, 16f / 255f), Colour(vertices[2]));
+    }
+
+    private static Vector4 Colour(float[] vertex) => new(vertex[3], vertex[4], vertex[5], vertex[6]);
+
+    [Fact]
     public void ATriangleIsDrawnBetweenItsCornersInItsColour()
     {
         using var scene = new Scene(camera: new Vector3(0f, 0f, 10f));

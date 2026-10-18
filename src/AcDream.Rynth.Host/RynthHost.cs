@@ -13,12 +13,13 @@ public sealed unsafe class RynthHost : IDisposable
 
     /// <param name="log">Gets every host and plugin log line, prefixed "[Rynth] ".</param>
     /// <param name="exportsTypes">Each plugin's exports class (its PluginExports).</param>
-    public RynthHost(IRynthGameView view, Action<string> log, IEnumerable<Type> exportsTypes, bool scriptWindows = false)
+    public RynthHost(IRynthGameView view, Action<string> log, IEnumerable<Type> exportsTypes, bool scriptWindows = false,
+        AcDream.Plugin.Abstractions.IPluginWorldTriangleLayer? nav3DLayer = null)
     {
         ArgumentNullException.ThrowIfNull(exportsTypes);
         ArgumentNullException.ThrowIfNull(log);
         _log = line => log($"[Rynth] {line}");
-        _table = new RynthApiTable(view, _log, scriptWindows);
+        _table = new RynthApiTable(view, _log, scriptWindows, nav3DLayer);
         RynthCore.Engine.RynthLog.Sink = _log;
         RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log = _log;
         try
@@ -36,17 +37,33 @@ public sealed unsafe class RynthHost : IDisposable
         }
     }
 
+    internal RynthMotionHolds Holds => _table.Holds;
+
     public IReadOnlyList<RynthPlugin> Plugins => _plugins;
 
     /// <summary>The runtime observer that feeds the plugins.</summary>
     public RynthEventBridge Bridge { get; }
 
-    /// <summary>Delivers the frame's queued events, then ticks each plugin, as RynthCore's frame does.</summary>
+    /// <summary>Delivers the frame's queued events, then ticks each plugin inside one Nav3D frame, as RynthCore's frame does.</summary>
     public void Tick()
     {
         Bridge.DeliverQueued();
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.Tick();
+        // A view fault here must not cost the plugins their tick.
+        try { _table.Holds.Sync(); }
+        catch (Exception error) { _log($"holding movement failed: {error.Message}"); }
+        try { _table.Nav3D.BeginTick(); }
+        catch (Exception error) { _log($"Nav3D begin failed: {error.Message}"); }
+        try
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.Tick();
+        }
+        finally
+        {
+            // RynthCore commits Nav3D after TickAll.
+            try { _table.Nav3D.CommitTick(); }
+            catch (Exception error) { _log($"Nav3D commit failed: {error.Message}"); }
+        }
     }
 
     public void Dispose()
@@ -58,6 +75,8 @@ public sealed unsafe class RynthHost : IDisposable
         }
 
         _plugins.Clear();
+        try { _table.Holds.Release(); }
+        catch (Exception error) { _log($"releasing held movement failed: {error.Message}"); }
         RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
         if (RynthCore.Engine.RynthLog.Sink == _log)
             RynthCore.Engine.RynthLog.Sink = null;
