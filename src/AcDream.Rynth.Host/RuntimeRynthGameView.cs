@@ -1,3 +1,4 @@
+using AcDream.Runtime.Gameplay;
 using System.Numerics;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
@@ -361,4 +362,73 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     }
 
     public bool WieldItem(uint objectId, uint equipMask) => _automation.Equipment.Equip(objectId, equipMask).Accepted;
+
+    public bool IsCastGestureActive => _runtime.MovementOwner.HasPendingMotions;
+
+    public bool TryGetTargetVitals(uint objectId, out RynthVitals vitals)
+    {
+        if (objectId != 0
+            && _runtime.ActionOwner.Combat.TryGetCreatureVitals(objectId, out CombatState.CreatureVitals found))
+        {
+            vitals = new RynthVitals(
+                found.Health, found.HealthMax,
+                found.Stamina ?? 0, found.StaminaMax ?? 0,
+                found.Mana ?? 0, found.ManaMax ?? 0);
+            return true;
+        }
+
+        vitals = default;
+        return false;
+    }
+
+    // OpenAC keeps the player's enchantment registry only.
+    public IReadOnlyList<RynthEnchantment>? GetObjectEnchantments(uint objectId) =>
+        IsPlayer(objectId) ? PlayerEnchantments : null;
+
+    // RynthCore holds casts while the player is in portal space. It answers 1 once the client's cast
+    // call ran, and a local refusal (unknown spell, no components) reaches the plugin as chat, so
+    // only an unavailable surface is false; a false here would stop RynthAi seeing that line.
+    public bool CastSpell(uint targetId, uint spellId) =>
+        _automation.IsAvailable && !IsPortaling
+        && _runtime.ActionOwner.SpellCast.Cast(spellId, targetId) != CastRequestResult.Unavailable;
+
+    // RynthCore sends the attack itself, past the power bar. The body stops first, as OpenAC's own attack does.
+    public bool MeleeAttack(uint targetId, int height, float power)
+    {
+        if (RynthTranslate.ToAttackHeight(height) is not { } attackHeight
+            || !_automation.IsAvailable
+            || _runtime.Session.CurrentSession is not { } session)
+            return false;
+        _runtime.PrepareLocalPlayerForAttackRequest();
+        session.SendMeleeAttack(targetId, attackHeight, power);
+        return true;
+    }
+
+    public bool MissileAttack(uint targetId, int height, float accuracy)
+    {
+        if (RynthTranslate.ToAttackHeight(height) is not { } attackHeight
+            || !_automation.IsAvailable
+            || _runtime.Session.CurrentSession is not { } session)
+            return false;
+        _runtime.PrepareLocalPlayerForAttackRequest();
+        session.SendMissileAttack(targetId, attackHeight, accuracy);
+        return true;
+    }
+
+    // OpenAC's own attack state sends the cancel itself when it holds anything (a bot swing the
+    // server commenced included), and clears what it holds; otherwise the cancel goes out bare.
+    public bool CancelAttack()
+    {
+        if (!_automation.IsAvailable || _runtime.Session.CurrentSession is not { } session)
+            return false;
+        RuntimeCombatAttackState attack = _runtime.ActionOwner.CombatAttack;
+        if (attack.AttackServerResponsePending || attack.AttackRequestInProgress || attack.RepeatAttackInProgress)
+            attack.AbortAutomaticAttack();
+        else
+            session.SendCancelAttack();
+        return true;
+    }
+
+    public bool UseObjectOn(uint sourceObjectId, uint targetObjectId) =>
+        _automation.Items.Apply(sourceObjectId, targetObjectId).Accepted;
 }

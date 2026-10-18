@@ -1,3 +1,4 @@
+using AcDream.Core.Combat;
 using AcDream.Plugin.Abstractions;
 
 namespace AcDream.Rynth.Host;
@@ -22,6 +23,15 @@ public static class RynthTranslate
         Melee => PluginCombatMode.Melee,
         Missile => PluginCombatMode.Missile,
         Magic => PluginCombatMode.Magic,
+        _ => null,
+    };
+
+    /// <summary>RynthCore's attack heights: 1 high, 2 medium, 3 low.</summary>
+    public static AttackHeight? ToAttackHeight(int height) => height switch
+    {
+        1 => AttackHeight.High,
+        2 => AttackHeight.Medium,
+        3 => AttackHeight.Low,
         _ => null,
     };
 }

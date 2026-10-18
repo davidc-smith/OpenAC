@@ -127,4 +127,28 @@ public interface IRynthGameView
 
     /// <summary>Wields an item into the given equip slot mask.</summary>
     bool WieldItem(uint objectId, uint equipMask);
+
+    /// <summary>True while the player's cast or action gesture is still playing (RynthCore's cast gate).</summary>
+    bool IsCastGestureActive { get; }
+
+    /// <summary>A creature's vitals from its last appraisal; stamina and mana 0 when it did not show them.</summary>
+    bool TryGetTargetVitals(uint objectId, out RynthVitals vitals);
+
+    /// <summary>An object's enchantments in force; null when the client keeps none for it (it keeps the player's only).</summary>
+    IReadOnlyList<RynthEnchantment>? GetObjectEnchantments(uint objectId);
+
+    /// <summary>Casts at a target without changing the selection; a self spell goes to the player. True when sent.</summary>
+    bool CastSpell(uint targetId, uint spellId);
+
+    /// <summary>Sends a melee attack at once, past the power bar. Height 1 high, 2 medium, 3 low; power 0..1. True when sent.</summary>
+    bool MeleeAttack(uint targetId, int height, float power);
+
+    /// <summary>Sends a missile attack at once, past the power bar. Accuracy 0..1. True when sent.</summary>
+    bool MissileAttack(uint targetId, int height, float accuracy);
+
+    /// <summary>Cancels the attack in progress. True when sent.</summary>
+    bool CancelAttack();
+
+    /// <summary>Uses one object on another (a kit on the player, a mana stone on an item). True when sent.</summary>
+    bool UseObjectOn(uint sourceObjectId, uint targetObjectId);
 }

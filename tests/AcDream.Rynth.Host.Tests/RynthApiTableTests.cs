@@ -19,7 +19,7 @@ public sealed unsafe class RynthApiTableTests
         Assert.True(host.HasGetPlayerId);
         Assert.True(host.HasGetObjectName);
         Assert.True(host.HasGetObjectQuadProperty);
-        Assert.False(host.HasCastSpell);
+        Assert.True(host.HasCastSpell);
         Assert.True(host.HasUseObject);
     }
 
@@ -202,9 +202,10 @@ public sealed unsafe class RynthApiTableTests
     public void DeferredSlotsStayUnset()
     {
         using var table = new RynthApiTable(new FakeGameView(), _log.Add);
-        Assert.Equal(IntPtr.Zero, table.Native->GetCastBusyStateFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetTargetVitalsFn);
-        Assert.Equal(IntPtr.Zero, table.Native->ReadObjectEnchantmentsFn);
+        Assert.Equal(IntPtr.Zero, table.Native->NativeAttackFn);
+        Assert.Equal(IntPtr.Zero, table.Native->SetMotionFn);
+        Assert.Equal(IntPtr.Zero, table.Native->TurnToHeadingFn);
+        Assert.Equal(IntPtr.Zero, table.Native->StopCompletelyFn);
         Assert.Equal(IntPtr.Zero, table.Native->StopMovementFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetObjectStateFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetObjectMotionOnFn);
@@ -283,5 +284,99 @@ public sealed unsafe class RynthApiTableTests
         host.ForceResetBusyCount();
         Assert.Contains(_log, line => line.Contains("UseObject threw", StringComparison.Ordinal));
         Assert.Contains(_log, line => line.Contains("ForceResetBusyCount threw", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CombatSlots_CallTheGameView()
+    {
+        const uint player = 0x50000001;
+        var view = new FakeGameView
+        {
+            PlayerId = player,
+            CastGesture = true,
+            Enchantments = [new RynthEnchantment(2, 1_300.0), new RynthEnchantment(3, double.MaxValue)],
+        };
+        view.TargetVitals[0x80000010] = new RynthVitals(75, 100, 40, 80, 0, 0);
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasGetCastBusyState);
+        Assert.True(host.HasMeleeAttack);
+        Assert.True(host.HasMissileAttack);
+        Assert.True(host.HasCancelAttack);
+        Assert.True(host.HasUseObjectOn);
+        Assert.True(host.HasReadObjectEnchantments);
+        Assert.NotEqual(IntPtr.Zero, table.Native->GetTargetVitalsFn);
+
+        Assert.Equal(1, host.GetCastBusyState());
+        Assert.False(host.CanCastNow);
+        Assert.True(host.CastSpell(0x80000010, 1234));
+        Assert.True(host.CastSpell(player, 2));
+        Assert.True(host.MeleeAttack(0x80000010, 2, 0.75f));
+        Assert.True(host.MissileAttack(0x80000010, 1, 1.5f));   // clamped to 1
+        Assert.True(host.CancelAttack());
+        Assert.True(host.UseObjectOn(0x80000020, player));
+        Assert.Equal(
+            new[]
+            {
+                "cast 80000010 1234", "cast 50000001 2", "melee 80000010 2 0.75", "missile 80000010 1 1.00",
+                "cancel", "useon 80000020 50000001",
+            },
+            view.Actions);
+
+        Assert.True(host.TryGetTargetVitals(0x80000010, out uint hp, out uint maxHp, out uint st, out uint maxSt,
+            out uint mp, out uint maxMp));
+        Assert.Equal((75u, 100u, 40u, 80u, 0u, 0u), (hp, maxHp, st, maxSt, mp, maxMp));
+        Assert.False(host.TryGetTargetVitals(0x80000011, out _, out _, out _, out _, out _, out _));
+
+        var spellIds = new uint[4];
+        var expiries = new double[4];
+        Assert.Equal(2, host.ReadObjectEnchantments(player, spellIds, expiries, 4));
+        Assert.Equal((2u, 1_300.0, 3u, double.MaxValue), (spellIds[0], expiries[0], spellIds[1], expiries[1]));
+        Assert.Equal(1, host.ReadObjectEnchantments(player, spellIds, expiries, 1));
+        Assert.Equal(-1, host.ReadObjectEnchantments(0x80000010, spellIds, expiries, 4));
+
+        view.CastGesture = false;
+        Assert.True(host.CanCastNow);
+        view.ActionAnswer = false;
+        Assert.False(host.CastSpell(0x80000010, 1234));
+    }
+
+    [Fact]
+    public void CombatSlots_RefuseBadArgumentsWithoutCallingTheView()
+    {
+        var view = new FakeGameView();
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.False(host.CastSpell(0x80000010, 0));
+        Assert.False(host.CastSpell(0x80000010, -5));
+        Assert.False(host.MeleeAttack(0x80000010, 0, 0.5f));
+        Assert.False(host.MissileAttack(0x80000010, 4, 0.5f));
+        Assert.False(host.MeleeAttack(0, 2, 0.5f));
+        Assert.False(host.UseObjectOn(0, 0x80000010));
+        Assert.False(host.UseObjectOn(0x80000010, 0));
+        Assert.Empty(view.Actions);
+    }
+
+    [Fact]
+    public void CombatSlots_ReturnNotAvailableWhenTheViewThrows()
+    {
+        var view = new FakeGameView { Throw = true };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.Equal(0, host.GetCastBusyState());
+        Assert.False(host.CastSpell(1, 1));
+        Assert.False(host.MeleeAttack(1, 2, 0.5f));
+        Assert.False(host.MissileAttack(1, 2, 0.5f));
+        Assert.False(host.CancelAttack());
+        Assert.False(host.TryGetTargetVitals(1, out _, out _, out _, out _, out _, out _));
+        Assert.False(host.UseObjectOn(1, 2));
+        Assert.Equal(-1, host.ReadObjectEnchantments(1, new uint[2], new double[2], 2));
+        Assert.Contains(_log, line => line.Contains("CastSpell threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("GetCastBusyState threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("GetTargetVitals threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("ReadObjectEnchantments threw", StringComparison.Ordinal));
     }
 }

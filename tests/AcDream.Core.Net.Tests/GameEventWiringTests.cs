@@ -215,6 +215,8 @@ public sealed class GameEventWiringTests
         Assert.NotNull(received);
         Assert.NotNull(received.Value.CreatureProfile);
         Assert.Equal(0.75f, combat.GetHealthPercent(guid), 3);
+        Assert.True(combat.TryGetCreatureVitals(guid, out CombatState.CreatureVitals vitals));
+        Assert.Equal(new CombatState.CreatureVitals(75u, 100u, null, null, null, null), vitals);
     }
 
 

@@ -696,4 +696,24 @@ public sealed class RuntimeLocalPlayerMovementStateTests
         current = !value;
         Assert.Equal(!value, movement.RunAsDefaultMovement);
     }
+
+    [Fact]
+    public void HasPendingMotionsFollowsTheControllersMotionQueue()
+    {
+        using var bodiless = new RuntimeLocalPlayerMovementState();
+        Assert.False(bodiless.HasPendingMotions);
+
+        var controller = new PlayerMovementController(new PhysicsEngine());
+        using var movement = new RuntimeLocalPlayerMovementState
+        {
+            Controller = controller,
+        };
+        Assert.False(movement.HasPendingMotions);
+
+        controller.Motion.AddToQueue(0u, (uint)MotionCommand.Ready, 0u);
+        Assert.True(movement.HasPendingMotions);
+
+        controller.Motion.MotionDone((uint)MotionCommand.Ready, success: true);
+        Assert.False(movement.HasPendingMotions);
+    }
 }

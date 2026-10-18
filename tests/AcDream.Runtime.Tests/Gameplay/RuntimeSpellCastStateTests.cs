@@ -88,6 +88,7 @@ public sealed class RuntimeSpellCastStateTests
         Assert.Equal(CastRequestResult.MissingComponents, state.Cast(1));
         Assert.Equal(0, operations.UntargetedSends);
         Assert.Equal(0, operations.BusyIncrements);
+        Assert.Equal("You don't have all the components for this spell.", operations.LastMessage);
     }
 
     [Fact]
@@ -222,6 +223,68 @@ public sealed class RuntimeSpellCastStateTests
         Assert.Equal(0, operations.TargetedSends);
         Assert.Equal(0, operations.BusyIncrements);
         Assert.Equal("You do not know that spell.", operations.LastMessage);
+    }
+
+    [Fact]
+    public void CastAtTarget_SendsToThatTargetAndLeavesTheSelectionAlone()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
+        uint sentTo = 0;
+        var operations = new FakeOperations
+        {
+            LocalPlayerId = 42u,
+            SendTargetedAction = (id, _) => sentTo = id,
+        };
+        var selection = new SelectionState();
+        selection.Select(99u, SelectionChangeSource.System);
+        var state = new RuntimeSpellCastState(book, selection, operations);
+
+        Assert.Equal(CastRequestResult.Sent, state.Cast(1, 77u));
+        Assert.Equal(77u, sentTo);
+        Assert.Equal(99u, selection.SelectedObjectId);
+        Assert.Equal(1, operations.BusyIncrements);
+        Assert.Equal(77u, state.PendingTargetId);
+
+        Assert.True(state.CompleteUse(0u));
+        Assert.Equal(77u, state.LastCompletion.TargetObjectId);
+    }
+
+    [Fact]
+    public void CastAtTarget_ZeroTargetForATargetedSpellIsNoTargetEvenWithASelection()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
+        var operations = new FakeOperations { LocalPlayerId = 42u };
+        RuntimeSpellCastState state = Create(book, operations, selected: 99u);
+
+        Assert.Equal(CastRequestResult.NoTarget, state.Cast(1, 0u));
+        Assert.Equal(0, operations.TargetedSends);
+    }
+
+    [Fact]
+    public void CastAtTarget_SelfSpellStillGoesToThePlayer()
+    {
+        Spellbook book = MakeBook(flags: 0x8, untargeted: true, targetMask: 0x10);
+        uint sentTo = 0;
+        var operations = new FakeOperations
+        {
+            LocalPlayerId = 42u,
+            SendTargetedAction = (id, _) => sentTo = id,
+        };
+        RuntimeSpellCastState state = Create(book, operations);
+
+        Assert.Equal(CastRequestResult.Sent, state.Cast(1, 77u));
+        Assert.Equal(42u, sentTo);
+    }
+
+    [Fact]
+    public void CastAtTarget_IncompatibleTargetIsRefused()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
+        var operations = new FakeOperations { LocalPlayerId = 42u, TargetCompatible = false };
+        RuntimeSpellCastState state = Create(book, operations);
+
+        Assert.Equal(CastRequestResult.IncompatibleTarget, state.Cast(1, 77u));
+        Assert.Equal(0, operations.TargetedSends);
     }
 
     private static RuntimeSpellCastState Create(

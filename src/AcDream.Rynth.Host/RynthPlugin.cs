@@ -71,7 +71,8 @@ public sealed unsafe class RynthPlugin
 
     /// <summary>
     /// A target's health. The server's health updates carry a ratio only, so
-    /// current and max are 0 unless the caller knows them (the player's own death).
+    /// current and max are 0 unless the creature was appraised (its appraised
+    /// maximum, with current as that share of it) or for the player's own death.
     /// </summary>
     public void OnUpdateHealth(uint targetId, float healthRatio, uint currentHealth = 0, uint maxHealth = 0)
     {
@@ -82,6 +83,52 @@ public sealed unsafe class RynthPlugin
                 targetId, healthRatio, currentHealth, maxHealth);
         }
     }
+
+    public void OnBusyCountIncremented() => CallVoid("RynthPluginOnBusyCountIncremented");
+
+    public void OnBusyCountDecremented() => CallVoid("RynthPluginOnBusyCountDecremented");
+
+    public void OnSelectedTargetChange(uint currentTargetId, uint previousTargetId)
+    {
+        if (IsActive && _exports.TryGet("RynthPluginOnSelectedTargetChange", out IntPtr export))
+        {
+            using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
+            ((delegate* unmanaged[Cdecl]<uint, uint, void>)export)(currentTargetId, previousTargetId);
+        }
+    }
+
+    /// <summary>Modes in RynthCore's 1 NonCombat, 2 Melee, 4 Missile, 8 Magic.</summary>
+    public void OnCombatModeChange(int currentMode, int previousMode)
+    {
+        if (IsActive && _exports.TryGet("RynthPluginOnCombatModeChange", out IntPtr export))
+        {
+            using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
+            ((delegate* unmanaged[Cdecl]<int, int, void>)export)(currentMode, previousMode);
+        }
+    }
+
+    /// <summary>A hit: the wire damage type, critical and attacker as 0/1 (attacker 1 = the player hit).</summary>
+    public void OnCombatDamage(uint damage, uint damageType, uint critical, uint isAttacker)
+    {
+        if (IsActive && _exports.TryGet("RynthPluginOnCombatDamage", out IntPtr export))
+        {
+            using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
+            ((delegate* unmanaged[Cdecl]<uint, uint, uint, uint, void>)export)(damage, damageType, critical, isAttacker);
+        }
+    }
+
+    /// <summary>An enchantment on the player; duration as the server sent it (-1 permanent).</summary>
+    public void OnEnchantmentAdded(uint spellId, double durationSeconds)
+    {
+        if (IsActive && _exports.TryGet("RynthPluginOnEnchantmentAdded", out IntPtr export))
+        {
+            using RynthDispatch.Scope scope = RynthDispatch.Enter(this);
+            ((delegate* unmanaged[Cdecl]<uint, double, void>)export)(spellId, durationSeconds);
+        }
+    }
+
+    /// <summary>An enchantment gone from the player, by spell id (layer stripped), as RynthCore reports it.</summary>
+    public void OnEnchantmentRemoved(uint spellId) => CallObject("RynthPluginOnEnchantmentRemoved", spellId);
 
     /// <summary>The eat flag is passed but ignored (the client shows the line regardless).</summary>
     public void OnChatWindowText(string text, int chatType)

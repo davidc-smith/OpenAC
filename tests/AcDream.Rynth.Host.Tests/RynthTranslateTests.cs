@@ -24,4 +24,17 @@ public sealed class RynthTranslateTests
         Assert.Null(RynthTranslate.FromRynthCombatMode(3));
         Assert.Null(RynthTranslate.FromRynthCombatMode(0));
     }
+
+    [Theory]
+    [InlineData(1, AcDream.Core.Combat.AttackHeight.High)]
+    [InlineData(2, AcDream.Core.Combat.AttackHeight.Medium)]
+    [InlineData(3, AcDream.Core.Combat.AttackHeight.Low)]
+    public void AttackHeightsMapOneToThree(int rynth, AcDream.Core.Combat.AttackHeight expected) =>
+        Assert.Equal(expected, RynthTranslate.ToAttackHeight(rynth));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(-1)]
+    public void OtherAttackHeightsAreRefused(int rynth) => Assert.Null(RynthTranslate.ToAttackHeight(rynth));
 }
