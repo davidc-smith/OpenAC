@@ -151,6 +151,22 @@ public sealed class ImGuiOverlayTests : IDisposable
         Assert.Equal(1, _renderer.Rendered);
     }
 
+    [Fact]
+    public void IconsAreTheOverlaysAndBindToTheBackend()
+    {
+        Assert.IsType<OverlayIcons>(_overlay.Icons);
+        Assert.Equal(IntPtr.Zero, _overlay.Icons.SpellIcon(1));
+    }
+
+    [Fact]
+    public void AMergedFontReachesTheFontList()
+    {
+        int before = _overlay.Fonts.Version;
+        ((AcDream.ClientExtensions.IClientOverlay)_overlay).AddMergedFont(
+            RynthCore.Engine.ImGuiBackend.PhosphorFont.Load()!, RynthCore.Engine.ImGuiBackend.PhosphorIcons.Baked, 1.2f);
+        Assert.Equal(before + 1, _overlay.Fonts.Version);
+    }
+
     private sealed class FakeRenderer : IImGuiDrawRenderer
     {
         private bool _built;

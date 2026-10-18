@@ -994,6 +994,7 @@ public sealed class GameWindow :
         {
             _uiHost = retained.Host;
             _retailUiRuntime = retained.Runtime;
+            _overlay.BindIcons(retained.Runtime.ImageBackend);
             _retailChatVm = retained.Chat;
             _characterSheetProvider = retained.CharacterSheet;
             _frameScreenshots = retained.Screenshots;

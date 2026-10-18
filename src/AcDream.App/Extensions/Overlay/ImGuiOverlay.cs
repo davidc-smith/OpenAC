@@ -18,6 +18,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 {
     private readonly Action<string> _log;
     private readonly List<Action> _callbacks = new();
+    private readonly OverlayIcons _icons;
+    private readonly OverlayFonts _fonts;
     private readonly Stopwatch _summaryClock = Stopwatch.StartNew();
     private const int MaxFrameSummaries = 5;
     private int _summariesLogged;
@@ -27,7 +29,12 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     private bool _frameOpen;
     private bool _failed;
 
-    public ImGuiOverlay(Action<string> log) => _log = log ?? throw new ArgumentNullException(nameof(log));
+    public ImGuiOverlay(Action<string> log)
+    {
+        _log = log ?? throw new ArgumentNullException(nameof(log));
+        _icons = new OverlayIcons(_log);
+        _fonts = new OverlayFonts(_log);
+    }
 
     /// <summary>Input arrives here from the window's devices.</summary>
     public ImGuiInputQueue Input { get; } = new();
@@ -35,6 +42,17 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     public bool WantsMouse { get; private set; }
 
     public bool WantsKeyboard { get; private set; }
+
+    /// <summary>The client's icons for extensions; zero until <see cref="BindIcons"/>.</summary>
+    public IClientOverlayIcons Icons => _icons;
+
+    /// <summary>Fonts merged into the atlas (the renderer reads them).</summary>
+    internal OverlayFonts Fonts => _fonts;
+
+    public void AddMergedFont(byte[] ttf, string glyphs, float scale) => _fonts.Add(ttf, glyphs, scale);
+
+    /// <summary>Points the icons at the client interface's icon services, once it exists.</summary>
+    internal void BindIcons(AcDream.App.Plugins.IPluginImageBackend backend) => _icons.Bind(backend);
 
     /// <summary>True once Initialize succeeded.</summary>
     public bool IsAvailable => _renderer is not null && !_failed;
@@ -195,6 +213,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
                 _context = IntPtr.Zero;
             }
         }
+
+        _fonts.Dispose();
     }
 
     /// <summary>
@@ -212,7 +232,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         ImGuiVulkanRenderer? renderer = null;
         try
         {
-            renderer = new ImGuiVulkanRenderer(device, frames, _log);
+            renderer = new ImGuiVulkanRenderer(device, frames, _log, _fonts, _icons.IsIssued);
             Initialize(renderer, () => (
                 new Vector2(window.Size.X, window.Size.Y),
                 new Vector2(window.FramebufferSize.X, window.FramebufferSize.Y)));

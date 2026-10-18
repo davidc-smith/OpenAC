@@ -29,21 +29,32 @@ public sealed class ImGuiVulkanRendererTests
     }
 
     [Fact]
-    public void OnlyTheAtlasTextureIsDrawable()
+    public void TheAtlasIsDrawnByItsHandle()
     {
         var atlas = new GpuTextureSlot(7);
-        Assert.True(ImGuiVulkanRenderer.IsDrawableTexture((IntPtr)7, atlas));
-        Assert.False(ImGuiVulkanRenderer.IsDrawableTexture(IntPtr.Zero, atlas));
-        Assert.False(ImGuiVulkanRenderer.IsDrawableTexture(unchecked((IntPtr)0x7FF6_1234_5678L), atlas));
-        Assert.False(ImGuiVulkanRenderer.IsDrawableTexture((IntPtr)8, atlas));
+        Assert.True(ImGuiVulkanRenderer.TryGetDrawSlot((IntPtr)8, atlas, null, out uint slot));
+        Assert.Equal(7u, slot);
+        Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot((IntPtr)7, atlas, null, out _));
+        Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot(IntPtr.Zero, atlas, null, out _));
+        Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot(unchecked((IntPtr)0x7FF6_1234_5678L), atlas, null, out _));
     }
 
     [Fact]
-    public void NothingIsDrawableWithoutAnAtlas()
+    public void IssuedIconHandlesAreDrawnAtTheirSlot()
+    {
+        var atlas = new GpuTextureSlot(7);
+        Func<IntPtr, bool> issued = id => id == (IntPtr)40;
+        Assert.True(ImGuiVulkanRenderer.TryGetDrawSlot((IntPtr)40, atlas, issued, out uint slot));
+        Assert.Equal(39u, slot);
+        Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot((IntPtr)41, atlas, issued, out _));
+    }
+
+    [Fact]
+    public void NothingIsDrawableWithoutAnAtlasOrIssuedIcons()
     {
         GpuTextureSlot none = GpuTextureSlot.Unassigned;
-        Assert.False(ImGuiVulkanRenderer.IsDrawableTexture(unchecked((IntPtr)uint.MaxValue), none));
-        Assert.False(ImGuiVulkanRenderer.IsDrawableTexture(IntPtr.Zero, none));
-        Assert.False(ImGuiVulkanRenderer.IsDrawableTexture((IntPtr)7, none));
+        Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot(unchecked((IntPtr)uint.MaxValue), none, null, out _));
+        Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot(IntPtr.Zero, none, _ => true, out _));
+        Assert.False(ImGuiVulkanRenderer.TryGetDrawSlot((IntPtr)8, none, null, out _));
     }
 }

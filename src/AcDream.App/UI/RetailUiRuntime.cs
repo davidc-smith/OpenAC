@@ -415,6 +415,9 @@ public sealed class RetailUiRuntime : IDisposable
 
     internal bool IsDisposalComplete => _disposed;
 
+    /// <summary>The interface's texture services as plugins and the overlay's icons see them.</summary>
+    internal AcDream.App.Plugins.IPluginImageBackend ImageBackend { get; }
+
     private RetailUiRuntime(RetailUiRuntimeBindings bindings)
     {
         _bindings = bindings;
@@ -429,12 +432,13 @@ public sealed class RetailUiRuntime : IDisposable
             HideClientWindow,
             IsClientWindowVisible);
         bindings.Plugins?.BindPluginWindowControl(ShowWindow, HideWindow);
-        bindings.Plugins?.BindImageServices(new RetailPluginImageBackend(
+        ImageBackend = new RetailPluginImageBackend(
             bindings.Assets.Dats,
             bindings.Assets.DatLock,
             bindings.Assets.TextureCache,
             bindings.Assets.Icons,
-            bindings.Toolbar.Objects));
+            bindings.Toolbar.Objects);
+        bindings.Plugins?.BindImageServices(ImageBackend);
 
         ChatSettings chatSettings = bindings.Chat.Store?.LoadChat() ?? ChatSettings.Default;
         WindowLockPresentation = new RetailWindowLockPresentationController(

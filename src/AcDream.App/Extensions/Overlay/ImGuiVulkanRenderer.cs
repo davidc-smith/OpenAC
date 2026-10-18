@@ -36,16 +36,26 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
     private GpuTextureSlot _atlasSlot = GpuTextureSlot.Unassigned;
     private float _atlasScale;
     private readonly Action<string>? _log;
+    private readonly OverlayFonts? _fonts;
+    private readonly Func<IntPtr, bool>? _issued;
+    private int _fontsVersion = -1;
     private readonly HashSet<IntPtr> _reportedBadTextures = [];
     private bool _reportedOversize;
     private bool _reportedRingFull;
     private bool _reportedCallback;
 
-    public ImGuiVulkanRenderer(IGpuDevice device, ICurrentGpuFrameSource frames, Action<string>? log = null)
+    public ImGuiVulkanRenderer(
+        IGpuDevice device,
+        ICurrentGpuFrameSource frames,
+        Action<string>? log = null,
+        OverlayFonts? fonts = null,
+        Func<IntPtr, bool>? issued = null)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
         _log = log;
+        _fonts = fonts;
+        _issued = issued;
         _pipeline = device.CreatePipeline(new GpuPipelineDescription
         {
             Name = "imgui-overlay",
@@ -72,17 +82,29 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
     }
 
     /// <summary>
-    /// True only for a texture id this renderer issued (today: the font atlas).
-    /// Anything else, such as a foreign plugin pointer, 0 or a stale id, would
-    /// index the bindless table out of range, so it is never drawn.
+    /// The bindless slot for an ImGui texture id. Ids are UI texture handles
+    /// (slot + 1): the font atlas's, or an icon the overlay's icon service
+    /// handed out. Anything else, such as a foreign plugin pointer, 0 or a
+    /// stale id, would index the bindless table out of range, so it is never drawn.
     /// </summary>
-    internal static bool IsDrawableTexture(IntPtr textureId, GpuTextureSlot atlas) =>
-        atlas.IsAssigned && textureId == (IntPtr)atlas.Index;
+    internal static bool TryGetDrawSlot(IntPtr textureId, GpuTextureSlot atlas, Func<IntPtr, bool>? issued, out uint slot)
+    {
+        slot = 0;
+        long value = textureId.ToInt64();
+        if (value <= 0 || value > uint.MaxValue)
+            return false;
+        uint handle = (uint)value;
+        if (handle != UiTextureTableHandle.FromSlot(atlas) && issued?.Invoke(textureId) != true)
+            return false;
+        slot = UiTextureTableHandle.ToSlot(handle).Index;
+        return true;
+    }
 
     public void PrepareFrame(ImGuiIOPtr io, Vector2 framebufferScale)
     {
         float scale = MathF.Max(1f, framebufferScale.X);
-        if (_atlas is not null && Math.Abs(scale - _atlasScale) < 0.01f)
+        int fontsVersion = _fonts?.Version ?? 0;
+        if (_atlas is not null && Math.Abs(scale - _atlasScale) < 0.01f && fontsVersion == _fontsVersion)
             return;
 
         ReleaseAtlas();
@@ -94,6 +116,7 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
         config.PixelSnapH = true;
         io.Fonts.AddFontDefault(config);
         config.Destroy();
+        _fonts?.MergeInto(io.Fonts, FontSizePoints * scale);
         io.FontGlobalScale = 1f / scale;
         io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
 
@@ -113,7 +136,8 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
         _atlas = texture;
         _log?.Invoke($"[ImGui] font atlas {width}x{height} at scale {scale}");
         _atlasScale = scale;
-        io.Fonts.SetTexID((IntPtr)_atlasSlot.Index);
+        _fontsVersion = fontsVersion;
+        io.Fonts.SetTexID((IntPtr)UiTextureTableHandle.FromSlot(_atlasSlot));
         io.Fonts.ClearTexData();
     }
 
@@ -208,7 +232,7 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
 
                 if (cmd.ElemCount == 0)
                     continue;
-                if (!IsDrawableTexture(cmd.TextureId, _atlasSlot))
+                if (!TryGetDrawSlot(cmd.TextureId, _atlasSlot, _issued, out uint texture))
                 {
                     ReportBadTexture(cmd.TextureId);
                     continue;
@@ -216,7 +240,6 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
 
                 if (!ImGuiScissor.TryMap(cmd.ClipRect, drawData.DisplayPos, drawData.FramebufferScale, fbWidth, fbHeight, out var s))
                     continue;
-                uint texture = _atlasSlot.Index;
                 if (texture != boundTexture)
                 {
                     constants.TextureIndexA = texture;
@@ -237,7 +260,7 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
     {
         if (_reportedBadTextures.Count >= MaxReportedBadTextures || !_reportedBadTextures.Add(textureId))
             return;
-        _log?.Invoke($"[ImGui] skipping draws with unknown texture id 0x{textureId:X}; only the font atlas can be drawn.");
+        _log?.Invoke($"[ImGui] skipping draws with unknown texture id 0x{textureId:X}; only the font atlas and client icons can be drawn.");
     }
 
     public void Dispose()
