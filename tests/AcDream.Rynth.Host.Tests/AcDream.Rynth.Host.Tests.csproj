@@ -2,6 +2,10 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- .NET 10 on arm64 (macOS): Tier-0 code throws DataMisalignedException in RynthAi's
+         RynthPluginGetSnapshotJson (Interlocked.Exchange on a [ThreadStatic] inside an
+         UnmanagedCallersOnly export), so the export returns null. Optimised JIT avoids it. -->
+    <TieredCompilationQuickJit>false</TieredCompilationQuickJit>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />

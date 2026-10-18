@@ -82,6 +82,8 @@ public sealed unsafe class RynthHost : IDisposable
             return;
         }
 
+        // RynthCore's dashboard shows a plugin's version from its loaded-plugin record.
+        plugin.Owner.VersionString = plugin.CallStringExport("RynthPluginVersion") ?? string.Empty;
         _plugins.Add(plugin);
         _log($"{name} loaded.");
     }

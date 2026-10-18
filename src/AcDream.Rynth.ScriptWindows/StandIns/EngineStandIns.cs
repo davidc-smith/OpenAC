@@ -33,6 +33,7 @@ namespace RynthCore.Engine.Plugins
     internal sealed class LoadedPlugin
     {
         public string DisplayName { get; set; } = "";
+        public string VersionString { get; set; } = "";
         public bool Failed { get; set; }
     }
 

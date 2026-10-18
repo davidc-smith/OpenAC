@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RynthSuite's RynthAi, compiled unchanged from the submodule as plain net10.0,
+       with the RynthSuite libraries and shared files its own csproj pulls in
+       (LootSdk, TerrainData, Plugins/Shared). Their embedded resources keep the
+       names their code loads them by. Their code, their warnings: warnings-as-
+       errors and analyzers are off for this project only. -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsPackable>false</IsPackable>
+    <RynthSuite>$(MSBuildThisFileDirectory)..\..\external\RynthSuite\</RynthSuite>
+    <AiPlugin>$(RynthSuite)Plugins\RynthCore.Plugin.RynthAi\</AiPlugin>
+    <SuiteShared>$(RynthSuite)Plugins\Shared\</SuiteShared>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(AiPlugin)**\*.cs" Exclude="$(AiPlugin)obj\**;$(AiPlugin)bin\**" />
+    <Compile Include="$(SuiteShared)RynthAiScriptApi.cs" Link="Shared\RynthAiScriptApi.cs" />
+    <Compile Include="$(SuiteShared)RynthAiStatusApi.cs" Link="Shared\RynthAiStatusApi.cs" />
+    <Compile Include="$(SuiteShared)RynthNavPathApi.cs" Link="Shared\RynthNavPathApi.cs" />
+    <Compile Include="$(SuiteShared)CombatText.cs" Link="Shared\CombatText.cs" />
+    <Compile Include="$(SuiteShared)UseAudit.cs" Link="Shared\UseAudit.cs" />
+    <Compile Include="$(SuiteShared)MoveAudit.cs" Link="Shared\MoveAudit.cs" />
+    <Compile Include="$(SuiteShared)ActionPacer.cs" Link="Shared\ActionPacer.cs" />
+    <Compile Include="$(SuiteShared)Nav3DText.cs" Link="Shared\Nav3DText.cs" />
+    <Compile Include="$(SuiteShared)RynthInstallPaths.cs" Link="Shared\RynthInstallPaths.cs" />
+    <Compile Include="$(RynthSuite)Shared\RynthCore.LootSdk\**\*.cs"
+             Exclude="$(RynthSuite)Shared\RynthCore.LootSdk\obj\**;$(RynthSuite)Shared\RynthCore.LootSdk\bin\**"
+             Link="LootSdk\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="$(RynthSuite)Shared\RynthCore.TerrainData\**\*.cs"
+             Exclude="$(RynthSuite)Shared\RynthCore.TerrainData\obj\**;$(RynthSuite)Shared\RynthCore.TerrainData\bin\**"
+             Link="TerrainData\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(AiPlugin)Combat\SpellData.txt" LogicalName="RynthCore.Plugin.RynthAi.Combat.SpellData.txt" />
+    <EmbeddedResource Include="$(AiPlugin)CreatureData\creature_resists.tsv" LogicalName="RynthCore.Plugin.RynthAi.CreatureData.creature_resists.tsv" />
+    <EmbeddedResource Include="$(AiPlugin)CreatureData\creature_types.txt" LogicalName="RynthCore.Plugin.RynthAi.CreatureData.creature_types.txt" />
+    <EmbeddedResource Include="$(AiPlugin)Data\creature_weakness.json" LogicalName="RynthCore.Plugin.RynthAi.Data.creature_weakness.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ImGui.NET" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AcDream.Rynth.Sdk\AcDream.Rynth.Sdk.csproj" />
+  </ItemGroup>
+</Project>
