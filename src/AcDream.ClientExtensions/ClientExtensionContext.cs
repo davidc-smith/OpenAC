@@ -25,4 +25,10 @@ public sealed class ClientExtensionContext
     /// the client accepted it. Null when the client offers no submission.
     /// </summary>
     public Func<string, bool>? SubmitChatCommand { get; init; }
+
+    /// <summary>
+    /// A folder the extension may keep its own files in (one per install; the
+    /// extension creates it when it first writes). Null: don't save anything.
+    /// </summary>
+    public string? StateDirectory { get; init; }
 }

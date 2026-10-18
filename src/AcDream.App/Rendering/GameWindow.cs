@@ -535,7 +535,7 @@ public sealed class GameWindow :
         _runtimeHostLease = _runtime.AcquireHostLease(
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
-        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true);
+        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"));
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
