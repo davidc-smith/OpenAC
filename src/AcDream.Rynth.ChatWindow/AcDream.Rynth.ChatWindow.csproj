@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RynthCore's ImGui chat window (ChatFace, the filter editor, ChatData and
+       friends), compiled unchanged from the submodule against our stand-ins for
+       the engine types they use (StandIns/, plus the shared ones in
+       AcDream.Rynth.ScriptWindows). RynthCore's Win32Backend, ChatHooks,
+       UiSources, UiDataHub, PluginExportBinder and Discord relay are NOT
+       compiled: the stand-ins of those names are plain classes. Their code,
+       their warnings: warnings-as-errors and analyzers are off here. -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsPackable>false</IsPackable>
+    <RynthEngine>$(MSBuildThisFileDirectory)..\..\external\RynthCore\src\RynthCore.Engine\</RynthEngine>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(RynthEngine)UI\Data\Chat*.cs" Link="RynthCore\Data\%(Filename)%(Extension)" />
+    <Compile Include="$(RynthEngine)UI\Data\UiSource.cs" Link="RynthCore\Data\UiSource.cs" />
+    <Compile Include="$(RynthEngine)UI\Panels\RynthChatPresets.cs" Link="RynthCore\RynthChatPresets.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\ChatFace.cs" Link="RynthCore\ChatFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\ChatFiltersFace.cs" Link="RynthCore\ChatFiltersFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\FaceKit.cs" Link="RynthCore\FaceKit.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\DashboardDrawers.cs" Link="RynthCore\DashboardDrawers.cs" />
+    <Compile Include="$(RynthEngine)ImGui\SafeImGui.cs" Link="RynthCore\SafeImGui.cs" />
+    <Compile Include="$(RynthEngine)ImGui\RynthTheme.cs" Link="RynthCore\RynthTheme.cs" />
+    <Compile Include="$(RynthEngine)Compatibility\TellMemory.cs" Link="RynthCore\TellMemory.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ImGui.NET" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AcDream.Rynth.ScriptWindows\AcDream.Rynth.ScriptWindows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AcDream.Rynth.Host" />
+    <InternalsVisibleTo Include="AcDream.Rynth.Host.Tests" />
+    <InternalsVisibleTo Include="AcDream.App.Tests" />
+  </ItemGroup>
+</Project>

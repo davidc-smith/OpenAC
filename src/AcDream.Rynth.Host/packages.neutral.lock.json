@@ -68,6 +68,13 @@
           "AcDream.Plugin.Abstractions": "[0.1.25, )"
         }
       },
+      "acdream.rynth.chatwindow": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.ScriptWindows": "[0.1.25, )",
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
+        }
+      },
       "acdream.rynth.plugin.rynthchat": {
         "type": "Project",
         "dependencies": {
