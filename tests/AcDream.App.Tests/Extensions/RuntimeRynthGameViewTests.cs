@@ -37,4 +37,55 @@ public sealed class RuntimeRynthGameViewTests
             runtime.CommunicationOwner.Chat.Snapshot(),
             entry => entry.Text == "Rynth tracker: no data yet");
     }
+
+    [Fact]
+    public void ReadsObjectFieldsAndContentsWithWieldedItems()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var pack = new ClientObject
+        {
+            ObjectId = 0x80000020,
+            Name = "Pack",
+            Type = ItemType.Container,
+            ContainerId = 0x50000001,
+            ItemsCapacity = 24,
+            IconId = 0x06001111,
+            WeenieClassId = 136,
+            PublicWeenieBitfield = 0x1,
+        };
+        pack.Properties.Ints[28] = 5;
+        var sword = new ClientObject
+        {
+            ObjectId = 0x80000010,
+            Name = "Sword",
+            WielderId = 0x50000001,
+            CurrentlyEquippedLocation = EquipMask.MeleeWeapon,
+        };
+        runtime.InventoryOwner.Objects.AddOrUpdate(pack);
+        runtime.InventoryOwner.Objects.AddOrUpdate(sword);
+        // AddOrUpdate indexes wielded items only; pack contents arrive as a server listing.
+        runtime.InventoryOwner.Objects.ReplaceContents(0x50000001, new uint[] { 0x80000020 });
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.False(view.TryGetObject(0x80000099, out _));
+        Assert.True(view.TryGetObject(0x80000020, out RynthObjectInfo info));
+        Assert.Equal(0x50000001u, info.ContainerId);
+        Assert.Equal((uint)ItemType.Container, info.ItemType);
+        Assert.Equal(24, info.ItemsCapacity);
+        Assert.Equal(0x06001111u, info.IconId);
+        Assert.Equal(136u, info.Wcid);
+        Assert.Equal(0x1u, info.Bitfield);
+        Assert.False(info.Identified);
+        Assert.Equal(5, info.Ints[28]);
+        Assert.True(view.TryGetObject(0x80000010, out RynthObjectInfo swordInfo));
+        Assert.Equal((uint)EquipMask.MeleeWeapon, swordInfo.EquipLocation);
+        Assert.Equal(0u, swordInfo.Bitfield);
+
+        Assert.Equal([0x80000010u, 0x80000020u], view.GetContainerContents(0x50000001));
+        Assert.Empty(view.GetContainerContents(0x80000020));
+        Assert.False(view.TryGetObjectPosition(0x80000020, out _, out _));
+        Assert.Equal(string.Empty, view.WorldName);
+        Assert.Equal(string.Empty, view.AccountName);
+    }
 }

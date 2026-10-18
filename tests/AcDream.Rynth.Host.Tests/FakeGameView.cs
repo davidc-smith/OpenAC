@@ -43,4 +43,30 @@ internal sealed class FakeGameView : IRynthGameView
         if (Throw) throw new InvalidOperationException("view failed");
         ChatLines.Add((text, chatType));
     }
+
+    public Dictionary<uint, RynthObjectInfo> Objects { get; } = new();
+    public Dictionary<uint, List<uint>> Contents { get; } = new();
+    public Dictionary<uint, (uint Cell, System.Numerics.Vector3 Origin)> Positions { get; } = new();
+    public string AccountName { get; set; } = string.Empty;
+    public string WorldName { get; set; } = string.Empty;
+
+    public bool TryGetObject(uint objectId, out RynthObjectInfo info)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        return Objects.TryGetValue(objectId, out info!);
+    }
+
+    public IReadOnlyList<uint> GetContainerContents(uint containerId)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        return Contents.TryGetValue(containerId, out List<uint>? ids) ? ids : [];
+    }
+
+    public bool TryGetObjectPosition(uint objectId, out uint cellId, out System.Numerics.Vector3 origin)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        bool found = Positions.TryGetValue(objectId, out var position);
+        (cellId, origin) = position;
+        return found;
+    }
 }
