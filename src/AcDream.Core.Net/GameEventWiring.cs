@@ -69,7 +69,8 @@ public static class GameEventWiring
         Action<BookEvents.PageDataResponse>? onBookPageData = null,
         Action<BookEvents.PageResponse>? onBookAddPageResponse = null,
         Action<BookEvents.Inscription>? onBookInscription = null,
-        Action<string /*deathMessage*/>? onLocalPlayerDeath = null)
+        Action<string /*deathMessage*/>? onLocalPlayerDeath = null,
+        ServerReplyLog? serverReplies = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(items);
@@ -430,6 +431,7 @@ public static class GameEventWiring
         {
             var code = GameEvents.ParseWeenieError(e.Payload.Span);
             if (code is null) return;
+            serverReplies?.RecordWeenieError((uint)GameEventType.WeenieError, code.Value, 0);
             if (WeenieErrorMessages.IsSilentClientControlStatus(code.Value)) return;
             var (text, type) = WeenieErrorMessages.Resolve(code.Value, null);
             if (text is null)
@@ -446,6 +448,7 @@ public static class GameEventWiring
         {
             var p = GameEvents.ParseWeenieErrorWithString(e.Payload.Span);
             if (p is null) return;
+            serverReplies?.RecordWeenieError((uint)GameEventType.WeenieErrorWithString, p.Value.ErrorCode, 0);
             if (WeenieErrorMessages.IsSilentClientControlStatus(p.Value.ErrorCode)) return;
             var (text, type) = WeenieErrorMessages.Resolve(p.Value.ErrorCode, p.Value.Interpolation);
             if (text is null)
@@ -522,6 +525,7 @@ public static class GameEventWiring
             var p = GameEvents.ParseKillerNotification(e.Payload.Span);
             // Same handler/type as VictimNotification above — 0x00 Default.
             if (p is not null) chat.OnCombatLine(p.Value.DeathMessage, logTextType: 0x00u, kind: CombatLineKind.Info);
+            if (p is not null) combat.OnKillerNotification(p.Value.DeathMessage, 0u);
         });
 
         // ── Spells ────────────────────────────────────────────────
@@ -768,6 +772,8 @@ public static class GameEventWiring
         {
             var p = GameEvents.ParseInventoryServerSaveFailed(e.Payload.Span);
             if (p is null) return;
+            serverReplies?.RecordWeenieError(
+                (uint)GameEventType.InventoryServerSaveFailed, p.Value.WeenieError, p.Value.ItemGuid);
             // B-Drag: the server rejected an optimistic move — snap the item back to its pre-move slot.
             var item = items.Get(p.Value.ItemGuid);
             string itemInfo = item is null
@@ -786,6 +792,7 @@ public static class GameEventWiring
                 error: err ?? 0,
                 payloadLength: e.Payload.Length);
             if (err is null) return;
+            serverReplies?.RecordUseDone(err.Value);
             Console.WriteLine($"[use-done] err=0x{err.Value:X4}");
             onUseDone?.Invoke(err.Value);
             if (err.Value == 0) return;
@@ -860,12 +867,15 @@ public static class GameEventWiring
             else if (!p.Value.Success)
                 items.RecordUnsuccessfulAppraisal(p.Value.Guid);
             if (p.Value.CreatureProfile is { HealthMax: > 0u } creature)
-                combat.OnUpdateHealth(
+                combat.OnCreatureProfile(
                     p.Value.Guid,
-                    Math.Clamp(
-                        (float)creature.Health / creature.HealthMax,
-                        0f,
-                        1f));
+                    new CombatState.CreatureVitals(
+                        creature.Health,
+                        creature.HealthMax,
+                        creature.Stamina,
+                        creature.StaminaMax,
+                        creature.Mana,
+                        creature.ManaMax));
             onAppraisal?.Invoke(p.Value);
         });
 

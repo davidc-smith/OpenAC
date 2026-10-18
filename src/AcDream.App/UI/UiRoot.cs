@@ -870,7 +870,10 @@ public sealed class UiRoot : UiElement
         // char tail, if it had one, has been and gone. Whatever follows is typed.
         _suppressedCharTailPending = false;
 
+        // A hidden default input (a window or ancestor hidden after it was set)
+        // never takes the keyboard: the key goes on to its normal handling.
         if (KeyboardFocus is null && DefaultTextInput is not null
+            && IsAvailableInputTarget(DefaultTextInput)
             && (vk == (int)Silk.NET.Input.Key.Tab
                 || vk == (int)Silk.NET.Input.Key.Enter))
         {

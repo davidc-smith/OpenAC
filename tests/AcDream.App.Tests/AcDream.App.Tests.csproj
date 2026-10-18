@@ -27,6 +27,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- One shared HOME/XDG sandbox for every test that loads RynthInventory. -->
+    <Compile Include="..\AcDream.Rynth.Host.Tests\RynthConfigSandbox.cs" Link="RynthConfigSandbox.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\AcDream.App\AcDream.App.csproj" />
     <ProjectReference Include="..\..\src\AcDream.Launcher.Core\AcDream.Launcher.Core.csproj" />
     <!-- The vendor panel test drives the client-command dispatcher, whose

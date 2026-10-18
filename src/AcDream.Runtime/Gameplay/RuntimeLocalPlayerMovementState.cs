@@ -407,6 +407,20 @@ public sealed class RuntimeLocalPlayerMovementState
         _controller?.ReportExhaustionAtMovementBoundary() == true;
 
     /// <summary>
+    /// True while the character's body still has motions queued: a cast or
+    /// action gesture is playing. The original client's cast gate reads the
+    /// same queue. False with no body.
+    /// </summary>
+    public bool HasPendingMotions
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _controller?.MotionsPending == true;
+        }
+    }
+
+    /// <summary>
     /// Whether the character's body is in position for <paramref name="mode"/>,
     /// by the original client's rule: a stance still being taken up is not
     /// ready for a mode change, and a melee or missile stance not yet held is

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RynthSuite's RynthChat, compiled unchanged from the submodule as plain net10.0. -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsPackable>false</IsPackable>
+    <ChatPlugin>$(MSBuildThisFileDirectory)..\..\external\RynthSuite\Plugins\RynthCore.Plugin.RynthChat\</ChatPlugin>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(ChatPlugin)**\*.cs" Exclude="$(ChatPlugin)obj\**;$(ChatPlugin)bin\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AcDream.Rynth.Sdk\AcDream.Rynth.Sdk.csproj" />
+  </ItemGroup>
+</Project>

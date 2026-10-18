@@ -1,0 +1,92 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using RynthCore.Engine;
+using RynthCore.Engine.ImGuiBackend;
+using RynthCore.Engine.ImGuiBackend.Panels;
+using RynthCore.Engine.Plugins;
+using RynthCore.Engine.UI.Data;
+
+namespace AcDream.Rynth.EngineUi;
+
+/// <summary>
+/// Runs RynthCore's RynthAi dashboard: Start does what RynthCore's EntryPoint
+/// does when RynthAi is installed (register the face), Tick is UiDataHub's
+/// step (run posted work, then poll each subscribed source when due), Stop is
+/// the hub's reset after plugins unload. Game thread.
+/// </summary>
+internal static class RynthAiDashboard
+{
+    private static bool _started;
+
+    /// <summary>Their dashboard's title (the bar button and the layout key).</summary>
+    internal const string Title = RynthAiFace.Title;
+
+    /// <summary>Where posted work that throws is logged; the host sets it.</summary>
+    internal static Action<string> Log { get; set; } = _ => { };
+
+    internal static void Start()
+    {
+        if (!_started)
+        {
+            EntryPoint.InitStartedUtc = DateTime.UtcNow;
+            _started = true;
+        }
+
+        // The panel host can be reset (tests, an extension restart): register again then.
+        if (!ImGuiPanelHost.HasFace(RynthAiFace.Title))
+            RynthAiFace.Register();
+    }
+
+    private static readonly UiSource[] Sources =
+        [UiSources.RynthAi, UiSources.Patrol, UiSources.Nav, UiSources.Settings, UiSources.RynthSortWatch];
+
+    /// <summary>One hub step. Returns how many posted actions ran.</summary>
+    internal static int Tick()
+    {
+        if (!_started)
+            return 0;
+        foreach (UiSource source in Sources)
+            source.PromoteDeferredRefresh();
+        int ran = UiDataHub.Drain(Log);
+        PollAll(Sources, Stopwatch.GetTimestamp());
+        return ran;
+    }
+
+    /// <summary>
+    /// Polls each subscribed, due source inside its own try/catch (as the hub's
+    /// Step does): one that throws is logged and still marked polled, so it
+    /// neither stops the others nor is retried every tick.
+    /// </summary>
+    internal static void PollAll(IReadOnlyList<UiSource> sources, long now)
+    {
+        foreach (UiSource source in sources)
+        {
+            if (!source.HasSubscribers || !source.IsDue(now))
+                continue;
+            long before = Stopwatch.GetTimestamp();
+            try { source.Poll(); }
+            catch (Exception ex) { Log($"[RynthAi] {source.Name} poll: {ex.GetType().Name}: {ex.Message}"); }
+            long after = Stopwatch.GetTimestamp();
+            source.MarkPolled(after, after - before);
+        }
+    }
+
+    internal static void Stop()
+    {
+        try
+        {
+            UiDataHub.Clear();
+            PluginManager.RaisePluginsUnloaded();
+            foreach (UiSource source in Sources)
+            {
+                try { source.Reset(); }
+                catch (Exception ex) { Log($"[RynthAi] {source.Name} reset: {ex.GetType().Name}: {ex.Message}"); }
+            }
+        }
+        finally
+        {
+            _started = false;
+        }
+    }
+}

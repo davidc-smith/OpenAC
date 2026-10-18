@@ -11,14 +11,17 @@ internal interface IInputCaptureSource
 
 internal sealed class DevToolsInputCaptureSource
 {
-    public DevToolsInputCaptureSource(bool enabled)
+    private readonly Func<bool>? _wantsMouse, _wantsKeyboard;
+    public DevToolsInputCaptureSource(bool enabled, Func<bool>? wantsMouse = null, Func<bool>? wantsKeyboard = null)
     {
         _ = enabled;
+        _wantsMouse = wantsMouse;
+        _wantsKeyboard = wantsKeyboard;
     }
 
-    public bool WantCaptureMouse => false;
+    public bool WantCaptureMouse => _wantsMouse?.Invoke() == true;
 
-    public bool WantCaptureKeyboard => false;
+    public bool WantCaptureKeyboard => _wantsKeyboard?.Invoke() == true;
 }
 
 internal sealed class RetainedUiInputCaptureSlot : IHotkeyFocusSource

@@ -383,6 +383,9 @@ public sealed class RetailUiRuntime : IDisposable
     private RetailUiAutomationScriptRunner? _automation;
     private readonly RetailPanelUiController _panelUi;
     private ChatWindowController? _chatWindowController;
+
+    /// <summary>Chat seam for client extensions: claims on any action that focuses the chat entry (EnterChatMode, ToggleChatEntry, FocusChatEntry, ChatStartCommand, replies, tell-to-selected) and the hide switch.</summary>
+    internal AcDream.App.Extensions.ClientChatSeam? ExtensionChat { get; set; }
     private readonly FloatingChatWindowController?[] _floatingChatControllers = new FloatingChatWindowController?[4];
     private GameplayConfirmationController? _gameplayConfirmationController;
     private RetailItemConfirmationController? _itemConfirmationController;
@@ -428,6 +431,9 @@ public sealed class RetailUiRuntime : IDisposable
 
     internal bool IsDisposalComplete => _disposed;
 
+    /// <summary>The interface's texture services as plugins and the overlay's icons see them.</summary>
+    internal AcDream.App.Plugins.IPluginImageBackend ImageBackend { get; }
+
     private RetailUiRuntime(RetailUiRuntimeBindings bindings)
     {
         _bindings = bindings;
@@ -442,12 +448,13 @@ public sealed class RetailUiRuntime : IDisposable
             HideClientWindow,
             IsClientWindowVisible);
         bindings.Plugins?.BindPluginWindowControl(ShowWindow, HideWindow);
-        bindings.Plugins?.BindImageServices(new RetailPluginImageBackend(
+        ImageBackend = new RetailPluginImageBackend(
             bindings.Assets.Dats,
             bindings.Assets.DatLock,
             bindings.Assets.TextureCache,
             bindings.Assets.Icons,
-            bindings.Toolbar.Objects));
+            bindings.Toolbar.Objects);
+        bindings.Plugins?.BindImageServices(ImageBackend);
         bindings.Plugins?.BindFontServices(new RetailPluginFontBackend(bindings.Assets.TextureCache));
 
         ChatSettings chatSettings = bindings.Chat.Store?.LoadChat() ?? ChatSettings.Default;
@@ -762,6 +769,7 @@ public sealed class RetailUiRuntime : IDisposable
         LinkStatusUiController?.Tick();
         IndicatorBarController?.Tick();
         _chatWindowController?.UpdateUnreadIndicator();
+        _chatWindowController?.SetExtensionHidden(ExtensionChat?.ChatWindowHidden == true);
         JumpPowerbarController?.Tick();
         SecureTradeController?.Tick();
         SelectedObjectController?.Tick(deltaSeconds);
@@ -1054,6 +1062,8 @@ public sealed class RetailUiRuntime : IDisposable
 
     public void FocusChatEntry()
     {
+        if (ExtensionChat?.TryClaimEntry() == true)
+            return;
         if (Host.Root.DefaultTextInput is { } input)
             Host.Root.SetKeyboardFocus(input);
     }
@@ -1706,6 +1716,7 @@ public sealed class RetailUiRuntime : IDisposable
         controller.AttachWindow(handle);
         Host.Root.DefaultTextInput = controller.Input;
         _chatWindowController = controller;
+        controller.ExtensionEntryClaim = () => ExtensionChat?.TryClaimEntry() == true;
         controller.BindIndicatorClicks(ToggleFloatingChatWindow);
         Console.WriteLine("[UI] retail chat window from LayoutDesc importer (0x2100006F).");
     }

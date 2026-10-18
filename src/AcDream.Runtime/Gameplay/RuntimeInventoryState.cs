@@ -66,6 +66,9 @@ public sealed class RuntimeInventoryState : IDisposable
     public IRuntimeInventoryStateView View { get; }
     public bool IsDisposed => _disposed;
 
+    /// <summary>The server's UseDone events and refusals, counted (see <see cref="ServerReplyLog"/>).</summary>
+    public ServerReplyLog ServerReplies { get; } = new();
+
     public RuntimeInventoryOwnershipSnapshot CaptureOwnership() => new(
         _disposed,
         Transactions.IsDisposed,

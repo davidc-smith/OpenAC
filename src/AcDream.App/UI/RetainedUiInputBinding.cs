@@ -211,7 +211,7 @@ internal sealed class RetainedMouseInputBinding : IRetainedUiInputBinding
     private void Invoke(Action callback) =>
         _quiescence.Invoke(() =>
         {
-            if (Volatile.Read(ref _active) != 0)
+            if (Volatile.Read(ref _active) != 0 && !AcDream.App.Extensions.Overlay.OverlayInputGate.SuppressMouse)
                 callback();
         });
 
@@ -403,7 +403,7 @@ internal sealed class RetainedKeyboardInputBinding : IRetainedUiInputBinding
     private void Invoke(Action callback) =>
         _quiescence.Invoke(() =>
         {
-            if (Volatile.Read(ref _active) != 0)
+            if (Volatile.Read(ref _active) != 0 && !AcDream.App.Extensions.Overlay.OverlayInputGate.SuppressKeyboard)
                 callback();
         });
 

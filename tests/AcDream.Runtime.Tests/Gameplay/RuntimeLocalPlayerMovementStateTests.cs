@@ -696,4 +696,39 @@ public sealed class RuntimeLocalPlayerMovementStateTests
         current = !value;
         Assert.Equal(!value, movement.RunAsDefaultMovement);
     }
+
+    [Fact]
+    public void HasPendingMotionsFollowsTheControllersMotionQueue()
+    {
+        using var bodiless = new RuntimeLocalPlayerMovementState();
+        Assert.False(bodiless.HasPendingMotions);
+
+        var controller = new PlayerMovementController(new PhysicsEngine());
+        using var movement = new RuntimeLocalPlayerMovementState
+        {
+            Controller = controller,
+        };
+        Assert.False(movement.HasPendingMotions);
+
+        controller.Motion.AddToQueue(0u, (uint)MotionCommand.Ready, 0u);
+        Assert.True(movement.HasPendingMotions);
+
+        controller.Motion.MotionDone((uint)MotionCommand.Ready, success: true);
+        Assert.False(movement.HasPendingMotions);
+    }
+
+    [Fact]
+    public void HasPendingMotionsReadsADormantControllerWithoutThrowing()
+    {
+        // The login window: the controller is Runtime-owned but not yet
+        // live, so it refuses mutation. A read of its queue is not one.
+        PlayerMovementController controller = NewDormantRuntimeController();
+        using var movement = new RuntimeLocalPlayerMovementState
+        {
+            Controller = controller,
+        };
+
+        Assert.True(controller.IsRuntimeOwnedDormant);
+        Assert.False(movement.HasPendingMotions);
+    }
 }

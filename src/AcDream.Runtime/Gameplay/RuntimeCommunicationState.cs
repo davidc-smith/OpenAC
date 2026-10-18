@@ -165,6 +165,13 @@ public sealed class RuntimeCommunicationState : IDisposable
     /// </summary>
     public event Action<string>? LocalPlayerDied;
 
+    /// <summary>
+    /// A client status line (<see cref="RetailLogTextType.ClientLocal"/>) was
+    /// shown. Those lines never enter the chat log, so a listener that needs
+    /// what the player saw ("You're too busy!") takes them from here.
+    /// </summary>
+    public event Action<string>? StatusTextShown;
+
     public void ReportLocalPlayerDeath(string deathMessage)
     {
         ArgumentNullException.ThrowIfNull(deathMessage);
@@ -210,6 +217,7 @@ public sealed class RuntimeCommunicationState : IDisposable
             }
 
             SpewBox.Enqueue(text);
+            StatusTextShown?.Invoke(text);
             return;
         }
 

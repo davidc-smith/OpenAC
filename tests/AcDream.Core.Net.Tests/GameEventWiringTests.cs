@@ -215,6 +215,8 @@ public sealed class GameEventWiringTests
         Assert.NotNull(received);
         Assert.NotNull(received.Value.CreatureProfile);
         Assert.Equal(0.75f, combat.GetHealthPercent(guid), 3);
+        Assert.True(combat.TryGetCreatureVitals(guid, out CombatState.CreatureVitals vitals));
+        Assert.Equal(new CombatState.CreatureVitals(75u, 100u, null, null, null, null), vitals);
     }
 
 
@@ -647,6 +649,20 @@ public sealed class GameEventWiringTests
         Assert.Equal(CombatLineKind.Info, entry.CombatKind);
         Assert.Equal("You killed the drudge!", entry.Text);
         Assert.Equal(0x00u, entry.LogTextType);
+    }
+
+    [Fact]
+    public void WireAll_KillerNotification_RaisesKillLanded()
+    {
+        var (d, _, combat, _, _) = MakeAll();
+        string? landed = null;
+        combat.KillLanded += (deathMessage, _) => landed = deathMessage;
+        byte[] payload = MakeString16L("You killed the drudge!");
+
+        var env = GameEventEnvelope.TryParse(WrapEnvelope(GameEventType.KillerNotification, payload));
+        d.Dispatch(env!.Value);
+
+        Assert.Equal("You killed the drudge!", landed);
     }
 
     [Fact]
@@ -2048,4 +2064,55 @@ public sealed class GameEventWiringTests
         false, false, "", 0, 0, 0u, 0, false, false, true,
         0f, 0u, 0u, 0u, 0);
 
+    private static (GameEventDispatcher, ServerReplyLog) MakeWithReplies()
+    {
+        var dispatcher = new GameEventDispatcher();
+        var replies = new ServerReplyLog();
+        GameEventWiring.WireAll(dispatcher, new ClientObjectTable(), new CombatState(),
+            new Spellbook(), new ChatLog(), serverReplies: replies);
+        return (dispatcher, replies);
+    }
+
+    private static void DispatchU32s(GameEventDispatcher dispatcher, GameEventType type, params uint[] values)
+    {
+        byte[] payload = new byte[values.Length * 4];
+        for (int i = 0; i < values.Length; i++)
+            BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(i * 4), values[i]);
+        dispatcher.Dispatch(GameEventEnvelope.TryParse(WrapEnvelope(type, payload))!.Value);
+    }
+
+    [Fact]
+    public void WireAll_ServerReplies_CountsUseDoneIncludingSuccess()
+    {
+        var (d, replies) = MakeWithReplies();
+
+        DispatchU32s(d, GameEventType.UseDone, 0u);
+        DispatchU32s(d, GameEventType.UseDone, 0x0036u);
+
+        Assert.Equal(2, replies.Snapshot.UseDoneSequence);
+        Assert.Equal(0x0036u, replies.Snapshot.LastUseDoneError);
+    }
+
+    [Fact]
+    public void WireAll_ServerReplies_CountsEveryRefusalKindWithItsEventType()
+    {
+        var (d, replies) = MakeWithReplies();
+
+        DispatchU32s(d, GameEventType.WeenieError, 0x9Cu);   // unmapped: still counted
+        Assert.Equal((1, 0x9Cu, 0x028Au, 0u), Tuple(replies.Snapshot));
+
+        byte[] interp = MakeString16L("drudge");
+        byte[] withString = new byte[4 + interp.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(withString, 0x04Au);
+        Array.Copy(interp, 0, withString, 4, interp.Length);
+        d.Dispatch(GameEventEnvelope.TryParse(
+            WrapEnvelope(GameEventType.WeenieErrorWithString, withString))!.Value);
+        Assert.Equal((2, 0x04Au, 0x028Bu, 0u), Tuple(replies.Snapshot));
+
+        DispatchU32s(d, GameEventType.InventoryServerSaveFailed, 0x80000010u, 0x0029u);
+        Assert.Equal((3, 0x0029u, 0x00A0u, 0x80000010u), Tuple(replies.Snapshot));
+
+        static (int, uint, uint, uint) Tuple(ServerReplySnapshot s) =>
+            (s.WeenieErrorSequence, s.LastWeenieError, s.LastWeenieErrorEventType, s.LastWeenieErrorObjectId);
+    }
 }

@@ -15,6 +15,12 @@
           "ZeroAllocJobScheduler": "1.1.2"
         }
       },
+      "ImGui.NET": {
+        "type": "Direct",
+        "requested": "[1.91.6.1, 1.91.6.1]",
+        "resolved": "1.91.6.1",
+        "contentHash": "Ph3j8pO6UM28PPJWP+5LEJSPVPkd8ivpVS8tRyY9b0IHn1HDIrMZ2o/FdiXaYW6YhNxMHmbevw6Jcfs+IDKi0Q=="
+      },
       "Serilog": {
         "type": "Direct",
         "requested": "[4.0.2, )",
@@ -236,6 +242,12 @@
         "resolved": "0.1.1",
         "contentHash": "QEti4O7dwRcOb9zbnLuudSrt2IT61OYjq0R7lcJb+EzUm5N6djOVGU/cp+FZIZzJUnaFIntwrpwiuRvhpS7ZHg=="
       },
+      "acdream.clientextensions": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Runtime": "[0.1.25, )"
+        }
+      },
       "acdream.content": {
         "type": "Project",
         "dependencies": {
@@ -275,6 +287,68 @@
           "AcDream.Platform": "[0.1.25, )",
           "AcDream.Plugin.Abstractions": "[0.1.25, )"
         }
+      },
+      "acdream.rynth.engineui": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.ScriptWindows": "[0.1.25, )",
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
+        }
+      },
+      "acdream.rynth.host": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.ClientExtensions": "[0.1.25, )",
+          "AcDream.Runtime": "[0.1.25, )",
+          "AcDream.Rynth.EngineUi": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthAi": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthChat": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthInventory": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthOracle": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthTracker": "[0.1.25, )",
+          "AcDream.Rynth.ScriptWindows": "[0.1.25, )",
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthai": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )",
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
+        }
+      },
+      "acdream.rynth.plugin.rynthchat": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthinventory": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthoracle": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthtracker": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )"
+        }
+      },
+      "acdream.rynth.scriptwindows": {
+        "type": "Project",
+        "dependencies": {
+          "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
+        }
+      },
+      "acdream.rynth.sdk": {
+        "type": "Project"
       },
       "acdream.ui.abstractions": {
         "type": "Project",

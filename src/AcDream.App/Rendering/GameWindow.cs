@@ -281,6 +281,8 @@ public sealed class GameWindow :
     private readonly AcDream.Runtime.Plugins.RuntimeAutomationSurface? _automation;
     private readonly AcDream.App.Input.AppHotkeyRegistry? _hotkeyRegistry;
     private readonly GameRuntime _runtime;
+    private readonly AcDream.App.Extensions.ClientExtensionHost _extensions = new();
+    private readonly AcDream.App.Extensions.Overlay.ImGuiOverlay _overlay = new(line => Serilog.Log.Information("{OverlayLine}", line));
     private readonly IDisposable _runtimeHostLease;
     private RuntimeCommunicationState _runtimeCommunication =>
         _runtime.CommunicationOwner;
@@ -358,6 +360,7 @@ public sealed class GameWindow :
     private AcDream.UI.Abstractions.Panels.Chat.ChatVM? _retailChatVm;
     private AcDream.App.UI.UiHost? _uiHost;
     private AcDream.App.UI.RetailUiRuntime? _retailUiRuntime;
+    private readonly AcDream.App.Extensions.ClientChatSeam _chatSeam = new(line => Serilog.Log.Information("{ExtensionLine}", line));
     private readonly AcDream.App.UI.RetailUiRuntimeLease _retailUiLease = new();
     private InteractionUiLateBindings? _interactionUiLateBindings;
     private readonly DeferredRenderFrameDiagnosticsSource _uiFrameDiagnostics = new();
@@ -534,6 +537,7 @@ public sealed class GameWindow :
         _runtimeHostLease = _runtime.AcquireHostLease(
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
+        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation);
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
@@ -558,7 +562,7 @@ public sealed class GameWindow :
                 AcDream.Core.Net.Messages.CharacterOptionId.DisplayTimeStamps);
         _retainedInputCapture = new AcDream.App.Input.RetainedUiInputCaptureSlot();
         _inputCapture = new AcDream.App.Input.CompositeInputCaptureSource(
-            new AcDream.App.Input.DevToolsInputCaptureSource(options.DevTools),
+            new AcDream.App.Input.DevToolsInputCaptureSource(options.DevTools, () => _overlay.WantsMouse, () => _overlay.WantsKeyboard),
             _retainedInputCapture);
         _movementInput = new AcDream.App.Input.DispatcherMovementInputSource(
             _playerControllerSlot,
@@ -999,6 +1003,8 @@ public sealed class GameWindow :
         {
             _uiHost = retained.Host;
             _retailUiRuntime = retained.Runtime;
+            _retailUiRuntime.ExtensionChat = _chatSeam;
+            _overlay.BindIcons(retained.Runtime.ImageBackend);
             _retailChatVm = retained.Chat;
             _characterSheetProvider = retained.CharacterSheet;
             _frameScreenshots = retained.Screenshots;
@@ -1593,7 +1599,7 @@ public sealed class GameWindow :
                         _renderPackDiagnostics,
                         WorldLines,
                         _uiRegistry?.WorldMarkerStore,
-                        WorldTriangles),
+                        WorldTriangles) { Overlay = _overlay },
                     this).Compose(
                         platformResult,
                         hostInputCamera,
@@ -1625,6 +1631,7 @@ public sealed class GameWindow :
                     == RuntimeCharacterSelectionLifecycle.InWorld);
         }
         _pluginTick.Feed(dt);
+        _extensions.Tick(dt);
         _renderLoopArmed = false;
     }
 
@@ -1683,6 +1690,7 @@ public sealed class GameWindow :
         if (!_lifetime.HasShutdownRoots)
         {
             PersistKeyBindingsAtShutdown();
+            _extensions.Dispose();
             _audioMixerCommand?.Dispose();
             if (_runtime.Session.IsInWorld)
                 _statusWriter.Disconnected(_options.SessionId ?? "app", "stopped");

@@ -6,6 +6,7 @@ namespace AcDream.Core.Combat;
 public sealed class CombatState
 {
     private readonly ConcurrentDictionary<uint, float> _healthByGuid = new();
+    private readonly ConcurrentDictionary<uint, CreatureVitals> _vitalsByGuid = new();
 
     public CombatMode CurrentMode { get; private set; } = CombatMode.NonCombat;
 
@@ -30,7 +31,24 @@ public sealed class CombatState
 
     public event Action<CombatMode>? CombatModeChanged;
 
-    public event Action<string /*victimName*/, uint /*victimGuid*/>? KillLanded;
+    /// <summary>
+    /// The server's killer notification. The text is the full death message
+    /// ("You killed the drudge!"), not a bare name; the message carries no
+    /// guid, so <c>victimGuid</c> is 0 when it comes from the wire.
+    /// </summary>
+    public event Action<string /*deathMessage*/, uint /*victimGuid*/>? KillLanded;
+
+    /// <summary>
+    /// A creature's vitals as its last appraisal reported them. Stamina and
+    /// mana are null unless the appraisal showed attributes.
+    /// </summary>
+    public readonly record struct CreatureVitals(
+        uint Health,
+        uint HealthMax,
+        uint? Stamina,
+        uint? StaminaMax,
+        uint? Mana,
+        uint? ManaMax);
 
     public readonly record struct DamageIncoming(
         string AttackerName,
@@ -66,6 +84,31 @@ public sealed class CombatState
         _healthByGuid[targetGuid] = healthPercent;
         HealthChanged?.Invoke(targetGuid, healthPercent);
     }
+
+    // RynthCore's "implausible" bound: a profile's maximum health at or above it is not kept.
+    private const uint ImplausibleHealthMax = 1_000_000u;
+
+    /// <summary>
+    /// An appraisal's creature profile: kept as the creature's last known
+    /// vitals, and its health share applied as a health update.
+    /// </summary>
+    public void OnCreatureProfile(uint targetGuid, in CreatureVitals vitals)
+    {
+        if (vitals.HealthMax == 0u)
+            return;
+
+        // RynthCore (AppraisalHooks.CacheCreatureVitals) keeps vitals only below its
+        // "implausible" bound of 1,000,000, with health capped at the maximum.
+        if (vitals.HealthMax < ImplausibleHealthMax)
+            _vitalsByGuid[targetGuid] = vitals with { Health = Math.Min(vitals.Health, vitals.HealthMax) };
+        OnUpdateHealth(
+            targetGuid,
+            Math.Clamp((float)vitals.Health / vitals.HealthMax, 0f, 1f));
+    }
+
+    /// <summary>The vitals of the creature's last appraisal; false when none was seen.</summary>
+    public bool TryGetCreatureVitals(uint guid, out CreatureVitals vitals) =>
+        _vitalsByGuid.TryGetValue(guid, out vitals);
 
     public void SetCombatMode(CombatMode mode)
     {
@@ -123,8 +166,8 @@ public sealed class CombatState
     public void OnEvasionAttackerNotification(string defenderName)
         => MissedOutgoing?.Invoke(defenderName);
 
-    public void OnKillerNotification(string victimName, uint victimGuid)
-        => KillLanded?.Invoke(victimName, victimGuid);
+    public void OnKillerNotification(string deathMessage, uint victimGuid)
+        => KillLanded?.Invoke(deathMessage, victimGuid);
 
     public void OnEvasionDefenderNotification(string attackerName)
         => EvadedIncoming?.Invoke(attackerName);
@@ -138,6 +181,7 @@ public sealed class CombatState
     public void Clear()
     {
         _healthByGuid.Clear();
+        _vitalsByGuid.Clear();
         CurrentMode = CombatMode.NonCombat;
         ServerMode = null;
 

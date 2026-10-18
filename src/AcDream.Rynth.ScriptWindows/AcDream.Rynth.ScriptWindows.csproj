@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RynthCore's script-window code (parser, registry, ImGui replay, window face),
+       compiled unchanged from the submodule, plus our small stand-ins for the
+       engine types those files use (StandIns/). Their code, their warnings:
+       warnings-as-errors and analyzers are off for this project only. -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsPackable>false</IsPackable>
+    <RynthEngine>$(MSBuildThisFileDirectory)..\..\external\RynthCore\src\RynthCore.Engine\</RynthEngine>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(RynthEngine)UI\ScriptWindows\DisplayListParser.cs" Link="RynthCore\DisplayListParser.cs" />
+    <Compile Include="$(RynthEngine)UI\ScriptWindows\ScriptWindowRegistry.cs" Link="RynthCore\ScriptWindowRegistry.cs" />
+    <Compile Include="$(RynthEngine)ImGui\ScriptWindowReplay.cs" Link="RynthCore\ScriptWindowReplay.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\ScriptWindowFace.cs" Link="RynthCore\ScriptWindowFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\PhosphorIcons.cs" Link="RynthCore\PhosphorIcons.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(RynthEngine)Assets\Fonts\Phosphor.ttf" LogicalName="AcDream.Rynth.ScriptWindows.Phosphor.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ImGui.NET" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AcDream.Rynth.Host" />
+    <InternalsVisibleTo Include="AcDream.Rynth.EngineUi" />
+    <InternalsVisibleTo Include="AcDream.Rynth.Host.Tests" />
+    <InternalsVisibleTo Include="AcDream.App.Tests" />
+  </ItemGroup>
+</Project>

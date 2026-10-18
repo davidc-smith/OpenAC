@@ -27,6 +27,7 @@
     <PackageReference Include="Silk.NET.OpenAL.Extensions.Creative" />
     <PackageReference Include="Silk.NET.OpenAL.Extensions.EXT" />
     <PackageReference Include="Silk.NET.OpenAL.Soft.Native" />
+    <PackageReference Include="ImGui.NET" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="StbTrueTypeSharp" />
@@ -38,6 +39,8 @@
     <ProjectReference Include="..\AcDream.Content\AcDream.Content.csproj" />
     <ProjectReference Include="..\AcDream.Platform\AcDream.Platform.csproj" />
     <ProjectReference Include="..\AcDream.UI.Abstractions\AcDream.UI.Abstractions.csproj" />
+    <ProjectReference Include="..\AcDream.ClientExtensions\AcDream.ClientExtensions.csproj" />
+    <ProjectReference Include="..\AcDream.Rynth.Host\AcDream.Rynth.Host.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="Rendering\Shaders\*.*">
@@ -64,6 +67,12 @@
                       LogicalName="AcDream.App.Fonts.NotoSans-SemiBold.ttf" />
     <None Include="..\..\assets\fonts\NotoSans\OFL.txt" Link="licenses\NotoSans-OFL.txt"
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\external\RynthCore\src\RynthCore.Engine\Assets\Fonts\Phosphor.LICENSE" Link="licenses\Phosphor-LICENSE.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\external\RynthCore\LICENSE" Link="licenses\RynthCore-LICENSE.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\external\RynthSuite\LICENSE" Link="licenses\RynthSuite-LICENSE.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="..\..\assets\icons\acdream-client-16.png"
                       LogicalName="AcDream.App.Rendering.Icons.acdream-client-16.png" />
     <EmbeddedResource Include="..\..\assets\icons\acdream-client-32.png"
@@ -72,5 +81,9 @@
                       LogicalName="AcDream.App.Rendering.Icons.acdream-client-48.png" />
     <EmbeddedResource Include="..\..\assets\icons\acdream-client-256.png"
                       LogicalName="AcDream.App.Rendering.Icons.acdream-client-256.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Extensions\Overlay\Shaders\imgui_overlay.vert.spv" LogicalName="AcDream.App.Overlay.imgui_overlay.vert.spv" />
+    <EmbeddedResource Include="Extensions\Overlay\Shaders\imgui_overlay.frag.spv" LogicalName="AcDream.App.Overlay.imgui_overlay.frag.spv" />
   </ItemGroup>
 </Project>

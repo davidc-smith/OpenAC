@@ -75,7 +75,19 @@ public sealed class RuntimeSpellCastState
             : SpellCastGate.TargetIncompatible;
     }
 
-    public CastRequestResult Cast(uint spellId)
+    public CastRequestResult Cast(uint spellId) =>
+        CastAt(spellId, _selection.SelectedObjectId);
+
+    /// <summary>
+    /// Casts at <paramref name="targetId"/> without reading or changing the
+    /// selection, as the original client's FreeHandsAndCastSpell does for a
+    /// plugin. A self or untargeted spell ignores the target, as
+    /// <see cref="Cast(uint)"/> ignores the selection; 0 is no target.
+    /// </summary>
+    public CastRequestResult Cast(uint spellId, uint targetId) =>
+        CastAt(spellId, targetId == 0u ? null : targetId);
+
+    private CastRequestResult CastAt(uint spellId, uint? candidateTarget)
     {
         if (!_spellbook.Knows(spellId) || !_spellbook.TryGetMetadata(spellId, out SpellMetadata spell))
         {
@@ -85,8 +97,9 @@ public sealed class RuntimeSpellCastState
 
         if (!_operations.HasRequiredComponents(spellId))
         {
+            // Retail's error 0x400 wording; RynthAi matches it to detect missing components.
             _operations.DisplayMessage(
-                "You do not have all of this spell's components.");
+                "You don't have all the components for this spell.");
             return CastRequestResult.MissingComponents;
         }
 
@@ -105,7 +118,7 @@ public sealed class RuntimeSpellCastState
         }
         else
         {
-            target = _selection.SelectedObjectId;
+            target = candidateTarget;
             untargeted = false;
             if (target is null or 0)
             {

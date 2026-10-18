@@ -336,7 +336,7 @@ public sealed class CombatChatTranslatorTests
     public void KillLanded_SynthesizesNoClientSideText()
     {
         var (chat, combat, _) = Setup();
-        combat.OnKillerNotification(victimName: "Phyntos Wasp", victimGuid: 0xCAFEu);
+        combat.OnKillerNotification(deathMessage: "You killed the Phyntos Wasp!", victimGuid: 0xCAFEu);
 
         Assert.Empty(chat.Snapshot());
     }
