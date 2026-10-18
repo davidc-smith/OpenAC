@@ -56,7 +56,10 @@
        PlaySound, the version command's module lookup) become inert after
        compile: each answers "failed", which their code already handles. In
        OpenAC's process those calls have no acclient to read and no editors to
-       launch, on any OS. advapi32 (their install-folder registry read) stays. -->
+       launch, on any OS. advapi32 (their install-folder registry read) stays.
+       Their two Interlocked.Exchange swaps of [ThreadStatic] pointers become plain
+       swaps (a thread static is only its own thread's; on .NET 10 osx-arm64 the
+       runtime can leave one 4-byte aligned, where Interlocked faults). -->
   <ItemGroup>
     <ProjectReference Include="..\..\tools\RynthInteropRedirect\AcDream.Tools.RynthInteropRedirect.csproj"
                       ReferenceOutputAssembly="false" Private="false" />
@@ -77,7 +80,7 @@
       <_RedirectHost Condition="'$(_RedirectHost)' == ''">dotnet</_RedirectHost>
     </PropertyGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)win32-inert.refs" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
-    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; - &quot;$(IntermediateOutputPath)win32-inert.refs&quot; --inert kernel32.dll,user32.dll,shell32.dll,winmm.dll" />
+    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; - &quot;$(IntermediateOutputPath)win32-inert.refs&quot; --inert kernel32.dll,user32.dll,shell32.dll,winmm.dll --plain-threadstatic-swaps" />
     <Touch Files="$(IntermediateOutputPath)win32-inert.stamp" AlwaysCreate="true" />
   </Target>
 </Project>

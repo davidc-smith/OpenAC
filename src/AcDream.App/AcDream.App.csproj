@@ -9,8 +9,6 @@
     <RootNamespace>AcDream.App</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>..\..\assets\icons\acdream-client.ico</ApplicationIcon>
-    <!-- RynthAi (hosted through AcDream.Rynth.Host) swaps [ThreadStatic] pointers with Interlocked in its exports; on .NET 10 osx-arm64 quick-JIT code faults there (DataMisalignedException). Methods with loops are JIT-optimised from the first call instead (the pre-.NET 7 default). RynthAiInteropTests.TheSnapshotAnswersOnAFreshThread guards it. -->
-    <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AcDream.Core.Tests" />

@@ -2,11 +2,10 @@
   <PropertyGroup>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- RynthAi (hosted through AcDream.Rynth.Host) swaps [ThreadStatic] pointers with Interlocked in its exports; on .NET 10 osx-arm64 quick-JIT code faults there (DataMisalignedException). Methods with loops are JIT-optimised from the first call instead (the pre-.NET 7 default). RynthAiInteropTests.TheSnapshotAnswersOnAFreshThread guards it. -->
-    <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Mono.Cecil" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
