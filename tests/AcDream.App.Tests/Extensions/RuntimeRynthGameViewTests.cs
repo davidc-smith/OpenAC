@@ -1,6 +1,11 @@
 using System.Numerics;
 using AcDream.Core.Items;
+using AcDream.Core.Net;
+using AcDream.Core.Net.Messages;
+using AcDream.Core.Physics;
+using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
+using AcDream.Runtime.Entities;
 using AcDream.Rynth.Host;
 
 namespace AcDream.App.Tests.Extensions;
@@ -145,8 +150,6 @@ public sealed class RuntimeRynthGameViewTests
         automation.CombatArea.Snapshot = default(PluginCombatSnapshot) with { Mode = PluginCombatMode.Missile };
         automation.CharacterArea.MaxHealth = 100;
         automation.CharacterArea.CurrentHealth = 40;
-        automation.CharacterArea.EnchantmentList.Add(new PluginActiveEnchantment(2, 1, 1, 60));
-        automation.CharacterArea.EnchantmentList.Add(new PluginActiveEnchantment(3, 1, 1, double.PositiveInfinity));
         automation.CharacterArea.SkillList.Add(new PluginSkillInfo(6, "Melee Defense", PluginSkillTraining.Specialized, 250) { Base = 200 });
         automation.SpellArea.Known.Add(2);
         automation.RecoveryArea.Busy = 3;
@@ -166,11 +169,64 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal((250, 200, 3), (buffed, baseLevel, training));
         Assert.False(view.TryGetSkill(0x80000010, 6, out _, out _, out _));
         Assert.Equal((1, 0x36u), (view.ServerReplies.UseDoneSequence, view.ServerReplies.LastUseDoneError));
+    }
+
+    [Fact]
+    public void PlayerEnchantmentsComeFromTheFullRegistryAsRynthCoreReadsThem()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        double clock = runtime.EffectClock.NowSeconds;
+        Spellbook book = runtime.CharacterOwner.Spellbook;
+        // Two layers of one spell: the stronger covers the weaker, and both are reported.
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1234, 1, 60, 0x50000001, Bucket: 1, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1234, 2, 90, 0x50000001, Bucket: 1, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1300, 1, -1, 0x50000001, Bucket: 2, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(
+            Spellbook.CooldownSpellOffset + 5, 1, 30, 0x50000001, Bucket: Spellbook.CooldownBucket, StartTime: clock));
+        // Id 0 once masked to 16 bits: RynthCore's walk skips it.
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x10000, 1, 60, 0x50000001, Bucket: 1, StartTime: clock));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1400, 1, -1, 0x50000001, Bucket: 4, StartTime: clock));
+        var view = new RuntimeRynthGameView(runtime, automation: new FakeRynthAutomation());
 
         IReadOnlyList<RynthEnchantment> enchantments = view.PlayerEnchantments!;
+
+        Assert.Equal(4, enchantments.Count);   // vitae (bucket 4) is not in the three lists
         double now = view.ServerTime;
-        Assert.InRange(enchantments[0].ExpiryServerTime - now, 59.0, 60.0);
-        Assert.Equal(double.MaxValue, enchantments[1].ExpiryServerTime);
+        RynthEnchantment[] byId = [.. enchantments.OrderBy(e => e.SpellId)];
+        Assert.Equal([0x1234u, 0x1234u, 0x1300u, 0x8005u], byId.Select(e => (uint)e.SpellId));
+        Assert.Equal(double.MaxValue, byId[2].ExpiryServerTime);
+        Assert.InRange(byId[3].ExpiryServerTime - now, 29.0, 30.0);
+        double[] layers = [.. byId.Take(2).Select(e => e.ExpiryServerTime - now).Order()];
+        Assert.InRange(layers[0], 59.0, 60.0);
+        Assert.InRange(layers[1], 89.0, 90.0);
+    }
+
+    [Fact]
+    public void QueryHealthIsFalseWhenNotInWorld()
+    {
+        // The test runtime has no session, so this pins the contract only; it does not cover the in-world gate against a live session.
+        var runtime = GameRuntimeTestFactory.Create();
+        var automation = new FakeRynthAutomation { Available = false };
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.False(view.QueryHealth(0x80000010));
+    }
+
+    [Fact]
+    public void KnownSpellsAreAscendingOnceLoggedIn()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        foreach (uint spell in new uint[] { 30, 5, 17 })
+            runtime.CharacterOwner.Spellbook.OnSpellLearned(spell);
+        var automation = new FakeRynthAutomation { Available = false };
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.Null(view.KnownSpells);   // the same gate as IsSpellKnown
+
+        automation.Available = true;
+        Assert.Equal([5u, 17u, 30u], view.KnownSpells);
     }
 
     [Fact]
@@ -267,5 +323,139 @@ public sealed class RuntimeRynthGameViewTests
         Assert.False(view.TryGetVitalBase(0x50000001, 2, out _));
         Assert.False(view.TryGetVitalBase(0x50000001, 6, out _));
         Assert.False(view.TryGetVitalBase(0x80000010, 1, out _));
+    }
+
+    [Fact]
+    public void HeadingAndPortalingComeFromTheNavigationAndObjectAreas()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var automation = new FakeRynthAutomation();
+        var position = new PluginNavigationPosition(0x01010101, 1, 2, 3, 123.5f, true);
+        automation.NavigationArea.Snapshot = default(PluginNavigationSnapshot) with
+        {
+            IsAvailable = true,
+            IsPortalSpace = true,
+            Position = position,
+        };
+        automation.ObjectArea.Known[0x80000010] = new PluginWorldObject(
+            0x80000010, 1, "A", PluginObjectClass.Unknown, 0, 0, 0)
+        { HasPosition = true, Position = position with { HeadingDegrees = 45f } };
+        automation.ObjectArea.Known[0x80000011] = new PluginWorldObject(
+            0x80000011, 1, "B", PluginObjectClass.Unknown, 0, 0, 0)
+        { HasPosition = false, Position = position };
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.TryGetPlayerHeading(out float heading));
+        Assert.Equal(123.5f, heading);
+        Assert.True(view.IsPortaling);
+        Assert.True(view.TryGetObjectHeading(0x80000010, out float objectHeading));
+        Assert.Equal(45f, objectHeading);
+        Assert.False(view.TryGetObjectHeading(0x80000011, out _));   // known, but no position
+        Assert.False(view.TryGetObjectHeading(0x80000012, out _));   // unknown
+
+        automation.NavigationArea.Snapshot = default;
+        Assert.False(view.TryGetPlayerHeading(out float none));
+        Assert.Equal(0f, none);
+        Assert.False(view.IsPortaling);
+    }
+
+    [Fact]
+    public void AttributesAreTheirStatIdsAndPlayerOnly()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var automation = new FakeRynthAutomation();
+        automation.CharacterArea.AttributeList.Add(new PluginAttributeInfo(0, "Strength", 120) { Base = 100 });
+        automation.CharacterArea.AttributeList.Add(new PluginAttributeInfo(1, "Endurance", 90));
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.TryGetAttribute(0x50000001, 1, out uint buffed, out uint baseLevel));   // StatId = kind + 1
+        Assert.Equal((120u, 100u), (buffed, baseLevel));
+        Assert.True(view.TryGetAttribute(0x50000001, 2, out buffed, out baseLevel));
+        Assert.Equal((90u, 90u), (buffed, baseLevel));
+        Assert.False(view.TryGetAttribute(0x50000001, 6, out _, out _));
+        Assert.False(view.TryGetAttribute(0x80000010, 1, out _, out _));
+    }
+
+    [Fact]
+    public void OnlyCreaturesAreAttackableAndNothingBeforeLogin()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var creature = new ClientObject
+        {
+            ObjectId = 0x80000010,
+            Type = ItemType.Creature,
+            PublicWeenieBitfield = 0x10,   // attackable
+        };
+        var sword = new ClientObject { ObjectId = 0x80000011, Type = ItemType.MeleeWeapon, PublicWeenieBitfield = 0x10 };
+        runtime.InventoryOwner.Objects.AddOrUpdate(creature);
+        runtime.InventoryOwner.Objects.AddOrUpdate(sword);
+        // The policy needs the player's own object to weigh a creature against.
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Type = ItemType.Creature });
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.False(view.IsAttackable(0x80000010));   // not logged in
+
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        Assert.True(view.IsAttackable(0x80000010));
+        Assert.False(view.IsAttackable(0x80000011));   // not a creature
+        Assert.False(view.IsAttackable(0x80000012));   // unknown object
+    }
+
+    [Fact]
+    public void SelectingZeroClearsTheSelection()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.True(view.SelectObject(0x80000010));
+
+        Assert.True(view.SelectObject(0));
+
+        Assert.Equal(0u, view.SelectedObjectId);
+    }
+
+    [Fact]
+    public void ThePlayerPoseIsTheEntitysBodyCellPosition()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.False(view.TryGetPlayerPose(out _, out _, out _));
+
+        RuntimeEntityRecord record = runtime.EntityObjects.Entities.AddActive(Spawn(0x50000001));
+        var body = new PhysicsBody { Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.5f) };
+        body.SnapToCell(0x0101001Au, new Vector3(10, 20, 30), new Vector3(1, 2, 3));
+        record.SetPhysicsBody(body);
+
+        Assert.True(view.TryGetPlayerPose(out uint cell, out Vector3 origin, out Quaternion orientation));
+        Assert.Equal(body.CellPosition.ObjCellId, cell);
+        Assert.Equal(body.CellPosition.Frame.Origin, origin);
+        Assert.Equal(body.CellPosition.Frame.Orientation, orientation);
+        Assert.Equal(new Vector3(1, 2, 3), origin);
+        Assert.True(view.TryGetObjectPosition(0x50000001, out uint objectCell, out _));
+        Assert.Equal(cell, objectCell);
+    }
+
+    private static WorldSession.EntitySpawn Spawn(uint guid)
+    {
+        var position = new CreateObject.ServerPosition(0x0101FFFFu, 10f, 20f, 5f, 1f, 0f, 0f, 0f);
+        var timestamps = new PhysicsTimestamps(
+            Position: 1, Movement: 1, State: 1, Vector: 1, Teleport: 0,
+            ServerControlledMove: 1, ForcePosition: 0, ObjDesc: 1, Instance: 1);
+        var physics = new PhysicsSpawnData(
+            RawState: 0x408u, Position: position, Movement: null, AnimationFrame: null,
+            SetupTableId: 0x02000001u, MotionTableId: 0x09000001u, SoundTableId: null,
+            PhysicsScriptTableId: null, Parent: null, Children: null, Scale: null, Friction: null,
+            Elasticity: null, Translucency: null, Velocity: null, Acceleration: null,
+            AngularVelocity: null, DefaultScriptType: null, DefaultScriptIntensity: null,
+            Timestamps: timestamps);
+        return new WorldSession.EntitySpawn(
+            guid, position, 0x02000001u,
+            Array.Empty<CreateObject.AnimPartChange>(),
+            Array.Empty<CreateObject.TextureChange>(),
+            Array.Empty<CreateObject.SubPaletteSwap>(),
+            null, null, "fixture", null, null, 0x09000001u,
+            PhysicsState: 0x408u, InstanceSequence: 1, MovementSequence: 1,
+            ServerControlSequence: 1, PositionSequence: 1, Physics: physics);
     }
 }

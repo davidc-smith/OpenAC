@@ -24,8 +24,4 @@ public static class RynthTranslate
         Magic => PluginCombatMode.Magic,
         _ => null,
     };
-
-    // RynthCore stores start + duration in server time; OpenAC reports seconds left.
-    public static double ToServerExpiry(double serverNow, double secondsRemaining) =>
-        double.IsFinite(secondsRemaining) ? serverNow + secondsRemaining : double.MaxValue;
 }

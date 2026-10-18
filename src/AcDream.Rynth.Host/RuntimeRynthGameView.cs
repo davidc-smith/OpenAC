@@ -2,6 +2,7 @@ using System.Numerics;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Selection;
+using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
@@ -216,11 +217,20 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         {
             if (!_automation.IsAvailable || PlayerId == 0)
                 return null;
-            double now = ServerTime;
+            double serverNow = ServerTime;
+            double clockNow = _runtime.EffectClock.NowSeconds;
+            // As RynthCore reads the player's registry: the Mult, Add and Cooldown lists, covered layers
+            // included. Vitae (bucket 4) is not in those lists.
             return
             [
-                .. _automation.Character.ActiveEnchantments.Select(enchantment => new RynthEnchantment(
-                    enchantment.SpellId, RynthTranslate.ToServerExpiry(now, enchantment.SecondsRemaining))),
+                .. _runtime.CharacterOwner.Spellbook.ActiveEnchantmentSnapshot
+                    .Where(record => record.Bucket is 1u or 2u or Spellbook.CooldownBucket
+                        && (record.SpellId & 0xFFFFu) != 0)
+                    .Select(record => new RynthEnchantment(
+                        record.SpellId & 0xFFFFu,
+                        record.Duration > 0
+                            ? serverNow + (record.StartTime + record.Duration - clockNow)
+                            : double.MaxValue)),
             ];
         }
     }
@@ -275,7 +285,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         !IsPlayer(objectId) || !_automation.IsAvailable ? -1 : _automation.Spells.IsKnown(spellId) ? 1 : 0;
 
     public IReadOnlyList<uint>? KnownSpells =>
-        PlayerId == 0 ? null : [.. _runtime.CharacterOwner.Spellbook.LearnedSpells.Order()];
+        !_automation.IsAvailable || PlayerId == 0 ? null : [.. _runtime.CharacterOwner.Spellbook.LearnedSpells.Order()];
 
     public bool IsAttackable(uint objectId)
     {
@@ -324,7 +334,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
 
     public bool QueryHealth(uint objectId)
     {
-        if (_runtime.Session.CurrentSession is not { } session)
+        if (!_automation.IsAvailable || _runtime.Session.CurrentSession is not { } session)
             return false;
         session.SendQueryHealth(objectId);
         return true;

@@ -2062,7 +2062,6 @@ public sealed class GameEventWiringTests
         false, false, "", 0, 0, 0u, 0, false, false, true,
         0f, 0u, 0u, 0u, 0);
 
-
     private static (GameEventDispatcher, ServerReplyLog) MakeWithReplies()
     {
         var dispatcher = new GameEventDispatcher();
