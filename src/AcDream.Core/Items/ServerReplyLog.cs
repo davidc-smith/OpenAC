@@ -40,6 +40,9 @@ public sealed class ServerReplyLog
         }
     }
 
+    /// <summary>Raised with the refusal code after <see cref="RecordWeenieError"/> records it, outside the lock.</summary>
+    public event Action<uint>? WeenieErrorRecorded;
+
     /// <param name="eventType">The GameEvent that carried it (0x28A, 0x28B or 0xA0).</param>
     /// <param name="weenieError">The refusal code.</param>
     /// <param name="objectId">The item for 0xA0, else 0.</param>
@@ -55,5 +58,6 @@ public sealed class ServerReplyLog
                 LastWeenieErrorObjectId = objectId,
             };
         }
+        WeenieErrorRecorded?.Invoke(weenieError);
     }
 }

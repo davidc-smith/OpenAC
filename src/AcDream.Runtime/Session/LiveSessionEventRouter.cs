@@ -339,9 +339,9 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                     ? update => tradeRegister.ApplyRegister(update, inventory.PlayerGuid())
                     : null,
                 onTradeClose: social.Trade is { } tradeClose
-                    ? _ =>
+                    ? reason =>
                     {
-                        tradeClose.ApplyClose();
+                        tradeClose.ApplyClose(reason);
                         social.AddText?.Invoke(
                             AcDream.Core.Chat.ClientTextRefusals.TradeCancelled,
                             RetailLogTextType.ClientLocal);
@@ -360,7 +360,7 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                     ? whoDeclined => tradeDecline.ApplyDecline(whoDeclined, inventory.PlayerGuid())
                     : null,
                 onTradeReset: social.Trade is { } tradeReset
-                    ? _ => tradeReset.ApplyReset()
+                    ? whoReset => tradeReset.ApplyReset(whoReset)
                     : null,
                 onTradeFailure: social.Trade is { } tradeFailure
                     ? tradeFailure.ApplyFailure
