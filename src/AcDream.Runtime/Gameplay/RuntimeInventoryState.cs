@@ -61,13 +61,13 @@ public sealed class RuntimeInventoryState : IDisposable
     public ItemManaState ItemMana { get; }
     public ShortcutStore Shortcuts { get; }
     public InventoryTransactionState Transactions { get; }
-
-    /// <summary>The server's UseDone events and refusals, counted (see <see cref="ServerReplyLog"/>).</summary>
-    public ServerReplyLog ServerReplies { get; } = new();
     public VendorState Vendor { get; }
     public VendorShopItemMaterializer VendorItems { get; }
     public IRuntimeInventoryStateView View { get; }
     public bool IsDisposed => _disposed;
+
+    /// <summary>The server's UseDone events and refusals, counted (see <see cref="ServerReplyLog"/>).</summary>
+    public ServerReplyLog ServerReplies { get; } = new();
 
     public RuntimeInventoryOwnershipSnapshot CaptureOwnership() => new(
         _disposed,
