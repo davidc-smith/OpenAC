@@ -131,8 +131,48 @@ public sealed class RynthHostTests
         Assert.True(Assert.Single(host.Plugins).IsActive);
     }
 
+    [Fact]
+    public void ContainerEventsReachThePlugin()
+    {
+        ContainerRecorder.Calls.Clear();
+        using var host = new RynthHost(_view, _log.Add, [typeof(ContainerRecorder)]);
+
+        host.Bridge.OnContainerOpened(0, 0x80000100);
+        host.Bridge.OnContainerOpened(0x80000100, 0x80000200);
+        host.Bridge.OnContainerContentsChanged(0x80000200);
+        host.Bridge.OnContainerClosed(0x80000200);
+        host.Bridge.OnContainerContentsChanged(0);
+
+        Assert.Equal(
+            [
+                "view 80000100",
+                "stop 80000100",
+                "view 80000200",
+                "update 80000200",
+                "stop 80000200",
+            ],
+            ContainerRecorder.Calls);
+    }
+
     private static class NoExports
     {
+    }
+
+    private static unsafe class ContainerRecorder
+    {
+        public static readonly List<string> Calls = new();
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginInit", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static int Init(RynthCoreApiNative* api) => 0;
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnViewObjectContents", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void View(uint id) => Calls.Add($"view {id:X8}");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnStopViewingObjectContents", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void Stop(uint id) => Calls.Add($"stop {id:X8}");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnUpdateObjectInventory", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void Update(uint id) => Calls.Add($"update {id:X8}");
     }
 
     private static unsafe class FailingInit

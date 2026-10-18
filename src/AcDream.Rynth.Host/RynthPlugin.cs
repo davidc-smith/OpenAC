@@ -50,6 +50,14 @@ public sealed unsafe class RynthPlugin
 
     public void OnDeleteObject(uint objectId) => CallObject("RynthPluginOnDeleteObject", objectId);
 
+    public void OnViewObjectContents(uint containerId) => CallObject("RynthPluginOnViewObjectContents", containerId);
+
+    public void OnStopViewingObjectContents(uint containerId) =>
+        CallObject("RynthPluginOnStopViewingObjectContents", containerId);
+
+    public void OnUpdateObjectInventory(uint containerId) =>
+        CallObject("RynthPluginOnUpdateObjectInventory", containerId);
+
     /// <summary>
     /// A target's health. The server's health updates carry a ratio only, so
     /// current and max are 0 unless the caller knows them (the player's own death).

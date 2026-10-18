@@ -79,6 +79,38 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             plugin.OnKillNotification(deathMessage);
     }
 
+    /// <summary>
+    /// From <c>ExternalContainerState.Changed</c> (Opened): the client now shows
+    /// <paramref name="containerId"/>, having stopped showing <paramref name="previousId"/>.
+    /// </summary>
+    public void OnContainerOpened(uint previousId, uint containerId)
+    {
+        if (previousId != 0 && previousId != containerId)
+            OnContainerClosed(previousId);
+        if (containerId == 0)
+            return;
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnViewObjectContents(containerId);
+    }
+
+    /// <summary>From <c>ExternalContainerState.Changed</c> (Closed or Reset).</summary>
+    public void OnContainerClosed(uint containerId)
+    {
+        if (containerId == 0)
+            return;
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnStopViewingObjectContents(containerId);
+    }
+
+    /// <summary>From the object table: a container's contents were replaced or an item moved in or out.</summary>
+    public void OnContainerContentsChanged(uint containerId)
+    {
+        if (containerId == 0)
+            return;
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnUpdateObjectInventory(containerId);
+    }
+
     public void OnCommand(in RuntimeCommandDelta delta)
     {
     }
