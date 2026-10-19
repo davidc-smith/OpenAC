@@ -36,6 +36,7 @@
     <Compile Include="$(RynthEngine)ImGui\Panels\RynthAiFace.Drawers.cs" Link="RynthCore\RynthAiFace.Drawers.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\SettingsRows.cs" Link="RynthCore\SettingsRows.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\QuickSettingsDrawer.cs" Link="RynthCore\QuickSettingsDrawer.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\SettingsFace.cs" Link="RynthCore\SettingsFace.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthAiData.cs" Link="RynthCore\Data\RynthAiData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\SettingsData.cs" Link="RynthCore\Data\SettingsData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\NavData.cs" Link="RynthCore\Data\NavData.cs" />
