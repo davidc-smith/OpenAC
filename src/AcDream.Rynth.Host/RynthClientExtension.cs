@@ -22,6 +22,7 @@ public sealed class RynthClientExtension : IClientExtension
 {
     private RynthHost? _host;
     private RynthChatHookup? _chatHookup;
+    private RynthInventoryHookup? _inventoryHookup;
     private RynthAiHookup? _aiHookup;
     private Action<string>? _log;
     private IDisposable? _runtimeSubscription;
@@ -94,6 +95,7 @@ public sealed class RynthClientExtension : IClientExtension
             scriptWindows,
             nav3DLayer: context.WorldTriangles?.CreateLayer());
         _chatHookup = new RynthChatHookup(_host, view, context.Log);
+        _inventoryHookup = new RynthInventoryHookup(view, context.Overlay?.Icons, context.Log);
         _aiHookup = new RynthAiHookup(_host, view, context.Log);
         if (context.Overlay is not null)
             Guard("RynthAi", RynthAiDashboard.Start);
@@ -187,6 +189,7 @@ public sealed class RynthClientExtension : IClientExtension
             ImGuiPanelHost.SweepEmbedded();
             return;
         }
+        Guard("RynthAi", RynthAiDashboard.BeginFrame);
         ImGuiPanelHost.DrawAll();
         _bar?.Draw();
     }
@@ -195,6 +198,8 @@ public sealed class RynthClientExtension : IClientExtension
     {
         _host?.Tick();
         GuardChat(TickChat);
+        if (_inventoryHookup is { } inventory)
+            Guard("RynthAi", inventory.Tick);
         Guard("RynthAi", () => RynthAiDashboard.Tick());
     }
 
@@ -252,6 +257,8 @@ public sealed class RynthClientExtension : IClientExtension
             GuardChat(RynthChatWindow.Stop);
             _chatHookup?.Dispose();
             _chatHookup = null;
+            _inventoryHookup?.Dispose();
+            _inventoryHookup = null;
         }
         finally
         {

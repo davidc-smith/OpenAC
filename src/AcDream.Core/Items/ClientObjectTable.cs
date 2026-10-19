@@ -108,7 +108,7 @@ public sealed class ClientObjectTable
     /// Monotonic authority for live object-table qualities used by physics,
     /// including house ownership/restrictions and the mover's monarch.
     /// </summary>
-    internal ulong MutationRevision => _mutationRevision;
+    public ulong MutationRevision => _mutationRevision;
 
     private void AdvanceMutationRevision() =>
         _mutationRevision = checked(_mutationRevision + 1UL);

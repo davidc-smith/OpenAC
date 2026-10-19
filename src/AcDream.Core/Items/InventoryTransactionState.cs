@@ -88,6 +88,9 @@ public sealed class InventoryTransactionState : IDisposable
     /// not make the next pick-up or container open report itself busy.
     /// </summary>
     public int AppraisalCount => _appraisalCount;
+    /// <summary>The one item request reserved or in flight (acclient's request slot); null when none.</summary>
+    public PendingInventoryRequest? PendingRequest => _pendingRequest;
+
     public bool HasPendingRequest => _pendingRequest is not null;
     /// <summary>Busy references from item actions, excluding cast cursor feedback.</summary>
     public int ItemBusyCount => _busyCount - _castBusyCount;

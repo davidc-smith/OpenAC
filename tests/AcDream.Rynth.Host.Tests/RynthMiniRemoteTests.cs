@@ -91,7 +91,7 @@ public sealed class RynthMiniRemoteTests : IDisposable
         Assert.Equal(["Skills"], Panes("skills"));
         Assert.Equal(["Damage"], Panes("combat"));
         Assert.Equal(["Nav"], Panes("nav"));
-        Assert.Equal(["Item Count", "Items"], Panes("inventory"));
+        Assert.Equal(["Inventory", "Item Count", "Items"], Panes("inventory"));
         Assert.Equal(SectionPaneKind.Overview, Assert.Single(snap.Find("char")!.Panes).Kind);
         Assert.All(snap.Sections, v => Assert.Empty(v.Groups));
         Assert.Equal(["ilt", "aelrynth"], snap.Servers.Select(s => s.Id));
@@ -156,10 +156,14 @@ public sealed class RynthMiniRemoteTests : IDisposable
             Assert.Equal(["/ro character"], ran);
 
             Assert.True(RynthCoreChatCommands.TryHandle("  ", replies.Add));
-            Assert.Equal("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>]", replies[^1]);
+            Assert.Equal("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>] | inventory", replies[^1]);
+
+            int before = replies.Count;
+            Assert.True(RynthCoreChatCommands.TryHandle("inv", replies.Add));
+            Assert.DoesNotContain("isn't in OpenAC", string.Join("|", replies.Skip(before)));
 
             RynthCoreChatCommands.TryHandle("bogus", replies.Add);
-            Assert.Equal("/rc bogus isn't in OpenAC (only /rc miniremote).", replies[^1]);
+            Assert.Equal("/rc bogus isn't in OpenAC (only /rc miniremote and /rc inventory).", replies[^1]);
         }
         finally
         {

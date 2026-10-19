@@ -66,4 +66,8 @@ internal sealed class NoOverlayIcons : IClientOverlayIcons
     public IntPtr SpellIcon(uint spellId) => IntPtr.Zero;
 
     public IntPtr ObjectIcon(uint objectId) => IntPtr.Zero;
+
+    public IntPtr Upload(byte[] rgba, int width, int height, string name) => IntPtr.Zero;
+
+    public bool Release(IntPtr texture) => false;
 }

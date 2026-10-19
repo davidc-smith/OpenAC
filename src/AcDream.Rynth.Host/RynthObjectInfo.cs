@@ -27,6 +27,15 @@ public sealed record RynthObjectInfo
     public required float Workmanship { get; init; }
     public required uint? MaterialType { get; init; }
 
+    /// <summary>The slots it can be worn in (PublicWeenieDesc ValidLocations); 0 when not wearable.</summary>
+    public uint ValidLocations { get; init; }
+
+    /// <summary>ITEM_USEABLE from PublicWeenieDesc; 0 when the client has none.</summary>
+    public uint Useability { get; init; }
+
+    /// <summary>Its place in its container, in the server's order; -1 when unknown.</summary>
+    public int ContainerSlot { get; init; } = -1;
+
     /// <summary>An identify of this object came back this session.</summary>
     public required bool Identified { get; init; }
 

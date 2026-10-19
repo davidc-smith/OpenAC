@@ -24,16 +24,10 @@ internal sealed class RynthChatHookup : IDisposable
     private readonly Func<uint, bool> _attackable;
     private readonly PlayerPhysicsHooks.PositionReader _position;
     private readonly Func<string> _serverName;
-    private readonly Func<InventoryView?> _inventory;
     private readonly Func<PlayerProgress, bool> _progress;
     private readonly EnchantmentHooks.StatModCopier _statMods;
     private readonly Func<double> _serverTime;
     private readonly Func<PlayerTraining.TrainKind, uint, uint, bool> _train;
-    private readonly Func<uint, bool> _useSender;
-    private readonly Func<bool> _busy;
-    private readonly Func<(int UseDoneSeq, uint UseDoneError, int ErrorSeq, uint Error)> _replies;
-    private readonly InventoryModel.ItemReader _readItem;
-    private readonly Func<uint> _usePlayerId;
 
     public RynthChatHookup(RynthHost host, IRynthGameView view, Action<string> log)
     {
@@ -58,22 +52,11 @@ internal sealed class RynthChatHookup : IDisposable
         _attackable = id => Guard(nameof(ClientObjectHooks.TryGetSnapshotAttackable), () => _view.IsAttackable(id), false);
         _position = TryGetPlayerPosition;
         _serverName = () => Guard(nameof(SessionStateRegistry.LastServerName), () => _view.WorldName, string.Empty);
-        _inventory = () => Guard(nameof(InventoryModel.Current), BuildInventory, null);
         _progress = ReadProgress;
         _statMods = CopyStatMods;
         _serverTime = () => Guard(nameof(TimeSyncHooks.GetCurrentServerTime), () => _view.ServerTime, 0d);
         _train = (kind, stype, amount) => Guard(
             nameof(PlayerTraining.Raise), () => _view.RequestAdvancement((int)kind, stype, amount), false);
-
-        _useSender = id => Guard(nameof(InventoryModel.UseSender), () => _view.UseObject(id), false);
-        _busy = () => Guard(nameof(InventoryModel.Busy), () => _view.BusyCount > 0, false);
-        _replies = () => Guard(nameof(InventoryModel.Replies), () =>
-        {
-            AcDream.Core.Items.ServerReplySnapshot r = _view.ServerReplies;
-            return (r.UseDoneSequence, r.LastUseDoneError, r.WeenieErrorSequence, r.LastWeenieError);
-        }, default);
-        _readItem = ReadItem;
-        _usePlayerId = _playerId;
 
         PluginExportBinder.Resolver = _resolver;
         ClientHelperHooks.PlayerId = _playerId;
@@ -87,25 +70,14 @@ internal sealed class RynthChatHookup : IDisposable
         PlayerPhysicsHooks.Position = _position;
         SessionStateRegistry.ServerName = _serverName;
         AccountHooks.WorldName = _serverName;
-        InventoryModel.Source = _inventory;
         ClientObjectHooks.ProgressReader = _progress;
         EnchantmentHooks.Copier = _statMods;
         TimeSyncHooks.ServerTime = _serverTime;
         PlayerTraining.Sender = _train;
-        InventoryModel.UseSender = _useSender;
-        InventoryModel.Busy = _busy;
-        InventoryModel.Replies = _replies;
-        InventoryModel.ReadItem = _readItem;
-        InventoryModel.PlayerId = _usePlayerId;
     }
 
     public void Dispose()
     {
-        if (InventoryModel.UseSender == _useSender) InventoryModel.UseSender = null;
-        if (InventoryModel.Busy == _busy) InventoryModel.Busy = null;
-        if (InventoryModel.Replies == _replies) InventoryModel.Replies = null;
-        if (InventoryModel.ReadItem == _readItem) InventoryModel.ReadItem = null;
-        if (InventoryModel.PlayerId == _usePlayerId) InventoryModel.PlayerId = null;
         if (PluginExportBinder.Resolver == _resolver) PluginExportBinder.Resolver = null;
         if (ClientHelperHooks.PlayerId == _playerId) ClientHelperHooks.PlayerId = null;
         if (SelectedTargetHooks.SelectedId == _selectedId) SelectedTargetHooks.SelectedId = null;
@@ -118,12 +90,6 @@ internal sealed class RynthChatHookup : IDisposable
         if (PlayerPhysicsHooks.Position == _position) PlayerPhysicsHooks.Position = null;
         if (SessionStateRegistry.ServerName == _serverName) SessionStateRegistry.ServerName = null;
         if (AccountHooks.WorldName == _serverName) AccountHooks.WorldName = null;
-        if (InventoryModel.Source == _inventory)
-        {
-            InventoryModel.Source = null;
-            InventoryModel.Reset();
-        }
-
         if (ClientObjectHooks.ProgressReader == _progress) ClientObjectHooks.ProgressReader = null;
         if (EnchantmentHooks.Copier == _statMods) EnchantmentHooks.Copier = null;
         if (TimeSyncHooks.ServerTime == _serverTime) TimeSyncHooks.ServerTime = null;
@@ -239,97 +205,6 @@ internal sealed class RynthChatHookup : IDisposable
         return ok;
     }
 
-    /// <summary>
-    /// The player's carried items as RynthCore's InventoryView: the main pack, each side pack
-    /// in it, and what the player wears. Null when there is no player.
-    /// </summary>
-    private InventoryView? BuildInventory()
-    {
-        uint player = _view.PlayerId;
-        if (player == 0)
-            return null;
-
-        var main = new List<InventoryItem>();
-        var worn = new List<InventoryItem>();
-        var packs = new List<InventoryPack>();
-        foreach (uint id in _view.GetContainerContents(player))
-        {
-            if (!_view.TryGetObject(id, out RynthObjectInfo info))
-                continue;
-            InventoryItem item = ToInventoryItem(id, info);
-            if (info.WielderId == player)
-            {
-                worn.Add(item);
-                continue;
-            }
-
-            main.Add(item);
-            if (info.ItemsCapacity > 0)
-            {
-                var contents = new List<InventoryItem>();
-                foreach (uint inner in _view.GetContainerContents(id))
-                    if (_view.TryGetObject(inner, out RynthObjectInfo innerInfo))
-                        contents.Add(ToInventoryItem(inner, innerInfo));
-                packs.Add(Pack(id, item.Name, info.ItemsCapacity, isMain: false, contents));
-            }
-        }
-
-        _view.TryGetObjectName(player, out string playerName);
-        packs.Insert(0, Pack(player, playerName ?? string.Empty, 102, isMain: true, main));
-        int count = 0;
-        foreach (InventoryPack pack in packs)
-            count += pack.Items.Length;
-        return new InventoryView
-        {
-            PlayerId = player,
-            PlayerName = playerName ?? string.Empty,
-            Packs = [.. packs],
-            Worn = [.. worn],
-            ItemCount = count,
-            ItemCountText = count.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            WornCountText = worn.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        };
-    }
-
-    private static InventoryPack Pack(uint id, string name, int capacity, bool isMain, List<InventoryItem> items) => new()
-    {
-        Id = id,
-        Name = name,
-        Capacity = capacity,
-        IsMain = isMain,
-        Items = [.. items],
-        Used = items.Count,
-        FillText = $"{items.Count}/{capacity}",
-    };
-
-    private InventoryItem ToInventoryItem(uint id, RynthObjectInfo info)
-    {
-        _view.TryGetObjectName(id, out string name);
-        name ??= string.Empty;
-        return new InventoryItem
-        {
-            Id = id,
-            Container = info.ContainerId,
-            Wielder = info.WielderId,
-            Location = info.EquipLocation,
-            Type = info.ItemType,
-            Value = (uint)Math.Max(0, info.Value),
-            Icon = info.IconId,
-            Wcid = info.Wcid,
-            SpellId = info.SpellId ?? 0,
-            Bitfield = info.Bitfield,
-            Burden = info.Burden,
-            Stack = Math.Max(1, info.StackSize),
-            MaxStack = info.StackSizeMax,
-            ItemsCapacity = info.ItemsCapacity,
-            MaterialType = (int)(info.MaterialType ?? 0),
-            Workmanship = info.Workmanship,
-            Name = name,
-            SearchName = name.ToLowerInvariant(),
-            StackText = info.StackSize > 1 ? info.StackSize.ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty,
-        };
-    }
-
     private bool TryGetPlayerPosition(out uint cell, out float x, out float y, out float z)
     {
         uint foundCell = 0;
@@ -341,15 +216,6 @@ internal sealed class RynthChatHookup : IDisposable
         cell = ok ? foundCell : 0u;
         (x, y, z) = ok ? (origin.X, origin.Y, origin.Z) : (0f, 0f, 0f);
         return ok;
-    }
-
-    private bool ReadItem(uint id, out uint container, out uint wielder, out int stack)
-    {
-        RynthObjectInfo? info = Guard(nameof(InventoryModel.ReadItem), () => _view.TryGetObject(id, out RynthObjectInfo i) ? i : null, null);
-        container = info?.ContainerId ?? 0;
-        wielder = info?.WielderId ?? 0;
-        stack = info?.StackSize ?? 0;
-        return info is not null;
     }
 
     private T Guard<T>(string what, Func<T> read, T fallback)

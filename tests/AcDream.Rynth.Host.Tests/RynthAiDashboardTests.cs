@@ -171,7 +171,9 @@ public sealed class RynthAiDashboardTests : IDisposable
             [new RynthStatProgress(1, 4, 0, 300, 80, 70)],
             30, 7, 1_000_000, 2500, 40, 500, 1f);
         using var host = new RynthHost(_view, _log.Add, []);
+        InventoryModelReset.Run();
         using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        using var inventory = new RynthInventoryHookup(_view, null, _log.Add);
         using var imgui = new HeadlessImGui();
         LoginLifecycleHooks.HasObservedLoginComplete = true;
         AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
@@ -203,7 +205,9 @@ public sealed class RynthAiDashboardTests : IDisposable
     public void TheSkillsPanelRegistersWithTheDashboardAndDrawsHeadless()
     {
         using var host = new RynthHost(_view, _log.Add, []);
+        InventoryModelReset.Run();
         using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        using var inventory = new RynthInventoryHookup(_view, null, _log.Add);
         using var imgui = new HeadlessImGui();
         LoginLifecycleHooks.HasObservedLoginComplete = true;
         AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
@@ -461,7 +465,9 @@ public sealed class RynthAiDashboardTests : IDisposable
         const uint Player = 0x50000001u, Kit = 0x80000020u;
         _view.Objects[Kit] = Carried(Player, 0, 5);
         using var host = new RynthHost(_view, _log.Add, []);
+        InventoryModelReset.Run();
         using (var hookup = new RynthChatHookup(host, _view, _log.Add))
+        using (var inventory = new RynthInventoryHookup(_view, null, _log.Add))
         {
             Assert.Null(AccountHooks.AnnouncedWorldName);
             _view.WorldName = "Coldeve";
@@ -473,13 +479,14 @@ public sealed class RynthAiDashboardTests : IDisposable
             InventoryModel.MainThreadTick();
             Assert.Contains($"use {Kit:X8}", _view.Actions);
         }
-        Assert.Null(InventoryModel.UseSender);
-        Assert.Null(InventoryModel.Busy);
-        Assert.Null(InventoryModel.Replies);
-        Assert.Null(InventoryModel.ReadItem);
-        Assert.Null(InventoryModel.PlayerId);
+        // The hooks the old stand-in's UseSender / Busy / Replies / ReadItem / PlayerId were.
+        Assert.Null(ClientHelperHooks.Use);
+        Assert.Null(ClientActionGates.Pending);
+        Assert.Null(SmartBoxHooks.Replies);
+        Assert.Null(ClientObjectHooks.ItemFields);
+        Assert.Null(ClientHelperHooks.PlayerId);
         Assert.Null(AccountHooks.WorldName);
-        InventoryModel.ResetActions();
+        InventoryModelReset.Run();
     }
 
     private static RynthObjectInfo Carried(uint container, uint wielder, int stack, int capacity = 0) => new()
@@ -506,16 +513,20 @@ public sealed class RynthAiDashboardTests : IDisposable
         _view.Names[Arrows] = _view.Names[MoreArrows] = "Arrow";
         _view.SelectedObjectId = MoreArrows;
         using var host = new RynthHost(_view, _log.Add, []);
+        InventoryModelReset.Run();
         using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        using var inventory = new RynthInventoryHookup(_view, null, _log.Add);
         InventoryModel.Subscribe();
         try
         {
+            InventoryModel.MainThreadTick();
             InventoryView view = InventoryModel.Current;
 
             Assert.Equal(Player, view.PlayerId);
             Assert.Equal([Player, Pack], view.Packs.Select(p => p.Id));
             Assert.True(view.Packs[0].IsMain);
-            Assert.Equal([Pack, Arrows], view.Packs[0].Items.Select(i => i.Id));
+            // Their model lists side packs only as packs, not as items of the main pack.
+            Assert.Equal([Arrows], view.Packs[0].Items.Select(i => i.Id));
             InventoryItem inner = Assert.Single(view.Packs[1].Items);
             Assert.Equal(("Arrow", 60), (inner.Name, inner.Stack));
             Assert.Equal(Bow, Assert.Single(view.Worn).Id);
@@ -525,7 +536,7 @@ public sealed class RynthAiDashboardTests : IDisposable
         finally
         {
             InventoryModel.Unsubscribe();
-            InventoryModel.Reset();
+            InventoryModelReset.Run();
         }
     }
 
@@ -533,7 +544,9 @@ public sealed class RynthAiDashboardTests : IDisposable
     public void TheItemCountPanelRegistersWithTheDashboardAndDrawsHeadless()
     {
         using var host = new RynthHost(_view, _log.Add, []);
+        InventoryModelReset.Run();
         using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        using var inventory = new RynthInventoryHookup(_view, null, _log.Add);
         using var imgui = new HeadlessImGui();
         LoginLifecycleHooks.HasObservedLoginComplete = true;
         AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
@@ -548,7 +561,7 @@ public sealed class RynthAiDashboardTests : IDisposable
         Assert.True(ImGuiPanelHost.IsOpen(ItemCountFace.Title));
         Assert.Empty(_log);
         RynthCore.Engine.UI.PanelRouter.Toggle(ItemCountFace.Title);
-        InventoryModel.Reset();
+        InventoryModelReset.Run();
     }
 
     private (RynthHost Host, RynthChatHookup Exports, RynthAiHookup Ai) StartWithRynthAi()

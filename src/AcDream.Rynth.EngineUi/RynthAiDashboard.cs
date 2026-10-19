@@ -28,6 +28,13 @@ internal static class RynthAiDashboard
     /// <summary>Where posted work that throws is logged; the host sets it.</summary>
     internal static Action<string> Log { get; set; } = _ => { };
 
+    /// <summary>RynthCore's EngineFrameController: the retail pictures decoded since the last frame become textures before the faces draw.</summary>
+    internal static void BeginFrame()
+    {
+        if (_started)
+            RetailSprites.BeginFrame(IntPtr.Zero);
+    }
+
     internal static void Start()
     {
         if (!_started)
@@ -62,6 +69,8 @@ internal static class RynthAiDashboard
             LootEditorFace.Register();
         if (!ImGuiPanelHost.HasFace(ItemCountFace.Title))
             ItemCountFace.Register();
+        if (!ImGuiPanelHost.HasFace(InventoryFace.Title))
+            InventoryFace.Register();
         if (!ImGuiPanelHost.HasFace(LuaFace.Title))
             LuaFace.Register();
         if (!ImGuiPanelHost.HasFace(SkillsFace.Title))
@@ -120,7 +129,6 @@ internal static class RynthAiDashboard
         try
         {
             UiDataHub.Clear();
-            InventoryModel.ResetActions();
             PluginManager.RaisePluginsUnloaded();
             foreach (UiSource source in Sources)
             {

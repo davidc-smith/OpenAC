@@ -9,7 +9,7 @@ namespace RynthCore.Engine.Compatibility
 {
     /// <summary>
     /// RynthCore's /rc commands. OpenAC has only their Mini Remote branch
-    /// (/rc miniremote|remote [show|hide|toggle|tab &lt;tab&gt;|section &lt;id&gt;]), with their texts;
+    /// (/rc miniremote|remote [show|hide|toggle|tab &lt;tab&gt;|section &lt;id&gt;]) and /rc inventory, with their texts;
     /// every other /rc verb says it isn't here.
     /// </summary>
     internal static class RynthCoreChatCommands
@@ -20,13 +20,22 @@ namespace RynthCore.Engine.Compatibility
             string sub = (arguments ?? string.Empty).Trim();
             if (sub.Length == 0)
             {
-                reply("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>]");
+                reply("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>] | inventory");
+                return true;
+            }
+            if (IsVerb(sub, "inventory", out _) || IsVerb(sub, "inv", out _))
+            {
+                // The ImGui Inventory panel (open/close), like its bar button.
+                if (!ImGuiPanelHost.HasFace(InventoryFace.Title))
+                    reply("The Inventory panel isn't available (the ImGui layer is off?).");
+                else
+                    UI.PanelRouter.Toggle(InventoryFace.Title);
                 return true;
             }
             if (!IsVerb(sub, "miniremote", out string remoteArgs) && !IsVerb(sub, "remote", out remoteArgs))
             {
                 string verb = sub.Split(' ', 2)[0];
-                reply($"/rc {verb} isn't in OpenAC (only /rc miniremote).");
+                reply($"/rc {verb} isn't in OpenAC (only /rc miniremote and /rc inventory).");
                 return true;
             }
 
