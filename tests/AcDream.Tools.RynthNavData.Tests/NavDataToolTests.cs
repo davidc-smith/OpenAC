@@ -114,6 +114,35 @@ public sealed class NavDataToolTests : IDisposable
     }
 
     [Fact]
+    public async Task InstallLeavesALauncherManagedFolderAloneUnlessForced()
+    {
+        NavDataPin pin = await Pin(Good);
+        Directory.CreateDirectory(NavData);
+        File.WriteAllText(Path.Combine(NavData, "navdata.id"), new string('a', 32));
+        int before = _server.Requests;
+
+        string said = await NavDataInstaller.InstallAsync(pin, NavData, Cache, null, TestContext.Current.CancellationToken);
+
+        Assert.Contains("launcher", said, StringComparison.Ordinal);
+        Assert.Equal(before, _server.Requests);
+        Assert.False(File.Exists(Path.Combine(NavData, "nav_A9B4.tile")));
+
+        await NavDataInstaller.InstallAsync(pin, NavData, Cache, null, TestContext.Current.CancellationToken, force: true);
+
+        Assert.True(File.Exists(Path.Combine(NavData, "nav_A9B4.tile")));
+        Assert.Equal(pin.Id, File.ReadAllText(Path.Combine(NavData, "navdata.id")).Trim());
+    }
+
+    [Fact]
+    public async Task AFailedDownloadLeavesNoPartFile()
+    {
+        await Assert.ThrowsAsync<HttpRequestException>(() => NavDataPinner.PinAsync(_server.Base + "missing.zip", Cache,
+            "e6fffb0f", new DateOnly(2026, 10, 19), _http, TextWriter.Null, TestContext.Current.CancellationToken));
+
+        Assert.False(File.Exists(Path.Combine(Cache, "navdata-pin.part")));
+    }
+
+    [Fact]
     public async Task InstallDoesNothingWhenThePinnedTilesAreThere()
     {
         NavDataPin pin = await Pin(Good);

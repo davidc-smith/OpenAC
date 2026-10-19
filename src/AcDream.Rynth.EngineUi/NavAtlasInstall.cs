@@ -29,6 +29,10 @@ internal static class NavAtlasInstall
                 return File.Exists(target);
             }
 
+            // A navdata.id means the pinned archive manages this folder and ships its own locations.json.
+            if (File.Exists(Path.Combine(coreDir, "NavData", "navdata.id")))
+                return File.Exists(target);
+
             var existing = new FileInfo(target);
             if (existing.Exists && (isWindows || existing.Length == source.Length))
                 return true;

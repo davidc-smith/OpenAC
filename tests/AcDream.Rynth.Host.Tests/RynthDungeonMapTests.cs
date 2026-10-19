@@ -208,6 +208,20 @@ public sealed unsafe class RynthDungeonMapTests : IDisposable
     }
 
     [Fact]
+    public void AFolderManagedByThePinnedArchiveIsLeftAlone()
+    {
+        string core = Path.Combine(_sandbox.Root, "atlas-managed");
+        string path = AcDream.Rynth.EngineUi.NavAtlasInstall.PathUnder(core);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(path)!, "navdata.id"), "abc");
+        File.WriteAllText(path, "{\"locations\":[]}");
+
+        Assert.True(AcDream.Rynth.EngineUi.NavAtlasInstall.Ensure(core, isWindows: false, _ => { }));
+
+        Assert.Equal("{\"locations\":[]}", File.ReadAllText(path));
+    }
+
+    [Fact]
     public void AnUnwritableFolderIsLoggedNotThrown()
     {
         // A file where the RynthCore folder should be: creating NavData under it fails.

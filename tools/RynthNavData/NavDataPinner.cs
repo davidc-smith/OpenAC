@@ -26,32 +26,40 @@ internal static class NavDataPinner
         string part = Path.Combine(cacheDir, "navdata-pin.part");
         long size = 0;
         string sha256;
-        using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+        try
         {
-            using HttpResponseMessage response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.EnsureSuccessStatusCode();
-            await using (Stream body = await response.Content.ReadAsStreamAsync(ct))
-            await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
             {
-                byte[] buffer = new byte[81920];
-                int read;
-                long nextReport = 64L << 20;
-                while ((read = await body.ReadAsync(buffer, ct)) > 0)
+                using HttpResponseMessage response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+                response.EnsureSuccessStatusCode();
+                await using (Stream body = await response.Content.ReadAsStreamAsync(ct))
+                await using (var file = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None))
                 {
-                    size += read;
-                    if (size > MaxArchiveBytes)
-                        throw new InvalidDataException($"{url} is larger than {MaxArchiveBytes >> 20} MB");
-                    hash.AppendData(buffer, 0, read);
-                    await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                    if (size >= nextReport)
+                    byte[] buffer = new byte[81920];
+                    int read;
+                    long nextReport = 64L << 20;
+                    while ((read = await body.ReadAsync(buffer, ct)) > 0)
                     {
-                        log.WriteLine($"  {size >> 20} MB");
-                        nextReport += 64L << 20;
+                        size += read;
+                        if (size > MaxArchiveBytes)
+                            throw new InvalidDataException($"{url} is larger than {MaxArchiveBytes >> 20} MB");
+                        hash.AppendData(buffer, 0, read);
+                        await file.WriteAsync(buffer.AsMemory(0, read), ct);
+                        if (size >= nextReport)
+                        {
+                            log.WriteLine($"  {size >> 20} MB");
+                            nextReport += 64L << 20;
+                        }
                     }
                 }
-            }
 
-            sha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+                sha256 = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+            }
+        }
+        catch
+        {
+            try { File.Delete(part); } catch { }
+            throw;
         }
 
         string staging = Path.Combine(cacheDir, "navdata-pin-check");

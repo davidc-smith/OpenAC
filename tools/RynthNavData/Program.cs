@@ -7,7 +7,7 @@ using AcDream.Tools.RynthNavData;
 using RynthCore.App.Avalonia;
 
 // pin --url <zip> --rynthsuite <commit> [--pin <file>] [--cache <dir>]
-// install [--dir <NavData>] [--pin <file>] [--cache <dir>]
+// install [--dir <NavData>] [--force] [--pin <file>] [--cache <dir>]
 // check-feed
 return await Run(args);
 
@@ -41,7 +41,7 @@ static async Task<int> Run(string[] args)
                 NavDataPin pin = NavDataPin.Load(pinPath);
                 string dir = Option("--dir") ?? NavDataFolders.NavData();
                 var progress = new Progress<DownloadProgress>(p => Console.WriteLine($"  {p.Detail}"));
-                Console.WriteLine(await NavDataInstaller.InstallAsync(pin, dir, cache, progress));
+                Console.WriteLine(await NavDataInstaller.InstallAsync(pin, dir, cache, progress, force: args.Contains("--force")));
                 return 0;
             }
             case "check-feed":
@@ -62,11 +62,11 @@ static async Task<int> Run(string[] args)
                 return 0;
             }
             default:
-                Console.Error.WriteLine("usage: pin --url <zip> --rynthsuite <commit> | install [--dir <NavData>] | check-feed  [--pin <file>] [--cache <dir>]");
+                Console.Error.WriteLine("usage: pin --url <zip> --rynthsuite <commit> | install [--dir <NavData>] [--force] | check-feed  [--pin <file>] [--cache <dir>]");
                 return 2;
         }
     }
-    catch (Exception error) when (error is IOException or InvalidDataException or HttpRequestException or ArgumentException or InvalidOperationException)
+    catch (Exception error) when (error is IOException or InvalidDataException or HttpRequestException or ArgumentException or InvalidOperationException or OperationCanceledException or UnauthorizedAccessException or System.Text.Json.JsonException)
     {
         Console.Error.WriteLine($"{verb} failed: {error.Message}");
         return 1;

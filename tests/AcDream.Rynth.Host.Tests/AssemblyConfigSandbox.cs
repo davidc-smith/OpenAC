@@ -67,8 +67,12 @@ internal static class TestNavData
             {
                 string name = $"nav_{(x << 8) | y:X4}.tile";
                 string source = Path.Combine(_realDirectory, name);
-                if (File.Exists(source))
-                    File.Copy(source, Path.Combine(Directory, name), overwrite: true);
+                try
+                {
+                    if (File.Exists(source))
+                        File.Copy(source, Path.Combine(Directory, name), overwrite: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }   // unreadable tile: HasTiles stays false
             }
 
         HasTiles = File.Exists(Path.Combine(Directory, $"nav_{HoltburgLandblock:X4}.tile"));

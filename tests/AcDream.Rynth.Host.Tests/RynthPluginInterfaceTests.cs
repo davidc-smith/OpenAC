@@ -71,6 +71,7 @@ public sealed unsafe class RynthPluginInterfaceTests
     public void AFailedOrShutDownPluginIsNotAsked()
     {
         using var host = new RynthHost(new FakeGameView(), _log.Add, [typeof(FailsInit), typeof(Provider)]);
+        // A plugin whose Init fails is never added to the host's list, so this half checks it is unreachable by name.
         Assert.Equal(IntPtr.Zero, Call(host, "FailsInit", "Any", 1));
 
         host.Plugins.Single(p => p.ReportedName == "Provider").Shutdown();

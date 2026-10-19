@@ -23,6 +23,6 @@ internal static class RynthNavDataHint
         catch (UnauthorizedAccessException) { }
 
         return $"[Rynth] RynthAi's outdoor detours need RynthNav's navmesh tiles in {navDataDirectory}. "
-            + $"Install them from an OpenAC checkout with: {InstallCommand}";
+            + $"Install them (1.6 GB download, about 4.7 GB on disk, needs about 6.4 GB free) from an OpenAC checkout with: {InstallCommand}";
     }
 }
