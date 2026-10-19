@@ -112,7 +112,7 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
             || _items.Any(item => item.ObjectId == itemId)
             || _bindings.Objects.Get(itemId) is not { } item)
             return false;
-        return _bindings.Objects.GetContents(itemId).Count > 0
+        return _bindings.Objects.GetContainedItems(itemId).Count > 0
             || SalvageItemPolicy.IsSuitable(item, _material, _bindings.AllowMultipleMaterials());
     }
 
@@ -125,10 +125,13 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
         return true;
     }
 
+    // A dropped container contributes its item list only. Its packs are a
+    // separate list and are not walked, so the main pack adds the
+    // character's own items and leaves every side pack alone.
     private void AddRecursive(uint itemId, HashSet<uint> visited)
     {
         if (!visited.Add(itemId) || !CanAdd(itemId)) return;
-        IReadOnlyList<uint> contents = _bindings.Objects.GetContents(itemId);
+        IReadOnlyList<uint> contents = _bindings.Objects.GetContainedItems(itemId);
         if (contents.Count > 0)
         {
             _bindings.Report($"Adding contents of {_bindings.Objects.Get(itemId)!.GetAppropriateName()}");
