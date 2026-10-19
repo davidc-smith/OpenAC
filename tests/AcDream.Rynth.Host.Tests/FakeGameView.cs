@@ -208,7 +208,7 @@ internal sealed class FakeGameView : IRynthGameView
     public bool QueryHealth(uint objectId) => Act($"health {objectId:X8}");
     public bool ChangeCombatMode(int rynthMode) => Act($"mode {rynthMode}");
     public bool MoveItem(uint objectId, uint containerId, int slot, int amount) =>
-        Act($"move {objectId:X8} {containerId:X8} {slot} {amount}");
+        amount > 0 && Act($"move {objectId:X8} {containerId:X8} {slot} {amount}");
     public bool MergeStack(uint sourceObjectId, uint targetObjectId) => Act($"merge {sourceObjectId:X8} {targetObjectId:X8}");
     public void ResetBusyCount() => Act("reset busy");
     public bool WieldItem(uint objectId, uint equipMask) => Act($"wield {objectId:X8} {equipMask:X8}");

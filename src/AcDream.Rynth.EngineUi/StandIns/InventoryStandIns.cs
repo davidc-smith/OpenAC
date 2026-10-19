@@ -53,6 +53,7 @@ namespace RynthCore.Engine.Compatibility
             7 => "wield",
             9 => "give",
             10 => "vendor buy/sell",
+            0x100 => "earlier item action",   // OpenAC's own: its item busy count with no request pending
             _ => $"request {type}",
         };
     }

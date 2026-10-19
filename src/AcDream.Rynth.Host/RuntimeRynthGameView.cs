@@ -448,9 +448,24 @@ public sealed class RuntimeRynthGameView : IRynthGameView
 
     public bool TryGetPendingItemRequest(out uint acType, out uint objectId)
     {
-        if (_runtime.InventoryOwner.Transactions.PendingRequest is { } pending)
+        var transactions = _runtime.InventoryOwner.Transactions;
+        return PendingFor(transactions.PendingRequest, transactions.ItemBusyCount, out acType, out objectId);
+    }
+
+    /// <summary>
+    /// OpenAC refuses item actions unless the busy count is 0 and nothing is pending, so a busy
+    /// count with no request reports OpenAC's own type 0x100 (see the ClientActionGates stand-in).
+    /// </summary>
+    internal static bool PendingFor(PendingInventoryRequest? pending, int itemBusyCount, out uint acType, out uint objectId)
+    {
+        if (pending is { } p)
         {
-            (acType, objectId) = (AcRequestType(pending.Kind), pending.ItemId);
+            (acType, objectId) = (AcRequestType(p.Kind), p.ItemId);
+            return true;
+        }
+        if (itemBusyCount > 0)
+        {
+            (acType, objectId) = (0x100, 0);
             return true;
         }
         (acType, objectId) = (0, 0);

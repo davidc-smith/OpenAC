@@ -10,8 +10,8 @@ namespace AcDream.App.Extensions.Overlay;
 /// out is remembered so the renderer draws it and nothing else. Icon and spell
 /// answers are memoised here, hits and misses, once a backend is bound: the
 /// script-window replay asks every frame and each backend call reads the dats
-/// under their lock. That is safe because issued handles are never released
-/// while the session runs. Object icons are not memoised: an object's icon,
+/// under their lock. That is safe because the memoised icon handles are never
+/// released while the session runs (uploaded pictures are released through Release). Object icons are not memoised: an object's icon,
 /// overlay and effects can change, and that path is cheap. Game thread.
 /// </summary>
 internal sealed class OverlayIcons : IClientOverlayIcons

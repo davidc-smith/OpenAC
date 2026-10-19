@@ -19,6 +19,18 @@ public sealed class RynthInventoryViewTests
         Assert.Equal(acType, RuntimeRynthGameView.AcRequestType(kind));
 
     [Fact]
+    public void PendingForReportsTheRequestOrOpenAcsBusyCount()
+    {
+        var req = new PendingInventoryRequest(1, InventoryRequestKind.Move, 0x80000011u, null, true);
+        Assert.True(RuntimeRynthGameView.PendingFor(req, 0, out uint type, out uint obj));
+        Assert.Equal((3u, 0x80000011u), (type, obj));
+        Assert.True(RuntimeRynthGameView.PendingFor(null, 2, out type, out obj));
+        Assert.Equal((0x100u, 0u), (type, obj));
+        Assert.False(RuntimeRynthGameView.PendingFor(null, 0, out type, out obj));
+        Assert.Equal((0u, 0u), (type, obj));
+    }
+
+    [Fact]
     public void ObjectInfoCarriesSlotLocationsAndUseability()
     {
         var info = new RynthObjectInfo

@@ -56,8 +56,9 @@ namespace RynthCore.Engine.Compatibility
         public static bool MoveItemInternal(uint objectId, uint targetContainerId, int slot, int amount) =>
             !IsOwnedContainerFull(targetContainerId)
             && (Move?.Invoke(objectId, targetContainerId, FirstEmptySlot?.Invoke(targetContainerId, objectId) ?? 0, amount) ?? false);
+        // A split leaves the source stack where it is, so even the item's own container counts it.
         public static bool SplitStackInternal(uint objectId, uint targetContainerId, int slot, int amount) =>
-            Move?.Invoke(objectId, targetContainerId, FirstEmptySlot?.Invoke(targetContainerId, objectId) ?? 0, amount) ?? false;
+            Move?.Invoke(objectId, targetContainerId, FirstEmptySlot?.Invoke(targetContainerId, 0) ?? 0, amount) ?? false;
         internal static bool IsOwnedContainerFull(uint target) => ContainerFull?.Invoke(target) ?? false;
         public static bool WieldItem(uint objectId, uint equipMask) => Wield?.Invoke(objectId, equipMask) ?? false;
         public static bool DropItem(uint objectId) => Drop?.Invoke(objectId) ?? false;

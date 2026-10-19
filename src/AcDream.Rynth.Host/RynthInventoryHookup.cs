@@ -67,7 +67,7 @@ internal sealed class RynthInventoryHookup : IDisposable
         }, default);
         _use = id => Guard(nameof(ClientHelperHooks.UseObject), () => _view.UseObject(id), false);
         _move = (item, container, slot, amount) =>
-            Guard(nameof(ClientHelperHooks.Move), () => _view.MoveItem(item, container, slot, amount), false);
+            Guard(nameof(ClientHelperHooks.Move), () => _view.MoveItem(item, container, slot, MoveAmount(item, amount)), false);
         _wield = (item, mask) => Guard(nameof(ClientHelperHooks.WieldItem), () => _view.WieldItem(item, mask), false);
         _drop = item => Guard(nameof(ClientHelperHooks.DropItem), () => _view.MoveItemExternal(item, 0, 0), false);
         _give = (item, target, amount) =>
@@ -161,7 +161,7 @@ internal sealed class RynthInventoryHookup : IDisposable
         f = new ClientObjectHooks.ItemPwdFields
         {
             Wcid = o.Wcid, Icon = o.IconId, Container = o.ContainerId, Wielder = o.WielderId,
-            ValidLocations = o.ValidLocations, Location = o.EquipLocation, Type = o.ItemType, Value = (uint)o.Value,
+            ValidLocations = o.ValidLocations, Location = o.EquipLocation, Type = o.ItemType, Value = (uint)Math.Max(0, o.Value),
             Useability = o.Useability, StackSize = (uint)o.StackSize, MaxStackSize = (uint)o.StackSizeMax,
             Bitfield = o.Bitfield, SpellId = o.SpellId ?? 0, ItemsCapacity = o.ItemsCapacity, Burden = o.Burden,
             MaterialType = (int)(o.MaterialType ?? 0), Workmanship = o.Workmanship,
@@ -215,6 +215,11 @@ internal sealed class RynthInventoryHookup : IDisposable
         (type, objectId) = ok ? (t, o) : (0u, 0u);
         return ok;
     }
+
+    // RynthCore's PutItemInContainerAt passes amount 0 (acclient: the whole stack); OpenAC's view
+    // refuses a move of 0, so a missing amount becomes the item's stack size.
+    private int MoveAmount(uint item, int amount) =>
+        amount > 0 ? amount : _view.TryGetObject(item, out RynthObjectInfo o) ? Math.Max(1, o.StackSize) : 1;
 
     private bool IsFull(uint target) =>
         _view.TryCountContents(target, out int items, out _)

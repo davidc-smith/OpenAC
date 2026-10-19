@@ -23,7 +23,7 @@ namespace RynthCore.Engine.Compatibility
                 reply("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>] | inventory");
                 return true;
             }
-            if (IsVerb(sub, "inventory", out _))
+            if (IsVerb(sub, "inventory", out _) || IsVerb(sub, "inv", out _))
             {
                 // The ImGui Inventory panel (open/close), like its bar button.
                 if (!ImGuiPanelHost.HasFace(InventoryFace.Title))

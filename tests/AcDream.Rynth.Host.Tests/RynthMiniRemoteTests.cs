@@ -158,6 +158,10 @@ public sealed class RynthMiniRemoteTests : IDisposable
             Assert.True(RynthCoreChatCommands.TryHandle("  ", replies.Add));
             Assert.Equal("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>] | inventory", replies[^1]);
 
+            int before = replies.Count;
+            Assert.True(RynthCoreChatCommands.TryHandle("inv", replies.Add));
+            Assert.DoesNotContain("isn't in OpenAC", string.Join("|", replies.Skip(before)));
+
             RynthCoreChatCommands.TryHandle("bogus", replies.Add);
             Assert.Equal("/rc bogus isn't in OpenAC (only /rc miniremote and /rc inventory).", replies[^1]);
         }

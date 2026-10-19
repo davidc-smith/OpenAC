@@ -61,7 +61,7 @@ public sealed class RynthInventoryActionTests : IDisposable
     public void MoveWithASlotSendsThePacketAndFinishesWhenTheItemLands()
     {
         Send(Req(InventoryActionKind.Move, MainItem, "Healing Kit", Pack, "Backpack", slot: 2));
-        Assert.Equal([$"move {MainItem:X8} {Pack:X8} 2 0"], _view.Actions);
+        Assert.Equal([$"move {MainItem:X8} {Pack:X8} 2 1"], _view.Actions);
         Put(MainItem, "Healing Kit", Item(Pack, slot: 2));
         Ticks();
         Assert.Equal("Moved Healing Kit to Backpack.", InventoryModel.LastResult!.Text);
@@ -160,8 +160,32 @@ public sealed class RynthInventoryActionTests : IDisposable
         Assert.Equal("move of Torch", InventoryModel.Pending.BusyWith);
         _view.PendingItemRequest = null;
         Ticks(1);
-        Assert.Equal([$"move {MainItem:X8} {Pack:X8} 2 0"], _view.Actions);
+        Assert.Equal([$"move {MainItem:X8} {Pack:X8} 2 1"], _view.Actions);
         Assert.False(InventoryModel.Pending!.WaitingForGame);
+    }
+
+    [Fact]
+    public void OpenAcsBusyCountWithNoRequestHoldsAMoveToo()
+    {
+        Ticks(2);
+        _view.PendingItemRequest = (0x100, 0);
+        Assert.True(InventoryModel.Request(Req(InventoryActionKind.Move, MainItem, "Healing Kit", Pack, "Backpack", slot: 2), out string why), why);
+        Ticks(1);
+        Assert.Empty(_view.Actions);
+        Assert.True(InventoryModel.Pending!.WaitingForGame);
+        Assert.Equal("another item action (earlier item action)", InventoryModel.Pending.BusyWith);
+        _view.PendingItemRequest = null;
+        Ticks(1);
+        Assert.Single(_view.Actions);
+    }
+
+    [Fact]
+    public void SplittingIntoTheItemsOwnContainerGoesToTheSlotAfterEveryItem()
+    {
+        Fill(Player, (0x80000021u, "Rope"));   // main pack: Healing Kit, Rope (Pack and Worn take no slot)
+        Put(MainItem, "Healing Kit", Item(Player, slot: 0, stack: 10));
+        Send(Req(InventoryActionKind.Split, MainItem, "Healing Kit", Player, "Tester", amount: 3));
+        Assert.Equal([$"move {MainItem:X8} {Player:X8} 2 3"], _view.Actions);
     }
 
     [Fact]
