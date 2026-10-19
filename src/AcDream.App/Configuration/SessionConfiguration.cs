@@ -90,6 +90,13 @@ internal sealed record SessionDescriptor
     /// </summary>
     public Dictionary<string, Dictionary<string, string>>? PluginSettings { get; init; }
 
+    /// <summary>
+    /// Whether the built-in Rynth extension (its bar, windows and commands)
+    /// runs in this session. Absent falls back to <c>ACDREAM_RYNTH</c>, which
+    /// leaves it on unless set to <c>0</c>.
+    /// </summary>
+    public bool? Rynth { get; init; }
+
     public List<string>? LoginCommands { get; init; }
 
     public int LoginCommandDelayMs { get; init; } = 500;

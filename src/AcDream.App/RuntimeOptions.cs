@@ -80,6 +80,12 @@ public sealed record RuntimeOptions(
     public string? VtankProfileDirectoryOverride { get; init; }
 
     /// <summary>
+    /// Whether the built-in Rynth extension runs. On unless
+    /// <c>ACDREAM_RYNTH=0</c>; a session document's <c>rynth</c> outranks it.
+    /// </summary>
+    public bool Rynth { get; init; } = true;
+
+    /// <summary>
     /// Path to a JSON file holding the startup settings this client was
     /// started with for each plugin: one object of settings per plugin id.
     /// Unset means none. The file is the same map a session configuration
@@ -181,6 +187,7 @@ public sealed record RuntimeOptions(
         {
             PluginTags = ParsePluginTags(env("ACDREAM_PLUGIN_TAGS")),
             VtankProfileDirectoryOverride = NullIfEmpty(env("ACDREAM_VTANK_PROFILE_DIR")),
+            Rynth = !string.Equals(env("ACDREAM_RYNTH"), "0", StringComparison.Ordinal),
             PluginSettingsFile =
                 NullIfEmpty(env("ACDREAM_PLUGIN_SETTINGS_FILE")),
         };
@@ -232,6 +239,7 @@ public sealed record RuntimeOptions(
                 ? AcDream.Runtime.Plugins.PluginSessionSettings.FromDeclared(
                     declared)
                 : null,
+            Rynth = session.Rynth ?? baseOptions.Rynth,
             DeclaredCharacterOptions =
                 AcDream.Runtime.Gameplay.RuntimeDeclaredCharacterOptions.Parse(
                     session.Id,

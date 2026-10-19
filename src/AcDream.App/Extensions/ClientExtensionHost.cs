@@ -12,10 +12,17 @@ namespace AcDream.App.Extensions;
 /// </summary>
 internal sealed class ClientExtensionHost : IDisposable
 {
-    private readonly List<IClientExtension> _extensions =
-    [
-        new AcDream.Rynth.Host.RynthClientExtension(),
-    ];
+    private readonly List<IClientExtension> _extensions = [];
+
+    /// <param name="rynth">False leaves the Rynth extension out entirely:
+    /// it is never created, so none of its bar, windows or commands load.</param>
+    public ClientExtensionHost(bool rynth = true)
+    {
+        if (rynth)
+            _extensions.Add(new AcDream.Rynth.Host.RynthClientExtension());
+    }
+
+    internal int Count => _extensions.Count;
 
     public void Attach(
         GameRuntime runtime,
