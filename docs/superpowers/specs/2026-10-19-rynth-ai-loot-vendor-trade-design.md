@@ -45,7 +45,7 @@ refuses. A throw becomes the usual "threw" log line and answers 0.
 | `GiveObjectToFn(uint obj, uint target, int amount)` | `Items.Give(obj, target, amount)`; 0 = whole stack, negative answers 0. |
 | `CloseContainerFn(uint id)` | `Loot.Close(id)`. |
 | `GetObjectPalettesFn(uint id, uint* subIds, uint* offsets, int max)` | From the object's CreateObject sub-palette swaps, in offset order: `subIds[i]` = sub-palette id, `offsets[i]` = its offset as a colour index (the wire's blocks of eight × 8), as RynthCore's `PaletteCache` reads the client's unpacked `Subpalette.offset`. An object the client knows but has no world entity for answers 0. Fills up to `max`, returns the total count (may exceed `max`), -1 when the object is unknown (RynthCore's "no data captured"). |
-| `GetNumContainedItemsFn(uint id)` / `GetNumContainedContainersFn(uint id)` | The container's direct contents that are not containers / that are containers (worn items are not contents). -1 when the container is unknown, as RynthCore. |
+| `GetNumContainedItemsFn(uint id)` / `GetNumContainedContainersFn(uint id)` | The container's direct contents that take an item slot / a container slot, split as the client's placement search does (`InventoryContainerPlacementPolicy.IsContainer`: packs and spell foci take container slots); worn items are not contents. -1 when the container is unknown, as RynthCore. |
 
 ### Salvage (`RynthSalvagePanel` + `RynthApiTable.Salvage.cs`)
 

@@ -542,6 +542,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             .OrderBy(p => p.Item2)];
     }
 
+    // A container slot as the client's placement search counts one (packs and spell foci alike).
     public bool TryCountContents(uint containerId, out int items, out int containers)
     {
         items = containers = 0;
@@ -550,7 +551,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             return false;
         foreach (uint id in objects.GetContents(containerId))
         {
-            if (objects.Get(id) is { ItemsCapacity: > 0 })
+            if (objects.Get(id) is { } held && InventoryContainerPlacementPolicy.IsContainer(held))
                 containers++;
             else
                 items++;

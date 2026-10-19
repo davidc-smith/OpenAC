@@ -624,6 +624,30 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal(new[] { (0x04005678u, 0u), (0x04001234u, 24u) }, view.GetPalettes(0x80000010));
     }
 
+    // A container slot is what the client's placement search counts as one: packs and spell foci.
+    [Fact]
+    public void ContainedCountsSplitContainerSlotsAsThePlacementSearchDoes()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        ClientObjectTable objects = runtime.InventoryOwner.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Name = "Sammy" });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000110, ContainerId = 0x50000001, ItemsCapacity = 24 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000111, ContainerId = 0x50000001 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000112, ContainerId = 0x50000001 });
+        // The listing names the focus by its container type (2), as the server's does.
+        objects.ReplaceContents(0x50000001, new ContainerContentEntry[]
+        {
+            new(0x80000110, 1u), new(0x80000111, 2u), new(0x80000112, 0u),
+        });
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.True(view.TryCountContents(0x50000001, out int items, out int containers));
+        Assert.Equal(1, items);
+        Assert.Equal(2, containers);
+        Assert.False(view.TryCountContents(0x8000FFFF, out _, out _));
+    }
+
     private static WorldSession.EntitySpawn Spawn(uint guid)
     {
         var position = new CreateObject.ServerPosition(0x0101FFFFu, 10f, 20f, 5f, 1f, 0f, 0f, 0f);
