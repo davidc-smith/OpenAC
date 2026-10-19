@@ -589,10 +589,32 @@ public sealed class RuntimeRynthGameViewTests
         Assert.True(view.TryGetPlayerPose(out uint cell, out Vector3 origin, out Quaternion orientation));
         Assert.Equal(body.CellPosition.ObjCellId, cell);
         Assert.Equal(body.CellPosition.Frame.Origin, origin);
-        Assert.Equal(body.CellPosition.Frame.Orientation, orientation);
+        Assert.Equal(body.Orientation, orientation);
         Assert.Equal(new Vector3(1, 2, 3), origin);
         Assert.True(view.TryGetObjectPosition(0x50000001, out uint objectCell, out _));
         Assert.Equal(cell, objectCell);
+    }
+
+    [Fact]
+    public void ThePlayerPoseHasTheBodysHeadingAfterATurnInPlace()
+    {
+        // RynthAi's nav turns in place with TurnToHeading, then reads the heading back from
+        // the pose: a turn that doesn't move the body must still show (the cell frame's copy
+        // of the orientation only refreshes when the position changes).
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var view = new RuntimeRynthGameView(runtime);
+        RuntimeEntityRecord record = runtime.EntityObjects.Entities.AddActive(Spawn(0x50000001));
+        var body = new PhysicsBody();
+        body.SnapToCell(0x0101001Au, new Vector3(10, 20, 30), new Vector3(1, 2, 3));
+        record.SetPhysicsBody(body);
+
+        Quaternion turned = AcDream.Core.Physics.Motion.MoveToMath.SetHeading(body.Orientation, 177.1f);
+        body.Orientation = turned;
+
+        Assert.True(view.TryGetPlayerPose(out _, out Vector3 origin, out Quaternion orientation));
+        Assert.Equal(turned, orientation);
+        Assert.Equal(new Vector3(1, 2, 3), origin);
     }
 
     [Fact]

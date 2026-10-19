@@ -209,7 +209,9 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         {
             cellId = body.CellPosition.ObjCellId;
             origin = body.CellPosition.Frame.Origin;
-            orientation = body.CellPosition.Frame.Orientation;
+            // The body's own orientation: the cell frame's copy only refreshes when the
+            // position changes, so a turn in place (RynthAi's TurnToHeading) wouldn't show.
+            orientation = body.Orientation;
             return true;
         }
 
