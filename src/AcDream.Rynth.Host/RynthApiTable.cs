@@ -35,6 +35,9 @@ public sealed unsafe partial class RynthApiTable : IDisposable
 
     /// <summary>RynthCore's salvage panel, kept by the host.</summary>
     internal RynthSalvagePanel Salvage { get; }
+
+    /// <summary>RynthCore's vendor buy/sell requests and the vendor list generation.</summary>
+    internal RynthVendorTrades Vendor { get; }
     private readonly Action<string> _log;
     private readonly bool _scriptWindows;
     private IntPtr _nameBuffer;
@@ -54,6 +57,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         Holds = new RynthMotionHolds(view);
         Nav3D = new RynthNav3D(view, nav3DLayer);
         Salvage = new RynthSalvagePanel(view);
+        Vendor = new RynthVendorTrades(view);
         _log = log;
         _scriptWindows = scriptWindows;
         Native = (RynthCoreApiNative*)NativeMemory.AllocZeroed((nuint)sizeof(RynthCoreApiNative));
@@ -88,6 +92,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         BindNav3DSlots();
         BindLootSlots();
         BindSalvageSlots();
+        BindVendorSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;
@@ -105,6 +110,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         if (Native is null)
             return;
         Nav3D.Dispose();
+        Vendor.Dispose();
         NativeMemory.Free(Native);
         Native = null;
         if (_nameBuffer != IntPtr.Zero)

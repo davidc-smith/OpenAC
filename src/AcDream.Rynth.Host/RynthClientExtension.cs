@@ -96,6 +96,7 @@ public sealed class RynthClientExtension : IClientExtension
         _runtime = context.Runtime;
         _runtime.CommunicationOwner.LocalPlayerDied += OnLocalPlayerDied;
         _runtime.InventoryOwner.ExternalContainers.Changed += OnExternalContainerChanged;
+        _runtime.InventoryOwner.Vendor.Changed += OnVendorChanged;
         _runtime.InventoryOwner.Objects.ContainerContentsReplaced += OnContainerContentsReplaced;
         _runtime.InventoryOwner.Objects.ObjectMoved += OnObjectMoved;
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
@@ -213,6 +214,7 @@ public sealed class RynthClientExtension : IClientExtension
         {
             _runtime.CommunicationOwner.LocalPlayerDied -= OnLocalPlayerDied;
             _runtime.InventoryOwner.ExternalContainers.Changed -= OnExternalContainerChanged;
+            _runtime.InventoryOwner.Vendor.Changed -= OnVendorChanged;
             _runtime.InventoryOwner.Objects.ContainerContentsReplaced -= OnContainerContentsReplaced;
             _runtime.InventoryOwner.Objects.ObjectMoved -= OnObjectMoved;
             _runtime = null;
@@ -276,6 +278,21 @@ public sealed class RynthClientExtension : IClientExtension
                 host.Bridge.OnContainerClosed(transition.PreviousContainerId);
                 break;
         }
+    }
+
+    // VendorState carries the vendor that closed (or was replaced) in PreviousVendorId.
+    private void OnVendorChanged(VendorTransition transition)
+    {
+        if (_host is not { } host)
+            return;
+        RynthVendorChange change = transition.Kind switch
+        {
+            VendorStateTransitionKind.Opened => RynthVendorChange.Opened,
+            VendorStateTransitionKind.Refreshed => RynthVendorChange.Refreshed,
+            VendorStateTransitionKind.Closed => RynthVendorChange.Closed,
+            _ => RynthVendorChange.Reset,
+        };
+        host.OnVendorChanged(change, transition.PreviousVendorId, transition.VendorId);
     }
 
     private void OnContainerContentsReplaced(uint containerId) =>

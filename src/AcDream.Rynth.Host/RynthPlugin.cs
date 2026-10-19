@@ -69,6 +69,10 @@ public sealed unsafe class RynthPlugin
     public void OnUpdateObjectInventory(uint containerId) =>
         CallObject("RynthPluginOnUpdateObjectInventory", containerId);
 
+    public void OnVendorOpen(uint vendorId) => CallObject("RynthPluginOnVendorOpen", vendorId);
+
+    public void OnVendorClose(uint vendorId) => CallObject("RynthPluginOnVendorClose", vendorId);
+
     /// <summary>
     /// A target's health. The server's health updates carry a ratio only, so
     /// current and max are 0 unless the creature was appraised (its appraised

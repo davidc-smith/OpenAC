@@ -34,6 +34,52 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
+    public void TheOpenVendorComesFromTheVendorStateWithRynthCoresCounts()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var player = new ClientObject { ObjectId = 0x50000001, Name = "Sammy" };
+        player.Properties.Ints[20] = 1_234;
+        runtime.InventoryOwner.Objects.AddOrUpdate(player);
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000700, Name = "Thorsten" });
+        runtime.InventoryOwner.Objects.AddOrUpdate(
+            new ClientObject { ObjectId = 0x80000110, ContainerId = 0x50000001, ItemsCapacity = 24 });
+        runtime.InventoryOwner.Objects.AddOrUpdate(
+            new ClientObject { ObjectId = 0x80000111, ContainerId = 0x50000001, WeenieClassId = 300, StackSize = 7 });
+        runtime.InventoryOwner.Objects.AddOrUpdate(
+            new ClientObject { ObjectId = 0x80000112, ContainerId = 0x80000110, WeenieClassId = 300, StackSize = 5 });
+        // Pack contents arrive as server listings.
+        runtime.InventoryOwner.Objects.ReplaceContents(0x50000001, new uint[] { 0x80000110, 0x80000111 });
+        runtime.InventoryOwner.Objects.ReplaceContents(0x80000110, new uint[] { 0x80000112 });
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.Null(view.Vendor);
+
+        runtime.InventoryOwner.Vendor.Apply(
+            0x80000700,
+            new VendorShopProfile(0x1u, 0u, uint.MaxValue, true, 0.9f, 1.3f, 300u, 12u, "Tokens"),
+            [
+                new VendorShopItem(0x80000701, 5, 30, "Sword", 1u, 0x06001234, 100, Burden: 200),
+                new VendorShopItem(0x80000702, -1, 31, "Gem", 0x800u, 0x06005678, 50, DescStackSize: 5,
+                    MaxStackSize: 100),
+                new VendorShopItem(0x80000703, 1, 32, "Pack", 0x200u, 0x06009999, 10, ItemsCapacity: 24),
+            ]);
+
+        RynthVendor vendor = Assert.IsType<RynthVendor>(view.Vendor);
+        Assert.Equal((0x80000700u, "Thorsten", int.MaxValue, 1.3f), (vendor.VendorId, vendor.Name, vendor.MaxValue, vendor.SellRate));
+        Assert.Equal((300u, "Tokens", 12, 12), (vendor.AltCurrencyWcid, vendor.AltCurrencyName,
+            vendor.AltCurrencyServerCount, vendor.AltCurrencyHave));
+        Assert.Equal(1_234, vendor.PlayerCoins);
+        Assert.Equal(3, vendor.Items.Count);
+        Assert.Equal((5, false), (vendor.Items[0].Amount, vendor.Items[0].Unlimited));
+        Assert.Equal((-1, true, true, 10), (vendor.Items[1].Amount, vendor.Items[1].Unlimited,
+            vendor.Items[1].Stackable, vendor.Items[1].UnitValue));
+        Assert.True(vendor.Items[2].NeedsContainerSlot);
+
+        runtime.InventoryOwner.Vendor.Close();
+        Assert.Null(view.Vendor);
+    }
+
+    [Fact]
     public void WriteChatLine_AddsASystemLine()
     {
         var runtime = GameRuntimeTestFactory.Create();

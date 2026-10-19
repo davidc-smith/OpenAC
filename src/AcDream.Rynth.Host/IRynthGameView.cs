@@ -208,4 +208,16 @@ public interface IRynthGameView
 
     /// <summary>A container's direct contents split into items and containers (worn items are not contents); false when it is unknown.</summary>
     bool TryCountContents(uint containerId, out int items, out int containers);
+
+    /// <summary>The open vendor; null when none is open.</summary>
+    RynthVendor? Vendor { get; }
+
+    /// <summary>Buys the given listings in one request. False (with the reason) when the client would not send it.</summary>
+    bool VendorBuy(IReadOnlyList<(uint ObjectId, int Amount)> items, out string? notice);
+
+    /// <summary>Sells the given owned items, whole stacks, in one request. False (with the reason) when the client would not send it.</summary>
+    bool VendorSell(IReadOnlyList<uint> itemIds, out string? notice);
+
+    /// <summary>Raised on the game thread with the server's answer to a buy or sell the view sent.</summary>
+    event Action<RynthVendorOutcome>? VendorTransactionCompleted;
 }

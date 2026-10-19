@@ -24,6 +24,9 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _submitChatCommand = submitChatCommand;
         _automation = automation ?? NoOpAutomationSurface.Instance;
+        // The surface polls its vendor automation every tick, so this arrives on the game thread.
+        _automation.Vendor.TransactionCompleted +=
+            transaction => VendorTransactionCompleted?.Invoke(new RynthVendorOutcome(transaction.Success, transaction.Notice));
     }
 
     public uint SelectedObjectId => _runtime.ActionOwner.Selection.SelectedObjectId ?? 0u;
@@ -536,5 +539,157 @@ public sealed class RuntimeRynthGameView : IRynthGameView
                 items++;
         }
         return true;
+    }
+
+    public event Action<RynthVendorOutcome>? VendorTransactionCompleted;
+
+    public RynthVendor? Vendor
+    {
+        get
+        {
+            VendorState state = _runtime.InventoryOwner.Vendor;
+            if (state.VendorId == 0u)
+                return null;
+            VendorShopProfile profile = state.Profile;
+            IReadOnlyList<PluginVendorItem> priced = _automation.Vendor.Items;
+            var items = new RynthVendorItem[state.Items.Count];
+            for (int i = 0; i < items.Length; i++)
+            {
+                VendorShopItem listing = state.Items[i];
+                int value = listing.Value ?? 0;
+                int stack = Math.Max(1, listing.DescStackSize ?? 1);
+                items[i] = new RynthVendorItem(
+                    listing.ItemGuid, listing.WeenieClassId, listing.Name ?? string.Empty, listing.ItemType ?? 0u,
+                    listing.IconId,
+                    // The ApproachVendor wiring records ACE's unlimited stock (0 or less) as -1,
+                    // and the vendor window reads a negative stock as unlimited.
+                    Amount: listing.StackSize > 0 ? listing.StackSize : -1,
+                    StackSize: stack,
+                    MaxStackSize: listing.MaxStackSize ?? 0,
+                    Value: value,
+                    UnitValue: stack > 1 ? value / stack : value,
+                    UnitPrice: UnitPrice(priced, i, listing.ItemGuid),
+                    Burden: listing.Burden ?? 0,
+                    NeedsContainerSlot: (listing.ItemsCapacity ?? 0) > 0 || (listing.ContainersCapacity ?? 0) > 0);
+            }
+
+            return new RynthVendor(
+                state.VendorId,
+                _runtime.InventoryOwner.Objects.Get(state.VendorId)?.Name ?? string.Empty,
+                profile.MerchandiseItemTypes,
+                ClampToInt(profile.MerchandiseMinValue),
+                ClampToInt(profile.MerchandiseMaxValue),
+                profile.DealMagicalItems,
+                profile.BuyPrice,
+                profile.SellPrice,
+                profile.AlternateCurrencyWcid,
+                profile.AlternateCurrencyPluralName ?? string.Empty,
+                ClampToInt(profile.AlternateCurrencyAmount),
+                profile.AlternateCurrencyWcid == 0u ? -1 : CountOwned(profile.AlternateCurrencyWcid),
+                PlayerCoins(),
+                items);
+        }
+    }
+
+    public bool VendorBuy(IReadOnlyList<(uint ObjectId, int Amount)> items, out string? notice)
+    {
+        IVendorAutomation vendor = _automation.Vendor;
+        vendor.ClearBuyList();
+        foreach ((uint id, int amount) in items)
+        {
+            PluginVendorCommandResult added = vendor.AddToBuyList(id, amount);
+            if (!added.Accepted)
+            {
+                vendor.ClearBuyList();
+                notice = added.Notice ?? $"0x{id:X8} could not be bought ({added.Status})";
+                return false;
+            }
+        }
+
+        PluginVendorCommandResult sent = vendor.BuyAll();
+        if (!sent.Accepted)
+            vendor.ClearBuyList();
+        notice = sent.Notice ?? (sent.Accepted ? null : sent.Status.ToString());
+        return sent.Accepted;
+    }
+
+    public bool VendorSell(IReadOnlyList<uint> itemIds, out string? notice)
+    {
+        IVendorAutomation vendor = _automation.Vendor;
+        vendor.ClearSellList();
+        foreach (uint id in itemIds)
+        {
+            PluginVendorCommandResult added = vendor.AddToSellList(id);
+            if (!added.Accepted)
+            {
+                vendor.ClearSellList();
+                notice = added.Notice ?? $"0x{id:X8} could not be sold ({added.Status})";
+                return false;
+            }
+        }
+
+        PluginVendorCommandResult sent = vendor.SellAll();
+        if (!sent.Accepted)
+            vendor.ClearSellList();
+        notice = sent.Notice ?? (sent.Accepted ? null : sent.Status.ToString());
+        return sent.Accepted;
+    }
+
+    // The automation lists the shop in the vendor state's order; a search covers a list that differs.
+    private static int UnitPrice(IReadOnlyList<PluginVendorItem> priced, int index, uint listingId)
+    {
+        if (index < priced.Count && priced[index].TemplateObjectId == listingId)
+            return priced[index].UnitPrice;
+        foreach (PluginVendorItem item in priced)
+        {
+            if (item.TemplateObjectId == listingId)
+                return item.UnitPrice;
+        }
+        return 0;
+    }
+
+    // Min/max use uint.MaxValue as "no limit", which becomes int.MaxValue.
+    private static int ClampToInt(uint value) => value > int.MaxValue ? int.MaxValue : (int)value;
+
+    // CoinValue (PropertyInt 20), from the player description first as TryGetInt64Property reads; -1 unknown.
+    private int PlayerCoins()
+    {
+        const uint coinValue = 20u;
+        uint player = PlayerId;
+        if (player == 0)
+            return -1;
+        if (_runtime.CharacterOwner.LocalPlayer is { HasDescription: true } local
+            && local.Properties.Ints.TryGetValue(coinValue, out int described))
+            return described;
+        return _runtime.InventoryOwner.Objects.Get(player) is { } self
+            && self.Properties.Ints.TryGetValue(coinValue, out int coins)
+            ? coins
+            : -1;
+    }
+
+    // RynthCore's CountAltCurrency: the player's and their packs' direct contents, not worn items.
+    private int CountOwned(uint wcid)
+    {
+        uint player = PlayerId;
+        if (player == 0)
+            return -1;
+        ClientObjectTable objects = _runtime.InventoryOwner.Objects;
+        long total = 0;
+        foreach (uint id in objects.GetContents(player))
+        {
+            if (objects.Get(id) is not { } item)
+                continue;
+            if (item.WeenieClassId == wcid)
+                total += Math.Max(1, item.StackSize);
+            if (item.ItemsCapacity > 0)
+            {
+                foreach (uint inner in objects.GetContents(id))
+                {
+                    if (objects.Get(inner) is { } packed && packed.WeenieClassId == wcid)
+                        total += Math.Max(1, packed.StackSize);
+                }
+            }
+        }
+        return (int)Math.Min(total, int.MaxValue);
     }
 }

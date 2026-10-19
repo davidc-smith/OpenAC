@@ -30,6 +30,8 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         CombatMode,
         ViewContents,
         StopViewingContents,
+        VendorOpen,
+        VendorClose,
         UpdateInventory,
         CreateObject,
         DeleteObject,
@@ -259,6 +261,20 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
                 plugin.OnStopViewingObjectContents(containerId);
         });
     }
+
+    /// <summary>A vendor's list arrived (RynthCore raises it for every OpenVendor, refreshes included).</summary>
+    public void OnVendorOpened(uint vendorId) => Enqueue(EventKind.VendorOpen, () =>
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnVendorOpen(vendorId);
+    });
+
+    /// <summary>The vendor closed (RynthCore's MarkVendorClosed), or another vendor replaced it.</summary>
+    public void OnVendorClosed(uint vendorId) => Enqueue(EventKind.VendorClose, () =>
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnVendorClose(vendorId);
+    });
 
     /// <summary>From the object table: a container's contents were replaced or an item moved in or out.</summary>
     public void OnContainerContentsChanged(uint containerId)

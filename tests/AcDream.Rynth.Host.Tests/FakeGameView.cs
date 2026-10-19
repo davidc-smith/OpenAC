@@ -258,4 +258,21 @@ internal sealed class FakeGameView : IRynthGameView
         (items, containers) = counts;
         return known;
     }
+
+    public RynthVendor? OpenVendor { get; set; }
+    public string? VendorNotice { get; set; }
+    public RynthVendor? Vendor => Read(OpenVendor);
+    public bool VendorBuy(IReadOnlyList<(uint ObjectId, int Amount)> items, out string? notice)
+    {
+        notice = VendorNotice;
+        return Act($"buy {string.Join(",", items.Select(i => $"{i.ObjectId:X8}x{i.Amount}"))}");
+    }
+    public bool VendorSell(IReadOnlyList<uint> itemIds, out string? notice)
+    {
+        notice = VendorNotice;
+        return Act($"sell {string.Join(",", itemIds.Select(id => id.ToString("X8")))}");
+    }
+    public event Action<RynthVendorOutcome>? VendorTransactionCompleted;
+    public void CompleteVendorTransaction(bool success, string? notice = null) =>
+        VendorTransactionCompleted?.Invoke(new RynthVendorOutcome(success, notice));
 }
