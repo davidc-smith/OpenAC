@@ -109,15 +109,27 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
     internal static void AddFonts(ImFontAtlasPtr atlas, OverlayFonts? fonts, float scale)
     {
         atlas.Clear();
+        fonts?.ClearBaked();
+        AddFont(atlas, fonts, FontSizePoints, scale);
+        if (fonts is null)
+            return;
+        foreach (float points in fonts.SizesAsked)
+            AddFont(atlas, fonts, points, scale);
+    }
+
+    // The default font at one size, with the merged fonts on it.
+    private static void AddFont(ImFontAtlasPtr atlas, OverlayFonts? fonts, float points, float scale)
+    {
         ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
-        config.SizePixels = FontSizePoints;
+        config.SizePixels = points;
         config.RasterizerDensity = scale;
         config.OversampleH = 1;
         config.OversampleV = 1;
         config.PixelSnapH = true;
-        atlas.AddFontDefault(config);
+        ImFontPtr font = atlas.AddFontDefault(config);
         config.Destroy();
-        fonts?.MergeInto(atlas, FontSizePoints, scale);
+        fonts?.MergeInto(atlas, points, scale);
+        fonts?.Baked(points, font);
     }
 
     public void PrepareFrame(ImGuiIOPtr io, Vector2 framebufferScale)

@@ -14,6 +14,8 @@ internal sealed unsafe class OverlayFonts : IDisposable
 {
     private readonly Action<string> _log;
     private readonly List<Entry> _entries = new();
+    private readonly List<float> _sizes = new();
+    private readonly Dictionary<float, IntPtr> _baked = new();
     private bool _disposed;
 
     public OverlayFonts(Action<string> log) => _log = log ?? throw new ArgumentNullException(nameof(log));
@@ -52,6 +54,38 @@ internal sealed unsafe class OverlayFonts : IDisposable
         _entries.Add(new Entry((IntPtr)data, ttf.Length, (IntPtr)nativeRanges, ranges.Length, scale));
         Version++;
     }
+
+    /// <summary>The extra point sizes asked for through <see cref="Sized"/>, in order.</summary>
+    public IReadOnlyList<float> SizesAsked => _sizes;
+
+    /// <summary>
+    /// The overlay's font at <paramref name="points"/> (whole points, 4-72) in the atlas
+    /// as last built, or zero. A size not built yet is asked for, and the next build has it.
+    /// </summary>
+    public IntPtr Sized(float points)
+    {
+        if (!float.IsFinite(points) || points < MinPoints || points > MaxPoints || _disposed)
+            return IntPtr.Zero;
+        points = MathF.Round(points);
+        if (_baked.TryGetValue(points, out IntPtr font))
+            return font;
+        if (!_sizes.Contains(points))
+        {
+            _sizes.Add(points);
+            Version++;
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private const float MinPoints = 4f;
+    private const float MaxPoints = 72f;
+
+    /// <summary>The atlas is being rebuilt: its fonts are gone.</summary>
+    internal void ClearBaked() => _baked.Clear();
+
+    /// <summary>The atlas now has the font at <paramref name="points"/>; the first one built at a size is kept.</summary>
+    internal unsafe void Baked(float points, ImFontPtr font) => _baked.TryAdd(points, (IntPtr)font.NativePtr);
 
     /// <summary>
     /// Merges every font into the atlas's last added font, at <paramref name="basePoints"/> times
@@ -117,6 +151,8 @@ internal sealed unsafe class OverlayFonts : IDisposable
         }
 
         _entries.Clear();
+        _sizes.Clear();
+        _baked.Clear();
     }
 
     private readonly record struct Entry(IntPtr Data, int Length, IntPtr Ranges, int RangesLength, float Scale)

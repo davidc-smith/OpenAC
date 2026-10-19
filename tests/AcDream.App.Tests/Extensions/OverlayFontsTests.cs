@@ -103,6 +103,40 @@ public sealed unsafe class OverlayFontsTests : IDisposable
         Assert.True(width2 * height2 > width1 * height1);
     }
 
+    [Fact]
+    public void ASizeIsBakedFromTheNextBuildWithTheMergedIcons()
+    {
+        _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
+        ImFontAtlasPtr atlas = ImGui.GetIO().Fonts;
+        ImGuiVulkanRenderer.AddFonts(atlas, _fonts, 2f);
+        int version = _fonts.Version;
+
+        Assert.Equal((nint)atlas.Fonts[0].NativePtr, _fonts.Sized(ImGuiVulkanRenderer.FontSizePoints));
+        Assert.Equal(IntPtr.Zero, _fonts.Sized(10f));
+        Assert.Equal(version + 1, _fonts.Version);
+        Assert.Equal(IntPtr.Zero, _fonts.Sized(10f));
+        Assert.Equal(version + 1, _fonts.Version);
+
+        ImGuiVulkanRenderer.AddFonts(atlas, _fonts, 2f);
+        atlas.GetTexDataAsRGBA32(out IntPtr _, out int _, out int _, out int _);
+        IntPtr ten = _fonts.Sized(10f);
+        Assert.NotEqual(IntPtr.Zero, ten);
+        var font = new ImFontPtr((ImFont*)ten);
+        Assert.Equal(10f, font.FontSize);
+        Assert.True(ImGuiNative.ImFont_FindGlyphNoFallback(font.NativePtr, PhosphorIcons.Sparkle[0]) != null);
+        Assert.Equal(version + 1, _fonts.Version);
+    }
+
+    [Fact]
+    public void ASizeOutsideTheRangeIsRefused()
+    {
+        int version = _fonts.Version;
+        Assert.Equal(IntPtr.Zero, _fonts.Sized(0f));
+        Assert.Equal(IntPtr.Zero, _fonts.Sized(500f));
+        Assert.Equal(IntPtr.Zero, _fonts.Sized(float.NaN));
+        Assert.Equal(version, _fonts.Version);
+    }
+
     private static float Advance(string glyph)
     {
         ImFontGlyph* found = ImGuiNative.ImFont_FindGlyphNoFallback(ImGui.GetIO().Fonts.Fonts[0].NativePtr, glyph[0]);

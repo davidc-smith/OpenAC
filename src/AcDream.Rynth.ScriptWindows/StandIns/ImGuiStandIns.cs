@@ -57,8 +57,22 @@ namespace RynthCore.Engine.ImGuiBackend
         /// <summary>RynthCore's sized UI fonts; here, the overlay's current font.</summary>
         public static ImFontPtr Get(UiFont font) => ImGui.GetFont();
 
-        /// <summary>RynthCore's chat font nearest a point size; here, the overlay's current font.</summary>
-        public static ImFontPtr Chat(float points) => ImGui.GetFont();
+        /// <summary>
+        /// The overlay's font at a point size (an ImFont*), or zero while that size isn't
+        /// baked yet. Set by the host while it has an overlay; null for none.
+        /// </summary>
+        public static Func<float, IntPtr>? Source { get; set; }
+
+        /// <summary>
+        /// RynthCore's chat font nearest a point size (they bake 8, 10, ... 18); here, the
+        /// overlay's font at that size, or the current font until the overlay has baked it.
+        /// </summary>
+        public static unsafe ImFontPtr Chat(float points)
+        {
+            int step = Math.Clamp((int)MathF.Round((points - 8f) / 2f), 0, 5);
+            IntPtr font = Source?.Invoke(8 + step * 2) ?? IntPtr.Zero;
+            return font == IntPtr.Zero ? ImGui.GetFont() : new ImFontPtr((ImFont*)font);
+        }
 
         /// <summary>RynthCore's baked text-size step; the overlay has one font size, so 0 (normal).</summary>
         public static int CurrentStep;

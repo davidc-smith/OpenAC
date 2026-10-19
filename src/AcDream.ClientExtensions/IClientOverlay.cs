@@ -28,6 +28,13 @@ public interface IClientOverlay
     {
     }
 
+    /// <summary>
+    /// The overlay's font (with the merged fonts) at <paramref name="points"/>,
+    /// as an ImFont pointer for this frame only. A size not baked yet is zero and
+    /// is baked from the next frame on.
+    /// </summary>
+    IntPtr Font(float points) => IntPtr.Zero;
+
     /// <summary>Adds a keyboard sink. Dispose the result to remove it.</summary>
     IDisposable AddKeyboardSink(IOverlayKeyboardSink sink) => NoKeyboardSink.Instance;
 

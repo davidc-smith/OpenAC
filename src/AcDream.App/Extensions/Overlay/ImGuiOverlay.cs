@@ -123,6 +123,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
     public void AddMergedFont(byte[] ttf, string glyphs, float scale) => _fonts.Add(ttf, glyphs, scale);
 
+    public IntPtr Font(float points) => _fonts.Sized(points);
+
     /// <summary>Points the icons at the client interface's icon services, once it exists.</summary>
     internal void BindIcons(AcDream.App.Plugins.IPluginImageBackend backend) => _icons.Bind(backend);
 
