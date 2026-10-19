@@ -58,49 +58,75 @@ public sealed class PanelHostLayoutTests : IDisposable
         Assert.Equal(new Vector2(980, 580), panel.Pos);
     }
 
-    // The client logs in at the character list's size and is made bigger after: a
-    // window held onto the small display goes back to where the player left it.
-    [Fact]
-    public void AWindowClampedOntoASmallDisplayGoesBackToItsSavedSpotWhenTheDisplayGrows()
+    private static readonly Vector2 Game = new(2560, 1400);
+    private static readonly Vector2 Login = new(1280, 800);
+
+    private void DisplayIs(Vector2 size)
     {
+        ImGui.GetIO().DisplaySize = size;
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+    }
+
+    // The client logs in at the character list's size and is made bigger after: the
+    // spot saved for the bigger display comes back once the display is that size again.
+    [Fact]
+    public void TheSpotSavedForADisplaySizeComesBackWhenTheDisplayIsThatSizeAgain()
+    {
+        _layout.SavedFor[(Key, Game)] = new PanelRect(new Vector2(1500, 900), new Vector2(300, 220));
         _layout.Saved[Key] = new PanelPlacement(new PanelRect(new Vector2(1500, 900), new Vector2(300, 220)), false);
         MovingPanel panel = RegisterAndOpen();
         _imgui.Frame(ImGuiPanelHost.DrawAll);
-        Assert.Equal(new Vector2(980, 580), panel.Pos);
+        Assert.Equal(new Vector2(980, 580), panel.Pos);   // nothing for this size: the last spot, held on screen
 
-        ImGui.GetIO().DisplaySize = new Vector2(1700, 1000);
-        _imgui.Frame(ImGuiPanelHost.DrawAll);
-        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        DisplayIs(new Vector2(1700, 1000));
         Assert.Equal(new Vector2(1400, 780), panel.Pos);
 
-        ImGui.GetIO().DisplaySize = new Vector2(2560, 1400);
-        _imgui.Frame(ImGuiPanelHost.DrawAll);
-        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        DisplayIs(Game);
         Assert.Equal(new Vector2(1500, 900), panel.Pos);
         Assert.Equal(new Vector2(300, 220), panel.Size);
         Assert.Empty(_layout.RectCalls);
+    }
 
-        // Back at its spot: a later change of display size leaves it where it is.
-        ImGui.GetIO().DisplaySize = new Vector2(2600, 1500);
+    // Logging out shrinks the display while the window stays open: being pulled onto
+    // the smaller display is not the player's doing and is not saved.
+    [Fact]
+    public void AWindowPulledOntoASmallerDisplayIsNotSavedThere()
+    {
+        MovingPanel panel = RegisterAndOpen();
+        DisplayIs(Game);
+        panel.MoveTo = new Vector2(2200, 1200);
         _imgui.Frame(ImGuiPanelHost.DrawAll);
-        Assert.Equal(new Vector2(1500, 900), panel.Pos);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Single(_layout.RectCalls);
+
+        DisplayIs(Login);
+        DisplayIs(new Vector2(1400, 900));
+        Assert.Single(_layout.RectCalls);
+
+        DisplayIs(Game);
+        Assert.Equal(new Vector2(2200, 1200), panel.Pos);
     }
 
     [Fact]
-    public void AClampedWindowThePlayerMovedStaysWhereThePlayerPutIt()
+    public void EachDisplaySizeKeepsItsOwnSpot()
     {
-        _layout.Saved[Key] = new PanelPlacement(new PanelRect(new Vector2(1500, 900), new Vector2(300, 220)), false);
         MovingPanel panel = RegisterAndOpen();
+        DisplayIs(Game);
+        panel.MoveTo = new Vector2(2000, 1100);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
         _imgui.Frame(ImGuiPanelHost.DrawAll);
 
+        DisplayIs(Login);
         panel.MoveTo = new Vector2(100, 120);
         _imgui.Frame(ImGuiPanelHost.DrawAll);
         _imgui.Frame(ImGuiPanelHost.DrawAll);
 
-        ImGui.GetIO().DisplaySize = new Vector2(2560, 1400);
-        _imgui.Frame(ImGuiPanelHost.DrawAll);
-        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        DisplayIs(Game);
+        Assert.Equal(new Vector2(2000, 1100), panel.Pos);
+        DisplayIs(Login);
         Assert.Equal(new Vector2(100, 120), panel.Pos);
+        Assert.Equal(new[] { (Key, Game), (Key, Login) }, _layout.RectCalls.Select(c => (c.Key, c.Display)).ToArray());
     }
 
     [Fact]
@@ -118,7 +144,7 @@ public sealed class PanelHostLayoutTests : IDisposable
         _imgui.Frame(ImGuiPanelHost.DrawAll);
         _imgui.Frame(ImGuiPanelHost.DrawAll);
 
-        (string key, PanelRect rect) = Assert.Single(_layout.RectCalls);
+        (string key, PanelRect rect, _) = Assert.Single(_layout.RectCalls);
         Assert.Equal(Key, key);
         Assert.Equal(new PanelRect(new Vector2(300, 200), new Vector2(200, 100)), rect);
     }

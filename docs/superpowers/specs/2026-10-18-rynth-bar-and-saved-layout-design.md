@@ -64,6 +64,15 @@ only the `IPanelLayout` interface and the panel host changes.
   ```
   All values in logical units (divided by `EngineFrameController.FontScale`,
   which is 1 today).
+- **Per display size (2026-10-19, live-check finding):** each window and the
+  bar also keep a `"displays": { "2560x1377": { "x", "y", "w", "h" } }` map
+  keyed by the client's size in whole points; the top-level values are the
+  last ones saved at any size (and what older files have). A window or the bar
+  is placed again on every display size change (logging out to the smaller
+  character list, maximising): the spot saved for that size, else the last
+  spot, held on screen. Moves the display change causes are never saved, only
+  the player's own (`IPanelLayout.GetRect/SetRect(key, rect, display)`,
+  `BarPositionFor/SetBarPosition(pos, display)`).
 - Loads once at construction. A missing file is an empty layout. A file that
   doesn't parse is logged once (`[Rynth] layout file unreadable: ...`), kept
   as is (not overwritten until the next save) and treated as empty.

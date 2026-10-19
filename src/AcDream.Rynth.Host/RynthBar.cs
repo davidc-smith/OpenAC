@@ -25,7 +25,7 @@ internal sealed class RynthBar
 
     private readonly RynthLayoutStore _layout;
     private readonly Action<string> _log;
-    private bool _placed;
+    private Vector2? _placedOn;
     private Vector2? _baseline;
     private int _failures;
 
@@ -76,10 +76,15 @@ internal sealed class RynthBar
     {
         if (_failures >= MaxFailures || !HasAnyContent)
             return;
-        if (!_placed)
+        // Placed when first drawn and on every new display size (logging out to the
+        // character list, maximising the client): where the player left it at that size.
+        Vector2 display = ImGui.GetIO().DisplaySize;
+        if (_placedOn != display)
         {
-            ImGui.SetNextWindowPos(ClampToDisplay((_layout.BarPosition ?? DefaultPos) * EngineFrameController.FontScale), ImGuiCond.Always);
-            _placed = true;
+            Vector2 logical = display / EngineFrameController.FontScale;
+            ImGui.SetNextWindowPos(ClampToDisplay((_layout.BarPositionFor(logical) ?? DefaultPos) * EngineFrameController.FontScale), ImGuiCond.Always);
+            _placedOn = display;
+            _baseline = null;   // whatever the new size does to the bar is not the player's doing
         }
 
         ImGui.Begin(WindowName, Flags);
@@ -189,7 +194,7 @@ internal sealed class RynthBar
         if (pos == _baseline || ImGui.IsMouseDown(ImGuiMouseButton.Left))
             return;
         _baseline = pos;
-        _layout.SetBarPosition(pos / EngineFrameController.FontScale);
+        _layout.SetBarPosition(pos / EngineFrameController.FontScale, ImGui.GetIO().DisplaySize / EngineFrameController.FontScale);
     }
 
     /// <summary>A hover tooltip for the last item; the text is never a format string.</summary>

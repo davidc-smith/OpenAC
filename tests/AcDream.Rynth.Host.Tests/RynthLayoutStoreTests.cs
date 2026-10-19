@@ -36,6 +36,44 @@ public sealed class RynthLayoutStoreTests : IDisposable
     }
 
     [Fact]
+    public void EachDisplaySizeKeepsItsOwnRectAndBarSpotAcrossStores()
+    {
+        var game = new Vector2(2560, 1377);
+        var login = new Vector2(1280, 800);
+        var first = new RynthLayoutStore(_dir, _log.Add);
+        first.SetRect("script:A/Main", new PanelRect(new Vector2(2000, 1100), new Vector2(300, 200)), game);
+        first.SetRect("script:A/Main", new PanelRect(new Vector2(100, 120), new Vector2(300, 200)), login);
+        first.SetBarPosition(new Vector2(2400, 50), game);
+        first.SetBarPosition(new Vector2(1100, 40), login);
+
+        var second = new RynthLayoutStore(_dir, _log.Add);
+
+        Assert.Equal(new PanelRect(new Vector2(2000, 1100), new Vector2(300, 200)), second.GetRect("script:A/Main", game));
+        Assert.Equal(new PanelRect(new Vector2(100, 120), new Vector2(300, 200)), second.GetRect("script:A/Main", login));
+        Assert.Equal(new Vector2(2400, 50), second.BarPositionFor(game));
+        Assert.Equal(new Vector2(1100, 40), second.BarPositionFor(login));
+        // A size with nothing of its own gets the last one saved.
+        Assert.Equal(new PanelRect(new Vector2(100, 120), new Vector2(300, 200)), second.GetRect("script:A/Main", new Vector2(1600, 900)));
+        Assert.Equal(new Vector2(1100, 40), second.BarPositionFor(new Vector2(1600, 900)));
+        Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void AFileFromBeforeDisplaySizesUsesItsRectForEverySize()
+    {
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(FilePath,
+            "{\"version\":1,\"bar\":{\"x\":5,\"y\":6},\"windows\":{\"a\":{\"x\":1,\"y\":2,\"w\":3,\"h\":4,\"open\":true}}}");
+
+        var store = new RynthLayoutStore(_dir, _log.Add);
+
+        Assert.Equal(new PanelRect(new Vector2(1, 2), new Vector2(3, 4)), store.GetRect("a", new Vector2(2560, 1377)));
+        Assert.Equal(new Vector2(5, 6), store.BarPositionFor(new Vector2(2560, 1377)));
+        Assert.Null(store.GetRect("b", new Vector2(2560, 1377)));
+        Assert.Empty(_log);
+    }
+
+    [Fact]
     public void AMissingFileIsAnEmptyLayout()
     {
         var store = new RynthLayoutStore(_dir, _log.Add);

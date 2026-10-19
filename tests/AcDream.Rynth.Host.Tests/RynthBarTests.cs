@@ -125,6 +125,35 @@ public sealed class RynthBarTests : IDisposable
         Assert.Equal(new Vector2(200, 100), _store.BarPosition);
     }
 
+    // Logging out shrinks the display: the bar pulled onto it is not saved there,
+    // and the spot saved for the bigger display comes back with it.
+    [Fact]
+    public void TheBarKeepsItsSpotPerDisplaySize()
+    {
+        using RynthHost host = CreateOracleHost();
+        var bar = new RynthBar(_store, _log.Add);
+        var game = new Vector2(2560, 1400);
+        ImGui.GetIO().DisplaySize = game;
+        _imgui.Frame(bar.Draw);
+        _imgui.Frame(() => { ImGui.SetWindowPos("##RynthBar", new Vector2(2400, 1300)); bar.Draw(); });
+        _imgui.Frame(bar.Draw);
+        Assert.Equal(new Vector2(2400, 1300), _store.BarPositionFor(game));
+
+        ImGui.GetIO().DisplaySize = new Vector2(1280, 800);
+        _imgui.Frame(bar.Draw);
+        _imgui.Frame(bar.Draw);
+        Vector2 small = default;
+        _imgui.Frame(() => { bar.Draw(); small = BarPos(); });
+        Assert.True(small.X < 1280 && small.Y < 800);
+
+        ImGui.GetIO().DisplaySize = game;
+        Vector2 pos = default;
+        _imgui.Frame(bar.Draw);
+        _imgui.Frame(() => { bar.Draw(); pos = BarPos(); });
+        Assert.Equal(new Vector2(2400, 1300), pos);
+        Assert.Equal(new Vector2(2400, 1300), _store.BarPositionFor(game));
+    }
+
     [Fact]
     public void ABarThatKeepsFailingStopsAndImGuiStaysBalanced()
     {

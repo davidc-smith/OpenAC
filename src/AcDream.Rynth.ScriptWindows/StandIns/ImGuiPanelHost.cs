@@ -33,13 +33,8 @@ internal static class ImGuiPanelHost
         public bool RestoreOpen;
         /// <summary>The rectangle last seen (logical units); a player change from it is saved.</summary>
         public PanelRect? Baseline;
-        /// <summary>
-        /// The saved rectangle while the display was too small to show the window there
-        /// (it was clamped onto it), and that display size. A larger display places it
-        /// again; reaching the spot or a player move ends it.
-        /// </summary>
-        public PanelRect? Displaced;
-        public Vector2 DisplacedOn;
+        /// <summary>The display size (points) the window was last drawn on; a new size places it again.</summary>
+        public Vector2? DrawnOn;
     }
 
     private const int MaxFailures = 3;
@@ -294,8 +289,14 @@ internal static class ImGuiPanelHost
                 Entry e = pair.Value;
                 if (!e.Open)
                     continue;
-                PanelRect? saved = e.PlacePending ? Layout?.Get(pair.Key)?.Rect
-                    : e.Displaced is { } held && ImGui.GetIO().DisplaySize != e.DisplacedOn ? held : null;
+                // A new display size (logging out to the character list, maximising the
+                // client) places the window where the player left it at that size.
+                Vector2 display = ImGui.GetIO().DisplaySize;
+                bool resized = e.DrawnOn is { } drawnOn && drawnOn != display;
+                e.DrawnOn = display;
+                PanelRect? saved = e.PlacePending || resized ? Layout?.GetRect(pair.Key, display) : null;
+                if (resized)
+                    e.Baseline = null;   // whatever the new size does to the window is not the player's doing
                 open.Add((pair.Key, e, e.RequestedSize, e.RequestedPos, saved));
                 e.RequestedSize = null;
                 e.RequestedPos = null;
@@ -326,15 +327,11 @@ internal static class ImGuiPanelHost
             if (requestedPos is { } pos)
             {
                 ImGui.SetNextWindowPos(pos * s, ImGuiCond.Always);
-                entry.Displaced = null;
                 placed = true;
             }
             else if (saved is { } savedPos)
             {
-                Vector2 at = ClampToDisplay(savedPos.Pos * s, savedPos.Size * s);
-                ImGui.SetNextWindowPos(at, ImGuiCond.Always);
-                entry.Displaced = at == savedPos.Pos * s ? null : savedPos;
-                entry.DisplacedOn = ImGui.GetIO().DisplaySize;
+                ImGui.SetNextWindowPos(ClampToDisplay(savedPos.Pos * s, savedPos.Size * s), ImGuiCond.Always);
                 placed = true;
             }
             else if (entry.Spec.DefaultPos is { } defaultPos)
@@ -418,8 +415,7 @@ internal static class ImGuiPanelHost
         if (now == entry.Baseline || ImGui.IsMouseDown(ImGuiMouseButton.Left))
             return;
         entry.Baseline = now;
-        entry.Displaced = null;
-        Layout?.SetRect(key, now);
+        Layout?.SetRect(key, now, ImGui.GetIO().DisplaySize / s);
     }
 
     /// <summary>Keeps a window of this size wholly on the display (when the display is known).</summary>
