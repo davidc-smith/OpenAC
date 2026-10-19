@@ -177,4 +177,11 @@
     <InternalsVisibleTo Include="AcDream.Rynth.Host.Tests" />
     <InternalsVisibleTo Include="AcDream.App.Tests" />
   </ItemGroup>
+  <!-- RynthNav's places database, which RynthCore's installer puts in the RynthCore
+       folder; their atlas reads dungeon names from it. NavAtlasInstall writes it there. -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(RynthEngine)..\..\tools\navdata\NavData\locations.json"
+                      LogicalName="AcDream.Rynth.EngineUi.locations.json" />
+  </ItemGroup>
+
 </Project>

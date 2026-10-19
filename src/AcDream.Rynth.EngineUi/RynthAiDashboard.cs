@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using RynthCore.Engine;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
 using RynthCore.Engine.Plugins;
 using RynthCore.Engine.UI.Data;
+using RynthCore.Install;
 
 namespace AcDream.Rynth.EngineUi;
 
@@ -32,6 +34,11 @@ internal static class RynthAiDashboard
         {
             EntryPoint.InitStartedUtc = DateTime.UtcNow;
             _started = true;
+            NavAtlasInstall.Ensure(RynthInstallPaths.CoreDir, OperatingSystem.IsWindows(), Log);
+            // Our UiBackgroundWriter runs work inline, and parsing the 1.9 MB Atlas would stall
+            // the first indoor frame; their loader is written for a background thread, and later
+            // calls see the path already requested.
+            Task.Run(RynthNavAtlas.EnsureLoadedForNames);
         }
 
         // The panel host can be reset (tests, an extension restart): register again then.

@@ -157,4 +157,65 @@ public sealed unsafe class RynthDungeonMapTests : IDisposable
         }
         finally { RynthCore.Engine.UI.PanelRouter.Toggle(DungeonMapFace.Title); }
     }
+
+    [Fact]
+    public void TheAtlasIsInstalledWhenMissingAndNamesTheDungeon()
+    {
+        string core = Path.Combine(_sandbox.Root, "atlas-core");
+        var log = new List<string>();
+
+        Assert.True(AcDream.Rynth.EngineUi.NavAtlasInstall.Ensure(core, isWindows: false, log.Add));
+
+        string path = AcDream.Rynth.EngineUi.NavAtlasInstall.PathUnder(core);
+        Assert.True(File.Exists(path));
+        Assert.False(File.Exists(path + ".tmp"));
+        Assert.Empty(log);
+        // Their loader runs inline here (UiBackgroundWriter stand-in), so names are ready after the call.
+        RynthNavAtlas.EnsureLoaded(path);
+        Assert.Equal("Shreth Hive", RynthNavAtlas.DungeonLabel(0x0153));
+        Assert.Equal("LB FFFF", RynthNavAtlas.DungeonLabel(0xFFFF));
+    }
+
+    [Fact]
+    public void AMatchingAtlasIsLeftAlone()
+    {
+        string core = Path.Combine(_sandbox.Root, "atlas-same");
+        AcDream.Rynth.EngineUi.NavAtlasInstall.Ensure(core, isWindows: false, _ => { });
+        string path = AcDream.Rynth.EngineUi.NavAtlasInstall.PathUnder(core);
+        var stamp = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(path, stamp);
+
+        Assert.True(AcDream.Rynth.EngineUi.NavAtlasInstall.Ensure(core, isWindows: false, _ => { }));
+
+        Assert.Equal(stamp, File.GetLastWriteTimeUtc(path));
+    }
+
+    [Fact]
+    public void ADifferentAtlasIsReplacedOffWindowsOnly()
+    {
+        string core = Path.Combine(_sandbox.Root, "atlas-diff");
+        string path = AcDream.Rynth.EngineUi.NavAtlasInstall.PathUnder(core);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{\"locations\":[]}");
+
+        Assert.True(AcDream.Rynth.EngineUi.NavAtlasInstall.Ensure(core, isWindows: true, _ => { }));
+        Assert.Equal("{\"locations\":[]}", File.ReadAllText(path));
+
+        Assert.True(AcDream.Rynth.EngineUi.NavAtlasInstall.Ensure(core, isWindows: false, _ => { }));
+        Assert.True(new FileInfo(path).Length > 1_000_000);
+    }
+
+    [Fact]
+    public void AnUnwritableFolderIsLoggedNotThrown()
+    {
+        // A file where the RynthCore folder should be: creating NavData under it fails.
+        string core = Path.Combine(_sandbox.Root, "atlas-blocked");
+        File.WriteAllText(core, "not a folder");
+        var log = new List<string>();
+
+        Assert.False(AcDream.Rynth.EngineUi.NavAtlasInstall.Ensure(core, isWindows: false, log.Add));
+
+        string line = Assert.Single(log);
+        Assert.Contains(AcDream.Rynth.EngineUi.NavAtlasInstall.PathUnder(core), line, StringComparison.Ordinal);
+    }
 }
