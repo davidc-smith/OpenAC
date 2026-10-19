@@ -234,4 +234,21 @@ internal sealed class FakeGameView : IRynthGameView
         if (Throw) throw new InvalidOperationException("view failed");
         return MotionOn.TryGetValue(objectId, out isOn);
     }
+
+
+    public Dictionary<uint, List<(uint SubPaletteId, uint Offset)>> Palettes { get; } = new();
+    public Dictionary<uint, (int Items, int Containers)> ContentCounts { get; } = new();
+
+    public bool PickupItem(uint objectId, uint preferredContainerId) => Act($"pickup {objectId:X8} {preferredContainerId:X8}");
+    public bool GiveItem(uint objectId, uint targetId, uint amount) => Act($"give {objectId:X8} {targetId:X8} {amount}");
+    public bool CloseContainer(uint containerId) => Act($"close {containerId:X8}");
+    public IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId) =>
+        Read(Palettes).TryGetValue(objectId, out var list) ? list : null;
+    public bool TryCountContents(uint containerId, out int items, out int containers)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        bool known = ContentCounts.TryGetValue(containerId, out var counts);
+        (items, containers) = counts;
+        return known;
+    }
 }

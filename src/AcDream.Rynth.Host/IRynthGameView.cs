@@ -184,4 +184,19 @@ public interface IRynthGameView
 
     /// <summary>Whether an object's last motion was On (true) or Off (false); false when neither has been seen.</summary>
     bool TryGetObjectMotionOn(uint objectId, out bool isOn);
+
+    /// <summary>Loots an item from the open container into a preferred pack (0 = the client's own choice). True when sent.</summary>
+    bool PickupItem(uint objectId, uint preferredContainerId);
+
+    /// <summary>Gives all (0) or part of an owned stack to a world target. True when sent.</summary>
+    bool GiveItem(uint objectId, uint targetId, uint amount);
+
+    /// <summary>Closes the open corpse or chest. True when sent.</summary>
+    bool CloseContainer(uint containerId);
+
+    /// <summary>An object's sub-palettes (id, offset) in offset order; null when the object is unknown.</summary>
+    IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId);
+
+    /// <summary>A container's direct contents split into items and containers (worn items are not contents); false when it is unknown.</summary>
+    bool TryCountContents(uint containerId, out int items, out int containers);
 }

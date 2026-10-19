@@ -487,4 +487,41 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         isOn = command == 0x000B;
         return true;
     }
+
+
+    public bool PickupItem(uint objectId, uint preferredContainerId) =>
+        (preferredContainerId == 0u
+            ? _automation.Loot.Pickup(objectId)
+            : _automation.Loot.Pickup(objectId, preferredContainerId)).Accepted;
+
+    public bool GiveItem(uint objectId, uint targetId, uint amount) =>
+        _automation.Items.Give(objectId, targetId, amount).Accepted;
+
+    public bool CloseContainer(uint containerId) => _automation.Loot.Close(containerId).Accepted;
+
+    // The raw ObjDesc swaps, as RynthCore captures them at CreateObject: id and offset only.
+    public IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId)
+    {
+        if (!_runtime.EntityObjects.Entities.TryGetActive(objectId, out RuntimeEntityRecord record))
+            return _runtime.InventoryOwner.Objects.Get(objectId) is null ? null : [];
+        return [.. record.Snapshot.SubPalettes
+            .Select(p => ((uint)p.SubPaletteId, (uint)p.Offset))
+            .OrderBy(p => p.Item2)];
+    }
+
+    public bool TryCountContents(uint containerId, out int items, out int containers)
+    {
+        items = containers = 0;
+        ClientObjectTable objects = _runtime.InventoryOwner.Objects;
+        if (objects.Get(containerId) is null)
+            return false;
+        foreach (uint id in objects.GetContents(containerId))
+        {
+            if (objects.Get(id) is { ItemsCapacity: > 0 })
+                containers++;
+            else
+                items++;
+        }
+        return true;
+    }
 }
