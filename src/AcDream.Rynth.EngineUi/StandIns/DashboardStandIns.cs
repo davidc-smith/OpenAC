@@ -227,14 +227,10 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
         public static bool ShowsSection(string sectionId) => false;
     }
 
-    /// <summary>RynthCore's Settings panel; the dashboard's own settings drawer works, this window is not in OpenAC.</summary>
-    internal static class SettingsFace
+    /// <summary>RynthCore's Report a problem panel; never registered in OpenAC, so Settings hides its button.</summary>
+    internal static class ReportFace
     {
-        public const string Title = "Settings";
-
-        public static void RequestTab(string name)
-        {
-        }
+        public const string Title = "Report a problem";
     }
 
     internal static class CharactersFace
@@ -284,6 +280,17 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
         {
             ImGuiNET.ImGui.SetCursorScreenPos(origin + new Vector2(8 * k, 8 * k));
             ImGuiNET.ImGui.TextDisabled("Ranges: not available in OpenAC yet.");
+        }
+    }
+}
+
+namespace RynthCore.Engine.Report
+{
+    /// <summary>RynthCore's problem report (it uploads to their staff); not in OpenAC.</summary>
+    internal static class ProblemReport
+    {
+        public static void OpenPanel()
+        {
         }
     }
 }

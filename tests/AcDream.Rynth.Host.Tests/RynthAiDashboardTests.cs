@@ -11,7 +11,7 @@ public sealed class RynthAiDashboardTests : IDisposable
     private static readonly string[] TheirFiles =
     [
         @"ImGui\Panels\RynthAiFace.cs", @"ImGui\Panels\RynthAiFace.Drawers.cs", @"ImGui\Panels\SettingsRows.cs",
-        @"ImGui\Panels\QuickSettingsDrawer.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
+        @"ImGui\Panels\QuickSettingsDrawer.cs", @"ImGui\Panels\SettingsFace.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
         @"UI\Data\NavData.cs", @"UI\Data\RynthSortData.cs", @"UI\RynthAiDashboardState.cs",
         @"UI\PanelTextScale.cs", @"UI\QuickSettings.cs", @"UI\BarLayout.cs",
     ];
@@ -102,6 +102,25 @@ public sealed class RynthAiDashboardTests : IDisposable
         {
             int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
             Assert.True(vertices > 100, $"frame {i}: only {vertices} vertices");
+        }
+
+        Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void TheSettingsPanelRegistersWithTheDashboardAndDrawsEveryTabHeadless()
+    {
+        using var imgui = new HeadlessImGui();
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        Assert.True(ImGuiPanelHost.HasFace(SettingsFace.Title));
+        ImGuiPanelHost.Open(SettingsFace.Title);
+
+        foreach (RynthCore.Engine.UI.Data.SettingsTab tab in RynthCore.Engine.UI.Data.SettingsSchema.Tabs)
+        {
+            SettingsFace.RequestTab(tab.Name);
+            int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
+            Assert.True(vertices > 100, $"{tab.Name}: only {vertices} vertices");
         }
 
         Assert.Empty(_log);

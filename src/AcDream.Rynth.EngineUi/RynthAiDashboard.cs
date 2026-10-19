@@ -11,7 +11,7 @@ namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// Runs RynthCore's RynthAi dashboard: Start does what RynthCore's EntryPoint
-/// does when RynthAi is installed (register the face), Tick is UiDataHub's
+/// does when RynthAi is installed (register the dashboard and Settings faces), Tick is UiDataHub's
 /// step (run posted work, then poll each subscribed source when due), Stop is
 /// the hub's reset after plugins unload. Game thread.
 /// </summary>
@@ -36,6 +36,8 @@ internal static class RynthAiDashboard
         // The panel host can be reset (tests, an extension restart): register again then.
         if (!ImGuiPanelHost.HasFace(RynthAiFace.Title))
             RynthAiFace.Register();
+        if (!ImGuiPanelHost.HasFace(SettingsFace.Title))
+            SettingsFace.Register();
     }
 
     private static readonly UiSource[] Sources =
