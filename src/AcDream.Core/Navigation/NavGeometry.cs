@@ -243,6 +243,84 @@ public sealed class NavGeometry
     }
 
     /// <summary>
+    /// The highest floor under a point, from <paramref name="lowest"/> to <paramref name="highest"/>,
+    /// that a grid captured over the landblock <paramref name="landblockId"/> holds: a face of one
+    /// of its cells, or of an object the landblock holds or <paramref name="standsOn"/> names, no
+    /// steeper than a floor, or the top of such an object's cylinder or dome where a body stands
+    /// on it. Each is taken and sorted into floor and wall as the grid takes and sorts it, so a
+    /// height this finds is one a route can arrive on. Null where there is none. Call it on the
+    /// thread that owns the physics world.
+    /// </summary>
+    public static float? HighestFloorUnder(
+        PhysicsEngine engine,
+        uint landblockId,
+        float x,
+        float y,
+        float lowest,
+        float highest,
+        Func<uint, bool>? standsOn = null)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        uint canonical = (landblockId & 0xFFFF0000u) | 0xFFFFu;
+        if (!engine.TryGetLandblockCollision(canonical, out _, out IReadOnlyList<CellSurface> cells, out _))
+            return null;
+
+        float? best = null;
+        void Consider(float z)
+        {
+            if (z >= lowest && z <= highest && (best is null || z > best))
+                best = z;
+        }
+
+        foreach (CellSurface cell in cells)
+        {
+            if (cell.SampleLevelZAtOrBelow(x, y, highest) is { } z)
+                Consider(z);
+        }
+
+        var point = new Vector2(x, y);
+        var entries = new List<ShadowEntry>();
+        engine.ShadowObjects.CaptureEntries(entries);
+        HashSet<uint>? owners = null;
+        var triangles = new List<NavTriangle>();
+        var cylinders = new List<NavCylinder>();
+        foreach (ShadowEntry entry in entries)
+        {
+            if (!Meets(entry))
+                continue;
+            NavAvoidance footprint = FootprintOf(entry, engine.DataCache);
+            if (Vector2.Distance(Flat(footprint.Centre), point) > footprint.Radius)
+                continue;
+            owners ??= [.. engine.ShadowObjects.CaptureStaticOwnersForLandblock(canonical)];
+            if (!owners.Contains(entry.EntityId) && standsOn?.Invoke(entry.EntityId) != true)
+                continue;
+            AddCollision(engine.DataCache, entry, cylinders, triangles);
+        }
+
+        foreach ((Vector3 a, Vector3 b, Vector3 c) in triangles)
+        {
+            Vector3 normal = Vector3.Cross(b - a, c - a);
+            float length = normal.Length();
+            if (length > 1e-6f
+                && NavGrid.IsFloor(normal, length)
+                && CellSurface.PointInTriangleXY(x, y, a, b, c, out float z))
+            {
+                Consider(z);
+            }
+        }
+        foreach (NavCylinder cylinder in cylinders)
+        {
+            float across = Vector2.DistanceSquared(Flat(cylinder.Base), point);
+            if (across > cylinder.Radius * cylinder.Radius)
+                continue;
+            float top = cylinder.Base.Z + NavGrid.TopOver(cylinder, across, out bool stands);
+            if (stands)
+                Consider(top);
+        }
+        return best;
+    }
+
+    /// <summary>
     /// The collision of the object the physics world knows as <paramref name="entityId"/>, every
     /// part of it that a body meets, or null when it has none.
     /// </summary>

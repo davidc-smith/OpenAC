@@ -395,7 +395,10 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
 
     /// <summary>
     /// A place in a cell's landblock frame, set relative to where the character stands in the
-    /// physics world. A place with no height stands on the terrain there.
+    /// physics world. A place with no height is first given the terrain's height there (or the
+    /// character's, where no terrain is loaded); a place in an interior cell is then stood on
+    /// a floor as <see cref="OnTheCellFloor"/> says, so in a dungeon a place with no height
+    /// ends on a floor under that height too.
     /// </summary>
     public bool TryLocatePlace(uint cellId, Vector3 local, out Vector3 position)
     {
@@ -411,7 +414,8 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
             OnTheGround(
                 _physics,
                 controller.Position + PlaceOffset(cellId, local, here.ObjCellId, here.Frame.Origin),
-                controller.Position.Z));
+                controller.Position.Z),
+            StandsStill);
         return true;
     }
 
@@ -422,14 +426,30 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
     internal const float PlaceAboveFloorMeters = 0.5f;
 
     /// <summary>
-    /// A place in an interior cell stood on the floor under it: the cell's own floor nearest at
-    /// or below the place, or where the cell has none there, as in the upper half of a tall room
-    /// authored as a cell on top of a cell, the nearest floor of any cell in its landblock. A
-    /// place in a cell is often given by the middle of the cell's bounds, which in a tall room
-    /// is metres above the floor, higher than a walk can arrive at. An outdoor place, or one with
-    /// no floor under it, is left as it is.
+    /// A place in an interior cell stood where a walk can arrive at it. A place in a cell is
+    /// often given by the middle of the cell's bounds, which in a tall room is metres above the
+    /// floor, higher than a walk arrives at.
+    /// <list type="bullet">
+    /// <item>A place with something a route stands on within
+    /// <see cref="NavRouter.GoalHeightTolerance"/> under it (or up to
+    /// <see cref="PlaceAboveFloorMeters"/> over it) is left where it is, lifted onto that
+    /// surface if it is under it. That surface is a cell's floor or the top of an object the
+    /// route grid holds, such as a bridge, a platform or a crate, so a place recorded on top
+    /// of one stays on it.</item>
+    /// <item>Otherwise it drops to its cell's own floor nearest at or below it, or where the
+    /// cell has none there, as in the upper half of a tall room authored as a cell on top of
+    /// a cell, to the highest floor under it of any cell in its landblock. That search takes
+    /// every cell in the landblock, so a place over a pit or a shaft drops to its bottom.</item>
+    /// <item>An outdoor place, or one with no floor under it at all, is left as it is.</item>
+    /// </list>
+    /// A place given with no height reaches this with the height <see cref="OnTheGround"/> gave
+    /// it, so in a dungeon it lands on a floor under that height, not on the terrain.
     /// </summary>
-    internal static Vector3 OnTheCellFloor(PhysicsEngine physics, uint cellId, Vector3 point)
+    internal static Vector3 OnTheCellFloor(
+        PhysicsEngine physics,
+        uint cellId,
+        Vector3 point,
+        Func<uint, bool>? standsOn = null)
     {
         ArgumentNullException.ThrowIfNull(physics);
         if ((cellId & 0xFFFFu) < 0x0100u || (cellId & 0xFFFFu) == 0xFFFFu || float.IsNaN(point.Z)
@@ -438,6 +458,17 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
             return point;
         }
         float atMost = point.Z + PlaceAboveFloorMeters;
+        if (NavGeometry.HighestFloorUnder(
+                physics,
+                cellId,
+                point.X,
+                point.Y,
+                point.Z - NavRouter.GoalHeightTolerance,
+                atMost,
+                standsOn) is { } standing)
+        {
+            return standing > point.Z ? point with { Z = standing } : point;
+        }
         float? own = null;
         float? any = null;
         foreach (CellSurface cell in cells)

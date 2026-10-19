@@ -79,6 +79,30 @@ public sealed class NavGrid
     private static readonly float DomeStandShare =
         MathF.Sqrt(MathF.Max(0f, 1f - (PhysicsGlobals.FloorZ * PhysicsGlobals.FloorZ)));
 
+    /// <summary>
+    /// Whether a face with this normal (of this length) is floor rather than wall: no steeper
+    /// than a floor, whichever way it faces.
+    /// </summary>
+    internal static bool IsFloor(Vector3 normal, float length) =>
+        MathF.Abs(normal.Z) / length >= PhysicsGlobals.FloorZ;
+
+    /// <summary>
+    /// How high over its base a cylinder's or a dome's top stands at a point
+    /// <paramref name="acrossSquared"/> (the square of the horizontal distance) from its
+    /// middle, and whether a body stands there: anywhere on a cylinder's flat top, and only
+    /// on the part of a dome's top that is no steeper than a floor.
+    /// </summary>
+    internal static float TopOver(NavCylinder cylinder, float acrossSquared, out bool stands)
+    {
+        stands = true;
+        if (!cylinder.Dome)
+            return cylinder.Height;
+        float inside = (cylinder.Radius * cylinder.Radius) - acrossSquared;
+        float standWithin = cylinder.Radius * DomeStandShare;
+        stands = acrossSquared <= standWithin * standWithin;
+        return cylinder.Radius + (inside > 0f ? MathF.Sqrt(inside) : 0f);
+    }
+
     // East, north, west and south, then the diagonals.
     private static readonly int[] StepX = [1, 0, -1, 0, 1, -1, -1, 1];
     private static readonly int[] StepY = [0, 1, 0, -1, 1, 1, -1, -1];
@@ -987,7 +1011,7 @@ public sealed class NavGrid
         float length = normal.Length();
         if (!(length > 1e-6f))
             return;
-        bool walkable = MathF.Abs(normal.Z) / length >= PhysicsGlobals.FloorZ;
+        bool walkable = IsFloor(normal, length);
 
         int x0 = Math.Max(0, (int)MathF.Floor(MathF.Min(a.X, MathF.Min(b.X, c.X)) / cellSize));
         int x1 = Math.Min(side - 1, (int)MathF.Floor(MathF.Max(a.X, MathF.Max(b.X, c.X)) / cellSize));
@@ -1057,7 +1081,6 @@ public sealed class NavGrid
         int y0 = Math.Max(0, (int)MathF.Floor((centre.Y - reach) / cellSize));
         int y1 = Math.Min(side - 1, (int)MathF.Floor((centre.Y + reach) / cellSize));
         Span<Vector3> square = stackalloc Vector3[4];
-        float standWithin = cylinder.Radius * DomeStandShare;
         for (int y = y0; y <= y1; y++)
         {
             for (int x = x0; x <= x1; x++)
@@ -1067,15 +1090,7 @@ public sealed class NavGrid
                 float across = (dx * dx) + (dy * dy);
                 if (across > reach * reach)
                     continue;
-                float top = centre.Z + cylinder.Height;
-                bool stands = true;
-                if (cylinder.Dome)
-                {
-                    float middle = centre.Z + cylinder.Radius;
-                    float inside = (cylinder.Radius * cylinder.Radius) - across;
-                    top = middle + (inside > 0f ? MathF.Sqrt(inside) : 0f);
-                    stands = across <= standWithin * standWithin;
-                }
+                float top = centre.Z + TopOver(cylinder, across, out bool stands);
                 spans.Add(x, y, centre.Z, top, stands, source);
 
                 float left = MathF.Max(x * cellSize, centre.X - cylinder.Radius);

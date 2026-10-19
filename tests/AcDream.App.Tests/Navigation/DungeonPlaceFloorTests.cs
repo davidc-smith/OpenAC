@@ -1,6 +1,7 @@
 using System.Numerics;
 using AcDream.Core.Physics;
 using AcDream.Plugin.Abstractions;
+using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Navigation;
 using static AcDream.App.Tests.Navigation.NavigationWalkControllerTests;
 
@@ -118,6 +119,83 @@ public sealed class DungeonPlaceFloorTests
 
         Assert.Equal(NavigationWalkState.Arrived, report.State);
         Assert.InRange(Vector2.Distance(new Vector2(body.Position.X, body.Position.Y), new Vector2(30f, 10f)), 0f, 2.6f);
+    }
+
+    /// <summary>
+    /// The client's own goal source stands a place on the floor, not only the test double:
+    /// a preview through it to the middle of a tall room routes to that room's floor.
+    /// </summary>
+    [Fact]
+    public async Task TheClientsGoalSourceStandsAPlaceAtTheMiddleOfATallRoomOnItsFloor()
+    {
+        PhysicsEngine world = DungeonWithTallRooms();
+        RuntimeNavigationGoalSource goals = ClientGoals(world);
+
+        Assert.True(goals.TryLocatePlace(TallRoom, TallMiddle, out Vector3 placed));
+        var body = new SimulatedBody(new Vector3(10f, 10f, Floor)) { CellId = LowRoom };
+        var walk = new NavigationWalkController(world, body, goals, isSealedDungeon: _ => true);
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(TallRoom, TallMiddle, 2.5f);
+
+        Assert.Equal(new Vector3(30f, 10f, Floor), placed);
+        Assert.Equal(PluginNavigationPlanStatus.Routed, plan.Status);
+        Assert.InRange(plan.Path[^1].Elevation * 240d, Floor - 0.1d, Floor + 0.1d);
+    }
+
+    /// <summary>
+    /// A place on top of an object in a cell, such as a route waypoint recorded where the
+    /// character stood on a platform, stays on it: the route grid stands a body on the
+    /// object's top, so a walk arrives there, or not at all. Only a place with nothing to
+    /// stand on near under it drops to the floor.
+    /// </summary>
+    [Fact]
+    public void APlaceOnAPlatformInACellStaysOnThePlatform()
+    {
+        PhysicsEngine world = DungeonWithAPlatform();
+        RuntimeNavigationGoalSource goals = ClientGoals(world);
+        var onTop = new Vector3(30f, 10f, PlatformTop);
+
+        Assert.NotEmpty(NavigationGeometry(world).Cylinders);
+        Assert.Equal(onTop, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, onTop));
+        Assert.Equal(onTop, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, onTop with { Z = PlatformTop - 0.2f }));
+        Assert.Equal(onTop with { Z = PlatformTop + 1f }, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, onTop with { Z = PlatformTop + 1f }));
+        Assert.True(goals.TryLocatePlace(TallRoom, onTop, out Vector3 placed));
+        Assert.Equal(onTop, placed);
+        Assert.Equal(new Vector3(36f, 10f, Floor), RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, new Vector3(36f, 10f, PlatformTop)));
+    }
+
+    private const float PlatformTop = Floor + 2f;
+
+    /// <summary>The 5 m room with a platform 2 m high and 3 m across the middle in it, which the landblock holds.</summary>
+    private static PhysicsEngine DungeonWithAPlatform()
+    {
+        PhysicsEngine physics = DungeonWithTallRooms();
+        physics.ShadowObjects.Register(
+            0x7A9B_4001u,
+            gfxObjId: 0u,
+            new Vector3(30f, 10f, Floor),
+            Quaternion.Identity,
+            3f,
+            worldOffsetX: 0f,
+            worldOffsetY: 0f,
+            landblockId: 0xA9B4FFFFu,
+            collisionType: ShadowCollisionType.Cylinder,
+            cylHeight: 2f,
+            seedCellId: TallRoom,
+            isStatic: true);
+        return physics;
+    }
+
+    private static AcDream.Core.Navigation.NavGeometry NavigationGeometry(PhysicsEngine world) =>
+        AcDream.Core.Navigation.NavGeometry.CaptureDungeon(world, 0xA9B4FFFFu, 0f, 0f, 64f)!;
+
+    /// <summary>The client's own goal source, the character standing in the low room.</summary>
+    private static RuntimeNavigationGoalSource ClientGoals(PhysicsEngine world)
+    {
+        var start = new Vector3(10f, 10f, Floor);
+        var controller = new PlayerMovementController(world);
+        controller.PreparePositionForCommit(start, LowRoom, start);
+        var movement = new RuntimeLocalPlayerMovementState { Controller = controller };
+        return new RuntimeNavigationGoalSource(world, GameRuntimeTestFactory.Create(), movement);
     }
 
     private static Task<PluginNavigationPlan> Preview(Goals goals, uint cellId, Vector3 local)

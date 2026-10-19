@@ -123,7 +123,7 @@ public sealed class CellSurface
     }
 
 
-    private static bool PointInTriangleXY(
+    internal static bool PointInTriangleXY(
         float px, float py,
         Vector3 a, Vector3 b, Vector3 c,
         out float z)

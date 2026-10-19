@@ -476,8 +476,9 @@ public interface INavigationAutomation
     /// Plans a path to a cell-aware position without moving or taking ownership of
     /// the character. Call from the thread that raises <see cref="IEvents.Tick"/>.
     /// An elevation of NaN selects ground at the destination. A position in a dungeon or
-    /// building cell stands on the floor under it, so a <see cref="PluginDungeonCell.Center"/>
-    /// may be given as it is.
+    /// building cell is placed as <see cref="GoTo(PluginNavigationPosition, float)"/> places
+    /// it, standing on the floor under it, so a <see cref="PluginDungeonCell.Center"/> may be
+    /// given as it is.
     /// </summary>
     Task<PluginNavigationPlan> PreviewPathAsync(PluginNavigationPosition position, float arrivalMeters = 2.5f) =>
         Task.FromResult(new PluginNavigationPlan(PluginNavigationPlanStatus.Unavailable, [], "navigation is unavailable"));
@@ -659,8 +660,12 @@ public interface INavigationAutomation
     /// position stands on, and waiting while something else needs the character. A position
     /// on a rock top is arrived at on the rock, or not at all. An elevation of NaN stands the
     /// position on the ground there, for map coordinates given without a height. A position in
-    /// a dungeon or building cell stands on the floor under it, the floor of the cell below
-    /// where its own cell has none there, as in the upper half of a tall room. It does not turn the character to face
+    /// a dungeon or building cell with nothing a walk stands on within 1.2 m under it is
+    /// dropped to the floor under it, the floor of the cell below where its own cell has none
+    /// there, as in the upper half of a tall room; one on or just over a floor or the top of an
+    /// object such as a platform stays there. In such a cell a position with an elevation of
+    /// NaN is given the ground's height first and then dropped the same way, so in a dungeon it
+    /// ends on a floor under that height. It does not turn the character to face
     /// anything on arrival. A position with no cell, such as one read from a VTank route
     /// file, is placed by its map coordinates alone. <see cref="GoToReport"/> reports the
     /// walk with no object id.
