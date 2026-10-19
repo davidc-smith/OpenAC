@@ -33,6 +33,13 @@ internal static class ImGuiPanelHost
         public bool RestoreOpen;
         /// <summary>The rectangle last seen (logical units); a player change from it is saved.</summary>
         public PanelRect? Baseline;
+        /// <summary>
+        /// The saved rectangle while the display was too small to show the window there
+        /// (it was clamped onto it), and that display size. A larger display places it
+        /// again; reaching the spot or a player move ends it.
+        /// </summary>
+        public PanelRect? Displaced;
+        public Vector2 DisplacedOn;
     }
 
     private const int MaxFailures = 3;
@@ -287,7 +294,8 @@ internal static class ImGuiPanelHost
                 Entry e = pair.Value;
                 if (!e.Open)
                     continue;
-                PanelRect? saved = e.PlacePending ? Layout?.Get(pair.Key)?.Rect : null;
+                PanelRect? saved = e.PlacePending ? Layout?.Get(pair.Key)?.Rect
+                    : e.Displaced is { } held && ImGui.GetIO().DisplaySize != e.DisplacedOn ? held : null;
                 open.Add((pair.Key, e, e.RequestedSize, e.RequestedPos, saved));
                 e.RequestedSize = null;
                 e.RequestedPos = null;
@@ -318,11 +326,15 @@ internal static class ImGuiPanelHost
             if (requestedPos is { } pos)
             {
                 ImGui.SetNextWindowPos(pos * s, ImGuiCond.Always);
+                entry.Displaced = null;
                 placed = true;
             }
             else if (saved is { } savedPos)
             {
-                ImGui.SetNextWindowPos(ClampToDisplay(savedPos.Pos * s, savedPos.Size * s), ImGuiCond.Always);
+                Vector2 at = ClampToDisplay(savedPos.Pos * s, savedPos.Size * s);
+                ImGui.SetNextWindowPos(at, ImGuiCond.Always);
+                entry.Displaced = at == savedPos.Pos * s ? null : savedPos;
+                entry.DisplacedOn = ImGui.GetIO().DisplaySize;
                 placed = true;
             }
             else if (entry.Spec.DefaultPos is { } defaultPos)
@@ -406,6 +418,7 @@ internal static class ImGuiPanelHost
         if (now == entry.Baseline || ImGui.IsMouseDown(ImGuiMouseButton.Left))
             return;
         entry.Baseline = now;
+        entry.Displaced = null;
         Layout?.SetRect(key, now);
     }
 
