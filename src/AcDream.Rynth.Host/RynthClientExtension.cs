@@ -170,9 +170,14 @@ public sealed class RynthClientExtension : IClientExtension
         }
     }
 
-    /// <summary>The overlay frame: the script windows, then the bar over them.</summary>
+    /// <summary>
+    /// The overlay frame: the script windows, then the bar over them. Nothing at the
+    /// character list: the windows stay open and come back with the next login.
+    /// </summary>
     private void DrawFrame()
     {
+        if (!RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete)
+            return;
         ImGuiPanelHost.DrawAll();
         _bar?.Draw();
     }
