@@ -287,6 +287,19 @@ public sealed unsafe class ImGuiPanelHostTests : IDisposable
     }
 
     [Fact]
+    public void AnIdleCopyIsHiddenByTheSweepAlone()
+    {
+        var factory = new CountingFactory();
+        ImGuiPanelHost.Register("Skills", new PanelSpec(new Vector2(380, 420), new Vector2(50, 50)), factory.Make);
+        _imgui.Frame(() => HostWindow(() => ImGuiPanelHost.DrawEmbedded("MiniRemote", "Skills", Vector2.Zero)));
+        RecordingPanel first = factory.Made[0];
+
+        Thread.Sleep(800);
+        ImGuiPanelHost.SweepEmbedded();
+        Assert.True(first.Hidden);
+    }
+
+    [Fact]
     public void ACopyCannotResizeOrMoveWindows()
     {
         var copy = new ResizingPanel();

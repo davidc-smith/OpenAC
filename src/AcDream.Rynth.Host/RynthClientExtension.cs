@@ -183,7 +183,10 @@ public sealed class RynthClientExtension : IClientExtension
     private void DrawFrame()
     {
         if (!RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete)
+        {
+            ImGuiPanelHost.SweepEmbedded();
             return;
+        }
         ImGuiPanelHost.DrawAll();
         _bar?.Draw();
     }

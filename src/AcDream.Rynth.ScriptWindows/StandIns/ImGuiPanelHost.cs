@@ -12,7 +12,8 @@ namespace RynthCore.Engine.ImGuiBackend;
 /// open state and draws the open ones as ImGui windows, and restores and
 /// records each window's placement (rectangle, open state) through Layout. Open and Close apply
 /// at once (RynthCore queues them to the next frame), so nothing is ever
-/// "transitioning". Every Begin has its End, even when a body throws.
+/// "transitioning". Every Begin has its End, even when a body throws. It also draws
+/// embedded copies of faces inside another panel (RynthCore's DrawEmbedded) for the Mini Remote.
 /// </summary>
 internal static class ImGuiPanelHost
 {
@@ -356,7 +357,7 @@ internal static class ImGuiPanelHost
     }
 
     /// <summary>Hides and drops embedded copies whose host stopped drawing them.</summary>
-    private static void SweepEmbedded()
+    internal static void SweepEmbedded()
     {
         if (_embedded.Count == 0) return;
         long now = Environment.TickCount64;

@@ -18,6 +18,11 @@ namespace RynthCore.Engine.Compatibility
         public static bool TryHandle(string arguments, Action<string> reply)
         {
             string sub = (arguments ?? string.Empty).Trim();
+            if (sub.Length == 0)
+            {
+                reply("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>]");
+                return true;
+            }
             if (!IsVerb(sub, "miniremote", out string remoteArgs) && !IsVerb(sub, "remote", out remoteArgs))
             {
                 string verb = sub.Split(' ', 2)[0];

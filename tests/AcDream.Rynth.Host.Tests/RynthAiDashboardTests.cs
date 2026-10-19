@@ -463,11 +463,22 @@ public sealed class RynthAiDashboardTests : IDisposable
         using var host = new RynthHost(_view, _log.Add, []);
         using (var hookup = new RynthChatHookup(host, _view, _log.Add))
         {
+            Assert.Null(AccountHooks.AnnouncedWorldName);
+            _view.WorldName = "Coldeve";
+            Assert.Equal("Coldeve", AccountHooks.AnnouncedWorldName);
+            _view.WorldName = "";
+            Assert.Null(AccountHooks.AnnouncedWorldName);
+            _view.WorldName = "Coldeve";
             Assert.True(InventoryModel.Request(new InventoryRequest { Kind = InventoryActionKind.Use, ItemId = Kit, ItemName = "Kit" }, out _));
             InventoryModel.MainThreadTick();
             Assert.Contains($"use {Kit:X8}", _view.Actions);
         }
         Assert.Null(InventoryModel.UseSender);
+        Assert.Null(InventoryModel.Busy);
+        Assert.Null(InventoryModel.Replies);
+        Assert.Null(InventoryModel.ReadItem);
+        Assert.Null(InventoryModel.PlayerId);
+        Assert.Null(AccountHooks.WorldName);
         InventoryModel.ResetActions();
     }
 

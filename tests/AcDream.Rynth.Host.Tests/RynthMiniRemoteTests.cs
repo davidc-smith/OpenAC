@@ -155,6 +155,9 @@ public sealed class RynthMiniRemoteTests : IDisposable
             RynthCoreChatCommands.TryHandle("miniremote tab character", replies.Add);
             Assert.Equal(["/ro character"], ran);
 
+            Assert.True(RynthCoreChatCommands.TryHandle("  ", replies.Add));
+            Assert.Equal("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>]", replies[^1]);
+
             RynthCoreChatCommands.TryHandle("bogus", replies.Add);
             Assert.Equal("/rc bogus isn't in OpenAC (only /rc miniremote).", replies[^1]);
         }
