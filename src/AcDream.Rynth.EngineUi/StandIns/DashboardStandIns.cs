@@ -307,16 +307,6 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
             ImGuiNET.ImGui.TextDisabled("Server: chosen at OpenAC's login.");
     }
 
-    /// <summary>RynthCore's Dungeon Map; not in OpenAC yet (it needs their radar), so its button does nothing.</summary>
-    internal static class DungeonMapFace
-    {
-        public const string Title = "Dungeon Map";
-
-        public static void Register()
-        {
-        }
-    }
-
     internal static class WorldMapFace
     {
         public const string Title = "World Map";

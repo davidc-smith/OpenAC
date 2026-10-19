@@ -23,6 +23,9 @@ public sealed class RynthAiDashboardTests : IDisposable
         @"ImGui\Panels\SkillsFace.cs", @"ImGui\Panels\SkillsFace.Progression.cs", @"ImGui\Panels\SkillsData.cs",
         @"UI\Data\ProgressionData.cs", @"Compatibility\TrainingCosts.cs", @"Compatibility\PlayerProgressHooks.cs",
         @"ImGui\MonsterHud\PortalSpellTable.cs", @"UI\ScriptWindows\AcIconDecoder.cs",
+        @"ImGui\Panels\DungeonMapFace.cs", @"UI\Data\RadarData.cs", @"UI\Data\RadarSnapshotJson.cs", @"UI\Data\DungeonMapMath.cs",
+        @"ImGui\Panels\RadarMarkerStyle.cs", @"ImGui\Panels\CircleClip.cs", @"UI\Panels\MarkerStyleSettings.cs",
+        @"ImGui\Panels\MarkerStyleEditor.cs", @"UI\Panels\RadarSettingsStore.cs", @"UI\Data\RynthNavAtlasData.cs", @"UI\Data\RynthNavData.cs",
     ];
 
     private readonly List<string> _log = new();

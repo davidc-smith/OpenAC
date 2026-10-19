@@ -12,7 +12,7 @@ namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// Runs RynthCore's RynthAi dashboard: Start does what RynthCore's EntryPoint
-/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills), Tick is UiDataHub's
+/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map), Tick is UiDataHub's
 /// step (run posted work, then poll each subscribed source when due), Stop is
 /// the hub's reset after plugins unload. Game thread.
 /// </summary>
@@ -57,13 +57,15 @@ internal static class RynthAiDashboard
             LuaFace.Register();
         if (!ImGuiPanelHost.HasFace(SkillsFace.Title))
             SkillsFace.Register();
+        if (!ImGuiPanelHost.HasFace(DungeonMapFace.Title))
+            DungeonMapFace.Register();
     }
 
     private static readonly UiSource[] Sources =
         [
             UiSources.RynthAi, UiSources.Patrol, UiSources.Nav, UiSources.Settings, UiSources.RynthSortWatch,
             UiSources.Items, UiSources.Damage, UiSources.MonsterRules, UiSources.MonsterDetail,
-            UiSources.Meta, UiSources.LootEdit, UiSources.Lua, UiSources.Progression,
+            UiSources.Meta, UiSources.LootEdit, UiSources.Lua, UiSources.Progression, UiSources.Radar,
         ];
 
     /// <summary>One hub step. Returns how many posted actions ran.</summary>

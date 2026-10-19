@@ -206,18 +206,8 @@ namespace RynthCore.Engine.UI.Data
         public static readonly ProgressionSource Progression = new();
         public static readonly MonsterRulesSource MonsterRules = new();
         public static readonly MonsterDetailSource MonsterDetail = new();
-    }
-
-    /// <summary>RynthNav's "Arrow to" / "Go to"; no RynthNav in OpenAC.</summary>
-    internal static class RynthNavCommands
-    {
-        public static void Arrow(string name, double ns, double ew)
-        {
-        }
-
-        public static void Go(string name, double ns, double ew)
-        {
-        }
+        public static readonly RadarSource Radar = new();
+        public static readonly RynthNavSource RynthNav = new();
     }
 }
 
