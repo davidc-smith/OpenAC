@@ -83,6 +83,17 @@
     <Compile Include="$(RynthEngine)UI\ScriptWindows\AcIconDecoder.cs" Link="RynthCore\AcIconDecoder.cs" />
     <Compile Include="$(RynthEngine)..\RynthCore.StatusAgent\Dat\DxtUtil.cs" Link="RynthCore\DxtUtil.cs" />
     <Compile Include="$(RynthEngine)Compatibility\TellMemory.cs" Link="RynthCore\TellMemory.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\DungeonMapFace.cs" Link="RynthCore\DungeonMapFace.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RadarData.cs" Link="RynthCore\Data\RadarData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RadarSnapshotJson.cs" Link="RynthCore\Data\RadarSnapshotJson.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\DungeonMapMath.cs" Link="RynthCore\Data\DungeonMapMath.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\RadarMarkerStyle.cs" Link="RynthCore\RadarMarkerStyle.cs" />
+    <Compile Include="$(RynthEngine)UI\Panels\MarkerStyleSettings.cs" Link="RynthCore\MarkerStyleSettings.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MarkerStyleEditor.cs" Link="RynthCore\MarkerStyleEditor.cs" />
+    <Compile Include="$(RynthEngine)UI\Panels\RadarSettingsStore.cs" Link="RynthCore\RadarSettingsStore.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RynthNavAtlasData.cs" Link="RynthCore\Data\RynthNavAtlasData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RynthNavData.cs" Link="RynthCore\Data\RynthNavData.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\CircleClip.cs" Link="RynthCore\CircleClip.cs" />
   </ItemGroup>
 
   <ItemGroup>

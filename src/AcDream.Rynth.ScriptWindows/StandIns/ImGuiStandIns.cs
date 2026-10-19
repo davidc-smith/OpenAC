@@ -104,7 +104,8 @@ namespace RynthCore.Engine.ImGuiBackend
         bool EdgeToEdge = false,
         bool GripInBody = false,
         uint? BorderColor = null,
-        float Rounding = 0f);
+        float Rounding = 0f,
+        bool OpenCentered = false);
 
     internal interface IImGuiPanel
     {
