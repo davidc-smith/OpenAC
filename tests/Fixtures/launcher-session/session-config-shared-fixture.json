@@ -26,6 +26,7 @@
       },
       "loginCommands": ["/tell someone, hi", "/vt start"],
       "loginCommandDelayMs": 750,
+      "rynth": false,
       "statusFile": "shared-fixture-status.jsonl"
     }
   ]

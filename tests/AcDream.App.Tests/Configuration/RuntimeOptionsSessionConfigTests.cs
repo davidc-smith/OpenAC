@@ -220,4 +220,53 @@ public sealed class RuntimeOptionsSessionConfigTests
         Assert.Null(options.PreparedAssetBaseRecipeVersion);
         Assert.Null(options.PreparedAssetEffectiveRecipeVersion);
     }
+
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData("0", null, false)]
+    [InlineData("1", null, true)]
+    [InlineData(null, false, false)]
+    [InlineData("0", true, true)]
+    [InlineData(null, true, true)]
+    public void RynthIsOnUnlessTheDocumentOrTheEnvironmentTurnsItOff(
+        string? environment,
+        bool? declared,
+        bool expected)
+    {
+        var session = new SessionDescriptor
+        {
+            Id = "rynth",
+            Endpoint = new SessionEndpointDescriptor { Host = "127.0.0.1", Port = 9000 },
+            Account = "account",
+            Credential = new SessionCredentialDescriptor
+            {
+                Provider = SessionCredentialProviderKind.Environment,
+                Reference = "X",
+            },
+            Rynth = declared,
+        };
+
+        RuntimeOptions options = RuntimeOptions.FromSessionConfig(
+            "D:\\dat",
+            name => name == "ACDREAM_RYNTH" ? environment : null,
+            "session.json",
+            new SessionConfiguration { Version = 1 },
+            session,
+            "password");
+
+        Assert.Equal(expected, options.Rynth);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("0", false)]
+    [InlineData("false", true)]
+    public void EnvironmentFlowTurnsRynthOffOnlyForALiteralZero(string? value, bool expected)
+    {
+        RuntimeOptions options = RuntimeOptions.Parse(
+            "D:\\dat",
+            name => name == "ACDREAM_RYNTH" ? value : null);
+
+        Assert.Equal(expected, options.Rynth);
+    }
 }

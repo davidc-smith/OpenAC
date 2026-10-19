@@ -113,6 +113,7 @@ libraries directly. It does not require those environment variables.
 | `ACDREAM_HEADLESS_CONSOLE=0\|1` | Headless interactive console; defaults to on when stdin is a terminal |
 | `ACDREAM_HEADLESS_CONSOLE_STREAM=stderr\|stdout` | Which stream that console prints to; `stderr` by default |
 | `ACDREAM_PLUGIN_TAGS=a,b` | Words this client wants to be found by; plugins on the clients running on this machine can see one another's tags and filter on them. The headless config's `pluginTags` is the same option |
+| `ACDREAM_RYNTH=0` | Graphical client: leave the built-in Rynth extension out (no bar, windows or commands). On by default; a session config's `rynth` outranks it |
 | `ACDREAM_PLUGIN_SETTINGS_FILE=<path>` | Path to a JSON file holding the startup settings each plugin is given, on either client. The file is the same map the headless config names under `pluginSettings`, which outranks it; a session that names none falls back to this file. A named file that is missing, unreadable or the wrong shape stops startup with the reason; unset means no settings |
 | `ACDREAM_FRAME_PROF=1` | Print the rolling `[frame-prof]` CPU/GPU/allocation line |
 | `ACDREAM_FRAME_HISTORY=<path>` | Write one CSV row per frame to that path on exit |
@@ -219,19 +220,24 @@ dotnet run --project src/AcDream.App/AcDream.App.csproj -c Release -- --session-
 It requires exactly one session in the document, and it honours every
 per-session field that decides what a plugin sees: `character`, `plugins`,
 `pluginTags`, `pluginSettings`, `loginCommands`, `loginCommandDelayMs`,
-`characterOptions` and `statusFile`. Both clients check `characterOptions`
+`characterOptions` and `statusFile`. It also reads `rynth`: `false` leaves
+the built-in Rynth extension out of the session (no bar, windows or
+commands), `true` keeps it, and leaving it out falls back to
+`ACDREAM_RYNTH` (on unless `0`). Both clients check `characterOptions`
 against the same declarable list and seed it the same way on login, so a
 document means the same thing whichever client reads it; a client started
 without a document declares none, so a player who sets an option in the
 panels is never overruled. One field only the windowless client acts on is
 accepted and ignored here rather than refused, so one document still starts
 either client: `policy` (which bot policy drives a windowless session; a
-graphical session is driven by the player). The one field the graphical
+graphical session is driven by the player). The windowless client likewise
+accepts and ignores `rynth`. The one field the graphical
 client refuses is `"mode": "probe"`, because a probe never selects a
 character and there is no windowed session to show.
 
 Where a document and a startup option say the same thing, the document wins:
-its `pluginTags` outranks `ACDREAM_PLUGIN_TAGS`, and its `pluginSettings`
+its `pluginTags` outranks `ACDREAM_PLUGIN_TAGS`, its `rynth` outranks
+`ACDREAM_RYNTH`, and its `pluginSettings`
 outranks `ACDREAM_PLUGIN_SETTINGS_FILE`, which is left unread. A field the
 document leaves out still falls back to the startup option, on either client.
 

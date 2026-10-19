@@ -68,6 +68,13 @@ internal sealed record HeadlessSessionDescriptor
     /// </summary>
     public List<string>? PluginTags { get; init; }
 
+    /// <summary>
+    /// Whether the graphical client runs its built-in Rynth extension.
+    /// Accepted and ignored here: a windowless session has no Rynth to run,
+    /// and one document still starts either client.
+    /// </summary>
+    public bool? Rynth { get; init; }
+
     public List<string>? LoginCommands { get; init; }
 
     public int LoginCommandDelayMs { get; init; } = 500;
