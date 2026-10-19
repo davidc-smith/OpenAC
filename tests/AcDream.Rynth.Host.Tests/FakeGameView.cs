@@ -242,6 +242,13 @@ internal sealed class FakeGameView : IRynthGameView
     public bool PickupItem(uint objectId, uint preferredContainerId) => Act($"pickup {objectId:X8} {preferredContainerId:X8}");
     public bool GiveItem(uint objectId, uint targetId, uint amount) => Act($"give {objectId:X8} {targetId:X8} {amount}");
     public bool CloseContainer(uint containerId) => Act($"close {containerId:X8}");
+
+    public HashSet<uint> Tools { get; } = new();
+    public HashSet<uint> Owned { get; } = new();
+    public bool IsOwnedTinkeringTool(uint objectId) => Read(Tools).Contains(objectId);
+    public bool IsOwnedItem(uint objectId) => Read(Owned).Contains(objectId);
+    public bool Salvage(uint toolId, IReadOnlyList<uint> itemIds) =>
+        Act($"salvage {toolId:X8} {string.Join(",", itemIds.Select(id => id.ToString("X8")))}");
     public IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId) =>
         Read(Palettes).TryGetValue(objectId, out var list) ? list : null;
     public bool TryCountContents(uint containerId, out int items, out int containers)

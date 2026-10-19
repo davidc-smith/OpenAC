@@ -499,6 +499,19 @@ public sealed class RuntimeRynthGameView : IRynthGameView
 
     public bool CloseContainer(uint containerId) => _automation.Loot.Close(containerId).Accepted;
 
+    public bool IsOwnedTinkeringTool(uint objectId) =>
+        IsOwnedItem(objectId)
+        && _runtime.InventoryOwner.Objects.Get(objectId) is { } tool
+        && (tool.Type & ItemType.TinkeringTool) != 0;
+
+    public bool IsOwnedItem(uint objectId) =>
+        objectId != 0
+        && _runtime.InventoryOwner.Objects.Get(objectId) is { } item
+        && RuntimeWorldObjectProjection.IsPlayerOwned(item, PlayerId, _runtime.InventoryOwner.Objects);
+
+    public bool Salvage(uint toolId, IReadOnlyList<uint> itemIds) =>
+        _automation.Items.Salvage(toolId, itemIds).Accepted;
+
     // The raw ObjDesc swaps, as RynthCore captures them at CreateObject: id and offset only.
     public IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId)
     {

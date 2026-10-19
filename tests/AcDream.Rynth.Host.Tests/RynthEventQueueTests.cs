@@ -78,6 +78,23 @@ public sealed class RynthEventQueueTests
         Assert.Equal(0, loggedIn);
     }
 
+    [Fact]
+    public void LoggedOutFiresOncePerLeavingWorldAndAThrowingHandlerIsLogged()
+    {
+        QueueRecorder.Calls.Clear();
+        var log = new List<string>();
+        using var host = new RynthHost(_view, log.Add, [typeof(QueueRecorder)]);
+        int closed = 0;
+        host.Bridge.LoggedOut += () => closed++;
+        host.Bridge.LoggedOut += () => throw new InvalidOperationException("boom");
+
+        host.Bridge.OnLeavingWorld();
+
+        Assert.Equal(1, closed);
+        Assert.Equal(["logout"], QueueRecorder.Calls);
+        Assert.Contains(log, line => line.Contains("LoggedOut handler failed"));
+    }
+
     // A plugin export cannot throw across the UnmanagedCallersOnly boundary (the
     // process would fail fast), so a throwing delivery is queued directly.
     [Fact]

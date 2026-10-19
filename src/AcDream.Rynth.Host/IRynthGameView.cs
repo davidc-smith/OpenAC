@@ -194,6 +194,15 @@ public interface IRynthGameView
     /// <summary>Closes the open corpse or chest. True when sent.</summary>
     bool CloseContainer(uint containerId);
 
+    /// <summary>True when the object is a tinkering tool (an Ust) the player owns.</summary>
+    bool IsOwnedTinkeringTool(uint objectId);
+
+    /// <summary>True when the player owns the item (in a pack or worn).</summary>
+    bool IsOwnedItem(uint objectId);
+
+    /// <summary>Salvages the items with the tool in one request. True when sent.</summary>
+    bool Salvage(uint toolId, IReadOnlyList<uint> itemIds);
+
     /// <summary>An object's sub-palettes (id, offset) in offset order; null when the object is unknown.</summary>
     IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId);
 

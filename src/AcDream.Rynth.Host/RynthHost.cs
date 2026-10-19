@@ -27,6 +27,7 @@ public sealed unsafe class RynthHost : IDisposable
             foreach (Type exportsType in exportsTypes)
                 Load(exportsType);
             Bridge = new RynthEventBridge(_plugins, _log);
+            Bridge.LoggedOut += _table.Salvage.Close;
         }
         catch
         {

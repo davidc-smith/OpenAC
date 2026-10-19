@@ -32,6 +32,9 @@ public sealed unsafe partial class RynthApiTable : IDisposable
 
     /// <summary>The Nav3D buffer the table's Nav3D slots fill and the host commits each tick.</summary>
     internal RynthNav3D Nav3D { get; }
+
+    /// <summary>RynthCore's salvage panel, kept by the host.</summary>
+    internal RynthSalvagePanel Salvage { get; }
     private readonly Action<string> _log;
     private readonly bool _scriptWindows;
     private IntPtr _nameBuffer;
@@ -50,6 +53,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         _view = view;
         Holds = new RynthMotionHolds(view);
         Nav3D = new RynthNav3D(view, nav3DLayer);
+        Salvage = new RynthSalvagePanel(view);
         _log = log;
         _scriptWindows = scriptWindows;
         Native = (RynthCoreApiNative*)NativeMemory.AllocZeroed((nuint)sizeof(RynthCoreApiNative));
@@ -83,6 +87,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         BindMovementSlots();
         BindNav3DSlots();
         BindLootSlots();
+        BindSalvageSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;

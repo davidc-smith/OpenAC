@@ -61,6 +61,9 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// <summary>Raised once the plugins have been told of the login, for pushes that follow it.</summary>
     public event Action? LoggedIn;
 
+    /// <summary>Raised after the plugins' OnLogout; the host closes its logout-bound state here.</summary>
+    public event Action? LoggedOut;
+
     public void OnLifecycle(in RuntimeLifecycleDelta delta)
     {
         if (delta.Current == RuntimeLifecycleState.InWorld
@@ -80,6 +83,8 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         _loginPending = false;
         foreach (RynthPlugin plugin in _plugins)
             plugin.OnLogout();
+        try { LoggedOut?.Invoke(); }
+        catch (Exception error) { _log?.Invoke($"LoggedOut handler failed: {error.Message}"); }
     }
 
     public void OnEntity(in RuntimeEntityDelta delta)
