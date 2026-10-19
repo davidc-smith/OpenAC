@@ -220,4 +220,15 @@ public interface IRynthGameView
 
     /// <summary>Raised on the game thread with the server's answer to a buy or sell the view sent.</summary>
     event Action<RynthVendorOutcome>? VendorTransactionCompleted;
+
+    /// <summary>The trade window and counters; null when the client cannot trade (out of world).</summary>
+    RynthTradeState? Trade { get; }
+
+    /// <summary>Trade actions; true when sent. Open asks the partner, Add stages an owned item, Close ends the trade.</summary>
+    bool TradeOpen(uint partnerId);
+    bool TradeAdd(uint itemId);
+    bool TradeAccept();
+    bool TradeDecline();
+    bool TradeReset();
+    bool TradeClose();
 }

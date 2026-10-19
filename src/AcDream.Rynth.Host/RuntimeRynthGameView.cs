@@ -635,6 +635,30 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return sent.Accepted;
     }
 
+    public RynthTradeState? Trade
+    {
+        get
+        {
+            ITradeAutomation trade = _automation.Trade;
+            if (!trade.IsAvailable)
+                return null;
+            PluginTradeEventCounters c = trade.Events;
+            return new RynthTradeState(
+                trade.IsOpen, trade.MyAccepted, trade.PartnerAccepted, trade.PartnerObjectId,
+                trade.MyItems, trade.PartnerItems,
+                c.Generation, c.Sequence, c.InitiatorId, c.LastEventType, c.FailureCount, c.LastFailureItemId,
+                c.LastFailureReason, c.LastCloseReason, c.LastAcceptedBy, c.LastDeclinedBy, c.LastResetBy,
+                c.CompletedCount, c.PartnerAcceptCount);
+        }
+    }
+
+    public bool TradeOpen(uint partnerId) => _automation.Trade.Open(partnerId).Accepted;
+    public bool TradeAdd(uint itemId) => _automation.Trade.Add(itemId).Accepted;
+    public bool TradeAccept() => _automation.Trade.Accept().Accepted;
+    public bool TradeDecline() => _automation.Trade.Decline().Accepted;
+    public bool TradeReset() => _automation.Trade.Reset().Accepted;
+    public bool TradeClose() => _automation.Trade.End().Accepted;
+
     // The automation lists the shop in the vendor state's order; a search covers a list that differs.
     private static int UnitPrice(IReadOnlyList<PluginVendorItem> priced, int index, uint listingId)
     {

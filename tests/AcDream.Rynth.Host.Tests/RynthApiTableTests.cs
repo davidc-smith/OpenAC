@@ -512,4 +512,67 @@ public sealed unsafe class RynthApiTableTests
         host.Nav3DClear();
         Assert.Equal((0, 0, 0), table.Nav3D.Counts);
     }
+
+    [Fact]
+    public void TradeSlots_ReportTheWindowAndCounters()
+    {
+        var view = new FakeGameView
+        {
+            PlayerId = 0x50000001,
+            TradeState = new RynthTradeState(
+                IsOpen: true, YouAccepted: false, PartnerAccepted: true, PartnerId: 0x50000002,
+                YourItems: [0x80000101], PartnerItems: [0x80000201, 0x80000202],
+                Generation: 3, Sequence: 17, InitiatorId: 0x50000002, LastEventType: 0x0202,
+                FailureCount: 1, LastFailureItemId: 0x80000103, LastFailureReason: 0x0426, LastCloseReason: 1,
+                LastAcceptedBy: 0x50000002, LastDeclinedBy: 0, LastResetBy: 0x50000001,
+                CompletedCount: 2, PartnerAcceptCount: 4),
+        };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasTrade);
+        Assert.True(host.TryGetTradeState(out TradeState state));
+        Assert.True(state.IsOpen);
+        Assert.False(state.YouAccepted);
+        Assert.True(state.PartnerAccepted);
+        Assert.True(state.Watching);
+        Assert.True(state.ActionsAvailable);
+        Assert.Equal((3u, 17u, 0x50000002u, 0x50000002u), (state.Generation, state.Sequence, state.PartnerId, state.InitiatorId));
+        Assert.Equal((1, 2), (state.YourItemCount, state.PartnerItemCount));
+        Assert.Equal((0x0202u, 1u, 0x80000103u, 0x0426u, 1u), (state.LastEventType, state.FailureCount, state.LastFailureItemId, state.LastFailureReason, state.LastCloseReason));
+        Assert.Equal((0x50000002u, 0u, 0x50000001u, 2u, 4u), (state.LastAcceptedBy, state.LastDeclinedBy, state.LastResetBy, state.CompletedCount, state.PartnerAcceptCount));
+        Assert.Equal(new uint[] { 0x80000101 }, host.GetTradeItems(TradeSide.You));
+        Assert.Equal(new uint[] { 0x80000201, 0x80000202 }, host.GetTradeItems(TradeSide.Partner));
+
+        var raw = new TradeStateNative { Size = 8 };
+        Assert.Equal(8, ((delegate* unmanaged[Cdecl]<TradeStateNative*, int>)table.Native->GetTradeStateFn)(&raw));
+        Assert.Equal(8u, raw.Size);
+        Assert.Equal(0u, raw.Generation);                    // past the 8 bytes asked for
+        raw = new TradeStateNative { Size = 4 };
+        Assert.Equal(0, ((delegate* unmanaged[Cdecl]<TradeStateNative*, int>)table.Native->GetTradeStateFn)(&raw));
+        Assert.Equal(-1, ((delegate* unmanaged[Cdecl]<int, uint*, int, int>)table.Native->GetTradeItemsFn)(3, null, 0));
+
+        view.TradeState = null;
+        Assert.False(host.TryGetTradeState(out _));
+    }
+
+    [Fact]
+    public void TradeSlots_ActionsReachTheView()
+    {
+        var view = new FakeGameView { PlayerId = 0x50000001 };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.TradeOpen(0x50000002));
+        Assert.False(host.TradeOpen(0));
+        Assert.True(host.TradeAdd(0x80000101, 4));
+        Assert.False(host.TradeAdd(0));
+        Assert.True(host.TradeAccept());
+        Assert.True(host.TradeDecline());
+        Assert.True(host.TradeReset());
+        Assert.True(host.TradeClose());
+        Assert.Equal(
+            new[] { "trade open 50000002", "trade add 80000101", "trade accept", "trade decline", "trade reset", "trade close" },
+            view.Actions);
+    }
 }

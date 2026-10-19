@@ -47,3 +47,11 @@ public enum RynthVendorChange
     /// <summary>Session teardown.</summary>
     Reset,
 }
+
+/// <summary>The trade window and its event counters, as RynthCore's GetTradeState reports them.</summary>
+public readonly record struct RynthTradeState(
+    bool IsOpen, bool YouAccepted, bool PartnerAccepted, uint PartnerId,
+    IReadOnlyList<uint> YourItems, IReadOnlyList<uint> PartnerItems,
+    uint Generation, uint Sequence, uint InitiatorId, uint LastEventType,
+    uint FailureCount, uint LastFailureItemId, uint LastFailureReason, uint LastCloseReason,
+    uint LastAcceptedBy, uint LastDeclinedBy, uint LastResetBy, uint CompletedCount, uint PartnerAcceptCount);
