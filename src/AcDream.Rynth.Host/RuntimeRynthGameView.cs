@@ -2,6 +2,7 @@ using System.Numerics;
 using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
+using AcDream.Core.Player;
 using AcDream.Core.Selection;
 using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
@@ -288,12 +289,95 @@ public sealed class RuntimeRynthGameView : IRynthGameView
                     .Where(record => record.Bucket is 1u or 2u or Spellbook.CooldownBucket
                         && (record.SpellId & 0xFFFFu) != 0)
                     .Select(record => new RynthEnchantment(
-                        record.SpellId & 0xFFFFu,
-                        record.Duration > 0
-                            ? serverNow + (record.StartTime + record.Duration - clockNow)
-                            : double.MaxValue)),
+                        record.SpellId & 0xFFFFu, ExpiryServerTime(record, serverNow, clockNow))),
             ];
         }
+    }
+
+    // A record's end in server time: double.MaxValue when it has none.
+    private static double ExpiryServerTime(ActiveEnchantmentRecord record, double serverNow, double clockNow) =>
+        record.Duration > 0 ? serverNow + (record.StartTime + record.Duration - clockNow) : double.MaxValue;
+
+    // Whole seconds: the two clocks are read at different instants, so the raw expiry jitters each read and
+    // RynthCore's exact snapshot compare would republish every poll while a timed buff is up.
+    private static double WholeSeconds(double expiry) => expiry == double.MaxValue ? expiry : Math.Round(expiry);
+
+    // As RynthCore's ReadPlayerProgressLive: the description's skill table, attribute cache and
+    // vitals (ranks, innate, XP spent) with the buffed and base values the surface reports.
+    public RynthPlayerProgress? PlayerProgress
+    {
+        get
+        {
+            if (!_automation.IsAvailable || PlayerId == 0
+                || _runtime.CharacterOwner.LocalPlayer is not { HasDescription: true } local)
+                return null;
+            ICharacterInfo character = _automation.Character;
+            var skills = new List<RynthSkillProgress>(local.Skills.Count);
+            foreach (LocalPlayerState.SkillSnapshot s in local.Skills.Values)
+            {
+                bool known = character.TryGetSkill(s.SkillId, out PluginSkillInfo info);
+                skills.Add(new RynthSkillProgress(
+                    s.SkillId, s.Status, s.Ranks, s.Xp, s.Init, known,
+                    known ? (int)info.Current : 0, known ? (int)info.Base : 0));
+            }
+
+            var attributes = new List<RynthStatProgress>(6);
+            foreach (PluginAttributeInfo a in character.Attributes)
+            {
+                uint init = LocalPlayerState.AttributeIdToKind(a.StatId) is { } kind && local.GetAttribute(kind) is { } snap ? snap.Start : 0;
+                attributes.Add(new RynthStatProgress(a.StatId, a.Ranks, init, ClampXp(a.ExperienceSpent), a.Current, a.Base));
+            }
+
+            var vitals = new List<RynthStatProgress>(3);
+            foreach (PluginVitalInfo v in character.Vitals)
+            {
+                uint init = local.Get((LocalPlayerState.VitalKind)v.Kind) is { } snap ? snap.Start : 0;
+                vitals.Add(new RynthStatProgress((uint)v.Kind + 1, v.Ranks, init, ClampXp(v.ExperienceSpent), v.Maximum, v.Base));
+            }
+
+            return new RynthPlayerProgress(
+                skills, attributes, vitals, character.Level,
+                local.Properties.GetInt(AvailableSkillCreditsProperty),
+                character.TotalExperience, character.UnassignedExperience,
+                character.AvailableLuminance, character.MaximumLuminance, character.VitaeMultiplier);
+        }
+    }
+
+    private const uint AvailableSkillCreditsProperty = 24;
+
+    private static uint ClampXp(ulong xp) => xp > uint.MaxValue ? uint.MaxValue : (uint)xp;
+
+    // As RynthCore's EnchantmentHooks.CopyPlayerStatMods: the Mult and Add lists' records that change a stat.
+    public IReadOnlyList<RynthStatMod>? PlayerStatMods
+    {
+        get
+        {
+            if (!_automation.IsAvailable || PlayerId == 0)
+                return null;
+            double serverNow = ServerTime;
+            double clockNow = _runtime.EffectClock.NowSeconds;
+            return
+            [
+                .. _runtime.CharacterOwner.Spellbook.ActiveEnchantmentSnapshot
+                    .Where(record => record.Bucket is 1u or 2u && record.StatModType is not null && (record.SpellId & 0xFFFFu) != 0)
+                    .Select(record => new RynthStatMod(
+                        record.SpellId & 0xFFFFu, WholeSeconds(ExpiryServerTime(record, serverNow, clockNow)),
+                        record.StatModType!.Value, record.StatModKey ?? 0, record.StatModValue ?? 0f, record.SpellCategory)),
+            ];
+        }
+    }
+
+    public bool RequestAdvancement(int kind, uint statId, uint amount)
+    {
+        PluginAdvancementKind? mapped = kind switch
+        {
+            1 => PluginAdvancementKind.Attribute,
+            2 => PluginAdvancementKind.Vital,
+            3 => PluginAdvancementKind.Skill,
+            4 => PluginAdvancementKind.TrainSkill,
+            _ => null,
+        };
+        return mapped is { } k && _automation.Character.RequestAdvancement(k, statId, amount).Accepted;
     }
 
     public bool TryGetSkill(uint objectId, uint skillId, out int buffed, out int baseLevel, out int training)

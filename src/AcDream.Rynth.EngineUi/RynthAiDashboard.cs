@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using RynthCore.Engine;
+using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
 using RynthCore.Engine.Plugins;
@@ -11,7 +12,7 @@ namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// Runs RynthCore's RynthAi dashboard: Start does what RynthCore's EntryPoint
-/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua), Tick is UiDataHub's
+/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills), Tick is UiDataHub's
 /// step (run posted work, then poll each subscribed source when due), Stop is
 /// the hub's reset after plugins unload. Game thread.
 /// </summary>
@@ -54,13 +55,15 @@ internal static class RynthAiDashboard
             ItemCountFace.Register();
         if (!ImGuiPanelHost.HasFace(LuaFace.Title))
             LuaFace.Register();
+        if (!ImGuiPanelHost.HasFace(SkillsFace.Title))
+            SkillsFace.Register();
     }
 
     private static readonly UiSource[] Sources =
         [
             UiSources.RynthAi, UiSources.Patrol, UiSources.Nav, UiSources.Settings, UiSources.RynthSortWatch,
             UiSources.Items, UiSources.Damage, UiSources.MonsterRules, UiSources.MonsterDetail,
-            UiSources.Meta, UiSources.LootEdit, UiSources.Lua,
+            UiSources.Meta, UiSources.LootEdit, UiSources.Lua, UiSources.Progression,
         ];
 
     /// <summary>One hub step. Returns how many posted actions ran.</summary>
@@ -70,6 +73,8 @@ internal static class RynthAiDashboard
             return 0;
         foreach (UiSource source in Sources)
             source.PromoteDeferredRefresh();
+        // RynthCore's MainThreadSnapshots.Tick: reads only while the Skills panel wants it.
+        PlayerProgressHooks.Prefetch();
         int ran = UiDataHub.Drain(Log);
         PollAll(Sources, Stopwatch.GetTimestamp());
         return ran;

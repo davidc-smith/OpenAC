@@ -4,7 +4,7 @@ using Mono.Cecil.Cil;
 namespace AcDream.Tools.RynthInteropRedirect;
 
 /// <summary>
-/// <c>AcDream.Tools.RynthInteropRedirect &lt;assembly&gt; &lt;stand-in type|-&gt; &lt;references file&gt; [--inert &lt;module,...&gt;] [--plain-threadstatic-swaps] [--redirect-type &lt;from&gt;=&lt;to&gt;]...</c>:
+/// <c>AcDream.Tools.RynthInteropRedirect &lt;assembly&gt; &lt;stand-in type|-&gt; &lt;references file&gt; [--inert &lt;module,...&gt;] [--plain-threadstatic-swaps] [--redirect-type &lt;from&gt;=&lt;to&gt;]... [--redirect-member &lt;type&gt;::&lt;member&gt;=&lt;stand-in type&gt;]...</c>:
 /// every user32/kernel32 P/Invoke in the assembly that the stand-in type (in
 /// the same assembly; <c>-</c> for none) has a public static method for, same
 /// name and signature, becomes a managed call to that method. With
@@ -24,7 +24,11 @@ namespace AcDream.Tools.RynthInteropRedirect;
 /// interface, generic constraint, catch type, event, override and custom
 /// attribute that holds that type (nothing else is rebuilt). A
 /// member <c>to</c> lacks (by name, return and parameter types) fails the run, as
-/// does a <c>from</c> given twice (a usage error). A rerun finds nothing to do.
+/// does a <c>from</c> given twice (a usage error). With <c>--redirect-member</c>, every
+/// call to that static member of a referenced type becomes a call to the public static
+/// method of the same name, return and parameter types on the stand-in type (in the
+/// assembly), whose own methods are left alone so its fallback can call the real member;
+/// one without such a method fails the run. A rerun finds nothing to do.
 /// </summary>
 internal static class Program
 {
@@ -35,10 +39,11 @@ internal static class Program
     /// <summary>The command line, with its output and error streams given (tests capture them).</summary>
     internal static int Run(string[] args, TextWriter output, TextWriter error)
     {
-        const string Usage = "usage: AcDream.Tools.RynthInteropRedirect <assembly> <stand-in type|-> <references file> [--inert <module,...>] [--plain-threadstatic-swaps] [--redirect-type <from>=<to>]...";
+        const string Usage = "usage: AcDream.Tools.RynthInteropRedirect <assembly> <stand-in type|-> <references file> [--inert <module,...>] [--plain-threadstatic-swaps] [--redirect-type <from>=<to>]... [--redirect-member <type>::<member>=<stand-in type>]...";
         string[] inert = [];
         bool inertGiven = false, plainSwaps = false;
         var typeMaps = new List<(string From, string To)>();
+        var memberMaps = new List<(string FromType, string Member, string To)>();
         for (int i = 3; i < args.Length; i++)
         {
             if (args[i] == "--inert" && !inertGiven && i + 1 < args.Length)
@@ -57,6 +62,14 @@ internal static class Program
                 typeMaps.Add((from, to));
                 i++;
             }
+            else if (args[i] == "--redirect-member" && i + 1 < args.Length
+                     && args[i + 1].Split('=') is [{ Length: > 0 } member, { Length: > 0 } toType]
+                     && member.Split("::") is [{ Length: > 0 } fromType, { Length: > 0 } memberName]
+                     && !memberMaps.Any(m => m.FromType == fromType && m.Member == memberName))
+            {
+                memberMaps.Add((fromType, memberName, toType));
+                i++;
+            }
             else
             {
                 error.WriteLine(Usage);
@@ -73,9 +86,9 @@ internal static class Program
         string? standIn = args[1] == "-" ? null : args[1];
         try
         {
-            (int redirected, int inerted, int swaps, int types) = Redirect(args[0], standIn, File.ReadAllLines(args[2]), inert, plainSwaps, typeMaps);
+            (int redirected, int inerted, int swaps, int types, int members) = Redirect(args[0], standIn, File.ReadAllLines(args[2]), inert, plainSwaps, typeMaps, memberMaps);
             output.WriteLine(
-                $"RynthInteropRedirect: {Path.GetFileName(args[0])}: {redirected} P/Invoke(s) redirected to {standIn ?? "nothing"}, {inerted} made inert{(plainSwaps ? $", {swaps} thread-static swap(s) made plain" : "")}{(typeMaps.Count > 0 ? $", {types} type(s) redirected" : "")}");
+                $"RynthInteropRedirect: {Path.GetFileName(args[0])}: {redirected} P/Invoke(s) redirected to {standIn ?? "nothing"}, {inerted} made inert{(plainSwaps ? $", {swaps} thread-static swap(s) made plain" : "")}{(typeMaps.Count > 0 ? $", {types} type(s) redirected" : "")}{(memberMaps.Count > 0 ? $", {members} member call(s) redirected" : "")}");
             return 0;
         }
         catch (Exception failure) when (failure is IOException or BadImageFormatException or InvalidOperationException or AssemblyResolutionException)
@@ -85,9 +98,9 @@ internal static class Program
         }
     }
 
-    private static (int Redirected, int Inerted, int Swaps, int Types) Redirect(
+    private static (int Redirected, int Inerted, int Swaps, int Types, int Members) Redirect(
         string assemblyPath, string? standInTypeName, IEnumerable<string> references, string[] inertModules, bool plainSwaps,
-        IReadOnlyList<(string From, string To)> typeMaps)
+        IReadOnlyList<(string From, string To)> typeMaps, IReadOnlyList<(string FromType, string Member, string To)> memberMaps)
     {
         bool hasSymbols = File.Exists(Path.ChangeExtension(assemblyPath, ".pdb"));
         using var resolver = new DefaultAssemblyResolver();
@@ -131,12 +144,57 @@ internal static class Program
 
         int swaps = plainSwaps ? MakeThreadStaticSwapsPlain(module) : 0;
         int types = RedirectTypes(module, typeMaps);
-        if (redirected + inerted + swaps + types > 0)
+        int members = RedirectMembers(module, memberMaps);
+        if (redirected + inerted + swaps + types + members > 0)
             module.Write(new WriterParameters { WriteSymbols = hasSymbols, DeterministicMvid = true });
         if (typeMaps.Count > 0)
             VerifyNoneLeft(assemblyPath, resolver, typeMaps);
-        return (redirected, inerted, swaps, types);
+        return (redirected, inerted, swaps, types, members);
     }
+
+    /// <summary>
+    /// Every call to a mapped static member (<c>Type::member</c> of a referenced type)
+    /// becomes a call to the public static method of the same name, return and
+    /// parameter types on the stand-in type (in the module). The stand-in's own
+    /// methods are skipped, so its fallback can still call the real member.
+    /// Returns how many calls were rewritten.
+    /// </summary>
+    private static int RedirectMembers(ModuleDefinition module, IReadOnlyList<(string FromType, string Member, string To)> maps)
+    {
+        int rewritten = 0;
+        foreach ((string fromType, string member, string to) in maps)
+        {
+            TypeDefinition standIn = module.GetType(to) ?? throw new InvalidOperationException($"{to} is not in {module.Name}");
+            var targets = new Dictionary<string, MethodReference>();   // by the called signature, so overloads each find their own
+            foreach (TypeDefinition type in module.GetTypes())
+            {
+                if (type == standIn)
+                    continue;
+                foreach (MethodDefinition method in type.Methods.Where(m => m.HasBody))
+                {
+                    foreach (Instruction instruction in method.Body.Instructions)
+                    {
+                        if (instruction.Operand is not MethodReference called || called.HasThis
+                            || called.Name != member || called.DeclaringType.FullName != fromType)
+                            continue;
+                        if (!targets.TryGetValue(called.FullName, out MethodReference? target))
+                            targets[called.FullName] = target = module.ImportReference(FindStatic(standIn, called));
+                        instruction.Operand = target;
+                        rewritten++;
+                    }
+                }
+            }
+        }
+
+        return rewritten;
+    }
+
+    private static MethodDefinition FindStatic(TypeDefinition standIn, MethodReference called) =>
+        standIn.Methods.FirstOrDefault(candidate => candidate.IsPublic && candidate.IsStatic && candidate.Name == called.Name
+            && candidate.ReturnType.FullName == called.ReturnType.FullName
+            && candidate.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(called.Parameters.Select(p => p.ParameterType.FullName)))
+        ?? throw new InvalidOperationException(
+            $"{standIn.FullName} has no public static {called.ReturnType.FullName} {called.Name}({string.Join(", ", called.Parameters.Select(p => p.ParameterType.FullName))})");
 
     /// <summary>
     /// Rebinds every use of each <c>from</c> type to its <c>to</c> type in the module:

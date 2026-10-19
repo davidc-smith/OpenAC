@@ -55,3 +55,26 @@ public readonly record struct RynthTradeState(
     uint Generation, uint Sequence, uint InitiatorId, uint LastEventType,
     uint FailureCount, uint LastFailureItemId, uint LastFailureReason, uint LastCloseReason,
     uint LastAcceptedBy, uint LastDeclinedBy, uint LastResetBy, uint CompletedCount, uint PartnerAcceptCount);
+
+/// <summary>One skill as RynthCore's Skills panel reads it: class 1 untrained, 2 trained, 3 specialized.</summary>
+public readonly record struct RynthSkillProgress(
+    uint SkillId, uint Class, uint Ranks, uint XpSpent, uint Init, bool LevelKnown, int Buffed, int Base);
+
+/// <summary>An attribute (id 1..6) or vital (id 1..3: health, stamina, mana); vitals' buffed and base are maximums.</summary>
+public readonly record struct RynthStatProgress(uint Id, uint Ranks, uint Init, uint XpSpent, uint Buffed, uint Base);
+
+/// <summary>The player's progress for the Skills panel: one read, never changed after.</summary>
+public sealed record RynthPlayerProgress(
+    IReadOnlyList<RynthSkillProgress> Skills,
+    IReadOnlyList<RynthStatProgress> Attributes,
+    IReadOnlyList<RynthStatProgress> Vitals,
+    int Level,
+    int SkillCredits,
+    long TotalXp,
+    long UnassignedXp,
+    long Luminance,
+    long MaxLuminance,
+    float Vitae);
+
+/// <summary>An enchantment's stat change (ACE EnchantmentTypeFlags type, key, value) and its spell category.</summary>
+public readonly record struct RynthStatMod(uint SpellId, double ExpiryServerTime, uint Type, uint Key, float Value, uint Category);

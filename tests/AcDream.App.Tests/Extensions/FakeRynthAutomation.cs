@@ -68,6 +68,19 @@ internal sealed class FakeCharacter : ICharacterInfo
     public IReadOnlyList<PluginSkillInfo> Skills => SkillList;
     public IReadOnlyList<PluginAttributeInfo> Attributes => AttributeList;
     public IReadOnlyList<PluginActiveEnchantment> ActiveEnchantments => EnchantmentList;
+    public int Level { get; set; }
+    public long TotalExperience { get; set; }
+    public long UnassignedExperience { get; set; }
+    public long AvailableLuminance { get; set; }
+    public long MaximumLuminance { get; set; }
+    public IReadOnlyList<PluginVitalInfo> Vitals => VitalList;
+    public List<(PluginAdvancementKind Kind, uint StatId, ulong Cost)> Advancements { get; } = new();
+
+    public PluginAdvancementResult RequestAdvancement(PluginAdvancementKind kind, uint statId, ulong cost)
+    {
+        Advancements.Add((kind, statId, cost));
+        return new(PluginAdvancementStatus.Sent);
+    }
 
     public bool TryGetSkill(uint skillId, out PluginSkillInfo skill)
     {

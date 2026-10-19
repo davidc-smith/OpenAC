@@ -29,6 +29,7 @@ public sealed class RynthClientExtensionDatDirectoryTests
             {
                 extension.Attach(context);
                 Assert.Equal("/x", RegistryStandIn.InstallPath);
+                Assert.Equal("/x", AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory);
             }
             finally
             {
@@ -36,10 +37,12 @@ public sealed class RynthClientExtensionDatDirectoryTests
             }
 
             Assert.Null(RegistryStandIn.InstallPath);
+            Assert.Null(AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory);
         }
         finally
         {
             RegistryStandIn.InstallPath = null;
+            AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory = null;
         }
     }
 

@@ -146,9 +146,7 @@ public sealed class RynthAiInteropTests(ITestOutputHelper output)
     [Fact]
     public void GeometryLoaderOpensTheInstalledDatsThroughTheStandIn()
     {
-        string? dats = Environment.GetEnvironmentVariable("ACDREAM_DAT_DIR");
-        if (string.IsNullOrWhiteSpace(dats))
-            dats = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AsheronsCall");
+        string dats = TestDats.Directory;
         if (!File.Exists(Path.Combine(dats, "client_cell_1.dat")))
         {
             // xunit 2 (this project) has no dynamic skip; the note shows in the test's output.

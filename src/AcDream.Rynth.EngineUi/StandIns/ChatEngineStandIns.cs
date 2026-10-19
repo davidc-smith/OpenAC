@@ -53,6 +53,11 @@ namespace RynthCore.Engine.Compatibility
             return Name is { } read && read(objectId, out name);
         }
 
+        /// <summary>Fills their PlayerProgress from the game view; the host sets it. False when not in the world.</summary>
+        internal static Func<PlayerProgress, bool>? ProgressReader { get; set; }
+
+        public static bool ReadPlayerProgressLive(PlayerProgress dst) => ProgressReader is { } read && read(dst);
+
         /// <summary>The PublicWeenieDesc fields RynthCore reads in one go; their InventoryItem compares against it.</summary>
         internal struct ItemPwdFields
         {
@@ -198,6 +203,7 @@ namespace RynthCore.Engine.UI.Data
         public static readonly LuaSource Lua = new();
         public static readonly ItemsSource Items = new();
         public static readonly DamageSource Damage = new();
+        public static readonly ProgressionSource Progression = new();
         public static readonly MonsterRulesSource MonsterRules = new();
         public static readonly MonsterDetailSource MonsterDetail = new();
     }

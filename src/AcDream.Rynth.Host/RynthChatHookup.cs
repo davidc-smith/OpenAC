@@ -25,6 +25,10 @@ internal sealed class RynthChatHookup : IDisposable
     private readonly PlayerPhysicsHooks.PositionReader _position;
     private readonly Func<string> _serverName;
     private readonly Func<InventoryView?> _inventory;
+    private readonly Func<PlayerProgress, bool> _progress;
+    private readonly EnchantmentHooks.StatModCopier _statMods;
+    private readonly Func<double> _serverTime;
+    private readonly Func<PlayerTraining.TrainKind, uint, uint, bool> _train;
 
     public RynthChatHookup(RynthHost host, IRynthGameView view, Action<string> log)
     {
@@ -50,6 +54,11 @@ internal sealed class RynthChatHookup : IDisposable
         _position = TryGetPlayerPosition;
         _serverName = () => Guard(nameof(SessionStateRegistry.LastServerName), () => _view.WorldName, string.Empty);
         _inventory = () => Guard(nameof(InventoryModel.Current), BuildInventory, null);
+        _progress = ReadProgress;
+        _statMods = CopyStatMods;
+        _serverTime = () => Guard(nameof(TimeSyncHooks.GetCurrentServerTime), () => _view.ServerTime, 0d);
+        _train = (kind, stype, amount) => Guard(
+            nameof(PlayerTraining.Raise), () => _view.RequestAdvancement((int)kind, stype, amount), false);
 
         PluginExportBinder.Resolver = _resolver;
         ClientHelperHooks.PlayerId = _playerId;
@@ -63,6 +72,10 @@ internal sealed class RynthChatHookup : IDisposable
         PlayerPhysicsHooks.Position = _position;
         SessionStateRegistry.ServerName = _serverName;
         InventoryModel.Source = _inventory;
+        ClientObjectHooks.ProgressReader = _progress;
+        EnchantmentHooks.Copier = _statMods;
+        TimeSyncHooks.ServerTime = _serverTime;
+        PlayerTraining.Sender = _train;
     }
 
     public void Dispose()
@@ -83,6 +96,69 @@ internal sealed class RynthChatHookup : IDisposable
             InventoryModel.Source = null;
             InventoryModel.Reset();
         }
+
+        if (ClientObjectHooks.ProgressReader == _progress) ClientObjectHooks.ProgressReader = null;
+        if (EnchantmentHooks.Copier == _statMods) EnchantmentHooks.Copier = null;
+        if (TimeSyncHooks.ServerTime == _serverTime) TimeSyncHooks.ServerTime = null;
+        if (PlayerTraining.Sender == _train) PlayerTraining.Sender = null;
+    }
+
+    // As RynthCore's ReadPlayerProgressLive fills its work buffer: indexed by skill id, attribute 1..6, vital 1..3.
+    private bool ReadProgress(PlayerProgress dst)
+    {
+        RynthPlayerProgress? read = Guard(nameof(ClientObjectHooks.ReadPlayerProgressLive), () => _view.PlayerProgress, null);
+        if (read is null)
+            return false;
+        dst.Clear();
+        dst.PlayerId = Guard(nameof(ClientHelperHooks.GetPlayerId), () => _view.PlayerId, 0u);
+        dst.SkillTableRead = true;
+        foreach (RynthSkillProgress s in read.Skills)
+        {
+            if (s.SkillId is 0 or > PlayerProgress.MaxSkill)
+                continue;
+            int i = (int)s.SkillId;
+            dst.SkillInTable[i] = true;
+            dst.SkillClass[i] = s.Class;
+            dst.SkillXpSpent[i] = s.XpSpent;
+            dst.SkillRanks[i] = s.Ranks;
+            dst.SkillInit[i] = s.Init;
+            dst.SkillLevelKnown[i] = s.LevelKnown;
+            dst.SkillBuffed[i] = s.Buffed;
+            dst.SkillBase[i] = s.Base;
+        }
+
+        dst.AttributeCacheRead = read.Attributes.Count > 0;
+        foreach (RynthStatProgress a in read.Attributes)
+        {
+            if (a.Id is 0 or > 6)
+                continue;
+            int i = (int)a.Id;
+            (dst.AttrRanks[i], dst.AttrInit[i], dst.AttrXpSpent[i], dst.AttrBuffed[i], dst.AttrBase[i]) = (a.Ranks, a.Init, a.XpSpent, a.Buffed, a.Base);
+        }
+
+        foreach (RynthStatProgress v in read.Vitals)
+        {
+            if (v.Id is 0 or > 3)
+                continue;
+            int i = (int)v.Id;
+            (dst.VitalRanks[i], dst.VitalInit[i], dst.VitalXpSpent[i], dst.VitalBuffed[i], dst.VitalBase[i]) = (v.Ranks, v.Init, v.XpSpent, v.Buffed, v.Base);
+        }
+
+        (dst.Level, dst.SkillCredits, dst.TotalXp, dst.UnassignedXp, dst.Luminance, dst.MaxLuminance, dst.Vitae) =
+            (read.Level, read.SkillCredits, read.TotalXp, read.UnassignedXp, read.Luminance, read.MaxLuminance, read.Vitae);
+        return true;
+    }
+
+    private int CopyStatMods(uint[] spell, double[] expiry, uint[] type, uint[] key, float[] value, uint[] category)
+    {
+        IReadOnlyList<RynthStatMod>? mods = Guard(nameof(EnchantmentHooks.CopyPlayerStatMods), () => _view.PlayerStatMods, null);
+        if (mods is null)
+            return 0;
+        int n = Math.Min(mods.Count, spell.Length);
+        for (int i = 0; i < n; i++)
+            (spell[i], expiry[i], type[i], key[i], value[i], category[i]) =
+                (mods[i].SpellId, mods[i].ExpiryServerTime, mods[i].Type, mods[i].Key, mods[i].Value, mods[i].Category);
+        return n;
     }
 
     private IntPtr Resolve(string pluginNamePart, string exportName)
