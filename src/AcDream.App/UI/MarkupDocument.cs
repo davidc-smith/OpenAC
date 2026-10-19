@@ -1009,10 +1009,27 @@ public static class MarkupDocument
                     : null;
                 return UiMarkupListColumn.Icon(width, valuesSource, resolve, onClick, isAutoWidth);
             }
+            case "button":
+            {
+                var captionSource = BindStringList(
+                    (string?)columnEl.Attribute("items"), binding, ColumnContext(index, "button", "items"));
+                var onClick = BindRequiredIntAction(
+                    (string?)columnEl.Attribute("onclick"), binding, ColumnContext(index, "button", "onclick"));
+                return UiMarkupListColumn.Button(width, captionSource, onClick, isAutoWidth,
+                    ButtonSize(columnEl, "buttonw", index), ButtonSize(columnEl, "buttonh", index));
+            }
             default:
                 throw new FormatException(
-                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, or icon)");
+                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, icon, or button)");
         }
+    }
+
+    private static float ButtonSize(XElement columnEl, string attribute, int index)
+    {
+        float size = FOr(columnEl, attribute, 0f);
+        if (size < 0f)
+            throw new FormatException($"{ColumnContext(index, "button", attribute)} must not be negative");
+        return size;
     }
 
     private static string ColumnContext(int index, string type, string attribute) =>

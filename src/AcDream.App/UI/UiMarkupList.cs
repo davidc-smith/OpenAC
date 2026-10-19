@@ -29,6 +29,8 @@ public sealed class UiMarkupList : UiElement
             _scratchIsAuto = new bool[count];
             _scratchFixedWidth = new float[count];
             _cachedRowCount = 0;
+            _hasButtons = value?.Any(static c => c.Kind == UiMarkupListColumnKind.Button) ?? false;
+            ClearButtonPointer();
         }
     }
     public UiDatFont? DatFont { get; set; }
@@ -38,6 +40,10 @@ public sealed class UiMarkupList : UiElement
     public Vector4 BorderColor { get; set; } = new(0.46f, 0.37f, 0.16f, 1f);
     public Vector4 TextColor { get; set; } = new(0.91f, 0.87f, 0.76f, 1f);
     public Vector4 SelectedColor { get; set; } = new(0.28f, 0.23f, 0.08f, 0.95f);
+
+    /// <summary>The face of a <c>button</c> column's cells; Classic matches a markup <c>&lt;button&gt;</c>.</summary>
+    public Vector4 ButtonColor { get; set; } = new(0.1f, 0.1f, 0.15f, 0.8f);
+    public Vector4 ButtonBorderColor { get; set; } = new(0.45f, 0.45f, 0.55f, 1f);
 
     public bool SelectionBandEnabled { get; set; }
 
@@ -68,7 +74,27 @@ public sealed class UiMarkupList : UiElement
     private float[] _scratchFixedWidth = Array.Empty<float>();
     private int _cachedRowCount;
 
+    // The button cell under the pointer and the one the left button went
+    // down on, as (row, column); -1 for none.
+    private bool _hasButtons;
+    private int _hoverRow = -1, _hoverColumn = -1;
+    private int _pressRow = -1, _pressColumn = -1;
+
+    // What the list showed when the button went down: a release fires by row
+    // index, so the press is dropped if the list scrolls, its row count
+    // changes, or the pressed button's caption changes before then.
+    private int _pressTopRow, _pressRowCount;
+    private string _pressCaption = string.Empty;
+
+    // The pointer's last position in list space, so the hovered button can be
+    // found again when the rows move under a pointer that did not.
+    private bool _pointerKnown;
+    private float _pointerX, _pointerY;
+
     public override bool HandlesClick => true;
+
+    /// <summary>Button cells show hover, so a list with any takes moves while hovered.</summary>
+    public override bool ReceivesHoverMouseMove => _hasButtons;
 
     protected override void OnDraw(UiRenderContext context)
     {
@@ -239,28 +265,7 @@ public sealed class UiMarkupList : UiElement
 
     private void DrawColumns(UiRenderContext context, IReadOnlyList<UiMarkupListColumn> columns)
     {
-        int rowCount = 0;
-        for (int c = 0; c < columns.Count; c++)
-        {
-            var col = columns[c];
-            switch (col.Kind)
-            {
-                case UiMarkupListColumnKind.Text:
-                    _cachedTextRows[c] = col.TextSource!();
-                    _cachedColorRows[c] = col.ColorsSource?.Invoke();
-                    rowCount = Math.Max(rowCount, _cachedTextRows[c]!.Count);
-                    break;
-                case UiMarkupListColumnKind.Check:
-                    _cachedCheckRows[c] = col.CheckSource!();
-                    rowCount = Math.Max(rowCount, _cachedCheckRows[c]!.Count);
-                    break;
-                case UiMarkupListColumnKind.Icon:
-                    _cachedIconRows[c] = col.IconValuesSource!();
-                    rowCount = Math.Max(rowCount, _cachedIconRows[c]!.Count);
-                    break;
-            }
-        }
-        _cachedRowCount = rowCount;
+        int rowCount = RefreshRows(columns);
 
         int visibleRows = VisibleRows;
         bool showScrollbar = rowCount > visibleRows;
@@ -280,6 +285,11 @@ public sealed class UiMarkupList : UiElement
             }
         }
         ClampTop(rowCount, visibleRows);
+        if (_hasButtons)
+        {
+            CancelPressIfRowsMoved();
+            RefreshHover(contentWidth, visibleRows);
+        }
 
         context.DrawFill(0f, 0f, Width, Height, BackgroundColor);
         context.DrawRectOutline(0f, 0f, Width, Height, BorderColor, 1f);
@@ -311,6 +321,9 @@ public sealed class UiMarkupList : UiElement
                         case UiMarkupListColumnKind.Icon:
                             DrawIconCell(context, columns[c], _cachedIconRows[c], index, cellX, cellW, y);
                             break;
+                        case UiMarkupListColumnKind.Button:
+                            DrawButtonCell(context, c, index, cellX, cellW, y);
+                            break;
                     }
                 }
                 finally
@@ -322,6 +335,38 @@ public sealed class UiMarkupList : UiElement
 
         if (showScrollbar)
             DrawScrollbar(context, contentWidth, rowCount, visibleRows);
+    }
+
+    /// <summary>Reads every column's rows from its binding; returns the row count, the longest column.</summary>
+    private int RefreshRows(IReadOnlyList<UiMarkupListColumn> columns)
+    {
+        int rowCount = 0;
+        for (int c = 0; c < columns.Count; c++)
+        {
+            var col = columns[c];
+            switch (col.Kind)
+            {
+                case UiMarkupListColumnKind.Text:
+                    _cachedTextRows[c] = col.TextSource!();
+                    _cachedColorRows[c] = col.ColorsSource?.Invoke();
+                    rowCount = Math.Max(rowCount, _cachedTextRows[c]!.Count);
+                    break;
+                case UiMarkupListColumnKind.Button:
+                    _cachedTextRows[c] = col.TextSource!();
+                    rowCount = Math.Max(rowCount, _cachedTextRows[c]!.Count);
+                    break;
+                case UiMarkupListColumnKind.Check:
+                    _cachedCheckRows[c] = col.CheckSource!();
+                    rowCount = Math.Max(rowCount, _cachedCheckRows[c]!.Count);
+                    break;
+                case UiMarkupListColumnKind.Icon:
+                    _cachedIconRows[c] = col.IconValuesSource!();
+                    rowCount = Math.Max(rowCount, _cachedIconRows[c]!.Count);
+                    break;
+            }
+        }
+        _cachedRowCount = rowCount;
+        return rowCount;
     }
 
     private void DrawTextCell(
@@ -376,6 +421,225 @@ public sealed class UiMarkupList : UiElement
             0f, 0f, 1f, 1f, Vector4.One);
     }
 
+    /// <summary>
+    /// A button cell inset by a pixel all round, so neighbouring buttons and
+    /// rows do not touch, with its caption centred in the list's text colour
+    /// and cut at the button's edges. A disabled list draws face, border and
+    /// caption at the alpha a disabled toggle's caption takes.
+    /// </summary>
+    private void DrawButtonCell(UiRenderContext context, int column, int index, float cellX, float cellW, float y)
+    {
+        if (!HasButtonCaption(column, index, out string caption))
+            return;
+        (float x, float top, float w, float h) = ButtonRect(_columns![column], cellX, cellW, y);
+        UiControlState state = ButtonState(index, column);
+        Vector4 face = state switch
+        {
+            UiControlState.Hovered => Vector4.Lerp(ButtonColor, ButtonBorderColor, 0.3f) with { W = ButtonColor.W },
+            UiControlState.Pressed => Vector4.Lerp(ButtonColor, Vector4.Zero, 0.25f) with { W = ButtonColor.W },
+            _ => ButtonColor,
+        };
+        Vector4 border = ButtonBorderColor;
+        Vector4 textColor = TextColor;
+        if (state == UiControlState.Disabled)
+        {
+            face = Dimmed(face);
+            border = Dimmed(border);
+            textColor = Dimmed(textColor);
+        }
+        context.DrawFill(x, top, w, h, face);
+        context.DrawRectOutline(x, top, w, h, border, 1f);
+
+        context.PushClip(x, top, w, h);
+        try
+        {
+            if (DatFont is { } font)
+            {
+                context.DrawStringDat(font, caption,
+                    x + (w - font.MeasureWidth(caption)) * 0.5f,
+                    top + (h - font.LineHeight) * 0.5f,
+                    textColor, ThemePalette is null);
+            }
+            else if (context.DefaultFont is { } fallback)
+            {
+                context.DrawString(caption,
+                    x + (w - fallback.MeasureWidth(caption)) * 0.5f,
+                    top + (h - fallback.LineHeight) * 0.5f,
+                    textColor);
+            }
+        }
+        finally
+        {
+            context.PopClip();
+        }
+    }
+
+    private static Vector4 Dimmed(Vector4 color) => color with { W = color.W * UiMarkupToggle.DisabledAlpha };
+
+    /// <summary>
+    /// Where a button sits in its cell: its column's size, centred, never past
+    /// the cell's one-pixel inset; a size of 0 fills the inset cell.
+    /// </summary>
+    private (float x, float y, float w, float h) ButtonRect(
+        UiMarkupListColumn column, float cellX, float cellW, float rowY)
+    {
+        float maxW = MathF.Max(0f, cellW - 2f), maxH = MathF.Max(0f, RowHeight - 2f);
+        float w = column.ButtonWidth > 0f ? MathF.Min(column.ButtonWidth, maxW) : maxW;
+        float h = column.ButtonHeight > 0f ? MathF.Min(column.ButtonHeight, maxH) : maxH;
+        return (MathF.Floor(cellX + (cellW - w) * 0.5f), MathF.Floor(rowY + (RowHeight - h) * 0.5f), w, h);
+    }
+
+    private bool HasButtonCaption(int column, int index, out string caption)
+    {
+        caption = string.Empty;
+        if (_columns is not { } columns || column < 0 || column >= columns.Count
+            || columns[column].Kind != UiMarkupListColumnKind.Button)
+            return false;
+        if (_cachedTextRows[column] is not { } captions || index < 0 || index >= captions.Count)
+            return false;
+        caption = captions[index] ?? string.Empty;
+        return caption.Length > 0;
+    }
+
+    /// <summary>
+    /// The look of one button cell: pressed only while the pointer is still
+    /// over the button it went down on, and no other button hovers while one
+    /// is held.
+    /// </summary>
+    private UiControlState ButtonState(int index, int column)
+    {
+        if (!Enabled)
+            return UiControlState.Disabled;
+        bool over = _hoverRow == index && _hoverColumn == column;
+        if (_pressRow >= 0)
+            return _pressRow == index && _pressColumn == column && over
+                ? UiControlState.Pressed
+                : UiControlState.Normal;
+        return over ? UiControlState.Hovered : UiControlState.Normal;
+    }
+
+    internal UiControlState ButtonStateForTest(int index, int column) =>
+        HasButtonCaption(column, index, out _) ? ButtonState(index, column) : UiControlState.Normal;
+
+    /// <summary>The button cell at a point inside the list, or (-1, -1) where there is none.</summary>
+    private (int index, int column) ButtonCellAt(float localX, float localY, float contentWidth, int visibleRows)
+    {
+        if (_columns is not { } columns || localX < 0f || localX >= contentWidth)
+            return (-1, -1);
+        int row = (int)MathF.Floor(localY / MathF.Max(1f, RowHeight));
+        int index = _topRow + row;
+        if (row < 0 || row >= visibleRows)
+            return (-1, -1);
+        for (int c = 0; c < columns.Count; c++)
+        {
+            (float cellX, float cellW) = _cachedLayout[c];
+            if (localX < cellX || localX >= cellX + cellW)
+                continue;
+            if (!HasButtonCaption(c, index, out _))
+                return (-1, -1);
+            (float bx, float by, float bw, float bh) = ButtonRect(columns[c], cellX, cellW, row * RowHeight);
+            bool onButton = localX >= bx && localX < bx + bw && localY >= by && localY < by + bh;
+            return onButton ? (index, c) : (-1, -1);
+        }
+        return (-1, -1);
+    }
+
+    private void ClearButtonPointer()
+    {
+        _hoverRow = _hoverColumn = -1;
+        _pressRow = _pressColumn = -1;
+        _pointerKnown = false;
+    }
+
+    protected override void OnEnabledChanged()
+    {
+        if (!Enabled)
+            _pressRow = _pressColumn = -1;
+    }
+
+    private void TrackPointer(in UiEvent e)
+    {
+        _pointerKnown = true;
+        (_pointerX, _pointerY) = (e.Data1, e.Data2);
+    }
+
+    /// <summary>Finds the hovered button again from the last pointer position, after the rows moved.</summary>
+    private void RefreshHover(float contentWidth, int visibleRows) =>
+        (_hoverRow, _hoverColumn) = _pointerKnown && !_draggingThumb
+            ? ButtonCellAt(_pointerX, _pointerY, contentWidth, visibleRows)
+            : (-1, -1);
+
+    private void RememberPressedRow()
+    {
+        _pressTopRow = _topRow;
+        _pressRowCount = _cachedRowCount;
+        HasButtonCaption(_pressColumn, _pressRow, out _pressCaption);
+    }
+
+    /// <summary>
+    /// Drops the press when the row under it may no longer be the item that was
+    /// pressed: the list scrolled, its row count changed, or the pressed
+    /// button's caption changed or went empty. Other columns are left out on
+    /// purpose: a live column such as a distance changes every frame and would
+    /// make the buttons beside it unreliable.
+    /// </summary>
+    private void CancelPressIfRowsMoved()
+    {
+        if (_pressRow < 0)
+            return;
+        bool moved = _topRow != _pressTopRow
+            || _cachedRowCount != _pressRowCount
+            || !HasButtonCaption(_pressColumn, _pressRow, out string caption)
+            || !string.Equals(caption, _pressCaption, StringComparison.Ordinal);
+        if (moved)
+            _pressRow = _pressColumn = -1;
+    }
+
+    /// <summary>
+    /// Follows the pointer over button cells and fires a button when the left
+    /// button comes up over the one it went down on. Only a release that fires
+    /// a button is handled here; everything else carries on to the list.
+    /// </summary>
+    private bool TrackButtonPointer(
+        in UiEvent e, IReadOnlyList<UiMarkupListColumn> columns, float contentWidth, int visibleRows)
+    {
+        switch (e.Type)
+        {
+            case UiEventType.HoverEnter:
+            case UiEventType.MouseMove:
+            case UiEventType.MouseDown:
+                TrackPointer(e);
+                RefreshHover(contentWidth, visibleRows);
+                return false;
+            case UiEventType.HoverLeave:
+                _pointerKnown = false;
+                _hoverRow = _hoverColumn = -1;
+                return false;
+            case UiEventType.CaptureChanged:
+                _pressRow = _pressColumn = -1;
+                return false;
+            case UiEventType.MouseUp:
+            {
+                TrackPointer(e);
+                if (_pressRow >= 0)
+                {
+                    // Read the rows as they are now, not as last drawn.
+                    RefreshRows(columns);
+                    CancelPressIfRowsMoved();
+                }
+                (int index, int column) = (_pressRow, _pressColumn);
+                _pressRow = _pressColumn = -1;
+                (_hoverRow, _hoverColumn) = ButtonCellAt(e.Data1, e.Data2, contentWidth, visibleRows);
+                if (index < 0 || !Enabled || (_hoverRow, _hoverColumn) != (index, column))
+                    return false;
+                columns[column].ButtonClicked?.Invoke(index);
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
     private bool OnEventColumns(in UiEvent e, IReadOnlyList<UiMarkupListColumn> columns)
     {
         int rowCount = _cachedRowCount;
@@ -383,6 +647,8 @@ public sealed class UiMarkupList : UiElement
         float contentWidth = rowCount > visibleRows
             ? MathF.Max(0f, Width - ScrollbarWidth)
             : Width;
+        if (_hasButtons && TrackButtonPointer(e, columns, contentWidth, visibleRows))
+            return true;
         if (TryHandleScrollbarEvent(e, contentWidth, rowCount, visibleRows))
             return true;
 
@@ -390,6 +656,14 @@ public sealed class UiMarkupList : UiElement
         {
             _topRow -= Math.Sign(e.Data0);
             ClampTop(rowCount, visibleRows);
+            if (_hasButtons)
+            {
+                // The rows moved under the pointer: a press no longer names
+                // the row it went down on, and the hovered button may differ.
+                CancelPressIfRowsMoved();
+                TrackPointer(e);
+                RefreshHover(contentWidth, visibleRows);
+            }
             return true;
         }
         if (e.Type != UiEventType.MouseDown || !Enabled)
@@ -426,6 +700,14 @@ public sealed class UiMarkupList : UiElement
                 case UiMarkupListColumnKind.Icon:
                     if (index < (_cachedIconRows[c]?.Count ?? 0))
                         columns[c].IconClicked?.Invoke(index);
+                    break;
+                case UiMarkupListColumnKind.Button:
+                    // Fires on release over the same button; see TrackButtonPointer.
+                    if ((_hoverRow, _hoverColumn) == (index, c))
+                    {
+                        (_pressRow, _pressColumn) = (index, c);
+                        RememberPressedRow();
+                    }
                     break;
             }
             break;

@@ -313,13 +313,14 @@ The two forms cannot be mixed on one list.
       selected="{SelectedMonster}" onchange="{SelectMonster}">
   <column type="check" width="20"  values="{MonsterFlags}" onchange="{ToggleFlag}"/>
   <column type="text"  width="127" items="{MonsterNames}"  onclick="{PingMonster}"/>
-  <column type="icon"  width="*"   iconkind="did" values="{MonsterIcons}" onclick="{MoveUp}"/>
+  <column type="icon"  width="20"  iconkind="did" values="{MonsterIcons}" onclick="{MoveUp}"/>
+  <column type="button" width="*"  items="{MonsterActions}" onclick="{ActOnMonster}"/>
 </list>
 ```
 
 | Attribute | Column type | Required | Binding |
 |---|---|---|---|
-| `type` | all | yes | `text`, `check`, or `icon` |
+| `type` | all | yes | `text`, `check`, `icon`, or `button` |
 | `width` | all | see below | pixels, or `*` for auto |
 | `items` | `text` | yes | `IReadOnlyList<string>` |
 | `colors` | `text` | no | `IReadOnlyList<uint>` or `<int>`, `0xRRGGBB` per row |
@@ -329,6 +330,9 @@ The two forms cannot be mixed on one list.
 | `values` | `icon` | yes | `IReadOnlyList<uint>` or `<int>` |
 | `iconkind` | `icon` | no | `did` (default), `spell`, or `item` |
 | `onclick` | `icon` | yes | `Action<int>` with the row index |
+| `items` | `button` | yes | `IReadOnlyList<string>`, each row's caption; an empty caption draws no button |
+| `onclick` | `button` | yes | `Action<int>` with the row index; the click does not select the row |
+| `buttonw`, `buttonh` | `button` | no | pixels; the button's size, centred in its cell (default: the whole cell) |
 
 Widths: `*` shares the remaining width equally with every other `*` column.
 The last column is always automatic; it takes the whole remainder unless
@@ -336,11 +340,33 @@ another column is also `*`. Every other column needs a positive `width` or
 `*`. Columns that would overflow the list are clamped and later ones draw
 nothing. Remainder pixels go to the last sharing column.
 
-Rows: the row count is the longest bound column. A `text` or `icon` cell past
-its own column's data draws nothing; a `check` cell draws unchecked. A click
+Rows: the row count is the longest bound column. A `text`, `icon` or `button`
+cell past its own column's data draws nothing; a `check` cell draws unchecked. A click
 in a `text` column without `onclick` selects the row and fires the list's
 `onchange`; any other click fires the column's own callback and leaves the
 selection alone. A click past a column's own data does nothing.
+
+A `button` cell is drawn as a button one pixel inside its cell, or at
+`buttonw` by `buttonh` centred in the cell (never larger than the cell; set
+either alone to size only that side), with its caption centred in the list's
+text colour and cut off at the button's edges. Without a theme its face and
+border are those of an unthemed `<button>`. On a themed window the face is the
+theme's background colour (the list itself is drawn in the field colour that
+a themed `<button>` uses) and the border is the theme's border colour. Unlike
+a `<button>`, it lightens while hovered and darkens while pressed. A disabled
+list draws its buttons' face, border and caption faded and fires none of them.
+
+It fires like a `<button>`, when the left button comes up over the button it
+went down on, so a press dragged off the button cancels it; a click beside a
+smaller button does nothing. Because `onclick` gets a row index, a press is
+also cancelled if, before the release, the list scrolls, its row count changes,
+or the pressed button's own caption changes or becomes empty. Changes in the
+row's other columns, such as a distance that updates every frame, do not
+cancel it, so a plugin that reorders rows with the same count should change
+the caption too, or the click fires for whatever item is at the pressed row.
+A cell with an empty caption is not a button and ignores clicks.
+On a host older than button columns, a `type="button"` column fails the build
+of its window as an unknown type.
 
 There is no header row; place `<label>` elements above the list. A `check`
 cell draws the same lamp glyph as `<toggle>`. When rows overflow the list's
