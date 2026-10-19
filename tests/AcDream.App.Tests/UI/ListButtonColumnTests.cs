@@ -309,6 +309,260 @@ public sealed class ListButtonColumnTests
         Assert.All(faceVerts, v => Assert.InRange(v[1], 1f, 19f));
     }
 
+    // ── A press names the row it went down on ───────────
+
+    private sealed class LiveRows
+    {
+        public string[] Names = { "a", "b", "c", "d", "e" };
+        public string[] Captions = { "Go", "Go", "Go", "Go", "Go" };
+        public List<int> Acted { get; } = new();
+    }
+
+    /// <summary>A 60-high list of 20-high rows (three visible), names in x = 0..50, buttons in 50..84.</summary>
+    private static UiMarkupList MakeLiveList(LiveRows rows)
+    {
+        var list = new UiMarkupList
+        {
+            Width = 100f, Height = 60f, RowHeight = 20f,
+            SelectedIndexSource = () => -1,
+            BackgroundColor = default, BorderColor = default,
+            Columns = new[]
+            {
+                // Fresh arrays every read, the way a markup binding hands them over.
+                UiMarkupListColumn.Text(50f, () => rows.Names.ToArray(), null),
+                UiMarkupListColumn.Button(50f, () => rows.Captions.ToArray(), row => rows.Acted.Add(row)),
+            },
+        };
+        Draw(list);
+        return list;
+    }
+
+    private static void Draw(UiMarkupList list)
+    {
+        var (_, ctx) = MakeContext(200f, 200f);
+        list.DrawSelfAndChildren(ctx);
+    }
+
+    private static UiEvent At(int type, int x, int y) => new() { Type = type, Data1 = x, Data2 = y };
+
+    [Fact]
+    public void RowsRedrawnWithTheSameContent_StillFire()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));
+        Draw(list);
+        list.OnEvent(At(UiEventType.MouseUp, 60, 25));
+
+        Assert.Equal(new[] { 1 }, rows.Acted);
+    }
+
+    [Fact]
+    public void RowRemovedAboveThePress_BeforeRelease_DoesNotFireForTheRowThatMovedIn()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));       // row 1, "b"
+        rows.Names = new[] { "b", "c", "d", "e" };             // "a" goes; "c" is now row 1
+        rows.Captions = new[] { "Go", "Go", "Go", "Go" };
+        list.OnEvent(At(UiEventType.MouseUp, 60, 25));
+
+        Assert.Empty(rows.Acted);
+    }
+
+    [Fact]
+    public void RowsReorderedBeforeRelease_DoesNotFire_EvenWithNoDrawBetween()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));       // row 1, "b"
+        rows.Names = new[] { "a", "c", "b", "d", "e" };        // same count, "c" is now row 1
+        list.OnEvent(At(UiEventType.MouseUp, 60, 25));
+
+        Assert.Empty(rows.Acted);
+    }
+
+    [Fact]
+    public void RowsChangedWhilePressed_DropThePressedLookAtTheNextDraw()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));
+        Assert.Equal(UiControlState.Pressed, list.ButtonStateForTest(1, 1));
+        rows.Names = new[] { "a", "c", "b", "d", "e" };
+        Draw(list);
+
+        Assert.Equal(UiControlState.Hovered, list.ButtonStateForTest(1, 1));
+    }
+
+    [Fact]
+    public void ListScrolledWhilePressed_DoesNotFire()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));       // row 1
+        list.OnEvent(new UiEvent { Type = UiEventType.Scroll, Data0 = -1, Data1 = 60, Data2 = 25 });
+        // Row 1 is now drawn at y = 0..20; release on it there.
+        list.OnEvent(At(UiEventType.MouseUp, 60, 5));
+
+        Assert.Empty(rows.Acted);
+    }
+
+    [Fact]
+    public void WheelScroll_WithNoPointerMove_MovesTheHoverToTheButtonNowUnderThePointer()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(list);
+
+        root.OnMouseMove(60, 5);
+        Assert.Equal(UiControlState.Hovered, list.ButtonStateForTest(0, 1));
+
+        root.OnScroll(-1);
+
+        Assert.Equal(UiControlState.Normal, list.ButtonStateForTest(0, 1));
+        Assert.Equal(UiControlState.Hovered, list.ButtonStateForTest(1, 1));
+    }
+
+    [Fact]
+    public void ThroughUiRoot_PressAndRelease_FiresOnce()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(list);
+
+        root.OnMouseMove(60, 45);
+        root.OnMouseDown(UiMouseButton.Left, 60, 45);
+        root.OnMouseUp(UiMouseButton.Left, 60, 45);
+
+        Assert.Equal(new[] { 2 }, rows.Acted);
+    }
+
+    [Fact]
+    public void ThroughUiRoot_CaptureTakenAway_ClearsThePress()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+        var other = new UiPanel { Left = 300, Top = 300, Width = 20, Height = 20 };
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(list);
+        root.AddChild(other);
+
+        root.OnMouseMove(60, 45);
+        root.OnMouseDown(UiMouseButton.Left, 60, 45);
+        Assert.Same(list, root.Captured);
+        Assert.Equal(UiControlState.Pressed, list.ButtonStateForTest(2, 1));
+
+        root.SetCapture(other);
+
+        Assert.NotEqual(UiControlState.Pressed, list.ButtonStateForTest(2, 1));
+        list.OnEvent(At(UiEventType.MouseUp, 60, 45));
+        Assert.Empty(rows.Acted);
+    }
+
+    [Fact]
+    public void DisabledList_DoesNotFire()
+    {
+        var acted = new List<int>();
+        var list = MakeList(acted, new List<int>());
+        list.Enabled = false;
+
+        list.OnEvent(At(UiEventType.MouseDown, 70, 5));
+        list.OnEvent(At(UiEventType.MouseUp, 70, 5));
+
+        Assert.Empty(acted);
+    }
+
+    [Fact]
+    public void ListDisabledWhilePressed_DoesNotFire_EvenIfEnabledAgainBeforeRelease()
+    {
+        var acted = new List<int>();
+        var list = MakeList(acted, new List<int>());
+
+        list.OnEvent(At(UiEventType.MouseDown, 70, 5));
+        list.Enabled = false;
+        list.Enabled = true;
+        list.OnEvent(At(UiEventType.MouseUp, 70, 5));
+
+        Assert.Empty(acted);
+    }
+
+    // ── Drawing ───────────
+
+    [Fact]
+    public void DisabledList_DrawsItsButtonFaceAndBorderFaded()
+    {
+        var face = new Vector4(0.2f, 0.4f, 0.6f, 1f);
+        var border = new Vector4(0.7f, 0.1f, 0.3f, 1f);
+        var list = new UiMarkupList
+        {
+            Width = 100f, Height = 60f, RowHeight = 20f,
+            SelectedIndexSource = () => -1,
+            BackgroundColor = default, BorderColor = default,
+            ButtonColor = face, ButtonBorderColor = border,
+            Enabled = false,
+            Columns = new[]
+            {
+                UiMarkupListColumn.Text(50f, () => new[] { "a" }, null),
+                UiMarkupListColumn.Button(50f, () => new[] { "Go" }, _ => { }),
+            },
+        };
+        var (renderer, ctx) = MakeContext(200f, 200f);
+        list.DrawSelfAndChildren(ctx);
+
+        var verts = renderer.DebugSpriteSegmentVerts
+            .Where(s => s.Texture == 0u)
+            .SelectMany(s => Chunk(s.Verts))
+            .ToList();
+        float faded = UiMarkupToggle.DisabledAlpha;
+        Assert.Contains(verts, v => ColorMatches(v, face with { W = faded }));
+        Assert.Contains(verts, v => ColorMatches(v, border with { W = faded }));
+        Assert.DoesNotContain(verts, v => ColorMatches(v, face));
+        Assert.DoesNotContain(verts, v => ColorMatches(v, border));
+    }
+
+    [Fact]
+    public void CaptionWiderThanItsButton_IsCutAtTheButtonEdges()
+    {
+        var glyphs = new Dictionary<char, DatReaderWriter.Types.FontCharDesc>
+        {
+            ['W'] = new DatReaderWriter.Types.FontCharDesc { Unicode = 'W', Width = 8, Height = 8 },
+        };
+        var font = new UiDatFont(
+            fgTex: 1u, fgW: 32, fgH: 32,
+            bgTex: 0, bgW: 0, bgH: 0,
+            lineHeight: 16f, baselineOffset: 12f,
+            glyphs);
+        var list = new UiMarkupList
+        {
+            Width = 100f, Height = 60f, RowHeight = 20f, DatFont = font,
+            SelectedIndexSource = () => -1,
+            BackgroundColor = default, BorderColor = default,
+            Columns = new[]
+            {
+                UiMarkupListColumn.Text(50f, () => new[] { "" }, null),
+                // Cell x = 50..100; a 20-wide button sits at x = 65..85. The caption is 80 wide.
+                UiMarkupListColumn.Button(50f, () => new[] { "WWWWWWWWWW" }, _ => { }, buttonWidth: 20f),
+            },
+        };
+        var (renderer, ctx) = MakeContext(200f, 200f);
+        list.DrawSelfAndChildren(ctx);
+
+        var glyphVerts = renderer.DebugSpriteSegmentVerts
+            .Where(s => s.Texture == 1u)
+            .SelectMany(s => Chunk(s.Verts))
+            .ToList();
+        Assert.NotEmpty(glyphVerts);
+        Assert.All(glyphVerts, v => Assert.InRange(v[0], 65f - 0.01f, 85f + 0.01f));
+    }
+
     private static IEnumerable<float[]> Chunk(IReadOnlyList<float> verts)
     {
         for (int i = 0; i + 8 <= verts.Count; i += 8)
