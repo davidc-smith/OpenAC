@@ -186,8 +186,8 @@ public sealed class RynthAiDashboardTests : IDisposable
             }
 
             Assert.NotNull(PlayerProgressHooks.Current);
-            // Their SkillDat logs one "Skills: " status line when the panel opens; nothing else.
-            Assert.NotEmpty(_log);
+            // Their SkillDat logs one "Skills: " status line when the panel opens, but only while its
+            // static tables are unloaded (another test may have loaded them); nothing else is logged.
             Assert.All(_log, line => Assert.StartsWith("[Rynth] [ScriptWindows] Skills: ", line, StringComparison.Ordinal));
         }
         finally

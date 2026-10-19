@@ -72,6 +72,7 @@ public sealed class RynthSkillsStandInsTests(Xunit.Abstractions.ITestOutputHelpe
         ProcessPathStandIn.DatDirectory = dats;
 
         Assert.Equal(Path.Combine(dats, "client_portal.dat"), RynthCore.Engine.UI.ScriptWindows.AcDatFile.FindPortalDat());
+        // The ScriptWindows stand-in UiBackgroundWriter runs queued work inline, so these loads are synchronous.
         RynthCore.Engine.ImGuiBackend.Panels.SkillDat.EnsureLoadQueued();
         Assert.True(RynthCore.Engine.ImGuiBackend.Panels.SkillDat.Tables is { Skills.Count: > 0 }, RynthCore.Engine.ImGuiBackend.Panels.SkillDat.Status);
         RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.EnsureLoadQueued();
