@@ -344,11 +344,6 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
     {
         public const string Title = "Inventory";
     }
-
-    internal static class SkillsFace
-    {
-        public const string Title = "Skills";
-    }
 }
 
 namespace RynthCore.Engine.UI.Panels
@@ -369,29 +364,6 @@ namespace RynthCore.Engine.Report
     {
         public static void OpenPanel()
         {
-        }
-    }
-}
-
-namespace RynthCore.Engine.ImGuiBackend.Hud
-{
-    /// <summary>
-    /// RynthCore reads spell names from client_portal.dat; not wired in OpenAC yet,
-    /// so recall spells show by id.
-    /// </summary>
-    internal static class PortalSpellTable
-    {
-        public static void EnsureLoadQueued()
-        {
-        }
-
-        /// <summary>The table is never read here, so never ready.</summary>
-        public static bool Ready => false;
-
-        public static bool TryGetName(uint spellId, out string name)
-        {
-            name = string.Empty;
-            return false;
         }
     }
 }

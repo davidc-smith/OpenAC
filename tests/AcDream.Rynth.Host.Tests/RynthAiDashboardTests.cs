@@ -20,6 +20,9 @@ public sealed class RynthAiDashboardTests : IDisposable
         @"UI\Data\ItemHudModel.cs", @"UI\Data\ItemHudStore.cs", @"ImGui\Panels\LuaFace.cs", @"UI\Data\LuaData.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
         @"UI\Data\NavData.cs", @"UI\Data\RynthSortData.cs", @"UI\RynthAiDashboardState.cs",
         @"UI\PanelTextScale.cs", @"UI\QuickSettings.cs", @"UI\BarLayout.cs",
+        @"ImGui\Panels\SkillsFace.cs", @"ImGui\Panels\SkillsFace.Progression.cs", @"ImGui\Panels\SkillsData.cs",
+        @"UI\Data\ProgressionData.cs", @"Compatibility\TrainingCosts.cs", @"Compatibility\PlayerProgressHooks.cs",
+        @"ImGui\MonsterHud\PortalSpellTable.cs", @"UI\ScriptWindows\AcIconDecoder.cs",
     ];
 
     private readonly List<string> _log = new();
@@ -111,6 +114,72 @@ public sealed class RynthAiDashboardTests : IDisposable
         }
 
         Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void TheSkillsPanelRegistersWithTheDashboardAndDrawsHeadless()
+    {
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        using var imgui = new HeadlessImGui();
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        RynthCore.Engine.UI.PanelRouter.Toggle(SkillsFace.Title);
+
+        try
+        {
+            // No progress reader: the panel draws empty.
+            for (int i = 0; i < 3; i++)
+            {
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
+                Assert.True(vertices > 100, $"empty frame {i}: only {vertices} vertices");
+            }
+
+            // A reader: the next tick publishes a snapshot and the panel draws it.
+            ClientObjectHooks.ProgressReader = dst =>
+            {
+                dst.Clear();
+                dst.PlayerId = _view.PlayerId;
+                dst.Level = 50;
+                dst.TotalXp = 10_000_000;
+                dst.UnassignedXp = 250_000;
+                dst.SkillCredits = 3;
+                dst.SkillTableRead = true;
+                dst.SkillInTable[6] = true;
+                dst.SkillClass[6] = 2;
+                dst.SkillLevelKnown[6] = true;
+                dst.SkillBase[6] = 120;
+                dst.SkillBuffed[6] = 130;
+                dst.AttributeCacheRead = true;
+                for (int a = 1; a <= 6; a++)
+                {
+                    dst.AttrInit[a] = 50;
+                    dst.AttrBase[a] = dst.AttrBuffed[a] = 60;
+                }
+                for (int v = 1; v <= 3; v++)
+                    dst.VitalBase[v] = dst.VitalBuffed[v] = 100;
+                return true;
+            };
+            PlayerProgressHooks.RefreshSoon();
+            for (int i = 0; i < 3; i++)
+            {
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
+                Assert.True(vertices > 100, $"progress frame {i}: only {vertices} vertices");
+            }
+
+            Assert.Equal(50, PlayerProgressHooks.Current?.Level);
+            Assert.True(ImGuiPanelHost.IsOpen(SkillsFace.Title));
+            // Their SkillDat logs one status line when the panel opens ("client_portal.dat not
+            // found" here, with no dat folder set; the tables' sizes when it loads); nothing else.
+            Assert.All(_log, line => Assert.StartsWith("[Rynth] [ScriptWindows] Skills: ", line, StringComparison.Ordinal));
+        }
+        finally
+        {
+            ClientObjectHooks.ProgressReader = null;
+            RynthCore.Engine.UI.PanelRouter.Toggle(SkillsFace.Title);
+        }
     }
 
     [Fact]
