@@ -25,14 +25,20 @@ public sealed class RynthClientExtensionDatDirectoryTests
         var extension = new RynthClientExtension();
         try
         {
-            extension.Attach(context);
-            Assert.Equal("/x", RegistryStandIn.InstallPath);
-            extension.Dispose();
+            try
+            {
+                extension.Attach(context);
+                Assert.Equal("/x", RegistryStandIn.InstallPath);
+            }
+            finally
+            {
+                extension.Dispose();
+            }
+
             Assert.Null(RegistryStandIn.InstallPath);
         }
         finally
         {
-            extension.Dispose();
             RegistryStandIn.InstallPath = null;
         }
     }

@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Xunit.Abstractions;
 
 namespace AcDream.Rynth.Host.Tests;
 
@@ -10,7 +11,7 @@ namespace AcDream.Rynth.Host.Tests;
 /// --inert): in OpenAC they would read our own process's memory (FellowshipTracker
 /// walks acclient structures at fixed addresses) or fail off Windows.
 /// </summary>
-public sealed class RynthAiInteropTests
+public sealed class RynthAiInteropTests(ITestOutputHelper output)
 {
     private static string Bare(string module) =>
         module.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? module[..^4] : module;
@@ -114,9 +115,10 @@ public sealed class RynthAiInteropTests
     public void NoRegistryReferenceIsLeft()
     {
         using ModuleDefinition module = ModuleDefinition.ReadModule(Theirs.Location);
+        // A member reference's full name holds its declaring type and its signature.
         string[] left = module.GetTypeReferences().Select(t => t.FullName)
-            .Concat(module.GetMemberReferences().Select(m => m.DeclaringType.FullName))
-            .Where(name => name is "Microsoft.Win32.Registry" or "Microsoft.Win32.RegistryKey")
+            .Concat(module.GetMemberReferences().Select(m => m.FullName))
+            .Where(name => name.Contains("Microsoft.Win32.Registry", StringComparison.Ordinal))
             .Distinct()
             .ToArray();
         Assert.Empty(left);
@@ -149,7 +151,8 @@ public sealed class RynthAiInteropTests
             dats = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AsheronsCall");
         if (!File.Exists(Path.Combine(dats, "client_cell_1.dat")))
         {
-            Console.WriteLine($"skipped: no dats at {dats}");
+            // xunit 2 (this project) has no dynamic skip; the note shows in the test's output.
+            output.WriteLine($"skipped: no dats at {dats}");
             return;
         }
 
