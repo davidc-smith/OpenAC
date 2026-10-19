@@ -287,7 +287,7 @@ internal static class ImGuiPanelHost
             foreach (KeyValuePair<string, Entry> pair in _entries)
             {
                 Entry e = pair.Value;
-                if (!e.Open)
+                if (!e.Open || HiddenWhileDocked(e))
                     continue;
                 // A new display size (logging out to the character list, maximising the
                 // client) places the window where the player left it at that size.
@@ -337,6 +337,14 @@ internal static class ImGuiPanelHost
             else if (entry.Spec.DefaultPos is { } defaultPos)
             {
                 ImGui.SetNextWindowPos(defaultPos * s, ImGuiCond.FirstUseEver);
+            }
+            else if (entry.Spec.OpenCentered && ImGui.GetIO().DisplaySize is { X: > 1, Y: > 1 })
+            {
+                // RynthCore's CenteredLogicalPos: the default size, centred, never off the top-left;
+                // null (no explicit position) while the display size is unknown.
+                Vector2 screen = ImGui.GetIO().DisplaySize;
+                Vector2 centred = Vector2.Max(Vector2.Zero, (screen / s - entry.Spec.DefaultSize) * 0.5f);
+                ImGui.SetNextWindowPos(centred * s, ImGuiCond.FirstUseEver);
             }
 
             ImGui.SetNextWindowSizeConstraints(entry.Spec.MinSize * s, new Vector2(float.MaxValue, float.MaxValue));
@@ -395,6 +403,19 @@ internal static class ImGuiPanelHost
             if (!keepOpen)
                 Close(key);
         }
+    }
+
+    /// <summary>
+    /// RynthCore's HiddenWhileDocked: an open panel can ask not to be drawn for now
+    /// (the Dungeon Map outdoors). A stopped panel always shows its error line, and a
+    /// getter that throws counts as shown.
+    /// </summary>
+    private static bool HiddenWhileDocked(Entry entry)
+    {
+        if (entry.Failures >= MaxFailures)
+            return false;
+        try { return entry.Instance?.HiddenWhileDocked ?? false; }
+        catch { return false; }
     }
 
     /// <summary>

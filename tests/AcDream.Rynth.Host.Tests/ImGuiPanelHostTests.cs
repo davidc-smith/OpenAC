@@ -99,6 +99,125 @@ public sealed unsafe class ImGuiPanelHostTests : IDisposable
         Assert.Equal((ushort)1, info.MaxFormatVersion);
     }
 
+    [Fact]
+    public void AnOpenCenteredPanelOpensInTheMiddleOfTheDisplay()
+    {
+        var panel = new PositionPanel();
+        ImGuiPanelHost.RegisterDynamic("script:map", "Map",
+            new PanelSpec(new Vector2(480, 520), new Vector2(240, 200), OpenCentered: true), () => panel);
+        ImGuiPanelHost.Open("script:map");
+
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+
+        Assert.Equal(new Vector2(400, 140), panel.WindowPos);
+    }
+
+    [Fact]
+    public void AnOpenCenteredPanelIsNotPlacedWhileTheDisplaySizeIsUnknown()
+    {
+        var panel = new PositionPanel();
+        ImGuiPanelHost.RegisterDynamic("script:map", "Map",
+            new PanelSpec(new Vector2(480, 520), new Vector2(240, 200), OpenCentered: true), () => panel);
+        ImGuiPanelHost.Open("script:map");
+        ImGui.GetIO().DisplaySize = Vector2.Zero;
+        try
+        {
+            _imgui.Frame(ImGuiPanelHost.DrawAll);
+            _imgui.Frame(ImGuiPanelHost.DrawAll);
+        }
+        finally { ImGui.GetIO().DisplaySize = new Vector2(1280, 800); }
+
+        Assert.NotEqual(new Vector2(400, 140), panel.WindowPos);
+    }
+
+    [Fact]
+    public void ASavedSpotWinsOverOpenCentered()
+    {
+        var layout = new FakePanelLayout();
+        layout.Saved["script:map"] = new PanelPlacement(new PanelRect(new Vector2(10, 20), new Vector2(480, 520)), false);
+        ImGuiPanelHost.Layout = layout;
+        try
+        {
+            var panel = new PositionPanel();
+            ImGuiPanelHost.RegisterDynamic("script:map", "Map",
+                new PanelSpec(new Vector2(480, 520), new Vector2(240, 200), OpenCentered: true), () => panel);
+            ImGuiPanelHost.Open("script:map");
+
+            _imgui.Frame(ImGuiPanelHost.DrawAll);
+            _imgui.Frame(ImGuiPanelHost.DrawAll);
+
+            Assert.Equal(new Vector2(10, 20), panel.WindowPos);
+        }
+        finally { ImGuiPanelHost.Layout = null; }
+    }
+
+    [Fact]
+    public void AHiddenWhileDockedPanelIsNotDrawnButStaysOpen()
+    {
+        var panel = new PositionPanel { Hide = true };
+        ImGuiPanelHost.RegisterDynamic("script:map", "Map", new PanelSpec(new Vector2(200, 100), new Vector2(50, 50)), () => panel);
+        ImGuiPanelHost.Open("script:map");
+
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Equal(0, panel.Draws);
+        Assert.True(ImGuiPanelHost.IsOpen("script:map"));
+
+        panel.Hide = false;
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.True(panel.Draws >= 1);
+    }
+
+    [Fact]
+    public void AThrowingHiddenWhileDockedGetterCountsAsShown()
+    {
+        var panel = new PositionPanel { HideThrows = true };
+        ImGuiPanelHost.RegisterDynamic("script:map", "Map", new PanelSpec(new Vector2(200, 100), new Vector2(50, 50)), () => panel);
+        ImGuiPanelHost.Open("script:map");
+
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+
+        Assert.True(panel.Draws >= 1);
+    }
+
+    [Fact]
+    public void AStoppedPanelIsNeverHidden()
+    {
+        var panel = new PositionPanel { Throw = true };
+        var log = new List<string>();
+        ImGuiPanelHost.Log = log.Add;
+        ImGuiPanelHost.RegisterDynamic("script:map", "Map", new PanelSpec(new Vector2(200, 100), new Vector2(50, 50)), () => panel);
+        ImGuiPanelHost.Open("script:map");
+        for (int i = 0; i < 5; i++)
+            _imgui.Frame(ImGuiPanelHost.DrawAll);   // stopped after MaxFailures
+
+        panel.Hide = true;
+        int vertices = _imgui.Frame(ImGuiPanelHost.DrawAll);
+
+        Assert.True(vertices > 0, "the stopped panel's error line should still draw");
+    }
+
+    private sealed class PositionPanel : IImGuiPanel
+    {
+        public bool Hide { get; set; }
+        public bool HideThrows { get; init; }
+        public bool Throw { get; init; }
+        public int Draws { get; private set; }
+        public Vector2 WindowPos { get; private set; }
+
+        public bool HiddenWhileDocked => HideThrows ? throw new InvalidOperationException("getter failed") : Hide;
+
+        public void Draw()
+        {
+            Draws++;
+            WindowPos = ImGui.GetWindowPos();
+            ImGui.Text("panel body");
+            if (Throw)
+                throw new InvalidOperationException("body failed");
+        }
+    }
+
     private sealed class RecordingPanel : IImGuiPanel
     {
         public bool Throw { get; init; }

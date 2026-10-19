@@ -1,18 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using RynthCore.Engine;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
 using RynthCore.Engine.Plugins;
 using RynthCore.Engine.UI.Data;
+using RynthCore.Install;
 
 namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// Runs RynthCore's RynthAi dashboard: Start does what RynthCore's EntryPoint
-/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills), Tick is UiDataHub's
+/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map), Tick is UiDataHub's
 /// step (run posted work, then poll each subscribed source when due), Stop is
 /// the hub's reset after plugins unload. Game thread.
 /// </summary>
@@ -32,6 +34,13 @@ internal static class RynthAiDashboard
         {
             EntryPoint.InitStartedUtc = DateTime.UtcNow;
             _started = true;
+            // RynthCore's EntryPoint loads radar_settings.txt at startup; their Radar panel isn't compiled here.
+            RynthCore.Engine.UI.Panels.RadarSettingsStore.Load();
+            NavAtlasInstall.Ensure(RynthInstallPaths.CoreDir, OperatingSystem.IsWindows(), Log);
+            // Our UiBackgroundWriter runs work inline, and parsing the 1.9 MB Atlas would stall
+            // the first indoor frame; their loader is written for a background thread, and later
+            // calls see the path already requested.
+            Task.Run(RynthNavAtlas.EnsureLoadedForNames);
         }
 
         // The panel host can be reset (tests, an extension restart): register again then.
@@ -57,13 +66,15 @@ internal static class RynthAiDashboard
             LuaFace.Register();
         if (!ImGuiPanelHost.HasFace(SkillsFace.Title))
             SkillsFace.Register();
+        if (!ImGuiPanelHost.HasFace(DungeonMapFace.Title))
+            DungeonMapFace.Register();
     }
 
     private static readonly UiSource[] Sources =
         [
             UiSources.RynthAi, UiSources.Patrol, UiSources.Nav, UiSources.Settings, UiSources.RynthSortWatch,
             UiSources.Items, UiSources.Damage, UiSources.MonsterRules, UiSources.MonsterDetail,
-            UiSources.Meta, UiSources.LootEdit, UiSources.Lua, UiSources.Progression,
+            UiSources.Meta, UiSources.LootEdit, UiSources.Lua, UiSources.Progression, UiSources.Radar,
         ];
 
     /// <summary>One hub step. Returns how many posted actions ran.</summary>

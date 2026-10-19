@@ -4,7 +4,7 @@
        ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
        filter editor, ChatData and friends) and the RynthAi dashboard (RynthAiFace, its
        drawers, RynthAiData and the settings it edits; its Settings, Items, Damage,
-       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua and Skills panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
+       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills and Dungeon Map panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
        faces share static engine classes (UiSources, PanelRouter, ...).
        RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
        PluginExportBinder and Discord relay are NOT compiled, nor PluginManager,
@@ -83,6 +83,17 @@
     <Compile Include="$(RynthEngine)UI\ScriptWindows\AcIconDecoder.cs" Link="RynthCore\AcIconDecoder.cs" />
     <Compile Include="$(RynthEngine)..\RynthCore.StatusAgent\Dat\DxtUtil.cs" Link="RynthCore\DxtUtil.cs" />
     <Compile Include="$(RynthEngine)Compatibility\TellMemory.cs" Link="RynthCore\TellMemory.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\DungeonMapFace.cs" Link="RynthCore\DungeonMapFace.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RadarData.cs" Link="RynthCore\Data\RadarData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RadarSnapshotJson.cs" Link="RynthCore\Data\RadarSnapshotJson.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\DungeonMapMath.cs" Link="RynthCore\Data\DungeonMapMath.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\RadarMarkerStyle.cs" Link="RynthCore\RadarMarkerStyle.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\CircleClip.cs" Link="RynthCore\CircleClip.cs" />
+    <Compile Include="$(RynthEngine)UI\Panels\MarkerStyleSettings.cs" Link="RynthCore\MarkerStyleSettings.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MarkerStyleEditor.cs" Link="RynthCore\MarkerStyleEditor.cs" />
+    <Compile Include="$(RynthEngine)UI\Panels\RadarSettingsStore.cs" Link="RynthCore\RadarSettingsStore.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RynthNavAtlasData.cs" Link="RynthCore\Data\RynthNavAtlasData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\RynthNavData.cs" Link="RynthCore\Data\RynthNavData.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -166,4 +177,11 @@
     <InternalsVisibleTo Include="AcDream.Rynth.Host.Tests" />
     <InternalsVisibleTo Include="AcDream.App.Tests" />
   </ItemGroup>
+  <!-- RynthNav's places database, which RynthCore's installer puts in the RynthCore
+       folder; their atlas reads dungeon names from it. NavAtlasInstall writes it there. -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(RynthEngine)..\..\tools\navdata\NavData\locations.json"
+                      LogicalName="AcDream.Rynth.EngineUi.locations.json" />
+  </ItemGroup>
+
 </Project>
