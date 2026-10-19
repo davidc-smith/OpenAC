@@ -255,7 +255,8 @@ public sealed unsafe class RynthApiTableTests
         Assert.True(host.MoveItemExternal(item, 0, 0));
         Assert.True(host.MoveItemExternal(item, player, 0));
         Assert.True(host.MoveItemExternal(item, pack, 0));
-        Assert.False(host.MoveItemExternal(item, pack, 5));
+        Assert.True(host.MoveItemExternal(item, pack, 5));
+        Assert.False(host.MoveItemExternal(item, pack, -1));
         Assert.False(host.MoveItemExternal(0, pack, 0));
         Assert.True(host.GiveObjectTo(item, 0x50000002, 0));
         Assert.True(host.GiveObjectTo(item, 0x50000002, 3));
@@ -266,7 +267,8 @@ public sealed unsafe class RynthApiTableTests
         Assert.Equal(
             new[]
             {
-                "pickup 80000100 00000000", "pickup 80000100 00000000", "pickup 80000100 80000200",
+                "moveext 80000100 00000000 0", "moveext 80000100 50000001 0", "moveext 80000100 80000200 0",
+                "moveext 80000100 80000200 5",
                 "give 80000100 50000002 0", "give 80000100 50000002 3", "close 80000300",
             },
             view.Actions);

@@ -17,17 +17,16 @@ public sealed unsafe partial class RynthApiTable
         Native->GetNumContainedContainersFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint, int>)&GetNumContainedContainers;
     }
 
-    // RynthAi always loots whole stacks (amount 0); OpenAC's pickup has no partial amount.
+    // RynthAi's general move: loot, drop, pack move or give; the view picks which from the objects.
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static int MoveItemExternal(uint objectId, uint targetContainerId, int amount)
+    private static int MoveItemExternal(uint objectId, uint targetId, int amount)
     {
         RynthApiTable? table = _current;
-        if (table is null || objectId == 0 || amount != 0)
+        if (table is null || objectId == 0 || amount < 0)
             return 0;
         try
         {
-            uint preferred = targetContainerId == table._view.PlayerId ? 0u : targetContainerId;
-            return table._view.PickupItem(objectId, preferred) ? 1 : 0;
+            return table._view.MoveItemExternal(objectId, targetId, (uint)amount) ? 1 : 0;
         }
         catch (Exception error)
         {

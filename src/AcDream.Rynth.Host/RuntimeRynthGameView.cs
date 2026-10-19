@@ -491,11 +491,27 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return true;
     }
 
-
-    public bool PickupItem(uint objectId, uint preferredContainerId) =>
-        (preferredContainerId == 0u
-            ? _automation.Loot.Pickup(objectId)
-            : _automation.Loot.Pickup(objectId, preferredContainerId)).Accepted;
+    public bool MoveItemExternal(uint objectId, uint targetId, uint amount)
+    {
+        if (objectId == 0)
+            return false;
+        uint player = PlayerId;
+        if (!IsOwnedItem(objectId))
+        {
+            // Loot: the pickup takes the whole stack and refuses anything not in the open container.
+            return (targetId == 0u || targetId == player
+                ? _automation.Loot.Pickup(objectId)
+                : _automation.Loot.Pickup(objectId, targetId)).Accepted;
+        }
+        if (targetId == 0u)
+            return _automation.Items.Drop(objectId, amount).Accepted;
+        ClientObject? target = _runtime.InventoryOwner.Objects.Get(targetId);
+        if (targetId == player || (target is { ItemsCapacity: > 0 } && IsOwnedItem(targetId)))
+            return _automation.Items.MoveToContainer(objectId, targetId, amount).Accepted;
+        // Any other known target that is not the player's own: a give (an NPC or another player).
+        return target is not null && !IsOwnedItem(targetId)
+            && _automation.Items.Give(objectId, targetId, amount).Accepted;
+    }
 
     public bool GiveItem(uint objectId, uint targetId, uint amount) =>
         _automation.Items.Give(objectId, targetId, amount).Accepted;

@@ -239,7 +239,8 @@ internal sealed class FakeGameView : IRynthGameView
     public Dictionary<uint, List<(uint SubPaletteId, uint Offset)>> Palettes { get; } = new();
     public Dictionary<uint, (int Items, int Containers)> ContentCounts { get; } = new();
 
-    public bool PickupItem(uint objectId, uint preferredContainerId) => Act($"pickup {objectId:X8} {preferredContainerId:X8}");
+    public bool MoveItemExternal(uint objectId, uint targetId, uint amount) =>
+        Act($"moveext {objectId:X8} {targetId:X8} {amount}");
     public bool GiveItem(uint objectId, uint targetId, uint amount) => Act($"give {objectId:X8} {targetId:X8} {amount}");
     public bool CloseContainer(uint containerId) => Act($"close {containerId:X8}");
 

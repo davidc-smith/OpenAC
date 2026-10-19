@@ -338,6 +338,59 @@ public sealed class RuntimeRynthGameViewTests
         Assert.False(view.UseObject(0x80000010));
     }
 
+    // RynthAi's MoveItemExternal is its general move: loot (amount 0), /mt drop (target 0), pack
+    // moves, and gives to an NPC or player with the stack size as the amount.
+    [Theory]
+    [InlineData(0x80000400u, 0x80000200u, 0u, "loot", "pickup 80000400 into 80000200")]
+    [InlineData(0x80000400u, 0x50000001u, 0u, "loot", "pickup 80000400")]
+    [InlineData(0x80000400u, 0u, 0u, "loot", "pickup 80000400")]
+    [InlineData(0x80000400u, 0x80000200u, 5u, "loot", "pickup 80000400 into 80000200")]
+    [InlineData(0x80000100u, 0u, 0u, "item", "drop 80000100 0")]
+    [InlineData(0x80000100u, 0u, 3u, "item", "drop 80000100 3")]
+    [InlineData(0x80000100u, 0x80000200u, 0u, "item", "move 80000100 80000200 0 0")]
+    [InlineData(0x80000100u, 0x50000001u, 4u, "item", "move 80000100 50000001 4 0")]
+    [InlineData(0x80000100u, 0x80000500u, 7u, "item", "give 80000100 80000500 7")]
+    public void MoveItemExternalPicksTheMoveFromTheObjects(uint item, uint target, uint amount, string area, string call)
+    {
+        var (runtime, automation) = MoveFixture();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.MoveItemExternal(item, target, amount));
+
+        Assert.Equal(new[] { call }, area == "loot" ? automation.LootArea.Calls : automation.ItemArea.Calls);
+        Assert.Empty(area == "loot" ? automation.ItemArea.Calls : automation.LootArea.Calls);
+    }
+
+    [Fact]
+    public void MoveItemExternalRefusesWhatItCannotPlace()
+    {
+        var (runtime, automation) = MoveFixture();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.False(view.MoveItemExternal(0x80000100, 0x8000FFFF, 0));   // unknown target
+        Assert.False(view.MoveItemExternal(0x80000100, 0x80000101, 0));   // an owned item that holds nothing
+        Assert.False(view.MoveItemExternal(0, 0x80000200, 0));
+        Assert.Empty(automation.ItemArea.Calls);
+        Assert.Empty(automation.LootArea.Calls);
+    }
+
+    private static (AcDream.Runtime.GameRuntime, FakeRynthAutomation) MoveFixture()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        ClientObjectTable objects = runtime.InventoryOwner.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Name = "Sammy" });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000200, ContainerId = 0x50000001, ItemsCapacity = 24 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000100, ContainerId = 0x50000001, StackSize = 10 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000101, ContainerId = 0x50000001 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000300, Name = "Corpse of Drudge" });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000400, ContainerId = 0x80000300 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000500, Name = "Thorsten" });
+        var automation = new FakeRynthAutomation();
+        automation.ObjectArea.OpenContainer = 0x80000300;
+        return (runtime, automation);
+    }
+
     [Fact]
     public void SelectIsTrueWhenTheObjectEndsUpSelectedAndQueryHealthNeedsASession()
     {

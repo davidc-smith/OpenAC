@@ -185,8 +185,14 @@ public interface IRynthGameView
     /// <summary>Whether an object's last motion was On (true) or Off (false); false when neither has been seen.</summary>
     bool TryGetObjectMotionOn(uint objectId, out bool isOn);
 
-    /// <summary>Loots an item from the open container into a preferred pack (0 = the client's own choice). True when sent.</summary>
-    bool PickupItem(uint objectId, uint preferredContainerId);
+    /// <summary>
+    /// RynthAi's general move (RynthCore's MoveItemExternal), chosen by the objects: an item in the
+    /// open corpse or chest is looted, whole, into the target pack (0 or the player: the client's
+    /// own choice); an owned item goes to the ground (target 0), into a pack the player owns or the
+    /// player's main pack, or to any other known target as a give. Amount 0 is the whole stack.
+    /// True when sent.
+    /// </summary>
+    bool MoveItemExternal(uint objectId, uint targetId, uint amount);
 
     /// <summary>Gives all (0) or part of an owned stack to a world target. True when sent.</summary>
     bool GiveItem(uint objectId, uint targetId, uint amount);
