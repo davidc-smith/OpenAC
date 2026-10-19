@@ -53,12 +53,17 @@ internal sealed unsafe class OverlayFonts : IDisposable
         Version++;
     }
 
-    /// <summary>Merges every font into the atlas's last added font, at <paramref name="basePixels"/> times its scale.</summary>
-    public void MergeInto(ImFontAtlasPtr atlas, float basePixels)
+    /// <summary>
+    /// Merges every font into the atlas's last added font, at <paramref name="basePoints"/> times
+    /// its scale, rasterised at <paramref name="density"/> pixels per point.
+    /// </summary>
+    public void MergeInto(ImFontAtlasPtr atlas, float basePoints, float density = 1f)
     {
         foreach (Entry entry in _entries)
         {
-            float pixels = MathF.Max(1f, MathF.Round(basePixels * entry.Scale));
+            // Whole pixels at the rasterised density, given back in points.
+            float pixels = MathF.Max(1f, MathF.Round(basePoints * entry.Scale * density));
+            float points = pixels / density;
             ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
             try
             {
@@ -67,10 +72,11 @@ internal sealed unsafe class OverlayFonts : IDisposable
                 config.PixelSnapH = true;
                 config.OversampleH = 1;
                 config.OversampleV = 1;
-                config.GlyphMinAdvanceX = pixels;
+                config.RasterizerDensity = density;
+                config.GlyphMinAdvanceX = points;
                 // Icon glyphs sit a quarter of their size above the text's middle; this lines them up with capitals.
-                config.GlyphOffset = new Vector2(0, MathF.Round(pixels * 0.25f));
-                atlas.AddFontFromMemoryTTF(entry.Data, entry.Length, pixels, config, entry.Ranges);
+                config.GlyphOffset = new Vector2(0, MathF.Round(pixels * 0.25f) / density);
+                atlas.AddFontFromMemoryTTF(entry.Data, entry.Length, points, config, entry.Ranges);
             }
             catch (Exception error)
             {
