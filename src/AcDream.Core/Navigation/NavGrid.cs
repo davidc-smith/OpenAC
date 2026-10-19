@@ -86,6 +86,15 @@ public sealed class NavGrid
     internal static bool IsFloor(Vector3 normal, float length) =>
         MathF.Abs(normal.Z) / length >= PhysicsGlobals.FloorZ;
 
+    /// <summary>Whether a cylinder or dome fills any room at all; one with no radius or height is left out of a grid.</summary>
+    internal static bool HasExtent(NavCylinder cylinder) => cylinder.Radius > 0f && cylinder.Height > 0f;
+
+    /// <summary>
+    /// How far from its middle a cylinder or dome fills a grid's columns: half a column beyond
+    /// its radius, so a column whose middle lies just outside its edge still holds its top.
+    /// </summary>
+    internal static float ReachOf(NavCylinder cylinder, float cellSize) => cylinder.Radius + (cellSize * 0.5f);
+
     /// <summary>
     /// How high over its base a cylinder's or a dome's top stands at a point
     /// <paramref name="acrossSquared"/> (the square of the horizontal distance) from its
@@ -1072,10 +1081,10 @@ public sealed class NavGrid
         int side,
         byte source)
     {
-        if (!(cylinder.Radius > 0f) || !(cylinder.Height > 0f))
+        if (!HasExtent(cylinder))
             return;
         Vector3 centre = cylinder.Base - origin;
-        float reach = cylinder.Radius + (cellSize * 0.5f);
+        float reach = ReachOf(cylinder, cellSize);
         int x0 = Math.Max(0, (int)MathF.Floor((centre.X - reach) / cellSize));
         int x1 = Math.Min(side - 1, (int)MathF.Floor((centre.X + reach) / cellSize));
         int y0 = Math.Max(0, (int)MathF.Floor((centre.Y - reach) / cellSize));

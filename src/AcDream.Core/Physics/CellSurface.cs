@@ -99,9 +99,9 @@ public sealed class CellSurface
     }
 
     /// <summary>
-    /// The height of the highest level face under a point that is no higher than
+    /// The height of the highest level, face-up face under a point that is no higher than
     /// <paramref name="atMostZ"/>, or null where the cell has none: the floor a point
-    /// in the cell stands on, not the ceiling over it.
+    /// in the cell stands on, never a ceiling, which faces down.
     /// </summary>
     public float? SampleLevelZAtOrBelow(float worldX, float worldY, float atMostZ)
     {
@@ -110,7 +110,7 @@ public sealed class CellSurface
         {
             Vector3 normal = Vector3.Cross(b - a, c - a);
             float length = normal.Length();
-            if (length <= 1e-6f || MathF.Abs(normal.Z) / length < PhysicsGlobals.FloorZ)
+            if (length <= 1e-6f || normal.Z / length < PhysicsGlobals.FloorZ)
                 continue;
             if (PointInTriangleXY(worldX, worldY, a, b, c, out float z)
                 && z <= atMostZ

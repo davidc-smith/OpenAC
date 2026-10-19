@@ -420,8 +420,9 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
     }
 
     /// <summary>
-    /// How far above a floor a place may be given and still stand on it, so a place given at
-    /// its floor's height, a little out, is not dropped to a floor below.
+    /// How far a place may be from a floor, over it or under it, and still count as given on
+    /// that floor: a route waypoint recorded where the character stood is at foot height, a
+    /// little out at most, so a place this near a floor is not moved to another one.
     /// </summary>
     internal const float PlaceAboveFloorMeters = 0.5f;
 
@@ -430,20 +431,22 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
     /// often given by the middle of the cell's bounds, which in a tall room is metres above the
     /// floor, higher than a walk arrives at.
     /// <list type="bullet">
-    /// <item>A place with something a route stands on within
-    /// <see cref="NavRouter.GoalHeightTolerance"/> under it (or up to
-    /// <see cref="PlaceAboveFloorMeters"/> over it) is left where it is, lifted onto that
-    /// surface if it is under it. That surface is a cell's floor or the top of an object the
-    /// route grid holds, such as a bridge, a platform or a crate, so a place recorded on top
-    /// of one stays on it.</item>
-    /// <item>Otherwise it drops to its cell's own floor nearest at or below it, or where the
-    /// cell has none there, as in the upper half of a tall room authored as a cell on top of
-    /// a cell, to the highest floor under it of any cell in its landblock. That search takes
-    /// every cell in the landblock, so a place over a pit or a shaft drops to its bottom.</item>
+    /// <item>When a face-up surface the route grid holds, a cell's floor or the top of an
+    /// object such as a bridge, a platform or a crate, lies no more than
+    /// <see cref="PlaceAboveFloorMeters"/> under the place, the place is left where it is.
+    /// When such a surface lies no more than that over the place, the place is lifted onto
+    /// the surface. So a waypoint recorded on top of a platform stays on the platform, while
+    /// the middle of a room, well over a table in it, does not stop on the table.</item>
+    /// <item>Otherwise the place drops to its cell's own floor nearest at or below it, or where
+    /// that cell has no floor there, as in the upper half of a tall room authored as a cell on
+    /// top of a cell, to the highest floor under it of any cell in the landblock. That search
+    /// takes every cell in the landblock, so a place over a pit or a shaft drops to the pit's
+    /// bottom.</item>
     /// <item>An outdoor place, or one with no floor under it at all, is left as it is.</item>
     /// </list>
-    /// A place given with no height reaches this with the height <see cref="OnTheGround"/> gave
-    /// it, so in a dungeon it lands on a floor under that height, not on the terrain.
+    /// A place given with no height arrives here already holding the height
+    /// <see cref="OnTheGround"/> gave it, the terrain's or the character's, so in a dungeon such
+    /// a place ends on a floor under that height, not on the terrain.
     /// </summary>
     internal static Vector3 OnTheCellFloor(
         PhysicsEngine physics,
@@ -463,7 +466,7 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
                 cellId,
                 point.X,
                 point.Y,
-                point.Z - NavRouter.GoalHeightTolerance,
+                point.Z - PlaceAboveFloorMeters,
                 atMost,
                 standsOn) is { } standing)
         {

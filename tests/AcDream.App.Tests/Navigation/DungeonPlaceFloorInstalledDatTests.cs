@@ -46,6 +46,7 @@ public sealed class DungeonPlaceFloorInstalledDatTests
         int onTheFloor = 0;
         int tall = 0;
         int floorless = 0;
+        int faceUpFloor = 0;
         var reasons = new Dictionary<string, int>();
         var flooredReasons = new Dictionary<string, int>();
         foreach (CellSurface cell in cells)
@@ -63,6 +64,8 @@ public sealed class DungeonPlaceFloorInstalledDatTests
             Vector3 placed = RuntimeNavigationGoalSource.OnTheCellFloor(world.Engine, cell.CellId, middle);
             if (middle.Z - placed.Z > NavRouter.GoalHeightTolerance)
                 tall++;
+            if (NavGeometry.HighestFloorUnder(world.Engine, dungeon, middle.X, middle.Y, float.NegativeInfinity, middle.Z) is not null)
+                faceUpFloor++;
             if (cell.SampleLevelZAtOrBelow(middle.X, middle.Y, middle.Z) is null)
                 floorless++;
             NavRoute raw = NavRouter.Find(grid, start, middle, arrival, arriveOnGoalFloor: true);
@@ -79,6 +82,7 @@ public sealed class DungeonPlaceFloorInstalledDatTests
 
         _output.WriteLine($"0x{dungeon >> 16:X4}: {cells.Count} cells, {tall} with their middle higher over the floor than a walk arrives, {floorless} with no floor of their own under it");
         _output.WriteLine($"  routed as given: {asGiven}; routed on the floor: {onTheFloor}");
+        _output.WriteLine($"  {faceUpFloor} with a face-up floor somewhere under their middle");
         foreach ((string reason, int count) in reasons.OrderByDescending(pair => pair.Value).Take(5))
             _output.WriteLine($"  {count} as given: {reason}");
         foreach ((string reason, int count) in flooredReasons.OrderByDescending(pair => pair.Value).Take(5))

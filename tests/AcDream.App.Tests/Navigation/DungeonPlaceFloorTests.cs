@@ -1,6 +1,11 @@
 using System.Numerics;
 using AcDream.Core.Physics;
 using AcDream.Plugin.Abstractions;
+using AcDream.Core.Items;
+using AcDream.Core.Net;
+using AcDream.Core.Net.Messages;
+using AcDream.Runtime;
+using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Navigation;
 using static AcDream.App.Tests.Navigation.NavigationWalkControllerTests;
@@ -143,9 +148,9 @@ public sealed class DungeonPlaceFloorTests
 
     /// <summary>
     /// A place on top of an object in a cell, such as a route waypoint recorded where the
-    /// character stood on a platform, stays on it: the route grid stands a body on the
-    /// object's top, so a walk arrives there, or not at all. Only a place with nothing to
-    /// stand on near under it drops to the floor.
+    /// character stood on a platform, stays on the platform: the route grid stands a body on
+    /// the object's top, so a walk arrives there, or not at all. A place a little under the
+    /// top is lifted onto it.
     /// </summary>
     [Fact]
     public void APlaceOnAPlatformInACellStaysOnThePlatform()
@@ -153,49 +158,197 @@ public sealed class DungeonPlaceFloorTests
         PhysicsEngine world = DungeonWithAPlatform();
         RuntimeNavigationGoalSource goals = ClientGoals(world);
         var onTop = new Vector3(30f, 10f, PlatformTop);
+        var justOver = onTop with { Z = PlatformTop + 0.4f };
 
         Assert.NotEmpty(NavigationGeometry(world).Cylinders);
         Assert.Equal(onTop, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, onTop));
         Assert.Equal(onTop, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, onTop with { Z = PlatformTop - 0.2f }));
-        Assert.Equal(onTop with { Z = PlatformTop + 1f }, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, onTop with { Z = PlatformTop + 1f }));
+        Assert.Equal(justOver, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, justOver));
         Assert.True(goals.TryLocatePlace(TallRoom, onTop, out Vector3 placed));
         Assert.Equal(onTop, placed);
         Assert.Equal(new Vector3(36f, 10f, Floor), RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, new Vector3(36f, 10f, PlatformTop)));
     }
 
-    private const float PlatformTop = Floor + 2f;
+    /// <summary>
+    /// A waypoint recorded at a platform's edge stays on the platform, as far out as the route
+    /// grid still holds the platform's top: half a grid column beyond its radius.
+    /// </summary>
+    [Fact]
+    public void APlaceAtAPlatformsEdgeStaysOnThePlatform()
+    {
+        PhysicsEngine world = DungeonWithAPlatform();
+        float edge = 30f + PlatformRadius;
+        float slack = AcDream.Core.Navigation.NavGrid.DefaultCellSize * 0.5f;
+        var atTheEdge = new Vector3(edge + (slack * 0.8f), 10f, PlatformTop);
+        var pastTheEdge = new Vector3(edge + (slack * 1.5f), 10f, PlatformTop);
 
-    /// <summary>The 5 m room with a platform 2 m high and 3 m across the middle in it, which the landblock holds.</summary>
+        Assert.Equal(atTheEdge, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, atTheEdge));
+        Assert.Equal(pastTheEdge with { Z = Floor }, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, pastTheEdge));
+    }
+
+    /// <summary>
+    /// The middle of a 3 m room is 1.5 m over its floor and 0.6 m over the top of a table
+    /// standing there. A table top is no floor a waypoint was recorded on, so the place drops
+    /// to the room's floor and a route reaches it.
+    /// </summary>
+    [Fact]
+    public async Task TheMiddleOfALowRoomOverATableDropsToTheFloorAndRoutes()
+    {
+        PhysicsEngine world = DungeonWithTallRooms();
+        RegisterCylinder(world, 0x7A9B_4002u, new Vector3(15f, 12f, Floor), radius: 0.6f, height: 0.9f, LowRoom, isStatic: true);
+        RuntimeNavigationGoalSource goals = ClientGoals(world);
+        var middle = new Vector3(15f, 12f, -28.5f);
+
+        Assert.True(goals.TryLocatePlace(LowRoom, middle, out Vector3 placed));
+        var body = new SimulatedBody(new Vector3(10f, 10f, Floor)) { CellId = LowRoom };
+        var walk = new NavigationWalkController(world, body, goals, isSealedDungeon: _ => true);
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(LowRoom, middle, 2.5f);
+
+        Assert.Equal(middle with { Z = Floor }, placed);
+        Assert.Equal(PluginNavigationPlanStatus.Routed, plan.Status);
+        Assert.InRange(plan.Path[^1].Elevation * 240d, Floor - 0.1d, Floor + 0.1d);
+    }
+
+    /// <summary>
+    /// The underside of a ceiling, an arch or anything hanging faces down, and nothing stands
+    /// on it: a place just under the 5 m room's ceiling drops to the floor, never up onto
+    /// the ceiling.
+    /// </summary>
+    [Fact]
+    public void APlaceJustUnderACeilingDropsToTheFloorNotOntoTheCeiling()
+    {
+        PhysicsEngine world = DungeonWithTallRooms();
+        var underTheCeiling = new Vector3(30f, 10f, -25.3f);
+
+        Assert.Equal(
+            underTheCeiling with { Z = Floor },
+            RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, underTheCeiling));
+    }
+
+    /// <summary>
+    /// An object the server placed is no part of the landblock, so a place is kept on its top
+    /// only because the walk names it as something a body stands on, as it does when it
+    /// builds its grid. The client's goal source passes that on.
+    /// </summary>
+    [Fact]
+    public void APlaceOnAPlatformTheServerPlacedStaysOnIt()
+    {
+        PhysicsEngine world = DungeonWithTallRooms();
+        using GameRuntime runtime = GameRuntimeTestFactory.Create();
+        RuntimeEntityRecord record = runtime.EntityObjects.RegisterEntity(Spawn(0x7000_0001u)).Canonical!;
+        runtime.EntityObjects.ApplyAcceptedSpawn(record, record.CreateIntegrationVersion, record.Snapshot, replaceGeneration: false);
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x7000_0001u, Name = "Platform" });
+        uint local = runtime.EntityObjects.Entities.ClaimLocalId(record);
+        RegisterCylinder(world, local, new Vector3(30f, 10f, Floor), PlatformRadius, 2f, TallRoom, isStatic: false);
+        RuntimeNavigationGoalSource goals = ClientGoals(world, runtime);
+        var onTop = new Vector3(30f, 10f, PlatformTop);
+
+        Assert.True(goals.StandsStill(local));
+        Assert.True(goals.TryLocatePlace(TallRoom, onTop, out Vector3 placed));
+        Assert.Equal(onTop, placed);
+        Assert.Equal(onTop with { Z = Floor }, RuntimeNavigationGoalSource.OnTheCellFloor(world, TallRoom, onTop));
+    }
+
+    private const float PlatformTop = Floor + 2f;
+    private const float PlatformRadius = 3f;
+
+    /// <summary>The 5 m room with a platform 2 m high and 6 m across in its middle, which the landblock holds.</summary>
     private static PhysicsEngine DungeonWithAPlatform()
     {
         PhysicsEngine physics = DungeonWithTallRooms();
+        RegisterCylinder(physics, 0x7A9B_4001u, new Vector3(30f, 10f, Floor), PlatformRadius, 2f, TallRoom, isStatic: true);
+        return physics;
+    }
+
+    private static void RegisterCylinder(
+        PhysicsEngine physics,
+        uint entityId,
+        Vector3 at,
+        float radius,
+        float height,
+        uint cellId,
+        bool isStatic) =>
         physics.ShadowObjects.Register(
-            0x7A9B_4001u,
+            entityId,
             gfxObjId: 0u,
-            new Vector3(30f, 10f, Floor),
+            at,
             Quaternion.Identity,
-            3f,
+            radius,
             worldOffsetX: 0f,
             worldOffsetY: 0f,
             landblockId: 0xA9B4FFFFu,
             collisionType: ShadowCollisionType.Cylinder,
-            cylHeight: 2f,
-            seedCellId: TallRoom,
-            isStatic: true);
-        return physics;
-    }
+            cylHeight: height,
+            seedCellId: cellId,
+            isStatic: isStatic);
 
     private static AcDream.Core.Navigation.NavGeometry NavigationGeometry(PhysicsEngine world) =>
         AcDream.Core.Navigation.NavGeometry.CaptureDungeon(world, 0xA9B4FFFFu, 0f, 0f, 64f)!;
 
     /// <summary>The client's own goal source, the character standing in the low room.</summary>
-    private static RuntimeNavigationGoalSource ClientGoals(PhysicsEngine world)
+    private static RuntimeNavigationGoalSource ClientGoals(PhysicsEngine world, GameRuntime? runtime = null)
     {
         var start = new Vector3(10f, 10f, Floor);
         var controller = new PlayerMovementController(world);
         controller.PreparePositionForCommit(start, LowRoom, start);
         var movement = new RuntimeLocalPlayerMovementState { Controller = controller };
-        return new RuntimeNavigationGoalSource(world, GameRuntimeTestFactory.Create(), movement);
+        return new RuntimeNavigationGoalSource(world, runtime ?? GameRuntimeTestFactory.Create(), movement);
+    }
+
+    /// <summary>A server object as the client is told of it: no player, nothing ethereal, no creature.</summary>
+    private static WorldSession.EntitySpawn Spawn(uint guid)
+    {
+        var position = new CreateObject.ServerPosition(TallRoom, 30f, 10f, Floor, 1f, 0f, 0f, 0f);
+        var timestamps = new PhysicsTimestamps(
+            Position: 1,
+            Movement: 1,
+            State: 1,
+            Vector: 1,
+            Teleport: 0,
+            ServerControlledMove: 1,
+            ForcePosition: 0,
+            ObjDesc: 1,
+            Instance: 1);
+        var physics = new PhysicsSpawnData(
+            RawState: 0u,
+            Position: position,
+            Movement: null,
+            AnimationFrame: null,
+            SetupTableId: 0x0200_0001u,
+            MotionTableId: null,
+            SoundTableId: null,
+            PhysicsScriptTableId: null,
+            Parent: null,
+            Children: null,
+            Scale: null,
+            Friction: null,
+            Elasticity: null,
+            Translucency: null,
+            Velocity: null,
+            Acceleration: null,
+            AngularVelocity: null,
+            DefaultScriptType: null,
+            DefaultScriptIntensity: null,
+            Timestamps: timestamps);
+        return new WorldSession.EntitySpawn(
+            guid,
+            position,
+            0x0200_0001u,
+            [],
+            [],
+            [],
+            null,
+            null,
+            guid.ToString("X8"),
+            null,
+            null,
+            null,
+            PhysicsState: physics.RawState,
+            InstanceSequence: 1,
+            MovementSequence: 1,
+            ServerControlSequence: 1,
+            PositionSequence: 1,
+            Physics: physics);
     }
 
     private static Task<PluginNavigationPlan> Preview(Goals goals, uint cellId, Vector3 local)

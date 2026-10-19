@@ -244,12 +244,14 @@ public sealed class NavGeometry
 
     /// <summary>
     /// The highest floor under a point, from <paramref name="lowest"/> to <paramref name="highest"/>,
-    /// that a grid captured over the landblock <paramref name="landblockId"/> holds: a face of one
-    /// of its cells, or of an object the landblock holds or <paramref name="standsOn"/> names, no
-    /// steeper than a floor, or the top of such an object's cylinder or dome where a body stands
-    /// on it. Each is taken and sorted into floor and wall as the grid takes and sorts it, so a
-    /// height this finds is one a route can arrive on. Null where there is none. Call it on the
-    /// thread that owns the physics world.
+    /// among the surfaces a grid captured over the landblock <paramref name="landblockId"/> holds:
+    /// a face of one of its cells, or of an object the landblock holds or
+    /// <paramref name="standsOn"/> names, that faces up and is no steeper than a floor, or the top
+    /// of such an object's cylinder or dome where a body stands on it. The objects, the floor
+    /// slope and a cylinder's reach are the grid's own. Only a face that faces up counts, so the
+    /// underside of an arch or of something hanging is never one. Whether a body has room to
+    /// stand there is not checked. Null where there is none. Call it on the thread that owns
+    /// the physics world.
     /// </summary>
     public static float? HighestFloorUnder(
         PhysicsEngine engine,
@@ -272,13 +274,27 @@ public sealed class NavGeometry
                 best = z;
         }
 
+        void ConsiderFace(Vector3 a, Vector3 b, Vector3 c)
+        {
+            Vector3 normal = Vector3.Cross(b - a, c - a);
+            float length = normal.Length();
+            if (length > 1e-6f
+                && normal.Z > 0f
+                && NavGrid.IsFloor(normal, length)
+                && CellSurface.PointInTriangleXY(x, y, a, b, c, out float z))
+            {
+                Consider(z);
+            }
+        }
+
         foreach (CellSurface cell in cells)
         {
-            if (cell.SampleLevelZAtOrBelow(x, y, highest) is { } z)
-                Consider(z);
+            foreach ((Vector3 a, Vector3 b, Vector3 c) in cell.Triangles)
+                ConsiderFace(a, b, c);
         }
 
         var point = new Vector2(x, y);
+        float slack = NavGrid.DefaultCellSize * 0.5f;
         var entries = new List<ShadowEntry>();
         engine.ShadowObjects.CaptureEntries(entries);
         HashSet<uint>? owners = null;
@@ -289,7 +305,7 @@ public sealed class NavGeometry
             if (!Meets(entry))
                 continue;
             NavAvoidance footprint = FootprintOf(entry, engine.DataCache);
-            if (Vector2.Distance(Flat(footprint.Centre), point) > footprint.Radius)
+            if (Vector2.Distance(Flat(footprint.Centre), point) > footprint.Radius + slack)
                 continue;
             owners ??= [.. engine.ShadowObjects.CaptureStaticOwnersForLandblock(canonical)];
             if (!owners.Contains(entry.EntityId) && standsOn?.Invoke(entry.EntityId) != true)
@@ -298,20 +314,14 @@ public sealed class NavGeometry
         }
 
         foreach ((Vector3 a, Vector3 b, Vector3 c) in triangles)
-        {
-            Vector3 normal = Vector3.Cross(b - a, c - a);
-            float length = normal.Length();
-            if (length > 1e-6f
-                && NavGrid.IsFloor(normal, length)
-                && CellSurface.PointInTriangleXY(x, y, a, b, c, out float z))
-            {
-                Consider(z);
-            }
-        }
+            ConsiderFace(a, b, c);
         foreach (NavCylinder cylinder in cylinders)
         {
+            if (!NavGrid.HasExtent(cylinder))
+                continue;
             float across = Vector2.DistanceSquared(Flat(cylinder.Base), point);
-            if (across > cylinder.Radius * cylinder.Radius)
+            float reach = NavGrid.ReachOf(cylinder, NavGrid.DefaultCellSize);
+            if (across > reach * reach)
                 continue;
             float top = cylinder.Base.Z + NavGrid.TopOver(cylinder, across, out bool stands);
             if (stands)
