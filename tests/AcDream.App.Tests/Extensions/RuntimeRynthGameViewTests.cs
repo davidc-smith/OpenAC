@@ -340,6 +340,63 @@ public sealed class RuntimeRynthGameViewTests
         Assert.False(view.UseObject(0x80000010));
     }
 
+    // RynthCore's UseObject is the retail client's use (a double-click): a weapon or caster
+    // in the pack is wielded. RynthAi wields its buffing wand this way; a plain use of it
+    // does nothing on the server.
+    [Fact]
+    public void UsingAWeaponOrCasterInThePackWieldsItLikeADoubleClick()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        ClientObjectTable objects = runtime.InventoryOwner.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Name = "Sammy" });
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 0x800003AD, Name = "Training Wand", ContainerId = 0x50000001,
+            Type = ItemType.Caster, ValidLocations = EquipMask.Held,
+        });
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 0x800003AE, Name = "Long Sword", ContainerId = 0x50000001,
+            Type = ItemType.MeleeWeapon, CombatUse = 1, ValidLocations = EquipMask.MeleeWeapon,
+        });
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 0x800003AF, Name = "Blackmoor's Favor", ContainerId = 0x50000001,
+            Type = ItemType.Gem, Useability = 0x8,
+        });
+        var automation = new FakeRynthAutomation();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.UseObject(0x800003AD));
+        Assert.True(view.UseObject(0x800003AE));
+        Assert.True(view.UseObject(0x800003AF));
+
+        Assert.Equal(new[] { (0x800003ADu, 0u), (0x800003AEu, 0u) }, automation.EquipmentArea.Equipped);
+        Assert.Equal(new[] { "use 800003AF" }, automation.ItemArea.Calls);
+    }
+
+    [Fact]
+    public void UsingAWieldedCasterIsAPlainUse()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        ClientObjectTable objects = runtime.InventoryOwner.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Name = "Sammy" });
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 0x800003AD, Name = "Training Wand", WielderId = 0x50000001,
+            Type = ItemType.Caster, ValidLocations = EquipMask.Held, CurrentlyEquippedLocation = EquipMask.Held,
+        });
+        var automation = new FakeRynthAutomation();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.UseObject(0x800003AD));
+
+        Assert.Empty(automation.EquipmentArea.Equipped);
+        Assert.Equal(new[] { "use 800003AD" }, automation.ItemArea.Calls);
+    }
+
     // RynthAi's MoveItemExternal is its general move: loot (amount 0), /mt drop (target 0), pack
     // moves, and gives to an NPC or player with the stack size as the amount.
     [Theory]

@@ -387,7 +387,14 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return (selection.SelectedObjectId ?? 0u) == objectId;
     }
 
-    public bool UseObject(uint objectId) => _automation.Items.Use(objectId).Accepted;
+    // RynthCore's UseObject is the retail client's use, a double-click: a weapon or caster
+    // in the pack is wielded (RynthAi wields its buffing wand this way). The automation's
+    // Use is the plain use, so those go through Equip, which wields the way a double-click does.
+    public bool UseObject(uint objectId) =>
+        _runtime.ItemInteractionOwner.ClassifyPrimaryUse(objectId)
+            is AcDream.Core.Items.ItemPrimaryUseResult.WieldRight or AcDream.Core.Items.ItemPrimaryUseResult.WieldLeft
+            ? _automation.Equipment.Equip(objectId).Accepted
+            : _automation.Items.Use(objectId).Accepted;
 
     public bool RequestIdentify(uint objectId) => _automation.Objects.Identify(objectId).Accepted;
 
