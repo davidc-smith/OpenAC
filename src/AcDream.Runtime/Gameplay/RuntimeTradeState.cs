@@ -32,8 +32,30 @@ public readonly record struct RuntimeTradeSnapshot(
     uint LastFailureItemGuid,
     uint LastFailureReason);
 
+/// <summary>
+/// RynthCore's trade counters (its GetTradeState): they only ever grow, so a
+/// caller compares two reads to see what happened between them.
+/// </summary>
+public readonly record struct RuntimeTradeCounters(
+    uint Generation,
+    uint Sequence,
+    uint InitiatorId,
+    uint LastEventType,
+    uint FailureCount,
+    uint LastFailureItemId,
+    uint LastFailureReason,
+    uint LastCloseReason,
+    uint LastAcceptedBy,
+    uint LastDeclinedBy,
+    uint LastResetBy,
+    uint CompletedCount,
+    uint PartnerAcceptCount);
+
 public interface IRuntimeTradeView
 {
+    /// <summary>RynthCore-style event counters; never reset.</summary>
+    RuntimeTradeCounters Counters { get; }
+
     RuntimeTradeSnapshot Snapshot { get; }
 
     /// <summary>Materialized staged-item guids for one side, in stage order.</summary>
@@ -53,6 +75,7 @@ public sealed class RuntimeTradeState : IDisposable
     private uint _lastFailureItemGuid;
     private uint _lastFailureReason;
     private long _revision;
+    private RuntimeTradeCounters _counters;
     private bool _disposed;
 
     public RuntimeTradeState(AcDream.Core.Items.ClientObjectTable? objects = null)
@@ -82,6 +105,13 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            // As RynthCore's RegisterTrade: a new generation, its initiator, and no close reason yet.
+            CountLocked(0x01FDu, c => c with
+            {
+                Generation = unchecked(c.Generation + 1u),
+                InitiatorId = update.Initiator,
+                LastCloseReason = 0u,
+            });
             _isOpen = true;
             _partnerGuid = update.Initiator != selfGuid && update.Initiator != 0u
                 ? update.Initiator
@@ -96,12 +126,14 @@ public sealed class RuntimeTradeState : IDisposable
         }
     }
 
-    public void ApplyClose()
+    public void ApplyClose(uint reason = 0u)
     {
         uint[] released;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            // As RynthCore's CloseTrade: the reason stays, the initiator is forgotten.
+            CountLocked(0x01FFu, c => c with { LastCloseReason = reason, InitiatorId = 0u });
             released = _partnerItems.ToArray();
             ClearLocked();
         }
@@ -114,6 +146,7 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            CountLocked(0x0200u);
             if (!_isOpen) return;
             List<uint> items = update.Side == (uint)RuntimeTradeSide.Partner
                 ? _partnerItems
@@ -138,6 +171,7 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            CountLocked(0x0201u);
             if (!_isOpen) return;
             bool removed = _selfItems.Remove(update.ItemGuid);
             partnerRemoved = _partnerItems.Remove(update.ItemGuid);
@@ -157,6 +191,7 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            CountLocked(0x0202u, c => c with { LastAcceptedBy = whoAccepted, PartnerAcceptCount = whoAccepted != selfGuid ? unchecked(c.PartnerAcceptCount + 1u) : c.PartnerAcceptCount });
             if (!_isOpen) return;
             if (whoAccepted == selfGuid) _selfAccepted = true;
             else _partnerAccepted = true;
@@ -170,6 +205,7 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            CountLocked(0x0203u, c => c with { LastDeclinedBy = whoDeclined });
             if (!_isOpen) return;
             if (whoDeclined == selfGuid) _selfAccepted = false;
             else _partnerAccepted = false;
@@ -177,12 +213,13 @@ public sealed class RuntimeTradeState : IDisposable
         }
     }
 
-    public void ApplyReset()
+    public void ApplyReset(uint whoReset = 0u)
     {
         uint[] released;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            CountLocked(0x0205u, c => c with { LastResetBy = whoReset });
             if (!_isOpen) return;
             released = _partnerItems.ToArray();
             ClearSelfTradeStates();
@@ -200,6 +237,7 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            CountLocked(0x0207u, c => c with { FailureCount = unchecked(c.FailureCount + 1u), LastFailureItemId = failure.ItemGuid, LastFailureReason = failure.Reason });
             if (!_isOpen) return;
             _selfItems.Remove(failure.ItemGuid);
             _partnerItems.Remove(failure.ItemGuid);
@@ -215,10 +253,25 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            CountLocked(0x0208u);
             if (!_isOpen) return;
             _selfAccepted = false;
             _partnerAccepted = false;
             Bump();
+        }
+    }
+
+    /// <summary>WeenieError 0x0529 TradeComplete: the server carried a trade out.</summary>
+    public void ApplyTradeComplete()
+    {
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _counters = _counters with
+            {
+                CompletedCount = unchecked(_counters.CompletedCount + 1u),
+                Sequence = unchecked(_counters.Sequence + 1u),
+            };
         }
     }
 
@@ -283,6 +336,17 @@ public sealed class RuntimeTradeState : IDisposable
         if (changed) Bump();
     }
 
+    // Every trade event counts, open trade or not, as RynthCore's PlayerTrade does.
+    private void CountLocked(uint eventType, Func<RuntimeTradeCounters, RuntimeTradeCounters>? change = null)
+    {
+        RuntimeTradeCounters next = _counters with
+        {
+            Sequence = unchecked(_counters.Sequence + 1u),
+            LastEventType = eventType,
+        };
+        _counters = change is null ? next : change(next);
+    }
+
     private void Bump() => _revision++;
 
     private void Release(uint[] released)
@@ -293,6 +357,11 @@ public sealed class RuntimeTradeState : IDisposable
 
     private sealed class TradeView(RuntimeTradeState owner) : IRuntimeTradeView
     {
+        public RuntimeTradeCounters Counters
+        {
+            get { lock (owner._gate) return owner._counters; }
+        }
+
         public RuntimeTradeSnapshot Snapshot
         {
             get

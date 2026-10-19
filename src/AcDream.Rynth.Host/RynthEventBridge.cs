@@ -30,6 +30,8 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         CombatMode,
         ViewContents,
         StopViewingContents,
+        VendorOpen,
+        VendorClose,
         UpdateInventory,
         CreateObject,
         DeleteObject,
@@ -61,6 +63,9 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// <summary>Raised once the plugins have been told of the login, for pushes that follow it.</summary>
     public event Action? LoggedIn;
 
+    /// <summary>Raised after the plugins' OnLogout; the host closes its logout-bound state here.</summary>
+    public event Action? LoggedOut;
+
     public void OnLifecycle(in RuntimeLifecycleDelta delta)
     {
         if (delta.Current == RuntimeLifecycleState.InWorld
@@ -80,6 +85,8 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         _loginPending = false;
         foreach (RynthPlugin plugin in _plugins)
             plugin.OnLogout();
+        try { LoggedOut?.Invoke(); }
+        catch (Exception error) { _log?.Invoke($"LoggedOut handler failed: {error.Message}"); }
     }
 
     public void OnEntity(in RuntimeEntityDelta delta)
@@ -254,6 +261,20 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
                 plugin.OnStopViewingObjectContents(containerId);
         });
     }
+
+    /// <summary>A vendor's list arrived (RynthCore raises it for every OpenVendor, refreshes included).</summary>
+    public void OnVendorOpened(uint vendorId) => Enqueue(EventKind.VendorOpen, () =>
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnVendorOpen(vendorId);
+    });
+
+    /// <summary>The vendor closed (RynthCore's MarkVendorClosed), or another vendor replaced it.</summary>
+    public void OnVendorClosed(uint vendorId) => Enqueue(EventKind.VendorClose, () =>
+    {
+        foreach (RynthPlugin plugin in _plugins)
+            plugin.OnVendorClose(vendorId);
+    });
 
     /// <summary>From the object table: a container's contents were replaced or an item moved in or out.</summary>
     public void OnContainerContentsChanged(uint containerId)

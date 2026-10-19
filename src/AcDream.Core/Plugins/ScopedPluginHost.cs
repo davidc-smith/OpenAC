@@ -546,6 +546,8 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         public IReadOnlyList<uint> PartnerItems => source().PartnerItems;
         public bool MyAccepted => source().MyAccepted;
         public bool PartnerAccepted => source().PartnerAccepted;
+        public PluginTradeEventCounters Events => source().Events;
+        public PluginTradeCommandResult Open(uint partnerObjectId) => source().Open(partnerObjectId);
         public PluginTradeCommandResult Add(uint itemObjectId) => source().Add(itemObjectId);
         public PluginTradeCommandResult Accept() => source().Accept();
         public PluginTradeCommandResult Decline() => source().Decline();

@@ -234,4 +234,53 @@ internal sealed class FakeGameView : IRynthGameView
         if (Throw) throw new InvalidOperationException("view failed");
         return MotionOn.TryGetValue(objectId, out isOn);
     }
+
+    public Dictionary<uint, List<(uint SubPaletteId, uint Offset)>> Palettes { get; } = new();
+    public Dictionary<uint, (int Items, int Containers)> ContentCounts { get; } = new();
+
+    public bool MoveItemExternal(uint objectId, uint targetId, uint amount) =>
+        Act($"moveext {objectId:X8} {targetId:X8} {amount}");
+    public bool GiveItem(uint objectId, uint targetId, uint amount) => Act($"give {objectId:X8} {targetId:X8} {amount}");
+    public bool CloseContainer(uint containerId) => Act($"close {containerId:X8}");
+
+    public HashSet<uint> Tools { get; } = new();
+    public HashSet<uint> Owned { get; } = new();
+    public bool IsOwnedTinkeringTool(uint objectId) => Read(Tools).Contains(objectId);
+    public bool IsOwnedItem(uint objectId) => Read(Owned).Contains(objectId);
+    public bool Salvage(uint toolId, IReadOnlyList<uint> itemIds) =>
+        Act($"salvage {toolId:X8} {string.Join(",", itemIds.Select(id => id.ToString("X8")))}");
+    public IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId) =>
+        Read(Palettes).TryGetValue(objectId, out var list) ? list : null;
+    public bool TryCountContents(uint containerId, out int items, out int containers)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        bool known = ContentCounts.TryGetValue(containerId, out var counts);
+        (items, containers) = counts;
+        return known;
+    }
+
+    public RynthVendor? OpenVendor { get; set; }
+    public string? VendorNotice { get; set; }
+    public RynthVendor? Vendor => Read(OpenVendor);
+    public bool VendorBuy(IReadOnlyList<(uint ObjectId, int Amount)> items, out string? notice)
+    {
+        notice = VendorNotice;
+        return Act($"buy {string.Join(",", items.Select(i => $"{i.ObjectId:X8}x{i.Amount}"))}");
+    }
+    public bool VendorSell(IReadOnlyList<uint> itemIds, out string? notice)
+    {
+        notice = VendorNotice;
+        return Act($"sell {string.Join(",", itemIds.Select(id => id.ToString("X8")))}");
+    }
+    public RynthTradeState? TradeState { get; set; }
+    public RynthTradeState? Trade => Read(TradeState);
+    public bool TradeOpen(uint partnerId) => Act($"trade open {partnerId:X8}");
+    public bool TradeAdd(uint itemId) => Act($"trade add {itemId:X8}");
+    public bool TradeAccept() => Act("trade accept");
+    public bool TradeDecline() => Act("trade decline");
+    public bool TradeReset() => Act("trade reset");
+    public bool TradeClose() => Act("trade close");
+    public event Action<RynthVendorOutcome>? VendorTransactionCompleted;
+    public void CompleteVendorTransaction(bool success, string? notice = null) =>
+        VendorTransactionCompleted?.Invoke(new RynthVendorOutcome(success, notice));
 }

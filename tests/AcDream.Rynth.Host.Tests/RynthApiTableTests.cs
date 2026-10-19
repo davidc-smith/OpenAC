@@ -242,6 +242,68 @@ public sealed unsafe class RynthApiTableTests
     }
 
     [Fact]
+    public void LootSlots_MoveGiveAndCloseReachTheView()
+    {
+        const uint player = 0x50000001, item = 0x80000100, pack = 0x80000200, corpse = 0x80000300;
+        var view = new FakeGameView { PlayerId = player };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasMoveItemExternal);
+        Assert.True(host.HasGiveObjectTo);
+        Assert.True(host.HasCloseContainer);
+        Assert.True(host.MoveItemExternal(item, 0, 0));
+        Assert.True(host.MoveItemExternal(item, player, 0));
+        Assert.True(host.MoveItemExternal(item, pack, 0));
+        Assert.True(host.MoveItemExternal(item, pack, 5));
+        Assert.False(host.MoveItemExternal(item, pack, -1));
+        Assert.False(host.MoveItemExternal(0, pack, 0));
+        Assert.True(host.GiveObjectTo(item, 0x50000002, 0));
+        Assert.True(host.GiveObjectTo(item, 0x50000002, 3));
+        Assert.False(host.GiveObjectTo(item, 0x50000002, -1));
+        Assert.False(host.GiveObjectTo(item, 0, 0));
+        Assert.True(host.CloseContainer(corpse));
+        Assert.False(host.CloseContainer(0));
+        Assert.Equal(
+            new[]
+            {
+                "moveext 80000100 00000000 0", "moveext 80000100 50000001 0", "moveext 80000100 80000200 0",
+                "moveext 80000100 80000200 5",
+                "give 80000100 50000002 0", "give 80000100 50000002 3", "close 80000300",
+            },
+            view.Actions);
+    }
+
+    [Fact]
+    public void LootSlots_PalettesAndCountsFollowRynthCoresReturns()
+    {
+        var view = new FakeGameView { PlayerId = 0x50000001 };
+        view.Palettes[0x80000100] = [(0x04001234, 0), (0x04005678, 8), (0x04009ABC, 16)];
+        view.ContentCounts[0x50000001] = (40, 3);
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasGetObjectPalettes);
+        var ids = new uint[2];
+        var offsets = new uint[2];
+        Assert.Equal(3, host.GetObjectPalettes(0x80000100, ids, offsets, 2));
+        Assert.Equal(new uint[] { 0x04001234, 0x04005678 }, ids);
+        Assert.Equal(new uint[] { 0, 8 }, offsets);
+        Assert.Equal(-1, host.GetObjectPalettes(0x80000999, ids, offsets, 2));
+
+        Assert.Equal(40, host.GetNumContainedItems(0x50000001));
+        Assert.Equal(3, host.GetNumContainedContainers(0x50000001));
+        Assert.Equal(-1, host.GetNumContainedItems(0x80000999));
+        Assert.Equal(-1, host.GetNumContainedContainers(0x80000999));
+
+        view.Throw = true;
+        Assert.Equal(-1, host.GetNumContainedItems(0x50000001));
+        Assert.False(host.CloseContainer(0x80000300));
+        Assert.Contains(_log, line => line.Contains("GetNumContainedItems threw", StringComparison.Ordinal));
+        Assert.Contains(_log, line => line.Contains("CloseContainer threw", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DeferredSlotsStayUnset()
     {
         using var table = new RynthApiTable(new FakeGameView(), _log.Add);
@@ -254,12 +316,8 @@ public sealed unsafe class RynthApiTableTests
         Assert.Equal(IntPtr.Zero, table.Native->GetRadarRectFn);
         Assert.Equal(IntPtr.Zero, table.Native->SetRadarSuppressedFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetPluginInterfaceFn);
-        Assert.Equal(IntPtr.Zero, table.Native->MoveItemExternalFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetObjectPalettesFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetNumContainedItemsFn);
         Assert.Equal(IntPtr.Zero, table.Native->IsPlayerReadyFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetScreenModeFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetNumContainedContainersFn);
     }
 
     private static RynthObjectInfo ObjectWith(
@@ -455,5 +513,68 @@ public sealed unsafe class RynthApiTableTests
         Assert.Equal((2, 1, 1), table.Nav3D.Counts);
         host.Nav3DClear();
         Assert.Equal((0, 0, 0), table.Nav3D.Counts);
+    }
+
+    [Fact]
+    public void TradeSlots_ReportTheWindowAndCounters()
+    {
+        var view = new FakeGameView
+        {
+            PlayerId = 0x50000001,
+            TradeState = new RynthTradeState(
+                IsOpen: true, YouAccepted: false, PartnerAccepted: true, PartnerId: 0x50000002,
+                YourItems: [0x80000101], PartnerItems: [0x80000201, 0x80000202],
+                Generation: 3, Sequence: 17, InitiatorId: 0x50000002, LastEventType: 0x0202,
+                FailureCount: 1, LastFailureItemId: 0x80000103, LastFailureReason: 0x0426, LastCloseReason: 1,
+                LastAcceptedBy: 0x50000002, LastDeclinedBy: 0, LastResetBy: 0x50000001,
+                CompletedCount: 2, PartnerAcceptCount: 4),
+        };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasTrade);
+        Assert.True(host.TryGetTradeState(out TradeState state));
+        Assert.True(state.IsOpen);
+        Assert.False(state.YouAccepted);
+        Assert.True(state.PartnerAccepted);
+        Assert.True(state.Watching);
+        Assert.True(state.ActionsAvailable);
+        Assert.Equal((3u, 17u, 0x50000002u, 0x50000002u), (state.Generation, state.Sequence, state.PartnerId, state.InitiatorId));
+        Assert.Equal((1, 2), (state.YourItemCount, state.PartnerItemCount));
+        Assert.Equal((0x0202u, 1u, 0x80000103u, 0x0426u, 1u), (state.LastEventType, state.FailureCount, state.LastFailureItemId, state.LastFailureReason, state.LastCloseReason));
+        Assert.Equal((0x50000002u, 0u, 0x50000001u, 2u, 4u), (state.LastAcceptedBy, state.LastDeclinedBy, state.LastResetBy, state.CompletedCount, state.PartnerAcceptCount));
+        Assert.Equal(new uint[] { 0x80000101 }, host.GetTradeItems(TradeSide.You));
+        Assert.Equal(new uint[] { 0x80000201, 0x80000202 }, host.GetTradeItems(TradeSide.Partner));
+
+        var raw = new TradeStateNative { Size = 8 };
+        Assert.Equal(8, ((delegate* unmanaged[Cdecl]<TradeStateNative*, int>)table.Native->GetTradeStateFn)(&raw));
+        Assert.Equal(8u, raw.Size);
+        Assert.Equal(0u, raw.Generation);                    // past the 8 bytes asked for
+        raw = new TradeStateNative { Size = 4 };
+        Assert.Equal(0, ((delegate* unmanaged[Cdecl]<TradeStateNative*, int>)table.Native->GetTradeStateFn)(&raw));
+        Assert.Equal(-1, ((delegate* unmanaged[Cdecl]<int, uint*, int, int>)table.Native->GetTradeItemsFn)(3, null, 0));
+
+        view.TradeState = null;
+        Assert.False(host.TryGetTradeState(out _));
+    }
+
+    [Fact]
+    public void TradeSlots_ActionsReachTheView()
+    {
+        var view = new FakeGameView { PlayerId = 0x50000001 };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.TradeOpen(0x50000002));
+        Assert.False(host.TradeOpen(0));
+        Assert.True(host.TradeAdd(0x80000101, 4));
+        Assert.False(host.TradeAdd(0));
+        Assert.True(host.TradeAccept());
+        Assert.True(host.TradeDecline());
+        Assert.True(host.TradeReset());
+        Assert.True(host.TradeClose());
+        Assert.Equal(
+            new[] { "trade open 50000002", "trade add 80000101", "trade accept", "trade decline", "trade reset", "trade close" },
+            view.Actions);
     }
 }

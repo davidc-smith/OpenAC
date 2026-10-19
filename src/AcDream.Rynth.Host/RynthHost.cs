@@ -27,6 +27,7 @@ public sealed unsafe class RynthHost : IDisposable
             foreach (Type exportsType in exportsTypes)
                 Load(exportsType);
             Bridge = new RynthEventBridge(_plugins, _log);
+            Bridge.LoggedOut += _table.Salvage.Close;
         }
         catch
         {
@@ -39,15 +40,47 @@ public sealed unsafe class RynthHost : IDisposable
 
     internal RynthMotionHolds Holds => _table.Holds;
 
+    internal RynthVendorTrades Vendor => _table.Vendor;
+
     public IReadOnlyList<RynthPlugin> Plugins => _plugins;
 
     /// <summary>The runtime observer that feeds the plugins.</summary>
     public RynthEventBridge Bridge { get; }
 
+    /// <summary>The client's vendor state changed: RynthCore's vendor events, and the vendor list generation.</summary>
+    public void OnVendorChanged(RynthVendorChange change, uint previousVendorId, uint vendorId)
+    {
+        switch (change)
+        {
+            case RynthVendorChange.Opened:
+                // RynthCore queues the replaced vendor's close before the new one's open.
+                if (previousVendorId != 0 && previousVendorId != vendorId)
+                    Bridge.OnVendorClosed(previousVendorId);
+                _table.Vendor.NoteOpened();
+                Bridge.OnVendorOpened(vendorId);
+                break;
+            case RynthVendorChange.Refreshed:
+                _table.Vendor.NoteOpened();
+                Bridge.OnVendorOpened(vendorId);
+                break;
+            case RynthVendorChange.Closed:
+                if (previousVendorId != 0)
+                    Bridge.OnVendorClosed(previousVendorId);
+                break;
+            case RynthVendorChange.Reset:
+                _table.Vendor.Reset();
+                if (previousVendorId != 0)
+                    Bridge.OnVendorClosed(previousVendorId);
+                break;
+        }
+    }
+
     /// <summary>Delivers the frame's queued events, then ticks each plugin inside one Nav3D frame, as RynthCore's frame does.</summary>
     public void Tick()
     {
         Bridge.DeliverQueued();
+        try { _table.Vendor.Tick(); }
+        catch (Exception error) { _log($"vendor tick failed: {error.Message}"); }
         // A view fault here must not cost the plugins their tick.
         try { _table.Holds.Sync(); }
         catch (Exception error) { _log($"holding movement failed: {error.Message}"); }

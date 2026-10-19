@@ -149,4 +149,71 @@ public sealed class RuntimeTradeStateTests
         trade.ApplyAdd(new GameEvents.AddToTrade(ItemA, (uint)RuntimeTradeSide.Self, 0u));
         Assert.Equal(1, updates);
     }
+
+    [Fact]
+    public void CountersFollowEveryTradeEventLikeRynthCore()
+    {
+        using var trade = new RuntimeTradeState();
+
+        trade.ApplyRegister(new GameEvents.RegisterTrade(Partner, Partner, 0uL), Self);
+        trade.ApplyAdd(new GameEvents.AddToTrade(ItemA, (uint)RuntimeTradeSide.Self, 0u));
+        trade.ApplyAccept(Partner, Self);
+        trade.ApplyAccept(Self, Self);
+        trade.ApplyFailure(new GameEvents.TradeFailure(ItemA, 0x0426u));
+        trade.ApplyDecline(Partner, Self);
+        trade.ApplyReset(Partner);
+        trade.ApplyClearAcceptance();
+        trade.ApplyTradeComplete();
+        trade.ApplyClose(0x51u);
+
+        RuntimeTradeCounters c = trade.View.Counters;
+        Assert.Equal(1u, c.Generation);
+        Assert.Equal(10u, c.Sequence);
+        Assert.Equal(0u, c.InitiatorId);   // the close forgets it, as RynthCore's does
+        Assert.Equal(0x01FFu, c.LastEventType);
+        Assert.Equal(1u, c.PartnerAcceptCount);
+        Assert.Equal(Self, c.LastAcceptedBy);
+        Assert.Equal(Partner, c.LastDeclinedBy);
+        Assert.Equal(Partner, c.LastResetBy);
+        Assert.Equal(1u, c.FailureCount);
+        Assert.Equal(ItemA, c.LastFailureItemId);
+        Assert.Equal(0x0426u, c.LastFailureReason);
+        Assert.Equal(1u, c.CompletedCount);
+        Assert.Equal(0x51u, c.LastCloseReason);
+    }
+
+    [Fact]
+    public void CountersMoveEvenWithNoTradeOpen()
+    {
+        using var trade = new RuntimeTradeState();
+
+        trade.ApplyAccept(Partner, Self);
+        trade.ApplyReset(Partner);
+
+        RuntimeTradeCounters c = trade.View.Counters;
+        Assert.Equal(2u, c.Sequence);
+        Assert.Equal(0x0205u, c.LastEventType);
+        Assert.Equal(0u, c.Generation);
+        Assert.False(trade.View.Snapshot.IsOpen);
+    }
+
+    [Fact]
+    public void ARegisterAfterACloseStartsANewGeneration()
+    {
+        using var trade = new RuntimeTradeState();
+
+        trade.ApplyRegister(new GameEvents.RegisterTrade(Self, Partner, 0uL), Self);
+        trade.ApplyClose(1u);
+
+        // RynthCore's CloseTrade forgets the initiator and keeps the reason.
+        Assert.Equal(0u, trade.View.Counters.InitiatorId);
+        Assert.Equal(1u, trade.View.Counters.LastCloseReason);
+
+        trade.ApplyRegister(new GameEvents.RegisterTrade(Partner, Partner, 0uL), Self);
+
+        // Its RegisterTrade clears the last close reason.
+        Assert.Equal(2u, trade.View.Counters.Generation);
+        Assert.Equal(Partner, trade.View.Counters.InitiatorId);
+        Assert.Equal(0u, trade.View.Counters.LastCloseReason);
+    }
 }

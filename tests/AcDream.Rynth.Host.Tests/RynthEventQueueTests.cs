@@ -78,6 +78,23 @@ public sealed class RynthEventQueueTests
         Assert.Equal(0, loggedIn);
     }
 
+    [Fact]
+    public void LoggedOutFiresOncePerLeavingWorldAndAThrowingHandlerIsLogged()
+    {
+        QueueRecorder.Calls.Clear();
+        var log = new List<string>();
+        using var host = new RynthHost(_view, log.Add, [typeof(QueueRecorder)]);
+        int closed = 0;
+        host.Bridge.LoggedOut += () => closed++;
+        host.Bridge.LoggedOut += () => throw new InvalidOperationException("boom");
+
+        host.Bridge.OnLeavingWorld();
+
+        Assert.Equal(1, closed);
+        Assert.Equal(["logout"], QueueRecorder.Calls);
+        Assert.Contains(log, line => line.Contains("LoggedOut handler failed"));
+    }
+
     // A plugin export cannot throw across the UnmanagedCallersOnly boundary (the
     // process would fail fast), so a throwing delivery is queued directly.
     [Fact]
@@ -172,6 +189,73 @@ public sealed class RynthEventQueueTests
         Assert.Empty(QueueRecorder.Calls);
     }
 
+    [Fact]
+    public void VendorEventsArriveInRynthCoresDrainOrder()
+    {
+        QueueRecorder.Calls.Clear();
+        using var host = new RynthHost(_view, _ => { }, [typeof(QueueRecorder)]);
+
+        host.Bridge.OnContainerContentsChanged(0x80000100);
+        host.OnVendorChanged(RynthVendorChange.Opened, previousVendorId: 0x80000600, vendorId: 0x80000700);
+        host.Bridge.OnContainerClosed(0x80000100);
+        Assert.Empty(QueueRecorder.Calls);
+        host.Tick();
+
+        // RynthCore queues the replaced vendor's close before the new open, but drains the
+        // open queue before the close queue (PluginManager.ProcessPendingActions), so a
+        // switch inside one frame reaches plugins as the new open, then the old close.
+        Assert.Equal(
+            ["stop-viewing 80000100", "vendor-open 80000700", "vendor-close 80000600", "update-inventory 80000100", "tick"],
+            QueueRecorder.Calls);
+        Assert.Equal(1u, host.Vendor.Generation);
+    }
+
+    [Fact]
+    public void RefreshOpensAgainAndResetCloses()
+    {
+        QueueRecorder.Calls.Clear();
+        using var host = new RynthHost(_view, _ => { }, [typeof(QueueRecorder)]);
+
+        host.OnVendorChanged(RynthVendorChange.Opened, previousVendorId: 0, vendorId: 0x80000700);
+        host.Bridge.DeliverQueued();
+        Assert.Equal(["vendor-open 80000700"], QueueRecorder.Calls);
+        Assert.Equal(1u, host.Vendor.Generation);
+
+        host.OnVendorChanged(RynthVendorChange.Refreshed, previousVendorId: 0x80000700, vendorId: 0x80000700);
+        host.Bridge.DeliverQueued();
+        Assert.Equal(["vendor-open 80000700", "vendor-open 80000700"], QueueRecorder.Calls);
+        Assert.Equal(2u, host.Vendor.Generation);
+
+        host.OnVendorChanged(RynthVendorChange.Reset, previousVendorId: 0x80000700, vendorId: 0);
+        host.Bridge.DeliverQueued();
+        Assert.Equal(["vendor-open 80000700", "vendor-open 80000700", "vendor-close 80000700"], QueueRecorder.Calls);
+
+        host.OnVendorChanged(RynthVendorChange.Opened, previousVendorId: 0, vendorId: 0x80000800);
+        host.OnVendorChanged(RynthVendorChange.Closed, previousVendorId: 0x80000800, vendorId: 0);
+        host.Bridge.DeliverQueued();
+        Assert.Equal(
+            ["vendor-open 80000700", "vendor-open 80000700", "vendor-close 80000700", "vendor-open 80000800", "vendor-close 80000800"],
+            QueueRecorder.Calls);
+        Assert.Equal(3u, host.Vendor.Generation);
+    }
+
+    [Fact]
+    public void AResetClearsTheRequestInFlight()
+    {
+        QueueRecorder.Calls.Clear();
+        _view.OpenVendor = new RynthVendor(0x80000700, "Vendor", 0, 0, 0, false, 1f, 1f, 0, "", 0, -1, 0,
+            [new(0x80000701, 1, "Sword", 1, 0, Amount: -1, StackSize: 1, MaxStackSize: 0, Value: 1, UnitValue: 1,
+                UnitPrice: 1, Burden: 1, NeedsContainerSlot: false)]);
+        using var host = new RynthHost(_view, _ => { }, [typeof(QueueRecorder)]);
+
+        Assert.NotEqual(0u, host.Vendor.Buy(0, [(0x80000701, 1)]));
+        Assert.True(host.Vendor.InFlight);
+        host.OnVendorChanged(RynthVendorChange.Reset, previousVendorId: 0x80000700, vendorId: 0);
+        Assert.False(host.Vendor.InFlight);
+        Assert.Equal((RynthVendorTrades.StateDone, RynthVendorTrades.ResultTimedOut),
+            (host.Vendor.Status.State, host.Vendor.Status.Result));
+    }
+
     private static RuntimeEntityDelta Created(uint objectId) =>
         new(default, RuntimeEntityChange.Registered,
             new RuntimeEntitySnapshot(new RuntimeEntityIdentity(objectId, 1, 1), 0, 0, null));
@@ -240,6 +324,18 @@ public sealed class RynthEventQueueTests
 
         [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnEnchantmentRemoved", CallConvs = new[] { typeof(CallConvCdecl) })]
         private static void Removed(uint spellId) => Calls.Add($"ench- {spellId}");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnStopViewingObjectContents", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void StopViewing(uint id) => Calls.Add($"stop-viewing {id:X8}");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnUpdateObjectInventory", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void UpdateInventory(uint id) => Calls.Add($"update-inventory {id:X8}");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnVendorOpen", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void VendorOpen(uint id) => Calls.Add($"vendor-open {id:X8}");
+
+        [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnVendorClose", CallConvs = new[] { typeof(CallConvCdecl) })]
+        private static void VendorClose(uint id) => Calls.Add($"vendor-close {id:X8}");
 
         [UnmanagedCallersOnly(EntryPoint = "RynthPluginOnChatWindowText", CallConvs = new[] { typeof(CallConvCdecl) })]
         private static void Chat(IntPtr text, int chatType, IntPtr eat) =>

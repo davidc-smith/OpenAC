@@ -56,6 +56,31 @@ public sealed class RuntimeTradeAutomation : ITradeAutomation
     public bool MyAccepted => Snapshot.SelfAccepted;
     public bool PartnerAccepted => Snapshot.PartnerAccepted;
 
+    public PluginTradeEventCounters Events
+    {
+        get
+        {
+            RuntimeTradeCounters c = _runtime.Trade.Counters;
+            return new(c.Generation, c.Sequence, c.InitiatorId, c.LastEventType, c.FailureCount,
+                c.LastFailureItemId, c.LastFailureReason, c.LastCloseReason, c.LastAcceptedBy,
+                c.LastDeclinedBy, c.LastResetBy, c.CompletedCount, c.PartnerAcceptCount);
+        }
+    }
+
+    public PluginTradeCommandResult Open(uint partnerObjectId)
+    {
+        if (!IsAvailable)
+            return new(PluginTradeCommandStatus.Unavailable);
+        if (partnerObjectId == 0u || partnerObjectId == _runtime.PlayerIdentity.ServerGuid)
+            return new(PluginTradeCommandStatus.InvalidItem);
+        if (Snapshot.IsOpen)
+            return new(PluginTradeCommandStatus.Refused, "a trade is already open");
+        if (Session is not { } session)
+            return new(PluginTradeCommandStatus.Unavailable);
+        session.SendOpenTradeNegotiations(partnerObjectId);
+        return new(PluginTradeCommandStatus.Sent);
+    }
+
     private AcDream.Core.Net.WorldSession? Session => _runtime.Session.CurrentSession;
 
     public PluginTradeCommandResult Add(uint itemObjectId)

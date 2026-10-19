@@ -14,6 +14,7 @@ internal sealed class FakeRynthAutomation : IAutomationSurface
     public FakeObjects ObjectArea { get; } = new();
     public FakeRecovery RecoveryArea { get; } = new();
     public FakeNavigation NavigationArea { get; } = new();
+    public FakeLoot LootArea { get; } = new();
 
     public bool IsAvailable => Available;
     public ICharacterInfo Character => CharacterArea;
@@ -26,6 +27,24 @@ internal sealed class FakeRynthAutomation : IAutomationSurface
     public IWorldObjectAutomation Objects => ObjectArea;
     public IRecoveryAutomation Recovery => RecoveryArea;
     public INavigationAutomation Navigation => NavigationArea;
+    public ILootAutomation Loot => LootArea;
+}
+
+internal sealed class FakeLoot : ILootAutomation
+{
+    public List<string> Calls { get; } = new();
+
+    public PluginItemCommandResult Pickup(uint objectId, bool mainPack = false)
+    {
+        Calls.Add($"pickup {objectId:X8}");
+        return new(PluginItemCommandStatus.Started);
+    }
+
+    public PluginItemCommandResult Pickup(uint objectId, uint preferredContainerObjectId)
+    {
+        Calls.Add($"pickup {objectId:X8} into {preferredContainerObjectId:X8}");
+        return new(PluginItemCommandStatus.Started);
+    }
 }
 
 internal sealed class FakeCharacter : ICharacterInfo
@@ -121,6 +140,18 @@ internal sealed class FakeItems : IItemAutomation
     public PluginItemCommandResult Merge(uint sourceObjectId, uint targetObjectId, uint amount = 0u)
     {
         Calls.Add($"merge {sourceObjectId:X8} {targetObjectId:X8} {amount}");
+        return new(Answer);
+    }
+
+    public PluginItemCommandResult Drop(uint objectId, uint amount = 0u)
+    {
+        Calls.Add($"drop {objectId:X8} {amount}");
+        return new(Answer);
+    }
+
+    public PluginItemCommandResult Give(uint objectId, uint targetObjectId, uint amount = 0u)
+    {
+        Calls.Add($"give {objectId:X8} {targetObjectId:X8} {amount}");
         return new(Answer);
     }
 }

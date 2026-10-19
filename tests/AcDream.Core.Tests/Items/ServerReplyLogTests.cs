@@ -23,4 +23,16 @@ public sealed class ServerReplyLogTests
         Assert.Equal(0x00A0u, snapshot.LastWeenieErrorEventType);
         Assert.Equal(0x80000010u, snapshot.LastWeenieErrorObjectId);
     }
+
+    [Fact]
+    public void WeenieErrorRecordedIsRaisedAfterTheSnapshotMoves()
+    {
+        var log = new ServerReplyLog();
+        var seen = new List<(uint Code, int Sequence)>();
+        log.WeenieErrorRecorded += code => seen.Add((code, log.Snapshot.WeenieErrorSequence));
+
+        log.RecordWeenieError(0x28Au, 0x0529u, 0u);
+
+        Assert.Equal(new[] { (0x0529u, 1) }, seen);
+    }
 }

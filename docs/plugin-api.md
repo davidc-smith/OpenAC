@@ -1035,6 +1035,13 @@ false, zero or empty when there is no fellowship.
 
 ## Loot
 
+`host.Automation.Loot.Pickup(objectId, preferredContainerObjectId)` is
+`Pickup` into a preferred pack: the player's own container when it has room,
+otherwise wherever the client's own placement would put it. 0 or the
+player's id is the client's own choice, exactly as `Pickup(objectId)`; a
+container the player does not own answers `InvalidTarget` and sends nothing.
+Needs contract `0.1.25-fork.9`.
+
 A classifier is registered under `<pluginId>/<classifierId>` — the id a
 plugin passes to `Register` is scoped by its own manifest id before other
 plugins ever see it. A plugin that registers `"loot-rules"` is visible to the
@@ -1097,6 +1104,19 @@ if (host.Automation.Trade.IsOpen)
 the same way: each returns `PluginTradeCommandResult` with a
 `PluginTradeCommandStatus` of `Unavailable` (no in-world session),
 `NotOpen` (no trade window is open), `InvalidItem`, or `Sent`.
+
+`Open(partnerObjectId)` asks the server to open a trade with another player,
+the same as the client's own trade request: `Sent`, `Unavailable` (not in
+world, no session), `Refused` while a trade is already open, `InvalidItem`
+for 0 or the player. `Events` (`PluginTradeEventCounters`) are RynthCore-style
+counters: `Generation` (trades opened), `Sequence` (every
+trade event), `InitiatorId`, `LastEventType`, `FailureCount`,
+`LastFailureItemId`, `LastFailureReason`, `LastCloseReason`, `LastAcceptedBy`,
+`LastDeclinedBy`, `LastResetBy`, `CompletedCount`, `PartnerAcceptCount`;
+compare two reads to see what happened between them. The counts only grow;
+as in RynthCore, a trade's close sets `InitiatorId` back to 0 and the next
+trade's register sets `LastCloseReason` back to 0. All zero on a host
+without them. `Open` and `Events` need contract `0.1.25-fork.9`.
 
 `Accept` is a no-op (returns `AlreadyAccepted` without touching the wire)
 once `MyAccepted` is already true -- the same guard the window's own

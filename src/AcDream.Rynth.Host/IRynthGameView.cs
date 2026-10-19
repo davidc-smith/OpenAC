@@ -184,4 +184,57 @@ public interface IRynthGameView
 
     /// <summary>Whether an object's last motion was On (true) or Off (false); false when neither has been seen.</summary>
     bool TryGetObjectMotionOn(uint objectId, out bool isOn);
+
+    /// <summary>
+    /// RynthAi's general move (RynthCore's MoveItemExternal), chosen by the objects: an item in the
+    /// open corpse or chest is looted, whole, into the target pack (0 or the player: the client's
+    /// own choice); an owned item goes to the ground (target 0), into a pack the player owns or the
+    /// player's main pack, or to any other known target as a give. Amount 0 is the whole stack.
+    /// True when sent.
+    /// </summary>
+    bool MoveItemExternal(uint objectId, uint targetId, uint amount);
+
+    /// <summary>Gives all (0) or part of an owned stack to a world target. True when sent.</summary>
+    bool GiveItem(uint objectId, uint targetId, uint amount);
+
+    /// <summary>Closes the open corpse or chest. True when sent.</summary>
+    bool CloseContainer(uint containerId);
+
+    /// <summary>True when the object is a tinkering tool (an Ust) the player owns.</summary>
+    bool IsOwnedTinkeringTool(uint objectId);
+
+    /// <summary>True when the player owns the item (in a pack or worn).</summary>
+    bool IsOwnedItem(uint objectId);
+
+    /// <summary>Salvages the items with the tool in one request. True when sent.</summary>
+    bool Salvage(uint toolId, IReadOnlyList<uint> itemIds);
+
+    /// <summary>An object's sub-palettes (id, offset) in offset order; null when the object is unknown.</summary>
+    IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId);
+
+    /// <summary>A container's direct contents split into items and containers (worn items are not contents); false when it is unknown.</summary>
+    bool TryCountContents(uint containerId, out int items, out int containers);
+
+    /// <summary>The open vendor; null when none is open.</summary>
+    RynthVendor? Vendor { get; }
+
+    /// <summary>Buys the given listings in one request. False (with the reason) when the client would not send it.</summary>
+    bool VendorBuy(IReadOnlyList<(uint ObjectId, int Amount)> items, out string? notice);
+
+    /// <summary>Sells the given owned items, whole stacks, in one request. False (with the reason) when the client would not send it.</summary>
+    bool VendorSell(IReadOnlyList<uint> itemIds, out string? notice);
+
+    /// <summary>Raised on the game thread with the server's answer to a buy or sell the view sent.</summary>
+    event Action<RynthVendorOutcome>? VendorTransactionCompleted;
+
+    /// <summary>The trade window and counters; null when the client cannot trade (out of world).</summary>
+    RynthTradeState? Trade { get; }
+
+    /// <summary>Trade actions; true when sent. Open asks the partner, Add stages an owned item, Close ends the trade.</summary>
+    bool TradeOpen(uint partnerId);
+    bool TradeAdd(uint itemId);
+    bool TradeAccept();
+    bool TradeDecline();
+    bool TradeReset();
+    bool TradeClose();
 }

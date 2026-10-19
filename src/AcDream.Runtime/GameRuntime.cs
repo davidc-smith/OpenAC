@@ -266,6 +266,12 @@ public sealed class GameRuntime
 
             context.Trade = new RuntimeTradeState(context.EntityObjects!.Objects);
             construction.Own(context.Trade);
+            RuntimeTradeState trade = context.Trade;
+            context.Inventory.ServerReplies.WeenieErrorRecorded += code =>
+            {
+                if (code == (uint)AcDream.Core.Physics.WeenieError.TradeComplete)
+                    trade.ApplyTradeComplete();
+            };
             Fault(
                 GameRuntimeConstructionPoint.TradeCreated,
                 context,

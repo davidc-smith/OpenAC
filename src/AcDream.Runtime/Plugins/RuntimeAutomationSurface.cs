@@ -114,6 +114,7 @@ internal sealed class RuntimeAutomationSurface
     private Func<uint, uint, bool>? _dropItem;
     private Func<uint, uint, uint, bool>? _giveItem;
     private Func<uint, bool, AcDream.Runtime.Gameplay.RuntimeBackpackPlacementOutcome>? _pickupItem;
+    private Func<uint, uint, AcDream.Runtime.Gameplay.RuntimeBackpackPlacementOutcome>? _pickupItemInto;
     private Func<uint, bool>? _identifyItem;
     private Func<uint, IReadOnlyList<uint>, bool>? _salvageItems;
     private PluginActivationCompletion _lastActivationCompletion;
@@ -1224,7 +1225,8 @@ internal sealed class RuntimeAutomationSurface
         Func<uint, bool> identifyItem,
         Func<uint, IReadOnlyList<uint>, bool>? salvageItems = null,
         Func<uint, uint, int, bool>? sellItem = null,
-        Func<uint, uint, uint, int, bool, bool>? moveItemJoiningStack = null)
+        Func<uint, uint, uint, int, bool, bool>? moveItemJoiningStack = null,
+        Func<uint, uint, AcDream.Runtime.Gameplay.RuntimeBackpackPlacementOutcome>? pickupItemInto = null)
     {
         ArgumentNullException.ThrowIfNull(useItem);
         ArgumentNullException.ThrowIfNull(applyItem);
@@ -1244,6 +1246,7 @@ internal sealed class RuntimeAutomationSurface
             _dropItem = dropItem;
             _giveItem = giveItem;
             _pickupItem = pickupItem;
+            _pickupItemInto = pickupItemInto;
             _identifyItem = identifyItem;
             _salvageItems = salvageItems;
             _sellItem = sellItem;
@@ -5367,6 +5370,38 @@ internal sealed class RuntimeAutomationSurface
         }
         if (runtime is null || pickup is null || !IsAvailable)
             return new(PluginItemCommandStatus.Unavailable);
+        return PickupChecked(runtime, objectId, () => pickup(objectId, mainPack));
+    }
+
+    public PluginItemCommandResult Pickup(uint objectId, uint preferredContainerObjectId)
+    {
+        GameRuntime? runtime;
+        lock (_gate)
+            runtime = _runtime;
+        if (runtime is null || !IsAvailable)
+            return new(PluginItemCommandStatus.Unavailable);
+        uint player = runtime.PlayerIdentity.ServerGuid;
+        if (preferredContainerObjectId == 0u || preferredContainerObjectId == player)
+            return Pickup(objectId);
+        ClientObjectTable objects = runtime.InventoryOwner.Objects;
+        if (!TryGetOwned(objects, player, preferredContainerObjectId, out ClientObject? pack)
+            || pack!.ItemsCapacity <= 0)
+        {
+            return new(PluginItemCommandStatus.InvalidTarget);
+        }
+        Func<uint, uint, AcDream.Runtime.Gameplay.RuntimeBackpackPlacementOutcome>? into;
+        lock (_gate)
+            into = _pickupItemInto;
+        if (into is null)
+            return new(PluginItemCommandStatus.Unavailable);
+        return PickupChecked(runtime, objectId, () => into(objectId, preferredContainerObjectId));
+    }
+
+    private static PluginItemCommandResult PickupChecked(
+        GameRuntime runtime,
+        uint objectId,
+        Func<AcDream.Runtime.Gameplay.RuntimeBackpackPlacementOutcome> place)
+    {
         uint root = runtime.InventoryOwner.ExternalContainers.CurrentContainerId;
         ClientObjectTable objects = runtime.InventoryOwner.Objects;
         if (objectId == 0u
@@ -5382,7 +5417,7 @@ internal sealed class RuntimeAutomationSurface
         // answer Started for all of them: a plugin looting a corpse into a
         // full pack was told its request was on its way and then waited for
         // a completion that could never arrive.
-        return pickup(objectId, mainPack) switch
+        return place() switch
         {
             AcDream.Runtime.Gameplay.RuntimeBackpackPlacementOutcome.Sent =>
                 new(PluginItemCommandStatus.Started),
@@ -6368,6 +6403,7 @@ internal sealed class RuntimeAutomationSurface
             _dropItem = null;
             _giveItem = null;
             _pickupItem = null;
+            _pickupItemInto = null;
             _identifyItem = null;
             _salvageItems = null;
             _sellItem = null;

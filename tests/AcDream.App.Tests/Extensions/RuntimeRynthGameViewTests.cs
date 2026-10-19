@@ -34,6 +34,52 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
+    public void TheOpenVendorComesFromTheVendorStateWithRynthCoresCounts()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var player = new ClientObject { ObjectId = 0x50000001, Name = "Sammy" };
+        player.Properties.Ints[20] = 1_234;
+        runtime.InventoryOwner.Objects.AddOrUpdate(player);
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000700, Name = "Thorsten" });
+        runtime.InventoryOwner.Objects.AddOrUpdate(
+            new ClientObject { ObjectId = 0x80000110, ContainerId = 0x50000001, ItemsCapacity = 24 });
+        runtime.InventoryOwner.Objects.AddOrUpdate(
+            new ClientObject { ObjectId = 0x80000111, ContainerId = 0x50000001, WeenieClassId = 300, StackSize = 7 });
+        runtime.InventoryOwner.Objects.AddOrUpdate(
+            new ClientObject { ObjectId = 0x80000112, ContainerId = 0x80000110, WeenieClassId = 300, StackSize = 5 });
+        // Pack contents arrive as server listings.
+        runtime.InventoryOwner.Objects.ReplaceContents(0x50000001, new uint[] { 0x80000110, 0x80000111 });
+        runtime.InventoryOwner.Objects.ReplaceContents(0x80000110, new uint[] { 0x80000112 });
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.Null(view.Vendor);
+
+        runtime.InventoryOwner.Vendor.Apply(
+            0x80000700,
+            new VendorShopProfile(0x1u, 0u, uint.MaxValue, true, 0.9f, 1.3f, 300u, 12u, "Tokens"),
+            [
+                new VendorShopItem(0x80000701, 5, 30, "Sword", 1u, 0x06001234, 100, Burden: 200),
+                new VendorShopItem(0x80000702, -1, 31, "Gem", 0x800u, 0x06005678, 50, DescStackSize: 5,
+                    MaxStackSize: 100),
+                new VendorShopItem(0x80000703, 1, 32, "Pack", 0x200u, 0x06009999, 10, ItemsCapacity: 24),
+            ]);
+
+        RynthVendor vendor = Assert.IsType<RynthVendor>(view.Vendor);
+        Assert.Equal((0x80000700u, "Thorsten", int.MaxValue, 1.3f), (vendor.VendorId, vendor.Name, vendor.MaxValue, vendor.SellRate));
+        Assert.Equal((300u, "Tokens", 12, 12), (vendor.AltCurrencyWcid, vendor.AltCurrencyName,
+            vendor.AltCurrencyServerCount, vendor.AltCurrencyHave));
+        Assert.Equal(1_234, vendor.PlayerCoins);
+        Assert.Equal(3, vendor.Items.Count);
+        Assert.Equal((5, false), (vendor.Items[0].Amount, vendor.Items[0].Unlimited));
+        Assert.Equal((-1, true, true, 10), (vendor.Items[1].Amount, vendor.Items[1].Unlimited,
+            vendor.Items[1].Stackable, vendor.Items[1].UnitValue));
+        Assert.True(vendor.Items[2].NeedsContainerSlot);
+
+        runtime.InventoryOwner.Vendor.Close();
+        Assert.Null(view.Vendor);
+    }
+
+    [Fact]
     public void WriteChatLine_AddsASystemLine()
     {
         var runtime = GameRuntimeTestFactory.Create();
@@ -292,6 +338,59 @@ public sealed class RuntimeRynthGameViewTests
         Assert.False(view.UseObject(0x80000010));
     }
 
+    // RynthAi's MoveItemExternal is its general move: loot (amount 0), /mt drop (target 0), pack
+    // moves, and gives to an NPC or player with the stack size as the amount.
+    [Theory]
+    [InlineData(0x80000400u, 0x80000200u, 0u, "loot", "pickup 80000400 into 80000200")]
+    [InlineData(0x80000400u, 0x50000001u, 0u, "loot", "pickup 80000400")]
+    [InlineData(0x80000400u, 0u, 0u, "loot", "pickup 80000400")]
+    [InlineData(0x80000400u, 0x80000200u, 5u, "loot", "pickup 80000400 into 80000200")]
+    [InlineData(0x80000100u, 0u, 0u, "item", "drop 80000100 0")]
+    [InlineData(0x80000100u, 0u, 3u, "item", "drop 80000100 3")]
+    [InlineData(0x80000100u, 0x80000200u, 0u, "item", "move 80000100 80000200 0 0")]
+    [InlineData(0x80000100u, 0x50000001u, 4u, "item", "move 80000100 50000001 4 0")]
+    [InlineData(0x80000100u, 0x80000500u, 7u, "item", "give 80000100 80000500 7")]
+    public void MoveItemExternalPicksTheMoveFromTheObjects(uint item, uint target, uint amount, string area, string call)
+    {
+        var (runtime, automation) = MoveFixture();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.True(view.MoveItemExternal(item, target, amount));
+
+        Assert.Equal(new[] { call }, area == "loot" ? automation.LootArea.Calls : automation.ItemArea.Calls);
+        Assert.Empty(area == "loot" ? automation.ItemArea.Calls : automation.LootArea.Calls);
+    }
+
+    [Fact]
+    public void MoveItemExternalRefusesWhatItCannotPlace()
+    {
+        var (runtime, automation) = MoveFixture();
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        Assert.False(view.MoveItemExternal(0x80000100, 0x8000FFFF, 0));   // unknown target
+        Assert.False(view.MoveItemExternal(0x80000100, 0x80000101, 0));   // an owned item that holds nothing
+        Assert.False(view.MoveItemExternal(0, 0x80000200, 0));
+        Assert.Empty(automation.ItemArea.Calls);
+        Assert.Empty(automation.LootArea.Calls);
+    }
+
+    private static (AcDream.Runtime.GameRuntime, FakeRynthAutomation) MoveFixture()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        ClientObjectTable objects = runtime.InventoryOwner.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Name = "Sammy" });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000200, ContainerId = 0x50000001, ItemsCapacity = 24 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000100, ContainerId = 0x50000001, StackSize = 10 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000101, ContainerId = 0x50000001 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000300, Name = "Corpse of Drudge" });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000400, ContainerId = 0x80000300 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000500, Name = "Thorsten" });
+        var automation = new FakeRynthAutomation();
+        automation.ObjectArea.OpenContainer = 0x80000300;
+        return (runtime, automation);
+    }
+
     [Fact]
     public void SelectIsTrueWhenTheObjectEndsUpSelectedAndQueryHealthNeedsASession()
     {
@@ -502,6 +601,51 @@ public sealed class RuntimeRynthGameViewTests
         record.Snapshot = record.Snapshot with { MotionState = new CreateObject.ServerMotionState(Stance: 0x3D, ForwardCommand: 0x000C) };
         Assert.True(view.TryGetObjectMotionOn(0x7A9B4001, out bool closed));
         Assert.False(closed);
+    }
+
+    // RynthCore reads the client's Subpalette.offset, a colour index: the wire's blocks of eight times 8.
+    [Fact]
+    public void PaletteOffsetsAreColourIndexesInOffsetOrder()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.Null(view.GetPalettes(0x80000010));
+
+        RuntimeEntityRecord record = runtime.EntityObjects.Entities.AddActive(Spawn(0x80000010));
+        record.Snapshot = record.Snapshot with
+        {
+            SubPalettes =
+            [
+                new CreateObject.SubPaletteSwap(0x04001234, 3, 1),
+                new CreateObject.SubPaletteSwap(0x04005678, 0, 2),
+            ],
+        };
+
+        Assert.Equal(new[] { (0x04005678u, 0u), (0x04001234u, 24u) }, view.GetPalettes(0x80000010));
+    }
+
+    // A container slot is what the client's placement search counts as one: packs and spell foci.
+    [Fact]
+    public void ContainedCountsSplitContainerSlotsAsThePlacementSearchDoes()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        ClientObjectTable objects = runtime.InventoryOwner.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Name = "Sammy" });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000110, ContainerId = 0x50000001, ItemsCapacity = 24 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000111, ContainerId = 0x50000001 });
+        objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000112, ContainerId = 0x50000001 });
+        // The listing names the focus by its container type (2), as the server's does.
+        objects.ReplaceContents(0x50000001, new ContainerContentEntry[]
+        {
+            new(0x80000110, 1u), new(0x80000111, 2u), new(0x80000112, 0u),
+        });
+        var view = new RuntimeRynthGameView(runtime);
+
+        Assert.True(view.TryCountContents(0x50000001, out int items, out int containers));
+        Assert.Equal(1, items);
+        Assert.Equal(2, containers);
+        Assert.False(view.TryCountContents(0x8000FFFF, out _, out _));
     }
 
     private static WorldSession.EntitySpawn Spawn(uint guid)

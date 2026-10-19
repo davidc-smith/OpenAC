@@ -247,4 +247,14 @@ public interface ILootAutomation
         uint objectId,
         bool mainPack = false) =>
         new(PluginItemCommandStatus.Unavailable);
+
+    /// <summary>
+    /// <see cref="Pickup(uint, bool)"/> into a preferred pack: the player's own
+    /// container <paramref name="preferredContainerObjectId"/> when it has room, else
+    /// where the client's own placement would put it. 0 or the player's id is the
+    /// client's own choice. <see cref="PluginItemCommandStatus.InvalidTarget"/> for a
+    /// container the player does not own. Fork contract 0.1.25-fork.9.
+    /// </summary>
+    PluginItemCommandResult Pickup(uint objectId, uint preferredContainerObjectId) =>
+        new(PluginItemCommandStatus.Unavailable);
 }

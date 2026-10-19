@@ -2014,6 +2014,57 @@ public sealed class ItemInteractionControllerTests
             h.BackpackPlacements);
     }
 
+    // The real placement behind Loot.Pickup(id, pack): the named pack is the
+    // destination while it has room, and the placement search falls back to the
+    // root once it is full.
+    [Fact]
+    public void PreferredContainerNamesThatPackAndFallsBackWhenItIsFull()
+    {
+        var h = new Harness();
+        const uint sidePack = 0x50000A31u;
+        h.Objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = sidePack,
+            Name = "Side Pack",
+            Type = ItemType.Container,
+            ItemsCapacity = 3,
+        });
+        h.Objects.MoveItem(sidePack, Player, 1);
+
+        const uint first = 0x70000A31u;
+        h.Objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = first,
+            Name = "First",
+            Type = ItemType.Misc,
+        });
+        Assert.Equal(
+            RuntimeBackpackPlacementOutcome.Sent,
+            h.Controller.TryPlaceWorldItemInBackpack(first, false, sidePack));
+        Assert.Equal(new[] { (first, sidePack, 0) }, h.BackpackPlacements);
+        h.Objects.ApplyConfirmedServerMove(first, sidePack, 0u, 0);
+
+        for (uint i = 0; i < 2; i++)
+        {
+            uint filler = 0x70000A40u + i;
+            h.Objects.AddOrUpdate(new ClientObject
+            {
+                ObjectId = filler,
+                Name = "Filler",
+                Type = ItemType.Misc,
+            });
+            h.Objects.MoveItem(filler, sidePack, (int)i + 1);
+        }
+
+        const uint overflow = 0x70000A32u;
+        Assert.Equal(
+            RuntimeBackpackPlacementOutcome.Sent,
+            h.Controller.TryPlaceWorldItemInBackpack(overflow, false, sidePack));
+        Assert.Equal(
+            new[] { (first, sidePack, 0), (overflow, Player, 0) },
+            h.BackpackPlacements);
+    }
+
     [Fact]
     public void ActivateItemOnAGroundItemHonorsMainPackPreferredLikePickupDoes()
     {

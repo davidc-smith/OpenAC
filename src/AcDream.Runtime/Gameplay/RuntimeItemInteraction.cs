@@ -1042,13 +1042,16 @@ public sealed class RuntimeItemInteraction : IDisposable
     /// </summary>
     public RuntimeBackpackPlacementOutcome TryPlaceWorldItemInBackpack(
         uint itemGuid,
-        bool mainPack = false)
+        bool mainPack = false,
+        uint preferredContainer = 0u)
     {
         if (itemGuid == 0u || _placeInBackpack is null)
             return RuntimeBackpackPlacementOutcome.NotThisClients;
 
         uint root = _playerGuid();
-        uint target = PreferredBackpackContainer(mainPack);
+        uint target = preferredContainer != 0u
+            ? preferredContainer
+            : PreferredBackpackContainer(mainPack);
         const int placement = 0;
 
         uint containerId = InventoryPlacementSearch.ChooseContainer(
