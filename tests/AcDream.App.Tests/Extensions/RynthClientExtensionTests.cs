@@ -180,7 +180,7 @@ public sealed class RynthClientExtensionTests : IDisposable
 
         Assert.Contains(
             runtime.CommunicationOwner.Chat.Snapshot(),
-            entry => entry.Text.Contains("/rc bogus isn't in OpenAC (only /rc miniremote).", StringComparison.Ordinal));
+            entry => entry.Text.Contains("/rc bogus isn't in OpenAC (only /rc miniremote and /rc inventory).", StringComparison.Ordinal));
     }
 
     [Fact]
