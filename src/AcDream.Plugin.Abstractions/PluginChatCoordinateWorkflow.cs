@@ -6,7 +6,10 @@ namespace AcDream.Plugin.Abstractions;
 /// <summary>Parses compass coordinate pairs from ordinary chat text.</summary>
 public static partial class PluginChatCoordinateParser
 {
-    [GeneratedRegex(@"(?<a>\d+(?:\.\d+)?)\s*(?<ad>[NSEW])\s*(?:[,;/|]|\s+)\s*(?<b>\d+(?:\.\d+)?)\s*(?<bd>[NSEW])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // A number and a compass letter, twice. A number may not continue a word
+    // or another number and a letter may not start a word, so "10n 20east"
+    // and "v2.1N 3E" are not pairs.
+    [GeneratedRegex(@"(?<![\w.])(?<a>\d+(?:\.\d+)?)\s*(?<ad>[NSEW])(?!\w)\s*(?:[,;/|]|\s+)\s*(?<b>\d+(?:\.\d+)?)\s*(?<bd>[NSEW])(?!\w)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PairPattern();
 
     /// <summary>Finds every unambiguous coordinate pair in a message.</summary>
@@ -15,11 +18,24 @@ public static partial class PluginChatCoordinateParser
     /// Each pair found, in the order it appears; empty for none. A pair is one
     /// north-or-south value and one east-or-west value, in either order, such
     /// as "42.1N 33.5E" or "33.5E, 42.1N". South and west come back negative.
+    /// Neither half may sit inside a longer word or number: "10n 20east" and
+    /// "v2.1N 3E" hold no pair.
     /// </returns>
     public static IReadOnlyList<PluginChatCoordinate> ParseAll(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return Array.Empty<PluginChatCoordinate>();
         var result = new List<PluginChatCoordinate>();
+        foreach ((_, _, PluginChatCoordinate coordinate) in Find(text))
+            result.Add(coordinate);
+        return result;
+    }
+
+    /// <summary>
+    /// Every pair <see cref="ParseAll"/> reads, with where it stands in the
+    /// text, so the client's chat links exactly the pairs a plugin would read.
+    /// </summary>
+    internal static IEnumerable<(int Index, int Length, PluginChatCoordinate Coordinate)> Find(string text)
+    {
         foreach (Match match in PairPattern().Matches(text))
         {
             if (!double.TryParse(match.Groups["a"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double a)
@@ -31,9 +47,8 @@ public static partial class PluginChatCoordinateParser
                 if (ad is not ('E' or 'W') || bd is not ('N' or 'S')) continue;
                 (a, b) = (b, a); (ad, bd) = (bd, ad);
             }
-            result.Add(new PluginChatCoordinate(bd == 'W' ? -b : b, ad == 'S' ? -a : a));
+            yield return (match.Index, match.Length, new PluginChatCoordinate(bd == 'W' ? -b : b, ad == 'S' ? -a : a));
         }
-        return result;
     }
 
     /// <summary>Parses exactly one coordinate pair and rejects ambiguous text.</summary>

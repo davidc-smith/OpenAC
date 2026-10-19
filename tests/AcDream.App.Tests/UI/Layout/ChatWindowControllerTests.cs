@@ -575,6 +575,96 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
+    public void ClickingACoordinateAPluginWroteRaisesACoordinateLink()
+    {
+        var log = new ChatLog();
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+        ctrl.ChatLinkClicked = clicked.Add;
+
+        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u, allowsMarkup: true);
+        UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+        int column = line.Text.IndexOf("42.1N", StringComparison.Ordinal);
+
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, 2)));
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, column + 3)));
+
+        var link = Assert.Single(clicked);
+        Assert.Equal(AcDream.Plugin.Abstractions.PluginChatLinkKind.Coordinate, link.Kind);
+        Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(-33.5, 42.1), link.Coordinate);
+        Assert.Equal("42.1N, 33.5W", link.DisplayText);
+    }
+
+    [Fact]
+    public void ACoordinateLinkIsNamedTheSameUnderACommaDecimalLocale()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+        try
+        {
+            var log = new ChatLog();
+            var (rootInfo, layout, vm) = BuildTestTree(log);
+            var filters = new ChatWindowState();
+            filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+            var ctrl = ChatWindowController.Bind(
+                rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+                NoTex, new RuntimeChatEntryOwner())!;
+            var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+            ctrl.ChatLinkClicked = clicked.Add;
+
+            log.OnSystemMessage(
+                "Go to <COORD:World:42.125S, 33.5E>the bridge<\\COORD>.",
+                chatType: 0u,
+                allowsMarkup: true);
+            UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+            int column = line.Text.IndexOf("bridge", StringComparison.Ordinal);
+
+            Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, column)));
+
+            var link = Assert.Single(clicked);
+            Assert.Equal("42.125S, 33.5E", link.DisplayText);
+            Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(33.5, -42.125), link.Coordinate);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
+    }
+
+    [Fact]
+    public void ClickingACoordinateOrCoordinateTagAPlayerTypedRaisesNothing()
+    {
+        var log = new ChatLog();
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+        ctrl.ChatLinkClicked = clicked.Add;
+
+        log.OnLocalSpeech(
+            "Bob", "<COORD:World:0N, 0E>42.1N 33.5E<\\COORD>", 0x5000000Au,
+            isRanged: false, logTextType: 2u);
+        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u);
+        IReadOnlyList<UiText.Line> lines = ctrl.Transcript.LinesProvider();
+        Assert.Equal("Bob says, \"42.1N 33.5E\"", lines[0].Text);
+        int typed = lines[0].Text.IndexOf("42.1N", StringComparison.Ordinal);
+        int server = lines[1].Text.IndexOf("42.1N", StringComparison.Ordinal);
+
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, typed + 3)));
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(1, server + 3)));
+
+        Assert.Empty(clicked);
+    }
+
+    [Fact]
     public void TranscriptLines_OutOfRangeLogTextType_CarriesPreviousLinesColor()
     {
         var log = new ChatLog();

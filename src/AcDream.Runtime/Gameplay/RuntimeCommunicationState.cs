@@ -174,6 +174,18 @@ public sealed class RuntimeCommunicationState : IDisposable
     }
 
     public void AddText(string text, RetailLogTextType type, uint windowId = 0)
+        => AddText(text, type, allowsMarkup: false);
+
+    /// <summary>
+    /// Writes a line a plugin posted. Only its <c>&lt;COORD:World:pair&gt;</c>
+    /// tags are read, as links in the transcript; any other angle-bracket text
+    /// is shown as written. A status notice has no links, so there the tags
+    /// are removed and only their captions shown.
+    /// </summary>
+    public void AddPluginText(string text, RetailLogTextType type)
+        => AddText(text, type, allowsMarkup: true);
+
+    private void AddText(string text, RetailLogTextType type, bool allowsMarkup)
     {
         ArgumentNullException.ThrowIfNull(text);
 
@@ -181,6 +193,11 @@ public sealed class RuntimeCommunicationState : IDisposable
 
         if (type == RetailLogTextType.ClientLocal)
         {
+            // The status line shows text, not links: a plugin's tags would
+            // otherwise appear there as raw markup.
+            if (allowsMarkup)
+                text = ChatTagMarkup.ToPlainText(text);
+
             // A status notice never enters the log, so it would otherwise
             // escape the filters entirely. Offer it under its own kind.
             if (Chat.Filters.ShouldSuppress(new PluginChatMessage(
@@ -203,7 +220,7 @@ public sealed class RuntimeCommunicationState : IDisposable
             return;
         }
 
-        Chat.OnSystemMessage(text, (uint)type);
+        Chat.OnSystemMessage(text, (uint)type, allowsMarkup);
     }
 
     public void Dispose()

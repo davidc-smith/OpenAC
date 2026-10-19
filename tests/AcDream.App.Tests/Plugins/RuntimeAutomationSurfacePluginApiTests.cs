@@ -373,6 +373,23 @@ public sealed class RuntimeAutomationSurfacePluginApiTests
     }
 
     [Fact]
+    public void PostMessageMarksTheLineAsCarryingMarkupAndServerTextDoesNot()
+    {
+        using var runtime = GameRuntimeTestFactory.Create();
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        surface.Chat.PostMessage("<COORD:World:1N, 2E>here<\\COORD>", (int)RetailLogTextType.Magic);
+        surface.Chat.PostSystemMessage("<COORD:World:1N, 2E>there<\\COORD>");
+        runtime.CommunicationOwner.AddText("<COORD:World:1N, 2E>server<\\COORD>", RetailLogTextType.Default);
+
+        IReadOnlyList<ChatEntry> entries = runtime.CommunicationOwner.Chat.Snapshot();
+        Assert.True(entries[0].AllowsMarkup);
+        Assert.True(entries[1].AllowsMarkup);
+        Assert.False(entries[2].AllowsMarkup);
+    }
+
+    [Fact]
     public void PostMessageRejectsTheStatusOnlyClientLocalClassAndFallsBackToDefault()
     {
         using var runtime = GameRuntimeTestFactory.Create();
@@ -391,6 +408,32 @@ public sealed class RuntimeAutomationSurfacePluginApiTests
         Assert.Equal((uint)RetailLogTextType.Default, entry.LogTextType);
         runtime.CommunicationOwner.SpewBox.Tick(0);
         Assert.Equal(0, runtime.CommunicationOwner.SpewBox.Count);
+    }
+
+    [Fact]
+    public void APluginsStatusLinePostShowsTheCaptionNotTheTag()
+    {
+        using var runtime = GameRuntimeTestFactory.Create();
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        // The surface sends a status-line class to the transcript, where the
+        // tag is a link; the status line itself, which has no links, shows
+        // only the caption.
+        surface.Chat.PostMessage(
+            "Go to <COORD:World:1N, 2E>the bridge<\\COORD> now.",
+            (int)RetailLogTextType.ClientLocal);
+        runtime.CommunicationOwner.AddPluginText(
+            "Go to <COORD:World:1N, 2E>the bridge<\\COORD> now.",
+            RetailLogTextType.ClientLocal);
+
+        ChatEntry entry = Assert.Single(runtime.CommunicationOwner.Chat.Snapshot());
+        Assert.True(entry.AllowsMarkup);
+        Assert.Equal("Go to the bridge now.", ChatLineWording.Format(entry));
+        runtime.CommunicationOwner.SpewBox.Tick(0);
+        Assert.Equal(
+            "Go to the bridge now.",
+            Assert.Single(runtime.CommunicationOwner.SpewBox.Snapshot()).Text);
     }
 
     [Fact]
