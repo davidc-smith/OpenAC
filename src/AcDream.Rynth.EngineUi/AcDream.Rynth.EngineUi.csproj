@@ -54,7 +54,6 @@
     <Compile Include="$(RynthEngine)UI\Data\MetaRowText.cs" Link="RynthCore\Data\MetaRowText.cs" />
     <Compile Include="$(RynthEngine)UI\Data\MetaRuleDto.cs" Link="RynthCore\Data\MetaRuleDto.cs" />
     <Compile Include="$(RynthEngine)UI\Data\MetaStateClock.cs" Link="RynthCore\Data\MetaStateClock.cs" />
-    <Compile Include="$(RynthEngine)ImGui\CodeEditor.cs" Link="RynthCore\CodeEditor.cs" />
     <Compile Include="$(RynthEngine)..\Shared\RynthInstallPaths.cs" Link="RynthCore\RynthInstallPaths.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\LootEditorFace.cs" Link="RynthCore\LootEditorFace.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\LootAddDialog.cs" Link="RynthCore\LootAddDialog.cs" />
