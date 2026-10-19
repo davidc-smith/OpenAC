@@ -12,13 +12,6 @@ namespace RynthCore.Engine
     internal static class EntryPoint
     {
         internal static DateTime InitStartedUtc { get; set; } = DateTime.MinValue;
-
-        /// <summary>
-        /// RynthCore's own cimgui.dll, which carries their native code editor. OpenAC's cimgui
-        /// has no editor, so none: CodeEditor reports itself unavailable and Meta's Source tab
-        /// says so (the rule list and rule editor don't need it).
-        /// </summary>
-        internal static IntPtr ImGuiNativeHandle => IntPtr.Zero;
     }
 }
 

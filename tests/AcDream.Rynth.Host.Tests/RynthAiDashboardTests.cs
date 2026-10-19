@@ -15,7 +15,7 @@ public sealed class RynthAiDashboardTests : IDisposable
         @"ImGui\Panels\DamageDetailFace.cs", @"UI\Data\ItemsData.cs", @"UI\Data\DamageData.cs", @"UI\PanelColumnStore.cs", @"ImGui\Panels\NavFace.cs", @"ImGui\Panels\MetaFace.cs",
         @"ImGui\Panels\MetaFace.List.cs", @"ImGui\Panels\MetaFace.Editor.cs", @"ImGui\Panels\MetaFace.Schedule.cs",
         @"UI\Data\MetaData.cs", @"UI\Data\MetaEditing.cs", @"UI\Data\MetaLocation.cs", @"UI\Data\MetaRowText.cs",
-        @"UI\Data\MetaRuleDto.cs", @"UI\Data\MetaStateClock.cs", @"ImGui\CodeEditor.cs", @"ImGui\Panels\LootEditorFace.cs",
+        @"UI\Data\MetaRuleDto.cs", @"UI\Data\MetaStateClock.cs", @"ImGui\Panels\LootEditorFace.cs",
         @"ImGui\Panels\LootAddDialog.cs", @"UI\Data\LootEditData.cs", @"ImGui\Panels\RangesSlideOut.cs", @"ImGui\Panels\ItemCountFace.cs",
         @"UI\Data\ItemHudModel.cs", @"UI\Data\ItemHudStore.cs", @"ImGui\Panels\LuaFace.cs", @"UI\Data\LuaData.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
         @"UI\Data\NavData.cs", @"UI\Data\RynthSortData.cs", @"UI\RynthAiDashboardState.cs",
