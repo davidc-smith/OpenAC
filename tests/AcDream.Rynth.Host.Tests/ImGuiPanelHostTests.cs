@@ -114,6 +114,24 @@ public sealed unsafe class ImGuiPanelHostTests : IDisposable
     }
 
     [Fact]
+    public void AnOpenCenteredPanelIsNotPlacedWhileTheDisplaySizeIsUnknown()
+    {
+        var panel = new PositionPanel();
+        ImGuiPanelHost.RegisterDynamic("script:map", "Map",
+            new PanelSpec(new Vector2(480, 520), new Vector2(240, 200), OpenCentered: true), () => panel);
+        ImGuiPanelHost.Open("script:map");
+        ImGui.GetIO().DisplaySize = Vector2.Zero;
+        try
+        {
+            _imgui.Frame(ImGuiPanelHost.DrawAll);
+            _imgui.Frame(ImGuiPanelHost.DrawAll);
+        }
+        finally { ImGui.GetIO().DisplaySize = new Vector2(1280, 800); }
+
+        Assert.NotEqual(new Vector2(400, 140), panel.WindowPos);
+    }
+
+    [Fact]
     public void ASavedSpotWinsOverOpenCentered()
     {
         var layout = new FakePanelLayout();

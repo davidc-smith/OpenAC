@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
@@ -7,6 +8,7 @@ using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
 using RynthCore.Engine.UI.Data;
+using RynthCore.Engine.UI.Panels;
 
 namespace AcDream.Rynth.Host.Tests;
 
@@ -217,5 +219,39 @@ public sealed unsafe class RynthDungeonMapTests : IDisposable
 
         string line = Assert.Single(log);
         Assert.Contains(AcDream.Rynth.EngineUi.NavAtlasInstall.PathUnder(core), line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StartInstallsTheAtlas()
+    {
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+
+        Assert.True(File.Exists(AcDream.Rynth.EngineUi.NavAtlasInstall.PathUnder(
+            RynthCore.Install.RynthInstallPaths.CoreDir)));
+    }
+
+    [Fact]
+    public void StartLoadsTheRadarSettingsFile()
+    {
+        string file = Path.Combine(_sandbox.Root, "radar_settings.txt");
+        File.WriteAllText(file, "showGroundItems=1\n");
+        string? previous = Environment.GetEnvironmentVariable("RYNTHCORE_RADAR_SETTINGS");
+        bool previousItems = RadarSettingsStore.ShowGroundItems;
+        var latch = typeof(RadarSettingsStore).GetField("_loaded", BindingFlags.NonPublic | BindingFlags.Static)!;
+        try
+        {
+            Environment.SetEnvironmentVariable("RYNTHCORE_RADAR_SETTINGS", file);
+            RadarSettingsStore.ShowGroundItems = false;
+            latch.SetValue(null, false); // Load reads once per process: re-arm it for this test.
+
+            AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+
+            Assert.True(RadarSettingsStore.ShowKind(RadarKind.GroundItem));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RYNTHCORE_RADAR_SETTINGS", previous);
+            RadarSettingsStore.ShowGroundItems = previousItems;
+        }
     }
 }

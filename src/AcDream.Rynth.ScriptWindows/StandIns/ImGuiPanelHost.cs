@@ -338,9 +338,10 @@ internal static class ImGuiPanelHost
             {
                 ImGui.SetNextWindowPos(defaultPos * s, ImGuiCond.FirstUseEver);
             }
-            else if (entry.Spec.OpenCentered)
+            else if (entry.Spec.OpenCentered && ImGui.GetIO().DisplaySize is { X: > 1, Y: > 1 })
             {
-                // RynthCore's CenteredLogicalPos: the default size, centred, never off the top-left.
+                // RynthCore's CenteredLogicalPos: the default size, centred, never off the top-left;
+                // null (no explicit position) while the display size is unknown.
                 Vector2 screen = ImGui.GetIO().DisplaySize;
                 Vector2 centred = Vector2.Max(Vector2.Zero, (screen / s - entry.Spec.DefaultSize) * 0.5f);
                 ImGui.SetNextWindowPos(centred * s, ImGuiCond.FirstUseEver);

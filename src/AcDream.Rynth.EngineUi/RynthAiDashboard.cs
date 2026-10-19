@@ -34,6 +34,8 @@ internal static class RynthAiDashboard
         {
             EntryPoint.InitStartedUtc = DateTime.UtcNow;
             _started = true;
+            // RynthCore's EntryPoint loads radar_settings.txt at startup; their Radar panel isn't compiled here.
+            RynthCore.Engine.UI.Panels.RadarSettingsStore.Load();
             NavAtlasInstall.Ensure(RynthInstallPaths.CoreDir, OperatingSystem.IsWindows(), Log);
             // Our UiBackgroundWriter runs work inline, and parsing the 1.9 MB Atlas would stall
             // the first indoor frame; their loader is written for a background thread, and later
