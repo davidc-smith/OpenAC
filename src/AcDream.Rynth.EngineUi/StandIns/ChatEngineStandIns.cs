@@ -53,6 +53,15 @@ namespace RynthCore.Engine.Compatibility
             return Name is { } read && read(objectId, out name);
         }
 
+        /// <summary>The PublicWeenieDesc fields RynthCore reads in one go; their InventoryItem compares against it.</summary>
+        internal struct ItemPwdFields
+        {
+            public uint Wcid, Icon, Container, Wielder, ValidLocations, Location, Type, Value, Useability,
+                StackSize, MaxStackSize, Bitfield, SpellId;
+            public int ItemsCapacity, Burden, MaterialType;
+            public float Workmanship;
+        }
+
         internal delegate bool FactsReader(uint objectId, out uint wcid, out uint bitfield, out uint containerId, out uint wielderId);
         internal delegate bool InstanceIdReader(uint objectId, uint stat, out uint value);
 
@@ -130,6 +139,10 @@ namespace RynthCore.Engine.Compatibility
         internal static Func<string>? CharacterName { get; set; }
 
         internal static string LastCharacterName => CharacterName?.Invoke() ?? string.Empty;
+
+        internal static Func<string>? ServerName { get; set; }
+
+        internal static string LastServerName => ServerName?.Invoke() ?? string.Empty;
     }
 }
 
@@ -182,6 +195,7 @@ namespace RynthCore.Engine.UI.Data
         public static readonly RynthSortWatch RynthSortWatch = new();
         public static readonly MetaSource Meta = new();
         public static readonly LootEditSource LootEdit = new();
+        public static readonly LuaSource Lua = new();
         public static readonly ItemsSource Items = new();
         public static readonly DamageSource Damage = new();
         public static readonly MonsterRulesSource MonsterRules = new();

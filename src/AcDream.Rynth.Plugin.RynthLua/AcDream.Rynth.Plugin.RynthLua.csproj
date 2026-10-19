@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RynthSuite's RynthLua (Lua scripting on MoonSharp, a pure C# Lua 5.2), compiled
+       unchanged from the submodule as plain net10.0, with the shared files its own
+       csproj pulls in. Their code, their warnings: warnings-as-errors and analyzers
+       are off for this project only. -->
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <IsPackable>false</IsPackable>
+    <RynthSuitePlugins>$(MSBuildThisFileDirectory)..\..\external\RynthSuite\Plugins\</RynthSuitePlugins>
+    <LuaPlugin>$(RynthSuitePlugins)RynthCore.Plugin.RynthLua\</LuaPlugin>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(LuaPlugin)**\*.cs" Exclude="$(LuaPlugin)obj\**;$(LuaPlugin)bin\**" />
+    <Compile Include="$(RynthSuitePlugins)Shared\RynthAiScriptApi.cs" Link="Shared\RynthAiScriptApi.cs" />
+    <Compile Include="$(RynthSuitePlugins)Shared\UseAudit.cs" Link="Shared\UseAudit.cs" />
+    <Compile Include="$(RynthSuitePlugins)Shared\RynthInstallPaths.cs" Link="Shared\RynthInstallPaths.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MoonSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AcDream.Rynth.Sdk\AcDream.Rynth.Sdk.csproj" />
+  </ItemGroup>
+</Project>
