@@ -9,25 +9,29 @@ namespace AcDream.App.Extensions;
 
 /// <summary>
 /// <see cref="IClientScreen"/> over the world camera, the live world origin and the
-/// retained radar window. Its sources arrive later than the extensions attach, so
+/// retained radar window (found through the retained UI's window manager). Its sources arrive later than the extensions attach, so
 /// each answers false until bound.
 /// </summary>
 internal sealed class ClientScreen(LiveWorldOriginState origin) : IClientScreen
 {
     private Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)>? _camera;
-    private RetailUiRuntime? _ui;
+    private RetailWindowManager? _windows;
 
     public void BindCamera(Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)>? camera) => _camera = camera;
 
-    public void BindUi(RetailUiRuntime? ui) => _ui = ui;
+    /// <summary>The retained UI's window manager, where the radar window is found.</summary>
+    public void BindWindows(RetailWindowManager? windows) => _windows = windows;
 
     public bool TryGetViewportSize(out Vector2 size)
     {
         size = default;
         if (_camera is null)
             return false;
-        size = _camera().Viewport;
-        return size.X > 0 && size.Y > 0;
+        Vector2 viewport = _camera().Viewport;
+        if (!(viewport.X > 0 && viewport.Y > 0))
+            return false;
+        size = viewport;
+        return true;
     }
 
     public bool TryProject(PluginNavigationPosition position, out Vector2 screen)
@@ -51,7 +55,7 @@ internal sealed class ClientScreen(LiveWorldOriginState origin) : IClientScreen
     {
         centre = default;
         radius = 0f;
-        if (_ui?.Host.WindowManager is not { } windows
+        if (_windows is not { } windows
             || !windows.IsVisible(WindowNames.Radar)
             || !windows.TryGet(WindowNames.Radar, out RetailWindowHandle handle)
             || handle.ContentRoot is not UiRadar radar)

@@ -1006,7 +1006,7 @@ public sealed class GameWindow :
             _uiHost = retained.Host;
             _retailUiRuntime = retained.Runtime;
             _retailUiRuntime.ExtensionChat = _chatSeam;
-            _clientScreen.BindUi(_retailUiRuntime);
+            _clientScreen.BindWindows(_retailUiRuntime.Host.WindowManager);
             _overlay.BindIcons(retained.Runtime.ImageBackend);
             _retailChatVm = retained.Chat;
             _characterSheetProvider = retained.CharacterSheet;
@@ -1699,7 +1699,7 @@ public sealed class GameWindow :
         {
             PersistKeyBindingsAtShutdown();
             _extensions.Dispose();
-            _clientScreen.BindUi(null);
+            _clientScreen.BindWindows(null);
             _clientScreen.BindCamera(null);
             _audioMixerCommand?.Dispose();
             if (_runtime.Session.IsInWorld)

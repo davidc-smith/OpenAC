@@ -1,5 +1,7 @@
 using System.Numerics;
 using AcDream.App.Extensions;
+using AcDream.App.UI;
+using AcDream.App.UI.Layout;
 using AcDream.App.World;
 using AcDream.Plugin.Abstractions;
 
@@ -61,7 +63,8 @@ public sealed class ClientScreenTests
         var screen = new ClientScreen(KnownOrigin());
         screen.BindCamera(() => (Matrix4x4.Identity, Matrix4x4.Identity, new Vector2(800f, 0f)));
 
-        Assert.False(screen.TryGetViewportSize(out _));
+        Assert.False(screen.TryGetViewportSize(out Vector2 size));
+        Assert.Equal(default, size);
         Assert.False(screen.TryProject(At(84d, 134d, 10d), out _));
     }
 
@@ -124,5 +127,53 @@ public sealed class ClientScreenTests
 
         Assert.False(screen.TryGetRadarDisc(out _, out float radius));
         Assert.Equal(0f, radius);
+    }
+
+    // The radar window: a frame at (100, 40) holding the radar at (5, 7) inside it.
+    private static (UiRoot Root, UiPanel Frame, UiRadar Radar) RadarWindow(bool register = true)
+    {
+        var root = new UiRoot { Width = 800f, Height = 600f };
+        var frame = new UiPanel { Left = 100f, Top = 40f, Width = 130f, Height = 130f };
+        root.AddChild(frame);
+        var radar = new UiRadar { Left = 5f, Top = 7f, Width = 120f, Height = 120f };
+        frame.AddChild(radar);
+        if (register)
+            root.WindowManager.Register(WindowNames.Radar, frame, radar);
+        return (root, frame, radar);
+    }
+
+    [Fact]
+    public void AVisibleRadarIsADiscAtItsScreenCentre()
+    {
+        (UiRoot root, _, UiRadar radar) = RadarWindow();
+        var screen = new ClientScreen(KnownOrigin());
+        screen.BindWindows(root.WindowManager);
+
+        Assert.True(screen.TryGetRadarDisc(out Vector2 centre, out float radius));
+        Assert.Equal(new Vector2(105f, 47f) + radar.Center, centre);
+        Assert.Equal(50f, radius);
+    }
+
+    [Fact]
+    public void AHiddenRadarIsNoDisc()
+    {
+        (UiRoot root, UiPanel frame, _) = RadarWindow();
+        frame.Visible = false;
+        var screen = new ClientScreen(KnownOrigin());
+        screen.BindWindows(root.WindowManager);
+
+        Assert.False(screen.TryGetRadarDisc(out Vector2 centre, out float radius));
+        Assert.Equal(default, centre);
+        Assert.Equal(0f, radius);
+    }
+
+    [Fact]
+    public void AnUnregisteredRadarIsNoDisc()
+    {
+        (UiRoot root, _, _) = RadarWindow(register: false);
+        var screen = new ClientScreen(KnownOrigin());
+        screen.BindWindows(root.WindowManager);
+
+        Assert.False(screen.TryGetRadarDisc(out _, out _));
     }
 }
