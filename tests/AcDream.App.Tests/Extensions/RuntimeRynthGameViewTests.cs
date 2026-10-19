@@ -603,6 +603,27 @@ public sealed class RuntimeRynthGameViewTests
         Assert.False(closed);
     }
 
+    // RynthCore reads the client's Subpalette.offset, a colour index: the wire's blocks of eight times 8.
+    [Fact]
+    public void PaletteOffsetsAreColourIndexesInOffsetOrder()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.Null(view.GetPalettes(0x80000010));
+
+        RuntimeEntityRecord record = runtime.EntityObjects.Entities.AddActive(Spawn(0x80000010));
+        record.Snapshot = record.Snapshot with
+        {
+            SubPalettes =
+            [
+                new CreateObject.SubPaletteSwap(0x04001234, 3, 1),
+                new CreateObject.SubPaletteSwap(0x04005678, 0, 2),
+            ],
+        };
+
+        Assert.Equal(new[] { (0x04005678u, 0u), (0x04001234u, 24u) }, view.GetPalettes(0x80000010));
+    }
+
     private static WorldSession.EntitySpawn Spawn(uint guid)
     {
         var position = new CreateObject.ServerPosition(0x0101FFFFu, 10f, 20f, 5f, 1f, 0f, 0f, 0f);

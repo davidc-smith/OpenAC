@@ -531,13 +531,14 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     public bool Salvage(uint toolId, IReadOnlyList<uint> itemIds) =>
         _automation.Items.Salvage(toolId, itemIds).Accepted;
 
-    // The raw ObjDesc swaps, as RynthCore captures them at CreateObject: id and offset only.
+    // The ObjDesc swaps, as RynthCore captures them at CreateObject: id and offset only. RynthCore
+    // reads the client's unpacked Subpalette.offset, a colour index; the wire sends blocks of eight.
     public IReadOnlyList<(uint SubPaletteId, uint Offset)>? GetPalettes(uint objectId)
     {
         if (!_runtime.EntityObjects.Entities.TryGetActive(objectId, out RuntimeEntityRecord record))
             return _runtime.InventoryOwner.Objects.Get(objectId) is null ? null : [];
         return [.. record.Snapshot.SubPalettes
-            .Select(p => ((uint)p.SubPaletteId, (uint)p.Offset))
+            .Select(p => ((uint)p.SubPaletteId, (uint)p.Offset * 8u))
             .OrderBy(p => p.Item2)];
     }
 
