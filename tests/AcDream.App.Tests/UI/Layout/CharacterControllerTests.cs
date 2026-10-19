@@ -205,6 +205,114 @@ public sealed class CharacterControllerTests
         Assert.DoesNotContain("Damage bonus.\n1Jack of All Trades.", report);
     }
 
+    [Fact]
+    public void Report_ListsManaFlowAuraUnderLuminanceHeader()
+    {
+        string report = CharacterController.BuildReport(
+            Sheet((PropertyInt.LumAugItemManaUsage, 4)), LuminanceStrings());
+
+        Assert.Contains(
+            "Luminance Augmentations:\n\n"
+            + "Aura of Mana Flow. The mana consumption of your items is decreased by a rating of 20.",
+            report);
+    }
+
+    [Fact]
+    public void Report_WritesLuminanceHeaderWithoutAnyAura()
+    {
+        string report = CharacterController.BuildReport(
+            new CharacterSheet(), LuminanceStrings());
+
+        Assert.Contains("Luminance Augmentations:", report);
+        Assert.DoesNotContain("Aura of", report);
+    }
+
+    [Theory]
+    [InlineData(3, "Aura of Valor. Damage 3.", null)]
+    [InlineData(5, "Aura of Valor. Damage 5.", null)]
+    [InlineData(8, "Aura of Valor. Damage 5.", "Aura of Destruction. Seer damage 3.")]
+    public void Report_SplitsTieredAuraRanksPastFiveIntoSeerLine(
+        int ranks, string baseLine, string? seerLine)
+    {
+        string report = CharacterController.BuildReport(
+            Sheet((PropertyInt.LumAugDamageRating, ranks)), LuminanceStrings());
+
+        Assert.Contains(baseLine, report);
+        if (seerLine is null)
+            Assert.DoesNotContain("Aura of Destruction", report);
+        else
+            Assert.Contains(baseLine + "\n\n" + seerLine, report);
+    }
+
+    [Fact]
+    public void Report_ScalesAndOrdersLuminanceAurasBeforeOtherAugmentations()
+    {
+        string report = CharacterController.BuildReport(
+            Sheet(
+                (PropertyInt.AugmentationInnateStrength, 1),
+                (PropertyInt.LumAugAllSkills, 2),
+                (PropertyInt.LumAugSkilledSpec, 3),
+                (PropertyInt.LumAugItemManaGain, 2),
+                (PropertyInt.SummoningMastery, 1)),
+            LuminanceStrings());
+
+        int summoning = report.IndexOf("Your summoning mastery is Primalist.", StringComparison.Ordinal);
+        int header = report.IndexOf("Luminance Augmentations:", StringComparison.Ordinal);
+        int manaGain = report.IndexOf("Aura of Mana Infusion. Mana gain 10.", StringComparison.Ordinal);
+        int specialist = report.IndexOf("Aura of the Specialist. Spec 6.", StringComparison.Ordinal);
+        int world = report.IndexOf("Aura of the World. All skills 2.", StringComparison.Ordinal);
+        int strength = report.IndexOf("Innate Strength augmented", StringComparison.Ordinal);
+        Assert.True(summoning >= 0 && summoning < header, report);
+        Assert.True(header < manaGain, report);
+        Assert.True(manaGain < specialist, report);
+        Assert.True(specialist < world, report);
+        Assert.True(world < strength, report);
+    }
+
+    [Fact]
+    public void FromDat_ResolvesLuminanceStrings()
+    {
+        CharacterInfoStrings strings = CharacterInfoStrings.FromDat(
+            key => key.Contains("Luminance", StringComparison.Ordinal)
+                ? [key + ": ", "\n"]
+                : null);
+
+        Assert.True(strings.AugmentationText.ContainsKey(
+            "ID_CharacterInfo_Luminance_Header"));
+        Assert.True(strings.AugmentationText.ContainsKey(
+            "ID_CharacterInfo_Luminance_Base_Mana_Use"));
+        Assert.True(strings.AugmentationText.ContainsKey(
+            "ID_CharacterInfo_Luminance_Spec_Crit_Reduction"));
+        Assert.Contains("ID_CharacterInfo_Luminance_Base_Mana_Use: 15",
+            CharacterController.BuildReport(
+                Sheet((PropertyInt.LumAugItemManaUsage, 3)), strings));
+    }
+
+    private static CharacterSheet Sheet(params (PropertyInt Property, int Value)[] values)
+        => new()
+        {
+            CharacterInfoProperties = values.ToDictionary(
+                value => (uint)value.Property, value => value.Value),
+        };
+
+    private static CharacterInfoStrings LuminanceStrings()
+        => CharacterInfoStrings.English with
+        {
+            AugmentationText = new Dictionary<string, string[]>
+            {
+                ["ID_CharacterInfo_Luminance_Header"] = ["Luminance Augmentations:\n\n"],
+                ["ID_CharacterInfo_Luminance_Base_Damage"] = ["Aura of Valor. Damage ", ".\n\n"],
+                ["ID_CharacterInfo_Luminance_Spec_Damage"] = ["Aura of Destruction. Seer damage ", ".\n\n"],
+                ["ID_CharacterInfo_Luminance_Base_Mana_Use"] =
+                    ["Aura of Mana Flow. The mana consumption of your items is decreased by a rating of ", ".\n\n"],
+                ["ID_CharacterInfo_Luminance_Base_Mana_Gain"] = ["Aura of Mana Infusion. Mana gain ", ".\n\n"],
+                ["ID_CharacterInfo_Luminance_Spec_Skilled_Spec"] = ["Aura of the Specialist. Spec ", ".\n\n"],
+                ["ID_CharacterInfo_Luminance_Base_All_Skills"] = ["Aura of the World. All skills ", ".\n\n"],
+                ["ID_CharacterInfo_Augmentation_Attribute_Strength"] =
+                    ["Innate Strength augmented ", " {time[1]|times}.\n\n"],
+            },
+        };
+
     private static string Report(CharacterSheet sheet)
         => CharacterController.BuildReport(sheet, CharacterInfoStrings.English);
 
