@@ -44,4 +44,10 @@ public sealed class ClientExtensionContext
 
     /// <summary>The client's world-triangle layers; null in a host that draws no world.</summary>
     public AcDream.Plugin.Abstractions.IPluginWorldTriangles? WorldTriangles { get; init; }
+
+    /// <summary>The directory the client read its dats from; null in a host without dats.</summary>
+    public string? DatDirectory { get; init; }
+
+    /// <summary>The client's view and radar on screen; null in a host without a window.</summary>
+    public IClientScreen? Screen { get; init; }
 }

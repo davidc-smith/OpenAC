@@ -478,6 +478,7 @@ public sealed class GameWindow :
     private AcDream.Core.Net.WorldSession? LiveSession =>
         _liveSessionHost?.CurrentSession;
     private readonly AcDream.App.World.LiveWorldOriginState _liveWorldOrigin = new();
+    private readonly AcDream.App.Extensions.ClientScreen _clientScreen;
     private int _liveCenterX => _liveWorldOrigin.CenterX;
     private int _liveCenterY => _liveWorldOrigin.CenterY;
     private static readonly IReadOnlyDictionary<uint, AcDream.Core.Net.WorldSession.EntitySpawn> EmptyLiveSpawnMap =
@@ -537,7 +538,8 @@ public sealed class GameWindow :
         _runtimeHostLease = _runtime.AcquireHostLease(
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
-        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation, worldTriangles: WorldTriangles);
+        _clientScreen = new(_liveWorldOrigin);
+        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation, worldTriangles: WorldTriangles, datDirectory: options.DatDir, screen: _clientScreen);
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
@@ -1004,6 +1006,7 @@ public sealed class GameWindow :
             _uiHost = retained.Host;
             _retailUiRuntime = retained.Runtime;
             _retailUiRuntime.ExtensionChat = _chatSeam;
+            _clientScreen.BindWindows(_retailUiRuntime.Host.WindowManager);
             _overlay.BindIcons(retained.Runtime.ImageBackend);
             _retailChatVm = retained.Chat;
             _characterSheetProvider = retained.CharacterSheet;
@@ -1400,10 +1403,15 @@ public sealed class GameWindow :
                     _liveCombatModeCommands,
                     _localPlayerIdentity,
                     _localPlayerMode,
-                    viewPlane => new SelectionCameraSource(
-                        hostInputCamera.CameraController,
-                        _window!,
-                        viewPlane),
+                    viewPlane =>
+                    {
+                        var selectionCamera = new SelectionCameraSource(
+                            hostInputCamera.CameraController,
+                            _window!,
+                            viewPlane);
+                        _clientScreen.BindCamera(selectionCamera.UiSnapshot);
+                        return selectionCamera;
+                    },
                     _uiFrameDiagnostics,
                     ExistingVitals: null,
                     compositionToast,
@@ -1691,6 +1699,8 @@ public sealed class GameWindow :
         {
             PersistKeyBindingsAtShutdown();
             _extensions.Dispose();
+            _clientScreen.BindWindows(null);
+            _clientScreen.BindCamera(null);
             _audioMixerCommand?.Dispose();
             if (_runtime.Session.IsInWorld)
                 _statusWriter.Disconnected(_options.SessionId ?? "app", "stopped");

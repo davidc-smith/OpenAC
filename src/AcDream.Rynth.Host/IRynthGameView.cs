@@ -237,4 +237,19 @@ public interface IRynthGameView
     bool TradeDecline();
     bool TradeReset();
     bool TradeClose();
+
+    /// <summary>
+    /// Where a point in metres from the player's landblock (X east, Y up, Z north) falls
+    /// on screen, in points, Y down. False when behind the camera or the view is not ready.
+    /// </summary>
+    bool TryWorldToScreen(float x, float y, float z, out float screenX, out float screenY);
+
+    /// <summary>The window size in points.</summary>
+    bool TryGetViewportSize(out uint width, out uint height);
+
+    /// <summary>
+    /// The radar's box on screen in points, as RynthCore's surface box: RynthAi draws its
+    /// walls at min(width, height) / 2 - 2 from the centre. False while the radar is hidden.
+    /// </summary>
+    bool TryGetRadarRect(out int x0, out int y0, out int x1, out int y1);
 }

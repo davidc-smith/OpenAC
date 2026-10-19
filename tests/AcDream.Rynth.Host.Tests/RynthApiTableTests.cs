@@ -311,9 +311,6 @@ public sealed unsafe class RynthApiTableTests
         Assert.Equal(IntPtr.Zero, table.Native->StopMovementFn);
         Assert.Equal(IntPtr.Zero, table.Native->DoMovementFn);
         Assert.Equal(IntPtr.Zero, table.Native->SetAutonomyLevelFn);
-        Assert.Equal(IntPtr.Zero, table.Native->WorldToScreenFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetViewportSizeFn);
-        Assert.Equal(IntPtr.Zero, table.Native->GetRadarRectFn);
         Assert.Equal(IntPtr.Zero, table.Native->SetRadarSuppressedFn);
         Assert.Equal(IntPtr.Zero, table.Native->GetPluginInterfaceFn);
         Assert.Equal(IntPtr.Zero, table.Native->IsPlayerReadyFn);

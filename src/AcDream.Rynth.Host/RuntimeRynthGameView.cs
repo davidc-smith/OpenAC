@@ -1,5 +1,5 @@
-using AcDream.Runtime.Gameplay;
 using System.Numerics;
+using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Selection;
@@ -7,6 +7,8 @@ using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
+using AcDream.Runtime.Gameplay;
+using AcDream.Runtime.Navigation;
 
 namespace AcDream.Rynth.Host;
 
@@ -17,16 +19,69 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     private readonly IAutomationSurface _automation;
 
     private readonly Func<string, bool>? _submitChatCommand;
+    private readonly IClientScreen? _screen;
 
     public RuntimeRynthGameView(GameRuntime runtime, Func<string, bool>? submitChatCommand = null,
-        IAutomationSurface? automation = null)
+        IAutomationSurface? automation = null, IClientScreen? screen = null)
     {
+        _screen = screen;
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _submitChatCommand = submitChatCommand;
         _automation = automation ?? NoOpAutomationSurface.Instance;
         // The surface polls its vendor automation every tick, so this arrives on the game thread.
         _automation.Vendor.TransactionCompleted +=
             transaction => VendorTransactionCompleted?.Invoke(new RynthVendorOutcome(transaction.Success, transaction.Notice));
+    }
+
+    public bool TryWorldToScreen(float x, float y, float z, out float screenX, out float screenY)
+    {
+        screenX = screenY = 0f;
+        if (_screen is null || !TryGetPlayerPose(out uint cell, out _, out _))
+            return false;
+        if (!_screen.TryProject(ToNavigationPosition(cell, x, y, z), out Vector2 point))
+            return false;
+        (screenX, screenY) = (point.X, point.Y);
+        return true;
+    }
+
+    // RynthCore's frame is Y up; the client's cell frame is Z up (as RynthNav3D converts).
+    internal static PluginNavigationPosition ToNavigationPosition(uint cell, float x, float y, float z) =>
+        RuntimeNavigationPositions.FromCellLocal(cell, new Vector3(x, z, y));
+
+    // Beyond this many points a size or position is not a screen's; casting it to an integer is unspecified.
+    private const float MaxPoints = 1 << 20;
+
+    private static bool IsPoints(float value) => float.IsFinite(value) && MathF.Abs(value) <= MaxPoints;
+
+    public bool TryGetViewportSize(out uint width, out uint height)
+    {
+        width = height = 0;
+        if (_screen is null || !_screen.TryGetViewportSize(out Vector2 size)
+            || !IsPoints(size.X) || !IsPoints(size.Y) || size.X < 0.5f || size.Y < 0.5f)
+            return false;
+        (uint w, uint h) = ((uint)MathF.Round(size.X), (uint)MathF.Round(size.Y));
+        if (w == 0 || h == 0)
+            return false; // 0.5 rounds to even, 0
+        (width, height) = (w, h);
+        return true;
+    }
+
+    public bool TryGetRadarRect(out int x0, out int y0, out int x1, out int y1)
+    {
+        x0 = y0 = x1 = y1 = 0;
+        if (_screen is null || !_screen.TryGetRadarDisc(out Vector2 centre, out float radius)
+            || !IsPoints(centre.X) || !IsPoints(centre.Y) || !IsPoints(radius) || radius < 0f)
+            return false;
+        (x0, y0, x1, y1) = RadarRect(centre, radius);
+        return true;
+    }
+
+    // RynthAi draws at min(w, h) / 2 - 2, so the box is the disc plus 2 on every side. The
+    // centre and the half-size are rounded once, so the box is always square.
+    internal static (int X0, int Y0, int X1, int Y1) RadarRect(Vector2 centre, float radius)
+    {
+        int cx = (int)MathF.Round(centre.X), cy = (int)MathF.Round(centre.Y), half = (int)MathF.Round(radius + 2f);
+        return (cx - half, cy - half, cx + half, cy + half);
     }
 
     public uint SelectedObjectId => _runtime.ActionOwner.Selection.SelectedObjectId ?? 0u;

@@ -1,3 +1,4 @@
+using AcDream.ClientExtensions;
 using AcDream.Core.Combat;
 using System.Numerics;
 using AcDream.Core.Items;
@@ -7,6 +8,7 @@ using AcDream.Core.Physics;
 using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime.Entities;
+using AcDream.Runtime.Navigation;
 using AcDream.Rynth.Host;
 
 namespace AcDream.App.Tests.Extensions;
@@ -534,6 +536,91 @@ public sealed class RuntimeRynthGameViewTests
         Assert.Equal(new Vector3(1, 2, 3), origin);
         Assert.True(view.TryGetObjectPosition(0x50000001, out uint objectCell, out _));
         Assert.Equal(cell, objectCell);
+    }
+
+    [Fact]
+    public void TheScreenSlotsConvertFramesAndRoundToPoints()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var screen = new RecordingScreen();
+        var view = new RuntimeRynthGameView(runtime, screen: screen);
+        Assert.False(view.TryWorldToScreen(1, 2, 3, out _, out _));   // no player pose yet
+
+        RuntimeEntityRecord record = runtime.EntityObjects.Entities.AddActive(Spawn(0x50000001));
+        var body = new PhysicsBody();
+        body.SnapToCell(0xA9B40001u, Vector3.Zero, Vector3.Zero);
+        record.SetPhysicsBody(body);
+
+        Assert.True(view.TryWorldToScreen(1, 2, 3, out float sx, out float sy));
+        Assert.Equal((10f, 20f), (sx, sy));
+        Assert.Equal(RuntimeNavigationPositions.FromCellLocal(0xA9B40001u, new Vector3(1, 3, 2)), screen.Asked);
+
+        Assert.True(view.TryGetViewportSize(out uint w, out uint h));
+        Assert.Equal((1280u, 720u), (w, h));
+        Assert.True(view.TryGetRadarRect(out int x0, out int y0, out int x1, out int y1));
+        Assert.Equal((48, -2, 152, 102), (x0, y0, x1, y1));
+
+        Assert.False(new RuntimeRynthGameView(runtime).TryGetViewportSize(out _, out _));
+    }
+
+    [Theory]
+    [InlineData(float.NaN, 720f)]
+    [InlineData(1280f, float.PositiveInfinity)]
+    [InlineData(-1280f, 720f)]
+    [InlineData(1280f, 0.4f)]
+    [InlineData(1280f, 0.5f)]   // rounds to 0
+    public void AViewportThatIsNotASizeIsRefused(float width, float height)
+    {
+        var view = new RuntimeRynthGameView(GameRuntimeTestFactory.Create(), screen: new RecordingScreen { Size = new Vector2(width, height) });
+
+        Assert.False(view.TryGetViewportSize(out uint w, out uint h));
+        Assert.Equal((0u, 0u), (w, h));
+    }
+
+    [Theory]
+    [InlineData(float.NaN, 50f, 50f)]
+    [InlineData(100f, float.NegativeInfinity, 50f)]
+    [InlineData(100f, 50f, float.NaN)]
+    [InlineData(100f, 50f, -1f)]
+    [InlineData(1e30f, 50f, 50f)]
+    public void ARadarDiscThatIsNotOnScreenIsRefused(float x, float y, float radius)
+    {
+        var view = new RuntimeRynthGameView(GameRuntimeTestFactory.Create(), screen: new RecordingScreen { Centre = new Vector2(x, y), Radius = radius });
+
+        Assert.False(view.TryGetRadarRect(out int x0, out int y0, out int x1, out int y1));
+        Assert.Equal((0, 0, 0, 0), (x0, y0, x1, y1));
+    }
+
+    [Theory]
+    [InlineData(100f, 50.1f, 50.5f)]   // rounding each edge on its own gave 104 x 105
+    [InlineData(100.5f, 50.5f, 50f)]
+    [InlineData(99.7f, 50.2f, 49.6f)]
+    public void TheRadarBoxIsAlwaysSquare(float x, float y, float radius)
+    {
+        (int x0, int y0, int x1, int y1) = RuntimeRynthGameView.RadarRect(new Vector2(x, y), radius);
+
+        Assert.Equal(x1 - x0, y1 - y0);
+    }
+
+    private sealed class RecordingScreen : IClientScreen
+    {
+        public PluginNavigationPosition? Asked;
+        public Vector2 Size = new(1279.6f, 720.2f);
+        public Vector2 Centre = new(100, 50);
+        public float Radius = 50f;
+        public bool TryGetViewportSize(out Vector2 size) { size = Size; return true; }
+        public bool TryProject(PluginNavigationPosition position, out Vector2 screen)
+        {
+            Asked = position;
+            screen = new Vector2(10, 20);
+            return true;
+        }
+        public bool TryGetRadarDisc(out Vector2 centre, out float radius)
+        {
+            (centre, radius) = (Centre, Radius);
+            return true;
+        }
     }
 
     [Fact]
