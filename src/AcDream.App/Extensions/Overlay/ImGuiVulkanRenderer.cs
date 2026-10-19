@@ -9,7 +9,7 @@ namespace AcDream.App.Extensions.Overlay;
 /// Draws ImGui through OpenAC's GPU layer: one single-sample pass onto the
 /// backbuffer after everything else, straight-alpha blending, no depth, a
 /// scissor per command. The font atlas is rasterised at the framebuffer scale
-/// (sharp on Retina) and drawn back at 1/scale, and rebuilt when the scale changes.
+/// (sharp on Retina) with its sizes in points, and rebuilt when the scale changes.
 /// </summary>
 internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
 {
@@ -100,6 +100,26 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
         return true;
     }
 
+    /// <summary>
+    /// Clears the atlas and adds the overlay's font and the merged fonts, sized in
+    /// points and rasterised at <paramref name="scale"/> pixels per point. The font's
+    /// own size stays in points, so code that draws with <c>font.FontSize</c> (as
+    /// RynthCore's faces do) gets the same size as ImGui's widgets.
+    /// </summary>
+    internal static void AddFonts(ImFontAtlasPtr atlas, OverlayFonts? fonts, float scale)
+    {
+        atlas.Clear();
+        ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
+        config.SizePixels = FontSizePoints;
+        config.RasterizerDensity = scale;
+        config.OversampleH = 1;
+        config.OversampleV = 1;
+        config.PixelSnapH = true;
+        atlas.AddFontDefault(config);
+        config.Destroy();
+        fonts?.MergeInto(atlas, FontSizePoints, scale);
+    }
+
     public void PrepareFrame(ImGuiIOPtr io, Vector2 framebufferScale)
     {
         float scale = MathF.Max(1f, framebufferScale.X);
@@ -108,16 +128,8 @@ internal sealed unsafe class ImGuiVulkanRenderer : IImGuiDrawRenderer
             return;
 
         ReleaseAtlas();
-        io.Fonts.Clear();
-        ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
-        config.SizePixels = FontSizePoints * scale;
-        config.OversampleH = 1;
-        config.OversampleV = 1;
-        config.PixelSnapH = true;
-        io.Fonts.AddFontDefault(config);
-        config.Destroy();
-        _fonts?.MergeInto(io.Fonts, FontSizePoints * scale);
-        io.FontGlobalScale = 1f / scale;
+        AddFonts(io.Fonts, _fonts, scale);
+        io.FontGlobalScale = 1f;
         io.Fonts.GetTexDataAsRGBA32(out IntPtr pixels, out int width, out int height, out int bytesPerPixel);
 
         IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(

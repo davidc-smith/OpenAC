@@ -67,23 +67,47 @@ public sealed unsafe class OverlayFontsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(13f)]
-    [InlineData(26f)]
-    public void IconsSitLevelWithCapitals(float basePixels)
+    [InlineData(1f)]
+    [InlineData(2f)]
+    public void IconsSitLevelWithCapitals(float scale)
     {
         _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
         ImFontAtlasPtr atlas = ImGui.GetIO().Fonts;
-        atlas.Clear();
-        ImFontConfigPtr config = ImGuiNative.ImFontConfig_ImFontConfig();
-        config.SizePixels = basePixels;
-        atlas.AddFontDefault(config);
-        config.Destroy();
-        _fonts.MergeInto(atlas, basePixels);
+        ImGuiVulkanRenderer.AddFonts(atlas, _fonts, scale);
         atlas.GetTexDataAsRGBA32(out IntPtr _, out int _, out int _, out int _);
 
         float capital = MiddleY("O");
-        Assert.InRange(MiddleY(PhosphorIcons.Sparkle), capital - basePixels / 13f, capital + basePixels / 13f);
-        Assert.InRange(MiddleY(PhosphorIcons.DotsSixVertical), capital - basePixels / 13f, capital + basePixels / 13f);
+        Assert.InRange(MiddleY(PhosphorIcons.Sparkle), capital - 1f, capital + 1f);
+        Assert.InRange(MiddleY(PhosphorIcons.DotsSixVertical), capital - 1f, capital + 1f);
+    }
+
+    // RynthCore's faces draw with font.FontSize and AddText(font, font.FontSize, ...),
+    // which a global scale doesn't reach: the font itself has to be in points.
+    [Fact]
+    public void OnRetinaTheFontKeepsItsPointSizeAndGetsSharper()
+    {
+        _fonts.Add(PhosphorFont.Load()!, PhosphorIcons.Baked, 1.2f);
+        ImFontAtlasPtr atlas = ImGui.GetIO().Fonts;
+
+        ImGuiVulkanRenderer.AddFonts(atlas, _fonts, 1f);
+        atlas.GetTexDataAsRGBA32(out IntPtr _, out int width1, out int height1, out int _);
+        float advance1 = Advance("W");
+        float icon1 = Advance(PhosphorIcons.Sparkle);
+
+        ImGuiVulkanRenderer.AddFonts(atlas, _fonts, 2f);
+        atlas.GetTexDataAsRGBA32(out IntPtr _, out int width2, out int height2, out int _);
+
+        Assert.Equal(ImGuiVulkanRenderer.FontSizePoints, atlas.Fonts[0].FontSize);
+        Assert.Equal(advance1, Advance("W"));
+        Assert.Equal(icon1, Advance(PhosphorIcons.Sparkle));
+        Assert.True(width2 * height2 > width1 * height1);
+    }
+
+    private static float Advance(string glyph)
+    {
+        ImFontGlyph* found = ImGuiNative.ImFont_FindGlyphNoFallback(ImGui.GetIO().Fonts.Fonts[0].NativePtr, glyph[0]);
+        Assert.True(found != null);
+        return ((float*)found)[1];
     }
 
     [Fact]
