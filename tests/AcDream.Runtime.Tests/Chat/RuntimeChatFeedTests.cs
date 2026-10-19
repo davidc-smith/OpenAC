@@ -246,6 +246,43 @@ public sealed class RuntimeChatFeedTests
     }
 
     [Fact]
+    public void AnUnmatchedBracketWithNoTagOpenIsShownAsWritten()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("3 < 4, and <Tell:IIDString:1:Bob", chatType: 0u);
+        log.OnLocalSpeech(
+            "You", "x <y", 0u, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("3 < 4, and <Tell:IIDString:1:Bob", lines[0].Text);
+        Assert.Null(lines[0].Spans);
+        Assert.Equal("You say, \"x <y\"", lines[1].Text);
+        Assert.Null(lines[1].Spans);
+    }
+
+    [Fact]
+    public void ACoordinateTagInAServerLineIsClosedByTheNextBracketedTextWhateverItIs()
+    {
+        // The coordinate tag is read as a tag that is never a link, so the
+        // next bracketed text only closes it: "<gate>" is hidden, and the tell
+        // tag after the caption opens nothing, which leaves its end tag shown.
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("<COORD:World:1N, 2E> meet at <gate>", chatType: 0u);
+        log.OnSystemMessage(
+            "<COORD:World:1N, 2E>x <Tell:IIDString:5:Bob>Bob<\\Tell>", chatType: 0u);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal(" meet at ", lines[0].Text);
+        Assert.Null(lines[0].Spans);
+        Assert.Equal("x Bob<\\Tell>", lines[1].Text);
+        Assert.Null(lines[1].Spans);
+    }
+
+    [Fact]
     public void AServerLinesBracketedTextThatIsNotATagIsShownAsWritten()
     {
         var log = new ChatLog();

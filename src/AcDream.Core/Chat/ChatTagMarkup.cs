@@ -259,18 +259,24 @@ public static class ChatTagMarkup
         ChatTextTag? open = null;
         int i = 0;
 
+        // The first ">" at or after the reading position, or -1 when none is
+        // left. Kept across brackets so a line full of "<" is read in one pass.
+        int nextClose = text.IndexOf('>');
+
         while (i < text.Length)
         {
             if (text[i] == '<')
             {
-                int close = text.IndexOf('>', i + 1);
+                if (nextClose >= 0 && nextClose < i)
+                    nextClose = text.IndexOf('>', i);
+                int close = nextClose;
                 if (close >= 0)
                 {
-                    string inner = text[(i + 1)..close];
                     ChatTextTag? next = null;
                     bool hidden = open is not null;   // an open tag ends at any bracketed text
-                    if (!hidden)
+                    if (!hidden && MayBeStartTag(text, i + 1, close, readCoordinateTags))
                     {
+                        string inner = text[(i + 1)..close];
                         next = ReadStartTag(inner)
                             ?? (readCoordinateTags ? TryParseLinkTag(inner) : null);
                         hidden = next is not null;
@@ -297,6 +303,30 @@ public static class ChatTagMarkup
             spans.Add(new ChatTextSpan(run.ToString(), open));
 
         return spans;
+    }
+
+    // The longest name in the tag table ("IIDString").
+    private const int LongestTagName = 9;
+
+    /// <summary>
+    /// Whether the bracketed text <c>text[start..end)</c> begins with a type a
+    /// tag can have: a name in the tag table (or COORD, when coordinate tags
+    /// are read) followed by a colon. Only such text is worth copying out and
+    /// reading; every other bracket is decided without looking further.
+    /// </summary>
+    private static bool MayBeStartTag(string text, int start, int end, bool readCoordinateTags)
+    {
+        int window = Math.Min(end - start, LongestTagName + 1);
+        int colon = text.IndexOf(':', start, window);
+        if (colon < 0)
+            return false;
+        ReadOnlySpan<char> type = text.AsSpan(start, colon - start);
+        foreach (string name in TagNames.Keys)
+        {
+            if (type.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return readCoordinateTags && type.Equals("COORD", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

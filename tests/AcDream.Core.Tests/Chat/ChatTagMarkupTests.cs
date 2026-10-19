@@ -104,6 +104,17 @@ public sealed class ChatTagMarkupTests
     }
 
     [Fact]
+    public void ALineFullOfBracketsIsReadInOnePassAndShownAsWritten()
+    {
+        string brackets = new string('<', 20000) + "Tell:IIDString:1:Bob";
+        string late = new string('<', 20000) + "a>";
+
+        Assert.Equal(brackets, Assert.Single(ChatTagMarkup.Parse(brackets)).Text);
+        Assert.Equal(late, Assert.Single(ChatTagMarkup.Parse(late)).Text);
+        Assert.Equal(late, ChatTagMarkup.ToShownText(late));
+    }
+
+    [Fact]
     public void AStartTagWhileATagIsOpenOnlyClosesIt()
     {
         IReadOnlyList<ChatTextSpan> spans =
