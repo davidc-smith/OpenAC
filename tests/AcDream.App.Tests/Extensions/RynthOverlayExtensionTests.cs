@@ -20,6 +20,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
     public RynthOverlayExtensionTests()
     {
         ScriptIcons.Source = null;
+        ImGuiFonts.Source = null;
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
         _imgui = ImGui.CreateContext();
@@ -33,6 +34,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
     public void Dispose()
     {
         ScriptIcons.Source = null;
+        ImGuiFonts.Source = null;
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
         ImGui.DestroyContext(_imgui);
@@ -113,6 +115,21 @@ public sealed class RynthOverlayExtensionTests : IDisposable
 
         extension.Dispose();
         Assert.Null(ScriptIcons.Source);
+    }
+
+    [Fact]
+    public void WithAnOverlayTheirSizedFontsAskTheOverlayUntilDispose()
+    {
+        var overlay = new FakeOverlay();
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay));
+
+        Assert.NotNull(ImGuiFonts.Source);
+        Assert.Equal((IntPtr)77, ImGuiFonts.Source!(12f));
+        Assert.Equal(new[] { 12f }, overlay.SizesAsked);
+
+        extension.Dispose();
+        Assert.Null(ImGuiFonts.Source);
     }
 
     [Fact]
@@ -274,6 +291,14 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         public string ClipboardText { get; set; } = "";
 
         public void AddMergedFont(byte[] ttf, string glyphs, float scale) => Fonts.Add((ttf.Length, glyphs, scale));
+
+        public List<float> SizesAsked { get; } = new();
+
+        public IntPtr Font(float points)
+        {
+            SizesAsked.Add(points);
+            return (IntPtr)77;
+        }
 
         public IDisposable AddFrameCallback(Action draw)
         {

@@ -32,6 +32,7 @@ public sealed class RynthClientExtension : IClientExtension
     private RynthLayoutStore? _layout;
     private RynthBar? _bar;
     private Func<ScriptIconKind, uint, IntPtr>? _iconSource;
+    private Func<float, IntPtr>? _fontSource;
     private RynthChatKeyboard? _chatKeyboard;
     private Func<string>? _clipboardText;
     private Action<string>? _setClipboardText;
@@ -61,6 +62,8 @@ public sealed class RynthClientExtension : IClientExtension
                 _ => IntPtr.Zero,
             };
             ScriptIcons.Source = _iconSource;
+            _fontSource = context.Overlay.Font;
+            ImGuiFonts.Source = _fontSource;
             if (PhosphorFont.Load() is { } phosphor)
                 context.Overlay.AddMergedFont(phosphor, PhosphorIcons.Baked, 1.2f);
             else
@@ -249,6 +252,9 @@ public sealed class RynthClientExtension : IClientExtension
         if (_iconSource is not null && ScriptIcons.Source == _iconSource)
             ScriptIcons.Source = null;
         _iconSource = null;
+        if (_fontSource is not null && ImGuiFonts.Source == _fontSource)
+            ImGuiFonts.Source = null;
+        _fontSource = null;
         _bar = null;
     }
 
