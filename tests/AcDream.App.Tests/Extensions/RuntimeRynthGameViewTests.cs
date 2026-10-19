@@ -569,6 +569,7 @@ public sealed class RuntimeRynthGameViewTests
     [InlineData(1280f, float.PositiveInfinity)]
     [InlineData(-1280f, 720f)]
     [InlineData(1280f, 0.4f)]
+    [InlineData(1280f, 0.5f)]   // rounds to 0
     public void AViewportThatIsNotASizeIsRefused(float width, float height)
     {
         var view = new RuntimeRynthGameView(GameRuntimeTestFactory.Create(), screen: new RecordingScreen { Size = new Vector2(width, height) });

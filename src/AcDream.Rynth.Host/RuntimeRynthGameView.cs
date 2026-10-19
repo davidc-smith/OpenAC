@@ -59,8 +59,11 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         if (_screen is null || !_screen.TryGetViewportSize(out Vector2 size)
             || !IsPoints(size.X) || !IsPoints(size.Y) || size.X < 0.5f || size.Y < 0.5f)
             return false;
-        (width, height) = ((uint)MathF.Round(size.X), (uint)MathF.Round(size.Y));
-        return width > 0 && height > 0;
+        (uint w, uint h) = ((uint)MathF.Round(size.X), (uint)MathF.Round(size.Y));
+        if (w == 0 || h == 0)
+            return false; // 0.5 rounds to even, 0
+        (width, height) = (w, h);
+        return true;
     }
 
     public bool TryGetRadarRect(out int x0, out int y0, out int x1, out int y1)
