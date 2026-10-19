@@ -76,7 +76,7 @@ Each layer knows only the one below it. The contract is plain .NET so plugins bu
      |  1. locate the goal (object, place, top, player)
      |  2. capture geometry: NavGeometry.Capture reads the physics world  (update thread)
      |  3. build the grid:   NavGrid.Build                               (worker task)
-     |  4. search a route:   NavRouter.Find / FindOnto / FindToward      (worker task)
+     |  4. search a route:   NavRouter.Find / FindOnto (stages, last leg); NavCorridor.Plan for a way round (worker task)
      |  5. collect the route next frame, narrate it, hand it to a driver
      v
   RuntimeRouteDriver  -- each frame: sample the body, return moves to begin or stop, a jump to charge
@@ -199,7 +199,7 @@ Everything is on `host.Automation.Navigation`. A host without navigation answers
 
 `PreviewPathAsync` returns a `Task<PluginNavigationPlan>`. Start the call on the thread that raises `host.Events.Tick`, including after an `await`: an async continuation may run on a worker and must wait for a later Tick to request another preview. The method reads the character and world and captures collision before it returns. Await the returned task outside the tick handler, or poll `IsCompleted` on later ticks. Grid building and route search run on a worker; a large dungeon can take time. The returned `Path` is a detached sequence of route leg points from the character toward the goal. Each `PluginNavigationPosition` includes a cell id, map coordinates and elevation; heading is zero because a route point does not face a direction. `LengthMeters` is the planned route length.
 
-`Status` is `Routed`, `NoRoute`, `Unavailable`, `InvalidTarget` or `Failed`. `Failed` means the grid build or route search threw an error; `Reason` contains its message. For any result other than `Routed`, `Path` is empty. A preview covers one planning region: a far outdoor destination beyond 320 m returns `NoRoute`, while a sealed dungeon can use a grid up to 2,048 m wide. Plans use collision and nearby objects as they stood when requested. They do not open doors, cross portals, reserve a walk or promise that the path will stay clear. The graphical and headless hosts expose the same API; drawing remains specific to `/nav route` in the graphical host.
+`Status` is `Routed`, `NoRoute`, `Unavailable`, `InvalidTarget` or `Failed`. `Failed` means the grid build or route search threw an error; `Reason` contains its message. For any result other than `Routed`, `Path` is empty. A preview covers the loaded area: it tries one square first, and otherwise plans a way round and stitches fine stages along it on the worker. A destination beyond the loaded area returns `NoRoute` with the reason `the destination is beyond the loaded area, N m away`. A sealed dungeon can use a grid up to 2,048 m wide. Plans use collision and nearby objects as they stood when requested. They do not open doors, cross portals, reserve a walk or promise that the path will stay clear. The graphical and headless hosts expose the same API; drawing remains specific to `/nav route` in the graphical host.
 
 ### Who is driving
 
@@ -305,7 +305,7 @@ Reports are snapshots, safe to read on any plugin tick. Check that `Sequence` is
 | Topic | Behavior |
 |---|---|
 | Planning grid | A square around the character and the goal with 24 m to spare, 96 to 320 m a side. In a sealed dungeon one grid covers every cell, up to 2,048 m a side, and serves every walk there. |
-| Far goals | Walked in stages, each planned toward the goal over its own grid, each at least 16 m nearer, 12 at most. |
+| Far goals | A goal beyond one square, or one whose square holds no way there, is walked along a way round: a route over a coarse grid of everything loaded (0.5 m cells up to 768 m a side, 1 m up to 1,536 m), built for a body that steps up and down 1.12 m per metre of cell so it climbs any slope the game walks (`NavCorridor.CoarseBody`; the coarse grid errs open, since a missed stage is planned again but a way it shuts is never tried), planned off the update thread while the walk shows `Planning`. The way round is walked only, unless no walked one exists: then, if the character can jump, it is planned again over 0.5 m cells with leaps (`NavCorridor.PlanOver`; the leap finder counts takeoff and landing room in columns and finds no leap at 1 m), so a face steeper than a floor that a player gets up no longer ends the walk `NoRoute`. Only walks that would otherwise find nothing pay for this. Each stage is planned over its own fine square toward the point about 120 m further along it, and the last straight to the goal once no more than 144 m is left. A stage reuses its grid only if the grid holds that stretch of the way round, and a stage that ends more than 8 m from its point, or out of sight of it, is missed. A goal beyond what is loaded gets a way round to the loaded edge, planned again from there, each time at least 16 m on. A missed stage (no path, or no spot to stand near a stage's point short of the goal; the last search onto an object is the stand-on's own business) keeps the next way round out of that stretch, up to 3 ways round; a walk with none ends `NoRoute`, naming where the last way round led nowhere and how far round it looked. A follow lets go of its way round whenever it plans toward the player afresh, so a player who comes back within one square is followed straight to. A one-square walk to a place or object (not a stand-on, not a follow) whose square has no route tries a way round the same way, and ends `NoRoute` before moving if none is found. The stage budget comes from the way round's length, 12 at least, so a far walk needs no resend after 12 stages. |
 | Getting stuck | When progress stops, the walk plans again. The first two stops keep later plans out of a spot 0.6 m across, 0.75 m ahead, while a route still arrives without it; where it was the only way on, the walk plans through it again. Each stop after the first also tries a different way off what the character met before planning: stepping back 1 m, walking to the roomiest clear spot within 2.5 m (the middle of a narrow staircase), sidestepping 1 m toward the more open side, sidestepping the other way, and a small hop forward. After 6 new plans a walk ends blocked, naming the object beside the spot; a follow starts over, going on round those ways off, not back to the first stop's none. Narration says where each stop happened, facing which way, on which leg, and how near the walls were. |
 | Doors | A closed door on the route is opened first, as a player's click would open it, and the walk goes on once it is open. The walk runs the last of the way up to the door itself and uses it from inside the client's use range. A door not yet appraised is appraised quietly, with nothing opening on screen; a locked one is walked around, and with no other way it ends the walk blocked, naming the door. |
 | Portals | Routes never pass through a portal other than the one a walk goes to. |
@@ -350,10 +350,17 @@ The planning layer, `AcDream.Core.Navigation`, is plain C# with no client state,
 | `NavGrid.Build` | Turns that geometry into 0.25 m columns of solid spans. A node is the top of a walkable span with headroom for the whole body. A link joins nodes in neighbouring columns within the body's step-up and step-down heights. A node is clear when no wall comes nearer than the body's radius less a quarter column, and it is not on the very edge of a ledge. Tops too small to walk on are perches a jump can land on. |
 | `NavRouter.Find` | A* from a node the start can walk to, within 1.5 m, to a clear node near the goal that can see it, or on the goal's own floor. It plans three ways in parallel, from the shortest to one well clear of walls, and keeps the tidiest route that arrives. It takes spots to keep out of and creatures to pass, and plans leaps only when no walked route arrives. It gives up at 4,000,000 expanded nodes. |
 | `NavRouter.FindOnto` | The same, ending on an object's top. |
-| `NavRouter.FindToward` | The same, toward a goal beyond the grid: to the grid's edge nearest the goal, for staged walks. |
+| `NavRouter.FindToward` | The same, toward a goal beyond the grid: to the grid's edge nearest the goal. Used on the coarse grid for a way round to the loaded edge. |
+| `NavCorridor` | A way round over a coarse grid: `PlanOver` plans a walked one, and again with leaps over 0.5 m cells when none is walked; `Plan` finds one onto the goal's floor, or to the grid's edge toward a goal beyond it; `Stitch` plans the fine stages along it and joins them, for previews. |
 | `NavRoute` | `Outcome` (`Routed`, `NoStart`, `NoGoal` or `NoPath`) with a `Reason`; the `Path` of nodes; straight `Legs`, with corners moved up to 1.5 m to keep 1 m from walls; `Leaps`; `Length`; `EndsInSight`; `Scrape`; `Crowding`; and `Milliseconds`. |
 
 The physics world gains two read accessors for this, `TryGetLandblockCollision` and `LandblockIds`, and the shadow object registry gains `CaptureEntries` and `CaptureEntriesNear`, which copy collision parts out in one pass instead of the debug enumeration.
+
+### Corridors
+
+One fine square cannot hold a way round that leaves it, such as a ramp up a plateau that starts a few hundred metres off. So a far walk is planned in two parts: a way round over a coarse grid of the whole loaded area, which answers which way to go, then fine 0.25 m stages along it, with leaps allowed, which answer where the feet go. The way round is walked where it can be: it plans leaps only when no walked way exists, and then over 0.5 m cells. Only the way round is kept; the coarse grid is let go. Measured in a Debug build over the installed game files, the Stonehold way round of 747 m was found in 508 ms over 1,344 m at 1 m cells, and the stitched fine route of 736 m took 1,338 ms. In the live Release client the same walk's way round of 740 m took 140 ms over 1,536 m at 1 m cells. The plateau at 45.0N 43.1W has no walked way round; in a Release build over the installed game files its leapt one, 499 m with one leap at a steep pinch near 44.7N 43.3W, took 1,988 ms to search over 1,344 m at 0.5 m cells, after about 1 s for the 1 m walked search that found nothing and 1 s to build the 0.5 m grid.
+
+A baked navmesh, as RynthSuite ships, was left out for now: it needs a second collision model kept in step with the client's rules and a bake pipeline, and it still knows nothing of doors, creatures or placed objects. Revisit it if walks need detours wider than the loaded area, if plugins need world-scale reachability, or if way-round builds show up as a real cost live. The next step would be a per-landblock coarse layer computed when first needed and cached on disk, built with the client's own rules.
 
 ## Leaps
 
@@ -414,6 +421,7 @@ MossTank walks its routes the reference way: straight at each point with held ke
 - Green points: clear floor, every 0.5 m.
 - Red points: beside a ledge or too near a wall.
 - Magenta line: the route being walked.
+- Purple line: the way round, drawn 0.3 m up, above the route, every 4th point, during any walk and after `/nav route`.
 
 The grid and the route line are hidden behind walls, floors and ceilings, as the world is. `/nav debug` narrates the rest.
 
@@ -424,6 +432,8 @@ The grid and the route line are hidden behind walls, floors and ceilings, as the
 - A thin post about 1.4 m tall plans no jump onto it.
 - A follow takes the shortest way to the player, not the way the player went, so it may use another door or the long way down.
 - Door use in the headless host is covered offline but has not been run against a live server.
+- A way round that needs leaps is found only over 0.5 m cells, after the walked search finds nothing, so such a walk spends a few seconds in `Planning`.
+- A way round covers only what is loaded; a detour through unloaded land is not found.
 - A grid over a whole dungeon holds 46 to 149 MB while it is in use, and planning with leaps over a large grid can take a couple of seconds.
 
 ## Tests

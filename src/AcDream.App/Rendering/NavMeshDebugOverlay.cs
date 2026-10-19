@@ -36,6 +36,9 @@ internal sealed class NavMeshDebugOverlay
     private static readonly Vector3 PathColour = new(0.85f, 0.85f, 0.85f);
     private static readonly Vector3 RouteColour = new(1f, 0f, 1f);
     private static readonly Vector3 BeyondColour = new(0.5f, 0f, 0.5f);
+    private static readonly Vector3 CorridorColour = new(0.55f, 0.35f, 0.75f);
+    private static readonly Vector3 CorridorLift = new(0f, 0f, 0.3f);
+    private const int CorridorStride = 4;
 
     /// <summary>Portals, which a walk never goes through: a warm violet, apart from every other mark.</summary>
     private static readonly Vector3 PortalColour = new(0.8f, 0.3f, 1f);
@@ -117,6 +120,16 @@ internal sealed class NavMeshDebugOverlay
     {
         if (_walk.Goal is { } goal)
             lines.AddCylinder(goal.Position, goal.ArrivalMeters, 0.1f, RouteColour, hiddenByScene: true);
+        if (_walk.Corridor is { Points.Count: > 1 } corridor)
+        {
+            Vector3 previous = corridor.Points[0];
+            for (int index = CorridorStride; index < corridor.Points.Count + CorridorStride - 1; index += CorridorStride)
+            {
+                Vector3 point = corridor.Points[Math.Min(index, corridor.Points.Count - 1)];
+                lines.AddLine(previous + CorridorLift, point + CorridorLift, CorridorColour, hiddenByScene: true);
+                previous = point;
+            }
+        }
         if (_walk.Route is not { Outcome: NavRouteOutcome.Routed } route || route.Legs.Count == 0)
             return;
 

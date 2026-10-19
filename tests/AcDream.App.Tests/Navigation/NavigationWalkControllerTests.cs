@@ -48,6 +48,342 @@ public sealed class NavigationWalkControllerTests
     }
 
     [Fact]
+    public async Task PreviewOfAWayRoundStitchesItsStages()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals());
+
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(0xA9B50001u, new Vector3(60f, 260f, 0f), 2.5f);
+
+        Assert.Equal(PluginNavigationPlanStatus.Routed, plan.Status);
+        Assert.True(plan.LengthMeters > 500f, $"length {plan.LengthMeters}");
+        double east = (plan.Path[^1].EastWest - plan.Path[0].EastWest) * 240d;
+        double north = (plan.Path[^1].NorthSouth - plan.Path[0].NorthSouth) * 240d;
+        Assert.True(Math.Sqrt((east * east) + ((north - 110d) * (north - 110d))) <= 2.5d, $"ends {east:0.0}, {north:0.0} from the start");
+        Assert.Equal(0, walk.Report.Sequence);
+    }
+
+    [Fact]
+    public async Task PreviewWithNoWayRoundSaysWhereItLooked()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals());
+
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(0xA9B50001u, new Vector3(60f, 260f, 0f), 2.5f);
+
+        Assert.Equal(PluginNavigationPlanStatus.NoRoute, plan.Status);
+        Assert.EndsWith("within 384 m around the start and goal", plan.Reason);
+    }
+
+    [Fact]
+    public async Task PreviewBeyondTheLoadedAreaSaysSo()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var walk = new NavigationWalkController(FlatWorld(), body, new Goals());
+
+        PluginNavigationPlan plan = await walk.PreviewPathAsync(0xA9B40001u, new Vector3(40f, 900f, 0f), 2.5f);
+
+        Assert.Equal(PluginNavigationPlanStatus.NoRoute, plan.Status);
+        Assert.StartsWith("the destination is beyond the loaded area", plan.Reason);
+    }
+
+    [Fact]
+    public void AWalkWithNoWayRoundAnywhereLoadedEndsBeforeMovingAndSaysWhereItLooked()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals());
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.EndsWith("within 384 m around the start and goal", report.Reason);
+        Assert.Equal(0, body.MovesBegun);
+    }
+
+    /// <summary>A debugging listener still hears what the one square looked at when no way round is found either.</summary>
+    [Fact]
+    public void ANarratedWalkWithNoWayRoundSaysWhatItsOneSquareLookedAt()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals());
+        var heard = new List<string>();
+        walk.Narration = heard.Add;
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        RunUntilSettled(walk, body);
+
+        Assert.Contains(heard, line => line.StartsWith("No route to ", StringComparison.Ordinal));
+        Assert.Contains(heard, line => line.StartsWith("Way round: NoPath", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AWalkThatFitsOneSquarePlansNoWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var walk = new NavigationWalkController(FlatWorld(), body, new Goals { [Target] = new Vector3(60f, 75f, 0f) });
+
+        walk.WalkTo(Target);
+
+        Assert.Equal(NavigationWalkState.Arrived, RunUntilSettled(walk, body).State);
+        Assert.Null(walk.Corridor);
+    }
+
+    [Fact]
+    public void AWalkWhoseWayRoundLeavesItsSquareGoesRoundTheWallAndArrives()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals());
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport first = RunUntil(walk, body, report => report.State == NavigationWalkState.Walking, seconds: 30f);
+        NavCorridor corridor = Assert.IsType<NavCorridor>(walk.Corridor);
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavCorridorOutcome.Reaches, corridor.Outcome);
+        Assert.InRange(first.RemainingMeters, corridor.Length * 0.85f, corridor.Length * 1.15f);
+        Assert.True(first.RemainingMeters > 165f);
+        Assert.Equal(NavigationWalkState.Arrived, report.State);
+        Assert.InRange(Vector2.Distance(body.Flat, new Vector2(60f, 260f)), 0f, NavigationWalkController.DefaultArrivalMeters + 0.05f);
+        Assert.Contains(body.Path, point => point.X > 320f);
+    }
+
+    /// <summary>
+    /// A route asked for alone says so as it turns to a way round, and draws no route while the
+    /// way round is planned, rather than the one square's search that found none.
+    /// </summary>
+    [Fact]
+    public void ARouteAskedForAloneThatNeedsAWayRoundSaysRouteAndDrawsNoRouteWhilePlanningIt()
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        NavigationWalkController? walk = null;
+        NavRoute? drawnWhileTurning = null;
+        bool turned = false;
+        walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals { [Target] = new Vector3(60f, 260f, 0f) }, line =>
+        {
+            said.Add(line);
+            if (line.Contains("no route within one square", StringComparison.Ordinal))
+            {
+                turned = true;
+                drawnWhileTurning = walk!.Route;
+            }
+        });
+
+        walk.RouteTo(Target);
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 60f);
+
+        Assert.True(turned);
+        Assert.Null(drawnWhileTurning);
+
+        Assert.Equal(NavigationWalkState.Planned, report.State);
+        Assert.Contains(said, line => line.StartsWith("Route to 0x50000001: no route within one square; planning a way round", StringComparison.Ordinal));
+        Assert.Contains(said, line => line.StartsWith("Route to 0x50000001: planning a way round over", StringComparison.Ordinal));
+        Assert.DoesNotContain(said, line => line.StartsWith("Walk to", StringComparison.Ordinal));
+        Assert.Equal(0, body.MovesBegun);
+    }
+
+    /// <summary>A way round straight from the start to the goal, as a coarse grid that missed a wall would plan it.</summary>
+    private static NavCorridor StraightThroughTheWall(NavCorridor planned)
+    {
+        var points = new List<Vector3>();
+        for (float y = 150f; y <= 260f; y += 1f)
+            points.Add(new Vector3(60f, y, 0f));
+        return new NavCorridor(NavCorridorOutcome.Reaches, "routed", points, planned.OriginX, planned.OriginY, planned.Size, planned.CellSize, 0d);
+    }
+
+    [Fact]
+    public void AWayRoundThatLeadsNowhereIsKeptOutOfAndAnotherIsPlanned()
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals(), said.Add);
+        int plans = 0;
+        walk.CorridorPlanned = planned => plans++ == 0 ? StraightThroughTheWall(planned) : planned;
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavigationWalkState.Arrived, report.State);
+        Assert.Contains(said, line => line.Contains("planning another way round"));
+        Assert.Equal(2, plans);
+    }
+
+    [Fact]
+    public void AWalkGivesUpAfterEveryWayRoundLeadsNowhere()
+    {
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: 330f), body, new Goals());
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return StraightThroughTheWall(planned); };
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.StartsWith("no way along the planned way round was found near", report.Reason);
+        Assert.Contains("searched 384 m around the start and goal", report.Reason);
+        Assert.Equal(NavigationWalkController.MaximumCorridorPlans, plans);
+    }
+
+    /// <summary>
+    /// A way round east along the wall and then north through it, as a coarse grid that missed
+    /// the wall's far end would plan it: its first stages are walked before the last one misses.
+    /// </summary>
+    private static NavCorridor AlongThenThroughTheWall(NavCorridor planned)
+    {
+        var points = new List<Vector3>();
+        for (float x = 60f; x < 260f; x += 1f)
+            points.Add(new Vector3(x, 150f, 0f));
+        for (float y = 150f; y <= 260f; y += 1f)
+            points.Add(new Vector3(260f, y, 0f));
+        return new NavCorridor(NavCorridorOutcome.Reaches, "routed", points, planned.OriginX, planned.OriginY, planned.Size, planned.CellSize, 0d);
+    }
+
+    /// <summary>
+    /// Stages walked, then a missed stage whose next way round finds nothing: the walk says
+    /// where the way round led nowhere and how far it searched, not that it got no nearer.
+    /// </summary>
+    [Fact]
+    public void AWayRoundPlannedAgainAfterAMissThatFindsNothingSaysWhereTheLastLedNowhere()
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(60f, 150f, 0f));
+        var walk = new NavigationWalkController(WallWorld(gapFromX: null), body, new Goals(), said.Add);
+        int plans = 0;
+        walk.CorridorPlanned = planned => plans++ == 0 ? AlongThenThroughTheWall(planned) : planned;
+
+        walk.WalkToPlace(0xA9B50001u, new Vector3(60f, 260f, 0f));
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 400f);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.Equal(2, plans);
+        Assert.Contains(said, line => line.Contains("stage 1 walked", StringComparison.Ordinal));
+        Assert.Contains(said, line => line.Contains("planning another way round", StringComparison.Ordinal));
+        Assert.StartsWith("no way along the planned way round was found near (", report.Reason);
+        Assert.EndsWith("; searched 384 m around the start and goal", report.Reason);
+    }
+
+    [Fact]
+    public void AFarObjectWithNothingToStandOnEndsWithTheRoutersReasonAfterOneWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f) };
+        goals.Surfaces[Target] = new NavSurfaces([], []);
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.StandOn(Target);
+        NavigationWalkReport report = RunUntilSettled(walk, body, seconds: 300f);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.Equal("nothing on top of the object can be stood on", report.Reason);
+        Assert.Equal(1, plans);
+    }
+
+    /// <summary>A way round south off the loaded world, whose first stage aims at a point with no floor.</summary>
+    private static NavCorridor SouthOffTheWorld(NavCorridor planned)
+    {
+        var points = new List<Vector3>();
+        for (float y = 40f; y >= -300f; y -= 1f)
+            points.Add(new Vector3(40f, y, 0f));
+        return new NavCorridor(NavCorridorOutcome.Reaches, "routed", points, planned.OriginX, planned.OriginY, planned.Size, planned.CellSize, 0d);
+    }
+
+    /// <summary>
+    /// A stage short of the goal aims at a point of the way round, not the goal, so finding nothing
+    /// to stand on there is the way round's fault, for a walk onto an object as for any other.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AStageThatFindsNoFloorAtItsPointPlansAnotherWayRound(bool onto)
+    {
+        var said = new List<string>();
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f) };
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals, said.Add);
+        int plans = 0;
+        walk.CorridorPlanned = planned => plans++ == 0 ? SouthOffTheWorld(planned) : planned;
+
+        if (onto)
+            walk.StandOn(Target);
+        else
+            walk.WalkTo(Target);
+        RunUntil(walk, body, report => plans >= 2 || report.State is not (NavigationWalkState.Planning or NavigationWalkState.Walking), seconds: 60f);
+
+        Assert.Contains(said, line => line.Contains("planning another way round", StringComparison.Ordinal));
+        Assert.Equal(2, plans);
+    }
+
+    /// <summary>A way round that finishes planning after its walk was stopped is let go, not taken up.</summary>
+    [Fact]
+    public void AWayRoundPlannedForAStoppedWalkIsLetGo()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, new Goals { [Target] = new Vector3(60f, 520f, 0f) });
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.WalkTo(Target);
+        walk.Tick(Frame);
+        Assert.StartsWith("planning a way round over", walk.Report.Reason);
+        Assert.True(walk.IsSearching);
+        walk.Stop();
+        TickFor(walk, 2f);
+
+        Assert.Equal(NavigationWalkState.Stopped, walk.Report.State);
+        Assert.False(walk.IsSearching);
+        Assert.False(walk.IsBusy);
+        Assert.Null(walk.Corridor);
+        Assert.Equal(0, plans);
+        Assert.Equal(0, body.MovesBegun);
+    }
+
+    /// <summary>A way round that finishes planning after a newer request replaced its walk is let go; the newer walk goes on.</summary>
+    [Fact]
+    public void AWayRoundPlannedForAReplacedWalkIsLetGoAndTheNewerWalkArrives()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f), [Other] = new Vector3(60f, 75f, 0f) };
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.WalkTo(Target);
+        walk.Tick(Frame);
+        Assert.StartsWith("planning a way round over", walk.Report.Reason);
+        long second = walk.WalkTo(Other);
+        NavigationWalkReport report = RunUntilSettled(walk, body);
+
+        Assert.Equal(second, report.Sequence);
+        Assert.Equal(NavigationWalkState.Arrived, report.State);
+        Assert.Null(walk.Corridor);
+        Assert.Equal(0, plans);
+        Assert.InRange(Vector2.Distance(body.Flat, new Vector2(60f, 75f)), 0f, NavigationWalkController.DefaultArrivalMeters + 0.05f);
+    }
+
+    [Fact]
+    public void AWayRoundIsPlannedOverWhatIsLoadedAndHoldsTheCharacter()
+    {
+        var low = new Vector2(0f, 0f);
+        var high = new Vector2(384f, 384f);
+
+        Assert.True(NavigationWalkController.TryChooseCorridorRegion(new Vector3(60f, 150f, 0f), new Vector3(60f, 260f, 0f), low, high,
+            out float x, out float y, out float size));
+        Assert.Equal((0f, 0f, 384f), (x, y, size));
+
+        var wide = new Vector2(4000f, 4000f);
+        Assert.True(NavigationWalkController.TryChooseCorridorRegion(new Vector3(100f, 100f, 0f), new Vector3(3900f, 3900f, 0f), low, wide,
+            out x, out y, out size));
+        Assert.Equal(NavigationWalkController.MaximumCorridorRegion, size);
+        Assert.InRange(100f - x, NavigationWalkController.RegionMargin, size - NavigationWalkController.RegionMargin);
+        Assert.InRange(100f - y, NavigationWalkController.RegionMargin, size - NavigationWalkController.RegionMargin);
+        Assert.True(x >= 0f && y >= 0f);
+    }
+
+    [Fact]
     public async Task PreviewDoesNotReplaceAnActiveWalk()
     {
         var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
@@ -697,6 +1033,92 @@ public sealed class NavigationWalkControllerTests
 
         Assert.InRange(Vector2.Distance(body.Flat, new Vector2(70f, 100f)), 0f, 4.5f);
         Assert.Contains(heard, line => line.Contains("the player moved", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A follow toward a player beyond one square plans a way round; once the player comes
+    /// back within one square, the follow plans straight to them, not along the old way round.
+    /// </summary>
+    [Fact]
+    public void FollowingAPlayerWhoComesBackWithinOneSquareDropsTheWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var goals = new Goals { [Target] = new Vector3(60f, 520f, 0f) };
+        goals.Players.Add(Target);
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+
+        walk.Follow(Target, 3f);
+        RunUntil(walk, body, report => report.State == NavigationWalkState.Walking && report.Reason == "walking", seconds: 30f);
+        Assert.NotNull(walk.Corridor);
+        Assert.True(walk.IsStaged);
+        Run(walk, body, seconds: 1f);
+
+        goals[Target] = new Vector3(40f, 70f, 0f);
+        NavigationWalkReport report = RunUntil(walk, body, report => report.Reason.StartsWith("keeping behind", StringComparison.Ordinal), seconds: 60f);
+
+        Assert.StartsWith("keeping behind", report.Reason);
+        Assert.Null(walk.Corridor);
+        Assert.False(walk.IsStaged);
+        Assert.InRange(Vector2.Distance(body.Flat, new Vector2(40f, 70f)), 0f, 4.5f);
+        Assert.DoesNotContain(body.Path, point => point.Y > 90f);
+    }
+
+    /// <summary>
+    /// A follow toward a player beyond one square who keeps running on keeps the way round it
+    /// planned, planning again on the way toward its stage rather than planning the whole way
+    /// round afresh each time the player has moved, and so keeps walking.
+    /// </summary>
+    [Fact]
+    public void FollowingAFarPlayerWhoKeepsRunningKeepsTheWayRound()
+    {
+        var body = new SimulatedBody(new Vector3(40f, 40f, 0f));
+        var leader = new Vector3(60f, 450f, 0f);
+        var goals = new Goals { [Target] = leader };
+        goals.Players.Add(Target);
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 4), body, goals);
+        int plans = 0;
+        walk.CorridorPlanned = planned => { plans++; return planned; };
+
+        walk.Follow(Target, 3f);
+        RunUntil(walk, body, report => report.State == NavigationWalkState.Walking && report.Reason == "walking", seconds: 30f);
+        Assert.Equal(1, plans);
+
+        // The player runs on north at a running pace for 20 s of game time; time stands still
+        // while the follower plans, as a frame would take that long.
+        var wall = Stopwatch.StartNew();
+        float simulated = 0f;
+        float startY = body.Flat.Y;
+        float stalledFor = 0f;
+        float longestStall = 0f;
+        Vector2 lastMoved = body.Flat;
+        while (simulated < 20f && wall.Elapsed < TimeSpan.FromSeconds(120))
+        {
+            walk.Tick(Frame);
+            if (walk.Report.State == NavigationWalkState.Planning || walk.IsSearching)
+            {
+                Thread.Sleep(1);
+                continue;
+            }
+            body.Integrate(Frame);
+            leader += new Vector3(0f, 4f * Frame, 0f);
+            goals[Target] = leader;
+            simulated += Frame;
+            if (Vector2.Distance(body.Flat, lastMoved) >= 1f)
+            {
+                lastMoved = body.Flat;
+                stalledFor = 0f;
+            }
+            else
+            {
+                stalledFor += Frame;
+                longestStall = MathF.Max(longestStall, stalledFor);
+            }
+        }
+
+        Assert.True(walk.IsBusy);
+        Assert.InRange(plans, 1, 2);
+        Assert.InRange(longestStall, 0f, 3f);
+        Assert.True(body.Flat.Y - startY > 50f, $"the follower went only {body.Flat.Y - startY:0.0} m north");
     }
 
     [Fact]
@@ -1563,24 +1985,6 @@ public sealed class NavigationWalkControllerTests
     }
 
     [Fact]
-    public void AStageRegionHoldsTheCharacterAndReachesTowardTheGoal()
-    {
-        var from = new Vector3(500f, 500f, 0f);
-        float margin = NavigationWalkController.RegionMargin - NavGrid.DefaultCellSize;
-        foreach (Vector3 goal in new[] { new Vector3(1500f, 500f, 0f), new Vector3(-400f, -600f, 0f), new Vector3(700f, 1400f, 0f) })
-        {
-            NavigationWalkController.ChooseStageRegion(from, goal, out float originX, out float originY, out float size);
-
-            Assert.Equal(NavigationWalkController.MaximumRegion, size);
-            Assert.InRange(from.X - originX, margin, size - margin);
-            Assert.InRange(from.Y - originY, margin, size - margin);
-            var centre = new Vector2(originX + (size * 0.5f), originY + (size * 0.5f));
-            var flatGoal = new Vector2(goal.X, goal.Y);
-            Assert.True(Vector2.Distance(centre, flatGoal) < Vector2.Distance(new Vector2(from.X, from.Y), flatGoal) - 100f);
-        }
-    }
-
-    [Fact]
     public void InsideASealedDungeonOneGridCoversEveryCellAndServesEveryWalkThere()
     {
         const uint room = 0xA9B40100u;
@@ -2100,6 +2504,29 @@ public sealed class NavigationWalkControllerTests
             Thread.Sleep(1);
         }
         return false;
+    }
+
+    /// <summary>
+    /// Four flat landblocks, 384 m square, crossed east-west at y = 200 by a wall 5 m high
+    /// from x = 0 to <paramref name="gapFromX"/>, or the whole way when null.
+    /// </summary>
+    private static PhysicsEngine WallWorld(float? gapFromX)
+    {
+        float end = gapFromX ?? 384f;
+        var wall = new Dictionary<ushort, Vector3>
+        {
+            [0] = new(0f, 200f, 0f),
+            [1] = new(end, 200f, 0f),
+            [2] = new(end, 200f, 5f),
+            [3] = new(0f, 200f, 5f),
+        };
+        var physics = new PhysicsEngine();
+        physics.AddLandblock(0xA9B4FFFFu, new TerrainSurface(new byte[81], new float[256]),
+            [new CellSurface(0xA9B40100u, wall, [[0, 1, 2, 3]])], [], 0f, 0f);
+        physics.AddLandblock(0xAAB4FFFFu, new TerrainSurface(new byte[81], new float[256]), [], [], 192f, 0f);
+        physics.AddLandblock(0xA9B5FFFFu, new TerrainSurface(new byte[81], new float[256]), [], [], 0f, 192f);
+        physics.AddLandblock(0xAAB5FFFFu, new TerrainSurface(new byte[81], new float[256]), [], [], 192f, 192f);
+        return physics;
     }
 
     private static PhysicsEngine FlatWorld(int landblocksNorth = 1)

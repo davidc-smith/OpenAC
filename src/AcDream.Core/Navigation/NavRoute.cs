@@ -134,7 +134,7 @@ public static class NavRouter
     private const float CrowdUntidiness = 8f;
     private const float CrowdScrapeAllowance = 0.25f;
 
-    private const string ReachedEdgeReason = "the goal lies beyond this grid, so the route ends at its edge toward the goal";
+    internal const string ReachedEdgeReason = "the goal lies beyond this grid, so the route ends at its edge toward the goal";
 
     /// <summary>
     /// A corner a route turns at is moved, when it helps and there is room, so that

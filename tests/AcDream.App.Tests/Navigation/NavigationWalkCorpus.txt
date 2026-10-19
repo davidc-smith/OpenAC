@@ -41,5 +41,5 @@ Yaraq, the archmage's room out and up to the healer's deck
   cutting corners:  Arrived, 2.4 m left, replans 0; route 11 legs, 106.3 m; 14.3 s, 9 stops, 0.0 s walking; ran around 2 corners and turned in place at 8; 0 frames off the floor, 0 through a wall
   turning in place: Arrived, 2.2 m left, replans 0; route 11 legs, 106.3 m; 14.6 s, 16 stops, 0.0 s walking; ran around 0 corners and turned in place at 10; 0 frames off the floor, 0 through a wall
 around Holtburg, west to east across three landblocks in stages
-  cutting corners:  Arrived, 2.2 m left, replans 0; route 1 legs, 275.1 m; 39.6 s, 2 stops, 0.0 s walking; ran around 0 corners and turned in place at 0, 1 stages walked before the last; 0 frames off the floor, 0 through a wall
-  turning in place: Arrived, 2.3 m left, replans 0; route 1 legs, 275.1 m; 39.5 s, 2 stops, 0.0 s walking; ran around 0 corners and turned in place at 0, 1 stages walked before the last; 0 frames off the floor, 0 through a wall
+  cutting corners:  Arrived, 2.4 m left, replans 0; route 1 legs, 111.6 m; 39.6 s, 4 stops, 0.0 s walking; ran around 0 corners and turned in place at 0, 3 stages walked before the last; 0 frames off the floor, 0 through a wall
+  turning in place: Arrived, 2.5 m left, replans 0; route 1 legs, 111.6 m; 39.5 s, 4 stops, 0.0 s walking; ran around 0 corners and turned in place at 0, 3 stages walked before the last; 0 frames off the floor, 0 through a wall
