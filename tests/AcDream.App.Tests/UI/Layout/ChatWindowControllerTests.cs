@@ -575,7 +575,7 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
-    public void ClickingACoordinateSomeoneTypedRaisesACoordinateLink()
+    public void ClickingACoordinateAPluginWroteRaisesACoordinateLink()
     {
         var log = new ChatLog();
         var (rootInfo, layout, vm) = BuildTestTree(log);
@@ -587,7 +587,7 @@ public class ChatWindowControllerTests
         var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
         ctrl.ChatLinkClicked = clicked.Add;
 
-        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u);
+        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u, allowsMarkup: true);
         UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
         int column = line.Text.IndexOf("42.1N", StringComparison.Ordinal);
 
@@ -597,6 +597,34 @@ public class ChatWindowControllerTests
         var link = Assert.Single(clicked);
         Assert.Equal(AcDream.Plugin.Abstractions.PluginChatLinkKind.Coordinate, link.Kind);
         Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(-33.5, 42.1), link.Coordinate);
+    }
+
+    [Fact]
+    public void ClickingACoordinateOrCoordinateTagAPlayerTypedRaisesNothing()
+    {
+        var log = new ChatLog();
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+        ctrl.ChatLinkClicked = clicked.Add;
+
+        log.OnLocalSpeech(
+            "Bob", "<COORD:World:0N, 0E>42.1N 33.5E<\\COORD>", 0x5000000Au,
+            isRanged: false, logTextType: 2u);
+        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u);
+        IReadOnlyList<UiText.Line> lines = ctrl.Transcript.LinesProvider();
+        Assert.Equal("Bob says, \"42.1N 33.5E\"", lines[0].Text);
+        int typed = lines[0].Text.IndexOf("42.1N", StringComparison.Ordinal);
+        int server = lines[1].Text.IndexOf("42.1N", StringComparison.Ordinal);
+
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, typed + 3)));
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(1, server + 3)));
+
+        Assert.Empty(clicked);
     }
 
     [Fact]

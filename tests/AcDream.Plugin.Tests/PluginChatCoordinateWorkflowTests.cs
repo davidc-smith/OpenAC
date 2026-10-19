@@ -24,6 +24,22 @@ public sealed class PluginChatCoordinateWorkflowTests
         Assert.False(PluginChatCoordinateParser.TryParse("1N, 2E and 3N, 4E", out _));
     }
 
+    [Theory]
+    [InlineData("10n 20east")]
+    [InlineData("10north 20e")]
+    [InlineData("v2.1N 3E")]
+    public void CoordinateParserDoesNotReadAPairInsideAWord(string text)
+    {
+        Assert.Empty(PluginChatCoordinateParser.ParseAll(text));
+    }
+
+    [Fact]
+    public void CoordinateParserReadsAPairBetweenPunctuation()
+    {
+        Assert.True(PluginChatCoordinateParser.TryParse("Your corpse is located at (42.1N, 33.5E).", out var coordinate));
+        Assert.Equal(new PluginChatCoordinate(33.5, 42.1), coordinate);
+    }
+
     [Fact]
     public void LinkRouterForwardsCoordinatesUntilDisposed()
     {

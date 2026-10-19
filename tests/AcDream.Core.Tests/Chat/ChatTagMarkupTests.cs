@@ -98,4 +98,44 @@ public sealed class ChatTagMarkupTests
         Assert.Equal(5u, id);
         Assert.Equal("Odd:Name", name);
     }
+
+    [Theory]
+    [InlineData("Press <Ctrl:F> to follow", false)]
+    [InlineData("<a:b:c>", false)]
+    [InlineData(@"<Tell:IIDString:1:Bob>Bob<\Tell>", false)]
+    [InlineData(@"<COORD:World:somewhere>x<\COORD>", false)]
+    [InlineData(@"<COORD:World:1N, 2E>x<\COORD>", true)]
+    [InlineData(@"Press <Ctrl:F>, then <coord:world:1N, 2E>x<\coord>", true)]
+    public void OnlyAWellFormedCoordinateTagIsALinkTag(string text, bool expected)
+    {
+        Assert.Equal(expected, ChatTagMarkup.ContainsTag(text));
+    }
+
+    [Fact]
+    public void ParseLinksKeepsEveryOtherAngleBracketTextAsWritten()
+    {
+        IReadOnlyList<ChatTextSpan> spans = ChatTagMarkup.ParseLinks(
+            @"<Ctrl:F> <COORD:World:1N, 2E>go <b:c> there<\Other><\COORD> <\COORD>end");
+
+        Assert.Equal(
+            new[] { "<Ctrl:F> ", @"go <b:c> there<\Other>", @" <\COORD>end" },
+            spans.Select(span => span.Text));
+        Assert.Null(spans[0].Tag);
+        Assert.Equal("COORD", spans[1].Tag!.Value.Type);
+        Assert.Null(spans[2].Tag);
+    }
+
+    [Fact]
+    public void WithoutCoordinateTagsKeepsTheCaptionAndOtherTags()
+    {
+        IReadOnlyList<ChatTextSpan> spans = ChatTagMarkup.WithoutCoordinateTags(
+            ChatTagMarkup.Parse(
+                @"<Tell:IIDString:1:Bob>Bob<\Tell> says, ""<COORD:World:0N, 0E>42.1N 33.5E<\COORD>"""));
+
+        Assert.Equal(
+            new[] { "Bob", " says, \"", "42.1N 33.5E", "\"" },
+            spans.Select(span => span.Text));
+        Assert.Equal("Tell", spans[0].Tag!.Value.Type);
+        Assert.All(spans.Skip(1), span => Assert.Null(span.Tag));
+    }
 }

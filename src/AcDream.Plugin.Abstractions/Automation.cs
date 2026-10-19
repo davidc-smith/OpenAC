@@ -833,7 +833,11 @@ public readonly record struct PluginChatMessage(
     /// The whole line as the client's chat window prints it: the channel
     /// prefix, the speaker, the verb and the quoted words, with another
     /// player's name wrapped in the client's tell link
-    /// (<c>&lt;Tell:IIDString:id:Name&gt;Name&lt;\Tell&gt;</c>). It carries no
+    /// (<c>&lt;Tell:IIDString:id:Name&gt;Name&lt;\Tell&gt;</c>). The quoted
+    /// words are as the speaker wrote them, angle brackets included, so text
+    /// in them that looks like a tag is the speaker's, not the client's. A
+    /// line a plugin posted is given as the plugin wrote it, its
+    /// <c>&lt;COORD:World:…&gt;</c> tags kept. It carries no
     /// timestamp and no closing line break. Empty on a line the host did not
     /// word. A chat filter is offered the line before the language filter
     /// runs, so there this and <see cref="Text"/> are the words as they
@@ -927,11 +931,15 @@ public interface IPluginChat
         Array.Empty<PluginChatMessage>();
 
     /// <summary>
-    /// Raised when the player clicks a link in the chat window. A coordinate
-    /// pair written in any line but combat text ("meet at 42.1N 33.5E") is a
-    /// link, and so is a <c>&lt;COORD:World:42.1N, 33.5E&gt;…&lt;\COORD&gt;</c>
-    /// tag in a line a plugin posted. Clicking a player's name starts a tell
-    /// instead and raises nothing.
+    /// Raised when the player clicks a coordinate link in the main chat
+    /// window. Only a line a plugin posted (<see cref="PostSystemMessage"/>,
+    /// <see cref="PostMessage"/>) carries one: its
+    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;caption&lt;\COORD&gt;</c> tags, and
+    /// every coordinate pair <see cref="PluginChatCoordinateParser"/> reads in
+    /// its plain text ("meet at 42.1N 33.5E"). What players say, tell and post
+    /// on channels, and the server's own lines, are shown as they arrived and
+    /// hold no coordinate link, even when they hold tag text. Clicking a
+    /// player's name starts a tell instead and raises nothing.
     /// </summary>
     event Action<PluginChatLinkClicked> LinkClicked
     {
@@ -1006,7 +1014,9 @@ public interface IPluginChat
     /// Writes a line into the client's own text, visible only to this
     /// player. Nothing is sent to the server. A
     /// <c>&lt;COORD:World:42.1N, 33.5E&gt;caption&lt;\COORD&gt;</c> tag in the
-    /// line shows its caption as a link that raises <see cref="LinkClicked"/>.
+    /// line shows its caption as a link that raises <see cref="LinkClicked"/>,
+    /// and so does a coordinate pair written in plain text. No other
+    /// angle-bracket text is a tag; it is shown as written.
     /// </summary>
     void PostSystemMessage(string text);
 

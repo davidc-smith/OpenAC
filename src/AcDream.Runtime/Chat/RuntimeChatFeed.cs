@@ -17,8 +17,9 @@ namespace AcDream.Runtime.Chat;
 /// The text class the line belongs to; what a chat window's filter is keyed on.
 /// </param>
 /// <param name="Spans">
-/// The line split at its links (a clickable sender, a coordinate, a plugin's
-/// own markup), or null when it has none. The spans always rejoin to
+/// The line split at its links (a clickable sender; on a plugin's own line,
+/// its coordinate tags and the coordinate pairs it writes), or null when it
+/// has none. The spans always rejoin to
 /// <paramref name="Text"/>.
 /// </param>
 public readonly record struct RuntimeChatLine(
@@ -119,16 +120,30 @@ public sealed class RuntimeChatFeed : IDisposable
 
     private RuntimeChatLine BuildLine(ChatEntry entry, bool timestamps)
     {
-        bool tagged = ShouldTagSender(entry) || ChatLineWording.CarriesMarkup(entry);
         string markup = FormatTagged(entry);
-        IReadOnlyList<ChatTextSpan>? spans = tagged
-            ? ChatTagMarkup.Parse(markup)
-            : null;
-        // A coordinate pair written anywhere in the line is a link too, except
-        // in combat text, which never carries one.
-        if (entry.Kind != ChatKind.Combat)
+        IReadOnlyList<ChatTextSpan>? spans;
+        if (entry.AllowsMarkup)
+        {
+            // A plugin's own line: its link tags are read, and a coordinate
+            // pair it writes in plain text is a link too.
+            spans = ChatLineWording.CarriesMarkup(entry)
+                ? ChatTagMarkup.ParseLinks(markup)
+                : null;
             spans = ChatCoordinateLinks.Link(spans ?? new[] { new ChatTextSpan(markup, null) })
                 ?? spans;
+        }
+        else if (ShouldTagSender(entry))
+        {
+            // The speaker's name is a link that starts a tell. The words are
+            // the player's own and may hold tag text too; a coordinate tag
+            // among them is shown as plain text, never as a link a click
+            // would hand to plugins.
+            spans = ChatTagMarkup.WithoutCoordinateTags(ChatTagMarkup.Parse(markup));
+        }
+        else
+        {
+            spans = null;
+        }
         string text = spans is null
             ? markup
             : string.Concat(spans.Select(span => span.Text));

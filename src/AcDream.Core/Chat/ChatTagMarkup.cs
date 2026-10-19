@@ -78,9 +78,10 @@ public readonly record struct ChatTextSpan(
 public static class ChatTagMarkup
 {
     /// <summary>
-    /// Whether the text holds at least one start tag (<c>&lt;TYPE:FORMAT…&gt;</c>).
-    /// Text a plugin writes is read as markup only when it does, so a stray
-    /// <c>&lt;</c> in an ordinary line is shown as it was written.
+    /// Whether a plugin's line holds at least one link tag
+    /// <see cref="ParseLinks"/> reads: a well-formed
+    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;</c>. Any other angle-bracket text,
+    /// such as "Press &lt;Ctrl:F&gt;", is not a tag.
     /// </summary>
     public static bool ContainsTag(string? text)
     {
@@ -91,15 +92,92 @@ public static class ChatTagMarkup
             int close = text.IndexOf('>', open + 1);
             if (close < 0)
                 return false;
-            if (TryParseStartTag(text[(open + 1)..close]) is not null)
+            if (TryParseLinkTag(text[(open + 1)..close]) is not null)
                 return true;
         }
         return false;
     }
 
-    /// <summary>The text with its markup removed: what <see cref="Parse"/> shows.</summary>
+    /// <summary>
+    /// Reads the link tags in a line a plugin posted. Only a well-formed
+    /// <c>&lt;COORD:World:pair&gt;</c> opens a link, and only its own
+    /// <c>&lt;\COORD&gt;</c> closes it; every other angle-bracket text is shown
+    /// as written. A link left open runs to the end of the line.
+    /// </summary>
+    public static IReadOnlyList<ChatTextSpan> ParseLinks(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return Array.Empty<ChatTextSpan>();
+
+        var spans = new List<ChatTextSpan>();
+        ChatTextTag? open = null;
+        int runStart = 0;
+
+        for (int i = text.IndexOf('<'); i >= 0; i = text.IndexOf('<', i + 1))
+        {
+            int close = text.IndexOf('>', i + 1);
+            if (close < 0)
+                break;
+
+            string inner = text[(i + 1)..close];
+            ChatTextTag? next;
+            if (TryParseLinkTag(inner) is { } start)
+                next = start;
+            else if (open is { } current && IsEndTag(inner, current))
+                next = null;
+            else
+                continue;   // not markup: shown as written
+
+            if (i > runStart)
+                spans.Add(new ChatTextSpan(text[runStart..i], open));
+            open = next;
+            runStart = close + 1;
+            i = close;
+        }
+
+        if (runStart < text.Length)
+            spans.Add(new ChatTextSpan(text[runStart..], open));
+
+        return spans;
+    }
+
+    /// <summary>A plugin's line with its link tags removed: what <see cref="ParseLinks"/> shows.</summary>
     public static string ToPlainText(string? text) =>
-        string.Concat(Parse(text).Select(static span => span.Text));
+        string.Concat(ParseLinks(text).Select(static span => span.Text));
+
+    /// <summary>
+    /// The spans with every coordinate tag dropped and its caption kept as
+    /// plain text. What a player or the server writes may hold a coordinate
+    /// tag; it is shown in the line's colour and is not a link.
+    /// </summary>
+    public static IReadOnlyList<ChatTextSpan> WithoutCoordinateTags(IReadOnlyList<ChatTextSpan> spans)
+    {
+        ArgumentNullException.ThrowIfNull(spans);
+        ChatTextSpan[]? result = null;
+        for (int i = 0; i < spans.Count; i++)
+        {
+            if (spans[i].Tag is not { } tag || !IsCoordinateType(tag.Type))
+                continue;
+            result ??= spans.ToArray();
+            result[i] = spans[i] with { Tag = null };
+        }
+        return result ?? spans;
+    }
+
+    private static bool IsCoordinateType(string type) =>
+        string.Equals(type, "COORD", StringComparison.OrdinalIgnoreCase);
+
+    private static ChatTextTag? TryParseLinkTag(string inner) =>
+        TryParseStartTag(inner) is { } tag
+            && IsCoordinateType(tag.Type)
+            && tag.TryGetCoordinate(out _, out _)
+            ? tag
+            : null;
+
+    private static bool IsEndTag(string inner, ChatTextTag open) =>
+        inner.Length == open.Type.Length + 1
+        && inner[0] == '\\'
+        && string.Equals(inner[1..], open.Type, StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<ChatTextSpan> Parse(string? text)
     {

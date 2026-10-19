@@ -132,18 +132,24 @@ host.Automation.Chat.PostSystemMessage(
     @"Next waypoint: <COORD:World:42.1N, 33.5E>the Holtburg bridge<\COORD>");
 ```
 
-A plugin's line is read as markup only when it holds a tag of the form
-`<TYPE:FORMAT…>`, so an ordinary `<` in a line is shown as written. Server
-text is never read as markup.
+The only tag read is a well-formed `<COORD:World:pair>`, closed by
+`<\COORD>`. Any other angle-bracket text ("Press <Ctrl:F>") is shown as
+written.
 
 ### Chat links
 
 `LinkClicked` is raised when the player clicks a coordinate link in the main
-chat window. Every coordinate pair `PluginChatCoordinateParser` reads is a
-link, in any line except combat text: what players say, tell and post on
-channels, the server's own lines ("Your corpse is located at (42.1N, 33.5E).")
-and plugins' lines. `PluginChatCoordinateLinkRouter` hands just the
-coordinates to a callback:
+chat window. Only a line a plugin posted carries one: its `COORD` tags, and
+every coordinate pair `PluginChatCoordinateParser` reads in its plain text
+("meet at 42.1N 33.5E"). A pair is a number and a compass letter twice,
+neither inside a longer word, so "10n 20east" is not one.
+
+What players say, tell and post on channels, and the server's own lines
+("Your corpse is located at (42.1N, 33.5E).") are shown exactly as they
+arrived and hold no coordinate link, even when a player types a `COORD` tag.
+A plugin that wants the coordinates in those lines reads them from `Received`
+with `PluginChatCoordinateParser`. `PluginChatCoordinateLinkRouter` hands the
+coordinates of a clicked link to a callback:
 
 ```csharp
 var router = new PluginChatCoordinateLinkRouter(
