@@ -59,9 +59,7 @@ public sealed class RynthSkillsStandInsTests(Xunit.Abstractions.ITestOutputHelpe
     [Fact]
     public void TheirDatReadersFindAndLoadTheInstalledPortalDat()
     {
-        string? dats = Environment.GetEnvironmentVariable("ACDREAM_DAT_DIR");
-        if (string.IsNullOrWhiteSpace(dats))
-            dats = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AsheronsCall");
+        string dats = TestDats.Directory;
         if (!File.Exists(Path.Combine(dats, "client_portal.dat")))
         {
             // xunit 2 (this project) has no dynamic skip; the note shows in the test's output.
@@ -69,6 +67,10 @@ public sealed class RynthSkillsStandInsTests(Xunit.Abstractions.ITestOutputHelpe
             return;
         }
 
+        // PortalSpellTable.EnsureLoadQueued latches its private static _queued even when the load failed, and
+        // earlier panel tests open Skills/Nav/Meta without a dat dir. We cannot change their code, so reset it.
+        ResetStatics(typeof(RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable));
+        ResetStatics(typeof(RynthCore.Engine.ImGuiBackend.Panels.SkillDat));
         ProcessPathStandIn.DatDirectory = dats;
 
         Assert.Equal(Path.Combine(dats, "client_portal.dat"), RynthCore.Engine.UI.ScriptWindows.AcDatFile.FindPortalDat());
@@ -79,5 +81,12 @@ public sealed class RynthSkillsStandInsTests(Xunit.Abstractions.ITestOutputHelpe
         Assert.True(RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.Ready, RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.Status);
         Assert.True(RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.TryGetName(1, out string name));
         Assert.Equal("Strength Other I", name);
+    }
+
+    private static void ResetStatics(Type type)
+    {
+        const System.Reflection.BindingFlags f = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        foreach (string name in new[] { "_queued", "_table", "_tables" })
+            type.GetField(name, f)?.SetValue(null, type.GetField(name, f)!.FieldType == typeof(bool) ? false : null);
     }
 }

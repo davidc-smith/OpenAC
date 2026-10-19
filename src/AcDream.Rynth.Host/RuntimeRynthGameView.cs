@@ -298,6 +298,10 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     private static double ExpiryServerTime(ActiveEnchantmentRecord record, double serverNow, double clockNow) =>
         record.Duration > 0 ? serverNow + (record.StartTime + record.Duration - clockNow) : double.MaxValue;
 
+    // Whole seconds: the two clocks are read at different instants, so the raw expiry jitters each read and
+    // RynthCore's exact snapshot compare would republish every poll while a timed buff is up.
+    private static double WholeSeconds(double expiry) => expiry == double.MaxValue ? expiry : Math.Round(expiry);
+
     // As RynthCore's ReadPlayerProgressLive: the description's skill table, attribute cache and
     // vitals (ranks, innate, XP spent) with the buffed and base values the surface reports.
     public RynthPlayerProgress? PlayerProgress
@@ -357,7 +361,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
                 .. _runtime.CharacterOwner.Spellbook.ActiveEnchantmentSnapshot
                     .Where(record => record.Bucket is 1u or 2u && record.StatModType is not null && (record.SpellId & 0xFFFFu) != 0)
                     .Select(record => new RynthStatMod(
-                        record.SpellId & 0xFFFFu, ExpiryServerTime(record, serverNow, clockNow),
+                        record.SpellId & 0xFFFFu, WholeSeconds(ExpiryServerTime(record, serverNow, clockNow)),
                         record.StatModType!.Value, record.StatModKey ?? 0, record.StatModValue ?? 0f, record.SpellCategory)),
             ];
         }

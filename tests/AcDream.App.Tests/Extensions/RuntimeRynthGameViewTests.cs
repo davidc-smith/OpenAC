@@ -935,7 +935,9 @@ public sealed class RuntimeRynthGameViewTests
 
         Assert.Equal([0x1234u, 0x1300u], mods.Select(m => m.SpellId));
         Assert.Equal((0x8010u, 6u, 35f, 77u), (mods[0].Type, mods[0].Key, mods[0].Value, mods[0].Category));
-        Assert.InRange(mods[0].ExpiryServerTime - view.ServerTime, 59.0, 60.0);
+        Assert.InRange(mods[0].ExpiryServerTime - view.ServerTime, 59.0, 61.0);
+        Assert.Equal(Math.Round(mods[0].ExpiryServerTime), mods[0].ExpiryServerTime);
+        Assert.Equal(mods[0].ExpiryServerTime, view.PlayerStatMods!.Single(m => m.SpellId == 0x1234u).ExpiryServerTime);
         Assert.Equal(double.MaxValue, mods[1].ExpiryServerTime);
     }
 
