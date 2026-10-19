@@ -1206,7 +1206,7 @@ public sealed class ClientObjectTable
                 .ToArray()
             : Array.Empty<ClientObject>();
 
-    /// <summary>Whether server listings cover the owner and every nested pack.</summary>
+    /// <summary>Whether server listings cover the owner and every nested pack (a focus needs none).</summary>
     public bool HasCompleteInventory(uint ownerId)
     {
         if (ownerId == 0 || _pendingMoves.Count != 0)
@@ -1225,7 +1225,10 @@ public sealed class ClientObjectTable
             {
                 if (!_objects.TryGetValue(id, out ClientObject? item))
                     return false;
-                if (IsContainerListMember(item))
+                // A focus takes a container slot but holds nothing, and the
+                // server never sends a listing for one.
+                if (IsContainerListMember(item)
+                    && !InventoryContainerPlacementPolicy.IsFocus(item))
                     pending.Push(id);
             }
         }
