@@ -603,7 +603,9 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
                 return true;
             }
 
-            if (!tag.TryGetIidString(out _, out string name) || name.Length == 0)
+            // Only a tell tag naming someone starts a tell; a click on any
+            // other tag does nothing.
+            if (!tag.IsTell || !tag.TryGetIidString(out _, out string name) || name.Length == 0)
                 continue;
 
             StartTell(name);

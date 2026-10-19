@@ -208,15 +208,53 @@ public sealed class RuntimeChatFeedTests
     }
 
     [Fact]
-    public void AServerLinesMarkupIsShownAsItArrived()
+    public void AServerLinesTagIsHiddenAndItsTellNameIsTagged()
     {
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
-        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell>", chatType: 0u);
+        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell> has logged on.", chatType: 0u);
 
         RuntimeChatLine line = Assert.Single(feed.Snapshot());
 
-        Assert.Equal("<Tell:IIDString:1:Bob>Bob<\\Tell>", line.Text);
+        Assert.Equal("Bob has logged on.", line.Text);
+        ChatTextSpan name = Assert.Single(line.Spans!, span => span.Tag is not null);
+        Assert.Equal("Bob", name.Text);
+        Assert.True(name.Tag!.Value.IsTell);
+        Assert.Equal("Bob has logged on.", RuntimeChatFeed.Format(log.Snapshot()[0]));
+    }
+
+    [Fact]
+    public void TheCharactersOwnAndACombatLinesTagsAreHiddenToo()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnLocalSpeech(
+            "You", "ask <Tell:IIDString:7:Ann>Ann<\\Tell> please", 0u,
+            isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+        log.OnCombatLine(
+            "You hit <DID:DID:0x06001234>the drudge<\\DID>.",
+            (uint)RetailLogTextType.CombatSelf);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("You say, \"ask Ann please\"", lines[0].Text);
+        Assert.Equal("Ann", Assert.Single(lines[0].Spans!, span => span.Tag is not null).Text);
+        Assert.Equal("You hit the drudge.", lines[1].Text);
+        ChatTextSpan other = Assert.Single(lines[1].Spans!, span => span.Tag is not null);
+        Assert.Equal("the drudge", other.Text);
+        Assert.False(other.Tag!.Value.IsTell);
+    }
+
+    [Fact]
+    public void AServerLinesBracketedTextThatIsNotATagIsShownAsWritten()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("Use <item> on <target>, or 3 < 4.", chatType: 0u);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal("Use <item> on <target>, or 3 < 4.", line.Text);
         Assert.Null(line.Spans);
     }
 

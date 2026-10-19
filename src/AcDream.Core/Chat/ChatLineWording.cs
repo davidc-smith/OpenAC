@@ -10,19 +10,20 @@ namespace AcDream.Core.Chat;
 public static class ChatLineWording
 {
     /// <summary>
-    /// The line as plain text, with no clickable sender marked up; a plugin's
-    /// line is given as it is shown, its link tags and escapes removed.
+    /// The line as plain text, as it is shown: the tags in it hidden, the
+    /// speaker's name left as plain text; a plugin's line with its link tags
+    /// and escapes removed.
     /// </summary>
     public static string Format(ChatEntry entry)
         => entry.AllowsMarkup
             ? ChatTagMarkup.ToPlainText(Format(entry, static sender => sender))
-            : Format(entry, static sender => sender);
+            : ChatTagMarkup.ToShownText(FormatTagged(entry));
 
     /// <summary>
-    /// The line with another player's name wrapped so a front end that supports
-    /// it can make the name clickable, and a plugin's line as the plugin wrote
-    /// it, its COORD tags and escapes kept. Identical to
-    /// <see cref="Format(ChatEntry)"/> for every other line.
+    /// The line as composed, before its tags are read: another player's name
+    /// wrapped in its tell tag so a front end that supports it can make the
+    /// name clickable, any tag in the words kept as written, and a plugin's
+    /// line as the plugin wrote it, its COORD tags and escapes kept.
     /// </summary>
     public static string FormatTagged(ChatEntry entry)
         => ShouldTagSender(entry)

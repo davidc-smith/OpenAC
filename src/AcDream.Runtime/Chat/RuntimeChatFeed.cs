@@ -17,10 +17,10 @@ namespace AcDream.Runtime.Chat;
 /// The text class the line belongs to; what a chat window's filter is keyed on.
 /// </param>
 /// <param name="Spans">
-/// The line split at its links (a clickable sender; on a plugin's own line,
-/// its coordinate tags and the coordinate pairs it writes), or null when it
-/// has none. The spans always rejoin to
-/// <paramref name="Text"/>.
+/// The line split at its tags (a speaker's tell tag and any other tag the
+/// line holds; on a plugin's own line, its coordinate tags and the coordinate
+/// pairs it writes), or null when it has none. The tags themselves are not in
+/// the text. The spans always rejoin to <paramref name="Text"/>.
 /// </param>
 public readonly record struct RuntimeChatLine(
     long Sequence,
@@ -138,17 +138,19 @@ public sealed class RuntimeChatFeed : IDisposable
                 markup = string.Concat(read.Select(static span => span.Text));
             }
         }
-        else if (ShouldTagSender(entry))
-        {
-            // The speaker's name is a link that starts a tell. The words are
-            // the player's own and may hold tag text too; a coordinate tag
-            // among them is shown as plain text, never as a link a click
-            // would hand to plugins.
-            spans = ChatTagMarkup.WithoutCoordinateTags(ChatTagMarkup.Parse(markup));
-        }
         else
         {
-            spans = null;
+            // Every other line, the server's, the character's own and a
+            // combat line among them, is read for tags the same way: a tag is
+            // hidden, and the speaker's name in its tell tag is a link that
+            // starts a tell. A coordinate tag in the words is shown as plain
+            // text, never as a link a click would hand to plugins.
+            spans = ChatTagMarkup.ParseLine(markup);
+            if (!spans.Any(static span => span.Tag is not null))
+            {
+                markup = string.Concat(spans.Select(static span => span.Text));
+                spans = null;
+            }
         }
         string text = spans is null
             ? markup
@@ -184,16 +186,15 @@ public sealed class RuntimeChatFeed : IDisposable
     // -- Wording -----------------------------------------------------------
 
     /// <summary>
-    /// The line as plain text, with no clickable sender marked up; a plugin's
-    /// line as it is shown, its COORD tags and escapes removed.
+    /// The line as plain text, as it is shown: every tag hidden; a plugin's
+    /// line with its COORD tags and escapes removed.
     /// </summary>
     public static string Format(ChatEntry entry) => ChatLineWording.Format(entry);
 
     /// <summary>
-    /// The line with another player's name wrapped so a front end that supports
-    /// it can make the name clickable, and a plugin's line as the plugin wrote
-    /// it, its COORD tags and escapes kept. Identical to <see cref="Format"/>
-    /// for every other line.
+    /// The line as composed, before its tags are read: another player's name
+    /// wrapped in its tell tag, any tag in the words kept, and a plugin's line
+    /// as the plugin wrote it, its COORD tags and escapes kept.
     /// </summary>
     public static string FormatTagged(ChatEntry entry) => ChatLineWording.FormatTagged(entry);
 

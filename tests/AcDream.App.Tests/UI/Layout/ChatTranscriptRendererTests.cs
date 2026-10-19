@@ -22,10 +22,9 @@ public class ChatTranscriptRendererTests
     [Fact]
     public void CoordinateTag_ParsesInvariantWorldCoordinates()
     {
-        var spans = ChatTagMarkup.Parse("Go <COORD:World:12.5,-3.25> here");
+        var spans = ChatTagMarkup.ParseLinks("Go <COORD:World:12.5N, 3.25E>here<\\COORD>");
 
         ChatTextTag tag = Assert.Single(spans, s => s.Tag is not null).Tag!.Value;
-        tag = tag with { Data = "12.5N, 3.25E" };
         Assert.True(tag.TryGetCoordinate(out double eastWest, out double northSouth));
         Assert.Equal(3.25, eastWest);
         Assert.Equal(12.5, northSouth);
