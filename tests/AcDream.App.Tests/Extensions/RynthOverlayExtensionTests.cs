@@ -23,6 +23,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         ImGuiFonts.Source = null;
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
+        LoginLifecycleHooks.HasObservedLoginComplete = true;   // in the world unless a test says otherwise
         _imgui = ImGui.CreateContext();
         ImGui.SetCurrentContext(_imgui);
         ImGuiIOPtr io = ImGui.GetIO();
@@ -37,6 +38,7 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         ImGuiFonts.Source = null;
         ScriptWindowRegistry.Reset();
         ImGuiPanelHost.Reset();
+        LoginLifecycleHooks.HasObservedLoginComplete = false;
         ImGui.DestroyContext(_imgui);
         _sandbox.Dispose();
     }
@@ -165,6 +167,38 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         {
             if (Directory.Exists(dir))
                 Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // At the character list (logged out) the windows and the bar make no sense: they
+    // are not drawn, stay open, and come back on the next login.
+    [Fact]
+    public void AtTheCharacterListNothingIsDrawnAndTheWindowsComeBackInTheWorld()
+    {
+        var overlay = new FakeOverlay();
+        var extension = new RynthClientExtension();
+        extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay));
+        try
+        {
+            _commands["ro"]("");
+            extension.Tick(1 / 60.0);
+            extension.Tick(1 / 60.0);
+            Action draw = Assert.Single(overlay.Callbacks);
+            Frame(draw);
+            Assert.True(Frame(draw) > 0);
+
+            LoginLifecycleHooks.HasObservedLoginComplete = false;
+            Frame(draw);
+            Assert.Equal(0, Frame(draw));
+            Assert.True(ImGuiPanelHost.IsOpen("script:RynthOracle/Oracle"));
+
+            LoginLifecycleHooks.HasObservedLoginComplete = true;
+            Frame(draw);
+            Assert.True(Frame(draw) > 0);
+        }
+        finally
+        {
+            extension.Dispose();
         }
     }
 
