@@ -84,6 +84,8 @@
     <Compile Include="$(RynthEngine)..\RynthCore.StatusAgent\Dat\DxtUtil.cs" Link="RynthCore\DxtUtil.cs" />
     <Compile Include="$(RynthEngine)Compatibility\TellMemory.cs" Link="RynthCore\TellMemory.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\DungeonMapFace.cs" Link="RynthCore\DungeonMapFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MiniRemoteFace.cs" Link="RynthCore\MiniRemoteFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MiniRemoteFace.Sections.cs" Link="RynthCore\MiniRemoteFace.Sections.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RadarData.cs" Link="RynthCore\Data\RadarData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RadarSnapshotJson.cs" Link="RynthCore\Data\RadarSnapshotJson.cs" />
     <Compile Include="$(RynthEngine)UI\Data\DungeonMapMath.cs" Link="RynthCore\Data\DungeonMapMath.cs" />

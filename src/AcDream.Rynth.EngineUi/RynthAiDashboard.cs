@@ -14,7 +14,7 @@ namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// Runs RynthCore's RynthAi dashboard: Start does what RynthCore's EntryPoint
-/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map), Tick is UiDataHub's
+/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, Mini Remote), Tick is UiDataHub's
 /// step (run posted work, then poll each subscribed source when due), Stop is
 /// the hub's reset after plugins unload. Game thread.
 /// </summary>
@@ -68,6 +68,8 @@ internal static class RynthAiDashboard
             SkillsFace.Register();
         if (!ImGuiPanelHost.HasFace(DungeonMapFace.Title))
             DungeonMapFace.Register();
+        if (!ImGuiPanelHost.HasFace(MiniRemoteFace.Title))
+            MiniRemoteFace.Register();
     }
 
     private static readonly UiSource[] Sources =

@@ -157,6 +157,33 @@ public sealed class RynthClientExtensionTests : IDisposable
     }
 
     [Fact]
+    public void RcIsRoutedToRynthCoresChatCommandsAndRepliesInChat()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        Action<string>? rc = null;
+        var context = new ClientExtensionContext
+        {
+            Runtime = runtime,
+            Log = _ => { },
+            RegisterChatCommand = (verb, handler) =>
+            {
+                if (verb == "rc")
+                    rc = handler;
+                return new Registration();
+            },
+        };
+        using var extension = new RynthClientExtension();
+        extension.Attach(context);
+        Assert.NotNull(rc);
+
+        rc!("bogus");
+
+        Assert.Contains(
+            runtime.CommunicationOwner.Chat.Snapshot(),
+            entry => entry.Text.Contains("/rc bogus isn't in OpenAC (only /rc miniremote).", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void OpeningASecondContainerClosesTheFirstInThePluginsInOrder()
     {
         ContainerRecorder.Calls.Clear();

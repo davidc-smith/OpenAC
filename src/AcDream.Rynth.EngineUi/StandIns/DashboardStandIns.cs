@@ -352,13 +352,6 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
         public const string Title = "World Map";
     }
 
-    internal static class MiniRemoteFace
-    {
-        public const string Title = "Mini Remote";
-
-        public static bool ShowsSection(string sectionId) => false;
-    }
-
     /// <summary>RynthCore's Report a problem panel; never registered in OpenAC, so Settings hides its button.</summary>
     internal static class ReportFace
     {

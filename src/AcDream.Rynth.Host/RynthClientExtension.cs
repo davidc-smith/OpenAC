@@ -4,6 +4,7 @@ using AcDream.Core.Items;
 using AcDream.Core.Player;
 using AcDream.Rynth.EngineUi;
 using AcDream.Runtime;
+using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.UI.ScriptWindows;
 
@@ -15,7 +16,7 @@ namespace AcDream.Rynth.Host;
 /// script windows draw on the client's ImGui overlay when it has one, with a
 /// launcher bar and their layout saved per install, RynthCore's chat window
 /// (over RynthChat's scrollback) with a Chat button on the bar, RynthCore's RynthAi dashboard with a RynthAi button, and
-/// <c>/rynth tracker</c>, <c>/ro</c>, <c>/ginv</c> and RynthAi's <c>/ra</c>, <c>/mt</c>, <c>/ub</c>, <c>/vt</c> reach the plugins.
+/// <c>/rynth tracker</c>, RynthCore's <c>/rc miniremote</c>, <c>/ro</c>, <c>/ginv</c> and RynthAi's <c>/ra</c>, <c>/mt</c>, <c>/ub</c>, <c>/vt</c> reach the plugins.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
 {
@@ -109,6 +110,8 @@ public sealed class RynthClientExtension : IClientExtension
         _runtime.InventoryOwner.Objects.ContainerContentsReplaced += OnContainerContentsReplaced;
         _runtime.InventoryOwner.Objects.ObjectMoved += OnObjectMoved;
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
+        _commands.Add(context.RegisterChatCommand("rc", arguments =>
+            Guard("RynthAi", () => RynthCoreChatCommands.TryHandle(arguments, line => view.WriteChatLine(line, 0)))));
         _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
         _commands.Add(context.RegisterChatCommand("ginv", arguments => OfferChatBarText("/ginv " + arguments)));
         foreach (string verb in new[] { "ra", "mt", "ub", "vt", "lua" })
