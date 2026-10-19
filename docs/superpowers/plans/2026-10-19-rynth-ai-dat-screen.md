@@ -497,19 +497,22 @@ namespace AcDream.App.Extensions;
 internal sealed class ClientScreen(LiveWorldOriginState origin) : IClientScreen
 {
     private Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)>? _camera;
-    private RetailUiRuntime? _ui;
+    private RetailWindowManager? _windows;
 
     public void BindCamera(Func<(Matrix4x4 View, Matrix4x4 Projection, Vector2 Viewport)>? camera) => _camera = camera;
 
-    public void BindUi(RetailUiRuntime? ui) => _ui = ui;
+    public void BindWindows(RetailWindowManager? windows) => _windows = windows;
 
     public bool TryGetViewportSize(out Vector2 size)
     {
         size = default;
         if (_camera is null)
             return false;
-        size = _camera().Viewport;
-        return size.X > 0 && size.Y > 0;
+        Vector2 viewport = _camera().Viewport;
+        if (!(viewport.X > 0 && viewport.Y > 0))
+            return false;
+        size = viewport;
+        return true;
     }
 
     public bool TryProject(PluginNavigationPosition position, out Vector2 screen)
@@ -533,7 +536,7 @@ internal sealed class ClientScreen(LiveWorldOriginState origin) : IClientScreen
     {
         centre = default;
         radius = 0f;
-        if (_ui?.Host.WindowManager is not { } windows
+        if (_windows is not { } windows
             || !windows.IsVisible(WindowNames.Radar)
             || !windows.TryGet(WindowNames.Radar, out RetailWindowHandle handle)
             || handle.ContentRoot is not UiRadar radar)
@@ -545,13 +548,13 @@ internal sealed class ClientScreen(LiveWorldOriginState origin) : IClientScreen
 }
 ```
 
-Check while implementing: the exact namespace of `WindowNames`, `RetailWindowHandle`, `UiRadar` (`grep -rn "class WindowNames\|class RetailWindowHandle\|class UiRadar" src/AcDream.App`), and that `RetailUiRuntime.Host.WindowManager` is the path (`RetailUiRuntime.cs:590` exposes `Host`; the retained `UiHost` has `WindowManager`, as `RetailUiRuntime.cs:532` uses). `UiRadar.Center` is in the radar root's local space (set from the disc element by `RadarController.ResolveCenter`). If the test project cannot see `internal` App types, it already has `InternalsVisibleTo` for `AcDream.App.Tests` — confirm with `grep -n InternalsVisibleTo src/AcDream.App/AcDream.App.csproj`.
+Check while implementing: the exact namespace of `WindowNames`, `RetailWindowHandle`, `UiRadar` (`grep -rn "class WindowNames\|class RetailWindowHandle\|class UiRadar" src/AcDream.App`), and that `RetailUiRuntime.Host.WindowManager` is the manager GameWindow passes to `BindWindows` (`RetailUiRuntime.cs:590` exposes `Host`; the retained `UiHost` has `WindowManager`, as `RetailUiRuntime.cs:532` uses). `UiRadar.Center` is in the radar root's local space (set from the disc element by `RadarController.ResolveCenter`). If the test project cannot see `internal` App types, it already has `InternalsVisibleTo` for `AcDream.App.Tests` — confirm with `grep -n InternalsVisibleTo src/AcDream.App/AcDream.App.csproj`.
 
 - [ ] **Step 4: Wire it in `GameWindow`.**
   - Field: `private readonly AcDream.App.Extensions.ClientScreen _clientScreen;`, assigned in the constructor body as `_clientScreen = new(_liveWorldOrigin);` (field initializers cannot reference the instance field `_liveWorldOrigin`).
   - `ClientExtensionHost.Attach` gains `IClientScreen? screen = null` → `Screen = screen`; line 540 passes `screen: _clientScreen`.
   - Where `new SelectionCameraSource(hostInputCamera.CameraController, _window!, viewPlane)` is created (~line 1403), keep the instance in a local, call `_clientScreen.BindCamera(source.UiSnapshot)`, and return it.
-  - Where `_retailUiRuntime = retained.Runtime;` (~line 1005): `_clientScreen.BindUi(_retailUiRuntime);`. Wherever `_retailUiRuntime` is set back to null or disposed: `_clientScreen.BindUi(null);` and `_clientScreen.BindCamera(null);` beside it (`grep -n "_retailUiRuntime = null\|_retailUiRuntime?.Dispose" src/AcDream.App/Rendering/GameWindow.cs`).
+  - Where `_retailUiRuntime = retained.Runtime;` (~line 1005): `_clientScreen.BindWindows(_retailUiRuntime.Host.WindowManager);`. Wherever `_retailUiRuntime` is set back to null or disposed: `_clientScreen.BindWindows(null);` and `_clientScreen.BindCamera(null);` beside it (`grep -n "_retailUiRuntime = null\|_retailUiRuntime?.Dispose" src/AcDream.App/Rendering/GameWindow.cs`).
 
 - [ ] **Step 5: Run, then commit.**
 
