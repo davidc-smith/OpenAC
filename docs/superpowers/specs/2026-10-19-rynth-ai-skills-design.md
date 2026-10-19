@@ -71,14 +71,16 @@ Their `PlayerProgressHooks.Prefetch` reads only while the panel wants data
 
 Host (`AcDream.Rynth.Host`):
 
-- `RynthPlayerProgress` (new, `RynthStateTypes.cs`): the same fields as their
-  `PlayerProgress` minus buffs (skills 1..54: in-table, class, XP spent, ranks,
-  init, level-known, buffed, base; attributes 1..6 and vitals 1..3: ranks,
-  init, XP spent, buffed, base; level, skill credits, total / unassigned XP,
-  luminance / max, vitae).
-- `IRynthGameView.TryReadPlayerProgress(RynthPlayerProgress)` and
-  `IRynthGameView.PlayerStatMods` (`IReadOnlyList<RynthStatMod>?`, record of
-  spell id, expiry in server time, StatMod type, key, value, spell category).
+- `RynthPlayerProgress` (new, `RynthStateTypes.cs`): an immutable read of
+  skills (`RynthSkillProgress`: id, class, ranks, XP spent, init, level-known,
+  buffed, base), attributes 1..6 and vitals 1..3 (`RynthStatProgress`: id,
+  ranks, init, XP spent, buffed, base), level, skill credits, total /
+  unassigned XP, luminance / max, vitae. The hookup copies it into their
+  `PlayerProgress` arrays.
+- `IRynthGameView.PlayerProgress` (null when not in the world),
+  `IRynthGameView.PlayerStatMods` (`IReadOnlyList<RynthStatMod>?`: spell id,
+  expiry in server time, StatMod type, key, value, spell category) and
+  `IRynthGameView.RequestAdvancement(kind, statId, amount)`.
 - `RuntimeRynthGameView` fills them from the character data the plugin API's
   skill / attribute / vital lists already use, init levels from
   `LocalPlayerState`, credits from `AvailableSkillCredits`, and the spellbook's
@@ -94,9 +96,9 @@ Host (`AcDream.Rynth.Host`):
 `TrainKind` with their values, `Available` / `TrainAvailable` true when the
 host has set a sender, `Raise(kind, stype, xp, defer)` and
 `TrainSkill(stype, credits, defer)` forward to it and call
-`PlayerProgressHooks.RefreshSoon()` on success. The host's sender maps
-Attribute/Vital/Skill/TrainWithCredits to `PluginAdvancementKind` and calls the
-existing `RequestAdvancement` (vitals: RynthCore's stype is the vital's maximum,
+`PlayerProgressHooks.RefreshSoon()` on success. The host's sender calls the view's
+`RequestAdvancement`, which maps Attribute/Vital/Skill/TrainWithCredits to
+`PluginAdvancementKind` and calls the surface's existing `RequestAdvancement` (vitals: RynthCore's stype is the vital's maximum,
 1/3/5, the same as `PluginVitalInfo.StatId`). `defer` is ignored: the call
 already runs on the game thread.
 
