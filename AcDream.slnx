@@ -17,6 +17,7 @@
     <Project Path="src/AcDream.Rynth.EngineUi/AcDream.Rynth.EngineUi.csproj" />
     <Project Path="src/AcDream.Rynth.Host/AcDream.Rynth.Host.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthLua/AcDream.Rynth.Plugin.RynthLua.csproj" />
+    <Project Path="src/AcDream.Rynth.Plugin.RynthNav/AcDream.Rynth.Plugin.RynthNav.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthOracle/AcDream.Rynth.Plugin.RynthOracle.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthInventory/AcDream.Rynth.Plugin.RynthInventory.csproj" />
     <Project Path="src/AcDream.Rynth.Plugin.RynthAi/AcDream.Rynth.Plugin.RynthAi.csproj" />
