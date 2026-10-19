@@ -29,6 +29,11 @@ internal sealed class RynthChatHookup : IDisposable
     private readonly EnchantmentHooks.StatModCopier _statMods;
     private readonly Func<double> _serverTime;
     private readonly Func<PlayerTraining.TrainKind, uint, uint, bool> _train;
+    private readonly Func<uint, bool> _useSender;
+    private readonly Func<bool> _busy;
+    private readonly Func<(int UseDoneSeq, uint UseDoneError, int ErrorSeq, uint Error)> _replies;
+    private readonly InventoryModel.ItemReader _readItem;
+    private readonly Func<uint> _usePlayerId;
 
     public RynthChatHookup(RynthHost host, IRynthGameView view, Action<string> log)
     {
@@ -60,6 +65,16 @@ internal sealed class RynthChatHookup : IDisposable
         _train = (kind, stype, amount) => Guard(
             nameof(PlayerTraining.Raise), () => _view.RequestAdvancement((int)kind, stype, amount), false);
 
+        _useSender = id => Guard(nameof(InventoryModel.UseSender), () => _view.UseObject(id), false);
+        _busy = () => Guard(nameof(InventoryModel.Busy), () => _view.BusyCount > 0, false);
+        _replies = () => Guard(nameof(InventoryModel.Replies), () =>
+        {
+            AcDream.Core.Items.ServerReplySnapshot r = _view.ServerReplies;
+            return (r.UseDoneSequence, r.LastUseDoneError, r.WeenieErrorSequence, r.LastWeenieError);
+        }, default);
+        _readItem = ReadItem;
+        _usePlayerId = _playerId;
+
         PluginExportBinder.Resolver = _resolver;
         ClientHelperHooks.PlayerId = _playerId;
         SelectedTargetHooks.SelectedId = _selectedId;
@@ -71,15 +86,26 @@ internal sealed class RynthChatHookup : IDisposable
         ClientObjectHooks.Attackable = _attackable;
         PlayerPhysicsHooks.Position = _position;
         SessionStateRegistry.ServerName = _serverName;
+        AccountHooks.WorldName = _serverName;
         InventoryModel.Source = _inventory;
         ClientObjectHooks.ProgressReader = _progress;
         EnchantmentHooks.Copier = _statMods;
         TimeSyncHooks.ServerTime = _serverTime;
         PlayerTraining.Sender = _train;
+        InventoryModel.UseSender = _useSender;
+        InventoryModel.Busy = _busy;
+        InventoryModel.Replies = _replies;
+        InventoryModel.ReadItem = _readItem;
+        InventoryModel.PlayerId = _usePlayerId;
     }
 
     public void Dispose()
     {
+        if (InventoryModel.UseSender == _useSender) InventoryModel.UseSender = null;
+        if (InventoryModel.Busy == _busy) InventoryModel.Busy = null;
+        if (InventoryModel.Replies == _replies) InventoryModel.Replies = null;
+        if (InventoryModel.ReadItem == _readItem) InventoryModel.ReadItem = null;
+        if (InventoryModel.PlayerId == _usePlayerId) InventoryModel.PlayerId = null;
         if (PluginExportBinder.Resolver == _resolver) PluginExportBinder.Resolver = null;
         if (ClientHelperHooks.PlayerId == _playerId) ClientHelperHooks.PlayerId = null;
         if (SelectedTargetHooks.SelectedId == _selectedId) SelectedTargetHooks.SelectedId = null;
@@ -91,6 +117,7 @@ internal sealed class RynthChatHookup : IDisposable
         if (ClientObjectHooks.Attackable == _attackable) ClientObjectHooks.Attackable = null;
         if (PlayerPhysicsHooks.Position == _position) PlayerPhysicsHooks.Position = null;
         if (SessionStateRegistry.ServerName == _serverName) SessionStateRegistry.ServerName = null;
+        if (AccountHooks.WorldName == _serverName) AccountHooks.WorldName = null;
         if (InventoryModel.Source == _inventory)
         {
             InventoryModel.Source = null;
@@ -314,6 +341,15 @@ internal sealed class RynthChatHookup : IDisposable
         cell = ok ? foundCell : 0u;
         (x, y, z) = ok ? (origin.X, origin.Y, origin.Z) : (0f, 0f, 0f);
         return ok;
+    }
+
+    private bool ReadItem(uint id, out uint container, out uint wielder, out int stack)
+    {
+        RynthObjectInfo? info = Guard(nameof(InventoryModel.ReadItem), () => _view.TryGetObject(id, out RynthObjectInfo i) ? i : null, null);
+        container = info?.ContainerId ?? 0;
+        wielder = info?.WielderId ?? 0;
+        stack = info?.StackSize ?? 0;
+        return info is not null;
     }
 
     private T Guard<T>(string what, Func<T> read, T fallback)

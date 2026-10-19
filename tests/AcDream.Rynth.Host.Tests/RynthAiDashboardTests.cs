@@ -455,6 +455,33 @@ public sealed class RynthAiDashboardTests : IDisposable
         Assert.False(PlayerPhysicsHooks.TryGetPlayerPoseSnapshot(out _, out _, out _, out _, out _, out _, out _, out _));
     }
 
+    [Fact]
+    public void TheHookupSendsMiniRemoteUsesThroughTheView()
+    {
+        const uint Player = 0x50000001u, Kit = 0x80000020u;
+        _view.Objects[Kit] = Carried(Player, 0, 5);
+        using var host = new RynthHost(_view, _log.Add, []);
+        using (var hookup = new RynthChatHookup(host, _view, _log.Add))
+        {
+            Assert.Null(AccountHooks.AnnouncedWorldName);
+            _view.WorldName = "Coldeve";
+            Assert.Equal("Coldeve", AccountHooks.AnnouncedWorldName);
+            _view.WorldName = "";
+            Assert.Null(AccountHooks.AnnouncedWorldName);
+            _view.WorldName = "Coldeve";
+            Assert.True(InventoryModel.Request(new InventoryRequest { Kind = InventoryActionKind.Use, ItemId = Kit, ItemName = "Kit" }, out _));
+            InventoryModel.MainThreadTick();
+            Assert.Contains($"use {Kit:X8}", _view.Actions);
+        }
+        Assert.Null(InventoryModel.UseSender);
+        Assert.Null(InventoryModel.Busy);
+        Assert.Null(InventoryModel.Replies);
+        Assert.Null(InventoryModel.ReadItem);
+        Assert.Null(InventoryModel.PlayerId);
+        Assert.Null(AccountHooks.WorldName);
+        InventoryModel.ResetActions();
+    }
+
     private static RynthObjectInfo Carried(uint container, uint wielder, int stack, int capacity = 0) => new()
     {
         ContainerId = container, WielderId = wielder, EquipLocation = wielder != 0 ? 0x100u : 0u, ItemType = 0x80, Wcid = 300,

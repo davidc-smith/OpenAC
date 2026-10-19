@@ -84,12 +84,21 @@
     <Compile Include="$(RynthEngine)..\RynthCore.StatusAgent\Dat\DxtUtil.cs" Link="RynthCore\DxtUtil.cs" />
     <Compile Include="$(RynthEngine)Compatibility\TellMemory.cs" Link="RynthCore\TellMemory.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\DungeonMapFace.cs" Link="RynthCore\DungeonMapFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MiniRemoteFace.cs" Link="RynthCore\MiniRemoteFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MiniRemoteFace.Sections.cs" Link="RynthCore\MiniRemoteFace.Sections.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RadarData.cs" Link="RynthCore\Data\RadarData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RadarSnapshotJson.cs" Link="RynthCore\Data\RadarSnapshotJson.cs" />
     <Compile Include="$(RynthEngine)UI\Data\DungeonMapMath.cs" Link="RynthCore\Data\DungeonMapMath.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\RadarMarkerStyle.cs" Link="RynthCore\RadarMarkerStyle.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\CircleClip.cs" Link="RynthCore\CircleClip.cs" />
     <Compile Include="$(RynthEngine)UI\Panels\MarkerStyleSettings.cs" Link="RynthCore\MarkerStyleSettings.cs" />
+    <Compile Include="$(RynthEngine)UI\Sections\SectionCatalog.cs" Link="RynthCore\Sections\SectionCatalog.cs" />
+    <Compile Include="$(RynthEngine)UI\Sections\SectionManifest.cs" Link="RynthCore\Sections\SectionManifest.cs" />
+    <Compile Include="$(RynthEngine)UI\Sections\SectionRegistry.cs" Link="RynthCore\Sections\SectionRegistry.cs" />
+    <Compile Include="$(RynthEngine)UI\Sections\ServerForce.cs" Link="RynthCore\Sections\ServerForce.cs" />
+    <Compile Include="$(RynthEngine)UI\Sections\ServerForceStore.cs" Link="RynthCore\Sections\ServerForceStore.cs" />
+    <Compile Include="$(RynthEngine)UI\Sections\NotLoadedServers.cs" Link="RynthCore\Sections\NotLoadedServers.cs" />
+    <Compile Include="$(RynthEngine)Compatibility\IltDetect.cs" Link="RynthCore\Compatibility\IltDetect.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\MarkerStyleEditor.cs" Link="RynthCore\MarkerStyleEditor.cs" />
     <Compile Include="$(RynthEngine)UI\Panels\RadarSettingsStore.cs" Link="RynthCore\RadarSettingsStore.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthNavAtlasData.cs" Link="RynthCore\Data\RynthNavAtlasData.cs" />
@@ -113,7 +122,7 @@
                       ReferenceOutputAssembly="false" Private="false" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\ItemsPanel.cs" Types="ItemsPanel=Payload,WeaponEntry,ConsumableEntry" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\MonstersPanel.cs" Types="MonstersPanel=Payload,CapturedInfo,ItemRef,Rule" />
-    <RynthPanelTypes Include="$(RynthEngine)Compatibility\InventoryModel.cs" Types="=InventoryCategory,InventoryItem,InventoryPack,InventoryView" />
+    <RynthPanelTypes Include="$(RynthEngine)Compatibility\InventoryModel.cs" Types="=InventoryCategory,InventoryItem,InventoryPack,InventoryView,InventoryActionKind,InventoryRequest,InventoryPending,InventoryResult" />
     <RynthPanelTypes Include="$(RynthEngine)Compatibility\AelrynthWire.cs" Types="=MasterySkill,MasteryData" />
     <RynthPanelTypes Include="$(RynthEngine)Compatibility\MasteryFeed.cs" Types="=MasterySnapshot" />
   </ItemGroup>
