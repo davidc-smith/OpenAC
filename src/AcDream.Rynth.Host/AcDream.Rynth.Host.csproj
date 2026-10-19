@@ -12,6 +12,7 @@
     <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthInventory\AcDream.Rynth.Plugin.RynthInventory.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthChat\AcDream.Rynth.Plugin.RynthChat.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthAi\AcDream.Rynth.Plugin.RynthAi.csproj" />
+    <ProjectReference Include="..\AcDream.Rynth.Plugin.RynthLua\AcDream.Rynth.Plugin.RynthLua.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.ScriptWindows\AcDream.Rynth.ScriptWindows.csproj" />
     <ProjectReference Include="..\AcDream.Rynth.EngineUi\AcDream.Rynth.EngineUi.csproj" />
   </ItemGroup>

@@ -4,7 +4,7 @@
        ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
        filter editor, ChatData and friends) and the RynthAi dashboard (RynthAiFace, its
        drawers, RynthAiData and the settings it edits; its Settings, Items, Damage,
-       Monster Detail, Nav, Meta and Loot Editor panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
+       Monster Detail, Nav, Meta, Loot Editor, Item Count and Lua panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
        faces share static engine classes (UiSources, PanelRouter, ...).
        RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
        PluginExportBinder and Discord relay are NOT compiled, nor PluginManager,
@@ -60,6 +60,11 @@
     <Compile Include="$(RynthEngine)ImGui\Panels\LootAddDialog.cs" Link="RynthCore\LootAddDialog.cs" />
     <Compile Include="$(RynthEngine)UI\Data\LootEditData.cs" Link="RynthCore\Data\LootEditData.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\RangesSlideOut.cs" Link="RynthCore\RangesSlideOut.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\ItemCountFace.cs" Link="RynthCore\ItemCountFace.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\ItemHudModel.cs" Link="RynthCore\Data\ItemHudModel.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\ItemHudStore.cs" Link="RynthCore\Data\ItemHudStore.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\LuaFace.cs" Link="RynthCore\LuaFace.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\LuaData.cs" Link="RynthCore\Data\LuaData.cs" />
     <Compile Include="$(RynthEngine)UI\PanelColumnStore.cs" Link="RynthCore\PanelColumnStore.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthAiData.cs" Link="RynthCore\Data\RynthAiData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\SettingsData.cs" Link="RynthCore\Data\SettingsData.cs" />
@@ -77,14 +82,17 @@
   </ItemGroup>
 
   <!-- The Items and Damage faces use data types RynthCore declares inside its
-       Avalonia panel files (ItemsPanel.cs, MonstersPanel.cs). Before compile,
-       RynthTypeExtract copies just those nested types and the files' JSON
-       contexts, their text unchanged, into obj/; nothing Avalonia is compiled. -->
+       Avalonia panel files (ItemsPanel.cs, MonstersPanel.cs), and Item Count
+       the inventory types beside their acclient-reading InventoryModel. Before
+       compile, RynthTypeExtract copies just those types (and the panel files'
+       JSON contexts), their text unchanged, into obj/; nothing Avalonia and
+       none of InventoryModel's own code is compiled. -->
   <ItemGroup>
     <ProjectReference Include="..\..\tools\RynthTypeExtract\AcDream.Tools.RynthTypeExtract.csproj"
                       ReferenceOutputAssembly="false" Private="false" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\ItemsPanel.cs" Types="ItemsPanel=Payload,WeaponEntry,ConsumableEntry" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\MonstersPanel.cs" Types="MonstersPanel=Payload,CapturedInfo,ItemRef,Rule" />
+    <RynthPanelTypes Include="$(RynthEngine)Compatibility\InventoryModel.cs" Types="=InventoryCategory,InventoryItem,InventoryPack,InventoryView" />
   </ItemGroup>
 
   <Target Name="ExtractRynthPanelTypes" BeforeTargets="CoreCompile">

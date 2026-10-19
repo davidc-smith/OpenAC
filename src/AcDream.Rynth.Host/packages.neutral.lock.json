@@ -94,6 +94,13 @@
           "AcDream.Rynth.Sdk": "[0.1.25, )"
         }
       },
+      "acdream.rynth.plugin.rynthlua": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )",
+          "MoonSharp": "[2.0.0, )"
+        }
+      },
       "acdream.rynth.plugin.rynthoracle": {
         "type": "Project",
         "dependencies": {
@@ -148,6 +155,12 @@
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.9"
         }
+      },
+      "MoonSharp": {
+        "type": "CentralTransitive",
+        "requested": "[2.0.0, )",
+        "resolved": "2.0.0",
+        "contentHash": "uiAcRh7d+53k3xW9pFDJfAFVw4RnjHVCJG05M3oPAVEVwPtFavhg1H/IpC6So4X1j9kJlzuLlA3OghhPcIvc5A=="
       },
       "Serilog": {
         "type": "CentralTransitive",

@@ -41,6 +41,15 @@ namespace RynthCore.Engine.D3D9
     internal static class VideoPatchPolicy
     {
         public static readonly string[] ComboItems = { "Off (not in OpenAC)" };
+
+        /// <summary>RynthCore's per-character settings key: "server/character", or "Default" before login. Their rule.</summary>
+        public static string CharacterKey(string? server, string? character)
+        {
+            string c = (character ?? string.Empty).Trim();
+            if (c.Length == 0) return "Default";
+            string s = (server ?? string.Empty).Trim();
+            return (s.Length > 0 ? s + "/" + c : c).Replace('=', '_');
+        }
     }
 
     /// <summary>RynthCore's acclient video patch; OpenAC renders itself, so it stays off.</summary>
@@ -103,6 +112,76 @@ namespace RynthCore.Engine.Compatibility
     internal static class ServerInfo
     {
         public static bool IsAelrynth => false;
+    }
+
+    /// <summary>
+    /// RynthCore's InventoryModel reads acclient's objects; here the host builds the same
+    /// view from OpenAC's (<see cref="Source"/>), at most four times a second while a
+    /// panel is subscribed. Only what the Item Count panel reads.
+    /// </summary>
+    internal static class InventoryModel
+    {
+        private const long RefreshMs = 250;
+        private static InventoryView _current = InventoryView.Empty;
+        private static uint _selectedItem;
+        private static long _nextRefreshMs;
+        private static int _subscribers;
+
+        /// <summary>The player's carried items as a view, or null when not in the world. The host sets it.</summary>
+        internal static Func<InventoryView?>? Source { get; set; }
+
+        public static void Subscribe() => _subscribers++;
+
+        public static void Unsubscribe() => _subscribers = Math.Max(0, _subscribers - 1);
+
+        /// <summary>The latest view; the same instance until it is rebuilt.</summary>
+        public static InventoryView Current
+        {
+            get
+            {
+                Refresh();
+                return _current;
+            }
+        }
+
+        /// <summary>The object selected in the game when it is one of the character's items, else 0.</summary>
+        public static uint SelectedItem
+        {
+            get
+            {
+                Refresh();
+                return _selectedItem;
+            }
+        }
+
+        private static void Refresh()
+        {
+            long now = Environment.TickCount64;
+            if (_subscribers == 0 || now < _nextRefreshMs)
+                return;
+            _nextRefreshMs = now + RefreshMs;
+            _current = Source?.Invoke() ?? InventoryView.Empty;
+            uint selected = ClientHelperHooks.GetSelectedItemId();
+            _selectedItem = selected != 0 && Carries(_current, selected) ? selected : 0u;
+        }
+
+        private static bool Carries(InventoryView view, uint id)
+        {
+            foreach (InventoryPack pack in view.Packs)
+                foreach (InventoryItem item in pack.Items)
+                    if (item.Id == id) return true;
+            foreach (InventoryItem item in view.Worn)
+                if (item.Id == id) return true;
+            return false;
+        }
+
+        /// <summary>Forgets the view (the host stopping); the next read asks the source again.</summary>
+        internal static void Reset()
+        {
+            _current = InventoryView.Empty;
+            _selectedItem = 0;
+            _nextRefreshMs = 0;
+        }
     }
 
     /// <summary>RynthCore's acclient UI hooks; only the item AC is dragging, which OpenAC doesn't report (none).</summary>
@@ -195,6 +274,8 @@ namespace RynthCore.Engine.ImGuiBackend
         }
 
         public static bool IsCursorOver(string key) => false;
+
+        public static bool AnyDragInProgress => false;
     }
 
     /// <summary>RynthCore's own toolbar; OpenAC has the Rynth bar instead, so the rows are only remembered.</summary>
@@ -269,11 +350,6 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
     internal static class InventoryFace
     {
         public const string Title = "Inventory";
-    }
-
-    internal static class ItemCountFace
-    {
-        public const string Title = "Item Count";
     }
 
     internal static class SkillsFace

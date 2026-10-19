@@ -16,7 +16,8 @@ public sealed class RynthAiDashboardTests : IDisposable
         @"ImGui\Panels\MetaFace.List.cs", @"ImGui\Panels\MetaFace.Editor.cs", @"ImGui\Panels\MetaFace.Schedule.cs",
         @"UI\Data\MetaData.cs", @"UI\Data\MetaEditing.cs", @"UI\Data\MetaLocation.cs", @"UI\Data\MetaRowText.cs",
         @"UI\Data\MetaRuleDto.cs", @"UI\Data\MetaStateClock.cs", @"ImGui\CodeEditor.cs", @"ImGui\Panels\LootEditorFace.cs",
-        @"ImGui\Panels\LootAddDialog.cs", @"UI\Data\LootEditData.cs", @"ImGui\Panels\RangesSlideOut.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
+        @"ImGui\Panels\LootAddDialog.cs", @"UI\Data\LootEditData.cs", @"ImGui\Panels\RangesSlideOut.cs", @"ImGui\Panels\ItemCountFace.cs",
+        @"UI\Data\ItemHudModel.cs", @"UI\Data\ItemHudStore.cs", @"ImGui\Panels\LuaFace.cs", @"UI\Data\LuaData.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
         @"UI\Data\NavData.cs", @"UI\Data\RynthSortData.cs", @"UI\RynthAiDashboardState.cs",
         @"UI\PanelTextScale.cs", @"UI\QuickSettings.cs", @"UI\BarLayout.cs",
     ];
@@ -300,6 +301,75 @@ public sealed class RynthAiDashboardTests : IDisposable
         hookup.Dispose();
         Assert.False(ClientObjectHooks.TryGetObjectWcid(Pet, out _));
         Assert.False(PlayerPhysicsHooks.TryGetPlayerPoseSnapshot(out _, out _, out _, out _, out _, out _, out _, out _));
+    }
+
+    private static RynthObjectInfo Carried(uint container, uint wielder, int stack, int capacity = 0) => new()
+    {
+        ContainerId = container, WielderId = wielder, EquipLocation = wielder != 0 ? 0x100u : 0u, ItemType = 0x80, Wcid = 300,
+        Bitfield = 0, IconId = 0x06001111, IconUnderlayId = 0, IconOverlayId = 0, SpellId = null, HouseOwnerId = null,
+        StackSize = stack, StackSizeMax = 100, Value = 5, Burden = 1, ItemsCapacity = capacity, Structure = 0,
+        MaxStructure = 0, Workmanship = 0, MaterialType = null, Identified = false,
+        AppraisedSpellIds = [], Ints = new Dictionary<uint, int>(), DataIds = new Dictionary<uint, uint>(),
+        InstanceIds = new Dictionary<uint, uint>(),
+        Bools = new Dictionary<uint, bool>(), Floats = new Dictionary<uint, double>(), Strings = new Dictionary<uint, string>(),
+    };
+
+    [Fact]
+    public void TheInventoryModelIsTheCarriedPacksAndWornItems()
+    {
+        const uint Player = 0x50000001u, Pack = 0x80000010u, Arrows = 0x80000011u, MoreArrows = 0x80000012u, Bow = 0x80000013u;
+        _view.Objects[Pack] = Carried(Player, 0, 1, capacity: 24);
+        _view.Objects[Arrows] = Carried(Player, 0, 40);
+        _view.Objects[MoreArrows] = Carried(Pack, 0, 60);
+        _view.Objects[Bow] = Carried(0, Player, 1);
+        _view.Contents[Player] = [Pack, Arrows, Bow];
+        _view.Contents[Pack] = [MoreArrows];
+        _view.Names[Arrows] = _view.Names[MoreArrows] = "Arrow";
+        _view.SelectedObjectId = MoreArrows;
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        InventoryModel.Subscribe();
+        try
+        {
+            InventoryView view = InventoryModel.Current;
+
+            Assert.Equal(Player, view.PlayerId);
+            Assert.Equal([Player, Pack], view.Packs.Select(p => p.Id));
+            Assert.True(view.Packs[0].IsMain);
+            Assert.Equal([Pack, Arrows], view.Packs[0].Items.Select(i => i.Id));
+            InventoryItem inner = Assert.Single(view.Packs[1].Items);
+            Assert.Equal(("Arrow", 60), (inner.Name, inner.Stack));
+            Assert.Equal(Bow, Assert.Single(view.Worn).Id);
+            Assert.Equal(MoreArrows, InventoryModel.SelectedItem);
+            Assert.Same(view, InventoryModel.Current);
+        }
+        finally
+        {
+            InventoryModel.Unsubscribe();
+            InventoryModel.Reset();
+        }
+    }
+
+    [Fact]
+    public void TheItemCountPanelRegistersWithTheDashboardAndDrawsHeadless()
+    {
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        using var imgui = new HeadlessImGui();
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        RynthCore.Engine.UI.PanelRouter.Toggle(ItemCountFace.Title);
+
+        for (int i = 0; i < 3; i++)
+        {
+            int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
+            Assert.True(vertices > 100, $"frame {i}: only {vertices} vertices");
+        }
+
+        Assert.True(ImGuiPanelHost.IsOpen(ItemCountFace.Title));
+        Assert.Empty(_log);
+        RynthCore.Engine.UI.PanelRouter.Toggle(ItemCountFace.Title);
+        InventoryModel.Reset();
     }
 
     private (RynthHost Host, RynthChatHookup Exports, RynthAiHookup Ai) StartWithRynthAi()

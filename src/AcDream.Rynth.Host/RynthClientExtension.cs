@@ -85,6 +85,7 @@ public sealed class RynthClientExtension : IClientExtension
                 typeof(RynthCore.Plugin.RynthInventory.PluginExports),
                 typeof(RynthCore.Plugin.RynthChat.PluginExports),
                 typeof(RynthCore.Plugin.RynthAi.PluginExports),
+                typeof(RynthCore.Plugin.RynthLua.PluginExports),
                 .. AdditionalPluginExports,
             ],
             scriptWindows,
@@ -108,7 +109,7 @@ public sealed class RynthClientExtension : IClientExtension
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
         _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
         _commands.Add(context.RegisterChatCommand("ginv", arguments => OfferChatBarText("/ginv " + arguments)));
-        foreach (string verb in new[] { "ra", "mt", "ub", "vt" })
+        foreach (string verb in new[] { "ra", "mt", "ub", "vt", "lua" })
             _commands.Add(context.RegisterChatCommand(verb, arguments => OfferChatBarText($"/{verb} " + arguments)));
         if (context.Overlay is { } overlay)
             _frameCallback = overlay.AddFrameCallback(DrawFrame);

@@ -53,6 +53,18 @@ public sealed class ExtractTests
     }
 
     [Fact]
+    public void WithNoContainerKeepsTheNamedTopLevelTypes()
+    {
+        string text = Program.Extract(Panel, "", ["ThingView"], "ThingPanel.cs");
+
+        Assert.Contains("internal sealed class ThingView : UserControl { }", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("ThingPanelJsonContext", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("class ThingPanel", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("using Avalonia", text, StringComparison.Ordinal);
+        Assert.ThrowsAny<Exception>(() => Program.Extract(Panel, "", ["Payload"], "ThingPanel.cs"));
+    }
+
+    [Fact]
     public void ATypeTheContainerLacksFailsTheRun()
     {
         string dir = Directory.CreateTempSubdirectory("rynth-extract-").FullName;
@@ -95,6 +107,7 @@ public sealed class ExtractTests
     {
         var error = new StringWriter();
         Assert.Equal(2, Program.Run(["a.cs", "b.cs", "NoTypes"], TextWriter.Null, error));
+        Assert.Equal(2, Program.Run(["a.cs", "b.cs", "Container="], TextWriter.Null, TextWriter.Null));
         Assert.StartsWith("usage:", error.ToString(), StringComparison.Ordinal);
     }
 }

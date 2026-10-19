@@ -17,6 +17,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.9" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="Mono.Cecil" Version="0.11.6" />
+    <PackageVersion Include="MoonSharp" Version="2.0.0" />
     <PackageVersion Include="Serilog" Version="4.0.2" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
     <PackageVersion Include="Silk.NET.Input" Version="2.23.0" />
