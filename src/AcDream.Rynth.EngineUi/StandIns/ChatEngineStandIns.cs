@@ -76,13 +76,14 @@ namespace RynthCore.Engine.UI
         /// <summary>OpenAC has no pop-out windows.</summary>
         public static bool CanPopOut => false;
 
-        /// <summary>RynthCore's Monsters panel is not in OpenAC yet; its buttons do nothing.</summary>
-        public static void ToggleMonsters()
-        {
-        }
+        /// <summary>The dashboard's Monsters button: the Damage panel (RynthCore retired the basic Monsters panel).</summary>
+        public static void ToggleMonsters() => Toggle(Canonical("Monsters"));
 
-        /// <summary>RynthCore maps old panel names to current ones; ours are already current.</summary>
-        public static string Canonical(string title) => title;
+        /// <summary>The panel that shows <paramref name="title"/>: "Monsters" is the Damage panel, as in RynthCore.</summary>
+        public static string Canonical(string title) =>
+            title.Equals("Monsters", StringComparison.OrdinalIgnoreCase)
+                ? RynthCore.Engine.ImGuiBackend.Panels.DamageFace.Title
+                : title;
     }
 
     /// <summary>RynthCore's Avalonia overlay flag; OpenAC has no Avalonia overlay.</summary>
@@ -112,6 +113,10 @@ namespace RynthCore.Engine.UI.Data
         public static readonly NavSource Nav = new();
         public static readonly SettingsSource Settings = new();
         public static readonly RynthSortWatch RynthSortWatch = new();
+        public static readonly ItemsSource Items = new();
+        public static readonly DamageSource Damage = new();
+        public static readonly MonsterRulesSource MonsterRules = new();
+        public static readonly MonsterDetailSource MonsterDetail = new();
     }
 
     /// <summary>RynthNav's "Arrow to" / "Go to"; no RynthNav in OpenAC.</summary>
