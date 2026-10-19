@@ -719,7 +719,7 @@ git commit -m "feat(rynth): install RynthCore's Atlas so the Dungeon Map names d
 **Acceptance Criteria:**
 - [ ] Wait until the user says they are available; launch only on the local ACE test server (memory: live-testing-rules), never Dreamweave.
 - [ ] Indoors, dashboard Map opens the Dungeon Map centred on first open; no `threw` lines in the log.
-- [ ] Walls and floors line up with the dungeon; the readout shows the dungeon's name and Z.
+- [ ] Walls and floors line up with the dungeon. (No name readout: RynthCore's map has none — only their Radar panel draws it; see the spec's correction.)
 - [ ] Monsters, doors and corpses appear and move; floors switch going up and down stairs.
 - [ ] The RynthAi nav route draws; adding and moving a point from the map changes the route.
 - [ ] Walking outside hides the map; going back in shows it again.

@@ -8,8 +8,7 @@ The dashboard's Map button opens RynthCore's real Dungeon Map: a pannable,
 zoomable map of the dungeon you are in with floors, walls, explored cells,
 markers (monsters, players, NPCs, vendors, pets, corpses, lifestones, portals,
 doors, ground items), the player, and the RynthAi nav route with route editing
-(add / move / delete point, set active). Indoors the readout names the
-dungeon ("Matron Hive East  Z 12.0"). Their source compiles unchanged (rule:
+(add / move / delete point, set active). Their source compiles unchanged (rule:
 [[rynth-no-rewrite]]); everything missing is a stand-in.
 
 Out of scope (user decision 2026-10-19): RynthCore's separate round Radar
@@ -76,6 +75,13 @@ The project test `TheProjectCompilesTheirFilesAndHasNoCopies` lists them.
 
 ## Dungeon names
 
+Correction (live check 2026-10-19): RynthCore's Dungeon Map draws no dungeon-name
+readout. `RadarView.CoordText` ("Shreth Hive  Z 12.0") is drawn only by their
+round Radar panel (`RadarFace.cs:172`), which is out of scope, so nothing on
+screen shows the names yet. User decision: leave the map as RynthCore has it;
+the installed and loaded Atlas below is ready for the Radar panel when it is
+ported.
+
 `locations.json` (1.9 MB, `external/RynthCore/tools/navdata/NavData/`) is
 embedded in `AcDream.Rynth.EngineUi` as a resource. `RynthAiDashboard.Start()`
 installs it once to `<RynthInstallPaths.CoreDir>/NavData/locations.json`
@@ -131,8 +137,7 @@ only be changed by editing that file.
 
 ## Live check (user, later)
 
-Enter a dungeon: the map opens centred; walls and floors line up; the readout
-shows the dungeon name; monsters, doors and corpses appear and move; floors
+Enter a dungeon: the map opens centred; walls and floors line up; monsters, doors and corpses appear and move; floors
 switch going up and down stairs; the nav route draws and adding / moving a
 point works; the map hides outdoors and returns indoors; settings survive a
 relog; Retina looks right.
