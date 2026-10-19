@@ -39,6 +39,27 @@ internal static class ImGuiPanelHost
 
     private const int MaxFailures = 3;
 
+    private sealed class EmbeddedFace
+    {
+        public required string Title;
+        public required IImGuiPanel Instance;
+        public long LastDrawnMs;
+        public int Failures;
+        public string? Error;
+    }
+
+    /// <summary>Embedded copies by host + title (RynthCore's EmbeddedFaces). Draw thread only.</summary>
+    private static readonly Dictionary<string, EmbeddedFace> _embedded = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A copy not drawn for this long is hidden and dropped (its section was left).</summary>
+    private const long EmbedIdleMs = 750;
+
+    /// <summary>Faces that can't be embedded: the hosts themselves.</summary>
+    private static readonly HashSet<string> NotEmbeddable = new(StringComparer.OrdinalIgnoreCase) { "Mini Remote" };
+
+    /// <summary>True while an embedded copy draws: window moves and size requests are ignored.</summary>
+    [ThreadStatic] private static bool _inEmbed;
+
     private static readonly object _gate = new();
     private static readonly Dictionary<string, Entry> _entries = new(StringComparer.OrdinalIgnoreCase);
 
@@ -114,6 +135,7 @@ internal static class ImGuiPanelHost
     /// </summary>
     public static void DragWindowWithLastItem()
     {
+        if (_inEmbed) return;   // an embedded copy: that window isn't this face's to move or resize
         if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 0f))
             _pendingDragDelta += ImGui.GetIO().MouseDelta;
     }
@@ -231,6 +253,7 @@ internal static class ImGuiPanelHost
 
     public static void RequestSize(string key, Vector2 logicalSize)
     {
+        if (_inEmbed) return;   // an embedded copy: that window isn't this face's to move or resize
         lock (_gate)
         {
             if (_entries.TryGetValue(key, out Entry? entry))
@@ -240,6 +263,7 @@ internal static class ImGuiPanelHost
 
     public static void RequestPos(string key, Vector2 logicalPos)
     {
+        if (_inEmbed) return;   // an embedded copy: that window isn't this face's to move or resize
         lock (_gate)
         {
             if (_entries.TryGetValue(key, out Entry? entry))
@@ -249,10 +273,118 @@ internal static class ImGuiPanelHost
 
     public static bool IsTransitioning(string key) => false;
 
+    /// <summary>True when <paramref name="title"/> is registered and may be drawn inside another panel.</summary>
+    public static bool CanEmbed(string title) => !NotEmbeddable.Contains(title) && HasFace(title);
+
+    /// <summary>A registered face's default window size (logical units).</summary>
+    public static bool TryGetDefaultSize(string title, out Vector2 size)
+    {
+        Entry? entry;
+        lock (_gate) _entries.TryGetValue(title, out entry);
+        size = entry?.Spec.DefaultSize ?? Vector2.Zero;
+        return entry != null;
+    }
+
+    /// <summary>
+    /// RynthCore's DrawEmbedded: draws a copy of the face <paramref name="title"/> into the current
+    /// window, in a child of <paramref name="size"/> (pixels; 0 = fill). <paramref name="hostKey"/>
+    /// separates the copies of different hosts. Created (OnShown) on first draw, dropped (OnHidden)
+    /// by DrawAll once it hasn't drawn for <see cref="EmbedIdleMs"/>. Inside a window.
+    /// </summary>
+    public static void DrawEmbedded(string hostKey, string title, Vector2 size)
+    {
+        Entry? entry;
+        lock (_gate) _entries.TryGetValue(title, out entry);
+        if (entry == null || NotEmbeddable.Contains(title))
+        {
+            ImGui.TextDisabled("Not available.");
+            return;
+        }
+
+        string key = hostKey + "\u001f" + title;
+        if (!_embedded.TryGetValue(key, out EmbeddedFace? face))
+        {
+            try
+            {
+                IImGuiPanel instance = entry.Factory();
+                instance.OnShown();
+                face = new EmbeddedFace { Title = title, Instance = instance };
+            }
+            catch (Exception error)
+            {
+                Log?.Invoke($"[ScriptWindows] embedding {title} failed: {error.GetType().Name}: {error.Message}");
+                face = new EmbeddedFace { Title = title, Instance = new NullFace(), Error = $"{title} failed to open: {error.Message}" };
+            }
+            _embedded[key] = face;
+        }
+        face.LastDrawnMs = Environment.TickCount64;
+
+        PanelSpec spec = entry.Spec;
+        float s = EngineFrameController.FontScale > 0f ? EngineFrameController.FontScale : 1f;
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, spec.EdgeToEdge ? Vector2.Zero : new Vector2(6, 4) * s);
+        ImGuiWindowFlags flags = ImGuiWindowFlags.NoBackground | spec.BodyFlags;
+        if (spec.EdgeToEdge) flags |= ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
+        bool open = ImGui.BeginChild("##embed_" + title, size, ImGuiChildFlags.AlwaysUseWindowPadding, flags);
+        ImGui.PopStyleVar();
+        try
+        {
+            if (!open) return;
+            if (face.Error != null)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.3f, 1f));
+                ImGui.PushTextWrapPos(0f);
+                ImGui.TextUnformatted(face.Error);
+                ImGui.PopTextWrapPos();
+                ImGui.PopStyleColor();
+                return;
+            }
+            _inEmbed = true;
+            try { face.Instance.Draw(); }
+            catch (Exception error)
+            {
+                face.Failures++;
+                Log?.Invoke($"[ScriptWindows] embedded {title}: {error.GetType().Name}: {error.Message} ({face.Failures}/{MaxFailures})");
+                if (face.Failures >= MaxFailures)
+                    face.Error = $"{title} stopped drawing after repeated errors: {error.Message}";
+            }
+            finally { _inEmbed = false; }
+        }
+        finally
+        {
+            ImGui.EndChild();
+        }
+    }
+
+    /// <summary>Hides and drops embedded copies whose host stopped drawing them.</summary>
+    private static void SweepEmbedded()
+    {
+        if (_embedded.Count == 0) return;
+        long now = Environment.TickCount64;
+        List<string>? stale = null;
+        foreach (KeyValuePair<string, EmbeddedFace> pair in _embedded)
+            if (now - pair.Value.LastDrawnMs > EmbedIdleMs) (stale ??= new List<string>()).Add(pair.Key);
+        if (stale == null) return;
+        foreach (string key in stale)
+        {
+            EmbeddedFace face = _embedded[key];
+            _embedded.Remove(key);
+            Guard("embedded " + face.Title + " OnHidden", face.Instance.OnHidden);
+        }
+    }
+
+    /// <summary>Stands in for a face that failed to open, so its error line can draw.</summary>
+    private sealed class NullFace : IImGuiPanel
+    {
+        public void Draw()
+        {
+        }
+    }
+
     /// <summary>Forgets every window and the layout hookups (tests, and host shutdown).</summary>
     internal static void Reset()
     {
         lock (_gate) _entries.Clear();
+        _embedded.Clear();
         _pendingDragDelta = Vector2.Zero;
         Layout = null;
         RestoreOpener = OpenLikeTheBar;
@@ -261,6 +393,7 @@ internal static class ImGuiPanelHost
     /// <summary>Draws every open window. Call between ImGui.NewFrame and ImGui.Render.</summary>
     internal static void DrawAll()
     {
+        SweepEmbedded();
         List<string> restore = new();
         // Marks wait while out of the world: Oracle resubmits its window at
         // character select and reopens it itself at login.
