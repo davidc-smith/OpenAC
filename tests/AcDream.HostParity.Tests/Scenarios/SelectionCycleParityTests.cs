@@ -95,6 +95,44 @@ public sealed class SelectionCycleParityTests
             Assert.Null(selection.SelectedObjectId);
         });
 
+    /// <summary>
+    /// Someone well below, close enough across the ground to be on the radar,
+    /// is in the cycle: reach is ground distance against the radar's 75 m,
+    /// and height only weighs into the order. Mutation check: measure reach
+    /// with the height-weighted order instead and the person in the pit, 40 m
+    /// out and 30 m down (order 76), is never reached.
+    /// </summary>
+    [Fact]
+    public void SteppingThroughPeopleReachesSomeoneFarBelow() =>
+        ParityScenario.Run((arm, transcript) =>
+        {
+            const uint inThePit = 0x50000064u;
+            ParityWorld.Stage(arm);
+            ParityWorld.Add(
+                arm.Runtime, Near, ParityWorld.PlayerX + 2f, Person(Near, "Near"));
+            ParityWorld.Add(
+                arm.Runtime,
+                inThePit,
+                ParityWorld.PlayerX + 40f,
+                Person(inThePit, "Pit"),
+                z: ParityPlayerBody.GroundHeight - 30f);
+            ISelectionService selection = arm.Host.Selection;
+            ISelectionAutomation cycle = arm.Host.Automation.Selection;
+            arm.Advance();
+
+            transcript.Step("the one on this level first");
+            Step(transcript, cycle, selection, PluginSelectionAction.NextPlayer);
+            Assert.Equal(Near, selection.SelectedObjectId);
+
+            transcript.Step("then the one down in the pit");
+            Step(transcript, cycle, selection, PluginSelectionAction.NextPlayer);
+            Assert.Equal(inThePit, selection.SelectedObjectId);
+
+            transcript.Step("and round again");
+            Step(transcript, cycle, selection, PluginSelectionAction.NextPlayer);
+            Assert.Equal(Near, selection.SelectedObjectId);
+        });
+
     private static void Step(
         ParityTranscript transcript,
         ISelectionAutomation cycle,

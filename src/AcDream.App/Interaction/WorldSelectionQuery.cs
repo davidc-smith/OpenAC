@@ -362,11 +362,13 @@ internal sealed class WorldSelectionQuery
                 continue;
             }
 
-            float order = SelectionOrder(player, entity);
-            if (order > radarRadius
+            // Reach is ground distance alone; height only orders the
+            // candidates, so a monster below in a pit is still in the cycle.
+            Vector3 offset = PlayerSpaceOffset(player, entity);
+            if (!RetailRadar.IsWithinSelectionCycleRange(offset, radarRadius)
                 || !MatchesSelectionKind(kind, guid, obj, record.FinalPhysicsState))
                 continue;
-            candidates.Add((guid, order));
+            candidates.Add((guid, RetailRadar.GetSelectionOrder(offset)));
         }
 
         if (candidates.Count == 0)
@@ -384,7 +386,9 @@ internal sealed class WorldSelectionQuery
         if (anchor is { } anchorGuid
             && _liveEntities.TryGetWorldEntity(anchorGuid, out WorldEntity anchorEntity))
         {
-            anchorKey = (SelectionOrder(player, anchorEntity), anchorGuid);
+            anchorKey = (
+                RetailRadar.GetSelectionOrder(PlayerSpaceOffset(player, anchorEntity)),
+                anchorGuid);
         }
 
         if (anchorKey is null)
@@ -431,7 +435,9 @@ internal sealed class WorldSelectionQuery
         float radarRadius = IsOutdoorCell(player.VisibilityCellId)
             ? RetailRadar.OutdoorRangeMeters
             : RetailRadar.IndoorRangeMeters;
-        return SelectionOrder(player, target) <= radarRadius ? attacker : null;
+        return RetailRadar.IsWithinRadarRange(PlayerSpaceOffset(player, target), radarRadius)
+            ? attacker
+            : null;
     }
 
     private bool MatchesSelectionKind(
@@ -481,13 +487,10 @@ internal sealed class WorldSelectionQuery
         };
     }
 
-    private static float SelectionOrder(WorldEntity player, WorldEntity target)
-    {
-        Vector3 delta = target.Position - player.Position;
-        Vector3 local = Vector3.Transform(delta, Quaternion.Inverse(player.Rotation));
-        return MathF.Sqrt(local.X * local.X + local.Y * local.Y)
-            + MathF.Abs(local.Z) * 1.2f;
-    }
+    private static Vector3 PlayerSpaceOffset(WorldEntity player, WorldEntity target)
+        => Vector3.Transform(
+            target.Position - player.Position,
+            Quaternion.Inverse(player.Rotation));
 
     private static int CompareSelectionKey(
         float leftOrder,

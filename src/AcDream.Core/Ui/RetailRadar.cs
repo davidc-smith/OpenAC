@@ -130,6 +130,52 @@ public static class RetailRadar
     public static float GetRangeMeters(bool isOutside)
         => isOutside ? OutdoorRangeMeters : IndoorRangeMeters;
 
+    /// <summary>
+    /// How much a metre of height counts for in the selection cycle's
+    /// ordering, against a metre across the ground.
+    /// </summary>
+    public const float SelectionHeightWeight = 1.2f;
+
+    /// <summary>
+    /// Distance across the ground, in metres, of an offset already turned
+    /// into the player's own frame. Height plays no part.
+    /// </summary>
+    public static float GetHorizontalDistance(Vector3 playerSpaceMeters)
+        => MathF.Sqrt(
+            (playerSpaceMeters.X * playerSpaceMeters.X)
+            + (playerSpaceMeters.Y * playerSpaceMeters.Y));
+
+    /// <summary>
+    /// Whether the select-next/previous/closest keys may land on something at
+    /// this offset: its distance across the ground, not counting height, is
+    /// at most the radar's range. A monster ten metres down a pit is in reach
+    /// as long as it is close enough across the ground.
+    /// </summary>
+    public static bool IsWithinSelectionCycleRange(
+        Vector3 playerSpaceMeters,
+        float radarRangeMeters)
+        => GetHorizontalDistance(playerSpaceMeters) <= radarRangeMeters;
+
+    /// <summary>
+    /// Whether "select last attacker" may land on something at this offset:
+    /// its distance across the ground is strictly inside the radar's range.
+    /// </summary>
+    public static bool IsWithinRadarRange(
+        Vector3 playerSpaceMeters,
+        float radarRangeMeters)
+        => GetHorizontalDistance(playerSpaceMeters) < radarRangeMeters;
+
+    /// <summary>
+    /// The selection cycle's ordering key: distance across the ground plus
+    /// <see cref="SelectionHeightWeight"/> times the height difference, so
+    /// something a floor up sorts behind something on this floor. It orders
+    /// candidates only; whether a candidate is in reach is decided by
+    /// <see cref="IsWithinSelectionCycleRange"/>, on ground distance alone.
+    /// </summary>
+    public static float GetSelectionOrder(Vector3 playerSpaceMeters)
+        => GetHorizontalDistance(playerSpaceMeters)
+            + (MathF.Abs(playerSpaceMeters.Z) * SelectionHeightWeight);
+
     public static bool TryProject(
         Vector3 playerSpaceMeters,
         Vector2 centerPixels,
