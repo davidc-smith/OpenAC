@@ -1334,6 +1334,48 @@ public sealed class VendorUiControllerTests
     }
 
     [Fact]
+    public void ZeroStockShopItem_IsListedWhenTheVendorOpens()
+    {
+        // Servers list many rows with an amount of 0. Every listed row is
+        // shown at open; only staging can take a row out of the list.
+        var h = new Harness();
+        h.State.Apply(VendorGuid, Profile(), new[]
+        {
+            new VendorShopItem(ArmorItemGuid, 0, 2u, "Chainmail", (uint)ItemType.Armor, 200u, 100),
+            new VendorShopItem(AnotherArmorItemGuid, -1, 4u, "Buckler", (uint)ItemType.Armor, 900u, 40),
+        });
+
+        Assert.Equal(2, h.ItemList.GetNumUIItems());
+        Assert.Equal(ArmorItemGuid, h.ItemList.GetItem(0)!.ItemId);
+        Assert.Equal(ArmorItemGuid, h.Selection.SelectedObjectId);
+    }
+
+    [Fact]
+    public void StagingAZeroStockShopItem_StagesItAndTakesTheRowOutOfTheList()
+    {
+        // A listed amount of 0 is a limited amount: staging is not refused,
+        // and the first unit staged leaves 0 - 1 remaining, which removes the
+        // row and clears the selection, exactly as exhausting any limited row.
+        var h = new Harness();
+        h.State.Apply(VendorGuid, Profile(), new[]
+        {
+            new VendorShopItem(ArmorItemGuid, 0, 2u, "Chainmail", (uint)ItemType.Armor, 200u, 100),
+        });
+
+        h.AddButton.OnClick!.Invoke();
+
+        Assert.Equal(1, h.BuyingList.GetNumUIItems());
+        Assert.Equal(ArmorItemGuid, h.BuyingList.GetItem(0)!.ItemId);
+        Assert.Equal(0, h.ItemList.GetNumUIItems());
+        Assert.Null(h.Selection.SelectedObjectId);
+
+        h.BuyClearListButton.OnClick!.Invoke();
+
+        Assert.Equal(1, h.ItemList.GetNumUIItems());
+        Assert.Equal(ArmorItemGuid, h.ItemList.GetItem(0)!.ItemId);
+    }
+
+    [Fact]
     public void BuyAllButton_SendsOneBatchedBuyForEveryStagedEntryAndClearsStagingOnSuccess()
     {
         var h = new Harness();

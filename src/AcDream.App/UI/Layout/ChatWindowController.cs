@@ -598,7 +598,7 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
             {
                 ChatLinkClicked?.Invoke(new PluginChatLinkClicked(
                     PluginChatLinkKind.Coordinate,
-                    $"{northSouth:0.###}{(northSouth < 0 ? 'S' : 'N')}, {eastWest:0.###}{(eastWest < 0 ? 'W' : 'E')}",
+                    ChatCoordinateLinks.Describe(eastWest, northSouth),
                     new PluginChatCoordinate(eastWest, northSouth)));
                 return true;
             }

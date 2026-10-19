@@ -124,6 +124,58 @@ writes in one of the client's own text classes, so a plugin's own output can
 use the colour the class carries. `Submit(text)` still runs the full chat
 pipeline, commands included.
 
+A line a plugin posts may carry a coordinate link. The tag's caption is shown
+in the link colour, and clicking it raises `LinkClicked`:
+
+```csharp
+host.Automation.Chat.PostSystemMessage(
+    @"Next waypoint: <COORD:World:42.1N, 33.5E>the Holtburg bridge<\COORD>");
+```
+
+The only tag read is a well-formed `<COORD:World:pair>`, closed by
+`<\COORD>`. Any other angle-bracket text ("Press <Ctrl:F>") is shown as
+written.
+
+### Chat links
+
+`LinkClicked` is raised when the player clicks a coordinate link in the main
+chat window. Only a line a plugin posted carries one: its `COORD` tags, and
+every coordinate pair `PluginChatCoordinateParser` reads in its plain text
+("meet at 42.1N 33.5E"). A pair is a number and a compass letter twice,
+neither inside a longer word, so "10n 20east" is not one.
+
+What players say, tell and post on channels, and the server's own lines
+("Your corpse is located at (42.1N, 33.5E).") are shown exactly as they
+arrived and hold no coordinate link, even when a player types a `COORD` tag.
+A plugin that wants the coordinates in those lines reads them from `Received`
+with `PluginChatCoordinateParser`. `PluginChatCoordinateLinkRouter` hands the
+coordinates of a clicked link to a callback:
+
+```csharp
+var router = new PluginChatCoordinateLinkRouter(
+    host.Automation.Chat,
+    coordinate => SetWaypoint(coordinate.NorthSouth, coordinate.EastWest));
+```
+
+Clicking a player's name still starts a tell and raises nothing. The floating
+chat windows show no links.
+
+**Escape text you did not write.** A plugin's line is trusted as the plugin's
+own, so a `COORD` tag in it is a working link. A plugin that repeats a
+player's words (echoing a tell, relaying a channel) would turn a tag that
+player typed into a link showing one place and reporting another. Pass such
+text through `PluginChatMarkup.Escape` first; it puts a backslash before every
+`<`, the chat drops that backslash, and the text shows exactly as the player
+wrote it with no tag read:
+
+```csharp
+host.Automation.Chat.PostSystemMessage(
+    $"{PluginChatMarkup.Escape(message.Sender)} told you: {PluginChatMarkup.Escape(message.Text)}");
+```
+
+A coordinate pair the escaped text shows in plain words is still a link, to
+exactly the place it shows.
+
 ### Intercepting what the player types
 
 ```csharp
