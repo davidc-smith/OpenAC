@@ -11,7 +11,8 @@ public sealed class RynthAiDashboardTests : IDisposable
     private static readonly string[] TheirFiles =
     [
         @"ImGui\Panels\RynthAiFace.cs", @"ImGui\Panels\RynthAiFace.Drawers.cs", @"ImGui\Panels\SettingsRows.cs",
-        @"ImGui\Panels\QuickSettingsDrawer.cs", @"ImGui\Panels\SettingsFace.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
+        @"ImGui\Panels\QuickSettingsDrawer.cs", @"ImGui\Panels\SettingsFace.cs", @"ImGui\Panels\ItemsFace.cs", @"ImGui\Panels\DamageFace.cs",
+        @"ImGui\Panels\DamageDetailFace.cs", @"UI\Data\ItemsData.cs", @"UI\Data\DamageData.cs", @"UI\PanelColumnStore.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
         @"UI\Data\NavData.cs", @"UI\Data\RynthSortData.cs", @"UI\RynthAiDashboardState.cs",
         @"UI\PanelTextScale.cs", @"UI\QuickSettings.cs", @"UI\BarLayout.cs",
     ];
@@ -124,6 +125,94 @@ public sealed class RynthAiDashboardTests : IDisposable
         }
 
         Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void TheItemsDamageAndMonsterDetailPanelsRegisterWithTheDashboardAndDrawHeadless()
+    {
+        using var imgui = new HeadlessImGui();
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        ImGuiPanelHost.Open(ItemsFace.Title);
+        ImGuiPanelHost.Open(DamageFace.Title);
+        DamageDetailFace.Show(0x1234u, "Drudge Skulker");
+
+        for (int i = 0; i < 3; i++)
+        {
+            int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
+            Assert.True(vertices > 300, $"frame {i}: only {vertices} vertices");
+        }
+
+        Assert.True(ImGuiPanelHost.IsOpen(ItemsFace.Title));
+        Assert.True(ImGuiPanelHost.IsOpen(DamageFace.Title));
+        Assert.True(ImGuiPanelHost.IsOpen(DamageDetailFace.Title));
+        Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void TheMonstersButtonTogglesTheDamagePanel()
+    {
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+
+        RynthCore.Engine.UI.PanelRouter.ToggleMonsters();
+        Assert.True(ImGuiPanelHost.IsOpen(DamageFace.Title));
+        Assert.Equal(DamageFace.Title, RynthCore.Engine.UI.PanelRouter.Canonical("Monsters"));
+
+        RynthCore.Engine.UI.PanelRouter.ToggleMonsters();
+        Assert.False(ImGuiPanelHost.IsOpen(DamageFace.Title));
+    }
+
+    [Fact]
+    public void AnItemsEditRoundTripsThroughThePlugin()
+    {
+        (RynthHost host, RynthChatHookup exports, RynthAiHookup ai) = StartWithRynthAi();
+        using (host) using (exports) using (ai)
+        {
+            var items = RynthCore.Engine.UI.Data.UiSources.Items;
+            items.Subscribe();
+            try
+            {
+                items.RequestRefresh();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                RynthCore.Engine.UI.Panels.ItemsPanel.Payload payload = Assert.IsType<RynthCore.Engine.UI.Data.ItemsSnapshot>(items.Current?.Value).ParseCopy();
+                int keep = payload.ManaStoneKeepCount + 3;
+                payload.ManaStoneKeepCount = keep;
+
+                RynthCore.Engine.UI.Data.ItemsCommands.SetJson(RynthCore.Engine.UI.Data.ItemsCommands.Serialize(payload));
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+
+                Assert.Equal(keep, items.Current!.Value.Parsed.ManaStoneKeepCount);
+            }
+            finally { items.Unsubscribe(); }
+        }
+    }
+
+    [Fact]
+    public void TheMonsterRulesAndDamageSourcesReadThePlugin()
+    {
+        (RynthHost host, RynthChatHookup exports, RynthAiHookup ai) = StartWithRynthAi();
+        using (host) using (exports) using (ai)
+        {
+            var rules = RynthCore.Engine.UI.Data.UiSources.MonsterRules;
+            var damage = RynthCore.Engine.UI.Data.UiSources.Damage;
+            rules.Subscribe();
+            damage.Subscribe();
+            try
+            {
+                rules.RequestRefresh();
+                damage.RequestRefresh();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+
+                Assert.NotNull(rules.Current);
+                Assert.True(damage.Current?.Value.Bound);
+            }
+            finally
+            {
+                rules.Unsubscribe();
+                damage.Unsubscribe();
+            }
+        }
     }
 
     private (RynthHost Host, RynthChatHookup Exports, RynthAiHookup Ai) StartWithRynthAi()

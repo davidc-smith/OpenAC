@@ -37,6 +37,7 @@
   <Folder Name="/tools/">
     <Project Path="tools/RenderPackValidator/AcDream.Tools.RenderPackValidator.csproj" />
     <Project Path="tools/RynthInteropRedirect/AcDream.Tools.RynthInteropRedirect.csproj" />
+    <Project Path="tools/RynthTypeExtract/AcDream.Tools.RynthTypeExtract.csproj" />
     <Project Path="tools/ShaderCompiler/ShaderCompiler.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -65,6 +66,7 @@
     <Project Path="tests/AcDream.Runtime.Tests/AcDream.Runtime.Tests.csproj" />
     <Project Path="tests/AcDream.Rynth.Host.Tests/AcDream.Rynth.Host.Tests.csproj" />
     <Project Path="tests/AcDream.Tools.RynthInteropRedirect.Tests/AcDream.Tools.RynthInteropRedirect.Tests.csproj" />
+    <Project Path="tests/AcDream.Tools.RynthTypeExtract.Tests/AcDream.Tools.RynthTypeExtract.Tests.csproj" />
     <Project Path="tests/AcDream.UI.Abstractions.Tests/AcDream.UI.Abstractions.Tests.csproj" />
   </Folder>
 </Solution>

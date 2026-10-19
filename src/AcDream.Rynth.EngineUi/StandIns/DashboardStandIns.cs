@@ -90,6 +90,15 @@ namespace RynthCore.Engine.Compatibility
         }
     }
 
+    /// <summary>
+    /// RynthCore works out whether the client is on Aelrynth (their server) to show
+    /// its difficulty tiers; OpenAC never connects there, so never.
+    /// </summary>
+    internal static class ServerInfo
+    {
+        public static bool IsAelrynth => false;
+    }
+
     /// <summary>RynthCore hides acclient's vitals bar; OpenAC's own bar is unaffected, the box is only remembered.</summary>
     internal static class RetailVitalsHooks
     {
