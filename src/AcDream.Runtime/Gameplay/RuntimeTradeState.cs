@@ -105,7 +105,13 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            CountLocked(0x01FDu, c => c with { Generation = unchecked(c.Generation + 1u), InitiatorId = update.Initiator });
+            // As RynthCore's RegisterTrade: a new generation, its initiator, and no close reason yet.
+            CountLocked(0x01FDu, c => c with
+            {
+                Generation = unchecked(c.Generation + 1u),
+                InitiatorId = update.Initiator,
+                LastCloseReason = 0u,
+            });
             _isOpen = true;
             _partnerGuid = update.Initiator != selfGuid && update.Initiator != 0u
                 ? update.Initiator
@@ -126,7 +132,8 @@ public sealed class RuntimeTradeState : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            CountLocked(0x01FFu, c => c with { LastCloseReason = reason });
+            // As RynthCore's CloseTrade: the reason stays, the initiator is forgotten.
+            CountLocked(0x01FFu, c => c with { LastCloseReason = reason, InitiatorId = 0u });
             released = _partnerItems.ToArray();
             ClearLocked();
         }

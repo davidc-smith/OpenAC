@@ -97,13 +97,14 @@ and logoff clears it.
   LastFailureItemId, LastFailureReason, LastCloseReason, LastAcceptedBy,
   LastDeclinedBy, LastResetBy, CompletedCount, PartnerAcceptCount.
   `RuntimeTradeState` updates them in its existing `Apply*` methods with RynthCore's
-  rules (`Compatibility/PlayerTrade.cs`): Register (Generation, Initiator), Add,
-  Remove, Accept (PartnerAcceptCount when it is not the player), Decline, Reset (who),
-  Close (reason, from the CloseTrade payload the router now passes on), Failure,
+  rules (`Compatibility/PlayerTrade.cs`): Register (Generation, Initiator, close
+  reason back to 0), Add, Remove, Accept (PartnerAcceptCount when it is not the
+  player), Decline, Reset (who), Close (reason, from the CloseTrade payload the router
+  now passes on; Initiator back to 0), Failure,
   ClearAcceptance; every one bumps Sequence and sets LastEventType, whether or not a
   trade is open. CompletedCount (+ Sequence) counts WeenieError `0x0529`
   TradeComplete, seen through a new `ServerReplyLog.WeenieErrorRecorded` event. Like
-  RynthCore's, the counters only ever grow; plugins compare them between reads.
+  RynthCore's, the counts only ever grow; plugins compare them between reads.
 - `ILootAutomation.Pickup(uint objectId, uint preferredContainerObjectId)` → the
   existing pickup, with `RuntimeItemInteraction.TryPlaceWorldItemInBackpack` taking
   the preferred pack as the placement search's target.

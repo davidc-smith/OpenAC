@@ -1109,11 +1109,13 @@ the same way: each returns `PluginTradeCommandResult` with a
 the same as the client's own trade request: `Sent`, `Unavailable` (not in
 world, no session), `Refused` while a trade is already open, `InvalidItem`
 for 0 or the player. `Events` (`PluginTradeEventCounters`) are RynthCore-style
-counters that only ever grow: `Generation` (trades opened), `Sequence` (every
+counters: `Generation` (trades opened), `Sequence` (every
 trade event), `InitiatorId`, `LastEventType`, `FailureCount`,
 `LastFailureItemId`, `LastFailureReason`, `LastCloseReason`, `LastAcceptedBy`,
 `LastDeclinedBy`, `LastResetBy`, `CompletedCount`, `PartnerAcceptCount`;
-compare two reads to see what happened between them. All zero on a host
+compare two reads to see what happened between them. The counts only grow;
+as in RynthCore, a trade's close sets `InitiatorId` back to 0 and the next
+trade's register sets `LastCloseReason` back to 0. All zero on a host
 without them. `Open` and `Events` need contract `0.1.25-fork.9`.
 
 `Accept` is a no-op (returns `AlreadyAccepted` without touching the wire)

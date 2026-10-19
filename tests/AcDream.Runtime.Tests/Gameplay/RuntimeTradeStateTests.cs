@@ -169,7 +169,7 @@ public sealed class RuntimeTradeStateTests
         RuntimeTradeCounters c = trade.View.Counters;
         Assert.Equal(1u, c.Generation);
         Assert.Equal(10u, c.Sequence);
-        Assert.Equal(Partner, c.InitiatorId);
+        Assert.Equal(0u, c.InitiatorId);   // the close forgets it, as RynthCore's does
         Assert.Equal(0x01FFu, c.LastEventType);
         Assert.Equal(1u, c.PartnerAcceptCount);
         Assert.Equal(Self, c.LastAcceptedBy);
@@ -204,10 +204,16 @@ public sealed class RuntimeTradeStateTests
 
         trade.ApplyRegister(new GameEvents.RegisterTrade(Self, Partner, 0uL), Self);
         trade.ApplyClose(1u);
+
+        // RynthCore's CloseTrade forgets the initiator and keeps the reason.
+        Assert.Equal(0u, trade.View.Counters.InitiatorId);
+        Assert.Equal(1u, trade.View.Counters.LastCloseReason);
+
         trade.ApplyRegister(new GameEvents.RegisterTrade(Partner, Partner, 0uL), Self);
 
+        // Its RegisterTrade clears the last close reason.
         Assert.Equal(2u, trade.View.Counters.Generation);
         Assert.Equal(Partner, trade.View.Counters.InitiatorId);
-        Assert.Equal(1u, trade.View.Counters.LastCloseReason);
+        Assert.Equal(0u, trade.View.Counters.LastCloseReason);
     }
 }
