@@ -90,4 +90,59 @@ public sealed class RynthAiInteropTests
         thread.Join();
         Assert.NotNull(json);
     }
+
+    [Fact]
+    public void NoRegistryReferenceIsLeft()
+    {
+        using ModuleDefinition module = ModuleDefinition.ReadModule(Theirs.Location);
+        string[] left = module.GetTypeReferences().Select(t => t.FullName)
+            .Concat(module.GetMemberReferences().Select(m => m.DeclaringType.FullName))
+            .Where(name => name is "Microsoft.Win32.Registry" or "Microsoft.Win32.RegistryKey")
+            .Distinct()
+            .ToArray();
+        Assert.Empty(left);
+    }
+
+    [Fact]
+    public void ComponentDatabaseFindsThePortalDatThroughTheStandIn()
+    {
+        string dir = Directory.CreateTempSubdirectory("rynth-reg").FullName;
+        try
+        {
+            File.WriteAllBytes(Path.Combine(dir, "client_portal.dat"), []);
+            AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = dir;
+            Type db = Theirs.GetType("RynthCore.Plugin.RynthAi.ComponentDatabase", throwOnError: true)!;
+            MethodInfo find = db.GetMethod("FindPortalDat", BindingFlags.NonPublic | BindingFlags.Static)!;
+            Assert.Equal(Path.Combine(dir, "client_portal.dat"), find.Invoke(null, null));
+        }
+        finally
+        {
+            AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = null;
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GeometryLoaderOpensTheInstalledDatsThroughTheStandIn()
+    {
+        string? dats = Environment.GetEnvironmentVariable("ACDREAM_DAT_DIR");
+        if (string.IsNullOrWhiteSpace(dats))
+            dats = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AsheronsCall");
+        if (!File.Exists(Path.Combine(dats, "client_cell_1.dat")))
+        {
+            Console.WriteLine($"skipped: no dats at {dats}");
+            return;
+        }
+
+        AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = dats;
+        try
+        {
+            using var loader = new RynthCore.Plugin.RynthAi.Raycasting.GeometryLoader();
+            Assert.True(loader.Initialize());
+        }
+        finally
+        {
+            AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = null;
+        }
+    }
 }

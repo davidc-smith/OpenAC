@@ -4,7 +4,7 @@ using Mono.Cecil.Cil;
 namespace AcDream.Tools.RynthInteropRedirect;
 
 /// <summary>
-/// <c>AcDream.Tools.RynthInteropRedirect &lt;assembly&gt; &lt;stand-in type|-&gt; &lt;references file&gt; [--inert &lt;module,...&gt;] [--plain-threadstatic-swaps]</c>:
+/// <c>AcDream.Tools.RynthInteropRedirect &lt;assembly&gt; &lt;stand-in type|-&gt; &lt;references file&gt; [--inert &lt;module,...&gt;] [--plain-threadstatic-swaps] [--redirect-type &lt;from&gt;=&lt;to&gt;]...</c>:
 /// every user32/kernel32 P/Invoke in the assembly that the stand-in type (in
 /// the same assembly; <c>-</c> for none) has a public static method for, same
 /// name and signature, becomes a managed call to that method. With
@@ -17,7 +17,11 @@ namespace AcDream.Tools.RynthInteropRedirect;
 /// on .NET 10 osx-arm64 the runtime can leave such a field 4-byte aligned,
 /// where Interlocked faults) becomes a plain read and write in a generated
 /// helper. The references file lists the assembly's references, one
-/// path a line, for resolving its types. A rerun finds nothing to do.
+/// path a line, for resolving its types. With <c>--redirect-type</c>, every
+/// use of type <c>from</c> (a referenced type, by full name) becomes <c>to</c>
+/// (a type in the assembly): its members by name, signature and static-ness,
+/// and every field, local, parameter, return and type operand of that type. A
+/// member <c>to</c> lacks fails the run. A rerun finds nothing to do.
 /// </summary>
 internal static class Program
 {
@@ -25,26 +29,46 @@ internal static class Program
 
     private static int Main(string[] args)
     {
-        const string PlainFlag = "--plain-threadstatic-swaps";
-        string[] rest = args.Length > 3 ? args[3..] : [];
-        bool plainSwaps = rest.Contains(PlainFlag);
-        string[] others = rest.Where(a => a != PlainFlag).ToArray();
-        bool inertGiven = others.Length == 2 && others[0] == "--inert";
-        if (args.Length < 3 || rest.Count(a => a == PlainFlag) > 1 || (others.Length != 0 && !inertGiven))
+        const string Usage = "usage: AcDream.Tools.RynthInteropRedirect <assembly> <stand-in type|-> <references file> [--inert <module,...>] [--plain-threadstatic-swaps] [--redirect-type <from>=<to>]...";
+        string[] inert = [];
+        bool inertGiven = false, plainSwaps = false;
+        var typeMaps = new List<(string From, string To)>();
+        for (int i = 3; i < args.Length; i++)
         {
-            Console.Error.WriteLine("usage: AcDream.Tools.RynthInteropRedirect <assembly> <stand-in type|-> <references file> [--inert <module,...>] [--plain-threadstatic-swaps]");
+            if (args[i] == "--inert" && !inertGiven && i + 1 < args.Length)
+            {
+                inertGiven = true;
+                inert = args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+            else if (args[i] == "--plain-threadstatic-swaps" && !plainSwaps)
+            {
+                plainSwaps = true;
+            }
+            else if (args[i] == "--redirect-type" && i + 1 < args.Length
+                     && args[i + 1].Split('=') is [{ Length: > 0 } from, { Length: > 0 } to])
+            {
+                typeMaps.Add((from, to));
+                i++;
+            }
+            else
+            {
+                Console.Error.WriteLine(Usage);
+                return 2;
+            }
+        }
+
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine(Usage);
             return 2;
         }
 
         string? standIn = args[1] == "-" ? null : args[1];
-        string[] inert = inertGiven
-            ? others[1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            : [];
         try
         {
-            (int redirected, int inerted, int swaps) = Redirect(args[0], standIn, File.ReadAllLines(args[2]), inert, plainSwaps);
+            (int redirected, int inerted, int swaps, int types) = Redirect(args[0], standIn, File.ReadAllLines(args[2]), inert, plainSwaps, typeMaps);
             Console.WriteLine(
-                $"RynthInteropRedirect: {Path.GetFileName(args[0])}: {redirected} P/Invoke(s) redirected to {standIn ?? "nothing"}, {inerted} made inert{(plainSwaps ? $", {swaps} thread-static swap(s) made plain" : "")}");
+                $"RynthInteropRedirect: {Path.GetFileName(args[0])}: {redirected} P/Invoke(s) redirected to {standIn ?? "nothing"}, {inerted} made inert{(plainSwaps ? $", {swaps} thread-static swap(s) made plain" : "")}{(typeMaps.Count > 0 ? $", {types} type(s) redirected" : "")}");
             return 0;
         }
         catch (Exception error) when (error is IOException or BadImageFormatException or InvalidOperationException or AssemblyResolutionException)
@@ -54,8 +78,9 @@ internal static class Program
         }
     }
 
-    private static (int Redirected, int Inerted, int Swaps) Redirect(
-        string assemblyPath, string? standInTypeName, IEnumerable<string> references, string[] inertModules, bool plainSwaps)
+    private static (int Redirected, int Inerted, int Swaps, int Types) Redirect(
+        string assemblyPath, string? standInTypeName, IEnumerable<string> references, string[] inertModules, bool plainSwaps,
+        IReadOnlyList<(string From, string To)> typeMaps)
     {
         bool hasSymbols = File.Exists(Path.ChangeExtension(assemblyPath, ".pdb"));
         using var resolver = new DefaultAssemblyResolver();
@@ -98,9 +123,95 @@ internal static class Program
         }
 
         int swaps = plainSwaps ? MakeThreadStaticSwapsPlain(module) : 0;
-        if (redirected + inerted + swaps > 0)
+        int types = RedirectTypes(module, typeMaps);
+        if (redirected + inerted + swaps + types > 0)
             module.Write(new WriterParameters { WriteSymbols = hasSymbols, DeterministicMvid = true });
-        return (redirected, inerted, swaps);
+        return (redirected, inerted, swaps, types);
+    }
+
+    /// <summary>
+    /// Rebinds every use of each <c>from</c> type to its <c>to</c> type in the module.
+    /// Returns how many <c>from</c> types were found in use.
+    /// </summary>
+    private static int RedirectTypes(ModuleDefinition module, IReadOnlyList<(string From, string To)> maps)
+    {
+        if (maps.Count == 0)
+            return 0;
+        var targets = maps.ToDictionary(
+            m => m.From,
+            m => module.GetType(m.To) ?? throw new InvalidOperationException($"{m.To} is not in {module.Name}"));
+        var used = new HashSet<string>();
+        var standIns = targets.Values.ToHashSet();
+
+        TypeReference Map(TypeReference type)
+        {
+            switch (type)
+            {
+                case ByReferenceType byRef:
+                    return new ByReferenceType(Map(byRef.ElementType));
+                case ArrayType array:
+                    return new ArrayType(Map(array.ElementType), array.Rank);
+                case GenericInstanceType generic:
+                    var copy = new GenericInstanceType(generic.ElementType);
+                    foreach (TypeReference argument in generic.GenericArguments)
+                        copy.GenericArguments.Add(Map(argument));
+                    return copy;
+            }
+
+            if (!targets.TryGetValue(type.FullName, out TypeDefinition? target))
+                return type;
+            used.Add(type.FullName);
+            return target;
+        }
+
+        foreach (TypeDefinition type in module.GetTypes().Where(t => !standIns.Contains(t)).ToList())
+        {
+            foreach (FieldDefinition field in type.Fields)
+                field.FieldType = Map(field.FieldType);
+            foreach (PropertyDefinition property in type.Properties)
+                property.PropertyType = Map(property.PropertyType);
+            foreach (MethodDefinition method in type.Methods)
+            {
+                method.ReturnType = Map(method.ReturnType);
+                foreach (ParameterDefinition parameter in method.Parameters)
+                    parameter.ParameterType = Map(parameter.ParameterType);
+                if (!method.HasBody)
+                    continue;
+                foreach (VariableDefinition variable in method.Body.Variables)
+                    variable.VariableType = Map(variable.VariableType);
+                foreach (Instruction instruction in method.Body.Instructions)
+                {
+                    switch (instruction.Operand)
+                    {
+                        case MethodReference callee when targets.TryGetValue(callee.DeclaringType.FullName, out TypeDefinition? to):
+                            used.Add(callee.DeclaringType.FullName);
+                            instruction.Operand = FindMember(to, callee, Map);
+                            break;
+                        case FieldReference field when targets.TryGetValue(field.DeclaringType.FullName, out TypeDefinition? to):
+                            used.Add(field.DeclaringType.FullName);
+                            bool isStatic = instruction.OpCode.Code is Code.Ldsfld or Code.Stsfld or Code.Ldsflda;
+                            instruction.Operand = to.Fields.FirstOrDefault(f => f.Name == field.Name && f.IsStatic == isStatic)
+                                ?? throw new InvalidOperationException($"{to.FullName} has no {(isStatic ? "static" : "instance")} field {field.Name}");
+                            break;
+                        case TypeReference operand:
+                            instruction.Operand = Map(operand);
+                            break;
+                    }
+                }
+            }
+        }
+
+        return used.Count;
+    }
+
+    private static MethodDefinition FindMember(TypeDefinition to, MethodReference callee, Func<TypeReference, TypeReference> map)
+    {
+        string[] parameters = callee.Parameters.Select(p => map(p.ParameterType).FullName).ToArray();
+        return to.Methods.FirstOrDefault(candidate =>
+                   candidate.IsPublic && candidate.Name == callee.Name && candidate.HasThis == callee.HasThis
+                   && candidate.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(parameters))
+               ?? throw new InvalidOperationException(
+                   $"{to.FullName} has no {(callee.HasThis ? "instance" : "static")} {callee.Name}({string.Join(", ", parameters)})");
     }
 
     private const string HelperType = "<RynthInteropRedirect>";
