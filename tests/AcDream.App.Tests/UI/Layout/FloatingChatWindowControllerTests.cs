@@ -193,6 +193,30 @@ public class FloatingChatWindowControllerTests
     }
 
     [Fact]
+    public void Transcript_HidesTheTagsInALineAndDrawsNoLinks()
+    {
+        var log = new ChatLog();
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(1, ulong.MaxValue);
+
+        var ctrl = FloatingChatWindowController.Bind(
+            1, rootInfo, layout, vm, () => new CaptureBus(), filters, null, null, NoTex);
+        Assert.NotNull(ctrl);
+
+        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell> has logged on.", chatType: 0x02u);
+        log.OnLocalSpeech(
+            "You", "ask <Tell:IIDString:7:Ann>Ann<\\Tell>", 0u, isRanged: false, logTextType: 0x02u);
+
+        var lines = ctrl!.Transcript.LinesProvider();
+
+        Assert.Equal(
+            new[] { "Bob has logged on.", "You say, \"ask Ann\"" },
+            lines.Select(line => line.Text));
+        Assert.Null(ctrl.Transcript.LineRunsProvider);
+    }
+
+    [Fact]
     public void Transcript_DifferentWindow_AcceptsADifferentSubsetOfTypes()
     {
         var log = new ChatLog();

@@ -41,6 +41,26 @@ public sealed class ChatTranscriptRunsTests
     }
 
     [Fact]
+    public void ATagThatIsNotATellTakesTheLineColour()
+    {
+        IReadOnlyList<ChatTextSpan> spans = new[]
+        {
+            new ChatTextSpan("Dww", new ChatTextTag("Tell", "IIDString", "1342177290:Dww")),
+            new ChatTextSpan(" found ", null),
+            new ChatTextSpan("a gem", new ChatTextTag("IID", "IIDString", "1342177290:gem")),
+            new ChatTextSpan(" and ", null),
+            new ChatTextSpan("this", new ChatTextTag("DID", "DID", "0x06001234")),
+        };
+
+        IReadOnlyList<UiText.TextRun>? runs = ChatTranscriptRenderer.RunsForFragment(
+            spans, 0, "Dww found a gem and this".Length, LineColor, TagGreen);
+
+        Assert.Equal(
+            new[] { TagGreen, LineColor, LineColor, LineColor, LineColor },
+            runs!.Select(run => run.Color));
+    }
+
+    [Fact]
     public void AFragmentWithNoTagInItGetsNoRunsAtAll()
     {
         IReadOnlyList<ChatTextSpan> spans = TellSpans("Dww", " tells you, hello there");

@@ -664,6 +664,74 @@ public class ChatWindowControllerTests
         Assert.Empty(clicked);
     }
 
+    private static ChatWindowController BindAllTypes(ChatLog log)
+    {
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        ctrl.Transcript.TagColor = new System.Numerics.Vector4(0f, 178f / 255f, 0f, 1f);
+        return ctrl;
+    }
+
+    [Fact]
+    public void AServerLinesTellTagIsHiddenAndItsNameIsGreenAndStartsATell()
+    {
+        var log = new ChatLog();
+        ChatWindowController ctrl = BindAllTypes(log);
+
+        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell> has logged on.", chatType: 0u);
+        UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+
+        Assert.Equal("Bob has logged on.", line.Text);
+        IReadOnlyList<UiText.TextRun> runs = ctrl.Transcript.LineRunsProvider!(0)!;
+        Assert.Equal(("Bob", ctrl.Transcript.TagColor!.Value), (runs[0].Text, runs[0].Color));
+        Assert.Equal(line.Color, runs[1].Color);
+
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, 1)));
+        Assert.Equal("@tell Bob, ", ctrl.Input.Text);
+    }
+
+    [Fact]
+    public void ATagThatIsNotATellInAPlayersLineIsHiddenDrawnInTheLineColourAndNotClickable()
+    {
+        var log = new ChatLog();
+        ChatWindowController ctrl = BindAllTypes(log);
+
+        log.OnLocalSpeech(
+            "Bob", "look <IID:IIDString:7:Ann>Ann<\\IID> here", 0x5000000Au,
+            isRanged: false, logTextType: 2u);
+        UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+
+        Assert.Equal("Bob says, \"look Ann here\"", line.Text);
+        IReadOnlyList<UiText.TextRun> runs = ctrl.Transcript.LineRunsProvider!(0)!;
+        Assert.Equal(("Bob", ctrl.Transcript.TagColor!.Value), (runs[0].Text, runs[0].Color));
+        UiText.TextRun ann = Assert.Single(runs, run => run.Text == "Ann");
+        Assert.Equal(line.Color, ann.Color);
+
+        int column = line.Text.IndexOf("Ann", StringComparison.Ordinal);
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, column + 1)));
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, 1)));
+        Assert.Equal("@tell Bob, ", ctrl.Input.Text);
+    }
+
+    [Fact]
+    public void TheCharactersOwnLineHidesItsTags()
+    {
+        var log = new ChatLog();
+        ChatWindowController ctrl = BindAllTypes(log);
+
+        log.OnLocalSpeech(
+            "You", "<Tell:IIDString:7:Ann>Ann<\\Tell>, hi", 0u,
+            isRanged: false, logTextType: 2u);
+
+        Assert.Equal(
+            "You say, \"Ann, hi\"",
+            Assert.Single(ctrl.Transcript.LinesProvider()).Text);
+    }
+
     [Fact]
     public void TranscriptLines_OutOfRangeLogTextType_CarriesPreviousLinesColor()
     {

@@ -125,7 +125,7 @@ internal static class ChatTranscriptRenderer
             bool stamped = span.Role == ChatSpanRole.Timestamp;
             sawTag |= tagged || stamped;
 
-            Vector4 color = tagged
+            Vector4 color = span.Tag is { } tag && DrawsInTagColor(tag)
                 ? tagColor
                 : stamped
                     ? TimestampColor
@@ -138,6 +138,16 @@ internal static class ChatTranscriptRenderer
 
         return sawTag ? runs : null;
     }
+
+    /// <summary>
+    /// Whether a tagged span is drawn in the tag colour. Only a tell tag, the
+    /// one around a speaker's name, is; any other tag keeps the line's own
+    /// colour. A coordinate link comes only from a plugin's own line (every
+    /// other line has its coordinate tags made plain text) and is drawn as a
+    /// link too.
+    /// </summary>
+    internal static bool DrawsInTagColor(ChatTextTag tag)
+        => tag.IsTell || tag.TryGetCoordinate(out _, out _);
 
     internal static IReadOnlyList<(int Start, int Length, ChatTextTag Tag)>?
         TaggedRangesForFragment(

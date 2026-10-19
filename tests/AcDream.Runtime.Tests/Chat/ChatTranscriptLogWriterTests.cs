@@ -37,6 +37,27 @@ public sealed class ChatTranscriptLogWriterTests : IDisposable
     }
 
     [Fact]
+    public void TheLineIsLoggedAsComposedWithItsTagsAsTheyArrived()
+    {
+        using var log = new ChatSessionLog(_directory);
+        var transcript = new ChatLog();
+        var writer = new ChatTranscriptLogWriter(log);
+
+        log.Open("session", out _);
+        writer.Attach(transcript);
+        transcript.OnLocalSpeech("Bob", "hello", 0x5000000Au, false, 0x02u);
+        transcript.OnSystemMessage("<Tell:IIDString:1:Ann>Ann<\\Tell> has logged on.", chatType: 0u);
+        transcript.OnSystemMessage("<COORD:World:1N, 2E>here<\\COORD>", chatType: 0u, allowsMarkup: true);
+        log.Close();
+
+        Assert.Equal(
+            "<Tell:IIDString:1342177290:Bob>Bob<\\Tell> says, \"hello\"\n"
+            + "<Tell:IIDString:1:Ann>Ann<\\Tell> has logged on.\n"
+            + "here\n",
+            Read());
+    }
+
+    [Fact]
     public void TheTimestampFollowsTheSameOptionTheWindowUses()
     {
         using var log = new ChatSessionLog(_directory);

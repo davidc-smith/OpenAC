@@ -163,7 +163,8 @@ public sealed class ChatLog
     /// <param name="allowsMarkup">
     /// True for a line the client itself wrote on a plugin's behalf. Only its
     /// <c>&lt;COORD:World:pair&gt;</c> tags are read, as links; any other
-    /// angle-bracket text is shown as written. Server text is never read.
+    /// angle-bracket text is shown as written. Any other line is read for the
+    /// chat window's own tags (a tell tag around a name), which are hidden.
     /// </param>
     public void OnSystemMessage(string text, uint chatType, bool allowsMarkup)
     {
@@ -325,7 +326,7 @@ public readonly record struct ChatEntry(
     public uint LogTextType { get; init; } = 0x00u;
 
     /// <summary>
-    /// Whether <see cref="Text"/> may carry chat markup (a link such as
+    /// Whether <see cref="Text"/> may carry a plugin's link markup (such as
     /// <c>&lt;COORD:World:42.1N, 33.5E&gt;…</c>). Only a line a plugin wrote does.
     /// </summary>
     public bool AllowsMarkup { get; init; }
