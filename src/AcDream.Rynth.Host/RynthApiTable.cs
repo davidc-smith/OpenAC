@@ -94,6 +94,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         BindSalvageSlots();
         BindVendorSlots();
         BindTradeSlots();
+        BindScreenSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;

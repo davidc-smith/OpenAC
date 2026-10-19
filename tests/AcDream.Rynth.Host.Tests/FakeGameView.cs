@@ -283,4 +283,29 @@ internal sealed class FakeGameView : IRynthGameView
     public event Action<RynthVendorOutcome>? VendorTransactionCompleted;
     public void CompleteVendorTransaction(bool success, string? notice = null) =>
         VendorTransactionCompleted?.Invoke(new RynthVendorOutcome(success, notice));
+
+    public (bool Ok, float X, float Y) Screen { get; set; }
+    public (bool Ok, uint W, uint H) Viewport { get; set; }
+    public (bool Ok, int X0, int Y0, int X1, int Y1) Radar { get; set; }
+
+    public bool TryWorldToScreen(float x, float y, float z, out float screenX, out float screenY)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        (screenX, screenY) = (Screen.X, Screen.Y);
+        return Screen.Ok;
+    }
+
+    public bool TryGetViewportSize(out uint width, out uint height)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        (width, height) = (Viewport.W, Viewport.H);
+        return Viewport.Ok;
+    }
+
+    public bool TryGetRadarRect(out int x0, out int y0, out int x1, out int y1)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        (x0, y0, x1, y1) = (Radar.X0, Radar.Y0, Radar.X1, Radar.Y1);
+        return Radar.Ok;
+    }
 }
