@@ -75,12 +75,39 @@ namespace RynthCore.Engine.Plugins
 
         internal static void RaisePluginsUnloaded() => PluginsUnloaded?.Invoke();
 
+        /// <summary>RynthCore reads each plugin's RynthPluginGetSectionsJson; RynthAi exports none, so none.</summary>
+        internal static List<(string Plugin, string Json)> CollectSectionManifests() => new();
+
+        /// <summary>Server plugins RynthCore didn't load for this host; OpenAC loads none, so none skipped.</summary>
+        internal static IReadOnlyList<SkippedServerPlugin> SkippedServerPlugins => Array.Empty<SkippedServerPlugin>();
+
+        internal static void RequestServerPluginLoad(string serverId)
+        {
+        }
+
         /// <summary>RynthCore draws a plugin's embedded widgets; RynthAi exports none, so "no plugin".</summary>
         internal static int RenderEmbed(string pluginName, ReadOnlySpan<byte> surfaceUtf8, Vector2 size, out Vector2 want)
         {
             want = Vector2.Zero;
             return EmbedNoPlugin;
         }
+    }
+}
+
+namespace RynthCore.Engine.Plugins
+{
+    /// <summary>RynthCore's skipped server plugin (path + manifest); never made in OpenAC.</summary>
+    internal sealed record SkippedServerPlugin(string Path, SkippedServerPlugin.ManifestInfo Manifest)
+    {
+        internal sealed record ServerInfo(string Id, string Name, List<string> WorldNames);
+
+        internal sealed record ManifestInfo(string Name, ServerInfo? Server);
+
+        public string ServerId => Manifest.Server!.Id;
+
+        public string ServerName => Manifest.Server!.Name;
+
+        public string PluginName => Manifest.Name;
     }
 }
 
@@ -104,7 +131,20 @@ namespace RynthCore.Engine.Compatibility
     /// </summary>
     internal static class ServerInfo
     {
+        public const string ServerId = "aelrynth";
+
+        private static readonly ServerVerdict NotAelrynth = new() { IsAelrynth = false, Reason = "OpenAC never connects to Aelrynth" };
+
         public static bool IsAelrynth => false;
+
+        public static ServerVerdict Detected => NotAelrynth;
+
+        /// <summary>RynthCore's launch host (from the launcher); OpenAC has none to read.</summary>
+        public static string LaunchHost => string.Empty;
+
+        public static void Invalidate()
+        {
+        }
     }
 
     /// <summary>

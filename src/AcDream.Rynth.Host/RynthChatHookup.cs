@@ -86,6 +86,7 @@ internal sealed class RynthChatHookup : IDisposable
         ClientObjectHooks.Attackable = _attackable;
         PlayerPhysicsHooks.Position = _position;
         SessionStateRegistry.ServerName = _serverName;
+        AccountHooks.WorldName = _serverName;
         InventoryModel.Source = _inventory;
         ClientObjectHooks.ProgressReader = _progress;
         EnchantmentHooks.Copier = _statMods;
@@ -116,6 +117,7 @@ internal sealed class RynthChatHookup : IDisposable
         if (ClientObjectHooks.Attackable == _attackable) ClientObjectHooks.Attackable = null;
         if (PlayerPhysicsHooks.Position == _position) PlayerPhysicsHooks.Position = null;
         if (SessionStateRegistry.ServerName == _serverName) SessionStateRegistry.ServerName = null;
+        if (AccountHooks.WorldName == _serverName) AccountHooks.WorldName = null;
         if (InventoryModel.Source == _inventory)
         {
             InventoryModel.Source = null;

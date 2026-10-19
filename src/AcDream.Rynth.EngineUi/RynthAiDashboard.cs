@@ -86,6 +86,8 @@ internal static class RynthAiDashboard
             source.PromoteDeferredRefresh();
         // RynthCore's MainThreadSnapshots.Tick: reads only while the Skills panel wants it.
         PlayerProgressHooks.Prefetch();
+        // RynthCore's ImGuiController frame: servers, plugin manifests and the Mini Remote's sections.
+        RynthCore.Engine.UI.Sections.SectionRegistry.Tick();
         int ran = UiDataHub.Drain(Log);
         InventoryModel.MainThreadTick();
         PollAll(Sources, Stopwatch.GetTimestamp());
