@@ -89,6 +89,8 @@ reports one:
   real RynthCore install keeps its own;
 - written to a temp file then moved, so a crash never leaves half a file;
 - an IO error is logged and the map falls back to "LB 6146" labels.
+- On Windows with no RynthCore install, the install creates `<CoreDir>/NavData`
+  (`C:\Games\RynthCore` by default), as RynthAi already writes under its SuiteDir.
 
 The install runs synchronously (a size check, and a 1.9 MB write on first run
 only). Our `UiBackgroundWriter` stand-in runs work inline, so the atlas load
@@ -102,6 +104,11 @@ calls from the frame thread see the path already requested and return.
 
 `dungeon_map_settings.txt` and `radar_settings.txt` stay at their own
 `LocalApplicationData` paths, unchanged (as `item_huds.txt`).
+
+`radar_settings.txt` is loaded once at dashboard start (`RadarSettingsStore.Load()`
+in `Start()`, as RynthCore's EntryPoint does). With no Radar panel in OpenAC,
+per-kind visibility and colours (e.g. items on the ground, off by default) can
+only be changed by editing that file.
 
 ## Testing (AcDream.Rynth.Host.Tests)
 
