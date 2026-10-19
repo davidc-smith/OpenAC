@@ -218,6 +218,163 @@ public sealed class RuntimeInventoryStateTests
         Assert.Equal(0, sends);
     }
 
+    private const uint Player = 0x50000001u;
+    private const uint SidePack = 0x80000010u;
+    private const uint Kit = 0x80000020u;
+    private const uint Chest = 0x70000030u;
+    private const int KitSlot = 4;
+
+    private static (RuntimeEntityObjectLifetime Entities,
+        RuntimeInventoryState Inventory,
+        List<int> Sent) NewHeldShortcut()
+    {
+        var entities = new RuntimeEntityObjectLifetime();
+        var inventory = new RuntimeInventoryState(entities);
+        var sent = new List<int>();
+        inventory.BindShortcutOwnership(() => Player, sent.Add);
+        ClientObjectTable objects = inventory.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player });
+        objects.InitializeInventoryManifest(
+            Player,
+            [new ContainerContentEntry(SidePack, 1u),
+             new ContainerContentEntry(Kit, 0u)]);
+        inventory.Shortcuts.Load([new ShortcutEntry(KitSlot, Kit, 0u)]);
+        return (entities, inventory, sent);
+    }
+
+    [Fact]
+    public void ServerDropToTheGroundClearsTheShortcutAndTellsTheServer()
+    {
+        var (entities, inventory, sent) = NewHeldShortcut();
+        using (entities)
+        using (inventory)
+        {
+            inventory.Objects.ApplyConfirmedServerMove(
+                Kit,
+                newContainerId: 0u,
+                newWielderId: 0u);
+
+            Assert.Null(inventory.Shortcuts.GetEntry(KitSlot));
+            Assert.Equal([KitSlot], sent);
+        }
+    }
+
+    [Fact]
+    public void ItemPutInAContainerThePlayerDoesNotOwnLeavesTheToolbar()
+    {
+        var (entities, inventory, sent) = NewHeldShortcut();
+        using (entities)
+        using (inventory)
+        {
+            inventory.Objects.ApplyConfirmedServerMove(
+                Kit,
+                newContainerId: Chest,
+                newWielderId: 0u);
+
+            Assert.Null(inventory.Shortcuts.GetEntry(KitSlot));
+            Assert.Equal([KitSlot], sent);
+        }
+    }
+
+    [Fact]
+    public void ItemTheServerDestroysOrTakesAwayLeavesTheToolbar()
+    {
+        var (entities, inventory, sent) = NewHeldShortcut();
+        using (entities)
+        using (inventory)
+        {
+            Assert.True(inventory.Objects.Remove(Kit));
+
+            Assert.Null(inventory.Shortcuts.GetEntry(KitSlot));
+            Assert.Equal([KitSlot], sent);
+        }
+    }
+
+    [Fact]
+    public void ItemStillHeldByThePlayerKeepsItsShortcut()
+    {
+        var (entities, inventory, sent) = NewHeldShortcut();
+        using (entities)
+        using (inventory)
+        {
+            inventory.Objects.ApplyConfirmedServerMove(
+                Kit,
+                newContainerId: SidePack,
+                newWielderId: 0u);
+            inventory.Objects.ApplyConfirmedServerWield(
+                Kit,
+                Player,
+                EquipMask.MeleeWeapon);
+            inventory.Objects.ApplyConfirmedServerMove(
+                Kit,
+                newContainerId: Player,
+                newWielderId: 0u);
+
+            Assert.Equal(
+                new ShortcutEntry(KitSlot, Kit, 0u),
+                inventory.Shortcuts.GetEntry(KitSlot));
+            Assert.Empty(sent);
+        }
+    }
+
+    [Fact]
+    public void ALocalProjectionAndAFreshIncarnationKeepTheShortcut()
+    {
+        var (entities, inventory, sent) = NewHeldShortcut();
+        using (entities)
+        using (inventory)
+        {
+            Assert.True(inventory.Objects.MoveItemOptimistic(Kit, 0u, 0));
+            Assert.True(inventory.Objects.RollbackMove(Kit));
+            Assert.NotNull(inventory.Objects.ReplaceGeneration(
+                new WeenieData { Guid = Kit, ContainerId = Player },
+                generation: 2));
+
+            Assert.Equal(
+                new ShortcutEntry(KitSlot, Kit, 0u),
+                inventory.Shortcuts.GetEntry(KitSlot));
+            Assert.Empty(sent);
+        }
+    }
+
+    [Fact]
+    public void EveryClientsRuntimeClearsTheShortcutOfAnItemTheServerDrops()
+    {
+        var gameplay = new RuntimeCreatureDeathStateTests.NoOpOperations();
+        using var runtime = new GameRuntime(new GameRuntimeDependencies(
+            gameplay,
+            gameplay,
+            gameplay,
+            gameplay));
+        runtime.PlayerIdentity.ServerGuid = Player;
+        RuntimeInventoryState inventory = runtime.InventoryOwner;
+        inventory.Objects.AddOrUpdate(new ClientObject { ObjectId = Player });
+        inventory.Objects.InitializeInventoryManifest(
+            Player,
+            [new ContainerContentEntry(Kit, 0u)]);
+        inventory.Shortcuts.Load([new ShortcutEntry(KitSlot, Kit, 0u)]);
+
+        inventory.Objects.ApplyConfirmedServerMove(Kit, 0u, 0u);
+
+        Assert.Null(inventory.Shortcuts.GetEntry(KitSlot));
+    }
+
+    [Fact]
+    public void NoShortcutIsDroppedWhileNoPlayerIsKnown()
+    {
+        using var entities = new RuntimeEntityObjectLifetime();
+        using var inventory = new RuntimeInventoryState(entities);
+        var sent = new List<int>();
+        inventory.BindShortcutOwnership(() => 0u, sent.Add);
+        inventory.Objects.AddOrUpdate(new ClientObject { ObjectId = Kit });
+        inventory.Shortcuts.Load([new ShortcutEntry(KitSlot, Kit, 0u)]);
+
+        inventory.Objects.ApplyConfirmedServerMove(Kit, 0u, 0u);
+
+        Assert.NotNull(inventory.Shortcuts.GetEntry(KitSlot));
+        Assert.Empty(sent);
+    }
+
     [Fact]
     public void DisposalRetiresShortcutObserversAndTransactionSubscriptions()
     {
