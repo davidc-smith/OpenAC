@@ -126,6 +126,8 @@ internal static class Program
         int types = RedirectTypes(module, typeMaps);
         if (redirected + inerted + swaps + types > 0)
             module.Write(new WriterParameters { WriteSymbols = hasSymbols, DeterministicMvid = true });
+        if (typeMaps.Count > 0)
+            VerifyNoneLeft(assemblyPath, resolver, typeMaps);
         return (redirected, inerted, swaps, types);
     }
 
@@ -148,13 +150,23 @@ internal static class Program
             switch (type)
             {
                 case ByReferenceType byRef:
-                    return new ByReferenceType(Map(byRef.ElementType));
+                    TypeReference byRefElement = Map(byRef.ElementType);
+                    return ReferenceEquals(byRefElement, byRef.ElementType) ? type : new ByReferenceType(byRefElement);
                 case ArrayType array:
-                    return new ArrayType(Map(array.ElementType), array.Rank);
+                    TypeReference arrayElement = Map(array.ElementType);
+                    if (ReferenceEquals(arrayElement, array.ElementType))
+                        return type;
+                    var rebuilt = new ArrayType(arrayElement, array.Rank);
+                    for (int d = 0; d < array.Rank; d++)
+                        rebuilt.Dimensions[d] = new ArrayDimension(array.Dimensions[d].LowerBound, array.Dimensions[d].UpperBound);
+                    return rebuilt;
                 case GenericInstanceType generic:
+                    TypeReference[] arguments = generic.GenericArguments.Select(Map).ToArray();
+                    if (arguments.Zip(generic.GenericArguments).All(pair => ReferenceEquals(pair.First, pair.Second)))
+                        return type;
                     var copy = new GenericInstanceType(generic.ElementType);
-                    foreach (TypeReference argument in generic.GenericArguments)
-                        copy.GenericArguments.Add(Map(argument));
+                    foreach (TypeReference argument in arguments)
+                        copy.GenericArguments.Add(argument);
                     return copy;
             }
 
@@ -202,6 +214,17 @@ internal static class Program
         }
 
         return used.Count;
+    }
+
+    /// <summary>Re-reads the written assembly and fails if any redirected type is still referenced.</summary>
+    private static void VerifyNoneLeft(string assemblyPath, IAssemblyResolver resolver, IReadOnlyList<(string From, string To)> maps)
+    {
+        using ModuleDefinition written = ModuleDefinition.ReadModule(assemblyPath, new ReaderParameters { AssemblyResolver = resolver });
+        foreach (TypeReference reference in written.GetTypeReferences())
+        {
+            if (maps.Any(m => m.From == reference.FullName))
+                throw new InvalidOperationException($"{reference.FullName} is still referenced in {written.Name} after the redirect");
+        }
     }
 
     private static MethodDefinition FindMember(TypeDefinition to, MethodReference callee, Func<TypeReference, TypeReference> map)

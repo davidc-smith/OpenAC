@@ -24,6 +24,25 @@ public sealed class RynthAiInteropTests
             .Select(method => (method, method.GetCustomAttribute<DllImportAttribute>()?.Value ?? string.Empty));
 
     [Fact]
+    public void ARedirectLeavesSignaturesWithoutTheRedirectedTypeUntouched()
+    {
+        // Their `float[,] HeightsZ` is System.Single[0...,0...] to the compiler; the rewriter
+        // once rebuilt it as System.Single[,], so the field no longer matched its call sites.
+        using ModuleDefinition module = ModuleDefinition.ReadModule(Theirs.Location);
+        TypeDefinition data = module.GetType("RynthCore.Plugin.RynthAi.Raycasting.LandblockData");
+        FieldDefinition field = data.Fields.Single(f => f.Name == "<HeightsZ>k__BackingField");
+        MethodReference[] calls = module.GetTypes()
+            .SelectMany(t => t.Methods).Where(m => m.HasBody)
+            .SelectMany(m => m.Body.Instructions)
+            .Select(i => i.Operand).OfType<MethodReference>()
+            .Where(c => c.Name == "get_HeightsZ").ToArray();
+        Assert.NotEmpty(calls);
+        Assert.All(calls, call => Assert.Equal(call.ReturnType.FullName, field.FieldType.FullName));
+        Assert.Equal(field.FieldType.FullName, data.Methods.Single(m => m.Name == "get_HeightsZ").ReturnType.FullName);
+        Assert.Equal("System.Single[0...,0...]", field.FieldType.FullName);
+    }
+
+    [Fact]
     public void NoWin32CallIsLeft()
     {
         // Allowlist: the install-folder registry read is the only native call RynthAi keeps.
