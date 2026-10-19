@@ -14,7 +14,10 @@ public readonly record struct PluginDungeonWall(Vector2 Start, Vector2 End);
 /// One cell of a floorplan: where it is and which layer it was drawn in.
 /// </summary>
 /// <param name="CellId">The full cell id, landblock in the high half.</param>
-/// <param name="Center">The middle of the cell's geometry, in landblock-local metres.</param>
+/// <param name="Center">
+/// The middle of the cell's geometry, in landblock-local metres. In a tall room it is well
+/// above the floor; a walk or preview to it stands it on the floor under it.
+/// </param>
 /// <param name="LayerZ">The <see cref="PluginDungeonLayer.Z"/> of the layer the cell is drawn in.</param>
 public readonly record struct PluginDungeonCell(uint CellId, Vector3 Center, float LayerZ);
 

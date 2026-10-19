@@ -2222,7 +2222,7 @@ public sealed class NavigationWalkControllerTests
         return physics;
     }
 
-    private static NavigationWalkReport RunUntilSettled(NavigationWalkController walk, SimulatedBody body, float seconds = 120f) =>
+    internal static NavigationWalkReport RunUntilSettled(NavigationWalkController walk, SimulatedBody body, float seconds = 120f) =>
         RunUntil(
             walk,
             body,
@@ -2343,10 +2343,13 @@ public sealed class NavigationWalkControllerTests
                 [.. Portals.Select(RuntimeNavigationGoalSource.PortalFootprint)],
                 goal);
 
+        /// <summary>When set, places in a cell stand on its floor as the client's goal source stands them.</summary>
+        public PhysicsEngine? Floors { get; init; }
+
         /// <summary>Places stand where their landblock-local point says, the test world having one landblock at its origin.</summary>
         public bool TryLocatePlace(uint cellId, Vector3 local, out Vector3 position)
         {
-            position = local;
+            position = Floors is { } floors ? RuntimeNavigationGoalSource.OnTheCellFloor(floors, cellId, local) : local;
             return true;
         }
 

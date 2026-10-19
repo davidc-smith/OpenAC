@@ -44,6 +44,25 @@ public class CellSurfaceTests
     }
 
     [Fact]
+    public void SampleLevelZAtOrBelow_TakesTheFloorUnderThePointNotTheCeilingOverIt()
+    {
+        var vertices = new Dictionary<ushort, Vector3>
+        {
+            [0] = new(0f, 0f, 0f), [1] = new(10f, 0f, 0f), [2] = new(10f, 10f, 0f), [3] = new(0f, 10f, 0f),
+            [4] = new(0f, 0f, 5f), [5] = new(0f, 10f, 5f), [6] = new(10f, 10f, 5f), [7] = new(10f, 0f, 5f),
+            [8] = new(0f, 0f, 0f), [9] = new(10f, 0f, 0f), [10] = new(10f, 0f, 5f), [11] = new(0f, 0f, 5f),
+        };
+        var surface = new CellSurface(0x0100, vertices,
+            [new() { 0, 1, 2, 3 }, new() { 4, 5, 6, 7 }, new() { 8, 9, 10, 11 }]);
+
+        Assert.Equal(0f, surface.SampleLevelZAtOrBelow(5f, 5f, 2.5f));
+        // The ceiling faces down, so even a point over it stands on the floor, not on the ceiling.
+        Assert.Equal(0f, surface.SampleLevelZAtOrBelow(5f, 5f, 6f));
+        Assert.Null(surface.SampleLevelZAtOrBelow(5f, 5f, -1f));
+        Assert.Null(surface.SampleLevelZAtOrBelow(20f, 5f, 2.5f));
+    }
+
+    [Fact]
     public void SampleFloorZ_OutsideFloor_ReturnsNull()
     {
         var surface = MakeFlatFloor(0x0100, originX: 50f, originY: 50f, z: 10f, halfSize: 5f);
