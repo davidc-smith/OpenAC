@@ -584,13 +584,6 @@ public sealed class ToolbarController : IItemListDragHandler, IRetainedPanelCont
         ApplyShortcutPlan(plan);
     }
 
-    public void ReplaceFullyMergedShortcut(uint oldObjectId, uint newObjectId)
-    {
-        ShortcutMutation[] plan = ShortcutDropPlanner.PlanFullStackMerge(
-            _store.Snapshot(), oldObjectId, newObjectId);
-        ApplyShortcutPlan(plan);
-    }
-
     private void ApplyShortcutPlan(IReadOnlyList<ShortcutMutation> plan)
     {
         foreach (var mutation in plan)

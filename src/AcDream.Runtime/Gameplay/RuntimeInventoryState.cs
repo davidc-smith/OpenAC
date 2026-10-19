@@ -40,6 +40,7 @@ public sealed class RuntimeInventoryState : IDisposable
 {
     private readonly RuntimeEntityObjectLifetime _entityObjects;
     private Func<uint>? _playerGuid;
+    private Action<ShortcutEntry>? _sendAddShortcut;
     private Action<int>? _sendRemoveShortcut;
     private bool _disposed;
 
@@ -93,19 +94,57 @@ public sealed class RuntimeInventoryState : IDisposable
     public void ResetVendor() => Vendor.Reset();
 
     /// <summary>
-    /// Binds what the toolbar needs to let go of an item the player no longer
-    /// has: who the player is, and how to tell the server a slot was cleared.
-    /// Until it is bound, and while no player is known, no shortcut is dropped.
+    /// Binds what the toolbar needs to follow items on its own: who the
+    /// player is, and how to tell the server a slot was filled or cleared.
+    /// Until it is bound, and while no player is known, no shortcut is
+    /// dropped or moved by this owner.
     /// </summary>
     public void BindShortcutOwnership(
         Func<uint> playerGuid,
+        Action<ShortcutEntry> sendAddShortcut,
         Action<int> sendRemoveShortcut)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _playerGuid = playerGuid
             ?? throw new ArgumentNullException(nameof(playerGuid));
+        _sendAddShortcut = sendAddShortcut
+            ?? throw new ArgumentNullException(nameof(sendAddShortcut));
         _sendRemoveShortcut = sendRemoveShortcut
             ?? throw new ArgumentNullException(nameof(sendRemoveShortcut));
+    }
+
+    /// <summary>
+    /// A stack merge has just been sent, from any client and any caller (a
+    /// drag, a plugin, an automatic join): the shortcut of the stack being
+    /// poured moves to the stack it is poured into, keeping its slot, and
+    /// the server is told of both changes. The poured stack's later removal
+    /// then finds nothing of it on the bar.
+    /// </summary>
+    public void ReplaceFullyMergedShortcut(uint oldObjectId, uint newObjectId)
+    {
+        if (_disposed
+            || _sendAddShortcut is not { } sendAdd
+            || _sendRemoveShortcut is not { } sendRemove)
+        {
+            return;
+        }
+
+        ShortcutMutation[] plan = ShortcutDropPlanner.PlanFullStackMerge(
+            Shortcuts.Snapshot(),
+            oldObjectId,
+            newObjectId);
+        foreach (ShortcutMutation mutation in plan)
+        {
+            if (mutation.Kind == ShortcutMutationKind.Remove)
+            {
+                int slot = mutation.Slot;
+                TryRemoveShortcut(slot, () => sendRemove(slot));
+            }
+            else if (mutation.Entry is { } entry)
+            {
+                TryAddShortcut(entry, () => sendAdd(entry));
+            }
+        }
     }
 
     public void ResetPlayerSnapshots()

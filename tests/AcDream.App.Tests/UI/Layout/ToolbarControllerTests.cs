@@ -1791,35 +1791,6 @@ public class ToolbarControllerTests
     }
 
     [Fact]
-    public void ReplaceFullyMergedShortcut_rekeysEntryAndPreservesRawFields()
-    {
-        var (layout, slots, _) = FakeToolbar();
-        var repo = new ClientObjectTable();
-        repo.AddOrUpdate(new ClientObject { ObjectId = 0x5001u, IconId = 1u });
-        repo.AddOrUpdate(new ClientObject { ObjectId = 0x5002u, IconId = 2u });
-        var shortcuts = new[]
-        {
-            new ShortcutEntry(4, 0x5001u, 0x11223344u),
-        };
-        var wire = new List<string>();
-        var ctrl = ToolbarController.Bind(layout, repo, Store(shortcuts),
-            iconIds: (_, _, _, _, _) => 1u,
-            useItem: _ => { },
-            sendAddShortcut: entry => wire.Add($"add:{entry.Index}:{entry.ObjectId:X8}:{entry.SpellId:X8}"),
-            sendRemoveShortcut: slot => wire.Add($"remove:{slot}"),
-            resolveAppropriateName: ItemTooltipCaptionNames.Resolve);
-
-        ctrl.ReplaceFullyMergedShortcut(0x5001u, 0x5002u);
-
-        Assert.Equal(0x5002u, slots[Row1[4]].Cell.ItemId);
-        Assert.Equal(new[]
-        {
-            "remove:4",
-            "add:4:00005002:11223344",
-        }, wire);
-    }
-
-    [Fact]
     public void HandleDropRelease_ontoSelf_reAddsToSource()
     {
         var (layout, slots, _) = FakeToolbar();
