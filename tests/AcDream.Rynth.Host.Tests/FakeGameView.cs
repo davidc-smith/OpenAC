@@ -168,6 +168,19 @@ internal sealed class FakeGameView : IRynthGameView
     public uint OpenContainerId => Read(OpenContainer);
     public AcDream.Core.Items.ServerReplySnapshot ServerReplies => Read(Replies);
 
+    public (uint Type, uint Object)? PendingItemRequest { get; set; }
+    public bool AttackInProgress { get; set; }
+    public ulong Revision { get; set; }
+
+    public bool TryGetPendingItemRequest(out uint acType, out uint objectId)
+    {
+        (acType, objectId) = Read(PendingItemRequest) ?? (0, 0);
+        return PendingItemRequest is not null;
+    }
+
+    public bool IsAttackInProgress => Read(AttackInProgress);
+    public ulong InventoryRevision => Read(Revision);
+
     public bool CastGesture { get; set; }
     public Dictionary<uint, RynthVitals> TargetVitals { get; } = new();
 

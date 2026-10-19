@@ -113,6 +113,15 @@ public interface IRynthGameView
     /// <summary>The server's UseDone and refusal counters.</summary>
     ServerReplySnapshot ServerReplies { get; }
 
+    /// <summary>The one item request the client has outstanding (acclient's request slot), as acclient's request type and object; false when none.</summary>
+    bool TryGetPendingItemRequest(out uint acType, out uint objectId);
+
+    /// <summary>True while an attack request, its server answer, or a repeat attack is in progress.</summary>
+    bool IsAttackInProgress { get; }
+
+    /// <summary>Changes whenever an object is added, moved, removed or updated in the client's table.</summary>
+    ulong InventoryRevision { get; }
+
     /// <summary>Selects an object (0 clears). True when it is selected afterwards.</summary>
     bool SelectObject(uint objectId);
 

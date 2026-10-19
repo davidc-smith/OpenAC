@@ -247,6 +247,20 @@ public sealed class InventoryTransactionStateTests
     }
 
     [Fact]
+    public void PendingRequestIsTheReservedOneUntilItEnds()
+    {
+        var objects = CreateTable();
+        using var state = new InventoryTransactionState(objects);
+
+        Assert.Null(state.PendingRequest);
+        Assert.True(state.TryReserve(InventoryRequestKind.Move, First, out PendingInventoryRequest pending));
+        Assert.Equal((InventoryRequestKind.Move, First), (state.PendingRequest!.Value.Kind, state.PendingRequest.Value.ItemId));
+
+        Assert.True(state.CancelBeforeDispatch(pending.Token));
+        Assert.Null(state.PendingRequest);
+    }
+
+    [Fact]
     public void ObserverFailureIsIsolatedAndRecorded()
     {
         var objects = CreateTable();

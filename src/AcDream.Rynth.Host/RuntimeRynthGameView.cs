@@ -164,6 +164,9 @@ public sealed class RuntimeRynthGameView : IRynthGameView
             MaxStructure = item.MaxStructure,
             Workmanship = item.Workmanship,
             MaterialType = item.MaterialType,
+            ValidLocations = (uint)item.ValidLocations,
+            Useability = item.Useability ?? 0,
+            ContainerSlot = item.ContainerSlot,
             Identified = item.AppraisalAnswered && !item.LastAppraisalUnsuccessful,
             AppraisedSpellIds = item.AppraisedSpellIds,
             Ints = properties.Ints,
@@ -442,6 +445,43 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     }
 
     public uint OpenContainerId => _automation.Objects.OpenContainerObjectId;
+
+    public bool TryGetPendingItemRequest(out uint acType, out uint objectId)
+    {
+        if (_runtime.InventoryOwner.Transactions.PendingRequest is { } pending)
+        {
+            (acType, objectId) = (AcRequestType(pending.Kind), pending.ItemId);
+            return true;
+        }
+        (acType, objectId) = (0, 0);
+        return false;
+    }
+
+    /// <summary>acclient's request-slot numbers (RynthCore's ClientActionGates.RequestTypeName).</summary>
+    internal static uint AcRequestType(InventoryRequestKind kind) => kind switch
+    {
+        InventoryRequestKind.Merge => 1,
+        InventoryRequestKind.SplitToContainer or InventoryRequestKind.SplitToWorld => 2,
+        InventoryRequestKind.Move => 3,
+        InventoryRequestKind.Pickup => 4,
+        InventoryRequestKind.PutInContainer => 5,
+        InventoryRequestKind.DropToWorld => 6,
+        InventoryRequestKind.Wield => 7,
+        InventoryRequestKind.Give => 9,
+        InventoryRequestKind.Shop => 10,
+        _ => 0,
+    };
+
+    public bool IsAttackInProgress
+    {
+        get
+        {
+            RuntimeCombatAttackState attack = _runtime.ActionOwner.CombatAttack;
+            return attack.AttackRequestInProgress || attack.AttackServerResponsePending || attack.RepeatAttackInProgress;
+        }
+    }
+
+    public ulong InventoryRevision => _runtime.InventoryOwner.Objects.MutationRevision;
 
     public ServerReplySnapshot ServerReplies => _runtime.InventoryOwner.ServerReplies.Snapshot;
 
