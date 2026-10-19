@@ -87,6 +87,7 @@ internal static class RynthAiDashboard
         // RynthCore's MainThreadSnapshots.Tick: reads only while the Skills panel wants it.
         PlayerProgressHooks.Prefetch();
         int ran = UiDataHub.Drain(Log);
+        InventoryModel.MainThreadTick();
         PollAll(Sources, Stopwatch.GetTimestamp());
         return ran;
     }
@@ -115,6 +116,7 @@ internal static class RynthAiDashboard
         try
         {
             UiDataHub.Clear();
+            InventoryModel.ResetActions();
             PluginManager.RaisePluginsUnloaded();
             foreach (UiSource source in Sources)
             {

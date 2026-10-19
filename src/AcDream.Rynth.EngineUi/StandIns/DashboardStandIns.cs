@@ -110,9 +110,9 @@ namespace RynthCore.Engine.Compatibility
     /// <summary>
     /// RynthCore's InventoryModel reads acclient's objects; here the host builds the same
     /// view from OpenAC's (<see cref="Source"/>), at most four times a second while a
-    /// panel is subscribed. Only what the Item Count panel reads.
+    /// panel is subscribed. Only what the Item Count panel reads. Item use: InventoryActionsStandIn.cs.
     /// </summary>
-    internal static class InventoryModel
+    internal static partial class InventoryModel
     {
         private const long RefreshMs = 250;
         private static InventoryView _current = InventoryView.Empty;

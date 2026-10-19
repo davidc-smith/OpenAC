@@ -113,7 +113,7 @@
                       ReferenceOutputAssembly="false" Private="false" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\ItemsPanel.cs" Types="ItemsPanel=Payload,WeaponEntry,ConsumableEntry" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\MonstersPanel.cs" Types="MonstersPanel=Payload,CapturedInfo,ItemRef,Rule" />
-    <RynthPanelTypes Include="$(RynthEngine)Compatibility\InventoryModel.cs" Types="=InventoryCategory,InventoryItem,InventoryPack,InventoryView" />
+    <RynthPanelTypes Include="$(RynthEngine)Compatibility\InventoryModel.cs" Types="=InventoryCategory,InventoryItem,InventoryPack,InventoryView,InventoryActionKind,InventoryRequest,InventoryPending,InventoryResult" />
     <RynthPanelTypes Include="$(RynthEngine)Compatibility\AelrynthWire.cs" Types="=MasterySkill,MasteryData" />
     <RynthPanelTypes Include="$(RynthEngine)Compatibility\MasteryFeed.cs" Types="=MasterySnapshot" />
   </ItemGroup>
