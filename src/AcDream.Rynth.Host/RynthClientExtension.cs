@@ -189,6 +189,7 @@ public sealed class RynthClientExtension : IClientExtension
             ImGuiPanelHost.SweepEmbedded();
             return;
         }
+        Guard("RynthAi", RynthAiDashboard.BeginFrame);
         ImGuiPanelHost.DrawAll();
         _bar?.Draw();
     }
