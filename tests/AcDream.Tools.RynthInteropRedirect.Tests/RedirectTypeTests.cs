@@ -87,6 +87,36 @@ public sealed class RedirectTypeTests : IDisposable
     }
 
     [Fact]
+    public void AnAttributeNamingATypeThatOnlyStartsWithTheFromNameStaysByteIdentical()
+    {
+        Build();
+        byte[] before;
+        using (ModuleDefinition original = Read())
+            before = original.GetType("App.Other").CustomAttributes.Single().GetBlob();
+
+        Assert.Equal(0, Run(TypeMaps).Code);
+
+        using ModuleDefinition app = Read();
+        CustomAttribute after = app.GetType("App.Other").CustomAttributes.Single();
+        Assert.Equal(before, after.GetBlob());
+        Assert.Equal("Ext.KeyboardX", ((TypeReference)after.ConstructorArguments.Single().Value).FullName);
+    }
+
+    [Fact]
+    public void ALdtokenOfAStaticFieldFindsTheStaticStandInField()
+    {
+        Build();
+
+        (int code, _, string error) = Run(TypeMaps);
+
+        Assert.True(code == 0, error);
+        using ModuleDefinition app = Read();
+        FieldReference field = Assert.IsAssignableFrom<FieldReference>(
+            app.GetType("App.User").Methods.Single(m => m.Name == "Token").Body.Instructions[0].Operand);
+        Assert.Equal("App.KeyStandIn App.KeyStandIn::Root", field.FullName);
+    }
+
+    [Fact]
     public void AMissingMemberFailsAndNamesIt()
     {
         Build(StandInGet.Missing);
@@ -155,6 +185,9 @@ public sealed class RedirectTypeTests : IDisposable
         TypeDefinition key = Class(ext, "Ext", "Key", ext.TypeSystem.Object);
         MethodDefinition open = Method(key, "Open", key, MethodAttributes.Static, ext.TypeSystem.String);
         MethodDefinition getValue = Method(key, "Get", ext.TypeSystem.String, 0, ext.TypeSystem.String);
+        var root = new FieldDefinition("Root", FieldAttributes.Public | FieldAttributes.Static, key);
+        key.Fields.Add(root);
+        Class(ext, "Ext", "KeyboardX", ext.TypeSystem.Object);
         var thing = new TypeDefinition("Ext", "IThing", TypeAttributes.Public | TypeAttributes.Interface | TypeAttributes.Abstract);
         ext.Types.Add(thing);
         TypeDefinition util = Class(ext, "Ext", "Util", ext.TypeSystem.Object);
@@ -167,6 +200,7 @@ public sealed class RedirectTypeTests : IDisposable
 
         TypeDefinition keyStandIn = Class(app, "App", "KeyStandIn", app.TypeSystem.Object);
         Method(keyStandIn, "Open", keyStandIn, MethodAttributes.Static, app.TypeSystem.String);
+        keyStandIn.Fields.Add(new FieldDefinition("Root", FieldAttributes.Public | FieldAttributes.Static, keyStandIn));
         if (get != StandInGet.Missing)
             Method(keyStandIn, "Get", get == StandInGet.ReturnsInt ? app.TypeSystem.Int32 : app.TypeSystem.String, 0, app.TypeSystem.String);
         app.Types.Add(new TypeDefinition("App", "ThingStandIn", TypeAttributes.Public | TypeAttributes.Interface | TypeAttributes.Abstract));
@@ -183,13 +217,27 @@ public sealed class RedirectTypeTests : IDisposable
         user.Fields.Add(new FieldDefinition("Heights", FieldAttributes.Public, heights));
         Method(user, "Plain", app.TypeSystem.Int32, 0, new ArrayType(app.TypeSystem.Int32));
         user.Events.Add(new EventDefinition("Changed", EventAttributes.None, extKey));
+        ILProcessor il;
         var attribute = new CustomAttribute(tagConstructor);
         attribute.ConstructorArguments.Add(new CustomAttributeArgument(app.ImportReference(typeof(Type)), extKey));
         user.CustomAttributes.Add(attribute);
+        // [Tag(typeof(Ext.KeyboardX))], whose blob holds "Ext.KeyboardX" (starting with the
+        // from-name "Ext.Key"), written by hand with the short assembly name so that Cecil
+        // re-encoding it (it writes the full name) would change its bytes.
+        TypeDefinition other = Class(app, "App", "Other", app.TypeSystem.Object);
+        byte[] name = System.Text.Encoding.UTF8.GetBytes("Ext.KeyboardX, Ext");
+        other.CustomAttributes.Add(new CustomAttribute(tagConstructor, [0x01, 0x00, (byte)name.Length, .. name, 0x00, 0x00]));
+
+        MethodDefinition token = Method(user, "Token", app.TypeSystem.Void, 0);
+        token.Body.Instructions.Clear();
+        il = token.Body.GetILProcessor();
+        il.Emit(OpCodes.Ldtoken, app.ImportReference(root));
+        il.Emit(OpCodes.Pop);
+        il.Emit(OpCodes.Ret);
 
         MethodDefinition read = Method(user, "Read", app.TypeSystem.String, 0);
         read.Body.Instructions.Clear();
-        ILProcessor il = read.Body.GetILProcessor();
+        il = read.Body.GetILProcessor();
         il.Emit(OpCodes.Ldstr, "k");
         il.Emit(OpCodes.Call, app.ImportReference(open));
         il.Emit(OpCodes.Ldstr, "v");

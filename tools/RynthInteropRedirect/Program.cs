@@ -246,7 +246,8 @@ internal static class Program
             return reference;
         }
 
-        FieldReference MapField(FieldReference field, bool isStatic)
+        // isStatic is null when the opcode does not say (ldtoken): the field matches by name and type alone.
+        FieldReference MapField(FieldReference field, bool? isStatic)
         {
             if (field is FieldDefinition)
                 return field;
@@ -254,13 +255,25 @@ internal static class Program
             {
                 used.Add(field.DeclaringType.FullName);
                 string fieldType = Map(field.FieldType).FullName;
-                return to.Fields.FirstOrDefault(f => f.Name == field.Name && f.IsStatic == isStatic && f.FieldType.FullName == fieldType)
-                    ?? throw new InvalidOperationException($"{to.FullName} has no {(isStatic ? "static" : "instance")} field {fieldType} {field.Name}");
+                string kind = isStatic switch { true => "static ", false => "instance ", null => "" };
+                return to.Fields.FirstOrDefault(f => f.Name == field.Name && (isStatic is not { } wanted || f.IsStatic == wanted)
+                                                     && f.FieldType.FullName == fieldType)
+                    ?? throw new InvalidOperationException($"{to.FullName} has no {kind}field {fieldType} {field.Name}");
             }
 
             TypeReference declaring = Map(field.DeclaringType);
             return ReferenceEquals(declaring, field.DeclaringType) ? field : new FieldReference(field.Name, Map(field.FieldType), declaring);
         }
+
+        bool Changes(CustomAttributeArgument argument) =>
+            !ReferenceEquals(Map(argument.Type), argument.Type)
+            || argument.Value switch
+            {
+                TypeReference type => !ReferenceEquals(Map(type), type),
+                CustomAttributeArgument boxed => Changes(boxed),
+                CustomAttributeArgument[] array => array.Any(Changes),
+                _ => false,
+            };
 
         CustomAttributeArgument MapArgument(CustomAttributeArgument argument) => new(
             Map(argument.Type),
@@ -276,15 +289,27 @@ internal static class Program
         {
             if (!provider.HasCustomAttributes)
                 return;
-            foreach (CustomAttribute attribute in provider.CustomAttributes)
+            for (int index = 0; index < provider.CustomAttributes.Count; index++)
             {
+                CustomAttribute attribute = provider.CustomAttributes[index];
                 MethodReference constructor = MapMethod(attribute.Constructor);
                 if (!ReferenceEquals(constructor, attribute.Constructor))
                     attribute.Constructor = constructor;
-                // Reading the arguments re-encodes the attribute, so only one that names a redirected type is opened.
+                // Reading the arguments makes Cecil re-encode the attribute, so only a blob that
+                // may name a redirected type is opened, and one whose arguments turn out not to
+                // hold one goes back as its original bytes.
                 byte[] blob = attribute.GetBlob();
                 if (!blobNames.Any(name => blob.AsSpan().IndexOf(name) >= 0))
                     continue;
+                IEnumerable<CustomAttributeArgument> all = attribute.ConstructorArguments
+                    .Concat(attribute.Fields.Select(f => f.Argument))
+                    .Concat(attribute.Properties.Select(p => p.Argument));
+                if (!all.Any(Changes))
+                {
+                    provider.CustomAttributes[index] = new CustomAttribute(attribute.Constructor, blob);
+                    continue;
+                }
+
                 for (int i = 0; i < attribute.ConstructorArguments.Count; i++)
                     attribute.ConstructorArguments[i] = MapArgument(attribute.ConstructorArguments[i]);
                 foreach (Mono.Collections.Generic.Collection<CustomAttributeNamedArgument> named in new[] { attribute.Fields, attribute.Properties })
@@ -369,7 +394,12 @@ internal static class Program
                             instruction.Operand = MapMethod(callee);
                             break;
                         case FieldReference field:
-                            instruction.Operand = MapField(field, instruction.OpCode.Code is Code.Ldsfld or Code.Stsfld or Code.Ldsflda);
+                            instruction.Operand = MapField(field, instruction.OpCode.Code switch
+                            {
+                                Code.Ldsfld or Code.Stsfld or Code.Ldsflda => true,
+                                Code.Ldfld or Code.Stfld or Code.Ldflda => false,
+                                _ => null,
+                            });
                             break;
                         case TypeReference operand:
                             instruction.Operand = Map(operand);
