@@ -20,14 +20,20 @@ namespace AcDream.Tools.RynthInteropRedirect;
 /// path a line, for resolving its types. With <c>--redirect-type</c>, every
 /// use of type <c>from</c> (a referenced type, by full name) becomes <c>to</c>
 /// (a type in the assembly): its members by name, signature and static-ness,
-/// and every field, local, parameter, return and type operand of that type. A
-/// member <c>to</c> lacks fails the run. A rerun finds nothing to do.
+/// and every field, local, parameter, return, type operand, base type,
+/// interface, generic constraint, catch type, event, override and custom
+/// attribute that holds that type (nothing else is rebuilt). A
+/// member <c>to</c> lacks (by name, return and parameter types) fails the run, as
+/// does a <c>from</c> given twice (a usage error). A rerun finds nothing to do.
 /// </summary>
 internal static class Program
 {
     private static readonly string[] Win32Modules = ["user32.dll", "kernel32.dll"];
 
-    private static int Main(string[] args)
+    private static int Main(string[] args) => Run(args, Console.Out, Console.Error);
+
+    /// <summary>The command line, with its output and error streams given (tests capture them).</summary>
+    internal static int Run(string[] args, TextWriter output, TextWriter error)
     {
         const string Usage = "usage: AcDream.Tools.RynthInteropRedirect <assembly> <stand-in type|-> <references file> [--inert <module,...>] [--plain-threadstatic-swaps] [--redirect-type <from>=<to>]...";
         string[] inert = [];
@@ -45,21 +51,22 @@ internal static class Program
                 plainSwaps = true;
             }
             else if (args[i] == "--redirect-type" && i + 1 < args.Length
-                     && args[i + 1].Split('=') is [{ Length: > 0 } from, { Length: > 0 } to])
+                     && args[i + 1].Split('=') is [{ Length: > 0 } from, { Length: > 0 } to]
+                     && !typeMaps.Any(m => m.From == from))
             {
                 typeMaps.Add((from, to));
                 i++;
             }
             else
             {
-                Console.Error.WriteLine(Usage);
+                error.WriteLine(Usage);
                 return 2;
             }
         }
 
         if (args.Length < 3)
         {
-            Console.Error.WriteLine(Usage);
+            error.WriteLine(Usage);
             return 2;
         }
 
@@ -67,13 +74,13 @@ internal static class Program
         try
         {
             (int redirected, int inerted, int swaps, int types) = Redirect(args[0], standIn, File.ReadAllLines(args[2]), inert, plainSwaps, typeMaps);
-            Console.WriteLine(
+            output.WriteLine(
                 $"RynthInteropRedirect: {Path.GetFileName(args[0])}: {redirected} P/Invoke(s) redirected to {standIn ?? "nothing"}, {inerted} made inert{(plainSwaps ? $", {swaps} thread-static swap(s) made plain" : "")}{(typeMaps.Count > 0 ? $", {types} type(s) redirected" : "")}");
             return 0;
         }
-        catch (Exception error) when (error is IOException or BadImageFormatException or InvalidOperationException or AssemblyResolutionException)
+        catch (Exception failure) when (failure is IOException or BadImageFormatException or InvalidOperationException or AssemblyResolutionException)
         {
-            Console.Error.WriteLine($"RynthInteropRedirect: error: {error.Message}");
+            error.WriteLine($"RynthInteropRedirect: error: {failure.Message}");
             return 1;
         }
     }
@@ -132,8 +139,10 @@ internal static class Program
     }
 
     /// <summary>
-    /// Rebinds every use of each <c>from</c> type to its <c>to</c> type in the module.
-    /// Returns how many <c>from</c> types were found in use.
+    /// Rebinds every use of each <c>from</c> type to its <c>to</c> type in the module:
+    /// signatures, locals, operands, base types, interfaces, generic constraints, catch
+    /// types, events, overrides and custom attributes. Only what holds a <c>from</c> type
+    /// is rebuilt. Returns how many <c>from</c> types were found in use.
     /// </summary>
     private static int RedirectTypes(ModuleDefinition module, IReadOnlyList<(string From, string To)> maps)
     {
@@ -144,6 +153,8 @@ internal static class Program
             m => module.GetType(m.To) ?? throw new InvalidOperationException($"{m.To} is not in {module.Name}"));
         var used = new HashSet<string>();
         var standIns = targets.Values.ToHashSet();
+        // A custom attribute's blob names a type (typeof, boxed argument) by its serialized name.
+        byte[][] blobNames = maps.Select(m => System.Text.Encoding.UTF8.GetBytes(m.From.Replace('/', '+'))).ToArray();
 
         TypeReference Map(TypeReference type)
         {
@@ -152,6 +163,25 @@ internal static class Program
                 case ByReferenceType byRef:
                     TypeReference byRefElement = Map(byRef.ElementType);
                     return ReferenceEquals(byRefElement, byRef.ElementType) ? type : new ByReferenceType(byRefElement);
+                case PointerType pointer:
+                    TypeReference pointee = Map(pointer.ElementType);
+                    return ReferenceEquals(pointee, pointer.ElementType) ? type : new PointerType(pointee);
+                case PinnedType pinned:
+                    TypeReference pinnedElement = Map(pinned.ElementType);
+                    return ReferenceEquals(pinnedElement, pinned.ElementType) ? type : new PinnedType(pinnedElement);
+                case SentinelType sentinel:
+                    TypeReference sentinelElement = Map(sentinel.ElementType);
+                    return ReferenceEquals(sentinelElement, sentinel.ElementType) ? type : new SentinelType(sentinelElement);
+                case RequiredModifierType required:
+                    TypeReference requiredModifier = Map(required.ModifierType), requiredElement = Map(required.ElementType);
+                    return ReferenceEquals(requiredModifier, required.ModifierType) && ReferenceEquals(requiredElement, required.ElementType)
+                        ? type
+                        : new RequiredModifierType(requiredModifier, requiredElement);
+                case OptionalModifierType optional:
+                    TypeReference optionalModifier = Map(optional.ModifierType), optionalElement = Map(optional.ElementType);
+                    return ReferenceEquals(optionalModifier, optional.ModifierType) && ReferenceEquals(optionalElement, optional.ElementType)
+                        ? type
+                        : new OptionalModifierType(optionalModifier, optionalElement);
                 case ArrayType array:
                     TypeReference arrayElement = Map(array.ElementType);
                     if (ReferenceEquals(arrayElement, array.ElementType))
@@ -162,7 +192,7 @@ internal static class Program
                     return rebuilt;
                 case GenericInstanceType generic:
                     TypeReference[] arguments = generic.GenericArguments.Select(Map).ToArray();
-                    if (arguments.Zip(generic.GenericArguments).All(pair => ReferenceEquals(pair.First, pair.Second)))
+                    if (Unchanged(arguments, generic.GenericArguments))
                         return type;
                     var copy = new GenericInstanceType(generic.ElementType);
                     foreach (TypeReference argument in arguments)
@@ -176,34 +206,170 @@ internal static class Program
             return target;
         }
 
+        MethodReference MapMethod(MethodReference method)
+        {
+            switch (method)
+            {
+                case MethodDefinition:
+                    return method; // defined here: its signature is mapped in place
+                case GenericInstanceMethod generic:
+                    MethodReference element = MapMethod(generic.ElementMethod);
+                    TypeReference[] arguments = generic.GenericArguments.Select(Map).ToArray();
+                    if (ReferenceEquals(element, generic.ElementMethod) && Unchanged(arguments, generic.GenericArguments))
+                        return method;
+                    var instance = new GenericInstanceMethod(element);
+                    foreach (TypeReference argument in arguments)
+                        instance.GenericArguments.Add(argument);
+                    return instance;
+            }
+
+            if (targets.TryGetValue(method.DeclaringType.FullName, out TypeDefinition? to))
+            {
+                used.Add(method.DeclaringType.FullName);
+                return FindMember(to, method, Map);
+            }
+
+            // A member of a type built over a redirected one (List<From>, From[,]).
+            TypeReference declaring = Map(method.DeclaringType);
+            if (ReferenceEquals(declaring, method.DeclaringType))
+                return method;
+            var reference = new MethodReference(method.Name, Map(method.ReturnType), declaring)
+            {
+                HasThis = method.HasThis,
+                ExplicitThis = method.ExplicitThis,
+                CallingConvention = method.CallingConvention,
+            };
+            foreach (GenericParameter parameter in method.GenericParameters)
+                reference.GenericParameters.Add(new GenericParameter(parameter.Name, reference));
+            foreach (ParameterDefinition parameter in method.Parameters)
+                reference.Parameters.Add(new ParameterDefinition(parameter.Name, parameter.Attributes, Map(parameter.ParameterType)));
+            return reference;
+        }
+
+        FieldReference MapField(FieldReference field, bool isStatic)
+        {
+            if (field is FieldDefinition)
+                return field;
+            if (targets.TryGetValue(field.DeclaringType.FullName, out TypeDefinition? to))
+            {
+                used.Add(field.DeclaringType.FullName);
+                string fieldType = Map(field.FieldType).FullName;
+                return to.Fields.FirstOrDefault(f => f.Name == field.Name && f.IsStatic == isStatic && f.FieldType.FullName == fieldType)
+                    ?? throw new InvalidOperationException($"{to.FullName} has no {(isStatic ? "static" : "instance")} field {fieldType} {field.Name}");
+            }
+
+            TypeReference declaring = Map(field.DeclaringType);
+            return ReferenceEquals(declaring, field.DeclaringType) ? field : new FieldReference(field.Name, Map(field.FieldType), declaring);
+        }
+
+        CustomAttributeArgument MapArgument(CustomAttributeArgument argument) => new(
+            Map(argument.Type),
+            argument.Value switch
+            {
+                TypeReference type => Map(type),
+                CustomAttributeArgument boxed => MapArgument(boxed),
+                CustomAttributeArgument[] array => array.Select(MapArgument).ToArray(),
+                var value => value,
+            });
+
+        void MapAttributes(ICustomAttributeProvider provider)
+        {
+            if (!provider.HasCustomAttributes)
+                return;
+            foreach (CustomAttribute attribute in provider.CustomAttributes)
+            {
+                MethodReference constructor = MapMethod(attribute.Constructor);
+                if (!ReferenceEquals(constructor, attribute.Constructor))
+                    attribute.Constructor = constructor;
+                // Reading the arguments re-encodes the attribute, so only one that names a redirected type is opened.
+                byte[] blob = attribute.GetBlob();
+                if (!blobNames.Any(name => blob.AsSpan().IndexOf(name) >= 0))
+                    continue;
+                for (int i = 0; i < attribute.ConstructorArguments.Count; i++)
+                    attribute.ConstructorArguments[i] = MapArgument(attribute.ConstructorArguments[i]);
+                foreach (Mono.Collections.Generic.Collection<CustomAttributeNamedArgument> named in new[] { attribute.Fields, attribute.Properties })
+                {
+                    for (int i = 0; i < named.Count; i++)
+                        named[i] = new CustomAttributeNamedArgument(named[i].Name, MapArgument(named[i].Argument));
+                }
+            }
+        }
+
+        void MapGenericParameters(IGenericParameterProvider provider)
+        {
+            if (!provider.HasGenericParameters)
+                return;
+            foreach (GenericParameter parameter in provider.GenericParameters)
+            {
+                MapAttributes(parameter);
+                foreach (GenericParameterConstraint constraint in parameter.Constraints)
+                    constraint.ConstraintType = Map(constraint.ConstraintType);
+            }
+        }
+
+        MapAttributes(module.Assembly);
+        MapAttributes(module);
         foreach (TypeDefinition type in module.GetTypes().Where(t => !standIns.Contains(t)).ToList())
         {
+            MapAttributes(type);
+            MapGenericParameters(type);
+            if (type.BaseType is not null)
+                type.BaseType = Map(type.BaseType);
+            foreach (InterfaceImplementation implementation in type.Interfaces)
+                implementation.InterfaceType = Map(implementation.InterfaceType);
             foreach (FieldDefinition field in type.Fields)
+            {
+                MapAttributes(field);
                 field.FieldType = Map(field.FieldType);
+            }
+
             foreach (PropertyDefinition property in type.Properties)
+            {
+                MapAttributes(property);
                 property.PropertyType = Map(property.PropertyType);
+                foreach (ParameterDefinition parameter in property.Parameters)
+                    parameter.ParameterType = Map(parameter.ParameterType);
+            }
+
+            foreach (EventDefinition @event in type.Events)
+            {
+                MapAttributes(@event);
+                @event.EventType = Map(@event.EventType);
+            }
+
             foreach (MethodDefinition method in type.Methods)
             {
+                MapAttributes(method);
+                MapAttributes(method.MethodReturnType);
+                MapGenericParameters(method);
                 method.ReturnType = Map(method.ReturnType);
                 foreach (ParameterDefinition parameter in method.Parameters)
+                {
+                    MapAttributes(parameter);
                     parameter.ParameterType = Map(parameter.ParameterType);
+                }
+
+                for (int i = 0; i < method.Overrides.Count; i++)
+                    method.Overrides[i] = MapMethod(method.Overrides[i]);
                 if (!method.HasBody)
                     continue;
                 foreach (VariableDefinition variable in method.Body.Variables)
                     variable.VariableType = Map(variable.VariableType);
+                foreach (ExceptionHandler handler in method.Body.ExceptionHandlers)
+                {
+                    if (handler.CatchType is not null)
+                        handler.CatchType = Map(handler.CatchType);
+                }
+
                 foreach (Instruction instruction in method.Body.Instructions)
                 {
                     switch (instruction.Operand)
                     {
-                        case MethodReference callee when targets.TryGetValue(callee.DeclaringType.FullName, out TypeDefinition? to):
-                            used.Add(callee.DeclaringType.FullName);
-                            instruction.Operand = FindMember(to, callee, Map);
+                        case MethodReference callee:
+                            instruction.Operand = MapMethod(callee);
                             break;
-                        case FieldReference field when targets.TryGetValue(field.DeclaringType.FullName, out TypeDefinition? to):
-                            used.Add(field.DeclaringType.FullName);
-                            bool isStatic = instruction.OpCode.Code is Code.Ldsfld or Code.Stsfld or Code.Ldsflda;
-                            instruction.Operand = to.Fields.FirstOrDefault(f => f.Name == field.Name && f.IsStatic == isStatic)
-                                ?? throw new InvalidOperationException($"{to.FullName} has no {(isStatic ? "static" : "instance")} field {field.Name}");
+                        case FieldReference field:
+                            instruction.Operand = MapField(field, instruction.OpCode.Code is Code.Ldsfld or Code.Stsfld or Code.Ldsflda);
                             break;
                         case TypeReference operand:
                             instruction.Operand = Map(operand);
@@ -216,25 +382,56 @@ internal static class Program
         return used.Count;
     }
 
-    /// <summary>Re-reads the written assembly and fails if any redirected type is still referenced.</summary>
+    private static bool Unchanged(IEnumerable<TypeReference> mapped, IEnumerable<TypeReference> original) =>
+        mapped.Zip(original).All(pair => ReferenceEquals(pair.First, pair.Second));
+
+    /// <summary>
+    /// Re-reads the written assembly and fails if any redirected type is still in a member
+    /// reference's signature or in the type references.
+    /// </summary>
     private static void VerifyNoneLeft(string assemblyPath, IAssemblyResolver resolver, IReadOnlyList<(string From, string To)> maps)
     {
         using ModuleDefinition written = ModuleDefinition.ReadModule(assemblyPath, new ReaderParameters { AssemblyResolver = resolver });
+        var froms = maps.Select(m => m.From).ToHashSet();
+
+        bool Holds(TypeReference type) => type switch
+        {
+            GenericInstanceType generic => Holds(generic.ElementType) || generic.GenericArguments.Any(Holds),
+            RequiredModifierType required => Holds(required.ModifierType) || Holds(required.ElementType),
+            OptionalModifierType optional => Holds(optional.ModifierType) || Holds(optional.ElementType),
+            TypeSpecification specification => Holds(specification.ElementType),
+            _ => froms.Contains(type.FullName),
+        };
+
+        foreach (MemberReference member in written.GetMemberReferences())
+        {
+            bool holds = Holds(member.DeclaringType) || member switch
+            {
+                MethodReference method => Holds(method.ReturnType) || method.Parameters.Any(p => Holds(p.ParameterType)),
+                FieldReference field => Holds(field.FieldType),
+                _ => false,
+            };
+            if (holds)
+                throw new InvalidOperationException($"{member.FullName} still uses a redirected type in {written.Name} after the redirect");
+        }
+
         foreach (TypeReference reference in written.GetTypeReferences())
         {
-            if (maps.Any(m => m.From == reference.FullName))
+            if (froms.Contains(reference.FullName))
                 throw new InvalidOperationException($"{reference.FullName} is still referenced in {written.Name} after the redirect");
         }
     }
 
     private static MethodDefinition FindMember(TypeDefinition to, MethodReference callee, Func<TypeReference, TypeReference> map)
     {
+        string returnType = map(callee.ReturnType).FullName;
         string[] parameters = callee.Parameters.Select(p => map(p.ParameterType).FullName).ToArray();
         return to.Methods.FirstOrDefault(candidate =>
                    candidate.IsPublic && candidate.Name == callee.Name && candidate.HasThis == callee.HasThis
+                   && candidate.ReturnType.FullName == returnType
                    && candidate.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(parameters))
                ?? throw new InvalidOperationException(
-                   $"{to.FullName} has no {(callee.HasThis ? "instance" : "static")} {callee.Name}({string.Join(", ", parameters)})");
+                   $"{to.FullName} has no {(callee.HasThis ? "instance" : "static")} {returnType} {callee.Name}({string.Join(", ", parameters)})");
     }
 
     private const string HelperType = "<RynthInteropRedirect>";

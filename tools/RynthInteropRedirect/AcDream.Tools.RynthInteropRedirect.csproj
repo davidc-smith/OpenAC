@@ -8,6 +8,9 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="AcDream.Tools.RynthInteropRedirect.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Mono.Cecil" />
   </ItemGroup>
 </Project>
