@@ -41,6 +41,24 @@ public sealed unsafe class RynthSalvagePanelTests
         Assert.Equal(new[] { "salvage 80000050 80000101,80000102", "salvage 80000050 80000101" }, view.Actions);
     }
 
+    // RynthAi's SalvageManager opens the panel by using the Ust (UseFor → UseObject), never
+    // through SalvagePanelOpen; using a Ust only opens the panel, as in retail, so nothing is sent.
+    [Fact]
+    public void UsingTheUstOpensThePanelAsRynthAiDoes()
+    {
+        FakeGameView view = View();
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.UseObject(Ust));
+        Assert.True(host.SalvagePanelAddItem(A));
+        Assert.True(host.SalvagePanelAddItem(B));
+        Assert.True(host.SalvagePanelExecute());
+        Assert.True(host.UseObject(A));               // anything else is an ordinary use
+
+        Assert.Equal(new[] { "salvage 80000050 80000101,80000102", "use 80000101" }, view.Actions);
+    }
+
     [Fact]
     public void TheListHoldsAtMostOneHundredItems()
     {

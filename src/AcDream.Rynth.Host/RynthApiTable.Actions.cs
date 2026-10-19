@@ -37,6 +37,8 @@ public sealed unsafe partial class RynthApiTable
         }
     }
 
+    // RynthAi opens the salvage panel by using a Ust (SalvageManager → UseFor), not through
+    // SalvagePanelOpen. Using a Ust only opens the panel, as in retail: nothing is sent.
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     private static int UseObject(uint objectId)
     {
@@ -45,7 +47,11 @@ public sealed unsafe partial class RynthApiTable
             return 0;
         try
         {
-            return objectId != 0 && table._view.UseObject(objectId) ? 1 : 0;
+            if (objectId == 0)
+                return 0;
+            if (table._view.IsOwnedTinkeringTool(objectId))
+                return table.Salvage.Open(objectId) ? 1 : 0;
+            return table._view.UseObject(objectId) ? 1 : 0;
         }
         catch (Exception error)
         {

@@ -56,6 +56,13 @@ refuses. A throw becomes the usual "threw" log line and answers 0.
 | `SalvagePanelExecuteFn()` | `Items.Salvage(tool, ids)`, then empties the list (the tool stays). 0 when the list is empty or the send is refused. |
 | `SalvageDirectFn(uint tool, uint* ids, int n)` | `Items.Salvage(tool, ids)` directly; RynthCore's rules (1..100 ids, none zero, none the tool). Not used by RynthAi; filled because it is the same call. |
 
+RynthAi never calls `SalvagePanelOpenFn`: its `SalvageManager` opens the panel by
+using the Ust (`UseFor` → `UseObjectFn`), as a retail double-click does. So
+`UseObjectFn` on a tinkering tool the player owns is the same panel open (recorded,
+list emptied, 1) and sends nothing to the server, as using a Ust in retail only opens
+the panel. RynthAi does not wait for a UseDone after it (`RecordUseForPacing` skips
+Salvage uses). Any other object is an ordinary use.
+
 The panel resets on logoff.
 
 ### Vendor (`RynthVendorTrades` + `RynthApiTable.Vendor.cs`)
