@@ -29,8 +29,6 @@ public sealed class UiMarkupList : UiElement
             _scratchIsAuto = new bool[count];
             _scratchFixedWidth = new float[count];
             _cachedRowCount = 0;
-            _pressRowText = new string?[count];
-            _pressRowIcon = new uint[count];
             _hasButtons = value?.Any(static c => c.Kind == UiMarkupListColumnKind.Button) ?? false;
             ClearButtonPointer();
         }
@@ -84,10 +82,9 @@ public sealed class UiMarkupList : UiElement
 
     // What the list showed when the button went down: a release fires by row
     // index, so the press is dropped if the list scrolls, its row count
-    // changes, or the pressed row's text, caption or icon changes before then.
+    // changes, or the pressed button's caption changes before then.
     private int _pressTopRow, _pressRowCount;
-    private string?[] _pressRowText = Array.Empty<string?>();
-    private uint[] _pressRowIcon = Array.Empty<uint>();
+    private string _pressCaption = string.Empty;
 
     // The pointer's last position in list space, so the hovered button can be
     // found again when the rows move under a pointer that did not.
@@ -576,44 +573,27 @@ public sealed class UiMarkupList : UiElement
     {
         _pressTopRow = _topRow;
         _pressRowCount = _cachedRowCount;
-        for (int c = 0; c < _pressRowText.Length; c++)
-        {
-            _pressRowText[c] = PressedRowText(c);
-            _pressRowIcon[c] = PressedRowIcon(c);
-        }
+        HasButtonCaption(_pressColumn, _pressRow, out _pressCaption);
     }
 
     /// <summary>
     /// Drops the press when the row under it may no longer be the item that was
-    /// pressed: the list scrolled, its row count changed, or the pressed row's
-    /// text, caption or icon changed. Check values are the row's state, not
-    /// which item it is, so they do not count.
+    /// pressed: the list scrolled, its row count changed, or the pressed
+    /// button's caption changed or went empty. Other columns are left out on
+    /// purpose: a live column such as a distance changes every frame and would
+    /// make the buttons beside it unreliable.
     /// </summary>
     private void CancelPressIfRowsMoved()
     {
         if (_pressRow < 0)
             return;
-        bool moved = _topRow != _pressTopRow || _cachedRowCount != _pressRowCount;
-        for (int c = 0; !moved && c < _pressRowText.Length; c++)
-        {
-            moved = !string.Equals(PressedRowText(c), _pressRowText[c], StringComparison.Ordinal)
-                || PressedRowIcon(c) != _pressRowIcon[c];
-        }
+        bool moved = _topRow != _pressTopRow
+            || _cachedRowCount != _pressRowCount
+            || !HasButtonCaption(_pressColumn, _pressRow, out string caption)
+            || !string.Equals(caption, _pressCaption, StringComparison.Ordinal);
         if (moved)
             _pressRow = _pressColumn = -1;
     }
-
-    private string? PressedRowText(int column) =>
-        _columns![column].Kind is UiMarkupListColumnKind.Text or UiMarkupListColumnKind.Button
-            && _cachedTextRows[column] is { } texts && _pressRow < texts.Count
-            ? texts[_pressRow]
-            : null;
-
-    private uint PressedRowIcon(int column) =>
-        _columns![column].Kind == UiMarkupListColumnKind.Icon
-            && _cachedIconRows[column] is { } icons && _pressRow < icons.Count
-            ? icons[_pressRow]
-            : 0u;
 
     /// <summary>
     /// Follows the pointer over button cells and fires a button when the left

@@ -373,27 +373,57 @@ public sealed class ListButtonColumnTests
     }
 
     [Fact]
-    public void RowsReorderedBeforeRelease_DoesNotFire_EvenWithNoDrawBetween()
+    public void PressedButtonsCaptionChangedBeforeRelease_DoesNotFire_EvenWithNoDrawBetween()
     {
         var rows = new LiveRows();
         var list = MakeLiveList(rows);
 
-        list.OnEvent(At(UiEventType.MouseDown, 60, 25));       // row 1, "b"
-        rows.Names = new[] { "a", "c", "b", "d", "e" };        // same count, "c" is now row 1
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));       // row 1
+        rows.Captions = new[] { "Go", "Stop", "Go", "Go", "Go" };
         list.OnEvent(At(UiEventType.MouseUp, 60, 25));
 
         Assert.Empty(rows.Acted);
     }
 
     [Fact]
-    public void RowsChangedWhilePressed_DropThePressedLookAtTheNextDraw()
+    public void PressedButtonsCaptionEmptiedBeforeRelease_DoesNotFire()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));       // row 1
+        rows.Captions = new[] { "Go", "", "Go", "Go", "Go" };
+        Draw(list);
+        rows.Captions = new[] { "Go", "Go", "Go", "Go", "Go" };
+        list.OnEvent(At(UiEventType.MouseUp, 60, 25));
+
+        Assert.Empty(rows.Acted);
+    }
+
+    [Fact]
+    public void OtherColumnChangedBetweenPressAndRelease_StillFires()
+    {
+        var rows = new LiveRows();
+        var list = MakeLiveList(rows);
+
+        list.OnEvent(At(UiEventType.MouseDown, 60, 25));       // row 1
+        rows.Names = new[] { "a", "b 12.3m", "c", "d", "e" };  // a live column ticks
+        Draw(list);
+        rows.Names = new[] { "a", "b 11.9m", "c", "d", "e" };
+        list.OnEvent(At(UiEventType.MouseUp, 60, 25));
+
+        Assert.Equal(new[] { 1 }, rows.Acted);
+    }
+
+    [Fact]
+    public void ButtonCaptionChangedWhilePressed_DropsThePressedLookAtTheNextDraw()
     {
         var rows = new LiveRows();
         var list = MakeLiveList(rows);
 
         list.OnEvent(At(UiEventType.MouseDown, 60, 25));
         Assert.Equal(UiControlState.Pressed, list.ButtonStateForTest(1, 1));
-        rows.Names = new[] { "a", "c", "b", "d", "e" };
+        rows.Captions = new[] { "Go", "Stop", "Go", "Go", "Go" };
         Draw(list);
 
         Assert.Equal(UiControlState.Hovered, list.ButtonStateForTest(1, 1));

@@ -360,9 +360,11 @@ It fires like a `<button>`, when the left button comes up over the button it
 went down on, so a press dragged off the button cancels it; a click beside a
 smaller button does nothing. Because `onclick` gets a row index, a press is
 also cancelled if, before the release, the list scrolls, its row count changes,
-or the pressed row's text, caption or icon changes; a `check` value changing
-does not cancel it. A cell with an empty caption is not a button and ignores
-clicks.
+or the pressed button's own caption changes or becomes empty. Changes in the
+row's other columns, such as a distance that updates every frame, do not
+cancel it, so a plugin that reorders rows with the same count should change
+the caption too, or the click fires for whatever item is at the pressed row.
+A cell with an empty caption is not a button and ignores clicks.
 On a host older than button columns, a `type="button"` column fails the build
 of its window as an unknown type.
 
