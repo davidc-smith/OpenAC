@@ -15,4 +15,13 @@ public interface IClientOverlayIcons
 
     /// <summary>A known object's icon with its underlay, overlay and effects, as the inventory draws it.</summary>
     IntPtr ObjectIcon(uint objectId);
+
+    /// <summary>
+    /// Uploads a picture of the caller's own (RGBA, 4 bytes a pixel) as a texture id the
+    /// overlay draws; zero when it can't. Give it back with <see cref="Release"/>.
+    /// </summary>
+    IntPtr Upload(byte[] rgba, int width, int height, string name) => IntPtr.Zero;
+
+    /// <summary>Gives back a texture from <see cref="Upload"/>; false for any other id.</summary>
+    bool Release(IntPtr texture) => false;
 }

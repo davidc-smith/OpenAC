@@ -141,6 +141,35 @@ public sealed class OverlayIconsTests
         Assert.False(_icons.IsIssued(IntPtr.Zero));
     }
 
+    [Fact]
+    public void UploadedPicturesAreIssuedAndReleasedOnce()
+    {
+        _icons.Bind(_backend);
+        _backend.Answer = 21;
+
+        IntPtr tex = _icons.Upload(new byte[2 * 3 * 4], 2, 3, "retail 06004D0A");
+        Assert.Equal((IntPtr)21, tex);
+        Assert.True(_icons.IsIssued(tex));
+        Assert.True(_icons.Release(tex));
+        Assert.False(_icons.IsIssued(tex));
+        Assert.False(_icons.Release(tex));
+        Assert.False(_icons.Release((IntPtr)99));
+        Assert.Equal(new[] { "upload:2x3:retail 06004D0A", "release:21" }, _backend.Asked);
+    }
+
+    [Fact]
+    public void BadPicturesAndAnUnboundServiceUploadNothing()
+    {
+        Assert.Equal(IntPtr.Zero, _icons.Upload(new byte[16], 2, 2, "unbound"));
+        _icons.Bind(_backend);
+        _backend.Answer = 22;
+        Assert.Equal(IntPtr.Zero, _icons.Upload(new byte[15], 2, 2, "short"));
+        Assert.Equal(IntPtr.Zero, _icons.Upload(new byte[16], 0, 2, "empty"));
+        _backend.Throw = true;
+        Assert.Equal(IntPtr.Zero, _icons.Upload(new byte[16], 2, 2, "boom"));
+        Assert.Single(_log);
+    }
+
     private sealed class FakeBackend : IPluginImageBackend
     {
         public uint Answer { get; set; }
@@ -158,9 +187,21 @@ public sealed class OverlayIconsTests
         public bool TryGetObjectIcon(uint objectId, out uint texture, out int width, out int height) =>
             Reply($"object:{objectId:X8}", out texture, out width, out height);
 
-        public uint UploadOwned(byte[] rgba, int width, int height, string debugName) => throw new NotSupportedException();
+        public uint UploadOwned(byte[] rgba, int width, int height, string debugName)
+        {
+            if (Throw)
+                throw new InvalidOperationException("upload failed");
+            Asked.Add($"upload:{width}x{height}:{debugName}");
+            return Answer;
+        }
 
-        public bool ReleaseOwned(uint texture) => throw new NotSupportedException();
+        public bool ReleaseOwned(uint texture)
+        {
+            if (Throw)
+                throw new InvalidOperationException("release failed");
+            Asked.Add($"release:{texture}");
+            return true;
+        }
 
         public bool IsLinearFiltered(uint texture) => true;
 

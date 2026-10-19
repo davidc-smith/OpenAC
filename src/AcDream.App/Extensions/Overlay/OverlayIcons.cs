@@ -18,6 +18,8 @@ internal sealed class OverlayIcons : IClientOverlayIcons
 {
     private readonly Action<string> _log;
     private readonly HashSet<uint> _issued = new();
+    private readonly HashSet<uint> _owned = new();
+    private readonly HashSet<string> _reportedUploads = new();
     private readonly HashSet<(char Kind, uint Id)> _reported = new();
     private readonly Dictionary<(char Kind, uint Id), IntPtr> _memo = new();
     private IPluginImageBackend? _backend;
@@ -53,6 +55,42 @@ internal sealed class OverlayIcons : IClientOverlayIcons
 
     public IntPtr ObjectIcon(uint objectId) =>
         Look('o', objectId, false, (IPluginImageBackend b, out uint t) => b.TryGetObjectIcon(objectId, out t, out _, out _));
+
+    public IntPtr Upload(byte[] rgba, int width, int height, string name)
+    {
+        if (_backend is not { } backend || rgba is null || width <= 0 || height <= 0
+            || rgba.Length < (long)width * height * 4)
+            return IntPtr.Zero;
+        try
+        {
+            uint texture = backend.UploadOwned(rgba, width, height, name);
+            if (texture == 0)
+                return IntPtr.Zero;
+            _owned.Add(texture);
+            _issued.Add(texture);
+            return (IntPtr)texture;
+        }
+        catch (Exception error)
+        {
+            if (_reportedUploads.Add(name))
+                _log($"[ImGui] picture upload failed ({name}): {error.GetType().Name}: {error.Message}");
+            return IntPtr.Zero;
+        }
+    }
+
+    public bool Release(IntPtr texture)
+    {
+        long value = texture.ToInt64();
+        if (_backend is not { } backend || value <= 0 || value > uint.MaxValue || !_owned.Remove((uint)value))
+            return false;
+        _issued.Remove((uint)value);
+        try { return backend.ReleaseOwned((uint)value); }
+        catch (Exception error)
+        {
+            _log($"[ImGui] picture release failed: {error.GetType().Name}: {error.Message}");
+            return false;
+        }
+    }
 
     /// <summary>True for a texture id this service handed out.</summary>
     public bool IsIssued(IntPtr textureId)
