@@ -156,10 +156,9 @@ internal sealed class RynthChatHookup : IDisposable
 
     private IntPtr Resolve(string pluginNamePart, string exportName)
     {
-        foreach (RynthPlugin plugin in _host.Plugins)
+        foreach (RynthPlugin plugin in RynthPluginLookup.Candidates(_host.Plugins, pluginNamePart))
         {
-            if (plugin.Name.Contains(pluginNamePart, StringComparison.OrdinalIgnoreCase)
-                && plugin.TryGetExport(exportName, out IntPtr pointer))
+            if (plugin.TryGetExport(exportName, out IntPtr pointer))
                 return pointer;
         }
 
