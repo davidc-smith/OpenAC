@@ -10,5 +10,6 @@
 | `publish-bin.ps1` | Builds the self-contained client and launcher payloads, `manifest.json` and `launcher-fingerprint.json`. CI runs it in the release job; locally it is for inspection. |
 | `launcher-fingerprint.ps1` | The launcher fingerprint `publish-bin.ps1` embeds and publishes; `-ListInputs` prints what it covers. |
 | `run-launcher-trial.ps1` | Builds this branch's client and launcher and runs them together, isolated in `artifacts/launcher-trial/` from the tester's real OpenAC install. |
+| `RynthNavData/` | RynthNav's navmesh tiles: `pin` records one archive of theirs in `external/rynth-navdata.json` (our own SHA-256), `install` installs exactly that one into `<RYNTHCORE_DIR>/NavData` with RynthCore's launcher code, `check-feed` shows what their signed feed offers. Run with `dotnet run --project tools/RynthNavData -c Release -- <verb>`. |
 | `plugin-extraction-dryrun.ps1` | Rehearses moving a plugin to its own repository, in scratch copies: builds and tests the client with the plugin deleted, and builds and tests the plugin on its own against the packed contract. See [extracting a plugin](../docs/plugins/extracting-a-plugin.md). |
 | `update-package-locks.ps1` | Regenerates every neutral and RID NuGet lock file after a dependency change. |
