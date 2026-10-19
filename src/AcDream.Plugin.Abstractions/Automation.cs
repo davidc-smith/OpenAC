@@ -1016,14 +1016,19 @@ public interface IPluginChat
     /// <c>&lt;COORD:World:42.1N, 33.5E&gt;caption&lt;\COORD&gt;</c> tag in the
     /// line shows its caption as a link that raises <see cref="LinkClicked"/>,
     /// and so does a coordinate pair written in plain text. No other
-    /// angle-bracket text is a tag; it is shown as written.
+    /// angle-bracket text is a tag; it is shown as written, and a backslash
+    /// directly before a <c>&lt;</c> is dropped. Escape any text the plugin did
+    /// not write itself (a player's words it repeats) with
+    /// <see cref="PluginChatMarkup.Escape"/>: a tag in that text would
+    /// otherwise become a link the plugin vouches for.
     /// </summary>
     void PostSystemMessage(string text);
 
     /// <summary>
     /// Writes a line in one of the client's own text classes, so a plugin can
     /// print in the colour that class carries. Tags are read as in
-    /// <see cref="PostSystemMessage"/>.
+    /// <see cref="PostSystemMessage"/>, and text the plugin did not write
+    /// should be escaped the same way.
     /// </summary>
     void PostMessage(string text, int logTextType) => PostSystemMessage(text);
 

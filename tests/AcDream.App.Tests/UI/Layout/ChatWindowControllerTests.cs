@@ -597,6 +597,43 @@ public class ChatWindowControllerTests
         var link = Assert.Single(clicked);
         Assert.Equal(AcDream.Plugin.Abstractions.PluginChatLinkKind.Coordinate, link.Kind);
         Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(-33.5, 42.1), link.Coordinate);
+        Assert.Equal("42.1N, 33.5W", link.DisplayText);
+    }
+
+    [Fact]
+    public void ACoordinateLinkIsNamedTheSameUnderACommaDecimalLocale()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+        try
+        {
+            var log = new ChatLog();
+            var (rootInfo, layout, vm) = BuildTestTree(log);
+            var filters = new ChatWindowState();
+            filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+            var ctrl = ChatWindowController.Bind(
+                rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+                NoTex, new RuntimeChatEntryOwner())!;
+            var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+            ctrl.ChatLinkClicked = clicked.Add;
+
+            log.OnSystemMessage(
+                "Go to <COORD:World:42.125S, 33.5E>the bridge<\\COORD>.",
+                chatType: 0u,
+                allowsMarkup: true);
+            UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+            int column = line.Text.IndexOf("bridge", StringComparison.Ordinal);
+
+            Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, column)));
+
+            var link = Assert.Single(clicked);
+            Assert.Equal("42.125S, 33.5E", link.DisplayText);
+            Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(33.5, -42.125), link.Coordinate);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
     }
 
     [Fact]

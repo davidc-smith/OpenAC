@@ -9,16 +9,20 @@ namespace AcDream.Core.Chat;
 /// </summary>
 public static class ChatLineWording
 {
-    /// <summary>The line as plain text, with no clickable sender marked up.</summary>
+    /// <summary>
+    /// The line as plain text, with no clickable sender marked up; a plugin's
+    /// line is given as it is shown, its link tags and escapes removed.
+    /// </summary>
     public static string Format(ChatEntry entry)
-        => CarriesMarkup(entry)
+        => entry.AllowsMarkup
             ? ChatTagMarkup.ToPlainText(Format(entry, static sender => sender))
             : Format(entry, static sender => sender);
 
     /// <summary>
     /// The line with another player's name wrapped so a front end that supports
-    /// it can make the name clickable, and a plugin's line with its own markup
-    /// kept. Identical to <see cref="Format(ChatEntry)"/> for every other line.
+    /// it can make the name clickable, and a plugin's line as the plugin wrote
+    /// it, its COORD tags and escapes kept. Identical to
+    /// <see cref="Format(ChatEntry)"/> for every other line.
     /// </summary>
     public static string FormatTagged(ChatEntry entry)
         => ShouldTagSender(entry)
@@ -27,10 +31,6 @@ public static class ChatLineWording
                 sender =>
                     $"<Tell:IIDString:{entry.SenderGuid}:{sender}>{sender}<\\Tell>")
             : Format(entry, static sender => sender);
-
-    /// <summary>Whether this line's own text holds markup to read as links.</summary>
-    public static bool CarriesMarkup(ChatEntry entry)
-        => entry.AllowsMarkup && ChatTagMarkup.ContainsTag(entry.Text);
 
     /// <summary>Whether this line names another player we could click to tell.</summary>
     // A channel line names its speaker without an object id (allegiance,

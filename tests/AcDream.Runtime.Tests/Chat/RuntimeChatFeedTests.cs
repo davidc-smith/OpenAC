@@ -234,6 +234,39 @@ public sealed class RuntimeChatFeedTests
     }
 
     [Fact]
+    public void APlayersTagAPluginRepostsEscapedIsShownAsWrittenAndIsNotALink()
+    {
+        // A plugin echoing a captured tell escapes the player's words; the
+        // tag they typed is shown literally and reports nothing hidden.
+        const string Typed = "<COORD:World:0N, 0E>the bridge<\\COORD>";
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage(
+            "Bob told you: " + AcDream.Plugin.Abstractions.PluginChatMarkup.Escape(Typed),
+            chatType: 0u,
+            allowsMarkup: true);
+        log.OnSystemMessage(
+            AcDream.Plugin.Abstractions.PluginChatMarkup.Escape("press <Ctrl:F>"),
+            chatType: 0u,
+            allowsMarkup: true);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("Bob told you: " + Typed, lines[0].Text);
+        Assert.Equal("Bob told you: " + Typed, RuntimeChatFeed.Format(log.Snapshot()[0]));
+        // The caption is not a link. The tag's own text, now shown, holds a
+        // plain pair, and that pair links to exactly what it shows.
+        Assert.DoesNotContain(lines[0].Spans!, span => span.Tag is not null && span.Text.Contains("bridge"));
+        ChatTextSpan shown = CoordinateSpan(lines[0]);
+        Assert.Equal("0N, 0E", shown.Text);
+        Assert.True(shown.Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
+        Assert.Equal((0d, 0d), (eastWest, northSouth));
+
+        Assert.Equal("press <Ctrl:F>", lines[1].Text);
+        Assert.Null(lines[1].Spans);
+    }
+
+    [Fact]
     public void APluginLinesOtherAngleBracketTextIsShownAsWritten()
     {
         var log = new ChatLog();

@@ -18,6 +18,8 @@ public static partial class PluginChatCoordinateParser
     /// Each pair found, in the order it appears; empty for none. A pair is one
     /// north-or-south value and one east-or-west value, in either order, such
     /// as "42.1N 33.5E" or "33.5E, 42.1N". South and west come back negative.
+    /// Neither half may sit inside a longer word or number: "10n 20east" and
+    /// "v2.1N 3E" hold no pair.
     /// </returns>
     public static IReadOnlyList<PluginChatCoordinate> ParseAll(string? text)
     {

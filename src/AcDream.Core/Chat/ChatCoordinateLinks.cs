@@ -68,7 +68,14 @@ public static class ChatCoordinateLinks
             "World",
             $"{Axis(coordinate.NorthSouth, 'N', 'S')}, {Axis(coordinate.EastWest, 'E', 'W')}");
 
-    private static string Axis(double value, char positive, char negative) =>
-        Math.Abs(value).ToString("R", CultureInfo.InvariantCulture)
+    /// <summary>
+    /// How a clicked coordinate is named to plugins: "42.1N, 33.5W", to at most
+    /// three decimals, written the same in every locale.
+    /// </summary>
+    public static string Describe(double eastWest, double northSouth) =>
+        $"{Axis(northSouth, 'N', 'S', "0.###")}, {Axis(eastWest, 'E', 'W', "0.###")}";
+
+    private static string Axis(double value, char positive, char negative, string format = "R") =>
+        Math.Abs(value).ToString(format, CultureInfo.InvariantCulture)
             + (value < 0d ? negative : positive);
 }

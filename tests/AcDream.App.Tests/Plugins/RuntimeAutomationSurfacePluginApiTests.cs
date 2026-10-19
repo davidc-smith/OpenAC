@@ -411,6 +411,32 @@ public sealed class RuntimeAutomationSurfacePluginApiTests
     }
 
     [Fact]
+    public void APluginsStatusLinePostShowsTheCaptionNotTheTag()
+    {
+        using var runtime = GameRuntimeTestFactory.Create();
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        // The surface sends a status-line class to the transcript, where the
+        // tag is a link; the status line itself, which has no links, shows
+        // only the caption.
+        surface.Chat.PostMessage(
+            "Go to <COORD:World:1N, 2E>the bridge<\\COORD> now.",
+            (int)RetailLogTextType.ClientLocal);
+        runtime.CommunicationOwner.AddPluginText(
+            "Go to <COORD:World:1N, 2E>the bridge<\\COORD> now.",
+            RetailLogTextType.ClientLocal);
+
+        ChatEntry entry = Assert.Single(runtime.CommunicationOwner.Chat.Snapshot());
+        Assert.True(entry.AllowsMarkup);
+        Assert.Equal("Go to the bridge now.", ChatLineWording.Format(entry));
+        runtime.CommunicationOwner.SpewBox.Tick(0);
+        Assert.Equal(
+            "Go to the bridge now.",
+            Assert.Single(runtime.CommunicationOwner.SpewBox.Snapshot()).Text);
+    }
+
+    [Fact]
     public void PostMessageRejectsAnOutOfRangeTextClassAndFallsBackToDefault()
     {
         using var runtime = GameRuntimeTestFactory.Create();

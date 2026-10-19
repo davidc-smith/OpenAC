@@ -125,6 +125,29 @@ public sealed class ChatTagMarkupTests
         Assert.Null(spans[2].Tag);
     }
 
+    [Theory]
+    [InlineData(@"<COORD:World:0N, 0E>the bridge<\COORD>")]
+    [InlineData(@"<coord:world:1N, 2E>x")]
+    [InlineData(@"a\<COORD:World:1N, 2E>b<\COORD>")]
+    [InlineData(@"trailing \ and \\< and <<COORD:World:1N, 2E>>")]
+    [InlineData(@"Press <Ctrl:F>")]
+    [InlineData("no markup at all")]
+    public void EscapedTextShowsAsWrittenAndHoldsNoTag(string text)
+    {
+        string escaped = AcDream.Plugin.Abstractions.PluginChatMarkup.Escape(text);
+
+        Assert.False(ChatTagMarkup.ContainsTag(escaped));
+        Assert.Equal(text, ChatTagMarkup.ToPlainText(escaped));
+        Assert.All(ChatTagMarkup.ParseLinks(escaped), span => Assert.Null(span.Tag));
+    }
+
+    [Fact]
+    public void EscapeOfNothingIsEmpty()
+    {
+        Assert.Equal(string.Empty, AcDream.Plugin.Abstractions.PluginChatMarkup.Escape(null));
+        Assert.Equal(@"\<b>", AcDream.Plugin.Abstractions.PluginChatMarkup.Escape("<b>"));
+    }
+
     [Fact]
     public void WithoutCoordinateTagsKeepsTheCaptionAndOtherTags()
     {

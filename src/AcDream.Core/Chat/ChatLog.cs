@@ -161,8 +161,9 @@ public sealed class ChatLog
         => OnSystemMessage(text, chatType, allowsMarkup: false);
 
     /// <param name="allowsMarkup">
-    /// True for a line the client itself wrote on a plugin's behalf, whose
-    /// <c>&lt;TYPE:FORMAT:data&gt;</c> tags are read as links. Server text never is.
+    /// True for a line the client itself wrote on a plugin's behalf. Only its
+    /// <c>&lt;COORD:World:pair&gt;</c> tags are read, as links; any other
+    /// angle-bracket text is shown as written. Server text is never read.
     /// </param>
     public void OnSystemMessage(string text, uint chatType, bool allowsMarkup)
     {

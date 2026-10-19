@@ -81,28 +81,22 @@ public static class ChatTagMarkup
     /// Whether a plugin's line holds at least one link tag
     /// <see cref="ParseLinks"/> reads: a well-formed
     /// <c>&lt;COORD:World:42.1N, 33.5E&gt;</c>. Any other angle-bracket text,
-    /// such as "Press &lt;Ctrl:F&gt;", is not a tag.
+    /// such as "Press &lt;Ctrl:F&gt;", and an escaped tag are not tags.
     /// </summary>
-    public static bool ContainsTag(string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return false;
-        for (int open = text.IndexOf('<'); open >= 0; open = text.IndexOf('<', open + 1))
-        {
-            int close = text.IndexOf('>', open + 1);
-            if (close < 0)
-                return false;
-            if (TryParseLinkTag(text[(open + 1)..close]) is not null)
-                return true;
-        }
-        return false;
-    }
+    public static bool ContainsTag(string? text) =>
+        !string.IsNullOrEmpty(text)
+        && text.IndexOf('<') >= 0
+        && ParseLinks(text).Any(static span => span.Tag is not null);
 
     /// <summary>
     /// Reads the link tags in a line a plugin posted. Only a well-formed
     /// <c>&lt;COORD:World:pair&gt;</c> opens a link, and only its own
     /// <c>&lt;\COORD&gt;</c> closes it; every other angle-bracket text is shown
-    /// as written. A link left open runs to the end of the line.
+    /// as written. A link left open runs to the end of the line. A backslash
+    /// directly before <c>&lt;</c> is dropped and that <c>&lt;</c> is shown as
+    /// written, never read as a tag, which is how
+    /// <see cref="AcDream.Plugin.Abstractions.PluginChatMarkup.Escape"/> makes
+    /// text show literally.
     /// </summary>
     public static IReadOnlyList<ChatTextSpan> ParseLinks(string? text)
     {
@@ -110,33 +104,51 @@ public static class ChatTagMarkup
             return Array.Empty<ChatTextSpan>();
 
         var spans = new List<ChatTextSpan>();
+        var run = new System.Text.StringBuilder(text.Length);
         ChatTextTag? open = null;
-        int runStart = 0;
+        int i = 0;
 
-        for (int i = text.IndexOf('<'); i >= 0; i = text.IndexOf('<', i + 1))
+        while (i < text.Length)
         {
-            int close = text.IndexOf('>', i + 1);
-            if (close < 0)
-                break;
+            char c = text[i];
+            if (c == '\\' && i + 1 < text.Length && text[i + 1] == '<')
+            {
+                run.Append('<');   // escaped: shown, never a tag
+                i += 2;
+                continue;
+            }
 
-            string inner = text[(i + 1)..close];
-            ChatTextTag? next;
-            if (TryParseLinkTag(inner) is { } start)
-                next = start;
-            else if (open is { } current && IsEndTag(inner, current))
-                next = null;
-            else
-                continue;   // not markup: shown as written
+            if (c == '<')
+            {
+                int close = text.IndexOf('>', i + 1);
+                if (close >= 0)
+                {
+                    string inner = text[(i + 1)..close];
+                    bool markup = true;
+                    ChatTextTag? next = null;
+                    if (TryParseLinkTag(inner) is { } start)
+                        next = start;
+                    else if (open is not { } current || !IsEndTag(inner, current))
+                        markup = false;   // not markup: shown as written
 
-            if (i > runStart)
-                spans.Add(new ChatTextSpan(text[runStart..i], open));
-            open = next;
-            runStart = close + 1;
-            i = close;
+                    if (markup)
+                    {
+                        if (run.Length > 0)
+                            spans.Add(new ChatTextSpan(run.ToString(), open));
+                        run.Clear();
+                        open = next;
+                        i = close + 1;
+                        continue;
+                    }
+                }
+            }
+
+            run.Append(c);
+            i++;
         }
 
-        if (runStart < text.Length)
-            spans.Add(new ChatTextSpan(text[runStart..], open));
+        if (run.Length > 0)
+            spans.Add(new ChatTextSpan(run.ToString(), open));
 
         return spans;
     }

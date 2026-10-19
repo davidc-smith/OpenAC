@@ -124,13 +124,19 @@ public sealed class RuntimeChatFeed : IDisposable
         IReadOnlyList<ChatTextSpan>? spans;
         if (entry.AllowsMarkup)
         {
-            // A plugin's own line: its link tags are read, and a coordinate
-            // pair it writes in plain text is a link too.
-            spans = ChatLineWording.CarriesMarkup(entry)
-                ? ChatTagMarkup.ParseLinks(markup)
-                : null;
-            spans = ChatCoordinateLinks.Link(spans ?? new[] { new ChatTextSpan(markup, null) })
-                ?? spans;
+            // A plugin's own line: its link tags and escapes are read, and a
+            // coordinate pair it writes in plain text is a link too.
+            IReadOnlyList<ChatTextSpan> read = ChatTagMarkup.ParseLinks(markup);
+            read = ChatCoordinateLinks.Link(read) ?? read;
+            if (read.Any(static span => span.Tag is not null))
+            {
+                spans = read;
+            }
+            else
+            {
+                spans = null;
+                markup = string.Concat(read.Select(static span => span.Text));
+            }
         }
         else if (ShouldTagSender(entry))
         {
@@ -177,13 +183,17 @@ public sealed class RuntimeChatFeed : IDisposable
 
     // -- Wording -----------------------------------------------------------
 
-    /// <summary>The line as plain text, with no clickable sender marked up.</summary>
+    /// <summary>
+    /// The line as plain text, with no clickable sender marked up; a plugin's
+    /// line as it is shown, its COORD tags and escapes removed.
+    /// </summary>
     public static string Format(ChatEntry entry) => ChatLineWording.Format(entry);
 
     /// <summary>
     /// The line with another player's name wrapped so a front end that supports
-    /// it can make the name clickable. Identical to <see cref="Format"/> for
-    /// every line that does not name another player.
+    /// it can make the name clickable, and a plugin's line as the plugin wrote
+    /// it, its COORD tags and escapes kept. Identical to <see cref="Format"/>
+    /// for every other line.
     /// </summary>
     public static string FormatTagged(ChatEntry entry) => ChatLineWording.FormatTagged(entry);
 

@@ -160,6 +160,22 @@ var router = new PluginChatCoordinateLinkRouter(
 Clicking a player's name still starts a tell and raises nothing. The floating
 chat windows show no links.
 
+**Escape text you did not write.** A plugin's line is trusted as the plugin's
+own, so a `COORD` tag in it is a working link. A plugin that repeats a
+player's words (echoing a tell, relaying a channel) would turn a tag that
+player typed into a link showing one place and reporting another. Pass such
+text through `PluginChatMarkup.Escape` first; it puts a backslash before every
+`<`, the chat drops that backslash, and the text shows exactly as the player
+wrote it with no tag read:
+
+```csharp
+host.Automation.Chat.PostSystemMessage(
+    $"{PluginChatMarkup.Escape(message.Sender)} told you: {PluginChatMarkup.Escape(message.Text)}");
+```
+
+A coordinate pair the escaped text shows in plain words is still a link, to
+exactly the place it shows.
+
 ### Intercepting what the player types
 
 ```csharp
