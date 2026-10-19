@@ -129,6 +129,19 @@ internal sealed class FakeGameView : IRynthGameView
     public float VitaeMultiplier => Read(Vitae);
     public double ServerTime => Read(Time);
     public IReadOnlyList<RynthEnchantment>? PlayerEnchantments => Read(Enchantments);
+    public RynthPlayerProgress? Progress { get; set; }
+    public IReadOnlyList<RynthStatMod>? StatMods { get; set; }
+    public List<(int Kind, uint StatId, uint Amount)> Advancements { get; } = new();
+    public bool AdvancementAccepted { get; set; } = true;
+    public RynthPlayerProgress? PlayerProgress => Read(Progress);
+    public IReadOnlyList<RynthStatMod>? PlayerStatMods => Read(StatMods);
+
+    public bool RequestAdvancement(int kind, uint statId, uint amount)
+    {
+        if (Throw) throw new InvalidOperationException("view failed");
+        Advancements.Add((kind, statId, amount));
+        return AdvancementAccepted;
+    }
 
     public bool TryGetSkill(uint objectId, uint skillId, out int buffed, out int baseLevel, out int training)
     {

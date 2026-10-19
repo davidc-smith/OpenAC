@@ -77,6 +77,18 @@ public interface IRynthGameView
     /// <summary>The player's enchantments in force; null when not known (before login).</summary>
     IReadOnlyList<RynthEnchantment>? PlayerEnchantments { get; }
 
+    /// <summary>The player's skills, attributes, vitals, level, XP and credits; null when not in the world.</summary>
+    RynthPlayerProgress? PlayerProgress { get; }
+
+    /// <summary>The player's enchantments that carry a stat change; null when not in the world.</summary>
+    IReadOnlyList<RynthStatMod>? PlayerStatMods { get; }
+
+    /// <summary>
+    /// Raise or train as RynthCore's PlayerTraining does: kind 1 attribute, 2 vital (stat id 1/3/5),
+    /// 3 skill (amount = XP), 4 train a skill (amount = credits). True when the client sent it.
+    /// </summary>
+    bool RequestAdvancement(int kind, uint statId, uint amount);
+
     /// <summary>A skill of the player: buffed and base level, training (0 unusable, 1 untrained, 2 trained, 3 specialized).</summary>
     bool TryGetSkill(uint objectId, uint skillId, out int buffed, out int baseLevel, out int training);
 

@@ -5,6 +5,7 @@ using AcDream.Core.Items;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Core.Physics;
+using AcDream.Core.Player;
 using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime.Entities;
@@ -870,5 +871,98 @@ public sealed class RuntimeRynthGameViewTests
 
         automation.Available = false;
         Assert.False(view.CastSpell(0x80000010, 1));
+    }
+
+    [Fact]
+    public void PlayerProgressIsTheDescriptionsRecordsWithTheSurfacesValues()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        LocalPlayerState local = runtime.CharacterOwner.LocalPlayer;
+        var properties = new PropertyBundle();
+        properties.Ints[24] = 7;   // AvailableSkillCredits
+        local.OnProperties(properties);
+        local.OnSkillUpdate(6, ranks: 10, status: 3, xp: 5000, init: 10, resistance: 0, lastUsed: 0, formulaBonus: 100);
+        local.OnSkillUpdate(15, ranks: 0, status: 1, xp: 0, init: 0, resistance: 0, lastUsed: 0, formulaBonus: 50);
+        local.OnAttributeUpdate(1, ranks: 20, start: 100, xp: 900);
+        local.OnVitalUpdate(1, ranks: 4, start: 0, xp: 300, current: 50);
+        var automation = new FakeRynthAutomation();
+        FakeCharacter c = automation.CharacterArea;
+        c.SkillList.Add(new PluginSkillInfo(6, "Melee Defense", PluginSkillTraining.Specialized, 140) { Base = 120 });
+        c.AttributeList.Add(new PluginAttributeInfo(0, "Strength", 130) { Base = 120, Ranks = 20, ExperienceSpent = 900 });
+        c.VitalList.Add(new PluginVitalInfo(0, "Health", 50, 80) { Base = 70, Ranks = 4, ExperienceSpent = 300 });
+        (c.Level, c.TotalExperience, c.UnassignedExperience, c.AvailableLuminance, c.MaximumLuminance, c.VitaeMultiplier) =
+            (30, 1_000_000, 2500, 40, 500, 0.95f);
+        var view = new RuntimeRynthGameView(runtime, automation: automation);
+
+        RynthPlayerProgress p = view.PlayerProgress!;
+
+        Assert.Equal(
+            [new RynthSkillProgress(6, 3, 10, 5000, 10, true, 140, 120), new RynthSkillProgress(15, 1, 0, 0, 0, false, 0, 0)],
+            p.Skills.OrderBy(s => s.SkillId));
+        Assert.Equal([new RynthStatProgress(1, 20, 100, 900, 130, 120)], p.Attributes);
+        Assert.Equal([new RynthStatProgress(1, 4, 0, 300, 80, 70)], p.Vitals);
+        Assert.Equal((30, 7, 1_000_000L, 2500L, 40L, 500L, 0.95f),
+            (p.Level, p.SkillCredits, p.TotalXp, p.UnassignedXp, p.Luminance, p.MaxLuminance, p.Vitae));
+    }
+
+    [Fact]
+    public void PlayerProgressAndStatModsAreNullBeforeLogin()
+    {
+        var view = new RuntimeRynthGameView(GameRuntimeTestFactory.Create(), automation: new FakeRynthAutomation());
+
+        Assert.Null(view.PlayerProgress);
+        Assert.Null(view.PlayerStatMods);
+    }
+
+    [Fact]
+    public void PlayerStatModsAreTheStatChangingEnchantments()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        double clock = runtime.EffectClock.NowSeconds;
+        Spellbook book = runtime.CharacterOwner.Spellbook;
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1234, 1, 60, 0x50000001,
+            StatModType: 0x10 | 0x8000, StatModKey: 6, StatModValue: 35f, Bucket: 2, StartTime: clock, SpellCategory: 77));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1300, 1, -1, 0x50000001,
+            StatModType: 0x1 | 0x8000, StatModKey: 1, StatModValue: 10f, Bucket: 1, StartTime: clock, SpellCategory: 3));
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1400, 1, 60, 0x50000001, Bucket: 1, StartTime: clock));   // no stat mod
+        book.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x1500, 1, -1, 0x50000001,
+            StatModType: 0x800000, StatModKey: 0, StatModValue: 0.95f, Bucket: 4, StartTime: clock));   // vitae bucket
+        var view = new RuntimeRynthGameView(runtime, automation: new FakeRynthAutomation());
+
+        RynthStatMod[] mods = [.. view.PlayerStatMods!.OrderBy(m => m.SpellId)];
+
+        Assert.Equal([0x1234u, 0x1300u], mods.Select(m => m.SpellId));
+        Assert.Equal((0x8010u, 6u, 35f, 77u), (mods[0].Type, mods[0].Key, mods[0].Value, mods[0].Category));
+        Assert.InRange(mods[0].ExpiryServerTime - view.ServerTime, 59.0, 60.0);
+        Assert.Equal(double.MaxValue, mods[1].ExpiryServerTime);
+    }
+
+    [Theory]
+    [InlineData(1, PluginAdvancementKind.Attribute)]
+    [InlineData(2, PluginAdvancementKind.Vital)]
+    [InlineData(3, PluginAdvancementKind.Skill)]
+    [InlineData(4, PluginAdvancementKind.TrainSkill)]
+    public void RequestAdvancementMapsRynthCoresKinds(int kind, PluginAdvancementKind expected)
+    {
+        var automation = new FakeRynthAutomation();
+        var view = new RuntimeRynthGameView(GameRuntimeTestFactory.Create(), automation: automation);
+
+        Assert.True(view.RequestAdvancement(kind, 3, 1234));
+
+        Assert.Equal([(expected, 3u, 1234ul)], automation.CharacterArea.Advancements);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(5)]
+    public void RequestAdvancementRefusesUnknownKinds(int kind)
+    {
+        var automation = new FakeRynthAutomation();
+        var view = new RuntimeRynthGameView(GameRuntimeTestFactory.Create(), automation: automation);
+
+        Assert.False(view.RequestAdvancement(kind, 3, 1234));
+        Assert.Empty(automation.CharacterArea.Advancements);
     }
 }
