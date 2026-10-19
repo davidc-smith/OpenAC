@@ -11,6 +11,8 @@ namespace RynthCore.Engine
         internal static Action<string>? Sink { get; set; }
 
         internal static void UI(string msg) => Sink?.Invoke("[ScriptWindows] " + msg);
+
+        internal static void Compat(string msg) => Sink?.Invoke("[Compat] " + msg);
     }
 }
 

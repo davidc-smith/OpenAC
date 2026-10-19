@@ -36,6 +36,16 @@ namespace RynthCore.Engine.ImGuiBackend
             texture = source(kind, id);
             return texture != IntPtr.Zero;
         }
+
+        /// <summary>
+        /// RynthCore composes an icon from its parts (icon, underlay, overlay, effects); only
+        /// RynthCore's Aelrynth vault draws icons from their parts, so none here.
+        /// </summary>
+        public static bool TryGetItem(uint icon, uint underlay, uint overlay, uint effects, uint itemType, out IntPtr texture)
+        {
+            texture = IntPtr.Zero;
+            return false;
+        }
     }
 
     internal enum UiFont

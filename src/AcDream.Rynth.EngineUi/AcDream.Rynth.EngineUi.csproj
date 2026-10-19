@@ -103,6 +103,16 @@
     <Compile Include="$(RynthEngine)UI\Panels\RadarSettingsStore.cs" Link="RynthCore\RadarSettingsStore.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthNavAtlasData.cs" Link="RynthCore\Data\RynthNavAtlasData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthNavData.cs" Link="RynthCore\Data\RynthNavData.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\InventoryFace*.cs" Link="RynthCore\%(Filename)%(Extension)" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\InventorySelection.cs" Link="RynthCore\InventorySelection.cs" />
+    <Compile Include="$(RynthEngine)Compatibility\InventoryModel*.cs" Link="RynthCore\%(Filename)%(Extension)" />
+    <Compile Include="$(RynthEngine)Compatibility\InventoryAttributeFilter.cs" Link="RynthCore\InventoryAttributeFilter.cs" />
+    <Compile Include="$(RynthEngine)Compatibility\InventoryFilterFacts.cs" Link="RynthCore\InventoryFilterFacts.cs" />
+    <Compile Include="$(RynthEngine)Compatibility\VaultFeed.cs" Link="RynthCore\VaultFeed.cs" />
+    <Compile Include="$(RynthEngine)Net\AelrynthVaultWire.cs" Link="RynthCore\AelrynthVaultWire.cs" />
+    <Compile Include="$(RynthEngine)Net\IdRequester.cs" Link="RynthCore\IdRequester.cs" />
+    <Compile Include="$(RynthEngine)Net\ChatOrigin.cs" Link="RynthCore\ChatOrigin.cs" />
+    <Compile Include="$(RynthEngine)ImGui\RetailSprites.cs" Link="RynthCore\RetailSprites.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -110,19 +120,17 @@
   </ItemGroup>
 
   <!-- The Items and Damage faces use data types RynthCore declares inside its
-       Avalonia panel files (ItemsPanel.cs, MonstersPanel.cs), and Item Count
-       the inventory types beside their acclient-reading InventoryModel, and the
+       Avalonia panel files (ItemsPanel.cs, MonstersPanel.cs), and the
        Skills panel the mastery types from AelrynthWire.cs / MasteryFeed.cs
        (Aelrynth only; MasteryFeed itself is a stand-in). Before
        compile, RynthTypeExtract copies just those types (and the panel files'
-       JSON contexts), their text unchanged, into obj/; nothing Avalonia and
-       none of InventoryModel's own code is compiled. -->
+       JSON contexts), their text unchanged, into obj/; nothing Avalonia is
+       compiled. (Their InventoryModel is compiled whole, above.) -->
   <ItemGroup>
     <ProjectReference Include="..\..\tools\RynthTypeExtract\AcDream.Tools.RynthTypeExtract.csproj"
                       ReferenceOutputAssembly="false" Private="false" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\ItemsPanel.cs" Types="ItemsPanel=Payload,WeaponEntry,ConsumableEntry" />
     <RynthPanelTypes Include="$(RynthEngine)UI\Panels\MonstersPanel.cs" Types="MonstersPanel=Payload,CapturedInfo,ItemRef,Rule" />
-    <RynthPanelTypes Include="$(RynthEngine)Compatibility\InventoryModel.cs" Types="=InventoryCategory,InventoryItem,InventoryPack,InventoryView,InventoryActionKind,InventoryRequest,InventoryPending,InventoryResult" />
     <RynthPanelTypes Include="$(RynthEngine)Compatibility\AelrynthWire.cs" Types="=MasterySkill,MasteryData" />
     <RynthPanelTypes Include="$(RynthEngine)Compatibility\MasteryFeed.cs" Types="=MasterySnapshot" />
   </ItemGroup>

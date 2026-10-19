@@ -31,6 +31,38 @@ namespace RynthCore.Engine.Compatibility
 
         /// <summary>The selected object, as SelectedTargetHooks reads it.</summary>
         public static uint GetSelectedItemId() => SelectedTargetHooks.ReadCurrentSelectedId();
+
+        /// <summary>The host's item actions, as RynthCore sends them through acclient's own calls. Game thread.</summary>
+        internal static Func<uint, bool>? Use { get; set; }
+        internal static Func<uint, uint, int, int, bool>? Move { get; set; }      // item, container, slot, amount (0 = whole)
+        internal static Func<uint, uint, bool>? Wield { get; set; }
+        internal static Func<uint, bool>? Drop { get; set; }
+        internal static Func<uint, uint, int, bool>? Give { get; set; }
+        internal static Func<uint, bool>? ContainerFull { get; set; }
+
+        public static bool HasDropItem => Drop is not null;
+        public static bool HasPutItemInContainer => Move is not null;
+        public static bool HasGiveObjectTo => Give is not null;
+        public static bool HasWieldItem => Wield is not null;
+
+        public static bool UseObject(uint objectId) => Use?.Invoke(objectId) ?? false;
+        public static bool PutItemInContainerAt(uint objectId, uint containerId, int slot) =>
+            Move?.Invoke(objectId, containerId, slot, 0) ?? false;
+        // acclient's MoveItemInternal / SplitStackInternal walk the pack's slot table for the first
+        // empty slot (RynthCore always passes slot 0) and MoveItemInternal refuses a full pack of the
+        // player's own. ACE keeps places contiguous, so the first empty one is the item count.
+        internal static Func<uint, uint, int>? FirstEmptySlot { get; set; }   // container, moving item → slot
+
+        public static bool MoveItemInternal(uint objectId, uint targetContainerId, int slot, int amount) =>
+            !IsOwnedContainerFull(targetContainerId)
+            && (Move?.Invoke(objectId, targetContainerId, FirstEmptySlot?.Invoke(targetContainerId, objectId) ?? 0, amount) ?? false);
+        public static bool SplitStackInternal(uint objectId, uint targetContainerId, int slot, int amount) =>
+            Move?.Invoke(objectId, targetContainerId, FirstEmptySlot?.Invoke(targetContainerId, objectId) ?? 0, amount) ?? false;
+        internal static bool IsOwnedContainerFull(uint target) => ContainerFull?.Invoke(target) ?? false;
+        public static bool WieldItem(uint objectId, uint equipMask) => Wield?.Invoke(objectId, equipMask) ?? false;
+        public static bool DropItem(uint objectId) => Drop?.Invoke(objectId) ?? false;
+        public static bool GiveObjectTo(uint objectId, uint targetId, int amount = 0) =>
+            Give?.Invoke(objectId, targetId, amount) ?? false;
     }
 
     internal static class ClientObjectHooks
@@ -76,6 +108,46 @@ namespace RynthCore.Engine.Compatibility
         internal static InstanceIdReader? InstanceId { get; set; }
 
         internal static Func<uint, bool>? Attackable { get; set; }
+
+        internal delegate bool ItemFieldsReader(uint objectId, out ItemPwdFields fields);
+        internal delegate bool IntPropertyReader(uint objectId, uint stype, out int value);
+        internal delegate bool AttributeReader(uint objectId, uint stype, int raw, out uint value);
+
+        /// <summary>The host's item fields, int properties, attributes and container contents.</summary>
+        internal static ItemFieldsReader? ItemFields { get; set; }
+        internal static IntPropertyReader? IntProperty { get; set; }
+        internal static AttributeReader? Attribute { get; set; }
+        internal static Func<uint, IReadOnlyList<uint>>? Contents { get; set; }
+
+        // RynthCore reads these PublicWeenieDesc fields out of acclient's object in one go.
+        internal static bool TryReadItemFields(uint objectId, out ItemPwdFields f)
+        {
+            f = default;
+            return ItemFields is { } read && read(objectId, out f);
+        }
+
+        public static bool TryGetObjectIntProperty(uint objectId, uint stype, out int value)
+        {
+            value = 0;
+            return IntProperty is { } read && read(objectId, stype, out value);
+        }
+
+        public static bool TryGetObjectAttribute(uint objectId, uint stype, int raw, out uint value)
+        {
+            value = 0;
+            return Attribute is { } read && read(objectId, stype, raw, out value);
+        }
+
+        // RynthCore walks its ~100 ms copy of acclient's objects; here, the client's table now.
+        internal static int CollectOwnedIdsFromSnapshot(uint containerId, Span<uint> dest)
+        {
+            if (Contents?.Invoke(containerId) is not { } ids)
+                return 0;
+            int n = Math.Min(ids.Count, dest.Length);
+            for (int i = 0; i < n; i++)
+                dest[i] = ids[i];
+            return n;
+        }
 
         // RynthCore reads these from its per-frame copy of acclient's objects ("snapshot");
         // here they are the same reads as the live ones.

@@ -120,7 +120,6 @@ internal static class RynthAiDashboard
         try
         {
             UiDataHub.Clear();
-            InventoryModel.ResetActions();
             PluginManager.RaisePluginsUnloaded();
             foreach (UiSource source in Sources)
             {
