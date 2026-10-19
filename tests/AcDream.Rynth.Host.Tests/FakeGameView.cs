@@ -235,7 +235,6 @@ internal sealed class FakeGameView : IRynthGameView
         return MotionOn.TryGetValue(objectId, out isOn);
     }
 
-
     public Dictionary<uint, List<(uint SubPaletteId, uint Offset)>> Palettes { get; } = new();
     public Dictionary<uint, (int Items, int Containers)> ContentCounts { get; } = new();
 

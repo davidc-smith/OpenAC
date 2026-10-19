@@ -612,6 +612,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     public bool VendorBuy(IReadOnlyList<(uint ObjectId, int Amount)> items, out string? notice)
     {
         IVendorAutomation vendor = _automation.Vendor;
+        // The surface's buy list is shared, so a Rynth request replaces anything staged there.
         vendor.ClearBuyList();
         foreach ((uint id, int amount) in items)
         {
@@ -634,6 +635,7 @@ public sealed class RuntimeRynthGameView : IRynthGameView
     public bool VendorSell(IReadOnlyList<uint> itemIds, out string? notice)
     {
         IVendorAutomation vendor = _automation.Vendor;
+        // The surface's sell list is shared, so a Rynth request replaces anything staged there.
         vendor.ClearSellList();
         foreach (uint id in itemIds)
         {
