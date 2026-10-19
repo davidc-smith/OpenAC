@@ -3,8 +3,8 @@
        our stand-ins for the engine types they use (StandIns/, plus the shared
        ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
        filter editor, ChatData and friends) and the RynthAi dashboard (RynthAiFace, its
-       drawers, RynthAiData and the settings it edits; its Settings, Items, Damage
-       and Monster Detail panels and their data). One assembly, as in RynthCore: their
+       drawers, RynthAiData and the settings it edits; its Settings, Items, Damage,
+       Monster Detail, Nav, Meta and Loot Editor panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
        faces share static engine classes (UiSources, PanelRouter, ...).
        RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
        PluginExportBinder and Discord relay are NOT compiled, nor PluginManager,
@@ -43,6 +43,23 @@
     <Compile Include="$(RynthEngine)ImGui\Panels\DamageDetailFace.cs" Link="RynthCore\DamageDetailFace.cs" />
     <Compile Include="$(RynthEngine)UI\Data\ItemsData.cs" Link="RynthCore\Data\ItemsData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\DamageData.cs" Link="RynthCore\Data\DamageData.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\NavFace.cs" Link="RynthCore\NavFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MetaFace.cs" Link="RynthCore\MetaFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MetaFace.List.cs" Link="RynthCore\MetaFace.List.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MetaFace.Editor.cs" Link="RynthCore\MetaFace.Editor.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MetaFace.Schedule.cs" Link="RynthCore\MetaFace.Schedule.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\MetaData.cs" Link="RynthCore\Data\MetaData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\MetaEditing.cs" Link="RynthCore\Data\MetaEditing.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\MetaLocation.cs" Link="RynthCore\Data\MetaLocation.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\MetaRowText.cs" Link="RynthCore\Data\MetaRowText.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\MetaRuleDto.cs" Link="RynthCore\Data\MetaRuleDto.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\MetaStateClock.cs" Link="RynthCore\Data\MetaStateClock.cs" />
+    <Compile Include="$(RynthEngine)ImGui\CodeEditor.cs" Link="RynthCore\CodeEditor.cs" />
+    <Compile Include="$(RynthEngine)..\Shared\RynthInstallPaths.cs" Link="RynthCore\RynthInstallPaths.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\LootEditorFace.cs" Link="RynthCore\LootEditorFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\LootAddDialog.cs" Link="RynthCore\LootAddDialog.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\LootEditData.cs" Link="RynthCore\Data\LootEditData.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\RangesSlideOut.cs" Link="RynthCore\RangesSlideOut.cs" />
     <Compile Include="$(RynthEngine)UI\PanelColumnStore.cs" Link="RynthCore\PanelColumnStore.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthAiData.cs" Link="RynthCore\Data\RynthAiData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\SettingsData.cs" Link="RynthCore\Data\SettingsData.cs" />

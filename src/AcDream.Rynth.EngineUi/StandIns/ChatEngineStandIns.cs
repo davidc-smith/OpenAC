@@ -28,6 +28,9 @@ namespace RynthCore.Engine.Compatibility
         internal static Func<uint>? PlayerId { get; set; }
 
         public static uint GetPlayerId() => PlayerId?.Invoke() ?? 0;
+
+        /// <summary>The selected object, as SelectedTargetHooks reads it.</summary>
+        public static uint GetSelectedItemId() => SelectedTargetHooks.ReadCurrentSelectedId();
     }
 
     internal static class ClientObjectHooks
@@ -48,6 +51,70 @@ namespace RynthCore.Engine.Compatibility
         {
             name = string.Empty;
             return Name is { } read && read(objectId, out name);
+        }
+
+        internal delegate bool FactsReader(uint objectId, out uint wcid, out uint bitfield, out uint containerId, out uint wielderId);
+        internal delegate bool InstanceIdReader(uint objectId, uint stat, out uint value);
+
+        /// <summary>An object's weenie class, public bitfield, container and wielder; the host sets it.</summary>
+        internal static FactsReader? Facts { get; set; }
+
+        internal static InstanceIdReader? InstanceId { get; set; }
+
+        internal static Func<uint, bool>? Attackable { get; set; }
+
+        // RynthCore reads these from its per-frame copy of acclient's objects ("snapshot");
+        // here they are the same reads as the live ones.
+        public static bool TryGetSnapshotName(uint objectId, out string name) => TryGetObjectName(objectId, out name);
+
+        public static bool TryGetSnapshotItemType(uint objectId, out uint typeFlags) => TryGetItemType(objectId, out typeFlags);
+
+        public static bool TryGetSnapshotPwdInfo(uint objectId, out uint bitfield, out uint containerId, out uint wielderId)
+        {
+            bitfield = containerId = wielderId = 0;
+            return Facts is { } read && read(objectId, out _, out bitfield, out containerId, out wielderId);
+        }
+
+        public static bool TryGetObjectWcid(uint objectId, out uint wcid)
+        {
+            wcid = 0;
+            return Facts is { } read && read(objectId, out wcid, out _, out _, out _);
+        }
+
+        public static bool TryGetObjectInstanceIdProperty(uint objectId, uint stype, out uint value)
+        {
+            value = 0;
+            return InstanceId is { } read && read(objectId, stype, out value);
+        }
+
+        public static bool TryGetSnapshotAttackable(uint objectId, out bool attackable)
+        {
+            attackable = false;
+            if (Attackable is not { } read || !TryGetItemType(objectId, out _))
+                return false;
+            attackable = read(objectId);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// RynthCore copies the player's pose every frame; here the host answers from the
+    /// game view on each call. Only the cell and position: no rotation or heading.
+    /// </summary>
+    internal static class PlayerPhysicsHooks
+    {
+        internal delegate bool PositionReader(out uint cell, out float x, out float y, out float z);
+
+        internal static PositionReader? Position { get; set; }
+
+        public static bool TryGetPlayerPoseSnapshot(out uint objCellId, out float x, out float y, out float z,
+                                                    out float qw, out float qz, out bool headingValid, out float heading)
+        {
+            qw = qz = heading = 0;
+            headingValid = false;
+            objCellId = 0;
+            x = y = z = 0;
+            return Position is { } read && read(out objCellId, out x, out y, out z);
         }
     }
 
@@ -113,6 +180,8 @@ namespace RynthCore.Engine.UI.Data
         public static readonly NavSource Nav = new();
         public static readonly SettingsSource Settings = new();
         public static readonly RynthSortWatch RynthSortWatch = new();
+        public static readonly MetaSource Meta = new();
+        public static readonly LootEditSource LootEdit = new();
         public static readonly ItemsSource Items = new();
         public static readonly DamageSource Damage = new();
         public static readonly MonsterRulesSource MonsterRules = new();

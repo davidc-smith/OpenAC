@@ -12,7 +12,11 @@ public sealed class RynthAiDashboardTests : IDisposable
     [
         @"ImGui\Panels\RynthAiFace.cs", @"ImGui\Panels\RynthAiFace.Drawers.cs", @"ImGui\Panels\SettingsRows.cs",
         @"ImGui\Panels\QuickSettingsDrawer.cs", @"ImGui\Panels\SettingsFace.cs", @"ImGui\Panels\ItemsFace.cs", @"ImGui\Panels\DamageFace.cs",
-        @"ImGui\Panels\DamageDetailFace.cs", @"UI\Data\ItemsData.cs", @"UI\Data\DamageData.cs", @"UI\PanelColumnStore.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
+        @"ImGui\Panels\DamageDetailFace.cs", @"UI\Data\ItemsData.cs", @"UI\Data\DamageData.cs", @"UI\PanelColumnStore.cs", @"ImGui\Panels\NavFace.cs", @"ImGui\Panels\MetaFace.cs",
+        @"ImGui\Panels\MetaFace.List.cs", @"ImGui\Panels\MetaFace.Editor.cs", @"ImGui\Panels\MetaFace.Schedule.cs",
+        @"UI\Data\MetaData.cs", @"UI\Data\MetaEditing.cs", @"UI\Data\MetaLocation.cs", @"UI\Data\MetaRowText.cs",
+        @"UI\Data\MetaRuleDto.cs", @"UI\Data\MetaStateClock.cs", @"ImGui\CodeEditor.cs", @"ImGui\Panels\LootEditorFace.cs",
+        @"ImGui\Panels\LootAddDialog.cs", @"UI\Data\LootEditData.cs", @"ImGui\Panels\RangesSlideOut.cs", @"UI\Data\RynthAiData.cs", @"UI\Data\SettingsData.cs",
         @"UI\Data\NavData.cs", @"UI\Data\RynthSortData.cs", @"UI\RynthAiDashboardState.cs",
         @"UI\PanelTextScale.cs", @"UI\QuickSettings.cs", @"UI\BarLayout.cs",
     ];
@@ -213,6 +217,89 @@ public sealed class RynthAiDashboardTests : IDisposable
                 damage.Unsubscribe();
             }
         }
+    }
+
+    [Fact]
+    public void TheNavMetaAndLootEditorPanelsRegisterWithTheDashboardAndDrawHeadless()
+    {
+        (RynthHost host, RynthChatHookup exports, RynthAiHookup ai) = StartWithRynthAi();
+        using (host) using (exports) using (ai)
+        {
+            using var imgui = new HeadlessImGui();
+            LoginLifecycleHooks.HasObservedLoginComplete = true;
+            RynthCore.Engine.UI.PanelRouter.Toggle("Nav");
+            RynthCore.Engine.UI.PanelRouter.Toggle("Meta");
+            LootEditorFace.ToggleFor(null);
+
+            for (int i = 0; i < 3; i++)
+            {
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
+                Assert.True(vertices > 300, $"frame {i}: only {vertices} vertices");
+            }
+
+            Assert.True(ImGuiPanelHost.IsOpen(NavFace.Title));
+            Assert.True(ImGuiPanelHost.IsOpen(MetaFace.Title));
+            Assert.True(ImGuiPanelHost.IsOpen(LootEditorFace.Title));
+            Assert.NotNull(RynthCore.Engine.UI.Data.UiSources.Meta.Current);
+            Assert.NotNull(RynthCore.Engine.UI.Data.UiSources.LootEdit.Current);
+            Assert.DoesNotContain(_log, l => l.Contains("[RynthAi]", StringComparison.Ordinal) && l.Contains("Exception", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public void TheRangesDrawerDrawsHeadless()
+    {
+        using var imgui = new HeadlessImGui();
+        var ranges = new RangesSlideOut();
+        void Draw()
+        {
+            ImGuiNET.ImGui.SetNextWindowSize(new System.Numerics.Vector2(300, 450));
+            ImGuiNET.ImGui.Begin("ranges-host");
+            ranges.DrawPanel(ImGuiNET.ImGui.GetCursorScreenPos(), ranges.Width(1), 400, 1);
+            ImGuiNET.ImGui.End();
+        }
+
+        imgui.Frame(Draw);   // a new window is hidden for its first frame
+        int vertices = imgui.Frame(Draw);
+        Assert.True(vertices > 100, $"only {vertices} vertices");
+    }
+
+    [Fact]
+    public void TheHookupAnswersObjectFactsAndThePlayerPosition()
+    {
+        using var host = new RynthHost(_view, _log.Add, []);
+        var hookup = new RynthChatHookup(host, _view, _log.Add);
+        const uint Pet = 0x80000020u;
+        _view.Objects[Pet] = new RynthObjectInfo
+        {
+            ContainerId = 0, WielderId = 0, EquipLocation = 0, ItemType = 0x10, Wcid = 1234, Bitfield = 0x8,
+            IconId = 0, IconUnderlayId = 0, IconOverlayId = 0, SpellId = null, HouseOwnerId = null,
+            StackSize = 0, StackSizeMax = 0, Value = 0, Burden = 0, ItemsCapacity = 0, Structure = 0,
+            MaxStructure = 0, Workmanship = 0, MaterialType = null, Identified = false,
+            AppraisedSpellIds = [], Ints = new Dictionary<uint, int>(), DataIds = new Dictionary<uint, uint>(),
+            InstanceIds = new Dictionary<uint, uint> { [40] = _view.PlayerId },
+            Bools = new Dictionary<uint, bool>(), Floats = new Dictionary<uint, double>(), Strings = new Dictionary<uint, string>(),
+        };
+        _view.Attackable.Add(Pet);
+        _view.Positions[_view.PlayerId] = (0xA9B40021u, new System.Numerics.Vector3(84f, 7.5f, 94f));
+
+        Assert.True(ClientObjectHooks.TryGetObjectWcid(Pet, out uint wcid));
+        Assert.Equal(1234u, wcid);
+        Assert.True(ClientObjectHooks.TryGetSnapshotPwdInfo(Pet, out uint bitfield, out _, out _));
+        Assert.Equal(0x8u, bitfield);
+        Assert.True(ClientObjectHooks.TryGetObjectInstanceIdProperty(Pet, 40, out uint owner));
+        Assert.Equal(_view.PlayerId, owner);
+        Assert.True(ClientObjectHooks.TryGetSnapshotAttackable(Pet, out bool attackable));
+        Assert.True(attackable);
+        Assert.False(ClientObjectHooks.TryGetSnapshotAttackable(0x80000099u, out _));
+        Assert.True(PlayerPhysicsHooks.TryGetPlayerPoseSnapshot(out uint cell, out float x, out _, out _, out _, out _, out _, out _));
+        Assert.Equal(0xA9B40021u, cell);
+        Assert.Equal(84f, x);
+
+        hookup.Dispose();
+        Assert.False(ClientObjectHooks.TryGetObjectWcid(Pet, out _));
+        Assert.False(PlayerPhysicsHooks.TryGetPlayerPoseSnapshot(out _, out _, out _, out _, out _, out _, out _, out _));
     }
 
     private (RynthHost Host, RynthChatHookup Exports, RynthAiHookup Ai) StartWithRynthAi()

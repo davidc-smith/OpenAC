@@ -1,8 +1,7 @@
 // Stand-ins for the RynthCore engine types RynthAi's dashboard (RynthAiFace and
 // the settings it edits) links to but OpenAC doesn't compile yet. Each keeps
 // only the members their files touch. Panels named here are not in OpenAC:
-// their buttons and menu items do nothing until a later RynthAi sub-project
-// compiles the real face (loot editor: #5; maps: #4 and #6).
+// their buttons and menu items do nothing.
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -13,6 +12,13 @@ namespace RynthCore.Engine
     internal static class EntryPoint
     {
         internal static DateTime InitStartedUtc { get; set; } = DateTime.MinValue;
+
+        /// <summary>
+        /// RynthCore's own cimgui.dll, which carries their native code editor. OpenAC's cimgui
+        /// has no editor, so none: CodeEditor reports itself unavailable and Meta's Source tab
+        /// says so (the rule list and rule editor don't need it).
+        /// </summary>
+        internal static IntPtr ImGuiNativeHandle => IntPtr.Zero;
     }
 }
 
@@ -99,6 +105,12 @@ namespace RynthCore.Engine.Compatibility
         public static bool IsAelrynth => false;
     }
 
+    /// <summary>RynthCore's acclient UI hooks; only the item AC is dragging, which OpenAC doesn't report (none).</summary>
+    internal static class UiElementHooks
+    {
+        public static uint CurrentDragObject => 0;
+    }
+
     /// <summary>RynthCore hides acclient's vitals bar; OpenAC's own bar is unaffected, the box is only remembered.</summary>
     internal static class RetailVitalsHooks
     {
@@ -166,6 +178,25 @@ namespace RynthCore.Engine.UI.Data
 
 namespace RynthCore.Engine.ImGuiBackend
 {
+    /// <summary>
+    /// AC items dropped on RynthCore's panels: their UIElement drop detour claims the drop.
+    /// OpenAC has no such hook, so no panel ever takes a dropped item.
+    /// </summary>
+    internal static class UiDropTargets
+    {
+        public static void Publish(string key, string panelTitle, Vector2 min, Vector2 max, bool accepting)
+        {
+        }
+
+        public static bool TryTake(string key, out uint itemId)
+        {
+            itemId = 0;
+            return false;
+        }
+
+        public static bool IsCursorOver(string key) => false;
+    }
+
     /// <summary>RynthCore's own toolbar; OpenAC has the Rynth bar instead, so the rows are only remembered.</summary>
     internal static class ImGuiBar
     {
@@ -202,19 +233,7 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
             ImGuiNET.ImGui.TextDisabled("Server: chosen at OpenAC's login.");
     }
 
-    internal static class LootEditorFace
-    {
-        public const string Title = "Loot Editor";
-
-        public static void Register()
-        {
-        }
-
-        public static void ToggleFor(string? path)
-        {
-        }
-    }
-
+    /// <summary>RynthCore's Dungeon Map; not in OpenAC yet (it needs their radar), so its button does nothing.</summary>
     internal static class DungeonMapFace
     {
         public const string Title = "Dungeon Map";
@@ -261,35 +280,16 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
     {
         public const string Title = "Skills";
     }
+}
 
-    /// <summary>
-    /// The dashboard's Ranges drawer. RynthCore's real one reads the monster-damage
-    /// rules (MonstersPanel, DamageFace), which come with combat; until then the
-    /// drawer tab is there and the panel says so.
-    /// </summary>
-    internal sealed class RangesSlideOut : RynthAiDrawer
+namespace RynthCore.Engine.UI.Panels
+{
+    /// <summary>RynthCore's dashboard launches their external Avalonia loot editor from here; OpenAC has none.</summary>
+    internal static class RynthAiPanel
     {
-        public override string Key => "ranges";
-
-        public override string Icon => PhosphorIcons.Ruler;
-
-        public override string Name => "ranges";
-
-        public override bool SavedOpen => RynthCore.Engine.UI.RynthAiDashboardState.RangesOpen;
-
-        public override void SaveOpen(bool open) => RynthCore.Engine.UI.RynthAiDashboardState.SetRangesOpen(open);
-
-        public override string TabTooltip(bool right) => "Ranges: not available in OpenAC yet.";
-
-        public override float Width(float k) => 250 * k;
-
-        public override float Height(float k) => 60 * k;
-
-        public override void DrawPanel(Vector2 origin, float width, float height, float k)
-        {
-            ImGuiNET.ImGui.SetCursorScreenPos(origin + new Vector2(8 * k, 8 * k));
-            ImGuiNET.ImGui.TextDisabled("Ranges: not available in OpenAC yet.");
-        }
+        public static void LaunchLootEditor(string? path) =>
+            RynthCore.Engine.Compatibility.AcMainThreadQueue.EnqueueWriteToChat(
+                "[RynthAi] The external loot editor isn't in OpenAC; use the Loot Editor panel.", 1);
     }
 }
 
@@ -315,6 +315,9 @@ namespace RynthCore.Engine.ImGuiBackend.Hud
         public static void EnsureLoadQueued()
         {
         }
+
+        /// <summary>The table is never read here, so never ready.</summary>
+        public static bool Ready => false;
 
         public static bool TryGetName(uint spellId, out string name)
         {

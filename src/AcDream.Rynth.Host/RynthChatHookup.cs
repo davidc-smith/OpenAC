@@ -19,6 +19,10 @@ internal sealed class RynthChatHookup : IDisposable
     private readonly ClientObjectHooks.NameReader _name;
     private readonly ClientObjectHooks.ItemTypeReader _itemType;
     private readonly Func<string> _characterName;
+    private readonly ClientObjectHooks.FactsReader _facts;
+    private readonly ClientObjectHooks.InstanceIdReader _instanceId;
+    private readonly Func<uint, bool> _attackable;
+    private readonly PlayerPhysicsHooks.PositionReader _position;
 
     public RynthChatHookup(RynthHost host, IRynthGameView view, Action<string> log)
     {
@@ -38,12 +42,21 @@ internal sealed class RynthChatHookup : IDisposable
             () => _view.TryGetObjectName(_view.PlayerId, out string name) ? name : string.Empty,
             string.Empty);
 
+        _facts = TryGetFacts;
+        _instanceId = TryGetInstanceId;
+        _attackable = id => Guard(nameof(ClientObjectHooks.TryGetSnapshotAttackable), () => _view.IsAttackable(id), false);
+        _position = TryGetPlayerPosition;
+
         PluginExportBinder.Resolver = _resolver;
         ClientHelperHooks.PlayerId = _playerId;
         SelectedTargetHooks.SelectedId = _selectedId;
         ClientObjectHooks.Name = _name;
         ClientObjectHooks.ItemType = _itemType;
         SessionStateRegistry.CharacterName = _characterName;
+        ClientObjectHooks.Facts = _facts;
+        ClientObjectHooks.InstanceId = _instanceId;
+        ClientObjectHooks.Attackable = _attackable;
+        PlayerPhysicsHooks.Position = _position;
     }
 
     public void Dispose()
@@ -54,6 +67,10 @@ internal sealed class RynthChatHookup : IDisposable
         if (ClientObjectHooks.Name == _name) ClientObjectHooks.Name = null;
         if (ClientObjectHooks.ItemType == _itemType) ClientObjectHooks.ItemType = null;
         if (SessionStateRegistry.CharacterName == _characterName) SessionStateRegistry.CharacterName = null;
+        if (ClientObjectHooks.Facts == _facts) ClientObjectHooks.Facts = null;
+        if (ClientObjectHooks.InstanceId == _instanceId) ClientObjectHooks.InstanceId = null;
+        if (ClientObjectHooks.Attackable == _attackable) ClientObjectHooks.Attackable = null;
+        if (PlayerPhysicsHooks.Position == _position) PlayerPhysicsHooks.Position = null;
     }
 
     private IntPtr Resolve(string pluginNamePart, string exportName)
@@ -82,6 +99,42 @@ internal sealed class RynthChatHookup : IDisposable
         bool ok = Guard(nameof(ClientObjectHooks.TryGetItemType), () => _view.TryGetObject(objectId, out info), false);
         typeFlags = ok && info is not null ? info.ItemType : 0u;
         return ok && info is not null;
+    }
+
+    private bool TryGetFacts(uint objectId, out uint wcid, out uint bitfield, out uint containerId, out uint wielderId)
+    {
+        RynthObjectInfo? info = null;
+        bool ok = Guard(nameof(ClientObjectHooks.TryGetSnapshotPwdInfo), () => _view.TryGetObject(objectId, out info), false) && info is not null;
+        wcid = ok ? info!.Wcid : 0u;
+        bitfield = ok ? info!.Bitfield : 0u;
+        containerId = ok ? info!.ContainerId : 0u;
+        wielderId = ok ? info!.WielderId : 0u;
+        return ok;
+    }
+
+    private bool TryGetInstanceId(uint objectId, uint stat, out uint value)
+    {
+        RynthObjectInfo? info = null;
+        uint found = 0;
+        bool ok = Guard(
+            nameof(ClientObjectHooks.TryGetObjectInstanceIdProperty),
+            () => _view.TryGetObject(objectId, out info) && info is not null && RynthObjectProperties.TryGetInstanceId(info, stat, out found),
+            false);
+        value = ok ? found : 0u;
+        return ok;
+    }
+
+    private bool TryGetPlayerPosition(out uint cell, out float x, out float y, out float z)
+    {
+        uint foundCell = 0;
+        System.Numerics.Vector3 origin = default;
+        bool ok = Guard(
+            nameof(PlayerPhysicsHooks.TryGetPlayerPoseSnapshot),
+            () => _view.TryGetObjectPosition(_view.PlayerId, out foundCell, out origin),
+            false);
+        cell = ok ? foundCell : 0u;
+        (x, y, z) = ok ? (origin.X, origin.Y, origin.Z) : (0f, 0f, 0f);
+        return ok;
     }
 
     private T Guard<T>(string what, Func<T> read, T fallback)
