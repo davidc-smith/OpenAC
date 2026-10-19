@@ -92,7 +92,7 @@ namespace RynthCore.Engine.ImGuiBackend
         None,
     }
 
-    /// <summary>The members of RynthCore's PanelSpec that their faces set (of Background, BorderColor and Rounding only a zero Background is honoured).</summary>
+    /// <summary>The members of RynthCore's PanelSpec that their faces set (of Background, BorderColor and Rounding only a zero Background is honoured; OpenCentered centres a first open).</summary>
     internal sealed record PanelSpec(
         Vector2 DefaultSize,
         Vector2 MinSize,
@@ -104,7 +104,8 @@ namespace RynthCore.Engine.ImGuiBackend
         bool EdgeToEdge = false,
         bool GripInBody = false,
         uint? BorderColor = null,
-        float Rounding = 0f);
+        float Rounding = 0f,
+        bool OpenCentered = false);
 
     internal interface IImGuiPanel
     {
