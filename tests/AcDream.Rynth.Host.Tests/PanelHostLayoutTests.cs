@@ -58,6 +58,51 @@ public sealed class PanelHostLayoutTests : IDisposable
         Assert.Equal(new Vector2(980, 580), panel.Pos);
     }
 
+    // The client logs in at the character list's size and is made bigger after: a
+    // window held onto the small display goes back to where the player left it.
+    [Fact]
+    public void AWindowClampedOntoASmallDisplayGoesBackToItsSavedSpotWhenTheDisplayGrows()
+    {
+        _layout.Saved[Key] = new PanelPlacement(new PanelRect(new Vector2(1500, 900), new Vector2(300, 220)), false);
+        MovingPanel panel = RegisterAndOpen();
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Equal(new Vector2(980, 580), panel.Pos);
+
+        ImGui.GetIO().DisplaySize = new Vector2(1700, 1000);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Equal(new Vector2(1400, 780), panel.Pos);
+
+        ImGui.GetIO().DisplaySize = new Vector2(2560, 1400);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Equal(new Vector2(1500, 900), panel.Pos);
+        Assert.Equal(new Vector2(300, 220), panel.Size);
+        Assert.Empty(_layout.RectCalls);
+
+        // Back at its spot: a later change of display size leaves it where it is.
+        ImGui.GetIO().DisplaySize = new Vector2(2600, 1500);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Equal(new Vector2(1500, 900), panel.Pos);
+    }
+
+    [Fact]
+    public void AClampedWindowThePlayerMovedStaysWhereThePlayerPutIt()
+    {
+        _layout.Saved[Key] = new PanelPlacement(new PanelRect(new Vector2(1500, 900), new Vector2(300, 220)), false);
+        MovingPanel panel = RegisterAndOpen();
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+
+        panel.MoveTo = new Vector2(100, 120);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+
+        ImGui.GetIO().DisplaySize = new Vector2(2560, 1400);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        _imgui.Frame(ImGuiPanelHost.DrawAll);
+        Assert.Equal(new Vector2(100, 120), panel.Pos);
+    }
+
     [Fact]
     public void APlayerMoveIsSavedOnceTheMouseIsUp()
     {
