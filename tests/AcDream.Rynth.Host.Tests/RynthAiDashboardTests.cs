@@ -117,6 +117,86 @@ public sealed class RynthAiDashboardTests : IDisposable
     }
 
     [Fact]
+    public void TheHookupReadsProgressStatModsTimeAndSendsRaises()
+    {
+        _view.Progress = new RynthPlayerProgress(
+            [new RynthSkillProgress(6, 3, 10, 5000, 10, true, 140, 120)],
+            [new RynthStatProgress(1, 20, 100, 900, 130, 120)],
+            [new RynthStatProgress(1, 4, 0, 300, 80, 70)],
+            30, 7, 1_000_000, 2500, 40, 500, 0.95f);
+        _view.StatMods = [new RynthStatMod(0x1234, 99.0, 0x8010, 6, 35f, 77), new RynthStatMod(0x1300, double.MaxValue, 0x8001, 1, 10f, 3)];
+        _view.Time = 12.5;
+        using var host = new RynthHost(_view, _log.Add, []);
+        using (var hookup = new RynthChatHookup(host, _view, _log.Add))
+        {
+            var p = new PlayerProgress();
+            Assert.True(ClientObjectHooks.ReadPlayerProgressLive(p));
+            Assert.True(p.SkillTableRead && p.SkillInTable[6] && p.SkillLevelKnown[6] && p.AttributeCacheRead);
+            Assert.Equal((3u, 5000u, 10u, 10u, 140, 120), (p.SkillClass[6], p.SkillXpSpent[6], p.SkillRanks[6], p.SkillInit[6], p.SkillBuffed[6], p.SkillBase[6]));
+            Assert.Equal((20u, 100u, 900u, 130u, 120u), (p.AttrRanks[1], p.AttrInit[1], p.AttrXpSpent[1], p.AttrBuffed[1], p.AttrBase[1]));
+            Assert.Equal((4u, 0u, 300u, 80u, 70u), (p.VitalRanks[1], p.VitalInit[1], p.VitalXpSpent[1], p.VitalBuffed[1], p.VitalBase[1]));
+            Assert.Equal((30, 7, 1_000_000L, 2500L, 40L, 500L, 0.95f), (p.Level, p.SkillCredits, p.TotalXp, p.UnassignedXp, p.Luminance, p.MaxLuminance, p.Vitae));
+            Assert.False(p.SkillInTable[15]);
+
+            uint[] spell = new uint[1], type = new uint[1], key = new uint[1], category = new uint[1];
+            double[] expiry = new double[1];
+            float[] value = new float[1];
+            Assert.Equal(1, EnchantmentHooks.CopyPlayerStatMods(spell, expiry, type, key, value, category));   // capped at the arrays
+            Assert.Equal((0x1234u, 99.0, 0x8010u, 6u, 35f, 77u), (spell[0], expiry[0], type[0], key[0], value[0], category[0]));
+
+            Assert.Equal(12.5, TimeSyncHooks.GetCurrentServerTime());
+            Assert.True(PlayerTraining.Raise(PlayerTraining.TrainKind.Skill, 6, 100));
+            Assert.Equal([(3, 6u, 100u)], _view.Advancements);
+
+            _view.Progress = null;
+            Assert.False(ClientObjectHooks.ReadPlayerProgressLive(p));
+        }
+
+        Assert.Null(ClientObjectHooks.ProgressReader);
+        Assert.Null(EnchantmentHooks.Copier);
+        Assert.Null(TimeSyncHooks.ServerTime);
+        Assert.Null(PlayerTraining.Sender);
+        Assert.Empty(_log);
+    }
+
+    [Fact]
+    public void TheSkillsPanelDrawsAPublishedSnapshot()
+    {
+        _view.Progress = new RynthPlayerProgress(
+            [new RynthSkillProgress(6, 3, 10, 5000, 10, true, 140, 120)],
+            [new RynthStatProgress(1, 20, 100, 900, 130, 120)],
+            [new RynthStatProgress(1, 4, 0, 300, 80, 70)],
+            30, 7, 1_000_000, 2500, 40, 500, 1f);
+        using var host = new RynthHost(_view, _log.Add, []);
+        using var hookup = new RynthChatHookup(host, _view, _log.Add);
+        using var imgui = new HeadlessImGui();
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        RynthCore.Engine.UI.PanelRouter.Toggle(SkillsFace.Title);
+
+        try
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                PlayerProgressHooks.Want();
+                PlayerProgressHooks.RefreshSoon();
+                AcDream.Rynth.EngineUi.RynthAiDashboard.Tick();
+                int vertices = imgui.Frame(ImGuiPanelHost.DrawAll);
+                Assert.True(vertices > 100, $"frame {i}: only {vertices} vertices");
+            }
+
+            Assert.NotNull(PlayerProgressHooks.Current);
+            // Their SkillDat logs one "Skills: " status line when the panel opens; nothing else.
+            Assert.NotEmpty(_log);
+            Assert.All(_log, line => Assert.StartsWith("[Rynth] [ScriptWindows] Skills: ", line, StringComparison.Ordinal));
+        }
+        finally
+        {
+            RynthCore.Engine.UI.PanelRouter.Toggle(SkillsFace.Title);
+        }
+    }
+
+    [Fact]
     public void TheSkillsPanelRegistersWithTheDashboardAndDrawsHeadless()
     {
         using var host = new RynthHost(_view, _log.Add, []);

@@ -1,11 +1,10 @@
 using AcDream.Rynth.EngineUi;
 using Mono.Cecil;
-using Mono.Cecil.Cil;
 using RynthCore.Engine.Compatibility;
 
 namespace AcDream.Rynth.Host.Tests;
 
-public sealed class RynthSkillsStandInsTests : IDisposable
+public sealed class RynthSkillsStandInsTests(Xunit.Abstractions.ITestOutputHelper output) : IDisposable
 {
     public void Dispose()
     {
@@ -55,5 +54,29 @@ public sealed class RynthSkillsStandInsTests : IDisposable
             .ToList();
 
         Assert.Equal(["AcDream.Rynth.EngineUi.ProcessPathStandIn"], callers);
+    }
+
+    [Fact]
+    public void TheirDatReadersFindAndLoadTheInstalledPortalDat()
+    {
+        string? dats = Environment.GetEnvironmentVariable("ACDREAM_DAT_DIR");
+        if (string.IsNullOrWhiteSpace(dats))
+            dats = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AsheronsCall");
+        if (!File.Exists(Path.Combine(dats, "client_portal.dat")))
+        {
+            // xunit 2 (this project) has no dynamic skip; the note shows in the test's output.
+            output.WriteLine($"skipped: no dats at {dats}");
+            return;
+        }
+
+        ProcessPathStandIn.DatDirectory = dats;
+
+        Assert.Equal(Path.Combine(dats, "client_portal.dat"), RynthCore.Engine.UI.ScriptWindows.AcDatFile.FindPortalDat());
+        RynthCore.Engine.ImGuiBackend.Panels.SkillDat.EnsureLoadQueued();
+        Assert.True(RynthCore.Engine.ImGuiBackend.Panels.SkillDat.Tables is { Skills.Count: > 0 }, RynthCore.Engine.ImGuiBackend.Panels.SkillDat.Status);
+        RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.EnsureLoadQueued();
+        Assert.True(RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.Ready, RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.Status);
+        Assert.True(RynthCore.Engine.ImGuiBackend.Hud.PortalSpellTable.TryGetName(1, out string name));
+        Assert.Equal("Strength Other I", name);
     }
 }

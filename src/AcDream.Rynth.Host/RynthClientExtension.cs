@@ -74,6 +74,8 @@ public sealed class RynthClientExtension : IClientExtension
         // RynthAi finds the dats through its registry read (StandIns/RegistryStandIn); it
         // starts loading them on a pool thread in Startup, so this is set first.
         AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = context.DatDirectory;
+        // RynthCore's engine finds client_portal.dat beside Environment.ProcessPath (redirected to this stand-in).
+        AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory = context.DatDirectory;
         var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand, context.Automation, context.Screen);
         bool scriptWindows = context.Overlay is not null;
         _host = new RynthHost(
@@ -250,6 +252,7 @@ public sealed class RynthClientExtension : IClientExtension
             _host?.Dispose();
             _host = null;
             AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = null;
+            AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory = null;
         }
 
         if (_layout is not null && ImGuiPanelHost.Layout == _layout)
