@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using AcDream.App.Rendering;
 using AcDream.ClientExtensions;
 using ImGuiNET;
@@ -31,6 +33,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     private bool _failed;
     private readonly List<IOverlayKeyboardSink> _sinks = new();
     private bool _imguiWantsKeyboard;
+    private GCHandle _self;
+    private IntPtr _clipboardUtf8;
 
     public ImGuiOverlay(Action<string> log)
     {
@@ -56,6 +60,57 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         {
             if (ClipboardSource is { } source)
                 source.ClipboardText = value ?? string.Empty;
+        }
+    }
+
+    // ImGui's own text fields (InputText) copy and paste through the platform
+    // clipboard calls; without them ImGui keeps a private clipboard of its own.
+    private unsafe void HookClipboard()
+    {
+        _self = GCHandle.Alloc(this);
+        ImGuiPlatformIOPtr platform = ImGui.GetPlatformIO();
+        platform.Platform_ClipboardUserData = GCHandle.ToIntPtr(_self);
+        platform.Platform_GetClipboardTextFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, IntPtr>)&GetClipboardForImGui;
+        platform.Platform_SetClipboardTextFn = (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, IntPtr, void>)&SetClipboardForImGui;
+    }
+
+    private static ImGuiOverlay? FromPlatform()
+    {
+        IntPtr data = ImGui.GetPlatformIO().Platform_ClipboardUserData;
+        return data == IntPtr.Zero ? null : GCHandle.FromIntPtr(data).Target as ImGuiOverlay;
+    }
+
+    // The text stays valid until the next call (ImGui copies it at once).
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static IntPtr GetClipboardForImGui(IntPtr context)
+    {
+        try
+        {
+            if (FromPlatform() is not { } overlay)
+                return IntPtr.Zero;
+            byte[] utf8 = System.Text.Encoding.UTF8.GetBytes(overlay.ClipboardText);
+            Marshal.FreeHGlobal(overlay._clipboardUtf8);
+            overlay._clipboardUtf8 = Marshal.AllocHGlobal(utf8.Length + 1);
+            Marshal.Copy(utf8, 0, overlay._clipboardUtf8, utf8.Length);
+            Marshal.WriteByte(overlay._clipboardUtf8, utf8.Length, 0);
+            return overlay._clipboardUtf8;
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void SetClipboardForImGui(IntPtr context, IntPtr text)
+    {
+        try
+        {
+            if (FromPlatform() is { } overlay)
+                overlay.ClipboardText = Marshal.PtrToStringUTF8(text) ?? string.Empty;
+        }
+        catch
+        {
         }
     }
 
@@ -159,6 +214,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             io.ConfigErrorRecovery = true;
             io.ConfigErrorRecoveryEnableAssert = false;
             unsafe { io.NativePtr->IniFilename = null; }
+            HookClipboard();
             _renderer = renderer;
             _windowSize = windowSize;
             Input.Accepting = true;
@@ -288,6 +344,11 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
                 ImGui.DestroyContext(_context);
                 _context = IntPtr.Zero;
             }
+
+            if (_self.IsAllocated)
+                _self.Free();
+            Marshal.FreeHGlobal(_clipboardUtf8);
+            _clipboardUtf8 = IntPtr.Zero;
 
             // Last: the atlas reads the font copies until the context is gone.
             _fonts.Dispose();

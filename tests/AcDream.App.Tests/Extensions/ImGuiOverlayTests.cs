@@ -127,6 +127,51 @@ public sealed class ImGuiOverlayTests : IDisposable
         Assert.Equal("hello", _overlay.ClipboardText);
     }
 
+    // RynthCore's filter test box (and every other plain ImGui text field) pastes
+    // through ImGui's own clipboard calls, not through their chat input's code.
+    [Fact]
+    public void ImGuiTextFieldsUseTheSystemClipboard()
+    {
+        Start();
+        Assert.Equal("", ImGui.GetClipboardText());
+
+        var keyboard = new FakeClipboard { ClipboardText = "You say, \"héllo ✓\"" };
+        _overlay.ClipboardSource = keyboard;
+        Assert.Equal("You say, \"héllo ✓\"", ImGui.GetClipboardText());
+
+        ImGui.SetClipboardText("copied ✓");
+        Assert.Equal("copied ✓", keyboard.ClipboardText);
+    }
+
+    [Fact]
+    public void CommandVPastesIntoAnImGuiTextFieldOnTheMac()
+    {
+        if (!OperatingSystem.IsMacOS())
+            return;   // Command is Super; elsewhere the shortcut is Ctrl+V
+        Start();
+        _overlay.ClipboardSource = new FakeClipboard { ClipboardText = "pasted line" };
+        byte[] buffer = new byte[64];
+        _overlay.AddFrameCallback(() =>
+        {
+            ImGui.SetNextWindowPos(new Vector2(0, 0));
+            ImGui.SetNextWindowSize(new Vector2(300, 100));
+            ImGui.Begin("paste");
+            ImGui.SetKeyboardFocusHere();
+            ImGui.InputText("##test", buffer, (uint)buffer.Length);
+            ImGui.End();
+        });
+        for (int i = 0; i < 3; i++)
+            RunFrame();   // the field takes focus
+        _overlay.Input.KeyChange(Key.SuperLeft, true);
+        _overlay.Input.KeyChange(Key.V, true);
+        RunFrame();
+        _overlay.Input.KeyChange(Key.V, false);
+        _overlay.Input.KeyChange(Key.SuperLeft, false);
+        RunFrame();
+
+        Assert.Equal("pasted line", System.Text.Encoding.UTF8.GetString(buffer).TrimEnd('\0'));
+    }
+
     private void Start() =>
         _overlay.Initialize(_renderer, () => (new Vector2(800, 600), new Vector2(1600, 1200)));
 
