@@ -5,8 +5,8 @@ namespace AcDream.Runtime.Navigation;
 
 /// <summary>
 /// Ways round. A walk whose goal lies beyond one planning square, or whose one square
-/// holds no route to it, first plans a walked way round over a coarse grid of everything
-/// loaded, then walks it in stages, each planned over its own fine square toward a point
+/// holds no route to it, first plans a way round over a coarse grid of everything loaded,
+/// walked where it can be and leapt where it can't, then walks it in stages, each planned over its own fine square toward a point
 /// further along the way.
 /// </summary>
 internal sealed partial class NavigationWalkController
@@ -90,7 +90,8 @@ internal sealed partial class NavigationWalkController
         NavAvoidance[] keepOut = [.. active.CorridorKeepOut];
         float cell = CorridorCellSize(size);
         _corridorFor = active;
-        _corridoring = Task.Run(() => NavCorridor.Plan(NavGrid.Build(geometry, NavCorridor.CoarseBody(body, cell), cell), from, goal, arrival, onGoalFloor, keepOut));
+        NavLeapAbility? leaps = sample.Leaps;
+        _corridoring = Task.Run(() => NavCorridor.PlanOver(geometry, body, cell, from, goal, arrival, onGoalFloor, keepOut, leaps));
         string planning = Inv($"planning a way round over {size:0} m around the start and goal");
         Publish(active, NavigationWalkState.Planning, planning, float.NaN);
         Say($"{Doing(active)} {Label(active)}: {planning}");
@@ -115,7 +116,7 @@ internal sealed partial class NavigationWalkController
         NavCorridor corridor = CorridorPlanned?.Invoke(planning.Result) ?? planning.Result;
         Corridor = corridor;
         Say(Inv(
-            $"Way round: {corridor.Outcome} over {corridor.Size:0} m at {corridor.CellSize:0.##} m cells, {corridor.Length:0} m, in {corridor.Milliseconds:0} ms"));
+            $"Way round: {corridor.Outcome} over {corridor.Size:0} m at {corridor.CellSize:0.##} m cells, {corridor.Length:0} m{(corridor.Leaps > 0 ? $", {corridor.Leaps} leaps" : "")}, in {corridor.Milliseconds:0} ms"));
         if (corridor.Outcome is not (NavCorridorOutcome.Reaches or NavCorridorOutcome.TowardEdge))
         {
             if (Narration is not null && requester.SquareNoRoute is { } square)

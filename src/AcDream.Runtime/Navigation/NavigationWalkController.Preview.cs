@@ -156,8 +156,8 @@ internal sealed partial class NavigationWalkController
                 if ((route is null || route.Outcome == NavRouteOutcome.NoPath) && round is not null)
                 {
                     float cell = CorridorCellSize(roundSize);
-                    NavCorridor corridor = NavCorridor.Plan(NavGrid.Build(round, NavCorridor.CoarseBody(body, cell), cell), start, goal,
-                        PlanningRadius(arrivalMeters), onGoalFloor);
+                    NavCorridor corridor = NavCorridor.PlanOver(round, body, cell, start, goal,
+                        PlanningRadius(arrivalMeters), onGoalFloor, leaps: leaps);
                     if (corridor.Outcome == NavCorridorOutcome.TowardEdge)
                         return new PluginNavigationPlan(PluginNavigationPlanStatus.NoRoute, [],
                             Inv($"the destination is beyond the loaded area, {HorizontalDistance(start, goal):0} m away"));

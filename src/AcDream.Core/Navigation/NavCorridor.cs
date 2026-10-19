@@ -27,8 +27,9 @@ public enum NavCorridorOutcome
 public delegate NavRoute NavStageSearch(NavGrid grid, Vector3 from, Vector3 to, bool final);
 
 /// <summary>
-/// A way round planned over a coarse grid of everything loaded, walking only, that a
-/// walk too long or too twisty for one planning square follows in fine stages. The
+/// A way round planned over a coarse grid of everything loaded, walking where it can and
+/// leaping only where no walked way exists, that a walk too long or too twisty for one
+/// planning square follows in fine stages. The
 /// coarse grid answers which way round; each stage's own fine grid answers where the
 /// feet go. <see cref="Points"/> are the coarse grid's standing points, start to end.
 /// </summary>
@@ -50,6 +51,13 @@ public sealed class NavCorridor
     public const float StageMargin = 24f;
     public const float MinimumStageSquare = 96f;
     public const float MaximumStageSquare = 320f;
+
+    /// <summary>
+    /// The cell size a way round is planned at again, with leaps, when no walked way exists:
+    /// the leap finder measures takeoffs and landings in columns, and at a metre a column it
+    /// finds no leap up a face it finds at this size.
+    /// </summary>
+    public const float LeapCellSize = 0.5f;
 
     /// <summary>A way round to a goal beyond the coarse grid ends within this of the edge nearest the goal.</summary>
     public const float EdgeBand = 8f;
@@ -104,6 +112,9 @@ public sealed class NavCorridor
     public float CellSize { get; }
 
     public double Milliseconds { get; }
+
+    /// <summary>How many leaps the way round takes; none unless no walked way was found.</summary>
+    public int Leaps { get; init; }
 
     /// <summary>The way round's horizontal length in meters.</summary>
     public float Length => _along.Length == 0 ? 0f : _along[^1];
@@ -181,10 +192,39 @@ public sealed class NavCorridor
     public const float CoarseRisePerMeter = 1.12f;
 
     /// <summary>
-    /// Searches a coarse grid for a walked way from <paramref name="from"/> to the goal: onto
-    /// the floor the goal stands on for a place, or near it for an object. A goal outside the
-    /// grid gets a way to the grid's edge nearest it. Nothing is leapt and no creatures are
-    /// passed: those are the fine stages' business.
+    /// Plans a way round over <paramref name="geometry"/> at <paramref name="cellSize"/>,
+    /// walking only, and when that finds no way and the walker can leap, plans it again at
+    /// <see cref="LeapCellSize"/> with <paramref name="leaps"/>. A face steeper than a floor
+    /// that a player gets up shuts every walked way, so only a walk that would otherwise end
+    /// with no route pays for the finer grid and the leap search.
+    /// </summary>
+    public static NavCorridor PlanOver(
+        NavGeometry geometry,
+        NavBody body,
+        float cellSize,
+        Vector3 from,
+        Vector3 goal,
+        float arrival,
+        bool arriveOnGoalFloor,
+        IReadOnlyList<NavAvoidance>? avoid = null,
+        NavLeapAbility? leaps = null)
+    {
+        ArgumentNullException.ThrowIfNull(geometry);
+        NavGrid coarse = NavGrid.Build(geometry, CoarseBody(body, cellSize), cellSize);
+        NavCorridor walked = Plan(coarse, from, goal, arrival, arriveOnGoalFloor, avoid);
+        if (walked.Outcome != NavCorridorOutcome.NoPath || leaps is null)
+            return walked;
+        NavGrid finer = cellSize == LeapCellSize ? coarse : NavGrid.Build(geometry, CoarseBody(body, LeapCellSize), LeapCellSize);
+        NavCorridor leapt = Plan(finer, from, goal, arrival, arriveOnGoalFloor, avoid, leaps);
+        return leapt.Outcome == NavCorridorOutcome.Reaches ? leapt : walked;
+    }
+
+    /// <summary>
+    /// Searches a coarse grid for a way from <paramref name="from"/> to the goal: onto the
+    /// floor the goal stands on for a place, or near it for an object. A goal outside the
+    /// grid gets a way to the grid's edge nearest it. Nothing is leapt unless
+    /// <paramref name="leaps"/> is given, and then only where no walked way reaches the goal;
+    /// no creatures are passed: those are the fine stages' business.
     /// </summary>
     public static NavCorridor Plan(
         NavGrid coarse,
@@ -192,7 +232,8 @@ public sealed class NavCorridor
         Vector3 goal,
         float arrival,
         bool arriveOnGoalFloor,
-        IReadOnlyList<NavAvoidance>? avoid = null)
+        IReadOnlyList<NavAvoidance>? avoid = null,
+        NavLeapAbility? leaps = null)
     {
         ArgumentNullException.ThrowIfNull(coarse);
         var clock = Stopwatch.StartNew();
@@ -200,7 +241,7 @@ public sealed class NavCorridor
         bool beyond = !coarse.Contains(goal, coarse.CellSize * 2f);
         NavRoute route = beyond
             ? NavRouter.FindToward(coarse, from, goal, EdgeBand, avoid)
-            : NavRouter.Find(coarse, from, goal, MathF.Max(arrival, coarse.CellSize * 2f), avoid, leaps: null, crowd: null, arriveOnGoalFloor);
+            : NavRouter.Find(coarse, from, goal, MathF.Max(arrival, coarse.CellSize * 2f), avoid, leaps, crowd: null, arriveOnGoalFloor);
         NavCorridorOutcome outcome = route.Outcome switch
         {
             NavRouteOutcome.Routed when beyond && route.Reason.StartsWith(NavRouter.ReachedEdgeReason, StringComparison.Ordinal)
@@ -218,7 +259,10 @@ public sealed class NavCorridor
             _ => $"{route.Reason} {area}",
         };
         IReadOnlyList<Vector3> points = outcome is NavCorridorOutcome.Reaches or NavCorridorOutcome.TowardEdge ? route.Path : [];
-        return new NavCorridor(outcome, reason, points, coarse.OriginX, coarse.OriginY, coarse.Size, coarse.CellSize, clock.Elapsed.TotalMilliseconds);
+        return new NavCorridor(outcome, reason, points, coarse.OriginX, coarse.OriginY, coarse.Size, coarse.CellSize, clock.Elapsed.TotalMilliseconds)
+        {
+            Leaps = points.Count > 0 ? route.Leaps.Count : 0,
+        };
     }
 
     /// <summary>

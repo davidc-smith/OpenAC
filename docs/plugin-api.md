@@ -2833,7 +2833,8 @@ The preview does not move the character, own navigation or change an active
 walk. It snapshots currently loaded collision and nearby objects, so a path
 may become stale. Outdoors it tries one planning square first, up to 320
 metres; a destination beyond that square, or one the square holds no route to,
-is planned as a walked way round over the loaded area, and fine stages searched
+is planned as a way round over the loaded area (walked, or leapt where no
+walked way exists), and fine stages searched
 along it are joined into one path. A destination beyond the loaded area returns
 `NoRoute` with the reason `the destination is beyond the loaded area, N m away`.
 A sealed dungeon is searched as one grid up to 2,048 metres across. A preview
