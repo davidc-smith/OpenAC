@@ -10,7 +10,6 @@ namespace AcDream.Rynth.Host.Tests;
 
 public sealed class RynthRadarTests : IDisposable
 {
-    private bool _drewAFace;   // a drawn map face started WorldMapMaps.Refresh
     private readonly List<string> _log = new();
     private readonly RynthConfigSandbox _sandbox = new("rynth-radar-");
     private readonly FakeGameView _view = new() { PlayerId = 0x50000001u };
@@ -25,7 +24,7 @@ public sealed class RynthRadarTests : IDisposable
     public void Dispose()
     {
         AcDream.Rynth.EngineUi.RynthAiDashboard.Stop();
-        MapTilesReset.Settle(awaitScan: _drewAFace);
+        MapTilesReset.Settle();
         AcMainThreadQueue.SelectObject = null;
         ImGuiPanelHost.Reset();
         ImGuiPanelHost.Log = null;
@@ -142,12 +141,14 @@ public sealed class RynthRadarTests : IDisposable
         try
         {
             AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
-            _drewAFace = true;
             RynthCore.Engine.UI.PanelRouter.Toggle(RadarFace.Title);
             for (int i = 0; i < 3; i++)
                 imgui.Frame(() => { AcDream.Rynth.EngineUi.RynthAiDashboard.BeginFrame(); ImGuiPanelHost.DrawAll(); });
             Assert.True(ImGuiPanelHost.IsOpen(RadarFace.Title));
             Assert.Empty(_log);
+            // With no radar snapshot the Radar draws no map backdrop, so it never starts
+            // WorldMapMaps.Refresh. If it ever does, Dispose must pass awaitScan: true.
+            Assert.False(WorldMapMaps.Scanned, "the Radar started a World Map scan; Dispose must settle it with awaitScan: true");
         }
         finally { LoginLifecycleHooks.HasObservedLoginComplete = false; }
     }
