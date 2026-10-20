@@ -65,7 +65,7 @@ public sealed class RuntimeVendorLifecycleTests
         Assert.Equal(250, item.Value);
     }
 
-    [Fact]
+    [Fact(Skip = "Fork zero-stock-is-unlimited rewrite is off; see GameEventWiring ApproachVendor.")]
     public void ApproachVendorEvent_ZeroStockListing_IsUnlimited()
     {
         using GameRuntime runtime = Create();
