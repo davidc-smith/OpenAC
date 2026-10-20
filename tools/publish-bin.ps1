@@ -419,6 +419,16 @@ $fingerprintDocument = [ordered]@{
     (($fingerprintDocument | ConvertTo-Json) + "`n"),
     [Text.UTF8Encoding]::new($false))
 
+# Beside manifest.json for the same reason as the fingerprint: the RynthNav navdata pin
+# this release was tested with. The launcher installs exactly this archive.
+$navDataPin = Get-Content -LiteralPath (Join-Path $RepoRoot 'external/rynth-navdata.json') -Raw | ConvertFrom-Json
+$navDataDocument = [ordered]@{ schemaVersion = 1 }
+foreach ($property in $navDataPin.PSObject.Properties) { $navDataDocument[$property.Name] = $property.Value }
+[IO.File]::WriteAllText(
+    (Join-Path $BinRoot 'rynth-navdata.json'),
+    (($navDataDocument | ConvertTo-Json) + "`n"),
+    [Text.UTF8Encoding]::new($false))
+
 Remove-Item -LiteralPath $Staging -Recurse -Force
 
 Write-Host ''

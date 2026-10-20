@@ -275,7 +275,8 @@
       "acdream.launcher.core": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Platform": "[0.1.25-fork.1, )"
+          "AcDream.Platform": "[0.1.25-fork.1, )",
+          "AcDream.Rynth.NavData": "[0.1.25-fork.1, )"
         }
       },
       "acdream.platform": {
@@ -328,6 +329,9 @@
           "AcDream.Rynth.ScriptWindows": "[0.1.25-fork.1, )",
           "AcDream.Rynth.Sdk": "[0.1.25-fork.1, )"
         }
+      },
+      "acdream.rynth.navdata": {
+        "type": "Project"
       },
       "acdream.rynth.plugin.rynthai": {
         "type": "Project",

@@ -57,12 +57,16 @@ $CommonPublishFlags = @(
 )
 
 # The launcher's own code, the bake tool's own project, and the build and
-# packaging files; the shared game code the bake tool links is left out.
+# packaging files, and the navdata library with the RynthCore source and pin it
+# builds from; the shared game code the bake tool links is left out.
 $LauncherOwnPaths = @(
     'src/AcDream.Launcher',
     'src/AcDream.Launcher.Core',
     'src/AcDream.Platform',
     'src/AcDream.Bake',
+    'src/AcDream.Rynth.NavData',
+    'external/rynth-navdata.json',
+    'external/RynthCore',
     'assets/icons',
     'global.json',
     'Directory.Packages.props',

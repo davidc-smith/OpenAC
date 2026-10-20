@@ -2,6 +2,8 @@ using System.Net;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AcDream.Launcher.Core.NavData;
+using AcDream.Rynth.NavData;
 
 namespace AcDream.Launcher.Core.Updates;
 
@@ -14,6 +16,11 @@ public interface IReleaseManifestClient
     Task<LauncherFingerprintDocument?> FetchLauncherFingerprintAsync(
         CancellationToken cancellationToken = default) =>
         Task.FromResult<LauncherFingerprintDocument?>(null);
+
+    /// <summary>The navdata pin published beside the manifest, or null when the release has
+    /// none or it cannot be read; the launcher then uses its built-in pin.</summary>
+    Task<NavDataPin?> FetchNavDataPinAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<NavDataPin?>(null);
 }
 
 public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
@@ -150,6 +157,33 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
         }
         // The file is optional: a release from before fingerprints has none, and one that is slow,
         // unreachable or unreadable leaves the check to compare versions, as it always could.
+        catch (LauncherUpdateException)
+        {
+            return null;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            return null;
+        }
+    }
+
+    public async Task<NavDataPin?> FetchNavDataPinAsync(CancellationToken cancellationToken = default)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(FingerprintTimeout);
+        try
+        {
+            byte[] bytes = await FetchBytesAsync(
+                    new Uri(_manifestUri, ReleaseNavDataPin.FileName), "navdata pin", timeout.Token)
+                .ConfigureAwait(false);
+            return ReleaseNavDataPin.Parse(bytes);
+        }
+        // Optional, like the fingerprint: a release without one, or one that is slow,
+        // unreachable or unreadable, leaves the launcher on its built-in pin.
         catch (LauncherUpdateException)
         {
             return null;
