@@ -213,6 +213,10 @@ can publish to the repository). `-DryRun` builds and checks, then prints those c
 Windows and Linux launchers find no payload for their RID in a fork release and report
 "Updates could not be checked".
 
+Pushing the `v*-fork` tag also triggers the fork's `ci.yml` (its tag trigger). The release
+job cannot publish there (its gates and branch guard), so those runs are noise: disable
+Actions on the fork or ignore them.
+
 `rynth-navdata.json` is `external/rynth-navdata.json` with a `schemaVersion`: the RynthNav
 navdata archive this release was tested with. It lives beside `manifest.json` for the same
 reason as the fingerprint. The launcher also carries the pin it was built with, and

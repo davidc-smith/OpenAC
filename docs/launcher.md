@@ -284,8 +284,13 @@ in place.
 The tiles go where the client reads them: `RYNTHNAV_NAVDATA` if set, otherwise the
 `NavData` folder under RynthCore's folder (`~/Library/Application Support/RynthCore` on
 macOS). A folder holding a `navdata.local` file, or tiles installed by RynthCore's own
-launcher, is left alone. A verified download stays in the cache
-(`~/Library/Caches/RynthCore/updates` on macOS) and is reused.
+launcher, is left alone. A successful install deletes its download; a download that
+a failed or cancelled install leaves in the cache (`~/Library/Caches/RynthCore/updates` on
+macOS) is reused by the next attempt.
+
+The `NavData` folder is shared by every launcher root on this computer (and by other OpenAC
+installs), while "no session running" is checked per root: a client started from another
+install keeps running during an update.
 
 ## Installation and updates
 

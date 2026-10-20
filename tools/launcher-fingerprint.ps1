@@ -11,6 +11,9 @@ not update itself. The inputs are:
   AcDream.Platform (the install paths and platform seams the launcher is
   built on);
 - the preparation tool's own project, AcDream.Bake;
+- the RynthNav navdata the launcher installs: src/AcDream.Rynth.NavData, the
+  pin in external/rynth-navdata.json and the RynthCore source it compiles,
+  external/RynthCore;
 - the prepared-data recipe: the pak format version and the bake tool version
   in AcDream.Content (Pak/PakFormat.cs), which the prepared data and the
   session config carry and which already decide when prepared data must be
