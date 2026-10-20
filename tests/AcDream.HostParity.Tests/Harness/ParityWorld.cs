@@ -179,6 +179,7 @@ internal static class ParityWorld
     internal const uint KitIconUnderlay = 0x06005B0Cu;
     internal const uint KitIconOverlay = 0x06006C0Bu;
     internal const uint KitCoverage = 0x0000_0400u;
+    internal const uint KitHookItemTypes = 0x0000_0080u;
 
     /// <summary>A side pack, carried, with room for four things.</summary>
     internal const uint SidePack = 0x50000041u;
@@ -254,6 +255,7 @@ internal static class ParityWorld
         kit.IconUnderlayId = KitIconUnderlay;
         kit.IconOverlayId = KitIconOverlay;
         kit.Priority = KitCoverage;
+        kit.HookItemTypes = KitHookItemTypes;
         kit.PluralName = "Healing Kits";
         objects.AddOrUpdate(kit);
         objects.AddOrUpdate(new ClientObject
