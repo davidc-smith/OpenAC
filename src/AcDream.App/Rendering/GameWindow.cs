@@ -543,7 +543,9 @@ public sealed class GameWindow :
         _extensions = new AcDream.App.Extensions.ClientExtensionHost(options.Rynth);
         if (!options.Rynth)
             Serilog.Log.Information("Rynth is turned off for this session; it is not loaded.");
-        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation, worldTriangles: WorldTriangles, datDirectory: options.DatDir, screen: _clientScreen);
+        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation, worldTriangles: WorldTriangles, datDirectory: options.DatDir, screen: _clientScreen, input: new AcDream.App.Extensions.ClientInputState(
+            () => _retainedInputCapture is { } capture && capture.HasKeyboardFocus,
+            () => _automation?.IsInputActive == true));
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(

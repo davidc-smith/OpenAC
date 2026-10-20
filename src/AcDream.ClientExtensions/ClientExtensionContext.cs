@@ -50,4 +50,7 @@ public sealed class ClientExtensionContext
 
     /// <summary>The client's view and radar on screen; null in a host without a window.</summary>
     public IClientScreen? Screen { get; init; }
+
+    /// <summary>The client's keyboard state; null in a host without a keyboard.</summary>
+    public IClientInput? Input { get; init; }
 }

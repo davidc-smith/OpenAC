@@ -34,7 +34,8 @@ internal sealed class ClientExtensionHost : IDisposable
         IAutomationSurface? automation = null,
         IPluginWorldTriangles? worldTriangles = null,
         string? datDirectory = null,
-        IClientScreen? screen = null)
+        IClientScreen? screen = null,
+        IClientInput? input = null)
     {
         var context = new ClientExtensionContext
         {
@@ -51,6 +52,7 @@ internal sealed class ClientExtensionHost : IDisposable
             WorldTriangles = worldTriangles,
             DatDirectory = datDirectory,
             Screen = screen,
+            Input = input,
         };
 
         foreach (IClientExtension extension in _extensions.ToArray())
