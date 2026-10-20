@@ -431,7 +431,7 @@ $navDataPin = if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKin
 $navDataDocument = [ordered]@{ schemaVersion = 1 }
 foreach ($property in $navDataPin.PSObject.Properties) {
     $value = $property.Value
-    if ($value -is [datetime]) { $value = $value.ToString('yyyy-MM-dd') }
+    if ($value -is [datetime]) { $value = $value.ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture) }
     $navDataDocument[$property.Name] = $value
 }
 [IO.File]::WriteAllText(

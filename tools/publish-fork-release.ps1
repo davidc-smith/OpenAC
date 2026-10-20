@@ -11,6 +11,8 @@ param(
 # rynth-navdata.json, published to the OpenACReleaseRepository in Directory.Build.props.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Check $LASTEXITCODE by hand so the custom messages below win over pwsh's own native-command error.
+$PSNativeCommandUseErrorActionPreference = $false
 
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'publish-fork-release requires PowerShell 7 or newer.' }
 if (-not $IsMacOS) { throw 'Fork releases are built on macOS (osx-arm64).' }
@@ -45,7 +47,11 @@ if (-not $DryRun) {
     $remoteTag = & git -C $RepoRoot ls-remote --tags origin "refs/tags/$tag"
     if ($LASTEXITCODE) { throw 'git ls-remote against origin failed.' }
     if ($remoteTag) { throw "Tag $tag already exists on origin." }
-    $head = (& git -C $RepoRoot rev-parse HEAD).Trim()
+    & git -C $RepoRoot fetch origin main
+    if ($LASTEXITCODE) { throw 'git fetch origin main failed.' }
+    $head = (& git -C $RepoRoot rev-parse HEAD)
+    if ($LASTEXITCODE) { throw 'git rev-parse HEAD failed.' }
+    $head = $head.Trim()
     $originMain = (& git -C $RepoRoot rev-parse origin/main)
     if ($LASTEXITCODE) { throw 'git rev-parse origin/main failed.' }
     if ($originMain.Trim() -ne $head) { throw 'HEAD is not origin/main; push main first.' }
@@ -53,6 +59,15 @@ if (-not $DryRun) {
 
 & (Join-Path $PSScriptRoot 'publish-bin.ps1') -MacOnly
 if ($LASTEXITCODE) { throw 'publish-bin failed.' }
+
+# Restoring packages while publishing rewrites the packages.*.lock.json files for this RID (and
+# may create new ones); put them back so the tree is as it was.
+& git -C $RepoRoot checkout -- '*packages.*.lock.json'
+if ($LASTEXITCODE) { throw 'git checkout of the lock files failed.' }
+$strayLocks = @(& git -C $RepoRoot ls-files --others --exclude-standard -- '*packages.*.lock.json')
+if ($LASTEXITCODE) { throw 'git ls-files failed.' }
+foreach ($lock in $strayLocks) { Remove-Item -LiteralPath (Join-Path $RepoRoot $lock) -Force }
+Write-Host "Restored the lock files publish-bin touched; removed $($strayLocks.Count) untracked one(s)."
 
 $bin = Join-Path $RepoRoot 'bin'
 $files = @('client-osx-arm64.zip', 'launcher-osx-arm64.zip', 'manifest.json', 'launcher-fingerprint.json', 'rynth-navdata.json') |
