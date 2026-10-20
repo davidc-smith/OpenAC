@@ -27,6 +27,7 @@ public sealed class RynthClientExtension : IClientExtension
     private RynthChatHookup? _chatHookup;
     private RynthInventoryHookup? _inventoryHookup;
     private RynthAiHookup? _aiHookup;
+    private RynthMapHookup? _mapHookup;
     private Action<string>? _log;
     private IDisposable? _runtimeSubscription;
     private IDisposable? _frameCallback;
@@ -109,6 +110,7 @@ public sealed class RynthClientExtension : IClientExtension
         _chatHookup = new RynthChatHookup(_host, view, context.Log);
         _inventoryHookup = new RynthInventoryHookup(view, context.Overlay?.Icons, context.Log);
         _aiHookup = new RynthAiHookup(_host, view, context.Log);
+        _mapHookup = new RynthMapHookup(view, context.Log);
         if (context.Overlay is not null)
             Guard("RynthAi", RynthAiDashboard.Start);
         // RynthCore registers the RynthNav panel only with RynthNav installed; here, only when it loaded.
@@ -273,6 +275,8 @@ public sealed class RynthClientExtension : IClientExtension
             Guard("RynthAi", RynthAiDashboard.Stop);
             _aiHookup?.Dispose();
             _aiHookup = null;
+            _mapHookup?.Dispose();
+            _mapHookup = null;
             GuardChat(RynthChatWindow.Stop);
             _chatHookup?.Dispose();
             _chatHookup = null;

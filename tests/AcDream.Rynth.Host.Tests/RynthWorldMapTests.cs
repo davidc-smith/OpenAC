@@ -1,6 +1,10 @@
 using System.IO.Compression;
+using AcDream.TestSupport;
+using AcDream.Rynth.Host;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
+using RynthCore.Engine.ImGuiBackend.Panels;
+using RynthCore.Engine.UI.Data;
 
 namespace AcDream.Rynth.Host.Tests;
 
@@ -137,5 +141,125 @@ public sealed class RynthWorldMapTests : IDisposable
         WaitFor(() => WorldMapTiles.IsOpen);
         int top = WorldMapTiles.Levels.Count - 1;
         WaitFor(() => { WorldMapTiles.BeginFrame(IntPtr.Zero); return WorldMapTiles.TryGet(top, 0, 0, out _); });
+    }
+}
+
+public sealed class RynthWorldMapHostTests : IDisposable
+{
+    private readonly List<string> _log = new();
+    private readonly RynthConfigSandbox _sandbox = new("rynth-wmap-");
+    private readonly FakeGameView _view = new() { PlayerId = 0x50000001u };
+    private readonly List<string> _temp = new();
+
+    public RynthWorldMapHostTests()
+    {
+        ImGuiPanelHost.Reset();
+        ImGuiPanelHost.Log = _log.Add;
+        UiDataHub.Clear();
+    }
+
+    public void Dispose()
+    {
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Stop();
+        WorldMapTiles.Shutdown();
+        ImGuiPanelHost.Reset();
+        ImGuiPanelHost.Log = null;
+        _sandbox.Dispose();
+        foreach (string f in _temp) File.Delete(f);
+    }
+
+    [Fact]
+    public void TheDashboardRegistersTheWorldMapAndMiniMap()
+    {
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        Assert.True(ImGuiPanelHost.HasFace(WorldMapFace.Title));
+        Assert.True(ImGuiPanelHost.HasFace(MiniMapFace.Title));
+    }
+
+    [Fact]
+    public void TheMapHooksAnswerFromTheView()
+    {
+        _view.Live = [0x80000001u, 0x80000002u];
+        _view.Positions[0x80000001u] = (0xA9B40021u, new System.Numerics.Vector3(1, 2, 3));
+        _view.Vitals = new RynthVitals(50, 100, 60, 120, 70, 140);
+        _view.Portaling = true;
+        using (new RynthMapHookup(_view, _log.Add))
+        {
+            Assert.Equal([0x80000001u, 0x80000002u], ClientObjectHooks.LiveObjectIds);
+            Assert.True(ClientObjectHooks.TryGetSnapshotPosition(0x80000001u, out uint cell, out float x, out float y, out float z));
+            Assert.Equal((0xA9B40021u, 1f, 2f, 3f), (cell, x, y, z));
+            Assert.False(ClientObjectHooks.TryGetSnapshotPosition(0x80000002u, out _, out _, out _, out _));
+            Assert.True(PlayerVitalsHooks.TryGetSnapshot(out PlayerVitalsSnapshot v));
+            Assert.Equal(new PlayerVitalsSnapshot(50, 100, 60, 120, 70, 140), v);
+            Assert.True(TeleportStateHooks.IsPortaling);
+        }
+        Assert.Empty(ClientObjectHooks.LiveObjectIds);
+        Assert.False(TeleportStateHooks.IsPortaling);
+    }
+
+    [Fact]
+    public void ALaterHookupKeepsItsHooksWhenAnEarlierOneIsDisposed()
+    {
+        var first = new RynthMapHookup(_view, _log.Add);
+        using var second = new RynthMapHookup(_view, _log.Add);
+        _view.Portaling = true;
+        first.Dispose();
+        Assert.True(TeleportStateHooks.IsPortaling);
+    }
+
+    [Fact]
+    public void AViewThatThrowsIsLoggedAndAnswersNothing()
+    {
+        using var hookup = new RynthMapHookup(_view, _log.Add);
+        _view.Throw = true;
+        Assert.Empty(ClientObjectHooks.LiveObjectIds);
+        Assert.Contains(_log, l => l.StartsWith("[Rynth] map LiveObjectIds: view failed:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheCharactersSourceIsPumpedByTheDashboard()
+    {
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        Assert.Contains(UiSources.Characters, AcDream.Rynth.EngineUi.RynthAiDashboard.HubSources);
+    }
+
+    [Fact]
+    public void TheWorldMapDrawsWithNoErrors()
+    {
+        using var imgui = new HeadlessImGui();
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        try
+        {
+            AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+            RynthCore.Engine.UI.PanelRouter.Toggle(WorldMapFace.Title);
+            for (int i = 0; i < 3; i++)
+                imgui.Frame(() => { AcDream.Rynth.EngineUi.RynthAiDashboard.BeginFrame(); ImGuiPanelHost.DrawAll(); });
+            Assert.True(ImGuiPanelHost.IsOpen(WorldMapFace.Title));
+            Assert.Empty(_log);
+        }
+        finally { LoginLifecycleHooks.HasObservedLoginComplete = false; }
+    }
+
+    private sealed class RecordingIcons : AcDream.ClientExtensions.IClientOverlayIcons
+    {
+        private int _next;
+        public List<IntPtr> Released { get; } = new();
+        public IntPtr Icon(uint iconId) => IntPtr.Zero;
+        public IntPtr SpellIcon(uint spellId) => IntPtr.Zero;
+        public IntPtr ObjectIcon(uint objectId) => IntPtr.Zero;
+        IntPtr AcDream.ClientExtensions.IClientOverlayIcons.Upload(byte[] rgba, int width, int height, string name) => (IntPtr)(++_next);
+        bool AcDream.ClientExtensions.IClientOverlayIcons.Release(IntPtr texture) { Released.Add(texture); return true; }
+    }
+
+    [Fact]
+    public void InventoryTeardownReleasesTheMapTilesThroughItsUpload()
+    {
+        var icons = new RecordingIcons();
+        var hookup = new RynthInventoryHookup(_view, icons, _log.Add);
+        WorldMapTiles.Open(RynthWorldMapTests.WriteMap(_temp, 1, 2, 3));
+        Assert.True(SpinWait.SpinUntil(() => WorldMapTiles.IsOpen, 5000));
+        Assert.True(SpinWait.SpinUntil(() => { WorldMapTiles.BeginFrame(IntPtr.Zero); return WorldMapTiles.TryGet(1, 0, 0, out _); }, 5000));
+        hookup.Dispose();
+        Assert.Single(icons.Released);
     }
 }
