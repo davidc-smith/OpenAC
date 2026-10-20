@@ -9,6 +9,7 @@ namespace AcDream.Rynth.Host;
 /// point under ApplicationData, beside the RynthCore folder our other plugins
 /// already use. RynthNav reads its tiles from RYNTHNAV_NAVDATA, not RynthInstallPaths,
 /// so off Windows that is pointed at &lt;RYNTHCORE_DIR&gt;/NavData too, where the Atlas already goes.
+/// RynthCore's hotkeys file goes there too, through their own RYNTHCORE_HOTKEYS_FILE, instead of .NET's ~/.local/share.
 /// Call before the first plugin loads: they resolve once.
 /// </summary>
 internal static class RynthInstallFolders
@@ -16,6 +17,7 @@ internal static class RynthInstallFolders
     internal const string CoreVariable = "RYNTHCORE_DIR";
     internal const string SuiteVariable = "RYNTHSUITE_DIR";
     internal const string NavDataVariable = "RYNTHNAV_NAVDATA";
+    internal const string HotkeysVariable = "RYNTHCORE_HOTKEYS_FILE";
 
     internal static void Apply() => Apply(
         Environment.GetEnvironmentVariable,
@@ -35,5 +37,7 @@ internal static class RynthInstallFolders
             set(SuiteVariable, Path.Combine(applicationData, "RynthSuite"));
         if (string.IsNullOrWhiteSpace(get(NavDataVariable)) && get(CoreVariable) is { Length: > 0 } core)
             set(NavDataVariable, Path.Combine(core, "NavData"));
+        if (string.IsNullOrWhiteSpace(get(HotkeysVariable)) && get(CoreVariable) is { Length: > 0 } coreDir)
+            set(HotkeysVariable, Path.Combine(coreDir, "hotkeys.txt"));
     }
 }

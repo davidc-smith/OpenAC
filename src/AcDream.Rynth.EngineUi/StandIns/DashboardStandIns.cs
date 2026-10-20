@@ -12,6 +12,11 @@ namespace RynthCore.Engine
     internal static class EntryPoint
     {
         internal static DateTime InitStartedUtc { get; set; } = DateTime.MinValue;
+
+        /// <summary>RynthCore notes a reload the player asked for; OpenAC doesn't reload, so nothing to note.</summary>
+        internal static void NoteManualReload()
+        {
+        }
     }
 }
 
@@ -114,7 +119,7 @@ namespace RynthCore.Engine.Plugins
 namespace RynthCore.Engine.Compatibility
 {
     /// <summary>
-    /// RynthCore queues work for acclient's thread; only the chat write and the selection
+    /// RynthCore queues work for acclient's thread; only the chat write, chat commands and the selection
     /// their code uses. OpenAC draws and ticks on one thread, so "queue" runs it now.
     /// </summary>
     internal static class AcMainThreadQueue
@@ -123,6 +128,21 @@ namespace RynthCore.Engine.Compatibility
 
         /// <summary>Selects an object in the game (the host: IRynthGameView.SelectObject).</summary>
         internal static Func<uint, bool>? SelectObject { get; set; }
+
+        /// <summary>Runs a chat command as if typed (the host: the same runner as ServerMenus.Runner).</summary>
+        internal static Action<string>? ChatCommand { get; set; }
+
+        /// <summary>
+        /// A chat command for the next tick (RynthCore's next main-thread drain), so a hotkey's
+        /// command never runs inside its own keystroke. False when nothing runs chat commands.
+        /// </summary>
+        public static bool EnqueueChatCommand(string text)
+        {
+            if (ChatCommand is null)
+                return false;
+            RynthCore.Engine.UI.Data.UiDataHub.Post("hotkey chat command", () => ChatCommand?.Invoke(text));
+            return true;
+        }
 
         public static bool EnqueueWriteToChat(string text, int color)
         {
@@ -279,18 +299,6 @@ namespace RynthCore.Engine.ImGuiBackend
 
 namespace RynthCore.Engine.ImGuiBackend.Panels
 {
-    /// <summary>RynthCore's hotkeys editor; OpenAC binds its own keys, so the Hotkeys settings tab is empty.</summary>
-    internal sealed class HotkeysSettingsUi
-    {
-        public const string TabName = "Hotkeys";
-
-        public void Leave()
-        {
-        }
-
-        public bool Draw(float w) => false;
-    }
-
     /// <summary>RynthCore's server picker (launcher profiles); OpenAC picks the server at login.</summary>
     internal static class ServerPickSettingsUi
     {

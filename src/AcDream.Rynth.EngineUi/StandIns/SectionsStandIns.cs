@@ -16,6 +16,8 @@ namespace RynthCore.Engine.Compatibility
 
         public static bool IsIlt => false;
 
+        public static bool PluginLoaded => false;
+
         public static IltVerdict Detected => NotIlt;
 
         public static void Invalidate()

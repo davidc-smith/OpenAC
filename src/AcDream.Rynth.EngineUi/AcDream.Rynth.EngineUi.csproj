@@ -4,7 +4,7 @@
        ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
        filter editor, ChatData and friends) and the RynthAi dashboard (RynthAiFace, its
        drawers, RynthAiData and the settings it edits; its Settings, Items, Damage,
-       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, World Map, Mini Map and Radar panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
+       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, World Map, Mini Map and Radar panels, the Hotkeys settings tab, the Ranges drawer, and their data). One assembly, as in RynthCore: their
        faces share static engine classes (UiSources, PanelRouter, ...).
        RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
        PluginExportBinder and Discord relay are NOT compiled, nor PluginManager,
@@ -38,6 +38,9 @@
     <Compile Include="$(RynthEngine)ImGui\Panels\SettingsRows.cs" Link="RynthCore\SettingsRows.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\QuickSettingsDrawer.cs" Link="RynthCore\QuickSettingsDrawer.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\SettingsFace.cs" Link="RynthCore\SettingsFace.cs" />
+    <Compile Include="$(RynthEngine)Hotkeys\HotkeyModel.cs" Link="RynthCore\Hotkeys\HotkeyModel.cs" />
+    <Compile Include="$(RynthEngine)Hotkeys\HotkeyService.cs" Link="RynthCore\Hotkeys\HotkeyService.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\HotkeysSettingsUi.cs" Link="RynthCore\HotkeysSettingsUi.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\ItemsFace.cs" Link="RynthCore\ItemsFace.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\DamageFace.cs" Link="RynthCore\DamageFace.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\DamageDetailFace.cs" Link="RynthCore\DamageDetailFace.cs" />
@@ -175,7 +178,8 @@
   <!-- Their ChatModel calls the Win32 clipboard through user32/kernel32
        P/Invokes. After compile, the redirect tool points those at the
        Win32ClipboardStandIn of the same names, so copy lines and the filter
-       editor's Import/Export use OpenAC's clipboard on every OS. Their two dat
+       editor's Import/Export use OpenAC's clipboard on every OS, and HotkeyService's
+       GetKeyState / GetForegroundWindow / GetWindowThreadProcessId (Win32KeyStateStandIn). Their two dat
        lookups (AcDatFile and PortalSpellTable FindPortalDat) look beside
        Environment.ProcessPath; that one getter is redirected to
        ProcessPathStandIn, which answers a path in OpenAC's dat folder. -->
@@ -199,7 +203,7 @@
       <_RedirectHost Condition="'$(_RedirectHost)' == ''">dotnet</_RedirectHost>
     </PropertyGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)win32-redirect.refs" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
-    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.EngineUi.Win32ClipboardStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot; --redirect-member System.Environment::get_ProcessPath=AcDream.Rynth.EngineUi.ProcessPathStandIn" />
+    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.EngineUi.Win32ClipboardStandIn,AcDream.Rynth.EngineUi.Win32KeyStateStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot; --redirect-member System.Environment::get_ProcessPath=AcDream.Rynth.EngineUi.ProcessPathStandIn" />
     <Touch Files="$(IntermediateOutputPath)win32-redirect.stamp" AlwaysCreate="true" />
   </Target>
 

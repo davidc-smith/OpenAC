@@ -9,7 +9,7 @@ namespace RynthCore.Engine.Compatibility
 {
     /// <summary>
     /// RynthCore's /rc commands. OpenAC has only their Mini Remote branch
-    /// (/rc miniremote|remote [show|hide|toggle|tab &lt;tab&gt;|section &lt;id&gt;]) and /rc inventory, with their texts;
+    /// (/rc miniremote|remote [show|hide|toggle|tab &lt;tab&gt;|section &lt;id&gt;]) /rc inventory, /rc hotkeys and /rc hotkey, with their texts;
     /// every other /rc verb says it isn't here.
     /// </summary>
     internal static class RynthCoreChatCommands
@@ -20,7 +20,7 @@ namespace RynthCore.Engine.Compatibility
             string sub = (arguments ?? string.Empty).Trim();
             if (sub.Length == 0)
             {
-                reply("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>] | inventory");
+                reply("Usage: /rc miniremote [show|hide|toggle|tab <tab>|section <id>] | inventory | hotkeys | hotkey <list|add|remove|...>");
                 return true;
             }
             if (IsVerb(sub, "inventory", out _) || IsVerb(sub, "inv", out _))
@@ -32,10 +32,29 @@ namespace RynthCore.Engine.Compatibility
                     UI.PanelRouter.Toggle(InventoryFace.Title);
                 return true;
             }
+            // /rc hotkeys : Settings > Hotkeys. /rc hotkey list|add|remove|enable|disable|actions|status|on|off
+            if (IsVerb(sub, "hotkeys", out string hotkeyArgs) && hotkeyArgs.Length == 0)
+            {
+                if (!ImGuiPanelHost.HasFace(SettingsFace.Title))
+                    reply("The Settings panel isn't available (the ImGui layer is off?). /rc hotkey list|add|remove work here in chat.");
+                else
+                {
+                    SettingsFace.RequestTab(HotkeysSettingsUi.TabName);
+                    if (!ImGuiPanelHost.IsOpen(SettingsFace.Title))
+                        UI.PanelRouter.Toggle(SettingsFace.Title);
+                }
+                return true;
+            }
+            if (IsVerb(sub, "hotkey", out hotkeyArgs) || IsVerb(sub, "hotkeys", out hotkeyArgs))
+            {
+                foreach (string line in Hotkeys.HotkeyService.HandleCommand(hotkeyArgs))
+                    reply(line);
+                return true;
+            }
             if (!IsVerb(sub, "miniremote", out string remoteArgs) && !IsVerb(sub, "remote", out remoteArgs))
             {
                 string verb = sub.Split(' ', 2)[0];
-                reply($"/rc {verb} isn't in OpenAC (only /rc miniremote and /rc inventory).");
+                reply($"/rc {verb} isn't in OpenAC (only /rc miniremote, /rc inventory, /rc hotkeys and /rc hotkey).");
                 return true;
             }
 
