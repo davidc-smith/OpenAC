@@ -4,10 +4,10 @@ using Mono.Cecil.Cil;
 namespace AcDream.Tools.RynthInteropRedirect;
 
 /// <summary>
-/// <c>AcDream.Tools.RynthInteropRedirect &lt;assembly&gt; &lt;stand-in type|-&gt; &lt;references file&gt; [--inert &lt;module,...&gt;] [--plain-threadstatic-swaps] [--redirect-type &lt;from&gt;=&lt;to&gt;]... [--redirect-member &lt;type&gt;::&lt;member&gt;=&lt;stand-in type&gt;]...</c>:
-/// every user32/kernel32 P/Invoke in the assembly that the stand-in type (in
-/// the same assembly; <c>-</c> for none) has a public static method for, same
-/// name and signature, becomes a managed call to that method. With
+/// <c>AcDream.Tools.RynthInteropRedirect &lt;assembly&gt; &lt;stand-in type[,type...]|-&gt; &lt;references file&gt; [--inert &lt;module,...&gt;] [--plain-threadstatic-swaps] [--redirect-type &lt;from&gt;=&lt;to&gt;]... [--redirect-member &lt;type&gt;::&lt;member&gt;=&lt;stand-in type&gt;]...</c>:
+/// every user32/kernel32 P/Invoke in the assembly that one of the stand-in types (in
+/// the same assembly; several separated by commas; <c>-</c> for none) has a public
+/// static method for, same name and signature, becomes a managed call to that method. With
 /// <c>--inert</c>, every other P/Invoke into one of the listed modules
 /// becomes a managed method that zeroes its out parameters and returns zero
 /// (false, null): a call that failed. The assembly is rewritten in place, its
@@ -39,7 +39,7 @@ internal static class Program
     /// <summary>The command line, with its output and error streams given (tests capture them).</summary>
     internal static int Run(string[] args, TextWriter output, TextWriter error)
     {
-        const string Usage = "usage: AcDream.Tools.RynthInteropRedirect <assembly> <stand-in type|-> <references file> [--inert <module,...>] [--plain-threadstatic-swaps] [--redirect-type <from>=<to>]... [--redirect-member <type>::<member>=<stand-in type>]...";
+        const string Usage = "usage: AcDream.Tools.RynthInteropRedirect <assembly> <stand-in type[,type...]|-> <references file> [--inert <module,...>] [--plain-threadstatic-swaps] [--redirect-type <from>=<to>]... [--redirect-member <type>::<member>=<stand-in type>]...";
         string[] inert = [];
         bool inertGiven = false, plainSwaps = false;
         var typeMaps = new List<(string From, string To)>();
@@ -109,14 +109,16 @@ internal static class Program
         using ModuleDefinition module = ModuleDefinition.ReadModule(
             assemblyPath,
             new ReaderParameters { ReadWrite = true, ReadSymbols = hasSymbols, AssemblyResolver = resolver });
-        TypeDefinition? standIn = standInTypeName is null
-            ? null
-            : module.GetType(standInTypeName) ?? throw new InvalidOperationException($"{standInTypeName} is not in {assemblyPath}");
+        TypeDefinition[] standIns = standInTypeName is null
+            ? []
+            : standInTypeName.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(name => module.GetType(name) ?? throw new InvalidOperationException($"{name} is not in {assemblyPath}"))
+                .ToArray();
 
         int redirected = 0, inerted = 0;
         foreach (TypeDefinition type in module.GetTypes())
         {
-            if (type == standIn)
+            if (standIns.Contains(type))
                 continue;
             foreach (MethodDefinition method in type.Methods)
             {
@@ -124,8 +126,8 @@ internal static class Program
                     continue;
                 string moduleName = pinvoke.Module.Name;
                 string entryPoint = string.IsNullOrEmpty(pinvoke.EntryPoint) ? method.Name : pinvoke.EntryPoint;
-                MethodDefinition? target = standIn is not null && Win32Modules.Contains(moduleName, StringComparer.OrdinalIgnoreCase)
-                    ? standIn.Methods.FirstOrDefault(
+                MethodDefinition? target = Win32Modules.Contains(moduleName, StringComparer.OrdinalIgnoreCase)
+                    ? standIns.SelectMany(s => s.Methods).FirstOrDefault(
                         candidate => candidate.IsPublic && candidate.IsStatic && candidate.Name == entryPoint
                             && SameSignature(candidate, method))
                     : null;
