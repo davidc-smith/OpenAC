@@ -65,6 +65,47 @@ public sealed unsafe class RynthNavPluginTests : IDisposable
         }
     }
 
+    // RynthNav remembers the last @ or / line it was offered; a recall announced within five
+    // seconds ("Name is recalling home.") followed by a teleport learns that line as the
+    // recall's command, which recalls.txt then carries (the default would be "@house recall").
+    [Fact]
+    public void ATypedRecallCommandIsLearnedFromTheRecallAnnouncement()
+    {
+        _view.Names[_view.PlayerId] = "Tester";
+        _view.WorldName = "TestWorld";
+        using RynthHost host = CreateHost();
+        RynthPlugin nav = Assert.Single(host.Plugins, p => p.ReportedName == "RynthNav");
+
+        // The stores load off-thread; the recall can only be remembered once they are in.
+        _view.Pose = (0xA9B40021u, new System.Numerics.Vector3(100, 100, 50), System.Numerics.Quaternion.Identity);
+        for (int i = 0; i < 20; i++)
+        {
+            host.Tick();
+            System.Threading.Thread.Sleep(25);
+        }
+
+        Assert.False(nav.OnChatBarEnter("/hr"));   // not eaten: it is still sent
+        nav.OnChatWindowText("Tester is recalling home.", 0);
+        host.Tick();
+        _view.Pose = (0xACB40021u, new System.Numerics.Vector3(100, 100, 50), System.Numerics.Quaternion.Identity);
+        host.Tick();
+        nav.OnLogout();   // saves recalls.txt now
+
+        // The save is off-thread; wait for the line to land in the shared NavData folder.
+        string file = Path.Combine(TestNavData.Directory, "recalls.txt");
+        string[] lines = [];
+        for (int i = 0; i < 100 && !lines.Any(l => l.StartsWith("TestWorld|Tester\t", StringComparison.Ordinal)); i++)
+        {
+            System.Threading.Thread.Sleep(50);
+            try { lines = File.Exists(file) ? File.ReadAllLines(file) : []; }
+            catch (IOException) { }
+        }
+
+        string[] line = lines.Single(l => l.StartsWith("TestWorld|Tester\t", StringComparison.Ordinal)).Split('\t');
+        Assert.Equal("House", line[1]);
+        Assert.Equal("/hr", line[5]);
+    }
+
     [Fact]
     public void RynthNavLoadsAndTicksBesideRynthAiAndRynthLua()
     {

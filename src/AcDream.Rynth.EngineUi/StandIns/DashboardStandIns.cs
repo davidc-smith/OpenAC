@@ -186,7 +186,7 @@ namespace RynthCore.Engine.UI.Data
 {
     /// <summary>
     /// RynthCore's UI pump: work posted here runs on the next dashboard tick
-    /// (RynthAiDashboard.Tick), on the game thread, in order.
+    /// (RynthEngineHub.Tick), on the game thread, in order.
     /// </summary>
     internal static class UiDataHub
     {
@@ -298,6 +298,12 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
     internal static class WorldMapFace
     {
         public const string Title = "World Map";
+    }
+
+    /// <summary>RynthCore's minimap (RynthNav maps); never registered in OpenAC, so the RynthNav panel hides its map buttons.</summary>
+    internal static class MiniMapFace
+    {
+        public const string Title = "Mini Map";
     }
 
     /// <summary>RynthCore's Report a problem panel; never registered in OpenAC, so Settings hides its button.</summary>

@@ -26,6 +26,7 @@ public sealed class RynthAiDashboardTests : IDisposable
         @"ImGui\Panels\DungeonMapFace.cs", @"UI\Data\RadarData.cs", @"UI\Data\RadarSnapshotJson.cs", @"UI\Data\DungeonMapMath.cs",
         @"ImGui\Panels\RadarMarkerStyle.cs", @"ImGui\Panels\CircleClip.cs", @"UI\Panels\MarkerStyleSettings.cs",
         @"ImGui\Panels\MarkerStyleEditor.cs", @"UI\Panels\RadarSettingsStore.cs", @"UI\Data\RynthNavAtlasData.cs", @"UI\Data\RynthNavData.cs",
+        @"ImGui\Panels\RynthNavFace.cs", @"ImGui\Panels\RynthNavArrowFace.cs",
     ];
 
     private readonly List<string> _log = new();
@@ -47,42 +48,6 @@ public sealed class RynthAiDashboardTests : IDisposable
         ImGuiPanelHost.Log = null;
         LoginLifecycleHooks.HasObservedLoginComplete = false;
         _sandbox.Dispose();
-    }
-
-    private sealed class ProbeSource(string name, bool throws) : RynthCore.Engine.UI.Data.UiSource(name, 1000)
-    {
-        public int Polls;
-
-        protected internal override void Poll()
-        {
-            Polls++;
-            if (throws)
-                throw new InvalidOperationException("boom");
-        }
-    }
-
-    [Fact]
-    public void ASourceThatThrowsDoesNotStopTheOthersOrRepeatEveryTick()
-    {
-        var bad = new ProbeSource("Bad", throws: true);
-        var good = new ProbeSource("Good", throws: false);
-        bad.Subscribe();
-        good.Subscribe();
-        AcDream.Rynth.EngineUi.RynthAiDashboard.Log = _log.Add;
-        try
-        {
-            long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            AcDream.Rynth.EngineUi.RynthAiDashboard.PollAll([bad, good], now);
-            AcDream.Rynth.EngineUi.RynthAiDashboard.PollAll([bad, good], now);
-        }
-        finally
-        {
-            AcDream.Rynth.EngineUi.RynthAiDashboard.Log = _ => { };
-        }
-
-        Assert.Equal(1, good.Polls);
-        Assert.Equal(1, bad.Polls);
-        Assert.Single(_log, line => line == "[RynthAi] Bad poll: InvalidOperationException: boom");
     }
 
     [Fact]

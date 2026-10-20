@@ -1,22 +1,16 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Threading.Tasks;
 using RynthCore.Engine;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
-using RynthCore.Engine.Plugins;
 using RynthCore.Engine.UI.Data;
-using RynthCore.Install;
 
 namespace AcDream.Rynth.EngineUi;
 
 /// <summary>
 /// Runs RynthCore's RynthAi dashboard: Start does what RynthCore's EntryPoint
-/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, Mini Remote), Tick is UiDataHub's
-/// step (run posted work, then poll each subscribed source when due), Stop is
-/// the hub's reset after plugins unload. Game thread.
+/// does when RynthAi is installed (register the dashboard and the panels it opens: Settings, Items, Damage, Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, Mini Remote), Tick runs the shared
+/// RynthEngineHub (this dashboard is one of its parts), Stop leaves it. Game thread.
 /// </summary>
 internal static class RynthAiDashboard
 {
@@ -25,8 +19,12 @@ internal static class RynthAiDashboard
     /// <summary>Their dashboard's title (the bar button and the layout key).</summary>
     internal const string Title = RynthAiFace.Title;
 
-    /// <summary>Where posted work that throws is logged; the host sets it.</summary>
-    internal static Action<string> Log { get; set; } = _ => { };
+    /// <summary>Where posted work that throws is logged; the host sets it (the hub's log).</summary>
+    internal static Action<string> Log
+    {
+        get => RynthEngineHub.Log;
+        set => RynthEngineHub.Log = value;
+    }
 
     /// <summary>RynthCore's EngineFrameController: the retail pictures decoded since the last frame become textures before the faces draw.</summary>
     internal static void BeginFrame()
@@ -43,11 +41,7 @@ internal static class RynthAiDashboard
             _started = true;
             // RynthCore's EntryPoint loads radar_settings.txt at startup; their Radar panel isn't compiled here.
             RynthCore.Engine.UI.Panels.RadarSettingsStore.Load();
-            NavAtlasInstall.Ensure(RynthInstallPaths.CoreDir, OperatingSystem.IsWindows(), Log);
-            // Our UiBackgroundWriter runs work inline, and parsing the 1.9 MB Atlas would stall
-            // the first indoor frame; their loader is written for a background thread, and later
-            // calls see the path already requested.
-            Task.Run(RynthNavAtlas.EnsureLoadedForNames);
+            NavAtlasInstall.EnsureOnce(Log);
         }
 
         // The panel host can be reset (tests, an extension restart): register again then.
@@ -79,6 +73,7 @@ internal static class RynthAiDashboard
             DungeonMapFace.Register();
         if (!ImGuiPanelHost.HasFace(MiniRemoteFace.Title))
             MiniRemoteFace.Register();
+        RynthEngineHub.Join(HubPart);
     }
 
     private static readonly UiSource[] Sources =
@@ -88,57 +83,23 @@ internal static class RynthAiDashboard
             UiSources.Meta, UiSources.LootEdit, UiSources.Lua, UiSources.Progression, UiSources.Radar,
         ];
 
-    /// <summary>One hub step. Returns how many posted actions ran.</summary>
-    internal static int Tick()
-    {
-        if (!_started)
-            return 0;
-        foreach (UiSource source in Sources)
-            source.PromoteDeferredRefresh();
-        // RynthCore's MainThreadSnapshots.Tick: reads only while the Skills panel wants it.
-        PlayerProgressHooks.Prefetch();
-        // RynthCore's ImGuiController frame: servers, plugin manifests and the Mini Remote's sections.
-        RynthCore.Engine.UI.Sections.SectionRegistry.Tick();
-        int ran = UiDataHub.Drain(Log);
-        InventoryModel.MainThreadTick();
-        PollAll(Sources, Stopwatch.GetTimestamp());
-        return ran;
-    }
-
-    /// <summary>
-    /// Polls each subscribed, due source inside its own try/catch (as the hub's
-    /// Step does): one that throws is logged and still marked polled, so it
-    /// neither stops the others nor is retried every tick.
-    /// </summary>
-    internal static void PollAll(IReadOnlyList<UiSource> sources, long now)
-    {
-        foreach (UiSource source in sources)
+    // RynthCore's ImGuiController frame and MainThreadSnapshots.Tick, in their order around the drain.
+    private static readonly RynthEngineHub.Part HubPart = new("RynthAi", Sources,
+        BeforeDrain: () =>
         {
-            if (!source.HasSubscribers || !source.IsDue(now))
-                continue;
-            long before = Stopwatch.GetTimestamp();
-            try { source.Poll(); }
-            catch (Exception ex) { Log($"[RynthAi] {source.Name} poll: {ex.GetType().Name}: {ex.Message}"); }
-            long after = Stopwatch.GetTimestamp();
-            source.MarkPolled(after, after - before);
-        }
-    }
+            // MainThreadSnapshots.Tick: reads only while the Skills panel wants it.
+            PlayerProgressHooks.Prefetch();
+            // Servers, plugin manifests and the Mini Remote's sections.
+            RynthCore.Engine.UI.Sections.SectionRegistry.Tick();
+        },
+        AfterDrain: InventoryModel.MainThreadTick);
+
+    /// <summary>One hub step (the hub runs every part, this one included). Returns how many posted actions ran.</summary>
+    internal static int Tick() => _started ? RynthEngineHub.Tick() : 0;
 
     internal static void Stop()
     {
-        try
-        {
-            UiDataHub.Clear();
-            PluginManager.RaisePluginsUnloaded();
-            foreach (UiSource source in Sources)
-            {
-                try { source.Reset(); }
-                catch (Exception ex) { Log($"[RynthAi] {source.Name} reset: {ex.GetType().Name}: {ex.Message}"); }
-            }
-        }
-        finally
-        {
-            _started = false;
-        }
+        try { RynthEngineHub.Leave(HubPart.Name); }
+        finally { _started = false; }
     }
 }

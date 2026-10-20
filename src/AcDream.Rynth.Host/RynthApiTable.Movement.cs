@@ -15,6 +15,8 @@ public sealed unsafe partial class RynthApiTable
         Native->SetAutoRunFn = (IntPtr)(delegate* unmanaged[Cdecl]<int, int>)&SetAutoRun;
         Native->TurnToHeadingFn = (IntPtr)(delegate* unmanaged[Cdecl]<float, int>)&TurnToHeading;
         Native->SetMotionFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint, int, int>)&SetMotion;
+        Native->DoMovementFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint, float, int, int>)&DoMovement;
+        Native->StopMovementFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint, int, int>)&StopMovement;
         Native->StopCompletelyFn = (IntPtr)(delegate* unmanaged[Cdecl]<int>)&StopCompletely;
         Native->JumpNonAutonomousFn = (IntPtr)(delegate* unmanaged[Cdecl]<float, int>)&JumpNonAutonomous;
         Native->TapJumpFn = (IntPtr)(delegate* unmanaged[Cdecl]<int>)&TapJump;
@@ -69,6 +71,37 @@ public sealed unsafe partial class RynthApiTable
         catch (Exception error)
         {
             table.Fail(nameof(SetMotion), error);
+            return 0;
+        }
+    }
+
+    // RynthCore's DoMovementCommand: here a held key, as SetMotion holds it. Speed and the
+    // hold key are ignored; run or walk follows the held run state.
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int DoMovement(uint motion, float speed, int holdKey)
+    {
+        RynthApiTable? table = _current;
+        if (table is null)
+            return 0;
+        try { return table.Holds.SetMotion(motion, true) ? 1 : 0; }
+        catch (Exception error)
+        {
+            table.Fail(nameof(DoMovement), error);
+            return 0;
+        }
+    }
+
+    // RynthCore's StopMovementCommand: lets go of the held key.
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int StopMovement(uint motion, int holdKey)
+    {
+        RynthApiTable? table = _current;
+        if (table is null)
+            return 0;
+        try { return table.Holds.SetMotion(motion, false) ? 1 : 0; }
+        catch (Exception error)
+        {
+            table.Fail(nameof(StopMovement), error);
             return 0;
         }
     }

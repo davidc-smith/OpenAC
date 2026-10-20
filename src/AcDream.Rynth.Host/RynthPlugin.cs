@@ -172,15 +172,24 @@ public sealed unsafe class RynthPlugin
     /// </summary>
     public bool OnChatBarEnter(string text)
     {
-        if (!IsActive || !_exports.TryGet("RynthPluginOnChatBarEnter", out IntPtr export))
-            return false;
         int eat = 0;
-        fixed (char* textUtf16 = text)
-        {
-            ((delegate* unmanaged[Cdecl]<IntPtr, IntPtr, void>)export)((IntPtr)textUtf16, (IntPtr)(&eat));
-        }
-
+        OnChatBarEnter(text, ref eat);
         return eat != 0;
+    }
+
+    /// <summary>
+    /// The same call with the eat flag RynthCore shares across every plugin for one line: a
+    /// plugin sets it to eat the line and later plugins still see it set.
+    /// </summary>
+    public void OnChatBarEnter(string text, ref int eat)
+    {
+        if (!IsActive || !_exports.TryGet("RynthPluginOnChatBarEnter", out IntPtr export))
+            return;
+        fixed (char* textUtf16 = text)
+        fixed (int* eatFlag = &eat)
+        {
+            ((delegate* unmanaged[Cdecl]<IntPtr, IntPtr, void>)export)((IntPtr)textUtf16, (IntPtr)eatFlag);
+        }
     }
 
     public void OnKillNotification(string deathMessage)

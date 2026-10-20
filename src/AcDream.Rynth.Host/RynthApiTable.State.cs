@@ -37,6 +37,7 @@ public sealed unsafe partial class RynthApiTable
         Native->GetUseDoneSeqFn = (IntPtr)(delegate* unmanaged[Cdecl]<int>)&GetUseDoneSeq;
         Native->GetLastUseDoneFn = (IntPtr)(delegate* unmanaged[Cdecl]<int*, uint*, int>)&GetLastUseDone;
         Native->GetLastWeenieErrorFn = (IntPtr)(delegate* unmanaged[Cdecl]<int*, uint*, uint*, uint*, int>)&GetLastWeenieError;
+        Native->GetLiveObjectIdsFn = (IntPtr)(delegate* unmanaged[Cdecl]<uint*, int, int>)&GetLiveObjectIds;
     }
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -409,6 +410,32 @@ public sealed unsafe partial class RynthApiTable
         {
             table.Fail(nameof(IsSpellKnown), error);
             return -1;
+        }
+    }
+
+    // RynthCore v69: the total live object count; fills up to capacity (a null buffer just counts).
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static int GetLiveObjectIds(uint* buffer, int capacity)
+    {
+        RynthApiTable? table = _current;
+        if (table is null)
+            return 0;
+        try
+        {
+            if (table._view.LiveObjectIds is not { } ids)
+                return 0;
+            if (buffer is not null && capacity > 0)
+            {
+                int count = Math.Min(capacity, ids.Count);
+                for (int i = 0; i < count; i++)
+                    buffer[i] = ids[i];
+            }
+            return ids.Count;
+        }
+        catch (Exception error)
+        {
+            table.Fail(nameof(GetLiveObjectIds), error);
+            return 0;
         }
     }
 
