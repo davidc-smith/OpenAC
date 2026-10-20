@@ -23,12 +23,33 @@ $repository = [string]($props.Project.PropertyGroup | ForEach-Object { $_.OpenAC
 if ($version -notmatch '-fork\.\d+$') { throw "Version '$version' is not a fork version (x.y.z-fork.n)." }
 if ([string]::IsNullOrWhiteSpace($repository)) { throw 'Directory.Build.props has no OpenACReleaseRepository.' }
 
+if ($AllowBranch -and -not $DryRun) { throw '-AllowBranch is for dry runs only; publish from main.' }
+
 $status = & git -C $RepoRoot status --porcelain
+if ($LASTEXITCODE) { throw 'git status failed.' }
 if ($status) { throw 'The working tree has changes; commit or stash them first.' }
-$branch = (& git -C $RepoRoot rev-parse --abbrev-ref HEAD).Trim()
-if ($branch -ne 'main' -and -not $AllowBranch) { throw "On '$branch'; fork releases come from main (or pass -AllowBranch)." }
+$branch = (& git -C $RepoRoot rev-parse --abbrev-ref HEAD)
+if ($LASTEXITCODE) { throw 'git rev-parse failed.' }
+$branch = $branch.Trim()
+if ($branch -ne 'main' -and -not $AllowBranch) { throw "On '$branch'; fork releases come from main (or pass -AllowBranch for a dry run)." }
 $tag = "v$version"
-if (-not $DryRun -and (& git -C $RepoRoot tag --list $tag)) { throw "Tag $tag already exists." }
+
+if (-not $DryRun) {
+    # Everything that can fail cheaply is checked before the build or any side effect.
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw 'The gh CLI is not installed.' }
+    & gh auth status *> $null
+    if ($LASTEXITCODE) { throw 'gh is not logged in (gh auth status failed).' }
+    & git -C $RepoRoot remote get-url origin *> $null
+    if ($LASTEXITCODE) { throw "This checkout has no 'origin' remote." }
+    if (& git -C $RepoRoot tag --list $tag) { throw "Tag $tag already exists locally." }
+    $remoteTag = & git -C $RepoRoot ls-remote --tags origin "refs/tags/$tag"
+    if ($LASTEXITCODE) { throw 'git ls-remote against origin failed.' }
+    if ($remoteTag) { throw "Tag $tag already exists on origin." }
+    $head = (& git -C $RepoRoot rev-parse HEAD).Trim()
+    $originMain = (& git -C $RepoRoot rev-parse origin/main)
+    if ($LASTEXITCODE) { throw 'git rev-parse origin/main failed.' }
+    if ($originMain.Trim() -ne $head) { throw 'HEAD is not origin/main; push main first.' }
+}
 
 & (Join-Path $PSScriptRoot 'publish-bin.ps1') -MacOnly
 if ($LASTEXITCODE) { throw 'publish-bin failed.' }
@@ -56,7 +77,10 @@ if ($DryRun) {
 & git -C $RepoRoot tag $tag
 if ($LASTEXITCODE) { throw "git tag $tag failed." }
 & git -C $RepoRoot push origin $tag
-if ($LASTEXITCODE) { throw "git push of $tag failed." }
+if ($LASTEXITCODE) {
+    & git -C $RepoRoot tag -d $tag
+    throw "git push of $tag failed; the local tag was deleted."
+}
 & gh release create $tag -R $repository --title "OpenAC $version" --notes $notes --latest @files
 if ($LASTEXITCODE) { throw 'gh release create failed; the tag is pushed, re-run gh release create by hand.' }
 Write-Host "Published $tag to https://github.com/$repository/releases/tag/$tag" -ForegroundColor Green
