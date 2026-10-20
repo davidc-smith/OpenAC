@@ -80,12 +80,13 @@ public sealed class RynthNavDataViewModelTests : IDisposable
         RynthNavDataViewModel vm = Create();
         await vm.CheckAsync(TestContext.Current.CancellationToken);
         Assert.True(vm.ShowBanner);
-        // Agreeing behind the view model's back is not seen until the next check re-reads the file.
+        // Agreeing behind the view model's back is not seen: ShowBanner uses the cached value.
         Consent.Agree();
         Assert.True(vm.ShowBanner);
-        File.Delete(Path.Combine(_root, "config", LauncherNavDataConsentStore.FileName));
-        await vm.InstallCommand.ExecuteAsync(null);
-        File.Delete(Path.Combine(_root, "config", LauncherNavDataConsentStore.FileName));
+        Assert.True(vm.ShowBanner);
+        // The next check re-reads the file, sees the agreement and installs on its own.
+        await vm.CheckAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, _installs);
         Assert.False(vm.ShowBanner);
     }
 

@@ -138,7 +138,15 @@ public sealed partial class LauncherWindowViewModelTests
             core.RaiseStateChanged();
             clock.Advance(5);
 
+            Assert.Empty(core.LaunchRequests);
             Task install = vm.NavData.InstallCommand.ExecuteAsync(null);
+            Assert.Empty(core.LaunchRequests);
+            Assert.True(vm.NavData.IsBusy);
+            // The open dialog would already block the relaunch through CanInteract; close it behind
+            // the view model's back so only the IsBusy precondition can hold the relaunch back.
+            typeof(RynthNavDataViewModel).GetField("_isOpen", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .SetValue(vm.NavData, false);
+            Assert.False(vm.IsModalOpen);
             Assert.True(vm.NavData.IsBusy);
             vm.PollStatus(); await vm.AutomaticRelaunchTask;
             Assert.Empty(core.LaunchRequests);

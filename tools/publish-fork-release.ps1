@@ -69,8 +69,13 @@ finally {
     if ($LASTEXITCODE) { Write-Warning 'git checkout of the lock files failed.'; $cleanupFailed = $true }
     $strayLocks = @(& git -C $RepoRoot ls-files --others --exclude-standard -- '*packages.*.lock.json')
     if ($LASTEXITCODE) { Write-Warning 'git ls-files failed.'; $cleanupFailed = $true }
-    foreach ($lock in $strayLocks) { Remove-Item -LiteralPath (Join-Path $RepoRoot $lock) -Force }
-    Write-Host "Restored the lock files publish-bin touched; removed $($strayLocks.Count) untracked one(s)."
+    foreach ($lock in $strayLocks) {
+        try { Remove-Item -LiteralPath (Join-Path $RepoRoot $lock) -Force -ErrorAction Stop }
+        catch { Write-Warning "Could not remove $lock`: $($_.Exception.Message)"; $cleanupFailed = $true }
+    }
+    if (-not $cleanupFailed) {
+        Write-Host "Restored the lock files publish-bin touched; removed $($strayLocks.Count) untracked one(s)."
+    }
 }
 if ($cleanupFailed) { throw 'Restoring the lock files failed.' }
 

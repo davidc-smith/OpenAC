@@ -52,7 +52,14 @@ public sealed class LauncherNavDataConsentStore
         string temporaryPath = Path.Combine(directory, $".{FileName}.{Guid.NewGuid():N}.tmp");
         try
         {
-            File.WriteAllBytes(temporaryPath, JsonSerializer.SerializeToUtf8Bytes(new Consent(true), Options));
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(new Consent(true), Options);
+            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                       bufferSize: 4096, FileOptions.WriteThrough))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+
             File.Move(temporaryPath, FilePath, overwrite: true);
         }
         finally
