@@ -150,6 +150,7 @@ internal sealed class RynthInventoryHookup : IDisposable
         {
             Guard(nameof(RetailSprites.Shutdown), () => { RetailSprites.Shutdown(); return true; }, false);
             Guard(nameof(WorldMapTiles.Shutdown), () => { WorldMapTiles.Shutdown(); return true; }, false);
+            Guard(nameof(WorldMapVectors.Shutdown), () => { WorldMapVectors.Shutdown(); return true; }, false);
         }
         finally { EngineThreads.StoppingFlag = false; }
 

@@ -72,11 +72,16 @@ internal sealed class RynthMapHookup : IDisposable
         return ok;
     }
 
-    private bool TryGetHealth(uint objectId, out uint current, out uint max)
+    // The ratio is the latest the client has (ratio-only updates count); Current/Max come
+    // from the last appraisal when there is one, else 0/0.
+    private bool TryGetHealth(uint objectId, out float ratio, out uint current, out uint max)
     {
+        float found = 0f;
         RynthVitals v = default;
-        bool ok = Guard(nameof(MonsterHudData.TryGetHealth), () => _view.TryGetTargetVitals(objectId, out v), false);
-        (current, max) = ok ? (v.Health, v.MaxHealth) : (0u, 0u);
+        bool ok = Guard(nameof(MonsterHudData.TryGetHealth), () => _view.TryGetHealthRatio(objectId, out found), false);
+        bool vitals = ok && Guard(nameof(MonsterHudData.TryGetHealth), () => _view.TryGetTargetVitals(objectId, out v), false);
+        ratio = ok ? found : 0f;
+        (current, max) = vitals ? (v.Health, v.MaxHealth) : (0u, 0u);
         return ok;
     }
 

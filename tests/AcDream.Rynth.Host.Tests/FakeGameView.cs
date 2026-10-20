@@ -191,6 +191,11 @@ internal sealed class FakeGameView : IRynthGameView
     public bool TryGetTargetVitals(uint objectId, out RynthVitals vitals) =>
         Read(TargetVitals).TryGetValue(objectId, out vitals);
 
+    public Dictionary<uint, float> HealthRatios { get; } = new();
+
+    public bool TryGetHealthRatio(uint objectId, out float ratio) =>
+        Read(HealthRatios).TryGetValue(objectId, out ratio);
+
     public IReadOnlyList<RynthEnchantment>? GetObjectEnchantments(uint objectId) =>
         objectId == _playerId ? Read(Enchantments) : Read((List<RynthEnchantment>?)null);
 

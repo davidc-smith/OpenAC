@@ -17,7 +17,7 @@ public sealed class RynthWorldMapTests : IDisposable
 
     public void Dispose()
     {
-        WorldMapTiles.Shutdown();
+        MapTilesReset.Settle();
         DX9Backend.Upload = _upload;
         DX9Backend.Release = _release;
         foreach (string f in _temp) { try { File.Delete(f); } catch { } }
@@ -94,6 +94,7 @@ public sealed class RynthWorldMapTests : IDisposable
     [Fact]
     public void TheTopTileOfAMapFileBecomesAnOverlayTexture()
     {
+        MapTilesReset.Settle();
         var uploads = new List<byte[]>();
         var released = new List<IntPtr>();
         DX9Backend.Upload = (rgba, w, h) => { Assert.Equal((256, 256), (w, h)); uploads.Add(rgba); return (IntPtr)(100 + uploads.Count); };
@@ -116,6 +117,7 @@ public sealed class RynthWorldMapTests : IDisposable
     [Fact]
     public void AMissingMapFileSaysSo()
     {
+        MapTilesReset.Settle();
         WorldMapTiles.Open(Path.Combine(Path.GetTempPath(), $"rynth-wmap-missing-{Guid.NewGuid():N}.rmap"));
         WaitFor(() => WorldMapTiles.Status.StartsWith("No world map file yet", StringComparison.Ordinal));
     }
@@ -134,6 +136,7 @@ public sealed class RynthWorldMapTests : IDisposable
     {
         string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RynthCore", "NavData", "worldmap.rmap");
         if (!File.Exists(path)) return;   // NavData not installed on this machine
+        MapTilesReset.Settle();
         var uploads = 0;
         DX9Backend.Upload = (_, _, _) => (IntPtr)(++uploads);
         DX9Backend.Release = _ => true;
@@ -146,6 +149,7 @@ public sealed class RynthWorldMapTests : IDisposable
 
 public sealed class RynthWorldMapHostTests : IDisposable
 {
+    private bool _drewAFace;   // a drawn map face started WorldMapMaps.Refresh
     private readonly List<string> _log = new();
     private readonly RynthConfigSandbox _sandbox = new("rynth-wmap-");
     private readonly FakeGameView _view = new() { PlayerId = 0x50000001u };
@@ -161,7 +165,7 @@ public sealed class RynthWorldMapHostTests : IDisposable
     public void Dispose()
     {
         AcDream.Rynth.EngineUi.RynthAiDashboard.Stop();
-        WorldMapTiles.Shutdown();
+        MapTilesReset.Settle(awaitScan: _drewAFace);
         ImGuiPanelHost.Reset();
         ImGuiPanelHost.Log = null;
         _sandbox.Dispose();
@@ -231,6 +235,7 @@ public sealed class RynthWorldMapHostTests : IDisposable
         try
         {
             AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+            _drewAFace = true;
             RynthCore.Engine.UI.PanelRouter.Toggle(WorldMapFace.Title);
             for (int i = 0; i < 3; i++)
                 imgui.Frame(() => { AcDream.Rynth.EngineUi.RynthAiDashboard.BeginFrame(); ImGuiPanelHost.DrawAll(); });
@@ -254,6 +259,7 @@ public sealed class RynthWorldMapHostTests : IDisposable
     [Fact]
     public void InventoryTeardownReleasesTheMapTilesThroughItsUpload()
     {
+        MapTilesReset.Settle();
         var icons = new RecordingIcons();
         var hookup = new RynthInventoryHookup(_view, icons, _log.Add);
         WorldMapTiles.Open(RynthWorldMapTests.WriteMap(_temp, 1, 2, 3));

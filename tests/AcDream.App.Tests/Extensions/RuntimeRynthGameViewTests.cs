@@ -879,6 +879,19 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
+    public void HealthRatioIsTheLatestRatioOnlyUpdatesIncluded()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime, automation: new FakeRynthAutomation());
+
+        Assert.False(view.TryGetHealthRatio(0x80000011, out _));
+        runtime.ActionOwner.Combat.OnUpdateHealth(0x80000011, 0.4f);
+        Assert.True(view.TryGetHealthRatio(0x80000011, out float ratio));
+        Assert.Equal(0.4f, ratio);
+        Assert.False(view.TryGetHealthRatio(0, out _));
+    }
+
+    [Fact]
     public void CombatActionsNeedASessionAndUseObjectOnGoesThroughTheItems()
     {
         var runtime = GameRuntimeTestFactory.Create();

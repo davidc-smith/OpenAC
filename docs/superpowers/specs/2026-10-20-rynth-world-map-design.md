@@ -87,8 +87,11 @@ settable delegate the host fills and clears (the existing pattern, e.g.
   polls RynthNet's export through the existing plugin export lookup; RynthNet is
   never loaded, so the snapshot stays empty.
 - `Hud.MonsterHudData.TryGetHealth(id, out HealthObservation)` and
-  `HealthObservation` (`Ratio`): host answers from `TryGetTargetVitals`
-  (health / max health; false when max is 0).
+  `HealthObservation` (`Ratio`): like RynthCore, every health update counts,
+  ratio-only ones included. The host answers `Ratio` from the client's latest
+  health ratio for the object (`TryGetHealthRatio`, from `CombatState`), with
+  `Current`/`Max` from the last appraisal (`TryGetTargetVitals`) when known,
+  else 0/0 with the ratio still answered; an object with no ratio is false.
 - `AcMainThreadQueue.EnqueueOverlaySelect(id)`: forwards to the existing
   `AcMainThreadQueue.SelectObject` hook.
 - `AvaloniaOverlay.RadarCtrlGatedClickThrough`: a `volatile bool` field.
@@ -138,6 +141,10 @@ Our panel host (`AcDream.Rynth.ScriptWindows/StandIns`):
   (beside `dungeon_map_settings.txt`); Radar settings already load at dashboard
   Start (`radar_settings.txt`).
 - Host hooks read the game view on the frame thread, like the existing hookups.
+- DXT1 pack tiles are decoded to RGBA on the frame thread before upload (up to
+  4 x 256 KB a frame), so GPU memory is RGBA-sized: up to 192 tiles is about
+  48 MB, against RynthCore's roughly 6 MB of DXT1. Accepted; packs are not
+  installed by default.
 
 ## Errors
 
@@ -159,6 +166,10 @@ Our panel host (`AcDream.Rynth.ScriptWindows/StandIns`):
   Map and Radar; Inventory registered twice keeps one entry.
 - `RynthMapHookup`: each hook answers from a fake `IRynthGameView` and is
   cleared on dispose (only when still ours).
+- Health: a ratio-only object answers its ratio with 0/0; an object with an
+  appraisal answers the latest ratio plus the appraisal's `Current`/`Max`;
+  unknown is false; a throwing view is false and logged; disposing an earlier
+  hookup leaves a later one's reader.
 - `EnqueueOverlaySelect` reaches `SelectObject`.
 - `PanelSpec.GoldGrip` compiles with RadarFace's spec; `TextSizeMenu` draws
   without throwing in the headless ImGui test context.

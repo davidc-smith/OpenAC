@@ -611,6 +611,19 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return false;
     }
 
+    public bool TryGetHealthRatio(uint objectId, out float ratio)
+    {
+        CombatState combat = _runtime.ActionOwner.Combat;
+        if (objectId != 0 && combat.HasHealth(objectId))
+        {
+            ratio = combat.GetHealthPercent(objectId);
+            return true;
+        }
+
+        ratio = 0f;
+        return false;
+    }
+
     // OpenAC keeps the player's enchantment registry only.
     public IReadOnlyList<RynthEnchantment>? GetObjectEnchantments(uint objectId) =>
         IsPlayer(objectId) ? PlayerEnchantments : null;
