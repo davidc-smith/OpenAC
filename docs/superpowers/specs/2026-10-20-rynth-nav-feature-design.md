@@ -43,8 +43,10 @@ also learns a recall command from the line typed just before "X is recalling hom
 - **Lines a plugin submits itself** (`InvokeChatParser`) are offered to the plugins too, as in
   RynthCore: its `InvokeParser` runs `ChatCommandDispatcher.Dispatch`, whose plugin
   pre-dispatch offers every line to each plugin's `OnChatBarEnter` (that is how `/rnav` typed
-  in Rynth chat reaches RynthNav there). A plugin that submits from inside its own
-  `OnChatBarEnter` re-enters the router, which already bounds its depth.
+  in Rynth chat reaches RynthNav there). Every line is offered to every plugin, in load
+  order, with one shared eat flag (an eaten line still reaches later plugins, as RynthLua
+  expects). A line a plugin submits from inside its own `OnChatBarEnter` skips the plugin
+  pre-dispatch, as RynthCore's `_inPluginPreDispatch` does.
 - The forwarding registrations (`ro`, `ginv`, `ra`, `mt`, `ub`, `vt`, `lua`) are removed; the
   interceptor reaches every plugin before plugin verbs are consulted. `/rynth` and `/rc` stay
   registered (the host answers them, not a plugin).

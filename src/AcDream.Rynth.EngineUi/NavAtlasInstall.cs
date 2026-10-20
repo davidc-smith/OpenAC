@@ -54,12 +54,15 @@ internal static class NavAtlasInstall
     private static string? _ensuredDir;
 
     /// <summary>
-    /// Once per RynthCore folder while its file stays in place (so once per process outside tests): the Atlas file in place, then RynthNavAtlas warmed on a pool thread
-    /// (our UiBackgroundWriter runs work inline, and parsing the 1.9 MB Atlas would stall the
-    /// first indoor frame; their loader is written for a background thread, and later calls
-    /// see the path already requested). Whichever of the dashboard and the RynthNav panel
-    /// starts first runs it.
+    /// Puts the Atlas file in place and warms RynthNavAtlas on a pool thread; skipped while
+    /// the RynthCore folder is unchanged and the file is still there.
     /// </summary>
+    /// <remarks>
+    /// Our UiBackgroundWriter runs work inline, and parsing the 1.9 MB Atlas would stall the
+    /// first indoor frame; their loader is written for a background thread, and later calls
+    /// see the path already requested. Whichever of the dashboard and the RynthNav panel
+    /// starts first runs it.
+    /// </remarks>
     internal static void EnsureOnce(Action<string> log)
     {
         string coreDir = RynthCore.Install.RynthInstallPaths.CoreDir;

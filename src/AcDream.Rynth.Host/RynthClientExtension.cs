@@ -374,19 +374,41 @@ public sealed class RynthClientExtension : IClientExtension
         return handles;
     }
 
-    /// <summary>Offers chat-bar text to each plugin until one eats it. True when one did.</summary>
-    private bool OfferChatBarText(string text)
-    {
-        if (_host is null)
-            return false;
-        foreach (RynthPlugin plugin in _host.Plugins)
-        {
-            if (plugin.OnChatBarEnter(text.TrimEnd()))
-                return true;
-        }
+    /// <summary>One plugin's OnChatBarEnter: the line and the eat flag shared by all of them.</summary>
+    internal delegate void ChatBarOffer(string text, ref int eat);
 
-        return false;
+    /// <summary>Set while a line is being offered, so a line a plugin submits from inside it skips the pre-dispatch.</summary>
+    [ThreadStatic]
+    private static bool _inPluginPreDispatch;
+
+    /// <summary>
+    /// RynthCore's DispatchChatBarEnter: the line goes to every plugin in load order with one
+    /// shared eat flag (an eaten line still reaches later plugins, which RynthLua relies on).
+    /// A line submitted from inside a plugin's handler is not offered again, as RynthCore's
+    /// _inPluginPreDispatch. True when a plugin ate it.
+    /// </summary>
+    internal static bool OfferToPlugins(IEnumerable<ChatBarOffer> offers, string text)
+    {
+        if (_inPluginPreDispatch)
+            return false;
+        _inPluginPreDispatch = true;
+        try
+        {
+            int eat = 0;
+            foreach (ChatBarOffer offer in offers)
+                offer(text, ref eat);
+            return eat != 0;
+        }
+        finally
+        {
+            _inPluginPreDispatch = false;
+        }
     }
+
+    /// <summary>Offers chat-bar text to every plugin. True when one ate it.</summary>
+    private bool OfferChatBarText(string text) =>
+        _host is not null
+        && OfferToPlugins(_host.Plugins.Select(plugin => new ChatBarOffer(plugin.OnChatBarEnter)), text.TrimEnd());
 
     private void OnRynthCommand(IRynthGameView view, string arguments)
     {

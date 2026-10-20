@@ -186,7 +186,7 @@ namespace RynthCore.Engine.UI.Data
 {
     /// <summary>
     /// RynthCore's UI pump: work posted here runs on the next dashboard tick
-    /// (RynthAiDashboard.Tick), on the game thread, in order.
+    /// (RynthEngineHub.Tick), on the game thread, in order.
     /// </summary>
     internal static class UiDataHub
     {

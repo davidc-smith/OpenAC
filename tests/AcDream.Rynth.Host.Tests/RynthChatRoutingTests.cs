@@ -74,4 +74,44 @@ public sealed class RynthChatRoutingTests : IDisposable
         Assert.False(Offer("hello there"));
         Assert.False(Offer("@lifestone"));
     }
+
+    [Fact]
+    public void ALineOneEatsStillReachesTheLaterPluginsWithTheSharedFlag()
+    {
+        var seen = new List<string>();
+        var flagOnArrival = new List<int>();
+        RynthClientExtension.ChatBarOffer Plugin(string name, bool eats) => (string text, ref int eat) =>
+        {
+            seen.Add(name + ":" + text);
+            flagOnArrival.Add(eat);
+            if (eats)
+                eat = 1;
+        };
+
+        bool eaten = RynthClientExtension.OfferToPlugins([Plugin("a", false), Plugin("b", true), Plugin("c", false)], "/x");
+
+        Assert.True(eaten);
+        Assert.Equal(new[] { "a:/x", "b:/x", "c:/x" }, seen);
+        Assert.Equal(new[] { 0, 0, 1 }, flagOnArrival);
+        Assert.False(RynthClientExtension.OfferToPlugins([Plugin("d", false)], "/y"));
+    }
+
+    [Fact]
+    public void ALineSubmittedFromInsideAnOfferIsNotOfferedAgain()
+    {
+        var seen = new List<string>();
+        bool? inner = null;
+        RynthClientExtension.ChatBarOffer reentrant = (string text, ref int eat) =>
+        {
+            seen.Add("outer");
+            inner = RynthClientExtension.OfferToPlugins(
+                [(string t, ref int e) => { seen.Add("inner"); e = 1; }], "/again");
+        };
+
+        Assert.False(RynthClientExtension.OfferToPlugins([reentrant], "/first"));
+        Assert.False(inner);
+        Assert.Equal(new[] { "outer" }, seen);
+        // The guard is released afterwards.
+        Assert.True(RynthClientExtension.OfferToPlugins([(string t, ref int e) => e = 1], "/next"));
+    }
 }

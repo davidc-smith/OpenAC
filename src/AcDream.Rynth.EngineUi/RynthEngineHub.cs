@@ -21,6 +21,11 @@ internal static class RynthEngineHub
 
     private static readonly List<Part> Parts = new();
 
+    // Snapshots rebuilt when a part joins or leaves, so a tick allocates nothing and a part
+    // that joins or leaves mid-tick doesn't disturb the loops running over the old arrays.
+    private static Part[] _partsSnapshot = [];
+    private static UiSource[] _sourcesSnapshot = [];
+
     /// <summary>Where posted work or a source that throws is logged; the host sets it.</summary>
     internal static Action<string> Log { get; set; } = _ => { };
 
@@ -29,7 +34,10 @@ internal static class RynthEngineHub
     internal static void Join(Part part)
     {
         if (!Parts.Any(p => p.Name == part.Name))
+        {
             Parts.Add(part);
+            Rebuild();
+        }
     }
 
     /// <summary>One hub step. Returns how many posted actions ran.</summary>
@@ -37,13 +45,14 @@ internal static class RynthEngineHub
     {
         if (Parts.Count == 0)
             return 0;
-        UiSource[] sources = AllSources();
+        Part[] parts = _partsSnapshot;
+        UiSource[] sources = _sourcesSnapshot;
         foreach (UiSource source in sources)
             source.PromoteDeferredRefresh();
-        foreach (Part part in Parts.ToArray())
+        foreach (Part part in parts)
             part.BeforeDrain?.Invoke();
         int ran = UiDataHub.Drain(Log);
-        foreach (Part part in Parts.ToArray())
+        foreach (Part part in parts)
             part.AfterDrain?.Invoke();
         PollAll(sources, Stopwatch.GetTimestamp());
         return ran;
@@ -75,6 +84,7 @@ internal static class RynthEngineHub
         if (part is not null)
         {
             Parts.Remove(part);
+            Rebuild();
             foreach (UiSource source in part.Sources)
             {
                 try { source.Reset(); }
@@ -97,5 +107,9 @@ internal static class RynthEngineHub
         Leave(string.Empty);
     }
 
-    private static UiSource[] AllSources() => Parts.SelectMany(p => p.Sources).Distinct().ToArray();
+    private static void Rebuild()
+    {
+        _partsSnapshot = Parts.ToArray();
+        _sourcesSnapshot = Parts.SelectMany(p => p.Sources).Distinct().ToArray();
+    }
 }
