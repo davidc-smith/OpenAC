@@ -87,6 +87,35 @@ public sealed class RynthOverlayExtensionTests : IDisposable
     }
 
     [Fact]
+    public void TheRynthNavPanelIsOfferedOnlyWithAnOverlay()
+    {
+        var withOverlay = new RynthClientExtension();
+        withOverlay.Attach(Context(GameRuntimeTestFactory.Create(), new FakeOverlay()));
+        try { Assert.True(ImGuiPanelHost.HasFace("RynthNav")); }
+        finally { withOverlay.Dispose(); }
+
+        ImGuiPanelHost.Reset();
+        var headless = new RynthClientExtension();
+        headless.Attach(Context(GameRuntimeTestFactory.Create(), overlay: null));
+        try { Assert.False(ImGuiPanelHost.HasFace("RynthNav")); }
+        finally { headless.Dispose(); }
+    }
+
+    [Fact]
+    public void TheRynthNavPanelNeedsRynthNavLoadedAndAnOverlay()
+    {
+        var view = new RuntimeRynthGameView(GameRuntimeTestFactory.Create());
+        using (var withNav = new RynthHost(view, _log.Add, [typeof(RynthCore.Plugin.RynthNav.PluginExports)]))
+        {
+            Assert.True(RynthClientExtension.ShouldStartNavPanel(true, withNav.Plugins));
+            Assert.False(RynthClientExtension.ShouldStartNavPanel(false, withNav.Plugins));
+        }
+
+        using var withoutNav = new RynthHost(view, _log.Add, [typeof(RynthCore.Plugin.RynthOracle.PluginExports)]);
+        Assert.False(RynthClientExtension.ShouldStartNavPanel(true, withoutNav.Plugins));
+    }
+
+    [Fact]
     public void RynthAisChatCommandsAreRegisteredUntilDispose()
     {
         var extension = new RynthClientExtension();

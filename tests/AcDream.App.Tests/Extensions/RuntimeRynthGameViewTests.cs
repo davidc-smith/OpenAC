@@ -37,6 +37,30 @@ public sealed class RuntimeRynthGameViewTests
     }
 
     [Fact]
+    public void LiveObjectIdsAreKeptUntilTheObjectTableChanges()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        var view = new RuntimeRynthGameView(runtime);
+        Assert.Null(view.LiveObjectIds);
+
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000010, Name = "a" });
+        IReadOnlyList<uint>? first = view.LiveObjectIds;
+        Assert.Equal([0x80000010u], first);
+        Assert.Same(first, view.LiveObjectIds);
+
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000011, Name = "b" });
+        IReadOnlyList<uint>? second = view.LiveObjectIds;
+        Assert.NotSame(first, second);
+        Assert.Equal([0x80000010u, 0x80000011u], second!.OrderBy(static i => i));
+
+        runtime.InventoryOwner.Objects.Remove(0x80000010);
+        Assert.Equal([0x80000011u], view.LiveObjectIds);
+        runtime.PlayerIdentity.ServerGuid = 0;
+        Assert.Null(view.LiveObjectIds);
+    }
+
+    [Fact]
     public void TheOpenVendorComesFromTheVendorStateWithRynthCoresCounts()
     {
         var runtime = GameRuntimeTestFactory.Create();

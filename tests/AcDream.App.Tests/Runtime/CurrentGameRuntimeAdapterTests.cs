@@ -20,6 +20,8 @@ using AcDream.Core.Social;
 using AcDream.Core.Spells;
 using AcDream.Core.World;
 using AcDream.Runtime;
+using AcDream.Plugin.Abstractions;
+using AcDream.Runtime.Chat;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Session;
@@ -31,6 +33,24 @@ namespace AcDream.App.Tests.Runtime;
 
 public sealed class CurrentGameRuntimeAdapterTests
 {
+    [Fact]
+    public void ALineSubmittedAsPluginChatTextReachesTheInterceptorAndASuppressStopsIt()
+    {
+        using var harness = new Harness();
+        harness.Commands.Activate();
+
+        Assert.True(harness.Runtime.SubmitChatText("hello"));
+        Assert.Equal(["hello"], harness.Commands.Intercepted);
+        Assert.Single(harness.Commands.Published);
+
+        harness.Commands.Published.Clear();
+        harness.Commands.Interceptor = static _ => PluginChatInputDecision.Suppress;
+        harness.Runtime.SubmitChatText("secret");
+
+        Assert.Equal(["hello", "secret"], harness.Commands.Intercepted);
+        Assert.Empty(harness.Commands.Published);
+    }
+
     [Fact]
     public void AdapterBorrowsCurrentOwnersAndCommandsExecuteAtPressTime()
     {
@@ -1305,9 +1325,22 @@ public sealed class CurrentGameRuntimeAdapterTests
 
     internal sealed class RecordingCommandRouting
         : ILiveSessionCommandRouting,
-          ICommandBus
+          IPluginCommandBus
     {
         private bool _active;
+
+        public List<string> Intercepted { get; } = [];
+
+        public Func<string, PluginChatInputDecision>? Interceptor { get; set; }
+
+        public bool TryHandlePluginCommand(string commandLine) => false;
+
+        public PluginChatInputDecision InterceptChatInput(string typed)
+        {
+            Intercepted.Add(typed);
+            return Interceptor?.Invoke(typed) ?? PluginChatInputDecision.Pass;
+        }
+
         private RuntimeCharacterState? _optionOwner;
 
         public List<object> Published { get; } = [];

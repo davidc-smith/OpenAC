@@ -46,6 +46,10 @@ public sealed class RynthClientExtension : IClientExtension
     private IClientChat? _clientChat;
     private bool? _chatHidden;
 
+    /// <summary>The RynthNav panel needs an overlay to draw in and a loaded RynthNav to show.</summary>
+    internal static bool ShouldStartNavPanel(bool hasOverlay, IReadOnlyList<RynthPlugin> plugins) =>
+        hasOverlay && RynthPluginLookup.Candidates(plugins, "RynthNav").Any();
+
     /// <summary>Test seam: extra plugin exports types loaded beside the shipped plugins.</summary>
     internal IReadOnlyList<Type> AdditionalPluginExports { get; init; } = [];
 
@@ -108,7 +112,7 @@ public sealed class RynthClientExtension : IClientExtension
         if (context.Overlay is not null)
             Guard("RynthAi", RynthAiDashboard.Start);
         // RynthCore registers the RynthNav panel only with RynthNav installed; here, only when it loaded.
-        if (context.Overlay is not null && RynthPluginLookup.Candidates(_host.Plugins, "RynthNav").Any())
+        if (ShouldStartNavPanel(context.Overlay is not null, _host.Plugins))
             Guard("RynthNav", RynthNavPanel.Start);
         if (context.Overlay is { } chatOverlay)
             StartChat(context, chatOverlay);

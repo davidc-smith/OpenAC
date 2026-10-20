@@ -187,8 +187,29 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return [.. ids];
     }
 
-    public IReadOnlyList<uint>? LiveObjectIds =>
-        PlayerId == 0 ? null : [.. _runtime.InventoryOwner.Objects.Objects.Select(static o => o.ObjectId)];
+    private uint[]? _liveObjectIds;
+    private ulong _liveObjectIdsRevision;
+
+    /// <summary>
+    /// Every object the client knows. RynthNav's scans and RynthCoreHost's retry ask
+    /// again and again, so the array is kept until the object table next changes.
+    /// </summary>
+    public IReadOnlyList<uint>? LiveObjectIds
+    {
+        get
+        {
+            if (PlayerId == 0)
+                return null;
+            ClientObjectTable objects = _runtime.InventoryOwner.Objects;
+            ulong revision = objects.MutationRevision;
+            if (_liveObjectIds is null || revision != _liveObjectIdsRevision)
+            {
+                _liveObjectIds = [.. objects.Objects.Select(static o => o.ObjectId)];
+                _liveObjectIdsRevision = revision;
+            }
+            return _liveObjectIds;
+        }
+    }
 
     public bool TryGetObjectPosition(uint objectId, out uint cellId, out Vector3 origin)
     {
