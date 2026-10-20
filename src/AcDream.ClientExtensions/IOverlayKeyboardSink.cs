@@ -20,14 +20,23 @@ public enum OverlayKey
     X,
 }
 
-/// <summary>Modifiers held with a key. Control includes Command on macOS.</summary>
+/// <summary>Modifiers held with a key. Control includes Command on macOS; Alt is Option there.</summary>
 [Flags]
 public enum OverlayModifiers
 {
     None = 0,
     Control = 1,
     Shift = 2,
+    Alt = 4,
 }
+
+/// <summary>
+/// One key press or release as Windows numbers it: <paramref name="VirtualKey"/> is the Win32
+/// virtual-key code (0 for a key with none), <paramref name="Extended"/> the extended-key flag
+/// (arrows, the navigation block, right Ctrl/Alt, numpad Enter and /), <paramref name="Repeat"/>
+/// a key-down for a key already down.
+/// </summary>
+public readonly record struct OverlayKeyEvent(int VirtualKey, OverlayModifiers Modifiers, bool Down, bool Repeat, bool Extended);
 
 /// <summary>
 /// Raw keyboard for an extension that runs its own text entry on the overlay.
@@ -45,4 +54,16 @@ public interface IOverlayKeyboardSink
     void KeyUp(OverlayKey key);
 
     void Character(char value);
+
+    /// <summary>
+    /// Every key press and release, offered before the client's own keyboard input sees it.
+    /// True takes it: the client never sees that key (its repeats, characters and release
+    /// included) until it comes back up.
+    /// </summary>
+    bool KeyPress(OverlayKeyEvent e) => false;
+
+    /// <summary>The client window lost the keyboard; held keys are gone.</summary>
+    void FocusLost()
+    {
+    }
 }

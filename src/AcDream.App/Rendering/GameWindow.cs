@@ -283,6 +283,7 @@ public sealed class GameWindow :
     private readonly GameRuntime _runtime;
     private readonly AcDream.App.Extensions.ClientExtensionHost _extensions;
     private readonly AcDream.App.Extensions.Overlay.ImGuiOverlay _overlay = new(line => Serilog.Log.Information("{OverlayLine}", line));
+    private IDisposable? _keyGate;
     private readonly IDisposable _runtimeHostLease;
     private RuntimeCommunicationState _runtimeCommunication =>
         _runtime.CommunicationOwner;
@@ -1230,13 +1231,24 @@ public sealed class GameWindow :
             GameWindowPlatformAcquisition.Acquire(
                 CreateGraphics,
                 static graphics => graphics.Dispose(),
-                () => _window!.CreateInput(),
-                static input => input.Dispose(),
+                () => AttachKeyGate(_window!.CreateInput()),
+                input =>
+                {
+                    Interlocked.Exchange(ref _keyGate, null)?.Dispose();
+                    input.Dispose();
+                },
                 this);
         if (_graphics is null || _input is null)
             throw new InvalidOperationException(
                 "Platform acquisition returned without publishing both owners.");
         return platform;
+    }
+
+    // The key gate must be the keyboard's first subscriber, so it goes on as the context is made.
+    private IInputContext AttachKeyGate(IInputContext input)
+    {
+        _keyGate = _overlay.AttachKeyGate(input, _window);
+        return input;
     }
 
     // The retained capture is the swapchain's size in pixels; the frame asks
@@ -1851,7 +1863,8 @@ public sealed class GameWindow :
             _dats,
             _preparedAssets,
             _input,
-            _graphics));
+            _graphics,
+            Interlocked.Exchange(ref _keyGate, null)));
     private void OnFocusChanged(bool focused)
         => _windowFocus.HandleFocusChanged(focused);
 

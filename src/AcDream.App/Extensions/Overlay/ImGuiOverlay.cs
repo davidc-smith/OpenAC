@@ -137,6 +137,44 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
     internal void SinkCharacter(char value) => ForEachSink(sink => sink.Character(value));
 
+    /// <summary>Offers a key press to every sink; true when one took it. A failed overlay takes nothing.</summary>
+    internal bool OfferKeyPress(OverlayKeyEvent e)
+    {
+        if (_failed)
+            return false;
+        bool taken = false;
+        foreach (IOverlayKeyboardSink sink in _sinks.ToArray())
+        {
+            try { taken |= sink.KeyPress(e); }
+            catch (Exception error) { DropSink(sink, error); }
+        }
+
+        return taken;
+    }
+
+    internal void SinkFocusLost() => ForEachSink(sink => sink.FocusLost());
+
+    /// <summary>
+    /// Puts the key gate on the input context's keyboards, ahead of everything else (call it
+    /// as the context is created). Dispose to take it off.
+    /// </summary>
+    internal IDisposable AttachKeyGate(Silk.NET.Input.IInputContext input, Silk.NET.Windowing.IView? window)
+    {
+        var gate = new OverlayKeyGate(OfferKeyPress, SinkFocusLost);
+        IDisposable subscription = gate.Attach(input, window);
+        OverlayInputGate.BindKeys(gate);
+        return new KeyGateRegistration(gate, subscription);
+    }
+
+    private sealed class KeyGateRegistration(OverlayKeyGate gate, IDisposable subscription) : IDisposable
+    {
+        public void Dispose()
+        {
+            subscription.Dispose();
+            OverlayInputGate.UnbindKeys(gate);
+        }
+    }
+
     private void ForEachSink(Action<IOverlayKeyboardSink> call)
     {
         foreach (IOverlayKeyboardSink sink in _sinks.ToArray())
