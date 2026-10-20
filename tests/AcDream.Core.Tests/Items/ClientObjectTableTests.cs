@@ -1676,6 +1676,24 @@ public sealed class ClientObjectTableTests
     }
 
     [Fact]
+    public void GetContainedItems_leaves_out_packs_and_foci_in_listing_order()
+    {
+        var table = new ClientObjectTable();
+        table.ReplaceContents(0xC0u, new ContainerContentEntry[]
+        {
+            new(0x540u, 0u),
+            new(0x541u, 1u),
+            new(0x542u, 2u),
+            new(0x543u, 0u),
+        });
+        table.AddOrUpdate(new ClientObject { ObjectId = 0x544u, Type = ItemType.Container });
+        table.MoveItem(0x544u, 0xC0u, 0);
+
+        Assert.Equal(new[] { 0x540u, 0x543u }, table.GetContainedItems(0xC0u));
+        Assert.Empty(table.GetContainedItems(0xC9u));
+    }
+
+    [Fact]
     public void UpdateInt64Property_unknownObject_false()
         => Assert.False(new ClientObjectTable().UpdateInt64Property(0xDEADu, 2u, 1L));
 }
