@@ -86,6 +86,22 @@ namespace RynthCore.Engine.Compatibility
             return Name is { } read && read(objectId, out name);
         }
 
+        internal delegate bool ObjectPositionReader(uint objectId, out uint cellId, out float x, out float y, out float z);
+
+        /// <summary>The ids of the objects the client knows now; the host sets it.</summary>
+        internal static Func<uint[]>? LiveIds { get; set; }
+
+        /// <summary>An object's cell and landblock-local origin; the host sets it.</summary>
+        internal static ObjectPositionReader? PositionSnapshot { get; set; }
+
+        public static uint[] LiveObjectIds => LiveIds?.Invoke() ?? Array.Empty<uint>();
+
+        public static bool TryGetSnapshotPosition(uint objectId, out uint objCellId, out float x, out float y, out float z)
+        {
+            objCellId = 0; x = y = z = 0;
+            return PositionSnapshot is { } read && read(objectId, out objCellId, out x, out y, out z);
+        }
+
         /// <summary>Fills their PlayerProgress from the game view; the host sets it. False when not in the world.</summary>
         internal static Func<PlayerProgress, bool>? ProgressReader { get; set; }
 
@@ -294,6 +310,7 @@ namespace RynthCore.Engine.UI.Data
         public static readonly RynthNavSource RynthNav = new();
         public static readonly RynthNavAtlasSource RynthNavAtlas = new();
         public static readonly RynthNavArrowWatch RynthNavArrowWatch = new();
+        public static readonly CharactersSource Characters = new();
     }
 }
 

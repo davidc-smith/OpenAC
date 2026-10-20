@@ -4,7 +4,7 @@
        ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
        filter editor, ChatData and friends) and the RynthAi dashboard (RynthAiFace, its
        drawers, RynthAiData and the settings it edits; its Settings, Items, Damage,
-       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills and Dungeon Map panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
+       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, World Map and Mini Map panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
        faces share static engine classes (UiSources, PanelRouter, ...).
        RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
        PluginExportBinder and Discord relay are NOT compiled, nor PluginManager,
@@ -105,6 +105,17 @@
     <Compile Include="$(RynthEngine)UI\Panels\RadarSettingsStore.cs" Link="RynthCore\RadarSettingsStore.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthNavAtlasData.cs" Link="RynthCore\Data\RynthNavAtlasData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\RynthNavData.cs" Link="RynthCore\Data\RynthNavData.cs" />
+    <Compile Include="$(RynthEngine)ImGui\WorldMapTiles.cs" Link="RynthCore\WorldMapTiles.cs" />
+    <Compile Include="$(RynthEngine)ImGui\WorldMapVectors.cs" Link="RynthCore\WorldMapVectors.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\WorldMapFace.cs" Link="RynthCore\WorldMapFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MiniMapFace.cs" Link="RynthCore\MiniMapFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\WorldMapView.cs" Link="RynthCore\WorldMapView.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\WorldMapTileDrawer.cs" Link="RynthCore\WorldMapTileDrawer.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\WorldMapSettings.cs" Link="RynthCore\WorldMapSettings.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\WorldMapMaps.cs" Link="RynthCore\WorldMapMaps.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\MapProjection.cs" Link="RynthCore\MapProjection.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\CharactersData.cs" Link="RynthCore\Data\CharactersData.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\CharactersModel.cs" Link="RynthCore\Data\CharactersModel.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\InventoryFace*.cs" Link="RynthCore\%(Filename)%(Extension)" />
     <Compile Include="$(RynthEngine)ImGui\Panels\InventorySelection.cs" Link="RynthCore\InventorySelection.cs" />
     <Compile Include="$(RynthEngine)Compatibility\InventoryModel*.cs" Link="RynthCore\%(Filename)%(Extension)" />
