@@ -421,9 +421,19 @@ $fingerprintDocument = [ordered]@{
 
 # Beside manifest.json for the same reason as the fingerprint: the RynthNav navdata pin
 # this release was tested with. The launcher installs exactly this archive.
-$navDataPin = Get-Content -LiteralPath (Join-Path $RepoRoot 'external/rynth-navdata.json') -Raw | ConvertFrom-Json
+# Keep 'pinned' a string: older PowerShell 7 builds turn an ISO date into a DateTime.
+$navDataText = Get-Content -LiteralPath (Join-Path $RepoRoot 'external/rynth-navdata.json') -Raw
+$navDataPin = if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')) {
+    $navDataText | ConvertFrom-Json -DateKind String
+} else {
+    $navDataText | ConvertFrom-Json
+}
 $navDataDocument = [ordered]@{ schemaVersion = 1 }
-foreach ($property in $navDataPin.PSObject.Properties) { $navDataDocument[$property.Name] = $property.Value }
+foreach ($property in $navDataPin.PSObject.Properties) {
+    $value = $property.Value
+    if ($value -is [datetime]) { $value = $value.ToString('yyyy-MM-dd') }
+    $navDataDocument[$property.Name] = $value
+}
 [IO.File]::WriteAllText(
     (Join-Path $BinRoot 'rynth-navdata.json'),
     (($navDataDocument | ConvertTo-Json) + "`n"),
