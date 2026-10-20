@@ -38,8 +38,11 @@ public sealed class LauncherNavDataService
         CacheDirectory = cacheDirectory;
         _barrier = barrier ?? throw new ArgumentNullException(nameof(barrier));
         _hasRunningSessions = hasRunningSessions ?? throw new ArgumentNullException(nameof(hasRunningSessions));
+        // Task.Run: RynthCore's installer runs synchronously up to its first await (a cached zip is
+        // SHA-256 hashed first, 1.57 GB) and its awaits do not ConfigureAwait(false), so called
+        // directly it would hash and resume its download chunks on the UI thread.
         _installer = installer ?? ((pin, dir, cache, progress, ct) =>
-            NavDataInstaller.InstallAsync(pin, dir, cache, progress, ct));
+            Task.Run(() => NavDataInstaller.InstallAsync(pin, dir, cache, progress, ct), ct));
     }
 
     public string NavDataDirectory { get; }
