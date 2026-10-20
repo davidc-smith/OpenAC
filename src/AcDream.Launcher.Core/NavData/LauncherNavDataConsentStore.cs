@@ -1,5 +1,4 @@
 using System.Text.Json;
-using AcDream.Launcher.Core.Updates;
 using AcDream.Platform;
 
 namespace AcDream.Launcher.Core.NavData;
@@ -35,16 +34,31 @@ public sealed class LauncherNavDataConsentStore
                 return File.Exists(FilePath)
                     && JsonSerializer.Deserialize<Consent>(File.ReadAllBytes(FilePath), Options)?.Agreed == true;
             }
-            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException
+                or NotSupportedException or ArgumentException)
             {
                 return false;
             }
         }
     }
 
+    /// <summary>Writes {"agreed": true} atomically (temp file, then a replacing move); synchronous,
+    /// so the caller's thread never waits on an async continuation.</summary>
     public void Agree()
     {
-        AtomicJsonFile.WriteAsync(FilePath, new Consent(true), Options).GetAwaiter().GetResult();
+        string directory = Path.GetDirectoryName(FilePath)
+            ?? throw new InvalidOperationException("The consent path has no parent directory.");
+        Directory.CreateDirectory(directory);
+        string temporaryPath = Path.Combine(directory, $".{FileName}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(temporaryPath, JsonSerializer.SerializeToUtf8Bytes(new Consent(true), Options));
+            File.Move(temporaryPath, FilePath, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(temporaryPath); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
     }
 
     private sealed record Consent(bool Agreed);

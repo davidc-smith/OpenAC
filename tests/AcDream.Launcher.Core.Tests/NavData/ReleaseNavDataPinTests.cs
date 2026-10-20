@@ -46,6 +46,25 @@ public sealed class ReleaseNavDataPinTests
         Assert.Throws<LauncherUpdateException>(() => ReleaseNavDataPin.Parse(Encoding.UTF8.GetBytes(Document(size: 0))));
 
     [Fact]
+    public void RejectsANonHexHash() =>
+        Assert.Throws<LauncherUpdateException>(() => ReleaseNavDataPin.Parse(Encoding.UTF8.GetBytes(Document(sha: new string('z', 64)))));
+
+    [Fact]
+    public void RejectsANonHexId() =>
+        Assert.Throws<LauncherUpdateException>(() => ReleaseNavDataPin.Parse(Encoding.UTF8.GetBytes(
+            Document().Replace($"\"id\":\"{Sha}\"", $"\"id\":\"{new string('z', 64)}\""))));
+
+    [Fact]
+    public void RejectsZeroFiles() =>
+        Assert.Throws<LauncherUpdateException>(() => ReleaseNavDataPin.Parse(Encoding.UTF8.GetBytes(
+            Document().Replace("\"files\":40203", "\"files\":0"))));
+
+    [Fact]
+    public void RejectsZeroBytes() =>
+        Assert.Throws<LauncherUpdateException>(() => ReleaseNavDataPin.Parse(Encoding.UTF8.GetBytes(
+            Document().Replace("\"bytes\":4731616273", "\"bytes\":0"))));
+
+    [Fact]
     public void BuiltInPinIsTheRepositoryPin()
     {
         string root = AppContext.BaseDirectory;
@@ -103,6 +122,15 @@ public sealed class ReleaseNavDataPinTests
             new Uri("https://example.test/latest/manifest.json"), allowLoopbackHttp: false, new HangingHandler());
         client.FingerprintTimeout = TimeSpan.FromMilliseconds(100);
         Assert.Null(await client.FetchNavDataPinAsync());
+    }
+
+    [Fact]
+    public async Task FetchPropagatesTheCallersCancellation()
+    {
+        using ReleaseManifestClient client = ReleaseManifestClient.CreateForTransportTest(
+            new Uri("https://example.test/latest/manifest.json"), allowLoopbackHttp: false, new HangingHandler());
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.FetchNavDataPinAsync(cts.Token));
     }
 
     private sealed class HangingHandler : HttpMessageHandler

@@ -66,6 +66,65 @@ public sealed class LauncherNavDataServiceTests : IDisposable
         Assert.Equal((Released, Path.Combine(_root, "NavData"), Path.Combine(_root, "cache")), seen);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void BlankFoldersAreRefused(string? blank)
+    {
+        var barrier = new UpdateSessionBarrier(Path.Combine(_root, "data"));
+        Assert.ThrowsAny<ArgumentException>(() => new LauncherNavDataService(
+            new FakeManifestClient(null), () => BuiltIn, blank!, "cache", barrier, () => false));
+        Assert.ThrowsAny<ArgumentException>(() => new LauncherNavDataService(
+            new FakeManifestClient(null), () => BuiltIn, "nav", blank!, barrier, () => false));
+    }
+
+    [Fact]
+    public async Task InstallRefusesWhenASessionAppearsAfterTheLease()
+    {
+        int calls = 0;
+        bool installed = false;
+        LauncherNavDataService service = Service(null, running: () => ++calls > 1,
+            installer: (_, _, _, _, _) => { installed = true; return Task.FromResult("x"); });
+        NavDataCheck check = await service.CheckAsync();
+        var error = await Assert.ThrowsAsync<LauncherUpdateException>(() => service.InstallAsync(check, null));
+        Assert.Contains("Stop every launcher session", error.Message);
+        Assert.Equal(2, calls);
+        Assert.False(installed);
+        using (new UpdateSessionBarrier(Path.Combine(_root, "data")).AcquireExclusive()) { }
+    }
+
+    [Fact]
+    public async Task InstallRefusesWhileASessionLeaseIsHeld()
+    {
+        var barrier = new UpdateSessionBarrier(Path.Combine(_root, "data"));
+        bool installed = false;
+        var service = new LauncherNavDataService(new FakeManifestClient(null), () => BuiltIn,
+            Path.Combine(_root, "NavData"), Path.Combine(_root, "cache"), barrier, () => false,
+            (_, _, _, _, _) => { installed = true; return Task.FromResult("x"); });
+        NavDataCheck check = await service.CheckAsync();
+        using (barrier.AcquireSession())
+            await Assert.ThrowsAsync<LauncherUpdateException>(() => service.InstallAsync(check, null));
+        Assert.False(installed);
+        Assert.Equal("x", await service.InstallAsync(check, null));
+    }
+
+    [Fact]
+    public async Task LeaseIsReleasedWhenTheInstallerThrows()
+    {
+        var barrier = new UpdateSessionBarrier(Path.Combine(_root, "data"));
+        int attempts = 0;
+        var service = new LauncherNavDataService(new FakeManifestClient(null), () => BuiltIn,
+            Path.Combine(_root, "NavData"), Path.Combine(_root, "cache"), barrier, () => false,
+            (_, _, _, _, _) => ++attempts == 1
+                ? throw new InvalidOperationException("boom")
+                : Task.FromResult("second"));
+        NavDataCheck check = await service.CheckAsync();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.InstallAsync(check, null));
+        using (barrier.AcquireExclusive()) { }
+        Assert.Equal("second", await service.InstallAsync(check, null));
+    }
+
     private sealed class FakeManifestClient(NavDataPin? pin) : IReleaseManifestClient
     {
         public Task<ReleaseManifest> FetchAsync(CancellationToken cancellationToken = default) =>

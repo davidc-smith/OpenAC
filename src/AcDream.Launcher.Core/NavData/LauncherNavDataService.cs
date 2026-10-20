@@ -34,6 +34,8 @@ public sealed class LauncherNavDataService
     {
         _manifestClient = manifestClient ?? throw new ArgumentNullException(nameof(manifestClient));
         _builtInPin = builtInPin ?? throw new ArgumentNullException(nameof(builtInPin));
+        ArgumentException.ThrowIfNullOrWhiteSpace(navDataDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(cacheDirectory);
         NavDataDirectory = navDataDirectory;
         CacheDirectory = cacheDirectory;
         _barrier = barrier ?? throw new ArgumentNullException(nameof(barrier));
