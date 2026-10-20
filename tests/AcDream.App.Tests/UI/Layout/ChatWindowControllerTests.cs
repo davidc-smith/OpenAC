@@ -681,7 +681,7 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
-    public void ClickingACoordinateSomeoneTypedRaisesACoordinateLink()
+    public void ClickingACoordinateAPluginWroteRaisesACoordinateLink()
     {
         var log = new ChatLog();
         var (rootInfo, layout, vm) = BuildTestTree(log);
@@ -693,7 +693,7 @@ public class ChatWindowControllerTests
         var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
         ctrl.ChatLinkClicked = clicked.Add;
 
-        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u);
+        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u, allowsMarkup: true);
         UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
         int column = line.Text.IndexOf("42.1N", StringComparison.Ordinal);
 
@@ -703,6 +703,139 @@ public class ChatWindowControllerTests
         var link = Assert.Single(clicked);
         Assert.Equal(AcDream.Plugin.Abstractions.PluginChatLinkKind.Coordinate, link.Kind);
         Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(-33.5, 42.1), link.Coordinate);
+        Assert.Equal("42.1N, 33.5W", link.DisplayText);
+    }
+
+    [Fact]
+    public void ACoordinateLinkIsNamedTheSameUnderACommaDecimalLocale()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("sv-SE");
+        try
+        {
+            var log = new ChatLog();
+            var (rootInfo, layout, vm) = BuildTestTree(log);
+            var filters = new ChatWindowState();
+            filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+            var ctrl = ChatWindowController.Bind(
+                rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+                NoTex, new RuntimeChatEntryOwner())!;
+            var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+            ctrl.ChatLinkClicked = clicked.Add;
+
+            log.OnSystemMessage(
+                "Go to <COORD:World:42.125S, 33.5E>the bridge<\\COORD>.",
+                chatType: 0u,
+                allowsMarkup: true);
+            UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+            int column = line.Text.IndexOf("bridge", StringComparison.Ordinal);
+
+            Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, column)));
+
+            var link = Assert.Single(clicked);
+            Assert.Equal("42.125S, 33.5E", link.DisplayText);
+            Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(33.5, -42.125), link.Coordinate);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
+    }
+
+    [Fact]
+    public void ClickingACoordinateOrCoordinateTagAPlayerTypedRaisesNothing()
+    {
+        var log = new ChatLog();
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+        ctrl.ChatLinkClicked = clicked.Add;
+
+        log.OnLocalSpeech(
+            "Bob", "<COORD:World:0N, 0E>42.1N 33.5E<\\COORD>", 0x5000000Au,
+            isRanged: false, logTextType: 2u);
+        log.OnSystemMessage("Your corpse is at 42.1N, 33.5W.", chatType: 0u);
+        IReadOnlyList<UiText.Line> lines = ctrl.Transcript.LinesProvider();
+        Assert.Equal("Bob says, \"42.1N 33.5E\"", lines[0].Text);
+        int typed = lines[0].Text.IndexOf("42.1N", StringComparison.Ordinal);
+        int server = lines[1].Text.IndexOf("42.1N", StringComparison.Ordinal);
+
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, typed + 3)));
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(1, server + 3)));
+
+        Assert.Empty(clicked);
+    }
+
+    private static ChatWindowController BindAllTypes(ChatLog log)
+    {
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        ctrl.Transcript.TagColor = new System.Numerics.Vector4(0f, 178f / 255f, 0f, 1f);
+        return ctrl;
+    }
+
+    [Fact]
+    public void AServerLinesTellTagIsHiddenAndItsNameIsGreenAndStartsATell()
+    {
+        var log = new ChatLog();
+        ChatWindowController ctrl = BindAllTypes(log);
+
+        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell> has logged on.", chatType: 0u);
+        UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+
+        Assert.Equal("Bob has logged on.", line.Text);
+        IReadOnlyList<UiText.TextRun> runs = ctrl.Transcript.LineRunsProvider!(0)!;
+        Assert.Equal(("Bob", ctrl.Transcript.TagColor!.Value), (runs[0].Text, runs[0].Color));
+        Assert.Equal(line.Color, runs[1].Color);
+
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, 1)));
+        Assert.Equal("@tell Bob, ", ctrl.Input.Text);
+    }
+
+    [Fact]
+    public void ATagThatIsNotATellInAPlayersLineIsHiddenDrawnInTheLineColourAndNotClickable()
+    {
+        var log = new ChatLog();
+        ChatWindowController ctrl = BindAllTypes(log);
+
+        log.OnLocalSpeech(
+            "Bob", "look <IID:IIDString:7:Ann>Ann<\\IID> here", 0x5000000Au,
+            isRanged: false, logTextType: 2u);
+        UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+
+        Assert.Equal("Bob says, \"look Ann here\"", line.Text);
+        IReadOnlyList<UiText.TextRun> runs = ctrl.Transcript.LineRunsProvider!(0)!;
+        Assert.Equal(("Bob", ctrl.Transcript.TagColor!.Value), (runs[0].Text, runs[0].Color));
+        UiText.TextRun ann = Assert.Single(runs, run => run.Text == "Ann");
+        Assert.Equal(line.Color, ann.Color);
+
+        int column = line.Text.IndexOf("Ann", StringComparison.Ordinal);
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, column + 1)));
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, 1)));
+        Assert.Equal("@tell Bob, ", ctrl.Input.Text);
+    }
+
+    [Fact]
+    public void TheCharactersOwnLineHidesItsTags()
+    {
+        var log = new ChatLog();
+        ChatWindowController ctrl = BindAllTypes(log);
+
+        log.OnLocalSpeech(
+            "You", "<Tell:IIDString:7:Ann>Ann<\\Tell>, hi", 0u,
+            isRanged: false, logTextType: 2u);
+
+        Assert.Equal(
+            "You say, \"Ann, hi\"",
+            Assert.Single(ctrl.Transcript.LinesProvider()).Text);
     }
 
     [Fact]

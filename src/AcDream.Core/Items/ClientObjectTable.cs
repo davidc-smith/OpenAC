@@ -1195,6 +1195,25 @@ public sealed class ClientObjectTable
         _containerIndex.TryGetValue(containerId, out var l)
             ? l.ToArray() : System.Array.Empty<uint>();
 
+    /// <summary>
+    /// The container's item list alone: its contents minus the packs and
+    /// foci, which live in the separate container list. A character's own
+    /// items, without anything inside its side packs.
+    /// </summary>
+    public IReadOnlyList<uint> GetContainedItems(uint containerId)
+    {
+        if (!_containerIndex.TryGetValue(containerId, out List<uint>? members))
+            return System.Array.Empty<uint>();
+        var items = new List<uint>(members.Count);
+        foreach (uint id in members)
+        {
+            if (_objects.TryGetValue(id, out ClientObject? member)
+                && !IsContainerListMember(member))
+                items.Add(id);
+        }
+        return items;
+    }
+
     public IReadOnlyList<ClientObject> GetEquippedBy(uint wielderId) =>
         _equipmentIndex.TryGetValue(wielderId, out List<uint>? placements)
             ? placements

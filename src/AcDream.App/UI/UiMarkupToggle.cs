@@ -19,6 +19,9 @@ public sealed class UiMarkupToggle : UiElement
 
     public bool IsChecked => CheckedSource?.Invoke() ?? false;
 
+    /// <summary>The alpha a disabled toggle's caption draws at; a disabled list button dims by it too.</summary>
+    internal const float DisabledAlpha = 0.42f;
+
     public override bool HandlesClick => true;
 
     private readonly UiKeyboardActivation _keyboardActivation = new();
@@ -50,7 +53,7 @@ public sealed class UiMarkupToggle : UiElement
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
         Vector4 color = Enabled
             ? textColor
-            : new Vector4(textColor.X, textColor.Y, textColor.Z, 0.42f);
+            : textColor with { W = DisabledAlpha };
         float y = DatFont is { } font
             ? (Height - font.LineHeight) * 0.5f
             : 1f;

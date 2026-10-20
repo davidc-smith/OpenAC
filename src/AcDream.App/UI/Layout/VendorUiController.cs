@@ -619,7 +619,7 @@ public sealed class VendorUiController : IRetainedPanelController, IItemListDrag
                 foreach (VendorShopItem item in items)
                 {
                     if (((item.ItemType ?? 0u) & maskValue) == 0u) continue;
-                    if (AvailableShopQuantity(item) <= 0) continue;
+                    if (IsShopSupplyConsumedByStaging(item)) continue;
 
                     firstItem ??= item;
                     if (item.ItemGuid == selectedGuid) selectedStillVisible = true;
@@ -670,12 +670,23 @@ public sealed class VendorUiController : IRetainedPanelController, IItemListDrag
         }
     }
 
-    private int AvailableShopQuantity(VendorShopItem item)
+    /// <summary>
+    /// True when staging has used up a limited shop row, which takes it out of
+    /// the browse list. A row that is not staged is always listed, whatever
+    /// amount the vendor sent, 0 included. A staged row with a limited amount
+    /// is removed once the listed amount minus the total staged is 0 or less,
+    /// so a row listed with 0 leaves the list as soon as anything is staged.
+    /// Only <see cref="VendorComponentFill.UnlimitedStock"/> means the vendor
+    /// never runs out. The remainder is recomputed from the untouched listing
+    /// on every call, so un-staging puts the row back without a restore path.
+    /// </summary>
+    private bool IsShopSupplyConsumedByStaging(VendorShopItem item)
     {
-        if (item.StackSize < 0)
-            return int.MaxValue;
-        int staged = _buyStaging.TryGet(item.ItemGuid, out VendorStagingEntry entry) ? entry.Quantity : 0;
-        return item.StackSize - staged;
+        if (item.StackSize == VendorComponentFill.UnlimitedStock)
+            return false;
+        if (!_buyStaging.TryGet(item.ItemGuid, out VendorStagingEntry entry))
+            return false;
+        return item.StackSize - entry.Quantity <= 0;
     }
 
     private void RefreshItemsTabAvailability() => RebuildItemList(reselectFirst: false);

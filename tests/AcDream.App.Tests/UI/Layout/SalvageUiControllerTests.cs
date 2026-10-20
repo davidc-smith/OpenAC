@@ -136,6 +136,48 @@ public sealed class SalvageUiControllerTests
         Assert.Equal(2, h.Controller.ItemCount);
     }
 
+    // #221: the main pack contributes the character's own items; side packs
+    // and everything inside them stay out until a side pack is dropped itself.
+    [Fact]
+    public void Main_pack_drop_adds_only_its_own_items_not_side_pack_contents()
+    {
+        using var h = new Harness();
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 10, Type = ItemType.Container, ItemsCapacity = 24 });
+        h.Objects.MoveItem(10, Player, 0);
+        var own = h.Item(1);
+        var packed = h.Item(2, container: 10);
+
+        var cell = new UiItemSlot();
+        var payload = new ItemDragPayload(Player, ItemDragSource.Inventory, 0, cell);
+        Assert.Equal(ItemDragAcceptance.Accept, h.Controller.OnDragOver(h.List, cell, payload));
+        h.Controller.HandleDropRelease(h.List, cell, payload);
+
+        Assert.Equal(1, h.Controller.ItemCount);
+        Assert.Equal(1, own.TradeState);
+        Assert.Equal(0, packed.TradeState);
+
+        Assert.True(h.Controller.AddItem(10));
+        Assert.Equal(2, h.Controller.ItemCount);
+        Assert.Equal(1, packed.TradeState);
+    }
+
+    [Fact]
+    public void Main_pack_holding_only_side_packs_is_not_a_container_drop()
+    {
+        using var h = new Harness();
+        h.Objects.Remove(Tool);
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = Tool, Type = ItemType.TinkeringTool });
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 10, Type = ItemType.Container, ItemsCapacity = 24 });
+        h.Objects.MoveItem(10, Player, 0);
+        h.Objects.MoveItem(Tool, 10, 0);
+        h.Controller.Open(Tool);
+        h.Item(2, container: 10);
+
+        Assert.False(h.Controller.CanAdd(Player));
+        Assert.False(h.Controller.AddItem(Player));
+        Assert.Equal(0, h.Controller.ItemCount);
+    }
+
     [Fact]
     public void Dragging_out_and_right_click_remove_staging()
     {

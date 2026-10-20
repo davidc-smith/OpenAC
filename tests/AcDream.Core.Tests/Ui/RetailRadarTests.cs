@@ -200,6 +200,35 @@ public sealed class RetailRadarTests
     public void Coordinates_AreUnavailableIndoors()
         => Assert.False(RadarCoordinates.TryFromCell(0xA9B40164u, out _));
 
+    [Theory]
+    // Height never takes a candidate out of reach: only ground distance does.
+    [InlineData(10f, 0f, 0f, 25f, true)]
+    [InlineData(20f, 0f, -30f, 25f, true)]
+    [InlineData(0f, 20f, 40f, 25f, true)]
+    [InlineData(15f, 20f, -12f, 25f, true)] // ground exactly 25: inclusive
+    [InlineData(25.01f, 0f, 0f, 25f, false)]
+    [InlineData(40f, 0f, -30f, 75f, true)]
+    [InlineData(76f, 0f, 0f, 75f, false)]
+    public void SelectionCycleReach_IsGroundDistanceInclusive(
+        float x, float y, float z, float range, bool expected)
+        => Assert.Equal(
+            expected,
+            RetailRadar.IsWithinSelectionCycleRange(new Vector3(x, y, z), range));
+
+    [Fact]
+    public void RadarRange_ForLastAttackerIsGroundDistanceStrict()
+    {
+        Assert.True(RetailRadar.IsWithinRadarRange(new Vector3(20f, 0f, -30f), 25f));
+        Assert.False(RetailRadar.IsWithinRadarRange(new Vector3(15f, 20f, 0f), 25f));
+    }
+
+    [Fact]
+    public void SelectionOrder_IsGroundDistancePlusOnePointTwoTimesHeight()
+    {
+        Assert.Equal(5f + 12f, RetailRadar.GetSelectionOrder(new Vector3(3f, 4f, -10f)), 4);
+        Assert.Equal(5f + 12f, RetailRadar.GetSelectionOrder(new Vector3(3f, 4f, 10f)), 4);
+    }
+
     private static void AssertOffsets(RadarBlipShape shape, (int X, int Y)[] expected)
         => Assert.Equal(
             expected.Select(p => new RadarPixelOffset(p.X, p.Y)),

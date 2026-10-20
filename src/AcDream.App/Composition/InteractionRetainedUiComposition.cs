@@ -775,7 +775,8 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                             target,
                             amount),
                     itemInteraction,
-                    d.Actions.Selection),
+                    d.Actions.Selection,
+                    d.Inventory.ReplaceFullyMergedShortcut),
                 ExternalContainer: new ExternalContainerRuntimeBindings(
                     d.Inventory.ExternalContainers,
                     d.Inventory.Objects,

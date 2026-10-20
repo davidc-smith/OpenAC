@@ -432,6 +432,100 @@ public class PaperdollControllerTests
     }
 
     [Fact]
+    public void OnDragOver_shieldSlot_acceptsAMeleeWeaponAsOffHand_butNotABowOrTwoHander()
+    {
+        var (layout, lists) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedPackItem(objects, 0xD21u, EquipMask.MeleeWeapon);
+        SeedPackItem(objects, 0xD22u, EquipMask.MissileWeapon);
+        SeedPackItem(objects, 0xD23u, EquipMask.TwoHanded);
+        var ctrl = Bind(layout, objects);
+        ItemDragAcceptance Over(uint id) => ctrl.OnDragOver(
+            lists[ShieldSlot], lists[ShieldSlot].Cell,
+            new ItemDragPayload(id, ItemDragSource.Inventory, 0, lists[ShieldSlot].Cell));
+
+        Assert.Equal(ItemDragAcceptance.Accept, Over(0xD21u));
+        Assert.Equal(ItemDragAcceptance.Reject, Over(0xD22u));
+        Assert.Equal(ItemDragAcceptance.Reject, Over(0xD23u));
+    }
+
+    [Fact]
+    public void HandleDropRelease_meleeWeaponOnShieldSlot_wieldsItInTheShieldSlot()
+    {
+        var (layout, lists) = BuildLayout();
+        var objects = new ClientObjectTable();
+        const uint sword = 0xD24u;
+        SeedEquipped(objects, 0xD25u, EquipMask.MeleeWeapon);      // main hand already armed
+        SeedPackItem(objects, sword, EquipMask.MeleeWeapon);
+        var wields = new List<(uint item, uint mask)>();
+        var puts = new List<(uint item, uint container, int placement)>();
+        var ctrl = Bind(layout, objects, wields, puts: puts);
+
+        ctrl.HandleDropRelease(lists[ShieldSlot], lists[ShieldSlot].Cell,
+            new ItemDragPayload(sword, ItemDragSource.Inventory, 0, lists[ShieldSlot].Cell));
+
+        Assert.Empty(puts);                                           // the main-hand weapon stays
+        Assert.Equal(new[] { (sword, (uint)EquipMask.Shield) }, wields);
+        Assert.Equal(EquipMask.None, objects.Get(sword)!.CurrentlyEquippedLocation);
+    }
+
+    [Fact]
+    public void HandleDropRelease_meleeWeaponOnOccupiedShieldSlot_movesTheShieldToThePackFirst()
+    {
+        var (layout, lists) = BuildLayout();
+        var objects = new ClientObjectTable();
+        const uint shield = 0xD26u;
+        const uint sword = 0xD27u;
+        SeedEquipped(objects, shield, EquipMask.Shield);
+        objects.Get(shield)!.Name = "Buckler";
+        SeedPackItem(objects, sword, EquipMask.MeleeWeapon);
+        var wields = new List<(uint item, uint mask)>();
+        var puts = new List<(uint item, uint container, int placement)>();
+        var messages = new List<string>();
+        var ctrl = Bind(layout, objects, wields, puts: puts, systemMessages: messages);
+
+        ctrl.HandleDropRelease(lists[ShieldSlot], lists[ShieldSlot].Cell,
+            new ItemDragPayload(sword, ItemDragSource.Inventory, 0, lists[ShieldSlot].Cell));
+
+        Assert.Equal(new[] { (shield, Player, 0) }, puts);
+        Assert.Empty(wields);
+        Assert.Equal(new[] { "Moving Buckler to your backpack" }, messages);
+
+        Assert.True(objects.ApplyConfirmedServerMove(shield, Player, 0u, 0));
+
+        Assert.Equal(new[] { (sword, (uint)EquipMask.Shield) }, wields);
+    }
+
+    [Fact]
+    public void HandleDropRelease_shieldOnShieldSlotHoldingAnOffHandWeapon_movesTheWeaponToThePackFirst()
+    {
+        var (layout, lists) = BuildLayout();
+        var objects = new ClientObjectTable();
+        const uint offHand = 0xD28u;
+        const uint shield = 0xD29u;
+        SeedEquipped(objects, 0xD2Au, EquipMask.MeleeWeapon);       // main hand
+        SeedEquipped(objects, offHand, EquipMask.Shield);           // a sword in the off hand
+        objects.Get(offHand)!.ValidLocations = EquipMask.MeleeWeapon;
+        objects.Get(offHand)!.Name = "Short Sword";
+        SeedPackItem(objects, shield, EquipMask.Shield);
+        var wields = new List<(uint item, uint mask)>();
+        var puts = new List<(uint item, uint container, int placement)>();
+        var messages = new List<string>();
+        var ctrl = Bind(layout, objects, wields, puts: puts, systemMessages: messages);
+
+        ctrl.HandleDropRelease(lists[ShieldSlot], lists[ShieldSlot].Cell,
+            new ItemDragPayload(shield, ItemDragSource.Inventory, 0, lists[ShieldSlot].Cell));
+
+        Assert.Equal(new[] { (offHand, Player, 0) }, puts);
+        Assert.Empty(wields);
+        Assert.Equal(new[] { "Moving Short Sword to your backpack" }, messages);
+
+        Assert.True(objects.ApplyConfirmedServerMove(offHand, Player, 0u, 0));
+
+        Assert.Equal(new[] { (shield, (uint)EquipMask.Shield) }, wields);
+    }
+
+    [Fact]
     public void HandleDropRelease_resolves_the_finger_bit_for_a_dual_finger_ring()
     {
         var (layout, lists) = BuildLayout();

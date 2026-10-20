@@ -74,31 +74,38 @@ public sealed class RuntimeChatFeedTests
                 .Select(span => span.Text)));
     }
 
-    // -- Coordinate links -------------------------------------------------
+    // -- Coordinate links: only a plugin's own line carries one ----------
 
     private static ChatTextSpan CoordinateSpan(RuntimeChatLine line) =>
         Assert.Single(line.Spans!, span => span.Tag is { Type: "COORD" });
 
+    private static bool HasCoordinateLink(RuntimeChatLine line) =>
+        line.Spans?.Any(span => span.Tag is { } tag
+            && string.Equals(tag.Type, "COORD", StringComparison.OrdinalIgnoreCase)) == true;
+
     [Fact]
-    public void ACoordinateAPlayerTypesIsALinkAndTheTextIsUnchanged()
+    public void ACoordinateAPlayerTypesIsNotALink()
     {
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
         log.OnLocalSpeech("Bob", "meet at 42.1N 33.5E", OtherPlayerGuid, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+        log.OnTellReceived("Bob", "meet at 42.1N 33.5E", OtherPlayerGuid, (uint)RetailLogTextType.Tell);
+        log.OnChannelBroadcast(7u, "Bob", "meet at 42.1N 33.5E", channelName: "Fellowship");
 
-        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
 
-        Assert.Equal("Bob says, \"meet at 42.1N 33.5E\"", line.Text);
-        Assert.Equal("Bob", line.Spans![0].Text);
-        ChatTextSpan coordinate = CoordinateSpan(line);
-        Assert.Equal("42.1N 33.5E", coordinate.Text);
-        Assert.True(coordinate.Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
-        Assert.Equal(33.5, eastWest);
-        Assert.Equal(42.1, northSouth);
+        Assert.Equal(3, lines.Count);
+        Assert.Equal("Bob says, \"meet at 42.1N 33.5E\"", lines[0].Text);
+        foreach (RuntimeChatLine line in lines)
+        {
+            Assert.False(HasCoordinateLink(line));
+            // The speaker's name is still the tell link it always was.
+            Assert.Equal("Bob", Assert.Single(line.Spans!, span => span.Tag is not null).Text);
+        }
     }
 
     [Fact]
-    public void ACoordinateInTheCharactersOwnLineAndInAServerLineIsALink()
+    public void ACoordinateInTheCharactersOwnLineOrAServerLineIsNotALink()
     {
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
@@ -107,9 +114,33 @@ public sealed class RuntimeChatFeedTests
 
         IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
 
-        Assert.Equal("1N 2E", CoordinateSpan(lines[0]).Text);
-        Assert.Equal("42.1N, 33.5E", CoordinateSpan(lines[1]).Text);
+        Assert.Null(lines[0].Spans);
+        Assert.Null(lines[1].Spans);
         Assert.Equal("Your corpse is located at (42.1N, 33.5E).", lines[1].Text);
+    }
+
+    [Fact]
+    public void ACoordinateTagAPlayerTypesIsNotALink()
+    {
+        // A player who types the tag must not be able to show one place and
+        // hand plugins another: the caption is plain text, the tag goes nowhere.
+        const string Typed = "<COORD:World:0N, 0E>42.1N 33.5E<\\COORD>";
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnLocalSpeech("Bob", Typed, OtherPlayerGuid, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+        log.OnTellReceived("Bob", Typed, OtherPlayerGuid, (uint)RetailLogTextType.Tell);
+        log.OnChannelBroadcast(7u, "Bob", Typed, channelName: "Fellowship");
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal(3, lines.Count);
+        Assert.Equal("Bob says, \"42.1N 33.5E\"", lines[0].Text);
+        foreach (RuntimeChatLine line in lines)
+        {
+            Assert.False(HasCoordinateLink(line));
+            Assert.Equal("Bob", Assert.Single(line.Spans!, span => span.Tag is not null).Text);
+            Assert.Equal(line.Text, string.Concat(line.Spans!.Select(span => span.Text)));
+        }
     }
 
     [Fact]
@@ -122,12 +153,31 @@ public sealed class RuntimeChatFeedTests
         Assert.Null(Assert.Single(feed.Snapshot()).Spans);
     }
 
+    // -- A plugin's own line ----------------------------------------------
+
     [Fact]
-    public void ATimestampedLineKeepsItsStampAndLinksTheCoordinate()
+    public void ACoordinateAPluginWritesIsALink()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("meet at 42.1N 33.5E", chatType: 0u, allowsMarkup: true);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal("meet at 42.1N 33.5E", line.Text);
+        ChatTextSpan coordinate = CoordinateSpan(line);
+        Assert.Equal("42.1N 33.5E", coordinate.Text);
+        Assert.True(coordinate.Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
+        Assert.Equal(33.5, eastWest);
+        Assert.Equal(42.1, northSouth);
+    }
+
+    [Fact]
+    public void ATimestampedPluginLineKeepsItsStampAndLinksTheCoordinate()
     {
         var log = new ChatLog { DisplayTimestampsSource = static () => true };
         using var feed = new RuntimeChatFeed(log);
-        log.OnSystemMessage("at 5S 6W", chatType: 0u);
+        log.OnSystemMessage("at 5S 6W", chatType: 0u, allowsMarkup: true);
 
         RuntimeChatLine line = Assert.Single(feed.Snapshot());
 
@@ -135,8 +185,6 @@ public sealed class RuntimeChatFeedTests
         Assert.Equal("5S 6W", CoordinateSpan(line).Text);
         Assert.Equal(line.Text, string.Concat(line.Spans.Select(span => span.Text)));
     }
-
-    // -- A plugin's markup ------------------------------------------------
 
     [Fact]
     public void APluginLinesMarkupIsReadAsALink()
@@ -160,15 +208,90 @@ public sealed class RuntimeChatFeedTests
     }
 
     [Fact]
-    public void AServerLinesMarkupIsShownAsItArrived()
+    public void AServerLinesTagIsHiddenAndItsTellNameIsTagged()
     {
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
-        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell>", chatType: 0u);
+        log.OnSystemMessage("<Tell:IIDString:1:Bob>Bob<\\Tell> has logged on.", chatType: 0u);
 
         RuntimeChatLine line = Assert.Single(feed.Snapshot());
 
-        Assert.Equal("<Tell:IIDString:1:Bob>Bob<\\Tell>", line.Text);
+        Assert.Equal("Bob has logged on.", line.Text);
+        ChatTextSpan name = Assert.Single(line.Spans!, span => span.Tag is not null);
+        Assert.Equal("Bob", name.Text);
+        Assert.True(name.Tag!.Value.IsTell);
+        Assert.Equal("Bob has logged on.", RuntimeChatFeed.Format(log.Snapshot()[0]));
+    }
+
+    [Fact]
+    public void TheCharactersOwnAndACombatLinesTagsAreHiddenToo()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnLocalSpeech(
+            "You", "ask <Tell:IIDString:7:Ann>Ann<\\Tell> please", 0u,
+            isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+        log.OnCombatLine(
+            "You hit <DID:DID:0x06001234>the drudge<\\DID>.",
+            (uint)RetailLogTextType.CombatSelf);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("You say, \"ask Ann please\"", lines[0].Text);
+        Assert.Equal("Ann", Assert.Single(lines[0].Spans!, span => span.Tag is not null).Text);
+        Assert.Equal("You hit the drudge.", lines[1].Text);
+        ChatTextSpan other = Assert.Single(lines[1].Spans!, span => span.Tag is not null);
+        Assert.Equal("the drudge", other.Text);
+        Assert.False(other.Tag!.Value.IsTell);
+    }
+
+    [Fact]
+    public void AnUnmatchedBracketWithNoTagOpenIsShownAsWritten()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("3 < 4, and <Tell:IIDString:1:Bob", chatType: 0u);
+        log.OnLocalSpeech(
+            "You", "x <y", 0u, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("3 < 4, and <Tell:IIDString:1:Bob", lines[0].Text);
+        Assert.Null(lines[0].Spans);
+        Assert.Equal("You say, \"x <y\"", lines[1].Text);
+        Assert.Null(lines[1].Spans);
+    }
+
+    [Fact]
+    public void ACoordinateTagInAServerLineIsClosedByTheNextBracketedTextWhateverItIs()
+    {
+        // The coordinate tag is read as a tag that is never a link, so the
+        // next bracketed text only closes it: "<gate>" is hidden, and the tell
+        // tag after the caption opens nothing, which leaves its end tag shown.
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("<COORD:World:1N, 2E> meet at <gate>", chatType: 0u);
+        log.OnSystemMessage(
+            "<COORD:World:1N, 2E>x <Tell:IIDString:5:Bob>Bob<\\Tell>", chatType: 0u);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal(" meet at ", lines[0].Text);
+        Assert.Null(lines[0].Spans);
+        Assert.Equal("x Bob<\\Tell>", lines[1].Text);
+        Assert.Null(lines[1].Spans);
+    }
+
+    [Fact]
+    public void AServerLinesBracketedTextThatIsNotATagIsShownAsWritten()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("Use <item> on <target>, or 3 < 4.", chatType: 0u);
+
+        RuntimeChatLine line = Assert.Single(feed.Snapshot());
+
+        Assert.Equal("Use <item> on <target>, or 3 < 4.", line.Text);
         Assert.Null(line.Spans);
     }
 
@@ -183,6 +306,61 @@ public sealed class RuntimeChatFeedTests
 
         Assert.Equal("a < b > c <none>", line.Text);
         Assert.Null(line.Spans);
+    }
+
+    [Fact]
+    public void APlayersTagAPluginRepostsEscapedIsShownAsWrittenAndIsNotALink()
+    {
+        // A plugin echoing a captured tell escapes the player's words; the
+        // tag they typed is shown literally and reports nothing hidden.
+        const string Typed = "<COORD:World:0N, 0E>the bridge<\\COORD>";
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage(
+            "Bob told you: " + AcDream.Plugin.Abstractions.PluginChatMarkup.Escape(Typed),
+            chatType: 0u,
+            allowsMarkup: true);
+        log.OnSystemMessage(
+            AcDream.Plugin.Abstractions.PluginChatMarkup.Escape("press <Ctrl:F>"),
+            chatType: 0u,
+            allowsMarkup: true);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("Bob told you: " + Typed, lines[0].Text);
+        Assert.Equal("Bob told you: " + Typed, RuntimeChatFeed.Format(log.Snapshot()[0]));
+        // The caption is not a link. The tag's own text, now shown, holds a
+        // plain pair, and that pair links to exactly what it shows.
+        Assert.DoesNotContain(lines[0].Spans!, span => span.Tag is not null && span.Text.Contains("bridge"));
+        ChatTextSpan shown = CoordinateSpan(lines[0]);
+        Assert.Equal("0N, 0E", shown.Text);
+        Assert.True(shown.Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
+        Assert.Equal((0d, 0d), (eastWest, northSouth));
+
+        Assert.Equal("press <Ctrl:F>", lines[1].Text);
+        Assert.Null(lines[1].Spans);
+    }
+
+    [Fact]
+    public void APluginLinesOtherAngleBracketTextIsShownAsWritten()
+    {
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnSystemMessage("Press <Ctrl:F> to follow", chatType: 0u, allowsMarkup: true);
+        log.OnSystemMessage(
+            "Press <Ctrl:F>, then <COORD:World:1N, 2E>go<\\COORD> <a:b:c>",
+            chatType: 0u,
+            allowsMarkup: true);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("Press <Ctrl:F> to follow", lines[0].Text);
+        Assert.Null(lines[0].Spans);
+        Assert.Equal("Press <Ctrl:F>, then go <a:b:c>", lines[1].Text);
+        Assert.Equal("go", CoordinateSpan(lines[1]).Text);
+        Assert.Equal(
+            "Press <Ctrl:F>, then go <a:b:c>",
+            RuntimeChatFeed.Format(log.Snapshot()[1]));
     }
 
     // -- Pull -------------------------------------------------------------

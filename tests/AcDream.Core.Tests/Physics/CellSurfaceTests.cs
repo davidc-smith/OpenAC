@@ -56,7 +56,8 @@ public class CellSurfaceTests
             [new() { 0, 1, 2, 3 }, new() { 4, 5, 6, 7 }, new() { 8, 9, 10, 11 }]);
 
         Assert.Equal(0f, surface.SampleLevelZAtOrBelow(5f, 5f, 2.5f));
-        Assert.Equal(5f, surface.SampleLevelZAtOrBelow(5f, 5f, 6f));
+        // The ceiling faces down, so even a point over it stands on the floor, not on the ceiling.
+        Assert.Equal(0f, surface.SampleLevelZAtOrBelow(5f, 5f, 6f));
         Assert.Null(surface.SampleLevelZAtOrBelow(5f, 5f, -1f));
         Assert.Null(surface.SampleLevelZAtOrBelow(20f, 5f, 2.5f));
     }

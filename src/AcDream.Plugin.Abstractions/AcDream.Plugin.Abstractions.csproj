@@ -36,11 +36,17 @@
        that asks with -p:UseForkContractVersion=true carries it, so the client, restore and the lock
        files keep <Version>. -->
   <PropertyGroup>
-    <ForkContractVersion>0.1.25-fork.9</ForkContractVersion>
+    <ForkContractVersion>0.1.26-fork.1</ForkContractVersion>
     <PackageVersion Condition="'$(UseForkContractVersion)' == 'true'">$(ForkContractVersion)</PackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- The client's chat links coordinates with the same matcher the public parser uses, so a
+       pair is a link exactly when a plugin would read it. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="AcDream.Core" />
   </ItemGroup>
 </Project>

@@ -774,14 +774,23 @@ selection alone. A click past a column's own data does nothing.
 
 A `button` cell is drawn as a button one pixel inside its cell, or at
 `buttonw` by `buttonh` centred in the cell (never larger than the cell; set
-either alone to size only that side), with its caption centred. It has the
-theme's button face, border, hover and press, or under Classic the face and
-border of a markup `<button>`. It fires like a `<button>`, when the left
-button comes up over the button it went down on, so a press dragged off the
-button cancels it; a click beside a smaller button does nothing. A cell with
-an empty caption is not a button and ignores clicks. On a host older than
-button columns, a `type="button"` column fails the build of its window as an
-unknown type.
+either alone to size only that side), with its caption centred in the list's
+text colour and cut off at the button's edges. It has the theme's button face,
+border, hover and press, or under Classic the face and border of a markup
+`<button>`, lightening while hovered and darkening while pressed. A disabled
+list draws its buttons' face, border and caption faded and fires none of them.
+
+It fires like a `<button>`, when the left button comes up over the button it
+went down on, so a press dragged off the button cancels it; a click beside a
+smaller button does nothing. Because `onclick` gets a row index, a press is
+also cancelled if, before the release, the list scrolls, its row count changes,
+or the pressed button's own caption changes or becomes empty. Changes in the
+row's other columns, such as a distance that updates every frame, do not
+cancel it, so a plugin that reorders rows with the same count should change
+the caption too, or the click fires for whatever item is at the pressed row.
+A cell with an empty caption is not a button and ignores clicks.
+On a host older than button columns, a `type="button"` column fails the build
+of its window as an unknown type.
 
 There is no header row; place `<label>` elements above the list. A `check`
 cell draws the same lamp glyph as `<toggle>`. When rows overflow the list's

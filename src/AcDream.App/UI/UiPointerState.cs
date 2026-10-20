@@ -1,8 +1,5 @@
 namespace AcDream.App.UI;
 
-/// <summary>The look a themed control takes from the pointer and its own enabled flag.</summary>
-public enum UiControlState { Normal, Hovered, Pressed, Disabled }
-
 /// <summary>
 /// Whether the pointer is over a control and whether the left button went
 /// down on it. It only watches events: the control's own handling decides

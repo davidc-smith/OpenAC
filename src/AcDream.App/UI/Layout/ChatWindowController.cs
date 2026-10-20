@@ -642,12 +642,14 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
             {
                 ChatLinkClicked?.Invoke(new PluginChatLinkClicked(
                     PluginChatLinkKind.Coordinate,
-                    $"{northSouth:0.###}{(northSouth < 0 ? 'S' : 'N')}, {eastWest:0.###}{(eastWest < 0 ? 'W' : 'E')}",
+                    ChatCoordinateLinks.Describe(eastWest, northSouth),
                     new PluginChatCoordinate(eastWest, northSouth)));
                 return true;
             }
 
-            if (!tag.TryGetIidString(out _, out string name) || name.Length == 0)
+            // Only a tell tag naming someone starts a tell; a click on any
+            // other tag does nothing.
+            if (!tag.IsTell || !tag.TryGetIidString(out _, out string name) || name.Length == 0)
                 continue;
 
             StartTell(name);

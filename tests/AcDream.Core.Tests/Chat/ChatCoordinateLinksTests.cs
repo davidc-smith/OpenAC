@@ -52,6 +52,16 @@ public sealed class ChatCoordinateLinksTests
         Assert.Null(ChatCoordinateLinks.Link(Plain("42N 33N is not a pair")));
     }
 
+    [Theory]
+    [InlineData("10n 20east")]
+    [InlineData("10north 20e")]
+    [InlineData("v2.1N 3E")]
+    [InlineData("x10n 20e")]
+    public void APairInsideAWordIsNotLinked(string text)
+    {
+        Assert.Null(ChatCoordinateLinks.Link(Plain(text)));
+    }
+
     [Fact]
     public void AnAlreadyTaggedSpanAndTheTimestampAreNotSearched()
     {
@@ -89,6 +99,7 @@ public sealed class ChatCoordinateLinksTests
     [InlineData("a 1N 2E b 3N 4W c")]
     [InlineData("no pair 1N here")]
     [InlineData("1E 2W")]
+    [InlineData("10n 20east and (42.1N, 33.5E).")]
     public void ItLinksExactlyThePairsThePluginParserReads(string text)
     {
         IReadOnlyList<PluginChatCoordinate> parsed = PluginChatCoordinateParser.ParseAll(text);

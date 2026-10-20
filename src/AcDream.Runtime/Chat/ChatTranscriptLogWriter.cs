@@ -36,8 +36,12 @@ public sealed class ChatTranscriptLogWriter
 
         bool stamped = source.DisplayTimestampsSource?.Invoke() == true;
 
+        // The file gets the line as composed, before the chat window reads its
+        // tags: a speaker's name is written inside its tell tag, and any tag
+        // in the words is written as it arrived. A plugin's own link markup is
+        // ours rather than the chat window's; its line is written as shown.
         _log.Write(
             stamped ? ChatLog.FormatTimestampPrefix(entry.Received) : null,
-            RuntimeChatFeed.Format(entry));
+            entry.AllowsMarkup ? RuntimeChatFeed.Format(entry) : RuntimeChatFeed.FormatTagged(entry));
     }
 }

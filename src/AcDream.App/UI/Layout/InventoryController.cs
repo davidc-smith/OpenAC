@@ -1135,9 +1135,10 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         return CountLooseContents(container) >= cap;
     }
 
+    // The runtime has already moved the poured stack's shortcut for a
+    // merge it sent itself; the panel only follows the selection.
     private void OnMergeAttempted(uint sourceId, uint targetId)
     {
-        _notifyMergeAttempt?.Invoke(sourceId, targetId);
         _selection.Select(targetId, SelectionChangeSource.Inventory);
     }
 

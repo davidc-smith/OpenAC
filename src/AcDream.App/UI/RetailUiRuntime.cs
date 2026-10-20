@@ -213,7 +213,8 @@ public sealed record InventoryRuntimeBindings(
     Action<uint, uint, uint, uint>? SendStackableSplitToContainer,
     Action<uint, uint, uint>? SendStackableMerge,
     RuntimeItemInteraction ItemInteraction,
-    SelectionState Selection);
+    SelectionState Selection,
+    Action<uint, uint>? RetargetMergedShortcut = null);
 
 public sealed record ExternalContainerRuntimeBindings(
     ExternalContainerState State,
@@ -4486,9 +4487,7 @@ public sealed class RetailUiRuntime : IDisposable
         }
 
         InventoryRuntimeBindings b = _bindings.Inventory;
-        Action<uint, uint>? notifyMergeAttempt = ToolbarController is null
-            ? null
-            : ToolbarController.ReplaceFullyMergedShortcut;
+        Action<uint, uint>? notifyMergeAttempt = b.RetargetMergedShortcut;
         InventoryController inventory = InventoryController.Bind(
             layout, b.Objects, b.PlayerGuid, b.ResolveIcon, b.Strength, b.Selection,
             _bindings.Assets.DefaultFont, ResolveAppropriateItemName,

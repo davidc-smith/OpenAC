@@ -228,6 +228,25 @@ public sealed class GameRuntime
             context.Inventory = new RuntimeInventoryState(
                 context.EntityObjects);
             construction.Own(context.Inventory);
+            // The toolbar lets go of an item the player no longer holds, and
+            // tells the server, on every client alike.
+            LiveSessionController shortcutSession = context.Session;
+            RuntimeLocalPlayerIdentityState shortcutPlayer =
+                context.PlayerIdentity;
+            context.Inventory.BindShortcutOwnership(
+                () => shortcutPlayer.ServerGuid,
+                entry =>
+                {
+                    WorldSession? live = shortcutSession.CurrentSession;
+                    if (live?.CurrentState == WorldSession.State.InWorld)
+                        live.SendAddShortcut(entry);
+                },
+                index =>
+                {
+                    WorldSession? live = shortcutSession.CurrentSession;
+                    if (live?.CurrentState == WorldSession.State.InWorld)
+                        live.SendRemoveShortcut((uint)index);
+                });
             Fault(
                 GameRuntimeConstructionPoint.InventoryCreated,
                 context,
@@ -340,6 +359,10 @@ public sealed class GameRuntime
                 context.Communication,
                 clock);
             construction.Own(context.ItemInteraction);
+            // A merge any caller sends moves the poured stack's shortcut to
+            // the stack it joins, here, once for every client.
+            context.ItemInteraction.MergeAttempted +=
+                context.Inventory.ReplaceFullyMergedShortcut;
             Fault(
                 GameRuntimeConstructionPoint.ItemInteractionCreated,
                 context,

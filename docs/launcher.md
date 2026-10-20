@@ -363,7 +363,7 @@ update feed for that run, the same way `--plugin-list-uri` replaces the curated
 plugin list. Give it the `manifest.json` attached to the pre-release:
 
 ```
-acdream-launcher --update-manifest-uri https://github.com/davidc-smith/OpenAC/releases/download/v0.1.25-fork.1/manifest.json
+acdream-launcher --update-manifest-uri https://github.com/davidc-smith/OpenAC/releases/download/v0.1.26-fork.1/manifest.json
 ```
 
 That launcher then offers the pre-release's client, and the pre-release's
