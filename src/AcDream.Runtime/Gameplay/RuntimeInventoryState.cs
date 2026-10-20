@@ -39,6 +39,9 @@ public readonly record struct RuntimeInventoryOwnershipSnapshot(
 public sealed class RuntimeInventoryState : IDisposable
 {
     private readonly RuntimeEntityObjectLifetime _entityObjects;
+    private Func<uint>? _playerGuid;
+    private Action<ShortcutEntry>? _sendAddShortcut;
+    private Action<int>? _sendRemoveShortcut;
     private bool _disposed;
 
     public RuntimeInventoryState(RuntimeEntityObjectLifetime entityObjects)
@@ -47,6 +50,8 @@ public sealed class RuntimeInventoryState : IDisposable
             ?? throw new ArgumentNullException(nameof(entityObjects));
         ExternalContainers = new ExternalContainerState();
         _entityObjects.Objects.ObjectRemoved += OnObjectRemoved;
+        _entityObjects.Objects.ObjectMoved += OnObjectMoved;
+        _entityObjects.Objects.ObjectRemovalClassified += OnObjectRemovalClassified;
         ItemMana = new ItemManaState();
         Shortcuts = new ShortcutStore();
         Vendor = new VendorState();
@@ -87,6 +92,60 @@ public sealed class RuntimeInventoryState : IDisposable
     public void ResetTransactions() => Transactions.ResetSession();
     public void ResetItemMana() => ItemMana.Clear();
     public void ResetVendor() => Vendor.Reset();
+
+    /// <summary>
+    /// Binds what the toolbar needs to follow items on its own: who the
+    /// player is, and how to tell the server a slot was filled or cleared.
+    /// Until it is bound, and while no player is known, no shortcut is
+    /// dropped or moved by this owner.
+    /// </summary>
+    public void BindShortcutOwnership(
+        Func<uint> playerGuid,
+        Action<ShortcutEntry> sendAddShortcut,
+        Action<int> sendRemoveShortcut)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _playerGuid = playerGuid
+            ?? throw new ArgumentNullException(nameof(playerGuid));
+        _sendAddShortcut = sendAddShortcut
+            ?? throw new ArgumentNullException(nameof(sendAddShortcut));
+        _sendRemoveShortcut = sendRemoveShortcut
+            ?? throw new ArgumentNullException(nameof(sendRemoveShortcut));
+    }
+
+    /// <summary>
+    /// A stack merge has just been sent, from any client and any caller (a
+    /// drag, a plugin, an automatic join): the shortcut of the stack being
+    /// poured moves to the stack it is poured into, keeping its slot, and
+    /// the server is told of both changes. The poured stack's later removal
+    /// then finds nothing of it on the bar.
+    /// </summary>
+    public void ReplaceFullyMergedShortcut(uint oldObjectId, uint newObjectId)
+    {
+        if (_disposed
+            || _sendAddShortcut is not { } sendAdd
+            || _sendRemoveShortcut is not { } sendRemove)
+        {
+            return;
+        }
+
+        ShortcutMutation[] plan = ShortcutDropPlanner.PlanFullStackMerge(
+            Shortcuts.Snapshot(),
+            oldObjectId,
+            newObjectId);
+        foreach (ShortcutMutation mutation in plan)
+        {
+            if (mutation.Kind == ShortcutMutationKind.Remove)
+            {
+                int slot = mutation.Slot;
+                TryRemoveShortcut(slot, () => sendRemove(slot));
+            }
+            else if (mutation.Entry is { } entry)
+            {
+                TryAddShortcut(entry, () => sendAdd(entry));
+            }
+        }
+    }
 
     public void ResetPlayerSnapshots()
     {
@@ -144,6 +203,9 @@ public sealed class RuntimeInventoryState : IDisposable
         try
         {
             _entityObjects.Objects.ObjectRemoved -= OnObjectRemoved;
+            _entityObjects.Objects.ObjectMoved -= OnObjectMoved;
+            _entityObjects.Objects.ObjectRemovalClassified -=
+                OnObjectRemovalClassified;
             Try(() => ExternalContainers.Reset(), ref failures);
             Try(() => Vendor.Reset(), ref failures);
             Try(VendorItems.Dispose, ref failures);
@@ -175,6 +237,53 @@ public sealed class RuntimeInventoryState : IDisposable
 
     private void OnObjectRemoved(ClientObject item)
         => ExternalContainers.SetCorpseDeleted(item.ObjectId);
+
+    // Only the server's word takes a shortcut off the toolbar: a local
+    // projection of a drag may still be refused and rolled back.
+    private void OnObjectMoved(ClientObjectMove move)
+    {
+        if (move.Origin == ClientObjectMoveOrigin.AuthoritativeResponse)
+            RemoveShortcutIfNoLongerOwned(move.ItemId);
+    }
+
+    // A fresh incarnation of the same object takes its place in the same
+    // breath; that is a re-description, not the item leaving the player.
+    private void OnObjectRemovalClassified(ClientObjectRemoval removal)
+    {
+        if (removal.Reason != ClientObjectRemovalReason.GenerationReplacement)
+            RemoveShortcutIfNoLongerOwned(removal.Object.ObjectId);
+    }
+
+    /// <summary>
+    /// When the server moves or removes an item that sits on the toolbar and
+    /// the player no longer holds it (dropped, given, sold, put in a
+    /// container that is not the player's, destroyed, used up), its shortcut
+    /// is cleared and the server is told, the same way a drag off the bar
+    /// clears it. An item still held (moved between the player's own packs,
+    /// wielded) keeps its slot.
+    /// </summary>
+    private void RemoveShortcutIfNoLongerOwned(uint itemId)
+    {
+        if (_disposed || itemId == 0u || _sendRemoveShortcut is null)
+            return;
+        uint player = _playerGuid?.Invoke() ?? 0u;
+        if (player == 0u)
+            return;
+
+        for (int slot = 0; slot < ShortcutStore.SlotCount; slot++)
+        {
+            if (Shortcuts.Get(slot) != itemId
+                || Objects.IsOwnedByObject(itemId, player))
+            {
+                continue;
+            }
+
+            Action<int> send = _sendRemoveShortcut;
+            int cleared = slot;
+            TryRemoveShortcut(cleared, () => send(cleared));
+            return;
+        }
+    }
 
     private sealed class InventoryStateView(RuntimeInventoryState owner)
         : IRuntimeInventoryStateView

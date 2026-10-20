@@ -257,6 +257,71 @@ public sealed class ItemParityTests
             transcript.RecordOutbound(arm);
         });
 
+    /// <summary>
+    /// A stack on the shortcut bar that a plugin pours into another keeps its
+    /// slot, now naming the stack it joined, and the server is told of the
+    /// swap; when the server then takes the poured stack away, nothing more
+    /// leaves for the bar. Before the runtime owned this, only a drag in the
+    /// windowed client moved the shortcut, and a merge from anywhere else
+    /// lost it.
+    ///
+    /// Regression guard: the owner is in the runtime, so both arms run the
+    /// same code. Mutation check (2026-10-19), run: taking the runtime's
+    /// subscription to the merge away turned this red at the slot check
+    /// (the poured stack still named there); restoring it turned it green.
+    /// </summary>
+    [Fact]
+    public void MergingAStackOnTheToolbarMovesItsShortcutOnBothClients() =>
+        ParityScenario.Run(static (arm, transcript) =>
+        {
+            const int Slot = 2;
+            _ = ParityWorld.Stage(arm);
+            ParityWorld.StageTwoStacksOfOneKind(arm.Runtime);
+            AcDream.Core.Items.ShortcutStore bar =
+                arm.Runtime.InventoryOwner.Shortcuts;
+            bar.Load([new AcDream.Core.Items.ShortcutEntry(
+                Slot, ParityWorld.CarriedCoin, 0u)]);
+            _ = arm.Operations.TakeOutbound();
+            IItemAutomation items = arm.Host.Automation.Items;
+
+            transcript.Step("pour the whole loose stack into the pack's stack");
+            PluginItemCommandResult join = items.MoveToContainer(
+                ParityWorld.CarriedCoin,
+                ParityWorld.SidePack,
+                amount: 40u,
+                placement: 0,
+                joinStack: true);
+            Record(transcript, "join", join);
+            Assert.Equal(PluginItemCommandStatus.Started, join.Status);
+            Assert.Equal(
+                (ParityWorld.CarriedCoin, ParityWorld.SidePackCoin, 40u),
+                TheMerge(arm));
+            Assert.Equal(
+                new AcDream.Core.Items.ShortcutEntry(
+                    Slot, ParityWorld.SidePackCoin, 0u),
+                bar.GetEntry(Slot));
+            Assert.Equal(
+                (uint)Slot,
+                Field(Assert.Single(Sent(arm, RemoveShortcutAction)), 12));
+            ParityOutbound add = Assert.Single(Sent(arm, AddShortcutAction));
+            Assert.Equal((uint)Slot, Field(add, 12));
+            Assert.Equal(ParityWorld.SidePackCoin, Field(add, 16));
+            transcript.RecordOutbound(arm);
+
+            transcript.Step("the server takes the poured stack away");
+            _ = arm.Operations.TakeOutbound();
+            Assert.True(
+                arm.Runtime.InventoryOwner.Objects.Remove(ParityWorld.CarriedCoin));
+            arm.Advance();
+            Assert.Equal(
+                new AcDream.Core.Items.ShortcutEntry(
+                    Slot, ParityWorld.SidePackCoin, 0u),
+                bar.GetEntry(Slot));
+            Assert.Empty(Sent(arm, RemoveShortcutAction));
+            Assert.Empty(Sent(arm, AddShortcutAction));
+            transcript.RecordOutbound(arm);
+        });
+
     /// <summary>The same move, not asked to join: a plain split into the pack.</summary>
     [Fact]
     public void MovingAStackWithoutJoiningLooksTheSameOnBothClients() =>
@@ -530,6 +595,8 @@ public sealed class ItemParityTests
     private const uint SalvageAction = 0x027Du;
     private const uint MergeAction = 0x0054u;
     private const uint SplitToContainerAction = 0x0055u;
+    private const uint AddShortcutAction = 0x019Cu;
+    private const uint RemoveShortcutAction = 0x019Du;
 
     /// <summary>
     /// Everything this arm asked to send that carries one named client
