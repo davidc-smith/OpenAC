@@ -127,7 +127,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
         if (NeedsInstall && _consent?.IsAgreed == true && _canStartInstall() && CanAutoInstall()
             && !cancellationToken.IsCancellationRequested)
         {
-            await RunInstallAsync().ConfigureAwait(true);
+            await RunInstallAsync(automatic: true).ConfigureAwait(true);
         }
     }
 
@@ -194,10 +194,30 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
         await RunInstallAsync().ConfigureAwait(true);
     }
 
-    private async Task RunInstallAsync()
+    private async Task RunInstallAsync(bool automatic = false)
     {
         if (_service is null || _check is null || IsBusy)
             return;
+        // The installer's own wording for these two is command-line advice (--dir / --force); the
+        // launcher never replaces such a folder, so say so in launcher words and do not run it.
+        string? leftAlone = _check.Inspection.State switch
+        {
+            NavDataInstallState.RynthCoreManaged =>
+                $"RynthCore's own launcher manages {_check.Inspection.Directory}; the OpenAC launcher leaves it alone.",
+            NavDataInstallState.LocalMarker =>
+                $"{_check.Inspection.Directory} holds your own tiles (navdata.local); left alone.",
+            _ => null,
+        };
+        if (leftAlone is not null)
+        {
+            Error = null;
+            Status = leftAlone;
+            IsProgressIndeterminate = false;
+            ProgressPercent = 0;
+            IsOpen = true;
+            return;
+        }
+
         using var cancellation = new CancellationTokenSource();
         _cancellation = cancellation;
         Error = null;
@@ -222,6 +242,9 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
             await RefreshAsync(CancellationToken.None).ConfigureAwait(true);
             // The refresh may report its own failure; the install's message is what the player asked about.
             Status = result;
+            // Nobody clicked it: nothing to read or answer, so the dialog goes away by itself.
+            if (automatic)
+                IsOpen = false;
         }
         catch (OperationCanceledException)
         {

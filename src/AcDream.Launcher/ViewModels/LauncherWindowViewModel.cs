@@ -543,11 +543,17 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
 
         if (ReferenceEquals(sender, FirstRunWizardShell)
             && e.PropertyName == nameof(FirstRunInstallerViewModel.IsOpen)
-            && !FirstRunWizardShell.IsOpen
-            && _openUpdateAfterContentCompletion)
+            && !FirstRunWizardShell.IsOpen)
         {
-            _openUpdateAfterContentCompletion = false;
-            UpdatePrompt.TryOpenPendingUpdate();
+            if (_openUpdateAfterContentCompletion)
+            {
+                _openUpdateAfterContentCompletion = false;
+                UpdatePrompt.TryOpenPendingUpdate();
+            }
+
+            // The wizard is a modal: an install that completed while it was still open was held
+            // back by it, so look again now that it is closed.
+            PostNavDataCheck();
         }
     }
 
@@ -1230,6 +1236,9 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         {
             PublishPendingContentIfCompatible(clientWasInstalled: false);
         }
+
+        // Someone who already agreed to the navdata gets it now rather than at the next start.
+        PostNavDataCheck();
     }
 
     private void OnClientVersionChanged()
@@ -1240,14 +1249,17 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         RefreshFromCore();
         // Posted: the update prompt is still open while it reports the change, and a new client
         // may carry a new navdata pin.
+        PostNavDataCheck();
+    }
+
+    private void PostNavDataCheck() =>
         _dispatcher.Post(() =>
         {
             if (!_disposed)
             {
-                _ = NavData.CheckAsync();
+                NavDataStartupCheck = NavData.CheckAsync();
             }
         });
-    }
 
     private void OnStartupUpdateCheckCompleted(object? sender, EventArgs e) =>
         PublishPendingContentIfCompatible(clientWasInstalled: false);

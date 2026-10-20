@@ -130,6 +130,67 @@ public sealed class RynthNavDataViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task AnAutomaticInstallClosesItsDialogOnSuccess()
+    {
+        Consent.Agree();
+        RynthNavDataViewModel vm = Create();
+        await vm.CheckAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, _installs);
+        Assert.False(vm.IsOpen);
+        Assert.False(vm.HasError);
+    }
+
+    [Fact]
+    public async Task AnAutomaticInstallLeavesItsDialogOpenOnFailure()
+    {
+        Consent.Agree();
+        _installFailure = new IOException("disk full");
+        RynthNavDataViewModel vm = Create();
+        await vm.CheckAsync(TestContext.Current.CancellationToken);
+        Assert.True(vm.IsOpen);
+        Assert.Contains("disk full", vm.Error);
+    }
+
+    [Fact]
+    public async Task AnAutomaticInstallLeavesItsDialogOpenWhenCancelled()
+    {
+        Consent.Agree();
+        _pendingInstall = new TaskCompletionSource<string>();
+        RynthNavDataViewModel vm = Create();
+        Task check = vm.CheckAsync(TestContext.Current.CancellationToken);
+        vm.CancelCommand.Execute(null);
+        await check;
+        Assert.True(vm.IsOpen);
+        Assert.True(vm.HasError);
+    }
+
+    [Fact]
+    public async Task AManualInstallKeepsItsDialogOpenOnSuccess()
+    {
+        RynthNavDataViewModel vm = Create();
+        await vm.InstallCommand.ExecuteAsync(null);
+        Assert.True(vm.IsOpen);
+    }
+
+    [Theory]
+    [InlineData("navdata.id", "0123456789abcdef0123456789abcdef", "RynthCore's own launcher manages")]
+    [InlineData("navdata.local", "", "holds your own tiles (navdata.local); left alone.")]
+    public async Task AManualInstallOverAnUnmanagedFolderSaysSoInLauncherWords(string file, string content, string expected)
+    {
+        Directory.CreateDirectory(NavDataDir);
+        File.WriteAllText(Path.Combine(NavDataDir, file), content);
+        RynthNavDataViewModel vm = Create();
+        await vm.InstallCommand.ExecuteAsync(null);
+        Assert.Equal(0, _installs);
+        Assert.Contains(expected, vm.Status);
+        Assert.Contains(NavDataDir, vm.Status);
+        Assert.DoesNotContain("--", vm.Status);
+        Assert.False(vm.HasError);
+        Assert.True(vm.IsOpen);
+        Assert.False(vm.IsBusy);
+    }
+
+    [Fact]
     public async Task AgreedButASessionRunsWaits()
     {
         Consent.Agree();

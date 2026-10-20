@@ -1,3 +1,4 @@
+using AcDream.Launcher.Core.Orchestration;
 using AcDream.Launcher.Core.Installation;
 using AcDream.Launcher.Core.NavData;
 using AcDream.Launcher.Core.Updates;
@@ -76,6 +77,46 @@ public sealed partial class LauncherWindowViewModelTests
     }
 
     [Fact]
+    public async Task RynthNavDataAgreedInstallsRightAfterTheFirstRunSetupCompletes()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "navdata-window-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            new LauncherNavDataConsentStore(Path.Combine(root, "config", LauncherNavDataConsentStore.FileName)).Agree();
+            int installs = 0;
+            using var orchestrator = new FakeLauncherOrchestrator
+            {
+                Session = FakeLauncherOrchestrator.CreateSession(LauncherActivityState.Exited, "Exited cleanly."),
+            };
+            var content = new FakeLauncherInstaller();
+            using var vm = CreateWithNavData(orchestrator, root, verifiedContent: false, installer: (_, dir, _, _, _) =>
+            {
+                installs++;
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "navdata.id"), NavDataId);
+                return Task.FromResult("installed");
+            }, content);
+            await vm.StartBackgroundInitializationAsync();
+            await vm.NavDataStartupCheck;
+            Assert.True(vm.IsFirstRunRequired);
+            Assert.Equal(0, installs);
+
+            vm.FirstRunWizardShell.OpenCommand.Execute(null);
+            await vm.FirstRunWizardShell.StartCommand.ExecuteAsync();
+            vm.CloseActiveModal();
+            await vm.NavDataStartupCheck;
+
+            Assert.False(vm.IsFirstRunRequired);
+            Assert.Equal(1, installs);
+            Assert.False(vm.ShowNavDataBanner);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RynthNavDataIsInertWithoutAService()
     {
         using var core = BatchOrchestrator();
@@ -87,9 +128,10 @@ public sealed partial class LauncherWindowViewModelTests
     }
 
     private static LauncherWindowViewModel CreateWithNavData(
-        FakeLauncherOrchestrator orchestrator, string root, bool verifiedContent, LauncherNavDataService.Installer installer)
+        FakeLauncherOrchestrator orchestrator, string root, bool verifiedContent, LauncherNavDataService.Installer installer,
+        FakeLauncherInstaller? contentInstaller = null)
     {
-        var content = new FakeLauncherInstaller();
+        var content = contentInstaller ?? new FakeLauncherInstaller();
         if (verifiedContent)
         {
             content.NextVerification = new InstallRecordVerification(
