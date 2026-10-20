@@ -50,4 +50,23 @@ internal static class NavAtlasInstall
             return false;
         }
     }
+
+    private static string? _ensuredDir;
+
+    /// <summary>
+    /// Once per RynthCore folder while its file stays in place (so once per process outside tests): the Atlas file in place, then RynthNavAtlas warmed on a pool thread
+    /// (our UiBackgroundWriter runs work inline, and parsing the 1.9 MB Atlas would stall the
+    /// first indoor frame; their loader is written for a background thread, and later calls
+    /// see the path already requested). Whichever of the dashboard and the RynthNav panel
+    /// starts first runs it.
+    /// </summary>
+    internal static void EnsureOnce(Action<string> log)
+    {
+        string coreDir = RynthCore.Install.RynthInstallPaths.CoreDir;
+        if (_ensuredDir == coreDir && File.Exists(PathUnder(coreDir)))
+            return;
+        _ensuredDir = coreDir;
+        Ensure(coreDir, OperatingSystem.IsWindows(), log);
+        System.Threading.Tasks.Task.Run(RynthCore.Engine.UI.Data.RynthNavAtlas.EnsureLoadedForNames);
+    }
 }
