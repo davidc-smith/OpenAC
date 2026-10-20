@@ -40,13 +40,12 @@ foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Release file '$file' is missing." }
 }
 
-# No --prerelease and no --latest: an ordinary new release becomes the latest one on its own,
-# which is what the launcher's releases/latest/download route needs.
+# No --prerelease; --latest keeps the launcher's releases/latest/download route on this release.
 $notes = "OpenAC fork release $version (macOS Apple silicon only). The launcher installs the RynthNav navdata pinned in rynth-navdata.json."
 $commands = @(
     "git -C `"$RepoRoot`" tag $tag",
     "git -C `"$RepoRoot`" push origin $tag",
-    "gh release create $tag -R $repository --title `"OpenAC $version`" --notes `"$notes`" $($files -join ' ')"
+    "gh release create $tag -R $repository --title `"OpenAC $version`" --notes `"$notes`" --latest $($files -join ' ')"
 )
 if ($DryRun) {
     Write-Host 'Dry run: the release would be published with:' -ForegroundColor Cyan
@@ -58,6 +57,6 @@ if ($DryRun) {
 if ($LASTEXITCODE) { throw "git tag $tag failed." }
 & git -C $RepoRoot push origin $tag
 if ($LASTEXITCODE) { throw "git push of $tag failed." }
-& gh release create $tag -R $repository --title "OpenAC $version" --notes $notes @files
+& gh release create $tag -R $repository --title "OpenAC $version" --notes $notes --latest @files
 if ($LASTEXITCODE) { throw 'gh release create failed; the tag is pushed, re-run gh release create by hand.' }
 Write-Host "Published $tag to https://github.com/$repository/releases/tag/$tag" -ForegroundColor Green
