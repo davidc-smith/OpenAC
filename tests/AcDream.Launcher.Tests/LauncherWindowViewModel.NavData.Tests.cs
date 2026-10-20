@@ -117,6 +117,54 @@ public sealed partial class LauncherWindowViewModelTests
     }
 
     [Fact]
+    public async Task AutomaticRelaunchWaitsWhileNavDataInstalls()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "navdata-window-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var pending = new TaskCompletionSource<string>();
+            using var core = ProfiledOrchestrator();
+            core.Session = FakeLauncherOrchestrator.CreateSession() with { ServerName = "One", AccountName = "Alice", HasLiveProcess = true };
+            var clock = new NavDataRelaunchClock();
+            using var vm = CreateWithNavData(core, root, verifiedContent: false,
+                installer: (_, _, _, _, ct) => pending.Task.WaitAsync(ct), timeProvider: clock);
+            await vm.StartBackgroundInitializationAsync();
+            await vm.NavDataStartupCheck;
+            vm.CloseActiveModal();
+            vm.Accounts[0].Rows[0].IsChecked = true;
+            vm.RelaunchCheckedClientsAutomatically = true;
+            vm.RelaunchDelaySecondsText = "5";
+            core.Session = core.Session with { State = LauncherActivityState.Exited, HasLiveProcess = false };
+            core.RaiseStateChanged();
+            clock.Advance(5);
+
+            Task install = vm.NavData.InstallCommand.ExecuteAsync(null);
+            Assert.True(vm.NavData.IsBusy);
+            vm.PollStatus(); await vm.AutomaticRelaunchTask;
+            Assert.Empty(core.LaunchRequests);
+
+            vm.NavData.CancelCommand.Execute(null);
+            await install;
+            vm.CloseActiveModal();
+            clock.Advance(5);
+            vm.PollStatus(); await vm.AutomaticRelaunchTask;
+            Assert.Single(core.LaunchRequests);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private sealed class NavDataRelaunchClock : TimeProvider
+    {
+        private long _seconds;
+        public override long TimestampFrequency => 1;
+        public override long GetTimestamp() => _seconds;
+        public void Advance(int seconds) => _seconds += seconds;
+    }
+
+    [Fact]
     public async Task RynthNavDataIsInertWithoutAService()
     {
         using var core = BatchOrchestrator();
@@ -129,7 +177,7 @@ public sealed partial class LauncherWindowViewModelTests
 
     private static LauncherWindowViewModel CreateWithNavData(
         FakeLauncherOrchestrator orchestrator, string root, bool verifiedContent, LauncherNavDataService.Installer installer,
-        FakeLauncherInstaller? contentInstaller = null)
+        FakeLauncherInstaller? contentInstaller = null, TimeProvider? timeProvider = null)
     {
         var content = contentInstaller ?? new FakeLauncherInstaller();
         if (verifiedContent)
@@ -144,7 +192,7 @@ public sealed partial class LauncherWindowViewModelTests
         var navData = new RynthNavDataViewModel(service,
             new LauncherNavDataConsentStore(Path.Combine(root, "config", LauncherNavDataConsentStore.FileName)),
             new ImmediateUiDispatcher(), () => true);
-        var viewModel = new LauncherWindowViewModel(orchestrator, new ImmediateUiDispatcher(), content, navData: navData);
+        var viewModel = new LauncherWindowViewModel(orchestrator, new ImmediateUiDispatcher(), content, navData: navData, timeProvider: timeProvider);
         viewModel.Initialize();
         return viewModel;
     }

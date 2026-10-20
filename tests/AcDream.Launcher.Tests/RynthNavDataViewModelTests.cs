@@ -75,6 +75,21 @@ public sealed class RynthNavDataViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task AgreementIsReadOnceAndNotOnEveryBannerEvaluation()
+    {
+        RynthNavDataViewModel vm = Create();
+        await vm.CheckAsync(TestContext.Current.CancellationToken);
+        Assert.True(vm.ShowBanner);
+        // Agreeing behind the view model's back is not seen until the next check re-reads the file.
+        Consent.Agree();
+        Assert.True(vm.ShowBanner);
+        File.Delete(Path.Combine(_root, "config", LauncherNavDataConsentStore.FileName));
+        await vm.InstallCommand.ExecuteAsync(null);
+        File.Delete(Path.Combine(_root, "config", LauncherNavDataConsentStore.FileName));
+        Assert.False(vm.ShowBanner);
+    }
+
+    [Fact]
     public async Task NotNowHidesForThisRunOnly()
     {
         RynthNavDataViewModel vm = Create();

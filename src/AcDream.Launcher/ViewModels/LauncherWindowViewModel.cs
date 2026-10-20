@@ -495,7 +495,8 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
     }
 
-    /// <summary>The navdata check started after startup (for tests; it never throws).</summary>
+    /// <summary>The most recent posted navdata check: the one started after startup, replaced by any
+    /// later one (for tests; it never throws).</summary>
     internal Task NavDataStartupCheck { get; private set; } = Task.CompletedTask;
 
     // An available update has its own banner and being current needs no announcement, so the

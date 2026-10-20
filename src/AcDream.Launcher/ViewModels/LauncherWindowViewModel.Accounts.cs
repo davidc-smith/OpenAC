@@ -88,7 +88,7 @@ public sealed partial class LauncherWindowViewModel
         try
         {
             await _automaticRelaunch.PollAsync(CanInteract && IsRelaunchDelayValid &&
-                !_isInstallationChecking && !_isClientCompatibilityCheckBlocking).ConfigureAwait(true);
+                !_isInstallationChecking && !_isClientCompatibilityCheckBlocking && !NavData.IsBusy).ConfigureAwait(true);
         }
         catch (Exception error) { if (!_disposed) OnAutomaticRelaunchFailed(error); }
     }

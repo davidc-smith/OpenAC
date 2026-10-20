@@ -15,6 +15,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
     private readonly IUiDispatcher _dispatcher;
     private readonly Func<bool> _canStartInstall;
     private NavDataCheck? _check;
+    private bool _agreed;
     private bool _dismissed;
     private bool _disposed;
     private bool _isBusy;
@@ -33,6 +34,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
     {
         _service = service;
         _consent = consent;
+        _agreed = consent?.IsAgreed == true;
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _canStartInstall = canStartInstall ?? throw new ArgumentNullException(nameof(canStartInstall));
         InstallCommand = new AsyncRelayCommand(InstallAsync, () => _service is not null && !IsBusy);
@@ -55,7 +57,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
 
     /// <summary>Offered until agreed; after that only when an install failed.</summary>
     public bool ShowBanner =>
-        !_dismissed && !IsBusy && NeedsInstall && (_consent?.IsAgreed != true || HasError);
+        !_dismissed && !IsBusy && NeedsInstall && (!_agreed || HasError);
 
     public string BannerText => _check is null
         ? string.Empty
@@ -124,7 +126,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
             return;
         if (!await RefreshAsync(cancellationToken).ConfigureAwait(true))
             return;
-        if (NeedsInstall && _consent?.IsAgreed == true && _canStartInstall() && CanAutoInstall()
+        if (NeedsInstall && _agreed && _canStartInstall() && CanAutoInstall()
             && !cancellationToken.IsCancellationRequested)
         {
             await RunInstallAsync(automatic: true).ConfigureAwait(true);
@@ -170,6 +172,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
             return false;
         }
 
+        _agreed = _consent?.IsAgreed == true;
         OnPropertyChanged(nameof(BannerText));
         OnPropertyChanged(nameof(ShowBanner));
         return true;
@@ -182,6 +185,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
         try
         {
             _consent?.Agree();
+            _agreed = _consent is not null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -228,7 +232,7 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            var progress = new DispatchedProgress(_dispatcher, report =>
+            var progress = new DispatcherProgress<NavDataProgress>(_dispatcher, report =>
             {
                 if (!string.IsNullOrWhiteSpace(report.Detail))
                     Status = report.Detail;
@@ -274,10 +278,4 @@ public sealed class RynthNavDataViewModel : ObservableObject, IDisposable
 
     private static string Gb(long bytes) =>
         (bytes / 1e9).ToString("0.0", CultureInfo.InvariantCulture) + " GB";
-
-    private sealed class DispatchedProgress(IUiDispatcher dispatcher, Action<NavDataProgress> apply)
-        : IProgress<NavDataProgress>
-    {
-        public void Report(NavDataProgress value) => dispatcher.Post(() => apply(value));
-    }
 }

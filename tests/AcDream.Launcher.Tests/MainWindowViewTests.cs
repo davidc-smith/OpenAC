@@ -63,12 +63,13 @@ public sealed class MainWindowViewTests
         ARefusedStartShowsItsReason();
         TheAddServerDialogListsKnownServersAndFocusesItsNameField();
         TheOptionsMenuActsOnItsOwnRow();
-        TheNavDataBannerAndDialogBindItsCommands();
     }
 
     /// <summary>The banner's Install, the dialog's Cancel and Close, and the menu item are bound to
-    /// the navdata view model; a misspelled binding path fails this.</summary>
-    private static void TheNavDataBannerAndDialogBindItsCommands()
+    /// the navdata view model; a misspelled binding path fails this. Its own headless fact, so it
+    /// runs in the default lane like the plugin-icon window tests.</summary>
+    [AvaloniaFact]
+    public void TheNavDataBannerAndDialogBindItsCommands()
     {
         using LauncherWindowViewModel viewModel = CreateViewModel();
         var window = new MainWindow { DataContext = viewModel };
