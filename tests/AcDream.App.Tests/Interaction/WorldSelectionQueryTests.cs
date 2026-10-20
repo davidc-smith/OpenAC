@@ -503,6 +503,81 @@ public sealed class WorldSelectionQueryTests
                 anchor: null));
     }
 
+    // Issue: in a pit, "next monster" only stepped through monsters at about
+    // the player's own height. Reach is distance across the ground against
+    // the radar's range (75 m outside); height only weighs into the order.
+    [Fact]
+    public void MonsterCycleReachesMonstersFarBelowAndAboveOnTheRadar()
+    {
+        var h = new Harness();
+        const uint level = 0x7000_0060u;
+        const uint below = 0x7000_0061u;
+        const uint above = 0x7000_0062u;
+        const uint beyond = 0x7000_0063u;
+        // Ground 10 m, no height: order 10.
+        AddMonster(h, level, new Vector3(10f, 0f, 0f));
+        // Ground 40 m, 30 m down a pit: order 40 + 1.2 * 30 = 76.
+        AddMonster(h, below, new Vector3(40f, 0f, -30f));
+        // Ground 20 m, 50 m up: order 20 + 1.2 * 50 = 80.
+        AddMonster(h, above, new Vector3(0f, 20f, 50f));
+        // Ground 76 m: off the radar however level it is.
+        AddMonster(h, beyond, new Vector3(76f, 0f, 0f));
+
+        uint? Next(uint? anchor) => h.Query.FindSelectionTarget(
+            RetailSelectionKind.Monster, RetailSelectionDirection.Next, anchor);
+
+        Assert.Equal(level, Next(null));
+        Assert.Equal(below, Next(level));
+        Assert.Equal(above, Next(below));
+        Assert.Equal(level, Next(above));
+        Assert.Equal(
+            above,
+            h.Query.FindSelectionTarget(
+                RetailSelectionKind.Monster,
+                RetailSelectionDirection.Previous,
+                level));
+    }
+
+    [Fact]
+    public void MonsterCycleRangeIsGroundDistanceInclusiveOfTheRadarEdge()
+    {
+        var h = new Harness();
+        const uint edge = 0x7000_0064u;
+        // Exactly on the 75 m edge across the ground, 10 m below.
+        AddMonster(h, edge, new Vector3(0f, -75f, -10f));
+
+        Assert.Equal(
+            edge,
+            h.Query.FindSelectionTarget(
+                RetailSelectionKind.Monster,
+                RetailSelectionDirection.Closest,
+                anchor: null));
+    }
+
+    [Fact]
+    public void LastAttackerFarBelowIsSelectedWhileInsideTheRadarAcrossTheGround()
+    {
+        var h = new Harness();
+        const uint attacker = 0x7000_0065u;
+        WorldEntity entity = AddMonster(h, attacker, new Vector3(40f, 0f, -30f));
+        h.Objects.Get(Player)!.Properties.InstanceIds[
+            (uint)AcDream.Core.Properties.PropertyInstanceId.CurrentAttacker] = attacker;
+
+        Assert.Equal(attacker, h.Query.FindLastAttacker());
+
+        // Exactly on the edge is outside for this one: the range is strict.
+        entity.Position = new Vector3(75f, 0f, 0f);
+        Assert.Null(h.Query.FindLastAttacker());
+    }
+
+    private static WorldEntity AddMonster(Harness h, uint guid, Vector3 position)
+        => h.Add(
+            guid,
+            position,
+            ItemType.Creature,
+            publicFlags: (uint)PublicWeenieFlags.Attackable,
+            radarBehavior: (byte)RadarBehavior.ShowAlways);
+
     [Fact]
     public void RetailUnopenedCorpseSelectionRemembersOpenUntilDelete()
     {

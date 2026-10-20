@@ -32,7 +32,8 @@ public enum RuntimeSelectionCycleDirection
 /// little more than distance across the ground, and the object id breaking a
 /// tie so the order never depends on which order the client heard about
 /// things. "Previous" and "next" step in and out along that order and wrap
-/// round at the ends.
+/// round at the ends. Who is in reach at all is decided on ground distance
+/// alone, against the radar's range: height orders, it never excludes.
 ///
 /// Everything it reads -- who is nearby, where they are, what the server
 /// said about them -- is runtime state, so a client with a window and a bot
@@ -40,9 +41,6 @@ public enum RuntimeSelectionCycleDirection
 /// </remarks>
 public sealed class RuntimeSelectionCycle
 {
-    /// <summary>Height counts for a little more than ground distance.</summary>
-    private const float HeightWeight = 1.2f;
-
     /// <summary>The server's "do not show this at all" bit.</summary>
     private const uint NeverShowFlag = 0x8000_0000u;
 
@@ -108,13 +106,16 @@ public sealed class RuntimeSelectionCycle
                 continue;
             }
 
-            float order = Order(playerPosition, playerOrientation, at);
-            if (order > radarRadius
+            // Reach is ground distance alone; height only orders the
+            // candidates, so someone on the floor below is still in the cycle.
+            Vector3 offset = PlayerSpaceOffset(
+                playerPosition, playerOrientation, at);
+            if (!RetailRadar.IsWithinSelectionCycleRange(offset, radarRadius)
                 || !IsSelectableCharacter(candidate, record.FinalPhysicsState))
             {
                 continue;
             }
-            candidates.Add((guid, order));
+            candidates.Add((guid, RetailRadar.GetSelectionOrder(offset)));
         }
 
         if (candidates.Count == 0)
@@ -133,7 +134,8 @@ public sealed class RuntimeSelectionCycle
             && TryGetPose(anchorRecord, out Vector3 anchorAt, out _))
         {
             anchorKey = (
-                Order(playerPosition, playerOrientation, anchorAt),
+                RetailRadar.GetSelectionOrder(PlayerSpaceOffset(
+                    playerPosition, playerOrientation, anchorAt)),
                 anchorGuid);
         }
 
@@ -198,21 +200,16 @@ public sealed class RuntimeSelectionCycle
     }
 
     /// <summary>
-    /// How far away something is for the purpose of ordering: across the
-    /// ground in the character's own frame, plus a little extra for height,
-    /// so a person one floor up sorts behind one on this floor.
+    /// Where something stands relative to the character, in the character's
+    /// own frame, in metres.
     /// </summary>
-    private static float Order(
+    private static Vector3 PlayerSpaceOffset(
         Vector3 playerPosition,
         Quaternion playerOrientation,
         Vector3 targetPosition)
-    {
-        Vector3 delta = targetPosition - playerPosition;
-        Vector3 local = Vector3.Transform(
-            delta, Quaternion.Inverse(playerOrientation));
-        return MathF.Sqrt((local.X * local.X) + (local.Y * local.Y))
-            + (MathF.Abs(local.Z) * HeightWeight);
-    }
+        => Vector3.Transform(
+            targetPosition - playerPosition,
+            Quaternion.Inverse(playerOrientation));
 
     private static int Compare(
         float leftOrder,
