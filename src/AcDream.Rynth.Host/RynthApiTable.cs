@@ -38,6 +38,9 @@ public sealed unsafe partial class RynthApiTable : IDisposable
 
     /// <summary>RynthCore's vendor buy/sell requests and the vendor list generation.</summary>
     internal RynthVendorTrades Vendor { get; }
+
+    /// <summary>The host's loaded plugins, for GetPluginInterface. Set by the host before the first Init.</summary>
+    internal IReadOnlyList<RynthPlugin> Plugins { get; set; } = [];
     private readonly Action<string> _log;
     private readonly bool _scriptWindows;
     private IntPtr _nameBuffer;
@@ -95,6 +98,7 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         BindVendorSlots();
         BindTradeSlots();
         BindScreenSlots();
+        BindInterfaceSlots();
         if (scriptWindows)
         {
             Native->UiSubmitFn = (IntPtr)(delegate* unmanaged[Cdecl]<byte*, int, int>)&UiSubmit;

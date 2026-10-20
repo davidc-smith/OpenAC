@@ -7,12 +7,15 @@ namespace AcDream.Rynth.Host;
 /// lookup is theirs and is left alone (a RynthSuite install shares its
 /// profiles). Elsewhere the C:\ defaults mean nothing, so unset variables
 /// point under ApplicationData, beside the RynthCore folder our other plugins
-/// already use. Call before the first plugin loads: they resolve once.
+/// already use. RynthNav reads its tiles from RYNTHNAV_NAVDATA, not RynthInstallPaths,
+/// so off Windows that is pointed at &lt;RYNTHCORE_DIR&gt;/NavData too, where the Atlas already goes.
+/// Call before the first plugin loads: they resolve once.
 /// </summary>
 internal static class RynthInstallFolders
 {
     internal const string CoreVariable = "RYNTHCORE_DIR";
     internal const string SuiteVariable = "RYNTHSUITE_DIR";
+    internal const string NavDataVariable = "RYNTHNAV_NAVDATA";
 
     internal static void Apply() => Apply(
         Environment.GetEnvironmentVariable,
@@ -30,5 +33,7 @@ internal static class RynthInstallFolders
             set(CoreVariable, Path.Combine(applicationData, "RynthCore"));
         if (string.IsNullOrWhiteSpace(get(SuiteVariable)))
             set(SuiteVariable, Path.Combine(applicationData, "RynthSuite"));
+        if (string.IsNullOrWhiteSpace(get(NavDataVariable)) && get(CoreVariable) is { Length: > 0 } core)
+            set(NavDataVariable, Path.Combine(core, "NavData"));
     }
 }

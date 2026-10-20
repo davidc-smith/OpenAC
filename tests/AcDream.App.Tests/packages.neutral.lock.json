@@ -322,6 +322,7 @@
           "AcDream.Rynth.Plugin.RynthChat": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthInventory": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthLua": "[0.1.25, )",
+          "AcDream.Rynth.Plugin.RynthNav": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthOracle": "[0.1.25, )",
           "AcDream.Rynth.Plugin.RynthTracker": "[0.1.25, )",
           "AcDream.Rynth.ScriptWindows": "[0.1.25, )",
@@ -352,6 +353,14 @@
         "dependencies": {
           "AcDream.Rynth.Sdk": "[0.1.25, )",
           "MoonSharp": "[2.0.0, )"
+        }
+      },
+      "acdream.rynth.plugin.rynthnav": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.Sdk": "[0.1.25, )",
+          "DotRecast.Core": "[2026.1.3, )",
+          "DotRecast.Detour": "[2026.1.3, )"
         }
       },
       "acdream.rynth.plugin.rynthoracle": {
@@ -413,6 +422,21 @@
         "dependencies": {
           "DotNet.Standard.Common": "2.0.1",
           "ZLibDotNet": "0.1.1"
+        }
+      },
+      "DotRecast.Core": {
+        "type": "CentralTransitive",
+        "requested": "[2026.1.3, )",
+        "resolved": "2026.1.3",
+        "contentHash": "d+3AfgrG1KfbzrWrcQEASLd4rcI5w0Hp9xI6/T4pFnZhxcO3pKU1mZ9H149axeg0rx36Tf3x3mSGuk0ivLP2Lw=="
+      },
+      "DotRecast.Detour": {
+        "type": "CentralTransitive",
+        "requested": "[2026.1.3, )",
+        "resolved": "2026.1.3",
+        "contentHash": "t7Mh/tbueiKJ8MuH33gVSWYGNAas4K9BBMsASEnn9yI6Op+N5fylAaaVpGPaRmobKweyL9oBmH1Y/7Miwobuiw==",
+        "dependencies": {
+          "DotRecast.Core": "2026.1.3"
         }
       },
       "ImGui.NET": {

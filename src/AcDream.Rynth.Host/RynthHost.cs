@@ -1,3 +1,5 @@
+using RynthCore.PluginSdk;
+
 namespace AcDream.Rynth.Host;
 
 /// <summary>
@@ -20,6 +22,9 @@ public sealed unsafe class RynthHost : IDisposable
         ArgumentNullException.ThrowIfNull(log);
         _log = line => log($"[Rynth] {line}");
         _table = new RynthApiTable(view, _log, scriptWindows, nav3DLayer);
+        // A plugin may ask for another's interface from its own Init (RynthCore's order: the
+        // ones loaded before it are there).
+        _table.Plugins = _plugins;
         RynthCore.Engine.RynthLog.Sink = _log;
         RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log = _log;
         try
@@ -41,6 +46,9 @@ public sealed unsafe class RynthHost : IDisposable
     internal RynthMotionHolds Holds => _table.Holds;
 
     internal RynthVendorTrades Vendor => _table.Vendor;
+
+    /// <summary>The engine API table every plugin got (tests call its slots directly).</summary>
+    internal RynthCoreApiNative* Api => _table.Native;
 
     public IReadOnlyList<RynthPlugin> Plugins => _plugins;
 
@@ -138,6 +146,7 @@ public sealed unsafe class RynthHost : IDisposable
 
         // RynthCore's dashboard shows a plugin's version from its loaded-plugin record.
         plugin.Owner.VersionString = plugin.CallStringExport("RynthPluginVersion") ?? string.Empty;
+        plugin.ReportedName = plugin.CallStringExport("RynthPluginName") ?? string.Empty;
         _plugins.Add(plugin);
         _log($"{name} loaded.");
     }

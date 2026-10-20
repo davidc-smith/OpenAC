@@ -22,6 +22,9 @@ public sealed unsafe class RynthPlugin
 
     public string Name { get; }
 
+    /// <summary>What the plugin's RynthPluginName export reports ("RynthNav"); empty when it has none.</summary>
+    public string ReportedName { get; internal set; } = string.Empty;
+
     /// <summary>This plugin's identity in RynthCore's script-window registry.</summary>
     internal RynthCore.Engine.Plugins.LoadedPlugin Owner { get; } = new();
 
@@ -37,6 +40,20 @@ public sealed unsafe class RynthPlugin
     {
         pointer = IntPtr.Zero;
         return IsActive && _exports.TryGet(entryPoint, out pointer);
+    }
+
+    /// <summary>True while active when the plugin has <paramref name="entryPoint"/>.</summary>
+    public bool HasExport(string entryPoint) => IsActive && _exports.TryGet(entryPoint, out _);
+
+    /// <summary>
+    /// The plugin's RynthPluginQueryInterface(iface, version): a typed table it owns, or 0.
+    /// RynthCore calls it outside any dispatch scope, and so does this.
+    /// </summary>
+    public IntPtr QueryInterface(IntPtr interfaceNameAnsi, uint version)
+    {
+        if (!IsActive || !_exports.TryGet("RynthPluginQueryInterface", out IntPtr export))
+            return IntPtr.Zero;
+        return ((delegate* unmanaged[Cdecl]<IntPtr, uint, IntPtr>)export)(interfaceNameAnsi, version);
     }
 
     /// <summary>Calls RynthPluginInit; 0 is success.</summary>

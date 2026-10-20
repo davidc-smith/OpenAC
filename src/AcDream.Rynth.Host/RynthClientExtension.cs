@@ -21,6 +21,8 @@ namespace AcDream.Rynth.Host;
 public sealed class RynthClientExtension : IClientExtension
 {
     private RynthHost? _host;
+    private IRynthGameView? _view;
+    private string? _navDataHint;
     private RynthChatHookup? _chatHookup;
     private RynthInventoryHookup? _inventoryHookup;
     private RynthAiHookup? _aiHookup;
@@ -73,12 +75,16 @@ public sealed class RynthClientExtension : IClientExtension
         }
 
         RynthInstallFolders.Apply();
+        _navDataHint = RynthNavDataHint.For(Environment.GetEnvironmentVariable(RynthInstallFolders.NavDataVariable));
+        if (_navDataHint is { } navHint)
+            context.Log(navHint);
         // RynthAi finds the dats through its registry read (StandIns/RegistryStandIn); it
         // starts loading them on a pool thread in Startup, so this is set first.
         AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = context.DatDirectory;
         // RynthCore's engine finds client_portal.dat beside Environment.ProcessPath (redirected to this stand-in).
         AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory = context.DatDirectory;
         var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand, context.Automation, context.Screen);
+        _view = view;
         bool scriptWindows = context.Overlay is not null;
         _host = new RynthHost(
             view,
@@ -88,6 +94,7 @@ public sealed class RynthClientExtension : IClientExtension
                 typeof(RynthCore.Plugin.RynthOracle.PluginExports),
                 typeof(RynthCore.Plugin.RynthInventory.PluginExports),
                 typeof(RynthCore.Plugin.RynthChat.PluginExports),
+                typeof(RynthCore.Plugin.RynthNav.PluginExports),
                 typeof(RynthCore.Plugin.RynthAi.PluginExports),
                 typeof(RynthCore.Plugin.RynthLua.PluginExports),
                 .. AdditionalPluginExports,
@@ -197,6 +204,12 @@ public sealed class RynthClientExtension : IClientExtension
     public void Tick(double deltaSeconds)
     {
         _host?.Tick();
+        // The chat bar is not there at the character list: the hint waits for the first login.
+        if (_navDataHint is { } hint && RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete)
+        {
+            _navDataHint = null;
+            Guard("RynthNav", () => _view?.WriteChatLine(hint, 0));
+        }
         GuardChat(TickChat);
         if (_inventoryHookup is { } inventory)
             Guard("RynthAi", inventory.Tick);
