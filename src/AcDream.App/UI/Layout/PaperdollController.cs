@@ -414,7 +414,8 @@ public sealed class PaperdollController : IItemListDragHandler, IRetainedPanelCo
         var item = _objects.Get(payload.ObjId);
         if (item is null)
             return ItemDragAcceptance.Reject;
-        return (item.ValidLocations & MaskFor(targetList)) != EquipMask.None
+        EquipMask slotMask = MaskFor(targetList);
+        return (ItemEquipRules.PaperdollSlotValidLocations(item, slotMask) & slotMask) != EquipMask.None
             ? ItemDragAcceptance.Accept
             : ItemDragAcceptance.Reject;
     }
@@ -425,7 +426,15 @@ public sealed class PaperdollController : IItemListDragHandler, IRetainedPanelCo
             return;
         var item = _objects.Get(payload.ObjId);
         if (item is null) return;
-        EquipMask wieldMask = ItemEquipRules.ResolvePaperdollDropWieldMask(item, MaskFor(targetList));
+        EquipMask slotMask = MaskFor(targetList);
+        if (ItemEquipRules.IsOffHandWeaponDrop(item, slotMask))
+        {
+            // An off-hand wield requests the shield slot; whatever already
+            // sits there goes to the backpack first.
+            _itemInteraction.TryWieldItemSecondary(payload.ObjId);
+            return;
+        }
+        EquipMask wieldMask = ItemEquipRules.ResolvePaperdollDropWieldMask(item, slotMask);
         if (wieldMask == EquipMask.None) return;       // not wieldable here (defensive; OnDragOver already rejected)
         _itemInteraction.WieldFromPaperdoll(payload.ObjId, wieldMask);
     }

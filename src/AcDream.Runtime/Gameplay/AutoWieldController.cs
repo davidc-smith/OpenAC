@@ -238,6 +238,17 @@ public sealed class AutoWieldController : IDisposable
                     combatModeAfterWield: null);
         }
 
+        // Whatever already holds the shield slot (a shield or an off-hand
+        // weapon) goes to the backpack first, and the wield follows.
+        if ((mask & EquipMask.Shield) != EquipMask.None
+            && GetEquippedObjectAtLocation(
+                EquipMask.Shield, priority: 0, item.ObjectId) is { } shieldSlotBlocker)
+            return BeginWeaponReplacement(
+                item.ObjectId,
+                shieldSlotBlocker,
+                mask,
+                combatModeAfterWield: null);
+
         return SendWield(item, mask, combatModeAfterWield: null);
     }
 
