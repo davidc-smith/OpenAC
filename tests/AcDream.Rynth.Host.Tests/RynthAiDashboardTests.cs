@@ -26,6 +26,7 @@ public sealed class RynthAiDashboardTests : IDisposable
         @"ImGui\Panels\DungeonMapFace.cs", @"UI\Data\RadarData.cs", @"UI\Data\RadarSnapshotJson.cs", @"UI\Data\DungeonMapMath.cs",
         @"ImGui\Panels\RadarMarkerStyle.cs", @"ImGui\Panels\CircleClip.cs", @"UI\Panels\MarkerStyleSettings.cs",
         @"ImGui\Panels\MarkerStyleEditor.cs", @"UI\Panels\RadarSettingsStore.cs", @"UI\Data\RynthNavAtlasData.cs", @"UI\Data\RynthNavData.cs",
+        @"ImGui\Panels\RynthNavFace.cs", @"ImGui\Panels\RynthNavArrowFace.cs",
     ];
 
     private readonly List<string> _log = new();

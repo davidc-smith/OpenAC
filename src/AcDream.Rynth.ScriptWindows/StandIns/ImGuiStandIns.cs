@@ -102,7 +102,7 @@ namespace RynthCore.Engine.ImGuiBackend
         None,
     }
 
-    /// <summary>The members of RynthCore's PanelSpec that their faces set (of Background, BorderColor and Rounding only a zero Background is honoured; OpenCentered centres a first open).</summary>
+    /// <summary>The members of RynthCore's PanelSpec that their faces set (of Background, BorderColor and Rounding only a zero Background is honoured; OpenCentered centres a first open; NoResize drops the resize grip, the RynthNav arrow sizes itself).</summary>
     internal sealed record PanelSpec(
         Vector2 DefaultSize,
         Vector2 MinSize,
@@ -115,7 +115,8 @@ namespace RynthCore.Engine.ImGuiBackend
         bool GripInBody = false,
         uint? BorderColor = null,
         float Rounding = 0f,
-        bool OpenCentered = false);
+        bool OpenCentered = false,
+        bool NoResize = false);
 
     internal interface IImGuiPanel
     {

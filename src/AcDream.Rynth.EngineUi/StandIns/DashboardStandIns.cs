@@ -300,6 +300,12 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
         public const string Title = "World Map";
     }
 
+    /// <summary>RynthCore's minimap (RynthNav maps); never registered in OpenAC, so the RynthNav panel hides its map buttons.</summary>
+    internal static class MiniMapFace
+    {
+        public const string Title = "Mini Map";
+    }
+
     /// <summary>RynthCore's Report a problem panel; never registered in OpenAC, so Settings hides its button.</summary>
     internal static class ReportFace
     {

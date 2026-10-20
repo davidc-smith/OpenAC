@@ -16,7 +16,7 @@ namespace AcDream.Rynth.Host;
 /// API table reads the runtime, runtime events become plugin callbacks,
 /// script windows draw on the client's ImGui overlay when it has one, with a
 /// launcher bar and their layout saved per install, RynthCore's chat window
-/// (over RynthChat's scrollback) with a Chat button on the bar, RynthCore's RynthAi dashboard with a RynthAi button, and
+/// (over RynthChat's scrollback) with a Chat button on the bar, RynthCore's RynthAi dashboard with a RynthAi button, RynthCore's RynthNav panel and arrow with a RynthNav button, and
 /// every line typed in either chat bar is offered to the plugins first, as in RynthCore, so <c>/rnav</c>, <c>/ro</c>, <c>/ginv</c>, <c>/ra</c>, <c>/mt</c>, <c>/ub</c>, <c>/vt</c>, <c>/lua</c> and script commands reach them; <c>/rynth tracker</c> and <c>/rc</c> are the host's.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
@@ -57,7 +57,7 @@ public sealed class RynthClientExtension : IClientExtension
         {
             _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
             ImGuiPanelHost.Layout = _layout;
-            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title, RynthAiDashboard.Title] };
+            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title, RynthAiDashboard.Title, RynthNavPanel.Title] };
             IClientOverlayIcons icons = context.Overlay.Icons;
             _iconSource = (kind, id) => kind switch
             {
@@ -107,6 +107,9 @@ public sealed class RynthClientExtension : IClientExtension
         _aiHookup = new RynthAiHookup(_host, view, context.Log);
         if (context.Overlay is not null)
             Guard("RynthAi", RynthAiDashboard.Start);
+        // RynthCore registers the RynthNav panel only with RynthNav installed; here, only when it loaded.
+        if (context.Overlay is not null && RynthPluginLookup.Candidates(_host.Plugins, "RynthNav").Any())
+            Guard("RynthNav", RynthNavPanel.Start);
         if (context.Overlay is { } chatOverlay)
             StartChat(context, chatOverlay);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
@@ -211,7 +214,7 @@ public sealed class RynthClientExtension : IClientExtension
         GuardChat(TickChat);
         if (_inventoryHookup is { } inventory)
             Guard("RynthAi", inventory.Tick);
-        Guard("RynthAi", () => RynthAiDashboard.Tick());
+        Guard("Rynth", () => RynthEngineHub.Tick());
     }
 
     public void Dispose()
@@ -262,6 +265,7 @@ public sealed class RynthClientExtension : IClientExtension
         _runtimeSubscription = null;
         try
         {
+            Guard("RynthNav", RynthNavPanel.Stop);
             Guard("RynthAi", RynthAiDashboard.Stop);
             _aiHookup?.Dispose();
             _aiHookup = null;

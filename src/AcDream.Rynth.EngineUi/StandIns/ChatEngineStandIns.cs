@@ -226,9 +226,20 @@ namespace RynthCore.Engine.Compatibility
 
 namespace RynthCore.Engine.UI
 {
+    /// <summary>Which face a panel shows (RynthCore: Avalonia, ImGui or both, per player choice). OpenAC has only ImGui.</summary>
+    internal enum PanelFace
+    {
+        Avalonia,
+        ImGui,
+        Both,
+    }
+
     /// <summary>RynthCore opens and closes panels through this; here, our panel host.</summary>
     internal static class PanelRouter
     {
+        /// <summary>The face a docked panel uses: always ImGui here.</summary>
+        public static PanelFace ResolveDockedFace(string title) => PanelFace.ImGui;
+
         public static void Toggle(string title) => RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Toggle(title);
 
         /// <summary>OpenAC has no pop-out windows.</summary>
@@ -281,6 +292,8 @@ namespace RynthCore.Engine.UI.Data
         public static readonly MonsterDetailSource MonsterDetail = new();
         public static readonly RadarSource Radar = new();
         public static readonly RynthNavSource RynthNav = new();
+        public static readonly RynthNavAtlasSource RynthNavAtlas = new();
+        public static readonly RynthNavArrowWatch RynthNavArrowWatch = new();
     }
 }
 
@@ -363,11 +376,5 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
         public static void DrawSwitch()
         {
         }
-    }
-
-    /// <summary>RynthNav's panel title; never registered here, so coordinate links stay hidden.</summary>
-    internal static class RynthNavFace
-    {
-        public const string Title = "RynthNav";
     }
 }

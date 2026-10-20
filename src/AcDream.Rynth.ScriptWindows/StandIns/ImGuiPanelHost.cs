@@ -486,6 +486,8 @@ internal static class ImGuiPanelHost
             ImGuiWindowFlags flags = entry.Spec.BodyFlags;
             if (entry.Spec.Chrome == PanelChrome.None)
                 flags |= ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize;
+            if (entry.Spec.NoResize)
+                flags |= ImGuiWindowFlags.NoResize;
             if (entry.Spec.Background == 0u)
                 flags |= ImGuiWindowFlags.NoBackground;
 
