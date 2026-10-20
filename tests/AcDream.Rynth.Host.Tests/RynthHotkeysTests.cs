@@ -15,11 +15,13 @@ public sealed class RynthHotkeysTests : IDisposable
     private readonly RynthConfigSandbox _sandbox = new("rynth-hotkeys-");
     private readonly FakeGameView _view = new() { PlayerId = 0x50000007u };
     private readonly string _file;
+    private readonly string _fileDirectory;
     private readonly string? _oldFile = Environment.GetEnvironmentVariable(HotkeyStore.EnvOverride);
 
     public RynthHotkeysTests()
     {
-        _file = Path.Combine(Directory.CreateTempSubdirectory("rynth-hotkeys-file-").FullName, "hotkeys.txt");
+        _fileDirectory = Directory.CreateTempSubdirectory("rynth-hotkeys-file-").FullName;
+        _file = Path.Combine(_fileDirectory, "hotkeys.txt");
         Environment.SetEnvironmentVariable(HotkeyStore.EnvOverride, _file);
         ResetHotkeyService();
         ImGuiPanelHost.Reset();
@@ -34,7 +36,12 @@ public sealed class RynthHotkeysTests : IDisposable
         ImGuiPanelHost.Log = null;
         LoginLifecycleHooks.HasObservedLoginComplete = false;
         ResetHotkeyService();
+        AcDream.Rynth.EngineUi.Win32KeyStateStandIn.Control = false;
+        AcDream.Rynth.EngineUi.Win32KeyStateStandIn.Shift = false;
+        AcDream.Rynth.EngineUi.Win32KeyStateStandIn.Alt = false;
+        AcDream.Rynth.EngineUi.Win32KeyStateStandIn.Focused = false;
         Environment.SetEnvironmentVariable(HotkeyStore.EnvOverride, _oldFile);
+        try { Directory.Delete(_fileDirectory, recursive: true); } catch (IOException) { }
         _sandbox.Dispose();
     }
 
@@ -201,6 +208,23 @@ public sealed class RynthHotkeysTests : IDisposable
         HotkeyService.BeginCapture();
         Assert.True(keys.KeyPress(Press(VkEscape, mods: AcDream.ClientExtensions.OverlayModifiers.None)));
         Assert.False(HotkeyService.Capturing);
+        Assert.True(HotkeyService.TryTakeCapture(out KeyCombo? cancelled) && cancelled is null);
+    }
+
+    [Fact]
+    public void ReloadWritesItsLineOnTheNextDrainNotAtOnce()
+    {
+        // RynthCore signals reload from a thread-pool thread: the chat line waits for the pump.
+        var lines = new List<string>();
+        AcMainThreadQueue.WriteToChat = (text, _) => lines.Add(text);
+        try
+        {
+            RynthCore.Engine.EngineLifecycle.SignalReload();
+            Assert.Empty(lines);
+            UiDataHub.Drain(_log.Add);
+            Assert.Equal(["[RynthCore] Reload isn't in OpenAC."], lines);
+        }
+        finally { AcMainThreadQueue.WriteToChat = null; }
     }
 
     [Fact]

@@ -18,6 +18,7 @@ internal sealed class OverlayKeyGate
     private readonly Action _focusLost;
     private readonly HashSet<Key> _down = new();
     private readonly HashSet<Key> _taken = new();
+    private readonly HashSet<Key> _releasePending = new();
     private Key? _upTaken;
 
     public OverlayKeyGate(Func<OverlayKeyEvent, bool> offer, Action focusLost)
@@ -35,28 +36,34 @@ internal sealed class OverlayKeyGate
     public void KeyDown(Key key, OverlayModifiers modifiers)
     {
         _upTaken = null;
+        _releasePending.Remove(key);
         bool repeat = !_down.Add(key);
         (int vk, bool extended) = OverlayVirtualKeys.Map(key);
         if (_offer(new OverlayKeyEvent(vk, modifiers, Down: true, repeat, extended)))
             _taken.Add(key);
-        else
-            _taken.Remove(key);
+        else if (!repeat)
+            _taken.Remove(key);   // a taken press latches: its repeats stay the sink's until key-up
     }
 
     public void KeyUp(Key key, OverlayModifiers modifiers)
     {
         _upTaken = null;
         _down.Remove(key);
-        bool wasTaken = _taken.Remove(key);
+        bool wasTaken = _taken.Remove(key) | _releasePending.Remove(key);
         (int vk, bool extended) = OverlayVirtualKeys.Map(key);
         bool took = _offer(new OverlayKeyEvent(vk, modifiers, Down: false, Repeat: false, extended));
         if (wasTaken || took)
             _upTaken = key;
     }
 
+    /// <summary>
+    /// GLFW sends the held keys' releases after the focus-lost callback, so a taken key
+    /// keeps its release: the next key-up for it is still the sink's.
+    /// </summary>
     public void FocusLost()
     {
         _down.Clear();
+        _releasePending.UnionWith(_taken);
         _taken.Clear();
         _upTaken = null;
         _focusLost();

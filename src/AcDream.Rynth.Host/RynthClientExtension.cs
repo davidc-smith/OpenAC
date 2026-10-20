@@ -252,7 +252,8 @@ public sealed class RynthClientExtension : IClientExtension
             GuardChat(claim.Dispose);
         if (_keyboardSink is { } sink)
             GuardChat(sink.Dispose);
-        _hotkeySink?.Dispose();
+        if (_hotkeySink is { } hotkeys)
+            Guard("hotkeys", hotkeys.Dispose);
         _hotkeySink = null;
         if (_isTyping is not null && AcKeyboardFocus.IsTyping == _isTyping)
         {
@@ -260,7 +261,7 @@ public sealed class RynthClientExtension : IClientExtension
             AcKeyboardFocus.Where = null;
         }
         _isTyping = null;
-        RynthCore.Engine.Hotkeys.HotkeyService.Shutdown();
+        Guard("hotkeys", RynthCore.Engine.Hotkeys.HotkeyService.Shutdown);
         if (_chatHidden == true && _clientChat is { } clientChat)
             GuardChat(() => clientChat.SetChatWindowHidden(false));
         _chatClaim = null;

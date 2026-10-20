@@ -15,6 +15,7 @@ internal sealed class ImGuiInputFeed : IDisposable
     private readonly IView? _window;
     private readonly ImGuiOverlay? _sinks;
     private readonly KeyboardClipboard? _clipboard;
+    private readonly HashSet<Key> _imguiDown = new();
 
     public ImGuiInputFeed(IInputContext input, ImGuiInputQueue queue, IView? window = null, ImGuiOverlay? sinks = null)
     {
@@ -81,7 +82,12 @@ internal sealed class ImGuiInputFeed : IDisposable
 
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
     {
-        _queue.KeyChange(key, true);
+        // A key a sink took (a Rynth hotkey) never reaches ImGui, as in RynthCore.
+        if (!OverlayInputGate.KeyTaken(key))
+        {
+            _imguiDown.Add(key);
+            _queue.KeyChange(key, true);
+        }
         _sinks?.SinkKeyDown(
             key,
             Held(keyboard, Key.ControlLeft, Key.ControlRight, Key.SuperLeft, Key.SuperRight),
@@ -90,19 +96,27 @@ internal sealed class ImGuiInputFeed : IDisposable
 
     private void OnKeyUp(IKeyboard keyboard, Key key, int scancode)
     {
-        _queue.KeyChange(key, false);
+        // ImGui still gets the release of a press it saw, so no key sticks there.
+        if (_imguiDown.Remove(key) || !OverlayInputGate.KeyTaken(key))
+            _queue.KeyChange(key, false);
         _sinks?.SinkKeyUp(key);
     }
 
     private void OnKeyChar(IKeyboard keyboard, char value)
     {
-        _queue.Character(value);
+        if (!OverlayInputGate.CharTaken)
+            _queue.Character(value);
         _sinks?.SinkCharacter(value);
     }
 
     private static bool Held(IKeyboard keyboard, params Key[] keys) => keys.Any(keyboard.IsKeyPressed);
 
-    private void OnFocusChanged(bool focused) => _queue.Focus(focused);
+    private void OnFocusChanged(bool focused)
+    {
+        if (!focused)
+            _imguiDown.Clear();
+        _queue.Focus(focused);
+    }
 }
 
 /// <summary>The system clipboard, as the overlay reads and writes it.</summary>

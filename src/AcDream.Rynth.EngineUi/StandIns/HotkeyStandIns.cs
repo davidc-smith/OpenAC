@@ -23,10 +23,14 @@ namespace RynthCore.Engine.Compatibility
 
 namespace RynthCore.Engine
 {
-    /// <summary>RynthCore reloads its engine (the "reload" hotkey, /rc rl); OpenAC has no engine reload.</summary>
+    /// <summary>
+    /// RynthCore reloads its engine (the "reload" hotkey, /rc rl); OpenAC has no engine reload.
+    /// HotkeyService signals it from a thread-pool thread, so the chat line is posted to the UI pump.
+    /// </summary>
     internal static class EngineLifecycle
     {
         public static void SignalReload() =>
-            Compatibility.AcMainThreadQueue.EnqueueWriteToChat("[RynthCore] Reload isn't in OpenAC.", 1);
+            UI.Data.UiDataHub.Post("reload", () =>
+                Compatibility.AcMainThreadQueue.EnqueueWriteToChat("[RynthCore] Reload isn't in OpenAC.", 1));
     }
 }
