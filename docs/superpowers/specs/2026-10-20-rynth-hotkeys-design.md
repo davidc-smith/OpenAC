@@ -32,7 +32,7 @@ bool KeyPress(OverlayKeyEvent e) => false;
 ```
 
 `OverlayKeyEvent(int VirtualKey, OverlayModifiers Modifiers, bool Down, bool Repeat, bool Extended)`.
-`OverlayModifiers` gains `Alt = 4` (Option on macOS). Control still includes Command on macOS.
+`IOverlayKeyboardSink` also gains `void FocusLost() { }`. `OverlayModifiers` gains `Alt = 4` (Option on macOS). Control still includes Command on macOS.
 The client maps Silk `Key` to a Win32 virtual-key code in one table (`OverlayVirtualKeys`):
 letters, digits, F1-F24, numpad digits/operators (`VK_NUMPAD0..`, `VK_ADD`...), punctuation
 (`VK_OEM_*`), arrows/Home/End/PageUp/PageDown/Insert/Delete (Extended = true), left/right
@@ -45,20 +45,24 @@ is already down in its own held-key set.
 
 ### One decision per key press
 
-Silk's keyboard events are multicast to the input dispatcher (`SilkKeyboardSource`), the
-retained-UI binding (`RetainedUiInputBinding`), plugin hotkeys (`AppHotkeyRegistry`) and the
-overlay feed (`ImGuiInputFeed`), in no guaranteed order. So the first one to ask decides:
+Silk's keyboard events are multicast to the input dispatcher (`SilkKeyboardSource`, which
+also feeds `AppHotkeyRegistry`), the retained-UI binding (`RetainedKeyboardInputBinding`) and
+the overlay feed (`ImGuiInputFeed`). Silk calls handlers in subscription order, so the
+decision is made by one handler subscribed before all of them:
 
-- `OverlayInputGate.TakesKey(Key key, bool down)` is checked by each consumer where it already
-  checks `SuppressKeyboard` (and by `SilkKeyboardSource` before it forwards a key).
-- For a key-down, the first call offers the press to every sink's `KeyPress` (modifiers read
-  from the keyboard at that moment) and latches the answer for that key until its key-up;
-  later calls for the same press return the latched answer. `ImGuiInputFeed` no longer offers
-  key presses itself: it calls the gate too.
-- A taken key-down also takes the key's repeats and its key-up (the key-up is still offered to
-  the sinks, then the latch clears), and holds back the `KeyChar` events that arrive while a
-  taken key is down from the client (they still reach the sinks' `Character`).
-- Window focus loss clears every latch.
+- `OverlayKeyGate` (App/Extensions/Overlay) subscribes to every keyboard's KeyDown/KeyUp and
+  the window's focus right after GameWindow creates the input context (before any other
+  keyboard subscriber exists). The overlay owns it (`ImGuiOverlay.AttachKeyGate`) and binds
+  it to `OverlayInputGate`; the overlay's own start (later, with the GPU) does not affect it.
+- On each key-down the gate offers the press to every sink's `KeyPress` (modifiers read from
+  the keyboard; a repeat is a key-down for a key the gate already holds down) and latches
+  "taken" for that key; on its key-up it offers the release, and that key-up is taken when
+  the press was or a sink takes it.
+- `OverlayInputGate.KeyTaken(Key)` / `CharTaken` are checked by `SilkKeyboardSource`
+  (KeyDown/KeyUp, and `IsHeld`, which movement polls) and `RetainedKeyboardInputBinding`
+  (down/up/char). `CharTaken` is true while any taken key is down. `ImGuiInputFeed` is
+  unchanged (sinks still get `KeyDown`/`Character` as now).
+- Window focus loss clears every latch and calls each sink's new `FocusLost()` (default no-op).
 
 An untaken key passes exactly as today.
 
@@ -87,7 +91,8 @@ warns when a key is one of AC's defaults (`HotkeyConflicts`). Agreed 2026-10-20.
 ### Redirects
 
 `HotkeyService`'s user32 P/Invokes are redirected at build time by RynthInteropRedirect (as
-the clipboard is) to `StandIns/Win32KeyStateStandIn`:
+the clipboard is) to `StandIns/Win32KeyStateStandIn`; the tool learns to take several stand-in
+types, comma-separated, instead of one:
 
 - `GetKeyState(vk)`: 0x8000 for Control/Menu/Shift (and their L/R codes) when the host's last
   key event had that modifier, else 0.
@@ -102,8 +107,11 @@ The key state and focus are set by the hotkey sink below (game thread, same as t
   `TypingDescription`.
 - `EngineLifecycle.SignalReload()` / `EntryPoint.NoteManualReload()` (the "reload" action):
   chat line "[RynthCore] Reload isn't in OpenAC."; no reload.
-- `RynthLog`, `UiBackgroundWriter` and anything else the compiler names: thin stand-ins in
-  the style of the existing ones (log to the host log; background writes run on the pool).
+- `AcMainThreadQueue.EnqueueChatCommand(text)`: posted to the UI hub pump (next tick, not
+  inside the keystroke) and run through `AcMainThreadQueue.ChatCommand`, which the host points
+  at the same runner as `ServerMenus.Runner`.
+- `IltInfo.PluginLoaded` => false. (A trial compile on 2026-10-20 showed these five are all
+  that is missing; `RynthLog` and `UiBackgroundWriter` already exist.)
 
 ### Key feed
 
@@ -115,7 +123,7 @@ New `src/AcDream.Rynth.Host/RynthHotkeyKeyboard.cs` (an `IOverlayKeyboardSink`, 
 - lParam: repeat count 1; bit 24 for Extended; bit 30 (previous state down) for a repeat;
   bits 30-31 for a key-up.
 - `Character(c)` → `WM_CHAR`; window focus loss → `WM_KILLFOCUS`.
-- `rynthTextFocus`: ImGui `WantTextInput` or RynthChat's sink is capturing.
+- `rynthTextFocus`: the overlay's `WantsKeyboard` (ImGui text input, or RynthChat capturing).
 - Its return value is `KeyPress`'s.
 
 ### Commands
@@ -126,7 +134,7 @@ on the Hotkeys tab, as RynthCore does. Usage text lists the new verbs.
 
 ### File
 
-At start the host sets `RYNTHCORE_HOTKEYS_FILE=<RYNTHCORE_DIR>/hotkeys.txt` (their own
+At start (off Windows, in `RynthInstallFolders.Apply`, beside RYNTHCORE_DIR) the host sets `RYNTHCORE_HOTKEYS_FILE=<RYNTHCORE_DIR>/hotkeys.txt` (their own
 override variable) unless already set, so the file sits with the other Rynth files.
 
 ### Actions
@@ -140,9 +148,9 @@ the client parser as now). Hotkeys fire only after login (their gate reads
 
 Client (AcDream.App.Tests):
 - Silk → VK table: letters, digits, F-keys, numpad, L/R modifiers, extended keys, unmapped → 0.
-- Gate: first asker offers, later askers get the latched answer; a taken press withholds the
-  dispatcher, retained UI and plugin hotkeys for that key, its repeats, chars and key-up; an
-  untaken press passes; focus loss clears.
+- Gate: a taken press withholds the dispatcher (and so plugin hotkeys), the retained UI and
+  movement polling for that key, its repeats, chars and key-up; an untaken press passes;
+  focus loss clears and reaches the sinks.
 - `IsTyping` follows chat entry and UI focus.
 - RynthChat's sink still gets `KeyDown`/`Character` unchanged.
 
