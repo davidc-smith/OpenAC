@@ -187,6 +187,9 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return [.. ids];
     }
 
+    public IReadOnlyList<uint>? LiveObjectIds =>
+        PlayerId == 0 ? null : [.. _runtime.InventoryOwner.Objects.Objects.Select(static o => o.ObjectId)];
+
     public bool TryGetObjectPosition(uint objectId, out uint cellId, out Vector3 origin)
     {
         if (_runtime.EntityObjects.Entities.TryGetActive(objectId, out RuntimeEntityRecord record)

@@ -87,6 +87,8 @@ internal sealed class FakeGameView : IRynthGameView
     public Dictionary<(uint Object, uint Attribute), (uint Buffed, uint Base)> Attributes { get; } = new();
     public Dictionary<(uint Object, uint Vital), uint> VitalBases { get; } = new();
     public List<uint>? Known { get; set; }
+    public List<uint>? Live { get; set; } = [];
+    public IReadOnlyList<uint>? LiveObjectIds => Read(Live);
     public HashSet<uint> Attackable { get; } = new();
     public uint OpenContainer { get; set; }
     public AcDream.Core.Items.ServerReplySnapshot Replies { get; set; }

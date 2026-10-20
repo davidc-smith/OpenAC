@@ -308,8 +308,6 @@ public sealed unsafe class RynthApiTableTests
     {
         using var table = new RynthApiTable(new FakeGameView(), _log.Add);
         Assert.Equal(IntPtr.Zero, table.Native->NativeAttackFn);
-        Assert.Equal(IntPtr.Zero, table.Native->StopMovementFn);
-        Assert.Equal(IntPtr.Zero, table.Native->DoMovementFn);
         Assert.Equal(IntPtr.Zero, table.Native->SetAutonomyLevelFn);
         Assert.Equal(IntPtr.Zero, table.Native->SetRadarSuppressedFn);
         Assert.Equal(IntPtr.Zero, table.Native->IsPlayerReadyFn);
@@ -572,5 +570,56 @@ public sealed unsafe class RynthApiTableTests
         Assert.Equal(
             new[] { "trade open 50000002", "trade add 80000101", "trade accept", "trade decline", "trade reset", "trade close" },
             view.Actions);
+    }
+
+    [Fact]
+    public void LiveObjectIds_AreTheViewsObjectsAndCountPastTheBuffer()
+    {
+        var view = new FakeGameView { Live = [.. Enumerable.Range(1, 1500).Select(i => 0x80000000u + (uint)i)] };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasGetLiveObjectIds);
+        Assert.Equal(view.Live, host.GetLiveObjectIds());
+
+        var fn = (delegate* unmanaged[Cdecl]<uint*, int, int>)table.Native->GetLiveObjectIdsFn;
+        uint* two = stackalloc uint[2];
+        Assert.Equal(1500, fn(two, 2));
+        Assert.Equal((0x80000001u, 0x80000002u), (two[0], two[1]));
+        Assert.Equal(1500, fn(null, 0));
+    }
+
+    [Fact]
+    public void LiveObjectIds_AreNoneOutOfWorldOrWhenTheViewThrows()
+    {
+        var view = new FakeGameView { Live = null };
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+        Assert.Empty(host.GetLiveObjectIds());
+
+        view.Live = [1, 2];
+        view.Throw = true;
+        Assert.Empty(host.GetLiveObjectIds());
+        Assert.Contains(_log, line => line.Contains("GetLiveObjectIds threw", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DoMovementHoldsAndStopMovementReleasesWalkBackward()
+    {
+        var view = new FakeGameView();
+        using var table = new RynthApiTable(view, _log.Add);
+        var host = new RynthCoreHost(*table.Native);
+
+        Assert.True(host.HasDoMovement && host.HasStopMovement);
+        Assert.True(host.DoMovement(0x45000006, 1f, 1));
+        Assert.Equal(new AcDream.Plugin.Abstractions.PluginMovementIntent(Backward: true, Run: false), view.Intents[^1]);
+        int sent = view.Intents.Count;
+        Assert.True(host.DoMovement(0x45000006, 1f, 1));   // RynthNav's heartbeat re-send
+        Assert.Equal(sent, view.Intents.Count);
+        Assert.True(host.StopMovement(0x45000006, 1));
+        Assert.Null(view.Intents[^1]);
+
+        Assert.False(host.DoMovement(0x41000012, 1f, 1));
+        Assert.False(host.StopMovement(0x41000012, 1));
     }
 }

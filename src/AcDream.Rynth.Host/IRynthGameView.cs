@@ -36,6 +36,12 @@ public interface IRynthGameView
     /// </summary>
     IReadOnlyList<uint> GetContainerContents(uint containerId);
 
+    /// <summary>
+    /// Every object the client knows (RynthCore: acclient's live object table, world
+    /// objects and items alike). Null out of world.
+    /// </summary>
+    IReadOnlyList<uint>? LiveObjectIds { get; }
+
     /// <summary>The logged-in account's name; empty before the character list.</summary>
     string AccountName { get; }
 
