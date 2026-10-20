@@ -1,4 +1,5 @@
 using AcDream.ClientExtensions;
+using AcDream.Plugin.Abstractions;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Player;
@@ -16,7 +17,7 @@ namespace AcDream.Rynth.Host;
 /// script windows draw on the client's ImGui overlay when it has one, with a
 /// launcher bar and their layout saved per install, RynthCore's chat window
 /// (over RynthChat's scrollback) with a Chat button on the bar, RynthCore's RynthAi dashboard with a RynthAi button, and
-/// <c>/rynth tracker</c>, RynthCore's <c>/rc miniremote</c>, <c>/ro</c>, <c>/ginv</c> and RynthAi's <c>/ra</c>, <c>/mt</c>, <c>/ub</c>, <c>/vt</c> reach the plugins.
+/// every line typed in either chat bar is offered to the plugins first, as in RynthCore, so <c>/rnav</c>, <c>/ro</c>, <c>/ginv</c>, <c>/ra</c>, <c>/mt</c>, <c>/ub</c>, <c>/vt</c>, <c>/lua</c> and script commands reach them; <c>/rynth tracker</c> and <c>/rc</c> are the host's.
 /// </summary>
 public sealed class RynthClientExtension : IClientExtension
 {
@@ -121,10 +122,7 @@ public sealed class RynthClientExtension : IClientExtension
         _commands.Add(context.RegisterChatCommand("rynth", arguments => OnRynthCommand(view, arguments)));
         _commands.Add(context.RegisterChatCommand("rc", arguments =>
             Guard("RynthAi", () => RynthCoreChatCommands.TryHandle(arguments, line => view.WriteChatLine(line, 0)))));
-        _commands.Add(context.RegisterChatCommand("ro", arguments => OfferChatBarText("/ro " + arguments)));
-        _commands.Add(context.RegisterChatCommand("ginv", arguments => OfferChatBarText("/ginv " + arguments)));
-        foreach (string verb in new[] { "ra", "mt", "ub", "vt", "lua" })
-            _commands.Add(context.RegisterChatCommand(verb, arguments => OfferChatBarText($"/{verb} " + arguments)));
+        _commands.AddRange(RouteChatToPlugins(context.Automation?.Chat, OfferChatBarText, context.RegisterChatCommand));
         if (context.Overlay is { } overlay)
             _frameCallback = overlay.AddFrameCallback(DrawFrame);
     }
@@ -352,16 +350,38 @@ public sealed class RynthClientExtension : IClientExtension
             host.Bridge.OnContainerContentsChanged(move.Current.ContainerId);
     }
 
-    /// <summary>Offers chat-bar text to each plugin until one eats it.</summary>
-    private void OfferChatBarText(string text)
+    /// <summary>The plugin commands forwarded as verbs when the client has no chat interceptor.</summary>
+    internal static readonly string[] ForwardedVerbs = ["ro", "ginv", "ra", "mt", "ub", "vt", "lua", "rnav"];
+
+    /// <summary>
+    /// RynthCore's chat-bar pre-dispatch (ChatCommandDispatcher.Dispatch): every line typed
+    /// or sent through InvokeChatParser goes to each plugin's OnChatBarEnter first, and one
+    /// that eats it stops it. Here that is the client's chat input interceptor; a client
+    /// without one (tests, headless) still reaches the plugins' own commands through verbs.
+    /// </summary>
+    internal static IReadOnlyList<IDisposable> RouteChatToPlugins(
+        IPluginChat? chat, Func<string, bool> offer, Func<string, Action<string>, IDisposable> register)
+    {
+        if (chat is not null)
+            return [chat.RegisterInputInterceptor(line => offer(line) ? PluginChatInputDecision.Suppress : PluginChatInputDecision.Pass)];
+        var handles = new List<IDisposable>();
+        foreach (string verb in ForwardedVerbs)
+            handles.Add(register(verb, arguments => offer($"/{verb} " + arguments)));
+        return handles;
+    }
+
+    /// <summary>Offers chat-bar text to each plugin until one eats it. True when one did.</summary>
+    private bool OfferChatBarText(string text)
     {
         if (_host is null)
-            return;
+            return false;
         foreach (RynthPlugin plugin in _host.Plugins)
         {
             if (plugin.OnChatBarEnter(text.TrimEnd()))
-                return;
+                return true;
         }
+
+        return false;
     }
 
     private void OnRynthCommand(IRynthGameView view, string arguments)
