@@ -240,10 +240,10 @@ the decision: a version carrying a SemVer pre-release part is a test build.
 That is what keeps a test build away from players, because the launcher polls
 `https://github.com/<OpenACReleaseRepository>/releases/latest/download/manifest.json`
 (`eriknihlen/OpenAC` upstream, `davidc-smith/OpenAC` in the fork; see
-[Fork releases](#fork-releases-mac-only-local)) and GitHub's `latest` route skips pre-releases. Every step that touches the
-release passes the same pair of flags, including the one that attaches the
-Intel assets afterwards, because anything else there would reset them on the
-release it appends to.
+[Fork releases](#fork-releases-mac-only-local)) and GitHub's `latest` route
+skips pre-releases. Every step that touches the release passes the same pair
+of flags, including the one that attaches the Intel assets afterwards, because
+anything else there would reset them on the release it appends to.
 
 The same step refuses a tag from the wrong branch: a pre-release tag has to
 point at a commit reachable from `dev`, and a stable tag at one reachable from

@@ -57,17 +57,22 @@ if (-not $DryRun) {
     if ($originMain.Trim() -ne $head) { throw 'HEAD is not origin/main; push main first.' }
 }
 
-& (Join-Path $PSScriptRoot 'publish-bin.ps1') -MacOnly
-if ($LASTEXITCODE) { throw 'publish-bin failed.' }
-
-# Restoring packages while publishing rewrites the packages.*.lock.json files for this RID (and
-# may create new ones); put them back so the tree is as it was.
-& git -C $RepoRoot checkout -- '*packages.*.lock.json'
-if ($LASTEXITCODE) { throw 'git checkout of the lock files failed.' }
-$strayLocks = @(& git -C $RepoRoot ls-files --others --exclude-standard -- '*packages.*.lock.json')
-if ($LASTEXITCODE) { throw 'git ls-files failed.' }
-foreach ($lock in $strayLocks) { Remove-Item -LiteralPath (Join-Path $RepoRoot $lock) -Force }
-Write-Host "Restored the lock files publish-bin touched; removed $($strayLocks.Count) untracked one(s)."
+$cleanupFailed = $false
+try {
+    & (Join-Path $PSScriptRoot 'publish-bin.ps1') -MacOnly
+    if ($LASTEXITCODE) { throw 'publish-bin failed.' }
+}
+finally {
+    # Restoring packages while publishing rewrites the packages.*.lock.json files for this RID (and
+    # may create new ones); put them back so the tree is as it was, also when publish-bin fails.
+    & git -C $RepoRoot checkout -- '*packages.*.lock.json'
+    if ($LASTEXITCODE) { Write-Warning 'git checkout of the lock files failed.'; $cleanupFailed = $true }
+    $strayLocks = @(& git -C $RepoRoot ls-files --others --exclude-standard -- '*packages.*.lock.json')
+    if ($LASTEXITCODE) { Write-Warning 'git ls-files failed.'; $cleanupFailed = $true }
+    foreach ($lock in $strayLocks) { Remove-Item -LiteralPath (Join-Path $RepoRoot $lock) -Force }
+    Write-Host "Restored the lock files publish-bin touched; removed $($strayLocks.Count) untracked one(s)."
+}
+if ($cleanupFailed) { throw 'Restoring the lock files failed.' }
 
 $bin = Join-Path $RepoRoot 'bin'
 $files = @('client-osx-arm64.zip', 'launcher-osx-arm64.zip', 'manifest.json', 'launcher-fingerprint.json', 'rynth-navdata.json') |
