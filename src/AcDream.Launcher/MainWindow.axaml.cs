@@ -177,6 +177,10 @@ public sealed partial class MainWindow : Window
         {
             UpdateCloseButton.Focus();
         }
+        else if (viewModel.NavData.IsOpen)
+        {
+            NavDataDialog.Focus();
+        }
         else if (viewModel.Plugins.InstallDialog.IsOpen)
         {
             InstallCancelButton.Focus();

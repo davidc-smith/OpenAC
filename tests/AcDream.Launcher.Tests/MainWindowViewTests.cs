@@ -39,6 +39,7 @@ public sealed class MainWindowViewTests
         ("FirstRunDatDirectoryTextBox", typeof(TextBox)),
         ("FirstRunCloseButton", typeof(Button)),
         ("UpdateCloseButton", typeof(Button)),
+        ("NavDataDialog", typeof(Border)),
         ("OwnServerNameTextBox", typeof(TextBox)),
         ("MigrationNoticeCloseButton", typeof(Button)),
     ];
@@ -62,6 +63,33 @@ public sealed class MainWindowViewTests
         ARefusedStartShowsItsReason();
         TheAddServerDialogListsKnownServersAndFocusesItsNameField();
         TheOptionsMenuActsOnItsOwnRow();
+        TheNavDataBannerAndDialogBindItsCommands();
+    }
+
+    /// <summary>The banner's Install, the dialog's Cancel and Close, and the menu item are bound to
+    /// the navdata view model; a misspelled binding path fails this.</summary>
+    private static void TheNavDataBannerAndDialogBindItsCommands()
+    {
+        using LauncherWindowViewModel viewModel = CreateViewModel();
+        var window = new MainWindow { DataContext = viewModel };
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+            Dispatcher.UIThread.RunJobs();
+
+            Button[] buttons = window.GetVisualDescendants().OfType<Button>().ToArray();
+            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.InstallCommand));
+            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.NotNowCommand));
+            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.CancelCommand));
+            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.CloseCommand));
+            Assert.False(viewModel.ShowNavDataBanner);
+            Assert.False(((Border)GetNamedField(window, "NavDataDialog")!).IsVisible);
+        }
+        finally
+        {
+            CloseTestWindow(window);
+        }
     }
 
     private static void TheOptionsMenuActsOnItsOwnRow()

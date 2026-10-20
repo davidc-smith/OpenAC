@@ -46,7 +46,8 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         Action? requestShutdown = null,
         PluginInventory? pluginInventory = null,
         TimeProvider? timeProvider = null,
-        LauncherCheckedAccountStore? checkedAccountStore = null)
+        LauncherCheckedAccountStore? checkedAccountStore = null,
+        RynthNavDataViewModel? navData = null)
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
         _checkedAccountStore = checkedAccountStore;
@@ -56,6 +57,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         _automaticRelaunch.LaunchFailed += OnAutomaticRelaunchFailed;
         _pluginInventory = pluginInventory;
         _orchestrator.StateChanged += OnOrchestratorStateChanged;
+        InitializeNavData(navData, _dispatcher);
 
         EditorDialog = new ProfileEditorDialogViewModel();
         _installer = installer ?? new UnavailableLauncherInstaller();
@@ -164,6 +166,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         EditorDialog.IsOpen
         || FirstRunWizardShell.IsOpen
         || UpdatePrompt.IsOpen
+        || NavData.IsOpen
         || (TextEditor?.IsOpen ?? false)
         || (AddServerDialog?.IsOpen ?? false)
         || IsCharacterOptionsOpen
@@ -391,6 +394,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         Plugins.InstallDialog.PropertyChanged -= OnModalPropertyChanged;
         Plugins.PropertyChanged -= OnModalPropertyChanged;
         UpdatePrompt.StartupCheckCompleted -= OnStartupUpdateCheckCompleted;
+        DisposeNavData();
         FirstRunWizardShell.Dispose();
         UpdatePrompt.Dispose();
         Plugins.Dispose();
@@ -478,10 +482,21 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             OnPropertyChanged(nameof(ShowInstallationBanner));
             OnPropertyChanged(nameof(InstallationBannerTitle));
             OnPropertyChanged(nameof(InstallationStatus));
+            OnPropertyChanged(nameof(ShowNavDataBanner));
             NotifyVersions();
             RefreshFromCore();
         }
+
+        // Not awaited: an agreed install that is due can take minutes, and the window's startup
+        // (plugin check, first-run setup) must not wait for it. Launches stay blocked meanwhile.
+        if (!_disposed && !cancellationToken.IsCancellationRequested)
+        {
+            NavDataStartupCheck = NavData.CheckAsync(cancellationToken);
+        }
     }
+
+    /// <summary>The navdata check started after startup (for tests; it never throws).</summary>
+    internal Task NavDataStartupCheck { get; private set; } = Task.CompletedTask;
 
     // An available update has its own banner and being current needs no announcement, so the
     // status line speaks only when the check itself could not run.
@@ -559,6 +574,10 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         else if (UpdatePrompt.IsOpen)
         {
             UpdatePrompt.Close();
+        }
+        else if (NavData.IsOpen)
+        {
+            NavData.Close();
         }
         else if (Plugins.InstallDialog.IsOpen)
         {
@@ -1029,6 +1048,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
     private bool CanLaunch(LaunchMode mode) =>
         CanInteract
         && !_isClientCompatibilityCheckBlocking
+        && !NavData.IsBusy
         && IsCharacterSelected
         && TryGetSelectedAccount(out string server, out string account)
         && !_startingRows.Contains((server, account))
@@ -1218,6 +1238,15 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         OperationStatus = "Versioned client activation changed.";
         LastError = null;
         RefreshFromCore();
+        // Posted: the update prompt is still open while it reports the change, and a new client
+        // may carry a new navdata pin.
+        _dispatcher.Post(() =>
+        {
+            if (!_disposed)
+            {
+                _ = NavData.CheckAsync();
+            }
+        });
     }
 
     private void OnStartupUpdateCheckCompleted(object? sender, EventArgs e) =>
@@ -1288,6 +1317,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         }
         FirstRunWizardShell.NotifyCommandStates();
         UpdatePrompt.NotifyCommandStates();
+        NavData.NotifyCommandStates();
         Plugins.NotifyCommandStates();
     }
 
