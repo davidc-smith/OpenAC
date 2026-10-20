@@ -186,7 +186,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not ad-hoc sign OpenAC.app.' }
 if ($LASTEXITCODE -ne 0) { throw 'OpenAC.app signature validation failed.' }
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $zip) -Force | Out-Null
-& /usr/bin/ditto -c -k --sequesterRsrc --keepParent $bundle $zip
+# This macOS stamps com.apple.provenance on every file; --sequesterRsrc would store it as
+# __MACOSX/ AppleDouble entries that the bundle check below rejects. The signatures are embedded
+# in the Mach-O files and _CodeSignature, so extended attributes are not needed.
+& /usr/bin/ditto -c -k --norsrc --noextattr --keepParent $bundle $zip
 if ($LASTEXITCODE -ne 0) { throw 'ditto could not archive OpenAC.app.' }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
