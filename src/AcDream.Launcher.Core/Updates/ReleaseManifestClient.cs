@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -21,8 +22,15 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     public const long MaximumArtifactBytes = 4L * 1024 * 1024 * 1024;
     public const int MaximumRedirects = 5;
 
+    /// <summary>owner/name of the repository whose releases are the update feed
+    /// (Directory.Build.props OpenACReleaseRepository).</summary>
+    public static string ReleaseRepository { get; } =
+        typeof(ReleaseManifestClient).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Single(attribute => attribute.Key == "OpenAC.ReleaseRepository").Value
+        ?? throw new InvalidOperationException("The launcher was built without a release repository.");
+
     public static Uri ProductionManifestUri { get; } = new(
-        "https://github.com/eriknihlen/OpenAC/releases/latest/download/manifest.json");
+        $"https://github.com/{ReleaseRepository}/releases/latest/download/manifest.json");
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {

@@ -13,6 +13,9 @@
     <InternalsVisibleTo Include="acdream-plugincheck" />
   </ItemGroup>
   <ItemGroup>
+    <AssemblyMetadata Include="OpenAC.ReleaseRepository" Value="$(OpenACReleaseRepository)" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\AcDream.Platform\AcDream.Platform.csproj" />
   </ItemGroup>
 </Project>

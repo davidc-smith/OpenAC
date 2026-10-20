@@ -32,6 +32,10 @@ if (-not (Test-Path (Join-Path $RepoRoot 'AcDream.slnx'))) {
 
 [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $RepoRoot 'Directory.Build.props') -Raw
 $repositoryVersion = [string]$buildProperties.Project.PropertyGroup.Version
+$releaseRepository = [string]($buildProperties.Project.PropertyGroup | ForEach-Object { $_.OpenACReleaseRepository } | Where-Object { $_ } | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($releaseRepository)) {
+    throw 'Directory.Build.props has no OpenACReleaseRepository.'
+}
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = $repositoryVersion
 } elseif ($Version -cne $repositoryVersion) {
@@ -56,7 +60,7 @@ if ([System.Management.Automation.SemanticVersion]::new($MinimumLauncherVersion)
 }
 
 $RawBase = if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
-    "https://github.com/eriknihlen/OpenAC/releases/download/v$Version"
+    "https://github.com/$releaseRepository/releases/download/v$Version"
 } else {
     $BaseUrl.TrimEnd('/')
 }

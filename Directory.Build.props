@@ -9,7 +9,10 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
-    <Version>0.1.25</Version>
+    <Version>0.1.25-fork.1</Version>
+    <!-- The GitHub repository whose releases are the launcher's update feed and the
+         publish script's asset addresses: the fork's own until it merges back upstream. -->
+    <OpenACReleaseRepository>davidc-smith/OpenAC</OpenACReleaseRepository>
 
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' == ''">$(MSBuildProjectDirectory)/packages.neutral.lock.json</NuGetLockFilePath>
