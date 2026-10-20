@@ -273,7 +273,8 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         var chat = new FakeChat();
         var extension = new RynthClientExtension();
         extension.Attach(Context(GameRuntimeTestFactory.Create(), overlay, chat: chat));
-        Assert.Single(overlay.Sinks);
+        Assert.Single(overlay.Sinks, sink => sink is RynthChatKeyboard);
+        Assert.Single(overlay.Sinks, sink => sink.GetType().Name == "RynthHotkeyKeyboard");
         Assert.Single(chat.Claims);
 
         extension.Dispose();

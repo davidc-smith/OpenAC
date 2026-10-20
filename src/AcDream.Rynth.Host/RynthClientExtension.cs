@@ -43,6 +43,8 @@ public sealed class RynthClientExtension : IClientExtension
     private Func<string>? _clipboardText;
     private Action<string>? _setClipboardText;
     private IDisposable? _keyboardSink;
+    private IDisposable? _hotkeySink;
+    private Func<bool>? _isTyping;
     private IDisposable? _chatClaim;
     private IClientChat? _clientChat;
     private bool? _chatHidden;
@@ -122,6 +124,8 @@ public sealed class RynthClientExtension : IClientExtension
             Guard("RynthNav", RynthNavPanel.Start);
         if (context.Overlay is { } chatOverlay)
             StartChat(context, chatOverlay);
+        if (context.Overlay is { } keyOverlay)
+            StartHotkeys(context, keyOverlay);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
         _combatEvents = new RynthCombatEvents(context.Runtime, _host.Bridge);
@@ -138,6 +142,19 @@ public sealed class RynthClientExtension : IClientExtension
         _commands.AddRange(RouteChatToPlugins(context.Automation?.Chat, OfferChatBarText, context.RegisterChatCommand));
         if (context.Overlay is { } overlay)
             _frameCallback = overlay.AddFrameCallback(DrawFrame);
+    }
+
+    /// <summary>RynthCore's hotkeys: every key press offered to their HotkeyService before OpenAC sees it.</summary>
+    private void StartHotkeys(ClientExtensionContext context, IClientOverlay overlay)
+    {
+        if (context.Input is { } input)
+        {
+            _isTyping = () => input.IsTyping;
+            AcKeyboardFocus.IsTyping = _isTyping;
+            AcKeyboardFocus.Where = () => input.TypingDescription;
+        }
+
+        _hotkeySink = overlay.AddKeyboardSink(new RynthHotkeyKeyboard(() => overlay.WantsKeyboard));
     }
 
     /// <summary>
@@ -235,6 +252,15 @@ public sealed class RynthClientExtension : IClientExtension
             GuardChat(claim.Dispose);
         if (_keyboardSink is { } sink)
             GuardChat(sink.Dispose);
+        _hotkeySink?.Dispose();
+        _hotkeySink = null;
+        if (_isTyping is not null && AcKeyboardFocus.IsTyping == _isTyping)
+        {
+            AcKeyboardFocus.IsTyping = null;
+            AcKeyboardFocus.Where = null;
+        }
+        _isTyping = null;
+        RynthCore.Engine.Hotkeys.HotkeyService.Shutdown();
         if (_chatHidden == true && _clientChat is { } clientChat)
             GuardChat(() => clientChat.SetChatWindowHidden(false));
         _chatClaim = null;

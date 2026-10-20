@@ -117,4 +117,110 @@ public sealed class RynthHotkeysTests : IDisposable
         Assert.True(ImGuiPanelHost.IsOpen(SettingsFace.Title));
         Assert.DoesNotContain(_log, line => line.Contains("Exception", StringComparison.Ordinal) || line.Contains("threw", StringComparison.Ordinal));
     }
+
+    private static AcDream.ClientExtensions.OverlayKeyEvent Press(int vk, bool down = true, bool repeat = false,
+        AcDream.ClientExtensions.OverlayModifiers mods = AcDream.ClientExtensions.OverlayModifiers.Control) =>
+        new(vk, mods, down, repeat, Extended: false);
+
+    private const int VkF1 = 0x70, VkF2 = 0x71, VkF5 = 0x74, VkEscape = 0x1B;
+
+    private (RynthHotkeyKeyboard Keys, List<string> Ran) Bound(bool typing = false, bool overlayWants = false)
+    {
+        var ran = new List<string>();
+        AcMainThreadQueue.ChatCommand = ran.Add;
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        var keys = new RynthHotkeyKeyboard(() => overlayWants);
+        AcKeyboardFocus.IsTyping = () => typing;
+        HotkeyService.Add(new HotkeyBinding(new KeyCombo(VkF1, HotkeyMods.Ctrl), HotkeyActions.Command, "/ra help"));
+        return (keys, ran);
+    }
+
+    [Fact]
+    public void ABoundKeyFiresOnceAndIsTakenWholly()
+    {
+        (RynthHotkeyKeyboard keys, List<string> ran) = Bound();
+        try
+        {
+            Assert.True(keys.KeyPress(Press(VkF1)));
+            Assert.True(keys.KeyPress(Press(VkF1, repeat: true)));
+            keys.Character('\u0001');
+            Assert.True(keys.KeyPress(Press(VkF1, down: false)));
+            UiDataHub.Drain(_log.Add);
+
+            Assert.Equal(["/ra help"], ran);
+            Assert.False(keys.KeyPress(Press(VkF2)));
+        }
+        finally { AcMainThreadQueue.ChatCommand = null; AcKeyboardFocus.IsTyping = null; }
+    }
+
+    [Theory]
+    [InlineData(true, false, true)]    // typing in OpenAC
+    [InlineData(false, true, true)]    // an ImGui field or Rynth chat has the keyboard
+    [InlineData(false, false, false)]  // before login
+    public void HeldBackWhileTypingOrOutOfWorld(bool typing, bool overlayWants, bool inWorld)
+    {
+        (RynthHotkeyKeyboard keys, List<string> ran) = Bound(typing, overlayWants);
+        try
+        {
+            LoginLifecycleHooks.HasObservedLoginComplete = inWorld;
+
+            Assert.False(keys.KeyPress(Press(VkF1)));
+            UiDataHub.Drain(_log.Add);
+            Assert.Empty(ran);
+        }
+        finally { AcMainThreadQueue.ChatCommand = null; AcKeyboardFocus.IsTyping = null; }
+    }
+
+    [Fact]
+    public void AKeyAfterAFocusLossStillFires()
+    {
+        // OpenAC sends keys only while its window has them, so the key itself is focus:
+        // a loss must not leave hotkeys blocked (their tracker resets on WM_KILLFOCUS).
+        (RynthHotkeyKeyboard keys, List<string> ran) = Bound();
+        try
+        {
+            keys.FocusLost();
+            Assert.False(AcDream.Rynth.EngineUi.Win32KeyStateStandIn.Focused);
+
+            Assert.True(keys.KeyPress(Press(VkF1)));
+            UiDataHub.Drain(_log.Add);
+            Assert.Equal(["/ra help"], ran);
+        }
+        finally { AcMainThreadQueue.ChatCommand = null; AcKeyboardFocus.IsTyping = null; }
+    }
+
+    [Fact]
+    public void SettingsCaptureTakesTheNextComboAndEscCancels()
+    {
+        var keys = new RynthHotkeyKeyboard(() => false);
+        HotkeyService.BeginCapture();
+        Assert.True(keys.KeyPress(Press(VkF5, mods: AcDream.ClientExtensions.OverlayModifiers.Control | AcDream.ClientExtensions.OverlayModifiers.Shift)));
+        Assert.True(HotkeyService.TryTakeCapture(out KeyCombo? combo));
+        Assert.Equal("Ctrl+Shift+F5", combo?.ToString());
+
+        HotkeyService.BeginCapture();
+        Assert.True(keys.KeyPress(Press(VkEscape, mods: AcDream.ClientExtensions.OverlayModifiers.None)));
+        Assert.False(HotkeyService.Capturing);
+    }
+
+    [Fact]
+    public void APanelBindingTogglesThePanel()
+    {
+        using var host = new RynthHost(_view, _log.Add, [typeof(RynthCore.Plugin.RynthAi.PluginExports)]);
+        using var exports = new RynthChatHookup(host, _view, _log.Add);
+        using var ai = new RynthAiHookup(host, _view, _log.Add);
+        LoginLifecycleHooks.HasObservedLoginComplete = true;
+        AcDream.Rynth.EngineUi.RynthAiDashboard.Start();
+        AcKeyboardFocus.IsTyping = () => false;
+        try
+        {
+            var keys = new RynthHotkeyKeyboard(() => false);
+            HotkeyService.Add(new HotkeyBinding(new KeyCombo(VkF2, HotkeyMods.Ctrl), HotkeyActions.PanelPrefix + DungeonMapFace.Title));
+
+            Assert.True(keys.KeyPress(Press(VkF2)));
+
+            Assert.True(ImGuiPanelHost.IsOpen(DungeonMapFace.Title));
+        }
+        finally { AcKeyboardFocus.IsTyping = null; }
+    }
 }
