@@ -620,7 +620,8 @@ appears, so `PluginWorldObject.CoverageMask` and
 that has never been appraised; both are zero for anything that is not worn.
 The same goes for a house hook: `HookItemTypes` on both records carries the
 item-type bits saying what the hook will take (the macro tools' hook mask),
-and is zero for anything that is not a hook.
+and is zero for anything that is not a hook. `HookItemTypes` needs contract
+`0.1.26-fork.2`.
 
 For a plugin that reproduces another tool's record of an object, both
 records also carry `Header`, a `PluginObjectHeader` with the raw words the
