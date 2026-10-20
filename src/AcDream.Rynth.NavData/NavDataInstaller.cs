@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RynthCore.App.Avalonia;
 
-namespace AcDream.Tools.RynthNavData;
+namespace AcDream.Rynth.NavData;
 
 /// <summary>
 /// Installs exactly the pinned archive with RynthCore's own UpdateNavDataAsync: disk space,
@@ -15,10 +15,10 @@ namespace AcDream.Tools.RynthNavData;
 /// alone, a matching navdata.id = nothing to do. A launcher-managed folder (a feed id) is
 /// left alone unless forced.
 /// </summary>
-internal static class NavDataInstaller
+public static class NavDataInstaller
 {
-    internal static async Task<string> InstallAsync(NavDataPin pin, string navDataDir, string cacheDir,
-        IProgress<DownloadProgress>? progress = null, CancellationToken ct = default, bool force = false)
+    public static async Task<string> InstallAsync(NavDataPin pin, string navDataDir, string cacheDir,
+        IProgress<NavDataProgress>? progress = null, CancellationToken ct = default, bool force = false)
     {
         RynthUpdater.NavDataEntry entry = pin.ToEntry();
         if (File.Exists(Path.Combine(navDataDir, RynthUpdater.NavDataLocalMarker)))
@@ -42,6 +42,13 @@ internal static class NavDataInstaller
         {
             NavData = new RynthUpdater.NavDataStatus(entry, navDataDir, installed, RynthUpdater.NavDataState.NeedsUpdate),
         };
-        return await updater.UpdateNavDataAsync(check, progress, ct);
+        IProgress<DownloadProgress>? theirs = progress is null ? null : new Adapter(progress);
+        return await updater.UpdateNavDataAsync(check, theirs, ct);
+    }
+
+    private sealed class Adapter(IProgress<NavDataProgress> ours) : IProgress<DownloadProgress>
+    {
+        public void Report(DownloadProgress value) =>
+            ours.Report(new NavDataProgress((NavDataStage)(int)value.Stage, value.Percent, value.Detail));
     }
 }

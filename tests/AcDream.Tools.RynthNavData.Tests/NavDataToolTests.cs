@@ -1,3 +1,4 @@
+using AcDream.Rynth.NavData;
 using System.IO.Compression;
 using System.Security.Cryptography;
 

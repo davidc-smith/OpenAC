@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- RynthNav's navmesh tiles for OpenAC: the one archive pinned in external/rynth-navdata.json
+       (our own SHA-256: the navdata follows our release, not their feed), installed with
+       RynthCore's own launcher code compiled unchanged. Used by tools/RynthNavData and the
+       OpenAC launcher. Their code, their warnings. -->
+  <PropertyGroup>
+    <RootNamespace>AcDream.Rynth.NavData</RootNamespace>
+    <AssemblyName>AcDream.Rynth.NavData</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RunAnalyzers>false</RunAnalyzers>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RynthCoreSrc>$(MSBuildThisFileDirectory)..\..\external\RynthCore\src\</RynthCoreSrc>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AcDream.Tools.RynthNavData" />
+    <InternalsVisibleTo Include="AcDream.Tools.RynthNavData.Tests" />
+    <InternalsVisibleTo Include="AcDream.Rynth.NavData.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.cs" Link="Linked\RynthUpdater.cs" />
+    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.NavData.cs" Link="Linked\RynthUpdater.NavData.cs" />
+    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.Available.cs" Link="Linked\RynthUpdater.Available.cs" />
+    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.MapPacks.cs" Link="Linked\RynthUpdater.MapPacks.cs" />
+    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\DownloadProgress.cs" Link="Linked\DownloadProgress.cs" />
+    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\UpdateTrust.cs" Link="Linked\UpdateTrust.cs" />
+    <Compile Include="$(RynthCoreSrc)RynthCore.Engine\Plugins\PluginContractVersion.cs" Link="Linked\PluginContractVersion.cs" />
+    <Compile Include="$(RynthCoreSrc)Shared\RynthInstallPaths.cs" Link="Linked\RynthInstallPaths.cs" />
+  </ItemGroup>
+</Project>

@@ -169,8 +169,14 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "acdream.tools.rynthnavdata": {
+      "acdream.rynth.navdata": {
         "type": "Project"
+      },
+      "acdream.tools.rynthnavdata": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Rynth.NavData": "[0.1.25, )"
+        }
       }
     }
   }
