@@ -212,7 +212,7 @@ namespace RynthCore.Engine.ImGuiBackend
         public static void EndPopOutDrag() { }
     }
 
-    /// <summary>RynthCore makes D3D9 textures; here the overlay's own upload (device unused).</summary>
+    /// <summary>RynthCore makes D3D9 textures; here the overlay's own upload (device unused). DXT1 (World Map packs) is decoded to RGBA first.</summary>
     internal static class DX9Backend
     {
         internal static Func<byte[], int, int, IntPtr>? Upload { get; set; }
@@ -220,6 +220,9 @@ namespace RynthCore.Engine.ImGuiBackend
 
         public static IntPtr CreateTextureRgba(IntPtr pDevice, int width, int height, ReadOnlySpan<byte> rgba) =>
             Upload?.Invoke(rgba.ToArray(), width, height) ?? IntPtr.Zero;
+
+        public static IntPtr CreateTextureDxt1(IntPtr pDevice, int width, int height, byte[] blocks) =>
+            Upload is { } upload ? upload(RynthCore.Imaging.DxtUtil.DecompressDxt1(blocks, width, height), width, height) : IntPtr.Zero;
 
         public static void ReleaseTexture(IntPtr tex) => Release?.Invoke(tex);
     }
