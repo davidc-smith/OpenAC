@@ -19,7 +19,7 @@ RynthCore's last three map panels work in OpenAC:
 Their source compiles unchanged (rule: [[rynth-no-rewrite]]); everything
 missing is a stand-in. User decisions 2026-10-20: all three panels in one
 sub-project (they share the tile layer), Radar last; DXT1 map packs supported
-by decoding to RGBA in the stand-in.
+by decoding to RGBA in the stand-in (with RynthCore's own `DxtUtil`).
 
 Out of scope: the Characters layer's data (RynthNet is not in OpenAC — the
 layer is there and stays empty, as in RynthCore without RynthNet); installing
@@ -71,9 +71,9 @@ All in `AcDream.Rynth.EngineUi/StandIns` unless noted; each new hook is a
 settable delegate the host fills and clears (the existing pattern, e.g.
 `RynthInventoryHookup`), returning "no data" when unset.
 
-- `DX9Backend.CreateTextureDxt1(device, w, h, blocks)`: decodes DXT1 (BC1)
-  blocks to RGBA with a small decoder (`Dxt1Decoder`, its own file, 4x4 blocks,
-  both colour modes incl. 1-bit alpha) and uploads through the existing
+- `DX9Backend.CreateTextureDxt1(device, w, h, blocks)`: decodes with
+  RynthCore's own `RynthCore.Imaging.DxtUtil.DecompressDxt1` (already compiled
+  into EngineUi for the Skills icons) and uploads the RGBA through the existing
   `Upload`. `CreateTextureRgba` and `ReleaseTexture` unchanged.
 - `ClientObjectHooks.LiveObjectIds` (uint[]; empty when unset) and
   `TryGetSnapshotPosition(id, out cell, out x, out y, out z)`: the host answers
@@ -150,10 +150,8 @@ Our panel host (`AcDream.Rynth.ScriptWindows/StandIns`):
 
 ## Testing (AcDream.Rynth.Host.Tests, plus EngineUi tests where they live)
 
-- `Dxt1Decoder`: known blocks for both colour modes (c0 > c1 four colours;
-  c0 <= c1 three colours + transparent black), all 16 indices, a 256 x 256
-  tile size check.
-- `DX9Backend.CreateTextureDxt1` uploads 256 x 256 RGBA through `Upload`.
+- `DX9Backend.CreateTextureDxt1` uploads 256 x 256 RGBA through `Upload`, and
+  a known four-colour block decodes to its end-point colours.
 - `WorldMapTiles` against a small synthetic RMAP v1 file (2 levels): opens,
   `TryGet` queues reads, `BeginFrame` uploads through the fake upload,
   `Shutdown` releases every texture.
