@@ -4,7 +4,7 @@
        ones in AcDream.Rynth.ScriptWindows): the ImGui chat window (ChatFace, the
        filter editor, ChatData and friends) and the RynthAi dashboard (RynthAiFace, its
        drawers, RynthAiData and the settings it edits; its Settings, Items, Damage,
-       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, World Map and Mini Map panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
+       Monster Detail, Nav, Meta, Loot Editor, Item Count, Lua, Skills, Dungeon Map, World Map, Mini Map and Radar panels, the Ranges drawer, and their data). One assembly, as in RynthCore: their
        faces share static engine classes (UiSources, PanelRouter, ...).
        RynthCore's Win32Backend, ChatHooks, UiSources, UiDataHub,
        PluginExportBinder and Discord relay are NOT compiled, nor PluginManager,
@@ -114,6 +114,7 @@
     <Compile Include="$(RynthEngine)ImGui\Panels\WorldMapSettings.cs" Link="RynthCore\WorldMapSettings.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\WorldMapMaps.cs" Link="RynthCore\WorldMapMaps.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\MapProjection.cs" Link="RynthCore\MapProjection.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\RadarFace.cs" Link="RynthCore\RadarFace.cs" />
     <Compile Include="$(RynthEngine)UI\Data\CharactersData.cs" Link="RynthCore\Data\CharactersData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\CharactersModel.cs" Link="RynthCore\Data\CharactersModel.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\InventoryFace*.cs" Link="RynthCore\%(Filename)%(Extension)" />

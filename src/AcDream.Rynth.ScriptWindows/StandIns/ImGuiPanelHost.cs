@@ -157,6 +157,15 @@ internal static class ImGuiPanelHost
         ImGui.TextDisabled("Uses OpenAC's UI scale.");
     }
 
+    /// <summary>RynthCore's per-panel "Text size" context submenu; the overlay has one font size, so this says so.</summary>
+    public static void TextSizeMenu(string title)
+    {
+        if (!ImGui.BeginMenu("Text size"))
+            return;
+        ImGui.TextDisabled("Uses OpenAC's UI scale.");
+        ImGui.EndMenu();
+    }
+
     /// <summary>RynthCore's built-in panels (Chat, ChatFilters) register by title.</summary>
     public static void Register(string title, PanelSpec spec, Func<IImGuiPanel> factory) =>
         RegisterDynamic(title, title, spec, factory);

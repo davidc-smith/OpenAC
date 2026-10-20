@@ -42,7 +42,7 @@ internal static class RynthAiDashboard
         {
             EntryPoint.InitStartedUtc = DateTime.UtcNow;
             _started = true;
-            // RynthCore's EntryPoint loads radar_settings.txt at startup; their Radar panel isn't compiled here.
+            // RynthCore's EntryPoint loads radar_settings.txt at startup; before the Radar registers.
             RynthCore.Engine.UI.Panels.RadarSettingsStore.Load();
             NavAtlasInstall.EnsureOnce(Log);
         }
@@ -79,6 +79,9 @@ internal static class RynthAiDashboard
         // Registers the Mini Map too, and loads world_map_settings.txt.
         if (!ImGuiPanelHost.HasFace(WorldMapFace.Title))
             WorldMapFace.Register();
+        // Registers Inventory again (RynthCore does it from here); RegisterDynamic replaces that entry in place.
+        if (!ImGuiPanelHost.HasFace(RadarFace.Title))
+            RadarFace.Register();
         RynthEngineHub.Join(HubPart);
     }
 

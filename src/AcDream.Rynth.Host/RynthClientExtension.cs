@@ -54,6 +54,10 @@ public sealed class RynthClientExtension : IClientExtension
     /// <summary>Test seam: extra plugin exports types loaded beside the shipped plugins.</summary>
     internal IReadOnlyList<Type> AdditionalPluginExports { get; init; } = [];
 
+    /// <summary>The bar's panel buttons, in order (RynthCore's bar has the Radar too).</summary>
+    internal static readonly IReadOnlyList<string> BarPanels =
+        [RynthChatWindow.Title, RynthAiDashboard.Title, RynthNavPanel.Title, RynthCore.Engine.ImGuiBackend.Panels.RadarFace.Title];
+
     public void Attach(ClientExtensionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -62,7 +66,7 @@ public sealed class RynthClientExtension : IClientExtension
         {
             _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
             ImGuiPanelHost.Layout = _layout;
-            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title, RynthAiDashboard.Title, RynthNavPanel.Title] };
+            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => BarPanels };
             IClientOverlayIcons icons = context.Overlay.Icons;
             _iconSource = (kind, id) => kind switch
             {

@@ -271,10 +271,11 @@ namespace RynthCore.Engine.UI
                 : title;
     }
 
-    /// <summary>RynthCore's Avalonia overlay flag; OpenAC has no Avalonia overlay.</summary>
+    /// <summary>RynthCore's Avalonia overlay flags; OpenAC has no Avalonia overlay (their ImGui faces only set them).</summary>
     internal static class AvaloniaOverlay
     {
         internal static volatile bool ChatCtrlGatedClickThrough;
+        internal static volatile bool RadarCtrlGatedClickThrough;
     }
 }
 

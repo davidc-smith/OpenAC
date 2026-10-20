@@ -131,6 +131,9 @@ namespace RynthCore.Engine.Compatibility
         }
 
         public static bool EnqueueSetSelectedObject(uint objectId) => SelectObject?.Invoke(objectId) ?? false;
+
+        /// <summary>The Radar's click on a dot: selects the object (RynthCore re-checks it on AC's thread; ours is one thread).</summary>
+        public static bool EnqueueOverlaySelect(uint objectId) => SelectObject?.Invoke(objectId) ?? false;
     }
 
     /// <summary>

@@ -102,7 +102,7 @@ namespace RynthCore.Engine.ImGuiBackend
         None,
     }
 
-    /// <summary>The members of RynthCore's PanelSpec that their faces set (of Background, BorderColor and Rounding only a zero Background is honoured; OpenCentered centres a first open; NoResize drops the resize grip, the RynthNav arrow sizes itself).</summary>
+    /// <summary>The members of RynthCore's PanelSpec that their faces set (of Background, BorderColor and Rounding only a zero Background is honoured; OpenCentered centres a first open; NoResize drops the resize grip, the RynthNav arrow sizes itself; GoldGrip, the Radar's gold grip, is accepted and not drawn: our windows keep ImGui's own resize grip).</summary>
     internal sealed record PanelSpec(
         Vector2 DefaultSize,
         Vector2 MinSize,
@@ -116,7 +116,8 @@ namespace RynthCore.Engine.ImGuiBackend
         uint? BorderColor = null,
         float Rounding = 0f,
         bool OpenCentered = false,
-        bool NoResize = false);
+        bool NoResize = false,
+        bool GoldGrip = false);
 
     internal interface IImGuiPanel
     {

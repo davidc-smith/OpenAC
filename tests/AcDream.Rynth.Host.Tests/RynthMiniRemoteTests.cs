@@ -87,7 +87,7 @@ public sealed class RynthMiniRemoteTests : IDisposable
             ["char", "map", "skills", "combat", "nav", "inventory", "crafting", "spells", "chat", "friends", "fellowship", "pets"],
             snap.Sections.Select(v => v.Id));
         string[] Panes(string id) => snap.Find(id)!.Panes.Select(p => p.Title).ToArray();
-        Assert.Equal(["Dungeon Map"], Panes("map"));
+        Assert.Equal(["Radar", "Dungeon Map"], Panes("map"));
         Assert.Equal(["Skills"], Panes("skills"));
         Assert.Equal(["Damage"], Panes("combat"));
         Assert.Equal(["Nav"], Panes("nav"));
