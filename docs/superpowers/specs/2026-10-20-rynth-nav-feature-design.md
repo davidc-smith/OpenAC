@@ -13,7 +13,7 @@ those need and a live check.
 ## Decisions
 
 - **Scope: the full feature** (user, 2026-10-20): command routing, both faces, a bar button,
-  the two missing host slots, chat coordinate links, live check of every travel kind.
+  the three missing host slots, chat coordinate links, live check of every travel kind.
 - **Their code, unchanged** (standing rule): RynthCore's faces and RynthNav compile from the
   submodules as they are; stand-ins only where they reach panels or engine parts OpenAC
   doesn't have.
@@ -37,13 +37,14 @@ also learns a recall command from the line typed just before "X is recalling hom
   `context.Automation.Chat.RegisterInputInterceptor`. For each line it calls
   `OfferChatBarText`; a plugin that eats it → `PluginChatInputDecision.Suppress`, else `Pass`.
 - `ChatCommandRouter` consults interceptors for every line submitted through it: OpenAC's chat
-  bar, the floating chat windows and Rynth chat's input (which submits through
-  `SubmitChatCommand`). The client's own commands (`RetailClientCommandCatalog`, `/help`) are
+  bar, the floating chat windows, and every `InvokeChatParser` call (Rynth chat's input box
+  sends through RynthChat's `SendLine` → `InvokeChatParser` → `SubmitChatCommand`). The client's own commands (`RetailClientCommandCatalog`, `/help`) are
   matched first and never reach plugins; server commands such as `@lifestone` do.
-- **Lines a plugin submits itself** (`InvokeChatParser`) are not offered back to the plugins:
-  RynthCore's InvokeParser calls the client's parser directly, bypassing the chat-bar hook. The
-  table sets a flag for the duration of its `SubmitChatCommand` call and the interceptor
-  passes while it is set.
+- **Lines a plugin submits itself** (`InvokeChatParser`) are offered to the plugins too, as in
+  RynthCore: its `InvokeParser` runs `ChatCommandDispatcher.Dispatch`, whose plugin
+  pre-dispatch offers every line to each plugin's `OnChatBarEnter` (that is how `/rnav` typed
+  in Rynth chat reaches RynthNav there). A plugin that submits from inside its own
+  `OnChatBarEnter` re-enters the router, which already bounds its depth.
 - The forwarding registrations (`ro`, `ginv`, `ra`, `mt`, `ub`, `vt`, `lua`) are removed; the
   interceptor reaches every plugin before plugin verbs are consulted. `/rynth` and `/rc` stay
   registered (the host answers them, not a plugin).
@@ -108,9 +109,12 @@ In `AcDream.Rynth.Host`, following RynthCore's semantics:
   too.
 - **`DoMovementFn`**: `int DoMovement(uint motion, float speed, int holdKey)` → a hold in
   `RynthMotionHolds` for the motions it holds (RynthNav only uses `WalkBackward` with
-  `HoldKeyRun`); the existing `StopMovement` lets go. A motion it doesn't hold → 0. Speed and
-  hold key are accepted as RynthCore's are; the run/walk choice follows the held run state as
-  for `SetMotion`.
+  `HoldKeyRun`, and re-sends it every 15 ticks while walking backward, which must stay a no-op
+  for an already-held key). A motion it doesn't hold → 0. Speed and hold key are accepted and
+  ignored; the run/walk choice follows the held run state as for `SetMotion`.
+- **`StopMovementFn`**: `int StopMovement(uint motion, int holdKey)` → lets go of that hold
+  (`RynthMotionHolds.SetMotion(motion, false)`); also empty in our host today, and RynthNav
+  calls it whenever goto stops or stops walking backward.
 
 Everything else RynthNav calls is already filled (UseFor, CastSpell, ReadKnownSpells,
 WieldItem, IsPortaling, InvokeChatParser, ObjectOwnershipInfo, LastWeenieError, ...).
@@ -134,8 +138,8 @@ WieldItem, IsPortaling, InvokeChatParser, ObjectOwnershipInfo, LastWeenieError, 
 - `DoMovement(WalkBackward, 1, HoldKeyRun)` holds, `StopMovement` releases; an unheld motion
   returns 0.
 - Interceptor: `/rnav where` is eaten by RynthNav (Suppress); `/rnavx` and plain say pass;
-  `@lifestone` passes and RynthNav recorded it; a line sent through `InvokeChatParser` is not
-  offered back; `/ra help` still reaches RynthAi with the verb registrations gone; a client
+  `@lifestone` passes and RynthNav recorded it; a line sent through `InvokeChatParser`
+  (Rynth chat's path) is offered too; `/ra help` still reaches RynthAi with the verb registrations gone; a client
   command (`/help`) never reaches the interceptor (router test in the Runtime tests if not
   already covered).
 - Panel: with RynthNav loaded, `RynthNav` and the arrow face are registered and the bar lists
