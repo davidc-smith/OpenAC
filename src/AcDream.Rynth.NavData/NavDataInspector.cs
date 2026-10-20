@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using RynthCore.App.Avalonia;
 
 namespace AcDream.Rynth.NavData;
@@ -15,6 +16,10 @@ public sealed record NavDataInspection(NavDataInstallState State, string Directo
 /// </summary>
 public static class NavDataInspector
 {
+    /// <summary>Our ids are the archive SHA-256: exactly 64 hex characters. Anything else is RynthCore's.</summary>
+    internal static bool IsOurId(string id) =>
+        id.Length == 64 && id.All(Uri.IsHexDigit);
+
     public static NavDataInspection Inspect(NavDataPin pin, string navDataDir)
     {
         ArgumentNullException.ThrowIfNull(pin);
@@ -25,7 +30,7 @@ public static class NavDataInspector
         string installed = File.Exists(idFile) ? File.ReadAllText(idFile).Trim().ToLowerInvariant() : string.Empty;
         NavDataInstallState state = installed.Length == 0 ? NavDataInstallState.Missing
             : installed == pin.Id.ToLowerInvariant() ? NavDataInstallState.Current
-            : installed.Length == 64 ? NavDataInstallState.Outdated
+            : IsOurId(installed) ? NavDataInstallState.Outdated
             : NavDataInstallState.RynthCoreManaged;
         return new(state, navDataDir, installed);
     }

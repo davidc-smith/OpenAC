@@ -29,9 +29,9 @@ public static class NavDataInstaller
         if (installed == entry.Id)
             return $"{navDataDir} already has the pinned tiles ({entry.Files} files).";
 
-        // RynthCore's own launcher keeps its feed's ids (32 hex, not our 64-hex SHA-256) there:
+        // RynthCore's own launcher keeps its feed's ids (not our 64-hex SHA-256) there:
         // replacing its tiles would make the launcher and this tool swap the folder back and forth.
-        if (!force && installed.Length > 0 && installed.Length != 64)
+        if (!force && installed.Length > 0 && !NavDataInspector.IsOurId(installed))
             return $"{navDataDir} holds RynthCore launcher tiles ({RynthUpdater.NavDataIdFile} {installed}); its launcher manages that folder. Pass --dir <other folder> or --force to replace them.";
 
         var updater = new RynthUpdater(trustedKeys: Array.Empty<string>(), stateDir: cacheDir) { NavDataCacheDir = cacheDir };
@@ -46,7 +46,7 @@ public static class NavDataInstaller
         return await updater.UpdateNavDataAsync(check, theirs, ct);
     }
 
-    private sealed class Adapter(IProgress<NavDataProgress> ours) : IProgress<DownloadProgress>
+    internal sealed class Adapter(IProgress<NavDataProgress> ours) : IProgress<DownloadProgress>
     {
         public void Report(DownloadProgress value) =>
             ours.Report(new NavDataProgress((NavDataStage)(int)value.Stage, value.Percent, value.Detail));

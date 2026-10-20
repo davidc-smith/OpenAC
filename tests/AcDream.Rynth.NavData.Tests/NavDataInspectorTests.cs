@@ -39,6 +39,15 @@ public sealed class NavDataInspectorTests : IDisposable
     }
 
     [Fact]
+    public void SixtyFourNonHexCharactersAreNotOurs()
+    {
+        Write("navdata.id", new string('z', 64));
+        Assert.Equal(NavDataInstallState.RynthCoreManaged, NavDataInspector.Inspect(Pin, _dir).State);
+        Assert.False(NavDataInspector.IsOurId(new string('z', 64)));
+        Assert.True(NavDataInspector.IsOurId(PinId));
+    }
+
+    [Fact]
     public void LocalMarkerWinsOverEverything()
     {
         Write("navdata.id", PinId);
