@@ -59,8 +59,41 @@ public static class CharacterController
         new(0x146u, "ID_CharacterInfo_Augmentation_JackOfAllTrades", false),
     ];
 
+    // Luminance auras, listed under their own header between the masteries
+    // and the other augmentations. The first four are bought in two tiers:
+    // the first five ranks read as the base aura, any ranks past five as the
+    // Seer's aura. Mana use and mana gain show five rating points per rank;
+    // the specialist aura shows two skill points per rank.
+    private const string LuminanceHeaderKey = "ID_CharacterInfo_Luminance_Header";
+    private const int LuminanceBaseRankCap = 5;
+
+    private static readonly LuminanceDescriptor[] LuminanceAuras =
+    [
+        new(0x14Du, "ID_CharacterInfo_Luminance_Base_Damage",
+            "ID_CharacterInfo_Luminance_Spec_Damage", 1),
+        new(0x14Eu, "ID_CharacterInfo_Luminance_Base_Reduction",
+            "ID_CharacterInfo_Luminance_Spec_Reduction", 1),
+        new(0x14Fu, "ID_CharacterInfo_Luminance_Base_Crit_Damage",
+            "ID_CharacterInfo_Luminance_Spec_Crit_Damage", 1),
+        new(0x150u, "ID_CharacterInfo_Luminance_Base_Crit_Reduction",
+            "ID_CharacterInfo_Luminance_Spec_Crit_Reduction", 1),
+        new(0x152u, "ID_CharacterInfo_Luminance_Base_Surge_Chance", null, 1),
+        new(0x153u, "ID_CharacterInfo_Luminance_Base_Mana_Use", null, 5),
+        new(0x154u, "ID_CharacterInfo_Luminance_Base_Mana_Gain", null, 5),
+        new(0x156u, "ID_CharacterInfo_Luminance_Base_Healing", null, 1),
+        new(0x157u, "ID_CharacterInfo_Luminance_Base_Skilled_Craft", null, 1),
+        new(0x158u, "ID_CharacterInfo_Luminance_Spec_Skilled_Spec", null, 2),
+        new(0x16Du, "ID_CharacterInfo_Luminance_Base_All_Skills", null, 1),
+    ];
+
     internal static IReadOnlyList<string> AugmentationStringKeys
-        => Augmentations.Select(descriptor => descriptor.StringKey).ToArray();
+        => Augmentations.Select(descriptor => descriptor.StringKey)
+            .Concat(LuminanceAuras.Select(descriptor => descriptor.BaseKey))
+            .Concat(LuminanceAuras
+                .Where(descriptor => descriptor.SeerKey is not null)
+                .Select(descriptor => descriptor.SeerKey!))
+            .Append(LuminanceHeaderKey)
+            .ToArray();
 
     public static CharacterInformationUiController Bind(
         ImportedLayout layout,
@@ -165,6 +198,7 @@ public static class CharacterController
             Get(sheet, 0x163u), RangedMasteryName);
         AppendMastery(body, strings.SummoningMastery,
             Get(sheet, 0x16Au), SummoningMasteryName);
+        AppendLuminanceAuras(body, sheet, strings);
         foreach (AugmentationDescriptor descriptor in Augmentations)
         {
             int value = Get(sheet, descriptor.PropertyId);
@@ -194,6 +228,45 @@ public static class CharacterController
                 sheet.EncumbranceAugmentations * 20f);
 
         return body.ToString().TrimEnd('\r', '\n');
+    }
+
+    // The header is written whether or not any aura has been bought.
+    private static void AppendLuminanceAuras(
+        StringBuilder body,
+        CharacterSheet sheet,
+        CharacterInfoStrings strings)
+    {
+        if (strings.AugmentationText.TryGetValue(
+                LuminanceHeaderKey, out string[]? header))
+            body.Append(header[0]);
+
+        foreach (LuminanceDescriptor descriptor in LuminanceAuras)
+        {
+            int ranks = Get(sheet, descriptor.PropertyId);
+            if (ranks <= 0)
+                continue;
+            int seerRanks = 0;
+            if (descriptor.SeerKey is not null && ranks > LuminanceBaseRankCap)
+            {
+                seerRanks = ranks - LuminanceBaseRankCap;
+                ranks = LuminanceBaseRankCap;
+            }
+            AppendLuminanceLine(body, strings, descriptor.BaseKey,
+                ranks * descriptor.PointsPerRank);
+            if (seerRanks > 0)
+                AppendLuminanceLine(body, strings, descriptor.SeerKey!,
+                    seerRanks * descriptor.PointsPerRank);
+        }
+    }
+
+    private static void AppendLuminanceLine(
+        StringBuilder body,
+        CharacterInfoStrings strings,
+        string key,
+        int value)
+    {
+        if (strings.AugmentationText.TryGetValue(key, out string[]? tokens))
+            AppendTokens(body, tokens, value);
     }
 
     private static int Get(CharacterSheet sheet, uint id)
@@ -330,6 +403,12 @@ public static class CharacterController
         uint PropertyId,
         string StringKey,
         bool IncludeValue);
+
+    private readonly record struct LuminanceDescriptor(
+        uint PropertyId,
+        string BaseKey,
+        string? SeerKey,
+        int PointsPerRank);
 }
 
 public sealed class CharacterInformationUiController : IRetainedPanelController
