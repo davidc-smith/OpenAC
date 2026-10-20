@@ -61,6 +61,7 @@ public sealed class LauncherNavDataConsentStore
             }
 
             File.Move(temporaryPath, FilePath, overwrite: true);
+            DirectorySync.TryFlush(directory); // make the rename itself durable (best effort)
         }
         finally
         {

@@ -26,6 +26,23 @@ public sealed class LauncherNavDataConsentStoreTests : IDisposable
     }
 
     [Fact]
+    public void DirectorySyncSucceedsForAnExistingDirectoryAndNeverThrowsForAMissingOne()
+    {
+        Directory.CreateDirectory(_dir);
+        bool existing = DirectorySync.TryFlush(_dir);
+        bool missing = DirectorySync.TryFlush(Path.Combine(_dir, "does-not-exist"));
+        Assert.False(missing);
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.True(existing);
+        }
+        else
+        {
+            Assert.False(existing);
+        }
+    }
+
+    [Fact]
     public void CorruptFileIsNotAgreed()
     {
         Directory.CreateDirectory(_dir);
