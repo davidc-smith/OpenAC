@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using RynthCore.Engine;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
@@ -26,11 +27,13 @@ internal static class RynthAiDashboard
         set => RynthEngineHub.Log = value;
     }
 
-    /// <summary>RynthCore's EngineFrameController: the retail pictures decoded since the last frame become textures before the faces draw.</summary>
+    /// <summary>RynthCore's EngineFrameController: the retail pictures and World Map tiles read since the last frame become textures before the faces draw.</summary>
     internal static void BeginFrame()
     {
-        if (_started)
-            RetailSprites.BeginFrame(IntPtr.Zero);
+        if (!_started)
+            return;
+        RetailSprites.BeginFrame(IntPtr.Zero);
+        WorldMapTiles.BeginFrame(IntPtr.Zero);
     }
 
     internal static void Start()
@@ -39,7 +42,7 @@ internal static class RynthAiDashboard
         {
             EntryPoint.InitStartedUtc = DateTime.UtcNow;
             _started = true;
-            // RynthCore's EntryPoint loads radar_settings.txt at startup; their Radar panel isn't compiled here.
+            // RynthCore's EntryPoint loads radar_settings.txt at startup; before the Radar registers.
             RynthCore.Engine.UI.Panels.RadarSettingsStore.Load();
             NavAtlasInstall.EnsureOnce(Log);
         }
@@ -73,6 +76,12 @@ internal static class RynthAiDashboard
             DungeonMapFace.Register();
         if (!ImGuiPanelHost.HasFace(MiniRemoteFace.Title))
             MiniRemoteFace.Register();
+        // Registers the Mini Map too, and loads world_map_settings.txt.
+        if (!ImGuiPanelHost.HasFace(WorldMapFace.Title))
+            WorldMapFace.Register();
+        // Registers Inventory again (RynthCore does it from here); RegisterDynamic replaces that entry in place.
+        if (!ImGuiPanelHost.HasFace(RadarFace.Title))
+            RadarFace.Register();
         RynthEngineHub.Join(HubPart);
     }
 
@@ -81,7 +90,10 @@ internal static class RynthAiDashboard
             UiSources.RynthAi, UiSources.Patrol, UiSources.Nav, UiSources.Settings, UiSources.RynthSortWatch,
             UiSources.Items, UiSources.Damage, UiSources.MonsterRules, UiSources.MonsterDetail,
             UiSources.Meta, UiSources.LootEdit, UiSources.Lua, UiSources.Progression, UiSources.Radar,
+            UiSources.Characters,
         ];
+
+    internal static IReadOnlyList<UiSource> HubSources => Sources;
 
     // RynthCore's ImGuiController frame and MainThreadSnapshots.Tick, in their order around the drain.
     private static readonly RynthEngineHub.Part HubPart = new("RynthAi", Sources,

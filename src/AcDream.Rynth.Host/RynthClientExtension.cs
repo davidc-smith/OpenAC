@@ -27,6 +27,7 @@ public sealed class RynthClientExtension : IClientExtension
     private RynthChatHookup? _chatHookup;
     private RynthInventoryHookup? _inventoryHookup;
     private RynthAiHookup? _aiHookup;
+    private RynthMapHookup? _mapHookup;
     private Action<string>? _log;
     private IDisposable? _runtimeSubscription;
     private IDisposable? _frameCallback;
@@ -53,6 +54,10 @@ public sealed class RynthClientExtension : IClientExtension
     /// <summary>Test seam: extra plugin exports types loaded beside the shipped plugins.</summary>
     internal IReadOnlyList<Type> AdditionalPluginExports { get; init; } = [];
 
+    /// <summary>The bar's panel buttons, in order (RynthCore's bar has the Radar too).</summary>
+    internal static readonly IReadOnlyList<string> BarPanels =
+        [RynthChatWindow.Title, RynthAiDashboard.Title, RynthNavPanel.Title, RynthCore.Engine.ImGuiBackend.Panels.RadarFace.Title];
+
     public void Attach(ClientExtensionContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -61,7 +66,7 @@ public sealed class RynthClientExtension : IClientExtension
         {
             _layout = new RynthLayoutStore(context.StateDirectory, context.Log);
             ImGuiPanelHost.Layout = _layout;
-            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => [RynthChatWindow.Title, RynthAiDashboard.Title, RynthNavPanel.Title] };
+            _bar = new RynthBar(_layout, context.Log) { PanelButtons = () => BarPanels };
             IClientOverlayIcons icons = context.Overlay.Icons;
             _iconSource = (kind, id) => kind switch
             {
@@ -109,6 +114,7 @@ public sealed class RynthClientExtension : IClientExtension
         _chatHookup = new RynthChatHookup(_host, view, context.Log);
         _inventoryHookup = new RynthInventoryHookup(view, context.Overlay?.Icons, context.Log);
         _aiHookup = new RynthAiHookup(_host, view, context.Log);
+        _mapHookup = new RynthMapHookup(view, context.Log);
         if (context.Overlay is not null)
             Guard("RynthAi", RynthAiDashboard.Start);
         // RynthCore registers the RynthNav panel only with RynthNav installed; here, only when it loaded.
@@ -273,6 +279,8 @@ public sealed class RynthClientExtension : IClientExtension
             Guard("RynthAi", RynthAiDashboard.Stop);
             _aiHookup?.Dispose();
             _aiHookup = null;
+            _mapHookup?.Dispose();
+            _mapHookup = null;
             GuardChat(RynthChatWindow.Stop);
             _chatHookup?.Dispose();
             _chatHookup = null;

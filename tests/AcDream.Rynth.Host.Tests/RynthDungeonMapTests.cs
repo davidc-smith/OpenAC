@@ -71,21 +71,6 @@ public sealed unsafe class RynthDungeonMapTests : IDisposable
                 : IntPtr.Zero;
 
     [Fact]
-    public void TheRadarFaceStandInHasTheirLegendRows()
-    {
-        string theirs = File.ReadAllText(Path.Combine(RynthAiDashboardTests.RepoRoot(),
-            "external/RynthCore/src/RynthCore.Engine/ImGui/Panels/RadarFace.cs"));
-        string table = theirs[theirs.IndexOf("KindRowsOrder", StringComparison.Ordinal)..];
-        table = table[..table.IndexOf("};", StringComparison.Ordinal)];
-        var rows = Regex.Matches(table, @"\(RadarKind\.(\w+), ""([^""]+)""\)")
-            .Select(m => ((byte)typeof(RadarKind).GetField(m.Groups[1].Value)!.GetValue(null)!, m.Groups[2].Value))
-            .ToArray();
-
-        Assert.Equal(12, rows.Length);
-        Assert.Equal(rows, RadarFace.KindRowsOrder.Select(r => (r.Kind, r.Label)).ToArray());
-    }
-
-    [Fact]
     public void TheRealRynthAiRadarExportReachesTheRadarSource()
     {
         _view.Pose = (0xA9B40021u, new System.Numerics.Vector3(100, 100, 50), System.Numerics.Quaternion.Identity);

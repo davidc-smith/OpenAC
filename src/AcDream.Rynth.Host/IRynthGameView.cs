@@ -161,6 +161,9 @@ public interface IRynthGameView
     /// <summary>A creature's vitals from its last appraisal; stamina and mana 0 when it did not show them.</summary>
     bool TryGetTargetVitals(uint objectId, out RynthVitals vitals);
 
+    /// <summary>The latest health ratio (0..1) the client has for an object, ratio-only updates included; false when none was seen.</summary>
+    bool TryGetHealthRatio(uint objectId, out float ratio);
+
     /// <summary>An object's enchantments in force; null when the client keeps none for it (it keeps the player's only).</summary>
     IReadOnlyList<RynthEnchantment>? GetObjectEnchantments(uint objectId);
 

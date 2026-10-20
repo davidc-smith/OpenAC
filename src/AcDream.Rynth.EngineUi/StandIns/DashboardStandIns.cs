@@ -131,6 +131,9 @@ namespace RynthCore.Engine.Compatibility
         }
 
         public static bool EnqueueSetSelectedObject(uint objectId) => SelectObject?.Invoke(objectId) ?? false;
+
+        /// <summary>The Radar's click on a dot: selects the object (RynthCore re-checks it on AC's thread; ours is one thread).</summary>
+        public static bool EnqueueOverlaySelect(uint objectId) => SelectObject?.Invoke(objectId) ?? false;
     }
 
     /// <summary>
@@ -293,17 +296,6 @@ namespace RynthCore.Engine.ImGuiBackend.Panels
     {
         public static void Draw(float width, string? tooltip) =>
             ImGuiNET.ImGui.TextDisabled("Server: chosen at OpenAC's login.");
-    }
-
-    internal static class WorldMapFace
-    {
-        public const string Title = "World Map";
-    }
-
-    /// <summary>RynthCore's minimap (RynthNav maps); never registered in OpenAC, so the RynthNav panel hides its map buttons.</summary>
-    internal static class MiniMapFace
-    {
-        public const string Title = "Mini Map";
     }
 
     /// <summary>RynthCore's Report a problem panel; never registered in OpenAC, so Settings hides its button.</summary>

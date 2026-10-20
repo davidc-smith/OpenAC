@@ -144,9 +144,14 @@ internal sealed class RynthInventoryHookup : IDisposable
         if (InventoryOrder.Source == _order) InventoryOrder.Source = null;
         if (InventoryOrder.Revision == _revision) InventoryOrder.Revision = null;
 
-        // Their retail pictures go back to the overlay while our upload is still the one in use.
+        // Their retail pictures and World Map tiles go back to the overlay while our upload is still the one in use.
         EngineThreads.StoppingFlag = true;
-        try { Guard(nameof(RetailSprites.Shutdown), () => { RetailSprites.Shutdown(); return true; }, false); }
+        try
+        {
+            Guard(nameof(RetailSprites.Shutdown), () => { RetailSprites.Shutdown(); return true; }, false);
+            Guard(nameof(WorldMapTiles.Shutdown), () => { WorldMapTiles.Shutdown(); return true; }, false);
+            Guard(nameof(WorldMapVectors.Shutdown), () => { WorldMapVectors.Shutdown(); return true; }, false);
+        }
         finally { EngineThreads.StoppingFlag = false; }
 
         if (_upload is not null && DX9Backend.Upload == _upload) DX9Backend.Upload = null;
