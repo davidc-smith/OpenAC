@@ -286,7 +286,7 @@ public sealed class LauncherUpdateViewModel : ObservableObject, IDisposable
         IsProgressIndeterminate = true;
         try
         {
-            var progress = new UiProgress<LauncherUpdateProgress>(
+            var progress = new DispatcherProgress<LauncherUpdateProgress>(
                 _dispatcher,
                 ApplyProgress);
 
@@ -366,11 +366,6 @@ public sealed class LauncherUpdateViewModel : ObservableObject, IDisposable
             ? "The update operation failed."
             : exception.Message;
 
-    private sealed class UiProgress<T>(IUiDispatcher dispatcher, Action<T> callback)
-        : IProgress<T>
-    {
-        public void Report(T value) => dispatcher.Post(() => callback(value));
-    }
 }
 
 internal sealed class UnavailableLauncherUpdater : ILauncherUpdater

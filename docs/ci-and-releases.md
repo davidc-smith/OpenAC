@@ -1,6 +1,6 @@
 # Continuous integration and releases
 
-Workflow: [`.github/workflows/ci.yml`](https://github.com/eriknihlen/OpenAC/blob/main/.github/workflows/ci.yml).
+Workflow: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
 
 ## Triggers and runners
 
@@ -196,6 +196,33 @@ runtime described above; `-MacVulkanRuntimeDirectory` overrides where).
 `launcher-<rid>.zip` pair for `osx-arm64`, plus an optional matching pair for
 `osx-x64`.
 
+### Fork releases (Mac only, local)
+
+Until the fork merges back upstream, its launcher updates from the fork's own releases:
+`OpenACReleaseRepository` in `Directory.Build.props` names the repository
+(`davidc-smith/OpenAC`), and both the launcher's feed
+(`releases/latest/download/manifest.json`) and `publish-bin.ps1`'s asset addresses come
+from it. Fork versions are `x.y.z-fork.n`; they are published as ordinary (not pre-release)
+releases so the `latest` route serves them.
+
+Build and publish one on a Mac with `pwsh tools/publish-fork-release.ps1` from a clean
+`main`: it runs `publish-bin.ps1 -MacOnly`, checks the five files (the osx-arm64 client and
+launcher zips, `manifest.json`, `launcher-fingerprint.json`, `rynth-navdata.json`), tags
+`v<version>`, pushes the tag and creates the release with `gh` (logged in as an account that
+can publish to the repository). `-DryRun` builds and checks, then prints those commands.
+Windows and Linux launchers find no payload for their RID in a fork release and report
+"Updates could not be checked".
+
+Pushing the `v*-fork` tag also triggers the fork's `ci.yml` (its tag trigger). The release
+job cannot publish there (its gates and branch guard), so those runs are noise: disable
+Actions on the fork or ignore them.
+
+`rynth-navdata.json` is `external/rynth-navdata.json` with a `schemaVersion`: the RynthNav
+navdata archive this release was tested with. It lives beside `manifest.json` for the same
+reason as the fingerprint. The launcher also carries the pin it was built with, and
+`external/rynth-navdata.json`, `external/RynthCore` and `src/AcDream.Rynth.NavData` are
+launcher fingerprint inputs, so a new pin updates the launcher.
+
 ### Two release trains
 
 |  | Stable | Pre-release |
@@ -211,11 +238,12 @@ The release job decides which train a tag belongs to in one step, **Decide the
 release train**, and the publish steps read nothing but its answer. The tag is
 the decision: a version carrying a SemVer pre-release part is a test build.
 That is what keeps a test build away from players, because the launcher polls
-`https://github.com/eriknihlen/OpenAC/releases/latest/download/manifest.json`
-and GitHub's `latest` route skips pre-releases. Every step that touches the
-release passes the same pair of flags, including the one that attaches the
-Intel assets afterwards, because anything else there would reset them on the
-release it appends to.
+`https://github.com/<OpenACReleaseRepository>/releases/latest/download/manifest.json`
+(`eriknihlen/OpenAC` upstream, `davidc-smith/OpenAC` in the fork; see
+[Fork releases](#fork-releases-mac-only-local)) and GitHub's `latest` route
+skips pre-releases. Every step that touches the release passes the same pair
+of flags, including the one that attaches the Intel assets afterwards, because
+anything else there would reset them on the release it appends to.
 
 The same step refuses a tag from the wrong branch: a pre-release tag has to
 point at a commit reachable from `dev`, and a stable tag at one reachable from

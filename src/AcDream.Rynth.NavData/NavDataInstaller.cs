@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using RynthCore.App.Avalonia;
 
-namespace AcDream.Tools.RynthNavData;
+namespace AcDream.Rynth.NavData;
 
 /// <summary>
 /// Installs exactly the pinned archive with RynthCore's own UpdateNavDataAsync: disk space,
@@ -15,10 +15,10 @@ namespace AcDream.Tools.RynthNavData;
 /// alone, a matching navdata.id = nothing to do. A launcher-managed folder (a feed id) is
 /// left alone unless forced.
 /// </summary>
-internal static class NavDataInstaller
+public static class NavDataInstaller
 {
-    internal static async Task<string> InstallAsync(NavDataPin pin, string navDataDir, string cacheDir,
-        IProgress<DownloadProgress>? progress = null, CancellationToken ct = default, bool force = false)
+    public static async Task<string> InstallAsync(NavDataPin pin, string navDataDir, string cacheDir,
+        IProgress<NavDataProgress>? progress = null, CancellationToken ct = default, bool force = false)
     {
         RynthUpdater.NavDataEntry entry = pin.ToEntry();
         if (File.Exists(Path.Combine(navDataDir, RynthUpdater.NavDataLocalMarker)))
@@ -29,9 +29,9 @@ internal static class NavDataInstaller
         if (installed == entry.Id)
             return $"{navDataDir} already has the pinned tiles ({entry.Files} files).";
 
-        // RynthCore's own launcher keeps its feed's ids (32 hex, not our 64-hex SHA-256) there:
+        // RynthCore's own launcher keeps its feed's ids (not our 64-hex SHA-256) there:
         // replacing its tiles would make the launcher and this tool swap the folder back and forth.
-        if (!force && installed.Length > 0 && installed.Length != 64)
+        if (!force && installed.Length > 0 && !NavDataInspector.IsOurId(installed))
             return $"{navDataDir} holds RynthCore launcher tiles ({RynthUpdater.NavDataIdFile} {installed}); its launcher manages that folder. Pass --dir <other folder> or --force to replace them.";
 
         var updater = new RynthUpdater(trustedKeys: Array.Empty<string>(), stateDir: cacheDir) { NavDataCacheDir = cacheDir };
@@ -42,6 +42,13 @@ internal static class NavDataInstaller
         {
             NavData = new RynthUpdater.NavDataStatus(entry, navDataDir, installed, RynthUpdater.NavDataState.NeedsUpdate),
         };
-        return await updater.UpdateNavDataAsync(check, progress, ct);
+        IProgress<DownloadProgress>? theirs = progress is null ? null : new Adapter(progress);
+        return await updater.UpdateNavDataAsync(check, theirs, ct);
+    }
+
+    internal sealed class Adapter(IProgress<NavDataProgress> ours) : IProgress<DownloadProgress>
+    {
+        public void Report(DownloadProgress value) =>
+            ours.Report(new NavDataProgress((NavDataStage)(int)value.Stage, value.Percent, value.Detail));
     }
 }

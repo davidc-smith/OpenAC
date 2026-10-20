@@ -91,13 +91,23 @@ public sealed class ReleaseManifestClientTests
 
         Assert.Equal("2.1.0", manifest.Version.Value);
         Assert.Equal(client.LongLength, manifest.RequireClient("win-x64").Size);
-        // Alpha distribution feed. Nothing about distribution lives in git; the
-        // CI release job re-points this URL after each versioned release, so
-        // the workflow and this literal must agree.
+        // The fork's own feed until it merges back upstream: one property in
+        // Directory.Build.props (OpenACReleaseRepository) names the repository.
         Assert.Equal(
-            "https://github.com/eriknihlen/OpenAC/releases/latest/download/manifest.json",
+            "https://github.com/davidc-smith/OpenAC/releases/latest/download/manifest.json",
             ReleaseManifestClient.ProductionManifestUri.AbsoluteUri);
         Assert.Equal(Uri.UriSchemeHttps, ReleaseManifestClient.ProductionManifestUri.Scheme);
+    }
+
+    [Fact]
+    public void ProductionFeedRepositoryIsTheBuildProperty()
+    {
+        string root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "AcDream.slnx")))
+            root = Path.GetDirectoryName(root) ?? throw new InvalidOperationException("No repository root.");
+        string property = System.Xml.Linq.XDocument.Load(Path.Combine(root, "Directory.Build.props"))
+            .Descendants("OpenACReleaseRepository").Single().Value;
+        Assert.Equal(property, ReleaseManifestClient.ReleaseRepository);
     }
 
     [Theory]

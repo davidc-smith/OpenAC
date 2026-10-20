@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using AcDream.Rynth.NavData;
 
 namespace AcDream.Tools.RynthNavData.Tests;
 

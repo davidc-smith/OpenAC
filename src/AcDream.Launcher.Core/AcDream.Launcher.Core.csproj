@@ -13,6 +13,15 @@
     <InternalsVisibleTo Include="acdream-plugincheck" />
   </ItemGroup>
   <ItemGroup>
+    <AssemblyMetadata Include="OpenAC.ReleaseRepository" Value="$(OpenACReleaseRepository)" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\AcDream.Platform\AcDream.Platform.csproj" />
+    <ProjectReference Include="..\AcDream.Rynth.NavData\AcDream.Rynth.NavData.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The navdata pin this launcher was built with: the fallback when a release has no
+         rynth-navdata.json beside its manifest. -->
+    <EmbeddedResource Include="..\..\external\rynth-navdata.json" LogicalName="OpenAC.RynthNavDataPin.json" />
   </ItemGroup>
 </Project>

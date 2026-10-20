@@ -37,7 +37,8 @@ public sealed class UpdateSessionBarrierTests : IDisposable
         var barrier = new UpdateSessionBarrier(_root);
         using UpdateSessionBarrier.ExclusiveLease update = barrier.AcquireExclusive();
 
-        Assert.Throws<LauncherUpdateException>(barrier.AcquireSession);
+        var refused = Assert.Throws<LauncherUpdateException>(barrier.AcquireSession);
+        Assert.Equal("An installation or update is in progress; try again when it finishes.", refused.Message);
         Assert.Throws<LauncherUpdateException>(barrier.AcquireExclusive);
     }
 

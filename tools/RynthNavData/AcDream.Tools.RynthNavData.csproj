@@ -1,9 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- RynthNav's navmesh tiles for OpenAC: pins one archive of theirs
        (external/rynth-navdata.json, our own SHA-256: the navdata follows our release, not
-       their feed) and installs exactly that one. The download, checks, unpack and folder
-       swap are RynthCore's launcher code, compiled unchanged: the same files their
-       tools/NavDataUpdateTests compiles. Their code, their warnings. -->
+       their feed) and installs exactly that one. The install lives in src/AcDream.Rynth.NavData. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>AcDream.Tools.RynthNavData</RootNamespace>
@@ -14,19 +12,11 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <RunAnalyzers>false</RunAnalyzers>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <RynthCoreSrc>$(MSBuildThisFileDirectory)..\..\external\RynthCore\src\</RynthCoreSrc>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AcDream.Tools.RynthNavData.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.cs" Link="Linked\RynthUpdater.cs" />
-    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.NavData.cs" Link="Linked\RynthUpdater.NavData.cs" />
-    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.Available.cs" Link="Linked\RynthUpdater.Available.cs" />
-    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\RynthUpdater.MapPacks.cs" Link="Linked\RynthUpdater.MapPacks.cs" />
-    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\DownloadProgress.cs" Link="Linked\DownloadProgress.cs" />
-    <Compile Include="$(RynthCoreSrc)RynthCore.App.Avalonia\UpdateTrust.cs" Link="Linked\UpdateTrust.cs" />
-    <Compile Include="$(RynthCoreSrc)RynthCore.Engine\Plugins\PluginContractVersion.cs" Link="Linked\PluginContractVersion.cs" />
-    <Compile Include="$(RynthCoreSrc)Shared\RynthInstallPaths.cs" Link="Linked\RynthInstallPaths.cs" />
+    <ProjectReference Include="..\..\src\AcDream.Rynth.NavData\AcDream.Rynth.NavData.csproj" />
   </ItemGroup>
 </Project>

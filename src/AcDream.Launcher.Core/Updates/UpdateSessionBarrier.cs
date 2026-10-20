@@ -19,7 +19,7 @@ public sealed class UpdateSessionBarrier
 
     public SessionLease AcquireSession()
     {
-        FileStream stream = Open(FileShare.ReadWrite, "A client update is in progress.");
+        FileStream stream = Open(FileShare.ReadWrite, "An installation or update is in progress; try again when it finishes.");
         return new SessionLease(stream);
     }
 

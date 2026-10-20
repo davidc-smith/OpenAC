@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+using AcDream.Rynth.NavData;
 using AcDream.Tools.RynthNavData;
 using RynthCore.App.Avalonia;
 
@@ -40,7 +41,7 @@ static async Task<int> Run(string[] args)
             {
                 NavDataPin pin = NavDataPin.Load(pinPath);
                 string dir = Option("--dir") ?? NavDataFolders.NavData();
-                var progress = new Progress<DownloadProgress>(p => Console.WriteLine($"  {p.Detail}"));
+                var progress = new Progress<NavDataProgress>(p => Console.WriteLine($"  {p.Detail}"));
                 Console.WriteLine(await NavDataInstaller.InstallAsync(pin, dir, cache, progress, force: args.Contains("--force")));
                 return 0;
             }

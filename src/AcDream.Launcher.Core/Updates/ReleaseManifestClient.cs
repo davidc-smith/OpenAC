@@ -1,6 +1,9 @@
 using System.Net;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AcDream.Launcher.Core.NavData;
+using AcDream.Rynth.NavData;
 
 namespace AcDream.Launcher.Core.Updates;
 
@@ -13,6 +16,11 @@ public interface IReleaseManifestClient
     Task<LauncherFingerprintDocument?> FetchLauncherFingerprintAsync(
         CancellationToken cancellationToken = default) =>
         Task.FromResult<LauncherFingerprintDocument?>(null);
+
+    /// <summary>The navdata pin published beside the manifest, or null when the release has
+    /// none or it cannot be read; the launcher then uses its built-in pin.</summary>
+    Task<NavDataPin?> FetchNavDataPinAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<NavDataPin?>(null);
 }
 
 public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
@@ -21,8 +29,15 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     public const long MaximumArtifactBytes = 4L * 1024 * 1024 * 1024;
     public const int MaximumRedirects = 5;
 
+    /// <summary>owner/name of the repository whose releases are the update feed
+    /// (Directory.Build.props OpenACReleaseRepository).</summary>
+    public static string ReleaseRepository { get; } =
+        typeof(ReleaseManifestClient).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "OpenAC.ReleaseRepository")?.Value
+        ?? throw new InvalidOperationException("The launcher was built without a release repository.");
+
     public static Uri ProductionManifestUri { get; } = new(
-        "https://github.com/eriknihlen/OpenAC/releases/latest/download/manifest.json");
+        $"https://github.com/{ReleaseRepository}/releases/latest/download/manifest.json");
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -126,22 +141,35 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     /// <summary>How long the optional fingerprint may take before the check goes on without it.</summary>
     internal TimeSpan FingerprintTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
-    public async Task<LauncherFingerprintDocument?> FetchLauncherFingerprintAsync(
-        CancellationToken cancellationToken = default)
+    public Task<LauncherFingerprintDocument?> FetchLauncherFingerprintAsync(
+        CancellationToken cancellationToken = default) =>
+        FetchOptionalAsync(
+            LauncherFingerprintDocument.FileName, "launcher fingerprint", bytes => ParseFingerprint(bytes), cancellationToken);
+
+    public Task<NavDataPin?> FetchNavDataPinAsync(CancellationToken cancellationToken = default) =>
+        FetchOptionalAsync(
+            ReleaseNavDataPin.FileName, "navdata pin", bytes => ReleaseNavDataPin.Parse(bytes), cancellationToken);
+
+    /// <summary>
+    /// An optional file published beside the manifest. A release without it, or one that is slow,
+    /// unreachable or unreadable, yields null and the caller falls back (version comparison for
+    /// the fingerprint, the built-in pin for navdata). The caller's own cancellation still throws.
+    /// </summary>
+    private async Task<T?> FetchOptionalAsync<T>(
+        string fileName,
+        string label,
+        Func<byte[], T> parse,
+        CancellationToken cancellationToken)
+        where T : class
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(FingerprintTimeout);
         try
         {
-            byte[] bytes = await FetchBytesAsync(
-                    new Uri(_manifestUri, LauncherFingerprintDocument.FileName),
-                    "launcher fingerprint",
-                    timeout.Token)
+            byte[] bytes = await FetchBytesAsync(new Uri(_manifestUri, fileName), label, timeout.Token)
                 .ConfigureAwait(false);
-            return ParseFingerprint(bytes);
+            return parse(bytes);
         }
-        // The file is optional: a release from before fingerprints has none, and one that is slow,
-        // unreachable or unreadable leaves the check to compare versions, as it always could.
         catch (LauncherUpdateException)
         {
             return null;

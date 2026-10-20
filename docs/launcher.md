@@ -271,6 +271,27 @@ launcher-managed plugin is never re-checked once installed.
 `--plugin-list-uri <https-uri>` overrides the curated list for testing, the
 same way `--update-manifest-uri` overrides the update feed.
 
+## RynthNav navdata
+
+RynthNav's outdoor routes need its map tiles (about 1.6 GB to download, 4.7 GB on disk).
+When they are missing or older than the release's pin, a banner offers **Install**; **Not
+now** hides it until the launcher next starts. After one install the launcher keeps them
+current by itself, at startup and after a client update, whenever no session is running.
+**Installation & updates > Install / update RynthNav navdata** installs or updates them at
+any time. Launches wait while an install runs; **Cancel** stops it and leaves the old tiles
+in place.
+
+The tiles go where the client reads them: `RYNTHNAV_NAVDATA` if set, otherwise the
+`NavData` folder under RynthCore's folder (`~/Library/Application Support/RynthCore` on
+macOS). A folder holding a `navdata.local` file, or tiles installed by RynthCore's own
+launcher, is left alone. A successful install deletes its download; a download that
+a failed or cancelled install leaves in the cache (`~/Library/Caches/RynthCore/updates` on
+macOS) is reused by the next attempt.
+
+The `NavData` folder is shared by every launcher root on this computer (and by other OpenAC
+installs), while "no session running" is checked per root: a client started from another
+install keeps running during an update.
+
 ## Installation and updates
 
 First setup opens when required. **Installation & updates** always provides
@@ -342,7 +363,7 @@ update feed for that run, the same way `--plugin-list-uri` replaces the curated
 plugin list. Give it the `manifest.json` attached to the pre-release:
 
 ```
-acdream-launcher --update-manifest-uri https://github.com/eriknihlen/OpenAC/releases/download/v0.1.13-dev.1/manifest.json
+acdream-launcher --update-manifest-uri https://github.com/davidc-smith/OpenAC/releases/download/v0.1.25-fork.1/manifest.json
 ```
 
 That launcher then offers the pre-release's client, and the pre-release's
@@ -356,6 +377,8 @@ too; a folder an earlier version used is refused.)
 **Build one from source.** `tools/run-launcher-trial.ps1` publishes the client
 and launcher from a checkout, installs the client into a scratch directory and
 starts the launcher against it, touching nothing you already have installed.
+
+A fork launcher (version `x.y.z-fork.n`) sorts below the upstream release of the same number, so start it in its own root (`--root-dir <new empty folder>`) rather than over an upstream install.
 
 A pre-release's `launcher-*.zip` can also be downloaded and unzipped by hand.
 
