@@ -83,11 +83,18 @@ public sealed class UiMarkupListViewMapTests
         int v2 = map.Version;
         Assert.NotEqual(v1, v2);
 
-        map.SortByNumber(keys, 3, descending: false);
+        keys[0] = 5;
+        map.SortByNumber(keys, 3, descending: false);  // first 3 keys 5,1,2 -> order [1,2,0]
         int v3 = map.Version;
         Assert.NotEqual(v2, v3);                       // a sorted map that lost a row
 
         map.SetIdentity(3);
-        Assert.NotEqual(v3, map.Version);              // the sort was cleared
+        Assert.NotEqual(v3, map.Version);              // the sort was cleared (a real reorder)
+
+        int v4 = map.Version;
+        map.SortByNumber(new double[] { 0, 1, 2 }, 3, descending: false);
+        Assert.Equal(v4, map.Version);                 // already in plugin order
+        map.SetIdentity(3);
+        Assert.Equal(v4, map.Version);                 // clearing it is not a reorder
     }
 }

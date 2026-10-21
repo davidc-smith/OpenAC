@@ -29,9 +29,13 @@ internal sealed class UiMarkupListViewMap
 
     public void SetIdentity(int count)
     {
-        // Leaving a sort always moves the version; identity growing or
-        // shrinking alone does not reorder anything.
-        bool changed = !_identity;
+        bool changed = false;
+        if (!_identity)
+        {
+            for (int view = 0; !changed && view < Math.Min(count, Count); view++)
+                changed = _viewToPlugin[view] != view;
+            changed |= count != Count;
+        }
         _identity = true;
         Count = count;
         if (changed)
