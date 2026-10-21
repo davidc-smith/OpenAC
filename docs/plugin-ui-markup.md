@@ -314,12 +314,14 @@ plugin decides what the chord does; the box only edits the string.
   `F12`, `Number1`, `Keypad5`, `Enter`). Empty means unbound. When reading
   `value` the box also accepts modifiers in any order and any case
   (`shift+ctrl+f`), but `onchange` always hands back the exact form.
-- The string is not a `PluginKeyChord` from the plugin hotkey API. Its key
-  names are Silk.NET's, which differ from `PluginKey`'s for some keys
-  (`Keypad5` vs `Numpad5`, `KeypadEnter` vs `NumpadEnter`, `GraveAccent` vs
-  `Grave`), and the box records keys `PluginKey` has no name for (`F13`,
-  `CapsLock`). A plugin that wants to register the chord with
-  `IHotkeyRegistry` maps the names itself.
+- The string uses the box's own key names (`Keypad5`, `GraveAccent`), which
+  are not always `PluginKey` names (`Numpad5`, `Grave`). To register or
+  rebind the recorded chord as a plugin hotkey, read it with
+  `PluginKeyChord.TryParse(text, out PluginKeyChord chord)`; to show a
+  hotkey's chord in a box, bind `value` to `chord.ToHotkeyText()`. `TryParse`
+  returns false for an empty (unbound) string and for keys a plugin hotkey
+  can't use, such as F13 or Caps Lock, which the box can still record. See
+  [Hotkeys](plugin-api.md#hotkeys).
 - The box shows the chord by the game's key names. An empty value, or one it
   can't read, shows `None`.
 - Clicking the box, or Enter or Space while it has focus, starts recording:
