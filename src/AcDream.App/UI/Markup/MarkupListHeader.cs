@@ -35,6 +35,18 @@ internal static class MarkupListHeader
         list.SortChanged = MarkupBindings.BindIntBoolAction((string?)el.Attribute("onsort"), binding, "list onsort");
         if (list.SortColumnSource is null)
             list.RememberedSort = new RememberedValue(context.ControlState, list.Name, "sort");
+        list.ColumnsResizable = Bool(el, "resizable");
+        if (list.ColumnsResizable && !list.ShowHeader)
+            throw new FormatException("<list resizable=\"true\"> needs header=\"true\"");
+        string? widths = (string?)el.Attribute("widths");
+        string? onResize = (string?)el.Attribute("onresize");
+        if (!list.ColumnsResizable && (widths is not null || onResize is not null))
+            throw new FormatException("<list widths> and <list onresize> need resizable=\"true\"");
+        if (widths is not null)
+            list.WidthsSource = MarkupBindings.BindRequiredFloatListReader(widths, binding, "list widths");
+        list.WidthsChanged = MarkupBindings.BindFloatListAction(onResize, binding, "list onresize");
+        if (list.ColumnsResizable && list.WidthsSource is null)
+            list.RememberedWidths = new RememberedValue(context.ControlState, list.Name, "widths");
         IReadOnlyList<UiMarkupListColumn> columns = list.Columns!;
         for (int i = 0; i < columns.Count; i++)
             ApplyColumn(columnEls[i], columns[i], i, binding);

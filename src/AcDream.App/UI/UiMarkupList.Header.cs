@@ -91,14 +91,41 @@ public sealed partial class UiMarkupList
     /// </summary>
     private bool HandleHeaderEvent(in UiEvent e, float contentWidth)
     {
+        if (_resizeColumn >= 0)
+        {
+            switch (e.Type)
+            {
+                case UiEventType.MouseMove:
+                    DragResize(e.Data1, contentWidth);
+                    return true;
+                case UiEventType.MouseUp:
+                    EndResize();
+                    return true;
+                case UiEventType.CaptureChanged:
+                    EndResize();
+                    break;
+            }
+        }
         if (!HeaderVisible)
             return false;
         bool inHeader = e.Data2 >= 0 && e.Data2 < HeaderHeight;
         switch (e.Type)
         {
+            case UiEventType.HoverEnter:
+            case UiEventType.MouseMove:
+                _hoverBoundary = BoundaryAt(e.Data1, e.Data2);
+                return false;
+            case UiEventType.HoverLeave:
+                _hoverBoundary = -1;
+                return false;
             case UiEventType.MouseDown:
                 if (!inHeader)
                     return false;
+                if (Enabled && BoundaryAt(e.Data1, e.Data2) is var boundary and >= 0)
+                {
+                    BeginResize(boundary, e.Data1);
+                    return true;
+                }
                 _headerPressColumn = Enabled ? HeaderColumnAt(e.Data1) : -1;
                 return true;
             case UiEventType.MouseUp:
@@ -115,7 +142,10 @@ public sealed partial class UiMarkupList
                 _headerPressColumn = -1;
                 return false;
             case UiEventType.Click:
+                return inHeader;
             case UiEventType.DoubleClick:
+                if (inHeader && Enabled && BoundaryAt(e.Data1, e.Data2) is var reset and >= 0)
+                    ResetWidth(reset);
                 return inHeader;
         }
         return false;

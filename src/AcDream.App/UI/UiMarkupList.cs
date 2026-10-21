@@ -26,6 +26,10 @@ public sealed partial class UiMarkupList : UiElement
             _cachedCheckRows = new IReadOnlyList<bool>?[count];
             _cachedIconRows = new IReadOnlyList<uint>?[count];
             _cachedLayout = new (float x, float w)[count];
+            _markupWidths = new float[count];
+            for (int i = 0; i < count; i++)
+                _markupWidths[i] = i == count - 1 || value![i].IsAutoWidth ? 0f : value[i].Width;
+            _hostWidths = null;
             _scratchIsAuto = new bool[count];
             _scratchFixedWidth = new float[count];
             _cachedRowCount = 0;
@@ -99,8 +103,8 @@ public sealed partial class UiMarkupList : UiElement
 
     public override bool HandlesClick => true;
 
-    /// <summary>Button cells show hover, so a list with any takes moves while hovered.</summary>
-    public override bool ReceivesHoverMouseMove => _hasButtons;
+    /// <summary>Button cells and header boundaries show hover, so such a list takes moves while hovered.</summary>
+    public override bool ReceivesHoverMouseMove => _hasButtons || _resizable;
 
     protected override void OnDraw(UiRenderContext context)
     {
@@ -226,13 +230,14 @@ public sealed partial class UiMarkupList : UiElement
     private void ComputeColumnLayout(IReadOnlyList<UiMarkupListColumn> columns, float totalWidth)
     {
         int n = columns.Count;
+        IReadOnlyList<float> widths = WidthState;
         float x = 0f;
         float sumFixed = 0f;
         int autoCount = 0;
         for (int i = 0; i < n; i++)
         {
             bool last = i == n - 1;
-            bool auto = last || columns[i].IsAutoWidth;
+            bool auto = last || !(widths[i] > 0f);
             _scratchIsAuto[i] = auto;
             if (auto)
             {
@@ -240,7 +245,7 @@ public sealed partial class UiMarkupList : UiElement
                 continue;
             }
             float avail = MathF.Max(0f, totalWidth - x);
-            float w = MathF.Min(MathF.Max(0f, columns[i].Width), avail);
+            float w = MathF.Min(MathF.Max(0f, widths[i]), avail);
             _scratchFixedWidth[i] = w;
             x += w;
             sumFixed += w;

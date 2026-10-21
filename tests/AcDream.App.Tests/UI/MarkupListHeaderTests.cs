@@ -428,4 +428,133 @@ public sealed class MarkupListHeaderTests : IDisposable
     {
         Assert.Throws<FormatException>(() => Mount(attributes, new Binding()));
     }
+
+    private static void DragHeader(UiRoot root, UiMarkupList list, int fromX, int toX)
+    {
+        root.OnMouseDown(UiMouseButton.Left, fromX, HeaderY);
+        root.OnMouseMove(toX, HeaderY);
+        root.OnMouseUp(UiMouseButton.Left, toX, HeaderY);
+        Redraw(list);
+    }
+
+    [Fact]
+    public void Resize_DragsTheColumnLeftOfTheBoundary()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("resizable=\"true\"", b);
+        DragHeader(root, list, 120, 150);
+        Assert.Equal((0f, 150f), list.ColumnLayoutForTest(0));
+        Assert.Equal((150f, 80f), list.ColumnLayoutForTest(1));
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));   // no sort
+        DragHeader(root, list, 150, 0);
+        Assert.Equal(UiMarkupList.MinColumnWidth, list.ColumnLayoutForTest(0).W);
+    }
+
+    [Fact]
+    public void Resize_DoubleClickRestoresTheMarkupWidth()
+    {
+        var (root, list) = Mount("resizable=\"true\"", new Binding());
+        DragHeader(root, list, 120, 150);
+        ClickAndDraw(root, list, 150, HeaderY);
+        ClickAndDraw(root, list, 150, HeaderY);
+        Assert.Equal((0f, 120f), list.ColumnLayoutForTest(0));
+    }
+
+    [Fact]
+    public void Resize_UnboundNotifiesEachWidth()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("resizable=\"true\" onresize=\"{NotifyWidths}\"", b);
+        DragHeader(root, list, 120, 150);
+        var widths = Assert.Single(b.Resizes);
+        Assert.Equal(new[] { 150f, 80f, 40f, 0f }, widths);
+    }
+
+    [Fact]
+    public void Resize_BoundWidthsBelongToThePlugin()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("resizable=\"true\" widths=\"{Widths}\" onresize=\"{SetWidths}\"", b);
+        DragHeader(root, list, 120, 150);
+        Assert.Equal(new[] { 150f, 80f, 40f, 0f }, Assert.Single(b.Resizes));
+        Assert.Equal((0f, 150f), list.ColumnLayoutForTest(0));
+        b.Widths = new() { 60f, 80f, 40f, 0f };
+        Redraw(list);
+        Assert.Equal((0f, 60f), list.ColumnLayoutForTest(0));
+        b.Widths = new() { 60f };
+        Redraw(list);
+        Assert.Equal((0f, 120f), list.ColumnLayoutForTest(0));
+    }
+
+    [Fact]
+    public void Resize_BoundWithoutOnresizeOnlyDisplays()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("resizable=\"true\" widths=\"{Widths}\"", b);
+        DragHeader(root, list, 120, 150);
+        Assert.Equal((0f, 120f), list.ColumnLayoutForTest(0));
+    }
+
+    [Fact]
+    public void Resize_RemembersAndForgetsTheMarkupWidths()
+    {
+        var state = new MarkupControlStateStore(null, () => "alice").ForWindow("win");
+        var (root, list) = Mount("resizable=\"true\"", new Binding(), state);
+        DragHeader(root, list, 120, 150);
+        Assert.Equal("150,80,40,0", state.Get("mobs", "widths"));
+        ClickAndDraw(root, list, 150, HeaderY);
+        ClickAndDraw(root, list, 150, HeaderY);
+        Assert.Null(state.Get("mobs", "widths"));
+    }
+
+    [Theory]
+    [InlineData("100,80,40,0", 100f)]
+    [InlineData("100,80", 120f)]
+    [InlineData("a,b,c,d", 120f)]
+    public void Resize_StoredWidthsApplyOrAreIgnored(string stored, float nameWidth)
+    {
+        var state = new MarkupControlStateStore(null, () => "alice").ForWindow("win");
+        state.Set("mobs", "widths", stored);
+        var (_, list) = Mount("resizable=\"true\"", new Binding(), state);
+        Redraw(list);
+        Assert.Equal(nameWidth, list.ColumnLayoutForTest(0).W);
+    }
+
+    [Fact]
+    public void Resize_CursorShowsOverBoundariesOnly()
+    {
+        var (root, list) = Mount("resizable=\"true\"", new Binding());
+        root.OnMouseMove(122, HeaderY);
+        Assert.Equal(0x06006128u, list.ActiveCursor().File);
+        root.OnMouseMove(60, HeaderY);
+        Assert.False(list.ActiveCursor().IsValid);
+
+        var (plainRoot, plain) = Mount("", new Binding());
+        plainRoot.OnMouseMove(120, HeaderY);
+        Assert.False(plain.ActiveCursor().IsValid);
+    }
+
+    [Fact]
+    public void Resize_DisabledIgnoresDragsAndShowsNoCursor()
+    {
+        var (root, list) = Mount("resizable=\"true\" enabled=\"false\"", new Binding());
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseDown, Data1 = 120, Data2 = HeaderY });
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseMove, Data1 = 150, Data2 = HeaderY });
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseUp, Data1 = 150, Data2 = HeaderY });
+        Redraw(list);
+        Assert.Equal((0f, 120f), list.ColumnLayoutForTest(0));
+        list.OnEvent(new UiEvent { Type = UiEventType.HoverEnter, Data1 = 120, Data2 = HeaderY });
+        Assert.False(list.ActiveCursor().IsValid);
+    }
+
+    [Theory]
+    [InlineData("header=\"false\" resizable=\"true\"")]
+    [InlineData("widths=\"{Widths}\"")]
+    [InlineData("onresize=\"{SetWidths}\"")]
+    [InlineData("resizable=\"true\" widths=\"{Names}\"")]
+    [InlineData("resizable=\"true\" onresize=\"{Toggle}\"")]
+    public void Resize_BadAttributesThrow(string attributes)
+    {
+        Assert.Throws<FormatException>(() => Mount(attributes, new Binding()));
+    }
 }
