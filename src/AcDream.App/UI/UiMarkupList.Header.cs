@@ -168,7 +168,6 @@ public sealed partial class UiMarkupList
         return false;
     }
 
-    /// <summary>A press and release on the same header cell.</summary>
     /// <summary>The select-all box: ticked when every row is, clear when none is, else indeterminate.</summary>
     private bool? SelectAllState(int column)
     {
@@ -182,6 +181,7 @@ public sealed partial class UiMarkupList
         return ticked == 0 ? false : ticked == _cachedRowCount ? true : null;
     }
 
+    /// <summary>A press and release on the same header cell.</summary>
     private void HeaderClicked(int column)
     {
         if (_columns is { } columns && columns[column].SelectAll)

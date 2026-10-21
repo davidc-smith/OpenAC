@@ -516,6 +516,17 @@ public sealed class MarkupListHeaderTests : IDisposable
         Assert.Equal(UiMarkupList.MinColumnWidth, list.ColumnLayoutForTest(0).W);
     }
 
+    [Fact]
+    public void Resize_LeavesRoomForTheColumnsToTheRight()
+    {
+        var (root, list) = Mount("resizable=\"true\"", new Binding());
+        DragHeader(root, list, 120, 390);
+        Assert.Equal(300f - 80f - 40f - UiMarkupList.MinColumnWidth, list.ColumnLayoutForTest(0).W);
+        Assert.Equal(80f, list.ColumnLayoutForTest(1).W);
+        Assert.Equal(40f, list.ColumnLayoutForTest(2).W);
+        Assert.Equal(UiMarkupList.MinColumnWidth, list.ColumnLayoutForTest(3).W);
+    }
+
     // UiRoot pairs clicks by its clock: the drag at 1000 ms and the clicks at
     // 5000 ms are too far apart to pair, so both clicks of a double-click are
     // presses from rest.
@@ -604,6 +615,8 @@ public sealed class MarkupListHeaderTests : IDisposable
     {
         var b = new Binding();
         var (root, list) = Mount("resizable=\"true\" widths=\"{Widths}\"", b);
+        root.OnMouseMove(122, HeaderY);
+        Assert.False(list.ActiveCursor().IsValid);   // nothing to drag, so no grip
         DragHeader(root, list, 120, 150);
         Assert.Equal((0f, 120f), list.ColumnLayoutForTest(0));
     }

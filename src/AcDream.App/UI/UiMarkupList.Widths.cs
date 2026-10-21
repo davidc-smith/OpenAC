@@ -52,6 +52,9 @@ public sealed partial class UiMarkupList
     private int _resizeColumn = -1;
     private int _hoverBoundary = -1;
     private float _resizeStartWidth;
+    // What the columns right of the dragged one keep: their fixed widths at
+    // drag start, and the narrowest drag width for each automatic one.
+    private float _resizeRightReserve;
     private float _resizePressX;
     private bool _resizeMoved;
 
@@ -101,10 +104,15 @@ public sealed partial class UiMarkupList
         return widths;
     }
 
-    /// <summary>The boundary to the right of a column within grabbing distance; -1 for none.</summary>
+    /// <summary>
+    /// The boundary to the right of a column within grabbing distance; -1 for
+    /// none, and always -1 for bound widths without <c>onresize</c>, which
+    /// only display.
+    /// </summary>
     private int BoundaryAt(float x, float y)
     {
-        if (!_resizable || !HeaderVisible || y < 0f || y >= HeaderHeight || _columns is not { } columns)
+        if (!_resizable || !HeaderVisible || y < 0f || y >= HeaderHeight || _columns is not { } columns
+            || (WidthsSource is not null && WidthsChanged is null))
             return -1;
         for (int c = 0; c < columns.Count - 1; c++)
         {
@@ -123,6 +131,12 @@ public sealed partial class UiMarkupList
         _resizeStartWidth = _cachedLayout[column].w;
         _resizeStartWidths = WidthState.ToArray();
         _askedWidths = _resizeStartWidths;
+        _resizeRightReserve = 0f;
+        for (int c = column + 1; c < _resizeStartWidths.Length; c++)
+        {
+            bool auto = c == _resizeStartWidths.Length - 1 || !(_resizeStartWidths[c] > 0f);
+            _resizeRightReserve += auto ? MinColumnWidth : _resizeStartWidths[c];
+        }
     }
 
     private void DragResize(float x, float contentWidth)
@@ -132,7 +146,7 @@ public sealed partial class UiMarkupList
         if (x != _resizePressX)
             _resizeMoved = true;
         (float cellX, _) = _cachedLayout[_resizeColumn];
-        float max = MathF.Max(MinColumnWidth, contentWidth - cellX - MinColumnWidth);
+        float max = MathF.Max(MinColumnWidth, contentWidth - cellX - _resizeRightReserve);
         float width = Math.Clamp(MathF.Round(_resizeStartWidth + x - _resizePressX), MinColumnWidth, max);
         AskWidth(_resizeColumn, width);
     }
