@@ -226,14 +226,23 @@ public sealed class MarkupListHeaderTests : IDisposable
     }
 
     [Fact]
-    public void Sort_SortKeysAndBoolColumns()
+    public void Sort_SortKeysColumn()
     {
         var b = new Binding();
         var (root, list) = Mount("", b);
         ClickAndDraw(root, list, DistX, HeaderY);
         Assert.Equal(new[] { 1, 3, 0, 2 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_BoolColumnIsStableBothWays()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
         ClickAndDraw(root, list, OnX, HeaderY);
         Assert.Equal(new[] { 1, 3, 0, 2 }, ViewOrder(root, list, b));
+        ClickAndDraw(root, list, OnX, HeaderY);
+        Assert.Equal(new[] { 0, 2, 1, 3 }, ViewOrder(root, list, b));
     }
 
     [Fact]
@@ -333,6 +342,7 @@ public sealed class MarkupListHeaderTests : IDisposable
         var (root, list) = Mount("onsort=\"{NotifySort}\"", b);
         ClickAndDraw(root, list, NameX, HeaderY);
         Assert.Equal(new[] { (0, false) }, b.Sorts);
+        Assert.Equal(new[] { 3, 1, 0, 2 }, ViewOrder(root, list, b));
     }
 
     [Fact]
