@@ -97,6 +97,13 @@ internal sealed record SessionDescriptor
     /// </summary>
     public bool? Rynth { get; init; }
 
+    /// <summary>
+    /// Whether the Rynth plugins tick on their own pump thread (RynthCore's 16 ms pump)
+    /// rather than inline on the frame thread. Absent falls back to
+    /// <c>ACDREAM_RYNTH_PUMP</c>, which leaves it on unless set to <c>0</c>.
+    /// </summary>
+    public bool? RynthPump { get; init; }
+
     public List<string>? LoginCommands { get; init; }
 
     public int LoginCommandDelayMs { get; init; } = 500;

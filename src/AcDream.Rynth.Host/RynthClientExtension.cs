@@ -49,6 +49,28 @@ public sealed class RynthClientExtension : IClientExtension
     private IDisposable? _chatClaim;
     private IClientChat? _clientChat;
     private bool? _chatHidden;
+    private RynthPump? _pump;
+    private RynthSnapshotBuilder? _builder;
+    private RynthActionQueue? _actions;
+    private RynthWorldSnapshot? _currentSnapshot;
+    private IRynthGameView? _currentView;
+
+    /// <summary>
+    /// Plugin passes on their own pump thread (RynthCore's 16 ms StartNormalPluginPump). Off:
+    /// today's inline ticking on the frame thread. The client sets it from
+    /// <c>ACDREAM_RYNTH_PUMP</c> / the session's <c>rynthPump</c>; off unless set, so a bare
+    /// extension (tests, headless) ticks inline.
+    /// </summary>
+    public bool PumpEnabled { get; init; }
+
+    /// <summary>Test seam: where pump passes run (a real thread unless set).</summary>
+    internal Func<IRynthPumpScheduler> PumpScheduler { get; init; } = () => new ThreadPumpScheduler();
+
+    /// <summary>The running pump, or null with the pump off (tests).</summary>
+    internal RynthPump? Pump => _pump;
+
+    /// <summary>Test seam: the plugin host.</summary>
+    internal RynthHost? Host => _host;
 
     /// <summary>The RynthNav panel needs an overlay to draw in and a loaded RynthNav to show.</summary>
     internal static bool ShouldStartNavPanel(bool hasOverlay, IReadOnlyList<RynthPlugin> plugins) =>
@@ -96,7 +118,13 @@ public sealed class RynthClientExtension : IClientExtension
         AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = context.DatDirectory;
         // RynthCore's engine finds client_portal.dat beside Environment.ProcessPath (redirected to this stand-in).
         AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory = context.DatDirectory;
-        var view = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand, context.Automation, context.Screen);
+        var live = new RuntimeRynthGameView(context.Runtime, context.SubmitChatCommand, context.Automation, context.Screen);
+        _actions = new RynthActionQueue(
+            line => context.Log($"[Rynth] {line}"),
+            () => Volatile.Read(ref _currentSnapshot) is { } s && (s.IsPortaling || s.Dead));
+        // Every slot and hook holds the routed view: live on the frame thread (and always,
+        // with the pump off), the current pass's snapshot view anywhere else.
+        var view = new ThreadRoutedGameView(live, () => Volatile.Read(ref _currentView) ?? live);
         _view = view;
         bool scriptWindows = context.Overlay is not null;
         _host = new RynthHost(
@@ -129,6 +157,8 @@ public sealed class RynthClientExtension : IClientExtension
             StartHotkeys(context, keyOverlay);
         if (context.Overlay is not null && context.ItemDrops is { } drops)
             StartDrops(drops);
+        if (PumpEnabled)
+            StartPump(context, live);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
         _combatEvents = new RynthCombatEvents(context.Runtime, _host.Bridge, view);
@@ -145,6 +175,66 @@ public sealed class RynthClientExtension : IClientExtension
         _commands.AddRange(RouteChatToPlugins(context.Automation?.Chat, OfferChatBarText, context.RegisterChatCommand));
         if (context.Overlay is { } overlay)
             _frameCallback = overlay.AddFrameCallback(DrawFrame);
+    }
+
+    /// <summary>
+    /// The pump: the snapshot builder, the action queue on the table and the stand-ins, the
+    /// frame thread latched, logout quiesced around the plugins' OnLogout, a stopped pump
+    /// replaced at the next login.
+    /// </summary>
+    private void StartPump(ClientExtensionContext context, RuntimeRynthGameView live)
+    {
+        RynthHost host = _host!;
+        RynthActionQueue actions = _actions!;
+        _builder = new RynthSnapshotBuilder(live, context.Runtime, context.Screen)
+        {
+            RynthVendorGeneration = () => host.Vendor.Generation,
+        };
+        host.Table.Actions = actions;
+        RynthFrameActions.Queue = actions;
+        RynthFrameThread.Latch();
+        host.Bridge.BeforeLogout = () =>
+        {
+            _pump?.Quiesce(TimeSpan.FromSeconds(5));
+            actions.Clear();
+        };
+        host.Bridge.AfterLogout = () => _pump?.Resume();
+        host.Bridge.EnteringWorld = () =>
+        {
+            if (_pump is { Stopped: true } stopped)
+            {
+                stopped.Dispose();
+                _pump = NewPump(context, live);
+                _pump.Start();
+                context.Log("[Rynth] the plugin pump restarted for this login.");
+            }
+        };
+        _pump = NewPump(context, live);
+        _pump.Start();
+    }
+
+    private RynthPump NewPump(ClientExtensionContext context, RuntimeRynthGameView live)
+    {
+        RynthHost host = _host!;
+        RynthActionQueue actions = _actions!;
+        RynthSnapshotBuilder builder = _builder!;
+        return new RynthPump(
+            pass: () =>
+            {
+                host.PumpPass();
+                RynthEngineHub.PumpTick();
+            },
+            publish: () =>
+            {
+                RynthWorldSnapshot snapshot = builder.Build();
+                Volatile.Write(ref _currentSnapshot, snapshot);
+                Volatile.Write(ref _currentView, new SnapshotRynthGameView(
+                    snapshot, actions, live, reason => host.Vendor.FailQueued(reason)));
+            },
+            actions: actions,
+            log: line => context.Log($"[Rynth] pump: {line}"),
+            notify: line => live.WriteChatLine(line, 0),
+            scheduler: PumpScheduler());
     }
 
     /// <summary>RynthCore's hotkeys: every key press offered to their HotkeyService before OpenAC sees it.</summary>
@@ -243,7 +333,18 @@ public sealed class RynthClientExtension : IClientExtension
 
     public void Tick(double deltaSeconds)
     {
-        _host?.Tick();
+        if (_pump is { } pump)
+        {
+            // The frame's half: held keys, queued actions, and (when the pump is idle and due)
+            // a snapshot and a pass; then the hub's frame-side hooks.
+            _host?.FrameTick();
+            pump.FrameTick();
+            Guard("Rynth", RynthEngineHub.FrameTick);
+        }
+        else
+        {
+            _host?.Tick();
+        }
         // The chat bar is not there at the character list: the hint waits for the first login.
         if (_navDataHint is { } hint && RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete)
         {
@@ -253,11 +354,20 @@ public sealed class RynthClientExtension : IClientExtension
         GuardChat(TickChat);
         if (_inventoryHookup is { } inventory)
             Guard("RynthAi", inventory.Tick);
-        Guard("Rynth", () => RynthEngineHub.Tick());
+        if (_pump is null)
+            Guard("Rynth", () => RynthEngineHub.Tick());
     }
 
     public void Dispose()
     {
+        // The pump first: no pass may run while anything below comes down, and its thread must
+        // be gone before the host frees the table's native buffers.
+        if (_pump is { } pump)
+        {
+            Guard("pump", pump.Dispose);
+            _pump = null;
+        }
+
         // The chat seams go first, each on its own, so a failure in one still lets
         // the rest (and the plugin host below) shut down.
         if (_chatClaim is { } claim)
@@ -338,6 +448,20 @@ public sealed class RynthClientExtension : IClientExtension
         {
             _host?.Dispose();
             _host = null;
+            _builder?.Dispose();
+            _builder = null;
+            if (_actions is { } actions)
+            {
+                actions.Clear();
+                if (RynthFrameActions.Queue == actions)
+                {
+                    RynthFrameThread.Reset();
+                    RynthFrameActions.Queue = null;
+                }
+            }
+            _actions = null;
+            Volatile.Write(ref _currentView, null);
+            Volatile.Write(ref _currentSnapshot, null);
             AcDream.Rynth.Plugin.RynthAi.StandIns.RegistryStandIn.InstallPath = null;
             AcDream.Rynth.EngineUi.ProcessPathStandIn.DatDirectory = null;
         }

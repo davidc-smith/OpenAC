@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using RynthCore.Engine.Plugins;
 using RynthCore.Engine.UI.Data;
 
@@ -40,7 +41,7 @@ internal static class RynthEngineHub
         }
     }
 
-    /// <summary>One hub step. Returns how many posted actions ran.</summary>
+    /// <summary>One hub step, inline (the pump off). Returns how many posted actions ran.</summary>
     internal static int Tick()
     {
         if (Parts.Count == 0)
@@ -56,6 +57,32 @@ internal static class RynthEngineHub
             part.AfterDrain?.Invoke();
         PollAll(sources, Stopwatch.GetTimestamp());
         return ran;
+    }
+
+    /// <summary>
+    /// The pump half (RynthCore runs UiDataHub.Step on its pump): refreshes, the BeforeDrain
+    /// hooks, the posted work, the polls. Returns how many posted actions ran.
+    /// </summary>
+    internal static int PumpTick()
+    {
+        Part[] parts = Volatile.Read(ref _partsSnapshot);
+        if (parts.Length == 0)
+            return 0;
+        UiSource[] sources = Volatile.Read(ref _sourcesSnapshot);
+        foreach (UiSource source in sources)
+            source.PromoteDeferredRefresh();
+        foreach (Part part in parts)
+            part.BeforeDrain?.Invoke();
+        int ran = UiDataHub.Drain(Log);
+        PollAll(sources, Stopwatch.GetTimestamp());
+        return ran;
+    }
+
+    /// <summary>The frame half: the AfterDrain hooks (InventoryModel.MainThreadTick and the like).</summary>
+    internal static void FrameTick()
+    {
+        foreach (Part part in Volatile.Read(ref _partsSnapshot))
+            part.AfterDrain?.Invoke();
     }
 
     /// <summary>
@@ -109,7 +136,8 @@ internal static class RynthEngineHub
 
     private static void Rebuild()
     {
-        _partsSnapshot = Parts.ToArray();
-        _sourcesSnapshot = Parts.SelectMany(p => p.Sources).Distinct().ToArray();
+        // The pump reads these off the frame thread.
+        Volatile.Write(ref _sourcesSnapshot, Parts.SelectMany(p => p.Sources).Distinct().ToArray());
+        Volatile.Write(ref _partsSnapshot, Parts.ToArray());
     }
 }

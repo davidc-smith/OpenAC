@@ -16,10 +16,12 @@ internal sealed class ClientExtensionHost : IDisposable
 
     /// <param name="rynth">False leaves the Rynth extension out entirely:
     /// it is never created, so none of its bar, windows or commands load.</param>
-    public ClientExtensionHost(bool rynth = true)
+    /// <param name="rynthPump">True runs the Rynth plugins on their own pump thread;
+    /// false (the default here; the window passes the option) ticks them inline.</param>
+    public ClientExtensionHost(bool rynth = true, bool rynthPump = false)
     {
         if (rynth)
-            _extensions.Add(new AcDream.Rynth.Host.RynthClientExtension());
+            _extensions.Add(new AcDream.Rynth.Host.RynthClientExtension { PumpEnabled = rynthPump });
     }
 
     internal int Count => _extensions.Count;

@@ -69,11 +69,25 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// <summary>Raised after the plugins' OnLogout; the host closes its logout-bound state here.</summary>
     public event Action? LoggedOut;
 
+    /// <summary>
+    /// Frame thread, around the plugins' OnLogout: the pump quiesces before and resumes after,
+    /// so OnLogout runs with no pass in flight (RynthClientExtension).
+    /// </summary>
+    internal Action? BeforeLogout { get; set; }
+
+    /// <inheritdoc cref="BeforeLogout"/>
+    internal Action? AfterLogout { get; set; }
+
+    /// <summary>Frame thread, when the player enters the world (before the login is delivered).</summary>
+    internal Action? EnteringWorld { get; set; }
+
     public void OnLifecycle(in RuntimeLifecycleDelta delta)
     {
         if (delta.Current == RuntimeLifecycleState.InWorld
             && delta.Previous != RuntimeLifecycleState.InWorld)
         {
+            try { EnteringWorld?.Invoke(); }
+            catch (Exception error) { _log?.Invoke($"entering-world hook failed: {error.Message}"); }
             RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
             Volatile.Write(ref _loginPending, 1);
         }
@@ -86,10 +100,20 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         // A login not yet delivered is dropped: the plugins never saw it, so they
         // must not see it after logging out.
         Volatile.Write(ref _loginPending, 0);
-        foreach (RynthPlugin plugin in _plugins)
-            plugin.OnLogout();
-        try { LoggedOut?.Invoke(); }
-        catch (Exception error) { _log?.Invoke($"LoggedOut handler failed: {error.Message}"); }
+        try { BeforeLogout?.Invoke(); }
+        catch (Exception error) { _log?.Invoke($"before-logout hook failed: {error.Message}"); }
+        try
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnLogout();
+            try { LoggedOut?.Invoke(); }
+            catch (Exception error) { _log?.Invoke($"LoggedOut handler failed: {error.Message}"); }
+        }
+        finally
+        {
+            try { AfterLogout?.Invoke(); }
+            catch (Exception error) { _log?.Invoke($"after-logout hook failed: {error.Message}"); }
+        }
     }
 
     public void OnEntity(in RuntimeEntityDelta delta)

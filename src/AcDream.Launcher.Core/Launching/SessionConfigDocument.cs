@@ -93,6 +93,13 @@ public sealed class SessionDescriptor
     /// </summary>
     public bool? Rynth { get; init; }
 
+    /// <summary>
+    /// Whether the graphical client's Rynth plugins tick on their own pump thread.
+    /// Omitted leaves the client falling back to <c>ACDREAM_RYNTH_PUMP</c> (on
+    /// unless set to <c>0</c>); the windowless client ignores it.
+    /// </summary>
+    public bool? RynthPump { get; init; }
+
     public List<string>? LoginCommands { get; init; }
 
     public int? LoginCommandDelayMs { get; init; }

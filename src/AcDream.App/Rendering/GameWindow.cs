@@ -544,9 +544,11 @@ public sealed class GameWindow :
         _itemDrops = new(() => _uiHost?.Root.DragPayload, () => _overlay.PointerOverWindow,
             line => Serilog.Log.Warning("{ExtensionLine}", line));
         _overlay.ExternalDragActive = () => _uiHost?.Root.DragPayload is not null;
-        _extensions = new AcDream.App.Extensions.ClientExtensionHost(options.Rynth);
+        _extensions = new AcDream.App.Extensions.ClientExtensionHost(options.Rynth, options.RynthPump);
         if (!options.Rynth)
             Serilog.Log.Information("Rynth is turned off for this session; it is not loaded.");
+        else if (!options.RynthPump)
+            Serilog.Log.Information("The Rynth pump is turned off for this session; the plugins tick on the frame thread.");
         _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation, worldTriangles: WorldTriangles, datDirectory: options.DatDir, screen: _clientScreen, input: new AcDream.App.Extensions.ClientInputState(
             () => _retainedInputCapture is { } capture && capture.HasKeyboardFocus,
             () => _automation?.IsInputActive == true), itemDrops: _itemDrops);

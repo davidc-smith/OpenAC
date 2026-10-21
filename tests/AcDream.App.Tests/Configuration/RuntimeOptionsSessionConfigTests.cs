@@ -269,4 +269,39 @@ public sealed class RuntimeOptionsSessionConfigTests
 
         Assert.Equal(expected, options.Rynth);
     }
+
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData("0", null, false)]
+    [InlineData(null, false, false)]
+    [InlineData("0", true, true)]
+    public void TheRynthPumpIsOnUnlessTheDocumentOrTheEnvironmentTurnsItOff(
+        string? environment,
+        bool? declared,
+        bool expected)
+    {
+        var session = new SessionDescriptor
+        {
+            Id = "rynth",
+            Endpoint = new SessionEndpointDescriptor { Host = "127.0.0.1", Port = 9000 },
+            Account = "account",
+            Credential = new SessionCredentialDescriptor
+            {
+                Provider = SessionCredentialProviderKind.Environment,
+                Reference = "X",
+            },
+            RynthPump = declared,
+        };
+
+        RuntimeOptions options = RuntimeOptions.FromSessionConfig(
+            "D:\\dat",
+            name => name == "ACDREAM_RYNTH_PUMP" ? environment : null,
+            "session.json",
+            new SessionConfiguration { Version = 1 },
+            session,
+            "password");
+
+        Assert.Equal(expected, options.RynthPump);
+        Assert.True(options.Rynth);
+    }
 }

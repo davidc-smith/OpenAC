@@ -83,15 +83,45 @@ public sealed unsafe class RynthHost : IDisposable
         }
     }
 
-    /// <summary>Delivers the frame's queued events, then ticks each plugin inside one Nav3D frame, as RynthCore's frame does.</summary>
+    /// <summary>
+    /// Inline mode (the pump off): the frame's queued events, the vendor timeout, the held keys,
+    /// then each plugin inside one Nav3D frame, as RynthCore's frame does. Today's order.
+    /// </summary>
     public void Tick()
     {
         Bridge.DeliverQueued();
-        try { _table.Vendor.Tick(); }
-        catch (Exception error) { _log($"vendor tick failed: {error.Message}"); }
+        TickVendor();
         // A view fault here must not cost the plugins their tick.
+        FrameTick();
+        TickPlugins();
+    }
+
+    /// <summary>The pump's pass: events, the vendor timeout, then each plugin inside one Nav3D frame (RynthCore's TickAll).</summary>
+    public void PumpPass()
+    {
+        Bridge.DeliverQueued();
+        TickVendor();
+        TickPlugins();
+    }
+
+    /// <summary>The frame's part: held keys re-sent (RynthMotionHolds watches the client drop them).</summary>
+    public void FrameTick()
+    {
         try { _table.Holds.Sync(); }
         catch (Exception error) { _log($"holding movement failed: {error.Message}"); }
+    }
+
+    /// <summary>The table every plugin got; the pump sets its action queue.</summary>
+    internal RynthApiTable Table => _table;
+
+    private void TickVendor()
+    {
+        try { _table.Vendor.Tick(); }
+        catch (Exception error) { _log($"vendor tick failed: {error.Message}"); }
+    }
+
+    private void TickPlugins()
+    {
         try { _table.Nav3D.BeginTick(); }
         catch (Exception error) { _log($"Nav3D begin failed: {error.Message}"); }
         try

@@ -86,6 +86,13 @@ public sealed record RuntimeOptions(
     public bool Rynth { get; init; } = true;
 
     /// <summary>
+    /// Whether the Rynth plugins tick on their own pump thread. On unless
+    /// <c>ACDREAM_RYNTH_PUMP=0</c>; a session document's <c>rynthPump</c> outranks it.
+    /// Off keeps today's inline ticking on the frame thread.
+    /// </summary>
+    public bool RynthPump { get; init; } = true;
+
+    /// <summary>
     /// Path to a JSON file holding the startup settings this client was
     /// started with for each plugin: one object of settings per plugin id.
     /// Unset means none. The file is the same map a session configuration
@@ -188,6 +195,7 @@ public sealed record RuntimeOptions(
             PluginTags = ParsePluginTags(env("ACDREAM_PLUGIN_TAGS")),
             VtankProfileDirectoryOverride = NullIfEmpty(env("ACDREAM_VTANK_PROFILE_DIR")),
             Rynth = !string.Equals(env("ACDREAM_RYNTH"), "0", StringComparison.Ordinal),
+            RynthPump = !string.Equals(env("ACDREAM_RYNTH_PUMP"), "0", StringComparison.Ordinal),
             PluginSettingsFile =
                 NullIfEmpty(env("ACDREAM_PLUGIN_SETTINGS_FILE")),
         };
@@ -240,6 +248,7 @@ public sealed record RuntimeOptions(
                     declared)
                 : null,
             Rynth = session.Rynth ?? baseOptions.Rynth,
+            RynthPump = session.RynthPump ?? baseOptions.RynthPump,
             DeclaredCharacterOptions =
                 AcDream.Runtime.Gameplay.RuntimeDeclaredCharacterOptions.Parse(
                     session.Id,
