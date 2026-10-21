@@ -31,7 +31,13 @@ internal static class MarkupContextMenu
                 : MarkupDocument.BindBoolList(enabled, binding, "contextmenu enabled"),
             Selected = MarkupDocument.BindRequiredIntAction(
                 (string?)el.Attribute("onselect"), binding, "contextmenu onselect"),
-            Opening = opened is null ? null : (_, _) => opened(-1),
+            Opening = owner is UiMarkupList list
+                ? (x, y) =>
+                {
+                    int row = list.PrepareContextMenu(x, y);
+                    opened?.Invoke(row);
+                }
+                : opened is null ? null : (_, _) => opened(-1),
         };
         owner.AddChild(menu);
         owner.ContextMenu = menu;
