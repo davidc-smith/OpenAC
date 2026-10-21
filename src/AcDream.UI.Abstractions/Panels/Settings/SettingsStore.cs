@@ -11,6 +11,9 @@ namespace AcDream.UI.Abstractions.Panels.Settings;
 
 public readonly record struct UiWindowPosition(float X, float Y);
 
+/// <summary>One remembered markup control value: which window, which named control, which kind of state.</summary>
+public readonly record struct MarkupControlKey(string Window, string Control, string Kind);
+
 public sealed class SettingsStore
 {
     private const int CurrentSchemaVersion = 4;
@@ -378,6 +381,70 @@ public sealed class SettingsStore
             ["x"] = position.X,
             ["y"] = position.Y,
         };
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
+    /// <summary>
+    /// What a character's markup controls remember, read from
+    /// <c>markupControls[toonKey][window][control][kind]</c>. Anything that is
+    /// not an object where one is expected, or not a string value, is skipped.
+    /// </summary>
+    /// <returns>False when the file exists but couldn't be read or parsed; values is then empty and must not be saved over.</returns>
+    public bool TryLoadMarkupControlState(string toonKey, out Dictionary<MarkupControlKey, string> values)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        values = new Dictionary<MarkupControlKey, string>();
+        if (!File.Exists(_path)) return true;
+        try
+        {
+            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            if (root?["markupControls"] is not JsonObject characters
+                || characters[toonKey] is not JsonObject windows)
+            {
+                return true;
+            }
+            foreach (var (window, windowNode) in windows)
+            {
+                if (windowNode is not JsonObject controls) continue;
+                foreach (var (control, controlNode) in controls)
+                {
+                    if (controlNode is not JsonObject kinds) continue;
+                    foreach (var (kind, valueNode) in kinds)
+                    {
+                        if (valueNode is JsonValue value && value.TryGetValue(out string? text) && text is not null)
+                            values[new MarkupControlKey(window, control, kind)] = text;
+                    }
+                }
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load markup control state from {_path}: {ex.Message}");
+            values = new Dictionary<MarkupControlKey, string>();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Replaces everything a character's markup controls remember, keeping
+    /// every other section and every other character.
+    /// </summary>
+    public void SaveMarkupControlState(string toonKey, IReadOnlyDictionary<MarkupControlKey, string> values)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentNullException.ThrowIfNull(values);
+
+        JsonObject root = LoadMutableRoot();
+        var windows = new JsonObject();
+        foreach (var (key, value) in values)
+        {
+            JsonObject controls = GetOrCreateObject(windows, key.Window);
+            JsonObject kinds = GetOrCreateObject(controls, key.Control);
+            kinds[key.Kind] = value;
+        }
+        GetOrCreateObject(root, "markupControls")[toonKey] = windows;
         root["version"] = CurrentSchemaVersion;
         WriteMutableRoot(root);
     }
