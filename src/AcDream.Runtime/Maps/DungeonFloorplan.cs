@@ -37,9 +37,15 @@ internal sealed class DungeonFloorplanCounts
     public int Slopes { get; set; }
     public int WallsAfterMerge { get; set; }
 
+    /// <summary>Standing faces left out because they start too far above the floor they stand on.</summary>
+    public int WallsAboveFloor { get; set; }
+
+    /// <summary><see cref="WallsAboveFloor"/> by the band each would have been drawn in.</summary>
+    public SortedDictionary<float, int> WallsAboveFloorByBand { get; } = new();
+
     public override string ToString() =>
         $"polygons={Polygons} floors={Floors} ceilings={Ceilings} walls={Walls}"
-        + $" merged={WallsAfterMerge} doorways={Portals} slopes={Slopes}";
+        + $" above-floor={WallsAboveFloor} merged={WallsAfterMerge} doorways={Portals} slopes={Slopes}";
 }
 
 /// <summary>
@@ -75,10 +81,12 @@ internal readonly record struct DungeonFloorplanWall(Vector2 Start, Vector2 End)
 /// <param name="CellId">The full cell id, landblock in the high half.</param>
 /// <param name="Center">The middle of the cell's geometry, in landblock-local metres.</param>
 /// <param name="LayerZ">The key of the layer the cell was drawn in.</param>
+/// <param name="Floors">The cell's own up-facing polygons, corners placed in landblock-local metres with their heights.</param>
 internal readonly record struct DungeonFloorplanCell(
     uint CellId,
     Vector3 Center,
-    float LayerZ);
+    float LayerZ,
+    ImmutableArray<ImmutableArray<Vector3>> Floors);
 
 /// <summary>The box around a plan, in landblock-local metres.</summary>
 internal readonly record struct DungeonFloorplanBounds(Vector3 Min, Vector3 Max)

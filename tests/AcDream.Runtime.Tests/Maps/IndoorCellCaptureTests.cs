@@ -83,6 +83,46 @@ public sealed class IndoorCellCaptureTests
     }
 
     [Fact]
+    public void EachDoorwaySaysWhichWayItFacesAndWhereItsSillIs()
+    {
+        var content = new DelveLandblock();
+        var map = new RuntimeDungeonMapAutomation();
+        map.BindContent(content, content.Lock);
+
+        IReadOnlyList<PluginIndoorCell> cells = map.CaptureIndoorCells(DelveLandblock.Landblock);
+        PluginIndoorCell Cell(uint id) => cells.Single(cell => cell.CellId == id);
+
+        PluginCellDoorway door = Assert.Single(Cell(DelveLandblock.Corridor).Doorways);
+        Assert.Equal(PluginDoorwayKind.Upright, door.Kind);
+        Assert.Equal(6f, door.Sill, 3);
+
+        PluginCellDoorway up = Assert.Single(Cell(DelveLandblock.ShaftBottom).Doorways);
+        Assert.Equal(PluginDoorwayKind.Ceiling, up.Kind);
+        Assert.Equal(6f, up.Sill, 3);
+
+        PluginCellDoorway down = Assert.Single(Cell(DelveLandblock.ShaftTop).Doorways);
+        Assert.Equal(PluginDoorwayKind.Floor, down.Kind);
+        Assert.Equal(6f, down.Sill, 3);
+
+        // A flat cell's opening is at its own middle; the cell beyond is lower.
+        PluginCellDoorway cap = Assert.Single(Cell(DelveLandblock.Cap).Doorways);
+        Assert.Equal(PluginDoorwayKind.Floor, cap.Kind);
+    }
+
+    [Fact]
+    public void ADoorwayWhosePolygonIsMissingIsUnknownAtTheOriginsHeight()
+    {
+        var content = new TwoRoomLandblock();
+        var map = new RuntimeDungeonMapAutomation();
+        map.BindContent(content, content.Lock);
+
+        PluginCellDoorway outside = Assert.Single(map.CaptureIndoorCells(TwoRoomLandblock.Landblock)[1].Doorways);
+
+        Assert.Equal(PluginDoorwayKind.Unknown, outside.Kind);
+        Assert.Equal(7.2f, outside.Sill, 3);
+    }
+
+    [Fact]
     public void ACellMadeWithoutDoorwaysHasAnEmptyList()
     {
         Assert.Empty(default(PluginIndoorCell).Doorways);

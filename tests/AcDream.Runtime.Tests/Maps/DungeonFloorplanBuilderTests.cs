@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Numerics;
 using AcDream.Runtime.Maps;
 
@@ -62,6 +63,7 @@ public sealed class DungeonFloorplanBuilderTests
         Assert.Equal(2, plan.Counts.Ceilings);
         Assert.Equal(1, plan.Counts.Portals);
         Assert.Equal(8, plan.Counts.Walls);
+        Assert.Equal(0, plan.Counts.WallsAboveFloor);
         Assert.Equal(7, plan.Counts.WallsAfterMerge);
     }
 
@@ -124,6 +126,8 @@ public sealed class DungeonFloorplanBuilderTests
         Assert.Equal(2, plan.Counts.Ceilings);
         Assert.Equal(1, plan.Counts.Portals);
         Assert.Equal(12, plan.Counts.Walls);
+        // The upper cell's walls start six metres over the floor it folds onto.
+        Assert.Equal(4, plan.Counts.WallsAboveFloor);
         Assert.Equal(8, plan.Counts.WallsAfterMerge);
     }
 
@@ -155,7 +159,75 @@ public sealed class DungeonFloorplanBuilderTests
         Assert.Equal(1, plan.Counts.Ceilings);
         Assert.Equal(2, plan.Counts.Portals);
         Assert.Equal(12, plan.Counts.Walls);
+        Assert.Equal(8, plan.Counts.WallsAboveFloor);
         Assert.Equal(4, plan.Counts.WallsAfterMerge);
+    }
+
+    [Fact]
+    public void ARampsFloorKeepsItsRealHeights()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        DungeonFloorplanCell ramp = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.Ramp);
+        ImmutableArray<Vector3> floor = Assert.Single(ramp.Floors);
+        Assert.Equal(
+            [new(100f, 100f, 0f), new(110f, 100f, 0f), new(110f, 108f, 6f), new(100f, 108f, 6f)],
+            floor.ToArray());
+    }
+
+    [Fact]
+    public void ALintelOverADoorwayIsNotAWallAndTheDoorwayIsAGap()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        DungeonFloorplanLayer band = plan.Layers.Single(static layer => layer.Z == 6f);
+        DungeonFloorplanWall[] south = band.Walls
+            .Where(static wall => MathF.Abs(wall.Start.Y - 20f) < 0.01f && MathF.Abs(wall.End.Y - 20f) < 0.01f)
+            .ToArray();
+        Assert.Equal(2, south.Length);
+        Assert.Contains(south, wall => Matches(wall, new Vector2(20f, 20f), new Vector2(24f, 20f)));
+        Assert.Contains(south, wall => Matches(wall, new Vector2(26f, 20f), new Vector2(30f, 20f)));
+    }
+
+    [Fact]
+    public void ATallRoomsUpperCellFoldsDownAndItsWallsAreDropped()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        DungeonFloorplanCell top = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.ShaftTop);
+        Assert.Equal(0f, top.LayerZ);
+        Assert.Empty(top.Floors);
+        Assert.DoesNotContain(plan.Layers, static layer => layer.Z == 6f && layer.Walls.Any(static wall => wall.Start.X >= 59f));
+        // The shaft's four walls outline it once, from the bottom cell; the
+        // top cell's four, six metres up, and the corridor's lintel are dropped.
+        DungeonFloorplanLayer ground = plan.Layers.Single(static layer => layer.Z == 0f);
+        Assert.Equal(4, ground.Walls.Count(static wall => wall.Start.X >= 59f));
+        Assert.Equal(5, plan.Counts.WallsAboveFloor);
+    }
+
+    [Fact]
+    public void AFlatCellFoldsOntoTheCellItsOpeningLeadsDownTo()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        Assert.Equal(0f, plan.Cells.Single(static cell => cell.CellId == DelveLandblock.Cap).LayerZ);
+    }
+
+    [Fact]
+    public void AFloorlessCellBesideALowerCellDoesNotFoldSideways()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        DungeonFloorplanCell beside = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.Beside);
+        Assert.Equal(12f, beside.LayerZ);
+        // With no way down it keeps every wall, so it does not vanish.
+        DungeonFloorplanLayer band = plan.Layers.Single(static layer => layer.Z == 12f);
+        Assert.Equal(3, band.Walls.Length);
     }
 
     private static bool Matches(DungeonFloorplanWall wall, Vector2 a, Vector2 b) =>

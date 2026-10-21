@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Numerics;
 using AcDream.Core.Content;
+using AcDream.Plugin.Abstractions;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Types;
 
@@ -11,8 +12,9 @@ namespace AcDream.Runtime.Maps;
 /// geometry the game data carries: each indoor cell's structure, placed by
 /// the cell's own position and turn, with every polygon flattened onto the
 /// ground plane. A level polygon that faces up is floor; a standing polygon
-/// is a wall, seen edge-on as a line; the doorways between cells, which the
-/// data lists as portal polygons, are left open.
+/// that reaches down to the floor it stands on is a wall, seen edge-on as a
+/// line; the doorways between cells, which the data lists as portal
+/// polygons, are left open.
 ///
 /// <para>The game files are read with the caller's lock held and only for as
 /// long as the read takes; the flattening runs afterwards, off the lock. What
@@ -27,7 +29,7 @@ internal sealed class DungeonFloorplanBuilder
     /// angle from straight up, to count as level: 0.7 is about 45 degrees,
     /// so a stair ramp is floor and a steep chute is not.
     /// </summary>
-    private const float LevelMinimumUp = 0.7f;
+    internal const float LevelMinimumUp = 0.7f;
 
     /// <summary>
     /// The most a polygon's normal may lean up or down, as a cosine, to
@@ -55,6 +57,25 @@ internal sealed class DungeonFloorplanBuilder
 
     /// <summary>A wall shorter than this, in metres, is a sliver and dropped.</summary>
     private const float MinimumWallMetres = 0.01f;
+
+    /// <summary>
+    /// How far above the floor it stands on, in metres, a standing face may
+    /// start and still be a wall: a real wall starts at the floor or within a
+    /// ramp's step of it, a door's lintel three metres or more up.
+    /// </summary>
+    private const float WallReachMetres = 1f;
+
+    /// <summary>
+    /// How far across, in metres, a floor corner may be from a wall's foot
+    /// and still be the floor the wall stands on.
+    /// </summary>
+    private const float FloorCornerReachMetres = 1f;
+
+    /// <summary>
+    /// A level opening this close to its cell's middle height, in metres, is
+    /// in a flat cell: neither above nor below the middle.
+    /// </summary>
+    private const float FlatCellMetres = 0.05f;
 
     private readonly IDatObjectSource _dats;
     private readonly object _datLock;
@@ -121,14 +142,16 @@ internal sealed class DungeonFloorplanBuilder
         // Every cell is flattened first: its floor goes straight into the
         // band of its own height, since a floor is at the height it is at
         // whatever the cell's origin says; its walls wait until the cell's
-        // band is known.
+        // band, and the floor they stand on, are known.
         var flattened = new List<FlattenedCell>(placed.Count);
         foreach (PlacedCell cell in placed)
         {
             Matrix4x4 transform = Matrix4x4.CreateFromQuaternion(cell.Orientation)
                 * Matrix4x4.CreateTranslation(cell.Origin);
             var cellBounds = DungeonFloorplanBounds.Empty;
-            var walls = new List<WallSpan>();
+            var walls = new List<WallCandidate>();
+            var floors = ImmutableArray.CreateBuilder<ImmutableArray<Vector3>>();
+            var levelOpenings = new List<(ushort PolygonId, float Height)>();
             float floorHeight = 0f;
             int floorVertices = 0;
 
@@ -142,15 +165,17 @@ internal sealed class DungeonFloorplanBuilder
                     cellBounds = cellBounds.Including(world[index]);
                 }
 
+                Vector3 facing = Vector3.Transform(polygon.WindingNormal, cell.Orientation);
+                float up = MathF.Abs(facing.Z);
                 if (polygon.IsPortal)
                 {
                     counts.Portals++;
+                    if (up >= LevelMinimumUp)
+                        levelOpenings.Add((polygon.PolygonId, MiddleHeight(world)));
                     continue;
                 }
 
-                Vector3 facing = Vector3.Transform(polygon.WindingNormal, cell.Orientation);
                 Vector3 shading = Vector3.Transform(polygon.MeanVertexNormal, cell.Orientation);
-                float up = MathF.Abs(facing.Z);
                 if (up >= LevelMinimumUp)
                 {
                     // The authored vertex normals say which way a level
@@ -165,6 +190,7 @@ internal sealed class DungeonFloorplanBuilder
                             height += vertex.Z;
                         height /= world.Length;
                         Layer(LayerKey(height)).Floors.Add(ProjectFloor(world));
+                        floors.Add(ImmutableArray.Create(world));
                         floorHeight += height * world.Length;
                         floorVertices += world.Length;
                     }
@@ -178,7 +204,7 @@ internal sealed class DungeonFloorplanBuilder
                     if (TryProjectWall(world, facing, out WallSpan span))
                     {
                         counts.Walls++;
-                        walls.Add(span);
+                        walls.Add(new WallCandidate(span, LowestCorner(world)));
                     }
                 }
                 else
@@ -190,26 +216,37 @@ internal sealed class DungeonFloorplanBuilder
             if (cellBounds.IsEmpty)
                 continue;
             bounds = bounds.Including(cellBounds.Min).Including(cellBounds.Max);
+            Vector3 center = (cellBounds.Min + cellBounds.Max) * 0.5f;
+
             flattened.Add(new FlattenedCell(
                 cell.CellId,
                 cell.Neighbours,
-                (cellBounds.Min + cellBounds.Max) * 0.5f,
+                levelOpenings,
+                center,
                 floorVertices == 0 ? null : LayerKey(floorHeight / floorVertices),
                 LayerKey(cell.Origin.Z),
+                floors.ToImmutable(),
                 walls));
         }
 
         // A tall room is authored as a cell on top of a cell: the upper one
-        // has walls and a ceiling but no floor, and its doorway list names
-        // the cell it opens onto below. Its walls belong in that cell's
-        // band, or the band above would show an empty outline of the room
-        // below. A cell with a floor is drawn in its floor's band; a cell
-        // with no floor and no way down stays in the band its origin is in.
+        // has walls and a ceiling but no floor, and opens through a level
+        // doorway in its own floor onto the cell below. Its walls belong in
+        // that cell's band, or the band above would show an empty outline of
+        // the room below. A cell with a floor is drawn in its floor's band; a
+        // cell with no floor and no way down -- a doorway beside it does not
+        // count -- stays in the band its origin is in. A folded cell stands
+        // on the floor of the cell it folds onto.
+        var middles = flattened.ToDictionary(static cell => cell.CellId, static cell => cell.Center.Z);
         var bands = new Dictionary<uint, float>(flattened.Count);
+        var standsOn = new Dictionary<uint, ImmutableArray<ImmutableArray<Vector3>>>(flattened.Count);
         foreach (FlattenedCell cell in flattened)
         {
             if (cell.FloorBand is { } floorBand)
+            {
                 bands[cell.CellId] = floorBand;
+                standsOn[cell.CellId] = cell.Floors;
+            }
         }
         var unresolved = flattened.Where(static cell => cell.FloorBand is null).ToList();
         // A cell may open onto another floorless cell, so folding goes
@@ -221,18 +258,20 @@ internal sealed class DungeonFloorplanBuilder
             {
                 FlattenedCell cell = unresolved[index];
                 float? below = null;
-                foreach (uint neighbour in cell.Neighbours)
+                uint onto = 0u;
+                foreach (uint neighbour in WaysDown(cell, landblock, middles))
                 {
                     if (bands.TryGetValue(landblock | neighbour, out float band)
-                        && band < cell.OriginBand
                         && (below is null || band > below))
                     {
                         below = band;
+                        onto = landblock | neighbour;
                     }
                 }
                 if (below is { } found)
                 {
                     bands[cell.CellId] = found;
+                    standsOn[cell.CellId] = standsOn[onto];
                     unresolved.RemoveAt(index);
                     folded = true;
                 }
@@ -245,8 +284,34 @@ internal sealed class DungeonFloorplanBuilder
         foreach (FlattenedCell cell in flattened)
         {
             float band = bands[cell.CellId];
-            Layer(band).Walls.AddRange(cell.Walls);
-            cells.Add(new DungeonFloorplanCell(cell.CellId, cell.Center, band));
+            LayerBuilder layer = Layer(band);
+            // A standing face is a wall only where it reaches down to the
+            // floor it stands on: a lintel over a doorway, or the walls of a
+            // tall room's upper cell, would otherwise close every doorway on
+            // the plan. A floorless cell with no way down keeps every wall,
+            // or it would vanish from the map.
+            if (standsOn.TryGetValue(cell.CellId, out ImmutableArray<ImmutableArray<Vector3>> floor))
+            {
+                foreach (WallCandidate wall in cell.Walls)
+                {
+                    if (wall.Lowest.Z - FloorHeightAt(floor, wall.Lowest) <= WallReachMetres)
+                    {
+                        layer.Walls.Add(wall.Span);
+                    }
+                    else
+                    {
+                        counts.WallsAboveFloor++;
+                        counts.WallsAboveFloorByBand[band] =
+                            counts.WallsAboveFloorByBand.GetValueOrDefault(band) + 1;
+                    }
+                }
+            }
+            else
+            {
+                foreach (WallCandidate wall in cell.Walls)
+                    layer.Walls.Add(wall.Span);
+            }
+            cells.Add(new DungeonFloorplanCell(cell.CellId, cell.Center, band, cell.Floors));
         }
 
         var built = ImmutableArray.CreateBuilder<DungeonFloorplanLayer>(layers.Count);
@@ -268,6 +333,169 @@ internal sealed class DungeonFloorplanBuilder
     /// <summary>The band a cell at height <paramref name="z"/> is drawn in.</summary>
     internal static float LayerKey(float z) =>
         MathF.Floor((z + LayerOffset) / LayerHeight) * LayerHeight;
+
+    /// <summary>
+    /// The cells a cell opens onto through a level doorway in its floor: the
+    /// same test a plugin's doorway kind makes.
+    /// </summary>
+    private static IEnumerable<uint> WaysDown(FlattenedCell cell, uint landblock, Dictionary<uint, float> middles)
+    {
+        foreach ((uint other, ushort polygonId) in cell.Neighbours)
+        {
+            foreach ((ushort openingId, float height) in cell.LevelOpenings)
+            {
+                if (openingId != polygonId)
+                    continue;
+                float? otherMiddle = middles.TryGetValue(landblock | other, out float found) ? found : null;
+                if (LevelOpeningKind(height, cell.Center.Z, otherMiddle) == PluginDoorwayKind.Floor)
+                    yield return other;
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The height of the floor a point stands on: the plane of the floor
+    /// polygon under it, the one nearest the point's height where floors
+    /// overlap. A wall stands on a floor's edge, so its corner is often just
+    /// outside every polygon; then the lowest floor corner within
+    /// <see cref="FloorCornerReachMetres"/> across, and failing that the
+    /// lowest floor height there is.
+    /// </summary>
+    private static float FloorHeightAt(ImmutableArray<ImmutableArray<Vector3>> floors, Vector3 point)
+    {
+        var flat = new Vector2(point.X, point.Y);
+        float? under = null;
+        foreach (ImmutableArray<Vector3> floor in floors)
+        {
+            if (!Covers(floor, flat))
+                continue;
+            float height = PlaneHeight(floor, flat);
+            if (under is null || MathF.Abs(height - point.Z) < MathF.Abs(under.Value - point.Z))
+                under = height;
+        }
+        if (under is { } found)
+            return found;
+
+        float? nearby = null;
+        float lowest = float.MaxValue;
+        foreach (ImmutableArray<Vector3> floor in floors)
+        {
+            foreach (Vector3 corner in floor)
+            {
+                lowest = MathF.Min(lowest, corner.Z);
+                if (Vector2.Distance(new Vector2(corner.X, corner.Y), flat) <= FloorCornerReachMetres
+                    && (nearby is null || corner.Z < nearby))
+                {
+                    nearby = corner.Z;
+                }
+            }
+        }
+        return nearby ?? lowest;
+    }
+
+    /// <summary>
+    /// Whether a floor polygon, seen from above, covers a point, counting
+    /// a point within <see cref="MergeOffsetMetres"/> of its edge.
+    /// </summary>
+    private static bool Covers(ImmutableArray<Vector3> floor, Vector2 point)
+    {
+        bool inside = false;
+        for (int index = 0, previous = floor.Length - 1; index < floor.Length; previous = index++)
+        {
+            var a = new Vector2(floor[index].X, floor[index].Y);
+            var b = new Vector2(floor[previous].X, floor[previous].Y);
+            if (DistanceToSegment(point, a, b) <= MergeOffsetMetres)
+                return true;
+            if ((a.Y > point.Y) != (b.Y > point.Y)
+                && point.X < (b.X - a.X) * (point.Y - a.Y) / (b.Y - a.Y) + a.X)
+            {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+
+    private static float DistanceToSegment(Vector2 point, Vector2 a, Vector2 b)
+    {
+        Vector2 along = b - a;
+        float lengthSquared = along.LengthSquared();
+        float t = lengthSquared < 1e-12f ? 0f : Math.Clamp(Vector2.Dot(point - a, along) / lengthSquared, 0f, 1f);
+        return Vector2.Distance(point, a + along * t);
+    }
+
+    /// <summary>The height of a level polygon's plane over a point.</summary>
+    private static float PlaneHeight(ImmutableArray<Vector3> floor, Vector2 point)
+    {
+        Vector3 normal = WindingNormal(floor.AsSpan());
+        Vector3 corner = floor[0];
+        if (MathF.Abs(normal.Z) < 1e-6f)
+            return corner.Z;
+        return corner.Z - ((normal.X * (point.X - corner.X)) + (normal.Y * (point.Y - corner.Y))) / normal.Z;
+    }
+
+    private static Vector3 LowestCorner(Vector3[] world)
+    {
+        Vector3 lowest = world[0];
+        foreach (Vector3 vertex in world)
+        {
+            if (vertex.Z < lowest.Z)
+                lowest = vertex;
+        }
+        return lowest;
+    }
+
+    /// <summary>
+    /// Whether a level opening is in a cell's floor or its ceiling: below the
+    /// middle of the cell's geometry it is floor, above it ceiling. A flat
+    /// cell, nothing but the opening, has it at its middle; then the cell
+    /// beyond decides, floor when its middle is lower, and ceiling when it
+    /// is not or is not known.
+    /// </summary>
+    /// <param name="openingHeight">The middle height of the opening's corners.</param>
+    /// <param name="cellMiddle">The middle height of the cell's geometry.</param>
+    /// <param name="otherMiddle">The middle height of the cell beyond, when known.</param>
+    internal static PluginDoorwayKind LevelOpeningKind(float openingHeight, float cellMiddle, float? otherMiddle)
+    {
+        if (openingHeight < cellMiddle - FlatCellMetres)
+            return PluginDoorwayKind.Floor;
+        if (openingHeight > cellMiddle + FlatCellMetres)
+            return PluginDoorwayKind.Ceiling;
+        return otherMiddle < cellMiddle ? PluginDoorwayKind.Floor : PluginDoorwayKind.Ceiling;
+    }
+
+    /// <summary>The middle of the box around a polygon's corners, up the vertical.</summary>
+    private static float MiddleHeight(Vector3[] world)
+    {
+        float minimum = float.MaxValue;
+        float maximum = float.MinValue;
+        foreach (Vector3 vertex in world)
+        {
+            minimum = MathF.Min(minimum, vertex.Z);
+            maximum = MathF.Max(maximum, vertex.Z);
+        }
+        return (minimum + maximum) * 0.5f;
+    }
+
+    /// <summary>
+    /// A polygon's normal from its vertex order, summed over every edge so a
+    /// bent or many-sided polygon still gives its overall facing; zero for a
+    /// polygon with no area.
+    /// </summary>
+    internal static Vector3 WindingNormal(ReadOnlySpan<Vector3> points)
+    {
+        var normal = Vector3.Zero;
+        for (int index = 0; index < points.Length; index++)
+        {
+            Vector3 current = points[index];
+            Vector3 next = points[(index + 1) % points.Length];
+            normal.X += (current.Y - next.Y) * (current.Z + next.Z);
+            normal.Y += (current.Z - next.Z) * (current.X + next.X);
+            normal.Z += (current.X - next.X) * (current.Y + next.Y);
+        }
+        float length = normal.Length();
+        return length < 1e-9f ? Vector3.Zero : normal / length;
+    }
 
     /// <summary>
     /// Reads the landblock's cells with the lock held, and nothing more:
@@ -341,9 +569,9 @@ internal sealed class DungeonFloorplanBuilder
                 ? geometry
                 : geometry.WithOpenings(openings);
 
-            var neighbours = new List<uint>(envCell.CellPortals.Count);
+            var neighbours = new List<(uint OtherCellId, ushort PolygonId)>(envCell.CellPortals.Count);
             foreach (CellPortal portal in envCell.CellPortals)
-                neighbours.Add(portal.OtherCellId);
+                neighbours.Add((portal.OtherCellId, portal.PolygonId));
 
             placed.Add(new PlacedCell(
                 cellId,
@@ -478,27 +706,38 @@ internal sealed class DungeonFloorplanBuilder
     /// <summary>A wall line before merging: its direction, its sideways offset from the origin, and its extent along the direction.</summary>
     private readonly record struct WallSpan(Vector2 Along, float Offset, float Minimum, float Maximum);
 
-    /// <param name="Neighbours">The low halves of the cells this cell's doorways open onto.</param>
+    /// <param name="Neighbours">
+    /// The low halves of the cells this cell's doorways open onto, each with
+    /// the polygon of the doorway it opens through.
+    /// </param>
     private readonly record struct PlacedCell(
         uint CellId,
         Vector3 Origin,
         Quaternion Orientation,
         CellGeometry Geometry,
-        List<uint> Neighbours);
+        List<(uint OtherCellId, ushort PolygonId)> Neighbours);
+
+    /// <summary>A standing face that may be a wall: its line, and its lowest corner, placed.</summary>
+    private readonly record struct WallCandidate(WallSpan Span, Vector3 Lowest);
 
     /// <summary>
     /// A cell after flattening, before its band is settled: its floor is
     /// already in the band of its own height, its walls are still waiting.
     /// </summary>
+    /// <param name="Neighbours">The low halves of the cells its doorways open onto, each with the doorway's polygon.</param>
+    /// <param name="LevelOpenings">Its level doorway polygons, each with the middle height of its corners.</param>
     /// <param name="FloorBand">The band of the cell's floor, weighted by vertex; null when the cell has no floor.</param>
     /// <param name="OriginBand">The band the cell's origin is in.</param>
+    /// <param name="Floors">The cell's own floor polygons, placed.</param>
     private readonly record struct FlattenedCell(
         uint CellId,
-        List<uint> Neighbours,
+        List<(uint OtherCellId, ushort PolygonId)> Neighbours,
+        List<(ushort PolygonId, float Height)> LevelOpenings,
         Vector3 Center,
         float? FloorBand,
         float OriginBand,
-        List<WallSpan> Walls);
+        ImmutableArray<ImmutableArray<Vector3>> Floors,
+        List<WallCandidate> Walls);
 
     /// <summary>One polygon of a structure, in the structure's own frame.</summary>
     private readonly record struct PolygonGeometry(
@@ -569,26 +808,6 @@ internal sealed class DungeonFloorplanBuilder
                 polygons[index] = polygon with { IsPortal = openings.Contains(polygon.PolygonId) };
             }
             return new CellGeometry(polygons, openings.ToImmutableHashSet());
-        }
-
-        /// <summary>
-        /// The polygon's normal from its vertex order, summed over every
-        /// edge so a bent or many-sided polygon still gives its overall
-        /// facing.
-        /// </summary>
-        private static Vector3 WindingNormal(Vector3[] points)
-        {
-            var normal = Vector3.Zero;
-            for (int index = 0; index < points.Length; index++)
-            {
-                Vector3 current = points[index];
-                Vector3 next = points[(index + 1) % points.Length];
-                normal.X += (current.Y - next.Y) * (current.Z + next.Z);
-                normal.Y += (current.Z - next.Z) * (current.X + next.X);
-                normal.Z += (current.X - next.X) * (current.Y + next.Y);
-            }
-            float length = normal.Length();
-            return length < 1e-9f ? Vector3.Zero : normal / length;
         }
     }
 }

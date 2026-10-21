@@ -88,7 +88,8 @@ public sealed class DungeonFloorplanSpikeInstalledDatTests
             foreach (DungeonFloorplanLayer layer in plan.Layers)
             {
                 line += $"\n    layer z={layer.Z,6:F0}: floors={layer.Floors.Length,4} walls={layer.Walls.Length,4}"
-                    + $" cells={plan.Cells.Count(cell => cell.LayerZ == layer.Z),3}";
+                    + $" cells={plan.Cells.Count(cell => cell.LayerZ == layer.Z),3}"
+                    + $" above-floor={plan.Counts.WallsAboveFloorByBand.GetValueOrDefault(layer.Z),4}";
             }
             stats.AppendLine(line);
             _output.WriteLine(line);
