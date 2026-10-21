@@ -188,8 +188,9 @@ them.
 <separator x="8" y="40" w="200" h="1"/>
 ```
 
-- A 1px line in the theme's border colour (Classic: the panel border
-  colour). Vertical when `h > w`. `color` overrides. Not focusable, no events.
+- A 1px line in the theme's border colour (Classic: the unlit lamp's
+  muted colour, #FF61573B). Vertical when `h > w`. `color` overrides. Not
+  focusable, no events; clicks pass through.
 
 ## 6. `<expander>` (series 5)
 
