@@ -4,13 +4,13 @@
     {
       "id": 0,
       "subject": "Task 0: Settings test baseline",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Record the `AcDream.UI.Abstractions.Tests` failures before this series touches `SettingsStore` (earlier series never ran that project).\n\n**Files:**\n- Create: `/private/tmp/claude-501/-Users-davidsmith-code-OpenAC-OpenAC/mc-uiabs-base.txt`\n\n**Acceptance Criteria:**\n- [ ] The file lists the failing test names of `AcDream.UI.Abstractions.Tests` at 0b42572a, timings stripped, sorted (may be empty).\n\n**Verify:** `wc -l < /private/tmp/claude-501/-Users-davidsmith-code-OpenAC-OpenAC/mc-uiabs-base.txt` \u2192 a count.\n\nFull steps: docs/superpowers/plans/2026-10-21-markup-controls-4-separator-state.md (branch docs/markup-controls-spec).\n\n```json:metadata\n{\"files\": [\"/private/tmp/claude-501/-Users-davidsmith-code-OpenAC-OpenAC/mc-uiabs-base.txt\"], \"verifyCommand\": \"`wc -l < /private/tmp/claude-501/-Users-davidsmith-code-OpenAC-OpenAC/mc-uiabs-base.txt` \\u2192 a count.\", \"acceptanceCriteria\": [\"The file lists the failing test names of `AcDream.UI.Abstractions.Tests` at 0b42572a, timings stripped, sorted (may be empty).\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 1,
       "subject": "Task 1: The `markupControls` settings section",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `SettingsStore` loads and saves what a character's markup controls remember, without disturbing any other section.\n\n**Files:**\n- Modify: `src/AcDream.UI.Abstractions/Panels/Settings/SettingsStore.cs`\n- Test: `tests/AcDream.UI.Abstractions.Tests/Panels/Settings/MarkupControlStateSettingsTests.cs`\n\n**Acceptance Criteria:**\n- [ ] `SaveMarkupControlState(toon, values)` then `LoadMarkupControlState(toon)` returns the same keys and values.\n- [ ] A save replaces that character's whole set (keys left out are gone) and leaves other characters and every other section (e.g. `windowPositions`) intact; another section's save leaves `markupControls` intact.\n- [ ] A missing file loads empty; non-object windows/controls and non-string values are skipped while valid siblings still load; a blank or null key throws `ArgumentException`.\n\n**Verify:** `dotnet test tests/AcDream.UI.Abstractions.Tests/AcDream.UI.Abstractions.Tests.csproj --filter \"FullyQualifiedName~MarkupControlStateSettingsTests\"` \u2192 all pass.\n\nFull steps: docs/superpowers/plans/2026-10-21-markup-controls-4-separator-state.md (branch docs/markup-controls-spec).\n\n```json:metadata\n{\"files\": [\"src/AcDream.UI.Abstractions/Panels/Settings/SettingsStore.cs\", \"tests/AcDream.UI.Abstractions.Tests/Panels/Settings/MarkupControlStateSettingsTests.cs\"], \"verifyCommand\": \"`dotnet test tests/AcDream.UI.Abstractions.Tests/AcDream.UI.Abstractions.Tests.csproj --filter \\\"FullyQualifiedName~MarkupControlStateSettingsTests\\\"` \\u2192 all pass.\", \"acceptanceCriteria\": [\"`SaveMarkupControlState(toon, values)` then `LoadMarkupControlState(toon)` returns the same keys and values.\", \"A save replaces that character's whole set (keys left out are gone) and leaves other characters and every other section (e.g. `windowPositions`) intact; another section's save leaves `markupControls` intact.\", \"A missing file loads empty; non-object windows/controls and non-string values are skipped while valid siblings still load; a blank or null key throws `ArgumentException`.\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         0
@@ -19,7 +19,7 @@
     {
       "id": 2,
       "subject": "Task 2: `MarkupControlStateStore`",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** One in-memory store for every markup window's remembered values, following the logged-in character and saving on request.\n\n**Files:**\n- Create: `src/AcDream.App/UI/Markup/IMarkupControlState.cs`\n- Create: `src/AcDream.App/UI/Markup/MarkupControlStateStore.cs`\n- Test: `tests/AcDream.App.Tests/UI/MarkupControlStateStoreTests.cs`\n\n**Acceptance Criteria:**\n- [ ] `ForWindow(name).Set(control, kind, value)` then `Get` returns it; windows, controls and kinds don't collide.\n- [ ] `Save()` writes only when something changed; values set but not saved are not in the file; saved values load into a fresh store.\n- [ ] When the character key changes, the previous character's unsaved changes are written first, the new character's values are loaded, and `Generation` increases; `Generation` is stable while the character stays the same.\n- [ ] With no `SettingsStore`, values still work for the session and `Save()` does nothing; a blank character key is never written.\n- [ ] `ForWindow` with a blank name throws.\n\n**Verify:** `dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj --filter \"FullyQualifiedName~MarkupControlStateStoreTests\"` \u2192 all pass.\n\nFull steps: docs/superpowers/plans/2026-10-21-markup-controls-4-separator-state.md (branch docs/markup-controls-spec).\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/UI/Markup/IMarkupControlState.cs\", \"src/AcDream.App/UI/Markup/MarkupControlStateStore.cs\", \"tests/AcDream.App.Tests/UI/MarkupControlStateStoreTests.cs\"], \"verifyCommand\": \"`dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj --filter \\\"FullyQualifiedName~MarkupControlStateStoreTests\\\"` \\u2192 all pass.\", \"acceptanceCriteria\": [\"`ForWindow(name).Set(control, kind, value)` then `Get` returns it; windows, controls and kinds don't collide.\", \"`Save()` writes only when something changed; values set but not saved are not in the file; saved values load into a fresh store.\", \"When the character key changes, the previous character's unsaved changes are written first, the new character's values are loaded, and `Generation` increases; `Generation` is stable while the character stays the same.\", \"With no `SettingsStore`, values still work for the session and `Save()` does nothing; a blank character key is never written.\", \"`ForWindow` with a blank name throws.\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         1
@@ -28,7 +28,7 @@
     {
       "id": 3,
       "subject": "Task 3: `<separator>`",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** A `<separator>` element: a click-through 1 px line in the window's border colour.\n\n**Files:**\n- Create: `src/AcDream.App/UI/UiMarkupSeparator.cs`\n- Create: `src/AcDream.App/UI/Markup/MarkupSeparator.cs`\n- Modify: `src/AcDream.App/UI/MarkupDocument.cs` (`case \"separator\"`)\n- Modify: `src/AcDream.App/UI/PluginMarkupTheme.cs`\n- Modify: `tests/AcDream.App.Tests/UI/MarkupDrawProbe.cs` (`QuadBounds`)\n- Test: `tests/AcDream.App.Tests/UI/MarkupSeparatorTests.cs`\n\n**Acceptance Criteria:**\n- [ ] A 200\u00d75 separator draws one `ClassicColor` quad 200 wide and 1 tall; a 5\u00d7100 one draws one quad 1 wide and 100 tall; each is centred across its box.\n- [ ] `color` literal and bound colours draw instead of the default; under `theme=\"plugin\"` (Moss) the default becomes `Moss.Border` but an explicit `color` is kept.\n- [ ] A click on a separator lying over a button reaches the button.\n- [ ] A 0-size separator draws nothing and doesn't throw.\n\n**Verify:** `dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj --filter \"FullyQualifiedName~MarkupSeparatorTests\"` \u2192 all pass.\n\nFull steps: docs/superpowers/plans/2026-10-21-markup-controls-4-separator-state.md (branch docs/markup-controls-spec).\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/UI/Markup/MarkupSeparator.cs\", \"src/AcDream.App/UI/MarkupDocument.cs\", \"src/AcDream.App/UI/PluginMarkupTheme.cs\", \"src/AcDream.App/UI/UiMarkupSeparator.cs\", \"tests/AcDream.App.Tests/UI/MarkupDrawProbe.cs\", \"tests/AcDream.App.Tests/UI/MarkupSeparatorTests.cs\"], \"verifyCommand\": \"`dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj --filter \\\"FullyQualifiedName~MarkupSeparatorTests\\\"` \\u2192 all pass.\", \"acceptanceCriteria\": [\"A 200\\u00d75 separator draws one `ClassicColor` quad 200 wide and 1 tall; a 5\\u00d7100 one draws one quad 1 wide and 100 tall; each is centred across its box.\", \"`color` literal and bound colours draw instead of the default; under `theme=\\\"plugin\\\"` (Moss) the default becomes `Moss.Border` but an explicit `color` is kept.\", \"A click on a separator lying over a button reaches the button.\", \"A 0-size separator draws nothing and doesn't throw.\"], \"modelTier\": \"standard\"}\n```",
       "blockedBy": [
         2
@@ -37,7 +37,7 @@
     {
       "id": 4,
       "subject": "Task 4: Docs",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** `docs/plugin-ui-markup.md` documents `<separator>`.\n\n**Files:**\n- Modify: `docs/plugin-ui-markup.md`\n\n**Acceptance Criteria:**\n- [ ] Elements table has a `separator` row after `radio`.\n- [ ] A short `## Separator` section after `## Radio group` covers orientation, colour (Classic, theme, `color`), and that it takes no input.\n- [ ] The older-host line is there.\n\n**Verify:** `grep -c 'separator' docs/plugin-ui-markup.md` \u2192 at least 4.\n\nFull steps: docs/superpowers/plans/2026-10-21-markup-controls-4-separator-state.md (branch docs/markup-controls-spec).\n\n```json:metadata\n{\"files\": [\"docs/plugin-ui-markup.md\"], \"verifyCommand\": \"`grep -c 'separator' docs/plugin-ui-markup.md` \\u2192 at least 4.\", \"acceptanceCriteria\": [\"Elements table has a `separator` row after `radio`.\", \"A short `## Separator` section after `## Radio group` covers orientation, colour (Classic, theme, `color`), and that it takes no input.\", \"The older-host line is there.\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         3
@@ -46,12 +46,12 @@
     {
       "id": 5,
       "subject": "Task 5: Series gate",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Release build clean; no new failures in App, Plugin or UI.Abstractions tests; every commit builds.\n\n**Files:** none changed.\n\n**Acceptance Criteria:**\n- [ ] `dotnet build AcDream.slnx -c Release` \u2192 0 errors, 0 warnings.\n- [ ] App + Plugin failing names (timings stripped) \u2286 `mc-base.txt`; UI.Abstractions failing names \u2286 `mc-uiabs-base.txt`.\n- [ ] Each of the series' commits builds and passes `UI.Markup|UiFieldTests` and `MarkupControlStateSettingsTests` on its own.\n- [ ] Nothing under `docs/superpowers/` on the branch.\n\n**Verify:** both `comm -13` comparisons print nothing.\n\nFull steps: docs/superpowers/plans/2026-10-21-markup-controls-4-separator-state.md (branch docs/markup-controls-spec).\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"both `comm -13` comparisons print nothing.\", \"acceptanceCriteria\": [\"`dotnet build AcDream.slnx -c Release` \\u2192 0 errors, 0 warnings.\", \"App + Plugin failing names (timings stripped) \\u2286 `mc-base.txt`; UI.Abstractions failing names \\u2286 `mc-uiabs-base.txt`.\", \"Each of the series' commits builds and passes `UI.Markup|UiFieldTests` and `MarkupControlStateSettingsTests` on its own.\", \"Nothing under `docs/superpowers/` on the branch.\"], \"modelTier\": \"mechanical\"}\n```",
       "blockedBy": [
         4
       ]
     }
   ],
-  "lastUpdated": "2026-10-21T17:33:45"
+  "lastUpdated": "2026-10-21T17:51:30"
 }
