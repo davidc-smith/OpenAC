@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Numerics;
 using AcDream.Core.Content;
 using AcDream.Plugin.Abstractions;
@@ -351,6 +352,16 @@ internal sealed class RuntimeDungeonMapAutomation : IDungeonMapAutomation
         }
     }
 
+    private static IReadOnlyList<IReadOnlyList<Vector3>> Faces(ImmutableArray<ImmutableArray<Vector3>> faces)
+    {
+        if (faces.IsDefaultOrEmpty)
+            return Array.Empty<IReadOnlyList<Vector3>>();
+        var projected = new IReadOnlyList<Vector3>[faces.Length];
+        for (int index = 0; index < projected.Length; index++)
+            projected[index] = faces[index];
+        return projected;
+    }
+
     private static PluginDungeonFloorplan Project(DungeonFloorplan plan)
     {
         var layers = new PluginDungeonLayer[plan.Layers.Length];
@@ -370,10 +381,11 @@ internal sealed class RuntimeDungeonMapAutomation : IDungeonMapAutomation
         for (int index = 0; index < cells.Length; index++)
         {
             DungeonFloorplanCell cell = plan.Cells[index];
-            var cellFloors = new IReadOnlyList<Vector3>[cell.Floors.Length];
-            for (int floor = 0; floor < cellFloors.Length; floor++)
-                cellFloors[floor] = cell.Floors[floor];
-            cells[index] = new PluginDungeonCell(cell.CellId, cell.Center, cell.LayerZ) { Floors = cellFloors };
+            cells[index] = new PluginDungeonCell(cell.CellId, cell.Center, cell.LayerZ)
+            {
+                Floors = Faces(cell.Floors),
+                ObjectFloors = Faces(cell.ObjectFloors),
+            };
         }
 
         return new PluginDungeonFloorplan(

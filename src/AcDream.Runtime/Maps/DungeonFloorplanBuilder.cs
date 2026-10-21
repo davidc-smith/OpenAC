@@ -1,6 +1,9 @@
 using System.Collections.Immutable;
 using System.Numerics;
+using AcDream.Content;
 using AcDream.Core.Content;
+using AcDream.Core.Meshing;
+using AcDream.Core.World;
 using AcDream.Plugin.Abstractions;
 using DatReaderWriter.DBObjs;
 using DatReaderWriter.Types;
@@ -14,7 +17,8 @@ namespace AcDream.Runtime.Maps;
 /// ground plane. A level polygon that faces up is floor; a standing polygon
 /// that reaches down to the floor it stands on is a wall, seen edge-on as a
 /// line; the doorways between cells, which the data lists as portal
-/// polygons, are left open.
+/// polygons, are left open. The objects a cell places -- a bridge, a stair,
+/// a platform -- are floor too where their physics faces up.
 ///
 /// <para>The game files are read with the caller's lock held and only for as
 /// long as the read takes; the flattening runs afterwards, off the lock. What
@@ -77,10 +81,17 @@ internal sealed class DungeonFloorplanBuilder
     /// </summary>
     private const float FlatCellMetres = 0.05f;
 
+    /// <summary>
+    /// An object's level face smaller than this, in square metres, is still
+    /// floor but does not band a cell: a candle shelf must not lift a room.
+    /// </summary>
+    private const float ObjectBandMinimumArea = 0.25f;
+
     private readonly IDatObjectSource _dats;
     private readonly object _datLock;
     private readonly object _cacheGate = new();
     private readonly Dictionary<uint, CellGeometry?> _geometryByStructure = new();
+    private readonly Dictionary<uint, Vector3[][]> _facesByObject = new();
     private readonly Dictionary<uint, DungeonFloorplan?> _plansByLandblock = new();
 
     /// <param name="dats">The game files.</param>
@@ -218,14 +229,34 @@ internal sealed class DungeonFloorplanBuilder
             bounds = bounds.Including(cellBounds.Min).Including(cellBounds.Max);
             Vector3 center = (cellBounds.Min + cellBounds.Max) * 0.5f;
 
+            // An object's floor is at its own height, as a cell's is; only
+            // the faces big enough to stand a room on say where the cell is.
+            float objectHeight = 0f;
+            int objectVertices = 0;
+            foreach (ImmutableArray<Vector3> face in cell.ObjectFloors)
+            {
+                counts.ObjectFloors++;
+                float height = 0f;
+                foreach (Vector3 vertex in face)
+                    height += vertex.Z;
+                Layer(LayerKey(height / face.Length)).Floors.Add(ProjectFloor(face.AsSpan()));
+                if (Area(face.AsSpan()) >= ObjectBandMinimumArea)
+                {
+                    objectHeight += height;
+                    objectVertices += face.Length;
+                }
+            }
+
             flattened.Add(new FlattenedCell(
                 cell.CellId,
                 cell.Neighbours,
                 levelOpenings,
                 center,
                 floorVertices == 0 ? null : LayerKey(floorHeight / floorVertices),
+                objectVertices == 0 ? null : LayerKey(objectHeight / objectVertices),
                 LayerKey(cell.Origin.Z),
                 floors.ToImmutable(),
+                cell.ObjectFloors,
                 walls));
         }
 
@@ -234,9 +265,11 @@ internal sealed class DungeonFloorplanBuilder
         // doorway in its own floor onto the cell below. Its walls belong in
         // that cell's band, or the band above would show an empty outline of
         // the room below. A cell with a floor is drawn in its floor's band; a
-        // cell with no floor and no way down -- a doorway beside it does not
-        // count -- stays in the band its origin is in. A folded cell stands
-        // on the floor of the cell it folds onto.
+        // cell with no floor of its own but an object to stand on, as the
+        // air a bridge spans is, is drawn in the band of the object's floor
+        // and stands on it; a cell with neither and no way down -- a doorway
+        // beside it does not count -- stays in the band its origin is in. A
+        // folded cell stands on the floor of the cell it folds onto.
         var middles = flattened.ToDictionary(static cell => cell.CellId, static cell => cell.Center.Z);
         var bands = new Dictionary<uint, float>(flattened.Count);
         var standsOn = new Dictionary<uint, ImmutableArray<ImmutableArray<Vector3>>>(flattened.Count);
@@ -247,8 +280,15 @@ internal sealed class DungeonFloorplanBuilder
                 bands[cell.CellId] = floorBand;
                 standsOn[cell.CellId] = cell.Floors;
             }
+            else if (cell.ObjectBand is { } objectBand)
+            {
+                bands[cell.CellId] = objectBand;
+                standsOn[cell.CellId] = cell.ObjectFloors;
+            }
         }
-        var unresolved = flattened.Where(static cell => cell.FloorBand is null).ToList();
+        var unresolved = flattened
+            .Where(static cell => cell.FloorBand is null && cell.ObjectBand is null)
+            .ToList();
         // A cell may open onto another floorless cell, so folding goes
         // round until nothing more folds.
         for (bool folded = true; folded && unresolved.Count != 0;)
@@ -311,7 +351,7 @@ internal sealed class DungeonFloorplanBuilder
                 foreach (WallCandidate wall in cell.Walls)
                     layer.Walls.Add(wall.Span);
             }
-            cells.Add(new DungeonFloorplanCell(cell.CellId, cell.Center, band, cell.Floors));
+            cells.Add(new DungeonFloorplanCell(cell.CellId, cell.Center, band, cell.Floors, cell.ObjectFloors));
         }
 
         var built = ImmutableArray.CreateBuilder<DungeonFloorplanLayer>(layers.Count);
@@ -464,6 +504,15 @@ internal sealed class DungeonFloorplanBuilder
         return otherMiddle < cellMiddle ? PluginDoorwayKind.Floor : PluginDoorwayKind.Ceiling;
     }
 
+    /// <summary>A flat polygon's area in square metres, whichever way it faces.</summary>
+    private static float Area(ReadOnlySpan<Vector3> points)
+    {
+        var doubled = Vector3.Zero;
+        for (int index = 0; index < points.Length; index++)
+            doubled += Vector3.Cross(points[index], points[(index + 1) % points.Length]);
+        return doubled.Length() * 0.5f;
+    }
+
     /// <summary>The middle of the box around a polygon's corners, up the vertical.</summary>
     private static float MiddleHeight(Vector3[] world)
     {
@@ -498,15 +547,16 @@ internal sealed class DungeonFloorplanBuilder
     }
 
     /// <summary>
-    /// Reads the landblock's cells with the lock held, and nothing more:
-    /// every flattening happens after the lock is released. A structure
-    /// seen before is not read again.
+    /// Reads the landblock's cells, and the objects they place, with the
+    /// lock held, and nothing more: every flattening happens after the lock
+    /// is released. A structure or object seen before is not read again.
     /// </summary>
     private List<PlacedCell> ReadCells(uint landblock)
     {
         var placed = new List<PlacedCell>();
         var pendingStructures = new List<(uint Key, CellStruct Structure)>();
         var pendingCells = new List<(uint CellId, EnvCell Cell, uint Key)>();
+        var pendingObjects = new Dictionary<uint, List<(GfxObj Part, Matrix4x4 Transform)>>();
 
         lock (_datLock)
         {
@@ -542,6 +592,15 @@ internal sealed class DungeonFloorplanBuilder
                     }
                 }
                 pendingCells.Add((cellId, envCell, key));
+
+                foreach (Stab stab in envCell.StaticObjects)
+                {
+                    bool objectKnown;
+                    lock (_cacheGate)
+                        objectKnown = _facesByObject.ContainsKey(stab.Id);
+                    if (!objectKnown && !pendingObjects.ContainsKey(stab.Id))
+                        pendingObjects[stab.Id] = ReadObjectParts(stab.Id);
+                }
             }
         }
 
@@ -550,6 +609,13 @@ internal sealed class DungeonFloorplanBuilder
             CellGeometry? geometry = structure is null ? null : CellGeometry.From(structure);
             lock (_cacheGate)
                 _geometryByStructure.TryAdd(key, geometry);
+        }
+
+        foreach ((uint objectId, List<(GfxObj Part, Matrix4x4 Transform)> parts) in pendingObjects)
+        {
+            Vector3[][] faces = ObjectFaces(parts);
+            lock (_cacheGate)
+                _facesByObject.TryAdd(objectId, faces);
         }
 
         foreach ((uint cellId, EnvCell envCell, uint key) in pendingCells)
@@ -578,15 +644,107 @@ internal sealed class DungeonFloorplanBuilder
                 envCell.Position.Origin,
                 envCell.Position.Orientation,
                 withOpenings,
-                neighbours));
+                neighbours,
+                PlaceObjectFloors(envCell.StaticObjects)));
         }
         return placed;
+    }
+
+    /// <summary>
+    /// The parts of a placed object that the player collides with, each
+    /// with its transform in the object's frame: a GfxObj is its own one
+    /// part, a Setup its parts at rest. Editor markers are left out unless
+    /// they carry collision, as the physics leaves them. Read under the lock.
+    /// </summary>
+    private List<(GfxObj Part, Matrix4x4 Transform)> ReadObjectParts(uint objectId)
+    {
+        var parts = new List<(GfxObj Part, Matrix4x4 Transform)>();
+        if ((objectId & 0xFF000000u) == 0x01000000u)
+        {
+            if (LandblockPhysicsContentBuilder.KeepsInteriorPart(_dats, objectId)
+                && _dats.Get<GfxObj>(objectId) is { } gfx)
+            {
+                parts.Add((gfx, Matrix4x4.Identity));
+            }
+        }
+        else if ((objectId & 0xFF000000u) == 0x02000000u && _dats.Get<Setup>(objectId) is { } setup)
+        {
+            foreach (MeshRef part in SetupMesh.Flatten(setup))
+            {
+                if (LandblockPhysicsContentBuilder.KeepsInteriorPart(_dats, part.GfxObjId)
+                    && _dats.Get<GfxObj>(part.GfxObjId) is { } gfx)
+                {
+                    parts.Add((gfx, part.PartTransform));
+                }
+            }
+        }
+        return parts;
+    }
+
+    /// <summary>Every physics polygon of an object's parts, in the object's own frame.</summary>
+    private static Vector3[][] ObjectFaces(List<(GfxObj Part, Matrix4x4 Transform)> parts)
+    {
+        var faces = new List<Vector3[]>();
+        foreach ((GfxObj part, Matrix4x4 transform) in parts)
+        {
+            if (part.VertexArray?.Vertices is not { } vertices)
+                continue;
+            foreach (Polygon polygon in part.PhysicsPolygons.Values)
+            {
+                if (polygon.VertexIds.Count < 3)
+                    continue;
+                var corners = new Vector3[polygon.VertexIds.Count];
+                bool complete = true;
+                for (int index = 0; index < corners.Length; index++)
+                {
+                    if (!vertices.TryGetValue((ushort)polygon.VertexIds[index], out SWVertex? vertex))
+                    {
+                        complete = false;
+                        break;
+                    }
+                    corners[index] = Vector3.Transform(vertex.Origin, transform);
+                }
+                if (complete)
+                    faces.Add(corners);
+            }
+        }
+        return faces.ToArray();
+    }
+
+    /// <summary>
+    /// The level, up-facing physics faces of a cell's objects, placed by
+    /// each object's frame, which is already landblock-local.
+    /// </summary>
+    private ImmutableArray<ImmutableArray<Vector3>> PlaceObjectFloors(List<Stab> stabs)
+    {
+        if (stabs.Count == 0)
+            return ImmutableArray<ImmutableArray<Vector3>>.Empty;
+        var floors = ImmutableArray.CreateBuilder<ImmutableArray<Vector3>>();
+        foreach (Stab stab in stabs)
+        {
+            Vector3[][]? faces;
+            lock (_cacheGate)
+                _facesByObject.TryGetValue(stab.Id, out faces);
+            if (faces is null || faces.Length == 0)
+                continue;
+            Matrix4x4 place = Matrix4x4.CreateFromQuaternion(stab.Frame.Orientation)
+                * Matrix4x4.CreateTranslation(stab.Frame.Origin);
+            foreach (Vector3[] face in faces)
+            {
+                var corners = new Vector3[face.Length];
+                for (int index = 0; index < corners.Length; index++)
+                    corners[index] = Vector3.Transform(face[index], place);
+                if (WindingNormal(corners).Z >= LevelMinimumUp)
+                    floors.Add(ImmutableArray.Create(corners));
+            }
+        }
+        return floors.ToImmutable();
     }
 
     private static uint StructureKey(ushort environmentId, ushort cellStructure) =>
         ((uint)environmentId << 16) | cellStructure;
 
-    private static ImmutableArray<Vector2> ProjectFloor(Vector3[] world)
+    private static ImmutableArray<Vector2> ProjectFloor(ReadOnlySpan<Vector3> world)
     {
         var flat = ImmutableArray.CreateBuilder<Vector2>(world.Length);
         foreach (Vector3 vertex in world)
@@ -710,12 +868,14 @@ internal sealed class DungeonFloorplanBuilder
     /// The low halves of the cells this cell's doorways open onto, each with
     /// the polygon of the doorway it opens through.
     /// </param>
+    /// <param name="ObjectFloors">The level faces of the objects the cell places, placed.</param>
     private readonly record struct PlacedCell(
         uint CellId,
         Vector3 Origin,
         Quaternion Orientation,
         CellGeometry Geometry,
-        List<(uint OtherCellId, ushort PolygonId)> Neighbours);
+        List<(uint OtherCellId, ushort PolygonId)> Neighbours,
+        ImmutableArray<ImmutableArray<Vector3>> ObjectFloors);
 
     /// <summary>A standing face that may be a wall: its line, and its lowest corner, placed.</summary>
     private readonly record struct WallCandidate(WallSpan Span, Vector3 Lowest);
@@ -727,16 +887,23 @@ internal sealed class DungeonFloorplanBuilder
     /// <param name="Neighbours">The low halves of the cells its doorways open onto, each with the doorway's polygon.</param>
     /// <param name="LevelOpenings">Its level doorway polygons, each with the middle height of its corners.</param>
     /// <param name="FloorBand">The band of the cell's floor, weighted by vertex; null when the cell has no floor.</param>
+    /// <param name="ObjectBand">
+    /// The band of its objects' floors big enough to stand on, weighted by
+    /// vertex; null when it places none.
+    /// </param>
     /// <param name="OriginBand">The band the cell's origin is in.</param>
     /// <param name="Floors">The cell's own floor polygons, placed.</param>
+    /// <param name="ObjectFloors">The level faces of the objects it places, placed.</param>
     private readonly record struct FlattenedCell(
         uint CellId,
         List<(uint OtherCellId, ushort PolygonId)> Neighbours,
         List<(ushort PolygonId, float Height)> LevelOpenings,
         Vector3 Center,
         float? FloorBand,
+        float? ObjectBand,
         float OriginBand,
         ImmutableArray<ImmutableArray<Vector3>> Floors,
+        ImmutableArray<ImmutableArray<Vector3>> ObjectFloors,
         List<WallCandidate> Walls);
 
     /// <summary>One polygon of a structure, in the structure's own frame.</summary>

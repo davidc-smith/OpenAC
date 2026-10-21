@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Numerics;
+using AcDream.Core.Content;
 using AcDream.Core.Meshing;
 using AcDream.Core.Physics;
 using AcDream.Core.World;
@@ -224,7 +225,7 @@ public static class LandblockPhysicsContentBuilder
     }
 
     /// <summary>Whether an interior part is kept: never an editor marker, unless it carries collision.</summary>
-    private static bool KeepsInteriorPart(IDatReaderWriter dats, uint gfxObjId) =>
+    public static bool KeepsInteriorPart(IDatObjectSource dats, uint gfxObjId) =>
         EntityHydrationRules.ShouldKeepPart(
             GfxObjDegradeResolver.IsRuntimeHiddenMarker(dats, gfxObjId),
             dats.Get<GfxObj>(gfxObjId) is { } gfx
