@@ -17,8 +17,15 @@ namespace AcDream.Rynth.EngineUi;
 /// </summary>
 internal static class RynthEngineHub
 {
-    /// <summary>One panel set's sources and the per-frame steps it runs around the posted work.</summary>
-    internal sealed record Part(string Name, IReadOnlyList<UiSource> Sources, Action? BeforeDrain = null, Action? AfterDrain = null);
+    /// <summary>
+    /// One panel set's sources and the per-frame steps it runs around the posted work.
+    /// <paramref name="FrameStep"/> is work RynthCore runs on AC's main thread before the drain
+    /// (MainThreadSnapshots.Tick): inline it runs just before <paramref name="BeforeDrain"/>; with
+    /// the pump on it runs on the frame (<see cref="FrameTick"/>), never in the pump's pass.
+    /// </summary>
+    internal sealed record Part(
+        string Name, IReadOnlyList<UiSource> Sources, Action? BeforeDrain = null, Action? AfterDrain = null,
+        Action? FrameStep = null);
 
     private static readonly List<Part> Parts = new();
 
@@ -51,7 +58,10 @@ internal static class RynthEngineHub
         foreach (UiSource source in sources)
             source.PromoteDeferredRefresh();
         foreach (Part part in parts)
+        {
+            part.FrameStep?.Invoke();
             part.BeforeDrain?.Invoke();
+        }
         int ran = UiDataHub.Drain(Log);
         foreach (Part part in parts)
             part.AfterDrain?.Invoke();
@@ -78,10 +88,16 @@ internal static class RynthEngineHub
         return ran;
     }
 
-    /// <summary>The frame half: the AfterDrain hooks (InventoryModel.MainThreadTick and the like).</summary>
+    /// <summary>
+    /// The frame half: the frame steps (PlayerProgressHooks.Prefetch, which reads only on the
+    /// frame thread), then the AfterDrain hooks (InventoryModel.MainThreadTick and the like).
+    /// </summary>
     internal static void FrameTick()
     {
-        foreach (Part part in Volatile.Read(ref _partsSnapshot))
+        Part[] parts = Volatile.Read(ref _partsSnapshot);
+        foreach (Part part in parts)
+            part.FrameStep?.Invoke();
+        foreach (Part part in parts)
             part.AfterDrain?.Invoke();
     }
 

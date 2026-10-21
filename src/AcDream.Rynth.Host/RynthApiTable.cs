@@ -137,6 +137,13 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     public RynthCoreApiNative* Native { get; private set; }
 
     /// <summary>
+    /// Shutdown with a pass still running (the pump thread did not exit): the table stops being
+    /// the current one, so slots called from now on return at once, but its native memory and
+    /// string buffers are left in place (leaked) for the code still reading them.
+    /// </summary>
+    internal void Abandon() => Interlocked.CompareExchange(ref _current, null, this);
+
+    /// <summary>
     /// Frees the table. The pump must be quiesced (stopped, no pass running) first: this frees
     /// every thread's string buffers, the pump thread's included.
     /// </summary>

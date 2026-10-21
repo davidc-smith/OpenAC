@@ -6,6 +6,7 @@ using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Core.Physics;
 using AcDream.Core.Physics.Motion;
+using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
@@ -161,6 +162,45 @@ public sealed class RynthSnapshotBuilderTests
 
         runtime.PlayerIdentity.ServerGuid = 0x50000002;
         Assert.NotSame(c.Character, builder.Build().Character);
+    }
+
+    // A buff moves only the spellbook; its effect on buffed skills and vital maxima must reach the
+    // next snapshot all the same, and so must the surface becoming unavailable.
+    [Fact]
+    public void ABuffReachesTheNextSnapshotsBuffedValues()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var automation = new FakeRynthAutomation();
+        automation.CharacterArea.MaxHealth = 100;
+        automation.CharacterArea.CurrentHealth = 100;
+        automation.CharacterArea.SkillList.Add(new PluginSkillInfo(6, "Melee Defense", PluginSkillTraining.Trained, 200));
+        using var builder = new RynthSnapshotBuilder(new RuntimeRynthGameView(runtime, automation: automation), runtime, screen: null);
+        RynthWorldSnapshot before = builder.Build();
+        Assert.Equal((200, 200), (before.Character!.Skills[6].Item1, before.Character.Skills[6].Item2));
+        Assert.Equal(100u, before.Character.Vitals.MaxHealth);
+
+        // The server's enchantment lands: the client's buffed numbers move, the spellbook revision with them.
+        automation.CharacterArea.SkillList[0] = new PluginSkillInfo(6, "Melee Defense", PluginSkillTraining.Trained, 250) { Base = 200 };
+        automation.CharacterArea.MaxHealth = 120;
+        runtime.CharacterOwner.Spellbook.OnEnchantmentAdded(new ActiveEnchantmentRecord(
+            SpellId: 1u, LayerId: 1u, Duration: 60d, CasterGuid: 0u));
+        RynthWorldSnapshot after = builder.Build();
+        Assert.Equal((250, 200), (after.Character!.Skills[6].Item1, after.Character.Skills[6].Item2));
+        Assert.Equal(120u, after.Character.Vitals.MaxHealth);
+
+        automation.Available = false;
+        Assert.False(builder.Build().Character!.HasVitals);
+    }
+
+    // An expiry moves nothing the builder watches: the character is re-read at least each second, as the spellbook is.
+    [Fact]
+    public void CharacterIsRefreshedEachSecondWithoutARevision()
+    {
+        var (_, _, builder) = Make();
+        RynthWorldSnapshot a = builder.Build();
+        Thread.Sleep(1100);
+        Assert.NotSame(a.Character, builder.Build().Character);
     }
 
     [Fact]

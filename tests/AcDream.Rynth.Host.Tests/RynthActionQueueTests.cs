@@ -78,4 +78,16 @@ public sealed class RynthActionQueueTests : IDisposable
         queue.Drain();
         Assert.Equal(2, _log.Count(l => l.Contains("use", StringComparison.Ordinal)));
     }
+
+    [Fact]
+    public void ChatIsNeverRefusedWhileBlockedButCannotTakeTheStopReserve()
+    {
+        var queue = NewQueue();
+        _blocked = true;
+        Assert.True(queue.TryEnqueue(RynthActionKind.Chat, "chat", () => true));
+        for (int i = 1; i < 300; i++)
+            queue.TryEnqueue(RynthActionKind.Chat, "chat", () => true);
+        Assert.True(queue.TryEnqueue(RynthActionKind.Stop, "StopCompletely", () => true));
+        Assert.Equal(RynthActionQueue.Capacity - RynthActionQueue.StopReserve + 1, queue.Drain());
+    }
 }

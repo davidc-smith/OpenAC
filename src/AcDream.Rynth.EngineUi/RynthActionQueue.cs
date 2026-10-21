@@ -4,14 +4,18 @@ using System.Threading;
 
 namespace AcDream.Rynth.EngineUi;
 
-/// <summary>Start: may be refused. Stop: stops, cancels, releases; may use the reserve.</summary>
-public enum RynthActionKind { Start, Stop }
+/// <summary>
+/// Start: may be refused. Stop: stops, cancels, releases; may use the reserve. Chat: a chat line,
+/// never refused while portalling or dead, but held out of the reserve as a start is.
+/// </summary>
+public enum RynthActionKind { Start, Stop, Chat }
 
 /// <summary>
 /// Actions from off the frame thread, run on it in order (RynthCore's AcMainThreadQueue):
 /// a bounded ring, multi-producer under a short lock, drained by the frame thread. Starts are
-/// refused while <c>blocked</c> (portalling or dead) and leave a reserve for stops; a full ring
-/// drops and counts, never runs off-thread.
+/// refused while <c>blocked</c> (portalling or dead) and leave a reserve for stops, as do chat
+/// lines (never refused, so a burst of them can't take the stops' room); a full ring drops and
+/// counts, never runs off-thread.
 /// </summary>
 public sealed class RynthActionQueue(Action<string> log, Func<bool> blocked, Func<long>? clock = null)
 {

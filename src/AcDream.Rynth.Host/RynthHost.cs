@@ -104,6 +104,17 @@ public sealed unsafe class RynthHost : IDisposable
         TickPlugins();
     }
 
+    /// <summary>
+    /// The pump's pass with the events taken when its snapshot was published
+    /// (<see cref="RynthEventBridge.TakeQueued"/>): exactly those, then as <see cref="PumpPass()"/>.
+    /// </summary>
+    internal void PumpPass(RynthEventBridge.EventBatch events)
+    {
+        Bridge.Deliver(events);
+        TickVendor();
+        TickPlugins();
+    }
+
     /// <summary>The frame's part: held keys re-sent (RynthMotionHolds watches the client drop them).</summary>
     public void FrameTick()
     {
@@ -137,11 +148,21 @@ public sealed unsafe class RynthHost : IDisposable
         }
     }
 
-    public void Dispose()
+    public void Dispose() => Dispose(pumpExited: true);
+
+    /// <summary>
+    /// <paramref name="pumpExited"/> false: the pump thread outlived its shutdown and a pass may
+    /// still be inside plugin code, so the plugins are not shut down under it and the API table
+    /// they read (function pointers, string buffers) is left in place rather than freed.
+    /// </summary>
+    internal void Dispose(bool pumpExited)
     {
+        if (!pumpExited)
+            _log("a pump pass is still running: the plugins were not shut down and their API table is left in place.");
         foreach (RynthPlugin plugin in _plugins)
         {
-            plugin.Shutdown();
+            if (pumpExited)
+                plugin.Shutdown();
             RynthCore.Engine.UI.ScriptWindows.ScriptWindowRegistry.DropOwner(plugin.Owner);
         }
 
@@ -153,7 +174,10 @@ public sealed unsafe class RynthHost : IDisposable
             RynthCore.Engine.RynthLog.Sink = null;
         if (RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log == _log)
             RynthCore.Engine.ImGuiBackend.ImGuiPanelHost.Log = null;
-        _table.Dispose();
+        if (pumpExited)
+            _table.Dispose();
+        else
+            _table.Abandon();
     }
 
     private void Load(Type exportsType)

@@ -326,9 +326,10 @@ public sealed class SnapshotRynthGameView(
 
     public bool SubmitChatCommand(string text) => Start("SubmitChatCommand", () => live.SubmitChatCommand(text));
 
-    // A stop, so chat lines are never refused while portalling (RynthCore enqueues WriteToChat the same way).
+    // Never refused while portalling (RynthCore enqueues WriteToChat the same way), but kept out of
+    // the stops' reserve so a burst of lines can't drop a StopCompletely.
     public void WriteChatLine(string text, int chatType) =>
-        Stop("WriteChatLine", () => { live.WriteChatLine(text, chatType); return true; });
+        queue.TryEnqueue(RynthActionKind.Chat, "WriteChatLine", () => { live.WriteChatLine(text, chatType); return true; });
 
     public bool VendorBuy(IReadOnlyList<(uint ObjectId, int Amount)> items, out string? notice)
     {

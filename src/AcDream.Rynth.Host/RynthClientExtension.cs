@@ -54,6 +54,11 @@ public sealed class RynthClientExtension : IClientExtension
     private RynthActionQueue? _actions;
     private RynthWorldSnapshot? _currentSnapshot;
     private IRynthGameView? _currentView;
+    // The events taken with the current snapshot, for the pass it wakes (set on the frame, taken on the pump).
+    private RynthEventBridge.EventBatch? _passEvents;
+    private long _hubFaultLoggedAt = long.MinValue;
+    private int _hubFaults;
+    private const long HubFaultLogEveryMs = 10_000;
 
     /// <summary>
     /// Plugin passes on their own pump thread (RynthCore's 16 ms StartNormalPluginPump). Off:
@@ -65,6 +70,9 @@ public sealed class RynthClientExtension : IClientExtension
 
     /// <summary>Test seam: where pump passes run (a real thread unless set).</summary>
     internal Func<IRynthPumpScheduler> PumpScheduler { get; init; } = () => new ThreadPumpScheduler();
+
+    /// <summary>Test seam: how long Dispose waits for a running pass (the spec's 5 s).</summary>
+    internal TimeSpan PumpShutdownTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>The running pump, or null with the pump off (tests).</summary>
     internal RynthPump? Pump => _pump;
@@ -221,8 +229,10 @@ public sealed class RynthClientExtension : IClientExtension
         return new RynthPump(
             pass: () =>
             {
-                host.PumpPass();
-                RynthEngineHub.PumpTick();
+                // Exactly the events taken with this pass's snapshot: none newer than it.
+                host.PumpPass(Interlocked.Exchange(ref _passEvents, null) ?? RynthEventBridge.EventBatch.Empty);
+                // The hub's own faults are logged here, so only a failing PumpPass counts toward the stop.
+                RunHubPumpStep(context.Log);
             },
             publish: () =>
             {
@@ -230,11 +240,36 @@ public sealed class RynthClientExtension : IClientExtension
                 Volatile.Write(ref _currentSnapshot, snapshot);
                 Volatile.Write(ref _currentView, new SnapshotRynthGameView(
                     snapshot, actions, live, reason => host.Vendor.FailQueued(reason)));
+                // In the same frame-thread step as the snapshot, so nothing queued after it is in this batch.
+                Volatile.Write(ref _passEvents, host.Bridge.TakeQueued());
             },
             actions: actions,
             log: line => context.Log($"[Rynth] pump: {line}"),
             notify: line => live.WriteChatLine(line, 0),
             scheduler: PumpScheduler());
+    }
+
+    /// <summary>
+    /// The pump half of the hub step inside its own catch (RynthCore's StepFaultLog): a fault is
+    /// logged at most once per 10 s with the count since the last line, and never fails the pass.
+    /// </summary>
+    private void RunHubPumpStep(Action<string> log)
+    {
+        try
+        {
+            RynthEngineHub.PumpTick();
+        }
+        catch (Exception error)
+        {
+            _hubFaults++;
+            long now = Environment.TickCount64;
+            if (_hubFaultLoggedAt == long.MinValue || now - _hubFaultLoggedAt >= HubFaultLogEveryMs)
+            {
+                _hubFaultLoggedAt = now;
+                log($"[Rynth] hub step failed: {error.GetType().Name}: {error.Message} ({_hubFaults} since the last report)");
+                _hubFaults = 0;
+            }
+        }
     }
 
     /// <summary>RynthCore's hotkeys: every key press offered to their HotkeyService before OpenAC sees it.</summary>
@@ -361,10 +396,16 @@ public sealed class RynthClientExtension : IClientExtension
     public void Dispose()
     {
         // The pump first: no pass may run while anything below comes down, and its thread must
-        // be gone before the host frees the table's native buffers.
+        // be gone before the host frees the table's native buffers. If a pass outlived the
+        // shutdown, the plugins are not shut down under it and the table is left in place.
+        bool pumpExited = true;
         if (_pump is { } pump)
         {
-            Guard("pump", pump.Dispose);
+            // A shutdown that throws leaves the thread's state unknown: treated as still running.
+            pumpExited = false;
+            Guard("pump", () => pumpExited = pump.Shutdown(PumpShutdownTimeout));
+            if (!pumpExited)
+                _log?.Invoke("[Rynth] the pump thread did not exit: the plugins are left running and their API table is not freed.");
             _pump = null;
         }
 
@@ -446,7 +487,7 @@ public sealed class RynthClientExtension : IClientExtension
         }
         finally
         {
-            _host?.Dispose();
+            _host?.Dispose(pumpExited);
             _host = null;
             _builder?.Dispose();
             _builder = null;

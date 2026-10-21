@@ -373,15 +373,75 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         }
 
         if (Interlocked.Exchange(ref _loginPending, 0) != 0)
-        {
-            Run("Login", () =>
-            {
-                foreach (RynthPlugin plugin in _plugins)
-                    plugin.OnLoginComplete();
-                LoggedIn?.Invoke();
-            });
-        }
+            RunLogin();
     }
+
+    /// <summary>
+    /// The events queued so far, and a pending login, taken off the queues together: what one
+    /// pump pass delivers (<see cref="Deliver"/>).
+    /// </summary>
+    internal sealed class EventBatch
+    {
+        internal static readonly EventBatch Empty = new(new List<Action>?[KindCount], false);
+
+        internal EventBatch(List<Action>?[] queues, bool login)
+        {
+            Queues = queues;
+            Login = login;
+        }
+
+        internal List<Action>?[] Queues { get; }
+
+        internal bool Login { get; }
+    }
+
+    /// <summary>
+    /// Frame thread, as the pump publishes a snapshot: takes every queued event and a pending
+    /// login at once, so the pass that reads that snapshot delivers exactly these, and nothing
+    /// queued after the snapshot was built (an object the snapshot does not have yet).
+    /// </summary>
+    internal EventBatch TakeQueued()
+    {
+        var taken = new List<Action>?[KindCount];
+        lock (_queueGate)
+        {
+            for (int i = 0; i < KindCount; i++)
+            {
+                if (_queues[i].Count == 0)
+                    continue;
+                taken[i] = _queues[i];
+                _queues[i] = [];
+            }
+        }
+        return new EventBatch(taken, Interlocked.Exchange(ref _loginPending, 0) != 0);
+    }
+
+    /// <summary>
+    /// The pump's pass: delivers a batch from <see cref="TakeQueued"/>, type by type in RynthCore's
+    /// order and each type in arrival order, then its login. Anything queued meanwhile waits for
+    /// the next batch.
+    /// </summary>
+    internal void Deliver(EventBatch batch)
+    {
+        for (int i = 0; i < KindCount; i++)
+        {
+            if (batch.Queues[i] is not { } pending)
+                continue;
+            foreach (Action deliver in pending)
+                Run(((EventKind)i).ToString(), deliver);
+        }
+
+        if (batch.Login)
+            RunLogin();
+    }
+
+    private void RunLogin() =>
+        Run("Login", () =>
+        {
+            foreach (RynthPlugin plugin in _plugins)
+                plugin.OnLoginComplete();
+            LoggedIn?.Invoke();
+        });
 
     private void Run(string kind, Action deliver)
     {

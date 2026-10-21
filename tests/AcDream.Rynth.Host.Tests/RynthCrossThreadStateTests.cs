@@ -303,6 +303,23 @@ public sealed unsafe class RynthCrossThreadStateTests : IDisposable
         Assert.Equal([7u, 8u, 9u], selected);
     }
 
+    [Fact]
+    public void TheMainThreadQueueStandInsChatCannotTakeTheStopReserve()
+    {
+        AcMainThreadQueue.WriteToChat = (_, _) => { };
+        var queue = new RynthActionQueue(_log.Add, () => false);
+        RynthFrameActions.Queue = queue;
+        RynthFrameThread.Latch();
+        bool stopped = false;
+        OnOtherThread(() =>
+        {
+            for (int i = 0; i < 300; i++)
+                AcMainThreadQueue.EnqueueWriteToChat($"line {i}", 1);
+            stopped = queue.TryEnqueue(RynthActionKind.Stop, "StopCompletely", () => true);
+        });
+        Assert.True(stopped);
+    }
+
     private static RynthVendor Shop() => new(
         VendorId, "Thorsten the Weaponsmith", 0x1u, 0, 10_000, true, 0.9f, 1.3f,
         0, "", 0, -1, 1_234,

@@ -150,12 +150,13 @@ namespace RynthCore.Engine.Compatibility
             return true;
         }
 
-        // A chat line is never refused while portalling or dead (the routed view's WriteChatLine is a stop too).
+        // A chat line is never refused while portalling or dead, and never takes the stops' reserve
+        // (the routed view's WriteChatLine queues the same way).
         public static bool EnqueueWriteToChat(string text, int color)
         {
             if (WriteToChat is null)
                 return false;
-            return OnFrame(AcDream.Rynth.EngineUi.RynthActionKind.Stop, "WriteToChat", () =>
+            return OnFrame(AcDream.Rynth.EngineUi.RynthActionKind.Chat, "WriteToChat", () =>
             {
                 WriteToChat?.Invoke(text, color);
                 return WriteToChat is not null;

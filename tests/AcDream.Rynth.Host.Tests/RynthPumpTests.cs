@@ -217,4 +217,62 @@ public sealed class RynthPumpTests : IDisposable
         pump.Dispose();
         Assert.False(scheduler.IsRunning);
     }
+
+    [Fact]
+    public void ASnapshotThatKeepsFailingIsLoggedOncePerTenSeconds()
+    {
+        RynthFrameThread.Latch();
+        var scheduler = new ManualPumpScheduler();
+        var log = new List<string>();
+        using var pump = new RynthPump(
+            pass: () => { },
+            publish: () => throw new InvalidOperationException("bad"),
+            actions: new RynthActionQueue(_ => { }, () => false),
+            log: log.Add,
+            notify: _ => { },
+            scheduler: scheduler);
+        pump.Start();
+        for (int i = 0; i < 50; i++) { pump.FrameTick(); pump.AdvanceClockForTests(17); }
+        Assert.Single(log, line => line.Contains("snapshot failed", StringComparison.Ordinal));
+        pump.AdvanceClockForTests(10_000);
+        pump.FrameTick();
+        Assert.Equal(2, log.Count(line => line.Contains("snapshot failed", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void ShutdownSaysTheThreadExited()
+    {
+        RynthFrameThread.Latch();
+        var scheduler = new ThreadPumpScheduler();
+        var pump = NewPump(new Probe(), scheduler);
+        pump.Start();
+        pump.FrameTick();
+        Assert.True(pump.Shutdown(TimeSpan.FromSeconds(5)));
+        Assert.False(scheduler.IsRunning);
+    }
+
+    // A pass that outlives the quiesce: Shutdown says the thread is still there, and does not then
+    // wait out a second long join on the frame.
+    [Fact]
+    public void ShutdownUnderAnOverrunningPassSaysSoWithoutStalling()
+    {
+        RynthFrameThread.Latch();
+        var probe = new Probe { SleepMs = 800 };
+        var scheduler = new ThreadPumpScheduler();
+        var pump = NewPump(probe, scheduler);
+        pump.Start();
+        pump.FrameTick();
+        var started = Stopwatch.StartNew();
+        while (Volatile.Read(ref probe.Passes) == 0 && started.ElapsedMilliseconds < 2000)
+            Thread.Sleep(1);
+
+        var t = Stopwatch.StartNew();
+        Assert.False(pump.Shutdown(TimeSpan.FromMilliseconds(50)));
+        Assert.True(t.ElapsedMilliseconds < 400, $"shutdown took {t.ElapsedMilliseconds} ms");
+
+        started.Restart();
+        while (scheduler.IsRunning && started.ElapsedMilliseconds < 3000)
+            Thread.Sleep(10);
+        Assert.False(scheduler.IsRunning);   // the pass ended and the thread left on its own
+    }
 }

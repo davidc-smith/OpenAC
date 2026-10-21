@@ -100,14 +100,11 @@ internal static class RynthAiDashboard
 
     // RynthCore's ImGuiController frame and MainThreadSnapshots.Tick, in their order around the drain.
     private static readonly RynthEngineHub.Part HubPart = new("RynthAi", Sources,
-        BeforeDrain: () =>
-        {
-            // MainThreadSnapshots.Tick: reads only while the Skills panel wants it.
-            PlayerProgressHooks.Prefetch();
-            // Servers, plugin manifests and the Mini Remote's sections.
-            RynthCore.Engine.UI.Sections.SectionRegistry.Tick();
-        },
-        AfterDrain: InventoryModel.MainThreadTick);
+        // Servers, plugin manifests and the Mini Remote's sections.
+        BeforeDrain: RynthCore.Engine.UI.Sections.SectionRegistry.Tick,
+        AfterDrain: InventoryModel.MainThreadTick,
+        // MainThreadSnapshots.Tick (AC's main thread): reads only while the Skills panel wants it.
+        FrameStep: PlayerProgressHooks.Prefetch);
 
     /// <summary>One hub step (the hub runs every part, this one included). Returns how many posted actions ran.</summary>
     internal static int Tick() => _started ? RynthEngineHub.Tick() : 0;

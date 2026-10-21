@@ -211,6 +211,17 @@ public sealed class SnapshotRynthGameViewActionTests
     }
 
     [Fact]
+    public void AChatBurstLeavesRoomForAStop()
+    {
+        var (view, queue, live) = Make();
+        for (int i = 0; i < 300; i++)
+            view.WriteChatLine($"line {i}", 1);
+        Assert.True(view.StopCompletely());
+        queue.Drain();
+        Assert.Equal("stop", live.Actions[^1]);
+    }
+
+    [Fact]
     public void CastingIsRefusedWhileTheSnapshotSaysPortalling()
     {
         var (view, queue, live) = Make(new RynthWorldSnapshot { PlayerId = 0x50000001, IsPortaling = true });

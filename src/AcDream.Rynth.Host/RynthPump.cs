@@ -10,6 +10,12 @@ public interface IRynthPumpScheduler : IDisposable
 
     /// <summary>A pass may start now (called by the frame thread after a publish).</summary>
     void Wake();
+
+    /// <summary>
+    /// Ends the pump: no pass starts again, and the thread is joined for at most
+    /// <paramref name="join"/>. True when no pass can still be running (the thread exited).
+    /// </summary>
+    bool Stop(TimeSpan join);
 }
 
 /// <summary>RynthCore's pump: one background thread, woken by the frame thread.</summary>
@@ -50,13 +56,19 @@ public sealed class ThreadPumpScheduler : IRynthPumpScheduler
             _wake.Set();
     }
 
-    public void Dispose()
+    public void Dispose() => Stop(TimeSpan.FromSeconds(5));
+
+    public bool Stop(TimeSpan join)
     {
+        if (_stop)
+            return _thread is not { IsAlive: true };
         _stop = true;
         _wake.Set();
         // A pass still running past the join keeps the event; it exits on its next wait.
-        if (_thread is null || _thread.Join(TimeSpan.FromSeconds(5)))
-            _wake.Dispose();
+        if (_thread is not null && !_thread.Join(join))
+            return false;
+        _wake.Dispose();
+        return true;
     }
 }
 
@@ -83,6 +95,8 @@ public sealed class ManualPumpScheduler : IRynthPumpScheduler
     public void Dispose()
     {
     }
+
+    public bool Stop(TimeSpan join) => true;
 }
 
 /// <summary>
@@ -98,6 +112,9 @@ public sealed class RynthPump(
 {
     public const int IntervalMs = 16;
     private const int MaxFailures = 50;
+    private const long SnapshotLogEveryMs = 10_000;
+    // After a quiesce that timed out, the pass is known to be running: the join only checks.
+    private static readonly TimeSpan OverrunJoin = TimeSpan.FromMilliseconds(100);
 
     /// <summary>The chat line written when the pump stops after <see cref="MaxFailures"/> failing passes.</summary>
     internal const string StoppedNotice =
@@ -111,6 +128,9 @@ public sealed class RynthPump(
     private volatile bool _stopped;
     private bool _notified;
     private bool _disposed;
+    private bool _exited;
+    private long _snapshotLoggedAt = long.MinValue;
+    private int _snapshotFailures;
 
     /// <summary>True once 50 passes in a row failed: no pass starts again on this pump.</summary>
     public bool Stopped => _stopped;
@@ -140,8 +160,16 @@ public sealed class RynthPump(
         }
         catch (Exception error)
         {
-            // The previous snapshot stays; no pass without a fresh one.
-            log($"snapshot failed: {error.GetType().Name}: {error.Message}");
+            // The previous snapshot stays; no pass without a fresh one. Tried each frame, so
+            // logged at most once per 10 s, with the count since the last line.
+            _snapshotFailures++;
+            long now = NowMs();
+            if (_snapshotLoggedAt == long.MinValue || now - _snapshotLoggedAt >= SnapshotLogEveryMs)
+            {
+                _snapshotLoggedAt = now;
+                log($"snapshot failed: {error.GetType().Name}: {error.Message} ({_snapshotFailures} since the last report)");
+                _snapshotFailures = 0;
+            }
             return;
         }
 
@@ -165,16 +193,27 @@ public sealed class RynthPump(
 
     internal void AdvanceClockForTests(long ms) => _clockOffsetMs += ms;
 
-    public void Dispose()
+    public void Dispose() => Shutdown(TimeSpan.FromSeconds(5));
+
+    /// <summary>
+    /// Quiesces (for at most <paramref name="quiesceTimeout"/>) and ends the pump thread. True when
+    /// the thread exited, so nothing of the plugins' can still be running on it; false when a pass
+    /// outlived the quiesce (logged): the caller must then leave the plugins and their API table
+    /// alone. After a timed-out quiesce the join is short, so the frame is not held twice.
+    /// </summary>
+    public bool Shutdown(TimeSpan quiesceTimeout)
     {
         if (_disposed)
-            return;
+            return _exited;
         _disposed = true;
-        bool idle = Quiesce(TimeSpan.FromSeconds(5));
-        scheduler.Dispose();
+        bool idle = Quiesce(quiesceTimeout);
+        _exited = scheduler.Stop(idle ? TimeSpan.FromSeconds(5) : OverrunJoin);
         // A pass that overran still sets the event when it ends.
         if (idle)
             _idle.Dispose();
+        if (!_exited)
+            log("the pump thread did not exit; a pass is still running");
+        return _exited;
     }
 
     private void RunPass()

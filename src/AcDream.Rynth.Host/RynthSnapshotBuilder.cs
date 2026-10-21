@@ -25,7 +25,8 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
     private readonly RynthObjectMirror _objects = new(live, runtime);
     private RynthWorldSnapshot? _last;
     private long _sequence;
-    private (long Character, long Description, uint Player) _characterKey = (-1, -1, 0);
+    private (long Character, long Description, long Spellbook, bool Available, uint Player) _characterKey = (-1, -1, -1, false, 0);
+    private long _characterAt;
     private (long Revision, uint Player) _spellbookKey = (-1, 0);
     private long _spellbookAt;
     private (uint Generation, ulong Mutation) _vendorKey = (uint.MaxValue, ulong.MaxValue);
@@ -65,7 +66,7 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
             ServerReplies = live.ServerReplies,
             ServerTime = live.ServerTime,
             Entities = BuildEntities(),
-            Character = BuildCharacter(player),
+            Character = BuildCharacter(player, now),
             Spellbook = BuildSpellbook(player, now),
             Objects = _objects.Build(player),
             Vendor = BuildVendor(),
@@ -120,13 +121,19 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
         return true;
     }
 
-    private RynthCharacterPart? BuildCharacter(uint player)
+    // Buffed skills, attributes and vital maxima carry the spellbook's enchantments, so a buff (the
+    // spellbook revision) moves them, and an expiry, which moves nothing, shows within the same
+    // second the spellbook part allows. The surface's availability gates every read here.
+    private RynthCharacterPart? BuildCharacter(uint player, long now)
     {
         var key = (runtime.CharacterOwner.CharacterRevision,
-                   runtime.CharacterOwner.LocalPlayer.DescriptionRevision, player);
-        if (_last?.Character is { } shared && key == _characterKey)
+                   runtime.CharacterOwner.LocalPlayer.DescriptionRevision,
+                   runtime.CharacterOwner.SpellbookRevision,
+                   live is RuntimeRynthGameView { AutomationAvailable: true }, player);
+        if (_last?.Character is { } shared && key == _characterKey && now - _characterAt < SpellbookRefreshTicks)
             return shared;
         _characterKey = key;
+        _characterAt = now;
         var skills = new Dictionary<uint, (int, int, int)>();
         for (uint id = 0; id <= MaxSkillId; id++)
             if (live.TryGetSkill(player, id, out int buffed, out int baseLevel, out int training))
