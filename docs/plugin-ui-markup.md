@@ -183,8 +183,8 @@ a binding.
 A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
 
-Clicking a `button`, `tab`, `toggle`, `checkbox`, or `radio` invokes its action
-without taking keyboard focus from the game. Use Tab to focus these controls:
+Clicking a `button`, `tab`, `toggle`, `checkbox`, `radio`, or `expander` (its
+header) invokes its action without taking keyboard focus from the game. Use Tab to focus these controls:
 Enter or Space then activates a `button`, `tab`, `toggle`, `checkbox` or
 `expander` (its header). A focused `radio` uses the arrow keys instead; Enter
 and Space do nothing on it.
@@ -358,8 +358,8 @@ placed below the header: a child at `y="0"` sits right under it.
 Clicking the header, or pressing Enter or Space while it has focus, folds
 the content away or brings it back. While it is folded, every element in the
 same parent whose top is at or below the expander's bottom moves up by the
-height it gave up, whatever its anchors (so a bar anchored to the window's
-bottom moves up too), and moves back when it opens. Elements beside it, whose
+height it gave up (so a bar anchored to the window's bottom moves up too;
+stretched elements grow instead, see below), and moves back when it opens. Elements beside it, whose
 top is above the expander's bottom, stay put.
 
 - Anchored `top,bottom`, it shrinks to its 18 px header while folded and gets
@@ -368,8 +368,19 @@ top is above the expander's bottom, stay put.
 - An expander inside another expander does not resize the outer one when it
   folds.
 - `enabled="false"` disables everything inside it as well.
-- A `tooltip` on an `<expander>` doesn't show, because the expander takes no
-  hover of its own; put tooltips on the elements inside it.
+- A `tooltip` on an `<expander>` shows on its header.
+- `color` sets the header caption's colour; without it the caption uses the
+  theme's text colour under `theme="plugin"`.
+- `open` other than `true` or `false`, and an `h` under 18, fail the build of
+  the window.
+- Elements below the expander that are anchored to both top and bottom
+  (stretched) grow into the freed space instead of moving, and shrink back when
+  it opens; their bottom margin stays as authored.
+- An expander without a `name` starts from `open` every time the window is built.
+  Two remembered controls with the same `name` in one window share what they
+  remember, so give each its own name.
+- A hidden expander applies its state when it is shown; while hidden it still
+  occupies its space as last laid out.
 - Without `expanded` the client keeps the state. It starts from `open`
   (`true` by default, or `false`). If the expander has a `name`, the client
   remembers the player's choice per character with the window's other
