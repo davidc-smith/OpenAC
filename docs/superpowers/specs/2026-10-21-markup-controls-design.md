@@ -152,10 +152,10 @@ them.
 - `min`, `max` (default the type's range), `step` (default 1), `decimals`
   (default 0 for integral types, 2 otherwise). `max < min` throws.
 - Built on `UiField` (one-line) plus two spin buttons at the right edge.
-- Typing accepts digits, one leading `-` (only when `min < 0`), and one
-  decimal separator (only when `decimals > 0`), in the invariant culture.
-  While the text does not parse or is outside the range it draws in the
-  error colour, and nothing is reported.
+- Typing accepts digits, `-` (only when `min < 0`) and `.` (only when
+  `decimals > 0`), in the invariant culture. Position and count are not
+  filtered: while the text does not parse or is outside the range it draws
+  in the error colour, and nothing is reported.
 - **Commit** on Enter or focus loss: parse, clamp, round to `decimals`,
   show the result, and call `onchange` if the value changed. Escape restores
   the last committed value. Unparseable text on commit restores it too.
