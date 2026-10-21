@@ -18,6 +18,15 @@ internal static class MarkupDrawProbe
         return renderer;
     }
 
+    /// <summary>Draws an element's overlay pass (open popups) headlessly.</summary>
+    public static TextRenderer DrawOverlays(UiElement element, float w = 800f, float h = 600f)
+    {
+        var renderer = new TextRenderer(new RecordingGpuDevice(), new NullFrameSource(), "unused");
+        renderer.Begin(new Vector2(w, h));
+        element.DrawOverlays(new UiRenderContext(renderer, new Vector2(w, h)));
+        return renderer;
+    }
+
     /// <summary>Untextured quads (6 vertices × 8 floats) whose colour matches within 0.01.</summary>
     public static int CountQuads(TextRenderer renderer, Vector4 color)
     {
