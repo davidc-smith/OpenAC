@@ -10,6 +10,9 @@ namespace AcDream.App.UI.Markup;
 /// Call <see cref="TryRefresh"/>, and apply any value it reports, immediately
 /// before computing a value to remember (e.g. at the start of a click handler),
 /// not only once per tick.
+/// Every distinct value remembered makes the client rewrite the settings file on
+/// the next frame, so a control remembers only when the player commits a change
+/// (a drag end, a sort click), never on every drag frame.
 /// </summary>
 internal sealed class RememberedValue(IMarkupControlState? state, string? control, string kind)
 {

@@ -20,7 +20,12 @@ public interface IMarkupControlState
 
     string? Get(string control, string kind);
 
-    /// <summary>Remembers <paramref name="value"/>, which must not be null.</summary>
+    /// <summary>
+    /// Remembers <paramref name="value"/>, which must not be null. Every distinct
+    /// <c>Set</c> or <see cref="Remove"/> makes the client rewrite the settings
+    /// file on the next frame, so call them only when the player commits a change
+    /// (the end of a drag, a sort click), never on every frame of a drag.
+    /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
     void Set(string control, string kind, string value);
 

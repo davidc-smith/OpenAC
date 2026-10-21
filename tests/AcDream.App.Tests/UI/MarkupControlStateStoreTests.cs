@@ -273,6 +273,36 @@ public sealed class MarkupControlStateStoreTests : IDisposable
     }
 
     [Fact]
+    public void ARemovalMadeWhileTheLoadIsFailingSurvivesTheRetryMerge()
+    {
+        File.WriteAllText(_path, "{ not json");
+        long now = 0;
+        var store = new MarkupControlStateStore(new SettingsStore(_path), () => _character, () => now);
+        var nav = store.ForWindow("nav");
+        nav.Remove("adv", "expanded");          // never seen this session, but it will be on disk
+        nav.Set("mobs", "widths", "1");
+        store.Save();
+        Assert.Equal("{ not json", File.ReadAllText(_path));
+
+        // The file becomes readable and holds nav/adv/expanded plus an unrelated key.
+        string good = _path + ".good";
+        var seeder = new MarkupControlStateStore(new SettingsStore(good), () => "alice");
+        seeder.ForWindow("nav").Set("adv", "expanded", "false");
+        seeder.ForWindow("nav").Set("other", "widths", "9");
+        seeder.Save();
+        File.Copy(good, _path, overwrite: true);
+        File.Delete(good);
+
+        now = 5001;
+        store.Save();
+
+        var fresh = NewStore().ForWindow("nav");
+        Assert.Null(fresh.Get("adv", "expanded"));
+        Assert.Equal("1", fresh.Get("mobs", "widths"));
+        Assert.Equal("9", fresh.Get("other", "widths"));
+    }
+
+    [Fact]
     public void ACharacterSwitchFlushesChangesHeldBackByAFailedLoad()
     {
         File.WriteAllText(_path, "{ not json");

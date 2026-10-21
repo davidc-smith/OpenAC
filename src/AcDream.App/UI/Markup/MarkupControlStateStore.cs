@@ -18,6 +18,8 @@ public sealed class MarkupControlStateStore
     private int _generation;
     private bool _dirty;
     private bool _loadFailed;
+    // Keys removed while the load is failing: the retry merge must drop them from disk too.
+    private readonly HashSet<MarkupControlKey> _removedWhileFailed = new();
     private const long RetryDelayMs = 5000;
     private readonly Func<long> _clock;
     private long _retryAfterMs;
@@ -61,11 +63,16 @@ public sealed class MarkupControlStateStore
             }
             // The load failed before anything was read, so _values holds only this
             // session's changes: lay them over what is on disk now.
+            foreach (var key in _removedWhileFailed)
+                onDisk.Remove(key);
             foreach (var (key, value) in _values)
                 onDisk[key] = value;
             Console.WriteLine($"markup controls: settings for {_character} readable again; merged {_values.Count} changes");
             _values = onDisk;
             _loadFailed = false;
+            _removedWhileFailed.Clear();
+            // The read problem is over; a write failure from here on is news.
+            _reportedFailure = false;
         }
         try
         {
@@ -109,6 +116,7 @@ public sealed class MarkupControlStateStore
         _character = character;
         _dirty = false;
         _loadFailed = false;
+        _removedWhileFailed.Clear();
         _retryAfterMs = 0;
         _reportedFailure = false;
         _values = new Dictionary<MarkupControlKey, string>();
@@ -149,6 +157,7 @@ public sealed class MarkupControlStateStore
         if (_values.TryGetValue(key, out string? current) && string.Equals(current, value, StringComparison.Ordinal))
             return;
         _values[key] = value;
+        _removedWhileFailed.Remove(key);
         _dirty = true;
     }
 
@@ -157,8 +166,18 @@ public sealed class MarkupControlStateStore
         ArgumentException.ThrowIfNullOrWhiteSpace(control);
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         FollowCharacter();
-        if (_values.Remove(new MarkupControlKey(window, control, kind)))
+        var key = new MarkupControlKey(window, control, kind);
+        bool removed = _values.Remove(key);
+        if (_loadFailed)
+        {
+            // The key may be on disk even though this session never saw it.
+            _removedWhileFailed.Add(key);
             _dirty = true;
+        }
+        else if (removed)
+        {
+            _dirty = true;
+        }
     }
 
     private sealed class WindowState(MarkupControlStateStore owner, string window) : IMarkupControlState
