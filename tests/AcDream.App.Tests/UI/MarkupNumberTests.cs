@@ -345,6 +345,7 @@ public class MarkupNumberTests
     {
         var b = new Binding();
         var (root, number) = Mount(CountAttrs + " enabled=\"false\"", b);
+        Assert.False(number.Field.Editable);   // read-only from build, before any tick
         root.Tick(0.016, 0);
         Assert.False(number.Field.Editable);
         Press(root, SpinX, UpY);

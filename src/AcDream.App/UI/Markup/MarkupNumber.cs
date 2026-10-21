@@ -64,9 +64,9 @@ internal static class MarkupNumber
         context.BindColor(color, value => field.TextColor = value,
             source => number.TextColorSource = source);
 
-        number.SyncField();
         field.SetText(number.Format(read()));
         MarkupDocument.ApplyCommon(number, el, binding);
+        number.SyncField();
         return number;
     }
 
