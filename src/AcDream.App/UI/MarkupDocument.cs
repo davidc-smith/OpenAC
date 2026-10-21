@@ -371,6 +371,10 @@ public static class MarkupDocument
                 parent.AddChild(MarkupNumber.Build(el, binding, Context()));
                 break;
 
+            case "radio":
+                parent.AddChild(MarkupRadio.Build(el, binding, Context()));
+                break;
+
             case "slider":
                 string? changeName = (string?)el.Attribute("onchange");
                 Action<float>? changed = BindFloatAction(changeName, binding);
