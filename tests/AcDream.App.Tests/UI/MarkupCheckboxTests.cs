@@ -89,6 +89,35 @@ public class MarkupCheckboxTests
     }
 
     [Fact]
+    public void Checkbox_ClickThroughUiRootActivatesWithoutTakingFocus()
+    {
+        var binding = new Binding();
+        var panel = MarkupDocument.Build(
+            "<panel x=\"0\" y=\"0\" w=\"200\" h=\"100\"><checkbox x=\"4\" y=\"4\" w=\"120\" h=\"16\" text=\"Loot rares\" checked=\"{Loot}\" onchange=\"{SetLoot}\"/></panel>",
+            binding, _ => (1u, 16, 16));
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(panel);
+        root.OnMouseDown(UiMouseButton.Left, 20, 12);
+        root.OnMouseUp(UiMouseButton.Left, 20, 12);
+        Assert.Equal(true, binding.LastChange);
+        Assert.Null(root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void Checkbox_CheckedUnderPluginThemeDrawsAccentTickAndBorder()
+    {
+        var box = new UiMarkupCheckbox
+        {
+            Width = 120f, Height = 16f, Text = "Loot",
+            ThemePalette = PluginUiPalette.Moss,
+        };
+        box.CheckedSource = () => true;
+        var renderer = MarkupDrawProbe.Draw(box);
+        // 7 tick fills plus the 4 quads of the 1px outline.
+        Assert.Equal(11, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Accent));
+    }
+
+    [Fact]
     public void Checkbox_IndeterminateClicksToTrue()
     {
         var binding = new Binding { Mixed = null };
