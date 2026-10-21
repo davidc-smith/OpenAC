@@ -9,8 +9,9 @@ namespace AcDream.Rynth.Host;
 /// <summary>
 /// Builds <see cref="RynthWorldSnapshot"/>s on the frame thread from the live view: small parts
 /// every time, big parts only when their revision moved, the rest shared with the last one.
+/// Dispose unhooks the object mirror from the object table.
 /// </summary>
-public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtime, IClientScreen? screen)
+public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtime, IClientScreen? screen) : IDisposable
 {
     // RynthCore's id ranges: skills, primary attributes, max-vital stat ids.
     private const uint MaxSkillId = 64;
@@ -18,6 +19,7 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
     private static readonly uint[] VitalStatIds = [1, 3, 5];
     private static readonly long SpellbookRefreshTicks = Stopwatch.Frequency;
 
+    private readonly RynthObjectMirror _objects = new(live, runtime);
     private RynthWorldSnapshot? _last;
     private long _sequence;
     private (long Character, long Description, uint Player) _characterKey = (-1, -1, 0);
@@ -62,7 +64,7 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
             Entities = BuildEntities(),
             Character = BuildCharacter(player),
             Spellbook = BuildSpellbook(player, now),
-            Objects = RynthObjectsPart.Empty,   // Task 4
+            Objects = _objects.Build(player),
             Vendor = BuildVendor(),
             // Small, and its items are copies: rebuilt every publish (spec 2.8 allows it).
             Trade = live.Trade,
@@ -71,6 +73,8 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
         _last = snapshot;
         return snapshot;
     }
+
+    public void Dispose() => _objects.Dispose();
 
     // Each active entity with a placed body, read as TryGetPlayerPose / TryGetObjectPosition read it.
     private FrozenDictionary<uint, RynthEntityPose> BuildEntities()

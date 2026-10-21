@@ -207,6 +207,27 @@ public sealed class RynthSnapshotBuilderTests
         }
     }
 
+    [Fact]
+    public void ObjectsHoldThePlayerObject()
+    {
+        var (_, live, builder) = Make();
+        RynthWorldSnapshot s = builder.Build();
+        Assert.True(s.Objects.TryGet(live.PlayerId, out RynthObjectEntry player));
+        Assert.Equal("Sammy", player.Name);
+    }
+
+    [Fact]
+    public void DisposeStopsTheObjectMirrorListening()
+    {
+        var (runtime, live, builder) = Make();
+        builder.Build().Objects.TryGet(live.PlayerId, out RynthObjectEntry before);
+        builder.Dispose();
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x50000001, Name = "Sammy II" });
+        // No longer subscribed: the update marks nothing, so the entry is the one copied before.
+        builder.Build().Objects.TryGet(live.PlayerId, out RynthObjectEntry after);
+        Assert.Same(before, after);
+    }
+
     private static WorldSession.EntitySpawn Spawn(uint guid)
     {
         var position = new CreateObject.ServerPosition(0x0101FFFFu, 10f, 20f, 5f, 1f, 0f, 0f, 0f);

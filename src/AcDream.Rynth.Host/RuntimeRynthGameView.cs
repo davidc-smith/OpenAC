@@ -179,6 +179,38 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return true;
     }
 
+    /// <summary>
+    /// <see cref="TryGetObject"/> with every property table and the appraised spell list copied, and
+    /// the Int64 table the way <see cref="TryGetInt64Property"/> reads it: safe to hand to another thread.
+    /// </summary>
+    internal bool TryCopyObject(uint objectId, out RynthObjectInfo info, out IReadOnlyDictionary<uint, long> int64s)
+    {
+        int64s = System.Collections.Frozen.FrozenDictionary<uint, long>.Empty;
+        if (!TryGetObject(objectId, out RynthObjectInfo shared))
+        {
+            info = null!;
+            return false;
+        }
+        info = shared with
+        {
+            Ints = new Dictionary<uint, int>(shared.Ints),
+            DataIds = new Dictionary<uint, uint>(shared.DataIds),
+            InstanceIds = new Dictionary<uint, uint>(shared.InstanceIds),
+            Bools = new Dictionary<uint, bool>(shared.Bools),
+            Floats = new Dictionary<uint, double>(shared.Floats),
+            Strings = new Dictionary<uint, string>(shared.Strings),
+            AppraisedSpellIds = [.. shared.AppraisedSpellIds],
+        };
+        ClientObject? item = _runtime.InventoryOwner.Objects.Get(objectId);
+        var copy = item is null ? new Dictionary<uint, long>() : new Dictionary<uint, long>(item.Properties.Int64s);
+        // The player description wins, as TryGetInt64Property reads it.
+        if (objectId != 0 && objectId == PlayerId && _runtime.CharacterOwner.LocalPlayer is { HasDescription: true } player)
+            foreach ((uint key, long value) in player.Properties.Int64s)
+                copy[key] = value;
+        int64s = copy;
+        return true;
+    }
+
     public IReadOnlyList<uint> GetContainerContents(uint containerId)
     {
         var ids = new SortedSet<uint>(_runtime.InventoryOwner.Objects.GetContents(containerId));
