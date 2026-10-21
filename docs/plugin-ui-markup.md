@@ -117,6 +117,10 @@ back at runtime instead.
 | `list onsort` | `Action<int, bool>`, the column and direction asked for | throws |
 | `list widths` | `IReadOnlyList<float>`, one per column (0 = automatic) | throws |
 | `list onresize` | `Action<IReadOnlyList<float>>`, every column's width | throws |
+| `list levels` | `IEnumerable<int>`, each row's depth (0 = top level) | throws |
+| `list keys` | `IEnumerable<string>`; a list or array is read as is, other collections are copied each frame | throws |
+| `list expanded` | `IReadOnlySet<string>` (best: `HashSet<string>`), or any `IEnumerable<string>`, which is copied each frame; when bound, the plugin owns it | throws when mistyped |
+| `list onexpand` | `Action<string, bool>`, the key and the state asked for | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
@@ -182,7 +186,7 @@ Unknown or miscased element names throw at build time.
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
-| `list` | Scrolling rows | `x y w h selectmode selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize`; column form only) |
+| `list` | Scrolling rows | `x y w h selectmode selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize tree levels keys expanded onexpand collapsed`; column form only) |
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
@@ -755,6 +759,60 @@ and `selectionband="false"` fails the build. Other build errors:
 a list of ints, and `onchange` that isn't an `Action<IReadOnlyList<int>>`.
 On a host older than multi-select, `selected` must be an `int`, so a
 multi-select list fails the build of its window there.
+
+### Trees
+
+```xml
+<list name="rules" x="8" y="24" w="320" h="200" tree="true" levels="{Depths}" keys="{Ids}"
+      header="true" selected="{Sel}" onchange="{Pick}">
+  <column type="checkbox" width="20" values="{On}" onchange="{ToggleRule}"/>
+  <column type="text" header="Rule" items="{Names}" sort="text"/>
+  <column type="text" header="Value" width="80" items="{Values}"/>
+</list>
+```
+
+With `tree="true"` a column list shows its rows as a tree. The rows are the
+tree flattened parent-first (each row followed by its children), and
+`levels` gives each row's depth, 0 for the top level. A negative level counts
+as 0, a row more than one level deeper than the row before it is treated as
+one deeper, and a row past the end of `levels` is top level. `keys` gives
+each row a stable id that the expanded state is kept by (a list or array is
+read as is, other collections are copied each frame); a row past the end of
+`keys` gets the key `#<row>`, for example `#7`.
+
+The first `text` column draws the tree: each level indents 12 pixels, and a
+row with children shows an arrow in a 12 pixel slot, pointing right when
+collapsed and down when expanded. Clicking the slot collapses or expands the
+row without selecting it. The list takes keyboard focus with Tab from another
+focused control in the same window; clicking a row does not focus it. While
+focused, Right expands the selected row or, if it is already expanded, moves
+to its first child, and Left collapses it or moves to its parent. In a
+multi-select list the keys act on the last row picked.
+
+- Without `expanded` the client keeps the expanded state: every row starts
+  expanded, or collapsed with `collapsed="true"`, and a list with a `name`
+  remembers the rows the player changed, per character. `onexpand`, if bound,
+  is told each change.
+- With `expanded="{Keys}"` the plugin keeps it: a row is expanded when its
+  key is in the set. Bind an `IReadOnlySet<string>` such as a
+  `HashSet<string>`; any other `IEnumerable<string>` is copied into a new set
+  every frame. Clicking an arrow or Left/Right only calls `onexpand` with the
+  key and the state asked for, so change the set there.
+
+Sorting a tree sorts each row's children among themselves and keeps them
+under their parent. Collapsed rows' children are left out of what is drawn,
+but every row index the plugin sees is still its own index, so `selected`,
+`onchange` and the column callbacks are unchanged. A multi-select list
+selects only rows that are shown (Shift ranges and Ctrl+A), and collapsing a
+row removes its hidden children from the selection through `onchange`. A
+single-select list keeps its selection when the selected row is hidden.
+
+`tree` needs `<column>` children with at least one `text` column. A tree
+without `levels` or `keys`, `expanded` that isn't bound to a collection of
+strings, `onexpand` that isn't an `Action<string, bool>`, `collapsed`
+together with `expanded`, and `levels`, `keys`, `expanded`, `onexpand` or
+`collapsed` without `tree="true"` fail the build. A host older than trees
+ignores these attributes and draws every row as a flat list, with no indent.
 
 ## Slider range
 
