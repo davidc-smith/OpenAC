@@ -1,4 +1,3 @@
-using System.Numerics;
 using AcDream.App.UI;
 using AcDream.App.UI.Markup;
 
@@ -62,5 +61,108 @@ public class MarkupCheckboxTests
         var ex = Assert.Throws<FormatException>(
             () => MarkupBindings.BindBoolAction(expression, new Binding(), "checkbox onchange"));
         Assert.Contains("checkbox onchange", ex.Message);
+    }
+
+    private static UiMarkupCheckbox BuildOne(string attributes, Binding binding)
+    {
+        var panel = MarkupDocument.Build(
+            $"<panel x=\"0\" y=\"0\" w=\"200\" h=\"100\"><checkbox x=\"4\" y=\"4\" w=\"120\" h=\"16\" text=\"Loot rares\" {attributes}/></panel>",
+            binding, _ => (1u, 16, 16));
+        return Assert.IsType<UiMarkupCheckbox>(panel.Children[0]);
+    }
+
+    private static void Click(UiMarkupCheckbox box) =>
+        box.OnEvent(new UiEvent { Type = UiEventType.Click });
+
+    [Fact]
+    public void Checkbox_ReportsTheNewValue()
+    {
+        var binding = new Binding();
+        var box = BuildOne("checked=\"{Loot}\" onchange=\"{SetLoot}\"", binding);
+        Assert.False(box.State);
+        Click(box);
+        Assert.Equal(true, binding.LastChange);
+        Assert.True(box.State);
+        Click(box);
+        Assert.Equal(false, binding.LastChange);
+        Assert.Equal(2, binding.Calls);
+    }
+
+    [Fact]
+    public void Checkbox_IndeterminateClicksToTrue()
+    {
+        var binding = new Binding { Mixed = null };
+        var box = BuildOne("checked=\"{Mixed}\" onchange=\"{SetMixed}\"", binding);
+        Assert.Null(box.State);
+        Click(box);
+        Assert.Equal(true, binding.LastChange);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("checked=\"{NotBool}\"")]
+    [InlineData("checked=\"{Loot}\" onchange=\"{WrongAction}\"")]
+    public void Checkbox_BadBindingsThrowAtBuild(string attributes)
+    {
+        Assert.Throws<FormatException>(() => BuildOne(attributes, new Binding()));
+    }
+
+    [Fact]
+    public void Checkbox_WithoutOnchangeIsDisplayOnly()
+    {
+        var binding = new Binding();
+        var box = BuildOne("checked=\"{Loot}\"", binding);
+        Click(box);
+        Assert.False(binding.Loot);
+    }
+
+    [Fact]
+    public void Checkbox_DisabledFiresNothing()
+    {
+        var binding = new Binding();
+        var box = BuildOne("checked=\"{Loot}\" onchange=\"{SetLoot}\" enabled=\"false\"", binding);
+        Click(box);
+        box.OnEvent(new UiEvent { Type = UiEventType.FocusGained });
+        box.OnEvent(new UiEvent { Type = UiEventType.KeyDown, Data0 = (int)Silk.NET.Input.Key.Space });
+        Assert.Equal(0, binding.Calls);
+    }
+
+    [Fact]
+    public void Checkbox_FocusedSpaceAndEnterActivate()
+    {
+        var binding = new Binding();
+        var box = BuildOne("checked=\"{Loot}\" onchange=\"{SetLoot}\"", binding);
+        Assert.True(box.TabStop);
+        box.OnEvent(new UiEvent { Type = UiEventType.FocusGained });
+        box.OnEvent(new UiEvent { Type = UiEventType.KeyDown, Data0 = (int)Silk.NET.Input.Key.Space });
+        Assert.True(binding.Loot);
+        box.OnEvent(new UiEvent { Type = UiEventType.KeyDown, Data0 = (int)Silk.NET.Input.Key.Enter });
+        Assert.False(binding.Loot);
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(true, 7)]
+    [InlineData(null, 1)]
+    public void Glyph_ClassicDrawsTickDashOrNothing(bool? state, int markQuads)
+    {
+        var box = new UiMarkupCheckbox { Width = 120f, Height = 16f, CheckedSource = () => state };
+        var renderer = MarkupDrawProbe.Draw(box);
+        Assert.Equal(markQuads, MarkupDrawProbe.CountQuads(renderer, UiCheckBoxGlyph.ClassicMark));
+    }
+
+    [Fact]
+    public void Checkbox_PluginThemeUsesThePalette()
+    {
+        var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build(
+            "<panel theme=\"plugin\" x=\"0\" y=\"0\" w=\"200\" h=\"100\">"
+            + "<checkbox x=\"4\" y=\"4\" w=\"120\" h=\"16\" text=\"Loot\" checked=\"{Loot}\"/></panel>",
+            new Binding(), _ => (1u, 16, 16), themes: themes);
+        var box = Assert.IsType<UiMarkupCheckbox>(panel.Children[^1]);
+        Assert.Same(PluginUiPalette.Moss, box.ThemePalette);
+        var renderer = MarkupDrawProbe.Draw(box);
+        Assert.True(MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Field) >= 1);
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiCheckBoxGlyph.ClassicFill));
     }
 }

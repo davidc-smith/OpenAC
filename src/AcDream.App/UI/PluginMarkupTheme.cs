@@ -17,6 +17,7 @@ internal static class PluginMarkupTheme
                 case UiLabel label: Bind(() => label.DatFont, f => label.DatFont = f); break;
                 case UiSimpleButton button: Bind(() => button.DatFont, f => button.DatFont = f); break;
                 case UiMarkupToggle toggle: Bind(() => toggle.DatFont, f => toggle.DatFont = f); break;
+                case UiMarkupCheckbox checkbox: Bind(() => checkbox.DatFont, f => checkbox.DatFont = f); break;
                 case UiField field: Bind(() => field.DatFont, f => field.DatFont = f); break;
                 case UiMenu menu:
                     Bind(() => menu.DatFont, f => menu.DatFont = f);
@@ -52,6 +53,11 @@ internal static class PluginMarkupTheme
                 var toggleText = toggle.TextColor;
                 panel.AddThemeAction(p => { toggle.ThemePalette = p;
                     if (Default("color")) toggle.TextColor = p?.Text ?? toggleText; });
+                break;
+            case UiMarkupCheckbox checkbox:
+                var checkboxText = checkbox.TextColor;
+                panel.AddThemeAction(p => { checkbox.ThemePalette = p;
+                    if (Default("color")) checkbox.TextColor = p?.Text ?? checkboxText; });
                 break;
             case UiField field:
                 var fieldBg = field.BackgroundColor; var fieldText = field.TextColor;

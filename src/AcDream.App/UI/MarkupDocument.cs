@@ -111,6 +111,9 @@ public static class MarkupDocument
             }
             else MarkupDocument.BindColorSource(expression, model, setValue, setSource);
         }
+        MarkupBuildContext Context() => new(
+            resolve, datFont, icons,
+            (expression, setValue, setSource) => BindColorSource(expression, binding, setValue, setSource));
         switch (el.Name.LocalName)
         {
             case "group":
@@ -360,6 +363,9 @@ public static class MarkupDocument
                 parent.AddChild(toggle);
                 break;
 
+            case "checkbox":
+                parent.AddChild(MarkupCheckbox.Build(el, binding, Context()));
+                break;
             case "slider":
                 string? changeName = (string?)el.Attribute("onchange");
                 Action<float>? changed = BindFloatAction(changeName, binding);
