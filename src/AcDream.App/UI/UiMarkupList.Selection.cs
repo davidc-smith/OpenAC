@@ -51,7 +51,7 @@ public sealed partial class UiMarkupList
         UiSelectModifiers keys = HeldModifiers();
         int[] next = UiMarkupListSelection.Click(
             SelectedRowsSource(), pluginRow, keys.Add, keys.Range, _anchorRow, _view);
-        if (UiMarkupListSelection.MovesAnchor(keys.Range, _anchorRow, _view.Count))
+        if (UiMarkupListSelection.MovesAnchor(keys.Range, _anchorRow, _view.PluginCount))
             _anchorRow = pluginRow;
         _leadRow = pluginRow;
         SelectedRowsChanged?.Invoke(next);
@@ -105,7 +105,8 @@ public sealed partial class UiMarkupList
         var key = (Key)e.Data0;
         if (key == Key.A && keys.Add)
         {
-            SelectedRowsChanged?.Invoke(UiMarkupListSelection.All(RefreshSelectionRows()));
+            RefreshSelectionRows();
+            SelectedRowsChanged?.Invoke(UiMarkupListSelection.All(_view));
             return true;
         }
         int delta = key switch { Key.Up => -1, Key.Down => 1, _ => 0 };
@@ -117,7 +118,7 @@ public sealed partial class UiMarkupList
         if (lead < 0)
             return true;
         int[] next;
-        if (keys.Range && (uint)_anchorRow < (uint)_view.Count)
+        if (keys.Range && (uint)_anchorRow < (uint)_view.PluginCount)
         {
             next = UiMarkupListSelection.Range(_anchorRow, lead, _view);
         }

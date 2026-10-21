@@ -6,7 +6,7 @@ namespace AcDream.App.Tests.UI;
 public sealed class UiMarkupListViewMapTests
 {
     private static int[] Order(UiMarkupListViewMap map) =>
-        Enumerable.Range(0, map.Count).Select(map.PluginRow).ToArray();
+        Enumerable.Range(0, map.ViewCount).Select(map.PluginRow).ToArray();
 
     [Fact]
     public void IdentityMapsEachRowToItself()
@@ -58,7 +58,17 @@ public sealed class UiMarkupListViewMapTests
     {
         var map = new UiMarkupListViewMap();
         map.SortByNumber(new double[] { 5, 3, 9, 1 }, 4, descending: false);
-        for (int view = 0; view < map.Count; view++)
+        for (int view = 0; view < map.ViewCount; view++)
             Assert.Equal(view, map.ViewRow(map.PluginRow(view)));
+    }
+
+    [Fact]
+    public void Counts_AreEqualWithoutATree()
+    {
+        var map = new UiMarkupListViewMap();
+        map.SetIdentity(3);
+        Assert.Equal((3, 3), (map.ViewCount, map.PluginCount));
+        map.SortByNumber(new double[] { 2, 1 }, 2, descending: true);
+        Assert.Equal((2, 2), (map.ViewCount, map.PluginCount));
     }
 }

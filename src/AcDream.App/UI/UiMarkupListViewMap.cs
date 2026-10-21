@@ -14,20 +14,24 @@ internal sealed class UiMarkupListViewMap
     private bool _identity = true;
     private readonly KeyComparer _comparer = new();
 
-    public int Count { get; private set; }
+    /// <summary>The rows shown, top to bottom.</summary>
+    public int ViewCount { get; private set; }
+
+    /// <summary>The plugin's rows, shown or not.</summary>
+    public int PluginCount { get; private set; }
 
     /// <summary>The plugin row shown at a view row; −1 outside the rows.</summary>
     public int PluginRow(int view) =>
-        (uint)view >= (uint)Count ? -1 : _identity ? view : _viewToPlugin[view];
+        (uint)view >= (uint)ViewCount ? -1 : _identity ? view : _viewToPlugin[view];
 
     /// <summary>Where a plugin row is shown; −1 outside the rows.</summary>
     public int ViewRow(int plugin) =>
-        (uint)plugin >= (uint)Count ? -1 : _identity ? plugin : _pluginToView[plugin];
+        (uint)plugin >= (uint)PluginCount ? -1 : _identity ? plugin : _pluginToView[plugin];
 
     public void SetIdentity(int count)
     {
         _identity = true;
-        Count = count;
+        ViewCount = PluginCount = count;
     }
 
     /// <summary>Sorts by <paramref name="keys"/>[plugin row]; a null key sorts last.</summary>
@@ -64,7 +68,7 @@ internal sealed class UiMarkupListViewMap
         for (int view = 0; view < count; view++)
             _pluginToView[_viewToPlugin[view]] = view;
         _identity = false;
-        Count = count;
+        ViewCount = PluginCount = count;
     }
 
     private sealed class KeyComparer : IComparer<int>
