@@ -22,6 +22,7 @@ internal static class PluginMarkupTheme
                 case UiMarkupExpander expander: Bind(() => expander.Header.DatFont, f => expander.Header.DatFont = f); break;
                 case UiField field: Bind(() => field.DatFont, f => field.DatFont = f); break;
                 case UiMarkupNumber number: Bind(() => number.Field.DatFont, f => number.Field.DatFont = f); break;
+                case UiMarkupHotkey hotkey: Bind(() => hotkey.DatFont, f => hotkey.DatFont = f); break;
                 case UiMenu menu:
                     Bind(() => menu.DatFont, f => menu.DatFont = f);
                     Bind(() => menu.ButtonDatFont, f => menu.ButtonDatFont = f);
@@ -90,6 +91,9 @@ internal static class PluginMarkupTheme
             case UiMarkupNumber number:
                 ThemeField(panel, number.Field, Default);
                 panel.AddThemeAction(p => number.ThemePalette = p);
+                break;
+            case UiMarkupHotkey hotkey:
+                panel.AddThemeAction(p => hotkey.ThemePalette = p);
                 break;
             case UiMenu menu:
                 bool art = menu.RetailButtonArt, menuOutline = menu.Outline;

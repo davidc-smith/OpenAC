@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Xml.Linq;
+using AcDream.UI.Abstractions.Input;
 
 namespace AcDream.App.UI.Markup;
 
@@ -15,7 +16,8 @@ internal delegate void MarkupColorBinder(
 /// document build: the same resolvers and font every built-in element uses,
 /// the window's remembered control state (null when nothing is remembered),
 /// and <see cref="AddChild"/>, which builds one child element into a
-/// container exactly as the document builds any element.
+/// container exactly as the document builds any element. <see cref="DescribeKey"/>
+/// is the host's key names for hotkeys (null shows the canonical string).
 /// </summary>
 internal sealed record MarkupBuildContext(
     Func<uint, (uint, int, int)> Resolve,
@@ -23,4 +25,5 @@ internal sealed record MarkupBuildContext(
     IMarkupIconResolver? Icons,
     MarkupColorBinder BindColor,
     IMarkupControlState? ControlState = null,
-    Action<UiElement, XElement>? AddChild = null);
+    Action<UiElement, XElement>? AddChild = null,
+    Func<KeyChord, string>? DescribeKey = null);

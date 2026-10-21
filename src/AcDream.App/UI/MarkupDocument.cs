@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Xml.Linq;
 using AcDream.App.UI.Markup;
 using AcDream.Plugin.Abstractions;
+using AcDream.UI.Abstractions.Input;
 
 namespace AcDream.App.UI;
 
@@ -23,7 +24,8 @@ public static class MarkupDocument
         string xml, object binding, Func<uint, (uint, int, int)> resolve,
         ControlsIni? style = null, UiDatFont? datFont = null,
         IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null,
-        IMarkupControlState? controlState = null)
+        IMarkupControlState? controlState = null,
+        Func<KeyChord, string>? describeKey = null)
     {
         var root = XDocument.Parse(xml).Root ?? throw new FormatException("empty markup");
         if (root.Name.LocalName != "panel")
@@ -80,7 +82,7 @@ public static class MarkupDocument
             PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
 
         foreach (var el in root.Elements())
-            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, controlState);
+            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, controlState, describeKey);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -99,7 +101,8 @@ public static class MarkupDocument
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
         IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
-        IMarkupControlState? controlState)
+        IMarkupControlState? controlState,
+        Func<KeyChord, string>? describeKey)
     {
         int firstChild = parent.Children.Count;
         void BindColorSource(string? expression, object model, Action<Vector4> setValue,
@@ -120,7 +123,8 @@ public static class MarkupDocument
             (expression, setValue, setSource) => BindColorSource(expression, binding, setValue, setSource),
             controlState,
             (container, child) => AddElement(
-                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState));
+                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey),
+            describeKey);
         switch (el.Name.LocalName)
         {
             case "group":
@@ -150,7 +154,7 @@ public static class MarkupDocument
                 ApplyCommon(group, el, binding);
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
-                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, controlState);
+                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey);
                 break;
 
             case "meter":
@@ -376,6 +380,10 @@ public static class MarkupDocument
 
             case "number":
                 parent.AddChild(MarkupNumber.Build(el, binding, Context()));
+                break;
+
+            case "hotkey":
+                parent.AddChild(MarkupHotkey.Build(el, binding, Context()));
                 break;
 
             case "radio":
