@@ -48,6 +48,18 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
 
     public bool WantsMouse { get; private set; }
 
+    /// <summary>The mouse is over an ImGui window (last frame), also during a retail drag.</summary>
+    public bool PointerOverWindow { get; private set; }
+
+    /// <summary>
+    /// A retail drag is in progress. ImGui stops hovering windows while a button pressed
+    /// outside it is held, so during one the overlay submits an external drag source each
+    /// frame, which keeps <see cref="PointerOverWindow"/> answering.
+    /// </summary>
+    internal Func<bool>? ExternalDragActive { get; set; }
+
+    private const string ExternalDragPayload = "OPENAC_DRAG";
+
     public bool WantsKeyboard => _imguiWantsKeyboard || AnySinkCapturing();
 
     /// <summary>Where the clipboard lives: the window's keyboard, once the input feed is up.</summary>
@@ -284,6 +296,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             {
                 Input.Clear();
                 WantsMouse = false;
+                PointerOverWindow = false;
                 _imguiWantsKeyboard = false;
                 return;
             }
@@ -296,6 +309,13 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             Input.ApplyTo(io);
             ImGui.NewFrame();
             _frameOpen = true;
+            if (ExternalDragActive?.Invoke() == true && ImGui.BeginDragDropSource(ImGuiDragDropFlags.SourceExtern))
+            {
+                ImGui.SetDragDropPayload(ExternalDragPayload, IntPtr.Zero, 0);
+                ImGui.EndDragDropSource();
+            }
+
+            PointerOverWindow = ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
             WantsMouse = io.WantCaptureMouse;
             _imguiWantsKeyboard = io.WantCaptureKeyboard;
         }
@@ -365,6 +385,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         Input.Accepting = false;
         Input.Clear();
         WantsMouse = false;
+        PointerOverWindow = false;
         _imguiWantsKeyboard = false;
         _sinks.Clear();
         ClipboardSource = null;
@@ -462,6 +483,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         Input.Accepting = false;
         Input.Clear();
         WantsMouse = false;
+        PointerOverWindow = false;
         _imguiWantsKeyboard = false;
         _log($"[ImGui] overlay stopped at {stage}: {error.GetType().Name}: {error.Message}");
     }

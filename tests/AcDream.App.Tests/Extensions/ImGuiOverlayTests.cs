@@ -172,6 +172,63 @@ public sealed class ImGuiOverlayTests : IDisposable
         Assert.Equal("pasted line", System.Text.Encoding.UTF8.GetString(buffer).TrimEnd('\0'));
     }
 
+    private void HoverWindow() => _overlay.AddFrameCallback(() =>
+    {
+        ImGui.SetNextWindowPos(new Vector2(100, 100));
+        ImGui.SetNextWindowSize(new Vector2(200, 200));
+        ImGui.Begin("drop");
+        ImGui.End();
+    });
+
+    [Fact]
+    public void TheMouseOverAWindowIsPointerOverWindow()
+    {
+        Start();
+        HoverWindow();
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        RunFrame();
+        RunFrame();
+        Assert.True(_overlay.PointerOverWindow);
+    }
+
+    [Fact]
+    public void ARetailDragOverAWindowIsPointerOverWindowButNotWantsMouse()
+    {
+        Start();
+        HoverWindow();
+        bool dragging = true;
+        _overlay.ExternalDragActive = () => dragging;
+        _overlay.Input.MouseMove(new Vector2(10, 10));
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, true);   // pressed outside ImGui: the app owns the click
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        RunFrame();
+        RunFrame();
+        Assert.True(_overlay.PointerOverWindow);
+        Assert.False(_overlay.WantsMouse);
+
+        _overlay.Input.MouseMove(new Vector2(20, 20));
+        RunFrame();
+        Assert.False(_overlay.PointerOverWindow);
+    }
+
+    [Fact]
+    public void WithoutTheExternalSourceARetailDragNeverHovers()
+    {
+        Start();
+        HoverWindow();
+        _overlay.Input.MouseMove(new Vector2(10, 10));
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, true);
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        RunFrame();
+        RunFrame();
+        Assert.False(_overlay.PointerOverWindow);
+    }
+
     private void Start() =>
         _overlay.Initialize(_renderer, () => (new Vector2(800, 600), new Vector2(1600, 1200)));
 
