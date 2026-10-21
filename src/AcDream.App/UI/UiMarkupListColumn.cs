@@ -34,6 +34,9 @@ public sealed class UiMarkupListColumn
     public float ButtonWidth { get; internal init; }
     public float ButtonHeight { get; internal init; }
 
+    /// <summary>The column's header caption (a literal or a bound string); null for none.</summary>
+    public Func<string?>? HeaderSource { get; internal set; }
+
     public static UiMarkupListColumn Text(
         float width,
         Func<IReadOnlyList<string>> textSource,

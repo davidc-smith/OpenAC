@@ -1,0 +1,123 @@
+using System.Numerics;
+
+namespace AcDream.App.UI;
+
+public sealed partial class UiMarkupList
+{
+    /// <summary>The height of the header row a <c>header="true"</c> list draws above its rows.</summary>
+    public const float HeaderHeight = 18f;
+
+    /// <summary>Draws a row of column captions above the rows (the column form only).</summary>
+    public bool ShowHeader { get; set; }
+
+    private bool HeaderVisible => ShowHeader && _columns is { Count: > 0 };
+
+    /// <summary>Where the rows and the scrollbar start: under the header when there is one.</summary>
+    private float RowsTop => HeaderVisible ? HeaderHeight : 0f;
+
+    private float RowsHeight => MathF.Max(0f, Height - RowsTop);
+
+    // The header cell the left button went down on; -1 for none.
+    private int _headerPressColumn = -1;
+
+    /// <summary>
+    /// The header: Classic draws the scrollbar track art under the captions,
+    /// the plugin theme its field colour; both draw a border-coloured underline
+    /// and a line between cells.
+    /// </summary>
+    private void DrawHeader(UiRenderContext context, IReadOnlyList<UiMarkupListColumn> columns)
+    {
+        if (ThemePalette is { } palette)
+            context.DrawFill(0f, 0f, Width, HeaderHeight, palette.Field);
+        else if (SpriteResolve is { } resolve)
+            DrawTiledSprite(context, resolve, RetailScrollbarChrome.Track, 0f, 0f, Width, HeaderHeight);
+        context.DrawFill(0f, HeaderHeight - 1f, Width, 1f, BorderColor);
+
+        for (int c = 0; c < columns.Count; c++)
+        {
+            (float cellX, float cellW) = _cachedLayout[c];
+            if (cellW <= 0f)
+                continue;
+            if (c < columns.Count - 1)
+                context.DrawFill(cellX + cellW - 1f, 2f, 1f, HeaderHeight - 4f, BorderColor);
+            DrawHeaderCell(context, columns[c], c, cellX, cellW);
+        }
+    }
+
+    private void DrawHeaderCell(UiRenderContext context, UiMarkupListColumn column, int c, float cellX, float cellW)
+    {
+        string caption = column.HeaderSource?.Invoke() ?? string.Empty;
+        context.PushClip(cellX, 0f, cellW, HeaderHeight);
+        try
+        {
+            DrawCaption(context, caption, cellX + Padding, 0f, HeaderHeight, TextColor);
+        }
+        finally
+        {
+            context.PopClip();
+        }
+    }
+
+    private void DrawCaption(UiRenderContext context, string text, float x, float top, float height, Vector4 color)
+    {
+        float textY = top + MathF.Max(0f, (height - (DatFont?.LineHeight ?? 14f)) * 0.5f);
+        if (DatFont is { } font)
+            context.DrawStringDat(font, text, x, textY, color, ThemePalette is null);
+        else
+            context.DrawString(text, x, textY, color);
+    }
+
+    private int HeaderColumnAt(float x)
+    {
+        if (_columns is not { } columns)
+            return -1;
+        for (int c = 0; c < columns.Count; c++)
+        {
+            (float cellX, float cellW) = _cachedLayout[c];
+            if (x >= cellX && x < cellX + cellW)
+                return c;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Pointer input over the header. Returns true when it is consumed; moves,
+    /// hovers and presses that began in the rows carry on to the rows.
+    /// </summary>
+    private bool HandleHeaderEvent(in UiEvent e, float contentWidth)
+    {
+        if (!HeaderVisible)
+            return false;
+        bool inHeader = e.Data2 >= 0 && e.Data2 < HeaderHeight;
+        switch (e.Type)
+        {
+            case UiEventType.MouseDown:
+                if (!inHeader)
+                    return false;
+                _headerPressColumn = Enabled ? HeaderColumnAt(e.Data1) : -1;
+                return true;
+            case UiEventType.MouseUp:
+            {
+                if (_headerPressColumn < 0)
+                    return false;
+                int pressed = _headerPressColumn;
+                _headerPressColumn = -1;
+                if (inHeader && Enabled && HeaderColumnAt(e.Data1) == pressed)
+                    HeaderClicked(pressed);
+                return true;
+            }
+            case UiEventType.CaptureChanged:
+                _headerPressColumn = -1;
+                return false;
+            case UiEventType.Click:
+            case UiEventType.DoubleClick:
+                return inHeader;
+        }
+        return false;
+    }
+
+    /// <summary>A press and release on the same header cell.</summary>
+    private void HeaderClicked(int column)
+    {
+    }
+}

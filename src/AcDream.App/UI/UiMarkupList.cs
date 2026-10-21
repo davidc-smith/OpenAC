@@ -211,7 +211,7 @@ public sealed partial class UiMarkupList : UiElement
     }
 
     private int VisibleRows => Math.Max(1, (int)MathF.Floor(
-        Height / MathF.Max(1f, RowHeight)));
+        RowsHeight / MathF.Max(1f, RowHeight)));
 
     private void ClampTop(int count, int visibleRows) =>
         _topRow = Math.Clamp(_topRow, 0, Math.Max(0, count - visibleRows));
@@ -301,12 +301,14 @@ public sealed partial class UiMarkupList : UiElement
 
         context.DrawFill(0f, 0f, Width, Height, BackgroundColor);
         context.DrawRectOutline(0f, 0f, Width, Height, BorderColor, 1f);
+        if (HeaderVisible)
+            DrawHeader(context, columns);
 
         int end = Math.Min(rowCount, _topRow + visibleRows);
         for (int view = _topRow; view < end; view++)
         {
             int row = _view.PluginRow(view);
-            float y = (view - _topRow) * RowHeight;
+            float y = RowsTop + (view - _topRow) * RowHeight;
             if (view == selectedView && SelectionBandEnabled)
                 context.DrawFill(1f, y + 1f, contentWidth - 2f, RowHeight - 1f, SelectedColor);
 
@@ -543,7 +545,9 @@ public sealed partial class UiMarkupList : UiElement
     {
         if (_columns is not { } columns || localX < 0f || localX >= contentWidth)
             return (-1, -1);
-        int row = (int)MathF.Floor(localY / MathF.Max(1f, RowHeight));
+        if (localY < RowsTop)
+            return (-1, -1);
+        int row = (int)MathF.Floor((localY - RowsTop) / MathF.Max(1f, RowHeight));
         int index = _topRow + row;
         if (row < 0 || row >= visibleRows)
             return (-1, -1);
@@ -554,7 +558,7 @@ public sealed partial class UiMarkupList : UiElement
                 continue;
             if (!HasButtonCaption(c, _view.PluginRow(index), out _))
                 return (-1, -1);
-            (float bx, float by, float bw, float bh) = ButtonRect(columns[c], cellX, cellW, row * RowHeight);
+            (float bx, float by, float bw, float bh) = ButtonRect(columns[c], cellX, cellW, RowsTop + row * RowHeight);
             bool onButton = localX >= bx && localX < bx + bw && localY >= by && localY < by + bh;
             return onButton ? (index, c) : (-1, -1);
         }
@@ -667,6 +671,8 @@ public sealed partial class UiMarkupList : UiElement
         float contentWidth = rowCount > visibleRows
             ? MathF.Max(0f, Width - ScrollbarWidth)
             : Width;
+        if (HandleHeaderEvent(e, contentWidth))
+            return true;
         if (_hasButtons && TrackButtonPointer(e, columns, contentWidth, visibleRows))
             return true;
         if (TryHandleScrollbarEvent(e, contentWidth, rowCount, visibleRows))
@@ -689,7 +695,9 @@ public sealed partial class UiMarkupList : UiElement
         if (e.Type != UiEventType.MouseDown || !Enabled)
             return false;
 
-        int row = (int)MathF.Floor(e.Data2 / MathF.Max(1f, RowHeight));
+        if (e.Data2 < RowsTop)
+            return true;
+        int row = (int)MathF.Floor((e.Data2 - RowsTop) / MathF.Max(1f, RowHeight));
         int index = _topRow + row;
         if (row < 0 || row >= visibleRows || index < 0 || index >= rowCount)
             return true;
@@ -748,28 +756,29 @@ public sealed partial class UiMarkupList : UiElement
     private void DrawScrollbar(UiRenderContext ctx, float x, int rowCount, int visibleRows)
     {
         ConfigureScroll(rowCount, visibleRows);
+        float barTop = RowsTop, barHeight = RowsHeight;
         if (ThemePalette is { } p)
         {
-            ctx.DrawFill(x, 0, ScrollbarWidth, Height, p.Field);
-            ctx.DrawRectOutline(x, 0, ScrollbarWidth, Height, p.Border, 1);
-            float button = Math.Min(ScrollButtonExtent, Height / 2);
-            var (top, size) = UiScrollbar.ThumbRect(_scroll, button, Math.Max(0, Height - 2 * button));
+            ctx.DrawFill(x, barTop, ScrollbarWidth, barHeight, p.Field);
+            ctx.DrawRectOutline(x, barTop, ScrollbarWidth, barHeight, p.Border, 1);
+            float button = Math.Min(ScrollButtonExtent, barHeight / 2);
+            var (top, size) = UiScrollbar.ThumbRect(_scroll, barTop + button, Math.Max(0, barHeight - 2 * button));
             ctx.DrawFill(x + 3, top, ScrollbarWidth - 6, size, p.Muted);
-            ctx.DrawFill(x + 5, button / 2, ScrollbarWidth - 10, 1, p.Muted);
-            ctx.DrawFill(x + 5, Height - button / 2, ScrollbarWidth - 10, 1, p.Muted);
+            ctx.DrawFill(x + 5, barTop + button / 2, ScrollbarWidth - 10, 1, p.Muted);
+            ctx.DrawFill(x + 5, barTop + barHeight - button / 2, ScrollbarWidth - 10, 1, p.Muted);
             return;
         }
         if (SpriteResolve is not { } resolve) return;
 
-        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, Height);
-        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, Height - decExtent);
+        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight);
+        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight - decExtent);
 
-        DrawTiledSprite(ctx, resolve, RetailScrollbarChrome.Track, x, 0f, ScrollbarWidth, Height);
-        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.UpNormal, x, 0f, ScrollbarWidth, decExtent);
-        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.DownNormal, x, Height - incExtent, ScrollbarWidth, incExtent);
+        DrawTiledSprite(ctx, resolve, RetailScrollbarChrome.Track, x, barTop, ScrollbarWidth, barHeight);
+        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.UpNormal, x, barTop, ScrollbarWidth, decExtent);
+        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.DownNormal, x, barTop + barHeight - incExtent, ScrollbarWidth, incExtent);
 
-        float trackTop = decExtent;
-        float trackLen = MathF.Max(0f, Height - decExtent - incExtent);
+        float trackTop = barTop + decExtent;
+        float trackLen = MathF.Max(0f, barHeight - decExtent - incExtent);
         var (ty, th) = UiScrollbar.ThumbRect(_scroll, trackTop, trackLen);
         const float capH = 3f;
         if (th >= 2f * capH)
@@ -823,17 +832,19 @@ public sealed partial class UiMarkupList : UiElement
         if (rowCount <= visibleRows) return false;
         if (e.Type != UiEventType.MouseDown || !Enabled) return false;
         if (e.Data1 < contentWidth) return false;
+        float barTop = RowsTop, barHeight = RowsHeight;
+        if (e.Data2 < barTop) return false;
 
         ConfigureScroll(rowCount, visibleRows);
-        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, Height);
-        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, Height - decExtent);
+        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight);
+        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight - decExtent);
         float ly = e.Data2;
 
-        if (ly < decExtent) { StepRow(-1, rowCount, visibleRows); return true; }
-        if (ly >= Height - incExtent) { StepRow(1, rowCount, visibleRows); return true; }
+        if (ly < barTop + decExtent) { StepRow(-1, rowCount, visibleRows); return true; }
+        if (ly >= barTop + barHeight - incExtent) { StepRow(1, rowCount, visibleRows); return true; }
 
-        float trackTop = decExtent;
-        float trackLen = MathF.Max(0f, Height - decExtent - incExtent);
+        float trackTop = barTop + decExtent;
+        float trackLen = MathF.Max(0f, barHeight - decExtent - incExtent);
         var (ty, th) = UiScrollbar.ThumbRect(_scroll, trackTop, trackLen);
         if (ly >= ty && ly <= ty + th)
         {
@@ -850,10 +861,11 @@ public sealed partial class UiMarkupList : UiElement
     private void DragThumb(float ly, int rowCount, int visibleRows)
     {
         ConfigureScroll(rowCount, visibleRows);
-        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, Height);
-        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, Height - decExtent);
-        float trackTop = decExtent;
-        float trackLen = MathF.Max(0f, Height - decExtent - incExtent);
+        float barTop = RowsTop, barHeight = RowsHeight;
+        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight);
+        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight - decExtent);
+        float trackTop = barTop + decExtent;
+        float trackLen = MathF.Max(0f, barHeight - decExtent - incExtent);
         var (_, thumbH) = UiScrollbar.ThumbRect(_scroll, trackTop, trackLen);
         float travel = MathF.Max(1f, trackLen - thumbH);
         float ratio = (ly - _thumbDragOffset - trackTop) / travel;
