@@ -375,6 +375,10 @@ public static class MarkupDocument
                 parent.AddChild(MarkupRadio.Build(el, binding, Context()));
                 break;
 
+            case "separator":
+                parent.AddChild(MarkupSeparator.Build(el, binding, Context()));
+                break;
+
             case "slider":
                 string? changeName = (string?)el.Attribute("onchange");
                 Action<float>? changed = BindFloatAction(changeName, binding);
