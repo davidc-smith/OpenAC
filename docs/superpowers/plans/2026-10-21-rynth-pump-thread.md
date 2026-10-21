@@ -2114,4 +2114,4 @@ Claude-Session: https://claude.ai/code/session_01UzLnYkJ6ifzKGaeNwgsp8W"
 - `dotnet build AcDream.slnx -c Release`: 0 errors.
 - `tests/AcDream.Rynth.Host.Tests`: 554/554 passed.
 - `tests/AcDream.App.Tests`: 10115 passed, 173 failed, 119 skipped. The 173 failures are exactly the same set on main ff28e715 (compared by name; none new, none fixed): the current Mac baseline.
-- Live check: pending (user).
+- Live check: passed, reported by the user on 2026-10-21 after the merge to main (cf9394a1). No dotnet-trace numbers were recorded.

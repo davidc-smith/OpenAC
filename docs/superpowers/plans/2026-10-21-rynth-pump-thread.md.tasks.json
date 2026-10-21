@@ -64,12 +64,12 @@
     {
       "id": 8,
       "subject": "Task 8: Gate, build and live check",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Full suites green, Release build deployed to the dev install, and the user's live check of the original failure.\n\n> **USER-ORDERED GATE \u2014 NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it \"verified inline\", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.\n\n**Files:**\n- Modify: `docs/superpowers/plans/2026-10-21-rynth-pump-thread.md` (record results)\n\n**Acceptance Criteria:**\n- [ ] `~/.dotnet/dotnet test tests/AcDream.Rynth.Host.Tests` \u2192 0 failed; `tests/AcDream.App.Tests --filter Rynth` \u2192 0 failed; full solution test run shows no new failures against the 70-failure Mac baseline.\n- [ ] Release build of the client succeeds and is deployed to the dev root (`~/OpenAC-dev`, the usual dev build path).\n- [ ] Live (user, local ACE 10.10.20.20 only; ask before launching): the Samurai Hausu goto runs with no stutter while RynthNav re-plans \u2014 dotnet-trace frame p99 under 20 ms during re-plans (was 450-520 ms stalls).\n- [ ] Live: RynthAi patrol with combat and looting; vendor buy/sell; dashboard, nav panel, arrow, maps; chat and `/rnav`; logout + login; `ACDREAM_RYNTH_PUMP=0` restores old behaviour.\n\n**Verify:** `~/.dotnet/dotnet test tests/AcDream.Rynth.Host.Tests` \u2192 `Failed: 0`; live trace captured with `dotnet-trace collect -p <pid> --profile dotnet-sampled-thread-time --duration 00:00:00:45` and analysed for frame p99 and Replan durations.\n\n```json:metadata\n{\"files\": [\"docs/superpowers/plans/2026-10-21-rynth-pump-thread.md\", \"tests/AcDream.App.Tests --filter Rynth\"], \"verifyCommand\": \"~/.dotnet/dotnet test tests/AcDream.Rynth.Host.Tests\", \"acceptanceCriteria\": [\"`~/.dotnet/dotnet test tests/AcDream.Rynth.Host.Tests` \\u2192 0 failed; `tests/AcDream.App.Tests --filter Rynth` \\u2192 0 failed; full solution test run shows no new failures against the 70-failure Mac baseline.\", \"Release build of the client succeeds and is deployed to the dev root (`~/OpenAC-dev`, the usual dev build path).\", \"Live (user, local ACE 10.10.20.20 only; ask before launching): the Samurai Hausu goto runs with no stutter while RynthNav re-plans \\u2014 dotnet-trace frame p99 under 20 ms during re-plans (was 450-520 ms stalls).\", \"Live: RynthAi patrol with combat and looting; vendor buy/sell; dashboard, nav panel, arrow, maps; chat and `/rnav`; logout + login; `ACDREAM_RYNTH_PUMP=0` restores old behaviour.\"], \"modelTier\": \"standard\", \"userGate\": true, \"tags\": [\"user-gate\"]}\n```",
       "blockedBy": [
         7
       ]
     }
   ],
-  "lastUpdated": "2026-10-21T12:36:27.202953"
+  "lastUpdated": "2026-10-21T18:00:00"
 }
