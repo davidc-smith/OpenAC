@@ -105,6 +105,8 @@ back at runtime instead.
 | `checkbox onchange` | `Action<bool>`, the new value | throws |
 | `number value` | `int`, `long`, `float`, `double` or `decimal` | throws |
 | `number onchange` | `Action<T>` of the same type as `value` | throws |
+| `hotkey value` | `string`, `Ctrl+Alt+Shift+Key`; empty is unbound | throws |
+| `hotkey onchange` | `Action<string>` | throws |
 | `radio items` | `IEnumerable<string>`, or a literal list `a\|b\|c` | throws |
 | `radio selected` | `int`, the chosen option (−1 for none) | throws |
 | `radio onchange` | `Action<int>`, the option picked | throws |
@@ -183,6 +185,7 @@ Unknown or miscased element names throw at build time.
 | `toggle` | On/off lamp | `x y w h text checked onclick color` |
 | `checkbox` | Tick box, optionally indeterminate | `x y w h text checked onchange color` |
 | `number` | Number field with spin buttons | `x y w h value onchange min max step decimals color background` |
+| `hotkey` | A box that records a key chord | `x y w h value onchange` |
 | `radio` | One choice of several, as round buttons or a segmented bar | `x y w h items selected onchange orientation style color` |
 | `separator` | A 1 px dividing line | `x y w h color` |
 | `expander` | A header that folds away the content below it | `name x y w h text expanded onchange open color` |
@@ -201,7 +204,7 @@ A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
 
 Clicking a `button`, `tab`, `toggle`, `checkbox`, `radio`, or `expander` (its
-header) invokes its action without taking keyboard focus from the game. Use Tab to focus these controls:
+header) invokes its action without taking keyboard focus from the game. A `hotkey` is the exception: clicking it takes focus, while it records. Use Tab to focus these controls:
 Enter or Space then activates a `button`, `tab`, `toggle`, `checkbox` or
 `expander` (its header). A focused `radio` uses the arrow keys instead; Enter
 and Space do nothing on it. A focused `split` bar moves 8 px with the arrow
@@ -295,6 +298,48 @@ with spin buttons at its right edge.
 
 On a host older than number fields, a `<number>` fails the build of its
 window as unknown.
+
+## Hotkey
+
+```xml
+<hotkey x="8" y="8" w="140" h="20" value="{ToggleNavKey}" onchange="{SetToggleNavKey}"/>
+```
+
+A `<hotkey>` shows a key chord and lets the player record a new one. The
+plugin decides what the chord does; the box only edits the string.
+
+- `value` binds a `string` and `onchange` an `Action<string>`; both are
+  required. The string is `Ctrl+Alt+Shift+Key`: the modifiers that are held,
+  in that order, then the key's name as Silk.NET's `Key` spells it (`F`,
+  `F12`, `Number1`, `Keypad5`, `Enter`). Empty means unbound. When reading
+  `value` the box also accepts modifiers in any order and any case
+  (`shift+ctrl+f`), but `onchange` always hands back the exact form.
+- The box shows the chord by the game's key names. An empty value, or one it
+  can't read, shows `None`.
+- Clicking the box, or Enter or Space while it has focus, starts recording:
+  the box shows `Press a key...` and takes every key press for itself, so
+  the game's key presses don't act while it records. Holding Shift, Ctrl or
+  Alt alone keeps it waiting; the first other key ends it and `onchange`
+  gets the chord. Escape stops without changing anything, and Backspace or
+  Delete unbinds (`onchange` gets `""`), even with modifiers held. Keys
+  pressed while the Windows/Command key is held are ignored. Tab can't be
+  recorded.
+- `onchange` is called only when the new string differs from `value`.
+- After a recording started by a click, the box gives the keyboard back to
+  the game when the key that ended it is released. One started with Enter or
+  Space keeps the focus, so Tab carries on to the next control.
+- Clicking elsewhere, the window hiding, or the box being disabled stops a
+  recording without changing anything. After a click-started recording that
+  is stopped by disabling the box, the focus is released at once.
+- Mouse buttons are never recorded.
+
+In Classic the box is a dark field with a thin border that turns gold while
+it has focus; under `theme="plugin"` it takes the palette's field, border,
+text, muted and accent colours and the panel's font.
+
+A `<hotkey>` without `value` or `onchange`, or with either bound to the wrong
+type, fails the build. On a host older than hotkey boxes, a `<hotkey>` fails
+the build of its window as unknown.
 
 ## Radio group
 
