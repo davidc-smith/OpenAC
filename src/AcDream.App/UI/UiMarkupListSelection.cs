@@ -4,7 +4,7 @@ namespace AcDream.App.UI;
 /// The multi-select rules of a markup list, as pure functions over plugin
 /// rows. Ranges run in view order (what the player sees). Every result is
 /// plugin rows in ascending order, without duplicates or rows outside
-/// 0..view.Count-1.
+/// 0..view.PluginCount-1.
 /// </summary>
 internal static class UiMarkupListSelection
 {
@@ -18,7 +18,7 @@ internal static class UiMarkupListSelection
     public static int[] Click(
         IReadOnlyList<int> current, int row, bool add, bool range, int anchor, UiMarkupListViewMap view)
     {
-        int count = view.Count;
+        int count = view.PluginCount;
         if (range && IsRow(anchor, count))
         {
             int[] span = Range(anchor, row, view);
@@ -51,8 +51,15 @@ internal static class UiMarkupListSelection
         return rows;
     }
 
-    /// <summary>Every row.</summary>
-    public static int[] All(int count) => Enumerable.Range(0, Math.Max(0, count)).ToArray();
+    /// <summary>Every row shown.</summary>
+    public static int[] All(UiMarkupListViewMap view)
+    {
+        var rows = new int[view.ViewCount];
+        for (int v = 0; v < rows.Length; v++)
+            rows[v] = view.PluginRow(v);
+        Array.Sort(rows);
+        return rows;
+    }
 
     /// <summary>
     /// The plugin row one view row from <paramref name="lead"/>, clamped to the
@@ -60,10 +67,10 @@ internal static class UiMarkupListSelection
     /// </summary>
     public static int Step(int lead, int delta, UiMarkupListViewMap view)
     {
-        if (view.Count == 0)
+        if (view.ViewCount == 0)
             return -1;
         int at = view.ViewRow(lead);
-        return view.PluginRow(at < 0 ? 0 : Math.Clamp(at + delta, 0, view.Count - 1));
+        return view.PluginRow(at < 0 ? 0 : Math.Clamp(at + delta, 0, view.ViewCount - 1));
     }
 
     private static bool IsRow(int row, int count) => (uint)row < (uint)count;

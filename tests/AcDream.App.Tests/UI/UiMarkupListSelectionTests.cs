@@ -80,10 +80,11 @@ public sealed class UiMarkupListSelectionTests
     }
 
     [Fact]
-    public void All_IsEveryRow()
+    public void All_IsEveryShownRowAscending()
     {
-        Assert.Equal(new[] { 0, 1, 2 }, UiMarkupListSelection.All(3));
-        Assert.Empty(UiMarkupListSelection.All(0));
+        Assert.Equal(new[] { 0, 1, 2 }, UiMarkupListSelection.All(Identity(3)));
+        Assert.Empty(UiMarkupListSelection.All(Identity(0)));
+        Assert.Equal(new[] { 0, 1, 2, 3 }, UiMarkupListSelection.All(Sorted()));
     }
 
     [Fact]

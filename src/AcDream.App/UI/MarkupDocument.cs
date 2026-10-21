@@ -692,6 +692,7 @@ public static class MarkupDocument
                     MarkupListHeader.Apply(el, listChildren, list, binding, Context());
                 else
                     MarkupListHeader.RejectWithoutColumns(el);
+                MarkupListTree.Apply(el, list, binding, Context());
                 parent.AddChild(list);
                 break;
 

@@ -198,7 +198,7 @@ public sealed partial class UiMarkupList : UiElement
 
     public override bool OnEvent(in UiEvent e)
     {
-        if (MultiSelect && HandleSelectionEvent(e))
+        if ((MultiSelect || IsTree) && HandleSelectionEvent(e))
             return true;
         if (Columns is { Count: > 0 } columns)
             return OnEventColumns(e, columns);
@@ -293,9 +293,10 @@ public sealed partial class UiMarkupList : UiElement
     private void DrawColumns(UiRenderContext context, IReadOnlyList<UiMarkupListColumn> columns)
     {
         int rowCount = RefreshRows(columns);
+        int viewCount = _view.ViewCount;
 
         int visibleRows = VisibleRows;
-        bool showScrollbar = rowCount > visibleRows;
+        bool showScrollbar = viewCount > visibleRows;
         float contentWidth = showScrollbar ? MathF.Max(0f, Width - ScrollbarWidth) : Width;
         ComputeColumnLayout(columns, contentWidth);
 
@@ -315,7 +316,7 @@ public sealed partial class UiMarkupList : UiElement
                     _topRow = selectedView - visibleRows + 1;
             }
         }
-        ClampTop(rowCount, visibleRows);
+        ClampTop(viewCount, visibleRows);
         if (MultiSelect)
             RefreshSelectedMask(rowCount);
         if (_hasButtons)
@@ -329,7 +330,7 @@ public sealed partial class UiMarkupList : UiElement
         if (HeaderVisible)
             DrawHeader(context, columns);
 
-        int end = Math.Min(rowCount, _topRow + visibleRows);
+        int end = Math.Min(viewCount, _topRow + visibleRows);
         for (int view = _topRow; view < end; view++)
         {
             int row = _view.PluginRow(view);
@@ -349,7 +350,10 @@ public sealed partial class UiMarkupList : UiElement
                     switch (columns[c].Kind)
                     {
                         case UiMarkupListColumnKind.Text:
-                            DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
+                            if (c == TreeColumn)
+                                DrawTreeCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
+                            else
+                                DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
                             break;
                         case UiMarkupListColumnKind.Check:
                             DrawCheckCell(context, _cachedCheckRows[c], row, cellX, cellW, y, columns[c].Boxed);
@@ -370,7 +374,7 @@ public sealed partial class UiMarkupList : UiElement
         }
 
         if (showScrollbar)
-            DrawScrollbar(context, contentWidth, rowCount, visibleRows);
+            DrawScrollbar(context, contentWidth, viewCount, visibleRows);
         DrawSelectionFocus(context);
     }
 
@@ -692,7 +696,7 @@ public sealed partial class UiMarkupList : UiElement
 
     private bool OnEventColumns(in UiEvent e, IReadOnlyList<UiMarkupListColumn> columns)
     {
-        int rowCount = _cachedRowCount;
+        int rowCount = _view.ViewCount; // rows shown
         int visibleRows = VisibleRows;
         float contentWidth = rowCount > visibleRows
             ? MathF.Max(0f, Width - ScrollbarWidth)
@@ -738,7 +742,11 @@ public sealed partial class UiMarkupList : UiElement
             switch (columns[c].Kind)
             {
                 case UiMarkupListColumnKind.Text:
-                    if (columns[c].TextClicked is { } onTextClick)
+                    if (c == TreeColumn && OnTreeArrow(pluginRow, cellX, localX))
+                    {
+                        ToggleExpanded(pluginRow);
+                    }
+                    else if (columns[c].TextClicked is { } onTextClick)
                     {
                         if (pluginRow < (_cachedTextRows[c]?.Count ?? 0))
                             onTextClick(pluginRow);

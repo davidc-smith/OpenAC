@@ -51,7 +51,7 @@ public sealed partial class UiMarkupList
         UiSelectModifiers keys = HeldModifiers();
         int[] next = UiMarkupListSelection.Click(
             SelectedRowsSource(), pluginRow, keys.Add, keys.Range, _anchorRow, _view);
-        if (UiMarkupListSelection.MovesAnchor(keys.Range, _anchorRow, _view.Count))
+        if (UiMarkupListSelection.MovesAnchor(keys.Range, _anchorRow, _view.PluginCount))
             _anchorRow = pluginRow;
         _leadRow = pluginRow;
         SelectedRowsChanged?.Invoke(next);
@@ -81,9 +81,31 @@ public sealed partial class UiMarkupList
     private bool _selectionFocused;
 
     /// <summary>
-    /// Multi-mode focus and selection keys: Up/Down step the lead (Shift
-    /// extends from the anchor), Ctrl/Cmd+A selects every row. Up and Down are
-    /// always taken while focused; other keys fall through.
+    /// Up and Down in a focused single-select tree: the row above or below,
+    /// as shown, or the first row when none is selected. When the selected row
+    /// is hidden inside a collapsed parent, the step starts from that parent.
+    /// Taken even at the ends, so the game doesn't act on them.
+    /// </summary>
+    private bool HandleSingleStep(Key key)
+    {
+        int delta = key switch { Key.Up => -1, Key.Down => 1, _ => 0 };
+        if (delta == 0)
+            return false;
+        RefreshSelectionRows();
+        int selected = SelectedIndexSource();
+        int current = ShownRowFor(selected);
+        int next = UiMarkupListSelection.Step(current, delta, _view);
+        if (next >= 0 && next != selected)
+            SelectionChanged?.Invoke(next);
+        return true;
+    }
+
+    /// <summary>
+    /// Focus and keys for a list. A tab-stop list tracks focus; while focused,
+    /// a tree takes Left/Right, and a multi-select list takes Up/Down (Shift
+    /// extends from the anchor) and Ctrl/Cmd+A to select every shown row. Up
+    /// and Down are taken in multi-select and in a single-select tree; other
+    /// keys fall through.
     /// </summary>
     private bool HandleSelectionEvent(in UiEvent e)
     {
@@ -103,9 +125,18 @@ public sealed partial class UiMarkupList
 
         UiSelectModifiers keys = HeldModifiers();
         var key = (Key)e.Data0;
+        if (IsTree && key is Key.Left or Key.Right)
+        {
+            RefreshSelectionRows();
+            HandleTreeKey(key == Key.Right);
+            return true;
+        }
+        if (!MultiSelect)
+            return IsTree && HandleSingleStep(key);
         if (key == Key.A && keys.Add)
         {
-            SelectedRowsChanged?.Invoke(UiMarkupListSelection.All(RefreshSelectionRows()));
+            RefreshSelectionRows();
+            SelectedRowsChanged?.Invoke(UiMarkupListSelection.All(_view));
             return true;
         }
         int delta = key switch { Key.Up => -1, Key.Down => 1, _ => 0 };
@@ -117,7 +148,7 @@ public sealed partial class UiMarkupList
         if (lead < 0)
             return true;
         int[] next;
-        if (keys.Range && (uint)_anchorRow < (uint)_view.Count)
+        if (keys.Range && (uint)_anchorRow < (uint)_view.PluginCount)
         {
             next = UiMarkupListSelection.Range(_anchorRow, lead, _view);
         }
