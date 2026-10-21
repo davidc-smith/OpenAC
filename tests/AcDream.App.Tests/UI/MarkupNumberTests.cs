@@ -35,6 +35,8 @@ public class MarkupNumberTests
         Assert.Equal(0.5m, MarkupBindings.BindRequiredNumberReader("{Ratio}", b, "ctx").Read());
         Assert.Equal(5m, MarkupBindings.BindRequiredNumberReader("{Big}", b, "ctx").Read());
         Assert.Equal(1.5m, MarkupBindings.BindRequiredNumberReader("{Scale}", b, "ctx").Read());
+        b.Scale = 0.1f;
+        Assert.Equal(0.1m, MarkupBindings.BindRequiredNumberReader("{Scale}", b, "ctx").Read());
         Assert.Equal(b.Money, MarkupBindings.BindRequiredNumberReader("{Money}", b, "ctx").Read());
     }
 
@@ -351,6 +353,27 @@ public class MarkupNumberTests
     }
 
     [Fact]
+    public void Number_FloatStepAtItsMaxReportsNothing()
+    {
+        var b = new Binding { Scale = 1.1f };
+        var (root, _) = Mount("value=\"{Scale}\" max=\"1.1\" onchange=\"{SetScale}\"", b);
+        Press(root, SpinX, UpY);
+        Release(root, SpinX, UpY);
+        Assert.Equal(0, b.ScaleCalls);
+    }
+
+    [Fact]
+    public void Number_FloatRetypedUnchangedReportsNothing()
+    {
+        var b = new Binding { Scale = 0.1f };
+        var (root, number) = Mount("value=\"{Scale}\" decimals=\"2\" onchange=\"{SetScale}\"", b);
+        Assert.Equal("0.10", number.Field.Text);
+        TypeText(root, number, "0.1");
+        root.SetKeyboardFocus(null);
+        Assert.Equal(0, b.ScaleCalls);
+    }
+
+    [Fact]
     public void Number_LongAndFloatStepAsTheirTypes()
     {
         var b = new Binding();
@@ -385,6 +408,7 @@ public class MarkupNumberTests
         TypeText(root, number, "42");
         root.OnKeyDown((int)Key.Up);
         Assert.Equal(47, b.Count);
+        Assert.Equal(1, b.Calls);
     }
 
     [Fact]
@@ -396,6 +420,7 @@ public class MarkupNumberTests
         TypeText(root, number, "42");
         root.OnScroll(1);
         Assert.Equal(47, b.Count);
+        Assert.Equal(1, b.Calls);
     }
 
     [Fact]

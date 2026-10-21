@@ -118,13 +118,13 @@ public sealed class UiMarkupNumber : UiElement
     {
         if (!Enabled)
             return;
-        if (Field.IsFocused && Field.Text != Format(Current) && TryParse(Field.Text, out _))
-            Commit(Field.Text);
+        decimal baseValue = Field.IsFocused && Field.Text != Format(Current)
+            && TryParse(Field.Text, out decimal typed) ? typed : Current;
         bool shift = ShiftHeld?.Invoke() ?? RootShiftHeld();
         decimal requested;
         try
         {
-            requested = Current + direction * Step * (shift ? 10m : 1m);
+            requested = baseValue + direction * Step * (shift ? 10m : 1m);
         }
         catch (OverflowException)
         {
@@ -137,7 +137,7 @@ public sealed class UiMarkupNumber : UiElement
     {
         decimal value = Math.Clamp(
             Math.Round(requested, Decimals, MidpointRounding.AwayFromZero), Min, Max);
-        if (value != Current)
+        if (value != Math.Round(Current, Decimals, MidpointRounding.AwayFromZero))
             Changed?.Invoke(value);
         ShowValue();
     }

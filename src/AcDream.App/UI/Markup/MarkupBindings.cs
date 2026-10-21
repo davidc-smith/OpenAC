@@ -88,7 +88,7 @@ internal static class MarkupBindings
                 $"{attribute} did not resolve to an {expected} property on "
                 + binding.GetType().Name + $" ({context})");
         }
-        object Target() => property.GetValue(binding)!;
+        object? Target() => property.GetValue(binding);
         return valueType == typeof(int) ? value => (Target() as Action<int>)?.Invoke((int)value)
             : valueType == typeof(long) ? value => (Target() as Action<long>)?.Invoke((long)value)
             : valueType == typeof(float) ? value => (Target() as Action<float>)?.Invoke((float)value)
@@ -113,7 +113,10 @@ internal static class MarkupBindings
         int i => i,
         long l => l,
         decimal d => d,
-        float f => FromBinary(f),
+        float f => float.IsNaN(f) ? 0m
+            : f >= (float)decimal.MaxValue ? decimal.MaxValue
+            : f <= (float)decimal.MinValue ? decimal.MinValue
+            : (decimal)f,   // rounds to 7 significant digits, so 0.1f reads as 0.1
         double d => FromBinary(d),
         _ => 0m,
     };
