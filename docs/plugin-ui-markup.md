@@ -172,8 +172,9 @@ a binding.
 A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
 
-Clicking a `button`, `tab`, or `toggle` invokes its action without taking keyboard
-focus from the game. Use Tab to focus these controls for Enter or Space activation.
+Clicking a `button`, `tab`, `toggle`, or `checkbox` invokes its action without
+taking keyboard focus from the game. Use Tab to focus these controls for Enter
+or Space activation.
 
 A `field` shows its bound `text` and goes on following it: while nobody is
 typing in the field, a value that changes behind it -- a profile loaded after
@@ -215,7 +216,7 @@ when the entries overflow, the popup shows the game's scrollbar.
 A `<checkbox>` is a tick box; a `<toggle>` is an on/off lamp. Both stay
 available: use whichever reads right for the setting.
 
-- `checked` binds a `bool`, or a `bool?` whose `null` draws the box
+- `checked` is required and binds a `bool`, or a `bool?` whose `null` draws the box
   indeterminate (a dash), e.g. a "select all" over a mix of rows.
 - `onchange` receives the value the click asks for, not a bare "clicked":
   unchecked and indeterminate become `true`, checked becomes `false`. The
@@ -225,6 +226,8 @@ available: use whichever reads right for the setting.
 
 In a list, `<column type="checkbox">` takes the same `values` and
 `onchange` as `type="check"` and draws tick boxes instead of lamps.
+On a host older than checkboxes, a `<checkbox>` element or `type="checkbox"`
+column fails the build of its window as unknown.
 
 ## Resizable panels and anchors
 
@@ -394,10 +397,10 @@ of its window as an unknown type.
 
 There is no header row; place `<label>` elements above the list. A `check`
 cell draws the same lamp glyph as `<toggle>`; a `checkbox` cell draws the
-`<checkbox>` tick box. When rows overflow the list's
-height it reserves a 16-pixel scrollbar at its right edge, drawn with the
-game's scrollbar art; when they fit, no bar and no reservation. Row
-selection draws no highlight band unless `selectionband="true"`.
+`<checkbox>` tick box. When rows overflow the list's height it reserves a
+16-pixel scrollbar at its right edge, drawn with the game's scrollbar art;
+when they fit, no bar and no reservation. Row selection draws no highlight
+band unless `selectionband="true"`.
 
 ## Slider range
 
