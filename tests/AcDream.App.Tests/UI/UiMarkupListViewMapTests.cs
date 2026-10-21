@@ -61,40 +61,4 @@ public sealed class UiMarkupListViewMapTests
         for (int view = 0; view < map.Count; view++)
             Assert.Equal(view, map.ViewRow(map.PluginRow(view)));
     }
-
-    [Fact]
-    public void VersionMovesOnlyWhenTheOrderChanges()
-    {
-        var map = new UiMarkupListViewMap();
-        map.SetIdentity(3);
-        int v0 = map.Version;
-        map.SetIdentity(4);
-        Assert.Equal(v0, map.Version);                 // identity growing is not a reorder
-
-        double[] keys = { 3, 1, 2, 0 };
-        map.SortByNumber(keys, 4, descending: false);
-        int v1 = map.Version;
-        Assert.NotEqual(v0, v1);
-        map.SortByNumber(keys, 4, descending: false);
-        Assert.Equal(v1, map.Version);                 // same keys, same order
-
-        keys[0] = -1;
-        map.SortByNumber(keys, 4, descending: false);
-        int v2 = map.Version;
-        Assert.NotEqual(v1, v2);
-
-        keys[0] = 5;
-        map.SortByNumber(keys, 3, descending: false);  // first 3 keys 5,1,2 -> order [1,2,0]
-        int v3 = map.Version;
-        Assert.NotEqual(v2, v3);                       // a sorted map that lost a row
-
-        map.SetIdentity(3);
-        Assert.NotEqual(v3, map.Version);              // the sort was cleared (a real reorder)
-
-        int v4 = map.Version;
-        map.SortByNumber(new double[] { 0, 1, 2 }, 3, descending: false);
-        Assert.Equal(v4, map.Version);                 // already in plugin order
-        map.SetIdentity(3);
-        Assert.Equal(v4, map.Version);                 // clearing it is not a reorder
-    }
 }

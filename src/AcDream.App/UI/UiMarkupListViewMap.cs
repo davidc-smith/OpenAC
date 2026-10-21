@@ -4,8 +4,7 @@ namespace AcDream.App.UI;
 /// The order a markup list shows its rows in: view row (top to bottom) to
 /// plugin row (the plugin's index) and back. Identity until sorted. A sort is
 /// stable (ties keep the plugin's order) and puts rows without a key last,
-/// ascending or descending. <see cref="Version"/> moves whenever the order
-/// changes, so a press can tell when the rows moved under it.
+/// ascending or descending.
 /// </summary>
 internal sealed class UiMarkupListViewMap
 {
@@ -17,8 +16,6 @@ internal sealed class UiMarkupListViewMap
 
     public int Count { get; private set; }
 
-    public int Version { get; private set; }
-
     /// <summary>The plugin row shown at a view row; −1 outside the rows.</summary>
     public int PluginRow(int view) =>
         (uint)view >= (uint)Count ? -1 : _identity ? view : _viewToPlugin[view];
@@ -29,17 +26,8 @@ internal sealed class UiMarkupListViewMap
 
     public void SetIdentity(int count)
     {
-        bool changed = false;
-        if (!_identity)
-        {
-            for (int view = 0; !changed && view < Math.Min(count, Count); view++)
-                changed = _viewToPlugin[view] != view;
-            changed |= count != Count;
-        }
         _identity = true;
         Count = count;
-        if (changed)
-            Version++;
     }
 
     /// <summary>Sorts by <paramref name="keys"/>[plugin row]; a null key sorts last.</summary>
@@ -70,10 +58,6 @@ internal sealed class UiMarkupListViewMap
         _comparer.Texts = null;
         _comparer.Numbers = null;
 
-        bool changed = count != Count;
-        for (int view = 0; !changed && view < count; view++)
-            changed = _scratch[view] != PluginRow(view);
-
         (_viewToPlugin, _scratch) = (_scratch, _viewToPlugin);
         if (_pluginToView.Length < count)
             _pluginToView = new int[count];
@@ -81,8 +65,6 @@ internal sealed class UiMarkupListViewMap
             _pluginToView[_viewToPlugin[view]] = view;
         _identity = false;
         Count = count;
-        if (changed)
-            Version++;
     }
 
     private sealed class KeyComparer : IComparer<int>

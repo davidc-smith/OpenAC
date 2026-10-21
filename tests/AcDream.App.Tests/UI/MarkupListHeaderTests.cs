@@ -313,6 +313,70 @@ public sealed class MarkupListHeaderTests : IDisposable
         Assert.Empty(b.Acted);
     }
 
+    /// <summary>Eight rows whose distance keys are their plugin rows, so a Dist sort keeps the plugin order.</summary>
+    private static Binding EightRows(int selected) => new()
+    {
+        Names = Enumerable.Range(0, 8).Select(i => $"m{i}").ToList(),
+        Dists = Enumerable.Range(0, 8).Select(i => $"{i} m").ToList(),
+        DistKeys = Enumerable.Range(0, 8).Select(i => (double)i).ToList(),
+        On = Enumerable.Repeat(false, 8).ToList(),
+        Acts = Enumerable.Repeat("Go", 8).ToList(),
+        Selected = selected,
+    };
+
+    private static void ScrollRows(UiMarkupList list, int rows)
+    {
+        for (int i = 0; i < Math.Abs(rows); i++)
+            list.OnEvent(new UiEvent { Type = UiEventType.Scroll, Data0 = -Math.Sign(rows) });
+        Redraw(list);
+    }
+
+    /// <summary>The plugin row shown at the top, read through its button so the selection stays.</summary>
+    private static int TopPluginRow(UiRoot root, Binding b)
+    {
+        b.Acted.Clear();
+        root.OnMouseMove(ButtonX, 27);
+        Click(root, ButtonX, 27);
+        return Assert.Single(b.Acted);
+    }
+
+    [Fact]
+    public void Sort_LiveReorderElsewhereKeepsTheScroll()
+    {
+        var b = EightRows(selected: 0);
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, DistX, HeaderY);
+        ScrollRows(list, 3);
+        (b.DistKeys[6], b.DistKeys[7]) = (b.DistKeys[7], b.DistKeys[6]);
+        Redraw(list);
+        Assert.Equal(3, TopPluginRow(root, b));
+    }
+
+    [Fact]
+    public void Sort_AHeaderClickRevealsTheSelection()
+    {
+        var b = EightRows(selected: 7);
+        var (root, list) = Mount("", b);   // reveals row 7: rows 3-7 show
+        ScrollRows(list, -3);
+        Assert.Equal(0, TopPluginRow(root, b));
+        ClickAndDraw(root, list, DistX, HeaderY);   // same order, but the sort changed
+        Assert.Equal(3, TopPluginRow(root, b));
+    }
+
+    [Fact]
+    public void Sort_APressSurvivesAReorderElsewhere()
+    {
+        var b = EightRows(selected: -1);
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, DistX, HeaderY);
+        root.OnMouseMove(ButtonX, 27);
+        root.OnMouseDown(UiMouseButton.Left, ButtonX, 27);
+        (b.DistKeys[6], b.DistKeys[7]) = (b.DistKeys[7], b.DistKeys[6]);
+        Redraw(list);
+        root.OnMouseUp(UiMouseButton.Left, ButtonX, 27);
+        Assert.Equal(new[] { 0 }, b.Acted);
+    }
+
     [Fact]
     public void Sort_BoundBelongsToThePlugin()
     {

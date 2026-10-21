@@ -60,13 +60,15 @@ public sealed partial class UiMarkupList : UiElement
     private int _topRow;
     private IReadOnlyList<UiMarkupListColumn>? _columns;
 
+    // The selection and sort last scrolled into view: only a change to either
+    // (a pick or a header click) reveals the selection, never live data
+    // reordering the rows.
     private int _lastRevealedSelected = int.MinValue;
-    private int _lastRevealedVersion = int.MinValue;
+    private (int Column, bool Descending) _lastRevealedSort = (int.MinValue, false);
 
     // Which plugin row each view row shows. Positions (_topRow, hover and
     // press rows) are view rows; data and callbacks use plugin rows.
     private readonly UiMarkupListViewMap _view = new();
-    private int _pressVersion;
 
     private readonly UiScrollable _scroll = new();
 
@@ -92,8 +94,9 @@ public sealed partial class UiMarkupList : UiElement
 
     // What the list showed when the button went down: a release fires by row
     // index, so the press is dropped if the list scrolls, its row count
-    // changes, or the pressed button's caption changes before then.
-    private int _pressTopRow, _pressRowCount;
+    // changes, another plugin row moves under it, or the pressed button's
+    // caption changes before then.
+    private int _pressTopRow, _pressRowCount, _pressPluginRow;
     private string _pressCaption = string.Empty;
 
     // The pointer's last position in list space, so the hovered button can be
@@ -285,10 +288,11 @@ public sealed partial class UiMarkupList : UiElement
 
         int selected = SelectedIndexSource();
         int selectedView = _view.ViewRow(selected);
-        if (selected != _lastRevealedSelected || _view.Version != _lastRevealedVersion)
+        (int Column, bool Descending) sort = CurrentSort;
+        if (selected != _lastRevealedSelected || sort != _lastRevealedSort)
         {
             _lastRevealedSelected = selected;
-            _lastRevealedVersion = _view.Version;
+            _lastRevealedSort = sort;
             if (selectedView >= 0)
             {
                 if (selectedView < _topRow)
@@ -599,17 +603,17 @@ public sealed partial class UiMarkupList : UiElement
     {
         _pressTopRow = _topRow;
         _pressRowCount = _cachedRowCount;
-        _pressVersion = _view.Version;
+        _pressPluginRow = _view.PluginRow(_pressRow);
         HasButtonCaption(_pressColumn, _view.PluginRow(_pressRow), out _pressCaption);
     }
 
     /// <summary>
-    /// Drops the press when the row under it may no longer be the item that was
-    /// pressed: the list scrolled, its row count changed, the row order changed
-    /// (a sort), or the pressed button's
-    /// caption changed or went empty. Other columns are left out on
-    /// purpose: a live column such as a distance changes every frame and would
-    /// make the buttons beside it unreliable.
+    /// Drops the press when the row under it may no longer be the item that
+    /// was pressed: the list scrolled, its row count changed, a sort moved
+    /// another plugin row under it, or the pressed button's caption changed or
+    /// went empty. Other columns and rows are left out on purpose: a live
+    /// column such as a distance changes every frame, and a sort by it swaps
+    /// rows elsewhere just as often, which would make the buttons unreliable.
     /// </summary>
     private void CancelPressIfRowsMoved()
     {
@@ -617,7 +621,7 @@ public sealed partial class UiMarkupList : UiElement
             return;
         bool moved = _topRow != _pressTopRow
             || _cachedRowCount != _pressRowCount
-            || _view.Version != _pressVersion
+            || _view.PluginRow(_pressRow) != _pressPluginRow
             || !HasButtonCaption(_pressColumn, _view.PluginRow(_pressRow), out string caption)
             || !string.Equals(caption, _pressCaption, StringComparison.Ordinal);
         if (moved)
