@@ -109,6 +109,50 @@ internal static class MarkupBindings
     public static Action<IReadOnlyList<int>>? BindIntListAction(string? attribute, object binding, string context) =>
         BindOptionalAction<IReadOnlyList<int>>(attribute, binding, context, "IReadOnlyList<int>");
 
+    private static readonly IReadOnlySet<string> NoStrings = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A required set of strings, read on each call: the plugin's set itself
+    /// when it is an <c>IReadOnlySet&lt;string&gt;</c>, otherwise any
+    /// <c>IEnumerable&lt;string&gt;</c> copied into an ordinal set. Null reads as empty.
+    /// </summary>
+    public static Func<IReadOnlySet<string>> BindRequiredStringSetReader(
+        string? expression, object binding, string context)
+    {
+        if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
+            throw new FormatException($"{context} must be a string-set binding");
+        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        if (property is null || !typeof(IEnumerable<string>).IsAssignableFrom(property.PropertyType))
+        {
+            throw new FormatException(
+                $"{expression} did not resolve to an IEnumerable<string> property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return () => property.GetValue(binding) switch
+        {
+            IReadOnlySet<string> set => set,
+            IEnumerable<string> values => new HashSet<string>(values, StringComparer.Ordinal),
+            _ => NoStrings,
+        };
+    }
+
+    /// <summary>An optional <c>Action&lt;string, bool&gt;</c>; null when the attribute is absent.</summary>
+    public static Action<string, bool>? BindStringBoolAction(string? attribute, object binding, string context)
+    {
+        if (attribute is null)
+            return null;
+        if (!MarkupDocument.IsBinding(attribute))
+            throw new FormatException($"{context} must be an Action<string, bool> binding");
+        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        if (property is null || !typeof(Action<string, bool>).IsAssignableFrom(property.PropertyType))
+        {
+            throw new FormatException(
+                $"{attribute} did not resolve to an Action<string, bool> property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return (key, value) => (property.GetValue(binding) as Action<string, bool>)?.Invoke(key, value);
+    }
+
     /// <summary>
     /// Sort keys for a list column: a list of doubles (compared as numbers) or
     /// of strings (compared as the column's sort kind says). Exactly one of the
