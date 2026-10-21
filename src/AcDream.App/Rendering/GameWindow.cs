@@ -480,6 +480,7 @@ public sealed class GameWindow :
         _liveSessionHost?.CurrentSession;
     private readonly AcDream.App.World.LiveWorldOriginState _liveWorldOrigin = new();
     private readonly AcDream.App.Extensions.ClientScreen _clientScreen;
+    private readonly AcDream.App.Extensions.ClientItemDrops _itemDrops;
     private int _liveCenterX => _liveWorldOrigin.CenterX;
     private int _liveCenterY => _liveWorldOrigin.CenterY;
     private static readonly IReadOnlyDictionary<uint, AcDream.Core.Net.WorldSession.EntitySpawn> EmptyLiveSpawnMap =
@@ -540,12 +541,15 @@ public sealed class GameWindow :
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
         _clientScreen = new(_liveWorldOrigin);
+        _itemDrops = new(() => _uiHost?.Root.DragPayload, () => _overlay.PointerOverWindow,
+            line => Serilog.Log.Warning("{ExtensionLine}", line));
+        _overlay.ExternalDragActive = () => _uiHost?.Root.DragPayload is not null;
         _extensions = new AcDream.App.Extensions.ClientExtensionHost(options.Rynth);
         if (!options.Rynth)
             Serilog.Log.Information("Rynth is turned off for this session; it is not loaded.");
         _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation, worldTriangles: WorldTriangles, datDirectory: options.DatDir, screen: _clientScreen, input: new AcDream.App.Extensions.ClientInputState(
             () => _retainedInputCapture is { } capture && capture.HasKeyboardFocus,
-            () => _automation?.IsInputActive == true));
+            () => _automation?.IsInputActive == true), itemDrops: _itemDrops);
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
@@ -1013,6 +1017,7 @@ public sealed class GameWindow :
             _retailUiRuntime = retained.Runtime;
             _retailUiRuntime.ExtensionChat = _chatSeam;
             _clientScreen.BindWindows(_retailUiRuntime.Host.WindowManager);
+            _uiHost.Root.DragReleaseInterceptor = _itemDrops.InterceptRelease;
             _overlay.BindIcons(retained.Runtime.ImageBackend);
             _retailChatVm = retained.Chat;
             _characterSheetProvider = retained.CharacterSheet;
@@ -1717,6 +1722,7 @@ public sealed class GameWindow :
             PersistKeyBindingsAtShutdown();
             _extensions.Dispose();
             _clientScreen.BindWindows(null);
+            if (_uiHost is not null) _uiHost.Root.DragReleaseInterceptor = null;
             _clientScreen.BindCamera(null);
             _audioMixerCommand?.Dispose();
             if (_runtime.Session.IsInWorld)
