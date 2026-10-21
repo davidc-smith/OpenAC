@@ -35,7 +35,15 @@ public sealed class UiMarkupHotkey : UiElement
     public Action<string>? Changed { get; set; }
 
     /// <summary>How a chord is shown (the retail key names); the canonical string when null.</summary>
-    public Func<KeyChord, string>? DescribeKey { get; set; }
+    public Func<KeyChord, string>? DescribeKey
+    {
+        get => _describeKey;
+        set
+        {
+            _describeKey = value;
+            _shownValid = false;
+        }
+    }
 
     /// <summary>The modifiers held now. Defaults to the root's keyboard.</summary>
     public Func<ModifierMask>? ModifiersSource { get; set; }
@@ -43,9 +51,12 @@ public sealed class UiMarkupHotkey : UiElement
     public bool IsCapturing { get; private set; }
     public bool IsFocused { get; private set; }
 
+    internal override bool CapturesAllKeys => IsCapturing;
+
     private bool _releaseFocus;   // a click began the capture: hand the keys back to the game after
     private Key? _startKey;       // the Enter/Space that began a keyboard capture, until it goes up
     private Key? _endKey;         // the key that ended a click capture; focus goes on its release
+    private Func<KeyChord, string>? _describeKey;
     private bool _shownValid;
     private string? _shownValue;
     private string _shownText = UnboundText;
@@ -210,6 +221,9 @@ public sealed class UiMarkupHotkey : UiElement
     {
         if (IsCapturing && !Enabled)
             End(endKey: null);
+        // The end key's release can be lost (the window lost focus meanwhile): don't keep the keys.
+        if (_endKey is { } key && FindRoot()?.Keyboard is { } keyboard && !keyboard.IsKeyPressed(key))
+            ReleaseFocus();
     }
 
     protected override void OnDraw(UiRenderContext ctx)
@@ -224,7 +238,15 @@ public sealed class UiMarkupHotkey : UiElement
         Vector4 color = IsCapturing ? focus
             : _shownBound ? p?.Text ?? ClassicText
             : p?.Muted ?? ClassicMuted;
-        UiCaption.Draw(ctx, DatFont, text, TextInset, 0f, Height, Fade(color), outline: p is null);
+        ctx.PushClip(1f, 1f, Width - 2f, Height - 2f);   // a long name stops inside the border
+        try
+        {
+            UiCaption.Draw(ctx, DatFont, text, TextInset, 0f, Height, Fade(color), outline: p is null);
+        }
+        finally
+        {
+            ctx.PopClip();
+        }
     }
 
     private Vector4 Fade(Vector4 color) =>

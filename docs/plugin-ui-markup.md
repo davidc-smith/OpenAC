@@ -314,23 +314,29 @@ plugin decides what the chord does; the box only edits the string.
   `F12`, `Number1`, `Keypad5`, `Enter`). Empty means unbound. When reading
   `value` the box also accepts modifiers in any order and any case
   (`shift+ctrl+f`), but `onchange` always hands back the exact form.
+- The string is not a `PluginKeyChord` from the plugin hotkey API. Its key
+  names are Silk.NET's, which differ from `PluginKey`'s for some keys
+  (`Keypad5` vs `Numpad5`, `KeypadEnter` vs `NumpadEnter`, `GraveAccent` vs
+  `Grave`), and the box records keys `PluginKey` has no name for (`F13`,
+  `CapsLock`). A plugin that wants to register the chord with
+  `IHotkeyRegistry` maps the names itself.
 - The box shows the chord by the game's key names. An empty value, or one it
   can't read, shows `None`.
 - Clicking the box, or Enter or Space while it has focus, starts recording:
   the box shows `Press a key...` and takes every key press for itself, so
-  the game's key presses don't act while it records. Holding Shift, Ctrl or
-  Alt alone keeps it waiting; the first other key ends it and `onchange`
-  gets the chord. Escape stops without changing anything, and Backspace or
-  Delete unbinds (`onchange` gets `""`), even with modifiers held. Keys
-  pressed while the Windows/Command key is held are ignored. Tab can't be
-  recorded.
+  neither the game's keys nor plugin hotkeys act while it records. Holding
+  Shift, Ctrl or Alt alone keeps it waiting; the first other key ends it and
+  `onchange` gets the chord. Escape stops without changing anything, and
+  Backspace or Delete unbinds (`onchange` gets `""`), even with modifiers
+  held. Keys pressed while the Windows/Command key is held are ignored. Tab
+  can't be recorded.
 - `onchange` is called only when the new string differs from `value`.
 - After a recording started by a click, the box gives the keyboard back to
   the game when the key that ended it is released. One started with Enter or
   Space keeps the focus, so Tab carries on to the next control.
-- Clicking elsewhere, the window hiding, or the box being disabled stops a
-  recording without changing anything. After a click-started recording that
-  is stopped by disabling the box, the focus is released at once.
+- Left-clicking elsewhere, the window hiding, or the box being disabled stops
+  a recording without changing anything. After a click-started recording
+  that is stopped by disabling the box, the focus is released at once.
 - Mouse buttons are never recorded.
 
 In Classic the box is a dark field with a thin border that turns gold while

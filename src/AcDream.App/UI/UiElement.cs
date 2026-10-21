@@ -147,6 +147,12 @@ public abstract class UiElement
     public bool TabStop         { get; set; }
 
     /// <summary>
+    /// True while this element, holding keyboard focus, takes every key press
+    /// (a hotkey box recording), so plugin hotkeys must not fire either.
+    /// </summary>
+    internal virtual bool CapturesAllKeys => false;
+
+    /// <summary>
     /// True if this is a text-entry (edit box); used by focus routing
     /// to suppress global hotkeys while typing.
     /// </summary>

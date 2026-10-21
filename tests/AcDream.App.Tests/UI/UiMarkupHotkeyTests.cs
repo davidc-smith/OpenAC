@@ -1,6 +1,7 @@
 using System.Numerics;
 using AcDream.App.UI;
 using AcDream.UI.Abstractions.Input;
+using AcDream.App.Tests.Plugins;
 using Silk.NET.Input;
 
 namespace AcDream.App.Tests.UI;
@@ -182,6 +183,32 @@ public class UiMarkupHotkeyTests
         model.Value = "G";
         Assert.Equal("described G", box.DisplayText);
         Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public void SettingDescribeKey_RenamesTheShownChord()
+    {
+        var (_, box, _) = Mount("Ctrl+F");
+        Assert.Equal("Ctrl+F", box.DisplayText);
+        box.DescribeKey = chord => "described " + chord.Key;
+        Assert.Equal("described F", box.DisplayText);
+    }
+
+    [Fact]
+    public void ALostEndKeyRelease_GivesFocusBackOnTheNextTick()
+    {
+        var (root, box, _) = Mount();
+        var keyboard = new FakeKeyboard();
+        root.Keyboard = keyboard;
+        Click(root);
+        keyboard.Held.Add(Key.F);
+        root.OnKeyDown((int)Key.F);
+        root.Tick(0.016, 0);
+        Assert.Same(box, root.KeyboardFocus);   // F still held
+
+        keyboard.Held.Remove(Key.F);            // released, but its KeyUp never came
+        root.Tick(0.016, 16);
+        Assert.Null(root.KeyboardFocus);
     }
 
     [Fact]

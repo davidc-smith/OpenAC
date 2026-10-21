@@ -1237,9 +1237,9 @@ While anything in the interface has keyboard focus (the chat bar, a text
 field, a control reached with Tab), a hotkey fires only if Ctrl or Alt is
 part of the chord; otherwise every letter typed would also be a candidate
 hotkey press. Clicking a button does not give it keyboard focus. While a
-modal dialog is open, or a key rebind is being captured
-(`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
-chords included.
+modal dialog is open, a key rebind is being captured
+(`InputDispatcher.BeginCapture`), or a markup `<hotkey>` box is recording,
+no hotkey fires at all, Ctrl and Alt chords included.
 
 Plugin hotkeys are a raw keyboard subscription, not a route through
 InputDispatcher's action/scope engine (a dynamic per-plugin action space

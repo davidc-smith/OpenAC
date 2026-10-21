@@ -9,6 +9,9 @@ public interface IHotkeyFocusSource
     /// <summary>Whether any interface element holds keyboard focus.</summary>
     bool HasKeyboardFocus { get; }
 
+    /// <summary>Whether the focused element takes every key press (a hotkey box recording).</summary>
+    bool IsCapturingKeys { get; }
+
     /// <summary>Whether a modal dialog is open.</summary>
     bool IsModalOpen { get; }
 }

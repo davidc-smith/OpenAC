@@ -38,6 +38,7 @@ internal sealed class RetainedUiInputCaptureSlot : IHotkeyFocusSource
     public bool WantCaptureKeyboard => Root?.WantsKeyboard ?? false;
 
     public bool HasKeyboardFocus => Root?.KeyboardFocus is not null;
+    public bool IsCapturingKeys => Root?.KeyboardFocus?.CapturesAllKeys == true;
     public bool IsModalOpen => Root?.Modal is not null;
 
     private void Unbind(UiRoot expected)

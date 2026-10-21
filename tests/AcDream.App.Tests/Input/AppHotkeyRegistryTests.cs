@@ -1,4 +1,5 @@
 using AcDream.App.Input;
+using AcDream.App.UI;
 using AcDream.Plugin.Abstractions;
 using AcDream.UI.Abstractions.Input;
 using Silk.NET.Input;
@@ -317,6 +318,47 @@ public sealed class AppHotkeyRegistryTests
     }
 
     [Fact]
+    public void NoHotkeyFiresWhileAHotkeyBoxRecords()
+    {
+        var registry = new AppHotkeyRegistry(overridesFilePath: null);
+        var keyboard = new FakeKeyboard();
+        var bindings = new KeyBindings();
+        InputDispatcher dispatcher = InputDispatcher.CreateDetached(
+            keyboard, new FakeMouse(), bindings);
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var box = new UiMarkupHotkey
+        {
+            Left = 10, Top = 10, Width = 140, Height = 20,
+            ValueSource = () => "",
+            ModifiersSource = () => ModifierMask.Ctrl,
+        };
+        root.AddChild(box);
+        var slot = new RetainedUiInputCaptureSlot();
+        using IDisposable binding = slot.Bind(root);
+        registry.Bind(keyboard, bindings, dispatcher, slot);
+
+        int fired = 0;
+        registry.Register(
+            "find", "Find", new PluginKeyChord(PluginKey.F, Ctrl: true), () => fired++);
+
+        root.OnMouseDown(UiMouseButton.Left, 20, 15);
+        root.OnMouseUp(UiMouseButton.Left, 20, 15);
+        Assert.True(box.IsCapturing);
+
+        // The registry hears the key before the interface, so the ending
+        // Ctrl+F is still seen while the box records.
+        keyboard.Fire(Key.F, ModifierMask.Ctrl);
+        root.OnKeyDown((int)Key.F);
+        Assert.Equal(0, fired);
+        Assert.False(box.IsCapturing);
+
+        root.OnKeyUp((int)Key.F);
+        Assert.Null(root.KeyboardFocus);
+        keyboard.Fire(Key.F, ModifierMask.Ctrl);
+        Assert.Equal(1, fired);
+    }
+
+    [Fact]
     public void NoHotkeyFiresWhileAModalIsOpen()
     {
         var registry = new AppHotkeyRegistry(overridesFilePath: null);
@@ -434,6 +476,7 @@ public sealed class AppHotkeyRegistryTests
     private sealed class FakeFocus : IHotkeyFocusSource
     {
         public bool HasKeyboardFocus { get; set; }
+        public bool IsCapturingKeys { get; set; }
         public bool IsModalOpen { get; set; }
     }
 
