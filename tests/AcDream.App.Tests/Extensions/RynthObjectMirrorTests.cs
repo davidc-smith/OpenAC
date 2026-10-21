@@ -122,6 +122,44 @@ public sealed class RynthObjectMirrorTests
     }
 
     [Fact]
+    public void AContentsListingOfKnownObjectsReachesContentsAndCounts()
+    {
+        var (runtime, live, mirror) = Make();
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000112, ContainerId = 0x80000110, Name = "Ruby" });
+        runtime.InventoryOwner.Objects.ReplaceContents(0x80000110, new uint[] { 0x80000111, 0x80000112 });
+        mirror.Build(live.PlayerId);
+        // Every id is known already: the table reports the listing with ContainerContentsReplaced alone.
+        runtime.InventoryOwner.Objects.ReplaceContents(0x80000110, new uint[] { 0x80000112 });
+        RynthObjectsPart part = mirror.Build(live.PlayerId);
+        Assert.Equal(live.GetContainerContents(0x80000110), part.Contents(0x80000110));
+        Assert.Equal(live.TryCountContents(0x80000110, out int i1, out int c1), part.TryCountContents(0x80000110, out int i2, out int c2));
+        Assert.Equal((i1, c1), (i2, c2));
+
+        runtime.InventoryOwner.Objects.StopViewingContents(0x80000110);
+        part = mirror.Build(live.PlayerId);
+        Assert.Equal(live.GetContainerContents(0x80000110), part.Contents(0x80000110));
+        Assert.Equal(live.TryCountContents(0x80000110, out i1, out c1), part.TryCountContents(0x80000110, out i2, out c2));
+        Assert.Equal((i1, c1), (i2, c2));
+    }
+
+    [Fact]
+    public void AMoveRenumbersItsSiblings()
+    {
+        var (runtime, live, mirror) = Make();
+        runtime.InventoryOwner.Objects.AddOrUpdate(new ClientObject { ObjectId = 0x80000112, ContainerId = 0x80000110, Name = "Ruby" });
+        runtime.InventoryOwner.Objects.ReplaceContents(0x80000110, new uint[] { 0x80000111, 0x80000112 });
+        runtime.InventoryOwner.Objects.MoveItemOptimistic(0x80000111, 0x80000110, newSlot: 0);
+        mirror.Build(live.PlayerId);
+        // The ruby goes to the front; only it is reported, but the gem's slot changes too.
+        runtime.InventoryOwner.Objects.MoveItemOptimistic(0x80000112, 0x80000110, newSlot: 0);
+        RynthObjectsPart part = mirror.Build(live.PlayerId);
+        Assert.True(live.TryGetObject(0x80000111, out RynthObjectInfo gem));
+        part.TryGet(0x80000111, out RynthObjectEntry entry);
+        Assert.Equal(1, gem.ContainerSlot);
+        Assert.Equal(gem.ContainerSlot, entry.Info.ContainerSlot);
+    }
+
+    [Fact]
     public void DisposeUnsubscribes()
     {
         var (runtime, live, mirror) = Make();

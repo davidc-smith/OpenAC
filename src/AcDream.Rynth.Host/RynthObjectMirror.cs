@@ -46,6 +46,8 @@ public sealed class RynthObjectMirror : IDisposable
     private readonly HashSet<uint> _dirty = [];
     private readonly Dictionary<uint, RynthObjectEntry> _entries = [];
     private bool _all = true;
+    // A contents listing of known objects, or a view ending, moves no revision: only ContainerContentsReplaced says so.
+    private bool _contentsDirty;
     private (ulong Revision, uint Player) _key = (ulong.MaxValue, 0);
     private RynthObjectsPart _last = RynthObjectsPart.Empty;
 
@@ -58,13 +60,14 @@ public sealed class RynthObjectMirror : IDisposable
         _table.ObjectRemoved += OnObject;
         _table.ObjectMoved += OnMoved;
         _table.Cleared += OnCleared;
+        _table.ContainerContentsReplaced += OnContentsReplaced;
     }
 
     public RynthObjectsPart Build(uint player)
     {
         var key = (_table.MutationRevision, player);
         // Idle frames: nothing moved, the last part is published again.
-        if (key == _key && _dirty.Count == 0 && !_all)
+        if (key == _key && _dirty.Count == 0 && !_all && !_contentsDirty)
             return _last;
         bool recomputeAll = _all || key != _key;
         IReadOnlyList<uint>? liveIds = _live.LiveObjectIds;
@@ -79,10 +82,10 @@ public sealed class RynthObjectMirror : IDisposable
         foreach (uint id in ids)
         {
             bool known = _entries.TryGetValue(id, out RynthObjectEntry? existing);
-            if (known && !_dirty.Contains(id))
+            if (known && !_dirty.Contains(id) && !PlacementMoved(id, existing!.Info))
             {
                 if (recomputeAll)
-                    _entries[id] = Rederive(id, existing!);
+                    _entries[id] = Rederive(id, existing);
                 continue;
             }
             if (!_live.TryCopyObject(id, out RynthObjectInfo info, out IReadOnlyDictionary<uint, long> int64s))
@@ -97,6 +100,7 @@ public sealed class RynthObjectMirror : IDisposable
         }
         _dirty.Clear();
         _all = false;
+        _contentsDirty = false;
 
         var contents = new Dictionary<uint, IReadOnlyList<uint>>();
         var counts = new Dictionary<uint, (bool, int, int)>();
@@ -127,6 +131,7 @@ public sealed class RynthObjectMirror : IDisposable
         _table.ObjectRemoved -= OnObject;
         _table.ObjectMoved -= OnMoved;
         _table.Cleared -= OnCleared;
+        _table.ContainerContentsReplaced -= OnContentsReplaced;
     }
 
     // An unreported object's answers can still change (its pack moved, the player changed):
@@ -151,6 +156,16 @@ public sealed class RynthObjectMirror : IDisposable
             Enchantments = enchantments?.ToArray(),
         };
     }
+
+    // A move renumbers the slots of every sibling in the source and destination containers, but
+    // reports only the moved item; a cheap read of the live placement catches the rest.
+    private bool PlacementMoved(uint id, RynthObjectInfo info) =>
+        _table.Get(id) is not { } item
+        || item.ContainerSlot != info.ContainerSlot
+        || item.ContainerId != info.ContainerId
+        || item.WielderId != info.WielderId;
+
+    private void OnContentsReplaced(uint containerId) => _contentsDirty = true;
 
     private void OnObject(ClientObject item) => _dirty.Add(item.ObjectId);
 
