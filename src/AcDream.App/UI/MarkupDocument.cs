@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Xml.Linq;
 using AcDream.Plugin.Abstractions;
+using AcDream.App.UI.Markup;
 
 namespace AcDream.App.UI;
 
@@ -797,7 +798,7 @@ public static class MarkupDocument
         throw new FormatException($"{context}=\"{text}\" is not a valid uint literal");
     }
 
-    private static Func<string?> BindString(string? attribute, object binding)
+    internal static Func<string?> BindString(string? attribute, object binding)
     {
         if (attribute is null)
             return static () => null;
@@ -1053,10 +1054,10 @@ public static class MarkupDocument
         return (width, false);
     }
 
-    private static bool IsBinding(string value) =>
+    internal static bool IsBinding(string value) =>
         value.Length > 2 && value[0] == '{' && value[^1] == '}';
 
-    private static void ApplyCommon(
+    internal static void ApplyCommon(
         UiElement element,
         XElement source,
         object binding)
@@ -1143,11 +1144,11 @@ public static class MarkupDocument
         return () => property.GetValue(binding) is int value ? value : -1;
     }
 
-    private static float F(XElement e, string attr)
+    internal static float F(XElement e, string attr)
         => float.TryParse((string?)e.Attribute(attr), NumberStyles.Float,
             CultureInfo.InvariantCulture, out var v) ? v : 0f;
 
-    private static float FOr(XElement e, string attr, float fallback)
+    internal static float FOr(XElement e, string attr, float fallback)
         => float.TryParse((string?)e.Attribute(attr), NumberStyles.Float,
             CultureInfo.InvariantCulture, out float value) ? value : fallback;
 
@@ -1155,12 +1156,12 @@ public static class MarkupDocument
         => int.TryParse((string?)e.Attribute(attr), NumberStyles.Integer,
             CultureInfo.InvariantCulture, out int value) ? value : fallback;
 
-    private static bool B(XElement e, string attr, bool fallback)
+    internal static bool B(XElement e, string attr, bool fallback)
         => bool.TryParse((string?)e.Attribute(attr), out bool value)
             ? value
             : fallback;
 
-    private static Vector4 Color(string? hex)
+    internal static Vector4 Color(string? hex)
     {
         if (hex?.StartsWith("theme:", StringComparison.Ordinal) == true)
             hex = hex.Contains('|') ? hex[(hex.IndexOf('|') + 1)..] : null;
