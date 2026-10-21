@@ -490,13 +490,16 @@ Hovering an item highlights it, and clicking it picks it; clicking a
 separator or a disabled item does nothing. While the menu is open it has
 the keyboard: Up and Down move between the items that can be picked
 (wrapping), Enter picks, Escape closes, and other keys do nothing, so the
-game doesn't act on them. When it closes the keyboard goes back to whatever
-had it before. A click outside the menu closes it (and does nothing else),
-as does opening another menu or drop-down, or the element being hidden or
-disabled.
+game doesn't act on them. A focused text field loses the keyboard while the
+menu is open (its `onblur` fires). When the menu closes the keyboard goes back
+to whatever had it before, unless something else has taken it since. A click outside the menu closes it (and does nothing else),
+as does opening another menu or drop-down, the element being hidden,
+disabled or leaving the window, or something else taking the keyboard focus
+(then the focus is not handed back).
 
-`onopen` is called as the menu opens, before `items` is read, so a plugin
-can change the items to suit. On a `<list>`, the right click first selects
+`onopen` is called as the menu is about to open, before `items` is read, so a
+plugin can change the items to suit; it runs even when the items then turn
+out empty and no menu opens (on a list the row is still selected). On a `<list>`, the right click first selects
 the row under the cursor (unless it is already one of the rows selected in a
 `selectmode="multi"` list) and `onopen` gets that row, as the plugin's own
 row index; over the header, the scrollbar or empty space it gets −1 and the

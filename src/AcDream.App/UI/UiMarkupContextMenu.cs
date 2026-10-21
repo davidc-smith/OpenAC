@@ -58,9 +58,10 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
     private string[] _items = Array.Empty<string>();
     private bool[] _enabled = Array.Empty<bool>();
     private float[] _rowTops = Array.Empty<float>();   // one more than the items: the last is the bottom
-    private float _x, _y, _w, _h;                       // the popup, in the owner's coordinates
+    private float _x, _y, _w, _h;                       // the popup, relative to this menu's origin
     private int _highlight = -1;
     private UiElement? _returnFocus;
+    private UiRoot? _root;                              // the root it opened in, so Close works detached
 
     public UiMarkupContextMenu()
     {
@@ -77,10 +78,15 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
 
     public bool TryOpen(int screenX, int screenY)
     {
+        if (_open)
+            Close();   // so the focus to give back is never this menu
         if (Parent is not { } owner || FindRoot() is not { } root || !Available(owner))
             return false;
-        Vector2 origin = owner.ScreenPosition;
-        Opening?.Invoke(screenX - origin.X, screenY - origin.Y);
+        Vector2 ownerOrigin = owner.ScreenPosition;
+        Opening?.Invoke(screenX - ownerOrigin.X, screenY - ownerOrigin.Y);
+        // Opening runs plugin code that may hide, disable or remove the owner.
+        if (!ReferenceEquals(Parent, owner) || !ReferenceEquals(FindRoot(), root) || !Available(owner))
+            return false;
         string[] items = ItemsSource().ToArray();
         if (items.Length == 0)
             return false;
@@ -102,10 +108,12 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         _rowTops[items.Length] = y;
         _w = MathF.Ceiling(MathF.Max(MinPopupWidth, textWidth + 2f * TextIndent));
         _h = y + Inset;
+        Vector2 origin = ScreenPosition;
         _x = Place(screenX, _w, root.Width) - origin.X;
         _y = Place(screenY, _h, root.Height) - origin.Y;
         _highlight = -1;
         _open = true;
+        _root = root;
         root.SetActivePopup(this, () => Close());
         _returnFocus = root.KeyboardFocus;
         root.SetKeyboardFocus(this);
@@ -131,7 +139,9 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         _highlight = -1;
         UiElement? previous = _returnFocus;
         _returnFocus = null;
-        if (FindRoot() is not { } root)
+        UiRoot? root = _root;
+        _root = null;
+        if (root is null)
             return;
         root.ClearActivePopup(this);
         if (restoreFocus && ReferenceEquals(root.KeyboardFocus, this))

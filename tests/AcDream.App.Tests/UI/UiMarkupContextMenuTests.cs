@@ -237,6 +237,64 @@ public sealed class UiMarkupContextMenuTests
     }
 
     [Fact]
+    public void OpeningHidesTheOwner_DoesNotOpenOrTakeTheFocus()
+    {
+        var m = Mount(CopyPaste);
+        int fell = 0;
+        m.Root.WorldKeyFallThrough += (_, _) => fell++;
+        m.Menu.Opening = (_, _) => m.Owner.Visible = false;
+        Assert.False(m.Menu.TryOpen(100, 100));
+        Assert.False(m.Menu.IsOpen);
+        Assert.Null(m.Root.KeyboardFocus);
+        m.Root.OnKeyDown((int)Key.W);
+        Assert.Equal(1, fell);
+    }
+
+    [Fact]
+    public void OpeningRemovesTheOwner_DoesNotOpenOrTakeTheFocus()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var box = new UiPanel { Left = 0, Top = 0, Width = 800, Height = 600 };
+        var owner = new Owner { Left = 0, Top = 0, Width = 800, Height = 600 };
+        var menu = new UiMarkupContextMenu { ItemsSource = () => CopyPaste };
+        var field = new Focusable { Left = 0, Top = 0, Width = 10, Height = 10 };
+        owner.AddChild(menu);
+        owner.ContextMenu = menu;
+        box.AddChild(owner);
+        root.AddChild(box);
+        root.AddChild(field);
+        root.SetKeyboardFocus(field);
+        menu.Opening = (_, _) => box.RemoveChild(owner);
+        Assert.False(menu.TryOpen(100, 100));
+        Assert.False(menu.IsOpen);
+        Assert.Same(field, root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void OpeningTwice_StillGivesTheFocusBackToTheFirstHolder()
+    {
+        var m = Mount(CopyPaste);
+        var field = new Focusable { Left = 0, Top = 0, Width = 10, Height = 10 };
+        m.Root.AddChild(field);
+        m.Root.SetKeyboardFocus(field);
+        Assert.True(m.Menu.TryOpen(100, 100));
+        Assert.True(m.Menu.TryOpen(120, 120));
+        m.Root.OnKeyDown((int)Key.Escape);
+        Assert.False(m.Menu.IsOpen);
+        Assert.Same(field, m.Root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void RemovingTheOwnerWhileOpen_ClosesAndLeavesNoFocusOnTheMenu()
+    {
+        var m = Mount(CopyPaste);
+        RightClick(m.Root, 100, 100);
+        m.Root.RemoveChild(m.Owner);
+        Assert.False(m.Menu.IsOpen);
+        Assert.NotSame(m.Menu, m.Root.KeyboardFocus);
+    }
+
+    [Fact]
     public void Draw_UsesClassicColours_OrThePalette()
     {
         var m = Mount(CopyPaste);
