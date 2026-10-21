@@ -366,6 +366,7 @@ public static class MarkupDocument
             case "checkbox":
                 parent.AddChild(MarkupCheckbox.Build(el, binding, Context()));
                 break;
+
             case "slider":
                 string? changeName = (string?)el.Attribute("onchange");
                 Action<float>? changed = BindFloatAction(changeName, binding);
@@ -996,12 +997,13 @@ public static class MarkupDocument
                 return UiMarkupListColumn.Text(width, textSource, colorsSource, textOnClick, isAutoWidth);
             }
             case "check":
+            case "checkbox":
             {
                 var checkSource = BindBoolList(
-                    (string?)columnEl.Attribute("values"), binding, ColumnContext(index, "check", "values"));
+                    (string?)columnEl.Attribute("values"), binding, ColumnContext(index, type, "values"));
                 var onChange = BindRequiredIntAction(
-                    (string?)columnEl.Attribute("onchange"), binding, ColumnContext(index, "check", "onchange"));
-                return UiMarkupListColumn.Check(width, checkSource, onChange, isAutoWidth);
+                    (string?)columnEl.Attribute("onchange"), binding, ColumnContext(index, type, "onchange"));
+                return UiMarkupListColumn.Check(width, checkSource, onChange, isAutoWidth, boxed: type == "checkbox");
             }
             case "icon":
             {
@@ -1027,7 +1029,7 @@ public static class MarkupDocument
             }
             default:
                 throw new FormatException(
-                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, icon, or button)");
+                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, checkbox, icon, or button)");
         }
     }
 

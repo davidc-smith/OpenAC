@@ -165,4 +165,63 @@ public class MarkupCheckboxTests
         Assert.True(MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Field) >= 1);
         Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiCheckBoxGlyph.ClassicFill));
     }
+
+    private static UiMarkupList BuildList(string columnType, Binding binding, string extra = "")
+    {
+        var panel = MarkupDocument.Build(
+            "<panel x=\"0\" y=\"0\" w=\"200\" h=\"100\">"
+            + "<list x=\"0\" y=\"0\" w=\"120\" h=\"60\" rowheight=\"18\" selected=\"{NotBool}\">"
+            + $"<column type=\"{columnType}\" width=\"20\" {extra}/>"
+            + "<column type=\"text\" items=\"{Names}\"/>"
+            + "</list></panel>",
+            binding, _ => (1u, 16, 16));
+        return Assert.IsType<UiMarkupList>(panel.Children[0]);
+    }
+
+    [Theory]
+    [InlineData("checkbox", true)]
+    [InlineData("check", false)]
+    public void Column_CheckboxIsABoxedCheckColumn(string type, bool boxed)
+    {
+        var list = BuildList(type, new Binding(), "values=\"{Flags}\" onchange=\"{ToggleFlag}\"");
+        var column = list.Columns![0];
+        Assert.Equal(UiMarkupListColumnKind.Check, column.Kind);
+        Assert.Equal(boxed, column.Boxed);
+    }
+
+    [Theory]
+    [InlineData("onchange=\"{ToggleFlag}\"")]
+    [InlineData("values=\"{Flags}\"")]
+    public void Column_CheckboxRequiresValuesAndOnchange(string extra)
+    {
+        var ex = Assert.Throws<FormatException>(() => BuildList("checkbox", new Binding(), extra));
+        Assert.Contains("type=\"checkbox\"", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("checkbox", 7)]
+    [InlineData("check", 1)]
+    public void Column_DrawsTickBoxesOrLamps(string type, int markQuads)
+    {
+        var list = BuildList(type, new Binding(), "values=\"{Flags}\" onchange=\"{ToggleFlag}\"");
+        var renderer = MarkupDrawProbe.Draw(list);
+        Assert.Equal(markQuads, MarkupDrawProbe.CountQuads(renderer, UiCheckBoxGlyph.ClassicMark));
+    }
+
+    [Fact]
+    public void Column_CheckboxClickReportsTheRow()
+    {
+        var binding = new Binding();
+        var list = BuildList("checkbox", binding, "values=\"{Flags}\" onchange=\"{ToggleFlag}\"");
+        MarkupDrawProbe.Draw(list); // frame order: draw, then handle input
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseDown, Data1 = 8, Data2 = 18 + 6 });
+        Assert.Equal(1, binding.Toggled);
+    }
+
+    [Fact]
+    public void Column_UnknownTypeListsCheckbox()
+    {
+        var ex = Assert.Throws<FormatException>(() => BuildList("lamp", new Binding()));
+        Assert.Contains("text, check, checkbox, icon, or button", ex.Message);
+    }
 }
