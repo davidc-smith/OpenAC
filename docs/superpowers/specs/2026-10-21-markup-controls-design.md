@@ -66,8 +66,10 @@ These apply to every control below unless it says otherwise.
 - **Both looks.** Every control draws in Classic (dat art where the retail
   client has it, otherwise primitives in the Classic colours) and under
   `theme="plugin"` (palette tokens via a new `case` in
-  `PluginMarkupTheme.Register`). Classic sprite ids are looked up in the plan
-  (the retail options screens have checkbox and radio art).
+  `PluginMarkupTheme.Register`). The retail options screens draw their
+  checkboxes as lamps (`UiCheckLamp` reproduces them), so there is no
+  square-tick sprite: the Classic `<checkbox>` and `<radio>` are drawn with
+  primitives in the lamp's colours.
 - **Common attributes.** Every new element accepts `name`/`id`, `visible`,
   `enabled`, `tooltip` and `anchor` through `ApplyCommon`, and `x y w h`.
   A disabled control draws faded and fires nothing.
@@ -97,6 +99,12 @@ These apply to every control below unless it says otherwise.
     or malformed stored values are ignored.
 
 ## 1. Shared infrastructure (series 0)
+
+Each piece lands with the first series that uses it, not all up front:
+the builder folder, `MarkupBuildContext` and `MarkupBindings` with series 1;
+`MarkupControlStateStore` with series 5 (expander); `IMarkupTextureService`
+with series 12 (colour); further bind helpers with whichever series needs
+them.
 
 - `src/AcDream.App/UI/Markup/` folder and the `internal` `Bind*` helpers.
 - `MarkupControlStateStore` and its wiring into the markup build: the builder
