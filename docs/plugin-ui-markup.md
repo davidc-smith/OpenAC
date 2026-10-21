@@ -317,8 +317,8 @@ plugin decides what the chord does; the box only edits the string.
 - The string uses the box's own key names (`Keypad5`, `GraveAccent`), which
   are not always `PluginKey` names (`Numpad5`, `Grave`). To register or
   rebind the recorded chord as a plugin hotkey, read it with
-  `PluginKeyChord.TryParse(text, out PluginKeyChord chord)`; to show a
-  hotkey's chord in a box, bind `value` to `chord.ToHotkeyText()`. `TryParse`
+  `PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord)`; to show a
+  hotkey's chord in a box, bind `value` to `chord.ToHotkeyText()`. `TryParseHotkeyText`
   returns false for an empty (unbound) string and for keys a plugin hotkey
   can't use, such as F13 or Caps Lock, which the box can still record. See
   [Hotkeys](plugin-api.md#hotkeys).

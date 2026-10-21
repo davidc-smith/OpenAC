@@ -1279,7 +1279,9 @@ public string QuickHealKey => _quickHeal.EffectiveChord.ToHotkeyText();
 
 public Action<string> SetQuickHealKey => text =>
 {
-    if (PluginKeyChord.TryParse(text, out PluginKeyChord chord))
+    if (text.Length == 0)
+        _quickHeal.Rebind(default); // the player cleared the box: unbind
+    else if (PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord))
         _quickHeal.Rebind(chord);
 };
 ```
@@ -1288,11 +1290,13 @@ public Action<string> SetQuickHealKey => text =>
 <hotkey x="8" y="8" w="140" h="20" value="{QuickHealKey}" onchange="{SetQuickHealKey}"/>
 ```
 
-`PluginKeyChord.TryParse` reads the box's text (modifiers in any order, the
+`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order, the
 key by the box's name such as `Keypad5` or by its `PluginKey` name such as
-`Numpad5`) and `ToHotkeyText()` writes it back. `TryParse` returns false for
+`Numpad5`) and `ToHotkeyText()` writes it back. `TryParseHotkeyText` returns false for
 an empty string (the player cleared the box) and for keys `PluginKey` has no
-member for, such as F13; the example then keeps the current chord. A chord
+member for, such as F13; the example keeps the current chord for the latter.
+Rebinding to the default chord (no key) unbinds the hotkey: the override is
+stored, `IsBound` is false, and the box reads back as `None`. A chord
 that collides with a client binding or another plugin's bound hotkey is still
 stored as the override, so `EffectiveChord` (and the box) shows it, but the
 registration is left unbound: `IsBound` is false and the old chord stops

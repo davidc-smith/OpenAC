@@ -34,7 +34,7 @@ public sealed class PluginKeyChordBridgeTests
         foreach (PluginKey key in Enum.GetValues<PluginKey>())
         {
             if (AppHotkeyRegistry.MapKey(key) is { } silk)
-                bindable[silk] = key;
+                bindable.Add(silk, key);
         }
 
         foreach (Key key in Enum.GetValues<Key>().Distinct())
@@ -42,7 +42,7 @@ public sealed class PluginKeyChordBridgeTests
             if (!MarkupHotkeyText.IsChordKey(key))
                 continue;
             string text = MarkupHotkeyText.Format(new KeyChord(key, ModifierMask.Shift));
-            bool read = PluginKeyChord.TryParse(text, out PluginKeyChord chord);
+            bool read = PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord);
             if (bindable.TryGetValue(key, out PluginKey expected))
             {
                 Assert.True(read, $"'{text}' should read as {expected}");

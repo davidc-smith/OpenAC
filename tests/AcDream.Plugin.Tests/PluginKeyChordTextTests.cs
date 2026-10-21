@@ -24,9 +24,9 @@ public sealed class PluginKeyChordTextTests
 
     [Theory]
     [MemberData(nameof(Readable))]
-    public void TryParse_ReadsAHotkeyBoxString(string text, PluginKeyChord expected)
+    public void TryParseHotkeyText_ReadsAHotkeyBoxString(string text, PluginKeyChord expected)
     {
-        Assert.True(PluginKeyChord.TryParse(text, out PluginKeyChord chord));
+        Assert.True(PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord));
         Assert.Equal(expected, chord);
     }
 
@@ -43,9 +43,9 @@ public sealed class PluginKeyChordTextTests
     [InlineData("A,B")]
     [InlineData("Unknown")]
     [InlineData("Ctrl+Nope")]
-    public void TryParse_RefusesWhatNoPluginHotkeyCanHold(string? text)
+    public void TryParseHotkeyText_RefusesWhatNoPluginHotkeyCanHold(string? text)
     {
-        Assert.False(PluginKeyChord.TryParse(text, out PluginKeyChord chord));
+        Assert.False(PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord));
         Assert.Equal(default, chord);
     }
 
@@ -75,7 +75,7 @@ public sealed class PluginKeyChordTextTests
             {
                 var chord = new PluginKeyChord(key, (mods & 1) != 0, (mods & 2) != 0, (mods & 4) != 0);
                 string text = chord.ToHotkeyText();
-                Assert.True(PluginKeyChord.TryParse(text, out PluginKeyChord back), text);
+                Assert.True(PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord back), text);
                 Assert.Equal(chord, back);
             }
         }
