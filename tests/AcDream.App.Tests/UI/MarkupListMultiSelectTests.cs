@@ -234,9 +234,9 @@ public sealed class MarkupListMultiSelectTests
     }
 
     [Theory]
-    [InlineData(ControlKey.ControlLeft, new[] { 1, 3 })]
-    [InlineData(ControlKey.SuperLeft, new[] { 1, 3 })]
-    [InlineData(ControlKey.ShiftLeft, new[] { 1, 3 })]
+    [InlineData(ControlKey.ControlLeft, new[] { 0, 3 })]
+    [InlineData(ControlKey.SuperLeft, new[] { 0, 3 })]
+    [InlineData(ControlKey.ShiftLeft, new[] { 0, 1, 3 })]
     public void DefaultModifiers_ReadTheRootKeyboard(ControlKey held, int[] expected)
     {
         var b = new Binding();
@@ -245,7 +245,7 @@ public sealed class MarkupListMultiSelectTests
         m.Root.Keyboard = keyboard;
         Click(m, NameX, RowY(0));                    // [3], anchor 3
         keyboard.Held.Add((Key)held);
-        Click(m, NameX, RowY(1));                    // toggle 1 in, or range views 0..1
+        Click(m, NameX, RowY(2));                    // toggle plugin 0 in, or range views 0..2
         Assert.Equal(expected, b.Selection);
         Assert.Null(m.Root.KeyboardFocus);
     }
@@ -284,5 +284,150 @@ public sealed class MarkupListMultiSelectTests
         Assert.False(list.SelectionBandEnabled);
         Assert.Contains("did not resolve to an Action<int> property", Assert.Throws<FormatException>(() =>
             BuildPanel(ColumnList("selected=\"{Single}\" onchange=\"{SetSelection}\""), b)).Message);
+    }
+
+    private static void Press(Mounted m, Key key, UiSelectModifiers keys = default)
+    {
+        m.Keys = keys;
+        m.Root.OnKeyDown((int)key);
+        Redraw(m.List);
+    }
+
+    private static Mounted MountFocused(Binding b, string? listXml = null)
+    {
+        var m = Mount(b, listXml);
+        m.Root.SetKeyboardFocus(m.List);
+        return m;
+    }
+
+    [Fact]
+    public void Focus_FlagsOnlyInMultiMode()
+    {
+        var multi = Mount(new Binding()).List;
+        Assert.True(multi.AcceptsFocus && multi.TabStop);
+        Assert.False(multi.FocusOnMouseClick);
+        var single = BuildPanel(ColumnList("selected=\"{Single}\""), new Binding())
+            .Children.OfType<UiMarkupList>().Single();
+        Assert.False(single.TabStop);
+    }
+
+    [Fact]
+    public void UpDown_MoveASingleSelectionInViewOrder()
+    {
+        var b = new Binding();
+        var m = MountFocused(b);
+        Press(m, Key.Down); Assert.Equal(new[] { 3 }, b.Selection);
+        Press(m, Key.Down); Assert.Equal(new[] { 1 }, b.Selection);
+        Press(m, Key.Up);   Assert.Equal(new[] { 3 }, b.Selection);
+        b.Changes.Clear();
+        Press(m, Key.Up);
+        Assert.Equal(new[] { 3 }, Assert.Single(b.Changes));
+    }
+
+    [Fact]
+    public void ShiftUpDown_ExtendFromTheAnchor()
+    {
+        var b = new Binding();
+        var m = MountFocused(b);
+        Press(m, Key.Down);          // [3], anchor 3
+        Press(m, Key.Down, Range);   Assert.Equal(new[] { 1, 3 }, b.Selection);
+        Press(m, Key.Down, Range);   Assert.Equal(new[] { 0, 1, 3 }, b.Selection);
+        Press(m, Key.Up, Range);     Assert.Equal(new[] { 1, 3 }, b.Selection);
+    }
+
+    [Fact]
+    public void CtrlA_SelectsAll()
+    {
+        var b = new Binding();
+        var m = MountFocused(b);
+        Press(m, Key.A, Add);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, b.Selection);
+    }
+
+    [Fact]
+    public void Keys_ContinueFromTheClickedRow()
+    {
+        var b = new Binding();
+        var m = MountFocused(b);
+        Click(m, NameX, RowY(2));                 // plugin 0
+        Assert.Null(m.Root.KeyboardFocus);        // a click on a non-text control clears focus (UiRoot rule)
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.Down);                       // view 3 = plugin 2
+        Assert.Equal(new[] { 2 }, b.Selection);
+    }
+
+    [Fact]
+    public void Keys_FallThroughWhenUnfocusedOrUnhandled()
+    {
+        var b = new Binding();
+        var m = Mount(b);
+        var fell = new List<int>();
+        m.Root.WorldKeyFallThrough += (vk, _) => fell.Add(vk);
+        Press(m, Key.Down);
+        Assert.Empty(b.Changes);
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.W);
+        Press(m, Key.Down);
+        Assert.Equal(new[] { (int)Key.Down, (int)Key.W }, fell);
+        Assert.Single(b.Changes);
+    }
+
+    [Fact]
+    public void Keys_DisabledFireNothing()
+    {
+        var b = new Binding();
+        var m = MountFocused(b, ColumnList("selectmode=\"multi\" selected=\"{Selection}\" onchange=\"{SetSelection}\" enabled=\"false\""));
+        Press(m, Key.Down);
+        Press(m, Key.A, Add);
+        Assert.Empty(b.Changes);
+    }
+
+    [Fact]
+    public void Keys_SingleColumnFormStepsInPluginOrder()
+    {
+        var b = new Binding();
+        var m = MountFocused(b, """
+              <list x="0" y="0" w="300" h="108" items="{Names}" selectmode="multi" selected="{Selection}" onchange="{SetSelection}"/>
+            """);
+        Press(m, Key.Down);
+        Press(m, Key.Down);
+        Assert.Equal(new[] { 1 }, b.Selection);
+    }
+
+    [Fact]
+    public void Lead_IsRevealedButReordersDoNotScroll()
+    {
+        var b = new Binding
+        {
+            Names = Enumerable.Range(0, 12).Select(i => $"mob {i:00}").ToList(),
+            On = Enumerable.Repeat(false, 12).ToList(),
+            Acts = Enumerable.Repeat("Go", 12).ToList(),
+        };
+        var m = MountFocused(b);                  // 108 px: header + 5 rows (top row y 19, last y 91)
+        for (int i = 0; i < 8; i++)
+            Press(m, Key.Down);                   // lead plugin 7 at view 7: scrolls to top row 3
+        var band = Assert.Single(MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(m.List), m.List.SelectedColor));
+        Assert.Equal(18f + 4 * 18f + 1f, band.Y);
+
+        b.SortDesc = true;                        // descending: plugin 7 at view 4, still in rows 3..7
+        Redraw(m.List);
+        band = Assert.Single(MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(m.List), m.List.SelectedColor));
+        Assert.Equal(18f + 1 * 18f + 1f, band.Y);
+
+        // Live data moves the lead's row to the end (view 11): no reveal, so it scrolls out of sight.
+        b.Names = b.Names.Select((n, i) => i == 7 ? "a" : n).ToList();
+        Redraw(m.List);
+        Assert.Empty(MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(m.List), m.List.SelectedColor));
+    }
+
+    [Fact]
+    public void FocusOutline_OnlyWhileFocused()
+    {
+        var m = Mount(new Binding());
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(MarkupDrawProbe.Draw(m.List), UiMarkupExpanderHeader.FocusColor));
+        m.Root.SetKeyboardFocus(m.List);
+        Assert.Equal(4, MarkupDrawProbe.CountQuads(MarkupDrawProbe.Draw(m.List), UiMarkupExpanderHeader.FocusColor));
+        m.Root.SetKeyboardFocus(null);
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(MarkupDrawProbe.Draw(m.List), UiMarkupExpanderHeader.FocusColor));
     }
 }

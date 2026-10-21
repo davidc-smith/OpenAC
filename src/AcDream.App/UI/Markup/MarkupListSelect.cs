@@ -28,6 +28,9 @@ internal static class MarkupListSelect
                 if (!MarkupDocument.B(el, "selectionband", true))
                     throw new FormatException("<list selectmode=\"multi\"> always draws the selection band; remove selectionband=\"false\"");
                 list.MultiSelect = true;
+                list.AcceptsFocus = true;
+                list.FocusOnMouseClick = false;
+                list.TabStop = true;
                 list.SelectedRowsSource = MarkupBindings.BindRequiredIntListReader(selected, binding, "list selected");
                 list.SelectedRowsChanged = MarkupBindings.BindIntListAction(onChange, binding, "list onchange");
                 list.SelectionBandEnabled = true;

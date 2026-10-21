@@ -75,4 +75,74 @@ public sealed partial class UiMarkupList
     private bool RowBanded(int pluginRow, int selected) => MultiSelect
         ? (uint)pluginRow < (uint)_selectedMask.Length && _selectedMask[pluginRow]
         : pluginRow == selected && SelectionBandEnabled;
+
+    private bool _selectionFocused;
+
+    /// <summary>
+    /// Multi-mode focus and selection keys: Up/Down step the lead (Shift
+    /// extends from the anchor), Ctrl/Cmd+A selects every row. Up and Down are
+    /// always taken while focused; other keys fall through.
+    /// </summary>
+    private bool HandleSelectionEvent(in UiEvent e)
+    {
+        switch (e.Type)
+        {
+            case UiEventType.FocusGained when TabStop:
+                _selectionFocused = true;
+                return true;
+            case UiEventType.FocusLost when TabStop:
+                _selectionFocused = false;
+                return true;
+            case UiEventType.KeyDown when _selectionFocused && Enabled:
+                break;
+            default:
+                return false;
+        }
+
+        UiSelectModifiers keys = HeldModifiers();
+        var key = (Key)e.Data0;
+        if (key == Key.A && keys.Add)
+        {
+            SelectedRowsChanged?.Invoke(UiMarkupListSelection.All(RefreshSelectionRows()));
+            return true;
+        }
+        int delta = key switch { Key.Up => -1, Key.Down => 1, _ => 0 };
+        if (delta == 0)
+            return false;
+
+        RefreshSelectionRows();
+        int lead = UiMarkupListSelection.Step(_leadRow, delta, _view);
+        if (lead < 0)
+            return true;
+        int[] next;
+        if (keys.Range && (uint)_anchorRow < (uint)_view.Count)
+        {
+            next = UiMarkupListSelection.Range(_anchorRow, lead, _view);
+        }
+        else
+        {
+            next = [lead];
+            _anchorRow = lead;
+        }
+        _leadRow = lead;
+        SelectedRowsChanged?.Invoke(next);
+        return true;
+    }
+
+    /// <summary>Reads the rows now, so keys act on the current data and order; returns the row count.</summary>
+    private int RefreshSelectionRows()
+    {
+        if (Columns is { Count: > 0 } columns)
+            return RefreshRows(columns);
+        int count = ItemsSource().Count;
+        _view.SetIdentity(count);
+        return count;
+    }
+
+    /// <summary>The gold outline a focused multi list draws over its border.</summary>
+    private void DrawSelectionFocus(UiRenderContext context)
+    {
+        if (_selectionFocused)
+            context.DrawRectOutline(0f, 0f, Width, Height, UiMarkupExpanderHeader.FocusColor, 1f);
+    }
 }

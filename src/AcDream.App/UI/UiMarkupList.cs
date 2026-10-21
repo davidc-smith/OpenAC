@@ -125,15 +125,16 @@ public sealed partial class UiMarkupList : UiElement
             : 0f;
         int visibleRows = VisibleRows;
         int selected = SelectedIndexSource();
-        if (selected != _lastRevealedSelected)
+        int reveal = MultiSelect ? _leadRow : selected;
+        if (reveal != _lastRevealedSelected)
         {
-            _lastRevealedSelected = selected;
-            if (selected >= 0 && selected < items.Count)
+            _lastRevealedSelected = reveal;
+            if (reveal >= 0 && reveal < items.Count)
             {
-                if (selected < _topRow)
-                    _topRow = selected;
-                else if (selected >= _topRow + visibleRows)
-                    _topRow = selected - visibleRows + 1;
+                if (reveal < _topRow)
+                    _topRow = reveal;
+                else if (reveal >= _topRow + visibleRows)
+                    _topRow = reveal - visibleRows + 1;
             }
         }
         ClampTop(items.Count, visibleRows);
@@ -192,10 +193,13 @@ public sealed partial class UiMarkupList : UiElement
 
         if (showScrollbar)
             DrawScrollbar(context, contentWidth, items.Count, visibleRows);
+        DrawSelectionFocus(context);
     }
 
     public override bool OnEvent(in UiEvent e)
     {
+        if (MultiSelect && HandleSelectionEvent(e))
+            return true;
         if (Columns is { Count: > 0 } columns)
             return OnEventColumns(e, columns);
 
@@ -296,11 +300,12 @@ public sealed partial class UiMarkupList : UiElement
         ComputeColumnLayout(columns, contentWidth);
 
         int selected = SelectedIndexSource();
-        int selectedView = _view.ViewRow(selected);
+        int reveal = MultiSelect ? _leadRow : selected;
+        int selectedView = _view.ViewRow(reveal);
         (int Column, bool Descending) sort = CurrentSort;
-        if (selected != _lastRevealedSelected || sort != _lastRevealedSort)
+        if (reveal != _lastRevealedSelected || sort != _lastRevealedSort)
         {
-            _lastRevealedSelected = selected;
+            _lastRevealedSelected = reveal;
             _lastRevealedSort = sort;
             if (selectedView >= 0)
             {
@@ -366,6 +371,7 @@ public sealed partial class UiMarkupList : UiElement
 
         if (showScrollbar)
             DrawScrollbar(context, contentWidth, rowCount, visibleRows);
+        DrawSelectionFocus(context);
     }
 
     /// <summary>Reads every column's rows from its binding; returns the row count, the longest column.</summary>
