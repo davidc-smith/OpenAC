@@ -282,6 +282,30 @@ public sealed class MarkupExpanderTests : IDisposable
     }
 
     [Fact]
+    public void Expander_StretchedSiblingsGrowInsteadOfMoving()
+    {
+        var panel = MarkupDocument.Build("""
+            <panel x="0" y="0" w="400" h="300">
+              <expander name="adv" x="8" y="8" w="200" h="100" text="Adv"/>
+              <group name="fill" x="8" y="120" w="200" h="170" anchor="left top bottom"/>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16));
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(panel);
+        var fill = Named(panel, "fill");
+        MarkupDrawProbe.Draw(panel, 800f, 600f);
+        ClickHeader(root);
+        MarkupDrawProbe.Draw(panel, 800f, 600f);
+        Assert.Equal(38f, fill.Top);
+        Assert.Equal(252f, fill.Height);
+        Assert.Equal(10f, 300f - (fill.Top + fill.Height));
+        ClickHeader(root);
+        MarkupDrawProbe.Draw(panel, 800f, 600f);
+        Assert.Equal(120f, fill.Top);
+        Assert.Equal(170f, fill.Height);
+    }
+
+    [Fact]
     public void Expander_ResizeBeforeDrawIsNotAbsorbed()
     {
         var markup = """

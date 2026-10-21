@@ -6,7 +6,8 @@ namespace AcDream.App.UI;
 /// <summary>
 /// A markup expander: a header that folds away the content below it. When it
 /// collapses, the siblings at or below its bottom move up by the height it
-/// lost, and come back when it expands. Each moved element re-records its
+/// lost (those stretched between top and bottom grow instead), and come back
+/// when it expands. Each moved element re-records its
 /// anchor baseline, so the per-frame anchor pass keeps the new layout.
 /// </summary>
 public sealed class UiMarkupExpander : UiElement
@@ -39,7 +40,7 @@ public sealed class UiMarkupExpander : UiElement
     private float _collapseDelta;
     private AnchorEdges? _expandedAnchors;
     private float _parentHeightAtCollapse;
-    private readonly List<UiElement> _moved = new();
+    private readonly List<(UiElement Element, bool Grew)> _moved = new();
 
     public UiMarkupExpander()
     {
@@ -150,10 +151,16 @@ public sealed class UiMarkupExpander : UiElement
                     if (ReferenceEquals(sibling, this)
                         || sibling.Top + ShiftOf(sibling) < authoredBottom - 0.5f)
                         continue;
+                    // A sibling stretched between top and bottom grows into the space
+                    // (its bottom margin stays as authored); everything else moves up.
+                    bool grows = (sibling.Anchors & (AnchorEdges.Top | AnchorEdges.Bottom))
+                        == (AnchorEdges.Top | AnchorEdges.Bottom);
                     sibling.Top -= _collapseDelta;
+                    if (grows)
+                        sibling.Height += _collapseDelta;
                     AddShift(sibling, _collapseDelta);
                     sibling.CaptureCurrentAnchorBaseline();
-                    _moved.Add(sibling);
+                    _moved.Add((sibling, grows));
                 }
             }
             Content.Visible = false;
@@ -182,11 +189,13 @@ public sealed class UiMarkupExpander : UiElement
             }
             CaptureCurrentAnchorBaseline();
             Content.Visible = true;
-            foreach (UiElement sibling in _moved)
+            foreach (var (sibling, grew) in _moved)
             {
                 if (!ReferenceEquals(sibling.Parent, parent))
                     continue;
                 sibling.Top += _collapseDelta;
+                if (grew)
+                    sibling.Height = MathF.Max(0f, sibling.Height - _collapseDelta);
                 AddShift(sibling, -_collapseDelta);
                 sibling.CaptureCurrentAnchorBaseline();
             }
