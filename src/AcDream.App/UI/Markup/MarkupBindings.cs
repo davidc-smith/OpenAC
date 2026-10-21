@@ -41,6 +41,73 @@ internal static class MarkupBindings
     public static Action<float>? BindFloatAction(string? attribute, object binding, string context) =>
         BindOptionalAction<float>(attribute, binding, context, "float");
 
+    /// <summary>An optional <c>Action&lt;int, bool&gt;</c>; null when the attribute is absent.</summary>
+    public static Action<int, bool>? BindIntBoolAction(string? attribute, object binding, string context)
+    {
+        if (attribute is null)
+            return null;
+        if (!MarkupDocument.IsBinding(attribute))
+            throw new FormatException($"{context} must be an Action<int, bool> binding");
+        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        if (property is null || !typeof(Action<int, bool>).IsAssignableFrom(property.PropertyType))
+        {
+            throw new FormatException(
+                $"{attribute} did not resolve to an Action<int, bool> property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return (first, second) => (property.GetValue(binding) as Action<int, bool>)?.Invoke(first, second);
+    }
+
+    /// <summary>A required list of floats (any <c>IEnumerable&lt;float&gt;</c>), copied on each read.</summary>
+    public static Func<IReadOnlyList<float>> BindRequiredFloatListReader(
+        string? expression, object binding, string context)
+    {
+        if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
+            throw new FormatException($"{context} must be a float-list binding");
+        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        if (property is null || !typeof(IEnumerable<float>).IsAssignableFrom(property.PropertyType))
+        {
+            throw new FormatException(
+                $"{expression} did not resolve to an IEnumerable<float> property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return () => property.GetValue(binding) is IEnumerable<float> values
+            ? values.ToArray()
+            : Array.Empty<float>();
+    }
+
+    /// <summary>An optional <c>Action&lt;IReadOnlyList&lt;float&gt;&gt;</c>; null when the attribute is absent.</summary>
+    public static Action<IReadOnlyList<float>>? BindFloatListAction(string? attribute, object binding, string context) =>
+        BindOptionalAction<IReadOnlyList<float>>(attribute, binding, context, "IReadOnlyList<float>");
+
+    /// <summary>
+    /// Sort keys for a list column: a list of doubles (compared as numbers) or
+    /// of strings (compared as the column's sort kind says). Exactly one of the
+    /// pair is set.
+    /// </summary>
+    public static (Func<IReadOnlyList<double>>? Numbers, Func<IReadOnlyList<string>>? Texts) BindSortKeys(
+        string? expression, object binding, string context)
+    {
+        if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
+            throw new FormatException($"{context} must be a binding to a list of double or string");
+        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        if (property is not null && typeof(IEnumerable<double>).IsAssignableFrom(property.PropertyType))
+        {
+            return (() => property.GetValue(binding) is IEnumerable<double> values
+                ? values.ToArray()
+                : Array.Empty<double>(), null);
+        }
+        if (property is not null && typeof(IEnumerable<string>).IsAssignableFrom(property.PropertyType))
+        {
+            return (null, () => property.GetValue(binding) is IEnumerable<string> values
+                ? values.ToArray()
+                : Array.Empty<string>());
+        }
+        throw new FormatException(
+            $"{expression} did not resolve to an IReadOnlyList<double> or IReadOnlyList<string> property on "
+            + binding.GetType().Name + $" ({context})");
+    }
+
     /// <summary>A required <c>float</c> binding, read live.</summary>
     public static Func<float> BindRequiredFloatReader(string? expression, object binding, string context)
     {

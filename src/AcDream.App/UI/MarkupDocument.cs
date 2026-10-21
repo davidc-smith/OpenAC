@@ -702,6 +702,10 @@ public static class MarkupDocument
                     }
                 }
                 ApplyCommon(list, el, binding);
+                if (listUsesColumns)
+                    MarkupListHeader.Apply(el, listChildren, list, binding, Context());
+                else
+                    MarkupListHeader.RejectWithoutColumns(el);
                 parent.AddChild(list);
                 break;
 

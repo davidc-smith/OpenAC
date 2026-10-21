@@ -112,6 +112,11 @@ back at runtime instead.
 | `expander onchange` | `Action<bool>`, the new state | throws |
 | `split position` | `float`, the first pane's size; when bound, the plugin owns it | throws |
 | `split onchange` | `Action<float>`, the size asked for | throws |
+| `list sortcolumn` | `int`, the sorted column (−1 for none); bound together with `sortdescending` | throws |
+| `list sortdescending` | `bool` | throws |
+| `list onsort` | `Action<int, bool>`, the column and direction asked for | throws |
+| `list widths` | `IReadOnlyList<float>`, one per column (0 = automatic) | throws |
+| `list onresize` | `Action<IReadOnlyList<float>>`, every column's width | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
@@ -177,7 +182,7 @@ Unknown or miscased element names throw at build time.
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
-| `list` | Scrolling rows | `x y w h selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children |
+| `list` | Scrolling rows | `x y w h selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize`; column form only) |
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
@@ -574,6 +579,10 @@ The two forms cannot be mixed on one list.
 | `iconkind` | `icon` | no | `did` (default), `spell`, or `item` |
 | `onclick` | `icon` | yes | `Action<int>` with the row index |
 | `items` | `button` | yes | `IReadOnlyList<string>`, each row's caption; an empty caption draws no button |
+| `header` | all | no | literal or bound string, the caption; `all` on a `checkbox` column is a select-all box |
+| `onall` | `checkbox` with `header="all"` | no | `Action<bool>`, the value every row should take |
+| `sort` | all | no | `text` or `number` (text and button columns, or any column with `sortkeys`); `bool` (check and checkbox) |
+| `sortkeys` | all with `sort` | no | `IReadOnlyList<double>` or `IReadOnlyList<string>`, one key per row |
 | `onclick` | `button` | yes | `Action<int>` with the row index; the click does not select the row |
 | `buttonw`, `buttonh` | `button` | no | pixels; the button's size, centred in its cell (default: the whole cell) |
 
@@ -611,12 +620,92 @@ A cell with an empty caption is not a button and ignores clicks.
 On a host older than button columns, a `type="button"` column fails the build
 of its window as an unknown type.
 
-There is no header row; place `<label>` elements above the list. A `check`
+With `header="true"` a list draws a header row; see below. A `check`
 cell draws the same lamp glyph as `<toggle>`; a `checkbox` cell draws the
 `<checkbox>` tick box. When rows overflow the list's height it reserves a
 16-pixel scrollbar at its right edge, drawn with the game's scrollbar art;
 when they fit, no bar and no reservation. Row selection draws no highlight
 band unless `selectionband="true"`.
+
+### Header, sorting and column widths
+
+```xml
+<list name="mobs" x="8" y="24" w="320" h="200" header="true" resizable="true"
+      selected="{Sel}" onchange="{Pick}">
+  <column type="text" header="Name" width="140" items="{Names}" sort="text"/>
+  <column type="text" header="Dist" width="80" items="{Dists}" sort="number" sortkeys="{DistKeys}"/>
+  <column type="checkbox" header="all" width="40" values="{On}" onchange="{Toggle}"
+          onall="{ToggleAll}"/>
+  <column type="button" items="{Acts}" onclick="{Act}"/>
+</list>
+```
+
+`header="true"` draws an 18 px row of column captions above the rows; the
+rows and the scrollbar start under it. A column's `header` is a literal or a
+bound string. Classic draws the header on the list's own dark background; a
+themed window uses its field colour. Both draw a line under the header and
+between cells.
+
+A column with `sort` can be sorted by clicking its header: the first click
+sorts ascending, the second descending, the third goes back to the plugin's
+order. The sorted column shows a small arrow. `text` compares the cells
+ignoring case; `number` reads them as numbers (invariant culture); cells
+that aren't numbers sort last in either direction; `bool` sorts a check or
+checkbox column unticked first. `sortkeys` replaces the cells as the keys,
+for a column that shows something other than what it sorts by, such as
+"12.3 m"; a row past the end of the keys sorts last. Ties keep the plugin's
+order.
+
+Sorting only changes what is drawn where. Every row index the list hands
+the plugin (`selected`, `onchange`, every column callback) is still the
+plugin's own index, the selection stays on the same row, and a button press
+in progress is cancelled if a sort moves a different row under it before the
+release. The list scrolls to keep the selected row in view when the
+selection or the sort changes, but not when live data (a distance, say)
+reorders the rows under a sort, so the player can scroll away from the
+selection.
+
+- Without `sortcolumn` the client keeps the sort and, for a list with a
+  `name`, remembers it per character; `onsort` is told each change.
+- With `sortcolumn="{Int}" sortdescending="{Bool}"` (always both) the plugin
+  keeps it: a header click only calls `onsort` with the column (−1 for none)
+  and direction asked for. Without `onsort` it only displays.
+
+With `resizable="true"` (which needs a header) the player drags the line
+between two header cells to resize the column to its left, down to 16 px
+and only as wide as leaves the columns to its right their own widths (16 px
+for an automatic one), and double-clicks it to put the column back to its markup width. A
+double-click counts only when both its clicks started from rest; the release
+of a drag is not the first click. The resize cursor shows over those lines.
+
+- Without `widths` the client keeps the widths and, for a named list,
+  remembers them per character when the player lets go (a remembered width
+  below 16 px is raised to 16); `onresize` is told every column's width for
+  each pixel the line moves and after a double-click reset.
+- With `widths="{Floats}"` the plugin keeps them: one entry per column in
+  pixels, 0 for automatic, the last entry ignored (the last column always
+  takes the rest). A list of the wrong length is ignored. A drag or a
+  double-click reset only calls `onresize`; without it the widths only
+  display, and the lines show no resize cursor and can't be grabbed.
+
+A `checkbox` column with `header="all"` draws a select-all box in its
+header: ticked when every row is ticked, clear when none is, indeterminate
+otherwise. Clicking it calls `onall` once with the value every row should
+take: true, unless every row is already ticked. The plugin sets its own
+values. Without `onall` the header cell is blank. `header="all"` on any
+other column is just the caption "all". A select-all column can't also
+`sort`.
+
+`header`, `resizable`, `sortcolumn`, `sortdescending`, `onsort`, `widths`
+and `onresize` need `<column>` children. `resizable` without a header,
+`widths` or `onresize` without `resizable`, `sortcolumn` without
+`sortdescending` (or the reverse), `sort="bool"` on a column that isn't a
+check or checkbox, `sort="text"` or `"number"` on a check, checkbox or icon
+column without `sortkeys`, `sortkeys` without `sort="text"` or `"number"`,
+`onall` without `header="all"` on a checkbox column, and `header="all"` with
+`sort` fail the build. These are attributes on existing elements, and a
+host older than list headers ignores attributes it doesn't know: it draws
+the list without a header and ignores sorting and widths.
 
 ## Slider range
 
