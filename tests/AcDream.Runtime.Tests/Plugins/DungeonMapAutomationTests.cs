@@ -71,6 +71,37 @@ public sealed class DungeonMapAutomationTests
     }
 
     [Fact]
+    public void EachCellOfThePlanCarriesItsOwnFloorInThreeDimensions()
+    {
+        var dats = new DelveLandblock();
+        using var surface = new RuntimeAutomationSurface();
+        surface.BindDungeonMap(dats, dats.Lock);
+
+        PluginDungeonFloorplan plan = surface.DungeonMap.CaptureFloorplan(DelveLandblock.Landblock);
+
+        PluginDungeonCell ramp = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.Ramp);
+        IReadOnlyList<Vector3> floor = Assert.Single(ramp.Floors);
+        Assert.Equal([0f, 0f, 6f, 6f], floor.Select(static corner => corner.Z).ToArray());
+        Assert.Empty(plan.Cells.Single(static cell => cell.CellId == DelveLandblock.ShaftTop).Floors);
+    }
+
+    [Fact]
+    public void CellsWithTheSameFloorsAreEqual()
+    {
+        var first = new PluginDungeonCell(0x01230100u, Vector3.One, 6f)
+        {
+            Floors = [[Vector3.Zero, Vector3.UnitX, Vector3.UnitY]],
+        };
+        var second = first with { Floors = [[Vector3.Zero, Vector3.UnitX, Vector3.UnitY]] };
+        var other = first with { Floors = [[Vector3.Zero, Vector3.UnitX, Vector3.UnitZ]] };
+
+        Assert.Equal(first, second);
+        Assert.Equal(first.GetHashCode(), second.GetHashCode());
+        Assert.NotEqual(first, other);
+        Assert.Empty(default(PluginDungeonCell).Floors);
+    }
+
+    [Fact]
     public void BoundToARuntimeItNamesTheLandblockTheCharacterStandsIn()
     {
         using GameRuntime runtime = GameRuntimeTestFactory.Create();

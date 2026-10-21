@@ -19,7 +19,80 @@ public readonly record struct PluginDungeonWall(Vector2 Start, Vector2 End);
 /// above the floor; a walk or preview to it stands it on the floor under it.
 /// </param>
 /// <param name="LayerZ">The <see cref="PluginDungeonLayer.Z"/> of the layer the cell is drawn in.</param>
-public readonly record struct PluginDungeonCell(uint CellId, Vector3 Center, float LayerZ);
+public readonly record struct PluginDungeonCell(uint CellId, Vector3 Center, float LayerZ)
+{
+    private readonly IReadOnlyList<IReadOnlyList<Vector3>>? _floors;
+
+    /// <summary>
+    /// The cell's own floor: every polygon of its geometry that faces up (the
+    /// same test the floorplan uses for floor), corners in landblock-local
+    /// metres with their real heights, in the order the data gives them. A
+    /// ramp's polygons slope; a flat floor's corners share one height. The
+    /// height under a point is the plane of the polygon under it. Empty for
+    /// a cell with no floor (the upper cell of a tall room). Two cells are
+    /// equal only when their floors are equal corner by corner. Needs
+    /// contract <c>0.1.26-fork.3</c> or later; an older host leaves it empty.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<Vector3>> Floors
+    {
+        get => _floors ?? Array.Empty<IReadOnlyList<Vector3>>();
+        init => _floors = value;
+    }
+
+    /// <summary>Compares every member, the floors corner by corner.</summary>
+    public bool Equals(PluginDungeonCell other)
+    {
+        if (CellId != other.CellId || Center != other.Center || !LayerZ.Equals(other.LayerZ))
+            return false;
+        IReadOnlyList<IReadOnlyList<Vector3>> floors = Floors;
+        IReadOnlyList<IReadOnlyList<Vector3>> others = other.Floors;
+        if (floors.Count != others.Count)
+            return false;
+        for (int index = 0; index < floors.Count; index++)
+        {
+            if (!floors[index].SequenceEqual(others[index]))
+                return false;
+        }
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(CellId);
+        hash.Add(Center);
+        hash.Add(LayerZ);
+        foreach (IReadOnlyList<Vector3> floor in Floors)
+        {
+            foreach (Vector3 corner in floor)
+                hash.Add(corner);
+        }
+        return hash.ToHashCode();
+    }
+}
+
+/// <summary>Which way an opening of a cell faces.</summary>
+public enum PluginDoorwayKind
+{
+    /// <summary>
+    /// Not known: the data lacks the opening's polygon, or the host is older
+    /// than contract <c>0.1.26-fork.3</c>.
+    /// </summary>
+    Unknown = 0,
+
+    /// <summary>
+    /// A standing opening walked through: a door, an arch or a corridor's
+    /// end, a stair's sloped opening included.
+    /// </summary>
+    Upright,
+
+    /// <summary>A level opening in this cell's floor: the cell beyond is below.</summary>
+    Floor,
+
+    /// <summary>A level opening in this cell's ceiling: the cell beyond is above.</summary>
+    Ceiling,
+}
 
 /// <summary>
 /// One opening of an indoor cell: a doorway, stairwell or other gap the data
@@ -45,6 +118,28 @@ public readonly record struct PluginCellDoorway(uint OtherCellId, Vector3 Center
 {
     /// <summary>True when the doorway opens onto the landscape rather than another cell.</summary>
     public bool LeadsOutside => OtherCellId == 0u;
+
+    /// <summary>
+    /// Which way the opening faces: <see cref="PluginDoorwayKind.Upright"/>
+    /// for one walked through, <see cref="PluginDoorwayKind.Floor"/> or
+    /// <see cref="PluginDoorwayKind.Ceiling"/> for a level one (a tall room
+    /// or a shaft), told apart by whether it is below or above the middle of
+    /// the cell's geometry (<see cref="PluginDungeonCell.Center"/>), or, in a
+    /// flat cell that is nothing but the opening, by whether the cell beyond
+    /// is lower. Needs contract <c>0.1.26-fork.3</c> or later; an
+    /// older host, or a doorway whose polygon the data lacks, gives
+    /// <see cref="PluginDoorwayKind.Unknown"/>.
+    /// </summary>
+    public PluginDoorwayKind Kind { get; init; }
+
+    /// <summary>
+    /// The height of the opening's lowest corner, in landblock-local metres:
+    /// where a walker crosses an upright doorway. About
+    /// <see cref="Center"/>'s Z for a level opening. The cell's origin
+    /// height when the data lacks the doorway's polygon. Needs contract
+    /// <c>0.1.26-fork.3</c> or later; an older host leaves it 0.
+    /// </summary>
+    public float Sill { get; init; }
 }
 
 /// <summary>
@@ -159,8 +254,9 @@ public readonly record struct PluginIndoorCell(
 /// One storey of a floorplan: the cells whose floor lies in one six-metre
 /// band of height, flattened together. A cell with no floor of its own, such
 /// as the upper cell of a tall room, is drawn in the band of the cell it
-/// opens onto below, however many floorless cells sit between; a cell with
-/// no floor and no way down is drawn in the band its origin is in.
+/// opens onto below through a level opening in its floor, however many
+/// floorless cells sit between; a cell with no floor and no way down -- a
+/// doorway beside it does not count -- is drawn in the band its origin is in.
 /// </summary>
 /// <param name="Z">
 /// The lowest height the band covers, in metres; bands are six metres tall
@@ -172,7 +268,13 @@ public readonly record struct PluginIndoorCell(
 /// in the order the data gives them. The polygons overlap wherever two cells
 /// meet; fill each one and the room comes out whole.
 /// </param>
-/// <param name="Walls">The walls as lines, collinear runs already joined.</param>
+/// <param name="Walls">
+/// The walls as lines, collinear runs already joined. Only the standing faces
+/// that reach down to the floor they stand on are walls: a door's lintel, and
+/// the walls of a tall room's upper cells, are left out, so every doorway is
+/// a gap in its wall line. Before contract <c>0.1.26-fork.3</c> every
+/// standing face was a wall and a lintel closed its doorway.
+/// </param>
 public sealed record PluginDungeonLayer(
     float Z,
     IReadOnlyList<IReadOnlyList<Vector2>> Floors,

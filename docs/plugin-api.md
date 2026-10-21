@@ -2323,6 +2323,22 @@ so a storey reads as a layer; each layer has its floor polygons and its wall
 lines, collinear runs already joined. `Cells` names every cell with its
 middle and its layer, and `BoundsMin`/`BoundsMax` box the whole plan.
 
+A standing face is a wall only where it reaches down to the floor it stands
+on, to within a metre: a door's lintel and the walls of a tall room's upper
+cells are left out, so every doorway shows as a gap in its wall line. A
+floorless cell, such as a tall room's upper cell, is drawn in the band of the
+cell its floor opens onto below and stands on that cell's floor; a doorway
+beside it does not count, and a floorless cell with no way down stays in its
+origin's band with all its walls. Before contract `0.1.26-fork.3` every
+standing face was a wall, lintels closed their doorways on the plan, and a
+floorless cell could fold onto a lower neighbour beside it.
+
+Each `PluginDungeonCell` also carries its own `Floors`: every up-facing
+polygon of the cell with its corners' real heights, so a ramp's polygons
+slope. The height under a point is the plane of the polygon under it, where
+the layer's `Z` is only the band. `Floors` is empty for a cell with no floor
+and on a host older than `0.1.26-fork.3`.
+
 Everything is in the landblock's own frame, in metres: x east and y north
 from the landblock's south-west corner, which is the frame the game's cell
 positions use. `PluginDungeonFloorplan.ToLandblockLocal` puts a position from
@@ -2369,6 +2385,20 @@ each of them lists only its own piece, sometimes in several parts. So one
 neighbour can appear more than once, and the two sides' centres can be up to
 about seven metres apart. `Doorways` needs contract `0.1.25-fork.6`; an older
 host leaves it empty.
+
+A doorway's `Kind` says which way it faces: `Upright` for one walked through
+(a door, an arch, a corridor's end or a stair's sloped opening), `Floor` for
+a level opening in the cell's floor with the cell beyond below, and `Ceiling`
+for one in its ceiling with the cell beyond above. A level opening is told
+floor from ceiling by whether it is below or above the middle of the cell's
+geometry, the floorplan's cell `Center`; in a flat cell that is nothing but
+the opening, by whether the cell beyond is lower. `Sill` is the height of the
+opening's lowest corner, where a walker crosses an upright doorway. A doorway
+whose polygon the data lacks is `Unknown`, with the cell origin's height as
+its `Sill`. `Kind` and `Sill` need contract `0.1.26-fork.3`; an older host
+gives `Unknown` and 0. A tour that walks rooms follows `Upright` doorways and
+treats cells joined through `Floor`/`Ceiling` openings as one tall room or
+shaft.
 
 ```csharp
 IReadOnlyList<PluginIndoorCell> cells = host.Automation.DungeonMap.CaptureIndoorCells(here.CellId);
