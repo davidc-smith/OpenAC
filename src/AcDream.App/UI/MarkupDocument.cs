@@ -881,7 +881,7 @@ public static class MarkupDocument
         return value => (property.GetValue(binding) as Action<int>)?.Invoke(value);
     }
 
-    private static Func<IReadOnlyList<string>> BindStringList(
+    internal static Func<IReadOnlyList<string>> BindStringList(
         string? expression,
         object binding,
         string context, bool preserveSnapshot = false)
@@ -1139,7 +1139,7 @@ public static class MarkupDocument
         return () => property.GetValue(binding) is true;
     }
 
-    private static Func<int> BindRequiredIntReader(
+    internal static Func<int> BindRequiredIntReader(
         string? expression,
         object binding,
         string context)
