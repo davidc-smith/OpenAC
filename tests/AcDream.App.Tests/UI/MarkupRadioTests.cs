@@ -336,8 +336,57 @@ public class MarkupRadioTests
     {
         var radio = MountThemed(Literal + " style=\"segmented\"", new Binding { Mode = 1 });
         var renderer = MarkupDrawProbe.Draw(radio);
-        Assert.True(MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Selected) >= 1);
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Selected));
         Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupRadio.ClassicSegmentSelected));
+    }
+
+    [Fact]
+    public void Radio_ArrowsReachTheGroupThroughUiRootAndOtherKeysFallThrough()
+    {
+        var b = new Binding();
+        var (root, radio) = Mount(Literal, b);
+        var fallen = new List<int>();
+        root.WorldKeyFallThrough += (vk, _) => fallen.Add(vk);
+        root.SetKeyboardFocus(radio);
+        root.OnKeyDown((int)Key.Down);
+        Assert.Equal(1, b.Mode);
+        Assert.Empty(fallen);
+        root.OnKeyDown((int)Key.A);
+        Assert.Equal(new[] { (int)Key.A }, fallen);
+    }
+
+    [Fact]
+    public void Radio_NullEntryInABoundListDraws()
+    {
+        var b = new Binding { Modes = ["a", null!, "c"] };
+        var (_, radio) = Mount("items=\"{Modes}\" selected=\"{Mode}\" onchange=\"{SetMode}\"", b);
+        MarkupDrawProbe.Draw(radio);
+        var (_, seg) = Mount("items=\"{Modes}\" selected=\"{Mode}\" style=\"segmented\"", b);
+        MarkupDrawProbe.Draw(seg);
+    }
+
+    [Fact]
+    public void Radio_DisabledSegmentedDrawsTheSelectionFaded()
+    {
+        var (_, radio) = Mount(Literal + " style=\"segmented\" enabled=\"false\"", new Binding { Mode = 1 });
+        var renderer = MarkupDrawProbe.Draw(radio);
+        var faded = UiMarkupRadio.ClassicSegmentSelected with
+        {
+            W = UiMarkupRadio.ClassicSegmentSelected.W * UiMarkupToggle.DisabledAlpha,
+        };
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, faded));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupRadio.ClassicSegmentSelected));
+    }
+
+    [Fact]
+    public void Radio_CaptureChangedCancelsThePress()
+    {
+        var b = new Binding();
+        var (_, radio) = Mount(Literal, b);
+        radio.OnEvent(new UiEvent { Type = UiEventType.MouseDown, Data1 = 20, Data2 = 20 });
+        radio.OnEvent(new UiEvent { Type = UiEventType.CaptureChanged });
+        radio.OnEvent(new UiEvent { Type = UiEventType.MouseUp, Data1 = 20, Data2 = 20 });
+        Assert.Equal(0, b.Calls);
     }
 
     [Fact]
