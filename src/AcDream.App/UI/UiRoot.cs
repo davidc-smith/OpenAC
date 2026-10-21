@@ -304,6 +304,15 @@ public sealed class UiRoot : UiElement
 
     internal void ClearSubtreeOwnership(UiElement subtree, bool preserveDetachedDrag = false)
     {
+        if (IsWithinSubtree(_activePopup, subtree))
+        {
+            // A popup whose owner hides or leaves the tree closes with it, so it
+            // does not come back open when the owner is shown again.
+            var dismiss = _activePopupDismiss;
+            _activePopup = null;
+            _activePopupDismiss = null;
+            dismiss?.Invoke();
+        }
         if (IsWithinSubtree(KeyboardFocus, subtree))
             SetKeyboardFocus(null);
         if (IsWithinSubtree(Captured, subtree))
@@ -741,7 +750,7 @@ public sealed class UiRoot : UiElement
                 var click = new UiEvent(target.EventId, target, UiEventType.RightClick,
                                         Data0: (int)flags,
                                         Data1: (int)(x - sp.X), Data2: (int)(y - sp.Y));
-                BubbleEvent(target, in click);
+                BubbleRightClick(target, in click);
             }
 
             if (ReferenceEquals(Captured, target))
@@ -1258,6 +1267,20 @@ public sealed class UiRoot : UiElement
         {
             if (w.OnEvent(in e)) return true;
             w = w.Parent;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Bubbles a right click like any event, but once an element leaves it
+    /// unhandled, offers it to that element's context menu before going on.
+    /// </summary>
+    private bool BubbleRightClick(UiElement start, in UiEvent e)
+    {
+        for (UiElement? w = start; w is not null; w = w.Parent)
+        {
+            if (w.OnEvent(in e)) return true;
+            if (w.ContextMenu is { } menu && w.Enabled && menu.TryOpen(MouseX, MouseY)) return true;
         }
         return false;
     }
