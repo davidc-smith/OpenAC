@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace AcDream.App.UI;
 
-public sealed class UiMarkupList : UiElement
+public sealed partial class UiMarkupList : UiElement
 {
     public PluginUiPalette? ThemePalette { get; set; }
 
@@ -57,6 +57,12 @@ public sealed class UiMarkupList : UiElement
     private IReadOnlyList<UiMarkupListColumn>? _columns;
 
     private int _lastRevealedSelected = int.MinValue;
+    private int _lastRevealedVersion = int.MinValue;
+
+    // Which plugin row each view row shows. Positions (_topRow, hover and
+    // press rows) are view rows; data and callbacks use plugin rows.
+    private readonly UiMarkupListViewMap _view = new();
+    private int _pressVersion;
 
     private readonly UiScrollable _scroll = new();
 
@@ -273,15 +279,17 @@ public sealed class UiMarkupList : UiElement
         ComputeColumnLayout(columns, contentWidth);
 
         int selected = SelectedIndexSource();
-        if (selected != _lastRevealedSelected)
+        int selectedView = _view.ViewRow(selected);
+        if (selected != _lastRevealedSelected || _view.Version != _lastRevealedVersion)
         {
             _lastRevealedSelected = selected;
-            if (selected >= 0 && selected < rowCount)
+            _lastRevealedVersion = _view.Version;
+            if (selectedView >= 0)
             {
-                if (selected < _topRow)
-                    _topRow = selected;
-                else if (selected >= _topRow + visibleRows)
-                    _topRow = selected - visibleRows + 1;
+                if (selectedView < _topRow)
+                    _topRow = selectedView;
+                else if (selectedView >= _topRow + visibleRows)
+                    _topRow = selectedView - visibleRows + 1;
             }
         }
         ClampTop(rowCount, visibleRows);
@@ -295,10 +303,11 @@ public sealed class UiMarkupList : UiElement
         context.DrawRectOutline(0f, 0f, Width, Height, BorderColor, 1f);
 
         int end = Math.Min(rowCount, _topRow + visibleRows);
-        for (int index = _topRow; index < end; index++)
+        for (int view = _topRow; view < end; view++)
         {
-            float y = (index - _topRow) * RowHeight;
-            if (index == selected && SelectionBandEnabled)
+            int row = _view.PluginRow(view);
+            float y = (view - _topRow) * RowHeight;
+            if (view == selectedView && SelectionBandEnabled)
                 context.DrawFill(1f, y + 1f, contentWidth - 2f, RowHeight - 1f, SelectedColor);
 
             for (int c = 0; c < columns.Count; c++)
@@ -313,16 +322,16 @@ public sealed class UiMarkupList : UiElement
                     switch (columns[c].Kind)
                     {
                         case UiMarkupListColumnKind.Text:
-                            DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], index, cellX, y);
+                            DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
                             break;
                         case UiMarkupListColumnKind.Check:
-                            DrawCheckCell(context, _cachedCheckRows[c], index, cellX, cellW, y, columns[c].Boxed);
+                            DrawCheckCell(context, _cachedCheckRows[c], row, cellX, cellW, y, columns[c].Boxed);
                             break;
                         case UiMarkupListColumnKind.Icon:
-                            DrawIconCell(context, columns[c], _cachedIconRows[c], index, cellX, cellW, y);
+                            DrawIconCell(context, columns[c], _cachedIconRows[c], row, cellX, cellW, y);
                             break;
                         case UiMarkupListColumnKind.Button:
-                            DrawButtonCell(context, c, index, cellX, cellW, y);
+                            DrawButtonCell(context, c, view, row, cellX, cellW, y);
                             break;
                     }
                 }
@@ -366,8 +375,13 @@ public sealed class UiMarkupList : UiElement
             }
         }
         _cachedRowCount = rowCount;
+        RebuildView(columns, rowCount);
         return rowCount;
     }
+
+    /// <summary>Re-derives the row order after the rows were read.</summary>
+    private void RebuildView(IReadOnlyList<UiMarkupListColumn> columns, int rowCount) =>
+        _view.SetIdentity(rowCount);
 
     private void DrawTextCell(
         UiRenderContext context, IReadOnlyList<string>? texts, IReadOnlyList<uint>? colors,
@@ -430,12 +444,12 @@ public sealed class UiMarkupList : UiElement
     /// and cut at the button's edges. A disabled list draws face, border and
     /// caption at the alpha a disabled toggle's caption takes.
     /// </summary>
-    private void DrawButtonCell(UiRenderContext context, int column, int index, float cellX, float cellW, float y)
+    private void DrawButtonCell(UiRenderContext context, int column, int view, int row, float cellX, float cellW, float y)
     {
-        if (!HasButtonCaption(column, index, out string caption))
+        if (!HasButtonCaption(column, row, out string caption))
             return;
         (float x, float top, float w, float h) = ButtonRect(_columns![column], cellX, cellW, y);
-        UiControlState state = ButtonState(index, column);
+        UiControlState state = ButtonState(view, column);
         Vector4 face = state switch
         {
             UiControlState.Hovered => Vector4.Lerp(ButtonColor, ButtonBorderColor, 0.3f) with { W = ButtonColor.W },
@@ -522,7 +536,7 @@ public sealed class UiMarkupList : UiElement
     }
 
     internal UiControlState ButtonStateForTest(int index, int column) =>
-        HasButtonCaption(column, index, out _) ? ButtonState(index, column) : UiControlState.Normal;
+        HasButtonCaption(column, _view.PluginRow(index), out _) ? ButtonState(index, column) : UiControlState.Normal;
 
     /// <summary>The button cell at a point inside the list, or (-1, -1) where there is none.</summary>
     private (int index, int column) ButtonCellAt(float localX, float localY, float contentWidth, int visibleRows)
@@ -538,7 +552,7 @@ public sealed class UiMarkupList : UiElement
             (float cellX, float cellW) = _cachedLayout[c];
             if (localX < cellX || localX >= cellX + cellW)
                 continue;
-            if (!HasButtonCaption(c, index, out _))
+            if (!HasButtonCaption(c, _view.PluginRow(index), out _))
                 return (-1, -1);
             (float bx, float by, float bw, float bh) = ButtonRect(columns[c], cellX, cellW, row * RowHeight);
             bool onButton = localX >= bx && localX < bx + bw && localY >= by && localY < by + bh;
@@ -576,13 +590,15 @@ public sealed class UiMarkupList : UiElement
     {
         _pressTopRow = _topRow;
         _pressRowCount = _cachedRowCount;
-        HasButtonCaption(_pressColumn, _pressRow, out _pressCaption);
+        _pressVersion = _view.Version;
+        HasButtonCaption(_pressColumn, _view.PluginRow(_pressRow), out _pressCaption);
     }
 
     /// <summary>
     /// Drops the press when the row under it may no longer be the item that was
-    /// pressed: the list scrolled, its row count changed, or the pressed
-    /// button's caption changed or went empty. Other columns are left out on
+    /// pressed: the list scrolled, its row count changed, the row order changed
+    /// (a sort), or the pressed button's
+    /// caption changed or went empty. Other columns are left out on
     /// purpose: a live column such as a distance changes every frame and would
     /// make the buttons beside it unreliable.
     /// </summary>
@@ -592,7 +608,8 @@ public sealed class UiMarkupList : UiElement
             return;
         bool moved = _topRow != _pressTopRow
             || _cachedRowCount != _pressRowCount
-            || !HasButtonCaption(_pressColumn, _pressRow, out string caption)
+            || _view.Version != _pressVersion
+            || !HasButtonCaption(_pressColumn, _view.PluginRow(_pressRow), out string caption)
             || !string.Equals(caption, _pressCaption, StringComparison.Ordinal);
         if (moved)
             _pressRow = _pressColumn = -1;
@@ -635,7 +652,7 @@ public sealed class UiMarkupList : UiElement
                 (_hoverRow, _hoverColumn) = ButtonCellAt(e.Data1, e.Data2, contentWidth, visibleRows);
                 if (index < 0 || !Enabled || (_hoverRow, _hoverColumn) != (index, column))
                     return false;
-                columns[column].ButtonClicked?.Invoke(index);
+                columns[column].ButtonClicked?.Invoke(_view.PluginRow(index));
                 return true;
             }
             default:
@@ -676,6 +693,7 @@ public sealed class UiMarkupList : UiElement
         int index = _topRow + row;
         if (row < 0 || row >= visibleRows || index < 0 || index >= rowCount)
             return true;
+        int pluginRow = _view.PluginRow(index);
 
         float localX = e.Data1;
         for (int c = 0; c < columns.Count; c++)
@@ -688,21 +706,21 @@ public sealed class UiMarkupList : UiElement
                 case UiMarkupListColumnKind.Text:
                     if (columns[c].TextClicked is { } onTextClick)
                     {
-                        if (index < (_cachedTextRows[c]?.Count ?? 0))
-                            onTextClick(index);
+                        if (pluginRow < (_cachedTextRows[c]?.Count ?? 0))
+                            onTextClick(pluginRow);
                     }
                     else
                     {
-                        SelectionChanged?.Invoke(index);
+                        SelectionChanged?.Invoke(pluginRow);
                     }
                     break;
                 case UiMarkupListColumnKind.Check:
-                    if (index < (_cachedCheckRows[c]?.Count ?? 0))
-                        columns[c].CheckChanged?.Invoke(index);
+                    if (pluginRow < (_cachedCheckRows[c]?.Count ?? 0))
+                        columns[c].CheckChanged?.Invoke(pluginRow);
                     break;
                 case UiMarkupListColumnKind.Icon:
-                    if (index < (_cachedIconRows[c]?.Count ?? 0))
-                        columns[c].IconClicked?.Invoke(index);
+                    if (pluginRow < (_cachedIconRows[c]?.Count ?? 0))
+                        columns[c].IconClicked?.Invoke(pluginRow);
                     break;
                 case UiMarkupListColumnKind.Button:
                     // Fires on release over the same button; see TrackButtonPointer.
