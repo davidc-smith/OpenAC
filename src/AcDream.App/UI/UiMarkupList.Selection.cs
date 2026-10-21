@@ -82,7 +82,7 @@ public sealed partial class UiMarkupList
 
     /// <summary>
     /// Multi-mode focus and selection keys: Up/Down step the lead (Shift
-    /// extends from the anchor), Ctrl/Cmd+A selects every row. Up and Down are
+    /// extends from the anchor), Ctrl/Cmd+A selects every row; a tree list also takes Left/Right. Up and Down are
     /// always taken while focused; other keys fall through.
     /// </summary>
     private bool HandleSelectionEvent(in UiEvent e)
@@ -103,6 +103,14 @@ public sealed partial class UiMarkupList
 
         UiSelectModifiers keys = HeldModifiers();
         var key = (Key)e.Data0;
+        if (IsTree && key is Key.Left or Key.Right)
+        {
+            RefreshSelectionRows();
+            HandleTreeKey(key == Key.Right);
+            return true;
+        }
+        if (!MultiSelect)
+            return false;
         if (key == Key.A && keys.Add)
         {
             RefreshSelectionRows();

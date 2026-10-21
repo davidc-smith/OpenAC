@@ -271,4 +271,162 @@ public sealed class MarkupListTreeTests
         Throws(ListXml(Tree + " expanded=\"{Expanded}\" collapsed=\"true\""), "collapsed");
         Throws(ListXml("levels=\"{Levels}\" selected=\"{Selected}\""), "tree");
     }
+
+    private static readonly UiSelectModifiers Add = new(Add: true, Range: false);
+
+    private static void Press(Mounted m, Key key, UiSelectModifiers keys = default)
+    {
+        m.Keys = keys;
+        m.Root.OnKeyDown((int)key);
+        Redraw(m.List);
+    }
+
+    [Fact]
+    public void ArrowClick_TogglesAParentWithoutSelecting()
+    {
+        var b = new Binding();
+        var m = Mount(b);
+        Click(m, ArrowX(0), RowY(0));
+        Assert.Empty(b.Picks);
+        Assert.Equal(new[] { 0, 4, 5 }, ViewOrder(m, b));
+        Click(m, ArrowX(0), RowY(0));
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, ViewOrder(m, b));
+    }
+
+    [Fact]
+    public void ArrowSlotOfALeaf_Selects()
+    {
+        var b = new Binding();
+        var m = Mount(b);
+        Click(m, ArrowX(1), RowY(1));   // A1 is a leaf
+        Assert.Equal(new[] { 1 }, b.Picks);
+    }
+
+    [Fact]
+    public void Unbound_RemembersOnlyKeysThatDifferFromTheDefault()
+    {
+        var state = NewState();
+        var b = new Binding();
+        var m = Mount(b, Tree + " onexpand=\"{NotifyExpand}\"", state: state);
+        Click(m, ArrowX(0), RowY(0));
+        Assert.Equal("[\"a\"]", state.Get("rules", "expanded"));
+        Assert.Equal(("a", false), Assert.Single(b.Expands));
+        Click(m, ArrowX(0), RowY(0));
+        Assert.Null(state.Get("rules", "expanded"));
+        Assert.Equal(("a", true), b.Expands[1]);
+    }
+
+    [Fact]
+    public void Unbound_CollapsedDefaultRemembersExpandedKeys()
+    {
+        var state = NewState();
+        var b = new Binding();
+        var m = Mount(b, Tree + " collapsed=\"true\"", state: state);
+        Click(m, ArrowX(0), RowY(1));   // B at view 1
+        Assert.Equal("[\"b\"]", state.Get("rules", "expanded"));
+        Assert.Equal(new[] { 0, 4, 5 }, ViewOrder(m, b));
+    }
+
+    [Fact]
+    public void Bound_ArrowClickOnlyAsksThePlugin()
+    {
+        var b = new Binding { Expanded = new() { "a", "a2", "b" } };
+        var m = Mount(b, Tree + " expanded=\"{Expanded}\" onexpand=\"{NotifyExpand}\"");
+        Click(m, ArrowX(0), RowY(0));
+        Assert.Equal(("a", false), Assert.Single(b.Expands));
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, ViewOrder(m, b));   // the plugin didn't apply it
+    }
+
+    [Fact]
+    public void TreeList_IsATabStopThatClicksDoNotFocus()
+    {
+        var list = Mount(new Binding()).List;
+        Assert.True(list.AcceptsFocus && list.TabStop);
+        Assert.False(list.FocusOnMouseClick);
+    }
+
+    [Fact]
+    public void LeftRight_SingleSelect()
+    {
+        var b = new Binding { Selected = 2 };   // A2, expanded, child A2a
+        var m = Mount(b);
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.Right);
+        Assert.Equal(3, b.Selected);            // to the first child
+        Press(m, Key.Left);
+        Assert.Equal(2, b.Selected);            // leaf: to the parent
+        b.Picks.Clear();
+        Press(m, Key.Left);                     // expanded parent: collapse
+        Assert.Empty(b.Picks);
+        Assert.Equal(new[] { 0, 1, 2, 4, 5 }, ViewOrder(m, b));
+        b.Selected = 2;
+        Redraw(m.List);
+        m.Root.SetKeyboardFocus(m.List);        // ViewOrder's clicks cleared focus
+        Press(m, Key.Right);                    // collapsed parent: expand
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, ViewOrder(m, b));
+    }
+
+    [Fact]
+    public void LeftRight_ActOnTheLeadInMultiMode()
+    {
+        var b = new Binding();
+        var m = Mount(b, MultiTree);
+        Click(m, TextX, RowY(0));               // lead A
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.Right);
+        Assert.Equal(new[] { 1 }, b.Selection); // to A1
+        Press(m, Key.Left);
+        Assert.Equal(new[] { 0 }, b.Selection); // back to A
+    }
+
+    [Fact]
+    public void Collapse_DeselectsHiddenRowsAndMovesTheLeadUp()
+    {
+        var b = new Binding();
+        var m = Mount(b, MultiTree);
+        Click(m, TextX, RowY(4));               // [4]
+        Click(m, TextX, RowY(1), Add);          // [1, 4]
+        Click(m, TextX, RowY(3), Add);          // [1, 3, 4], lead 3
+        b.Changes.Clear();
+        Click(m, ArrowX(0), RowY(0));           // collapse A
+        Assert.Equal(new[] { 4 }, Assert.Single(b.Changes));
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.Down);                     // lead moved to A (view 0): Down → view 1 = B
+        Assert.Equal(new[] { 4 }, b.Selection);
+    }
+
+    [Fact]
+    public void CtrlA_SelectsOnlyTheRowsShown()
+    {
+        var b = new Binding();
+        var m = Mount(b, MultiTree + " collapsed=\"true\"");
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.A, Add);
+        Assert.Equal(new[] { 0, 4 }, b.Selection);
+    }
+
+    [Fact]
+    public void SingleMode_CollapseKeepsTheSelection()
+    {
+        var b = new Binding { Selected = 3 };
+        var m = Mount(b);
+        Click(m, ArrowX(0), RowY(0));
+        Assert.Empty(b.Picks);
+        Assert.Equal(3, b.Selected);
+    }
+
+    [Fact]
+    public void Disabled_IgnoresArrowsAndKeys()
+    {
+        var b = new Binding { Selected = 0 };
+        var m = Mount(b, Tree + " enabled=\"false\"");
+        Click(m, ArrowX(0), RowY(0));
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.Left);
+        b.Selected = -1;
+        Redraw(m.List);
+        // Still every row shown: nothing collapsed. (Rows can't be clicked while disabled, so count arrows.)
+        m.List.TextColor = new Vector4(0.1f, 0.9f, 0.2f, 1f);
+        Assert.Equal(12, MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(m.List), m.List.TextColor).Count);
+    }
 }

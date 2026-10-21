@@ -121,4 +121,102 @@ public sealed partial class UiMarkupList
                 context.DrawFill(slotX + 3f + i, top + i, 1f, length, TextColor);
         }
     }
+
+    /// <summary>Whether a press at <paramref name="localX"/> lands in a parent row's arrow slot.</summary>
+    private bool OnTreeArrow(int row, float cellX, float localX)
+    {
+        if (!_tree.HasChildren(row))
+            return false;
+        float slotX = TreeSlotX(row, cellX);
+        return localX >= slotX && localX < slotX + TreeIndent;
+    }
+
+    /// <summary>
+    /// A user collapse or expand of a parent row. Unbound, the host applies and
+    /// remembers it; bound, the plugin is asked. A collapse drops the row's
+    /// descendants from a multi selection.
+    /// </summary>
+    private void ToggleExpanded(int row)
+    {
+        if (!_tree.HasChildren(row))
+            return;
+        string key = TreeKey(row);
+        bool expand = _tree.IsCollapsed(row);
+        if (ExpandedSource is null)
+        {
+            HashSet<string> toggled = HostToggled;
+            if (!toggled.Remove(key))
+                toggled.Add(key);
+            RememberedExpansion?.Remember(toggled.Count == 0 ? null : EncodeKeys(toggled));
+            _tree.SetCollapsed(row, !expand);
+        }
+        ExpansionChanged?.Invoke(key, expand);
+        if (!expand)
+            DeselectHidden(row);
+    }
+
+    /// <summary>A collapse hides the row's descendants: a multi selection drops them, and an anchor or lead among them moves up to the row.</summary>
+    private void DeselectHidden(int row)
+    {
+        if (!MultiSelect)
+            return;
+        int end = _tree.SubtreeEnd(row);
+        if (_anchorRow > row && _anchorRow < end)
+            _anchorRow = row;
+        if (_leadRow > row && _leadRow < end)
+            _leadRow = row;
+        IReadOnlyList<int> current = SelectedRowsSource();
+        var kept = new List<int>(current.Count);
+        for (int i = 0; i < current.Count; i++)
+        {
+            int selected = current[i];
+            if (selected <= row || selected >= end)
+                kept.Add(selected);
+        }
+        if (kept.Count != current.Count)
+            SelectedRowsChanged?.Invoke(kept.Distinct().Order().ToArray());
+    }
+
+    /// <summary>
+    /// Right expands a collapsed parent or moves to an expanded one's first
+    /// child; Left collapses an expanded parent or moves to the row's parent.
+    /// Acts on the selected row (single) or the lead (multi) when it is shown.
+    /// </summary>
+    private void HandleTreeKey(bool right)
+    {
+        int row = MultiSelect ? _leadRow : SelectedIndexSource();
+        int view = _view.ViewRow(row);
+        if (view < 0)
+            return;
+        bool parent = _tree.HasChildren(row);
+        if (right)
+        {
+            if (!parent)
+                return;
+            if (_tree.IsCollapsed(row))
+                ToggleExpanded(row);
+            else
+                MoveTreeSelection(_view.PluginRow(view + 1));
+            return;
+        }
+        if (parent && !_tree.IsCollapsed(row))
+            ToggleExpanded(row);
+        else if (_tree.Parent(row) >= 0)
+            MoveTreeSelection(_tree.Parent(row));
+    }
+
+    private void MoveTreeSelection(int row)
+    {
+        if (row < 0)
+            return;
+        if (MultiSelect)
+        {
+            _anchorRow = _leadRow = row;
+            SelectedRowsChanged?.Invoke([row]);
+        }
+        else
+        {
+            SelectionChanged?.Invoke(row);
+        }
+    }
 }

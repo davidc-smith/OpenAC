@@ -198,7 +198,7 @@ public sealed partial class UiMarkupList : UiElement
 
     public override bool OnEvent(in UiEvent e)
     {
-        if (MultiSelect && HandleSelectionEvent(e))
+        if ((MultiSelect || IsTree) && HandleSelectionEvent(e))
             return true;
         if (Columns is { Count: > 0 } columns)
             return OnEventColumns(e, columns);
@@ -742,7 +742,11 @@ public sealed partial class UiMarkupList : UiElement
             switch (columns[c].Kind)
             {
                 case UiMarkupListColumnKind.Text:
-                    if (columns[c].TextClicked is { } onTextClick)
+                    if (c == TreeColumn && OnTreeArrow(pluginRow, cellX, localX))
+                    {
+                        ToggleExpanded(pluginRow);
+                    }
+                    else if (columns[c].TextClicked is { } onTextClick)
                     {
                         if (pluginRow < (_cachedTextRows[c]?.Count ?? 0))
                             onTextClick(pluginRow);

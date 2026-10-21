@@ -33,9 +33,12 @@ internal static class MarkupListTree
             throw new FormatException("<list tree=\"true\"> needs a text column to draw the tree in");
 
         list.TreeColumn = treeColumn;
+        list.AcceptsFocus = true;
+        list.FocusOnMouseClick = false;
+        list.TabStop = true;
         list.TreeLevelsSource = MarkupBindings.BindRequiredIntListReader(
             (string?)el.Attribute("levels"), binding, "list levels");
-        list.TreeKeysSource = MarkupDocument.BindStringList((string?)el.Attribute("keys"), binding, "list keys");
+        list.TreeKeysSource = MarkupDocument.BindStringList((string?)el.Attribute("keys"), binding, "list keys", preserveSnapshot: true);
         string? expanded = (string?)el.Attribute("expanded");
         if (expanded is not null)
         {
