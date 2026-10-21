@@ -94,13 +94,13 @@ back at runtime instead.
 | `list colors` | `IEnumerable<uint>` or `IEnumerable<int>`, `0xRRGGBB` per row | silent when omitted; throws when mistyped |
 | `list icons` | `IEnumerable<uint>` or `IEnumerable<int>` | silent when omitted; throws when mistyped; a negative element draws no icon |
 | `icon did` / `spell` / `item`, `button icon` | any integral type | throws at build for a missing member; a negative or out-of-range value draws nothing |
-| `list selected` | `int` | throws |
+| `list selected` | `int`; with `selectmode="multi"`, `IEnumerable<int>` of plugin rows | throws |
 | `tab selected`, `toggle checked`, `visible`, `enabled` | `bool` | throws |
 | `onclick` (button, tab, toggle) | `Action` | throws |
 | `slider onchange` | `Action<float>` | throws |
 | `field onchange`, `field onsubmit`, `field onblur`, `menu onchange` | `Action<string>` | throws |
 | `field onup`, `field ondown` | `Action` | throws |
-| `list onchange` | `Action<int>` | throws |
+| `list onchange` | `Action<int>`; with `selectmode="multi"`, `Action<IReadOnlyList<int>>` | throws |
 | `checkbox checked` | `bool`, or `bool?` where null is indeterminate | throws |
 | `checkbox onchange` | `Action<bool>`, the new value | throws |
 | `number value` | `int`, `long`, `float`, `double` or `decimal` | throws |
@@ -182,7 +182,7 @@ Unknown or miscased element names throw at build time.
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
-| `list` | Scrolling rows | `x y w h selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize`; column form only) |
+| `list` | Scrolling rows | `x y w h selectmode selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize`; column form only) |
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
@@ -704,6 +704,53 @@ column without `sortkeys`, `sortkeys` without `sort="text"` or `"number"`,
 `sort` fail the build. These are attributes on existing elements, and a
 host older than list headers ignores attributes it doesn't know: it draws
 the list without a header and ignores sorting and widths.
+
+### Multi-select
+
+```xml
+<list name="loot" x="8" y="24" w="320" h="200" header="true" selectmode="multi"
+      selected="{Picked}" onchange="{SetPicked}">
+  <column type="text" header="Item" items="{Names}" sort="text"/>
+  <column type="text" header="Value" width="60" items="{Values}" sort="number"/>
+</list>
+```
+
+With `selectmode="multi"` the player can select any number of rows.
+`selected` binds the selected rows (any `IEnumerable<int>`) and `onchange`
+is an `Action<IReadOnlyList<int>>` that gets the new selection, as the
+plugin's own row indices in ascending order. The plugin owns the selection:
+the list draws whatever `selected` returns each frame and only asks for a
+change, so set the property in `onchange`. Without `onchange` the list only
+displays. `onchange` fires on every click or key the list handles, even if
+the selection comes out the same.
+
+Rows are picked where a single-select list picks them: anywhere in the
+single-column form, and on a text column without `onclick` in the column
+form. Check, icon and button cells keep their own actions.
+
+- Click selects only that row.
+- Ctrl-click (Cmd-click on macOS) adds or removes that row.
+- Shift-click selects every row from the last plain or Ctrl click to this
+  one, as they are shown, so a sorted list selects what the player sees
+  between the two. Ctrl+Shift-click adds that range to the selection.
+  With no earlier click, Shift-click acts as a plain click and
+  Ctrl+Shift-click as a Ctrl-click.
+
+The list can take keyboard focus with Tab; clicking it does not focus it
+(and clears any keyboard focus, as for other controls that don't take
+text), so the game keeps its keys. While focused it draws the gold focus
+outline. Up and Down select the row above or below the last one picked (the
+first row if none), Shift+Up and Shift+Down extend the range instead, and
+Ctrl+A (Cmd+A) selects every row. With no rows, Up and Down are still taken
+but do nothing and `onchange` doesn't fire. The list keeps the last-picked
+row in view. Other keys go on to the game.
+
+Every selected row draws the selection band; `selectionband` is implied,
+and `selectionband="false"` fails the build. Other build errors:
+`selectmode` other than `single` or `multi`, `selected` that isn't bound to
+a list of ints, and `onchange` that isn't an `Action<IReadOnlyList<int>>`.
+On a host older than multi-select, `selected` must be an `int`, so a
+multi-select list fails the build of its window there.
 
 ## Slider range
 
