@@ -450,14 +450,61 @@ public sealed class MarkupListHeaderTests : IDisposable
         Assert.Equal(UiMarkupList.MinColumnWidth, list.ColumnLayoutForTest(0).W);
     }
 
+    // UiRoot pairs clicks by its clock: the drag at 1000 ms and the clicks at
+    // 5000 ms are too far apart to pair, so both clicks of a double-click are
+    // presses from rest.
+    private static void DragHeaderThenDoubleClick(UiRoot root, UiMarkupList list, int fromX, int toX)
+    {
+        root.Tick(0, 1000);
+        DragHeader(root, list, fromX, toX);
+        root.Tick(0, 5000);
+        ClickAndDraw(root, list, toX, HeaderY);
+        ClickAndDraw(root, list, toX, HeaderY);
+    }
+
     [Fact]
     public void Resize_DoubleClickRestoresTheMarkupWidth()
     {
-        var (root, list) = Mount("resizable=\"true\"", new Binding());
-        DragHeader(root, list, 120, 150);
-        ClickAndDraw(root, list, 150, HeaderY);
-        ClickAndDraw(root, list, 150, HeaderY);
+        var b = new Binding();
+        var (root, list) = Mount("resizable=\"true\" onsort=\"{NotifySort}\"", b);
+        DragHeaderThenDoubleClick(root, list, 120, 150);
         Assert.Equal((0f, 120f), list.ColumnLayoutForTest(0));
+        Assert.Empty(b.Sorts);
+    }
+
+    [Fact]
+    public void Resize_ADragReleaseIsNotTheFirstClickOfAReset()
+    {
+        var state = new MarkupControlStateStore(null, () => "alice").ForWindow("win");
+        var (root, list) = Mount("resizable=\"true\"", new Binding(), state);
+        root.Tick(0, 1000);
+        DragHeader(root, list, 120, 150);
+        ClickAndDraw(root, list, 150, HeaderY);   // within 500 ms of the drag's release
+        Assert.Equal((0f, 150f), list.ColumnLayoutForTest(0));
+        Assert.Equal("150,80,40,0", state.Get("mobs", "widths"));
+    }
+
+    [Fact]
+    public void Resize_HidingTheHeaderDropsTheCursor()
+    {
+        var (root, list) = Mount("resizable=\"true\"", new Binding());
+        root.OnMouseMove(122, HeaderY);
+        Assert.True(list.ActiveCursor().IsValid);
+        list.ShowHeader = false;
+        Assert.False(list.ActiveCursor().IsValid);
+    }
+
+    [Fact]
+    public void Resize_DisablingMidDragStopsResizing()
+    {
+        var (root, list) = Mount("resizable=\"true\"", new Binding());
+        root.OnMouseDown(UiMouseButton.Left, 120, HeaderY);
+        root.OnMouseMove(130, HeaderY);
+        list.Enabled = false;
+        root.OnMouseMove(150, HeaderY);
+        root.OnMouseUp(UiMouseButton.Left, 150, HeaderY);
+        Redraw(list);
+        Assert.Equal((0f, 130f), list.ColumnLayoutForTest(0));
     }
 
     [Fact]
@@ -500,17 +547,19 @@ public sealed class MarkupListHeaderTests : IDisposable
     {
         var state = new MarkupControlStateStore(null, () => "alice").ForWindow("win");
         var (root, list) = Mount("resizable=\"true\"", new Binding(), state);
+        DragHeaderThenDoubleClick(root, list, 120, 150);
+        Assert.Null(state.Get("mobs", "widths"));
+        Assert.Null(state.Get("mobs", "sort"));
+        root.Tick(0, 9000);
         DragHeader(root, list, 120, 150);
         Assert.Equal("150,80,40,0", state.Get("mobs", "widths"));
-        ClickAndDraw(root, list, 150, HeaderY);
-        ClickAndDraw(root, list, 150, HeaderY);
-        Assert.Null(state.Get("mobs", "widths"));
     }
 
     [Theory]
     [InlineData("100,80,40,0", 100f)]
     [InlineData("100,80", 120f)]
     [InlineData("a,b,c,d", 120f)]
+    [InlineData("5,80,40,0", 16f)]
     public void Resize_StoredWidthsApplyOrAreIgnored(string stored, float nameWidth)
     {
         var state = new MarkupControlStateStore(null, () => "alice").ForWindow("win");

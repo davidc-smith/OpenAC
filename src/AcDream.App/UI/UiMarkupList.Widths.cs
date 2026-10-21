@@ -53,9 +53,15 @@ public sealed partial class UiMarkupList
     private int _hoverBoundary = -1;
     private float _resizeStartWidth;
     private float _resizePressX;
+    private bool _resizeMoved;
+
+    // Whether each of the last two left releases ended a boundary press that
+    // never moved. UiRoot pairs any two releases at one spot as a double-click,
+    // a drag's release included; only a pair of presses from rest resets.
+    private bool _lastReleaseAtRest, _previousReleaseAtRest;
 
     public override string ActiveCursorStateName =>
-        Enabled && (_resizeColumn >= 0 || _hoverBoundary >= 0) ? ResizeCursorState : "";
+        Enabled && HeaderVisible && (_resizeColumn >= 0 || _hoverBoundary >= 0) ? ResizeCursorState : "";
 
     internal (float X, float W) ColumnLayoutForTest(int column) => _cachedLayout[column];
 
@@ -90,7 +96,7 @@ public sealed partial class UiMarkupList
         {
             if (!int.TryParse(parts[i], NumberStyles.None, CultureInfo.InvariantCulture, out int width))
                 return null;
-            widths[i] = width;
+            widths[i] = width > 0 ? MathF.Max(MinColumnWidth, width) : 0f;
         }
         return widths;
     }
@@ -113,6 +119,7 @@ public sealed partial class UiMarkupList
     {
         _resizeColumn = column;
         _resizePressX = x;
+        _resizeMoved = false;
         _resizeStartWidth = _cachedLayout[column].w;
         _resizeStartWidths = WidthState.ToArray();
         _askedWidths = _resizeStartWidths;
@@ -120,6 +127,10 @@ public sealed partial class UiMarkupList
 
     private void DragResize(float x, float contentWidth)
     {
+        if (!Enabled)
+            return;
+        if (x != _resizePressX)
+            _resizeMoved = true;
         (float cellX, _) = _cachedLayout[_resizeColumn];
         float max = MathF.Max(MinColumnWidth, contentWidth - cellX - MinColumnWidth);
         float width = Math.Clamp(MathF.Round(_resizeStartWidth + x - _resizePressX), MinColumnWidth, max);
@@ -150,6 +161,16 @@ public sealed partial class UiMarkupList
         _askedWidths = null;
         _resizeStartWidths = null;
     }
+
+    /// <summary>Notes, for every left release, whether it ended a boundary press from rest.</summary>
+    private void NoteRelease()
+    {
+        _previousReleaseAtRest = _lastReleaseAtRest;
+        _lastReleaseAtRest = _resizeColumn >= 0 && !_resizeMoved;
+    }
+
+    /// <summary>A double-click resets only when neither of its presses dragged.</summary>
+    private bool DoubleClickWasAtRest => _lastReleaseAtRest && _previousReleaseAtRest;
 
     /// <summary>Remembers an unbound change once the player commits it.</summary>
     private void CommitWidths(float[]? before)

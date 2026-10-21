@@ -91,6 +91,8 @@ public sealed partial class UiMarkupList
     /// </summary>
     private bool HandleHeaderEvent(in UiEvent e, float contentWidth)
     {
+        if (e.Type == UiEventType.MouseUp)
+            NoteRelease();
         if (_resizeColumn >= 0)
         {
             switch (e.Type)
@@ -107,7 +109,10 @@ public sealed partial class UiMarkupList
             }
         }
         if (!HeaderVisible)
+        {
+            _hoverBoundary = -1;
             return false;
+        }
         bool inHeader = e.Data2 >= 0 && e.Data2 < HeaderHeight;
         switch (e.Type)
         {
@@ -144,7 +149,8 @@ public sealed partial class UiMarkupList
             case UiEventType.Click:
                 return inHeader;
             case UiEventType.DoubleClick:
-                if (inHeader && Enabled && BoundaryAt(e.Data1, e.Data2) is var reset and >= 0)
+                if (inHeader && Enabled && DoubleClickWasAtRest
+                    && BoundaryAt(e.Data1, e.Data2) is var reset and >= 0)
                     ResetWidth(reset);
                 return inHeader;
         }
