@@ -101,6 +101,8 @@ back at runtime instead.
 | `field onchange`, `field onsubmit`, `field onblur`, `menu onchange` | `Action<string>` | throws |
 | `field onup`, `field ondown` | `Action` | throws |
 | `list onchange` | `Action<int>` | throws |
+| `checkbox checked` | `bool`, or `bool?` where null is indeterminate | throws |
+| `checkbox onchange` | `Action<bool>`, the new value | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
@@ -156,7 +158,8 @@ Unknown or miscased element names throw at build time.
 | `icon` | An icon | `x y w h did` or `spell` or `item`, `tooltip` |
 | `meter` | Nine-slice bar | `x y w h fill cur max color` plus the nine-slice `backleft backtile backright frontleft fronttile frontright` |
 | `tab` | Tab button with optional icon | `x y w h text selected onclick icon iconkind` |
-| `toggle` | Checkbox | `x y w h text checked onclick color` |
+| `toggle` | On/off lamp | `x y w h text checked onclick color` |
+| `checkbox` | Tick box, optionally indeterminate | `x y w h text checked onchange color` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
@@ -201,6 +204,27 @@ text when Enter ends the edit.
 border, no sprite art) or `retail` (the game's own pushbutton or scrollbar
 art). A `menu` always opens as one scrolling column of at most `rows` entries;
 when the entries overflow, the popup shows the game's scrollbar.
+
+## Checkbox
+
+```xml
+<checkbox x="8" y="8" w="140" h="16" text="Loot rares"
+          checked="{LootRares}" onchange="{SetLootRares}"/>
+```
+
+A `<checkbox>` is a tick box; a `<toggle>` is an on/off lamp. Both stay
+available: use whichever reads right for the setting.
+
+- `checked` binds a `bool`, or a `bool?` whose `null` draws the box
+  indeterminate (a dash), e.g. a "select all" over a mix of rows.
+- `onchange` receives the value the click asks for, not a bare "clicked":
+  unchecked and indeterminate become `true`, checked becomes `false`. The
+  plugin stores it; the box shows whatever `checked` returns next frame.
+  Without `onchange` the box only displays.
+- Tab focuses it; Space or Enter activates it, as for `<toggle>`.
+
+In a list, `<column type="checkbox">` takes the same `values` and
+`onchange` as `type="check"` and draws tick boxes instead of lamps.
 
 ## Resizable panels and anchors
 
@@ -320,13 +344,13 @@ The two forms cannot be mixed on one list.
 
 | Attribute | Column type | Required | Binding |
 |---|---|---|---|
-| `type` | all | yes | `text`, `check`, `icon`, or `button` |
+| `type` | all | yes | `text`, `check`, `checkbox`, `icon`, or `button` |
 | `width` | all | see below | pixels, or `*` for auto |
 | `items` | `text` | yes | `IReadOnlyList<string>` |
 | `colors` | `text` | no | `IReadOnlyList<uint>` or `<int>`, `0xRRGGBB` per row |
 | `onclick` | `text` | no | `Action<int>` with the row index; the click then does not select the row |
-| `values` | `check` | yes | `IReadOnlyList<bool>` |
-| `onchange` | `check` | yes | `Action<int>` with the row index; the plugin flips its own value |
+| `values` | `check`, `checkbox` | yes | `IReadOnlyList<bool>` |
+| `onchange` | `check`, `checkbox` | yes | `Action<int>` with the row index; the plugin flips its own value |
 | `values` | `icon` | yes | `IReadOnlyList<uint>` or `<int>` |
 | `iconkind` | `icon` | no | `did` (default), `spell`, or `item` |
 | `onclick` | `icon` | yes | `Action<int>` with the row index |
@@ -369,7 +393,8 @@ On a host older than button columns, a `type="button"` column fails the build
 of its window as an unknown type.
 
 There is no header row; place `<label>` elements above the list. A `check`
-cell draws the same lamp glyph as `<toggle>`. When rows overflow the list's
+cell draws the same lamp glyph as `<toggle>`; a `checkbox` cell draws the
+`<checkbox>` tick box. When rows overflow the list's
 height it reserves a 16-pixel scrollbar at its right edge, drawn with the
 game's scrollbar art; when they fit, no bar and no reservation. Row
 selection draws no highlight band unless `selectionband="true"`.
