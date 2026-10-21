@@ -47,6 +47,7 @@
     - `bool` needs a check or checkbox column.
   - `sortkeys` is an `IReadOnlyList<double>` or an `IReadOnlyList<string>`, and only goes with `text` or `number`.
   - `sortcolumn` (`int`, −1 none) and `sortdescending` (`bool`) are bound as a pair or not at all; `onsort` is `Action<int, bool>`.
+  - `header="all"` on a `checkbox` column is a select-all box with `onall` (`Action<bool>`); it can't also sort.
   - `resizable="true"` needs `header="true"`. `widths` is a float list with one entry per column (0 = automatic; the last entry is ignored) and needs `resizable`. `onresize` is `Action<IReadOnlyList<float>>` and needs `resizable`.
   - `header`, `resizable`, `sortcolumn`, `sortdescending`, `onsort`, `widths` and `onresize` on a single-column list (no `<column>`) throw.
 - **Sizes and keys.**
@@ -74,7 +75,7 @@
 | `src/AcDream.App/UI/UiMarkupList.Sort.cs` (new) | Sort state (bound/host/remembered), sort keys, header-click cycle, glyph |
 | `src/AcDream.App/UI/UiMarkupList.Widths.cs` (new) | Width state, boundary drag, double-click reset, resize cursor |
 | `src/AcDream.App/UI/UiMarkupListColumn.cs` | `HeaderSource`, `Sort`, `SortNumberKeys`, `SortTextKeys`; `UiMarkupListSortKind` |
-| `src/AcDream.App/UI/Markup/MarkupListHeader.cs` (new) | Builder: list and column header/sort/width attributes |
+| `src/AcDream.App/UI/Markup/MarkupListHeader.cs` (new) | Builder: list and column header/sort/width/select-all attributes |
 | `src/AcDream.App/UI/MarkupDocument.cs` | The list case calls `MarkupListHeader` |
 | `tests/AcDream.App.Tests/UI/MarkupListBindingsTests.cs`, `UiMarkupListViewMapTests.cs`, `MarkupListHeaderTests.cs` (new) | Tests |
 | `docs/plugin-ui-markup.md` | Header, sorting, widths docs |
@@ -2160,7 +2161,211 @@ Claude-Session: https://claude.ai/code/session_01UzLnYkJ6ifzKGaeNwgsp8W"
 
 ---
 
-### Task 7: Docs
+### Task 7: Select-all header on a checkbox column
+
+**Goal:** `header="all"` on a `type="checkbox"` column draws a header checkbox: ticked when every row is ticked, clear when none is, indeterminate otherwise. Clicking it calls `onall` (`Action<bool>`) once with the new value for every row (spec §2, "Select-all header (with series 7)"). Without `onall` the header cell is blank.
+
+**Files:**
+- Modify: `src/AcDream.App/UI/UiMarkupListColumn.cs`, `src/AcDream.App/UI/UiMarkupList.Header.cs`, `src/AcDream.App/UI/Markup/MarkupListHeader.cs`
+- Test: `tests/AcDream.App.Tests/UI/MarkupListHeaderTests.cs`
+
+**Acceptance Criteria:**
+- [ ] With `On = [true, false, true, false]`, the header draws the indeterminate dash: one `UiCheckBoxGlyph.ClassicMark` quad 5×3 above y 18. All ticked draws 7 tick quads (2×2) above y 18; none ticked draws no mark there.
+- [ ] Clicking the header cell calls `onall(true)` while not all rows are ticked, and `onall(false)` once they all are. It never sorts, and a disabled list calls nothing.
+- [ ] Without `onall`, the header cell draws no box (no `UiCheckBoxGlyph.ClassicFill` quad above y 18).
+- [ ] `header="all"` on a non-checkbox column stays a literal caption "all".
+- [ ] Build throws `FormatException` for:
+  - `onall` without `header="all"` on a checkbox column;
+  - `header="all"` with `sort` on the same column;
+  - `onall="{Toggle}"` (wrong type).
+
+**Verify:** `dotnet test tests/AcDream.App.Tests/AcDream.App.Tests.csproj --filter "FullyQualifiedName~MarkupListHeaderTests|FullyQualifiedName~MarkupList|FullyQualifiedName~ListButtonColumn|FullyQualifiedName~UiMarkupList"` → all pass.
+
+**Steps:**
+
+- [ ] **Step 1: Write the failing tests** — add to the test `Binding` class:
+
+```csharp
+        public List<bool> AllCalls { get; } = new();
+        public Action<bool> SetAll => v => { AllCalls.Add(v); On = On.Select(_ => v).ToList(); };
+```
+
+and append inside `MarkupListHeaderTests`:
+
+```csharp
+    // Name 0-120, checkbox 120-160 (header box at x 134.5, y 3.5), button 160-300.
+    private const string SelectAllColumns = """
+          <column type="text" header="Name" width="120" items="{Names}"/>
+          <column type="checkbox" header="all" width="40" values="{On}" onchange="{Toggle}" onall="{SetAll}"/>
+          <column type="button" items="{Acts}" onclick="{Act}"/>
+        """;
+
+    private static List<(float X, float Y, float W, float H)> HeaderQuads(UiMarkupList list, System.Numerics.Vector4 color) =>
+        MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(list), color).Where(q => q.Y < UiMarkupList.HeaderHeight).ToList();
+
+    [Fact]
+    public void SelectAll_BoxShowsNoneSomeOrAll()
+    {
+        var b = new Binding();
+        var (_, list) = Mount("", b, columns: SelectAllColumns);
+        var some = HeaderQuads(list, UiCheckBoxGlyph.ClassicMark);
+        Assert.Equal((5f, 3f), (Assert.Single(some).W, some[0].H));
+        b.On = new() { true, true, true, true };
+        Assert.Equal(7, HeaderQuads(list, UiCheckBoxGlyph.ClassicMark).Count(q => q.W == 2f && q.H == 2f));
+        b.On = new() { false, false, false, false };
+        Assert.Empty(HeaderQuads(list, UiCheckBoxGlyph.ClassicMark));
+    }
+
+    [Fact]
+    public void SelectAll_ClickTicksEverythingThenClearsIt()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b, columns: SelectAllColumns);
+        ClickAndDraw(root, list, 140, HeaderY);
+        ClickAndDraw(root, list, 140, HeaderY);
+        Assert.Equal(new[] { true, false }, b.AllCalls);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void SelectAll_DisabledCallsNothing()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("enabled=\"false\"", b, columns: SelectAllColumns);
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseDown, Data1 = 140, Data2 = HeaderY });
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseUp, Data1 = 140, Data2 = HeaderY });
+        Assert.Empty(b.AllCalls);
+    }
+
+    [Fact]
+    public void SelectAll_WithoutOnallTheCellIsBlank()
+    {
+        string columns = SelectAllColumns.Replace(" onall=\"{SetAll}\"", "");
+        var (_, list) = Mount("", new Binding(), columns: columns);
+        Assert.Empty(HeaderQuads(list, UiCheckBoxGlyph.ClassicFill));
+    }
+
+    [Fact]
+    public void SelectAll_OnOtherColumnsIsJustACaption()
+    {
+        string columns = SelectAllColumns.Replace("header=\"Name\"", "header=\"all\"");
+        var (_, list) = Mount("", new Binding(), columns: columns);
+        Assert.Equal("all", list.Columns![0].HeaderSource!());
+    }
+
+    [Theory]
+    [InlineData("""<column type="checkbox" width="40" values="{On}" onchange="{Toggle}" onall="{SetAll}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="text" header="all" width="40" items="{Names}" onall="{SetAll}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="checkbox" header="all" width="40" values="{On}" onchange="{Toggle}" onall="{SetAll}" sort="bool"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="checkbox" header="all" width="40" values="{On}" onchange="{Toggle}" onall="{Toggle}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    public void SelectAll_BadColumnsThrow(string columns)
+    {
+        Assert.Throws<FormatException>(() => Mount("", new Binding(), columns: columns));
+    }
+```
+
+- [ ] **Step 2: Run to see them fail** — build error: there is no `SetAll` member use yet (it compiles once the `Binding` lines are added); the select-all tests then fail.
+
+- [ ] **Step 3: Column properties** — in `UiMarkupListColumn`, after `SortTextKeys`:
+
+```csharp
+    /// <summary>A checkbox column whose header is a select-all box (<c>header="all"</c>).</summary>
+    public bool SelectAll { get; internal set; }
+
+    /// <summary>Called once with the value every row should take; null draws a blank header cell.</summary>
+    public Action<bool>? SelectAllChanged { get; internal set; }
+```
+
+- [ ] **Step 4: Builder** — in `MarkupListHeader.ApplyColumn`, replace the caption lines (`string? header = …; if (header is not null) column.HeaderSource = …;`) with:
+
+```csharp
+        string? header = (string?)columnEl.Attribute("header");
+        string? onAll = (string?)columnEl.Attribute("onall");
+        bool selectAll = header == "all" && column.Kind == UiMarkupListColumnKind.Check && column.Boxed;
+        if (onAll is not null && !selectAll)
+            throw new FormatException($"column[{index}] onall needs header=\"all\" on a checkbox column");
+        if (selectAll)
+        {
+            column.SelectAll = true;
+            column.SelectAllChanged = MarkupBindings.BindBoolAction(onAll, binding, $"column[{index}] onall");
+        }
+        else if (header is not null)
+        {
+            column.HeaderSource = MarkupDocument.BindString(header, binding);
+        }
+```
+
+and after `column.Sort = sort;` add:
+
+```csharp
+        if (selectAll && sort != UiMarkupListSortKind.None)
+            throw new FormatException($"column[{index}] header=\"all\" can't also sort");
+```
+
+- [ ] **Step 5: Draw and click** — in `UiMarkupList.Header.cs`:
+  - At the top of `DrawHeaderCell`:
+
+```csharp
+        if (column.SelectAll)
+        {
+            if (column.SelectAllChanged is not null)
+            {
+                UiCheckBoxGlyph.Draw(context,
+                    cellX + 1f + MathF.Max(0f, cellW - 2f - UiCheckBoxGlyph.Size) * 0.5f,
+                    MathF.Max(1f, (HeaderHeight - UiCheckBoxGlyph.Size) * 0.5f),
+                    SelectAllState(c), ThemePalette);
+            }
+            return;
+        }
+```
+
+  - Add:
+
+```csharp
+    /// <summary>The select-all box: ticked when every row is, clear when none is, else indeterminate.</summary>
+    private bool? SelectAllState(int column)
+    {
+        IReadOnlyList<bool>? flags = _cachedCheckRows[column];
+        int ticked = 0;
+        for (int row = 0; row < _cachedRowCount; row++)
+        {
+            if (flags is not null && row < flags.Count && flags[row])
+                ticked++;
+        }
+        return ticked == 0 ? false : ticked == _cachedRowCount ? true : null;
+    }
+```
+
+  - `HeaderClicked` becomes:
+
+```csharp
+    private void HeaderClicked(int column)
+    {
+        if (_columns is { } columns && columns[column].SelectAll)
+        {
+            RefreshRows(columns);
+            columns[column].SelectAllChanged?.Invoke(SelectAllState(column) != true);
+            return;
+        }
+        CycleSort(column);
+    }
+```
+
+- [ ] **Step 6: Run** — the Verify command → PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git checkout -- '*.lock.json' 2>/dev/null
+git add src/AcDream.App/UI tests/AcDream.App.Tests/UI/MarkupListHeaderTests.cs
+git commit -m "feat(ui): select-all header for checkbox list columns
+
+Claude-Session: https://claude.ai/code/session_01UzLnYkJ6ifzKGaeNwgsp8W"
+```
+
+---
+
+### Task 8: Docs
 
 **Goal:** `docs/plugin-ui-markup.md` documents the header, sorting and resizable columns.
 
@@ -2175,7 +2380,8 @@ Claude-Session: https://claude.ai/code/session_01UzLnYkJ6ifzKGaeNwgsp8W"
   - `list widths` (`IReadOnlyList<float>`, 0 = automatic);
   - `list onresize` (`Action<IReadOnlyList<float>>`).
 - [ ] The Columns attribute table gains rows:
-  - `header` (all; literal or bound string);
+  - `header` (all; literal or bound string; `all` on a `checkbox` column is a select-all box);
+  - `onall` (`checkbox` with `header="all"`; `Action<bool>`, the value for every row);
   - `sort` (`text`/`number` for text and button columns or with `sortkeys`, `bool` for check/checkbox);
   - `sortkeys` (`IReadOnlyList<double>` or `IReadOnlyList<string>`).
 - [ ] The "There is no header row; place `<label>` elements above the list" sentence is replaced. A `### Header, sorting and column widths` subsection at the end of `## Columns` covers:
@@ -2183,6 +2389,7 @@ Claude-Session: https://claude.ai/code/session_01UzLnYkJ6ifzKGaeNwgsp8W"
   - **Sorting:** the click cycle, key rules, stability, unparseable last, and that every index stays a plugin row. Selection follows the row, and a sort cancels a pending button press.
   - **Sort state:** bound pair vs remembered.
   - **Widths:** dragging (≥16 px), double-click reset, 0 = automatic, and the last entry ignored. Bound vs remembered; a mismatched count is ignored; `onresize` fires per pixel during a drag.
+  - **Select-all:** `header="all"` on a checkbox column, its three states, `onall` with the value for every row, a blank cell without `onall`.
   - **Build errors.**
   - **The older-host line:** a host older than list headers ignores the attributes. Check how the earlier sections phrase it. These are attributes on an existing element, so say that an older host draws the list without a header and ignores sorting and widths.
 
@@ -2266,7 +2473,7 @@ Claude-Session: https://claude.ai/code/session_01UzLnYkJ6ifzKGaeNwgsp8W"
 
 ---
 
-### Task 8: Series gate
+### Task 9: Series gate
 
 **Goal:** Release build clean; no new failures in App, Plugin or UI.Abstractions tests; every commit builds.
 
@@ -2321,6 +2528,6 @@ cd /Users/davidsmith/code/OpenAC/OpenAC/.worktrees/markup-controls
 git log --oneline 5561afcb..HEAD
 git diff --stat 391e709a..HEAD | grep superpowers || echo "no superpowers docs"
 ```
-Expected: the 7 commits of Tasks 1-7 (plus any review-fix commits); "no superpowers docs".
+Expected: the 8 commits of Tasks 1-8 (plus any review-fix commits); "no superpowers docs".
 
 No commit.
