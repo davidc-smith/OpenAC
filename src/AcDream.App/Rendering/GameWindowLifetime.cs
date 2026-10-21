@@ -132,7 +132,8 @@ internal sealed record PlatformShutdownRoots(
     IDatReaderWriter? Dats,
     IPreparedAssetSource? PreparedAssets,
     IInputContext? Input,
-    GameWindowGraphics? Graphics);
+    GameWindowGraphics? Graphics,
+    IDisposable? OverlayKeyGate = null);
 
 internal sealed record GameWindowShutdownRoots(
     IngressShutdownRoots Ingress,
@@ -515,6 +516,8 @@ internal static class GameWindowShutdownManifest
             ]),
             new ResourceShutdownStage("input context",
             [
+                // The overlay key gate is on the context's keyboards: off first.
+                Hard("overlay key gate", () => platform.OverlayKeyGate?.Dispose()),
                 Hard("input context", () => platform.Input?.Dispose()),
             ]),
             new ResourceShutdownStage("graphics API context",

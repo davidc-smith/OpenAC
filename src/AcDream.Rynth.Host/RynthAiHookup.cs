@@ -39,6 +39,7 @@ internal sealed class RynthAiHookup : IDisposable
 
         PluginManager.Plugins = _plugins;
         ServerMenus.Runner = _runner;
+        AcMainThreadQueue.ChatCommand = _runner;
         AcMainThreadQueue.WriteToChat = _writeToChat;
         RynthAiDashboard.Log = _pumpLog;
     }
@@ -47,6 +48,7 @@ internal sealed class RynthAiHookup : IDisposable
     {
         if (ReferenceEquals(PluginManager.Plugins, _plugins)) PluginManager.Plugins = Array.Empty<LoadedPlugin>();
         if (ServerMenus.Runner == _runner) ServerMenus.Runner = null;
+        if (AcMainThreadQueue.ChatCommand == _runner) AcMainThreadQueue.ChatCommand = null;
         if (AcMainThreadQueue.WriteToChat == _writeToChat) AcMainThreadQueue.WriteToChat = null;
         if (RynthAiDashboard.Log == _pumpLog) RynthAiDashboard.Log = _ => { };
     }

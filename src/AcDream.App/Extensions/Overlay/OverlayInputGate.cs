@@ -14,4 +14,21 @@ internal static class OverlayInputGate
     public static bool SuppressKeyboard => _overlay?.WantsKeyboard == true;
 
     public static void Bind(ImGuiOverlay? overlay) => _overlay = overlay;
+
+    private static OverlayKeyGate? _keys;
+
+    /// <summary>True when an overlay sink took this key's current press (or its release).</summary>
+    public static bool KeyTaken(Silk.NET.Input.Key key) => _keys?.IsTaken(key) == true;
+
+    /// <summary>True while a taken key is down: typed characters belong to the sink.</summary>
+    public static bool CharTaken => _keys?.CharTaken == true;
+
+    public static void BindKeys(OverlayKeyGate? keys) => _keys = keys;
+
+    /// <summary>Unbinds the gate only when it is still the bound one.</summary>
+    public static void UnbindKeys(OverlayKeyGate keys)
+    {
+        if (ReferenceEquals(_keys, keys))
+            _keys = null;
+    }
 }

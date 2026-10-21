@@ -91,5 +91,18 @@ public sealed class RynthAiPluginTests : IDisposable
         var env = new Dictionary<string, string?>();
         RynthInstallFolders.Apply(name => env.GetValueOrDefault(name), (name, value) => env[name] = value, isWindows: true, @"C:\Users\me\AppData\Roaming");
         Assert.Empty(env);
+        Assert.False(env.ContainsKey(RynthInstallFolders.HotkeysVariable));
+    }
+
+    [Fact]
+    public void OffWindowsTheHotkeysFileGoesBesideTheCoreFolder()
+    {
+        var env = new Dictionary<string, string?>();
+        RynthInstallFolders.Apply(name => env.GetValueOrDefault(name), (name, value) => env[name] = value, isWindows: false, "/home/me/.config");
+        Assert.Equal(Path.Combine("/home/me/.config", "RynthCore", "hotkeys.txt"), env[RynthInstallFolders.HotkeysVariable]);
+
+        env[RynthInstallFolders.HotkeysVariable] = "/mine.txt";
+        RynthInstallFolders.Apply(name => env.GetValueOrDefault(name), (name, value) => env[name] = value, isWindows: false, "/home/me/.config");
+        Assert.Equal("/mine.txt", env[RynthInstallFolders.HotkeysVariable]);
     }
 }
