@@ -323,7 +323,8 @@ One `<radio>` is the whole group: the player picks one of its options.
   previous option and Down or Right the next, wrapping round; with nothing
   chosen, Down or Right picks the first and Up or Left the last. A click
   picks an option but doesn't keep keyboard focus, as with `<toggle>`:
-  after clicking, Tab back to the group to use the arrow keys again.
+  after clicking, Tab to the group from another focused control in the
+  window to use the arrow keys again.
 
 On a host older than radio groups, a `<radio>` fails the build of its
 window as unknown.
@@ -716,7 +717,8 @@ the list without a header and ignores sorting and widths.
 ```
 
 With `selectmode="multi"` the player can select any number of rows.
-`selected` binds the selected rows (any `IEnumerable<int>`) and `onchange`
+`selected` binds the selected rows (any `IEnumerable<int>`; a list or array
+is read as is, other collections are copied each frame) and `onchange`
 is an `Action<IReadOnlyList<int>>` that gets the new selection, as the
 plugin's own row indices in ascending order. The plugin owns the selection:
 the list draws whatever `selected` returns each frame and only asks for a
@@ -736,11 +738,13 @@ form. Check, icon and button cells keep their own actions.
   With no earlier click, Shift-click acts as a plain click and
   Ctrl+Shift-click as a Ctrl-click.
 
-The list can take keyboard focus with Tab; clicking it does not focus it
-(and clears any keyboard focus, as for other controls that don't take
-text), so the game keeps its keys. While focused it draws the gold focus
-outline. Up and Down select the row above or below the last one picked (the
-first row if none), Shift+Up and Shift+Down extend the range instead, and
+The list takes keyboard focus with Tab from another focused control in the
+same window, such as a field or a checkbox. Clicking a row does not focus
+the list (and clears any keyboard focus, as for other controls that don't
+take text), so the game keeps its keys. While focused it draws the gold
+focus outline. Up and Down select the row above or below the last one
+picked (the first row if none) and move the Shift anchor to that row,
+Shift+Up and Shift+Down extend the range from the anchor instead, and
 Ctrl+A (Cmd+A) selects every row. With no rows, Up and Down are still taken
 but do nothing and `onchange` doesn't fire. The list keeps the last-picked
 row in view. Other keys go on to the game.

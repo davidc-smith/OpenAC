@@ -64,8 +64,10 @@ public sealed partial class UiMarkupList
             _selectedMask = new bool[rowCount];
         else
             Array.Clear(_selectedMask);
-        foreach (int row in SelectedRowsSource())
+        IReadOnlyList<int> rows = SelectedRowsSource();
+        for (int i = 0; i < rows.Count; i++)
         {
+            int row = rows[i];
             if ((uint)row < (uint)rowCount)
                 _selectedMask[row] = true;
         }
