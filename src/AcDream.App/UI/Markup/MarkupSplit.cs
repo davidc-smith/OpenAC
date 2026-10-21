@@ -14,7 +14,7 @@ internal static class MarkupSplit
             var other => throw new FormatException(
                 $"<split orientation=\"{other}\"> must be horizontal or vertical"),
         };
-        XElement[] panes = el.Elements().ToArray();
+        XElement[] panes = el.Elements().Where(static child => child.Name.LocalName != "contextmenu").ToArray();
         if (panes.Length != 2 || panes.Any(pane => pane.Name.LocalName != "group"))
             throw new FormatException("<split> must contain exactly two <group> elements");
 

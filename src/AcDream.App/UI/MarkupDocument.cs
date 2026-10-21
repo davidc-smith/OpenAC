@@ -28,6 +28,8 @@ public static class MarkupDocument
         var root = XDocument.Parse(xml).Root ?? throw new FormatException("empty markup");
         if (root.Name.LocalName != "panel")
             throw new FormatException($"root must be <panel>, got <{root.Name.LocalName}>");
+        if (root.Element("contextmenu") is not null)
+            throw new FormatException("<contextmenu> goes inside the element it belongs to, not directly in <panel>");
 
         bool themed = (string?)root.Attribute("theme") == "plugin";
         if (themed) themes ??= new PluginUiThemeSettings();
@@ -622,7 +624,9 @@ public static class MarkupDocument
                 break;
 
             case "list":
-                var listChildren = el.Elements().ToList();
+                var listChildren = el.Elements()
+                    .Where(static child => child.Name.LocalName != "contextmenu")
+                    .ToList();
                 foreach (var child in listChildren)
                 {
                     if (child.Name.LocalName != "column")
@@ -630,6 +634,8 @@ public static class MarkupDocument
                         throw new FormatException(
                             $"<list> children must all be <column>, got <{child.Name.LocalName}>");
                     }
+                    if (child.Element("contextmenu") is not null)
+                        throw new FormatException("<contextmenu> goes on the <list>, not on a <column>");
                 }
                 bool listUsesColumns = listChildren.Count > 0;
                 if (listUsesColumns
@@ -696,11 +702,21 @@ public static class MarkupDocument
                 parent.AddChild(list);
                 break;
 
+            case "contextmenu":
+                // Built onto its owner element after the owner's own case; see the tail below.
+                break;
+
             default:
                 throw new FormatException($"unknown element <{el.Name.LocalName}>");
         }
-        if (themedPanel is not null && parent.Children.Count > firstChild)
-            PluginMarkupTheme.Register(themedPanel, parent.Children[firstChild], el);
+        if (parent.Children.Count > firstChild)
+        {
+            UiElement built = parent.Children[firstChild];
+            if (themedPanel is not null)
+                PluginMarkupTheme.Register(themedPanel, built, el);
+            if (MarkupContextMenu.Attach(el, built, binding, Context()) is { } contextMenu && themedPanel is not null)
+                PluginMarkupTheme.Register(themedPanel, contextMenu, el.Element("contextmenu")!);
+        }
     }
 
     /// <summary>
@@ -946,7 +962,7 @@ public static class MarkupDocument
             + "IEnumerable<int> property on " + binding.GetType().Name);
     }
 
-    private static Func<IReadOnlyList<bool>> BindBoolList(
+    internal static Func<IReadOnlyList<bool>> BindBoolList(
         string? expression, object binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
@@ -972,7 +988,7 @@ public static class MarkupDocument
         return BindUintList(expression, binding, context);
     }
 
-    private static Action<int> BindRequiredIntAction(
+    internal static Action<int> BindRequiredIntAction(
         string? attribute, object binding, string context)
     {
         if (attribute is null || !IsBinding(attribute))
