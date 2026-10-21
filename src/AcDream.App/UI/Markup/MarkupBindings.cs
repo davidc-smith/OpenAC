@@ -30,20 +30,28 @@ internal static class MarkupBindings
     }
 
     /// <summary>An optional <c>Action&lt;bool&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<bool>? BindBoolAction(string? attribute, object binding, string context)
+    public static Action<bool>? BindBoolAction(string? attribute, object binding, string context) =>
+        BindOptionalAction<bool>(attribute, binding, context, "bool");
+
+    /// <summary>An optional <c>Action&lt;int&gt;</c>; null when the attribute is absent.</summary>
+    public static Action<int>? BindIntAction(string? attribute, object binding, string context) =>
+        BindOptionalAction<int>(attribute, binding, context, "int");
+
+    private static Action<T>? BindOptionalAction<T>(
+        string? attribute, object binding, string context, string typeName)
     {
         if (attribute is null)
             return null;
         if (!MarkupDocument.IsBinding(attribute))
-            throw new FormatException($"{context} must be an Action<bool> binding");
+            throw new FormatException($"{context} must be an Action<{typeName}> binding");
         PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
-        if (property is null || !typeof(Action<bool>).IsAssignableFrom(property.PropertyType))
+        if (property is null || !typeof(Action<T>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
-                $"{attribute} did not resolve to an Action<bool> property on "
+                $"{attribute} did not resolve to an Action<{typeName}> property on "
                 + binding.GetType().Name + $" ({context})");
         }
-        return value => (property.GetValue(binding) as Action<bool>)?.Invoke(value);
+        return value => (property.GetValue(binding) as Action<T>)?.Invoke(value);
     }
 
     private static readonly Type[] NumberTypes =
