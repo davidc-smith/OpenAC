@@ -33,6 +33,7 @@ public sealed partial class UiMarkupList
             DrawTiledSprite(context, resolve, RetailScrollbarChrome.Track, 0f, 0f, Width, HeaderHeight);
         context.DrawFill(0f, HeaderHeight - 1f, Width, 1f, BorderColor);
 
+        (int sorted, bool descending) = CurrentSort;
         for (int c = 0; c < columns.Count; c++)
         {
             (float cellX, float cellW) = _cachedLayout[c];
@@ -40,14 +41,16 @@ public sealed partial class UiMarkupList
                 continue;
             if (c < columns.Count - 1)
                 context.DrawFill(cellX + cellW - 1f, 2f, 1f, HeaderHeight - 4f, BorderColor);
-            DrawHeaderCell(context, columns[c], c, cellX, cellW);
+            DrawHeaderCell(context, columns[c], c, cellX, cellW, c == sorted, descending);
         }
     }
 
-    private void DrawHeaderCell(UiRenderContext context, UiMarkupListColumn column, int c, float cellX, float cellW)
+    private void DrawHeaderCell(
+        UiRenderContext context, UiMarkupListColumn column, int c, float cellX, float cellW,
+        bool sorted, bool descending)
     {
         string caption = column.HeaderSource?.Invoke() ?? string.Empty;
-        context.PushClip(cellX, 0f, cellW, HeaderHeight);
+        context.PushClip(cellX, 0f, MathF.Max(0f, cellW - (sorted ? 12f : 0f)), HeaderHeight);
         try
         {
             DrawCaption(context, caption, cellX + Padding, 0f, HeaderHeight, TextColor);
@@ -56,6 +59,8 @@ public sealed partial class UiMarkupList
         {
             context.PopClip();
         }
+        if (sorted)
+            DrawSortGlyph(context, descending, cellX + cellW);
     }
 
     private void DrawCaption(UiRenderContext context, string text, float x, float top, float height, Vector4 color)
@@ -117,7 +122,5 @@ public sealed partial class UiMarkupList
     }
 
     /// <summary>A press and release on the same header cell.</summary>
-    private void HeaderClicked(int column)
-    {
-    }
+    private void HeaderClicked(int column) => CycleSort(column);
 }

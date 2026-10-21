@@ -124,8 +124,9 @@ public sealed class MarkupListHeaderTests : IDisposable
     {
         var b = new Binding();
         var (root, _) = Mount("", b);
-        Click(root, 60, 9);
+        Click(root, 270, 9);   // the unsortable button header: a sortable one would reorder the rows
         Assert.Empty(b.Picks);
+        Assert.Empty(b.Acted);
         Click(root, 60, 27);
         Assert.Equal(new[] { 0 }, b.Picks);
         Click(root, 270, 27);
@@ -207,5 +208,214 @@ public sealed class MarkupListHeaderTests : IDisposable
             </panel>
             """;
         Assert.Throws<FormatException>(() => MarkupDocument.Build(xml, new Binding(), id => (id, 16, 16)));
+    }
+
+    private const int NameX = 60, DistX = 160, OnX = 220, ButtonX = 270, HeaderY = 9;
+
+    [Fact]
+    public void Sort_NameCyclesAscendingDescendingNone()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal(new[] { 3, 1, 0, 2 }, ViewOrder(root, list, b));
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal(new[] { 2, 0, 1, 3 }, ViewOrder(root, list, b));
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_SortKeysAndBoolColumns()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, DistX, HeaderY);
+        Assert.Equal(new[] { 1, 3, 0, 2 }, ViewOrder(root, list, b));
+        ClickAndDraw(root, list, OnX, HeaderY);
+        Assert.Equal(new[] { 1, 3, 0, 2 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_NumberParsesCellsAndKeepsUnparseableLast()
+    {
+        var b = new Binding();
+        string columns = """
+              <column type="text" header="Name" width="120" items="{Names}"/>
+              <column type="text" header="Lvl" width="80" items="{Levels}" sort="number"/>
+              <column type="button" items="{Acts}" onclick="{Act}"/>
+            """;
+        var (root, list) = Mount("", b, columns: columns);
+        ClickAndDraw(root, list, DistX, HeaderY);
+        Assert.Equal(new[] { 2, 0, 3, 1 }, ViewOrder(root, list, b));
+        ClickAndDraw(root, list, DistX, HeaderY);
+        Assert.Equal(new[] { 3, 0, 2, 1 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_UnsortableHeadersAndDraggedPressesDoNothing()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, ButtonX, HeaderY);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));
+        root.OnMouseDown(UiMouseButton.Left, NameX, HeaderY);
+        root.OnMouseUp(UiMouseButton.Left, DistX, HeaderY);
+        Redraw(list);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_SelectionBandFollowsTheRow()
+    {
+        var b = new Binding { Selected = 0 };
+        var (root, list) = Mount("selectionband=\"true\"", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        var band = Assert.Single(MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(list), list.SelectedColor));
+        Assert.Equal(18f + 36f + 1f, band.Y);
+    }
+
+    [Fact]
+    public void Sort_CallbacksReceivePluginRows()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Click(root, OnX, 27);
+        Assert.Equal(new[] { 3 }, b.Toggled);
+        Redraw(list);
+        Click(root, ButtonX, 27);
+        Assert.Equal(new[] { 3 }, b.Acted);
+    }
+
+    [Fact]
+    public void Sort_APressIsCancelledWhenTheOrderChangesUnderIt()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        root.OnMouseMove(ButtonX, 27);
+        root.OnMouseDown(UiMouseButton.Left, ButtonX, 27);
+        b.Names[3] = "zzz";
+        Redraw(list);
+        root.OnMouseUp(UiMouseButton.Left, ButtonX, 27);
+        Assert.Empty(b.Acted);
+    }
+
+    [Fact]
+    public void Sort_BoundBelongsToThePlugin()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("sortcolumn=\"{SortCol}\" sortdescending=\"{SortDesc}\" onsort=\"{SetSort}\"", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal(new[] { 3, 1, 0, 2 }, ViewOrder(root, list, b));
+        ClickAndDraw(root, list, NameX, HeaderY);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal(new[] { (0, false), (0, true), (-1, false) }, b.Sorts);
+        b.SortCol = 1;
+        Redraw(list);
+        Assert.Equal(new[] { 1, 3, 0, 2 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_BoundWithoutOnsortOnlyDisplays()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("sortcolumn=\"{SortCol}\" sortdescending=\"{SortDesc}\"", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_UnboundStillNotifies()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("onsort=\"{NotifySort}\"", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal(new[] { (0, false) }, b.Sorts);
+    }
+
+    [Fact]
+    public void Sort_RemembersAndForgetsNone()
+    {
+        var state = new MarkupControlStateStore(null, () => "alice").ForWindow("win");
+        var b = new Binding();
+        var (root, list) = Mount("", b, state);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal("0:asc", state.Get("mobs", "sort"));
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Equal("0:desc", state.Get("mobs", "sort"));
+        ClickAndDraw(root, list, NameX, HeaderY);
+        Assert.Null(state.Get("mobs", "sort"));
+    }
+
+    [Theory]
+    [InlineData("1:desc", new[] { 2, 0, 3, 1 })]
+    [InlineData("9:asc", new[] { 0, 1, 2, 3 })]
+    [InlineData("3:asc", new[] { 0, 1, 2, 3 })]
+    [InlineData("0:sideways", new[] { 0, 1, 2, 3 })]
+    public void Sort_StoredValuesApplyOrAreIgnored(string stored, int[] order)
+    {
+        var state = new MarkupControlStateStore(null, () => "alice").ForWindow("win");
+        state.Set("mobs", "sort", stored);
+        var b = new Binding();
+        var (root, list) = Mount("", b, state);
+        Assert.Equal(order, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_ACharacterSwitchReReads()
+    {
+        string character = "alice";
+        var store = new MarkupControlStateStore(new SettingsStore(_settingsPath), () => character);
+        var state = store.ForWindow("win");
+        var b = new Binding();
+        var (root, list) = Mount("", b, state);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        store.Save();
+        character = "bob";
+        root.Tick(0.016, 0);
+        Redraw(list);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));
+        character = "alice";
+        root.Tick(0.016, 0);
+        Redraw(list);
+        Assert.Equal(new[] { 3, 1, 0, 2 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_GlyphPointsUpThenDown()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        var up = MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(list), list.TextColor)
+            .Where(q => q.H == 1f && q.X >= 110f && q.X < 120f).OrderBy(q => q.Y).Select(q => q.W).ToArray();
+        Assert.Equal(new[] { 1f, 3f, 5f, 7f }, up);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        var down = MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(list), list.TextColor)
+            .Where(q => q.H == 1f && q.X >= 110f && q.X < 120f).OrderBy(q => q.Y).Select(q => q.W).ToArray();
+        Assert.Equal(new[] { 7f, 5f, 3f, 1f }, down);
+    }
+
+    [Theory]
+    [InlineData("""<column type="text" width="80" items="{Names}" sort="weird"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="text" width="80" items="{Names}" sort="bool"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="icon" width="20" values="{Ids}" onclick="{Act}" sort="text"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="checkbox" width="20" values="{On}" onchange="{Toggle}" sort="bool" sortkeys="{DistKeys}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="text" width="80" items="{Names}" sortkeys="{DistKeys}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="text" width="80" items="{Names}" sort="number" sortkeys="{On}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    public void Sort_BadColumnsThrow(string columns)
+    {
+        Assert.Throws<FormatException>(() => Mount("", new Binding(), columns: columns));
+    }
+
+    [Theory]
+    [InlineData("sortcolumn=\"{SortCol}\"")]
+    [InlineData("sortdescending=\"{SortDesc}\"")]
+    [InlineData("onsort=\"{Toggle}\"")]
+    public void Sort_BadListAttributesThrow(string attributes)
+    {
+        Assert.Throws<FormatException>(() => Mount(attributes, new Binding()));
     }
 }

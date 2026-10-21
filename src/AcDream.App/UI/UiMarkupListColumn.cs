@@ -8,6 +8,14 @@ public enum UiMarkupListColumnKind
     Button,
 }
 
+public enum UiMarkupListSortKind
+{
+    None,
+    Text,
+    Number,
+    Bool,
+}
+
 public sealed class UiMarkupListColumn
 {
     public UiMarkupListColumnKind Kind { get; internal init; }
@@ -36,6 +44,13 @@ public sealed class UiMarkupListColumn
 
     /// <summary>The column's header caption (a literal or a bound string); null for none.</summary>
     public Func<string?>? HeaderSource { get; internal set; }
+
+    /// <summary>How a header click sorts by this column; None is not sortable.</summary>
+    public UiMarkupListSortKind Sort { get; internal set; }
+
+    /// <summary>Keys that replace the cell values when sorting (one of the two, or neither).</summary>
+    public Func<IReadOnlyList<double>>? SortNumberKeys { get; internal set; }
+    public Func<IReadOnlyList<string>>? SortTextKeys { get; internal set; }
 
     public static UiMarkupListColumn Text(
         float width,

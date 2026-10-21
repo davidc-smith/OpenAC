@@ -383,7 +383,7 @@ public sealed partial class UiMarkupList : UiElement
 
     /// <summary>Re-derives the row order after the rows were read.</summary>
     private void RebuildView(IReadOnlyList<UiMarkupListColumn> columns, int rowCount) =>
-        _view.SetIdentity(rowCount);
+        SortView(columns, rowCount);
 
     private void DrawTextCell(
         UiRenderContext context, IReadOnlyList<string>? texts, IReadOnlyList<uint>? colors,
