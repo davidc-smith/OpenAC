@@ -36,24 +36,36 @@ retail panel hidden behind the ImGui window.
   - `void SetDropClaimer(Func<uint, Vector2, bool>? claimer)` — item id and the
     release point in overlay (ImGui) coordinates; true = a panel took it.
     One claimer (the Rynth host); null clears it.
-- `UiRoot` gains a release interceptor (`Func<object, int, int, bool>?`),
-  asked at the start of `FinishDrag` with the payload and release point. True
+- `UiRoot` gains a release interceptor
+  (`Func<object, Vector2, bool>? DragReleaseInterceptor`), asked when a drag
+  is let go, before `FinishDrag`'s hit-test, with the payload and the
+  release point in window points (the point before `UiRoot` maps it to its
+  canvas, so the same space as ImGui's). True
   ends the drag there: the source slot stops being dragged, no
   `DropReleased`, no `DragReleasedOutsideUi` (no world placement).
 - The App's interceptor (`ClientItemDrops`, `AcDream.App/Extensions`):
   - pointer not over an ImGui window → false (today's behaviour, unchanged);
   - over one → an inventory `ItemDragPayload` with a claimer is offered to it
-    (point converted from `UiRoot` to overlay coordinates); returns true
+    (window point passed through unchanged); returns true
     whether claimed or not (cancel rule).
 - "Over an ImGui window" is a new `ImGuiOverlay.PointerOverWindow`, set each
-  frame from ImGui's hovered window
-  (`IsWindowHovered(AnyWindow | AllowWhenBlockedByActiveItem)`).
-  `WantCaptureMouse` can't be used: it stays false during a drag that began
-  outside ImGui. The flag is last frame's; the release is in the same frame
-  as or one after the last hover, which is fine at a hand's speed.
-- Coordinates: both `UiRoot` and the overlay take Silk window positions
-  (points), so the conversion is expected to be the identity. It lives in one
-  function so a Retina difference is a one-line fix; the live check confirms.
+  frame after `NewFrame` from
+  `IsWindowHovered(AnyWindow | AllowWhenBlockedByActiveItem)`.
+  ImGui 1.91 clears its hovered window while a mouse button pressed outside
+  ImGui is held (click ownership), so during any retail drag
+  (`UiRoot.DragPayload != null`, given to the overlay as
+  `Func<bool> ExternalDragActive`) the overlay submits an external drag
+  source each frame (`BeginDragDropSource(SourceExtern)` + payload type
+  `OPENAC_DRAG`), which keeps hover tracking alive. Checked headless
+  2026-10-21: without it hovered=false over a window; with it hovered=true
+  over and false off the window, `WantCaptureMouse` stays false (retail still
+  gets the mouse-up), and the payload clears after release.
+  `WantCaptureMouse` itself can't be used: it is false during such a drag.
+  The flag is last frame's, which is fine at a hand's speed.
+- Coordinates: `UiRoot`'s mouse handlers and the overlay's input feed both
+  get Silk window positions (points); `UiRoot` divides by its `CanvasScale`
+  only after, so the interceptor gets the unmapped point. The Retina live
+  check confirms.
 
 ## Rynth side
 
@@ -62,7 +74,11 @@ retail panel hidden behind the ImGui window.
   `StandIns/DashboardStandIns.cs` is deleted.
 - What their file links to:
   - `user32!GetCursorPos` — the existing `RynthInteropRedirect` P/Invoke step
-    points it at a new `Win32CursorStandIn`: returns a host-set point in
+    points it at a new `Win32CursorStandIn`. Their `out POINT` is a private
+    nested struct the stand-in can't name, so the tool also matches a by-ref
+    struct parameter whose type has the same instance fields (names and
+    types, in order); the stand-in declares its own `CursorPoint { int X, Y }`.
+    It returns a host-set point in
     ImGui coordinates (overlay mouse each frame; the exact release point
     while a claim runs).
   - `ImGuiPopOuts` stand-in gains `ClientOriginOnScreen() => Vector2.Zero`
@@ -71,8 +87,9 @@ retail panel hidden behind the ImGui window.
   - `Compatibility.UiElementHooks.CurrentDragObject` stand-in reads a
     host-set source, fed from `IClientItemDrops.DraggedItem`, so
     `AnyDragInProgress` lights the faces' drop look during inventory drags.
-- Claimer: `RynthEngineHub` registers it when the engine starts and clears it
-  on stop/logout. It sets the cursor stand-in to the release point, calls
+- Claimer: `RynthDropClaim.Claim(item, point)` (EngineUi); the Rynth host's
+  `RynthClientExtension` registers it with `SetDropClaimer` at attach (when
+  the overlay is there) and clears it, and the stand-in sources, at dispose. It sets the cursor stand-in to the release point, calls
   `UiDropTargets.TryClaim(item, 0, out _)`, then restores the cursor source.
   The face takes the item with `TryTake` on its next draw, as in RynthCore.
 - Threading: one game thread; their lock and 500 ms staleness stay as is.
@@ -87,7 +104,7 @@ retail panel hidden behind the ImGui window.
 
 - Rynth.Host.Tests: claim reaches the published accepting target under the
   release point; stale or not-accepting targets aren't claimed; the cursor is
-  restored after a claim; the claimer is cleared at logout/stop;
+  restored after a claim; the claimer is cleared at dispose;
   `CurrentDragObject` follows `DraggedItem`.
 - App tests: a drop off ImGui is unchanged (hit-test / outside callback run);
   an inventory drag over ImGui reaches the claimer; a paperdoll drag over
