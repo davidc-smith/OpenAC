@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Xml.Linq;
 
 namespace AcDream.App.UI.Markup;
 
@@ -11,10 +12,15 @@ internal delegate void MarkupColorBinder(
 
 /// <summary>
 /// What an element builder outside <see cref="MarkupDocument"/> gets from the
-/// document build: the same resolvers and font every built-in element uses.
+/// document build: the same resolvers and font every built-in element uses,
+/// the window's remembered control state (null when nothing is remembered),
+/// and <see cref="AddChild"/>, which builds one child element into a
+/// container exactly as the document builds any element.
 /// </summary>
 internal sealed record MarkupBuildContext(
     Func<uint, (uint, int, int)> Resolve,
     UiDatFont? DatFont,
     IMarkupIconResolver? Icons,
-    MarkupColorBinder BindColor);
+    MarkupColorBinder BindColor,
+    IMarkupControlState? ControlState = null,
+    Action<UiElement, XElement>? AddChild = null);

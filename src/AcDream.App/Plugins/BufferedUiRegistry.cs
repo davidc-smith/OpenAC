@@ -776,6 +776,10 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 checkbox.TextSource = null;
                 checkbox.Text = label;
                 return true;
+            case UiMarkupExpander expander:
+                expander.Header.TextSource = null;
+                expander.Header.Text = label;
+                return true;
             case UiLabel text:
                 text.TextSource = null;
                 text.Text = label;

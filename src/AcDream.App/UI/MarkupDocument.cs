@@ -22,7 +22,8 @@ public static class MarkupDocument
     public static UiNineSlicePanel Build(
         string xml, object binding, Func<uint, (uint, int, int)> resolve,
         ControlsIni? style = null, UiDatFont? datFont = null,
-        IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null)
+        IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null,
+        IMarkupControlState? controlState = null)
     {
         var root = XDocument.Parse(xml).Root ?? throw new FormatException("empty markup");
         if (root.Name.LocalName != "panel")
@@ -77,7 +78,7 @@ public static class MarkupDocument
             PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
 
         foreach (var el in root.Elements())
-            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes);
+            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, controlState);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -95,7 +96,8 @@ public static class MarkupDocument
         object binding,
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
-        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes)
+        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
+        IMarkupControlState? controlState)
     {
         int firstChild = parent.Children.Count;
         void BindColorSource(string? expression, object model, Action<Vector4> setValue,
@@ -113,7 +115,10 @@ public static class MarkupDocument
         }
         MarkupBuildContext Context() => new(
             resolve, datFont, icons,
-            (expression, setValue, setSource) => BindColorSource(expression, binding, setValue, setSource));
+            (expression, setValue, setSource) => BindColorSource(expression, binding, setValue, setSource),
+            controlState,
+            (container, child) => AddElement(
+                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState));
         switch (el.Name.LocalName)
         {
             case "group":
@@ -143,7 +148,7 @@ public static class MarkupDocument
                 ApplyCommon(group, el, binding);
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
-                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes);
+                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, controlState);
                 break;
 
             case "meter":
@@ -377,6 +382,10 @@ public static class MarkupDocument
 
             case "separator":
                 parent.AddChild(MarkupSeparator.Build(el, binding, Context()));
+                break;
+
+            case "expander":
+                parent.AddChild(MarkupExpander.Build(el, binding, Context()));
                 break;
 
             case "slider":
@@ -1129,7 +1138,7 @@ public static class MarkupDocument
         setSource(() => property.GetValue(binding) is true);
     }
 
-    private static Func<bool> BindRequiredBoolReader(
+    internal static Func<bool> BindRequiredBoolReader(
         string? expression,
         object binding,
         string context)
