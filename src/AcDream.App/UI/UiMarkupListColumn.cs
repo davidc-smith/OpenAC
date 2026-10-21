@@ -21,6 +21,9 @@ public sealed class UiMarkupListColumn
     public Func<IReadOnlyList<bool>>? CheckSource { get; internal init; }
     public Action<int>? CheckChanged { get; internal init; }
 
+    /// <summary>A check column drawn as tick boxes (<c>type="checkbox"</c>) instead of lamps.</summary>
+    public bool Boxed { get; internal init; }
+
     public Func<IReadOnlyList<uint>>? IconValuesSource { get; internal init; }
     public Func<uint, (uint tex, int w, int h)>? IconResolve { get; internal init; }
     public Action<int>? IconClicked { get; internal init; }
@@ -50,13 +53,15 @@ public sealed class UiMarkupListColumn
         float width,
         Func<IReadOnlyList<bool>> checkSource,
         Action<int> onChange,
-        bool isAutoWidth = false) => new()
+        bool isAutoWidth = false,
+        bool boxed = false) => new()
     {
         Kind = UiMarkupListColumnKind.Check,
         Width = width,
         IsAutoWidth = isAutoWidth,
         CheckSource = checkSource,
         CheckChanged = onChange,
+        Boxed = boxed,
     };
 
     public static UiMarkupListColumn Icon(

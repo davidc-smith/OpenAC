@@ -316,7 +316,7 @@ public sealed class UiMarkupList : UiElement
                             DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], index, cellX, y);
                             break;
                         case UiMarkupListColumnKind.Check:
-                            DrawCheckCell(context, _cachedCheckRows[c], index, cellX, cellW, y);
+                            DrawCheckCell(context, _cachedCheckRows[c], index, cellX, cellW, y, columns[c].Boxed);
                             break;
                         case UiMarkupListColumnKind.Icon:
                             DrawIconCell(context, columns[c], _cachedIconRows[c], index, cellX, cellW, y);
@@ -386,13 +386,16 @@ public sealed class UiMarkupList : UiElement
     }
 
     private void DrawCheckCell(
-        UiRenderContext context, IReadOnlyList<bool>? flags, int index, float cellX, float cellW, float y)
+        UiRenderContext context, IReadOnlyList<bool>? flags, int index, float cellX, float cellW, float y,
+        bool boxed)
     {
         bool isChecked = flags is not null && index < flags.Count && flags[index];
         float extent = MathF.Max(0f, cellW - 2f);
-        float lampX = cellX + 1f + MathF.Max(0f, extent - UiCheckLamp.LampSize) * 0.5f;
-        float lampY = y + MathF.Max(1f, (RowHeight - UiCheckLamp.LampSize) * 0.5f);
-        if (ThemePalette is { } p) p.DrawCheck(context, lampX, lampY, isChecked);
+        float size = boxed ? UiCheckBoxGlyph.Size : UiCheckLamp.LampSize;
+        float lampX = cellX + 1f + MathF.Max(0f, extent - size) * 0.5f;
+        float lampY = y + MathF.Max(1f, (RowHeight - size) * 0.5f);
+        if (boxed) UiCheckBoxGlyph.Draw(context, lampX, lampY, isChecked, ThemePalette);
+        else if (ThemePalette is { } p) p.DrawCheck(context, lampX, lampY, isChecked);
         else UiCheckLamp.Draw(context, lampX, lampY, isChecked);
     }
 

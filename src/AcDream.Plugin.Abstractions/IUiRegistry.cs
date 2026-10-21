@@ -136,7 +136,7 @@ public interface IUiRegistry
     bool ControlExists(string viewName, string controlName) => false;
 
     /// <summary>
-    /// Replaces the text of a named button, toggle or label in one of this
+    /// Replaces the text of a named button, toggle, checkbox or label in one of this
     /// plugin's own windows, dropping whatever binding the markup gave it.
     /// Returns false when the control is not found or carries no text.
     /// </summary>

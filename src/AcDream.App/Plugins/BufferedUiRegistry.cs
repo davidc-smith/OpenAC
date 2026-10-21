@@ -772,6 +772,10 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 toggle.TextSource = null;
                 toggle.Text = label;
                 return true;
+            case UiMarkupCheckbox checkbox:
+                checkbox.TextSource = null;
+                checkbox.Text = label;
+                return true;
             case UiLabel text:
                 text.TextSource = null;
                 text.Text = label;
