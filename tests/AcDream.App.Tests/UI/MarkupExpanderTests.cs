@@ -305,6 +305,57 @@ public sealed class MarkupExpanderTests : IDisposable
         Assert.Equal(170f, fill.Height);
     }
 
+    // "adv" header y 8-26; "fill" is an expander from y 120 stretched to 10 px above the bottom.
+    private static (UiRoot Root, UiMarkupExpander Fill) MountStretchedPair()
+    {
+        var panel = MarkupDocument.Build("""
+            <panel x="0" y="0" w="400" h="300">
+              <expander name="adv" x="8" y="8" w="200" h="100" text="Adv"/>
+              <expander name="fill" x="8" y="120" w="200" h="170" anchor="left top bottom" text="Fill"/>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16));
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(panel);
+        MarkupDrawProbe.Draw(panel, 800f, 600f);
+        return (root, (UiMarkupExpander)Named(panel, "fill"));
+    }
+
+    private static void ClickAndDraw(UiRoot root, int y)
+    {
+        Click(root, 30, y);
+        MarkupDrawProbe.Draw(root.Children[0], 800f, 600f);
+    }
+
+    [Fact]
+    public void Expander_CollapsedStretchedSiblingKeepsItsHeaderWhenTheOneAboveExpands()
+    {
+        var (root, fill) = MountStretchedPair();
+        ClickAndDraw(root, 14);           // collapse adv: fill grows to 38..290
+        ClickAndDraw(root, 38 + 6);       // collapse fill
+        ClickAndDraw(root, 14);           // expand adv
+        Assert.Equal(120f, fill.Top);
+        Assert.Equal(UiMarkupExpander.HeaderHeight, fill.Height);
+        ClickAndDraw(root, 120 + 6);      // expand fill
+        Assert.Equal(120f, fill.Top);
+        Assert.Equal(170f, fill.Height);
+    }
+
+    [Fact]
+    public void Expander_CollapsedStretchedSiblingGrowsWhenTheOneAboveCollapses()
+    {
+        var (root, fill) = MountStretchedPair();
+        ClickAndDraw(root, 120 + 6);      // collapse fill
+        ClickAndDraw(root, 14);           // collapse adv: fill moves up, stays a header
+        Assert.Equal(38f, fill.Top);
+        Assert.Equal(UiMarkupExpander.HeaderHeight, fill.Height);
+        ClickAndDraw(root, 38 + 6);       // expand fill: reaches 10 px above the bottom
+        Assert.Equal(38f, fill.Top);
+        Assert.Equal(252f, fill.Height);
+        ClickAndDraw(root, 14);           // expand adv
+        Assert.Equal(120f, fill.Top);
+        Assert.Equal(170f, fill.Height);
+    }
+
     [Fact]
     public void Expander_ResizeBeforeDrawIsNotAbsorbed()
     {

@@ -124,6 +124,22 @@ public sealed class UiMarkupExpander : UiElement
 
     private static void AddShift(UiElement e, float delta) => Shifts.GetOrCreateValue(e).Value += delta;
 
+    private static bool StretchesWhenExpanded(UiElement e)
+    {
+        AnchorEdges anchors = e is UiMarkupExpander { _expandedAnchors: { } expanded } ? expanded : e.Anchors;
+        return (anchors & (AnchorEdges.Top | AnchorEdges.Bottom)) == (AnchorEdges.Top | AnchorEdges.Bottom);
+    }
+
+    // A collapsed stretched expander is pinned at its header, so the height it
+    // gains or loses goes to what it restores on expand instead.
+    private static void Grow(UiElement e, float delta)
+    {
+        if (e is UiMarkupExpander { _expandedAnchors: not null } collapsed)
+            collapsed._collapseDelta = MathF.Max(0f, collapsed._collapseDelta + delta);
+        else
+            e.Height = MathF.Max(0f, e.Height + delta);
+    }
+
     private void ApplyLayout(bool expanded)
     {
         if (expanded == _laidOutExpanded)
@@ -153,11 +169,10 @@ public sealed class UiMarkupExpander : UiElement
                         continue;
                     // A sibling stretched between top and bottom grows into the space
                     // (its bottom margin stays as authored); everything else moves up.
-                    bool grows = (sibling.Anchors & (AnchorEdges.Top | AnchorEdges.Bottom))
-                        == (AnchorEdges.Top | AnchorEdges.Bottom);
+                    bool grows = StretchesWhenExpanded(sibling);
                     sibling.Top -= _collapseDelta;
                     if (grows)
-                        sibling.Height += _collapseDelta;
+                        Grow(sibling, _collapseDelta);
                     AddShift(sibling, _collapseDelta);
                     sibling.CaptureCurrentAnchorBaseline();
                     _moved.Add((sibling, grows));
@@ -195,7 +210,7 @@ public sealed class UiMarkupExpander : UiElement
                     continue;
                 sibling.Top += _collapseDelta;
                 if (grew)
-                    sibling.Height = MathF.Max(0f, sibling.Height - _collapseDelta);
+                    Grow(sibling, -_collapseDelta);
                 AddShift(sibling, -_collapseDelta);
                 sibling.CaptureCurrentAnchorBaseline();
             }
