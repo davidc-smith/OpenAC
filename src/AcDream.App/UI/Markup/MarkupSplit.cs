@@ -55,9 +55,10 @@ internal static class MarkupSplit
         addChild(split, panes[1]);
         UiElement second = split.Children[^1];
         split.SetPanes(first, second);
-        // Lay out now, so the panes' children record their anchors against the
-        // pane sizes they will actually have.
-        split.Layout();
+        // Lay out at the authored start now, so the panes' children record their
+        // anchors against the pane sizes the markup was written for, whatever
+        // position is stored or bound.
+        split.LayoutAtDefault();
         return split;
     }
 

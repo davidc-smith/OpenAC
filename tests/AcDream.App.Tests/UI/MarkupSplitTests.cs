@@ -206,6 +206,46 @@ public sealed class MarkupSplitTests : IDisposable
         Assert.Equal(200f, split.First.Width);   // the host value was never clamped, only its layout
     }
 
+    // Pane 1 holds a 150-wide red block that the bar is then dragged across.
+    private static (UiRoot Root, UiNineSlicePanel Panel, UiMarkupSplit Split) MountWideBlock()
+    {
+        var panel = MarkupDocument.Build("""
+            <panel x="0" y="0" w="500" h="300">
+              <split name="main" x="10" y="10" w="405" h="200">
+                <group><group name="block" x="4" y="4" w="150" h="190" background="#ffff0000"/></group>
+                <group/>
+              </split>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16));
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(panel);
+        MarkupDrawProbe.Draw(panel, 800f, 600f);
+        return (root, panel, panel.Children.OfType<UiMarkupSplit>().Single());
+    }
+
+    [Fact]
+    public void Split_APaneClipsWhatOverhangsIt()
+    {
+        var (root, panel, split) = MountWideBlock();
+        Drag(root, 212, 62);                     // pane 1 is now 50 wide, the block still 150
+        Assert.Equal(50f, split.First!.Width);
+        var renderer = MarkupDrawProbe.Draw(panel, 800f, 600f);
+        var block = Assert.Single(MarkupDrawProbe.QuadBounds(renderer, new System.Numerics.Vector4(1f, 0f, 0f, 1f)));
+        Assert.Equal(10f + 4f, block.X);
+        Assert.Equal(46f, block.W);              // cut at the pane's edge, short of the bar
+    }
+
+    [Fact]
+    public void Split_TheBarIsAboveThePanes()
+    {
+        var (root, _, split) = MountWideBlock();
+        Drag(root, 212, 62);                     // the bar is at screen x 60-65, over the block
+        Assert.Same(split.Bar, split.ChildrenFrontToBackSnapshot()[0]);
+        Assert.Same(split.Bar, split.HitTest(52f, 90f));
+        Drag(root, 62, 202);
+        Assert.Equal(190f, split.First!.Width);
+    }
+
     [Fact]
     public void Split_PaneChildrenAreClickableAndTheBarTakesNoFocus()
     {
@@ -224,6 +264,7 @@ public sealed class MarkupSplitTests : IDisposable
     {
         var b = new Binding();
         var (root, _, split) = Mount("position=\"{At}\" onchange=\"{SetAt}\"", b);
+        root.Tick(0.016, 0);                     // the build lays out at the default; the binding applies from here
         Assert.Equal(120f, split.First!.Width);
         Drag(root, 10 + 120 + 2, 10 + 170 + 2);
         Assert.Equal(new[] { 170f }, b.Changes);
@@ -238,6 +279,7 @@ public sealed class MarkupSplitTests : IDisposable
     {
         var b = new Binding();
         var (root, _, split) = Mount("position=\"{At}\"", b);
+        root.Tick(0.016, 0);
         Drag(root, 10 + 120 + 2, 10 + 170 + 2);
         Assert.Equal(120f, split.First!.Width);
         Assert.Equal(120f, b.At);
@@ -257,16 +299,47 @@ public sealed class MarkupSplitTests : IDisposable
     }
 
     [Fact]
-    public void Split_StoredPositionAppliesAtBuildAndMalformedIsIgnored()
+    public void Split_StoredPositionAppliesOnTheFirstTickAndMalformedIsIgnored()
     {
         var store = new MarkupControlStateStore(null, () => "alice");
         var state = store.ForWindow("win");
         state.Set("main", "position", "150");
-        var (_, _, remembered) = Mount("", new Binding(), state);
+        var (root, _, remembered) = Mount("", new Binding(), state);
+        root.Tick(0.016, 0);
         Assert.Equal(150f, remembered.First!.Width);
         state.Set("main", "position", "abc");
-        var (_, _, malformed) = Mount("", new Binding(), state);
+        var (malformedRoot, _, malformed) = Mount("", new Binding(), state);
+        malformedRoot.Tick(0.016, 0);
         Assert.Equal(200f, malformed.First!.Width);
+    }
+
+    [Fact]
+    public void Split_PaneChildrenAnchorAgainstTheAuthoredStartNotTheStoredPosition()
+    {
+        const string markup = """
+            <panel x="0" y="0" w="500" h="300">
+              <split name="main" x="10" y="10" w="405" h="200">
+                <group><group name="fill" x="0" y="0" w="200" h="20" anchor="left top right"/></group>
+                <group/>
+              </split>
+            </panel>
+            """;
+        foreach (string? stored in new[] { null, "300" })
+        {
+            var store = new MarkupControlStateStore(null, () => "alice");
+            var state = store.ForWindow("win");
+            if (stored is not null)
+                state.Set("main", "position", stored);
+            var panel = MarkupDocument.Build(markup, new Binding(), _ => (1u, 16, 16), controlState: state);
+            var root = new UiRoot { Width = 800, Height = 600 };
+            root.AddChild(panel);
+            root.Tick(0.016, 0);
+            MarkupDrawProbe.Draw(panel, 800f, 600f);
+            var split = panel.Children.OfType<UiMarkupSplit>().Single();
+            float expected = stored is null ? 200f : 300f;
+            Assert.Equal(expected, split.First!.Width);
+            Assert.Equal(expected, split.First.Children.Single().Width);
+        }
     }
 
     [Fact]
@@ -302,9 +375,12 @@ public sealed class MarkupSplitTests : IDisposable
         Assert.Equal(0, unnamedState.Calls);
 
         var boundState = new RecordingState();
-        var (boundRoot, _, _) = Mount("position=\"{At}\" onchange=\"{SetAt}\"", new Binding(), boundState);
+        var bound = new Binding();
+        var (boundRoot, _, _) = Mount("position=\"{At}\" onchange=\"{SetAt}\"", bound, boundState);
+        boundRoot.Tick(0.016, 0);
         Drag(boundRoot, 10 + 120 + 2, 10 + 170 + 2);
         boundRoot.Tick(0.016, 0);
+        Assert.Equal(new[] { 170f }, bound.Changes);
         Assert.Equal(0, boundState.Calls);
     }
 
@@ -398,6 +474,10 @@ public sealed class MarkupSplitTests : IDisposable
         var faded = new System.Numerics.Vector4(c.X, c.Y, c.Z, c.W * UiMarkupToggle.DisabledAlpha);
         Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, faded));
         Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupSplitBar.ClassicFill));
+        var g = UiMarkupSplitBar.ClassicGrip;
+        var fadedGrip = new System.Numerics.Vector4(g.X, g.Y, g.Z, g.W * UiMarkupToggle.DisabledAlpha);
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, fadedGrip));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupSplitBar.ClassicGrip));
     }
 
     [Fact]

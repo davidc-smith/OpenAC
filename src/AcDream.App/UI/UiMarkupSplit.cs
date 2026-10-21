@@ -56,6 +56,8 @@ public sealed class UiMarkupSplit : UiElement
             FocusOnMouseClick = false,
             TabStop = true,
             Anchors = AnchorEdges.None,
+            // Drawn and hit-tested above the panes.
+            ZOrder = 1,
         };
         AddChild(Bar);
     }
@@ -103,9 +105,18 @@ public sealed class UiMarkupSplit : UiElement
         return MathF.Round(Math.Clamp(position, lo, hi));
     }
 
-    internal void Layout()
+    internal void Layout() => LayoutAt(Clamp(Position));
+
+    /// <summary>
+    /// Lays out at the authored start, ignoring the store and the binding. The
+    /// builder uses it so the panes' children record their anchors against the
+    /// same pane sizes for every character; the first tick or draw then moves
+    /// the bar to the real position.
+    /// </summary>
+    internal void LayoutAtDefault() => LayoutAt(Clamp(DefaultPosition));
+
+    private void LayoutAt(float at)
     {
-        float at = Clamp(Position);
         LaidOutPosition = at;
         float second = at + BarSize;
         if (Horizontal)
