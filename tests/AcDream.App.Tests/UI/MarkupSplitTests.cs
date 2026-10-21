@@ -371,4 +371,67 @@ public sealed class MarkupSplitTests : IDisposable
         Assert.Throws<FormatException>(() => MarkupDocument.Build(
             $"<panel x=\"0\" y=\"0\" w=\"300\" h=\"100\">{split}</panel>", new Binding(), _ => (1u, 16, 16)));
     }
+
+    [Fact]
+    public void Split_ClassicBarDrawsAFillAndAGripThatLightsOnHover()
+    {
+        var (root, _, split) = Mount("", new Binding());
+        var renderer = MarkupDrawProbe.Draw(split.Bar);
+        var fill = Assert.Single(MarkupDrawProbe.QuadBounds(renderer, UiMarkupSplitBar.ClassicFill));
+        Assert.Equal((5f, 200f), (fill.W, fill.H));
+        var grip = Assert.Single(MarkupDrawProbe.QuadBounds(renderer, UiMarkupSplitBar.ClassicGrip));
+        Assert.Equal(1f, grip.W);
+
+        root.OnMouseMove(212, 100);
+        Assert.True(split.Bar.Hot);
+        var hot = MarkupDrawProbe.Draw(split.Bar);
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(hot, UiMarkupSplitBar.ClassicHot));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(hot, UiMarkupSplitBar.ClassicGrip));
+    }
+
+    [Fact]
+    public void Split_DisabledBarDrawsFaded()
+    {
+        var (_, _, split) = Mount("enabled=\"false\"", new Binding());
+        var renderer = MarkupDrawProbe.Draw(split.Bar);
+        var c = UiMarkupSplitBar.ClassicFill;
+        var faded = new System.Numerics.Vector4(c.X, c.Y, c.Z, c.W * UiMarkupToggle.DisabledAlpha);
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, faded));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupSplitBar.ClassicFill));
+    }
+
+    [Fact]
+    public void Split_FocusDrawsAnOutline()
+    {
+        var (_, _, split) = Mount("", new Binding());
+        split.Bar.OnEvent(new UiEvent { Type = UiEventType.FocusGained });
+        var renderer = MarkupDrawProbe.Draw(split.Bar);
+        Assert.Equal(4, MarkupDrawProbe.CountQuads(renderer, UiMarkupSplitBar.FocusColor));
+    }
+
+    [Fact]
+    public void Split_PluginThemeReachesTheBarAndThePanes()
+    {
+        var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build("""
+            <panel theme="plugin" x="0" y="0" w="500" h="300">
+              <split x="10" y="10" w="405" h="200">
+                <group><toggle x="4" y="4" w="120" h="16" text="Inner" checked="{LeftOn}"/></group>
+                <group/>
+              </split>
+            </panel>
+            """, new ThemedBinding(), _ => (1u, 16, 16), themes: themes);
+        var split = panel.Children.OfType<UiMarkupSplit>().Single();
+        Assert.Same(PluginUiPalette.Moss, split.Bar.ThemePalette);
+        var renderer = MarkupDrawProbe.Draw(split.Bar);
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Field));
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Border));
+        var toggle = Assert.IsType<UiMarkupToggle>(split.First!.Children[0]);
+        Assert.Same(PluginUiPalette.Moss, toggle.ThemePalette);
+    }
+
+    private sealed class ThemedBinding
+    {
+        public bool LeftOn { get; set; }
+    }
 }
