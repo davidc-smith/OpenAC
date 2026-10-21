@@ -180,8 +180,9 @@ A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
 
 Clicking a `button`, `tab`, `toggle`, `checkbox`, or `radio` invokes its action
-without taking keyboard focus from the game. Use Tab to focus these controls for
-Enter or Space activation.
+without taking keyboard focus from the game. Use Tab to focus these controls:
+Enter or Space then activates a `button`, `tab`, `toggle` or `checkbox`. A
+focused `radio` uses the arrow keys instead; Enter and Space do nothing on it.
 
 A `field` shows its bound `text` and goes on following it: while nobody is
 typing in the field, a value that changes behind it -- a profile loaded after
@@ -283,6 +284,9 @@ window as unknown.
 
 One `<radio>` is the whole group: the player picks one of its options.
 
+- `items` and `selected` are required. An `orientation` other than
+  `vertical` or `horizontal`, or a `style` other than `radio` or
+  `segmented`, fails the build.
 - `items` is a literal list separated by `|`, or a bound
   `IEnumerable<string>` that the group re-reads every frame. A literal list
   can't have an empty option: `a||b`, `a|` and `|` fail the build. A literal
