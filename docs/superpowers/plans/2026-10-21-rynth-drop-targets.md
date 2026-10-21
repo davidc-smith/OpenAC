@@ -996,5 +996,6 @@ git commit -m "feat(rynth): RynthCore's drop targets take items dragged out of p
 **Steps:**
 
 - [ ] **Step 1:** Run the three test commands and the Release build. If App failures are not 59, compare names against main by running the same App test command in a worktree of `main`.
-- [ ] **Step 2:** Ask the user when they're available for the live check; do not launch a client before they say so.
+  Result 2026-10-21 (head 5685e1a9): Host 450/450, Redirect 23/23, App 174 failures = the identical set on main 0a94aae4 (installed-dat / live-mount probes), Release 0 errors.
+- [ ] **Step 2:** Ask the user when they're available for the live check; do not launch a client before they say so. Also check (final review): a retail slot's drop highlight clears after a drop cancelled over a Rynth panel; no box follows the cursor in an ordinary pack-to-pack drag; retail keys and Rynth hotkeys work mid-drag; whether the drag ghost stays visible over a Rynth panel; drops right beside the dashboard drawer tabs (hover padding may cancel them); a quick flick-and-release onto a panel (hover is one frame old).
 - [ ] **Step 3:** Record each live item's result in this task; fix wave for any failure before finishing the branch.
