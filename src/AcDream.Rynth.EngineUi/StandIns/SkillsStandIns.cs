@@ -2,10 +2,14 @@ using System;
 
 namespace RynthCore.Engine.Compatibility
 {
-    /// <summary>RynthCore records acclient's main thread; OpenAC updates and draws on one thread, so every call is on it.</summary>
+    /// <summary>
+    /// RynthCore records acclient's main thread; here it is the client's frame thread once the
+    /// Rynth pump latches it, and every thread before that (everything then runs on one thread).
+    /// </summary>
     internal static class MainThreadGuard
     {
-        public static bool IsOnMainThread() => true;
+        public static bool IsOnMainThread() =>
+            !AcDream.Rynth.EngineUi.RynthFrameThread.Latched || AcDream.Rynth.EngineUi.RynthFrameThread.IsCurrent;
     }
 
     /// <summary>RynthCore reads acclient's server clock; here the host answers the game view's.</summary>

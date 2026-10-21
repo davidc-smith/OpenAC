@@ -38,7 +38,10 @@ public sealed unsafe partial class RynthApiTable
         catch (Exception error)
         {
             // Asked every tick by some callers: say it once per plugin/interface pair.
-            if (table._interfaceFailures.Add($"{name}/{iface}"))
+            bool first;
+            lock (table._interfaceFailures)
+                first = table._interfaceFailures.Add($"{name}/{iface}");
+            if (first)
                 table.Fail($"{nameof(GetPluginInterface)}({name}, {iface})", error);
             return IntPtr.Zero;
         }

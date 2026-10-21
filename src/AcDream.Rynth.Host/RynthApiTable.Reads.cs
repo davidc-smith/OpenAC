@@ -31,7 +31,7 @@ public sealed unsafe partial class RynthApiTable
         {
             if (!table._view.TryGetObjectName(objectId, out string name))
                 return IntPtr.Zero;
-            return Replace(ref table._nameBuffer, name);
+            return Replace(ref table.Buffers.Name, name);
         }
         catch (Exception error)
         {
@@ -344,7 +344,7 @@ public sealed unsafe partial class RynthApiTable
         try
         {
             string name = table._view.AccountName;
-            return name.Length == 0 ? IntPtr.Zero : Replace(ref table._accountBuffer, name);
+            return name.Length == 0 ? IntPtr.Zero : Replace(ref table.Buffers.Account, name);
         }
         catch (Exception error)
         {
@@ -362,7 +362,7 @@ public sealed unsafe partial class RynthApiTable
         try
         {
             string name = table._view.WorldName;
-            return name.Length == 0 ? IntPtr.Zero : Replace(ref table._worldBuffer, name);
+            return name.Length == 0 ? IntPtr.Zero : Replace(ref table.Buffers.World, name);
         }
         catch (Exception error)
         {

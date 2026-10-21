@@ -131,7 +131,7 @@ public sealed class RynthClientExtension : IClientExtension
             StartDrops(drops);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
-        _combatEvents = new RynthCombatEvents(context.Runtime, _host.Bridge);
+        _combatEvents = new RynthCombatEvents(context.Runtime, _host.Bridge, view);
         _combat.KillLanded += OnKillLanded;
         _runtime = context.Runtime;
         _runtime.CommunicationOwner.LocalPlayerDied += OnLocalPlayerDied;

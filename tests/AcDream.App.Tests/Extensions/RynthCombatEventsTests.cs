@@ -29,8 +29,9 @@ public sealed class RynthCombatEventsTests : IDisposable
     {
         var runtime = GameRuntimeTestFactory.Create();
         runtime.PlayerIdentity.ServerGuid = 0x50000001;
-        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
-        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        var view = new RuntimeRynthGameView(runtime);
+        using var host = new RynthHost(view, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
         CombatState combat = runtime.ActionOwner.Combat;
         Spellbook spellbook = runtime.CharacterOwner.Spellbook;
 
@@ -64,8 +65,9 @@ public sealed class RynthCombatEventsTests : IDisposable
     public void AHealthShareAboveOneForwardsTheRatioWithCurrentHealthCappedAtTheMaximum()
     {
         var runtime = GameRuntimeTestFactory.Create();
-        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
-        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        var view = new RuntimeRynthGameView(runtime);
+        using var host = new RynthHost(view, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
         CombatState combat = runtime.ActionOwner.Combat;
         combat.OnCreatureProfile(0x80000010, new CombatState.CreatureVitals(100, 100, null, null, null, null));
         host.Bridge.DeliverQueued();
@@ -81,8 +83,9 @@ public sealed class RynthCombatEventsTests : IDisposable
     public void ACooldownTheClientDropsOnExpiryIsNotForwarded()
     {
         var runtime = GameRuntimeTestFactory.Create();
-        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
-        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        var view = new RuntimeRynthGameView(runtime);
+        using var host = new RynthHost(view, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
         Spellbook spellbook = runtime.CharacterOwner.Spellbook;
         spellbook.OnEnchantmentAdded(new ActiveEnchantmentRecord(0x8005u, 1u, 30.0, 0u,
             Bucket: Spellbook.CooldownBucket, StartTime: 0d));
@@ -100,8 +103,9 @@ public sealed class RynthCombatEventsTests : IDisposable
     public void AServerRemovalOfASpellTheClientDoesNotHoldIsForwarded()
     {
         var runtime = GameRuntimeTestFactory.Create();
-        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
-        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        var view = new RuntimeRynthGameView(runtime);
+        using var host = new RynthHost(view, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
         CombatRecorder.Calls.Clear();
 
         runtime.CharacterOwner.Spellbook.OnEnchantmentRemoved(1u, 0x1234u);
@@ -114,8 +118,9 @@ public sealed class RynthCombatEventsTests : IDisposable
     public void AStatusLineIsHeldUntilTheDelivery()
     {
         var runtime = GameRuntimeTestFactory.Create();
-        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
-        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        var view = new RuntimeRynthGameView(runtime);
+        using var host = new RynthHost(view, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
         CombatRecorder.Calls.Clear();
 
         runtime.CommunicationOwner.AddText("You're too busy!", RetailLogTextType.ClientLocal);
@@ -154,8 +159,9 @@ public sealed class RynthCombatEventsTests : IDisposable
     {
         var runtime = GameRuntimeTestFactory.Create();
         runtime.PlayerIdentity.ServerGuid = 0x50000001;
-        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
-        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        var view = new RuntimeRynthGameView(runtime);
+        using var host = new RynthHost(view, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
         CombatRecorder.Calls.Clear();
         CombatState combat = runtime.ActionOwner.Combat;
 
@@ -183,8 +189,9 @@ public sealed class RynthCombatEventsTests : IDisposable
     {
         var runtime = GameRuntimeTestFactory.Create();
         runtime.PlayerIdentity.ServerGuid = 0x50000001;
-        using var host = new RynthHost(new RuntimeRynthGameView(runtime), _ => { }, [typeof(CombatRecorder)]);
-        using var events = new RynthCombatEvents(runtime, host.Bridge);
+        var view = new RuntimeRynthGameView(runtime);
+        using var host = new RynthHost(view, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
         runtime.ActionOwner.Selection.Select(0x80000010, SelectionChangeSource.System);
         runtime.ActionOwner.Combat.SetCombatMode(CombatMode.Magic);
         host.Bridge.DeliverQueued();

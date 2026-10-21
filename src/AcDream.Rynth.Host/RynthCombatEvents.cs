@@ -3,6 +3,7 @@ using AcDream.Core.Items;
 using AcDream.Core.Selection;
 using AcDream.Core.Spells;
 using AcDream.Runtime;
+using AcDream.Rynth.EngineUi;
 
 namespace AcDream.Rynth.Host;
 
@@ -21,6 +22,7 @@ public sealed class RynthCombatEvents : IDisposable
 
     private readonly GameRuntime _runtime;
     private readonly RynthEventBridge _bridge;
+    private readonly IRynthGameView _view;
     private readonly CombatState _combat;
     private readonly SelectionState _selection;
     private readonly Spellbook _spellbook;
@@ -29,10 +31,12 @@ public sealed class RynthCombatEvents : IDisposable
     private int _busyCount;
     private bool _disposed;
 
-    public RynthCombatEvents(GameRuntime runtime, RynthEventBridge bridge)
+    /// <param name="view">The host's view: the login push reads the mode and selection through it, so on the pump it reads the snapshot.</param>
+    public RynthCombatEvents(GameRuntime runtime, RynthEventBridge bridge, IRynthGameView view)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
+        _view = view ?? throw new ArgumentNullException(nameof(view));
         _combat = runtime.ActionOwner.Combat;
         _selection = runtime.ActionOwner.Selection;
         _spellbook = runtime.CharacterOwner.Spellbook;
@@ -135,11 +139,25 @@ public sealed class RynthCombatEvents : IDisposable
     private void OnStatusTextShown(string text) => _bridge.OnStatusText(text);
 
     // RynthCore tells a plugin the mode (from NonCombat) and any selection once the player is in the world.
+    // The bridge raises LoggedIn where it delivers: on the pump thread when the pump runs. There the
+    // mode and selection come from the view (the snapshot) and _combatMode is left to the frame
+    // thread's own handler; on the frame thread (or before a latch) they are read live, as before.
     private void OnLoggedIn()
     {
-        _combatMode = (int)_combat.CurrentMode;
-        _bridge.OnCombatModeChange(_combatMode, (int)CombatMode.NonCombat);
-        if (_selection.SelectedObjectId is uint selected and not 0u)
+        int mode;
+        uint selected;
+        if (!RynthFrameThread.Latched || RynthFrameThread.IsCurrent)
+        {
+            _combatMode = mode = (int)_combat.CurrentMode;
+            selected = _selection.SelectedObjectId ?? 0u;
+        }
+        else
+        {
+            mode = _view.CombatMode;
+            selected = _view.SelectedObjectId;
+        }
+        _bridge.OnCombatModeChange(mode, (int)CombatMode.NonCombat);
+        if (selected != 0u)
             _bridge.OnSelectedTargetChange(selected, 0u);
     }
 }

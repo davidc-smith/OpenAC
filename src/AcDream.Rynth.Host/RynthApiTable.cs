@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using AcDream.Rynth.EngineUi;
 using RynthCore.Engine.Plugins;
 using RynthCore.Engine.UI.ScriptWindows;
 using RynthCore.PluginSdk;
@@ -43,10 +44,14 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     internal IReadOnlyList<RynthPlugin> Plugins { get; set; } = [];
     private readonly Action<string> _log;
     private readonly bool _scriptWindows;
-    private IntPtr _nameBuffer;
-    private IntPtr _accountBuffer;
-    private IntPtr _worldBuffer;
-    private IntPtr _stringBuffer;
+
+    // The string slots' return buffers, one set per calling thread (the frame thread and the
+    // pump both call them): a pointer handed to a plugin stays valid until that same thread's
+    // next call to the same slot, as on one thread before. The table keeps every thread's set
+    // so Dispose frees them all.
+    [ThreadStatic]
+    private static StringBuffers? t_buffers;
+    private readonly List<StringBuffers> _allBuffers = [];
 
     public RynthApiTable(IRynthGameView view, Action<string> log, bool scriptWindows = false,
         AcDream.Plugin.Abstractions.IPluginWorldTriangleLayer? nav3DLayer = null)
@@ -108,6 +113,26 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         }
     }
 
+    /// <summary>The frame action queue; set when the pump starts.</summary>
+    internal RynthActionQueue? Actions
+    {
+        get => Volatile.Read(ref _actions);
+        set => Volatile.Write(ref _actions, value);
+    }
+
+    private RynthActionQueue? _actions;
+
+    /// <summary>
+    /// Runs <paramref name="work"/> now on the frame thread (or before the frame thread is
+    /// latched); elsewhere queues it for the frame. The held keys (<see cref="Holds"/>) live on
+    /// the frame side, so every slot that changes them comes through here. False when refused
+    /// or there is no queue.
+    /// </summary>
+    internal bool OnFrame(RynthActionKind kind, string label, Func<bool> work) =>
+        !RynthFrameThread.Latched || RynthFrameThread.IsCurrent
+            ? work()
+            : Actions?.TryEnqueue(kind, label, work) ?? false;
+
     /// <summary>The table, in native memory, for as long as this object lives.</summary>
     public RynthCoreApiNative* Native { get; private set; }
 
@@ -119,28 +144,11 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         Vendor.Dispose();
         NativeMemory.Free(Native);
         Native = null;
-        if (_nameBuffer != IntPtr.Zero)
+        lock (_allBuffers)
         {
-            Marshal.FreeHGlobal(_nameBuffer);
-            _nameBuffer = IntPtr.Zero;
-        }
-
-        if (_accountBuffer != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_accountBuffer);
-            _accountBuffer = IntPtr.Zero;
-        }
-
-        if (_worldBuffer != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_worldBuffer);
-            _worldBuffer = IntPtr.Zero;
-        }
-
-        if (_stringBuffer != IntPtr.Zero)
-        {
-            Marshal.FreeHGlobal(_stringBuffer);
-            _stringBuffer = IntPtr.Zero;
+            foreach (StringBuffers buffers in _allBuffers)
+                buffers.Free();
+            _allBuffers.Clear();
         }
 
         if (_scriptWindows)
@@ -183,7 +191,8 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     }
 
     // RynthCore hands back a pointer the plugin reads at once (PtrToStringAnsi) and never
-    // frees, so the host keeps one buffer per function and replaces it on the next call.
+    // frees, so the host keeps one buffer per function and calling thread, and replaces it
+    // on that thread's next call.
     private static IntPtr Replace(ref IntPtr buffer, string text)
     {
         IntPtr previous = buffer;
@@ -191,6 +200,48 @@ public sealed unsafe partial class RynthApiTable : IDisposable
         if (previous != IntPtr.Zero)
             Marshal.FreeHGlobal(previous);
         return buffer;
+    }
+
+    /// <summary>This thread's return buffers for this table, made on the thread's first string call.</summary>
+    private StringBuffers Buffers
+    {
+        get
+        {
+            StringBuffers? buffers = t_buffers;
+            if (buffers is not null && ReferenceEquals(buffers.Owner, this))
+                return buffers;
+            // A set left by an earlier table on this thread was freed by that table's Dispose.
+            buffers = new StringBuffers(this);
+            lock (_allBuffers)
+                _allBuffers.Add(buffers);
+            t_buffers = buffers;
+            return buffers;
+        }
+    }
+
+    /// <summary>One thread's string-slot buffers. Only its thread replaces them; Dispose frees them.</summary>
+    private sealed class StringBuffers(RynthApiTable owner)
+    {
+        public RynthApiTable Owner { get; } = owner;
+        public IntPtr Name;
+        public IntPtr Account;
+        public IntPtr World;
+        public IntPtr String;
+
+        public void Free()
+        {
+            FreeOne(ref Name);
+            FreeOne(ref Account);
+            FreeOne(ref World);
+            FreeOne(ref String);
+        }
+
+        private static void FreeOne(ref IntPtr buffer)
+        {
+            if (buffer != IntPtr.Zero)
+                Marshal.FreeHGlobal(buffer);
+            buffer = IntPtr.Zero;
+        }
     }
 
     // RynthCore: runs the text as if typed (ClientHelperHooks.InvokeParser); 1 = handled.

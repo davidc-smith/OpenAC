@@ -120,10 +120,16 @@ namespace RynthCore.Engine.Compatibility
 {
     /// <summary>
     /// RynthCore queues work for acclient's thread; only the chat write, chat commands and the selection
-    /// their code uses. OpenAC draws and ticks on one thread, so "queue" runs it now.
+    /// their code uses. On the client's frame thread (or before the Rynth pump latches it) "queue"
+    /// runs it now; on any other thread it goes on the pump's frame action queue (false when there is none).
     /// </summary>
     internal static class AcMainThreadQueue
     {
+        private static bool OnFrame(AcDream.Rynth.EngineUi.RynthActionKind kind, string label, Func<bool> work) =>
+            !AcDream.Rynth.EngineUi.RynthFrameThread.Latched || AcDream.Rynth.EngineUi.RynthFrameThread.IsCurrent
+                ? work()
+                : AcDream.Rynth.EngineUi.RynthFrameActions.Queue?.TryEnqueue(kind, label, work) ?? false;
+
         internal static Action<string, int>? WriteToChat { get; set; }
 
         /// <summary>Selects an object in the game (the host: IRynthGameView.SelectObject).</summary>
@@ -144,16 +150,26 @@ namespace RynthCore.Engine.Compatibility
             return true;
         }
 
+        // A chat line is never refused while portalling or dead (the routed view's WriteChatLine is a stop too).
         public static bool EnqueueWriteToChat(string text, int color)
         {
-            WriteToChat?.Invoke(text, color);
-            return WriteToChat is not null;
+            if (WriteToChat is null)
+                return false;
+            return OnFrame(AcDream.Rynth.EngineUi.RynthActionKind.Stop, "WriteToChat", () =>
+            {
+                WriteToChat?.Invoke(text, color);
+                return WriteToChat is not null;
+            });
         }
 
-        public static bool EnqueueSetSelectedObject(uint objectId) => SelectObject?.Invoke(objectId) ?? false;
+        public static bool EnqueueSetSelectedObject(uint objectId) =>
+            SelectObject is not null
+            && OnFrame(AcDream.Rynth.EngineUi.RynthActionKind.Start, "SetSelectedObject", () => SelectObject?.Invoke(objectId) ?? false);
 
-        /// <summary>The Radar's click on a dot: selects the object (RynthCore re-checks it on AC's thread; ours is one thread).</summary>
-        public static bool EnqueueOverlaySelect(uint objectId) => SelectObject?.Invoke(objectId) ?? false;
+        /// <summary>The Radar's click on a dot: selects the object (RynthCore re-checks it on AC's thread).</summary>
+        public static bool EnqueueOverlaySelect(uint objectId) =>
+            SelectObject is not null
+            && OnFrame(AcDream.Rynth.EngineUi.RynthActionKind.Start, "OverlaySelect", () => SelectObject?.Invoke(objectId) ?? false);
     }
 
     /// <summary>

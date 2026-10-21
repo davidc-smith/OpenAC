@@ -5,6 +5,8 @@ namespace AcDream.Rynth.Host;
 /// the open vendor, sends it through the view, and keeps the status of the most recent
 /// request: Sent, then Done with Accepted / AnsweredNoRefresh / TimedOut, or Refused
 /// for one that never went out. One request is in flight at a time.
+/// Requests come from the plugins (the pump thread when it runs) and answers from the
+/// client (the frame thread): every member that reads or changes the state takes one lock.
 /// </summary>
 internal sealed class RynthVendorTrades : IDisposable
 {
@@ -16,7 +18,10 @@ internal sealed class RynthVendorTrades : IDisposable
     internal const int ResultAccepted = 1, ResultAnsweredNoRefresh = 2, ResultTimedOut = 3;
 
     private readonly IRynthGameView _view;
+    private readonly object _gate = new();
     private uint _sequence;
+    private uint _generation;
+    private (uint RequestId, int State, int Result, bool IsBuy, uint VendorId, int EntryCount, string Message) _status;
     private long _sentAt;
     private bool _inFlight;
 
@@ -30,14 +35,27 @@ internal sealed class RynthVendorTrades : IDisposable
     internal Func<long> Clock { get; set; } = () => Environment.TickCount64;
 
     /// <summary>+1 for every vendor list the server sent (open or refresh).</summary>
-    public uint Generation { get; private set; }
+    public uint Generation
+    {
+        get { lock (_gate) return _generation; }
+    }
 
-    public bool InFlight => _inFlight;
+    public bool InFlight
+    {
+        get { lock (_gate) return _inFlight; }
+    }
 
     /// <summary>The latest request's status; RequestId 0 before the first.</summary>
-    public (uint RequestId, int State, int Result, bool IsBuy, uint VendorId, int EntryCount, string Message) Status { get; private set; }
+    public (uint RequestId, int State, int Result, bool IsBuy, uint VendorId, int EntryCount, string Message) Status
+    {
+        get { lock (_gate) return _status; }
+    }
 
-    public void NoteOpened() => Generation = unchecked(Generation + 1u);
+    public void NoteOpened()
+    {
+        lock (_gate)
+            _generation = unchecked(_generation + 1u);
+    }
 
     /// <summary>
     /// Session teardown: nothing is in flight any more. The server will never answer a
@@ -45,11 +63,36 @@ internal sealed class RynthVendorTrades : IDisposable
     /// </summary>
     public void Reset()
     {
-        if (_inFlight)
-            Finish(ResultTimedOut, "the session ended before the server answered");
+        lock (_gate)
+        {
+            if (_inFlight)
+                Finish(ResultTimedOut, "the session ended before the server answered");
+        }
+    }
+
+    /// <summary>A queued send the client refused when it ran: ends the request as refused.</summary>
+    public void FailQueued(string reason)
+    {
+        lock (_gate)
+        {
+            if (_inFlight)
+                Finish(ResultAnsweredNoRefresh, "the client would not send it: " + reason);
+        }
     }
 
     public uint Buy(uint vendorId, IReadOnlyList<(uint ObjectId, int Amount)> lines)
+    {
+        lock (_gate)
+            return BuyLocked(vendorId, lines);
+    }
+
+    public uint Sell(uint vendorId, IReadOnlyList<uint> ids)
+    {
+        lock (_gate)
+            return SellLocked(vendorId, ids);
+    }
+
+    private uint BuyLocked(uint vendorId, IReadOnlyList<(uint ObjectId, int Amount)> lines)
     {
         // One at a time, as RynthCore's single in-flight slot: the waiting request keeps its status.
         if (_inFlight)
@@ -79,7 +122,7 @@ internal sealed class RynthVendorTrades : IDisposable
             : Refuse(seq, true, open.VendorId, lines.Count, notice ?? "the client would not send it");
     }
 
-    public uint Sell(uint vendorId, IReadOnlyList<uint> ids)
+    private uint SellLocked(uint vendorId, IReadOnlyList<uint> ids)
     {
         if (_inFlight)
             return 0;
@@ -107,20 +150,26 @@ internal sealed class RynthVendorTrades : IDisposable
     /// <summary>Times out a request the server never answered. Called once per host tick.</summary>
     public void Tick()
     {
-        if (_inFlight && Clock() - _sentAt >= TimeoutMs)
-            Finish(ResultTimedOut, "no answer from the server within 10 s");
+        lock (_gate)
+        {
+            if (_inFlight && Clock() - _sentAt >= TimeoutMs)
+                Finish(ResultTimedOut, "no answer from the server within 10 s");
+        }
     }
 
     public void Dispose() => _view.VendorTransactionCompleted -= OnCompleted;
 
     private void OnCompleted(RynthVendorOutcome outcome)
     {
-        if (!_inFlight)
-            return;
-        if (outcome.Success)
-            Finish(ResultAccepted, "server accepted");
-        else
-            Finish(ResultAnsweredNoRefresh, outcome.Notice ?? "server refused");
+        lock (_gate)
+        {
+            if (!_inFlight)
+                return;
+            if (outcome.Success)
+                Finish(ResultAccepted, "server accepted");
+            else
+                Finish(ResultAnsweredNoRefresh, outcome.Notice ?? "server refused");
+        }
     }
 
     private static string? Check(RynthVendor? vendor, uint vendorId, int count)
@@ -156,19 +205,19 @@ internal sealed class RynthVendorTrades : IDisposable
     {
         _inFlight = true;
         _sentAt = Clock();
-        Status = (seq, StateSent, 0, isBuy, vendorId, count, "sent, waiting for the server");
+        _status = (seq, StateSent, 0, isBuy, vendorId, count, "sent, waiting for the server");
         return seq;
     }
 
     private uint Refuse(uint seq, bool isBuy, uint vendorId, int count, string reason)
     {
-        Status = (seq, StateRefused, 0, isBuy, vendorId, count, reason);
+        _status = (seq, StateRefused, 0, isBuy, vendorId, count, reason);
         return 0;
     }
 
     private void Finish(int result, string message)
     {
         _inFlight = false;
-        Status = Status with { State = StateDone, Result = result, Message = message };
+        _status = _status with { State = StateDone, Result = result, Message = message };
     }
 }

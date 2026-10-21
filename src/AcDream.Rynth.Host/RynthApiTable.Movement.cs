@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using AcDream.Rynth.EngineUi;
 
 namespace AcDream.Rynth.Host;
 
@@ -35,10 +36,14 @@ public sealed unsafe partial class RynthApiTable
             return 0;
         try
         {
-            if (!table._view.SetAutoRun(enabled != 0))
-                return 0;
-            table.Holds.Refresh();
-            return 1;
+            bool on = enabled != 0;
+            return table.OnFrame(on ? RynthActionKind.Start : RynthActionKind.Stop, nameof(SetAutoRun), () =>
+            {
+                if (!table._view.SetAutoRun(on))
+                    return false;
+                table.Holds.Refresh();
+                return true;
+            }) ? 1 : 0;
         }
         catch (Exception error)
         {
@@ -67,7 +72,12 @@ public sealed unsafe partial class RynthApiTable
         RynthApiTable? table = _current;
         if (table is null)
             return 0;
-        try { return table.Holds.SetMotion(motion, enabled != 0) ? 1 : 0; }
+        try
+        {
+            bool on = enabled != 0;
+            return table.OnFrame(on ? RynthActionKind.Start : RynthActionKind.Stop, nameof(SetMotion),
+                () => table.Holds.SetMotion(motion, on)) ? 1 : 0;
+        }
         catch (Exception error)
         {
             table.Fail(nameof(SetMotion), error);
@@ -83,7 +93,7 @@ public sealed unsafe partial class RynthApiTable
         RynthApiTable? table = _current;
         if (table is null)
             return 0;
-        try { return table.Holds.SetMotion(motion, true) ? 1 : 0; }
+        try { return table.OnFrame(RynthActionKind.Start, nameof(DoMovement), () => table.Holds.SetMotion(motion, true)) ? 1 : 0; }
         catch (Exception error)
         {
             table.Fail(nameof(DoMovement), error);
@@ -98,7 +108,7 @@ public sealed unsafe partial class RynthApiTable
         RynthApiTable? table = _current;
         if (table is null)
             return 0;
-        try { return table.Holds.SetMotion(motion, false) ? 1 : 0; }
+        try { return table.OnFrame(RynthActionKind.Stop, nameof(StopMovement), () => table.Holds.SetMotion(motion, false)) ? 1 : 0; }
         catch (Exception error)
         {
             table.Fail(nameof(StopMovement), error);
@@ -112,7 +122,7 @@ public sealed unsafe partial class RynthApiTable
         RynthApiTable? table = _current;
         if (table is null)
             return 0;
-        try { return table.Holds.StopCompletely() ? 1 : 0; }
+        try { return table.OnFrame(RynthActionKind.Stop, nameof(StopCompletely), table.Holds.StopCompletely) ? 1 : 0; }
         catch (Exception error)
         {
             table.Fail(nameof(StopCompletely), error);
@@ -154,7 +164,7 @@ public sealed unsafe partial class RynthApiTable
         RynthApiTable? table = _current;
         if (table is null)
             return 0;
-        try { return table.Holds.CommenceJump() ? 1 : 0; }
+        try { return table.OnFrame(RynthActionKind.Start, nameof(CommenceJump), table.Holds.CommenceJump) ? 1 : 0; }
         catch (Exception error)
         {
             table.Fail(nameof(CommenceJump), error);
@@ -169,7 +179,7 @@ public sealed unsafe partial class RynthApiTable
         RynthApiTable? table = _current;
         if (table is null)
             return 0;
-        try { return table.Holds.DoJump() ? 1 : 0; }
+        try { return table.OnFrame(RynthActionKind.Stop, nameof(DoJump), table.Holds.DoJump) ? 1 : 0; }
         catch (Exception error)
         {
             table.Fail(nameof(DoJump), error);
@@ -183,7 +193,11 @@ public sealed unsafe partial class RynthApiTable
         RynthApiTable? table = _current;
         if (table is null)
             return 0;
-        try { return table.Holds.LaunchJumpWithMotion(shift != 0, w != 0, x != 0, z != 0, c != 0) ? 1 : 0; }
+        try
+        {
+            return table.OnFrame(RynthActionKind.Stop, nameof(LaunchJumpWithMotion),
+                () => table.Holds.LaunchJumpWithMotion(shift != 0, w != 0, x != 0, z != 0, c != 0)) ? 1 : 0;
+        }
         catch (Exception error)
         {
             table.Fail(nameof(LaunchJumpWithMotion), error);

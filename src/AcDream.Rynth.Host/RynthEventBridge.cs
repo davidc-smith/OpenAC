@@ -48,8 +48,10 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
 
     private readonly IReadOnlyList<RynthPlugin> _plugins;
     private readonly Action<string>? _log;
+    // Enqueue runs on the frame thread and DeliverQueued on the pump: the lists are swapped under this.
+    private readonly object _queueGate = new();
     private readonly List<Action>[] _queues = new List<Action>[KindCount];
-    private bool _loginPending;
+    private int _loginPending;
 
     /// <param name="log">Gets a line for each delivery that threw.</param>
     public RynthEventBridge(IReadOnlyList<RynthPlugin> plugins, Action<string>? log = null)
@@ -72,7 +74,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
             && delta.Previous != RuntimeLifecycleState.InWorld)
         {
             RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = true;
-            _loginPending = true;
+            Volatile.Write(ref _loginPending, 1);
         }
     }
 
@@ -82,7 +84,7 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         RynthCore.Engine.Compatibility.LoginLifecycleHooks.HasObservedLoginComplete = false;
         // A login not yet delivered is dropped: the plugins never saw it, so they
         // must not see it after logging out.
-        _loginPending = false;
+        Volatile.Write(ref _loginPending, 0);
         foreach (RynthPlugin plugin in _plugins)
             plugin.OnLogout();
         try { LoggedOut?.Invoke(); }
@@ -294,23 +296,27 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// type has not run yet and waits for the next one otherwise, as with RynthCore's
     /// per-type queues. A pending login is told last, as RynthCore's frame does.
     /// A delivery that throws is logged and the rest still run, as RynthCore catches
-    /// each dispatch on its own.
+    /// each dispatch on its own. Events may be queued from another thread meanwhile:
+    /// each type's list is swapped for an empty one under a lock and run outside it.
     /// </summary>
     public void DeliverQueued()
     {
         for (int i = 0; i < KindCount; i++)
         {
-            List<Action> pending = _queues[i];
-            if (pending.Count == 0)
-                continue;
-            _queues[i] = [];
+            List<Action> pending;
+            lock (_queueGate)
+            {
+                pending = _queues[i];
+                if (pending.Count == 0)
+                    continue;
+                _queues[i] = [];
+            }
             foreach (Action deliver in pending)
                 Run(((EventKind)i).ToString(), deliver);
         }
 
-        if (_loginPending)
+        if (Interlocked.Exchange(ref _loginPending, 0) != 0)
         {
-            _loginPending = false;
             Run("Login", () =>
             {
                 foreach (RynthPlugin plugin in _plugins)
@@ -332,7 +338,11 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
         }
     }
 
-    internal void Enqueue(EventKind kind, Action deliver) => _queues[(int)kind].Add(deliver);
+    internal void Enqueue(EventKind kind, Action deliver)
+    {
+        lock (_queueGate)
+            _queues[(int)kind].Add(deliver);
+    }
 
     public void OnCommand(in RuntimeCommandDelta delta)
     {

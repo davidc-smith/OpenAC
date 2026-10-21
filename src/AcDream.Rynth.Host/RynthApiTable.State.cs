@@ -306,7 +306,7 @@ public sealed unsafe partial class RynthApiTable
         {
             if (!table.TryObject(objectId, out RynthObjectInfo info) || !info.Strings.TryGetValue(stat, out string? found))
                 return IntPtr.Zero;
-            return Replace(ref table._stringBuffer, found);
+            return Replace(ref table.Buffers.String, found);
         }
         catch (Exception error)
         {
