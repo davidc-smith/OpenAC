@@ -19,6 +19,8 @@
     <Compile Include="$(RynthEngine)ImGui\ScriptWindowReplay.cs" Link="RynthCore\ScriptWindowReplay.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\ScriptWindowFace.cs" Link="RynthCore\ScriptWindowFace.cs" />
     <Compile Include="$(RynthEngine)ImGui\PhosphorIcons.cs" Link="RynthCore\PhosphorIcons.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\OracleSkillsEmbed.cs" Link="RynthCore\OracleSkillsEmbed.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\ShownLatch.cs" Link="RynthCore\ShownLatch.cs" />
   </ItemGroup>
 
   <ItemGroup>

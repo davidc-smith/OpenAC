@@ -14,7 +14,7 @@ public sealed unsafe class RynthApiTableTests
         using var table = new RynthApiTable(new FakeGameView(), _log.Add);
         var host = new RynthCoreHost(*table.Native);
 
-        Assert.Equal(86u, host.Version);
+        Assert.Equal(88u, host.Version);
         Assert.Equal(RynthCoreHost.CurrentApiVersion, RynthApiTable.ApiVersion);
         Assert.True(host.HasGetPlayerId);
         Assert.True(host.HasGetObjectName);

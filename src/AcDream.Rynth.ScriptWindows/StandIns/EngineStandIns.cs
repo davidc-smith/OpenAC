@@ -27,6 +27,18 @@ namespace RynthCore.Engine.UI
             catch { }
         }
     }
+
+    /// <summary>RynthCore restyles and places the acclient window; OpenAC's window is its own, so these do nothing.</summary>
+    internal static class AcWindowChrome
+    {
+        public static void RequestApply()
+        {
+        }
+
+        public static void SaveLayoutNow()
+        {
+        }
+    }
 }
 
 namespace RynthCore.Engine.Plugins
@@ -51,6 +63,18 @@ namespace RynthCore.Engine.Plugins
         public static bool CloseOnServerDisconnect { get; set; }
 
         public static Compatibility.AutoIdMode AutoIdMode { get; set; } = Compatibility.AutoIdMode.Limited;
+
+        // Settings > Display and engine reload settings (2026-10-20 snapshot). They steer the
+        // acclient window and engine hot reloads, which OpenAC doesn't have: remembered only.
+        public static bool BorderlessWindowed { get; set; }
+
+        public static bool RememberWindowLayout { get; set; } = true;
+
+        public static bool RememberAcWindowPosition { get; set; }
+
+        public static bool HoldReloadInWorld { get; set; }
+
+        public static int HoldReloadInWorldMaxMinutes { get; set; } = 10;
     }
 
     /// <summary>Layout copied from RynthCore.Engine/Plugins/PluginContract.cs (480 bytes).</summary>

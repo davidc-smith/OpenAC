@@ -3,6 +3,7 @@ using AcDream.TestSupport;
 using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
+using SkillsFace = RynthCore.Engine.ImGuiBackend.Panels.SkillsFace;
 
 namespace AcDream.Rynth.Host.Tests;
 

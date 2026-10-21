@@ -219,6 +219,18 @@ namespace RynthCore.Engine.Compatibility
             x = y = z = 0;
             return Position is { } read && read(out objCellId, out x, out y, out z);
         }
+
+        /// <summary>Compass heading (0 = North, clockwise) from the pose snapshot, as the nav arrow's old TryHeading did.</summary>
+        public static bool TryGetPlayerCompassSnapshot(out float heading)
+        {
+            heading = 0;
+            if (!TryGetPlayerPoseSnapshot(out _, out _, out _, out _, out float qw, out float qz, out bool valid, out float h))
+                return false;
+            if (valid) { heading = h; return true; }
+            double yaw = 2.0 * Math.Atan2(qz, qw) * (180.0 / Math.PI);
+            heading = (float)((-yaw % 360.0 + 720.0) % 360.0);
+            return true;
+        }
     }
 
     internal static class SelectedTargetHooks

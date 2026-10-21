@@ -26,6 +26,8 @@
   <ItemGroup>
     <Compile Include="$(RynthEngine)UI\Data\Chat*.cs" Link="RynthCore\Data\%(Filename)%(Extension)" />
     <Compile Include="$(RynthEngine)UI\Data\UiSource.cs" Link="RynthCore\Data\UiSource.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\SharedFileWatch.cs" Link="RynthCore\Data\SharedFileWatch.cs" />
+    <Compile Include="$(RynthEngine)UI\Data\EnlRowConverters.cs" Link="RynthCore\Data\EnlRowConverters.cs" />
     <Compile Include="$(RynthEngine)UI\Panels\RynthChatPresets.cs" Link="RynthCore\RynthChatPresets.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\ChatFace.cs" Link="RynthCore\ChatFace.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\ChatFiltersFace.cs" Link="RynthCore\ChatFiltersFace.cs" />
@@ -78,6 +80,7 @@
     <Compile Include="$(RynthEngine)UI\QuickSettings.cs" Link="RynthCore\QuickSettings.cs" />
     <Compile Include="$(RynthEngine)UI\BarLayout.cs" Link="RynthCore\BarLayout.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\SkillsFace.cs" Link="RynthCore\SkillsFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\Panels\SkillsRouting.cs" Link="RynthCore\SkillsRouting.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\SkillsFace.Progression.cs" Link="RynthCore\SkillsFace.Progression.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\SkillsData.cs" Link="RynthCore\SkillsData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\ProgressionData.cs" Link="RynthCore\Data\ProgressionData.cs" />
@@ -122,6 +125,9 @@
     <Compile Include="$(RynthEngine)UI\Data\CharactersData.cs" Link="RynthCore\Data\CharactersData.cs" />
     <Compile Include="$(RynthEngine)UI\Data\CharactersModel.cs" Link="RynthCore\Data\CharactersModel.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\InventoryFace*.cs" Link="RynthCore\%(Filename)%(Extension)" />
+    <Compile Include="$(RynthEngine)UI\InventoryTitleLayout.cs" Link="RynthCore\InventoryTitleLayout.cs" />
+    <!-- RynthAi dashboard's Classic (retail) look, 2026-10-20 snapshot. -->
+    <Compile Include="$(RynthEngine)ImGui\Panels\Classic\*.cs" Link="RynthCore\Classic\%(Filename)%(Extension)" />
     <Compile Include="$(RynthEngine)ImGui\Panels\InventorySelection.cs" Link="RynthCore\InventorySelection.cs" />
     <Compile Include="$(RynthEngine)Compatibility\InventoryModel*.cs" Link="RynthCore\%(Filename)%(Extension)" />
     <Compile Include="$(RynthEngine)Compatibility\InventoryAttributeFilter.cs" Link="RynthCore\InventoryAttributeFilter.cs" />
