@@ -214,4 +214,76 @@ public sealed class MarkupControlStateStoreTests : IDisposable
         _character = "bob";
         Assert.Null(NewStore().ForWindow("nav").Get("adv", "expanded"));
     }
+
+    [Fact]
+    public void RemoveForgetsAValue()
+    {
+        var store = NewStore();
+        var nav = store.ForWindow("nav");
+        nav.Set("adv", "expanded", "false");
+        nav.Set("mobs", "widths", "1");
+        store.Save();
+        nav.Remove("adv", "expanded");
+        Assert.Null(nav.Get("adv", "expanded"));
+        store.Save();
+        var fresh = NewStore().ForWindow("nav");
+        Assert.Null(fresh.Get("adv", "expanded"));
+        Assert.Equal("1", fresh.Get("mobs", "widths"));
+    }
+
+    [Fact]
+    public void RemovingAMissingValueChangesNothing()
+    {
+        var store = NewStore();
+        store.ForWindow("nav").Remove("adv", "expanded");
+        store.Save();
+        Assert.False(File.Exists(_path));
+    }
+
+    [Theory]
+    [InlineData("", "k")]
+    [InlineData("c", " ")]
+    public void RemoveRejectsBlankNames(string control, string kind)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => NewStore().ForWindow("nav").Remove(control, kind));
+    }
+
+    [Fact]
+    public void ALaterSaveRetriesAFailedLoad()
+    {
+        File.WriteAllText(_path, "{ not json");
+        var store = NewStore();
+        var nav = store.ForWindow("nav");
+        nav.Set("adv", "expanded", "false");
+        store.Save();
+        Assert.Equal("{ not json", File.ReadAllText(_path));
+
+        new SettingsStore(_path + ".tmp").SaveWindowPosition("alice", "chat", new UiWindowPosition(1, 2));
+        File.Copy(_path + ".tmp", _path, overwrite: true);
+        File.Delete(_path + ".tmp");
+        store.Save();
+
+        var settings = new SettingsStore(_path);
+        Assert.Equal(new UiWindowPosition(1, 2), settings.LoadWindowPosition("alice", "chat"));
+        Assert.Equal("false", NewStore().ForWindow("nav").Get("adv", "expanded"));
+    }
+
+    [Fact]
+    public void ACharacterSwitchFlushesChangesHeldBackByAFailedLoad()
+    {
+        File.WriteAllText(_path, "{ not json");
+        var store = NewStore();
+        store.ForWindow("nav").Set("adv", "expanded", "false");
+
+        new SettingsStore(_path + ".tmp").SaveWindowPosition("alice", "chat", new UiWindowPosition(1, 2));
+        File.Copy(_path + ".tmp", _path, overwrite: true);
+        File.Delete(_path + ".tmp");
+
+        _character = "bob";
+        Assert.Null(store.ForWindow("nav").Get("adv", "expanded"));
+
+        _character = "alice";
+        Assert.Equal("false", NewStore().ForWindow("nav").Get("adv", "expanded"));
+        Assert.Equal(new UiWindowPosition(1, 2), new SettingsStore(_path).LoadWindowPosition("alice", "chat"));
+    }
 }

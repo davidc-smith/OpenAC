@@ -14,7 +14,7 @@ public interface IMarkupControlState
     /// <summary>
     /// Changes whenever every remembered value may have changed, which is when
     /// another character logs in. A control that caches a value re-reads it
-    /// when this moves.
+    /// when this moves. It moves only when the character changes.
     /// </summary>
     int Generation { get; }
 
@@ -23,4 +23,7 @@ public interface IMarkupControlState
     /// <summary>Remembers <paramref name="value"/>, which must not be null.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
     void Set(string control, string kind, string value);
+
+    /// <summary>Forgets a value, e.g. when the control is back at its markup default.</summary>
+    void Remove(string control, string kind);
 }

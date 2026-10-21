@@ -43,7 +43,17 @@ public sealed class MarkupControlStateStore
             return;
         }
         if (_loadFailed)
-            return;
+        {
+            if (!_store.TryLoadMarkupControlState(_character!, out var onDisk))
+                return;
+            // The load failed before anything was read, so _values holds only this
+            // session's changes: lay them over what is on disk now.
+            foreach (var (key, value) in _values)
+                onDisk[key] = value;
+            Console.WriteLine($"markup controls: settings for {_character} readable again; merged {_values.Count} changes");
+            _values = onDisk;
+            _loadFailed = false;
+        }
         try
         {
             _store.SaveMarkupControlState(_character!, _values);
@@ -77,7 +87,7 @@ public sealed class MarkupControlStateStore
             && !_store.TryLoadMarkupControlState(character, out _values))
         {
             _loadFailed = true;
-            Console.WriteLine($"markup controls: settings could not be read; {character} will not be saved this session");
+            Console.WriteLine($"markup controls: settings could not be read; {character} will not be saved until they can be");
         }
         _generation++;
     }
@@ -112,10 +122,20 @@ public sealed class MarkupControlStateStore
         _dirty = true;
     }
 
+    private void Remove(string window, string control, string kind)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(control);
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        FollowCharacter();
+        if (_values.Remove(new MarkupControlKey(window, control, kind)))
+            _dirty = true;
+    }
+
     private sealed class WindowState(MarkupControlStateStore owner, string window) : IMarkupControlState
     {
         public int Generation => owner.CurrentGeneration;
         public string? Get(string control, string kind) => owner.Get(window, control, kind);
         public void Set(string control, string kind, string value) => owner.Set(window, control, kind, value);
+        public void Remove(string control, string kind) => owner.Remove(window, control, kind);
     }
 }
