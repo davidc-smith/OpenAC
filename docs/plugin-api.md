@@ -2339,6 +2339,21 @@ slope. The height under a point is the plane of the polygon under it, where
 the layer's `Z` is only the band. `Floors` is empty for a cell with no floor
 and on a host older than `0.1.26-fork.3`.
 
+Bridges, stairs and platforms in dungeons are objects a cell places, not part
+of the cell's geometry. Each cell's `ObjectFloors` are the walkable faces of
+those objects: every up-facing level face of their physics (the parts the
+player collides with), corners in landblock-local metres with their real
+heights. A body stands on either `Floors` or `ObjectFloors`. A cell with no
+floor of its own but object floors, such as the air a bridge spans, is drawn
+in the band of those object floors (faces under a quarter square metre do not
+count) and is not folded onto the room below; objects never move a cell that
+has a floor of its own. Each object floor is also filed, flattened, into the
+`Floors` of the layer its own average height falls in, so the map draws the
+bridge at its deck's height. Objects the server places while the game runs
+are not in the data and are not included. `ObjectFloors` is empty, layers hold
+only cells' own floors, and a bridge's cell folds onto the room under it on a
+host older than `0.1.26-fork.4`.
+
 Everything is in the landblock's own frame, in metres: x east and y north
 from the landblock's south-west corner, which is the frame the game's cell
 positions use. `PluginDungeonFloorplan.ToLandblockLocal` puts a position from

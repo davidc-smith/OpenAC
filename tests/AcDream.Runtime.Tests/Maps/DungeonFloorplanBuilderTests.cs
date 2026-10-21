@@ -230,6 +230,78 @@ public sealed class DungeonFloorplanBuilderTests
         Assert.Equal(3, band.Walls.Length);
     }
 
+    [Fact]
+    public void ABridgesDeckIsItsCellsObjectFloorAndBandsIt()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        DungeonFloorplanCell bridge = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.Bridge);
+        Assert.Empty(bridge.Floors);
+        // The deck, turned a quarter turn about (200, 200, 12), and the
+        // small shelf; not the underside, which faces down, nor the railing.
+        Assert.Equal(2, bridge.ObjectFloors.Length);
+        ImmutableArray<Vector3> deck = bridge.ObjectFloors[0];
+        Assert.Equal(4, deck.Length);
+        AssertVector(new Vector3(200f, 200f, 12f), deck[0]);
+        AssertVector(new Vector3(200f, 204f, 12f), deck[1]);
+        AssertVector(new Vector3(198f, 204f, 12f), deck[2]);
+        AssertVector(new Vector3(198f, 200f, 12f), deck[3]);
+        Assert.All(bridge.ObjectFloors[1], static corner => Assert.Equal(23f, corner.Z, 3));
+
+        // Banded by the deck, not folded, and not lifted by the shelf.
+        Assert.Equal(12f, bridge.LayerZ);
+        Assert.Contains(
+            plan.Layers.Single(static layer => layer.Z == 12f).Floors,
+            static floor => floor.Length == 4 && floor.All(static corner => corner.X is >= 197.9f and <= 200.1f));
+        Assert.Contains(
+            plan.Layers.Single(static layer => layer.Z == 24f).Floors,
+            static floor => floor.All(static corner => corner.X is >= 198f and <= 199.1f));
+    }
+
+    [Fact]
+    public void ASetupsPartsAreEachPlacedByTheirOwnTransform()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        DungeonFloorplanCell platform = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.Platform);
+        Assert.Equal(2, platform.ObjectFloors.Length);
+        Assert.Equal(
+            [new(300f, 300f, 18f), new(301f, 300f, 18f), new(301f, 301f, 18f), new(300f, 301f, 18f)],
+            platform.ObjectFloors[0].ToArray());
+        Assert.Equal(
+            [new(302f, 300f, 19f), new(303f, 300f, 19f), new(303f, 301f, 19f), new(302f, 301f, 19f)],
+            platform.ObjectFloors[1].ToArray());
+        Assert.Equal(18f, platform.LayerZ);
+    }
+
+    [Fact]
+    public void AnObjectNeverMovesACellWithAFloorOfItsOwn()
+    {
+        var dats = new DelveLandblock();
+        DungeonFloorplan plan = new DungeonFloorplanBuilder(dats, dats.Lock).TryBuild(DelveLandblock.Landblock)!;
+
+        DungeonFloorplanCell room = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.TableRoom);
+        Assert.Equal(0f, room.LayerZ);
+        Assert.Single(room.Floors);
+        ImmutableArray<Vector3> top = Assert.Single(room.ObjectFloors);
+        Assert.All(top, static corner => Assert.Equal(1f, corner.Z));
+        Assert.Equal(new Vector3(402f, 402f, 1f), top[0]);
+    }
+
+    [Fact]
+    public void EveryObjectFloorIsCounted()
+    {
+        var dats = new DelveLandblock();
+        var builder = new DungeonFloorplanBuilder(dats, dats.Lock);
+
+        DungeonFloorplan? plan = builder.TryBuild(DelveLandblock.Landblock);
+
+        Assert.NotNull(plan);
+        Assert.Equal(5, plan.Counts.ObjectFloors);
+    }
+
     private static bool Matches(DungeonFloorplanWall wall, Vector2 a, Vector2 b) =>
         (Near(wall.Start, a) && Near(wall.End, b))
         || (Near(wall.Start, b) && Near(wall.End, a));

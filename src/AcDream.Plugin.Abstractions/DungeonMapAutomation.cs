@@ -22,6 +22,7 @@ public readonly record struct PluginDungeonWall(Vector2 Start, Vector2 End);
 public readonly record struct PluginDungeonCell(uint CellId, Vector3 Center, float LayerZ)
 {
     private readonly IReadOnlyList<IReadOnlyList<Vector3>>? _floors;
+    private readonly IReadOnlyList<IReadOnlyList<Vector3>>? _objectFloors;
 
     /// <summary>
     /// The cell's own floor: every polygon of its geometry that faces up (the
@@ -39,22 +40,29 @@ public readonly record struct PluginDungeonCell(uint CellId, Vector3 Center, flo
         init => _floors = value;
     }
 
-    /// <summary>Compares every member, the floors corner by corner.</summary>
-    public bool Equals(PluginDungeonCell other)
+    /// <summary>
+    /// The walkable faces of the objects this cell places (its static
+    /// objects: a bridge, a stair, a platform): every level face of their
+    /// physics, corners in landblock-local metres with their real heights.
+    /// Kept apart from <see cref="Floors"/>, which is the cell's own
+    /// geometry; a body stands on either. Objects the server places while
+    /// the game runs are not in the data and are not here. Empty for a cell
+    /// that places nothing to stand on, and on a host older than contract
+    /// <c>0.1.26-fork.4</c>.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<Vector3>> ObjectFloors
     {
-        if (CellId != other.CellId || Center != other.Center || !LayerZ.Equals(other.LayerZ))
-            return false;
-        IReadOnlyList<IReadOnlyList<Vector3>> floors = Floors;
-        IReadOnlyList<IReadOnlyList<Vector3>> others = other.Floors;
-        if (floors.Count != others.Count)
-            return false;
-        for (int index = 0; index < floors.Count; index++)
-        {
-            if (!floors[index].SequenceEqual(others[index]))
-                return false;
-        }
-        return true;
+        get => _objectFloors ?? Array.Empty<IReadOnlyList<Vector3>>();
+        init => _objectFloors = value;
     }
+
+    /// <summary>Compares every member, the floors and object floors corner by corner.</summary>
+    public bool Equals(PluginDungeonCell other) =>
+        CellId == other.CellId
+        && Center == other.Center
+        && LayerZ.Equals(other.LayerZ)
+        && SameFaces(Floors, other.Floors)
+        && SameFaces(ObjectFloors, other.ObjectFloors);
 
     /// <inheritdoc/>
     public override int GetHashCode()
@@ -68,7 +76,26 @@ public readonly record struct PluginDungeonCell(uint CellId, Vector3 Center, flo
             foreach (Vector3 corner in floor)
                 hash.Add(corner);
         }
+        foreach (IReadOnlyList<Vector3> floor in ObjectFloors)
+        {
+            foreach (Vector3 corner in floor)
+                hash.Add(corner);
+        }
         return hash.ToHashCode();
+    }
+
+    private static bool SameFaces(
+        IReadOnlyList<IReadOnlyList<Vector3>> faces,
+        IReadOnlyList<IReadOnlyList<Vector3>> others)
+    {
+        if (faces.Count != others.Count)
+            return false;
+        for (int index = 0; index < faces.Count; index++)
+        {
+            if (!faces[index].SequenceEqual(others[index]))
+                return false;
+        }
+        return true;
     }
 }
 
@@ -252,11 +279,17 @@ public readonly record struct PluginIndoorCell(
 
 /// <summary>
 /// One storey of a floorplan: the cells whose floor lies in one six-metre
-/// band of height, flattened together. A cell with no floor of its own, such
+/// band of height, flattened together. A cell with no floor of its own but
+/// objects placed in it to stand on -- the air a bridge spans -- is drawn in
+/// the band of those objects' floors (their faces of a quarter square metre
+/// or more, weighted by corner); objects never move a cell that has a floor
+/// of its own. A cell with no floor of its own and nothing to stand on, such
 /// as the upper cell of a tall room, is drawn in the band of the cell it
 /// opens onto below through a level opening in its floor, however many
 /// floorless cells sit between; a cell with no floor and no way down -- a
 /// doorway beside it does not count -- is drawn in the band its origin is in.
+/// Before contract <c>0.1.26-fork.4</c> placed objects were not read and a
+/// bridge's cell folded onto the room under it.
 /// </summary>
 /// <param name="Z">
 /// The lowest height the band covers, in metres; bands are six metres tall
@@ -266,7 +299,11 @@ public readonly record struct PluginIndoorCell(
 /// <param name="Floors">
 /// The floor area as closed polygons, each vertex in landblock-local metres,
 /// in the order the data gives them. The polygons overlap wherever two cells
-/// meet; fill each one and the room comes out whole.
+/// meet; fill each one and the room comes out whole. Each cell's own floor
+/// polygons come first, then the walkable faces of the objects it places
+/// (<see cref="PluginDungeonCell.ObjectFloors"/>), each filed in the band its
+/// own average height is in, so a bridge is drawn at its deck's height.
+/// Object faces are included from contract <c>0.1.26-fork.4</c>.
 /// </param>
 /// <param name="Walls">
 /// The walls as lines, collinear runs already joined. Only the standing faces

@@ -83,6 +83,19 @@ public sealed class DungeonMapAutomationTests
         IReadOnlyList<Vector3> floor = Assert.Single(ramp.Floors);
         Assert.Equal([0f, 0f, 6f, 6f], floor.Select(static corner => corner.Z).ToArray());
         Assert.Empty(plan.Cells.Single(static cell => cell.CellId == DelveLandblock.ShaftTop).Floors);
+
+        PluginDungeonCell bridge = plan.Cells.Single(static cell => cell.CellId == DelveLandblock.Bridge);
+        Assert.Empty(bridge.Floors);
+        Assert.Equal(2, bridge.ObjectFloors.Count);
+        Assert.All(bridge.ObjectFloors[0], static corner => Assert.Equal(12f, corner.Z, 3));
+        Assert.Equal(12f, bridge.LayerZ);
+        Assert.Empty(ramp.ObjectFloors);
+
+        // A second host reading the same files hands out equal cells.
+        var again = new DelveLandblock();
+        using var other = new RuntimeAutomationSurface();
+        other.BindDungeonMap(again, again.Lock);
+        Assert.Equal(plan.Cells, other.DungeonMap.CaptureFloorplan(DelveLandblock.Landblock).Cells);
     }
 
     [Fact]
@@ -99,6 +112,27 @@ public sealed class DungeonMapAutomationTests
         Assert.Equal(first.GetHashCode(), second.GetHashCode());
         Assert.NotEqual(first, other);
         Assert.Empty(default(PluginDungeonCell).Floors);
+    }
+
+    [Fact]
+    public void CellsWithTheSameObjectFloorsAreEqual()
+    {
+        var first = new PluginDungeonCell(0x01230100u, Vector3.One, 6f)
+        {
+            ObjectFloors = [[Vector3.Zero, Vector3.UnitX, Vector3.UnitY]],
+        };
+        var second = first with { ObjectFloors = [[Vector3.Zero, Vector3.UnitX, Vector3.UnitY]] };
+        var other = first with { ObjectFloors = [[Vector3.Zero, Vector3.UnitX, Vector3.UnitZ]] };
+        var asOwnFloor = new PluginDungeonCell(0x01230100u, Vector3.One, 6f)
+        {
+            Floors = [[Vector3.Zero, Vector3.UnitX, Vector3.UnitY]],
+        };
+
+        Assert.Equal(first, second);
+        Assert.Equal(first.GetHashCode(), second.GetHashCode());
+        Assert.NotEqual(first, other);
+        Assert.NotEqual(first, asOwnFloor);
+        Assert.Empty(default(PluginDungeonCell).ObjectFloors);
     }
 
     [Fact]
