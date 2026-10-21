@@ -52,6 +52,12 @@ public sealed class UiMarkupListColumn
     public Func<IReadOnlyList<double>>? SortNumberKeys { get; internal set; }
     public Func<IReadOnlyList<string>>? SortTextKeys { get; internal set; }
 
+    /// <summary>A checkbox column whose header is a select-all box (<c>header="all"</c>).</summary>
+    public bool SelectAll { get; internal set; }
+
+    /// <summary>Called once with the value every row should take; null draws a blank header cell.</summary>
+    public Action<bool>? SelectAllChanged { get; internal set; }
+
     public static UiMarkupListColumn Text(
         float width,
         Func<IReadOnlyList<string>> textSource,

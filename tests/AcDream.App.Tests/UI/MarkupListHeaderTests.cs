@@ -25,6 +25,8 @@ public sealed class MarkupListHeaderTests : IDisposable
         public List<double> DistKeys { get; set; } = new() { 12.5, 3, 40, 7 };
         public List<string> Levels { get; set; } = new() { "10", "x", "2", "33" };
         public List<bool> On { get; set; } = new() { true, false, true, false };
+        public List<bool> AllCalls { get; } = new();
+        public Action<bool> SetAll => v => { AllCalls.Add(v); On = On.Select(_ => v).ToList(); };
         public List<string> Acts { get; set; } = new() { "Go", "Go", "Go", "Go" };
         public List<uint> Ids { get; } = new() { 1, 2, 3, 4 };
         public string DistTitle { get; set; } = "Dist";
@@ -605,5 +607,75 @@ public sealed class MarkupListHeaderTests : IDisposable
     public void Resize_BadAttributesThrow(string attributes)
     {
         Assert.Throws<FormatException>(() => Mount(attributes, new Binding()));
+    }
+
+    // Name 0-120, checkbox 120-160 (header box at x 134.5, y 3.5), button 160-300.
+    private const string SelectAllColumns = """
+          <column type="text" header="Name" width="120" items="{Names}"/>
+          <column type="checkbox" header="all" width="40" values="{On}" onchange="{Toggle}" onall="{SetAll}"/>
+          <column type="button" items="{Acts}" onclick="{Act}"/>
+        """;
+
+    private static List<(float X, float Y, float W, float H)> HeaderQuads(UiMarkupList list, System.Numerics.Vector4 color) =>
+        MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(list), color).Where(q => q.Y < UiMarkupList.HeaderHeight).ToList();
+
+    [Fact]
+    public void SelectAll_BoxShowsNoneSomeOrAll()
+    {
+        var b = new Binding();
+        var (_, list) = Mount("", b, columns: SelectAllColumns);
+        var some = HeaderQuads(list, UiCheckBoxGlyph.ClassicMark);
+        Assert.Equal((5f, 3f), (Assert.Single(some).W, some[0].H));
+        b.On = new() { true, true, true, true };
+        Assert.Equal(7, HeaderQuads(list, UiCheckBoxGlyph.ClassicMark).Count(q => q.W == 2f && q.H == 2f));
+        b.On = new() { false, false, false, false };
+        Assert.Empty(HeaderQuads(list, UiCheckBoxGlyph.ClassicMark));
+    }
+
+    [Fact]
+    public void SelectAll_ClickTicksEverythingThenClearsIt()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b, columns: SelectAllColumns);
+        ClickAndDraw(root, list, 140, HeaderY);
+        ClickAndDraw(root, list, 140, HeaderY);
+        Assert.Equal(new[] { true, false }, b.AllCalls);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void SelectAll_DisabledCallsNothing()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("enabled=\"false\"", b, columns: SelectAllColumns);
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseDown, Data1 = 140, Data2 = HeaderY });
+        list.OnEvent(new UiEvent { Type = UiEventType.MouseUp, Data1 = 140, Data2 = HeaderY });
+        Assert.Empty(b.AllCalls);
+    }
+
+    [Fact]
+    public void SelectAll_WithoutOnallTheCellIsBlank()
+    {
+        string columns = SelectAllColumns.Replace(" onall=\"{SetAll}\"", "");
+        var (_, list) = Mount("", new Binding(), columns: columns);
+        Assert.Empty(HeaderQuads(list, UiCheckBoxGlyph.ClassicFill));
+    }
+
+    [Fact]
+    public void SelectAll_OnOtherColumnsIsJustACaption()
+    {
+        string columns = SelectAllColumns.Replace("header=\"Name\"", "header=\"all\"");
+        var (_, list) = Mount("", new Binding(), columns: columns);
+        Assert.Equal("all", list.Columns![0].HeaderSource!());
+    }
+
+    [Theory]
+    [InlineData("""<column type="checkbox" width="40" values="{On}" onchange="{Toggle}" onall="{SetAll}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="text" header="all" width="40" items="{Names}" onall="{SetAll}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="checkbox" header="all" width="40" values="{On}" onchange="{Toggle}" onall="{SetAll}" sort="bool"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    [InlineData("""<column type="checkbox" header="all" width="40" values="{On}" onchange="{Toggle}" onall="{Toggle}"/><column type="button" items="{Acts}" onclick="{Act}"/>""")]
+    public void SelectAll_BadColumnsThrow(string columns)
+    {
+        Assert.Throws<FormatException>(() => Mount("", new Binding(), columns: columns));
     }
 }

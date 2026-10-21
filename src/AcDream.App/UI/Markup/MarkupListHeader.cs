@@ -55,8 +55,19 @@ internal static class MarkupListHeader
     private static void ApplyColumn(XElement columnEl, UiMarkupListColumn column, int index, object binding)
     {
         string? header = (string?)columnEl.Attribute("header");
-        if (header is not null)
+        string? onAll = (string?)columnEl.Attribute("onall");
+        bool selectAll = header == "all" && column.Kind == UiMarkupListColumnKind.Check && column.Boxed;
+        if (onAll is not null && !selectAll)
+            throw new FormatException($"column[{index}] onall needs header=\"all\" on a checkbox column");
+        if (selectAll)
+        {
+            column.SelectAll = true;
+            column.SelectAllChanged = MarkupBindings.BindBoolAction(onAll, binding, $"column[{index}] onall");
+        }
+        else if (header is not null)
+        {
             column.HeaderSource = MarkupDocument.BindString(header, binding);
+        }
         UiMarkupListSortKind sort = (string?)columnEl.Attribute("sort") switch
         {
             null or "none" => UiMarkupListSortKind.None,
@@ -78,6 +89,8 @@ internal static class MarkupListHeader
                 $"column[{index}] sort=\"{columnEl.Attribute("sort")!.Value}\" on a {column.Kind} column needs sortkeys");
         }
         column.Sort = sort;
+        if (selectAll && sort != UiMarkupListSortKind.None)
+            throw new FormatException($"column[{index}] header=\"all\" can't also sort");
         if (keys is not null)
             (column.SortNumberKeys, column.SortTextKeys) =
                 MarkupBindings.BindSortKeys(keys, binding, $"column[{index}] sortkeys");

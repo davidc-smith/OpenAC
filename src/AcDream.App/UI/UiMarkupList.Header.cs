@@ -49,6 +49,17 @@ public sealed partial class UiMarkupList
         UiRenderContext context, UiMarkupListColumn column, int c, float cellX, float cellW,
         bool sorted, bool descending)
     {
+        if (column.SelectAll)
+        {
+            if (column.SelectAllChanged is not null)
+            {
+                UiCheckBoxGlyph.Draw(context,
+                    cellX + 1f + MathF.Max(0f, cellW - 2f - UiCheckBoxGlyph.Size) * 0.5f,
+                    MathF.Max(1f, (HeaderHeight - UiCheckBoxGlyph.Size) * 0.5f),
+                    SelectAllState(c), ThemePalette);
+            }
+            return;
+        }
         string caption = column.HeaderSource?.Invoke() ?? string.Empty;
         context.PushClip(cellX, 0f, MathF.Max(0f, cellW - (sorted ? 12f : 0f)), HeaderHeight);
         try
@@ -158,5 +169,27 @@ public sealed partial class UiMarkupList
     }
 
     /// <summary>A press and release on the same header cell.</summary>
-    private void HeaderClicked(int column) => CycleSort(column);
+    /// <summary>The select-all box: ticked when every row is, clear when none is, else indeterminate.</summary>
+    private bool? SelectAllState(int column)
+    {
+        IReadOnlyList<bool>? flags = _cachedCheckRows[column];
+        int ticked = 0;
+        for (int row = 0; row < _cachedRowCount; row++)
+        {
+            if (flags is not null && row < flags.Count && flags[row])
+                ticked++;
+        }
+        return ticked == 0 ? false : ticked == _cachedRowCount ? true : null;
+    }
+
+    private void HeaderClicked(int column)
+    {
+        if (_columns is { } columns && columns[column].SelectAll)
+        {
+            RefreshRows(columns);
+            columns[column].SelectAllChanged?.Invoke(SelectAllState(column) != true);
+            return;
+        }
+        CycleSort(column);
+    }
 }
