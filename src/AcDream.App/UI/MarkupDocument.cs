@@ -388,6 +388,10 @@ public static class MarkupDocument
                 parent.AddChild(MarkupExpander.Build(el, binding, Context()));
                 break;
 
+            case "split":
+                parent.AddChild(MarkupSplit.Build(el, binding, Context()));
+                break;
+
             case "slider":
                 string? changeName = (string?)el.Attribute("onchange");
                 Action<float>? changed = BindFloatAction(changeName, binding);
