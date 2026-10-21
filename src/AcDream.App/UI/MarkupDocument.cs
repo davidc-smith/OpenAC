@@ -622,15 +622,6 @@ public static class MarkupDocument
                 break;
 
             case "list":
-                string? listChangeName = (string?)el.Attribute("onchange");
-                Action<int>? listChanged = BindIntAction(listChangeName, binding);
-                if (listChangeName is not null && listChanged is null)
-                {
-                    throw new FormatException(
-                        $"<list onchange=\"{listChangeName}\"> did not resolve to an "
-                        + $"Action<int> property on {binding.GetType().Name}");
-                }
-
                 var listChildren = el.Elements().ToList();
                 foreach (var child in listChildren)
                 {
@@ -661,13 +652,8 @@ public static class MarkupDocument
                     RowHeight = Math.Max(12f, FOr(el, "rowheight", 18f)),
                     DatFont = datFont,
                     SpriteResolve = resolve,
-                    SelectedIndexSource = BindRequiredIntReader(
-                        (string?)el.Attribute("selected"),
-                        binding,
-                        "list selected"),
-                    SelectionChanged = listChanged,
-                    SelectionBandEnabled = B(el, "selectionband", false),
                 };
+                MarkupListSelect.Apply(el, list, binding);
 
                 if (listUsesColumns)
                 {
@@ -893,7 +879,7 @@ public static class MarkupDocument
         return value => (property.GetValue(binding) as Action<string>)?.Invoke(value);
     }
 
-    private static Action<int>? BindIntAction(string? attribute, object binding)
+    internal static Action<int>? BindIntAction(string? attribute, object binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;

@@ -137,6 +137,11 @@ public sealed partial class UiMarkupList : UiElement
             }
         }
         ClampTop(items.Count, visibleRows);
+        if (MultiSelect)
+        {
+            _view.SetIdentity(items.Count);
+            RefreshSelectedMask(items.Count);
+        }
 
         bool showScrollbar = items.Count > visibleRows;
         float contentWidth = showScrollbar ? MathF.Max(0f, Width - ScrollbarWidth) : Width;
@@ -147,7 +152,7 @@ public sealed partial class UiMarkupList : UiElement
         for (int index = _topRow; index < end; index++)
         {
             float y = (index - _topRow) * RowHeight;
-            if (index == selected && SelectionBandEnabled)
+            if (RowBanded(index, selected))
                 context.DrawFill(1f, y + 1f, contentWidth - 2f, RowHeight - 1f, SelectedColor);
 
             if (iconIds is not null && index < iconIds.Count && IconResolve is { } resolve)
@@ -213,7 +218,11 @@ public sealed partial class UiMarkupList : UiElement
         int row = (int)MathF.Floor(e.Data2 / MathF.Max(1f, RowHeight));
         int index = _topRow + row;
         if (row >= 0 && row < visibleRows && index >= 0 && index < items.Count)
-            SelectionChanged?.Invoke(index);
+        {
+            if (MultiSelect)
+                _view.SetIdentity(items.Count);
+            PickRow(index);
+        }
         return true;
     }
 
@@ -302,6 +311,8 @@ public sealed partial class UiMarkupList : UiElement
             }
         }
         ClampTop(rowCount, visibleRows);
+        if (MultiSelect)
+            RefreshSelectedMask(rowCount);
         if (_hasButtons)
         {
             CancelPressIfRowsMoved();
@@ -318,7 +329,7 @@ public sealed partial class UiMarkupList : UiElement
         {
             int row = _view.PluginRow(view);
             float y = RowsTop + (view - _topRow) * RowHeight;
-            if (view == selectedView && SelectionBandEnabled)
+            if (RowBanded(row, selected))
                 context.DrawFill(1f, y + 1f, contentWidth - 2f, RowHeight - 1f, SelectedColor);
 
             for (int c = 0; c < columns.Count; c++)
@@ -728,7 +739,7 @@ public sealed partial class UiMarkupList : UiElement
                     }
                     else
                     {
-                        SelectionChanged?.Invoke(pluginRow);
+                        PickRow(pluginRow);
                     }
                     break;
                 case UiMarkupListColumnKind.Check:
