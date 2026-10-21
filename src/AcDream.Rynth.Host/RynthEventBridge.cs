@@ -1,5 +1,6 @@
 using AcDream.Core.Chat;
 using AcDream.Runtime;
+using AcDream.Rynth.EngineUi;
 
 namespace AcDream.Rynth.Host;
 
@@ -296,20 +297,52 @@ public sealed class RynthEventBridge : IRuntimeEventObserver
     /// type has not run yet and waits for the next one otherwise, as with RynthCore's
     /// per-type queues. A pending login is told last, as RynthCore's frame does.
     /// A delivery that throws is logged and the rest still run, as RynthCore catches
-    /// each dispatch on its own. Events may be queued from another thread meanwhile:
-    /// each type's list is swapped for an empty one under a lock and run outside it.
+    /// each dispatch on its own.
     /// </summary>
+    /// <remarks>
+    /// Off the frame thread (the pump, once the frame thread is latched) the frame thread keeps
+    /// queueing while this runs, so every type's list is taken at once, under one lock, at the
+    /// start: what the frame queues meanwhile all waits for the next delivery. Taking them a type
+    /// at a time would let a later type (a delete) overtake an earlier one (its create) queued
+    /// just after that type ran, which RynthCore never does. On the frame thread (or before a
+    /// latch) only the delivery itself can queue, and each type is taken as it comes, as before.
+    /// </remarks>
     public void DeliverQueued()
     {
-        for (int i = 0; i < KindCount; i++)
+        List<Action>?[]? taken = null;
+        if (RynthFrameThread.Latched && !RynthFrameThread.IsCurrent)
         {
-            List<Action> pending;
+            taken = new List<Action>?[KindCount];
             lock (_queueGate)
             {
-                pending = _queues[i];
-                if (pending.Count == 0)
+                for (int i = 0; i < KindCount; i++)
+                {
+                    if (_queues[i].Count == 0)
+                        continue;
+                    taken[i] = _queues[i];
+                    _queues[i] = [];
+                }
+            }
+        }
+
+        for (int i = 0; i < KindCount; i++)
+        {
+            List<Action>? pending;
+            if (taken is not null)
+            {
+                pending = taken[i];
+                if (pending is null)
                     continue;
-                _queues[i] = [];
+            }
+            else
+            {
+                lock (_queueGate)
+                {
+                    pending = _queues[i];
+                    if (pending.Count == 0)
+                        continue;
+                    _queues[i] = [];
+                }
             }
             foreach (Action deliver in pending)
                 Run(((EventKind)i).ToString(), deliver);

@@ -136,10 +136,16 @@ public sealed unsafe partial class RynthApiTable : IDisposable
     /// <summary>The table, in native memory, for as long as this object lives.</summary>
     public RynthCoreApiNative* Native { get; private set; }
 
+    /// <summary>
+    /// Frees the table. The pump must be quiesced (stopped, no pass running) first: this frees
+    /// every thread's string buffers, the pump thread's included.
+    /// </summary>
     public void Dispose()
     {
         if (Native is null)
             return;
+        // Slots called from now on find no table and return at once.
+        Interlocked.CompareExchange(ref _current, null, this);
         Nav3D.Dispose();
         Vendor.Dispose();
         NativeMemory.Free(Native);
@@ -150,10 +156,13 @@ public sealed unsafe partial class RynthApiTable : IDisposable
                 buffers.Free();
             _allBuffers.Clear();
         }
+        // Don't let this thread's cache keep a disposed table alive (other threads' caches are
+        // replaced on their next string call to a newer table).
+        if (t_buffers is { } mine && ReferenceEquals(mine.Owner, this))
+            t_buffers = null;
 
         if (_scriptWindows)
             EngineSettings.EnableImGuiBackend = false;
-        Interlocked.CompareExchange(ref _current, null, this);
     }
 
     private void Fail(string function, Exception error)

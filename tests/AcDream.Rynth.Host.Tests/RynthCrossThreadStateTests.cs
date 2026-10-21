@@ -60,6 +60,40 @@ public sealed unsafe class RynthCrossThreadStateTests : IDisposable
     }
 
     [Fact]
+    public void OffTheFrameThreadADeliveryNeverReordersEventsQueuedDuringIt()
+    {
+        var seen = new List<string>();
+        void Saw(string what) { lock (seen) seen.Add(what); }
+        var bridge = new RynthEventBridge([], _log.Add);
+        using var running = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        bridge.Enqueue(RynthEventBridge.EventKind.CreateObject, () =>
+        {
+            Saw("create 1");
+            running.Set();
+            release.Wait(TimeSpan.FromSeconds(5));
+        });
+        RynthFrameThread.Latch();
+
+        var pump = new Thread(bridge.DeliverQueued);
+        pump.Start();
+        Assert.True(running.Wait(TimeSpan.FromSeconds(5)));
+        // The frame thread queues a create and then a delete of the same object while the pump is
+        // inside the create kind: neither joins this pass, so the delete can't overtake the create.
+        bridge.Enqueue(RynthEventBridge.EventKind.CreateObject, () => Saw("create 2"));
+        bridge.Enqueue(RynthEventBridge.EventKind.DeleteObject, () => Saw("delete 2"));
+        release.Set();
+        pump.Join();
+        lock (seen)
+            Assert.Equal(["create 1"], seen);
+
+        OnOtherThread(bridge.DeliverQueued);
+        lock (seen)
+            Assert.Equal(["create 1", "create 2", "delete 2"], seen);
+        Assert.Empty(_log);
+    }
+
+    [Fact]
     public void AStringSlotKeepsEachThreadsBufferApart()
     {
         var view = new FakeGameView();

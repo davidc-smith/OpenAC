@@ -6,6 +6,7 @@ using AcDream.Core.Combat;
 using AcDream.Core.Selection;
 using AcDream.Core.Spells;
 using AcDream.Runtime;
+using AcDream.Rynth.EngineUi;
 using AcDream.Rynth.Host;
 using AcDream.TestSupport;
 using RynthCore.PluginSdk;
@@ -205,6 +206,80 @@ public sealed class RynthCombatEventsTests : IDisposable
         host.Bridge.DeliverQueued();
 
         Assert.Equal(["login", "mode 8 1", "select 80000010 00000000"], Recorded());
+    }
+
+    [Fact]
+    public void ALoginDeliveredOffTheFrameThreadPushesTheViewsModeAndSelection()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var live = new RuntimeRynthGameView(runtime);
+        // The view the pump reads (the snapshot in the client): its own mode and selection.
+        IRynthGameView view = SnapshotLike.Wrap(live, combatMode: 2, selected: 0x80000030);
+        using var host = new RynthHost(live, _ => { }, [typeof(CombatRecorder)]);
+        using var events = new RynthCombatEvents(runtime, host.Bridge, view);
+        runtime.ActionOwner.Selection.Select(0x80000010, SelectionChangeSource.System);
+        runtime.ActionOwner.Combat.SetCombatMode(CombatMode.Magic);
+        host.Bridge.DeliverQueued();
+        CombatRecorder.Calls.Clear();
+        RynthFrameThread.Latch();
+        try
+        {
+            host.Bridge.OnLifecycle(new RuntimeLifecycleDelta(
+                default, RuntimeLifecycleState.Starting, RuntimeLifecycleState.InWorld));
+            OnPump(host.Bridge.DeliverQueued);   // the login, told on the pump
+            OnPump(host.Bridge.DeliverQueued);   // the pushes it queued
+
+            Assert.Equal(["login", "mode 2 1", "select 80000030 00000000"], Recorded());
+
+            // The frame thread's own record of the mode is untouched (still Magic): a change to
+            // Melee is reported from Magic, which it would not be had the login written the view's 2.
+            CombatRecorder.Calls.Clear();
+            runtime.ActionOwner.Combat.SetCombatMode(CombatMode.Melee);
+            OnPump(host.Bridge.DeliverQueued);
+            Assert.Equal(["mode 2 8"], Recorded());
+        }
+        finally
+        {
+            RynthFrameThread.Reset();
+        }
+    }
+
+    private static void OnPump(Action work)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try { work(); }
+            catch (Exception error) { failure = error; }
+        });
+        thread.Start();
+        thread.Join();
+        if (failure is not null)
+            throw new Xunit.Sdk.XunitException($"pump thread threw: {failure}");
+    }
+
+    /// <summary>A view that answers the mode and selection itself and passes everything else to <c>live</c>.</summary>
+    public class SnapshotLike : System.Reflection.DispatchProxy
+    {
+        private IRynthGameView _live = null!;
+        private int _combatMode;
+        private uint _selected;
+
+        public static IRynthGameView Wrap(IRynthGameView live, int combatMode, uint selected)
+        {
+            IRynthGameView proxy = Create<IRynthGameView, SnapshotLike>();
+            var self = (SnapshotLike)(object)proxy;
+            (self._live, self._combatMode, self._selected) = (live, combatMode, selected);
+            return proxy;
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args) => method!.Name switch
+        {
+            "get_CombatMode" => _combatMode,
+            "get_SelectedObjectId" => _selected,
+            _ => method.Invoke(_live, args),
+        };
     }
 
     [Fact]
