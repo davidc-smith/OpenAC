@@ -51,6 +51,66 @@ public sealed class RedirectPInvokeTests : IDisposable
         Assert.Contains("App.Nowhere is not in", error, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AnOutStructGoesToAStandInStructWithTheSameFields()
+    {
+        BuildCursor(standInSecondField: "Int32");
+
+        (int code, string output, string error) = Run("App.CursorStandIn");
+
+        Assert.True(code == 0, error);
+        Assert.Contains("1 P/Invoke(s) redirected to App.CursorStandIn", output, StringComparison.Ordinal);
+        using ModuleDefinition app = Read();
+        Assert.Equal(["System.Boolean App.CursorStandIn::GetCursorPos(App.CursorPoint&)"], Calls(app, "GetCursorPos"));
+    }
+
+    [Fact]
+    public void AnOutStructWithOtherFieldsIsNotMatched()
+    {
+        BuildCursor(standInSecondField: "Int64");
+
+        (int code, string output, string error) = Run("App.CursorStandIn");
+
+        Assert.True(code == 0, error);
+        Assert.Contains("0 P/Invoke(s) redirected", output, StringComparison.Ordinal);
+        using ModuleDefinition app = Read();
+        Assert.True(app.GetType("App.Native").Methods.Single(m => m.Name == "GetCursorPos").IsPInvokeImpl);
+    }
+
+    private void BuildCursor(string standInSecondField)
+    {
+        using AssemblyDefinition assembly = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("App", new Version(1, 0)), "App", ModuleKind.Dll);
+        ModuleDefinition app = assembly.MainModule;
+        var user32 = new ModuleReference("user32.dll");
+        app.ModuleReferences.Add(user32);
+
+        var native = new TypeDefinition("App", "Native", TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed, app.TypeSystem.Object);
+        app.Types.Add(native);
+        TypeDefinition point = Struct(app, "", "POINT", TypeAttributes.NestedPrivate, app.TypeSystem.Int32, app.TypeSystem.Int32);
+        native.NestedTypes.Add(point);
+        MethodDefinition import = Import(app, user32, "GetCursorPos", app.TypeSystem.Boolean, new ByReferenceType(point));
+        import.Parameters[0].Attributes = ParameterAttributes.Out;
+        native.Methods.Add(import);
+
+        TypeReference second = standInSecondField == "Int64" ? app.TypeSystem.Int64 : app.TypeSystem.Int32;
+        TypeDefinition cursorPoint = Struct(app, "App", "CursorPoint", TypeAttributes.Public, app.TypeSystem.Int32, second);
+        app.Types.Add(cursorPoint);
+        TypeDefinition standIn = StandIn(app, "CursorStandIn", "GetCursorPos", app.TypeSystem.Boolean, new ByReferenceType(cursorPoint));
+        standIn.Methods[0].Parameters[0].Attributes = ParameterAttributes.Out;
+        app.Types.Add(standIn);
+        assembly.Write(AppPath);
+    }
+
+    private static TypeDefinition Struct(ModuleDefinition app, string ns, string name, TypeAttributes visibility, TypeReference x, TypeReference y)
+    {
+        var type = new TypeDefinition(ns, name,
+            visibility | TypeAttributes.SequentialLayout | TypeAttributes.Sealed | TypeAttributes.BeforeFieldInit,
+            app.ImportReference(typeof(ValueType)));
+        type.Fields.Add(new FieldDefinition("X", FieldAttributes.Public, x));
+        type.Fields.Add(new FieldDefinition("Y", FieldAttributes.Public, y));
+        return type;
+    }
+
     private static string[] Calls(ModuleDefinition app, string method) =>
         app.GetType("App.Native").Methods.Single(m => m.Name == method).Body.Instructions
             .Select(i => i.Operand).OfType<MethodReference>().Select(m => m.FullName).ToArray();
