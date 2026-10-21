@@ -323,14 +323,18 @@ window as unknown.
 ```
 
 A `<separator>` draws a 1 px line across the middle of its box: horizontal,
-or vertical when the box is taller than it is wide. It uses the window's
-border colour (in the plugin theme, the theme's border token); `color`
-gives it any other colour, literal or bound. It takes no input, and a click
-on it reaches whatever lies beneath. Because clicks and hovering pass through
+or vertical when the box is taller than it is wide. In Classic it is a
+fixed muted brown-olive (`#FF61573B`, the unlit lamp's colour); under
+`theme="plugin"` it is the theme's border colour. `color` gives it any other
+colour, literal or bound. A separator with zero width or height draws nothing. It takes no input, and a click on it reaches whatever lies beneath. Because clicks and hovering pass through
 a separator, a `tooltip` on it never shows.
 
 On a host older than separators, a `<separator>` fails the build of its
 window as unknown.
+
+Write `color="theme:border|#FF61573B"` when you want one colour pinned in both
+looks: the theme's border colour in the plugin theme, and the given colour in
+Classic. It is useful when other separators on the window use a custom colour.
 
 ## Resizable panels and anchors
 
