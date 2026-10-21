@@ -18,6 +18,7 @@ internal static class PluginMarkupTheme
                 case UiSimpleButton button: Bind(() => button.DatFont, f => button.DatFont = f); break;
                 case UiMarkupToggle toggle: Bind(() => toggle.DatFont, f => toggle.DatFont = f); break;
                 case UiMarkupCheckbox checkbox: Bind(() => checkbox.DatFont, f => checkbox.DatFont = f); break;
+                case UiMarkupRadio radio: Bind(() => radio.DatFont, f => radio.DatFont = f); break;
                 case UiField field: Bind(() => field.DatFont, f => field.DatFont = f); break;
                 case UiMarkupNumber number: Bind(() => number.Field.DatFont, f => number.Field.DatFont = f); break;
                 case UiMenu menu:
@@ -59,6 +60,11 @@ internal static class PluginMarkupTheme
                 var checkboxText = checkbox.TextColor;
                 panel.AddThemeAction(p => { checkbox.ThemePalette = p;
                     if (Default("color")) checkbox.TextColor = p?.Text ?? checkboxText; });
+                break;
+            case UiMarkupRadio radio:
+                var radioText = radio.TextColor;
+                panel.AddThemeAction(p => { radio.ThemePalette = p;
+                    if (Default("color")) radio.TextColor = p?.Text ?? radioText; });
                 break;
             case UiField field:
                 ThemeField(panel, field, Default);

@@ -244,4 +244,80 @@ public class MarkupRadioTests
         Assert.Equal(0, b.Calls);
         MarkupDrawProbe.Draw(radio);
     }
+
+    private static UiMarkupRadio MountThemed(string attributes, Binding binding)
+    {
+        var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build(
+            "<panel theme=\"plugin\" x=\"0\" y=\"0\" w=\"300\" h=\"100\">"
+            + $"<radio x=\"8\" y=\"8\" w=\"200\" h=\"54\" {attributes}/></panel>",
+            binding, _ => (1u, 16, 16), themes: themes);
+        return panel.Children.OfType<UiMarkupRadio>().Single();
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(-1, 0)]
+    public void Radio_ClassicDrawsOneMarkForTheSelection(int selected, int marks)
+    {
+        var (_, radio) = Mount(Literal, new Binding { Mode = selected });
+        var renderer = MarkupDrawProbe.Draw(radio);
+        Assert.Equal(marks, MarkupDrawProbe.CountQuads(renderer, UiRadioGlyph.ClassicMark));
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(-1, 0)]
+    public void Radio_SegmentedFillsTheSelectedSegment(int selected, int fills)
+    {
+        var (_, radio) = Mount(Literal + " style=\"segmented\"", new Binding { Mode = selected });
+        var renderer = MarkupDrawProbe.Draw(radio);
+        Assert.Equal(fills, MarkupDrawProbe.CountQuads(renderer, UiMarkupRadio.ClassicSegmentSelected));
+    }
+
+    [Fact]
+    public void Radio_DisabledDrawsFaded()
+    {
+        var (_, radio) = Mount(Literal + " enabled=\"false\"", new Binding { Mode = 1 });
+        var renderer = MarkupDrawProbe.Draw(radio);
+        var faded = UiRadioGlyph.ClassicMark with { W = UiMarkupToggle.DisabledAlpha };
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, faded));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiRadioGlyph.ClassicMark));
+    }
+
+    [Fact]
+    public void Radio_FocusDrawsAnOutline()
+    {
+        var (_, radio) = Mount(Literal, new Binding());
+        Focus(radio);
+        var renderer = MarkupDrawProbe.Draw(radio);
+        Assert.Equal(4, MarkupDrawProbe.CountQuads(renderer, UiMarkupRadio.FocusColor));
+    }
+
+    [Fact]
+    public void Radio_PluginThemeUsesThePalette()
+    {
+        var radio = MountThemed(Literal, new Binding { Mode = 0 });
+        Assert.Same(PluginUiPalette.Moss, radio.ThemePalette);
+        Assert.Equal(PluginUiPalette.Moss.Text, radio.TextColor);
+        var renderer = MarkupDrawProbe.Draw(radio);
+        Assert.Equal(6, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Accent));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiRadioGlyph.ClassicMark));
+    }
+
+    [Fact]
+    public void Radio_PluginThemeSegmented()
+    {
+        var radio = MountThemed(Literal + " style=\"segmented\"", new Binding { Mode = 1 });
+        var renderer = MarkupDrawProbe.Draw(radio);
+        Assert.True(MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Selected) >= 1);
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupRadio.ClassicSegmentSelected));
+    }
+
+    [Fact]
+    public void Radio_ExplicitColorSurvivesTheTheme()
+    {
+        var radio = MountThemed(Literal + " color=\"#FFFF0000\"", new Binding());
+        Assert.Equal(new Vector4(1f, 0f, 0f, 1f), radio.TextColor);
+    }
 }
