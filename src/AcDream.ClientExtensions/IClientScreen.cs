@@ -18,6 +18,16 @@ public interface IClientScreen
     /// </summary>
     bool TryProject(PluginNavigationPosition position, out Vector2 screen);
 
+    /// <summary>
+    /// This frame's camera, captured so another thread can project with it. False before the
+    /// world view exists.
+    /// </summary>
+    bool TryCaptureProjection(out ClientScreenProjection projection)
+    {
+        projection = null!;
+        return false;
+    }
+
     /// <summary>The radar disc's centre and radius on screen; false while the radar is hidden.</summary>
     bool TryGetRadarDisc(out Vector2 centre, out float radius);
 }

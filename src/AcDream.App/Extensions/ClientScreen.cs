@@ -34,21 +34,23 @@ internal sealed class ClientScreen(LiveWorldOriginState origin) : IClientScreen
         return true;
     }
 
+    public bool TryCaptureProjection(out ClientScreenProjection projection)
+    {
+        projection = null!;
+        if (_camera is null || !origin.IsKnown)
+            return false;
+        (Matrix4x4 view, Matrix4x4 proj, Vector2 viewport) = _camera();
+        if (viewport.X <= 0 || viewport.Y <= 0)
+            return false;
+        projection = new ClientScreenProjection(view * proj, viewport, origin.CenterX, origin.CenterY);
+        return true;
+    }
+
     public bool TryProject(PluginNavigationPosition position, out Vector2 screen)
     {
         screen = default;
-        if (_camera is null || !origin.IsKnown)
-            return false;
-        (Matrix4x4 view, Matrix4x4 projection, Vector2 viewport) = _camera();
-        if (viewport.X <= 0 || viewport.Y <= 0)
-            return false;
-        Vector3 world = PluginNavigationProjection.ToWorld(position, origin.CenterX, origin.CenterY);
-        Vector4 clip = Vector4.Transform(new Vector4(world, 1f), view * projection);
-        if (clip.W <= 0.001f)
-            return false;
-        float ndcX = clip.X / clip.W, ndcY = clip.Y / clip.W;
-        screen = new Vector2((ndcX * 0.5f + 0.5f) * viewport.X, (1f - (ndcY * 0.5f + 0.5f)) * viewport.Y);
-        return true;
+        return TryCaptureProjection(out ClientScreenProjection projection)
+            && projection.TryProject(position, out screen);
     }
 
     public bool TryGetRadarDisc(out Vector2 centre, out float radius)

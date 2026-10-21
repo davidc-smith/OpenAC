@@ -54,6 +54,13 @@ public sealed class RuntimeCharacterState : IDisposable
     private bool _disposed;
     private long _characterRevision;
     private long _spellbookRevision;
+
+    /// <summary>Moves on every vital, attribute or character change.</summary>
+    public long CharacterRevision => Interlocked.Read(ref _characterRevision);
+
+    /// <summary>Moves on every spellbook change.</summary>
+    public long SpellbookRevision => Interlocked.Read(ref _spellbookRevision);
+
     private bool _internalSubscriptionsAttached;
     private uint _autonomyLevel = FullAutonomyLevel;
 
