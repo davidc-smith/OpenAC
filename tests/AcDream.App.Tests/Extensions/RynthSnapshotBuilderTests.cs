@@ -86,11 +86,11 @@ public sealed class RynthSnapshotBuilderTests
         var doorBody = new PhysicsBody();
         doorBody.SnapToCell(0xA9B40001u, Vector3.Zero, new Vector3(4, 5, 6));
         door.SetPhysicsBody(doorBody);
-        runtime.EntityObjects.Entities.AddActive(Spawn(0x80000099));   // no body: no pose, as the live view
+        runtime.EntityObjects.Entities.AddActive(Spawn(0x80000099));   // no body: a state but no pose, as the live view
 
         RynthWorldSnapshot s = builder.Build();
 
-        Assert.Equal(2, s.Entities.Count);
+        Assert.Equal(3, s.Entities.Count);
         Assert.True(live.TryGetPlayerPose(out uint cell, out Vector3 origin, out Quaternion orientation));
         RynthEntityPose pose = s.Entities[0x50000001];
         Assert.Equal((cell, origin, orientation), (pose.CellId, pose.Origin, pose.Orientation));
@@ -102,7 +102,10 @@ public sealed class RynthSnapshotBuilderTests
         Assert.True(doorPose.MotionOn);
         Assert.Equal(live.GetPalettes(0x7A9B4001), doorPose.Palettes);
         Assert.Null(pose.MotionOn);
-        Assert.False(s.Entities.ContainsKey(0x80000099));
+        Assert.True(pose.Placed);
+        Assert.False(s.Entities[0x80000099].Placed);
+        Assert.True(live.TryGetObjectState(0x80000099, out uint unplacedState));
+        Assert.Equal(unplacedState, s.Entities[0x80000099].RawState);
         Assert.False(live.TryGetObjectPosition(0x80000099, out _, out _));
     }
 

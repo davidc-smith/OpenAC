@@ -7,10 +7,15 @@ using AcDream.Plugin.Abstractions;
 
 namespace AcDream.Rynth.Host;
 
-/// <summary>One entity's pose and state, as the live view reads them.</summary>
+/// <summary>
+/// One active entity's pose and state, as the live view reads them. <paramref name="Placed"/>:
+/// it has a body in a cell, so it has a position (an entity with no body still has a state).
+/// The heading is the live view's own answer (the automation surface's object projection).
+/// </summary>
 public readonly record struct RynthEntityPose(
     uint CellId, Vector3 Origin, Quaternion Orientation, uint RawState, bool? MotionOn,
-    IReadOnlyList<(uint SubPaletteId, uint Offset)>? Palettes);
+    IReadOnlyList<(uint SubPaletteId, uint Offset)>? Palettes,
+    bool Placed = true, bool HasHeading = false, float Heading = 0f);
 
 /// <summary>The player's character: refreshed when the character revision moves.</summary>
 public sealed record RynthCharacterPart(
@@ -28,7 +33,8 @@ public sealed record RynthSpellbookPart(
     float VitaeMultiplier,
     IReadOnlyList<uint>? KnownSpells,
     FrozenSet<uint> KnownSet,
-    bool SpellsAvailable);
+    bool SpellsAvailable,
+    IReadOnlyList<RynthEnchantment>? PlayerObjectEnchantments);
 
 /// <summary>Everything the pump reads in one pass. Immutable; published by the frame thread.</summary>
 public sealed record RynthWorldSnapshot

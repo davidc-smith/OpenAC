@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.Diagnostics;
+using System.Numerics;
 using AcDream.ClientExtensions;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
@@ -76,20 +77,24 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
 
     public void Dispose() => _objects.Dispose();
 
-    // Each active entity with a placed body, read as TryGetPlayerPose / TryGetObjectPosition read it.
+    // Each active entity, read as TryGetPlayerPose / TryGetObjectPosition / TryGetObjectState read it:
+    // only one with a body in a cell is placed. The heading is the live view's answer.
     private FrozenDictionary<uint, RynthEntityPose> BuildEntities()
     {
         var poses = new Dictionary<uint, RynthEntityPose>(runtime.EntityObjects.Entities.Count);
         foreach (RuntimeEntityRecord record in runtime.EntityObjects.Entities.ActiveRecords)
         {
-            if (record.PhysicsBody is not { } body || body.CellPosition.ObjCellId == 0)
-                continue;
             uint guid = record.ServerGuid;
             live.TryGetObjectState(guid, out uint state);
             bool? motion = live.TryGetObjectMotionOn(guid, out bool on) ? on : null;
-            poses[guid] = new RynthEntityPose(
-                body.CellPosition.ObjCellId, body.CellPosition.Frame.Origin, body.Orientation,
-                state, motion, live.GetPalettes(guid));
+            bool hasHeading = live.TryGetObjectHeading(guid, out float heading);
+            bool placed = record.PhysicsBody is { } body && body.CellPosition.ObjCellId != 0;
+            poses[guid] = placed
+                ? new RynthEntityPose(
+                    record.PhysicsBody!.CellPosition.ObjCellId, record.PhysicsBody.CellPosition.Frame.Origin,
+                    record.PhysicsBody.Orientation, state, motion, live.GetPalettes(guid), true, hasHeading, heading)
+                : new RynthEntityPose(0, default, Quaternion.Identity, state, motion, live.GetPalettes(guid),
+                    false, hasHeading, heading);
         }
         return poses.ToFrozenDictionary();
     }
@@ -131,7 +136,9 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
         IReadOnlyList<uint>? known = live.KnownSpells?.ToArray();
         return new RynthSpellbookPart(
             live.PlayerEnchantments?.ToArray(), live.PlayerStatMods?.ToArray(), live.VitaeMultiplier, known,
-            (known ?? []).ToFrozenSet(), live.IsSpellKnown(player, 0) != -1);
+            (known ?? []).ToFrozenSet(), live.IsSpellKnown(player, 0) != -1,
+            // Here, not in the object part: that part is shared on idle frames, the spellbook is not.
+            live.GetObjectEnchantments(player)?.ToArray());
     }
 
     private RynthVendor? BuildVendor()
