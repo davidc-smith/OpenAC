@@ -81,6 +81,35 @@ internal static class MarkupBindings
         BindOptionalAction<IReadOnlyList<float>>(attribute, binding, context, "IReadOnlyList<float>");
 
     /// <summary>
+    /// A required list of ints (any <c>IEnumerable&lt;int&gt;</c>), read on each
+    /// call: the plugin's list itself when it is an <c>IReadOnlyList&lt;int&gt;</c>
+    /// (read every frame, so not copied), otherwise a copy. Null reads as empty.
+    /// </summary>
+    public static Func<IReadOnlyList<int>> BindRequiredIntListReader(
+        string? expression, object binding, string context)
+    {
+        if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
+            throw new FormatException($"{context} must be an int-list binding");
+        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        if (property is null || !typeof(IEnumerable<int>).IsAssignableFrom(property.PropertyType))
+        {
+            throw new FormatException(
+                $"{expression} did not resolve to an IEnumerable<int> property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return () => property.GetValue(binding) switch
+        {
+            IReadOnlyList<int> list => list,
+            IEnumerable<int> values => values.ToArray(),
+            _ => Array.Empty<int>(),
+        };
+    }
+
+    /// <summary>An optional <c>Action&lt;IReadOnlyList&lt;int&gt;&gt;</c>; null when the attribute is absent.</summary>
+    public static Action<IReadOnlyList<int>>? BindIntListAction(string? attribute, object binding, string context) =>
+        BindOptionalAction<IReadOnlyList<int>>(attribute, binding, context, "IReadOnlyList<int>");
+
+    /// <summary>
     /// Sort keys for a list column: a list of doubles (compared as numbers) or
     /// of strings (compared as the column's sort kind says). Exactly one of the
     /// pair is set.
