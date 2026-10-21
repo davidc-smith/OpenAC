@@ -10,6 +10,8 @@
 - **Input.** The bar captures the pointer (`CapturesPointerDrag`), shows the retail resize cursor (state cursor `""`), highlights on hover and while dragging, and is the split's one tab stop: arrow keys along its axis move it 8 px. Clicking doesn't take keyboard focus.
 - **Callbacks.** `onchange(float)` fires once per distinct whole-pixel position during a drag or per key press. Unbound, the host value moves with it and is remembered once, at drag end (or per key press), removed when back at the default. Bound, the host only asks; the layout follows the property.
 
+**Status:** DONE 2026-10-21 — feat 13aa1206..5561afcb (7 commits incl. 3 final-review fix commits; each builds; pushed). Final review also fixed the expander move-back regression from 13aa1206 (per-entry move delta). Parked: grown stretched expander's authoredBottom misses siblings below (pre-existing, transient); disabled ancestor doesn't fade the bar (same as all controls).
+
 **Tech Stack:** C# / .NET 10, xUnit, headless `UiRoot` + `RecordingGpuDevice` tests.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` (branch `docs/markup-controls-spec`), "Shared rules" and section 7. Plans 4-5 built the store, `RememberedValue` and the `AddChild` build context.
