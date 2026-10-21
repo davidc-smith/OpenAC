@@ -350,7 +350,10 @@ public sealed partial class UiMarkupList : UiElement
                     switch (columns[c].Kind)
                     {
                         case UiMarkupListColumnKind.Text:
-                            DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
+                            if (c == TreeColumn)
+                                DrawTreeCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
+                            else
+                                DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
                             break;
                         case UiMarkupListColumnKind.Check:
                             DrawCheckCell(context, _cachedCheckRows[c], row, cellX, cellW, y, columns[c].Boxed);

@@ -87,10 +87,11 @@ public sealed partial class UiMarkupList
     /// <summary>Orders the view by the sorted column's keys (the cells, or its sortkeys).</summary>
     private void SortView(IReadOnlyList<UiMarkupListColumn> columns, int rowCount)
     {
+        UiMarkupListTreeShape? tree = LoadTree(rowCount);
         (int sorted, bool descending) = CurrentSort;
         if (sorted < 0)
         {
-            _view.SetIdentity(rowCount);
+            _view.SetIdentity(rowCount, tree);
             return;
         }
         if (_textKeys.Length < rowCount)
@@ -104,7 +105,7 @@ public sealed partial class UiMarkupList
             IReadOnlyList<double> keys = numbers();
             for (int row = 0; row < rowCount; row++)
                 _numberKeys[row] = row < keys.Count ? keys[row] : double.NaN;
-            _view.SortByNumber(_numberKeys, rowCount, descending);
+            _view.SortByNumber(_numberKeys, rowCount, descending, tree);
             return;
         }
         if (column.Sort == UiMarkupListSortKind.Bool)
@@ -112,7 +113,7 @@ public sealed partial class UiMarkupList
             IReadOnlyList<bool>? flags = _cachedCheckRows[sorted];
             for (int row = 0; row < rowCount; row++)
                 _numberKeys[row] = flags is not null && row < flags.Count ? (flags[row] ? 1d : 0d) : double.NaN;
-            _view.SortByNumber(_numberKeys, rowCount, descending);
+            _view.SortByNumber(_numberKeys, rowCount, descending, tree);
             return;
         }
         IReadOnlyList<string>? cells = column.SortTextKeys?.Invoke() ?? _cachedTextRows[sorted];
@@ -125,12 +126,12 @@ public sealed partial class UiMarkupList
                         ? value
                         : double.NaN;
             }
-            _view.SortByNumber(_numberKeys, rowCount, descending);
+            _view.SortByNumber(_numberKeys, rowCount, descending, tree);
             return;
         }
         for (int row = 0; row < rowCount; row++)
             _textKeys[row] = cells is not null && row < cells.Count ? cells[row] : null;
-        _view.SortByText(_textKeys, rowCount, descending);
+        _view.SortByText(_textKeys, rowCount, descending, tree);
     }
 
     /// <summary>▲ (ascending) or ▼ at the right of a sorted header cell.</summary>
