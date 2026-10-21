@@ -367,6 +367,10 @@ public static class MarkupDocument
                 parent.AddChild(MarkupCheckbox.Build(el, binding, Context()));
                 break;
 
+            case "number":
+                parent.AddChild(MarkupNumber.Build(el, binding, Context()));
+                break;
+
             case "slider":
                 string? changeName = (string?)el.Attribute("onchange");
                 Action<float>? changed = BindFloatAction(changeName, binding);
