@@ -167,6 +167,7 @@ Unknown or miscased element names throw at build time.
 | `checkbox` | Tick box, optionally indeterminate | `x y w h text checked onchange color` |
 | `number` | Number field with spin buttons | `x y w h value onchange min max step decimals color background` |
 | `radio` | One choice of several, as round buttons or a segmented bar | `x y w h items selected onchange orientation style color` |
+| `separator` | A 1 px dividing line | `x y w h color` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
@@ -312,6 +313,23 @@ One `<radio>` is the whole group: the player picks one of its options.
   after clicking, Tab back to the group to use the arrow keys again.
 
 On a host older than radio groups, a `<radio>` fails the build of its
+window as unknown.
+
+## Separator
+
+```xml
+<separator x="8" y="40" w="200" h="1"/>
+<separator x="110" y="48" w="1" h="120" color="theme:border|#FF61573B"/>
+```
+
+A `<separator>` draws a 1 px line across the middle of its box: horizontal,
+or vertical when the box is taller than it is wide. It uses the window's
+border colour (in the plugin theme, the theme's border token); `color`
+gives it any other colour, literal or bound. It takes no input, and a click
+on it reaches whatever lies beneath. Because clicks and hovering pass through
+a separator, a `tooltip` on it never shows.
+
+On a host older than separators, a `<separator>` fails the build of its
 window as unknown.
 
 ## Resizable panels and anchors
