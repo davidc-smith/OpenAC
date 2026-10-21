@@ -77,6 +77,9 @@ internal static class PluginMarkupTheme
                 panel.AddThemeAction(p => { expander.Header.ThemePalette = p;
                     if (Default("color")) expander.Header.TextColor = p?.Text ?? expanderText; });
                 break;
+            case UiMarkupSplit split:
+                panel.AddThemeAction(p => split.Bar.ThemePalette = p);
+                break;
             case UiField field:
                 ThemeField(panel, field, Default);
                 break;

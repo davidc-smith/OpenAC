@@ -37,6 +37,25 @@ internal static class MarkupBindings
     public static Action<int>? BindIntAction(string? attribute, object binding, string context) =>
         BindOptionalAction<int>(attribute, binding, context, "int");
 
+    /// <summary>An optional <c>Action&lt;float&gt;</c>; null when the attribute is absent.</summary>
+    public static Action<float>? BindFloatAction(string? attribute, object binding, string context) =>
+        BindOptionalAction<float>(attribute, binding, context, "float");
+
+    /// <summary>A required <c>float</c> binding, read live.</summary>
+    public static Func<float> BindRequiredFloatReader(string? expression, object binding, string context)
+    {
+        if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
+            throw new FormatException($"{context} must be a float binding");
+        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        if (property is null || property.PropertyType != typeof(float))
+        {
+            throw new FormatException(
+                $"{expression} did not resolve to a float property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return () => property.GetValue(binding) is float value ? value : 0f;
+    }
+
     private static Action<T>? BindOptionalAction<T>(
         string? attribute, object binding, string context, string typeName)
     {
