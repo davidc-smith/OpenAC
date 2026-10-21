@@ -94,7 +94,9 @@ These apply to every control below unless it says otherwise.
     already works this way).
   - **Store:** a new `MarkupControlStateStore` beside
     `RetailWindowLayoutPersistence`, saved through the same `SettingsStore`
-    and character key, written when the layout is saved. Keys are
+    and character key. It is written on the frame after a change (and on
+    shutdown and layout save), so a control remembers only when the player
+    commits a change (drag end, a click), never on every drag frame. Keys are
     `<window name>/<control name>/<kind>`; values are short strings. Unknown
     or malformed stored values are ignored.
 
@@ -210,7 +212,8 @@ them.
   below the expander's authored bottom moves up by the difference, and back
   down on expanding, like an accordion. Siblings above or beside it don't
   move. Anchored siblings keep their anchors; the shift applies to their
-  authored position.
+  authored position, so a sibling anchored top and bottom grows into the
+  space instead of moving.
 
 ## 7. `<split>` (series 6)
 
