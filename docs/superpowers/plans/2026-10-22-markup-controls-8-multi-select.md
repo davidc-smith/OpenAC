@@ -11,6 +11,8 @@
 - **Builder.** `Markup/MarkupListSelect.cs` binds `selectmode`, `selected`, `onchange` and `selectionband` for both modes. Single mode keeps today's bindings and error messages exactly.
 - **No host selection.** The list keeps only the anchor and the lead, never a selection. It draws whatever `selected` returns and calls `onchange` on each user action.
 
+**Status:** DONE 2026-10-22 — feat fd03cfb0..502f7bd5 (6 commits incl. final-review fix; each builds; gate = baseline 162). Final review: keyboard focus is only reachable by Tab from another focused control (click clears focus) — shared-rule gap across radio/checkbox/list, docs corrected, design change open with the user.
+
 **Tech Stack:** C# / .NET 10, Silk.NET input keys, xUnit, headless `UiRoot` + `RecordingGpuDevice` tests.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` (branch `docs/markup-controls-spec`), "Shared rules" and section 9. It builds on plan 7 (`2026-10-21-markup-controls-7-list-header.md`): the view map, `PluginRow`/`ViewRow`, and the reveal and press-cancel rules.
