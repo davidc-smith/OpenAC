@@ -51,8 +51,17 @@ internal sealed class RynthHotkeyKeyboard : IOverlayKeyboardSink
     public void FocusLost()
     {
         Win32KeyStateStandIn.Focused = false;
-        HotkeyService.HandleKeyMessage(WmKillFocus, IntPtr.Zero, IntPtr.Zero, false);
+        ForgetHeldKeys();
     }
+
+    /// <summary>
+    /// Clears the keys their tracker thinks a hotkey took, through the focus-loss message.
+    /// HotkeyService.Shutdown stopped doing it (2026-10-20: in RynthCore the tracker dies with
+    /// the engine generation); here the statics outlive a host, so the host calls this after it.
+    /// Game thread.
+    /// </summary>
+    internal static void ForgetHeldKeys() =>
+        HotkeyService.HandleKeyMessage(WmKillFocus, IntPtr.Zero, IntPtr.Zero, false);
 
     public void KeyDown(OverlayKey key, OverlayModifiers modifiers)
     {

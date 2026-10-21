@@ -49,6 +49,7 @@ public sealed class RynthHotkeysTests : IDisposable
     internal static void ResetHotkeyService()
     {
         HotkeyService.Shutdown();
+        RynthHotkeyKeyboard.ForgetHeldKeys();
         Type service = typeof(HotkeyService);
         service.GetField("_loaded", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, false);
         service.GetField("_nextFileCheckMs", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, 0L);

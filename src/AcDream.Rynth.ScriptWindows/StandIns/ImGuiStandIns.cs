@@ -12,6 +12,19 @@ namespace RynthCore.Engine.ImGuiBackend
         internal static float FontScale => 1f;
     }
 
+    /// <summary>
+    /// ScriptWindowFace draws the engine Skills body into Oracle's window. The real
+    /// SkillsFace lives in AcDream.Rynth.EngineUi, which this project can't see, so
+    /// this sits one namespace out (name lookup from Panels reaches it after Panels)
+    /// and forwards to whatever EngineUi sets in <see cref="EmbeddedDraw"/>.
+    /// </summary>
+    internal static class SkillsFace
+    {
+        public static Action<int>? EmbeddedDraw { get; set; }
+
+        public static void DrawEmbedded(int tab) => EmbeddedDraw?.Invoke(tab);
+    }
+
     internal static class ImGuiTextFocus
     {
         public static void NoteActive(string id)

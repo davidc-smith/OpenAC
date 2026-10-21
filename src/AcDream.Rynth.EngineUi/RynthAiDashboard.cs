@@ -5,6 +5,7 @@ using RynthCore.Engine.Compatibility;
 using RynthCore.Engine.ImGuiBackend;
 using RynthCore.Engine.ImGuiBackend.Panels;
 using RynthCore.Engine.UI.Data;
+using SkillsFace = RynthCore.Engine.ImGuiBackend.Panels.SkillsFace;
 
 namespace AcDream.Rynth.EngineUi;
 
@@ -72,6 +73,8 @@ internal static class RynthAiDashboard
             LuaFace.Register();
         if (!ImGuiPanelHost.HasFace(SkillsFace.Title))
             SkillsFace.Register();
+        // Oracle's window draws the Skills body through the ScriptWindows stand-in.
+        RynthCore.Engine.ImGuiBackend.SkillsFace.EmbeddedDraw = SkillsFace.DrawEmbedded;
         if (!ImGuiPanelHost.HasFace(DungeonMapFace.Title))
             DungeonMapFace.Register();
         if (!ImGuiPanelHost.HasFace(MiniRemoteFace.Title))

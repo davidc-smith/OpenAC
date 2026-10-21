@@ -274,6 +274,7 @@ public sealed class RynthClientExtension : IClientExtension
         }
         _isTyping = null;
         Guard("hotkeys", RynthCore.Engine.Hotkeys.HotkeyService.Shutdown);
+        Guard("hotkeys", RynthHotkeyKeyboard.ForgetHeldKeys);
         if (_itemDrops is { } drops)
         {
             drops.SetDropClaimer(null);

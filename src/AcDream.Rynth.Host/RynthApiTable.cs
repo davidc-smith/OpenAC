@@ -21,7 +21,7 @@ namespace AcDream.Rynth.Host;
 public sealed unsafe partial class RynthApiTable : IDisposable
 {
     /// <summary>The RynthCore engine API version this host implements.</summary>
-    public const uint ApiVersion = 86;
+    public const uint ApiVersion = 88;
 
     private static RynthApiTable? _current;
 
