@@ -8,9 +8,11 @@
 - **Contract.** `PluginKeyChord` (in `AcDream.Plugin.Abstractions/HotkeyAutomation.cs`) gains a body with two public members:
   - `static bool TryParse(string? text, out PluginKeyChord chord)` reads a `<hotkey>` string. Modifiers can come in any order and any case. The key can be spelled the box's way (`Keypad5`, `GraveAccent`) or by its `PluginKey` name (`Numpad5`, `Grave`). It returns false for empty or unreadable text, and for keys `PluginKey` has no member for.
   - `string ToHotkeyText()` writes the box's canonical form, `Ctrl+Alt+Shift+Key` with the box's key names.
-  - The abstractions assembly stays free of Silk.NET. The nine names that differ are a small string table.
+  - The abstractions assembly stays free of Silk.NET. The 17 names that differ (7 table rows) are a small string table.
 - **Consistency check.** An App test cross-checks every `PluginKey` against the client's own `AppHotkeyRegistry.MapKey` and `MarkupHotkeyText`, so the table can't drift from the client's key mapping. `MapKey` goes from `private` to `internal` for this.
 - **Docs.** `plugin-ui-markup.md` (Hotkey section) and `plugin-api.md` (Hotkeys section) show the round trip.
+
+**Status:** DONE 2026-10-22 — feat 8e627c4c..618e80d4 (5 commits: 3 tasks, 1 docs fix round, 1 final-review fix; gate = baseline 162, 0 warnings). Final review: `TryParse` renamed `TryParseHotkeyText` (the plain name implies a ToString round trip); `IsBound`/`EffectiveChord`/`Rebind` XML docs corrected (plugin-collision re-resolve; Rebind changes EffectiveChord; `Rebind(default)` unbinds and persists, now tested); docs example unbinds when the box is cleared. The code below still says `TryParse`; the branch uses `TryParseHotkeyText`. Deferred: client-binding sentence omits that re-register/Rebind also re-resolves.
 
 **Tech Stack:** C# / .NET 10, xUnit. Plugin.Abstractions is `TreatWarningsAsErrors` with `GenerateDocumentationFile`, so every new public member needs an XML doc comment.
 

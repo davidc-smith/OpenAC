@@ -372,7 +372,7 @@ them.
 - A modifier pressed alone is not a chord; capture keeps waiting.
 - Keyboard input only (no mouse buttons).
 
-- **Bridge to `PluginKeyChord`** (amendment 2026-10-22, plan 11b). The string's key names are Silk's, which differ from `PluginKey` for the keypad keys and Grave. `PluginKeyChord.TryParse(string, out PluginKeyChord)` reads a box string (either spelling; false for empty and for keys `PluginKey` lacks) and `PluginKeyChord.ToHotkeyText()` writes one. Additive public contract members; the box itself is unchanged.
+- **Bridge to `PluginKeyChord`** (amendment 2026-10-22, plan 11b). The string's key names are Silk's, which differ from `PluginKey` for the keypad keys and Grave. `PluginKeyChord.TryParseHotkeyText(string, out PluginKeyChord)` reads a box string (either spelling; false for empty and for keys `PluginKey` lacks) and `PluginKeyChord.ToHotkeyText()` writes one. Additive public contract members; the box itself is unchanged.
 
 ## 13. `<color>` (series 12)
 
