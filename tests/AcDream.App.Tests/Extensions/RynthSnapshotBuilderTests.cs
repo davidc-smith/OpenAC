@@ -5,8 +5,10 @@ using AcDream.Core.Items;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Core.Physics;
+using AcDream.Core.Physics.Motion;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime.Entities;
+using AcDream.Runtime.Gameplay;
 using AcDream.Rynth.Host;
 
 namespace AcDream.App.Tests.Extensions;
@@ -67,6 +69,42 @@ public sealed class RynthSnapshotBuilderTests
 
         automation.Available = false;   // vitals not readable
         Assert.False(builder.Build().Dead);
+    }
+
+    // The surface's object projection: the body's orientation when there is a body, else the rotation of
+    // the server's last position, else none; and nothing while the surface is unavailable.
+    [Fact]
+    public void EntityHeadingsFollowTheObjectProjectionsRule()
+    {
+        var runtime = GameRuntimeTestFactory.Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001;
+        var automation = new FakeRynthAutomation();
+        var live = new RuntimeRynthGameView(runtime, automation: automation);
+        using var builder = new RynthSnapshotBuilder(live, runtime, screen: null);
+
+        RuntimeEntityRecord placed = runtime.EntityObjects.Entities.AddActive(Spawn(0x80000010));
+        var body = new PhysicsBody { Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 1.25f) };
+        body.SnapToCell(0x0101001Au, new Vector3(10, 20, 30), new Vector3(1, 2, 3));
+        placed.SetPhysicsBody(body);
+        RuntimeEntityRecord unplaced = runtime.EntityObjects.Entities.AddActive(Spawn(0x80000011));
+        var server = new CreateObject.ServerPosition(0x0101001Bu, 10f, 20f, 5f, MathF.Cos(0.4f), 0f, 0f, MathF.Sin(0.4f));
+        unplaced.Snapshot = unplaced.Snapshot with { Position = server };
+        RuntimeEntityRecord nowhere = runtime.EntityObjects.Entities.AddActive(Spawn(0x80000012));
+        nowhere.Snapshot = nowhere.Snapshot with { Position = null };
+
+        RynthWorldSnapshot s = builder.Build();
+
+        float placedHeading = MoveToMath.GetHeading(body.Orientation);
+        float serverHeading = MoveToMath.GetHeading(RuntimeWorldObjectProjection.ConvertPosition(server)!.Value.Frame.Orientation);
+        Assert.NotEqual(placedHeading, serverHeading);
+        Assert.Equal((true, placedHeading), (s.Entities[0x80000010].HasHeading, s.Entities[0x80000010].Heading));
+        Assert.Equal((true, serverHeading), (s.Entities[0x80000011].HasHeading, s.Entities[0x80000011].Heading));
+        Assert.False(s.Entities[0x80000012].HasHeading);
+
+        automation.Available = false;
+        placed.SetPhysicsBody(body);   // a new build of entities, all the same
+        s = builder.Build();
+        Assert.All(s.Entities.Values, pose => Assert.False(pose.HasHeading));
     }
 
     [Fact]

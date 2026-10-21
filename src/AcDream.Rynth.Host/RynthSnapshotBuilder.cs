@@ -2,8 +2,10 @@ using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Numerics;
 using AcDream.ClientExtensions;
+using AcDream.Core.Physics.Motion;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
+using AcDream.Runtime.Gameplay;
 
 namespace AcDream.Rynth.Host;
 
@@ -78,25 +80,44 @@ public sealed class RynthSnapshotBuilder(IRynthGameView live, GameRuntime runtim
     public void Dispose() => _objects.Dispose();
 
     // Each active entity, read as TryGetPlayerPose / TryGetObjectPosition / TryGetObjectState read it:
-    // only one with a body in a cell is placed. The heading is the live view's answer.
+    // only one with a body in a cell is placed.
     private FrozenDictionary<uint, RynthEntityPose> BuildEntities()
     {
+        // TryGetObjectHeading's gate, probed once: the surface answers object reads only while available.
+        bool headings = live is RuntimeRynthGameView { AutomationAvailable: true };
         var poses = new Dictionary<uint, RynthEntityPose>(runtime.EntityObjects.Entities.Count);
         foreach (RuntimeEntityRecord record in runtime.EntityObjects.Entities.ActiveRecords)
         {
             uint guid = record.ServerGuid;
             live.TryGetObjectState(guid, out uint state);
             bool? motion = live.TryGetObjectMotionOn(guid, out bool on) ? on : null;
-            bool hasHeading = live.TryGetObjectHeading(guid, out float heading);
-            bool placed = record.PhysicsBody is { } body && body.CellPosition.ObjCellId != 0;
-            poses[guid] = placed
+            bool hasHeading = TryGetHeading(record, headings, out float heading);
+            poses[guid] = record.PhysicsBody is { } body && body.CellPosition.ObjCellId != 0
                 ? new RynthEntityPose(
-                    record.PhysicsBody!.CellPosition.ObjCellId, record.PhysicsBody.CellPosition.Frame.Origin,
-                    record.PhysicsBody.Orientation, state, motion, live.GetPalettes(guid), true, hasHeading, heading)
+                    body.CellPosition.ObjCellId, body.CellPosition.Frame.Origin, body.Orientation,
+                    state, motion, live.GetPalettes(guid), true, hasHeading, heading)
                 : new RynthEntityPose(0, default, Quaternion.Identity, state, motion, live.GetPalettes(guid),
                     false, hasHeading, heading);
         }
         return poses.ToFrozenDictionary();
+    }
+
+    // The heading RuntimeWorldObjectProjection gives an entity, without projecting the rest of it: the
+    // body's orientation (LivePosition) when there is a body, else the server position's rotation, else none.
+    private static bool TryGetHeading(RuntimeEntityRecord record, bool available, out float heading)
+    {
+        heading = 0;
+        if (!available || record.ServerGuid == 0)
+            return false;
+        if (record.PhysicsBody is { } body)
+        {
+            heading = MoveToMath.GetHeading(body.Orientation);
+            return true;
+        }
+        if (RuntimeWorldObjectProjection.ConvertPosition(record.Snapshot.Position) is not { } position)
+            return false;
+        heading = MoveToMath.GetHeading(position.Frame.Orientation);
+        return true;
     }
 
     private RynthCharacterPart? BuildCharacter(uint player)

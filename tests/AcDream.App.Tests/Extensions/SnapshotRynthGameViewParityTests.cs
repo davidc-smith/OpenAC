@@ -3,9 +3,11 @@ using AcDream.Core.Items;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Core.Physics;
+using AcDream.Core.Physics.Motion;
 using AcDream.Core.Spells;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime.Entities;
+using AcDream.Runtime.Gameplay;
 using AcDream.Rynth.EngineUi;
 using AcDream.Rynth.Host;
 
@@ -30,7 +32,9 @@ public sealed class SnapshotRynthGameViewParityTests
         // Not vacuous: the fixture gives real answers.
         Assert.True(live.TryGetPlayerVitals(out _));
         Assert.True(live.TryGetPlayerPose(out _, out _, out _));
-        Assert.True(live.TryGetObjectHeading(Vendor, out _));
+        Assert.True(live.TryGetObjectHeading(Vendor, out float vendorHeading));
+        Assert.Equal(MoveToMath.GetHeading(Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 1.25f)), vendorHeading);
+        Assert.True(live.TryGetObjectHeading(Door, out _));   // no body: the server position's rotation
         Assert.True(live.TryGetObjectState(Door, out _));
         Assert.NotNull(live.Vendor);
         Assert.NotEmpty(live.KnownSpells!);
@@ -220,8 +224,11 @@ public sealed class SnapshotRynthGameViewParityTests
         runtime.InventoryOwner.ServerReplies.RecordUseDone(0x36);
         var position = new PluginNavigationPosition(0x0101001A, 1, 2, 3, 123.5f, true);
         automation.NavigationArea.Snapshot = default(PluginNavigationSnapshot) with { IsAvailable = true, Position = position };
-        automation.ObjectArea.Known[Vendor] = new PluginWorldObject(Vendor, 1, "Thorsten", PluginObjectClass.Unknown, 0, 0, 0)
-        { HasPosition = true, Position = position with { HeadingDegrees = 45f } };
+        // The fake surface's objects are the real projection of each entity, as RuntimeAutomationSurface
+        // gives them: so the live heading is the real rule (body, else server position), not a made-up one.
+        foreach (RuntimeEntityRecord record in runtime.EntityObjects.Entities.ActiveRecords)
+            automation.ObjectArea.Known[record.ServerGuid] = RuntimeWorldObjectProjection.Project(
+                record, runtime.InventoryOwner.Objects.Get(record.ServerGuid), Player, runtime.InventoryOwner.Objects);
 
         // PlayerEnchantmentsComeFromTheFullRegistryAsRynthCoreReadsThem (untimed, so no clock jitter).
         double clock = runtime.EffectClock.NowSeconds;

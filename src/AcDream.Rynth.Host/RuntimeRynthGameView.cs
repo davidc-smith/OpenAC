@@ -300,6 +300,9 @@ public sealed class RuntimeRynthGameView : IRynthGameView
         return false;
     }
 
+    /// <summary>The automation surface's gate on its object reads (TryGetObjectHeading among them).</summary>
+    internal bool AutomationAvailable => _automation.IsAvailable;
+
     public bool IsPortaling => _automation.Navigation.Snapshot.IsPortalSpace;
 
     public int BusyCount => _automation.Recovery.CaptureBusyState().BusyCount;
