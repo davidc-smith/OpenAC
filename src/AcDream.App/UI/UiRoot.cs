@@ -256,6 +256,14 @@ public sealed class UiRoot : UiElement
     /// <summary>Raised when a drag is released over no UI element.</summary>
     public event Action<object /*payload*/, int /*x*/, int /*y*/>? DragReleasedOutsideUi;
 
+    /// <summary>
+    /// Asked when a drag is let go, before the drop is hit-tested: the payload and the
+    /// release point in window points (before the canvas mapping). True: the drag ends
+    /// there, with no drop and no <see cref="DragReleasedOutsideUi"/> (an ImGui window
+    /// took it or is in the way).
+    /// </summary>
+    public Func<object, Vector2, bool>? DragReleaseInterceptor { get; set; }
+
     /// <summary>Raised after a registered top-level window finishes moving.</summary>
     public event Action<string, UiElement>? WindowMoved;
 
@@ -687,6 +695,7 @@ public sealed class UiRoot : UiElement
 
     public void OnMouseUp(UiMouseButton btn, int x, int y, uint flags = 0)
     {
+        var windowPoint = new Vector2(x, y);
         (x, y) = MapWindowToCanvas(x, y);
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: false);
@@ -711,7 +720,10 @@ public sealed class UiRoot : UiElement
 
         if (DragSource is not null)
         {
-            FinishDrag(x, y);
+            if (DragPayload is { } payload && DragReleaseInterceptor?.Invoke(payload, windowPoint) == true)
+                CancelDrag();
+            else
+                FinishDrag(x, y);
             ReleaseCapture();
             _dragCandidate = false;
             return;
@@ -1144,6 +1156,16 @@ public sealed class UiRoot : UiElement
             t.OnEvent(in eEnter);
         }
         _lastDragHoverTarget = t;
+    }
+
+    /// <summary>The drag ends where it began: the source shows the item again, nothing is dropped.</summary>
+    private void CancelDrag()
+    {
+        DragSource?.SetDragSourceActive(false, DragPayload);
+        DragSource = null;
+        DragPayload = null;
+        _dragGhost = null;
+        _lastDragHoverTarget = null;
     }
 
     private void FinishDrag(int x, int y)
