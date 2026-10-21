@@ -419,14 +419,52 @@ public sealed class MarkupListTreeTests
     public void Disabled_IgnoresArrowsAndKeys()
     {
         var b = new Binding { Selected = 0 };
-        var m = Mount(b, Tree + " enabled=\"false\"");
+        var m = Mount(b, Tree + " enabled=\"false\" onexpand=\"{NotifyExpand}\"");
         Click(m, ArrowX(0), RowY(0));
         m.Root.SetKeyboardFocus(m.List);
         Press(m, Key.Left);
+        Assert.Empty(b.Expands);
         b.Selected = -1;
         Redraw(m.List);
         // Still every row shown: nothing collapsed. (Rows can't be clicked while disabled, so count arrows.)
         m.List.TextColor = new Vector4(0.1f, 0.9f, 0.2f, 1f);
         Assert.Equal(12, MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(m.List), m.List.TextColor).Count);
+    }
+
+    [Fact]
+    public void SingleMode_UpDownFallThrough_LeftRightDoNot()
+    {
+        var b = new Binding { Selected = 0 };
+        var m = Mount(b);
+        var fell = new List<int>();
+        m.Root.WorldKeyFallThrough += (vk, _) => fell.Add(vk);
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.Up);
+        Press(m, Key.Down);
+        Assert.Equal(2, fell.Count);
+        Assert.Empty(b.Picks);
+        fell.Clear();
+        Press(m, Key.Left);
+        Press(m, Key.Right);
+        Assert.Empty(fell);
+    }
+
+    [Fact]
+    public void SharedKey_CollapsesTogether()
+    {
+        var b = new Binding { Ids = new() { "x", "a1", "a2", "a2a", "x", "b1" } };
+        var m = Mount(b);
+        Click(m, ArrowX(0), RowY(0));
+        Assert.Equal(new[] { 0, 4 }, ViewOrder(m, b));
+    }
+
+    [Fact]
+    public void ShiftRange_AcrossCollapsedParentCoversOnlyShownRows()
+    {
+        var b = new Binding();
+        var m = Mount(b, MultiTree + " collapsed=\"true\"");
+        Click(m, TextX, RowY(0));
+        Click(m, TextX, RowY(1), new UiSelectModifiers(Add: false, Range: true));
+        Assert.Equal(new[] { 0, 4 }, b.Selection);
     }
 }

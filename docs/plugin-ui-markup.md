@@ -779,15 +779,21 @@ one deeper, and a row past the end of `levels` is top level. `keys` gives
 each row a stable id that the expanded state is kept by (a list or array is
 read as is, other collections are copied each frame); a row past the end of
 `keys` gets the key `#<row>`, for example `#7`.
+Keys should be stable across sessions: the client remembers changed keys per
+character and keeps them even when a key no longer appears, so volatile ids
+(for example item GUIDs) make the remembered value grow. Rows that share a key
+expand and collapse together. A `levels` that is not a list or array is copied
+each frame, like `keys`.
 
 The first `text` column draws the tree: each level indents 12 pixels, and a
 row with children shows an arrow in a 12 pixel slot, pointing right when
 collapsed and down when expanded. Clicking the slot collapses or expands the
-row without selecting it. The list takes keyboard focus with Tab from another
+row without selecting it, and does not fire the column's `onclick`. The list takes keyboard focus with Tab from another
 focused control in the same window; clicking a row does not focus it. While
 focused, Right expands the selected row or, if it is already expanded, moves
 to its first child, and Left collapses it or moves to its parent. In a
-multi-select list the keys act on the last row picked.
+multi-select list the keys act on the last row picked or stepped to, so they
+do nothing until the player has picked one.
 
 - Without `expanded` the client keeps the expanded state: every row starts
   expanded, or collapsed with `collapsed="true"`, and a list with a `name`
@@ -798,12 +804,16 @@ multi-select list the keys act on the last row picked.
   `HashSet<string>`; any other `IEnumerable<string>` is copied into a new set
   every frame. Clicking an arrow or Left/Right calls `onexpand` with the
   key and the state asked for, so change the set there.
+  A bound set that returns null counts as empty, so every parent shows
+  collapsed. Without `onexpand` the arrows and Left/Right do nothing visible.
 
 Sorting a tree sorts each row's children among themselves and keeps them
 under their parent. Collapsed rows' children are left out of what is drawn,
 but every row index the plugin sees is still its own index, so `selected`,
 `onchange` and the column callbacks are unchanged. A multi-select list
-selects only rows that are shown (Shift ranges and Ctrl+A). When the player
+selects only rows that are shown (Shift ranges and Ctrl+A). A checkbox column's
+select-all header (`header="all"`) counts every row, hidden ones included,
+matching what `onall` changes. When the player
 asks for a collapse (an arrow click or Left), the list calls `onchange` with
 the row's hidden children removed from the selection, and moves the Shift
 anchor and last-picked row up to the collapsed row. This happens straight

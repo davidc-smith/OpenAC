@@ -81,9 +81,10 @@ public sealed partial class UiMarkupList
     private bool _selectionFocused;
 
     /// <summary>
-    /// Multi-mode focus and selection keys: Up/Down step the lead (Shift
-    /// extends from the anchor), Ctrl/Cmd+A selects every row; a tree list also takes Left/Right. Up and Down are
-    /// always taken while focused; other keys fall through.
+    /// Focus and keys for a list. A tab-stop list tracks focus; while focused,
+    /// a tree takes Left/Right, and a multi-select list takes Up/Down (Shift
+    /// extends from the anchor) and Ctrl/Cmd+A to select every shown row. Up
+    /// and Down are taken only in multi-select; other keys fall through.
     /// </summary>
     private bool HandleSelectionEvent(in UiEvent e)
     {
