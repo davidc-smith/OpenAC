@@ -391,8 +391,9 @@ public sealed class UiMarkupList : UiElement
     {
         bool isChecked = flags is not null && index < flags.Count && flags[index];
         float extent = MathF.Max(0f, cellW - 2f);
-        float lampX = cellX + 1f + MathF.Max(0f, extent - UiCheckLamp.LampSize) * 0.5f;
-        float lampY = y + MathF.Max(1f, (RowHeight - UiCheckLamp.LampSize) * 0.5f);
+        float size = boxed ? UiCheckBoxGlyph.Size : UiCheckLamp.LampSize;
+        float lampX = cellX + 1f + MathF.Max(0f, extent - size) * 0.5f;
+        float lampY = y + MathF.Max(1f, (RowHeight - size) * 0.5f);
         if (boxed) UiCheckBoxGlyph.Draw(context, lampX, lampY, isChecked, ThemePalette);
         else if (ThemePalette is { } p) p.DrawCheck(context, lampX, lampY, isChecked);
         else UiCheckLamp.Draw(context, lampX, lampY, isChecked);

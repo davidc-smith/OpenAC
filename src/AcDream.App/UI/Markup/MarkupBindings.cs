@@ -2,14 +2,19 @@ using System.Reflection;
 
 namespace AcDream.App.UI.Markup;
 
-/// <summary>Binding readers and actions the newer markup elements share.</summary>
+/// <summary>
+/// Binding readers and actions the newer markup elements share.
+/// MarkupBindings helpers validate: BindRequired* throw when the attribute is
+/// absent or mistyped; other Bind* return null when the attribute is absent and
+/// throw when it is present but mistyped. <c>context</c> is "&lt;element&gt; &lt;attribute&gt;".
+/// </summary>
 internal static class MarkupBindings
 {
     /// <summary>
     /// A required tri-state binding: a <c>bool</c> property, or a <c>bool?</c>
     /// one whose null means indeterminate.
     /// </summary>
-    public static Func<bool?> BindRequiredCheckState(string? expression, object binding, string context)
+    public static Func<bool?> BindRequiredNullableBoolReader(string? expression, object binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a bool or bool? binding");

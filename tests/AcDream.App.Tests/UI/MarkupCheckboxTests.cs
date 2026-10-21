@@ -25,10 +25,10 @@ public class MarkupCheckboxTests
     public void CheckState_ReadsBoolAndNullableBool()
     {
         var binding = new Binding { Loot = true, Mixed = null };
-        Assert.True(MarkupBindings.BindRequiredCheckState("{Loot}", binding, "ctx")());
-        Assert.Null(MarkupBindings.BindRequiredCheckState("{Mixed}", binding, "ctx")());
+        Assert.True(MarkupBindings.BindRequiredNullableBoolReader("{Loot}", binding, "ctx")());
+        Assert.Null(MarkupBindings.BindRequiredNullableBoolReader("{Mixed}", binding, "ctx")());
         binding.Mixed = false;
-        Assert.False(MarkupBindings.BindRequiredCheckState("{Mixed}", binding, "ctx")());
+        Assert.False(MarkupBindings.BindRequiredNullableBoolReader("{Mixed}", binding, "ctx")());
     }
 
     [Theory]
@@ -39,7 +39,7 @@ public class MarkupCheckboxTests
     public void CheckState_RejectsAnythingButABoolBinding(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredCheckState(expression, new Binding(), "checkbox checked"));
+            () => MarkupBindings.BindRequiredNullableBoolReader(expression, new Binding(), "checkbox checked"));
         Assert.Contains("checkbox checked", ex.Message);
     }
 

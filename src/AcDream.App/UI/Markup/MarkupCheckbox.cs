@@ -18,7 +18,7 @@ internal static class MarkupCheckbox
             Height = MarkupDocument.F(el, "h"),
             Text = caption ?? string.Empty,
             TextSource = MarkupDocument.BindString(caption, binding),
-            CheckedSource = MarkupBindings.BindRequiredCheckState(
+            CheckedSource = MarkupBindings.BindRequiredNullableBoolReader(
                 (string?)el.Attribute("checked"), binding, "checkbox checked"),
             Changed = MarkupBindings.BindBoolAction(
                 (string?)el.Attribute("onchange"), binding, "checkbox onchange"),
