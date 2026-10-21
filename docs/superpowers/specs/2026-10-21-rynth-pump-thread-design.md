@@ -120,10 +120,10 @@ uses today's `Merge` clone.
 
 Serves `TryGetObject`, `TryGetObjectName`, `TryGetInt64Property` (non-player),
 `GetContainerContents`, `TryCountContents`, `LiveObjectIds`, `InventoryRevision`. Derived
-predicates (`IsOwnedItem`, `IsOwnedTinkeringTool`, `IsAttackable`) are computed on the
-pump by the same policy code against the snapshot's objects. Each policy function used there
-must read only the objects it is given and a lookup; one that reads live runtime state gets a
-lookup-taking overload.
+predicates (`IsOwnedItem`, `IsOwnedTinkeringTool`, `IsAttackable`) and each object's
+`GetObjectEnchantments` are filled at publish by calling the live view for every object,
+when `MutationRevision` (or the player id) moved, else shared. Filling the snapshot from
+the live view's own answers keeps the two in agreement by construction.
 
 #### 2.3 Character (when changed)
 
@@ -133,10 +133,9 @@ Vitals, base vitals, vital bases, skills, attributes, `PlayerProgress`, the play
 
 #### 2.4 Spellbook (when changed)
 
-Enchantment records, stat mods, vitae, known spells (copied to a `FrozenSet<uint>`),
-object enchantments: rebuilt when the spellbook revision moved. Values that depend on time
-(remaining durations, `PlayerEnchantments` as filtered "now") are computed on the pump from
-the copied records and the published effect-clock pair, the way §2.5 does server time.
+`PlayerEnchantments`, `PlayerStatMods`, `VitaeMultiplier`, `KnownSpells` (plus a
+`FrozenSet<uint>` for `IsSpellKnown`): filled from the live view when the spellbook revision
+moved, and at least once a second otherwise, so expiries show without a revision bump.
 
 #### 2.5 Clocks
 
@@ -228,8 +227,10 @@ action. That is RynthCore's behaviour too; nothing compensates for it.
 **Testing** (Rynth.Host.Tests, plus the new pieces):
 
 - The pump takes an injectable scheduler: a real thread in the client, a manual one in tests
-  that runs a pass on demand, so existing tests stay deterministic. The whole existing suite
-  passes with the pump on (manual scheduler) and off.
+  that runs one pass on a separate thread and joins it, so tests stay deterministic and the
+  routing is real. The existing suite keeps running inline (pump off, the routed view always
+  live); pump mode gets its own tests, including one that loads the real plugins and runs
+  passes through the manual scheduler.
 - Routing: frame thread → live view; other threads → snapshot view; stand-ins follow it.
 - Snapshot parity: on a populated runtime fixture, every read member answers the same through
   the snapshot view as through the live view right after a publish (table-driven over the
