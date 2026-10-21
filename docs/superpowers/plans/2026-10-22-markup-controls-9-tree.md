@@ -19,6 +19,8 @@
   - Bound: `expanded` is a set of keys, read every frame; `onexpand(key, state)` asks for a change.
   - Unbound: the host remembers the keys whose state differs from the default (expanded, or collapsed with `collapsed="true"`). It stores them as a JSON array of strings under kind `"expanded"`.
 
+**Status:** DONE 2026-10-22 — feat 502f7bd5..9b4b5523 (9 commits incl. docs fix + final polish; each code commit builds; gate = baseline 162). Plan bug fixed in Task 4: LoadTree's unbound test must be `toggled.Contains(key) == StartCollapsed`. Keys bind with preserveSnapshot. A user collapse request trims a multi selection even in bound mode (documented).
+
 **Tech Stack:** C# / .NET 10, System.Text.Json, xUnit, headless `UiRoot` + `RecordingGpuDevice` tests.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` (branch `docs/markup-controls-spec`), "Shared rules" and section 10. It builds on plan 7 (view map, sort) and plan 8 (multi-select, `UiMarkupListSelection`, focus/keys in `UiMarkupList.Selection.cs`).
