@@ -119,7 +119,7 @@ back at runtime instead.
 | `list onresize` | `Action<IReadOnlyList<float>>`, every column's width | throws |
 | `list levels` | `IEnumerable<int>`, each row's depth (0 = top level) | throws |
 | `list keys` | `IEnumerable<string>`; a list or array is read as is, other collections are copied each frame | throws |
-| `list expanded` | `IReadOnlySet<string>` (best: `HashSet<string>`), or any `IEnumerable<string>`, which is copied each frame; when bound, the plugin owns it | throws when mistyped |
+| `list expanded` | `IReadOnlySet<string>` (best: `HashSet<string>`), or any `IEnumerable<string>`, which is copied each frame; when bound, the plugin owns it | throws |
 | `list onexpand` | `Action<string, bool>`, the key and the state asked for | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
@@ -796,16 +796,22 @@ multi-select list the keys act on the last row picked.
 - With `expanded="{Keys}"` the plugin keeps it: a row is expanded when its
   key is in the set. Bind an `IReadOnlySet<string>` such as a
   `HashSet<string>`; any other `IEnumerable<string>` is copied into a new set
-  every frame. Clicking an arrow or Left/Right only calls `onexpand` with the
+  every frame. Clicking an arrow or Left/Right calls `onexpand` with the
   key and the state asked for, so change the set there.
 
 Sorting a tree sorts each row's children among themselves and keeps them
 under their parent. Collapsed rows' children are left out of what is drawn,
 but every row index the plugin sees is still its own index, so `selected`,
 `onchange` and the column callbacks are unchanged. A multi-select list
-selects only rows that are shown (Shift ranges and Ctrl+A), and collapsing a
-row removes its hidden children from the selection through `onchange`. A
-single-select list keeps its selection when the selected row is hidden.
+selects only rows that are shown (Shift ranges and Ctrl+A). When the player
+asks for a collapse (an arrow click or Left), the list calls `onchange` with
+the row's hidden children removed from the selection, and moves the Shift
+anchor and last-picked row up to the collapsed row. This happens straight
+after `onexpand`, in bound mode too, before the plugin applies the collapse
+and whether or not it ever does. A collapse the plugin makes itself, by
+editing its `expanded` set, leaves the selection alone: hidden selected rows
+stay selected and show again on expand. A single-select list keeps its
+selection when the selected row is hidden.
 
 `tree` needs `<column>` children with at least one `text` column. A tree
 without `levels` or `keys`, `expanded` that isn't bound to a collection of
