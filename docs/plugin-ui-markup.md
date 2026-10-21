@@ -108,6 +108,8 @@ back at runtime instead.
 | `radio items` | `IEnumerable<string>`, or a literal list `a\|b\|c` | throws |
 | `radio selected` | `int`, the chosen option (−1 for none) | throws |
 | `radio onchange` | `Action<int>`, the option picked | throws |
+| `expander expanded` | `bool`; when bound, the plugin owns the state | throws |
+| `expander onchange` | `Action<bool>`, the new state | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
@@ -168,6 +170,7 @@ Unknown or miscased element names throw at build time.
 | `number` | Number field with spin buttons | `x y w h value onchange min max step decimals color background` |
 | `radio` | One choice of several, as round buttons or a segmented bar | `x y w h items selected onchange orientation style color` |
 | `separator` | A 1 px dividing line | `x y w h color` |
+| `expander` | A header that folds away the content below it | `name x y w h text expanded onchange open color` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
@@ -182,8 +185,9 @@ Fields without these callbacks retain their usual history navigation.
 
 Clicking a `button`, `tab`, `toggle`, `checkbox`, or `radio` invokes its action
 without taking keyboard focus from the game. Use Tab to focus these controls:
-Enter or Space then activates a `button`, `tab`, `toggle` or `checkbox`. A
-focused `radio` uses the arrow keys instead; Enter and Space do nothing on it.
+Enter or Space then activates a `button`, `tab`, `toggle`, `checkbox` or
+`expander` (its header). A focused `radio` uses the arrow keys instead; Enter
+and Space do nothing on it.
 
 A `field` shows its bound `text` and goes on following it: while nobody is
 typing in the field, a value that changes behind it -- a profile loaded after
@@ -322,19 +326,62 @@ window as unknown.
 <separator x="110" y="48" w="1" h="120" color="theme:border|#FF61573B"/>
 ```
 
+Write `color="theme:border|#FF61573B"` when you want one colour pinned in both
+looks: the theme's border colour in the plugin theme, and the given colour in
+Classic. It is useful when other separators on the window use a custom colour.
+
 A `<separator>` draws a 1 px line across the middle of its box: horizontal,
 or vertical when the box is taller than it is wide. In Classic it is a
 fixed muted brown-olive (`#FF61573B`, the unlit lamp's colour); under
 `theme="plugin"` it is the theme's border colour. `color` gives it any other
-colour, literal or bound. A separator with zero width or height draws nothing. It takes no input, and a click on it reaches whatever lies beneath. Because clicks and hovering pass through
-a separator, a `tooltip` on it never shows.
+colour, literal or bound. A separator with zero width or height draws
+nothing. It takes no input, and a click on it reaches whatever lies beneath.
+Because clicks and hovering pass through a separator, a `tooltip` on it never
+shows.
 
 On a host older than separators, a `<separator>` fails the build of its
 window as unknown.
 
-Write `color="theme:border|#FF61573B"` when you want one colour pinned in both
-looks: the theme's border colour in the plugin theme, and the given colour in
-Classic. It is useful when other separators on the window use a custom colour.
+## Expander
+
+```xml
+<expander name="advanced" x="8" y="60" w="240" h="120" text="Advanced">
+  <toggle x="4" y="4" w="140" h="16" text="Loot everything" checked="{LootAll}" onclick="{ToggleLootAll}"/>
+</expander>
+<label x="8" y="190" text="Below the expander"/>
+```
+
+An `<expander>` is a header (an arrow and its `text`) with content beneath
+it. `h` includes the 18 px header and must be at least 18. Its children are
+placed below the header: a child at `y="0"` sits right under it.
+
+Clicking the header, or pressing Enter or Space while it has focus, folds
+the content away or brings it back. While it is folded, every element in the
+same parent whose top is at or below the expander's bottom moves up by the
+height it gave up, whatever its anchors (so a bar anchored to the window's
+bottom moves up too), and moves back when it opens. Elements beside it, whose
+top is above the expander's bottom, stay put.
+
+- Anchored `top,bottom`, it shrinks to its 18 px header while folded and gets
+  its stretched height back when it opens, even if the window was resized in
+  between.
+- An expander inside another expander does not resize the outer one when it
+  folds.
+- `enabled="false"` disables everything inside it as well.
+- A `tooltip` on an `<expander>` doesn't show, because the expander takes no
+  hover of its own; put tooltips on the elements inside it.
+- Without `expanded` the client keeps the state. It starts from `open`
+  (`true` by default, or `false`). If the expander has a `name`, the client
+  remembers the player's choice per character with the window's other
+  settings, saving it as soon as the player makes it, and forgets it again
+  when it matches `open`. `onchange`, if given, is told each new state.
+- With `expanded="{Bool}"` the plugin keeps the state: a click only calls
+  `onchange` with the state asked for, and the expander follows the property.
+  Without `onchange` it only displays. Bound state is never remembered by the
+  client.
+
+On a host older than expanders, an `<expander>` fails the build of its
+window as unknown.
 
 ## Resizable panels and anchors
 
