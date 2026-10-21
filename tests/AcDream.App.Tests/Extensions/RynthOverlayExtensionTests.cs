@@ -343,6 +343,34 @@ public sealed class RynthOverlayExtensionTests : IDisposable
         return ImGui.GetDrawData().TotalVtxCount;
     }
 
+    private sealed class FakeItemDrops : IClientItemDrops
+    {
+        public uint DraggedItem { get; set; }
+        public Func<uint, Vector2, bool>? Claimer { get; private set; }
+        public void SetDropClaimer(Func<uint, Vector2, bool>? claimer) => Claimer = claimer;
+    }
+
+    [Fact]
+    public void WithAnOverlayDropsAreClaimedAndTheDragIsSeenUntilDispose()
+    {
+        var drops = new FakeItemDrops { DraggedItem = 0x5001u };
+        var extension = new RynthClientExtension();
+        ClientExtensionContext context = Context(GameRuntimeTestFactory.Create(), new FakeOverlay());
+        extension.Attach(new ClientExtensionContext
+        {
+            Runtime = context.Runtime, Log = context.Log, RegisterChatCommand = context.RegisterChatCommand,
+            Overlay = context.Overlay, StateDirectory = context.StateDirectory, ItemDrops = drops,
+        });
+
+        Assert.NotNull(drops.Claimer);
+        Assert.Equal(0x5001u, UiElementHooks.CurrentDragObject);
+        Assert.True(UiDropTargets.AnyDragInProgress);
+
+        extension.Dispose();
+        Assert.Null(drops.Claimer);
+        Assert.Equal(0u, UiElementHooks.CurrentDragObject);
+    }
+
     private sealed class FakeOverlay : IClientOverlay
     {
         public List<Action> Callbacks { get; } = new();

@@ -178,10 +178,13 @@ namespace RynthCore.Engine.Compatibility
         }
     }
 
-    /// <summary>RynthCore's acclient UI hooks; only the item AC is dragging, which OpenAC doesn't report (none).</summary>
+    /// <summary>RynthCore's acclient UI hooks; only the item being dragged out of a pack or the inventory (the host's source).</summary>
     internal static class UiElementHooks
     {
-        public static uint CurrentDragObject => 0;
+        /// <summary>The client's dragged inventory item; null: no drag is ever seen.</summary>
+        internal static Func<uint>? DragSource { get; set; }
+
+        public static uint CurrentDragObject => DragSource?.Invoke() ?? 0;
     }
 
     /// <summary>RynthCore hides acclient's vitals bar; OpenAC's own bar is unaffected, the box is only remembered.</summary>
@@ -251,37 +254,6 @@ namespace RynthCore.Engine.UI.Data
 
 namespace RynthCore.Engine.ImGuiBackend
 {
-    /// <summary>
-    /// AC items dropped on RynthCore's panels: their UIElement drop detour claims the drop.
-    /// OpenAC has no such hook, so no panel ever takes a dropped item.
-    /// </summary>
-    internal static class UiDropTargets
-    {
-        public static void Publish(string key, string panelTitle, Vector2 min, Vector2 max, bool accepting)
-        {
-        }
-
-        public static bool TryTake(string key, out uint itemId)
-        {
-            itemId = 0;
-            return false;
-        }
-
-        public static bool IsCursorOver(string key) => false;
-
-        public static bool AnyDragInProgress => false;
-
-        /// <summary>The item acclient is dragging, which RynthCore's detour records; OpenAC never sets it.</summary>
-        public static uint EngineDragObject { get; set; }
-
-        /// <summary>RynthCore lets a panel claim a dropped item or spell; no drop reaches a panel here.</summary>
-        public static bool TryClaim(uint itemId, uint spellId, out string key)
-        {
-            key = string.Empty;
-            return false;
-        }
-    }
-
     /// <summary>RynthCore's own toolbar; OpenAC has the Rynth bar instead, so the rows are only remembered.</summary>
     internal static class ImGuiBar
     {

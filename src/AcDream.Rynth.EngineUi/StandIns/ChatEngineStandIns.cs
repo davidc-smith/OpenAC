@@ -381,6 +381,12 @@ namespace RynthCore.Engine.ImGuiBackend
     internal static class ImGuiPopOuts
     {
         public static bool InPopOutFrame => false;
+
+        /// <summary>RynthCore's game window client origin on the desktop; OpenAC's cursor is already window points.</summary>
+        public static System.Numerics.Vector2 ClientOriginOnScreen() => System.Numerics.Vector2.Zero;
+
+        /// <summary>No pop-out window to be over.</summary>
+        public static bool IsCursorOver(string panelTitle) => false;
     }
 }
 

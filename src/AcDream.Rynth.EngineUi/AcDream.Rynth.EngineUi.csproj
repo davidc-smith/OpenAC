@@ -63,6 +63,7 @@
     <Compile Include="$(RynthEngine)UI\Data\LootEditData.cs" Link="RynthCore\Data\LootEditData.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\RangesSlideOut.cs" Link="RynthCore\RangesSlideOut.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\ItemCountFace.cs" Link="RynthCore\ItemCountFace.cs" />
+    <Compile Include="$(RynthEngine)ImGui\UiDropTargets.cs" Link="RynthCore\UiDropTargets.cs" />
     <Compile Include="$(RynthEngine)UI\Data\ItemHudModel.cs" Link="RynthCore\Data\ItemHudModel.cs" />
     <Compile Include="$(RynthEngine)UI\Data\ItemHudStore.cs" Link="RynthCore\Data\ItemHudStore.cs" />
     <Compile Include="$(RynthEngine)ImGui\Panels\LuaFace.cs" Link="RynthCore\LuaFace.cs" />
@@ -182,7 +183,8 @@
        GetKeyState / GetForegroundWindow / GetWindowThreadProcessId (Win32KeyStateStandIn). Their two dat
        lookups (AcDatFile and PortalSpellTable FindPortalDat) look beside
        Environment.ProcessPath; that one getter is redirected to
-       ProcessPathStandIn, which answers a path in OpenAC's dat folder. -->
+       ProcessPathStandIn, which answers a path in OpenAC's dat folder.
+       UiDropTargets' GetCursorPos goes to Win32CursorStandIn. -->
   <ItemGroup>
     <ProjectReference Include="..\..\tools\RynthInteropRedirect\AcDream.Tools.RynthInteropRedirect.csproj"
                       ReferenceOutputAssembly="false" Private="false" />
@@ -203,7 +205,7 @@
       <_RedirectHost Condition="'$(_RedirectHost)' == ''">dotnet</_RedirectHost>
     </PropertyGroup>
     <WriteLinesToFile File="$(IntermediateOutputPath)win32-redirect.refs" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" />
-    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.EngineUi.Win32ClipboardStandIn,AcDream.Rynth.EngineUi.Win32KeyStateStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot; --redirect-member System.Environment::get_ProcessPath=AcDream.Rynth.EngineUi.ProcessPathStandIn" />
+    <Exec Command="&quot;$(_RedirectHost)&quot; &quot;$(_RedirectTool)&quot; &quot;@(IntermediateAssembly->'%(FullPath)')&quot; AcDream.Rynth.EngineUi.Win32ClipboardStandIn,AcDream.Rynth.EngineUi.Win32KeyStateStandIn,AcDream.Rynth.EngineUi.Win32CursorStandIn &quot;$(IntermediateOutputPath)win32-redirect.refs&quot; --redirect-member System.Environment::get_ProcessPath=AcDream.Rynth.EngineUi.ProcessPathStandIn" />
     <Touch Files="$(IntermediateOutputPath)win32-redirect.stamp" AlwaysCreate="true" />
   </Target>
 
