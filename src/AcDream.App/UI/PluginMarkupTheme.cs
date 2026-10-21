@@ -66,6 +66,11 @@ internal static class PluginMarkupTheme
                 panel.AddThemeAction(p => { radio.ThemePalette = p;
                     if (Default("color")) radio.TextColor = p?.Text ?? radioText; });
                 break;
+            case UiMarkupSeparator separator:
+                var separatorColor = separator.Color;
+                panel.AddThemeAction(p => {
+                    if (Default("color")) separator.Color = p?.Border ?? separatorColor; });
+                break;
             case UiField field:
                 ThemeField(panel, field, Default);
                 break;

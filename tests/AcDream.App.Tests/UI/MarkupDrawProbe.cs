@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
@@ -37,6 +38,36 @@ internal static class MarkupDrawProbe
             }
         }
         return count;
+    }
+
+    /// <summary>The screen rectangles of untextured quads drawn in a colour (within 0.01).</summary>
+    public static List<(float X, float Y, float W, float H)> QuadBounds(TextRenderer renderer, Vector4 color)
+    {
+        var bounds = new List<(float, float, float, float)>();
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+        {
+            if (s.Texture != 0u)
+                continue;
+            for (int q = 0; q + 48 <= s.Verts.Count; q += 48)
+            {
+                if (MathF.Abs(s.Verts[q + 4] - color.X) >= 0.01f
+                    || MathF.Abs(s.Verts[q + 5] - color.Y) >= 0.01f
+                    || MathF.Abs(s.Verts[q + 6] - color.Z) >= 0.01f
+                    || MathF.Abs(s.Verts[q + 7] - color.W) >= 0.01f)
+                {
+                    continue;
+                }
+                float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+                for (int v = 0; v < 6; v++)
+                {
+                    float x = s.Verts[q + v * 8], y = s.Verts[q + v * 8 + 1];
+                    minX = MathF.Min(minX, x); maxX = MathF.Max(maxX, x);
+                    minY = MathF.Min(minY, y); maxY = MathF.Max(maxY, y);
+                }
+                bounds.Add((minX, minY, maxX - minX, maxY - minY));
+            }
+        }
+        return bounds;
     }
 
     private sealed class NullFrameSource : ICurrentGpuFrameSource
