@@ -35,7 +35,8 @@ internal sealed class ClientExtensionHost : IDisposable
         IPluginWorldTriangles? worldTriangles = null,
         string? datDirectory = null,
         IClientScreen? screen = null,
-        IClientInput? input = null)
+        IClientInput? input = null,
+        IClientItemDrops? itemDrops = null)
     {
         var context = new ClientExtensionContext
         {
@@ -53,6 +54,7 @@ internal sealed class ClientExtensionHost : IDisposable
             DatDirectory = datDirectory,
             Screen = screen,
             Input = input,
+            ItemDrops = itemDrops,
         };
 
         foreach (IClientExtension extension in _extensions.ToArray())

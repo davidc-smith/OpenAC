@@ -44,6 +44,7 @@ public sealed class RynthClientExtension : IClientExtension
     private Action<string>? _setClipboardText;
     private IDisposable? _keyboardSink;
     private IDisposable? _hotkeySink;
+    private IClientItemDrops? _itemDrops;
     private Func<bool>? _isTyping;
     private IDisposable? _chatClaim;
     private IClientChat? _clientChat;
@@ -126,6 +127,8 @@ public sealed class RynthClientExtension : IClientExtension
             StartChat(context, chatOverlay);
         if (context.Overlay is { } keyOverlay)
             StartHotkeys(context, keyOverlay);
+        if (context.Overlay is not null && context.ItemDrops is { } drops)
+            StartDrops(drops);
         _runtimeSubscription = context.Runtime.Subscribe(_host.Bridge);
         _combat = context.Runtime.ActionOwner.Combat;
         _combatEvents = new RynthCombatEvents(context.Runtime, _host.Bridge);
@@ -155,6 +158,15 @@ public sealed class RynthClientExtension : IClientExtension
         }
 
         _hotkeySink = overlay.AddKeyboardSink(new RynthHotkeyKeyboard(() => overlay.WantsKeyboard));
+    }
+
+    /// <summary>RynthCore's drop targets: items dragged out of the client's packs land on their panels.</summary>
+    private void StartDrops(IClientItemDrops drops)
+    {
+        _itemDrops = drops;
+        RynthCore.Engine.Compatibility.UiElementHooks.DragSource = () => drops.DraggedItem;
+        Win32CursorStandIn.Source = () => ImGuiNET.ImGui.GetIO().MousePos;
+        drops.SetDropClaimer(RynthDropClaim.Claim);
     }
 
     /// <summary>
@@ -262,6 +274,13 @@ public sealed class RynthClientExtension : IClientExtension
         }
         _isTyping = null;
         Guard("hotkeys", RynthCore.Engine.Hotkeys.HotkeyService.Shutdown);
+        if (_itemDrops is { } drops)
+        {
+            drops.SetDropClaimer(null);
+            _itemDrops = null;
+        }
+        RynthCore.Engine.Compatibility.UiElementHooks.DragSource = null;
+        Win32CursorStandIn.Source = null;
         if (_chatHidden == true && _clientChat is { } clientChat)
             GuardChat(() => clientChat.SetChatWindowHidden(false));
         _chatClaim = null;

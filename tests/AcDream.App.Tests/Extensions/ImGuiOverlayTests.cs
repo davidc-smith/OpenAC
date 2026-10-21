@@ -172,6 +172,136 @@ public sealed class ImGuiOverlayTests : IDisposable
         Assert.Equal("pasted line", System.Text.Encoding.UTF8.GetString(buffer).TrimEnd('\0'));
     }
 
+    private void HoverWindow() => _overlay.AddFrameCallback(() =>
+    {
+        ImGui.SetNextWindowPos(new Vector2(100, 100));
+        ImGui.SetNextWindowSize(new Vector2(200, 200));
+        ImGui.Begin("drop");
+        ImGui.End();
+    });
+
+    [Fact]
+    public void TheMouseOverAWindowIsPointerOverWindow()
+    {
+        Start();
+        HoverWindow();
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        RunFrame();
+        RunFrame();
+        Assert.True(_overlay.PointerOverWindow);
+    }
+
+    [Fact]
+    public void ARetailDragOverAWindowIsPointerOverWindowButNotWantsMouse()
+    {
+        Start();
+        HoverWindow();
+        bool dragging = true;
+        _overlay.ExternalDragActive = () => dragging;
+        _overlay.Input.MouseMove(new Vector2(10, 10));
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, true);   // pressed outside ImGui: the app owns the click
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        RunFrame();
+        RunFrame();
+        Assert.True(_overlay.PointerOverWindow);
+        Assert.False(_overlay.WantsMouse);
+        Assert.False(_overlay.WantsKeyboard);   // the extern source's ActiveId must not take the keyboard
+
+        _overlay.Input.MouseMove(new Vector2(20, 20));
+        RunFrame();
+        Assert.False(_overlay.PointerOverWindow);
+    }
+
+    [Fact]
+    public void ReleasingARetailDragOverAWindowHoversItAgain()
+    {
+        Start();
+        HoverWindow();
+        bool dragging = true;
+        _overlay.ExternalDragActive = () => dragging;
+        _overlay.Input.MouseMove(new Vector2(10, 10));
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, true);
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        RunFrame();
+        RunFrame();
+
+        _overlay.Input.MouseButton(MouseButton.Left, false);   // let go over the window
+        dragging = false;
+        RunFrame();
+        RunFrame();
+
+        // No button held any more: plain hover of the window returns, and ImGui wants the mouse again.
+        Assert.True(_overlay.PointerOverWindow);
+        Assert.True(_overlay.WantsMouse);
+        Assert.False(_overlay.WantsKeyboard);
+    }
+
+    [Fact]
+    public void AFocusedTextFieldStillWantsTheKeyboardAfterARetailDrag()
+    {
+        Start();
+        bool dragging = true;
+        _overlay.ExternalDragActive = () => dragging;
+        _overlay.Input.MouseMove(new Vector2(500, 500));
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, true);
+        RunFrame();
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, false);
+        dragging = false;
+        RunFrame();
+
+        byte[] buffer = new byte[16];
+        _overlay.AddFrameCallback(() =>
+        {
+            ImGui.SetNextWindowPos(new Vector2(0, 0));
+            ImGui.SetNextWindowSize(new Vector2(300, 100));
+            ImGui.Begin("field");
+            ImGui.SetKeyboardFocusHere();
+            ImGui.InputText("##f", buffer, (uint)buffer.Length);
+            ImGui.End();
+        });
+        for (int i = 0; i < 4; i++)
+            RunFrame();
+        Assert.True(_overlay.WantsKeyboard);
+    }
+
+    [Fact]
+    public void ARetailDragOverEmptySpaceDrawsNothing()
+    {
+        Start();
+        bool dragging = true;
+        _overlay.ExternalDragActive = () => dragging;
+        _overlay.Input.MouseMove(new Vector2(10, 10));
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, true);
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(400, 300));
+        RunFrame();
+        RunFrame();
+        Assert.Equal(0, _renderer.LastVertexCount);   // no ImGui drag-preview tooltip
+    }
+
+    [Fact]
+    public void WithoutTheExternalSourceARetailDragNeverHovers()
+    {
+        Start();
+        HoverWindow();
+        _overlay.Input.MouseMove(new Vector2(10, 10));
+        RunFrame();
+        _overlay.Input.MouseButton(MouseButton.Left, true);
+        RunFrame();
+        _overlay.Input.MouseMove(new Vector2(150, 150));
+        RunFrame();
+        RunFrame();
+        Assert.False(_overlay.PointerOverWindow);
+    }
+
     private void Start() =>
         _overlay.Initialize(_renderer, () => (new Vector2(800, 600), new Vector2(1600, 1200)));
 

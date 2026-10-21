@@ -599,7 +599,40 @@ internal static class Program
 
     private static bool SameSignature(MethodDefinition a, MethodDefinition b) =>
         a.ReturnType.FullName == b.ReturnType.FullName
-        && a.Parameters.Select(p => p.ParameterType.FullName).SequenceEqual(b.Parameters.Select(p => p.ParameterType.FullName));
+        && a.Parameters.Count == b.Parameters.Count
+        && a.Parameters.Zip(b.Parameters).All(pair => SameParameterType(pair.First.ParameterType, pair.Second.ParameterType));
+
+    /// <summary>
+    /// The same type, or by-ref structs with the same instance fields (names and types, in
+    /// order): a stand-in can't name a P/Invoke's private nested struct (UiDropTargets' POINT),
+    /// so it declares its own of the same layout.
+    /// </summary>
+    private static bool SameParameterType(TypeReference a, TypeReference b)
+    {
+        if (a.FullName == b.FullName)
+            return true;
+        if (a is not ByReferenceType { ElementType: var ea } || b is not ByReferenceType { ElementType: var eb })
+            return false;
+        if (TryResolve(ea) is not { IsValueType: true } da || TryResolve(eb) is not { IsValueType: true } db)
+            return false;
+        FieldDefinition[] fa = da.Fields.Where(f => !f.IsStatic).ToArray();
+        FieldDefinition[] fb = db.Fields.Where(f => !f.IsStatic).ToArray();
+        return fa.Length == fb.Length
+            && fa.Zip(fb).All(pair => pair.First.Name == pair.Second.Name && pair.First.FieldType.FullName == pair.Second.FieldType.FullName);
+    }
+
+    /// <summary>The type's definition, or null when its assembly can't be found: no match, not a failed run.</summary>
+    private static TypeDefinition? TryResolve(TypeReference type)
+    {
+        try
+        {
+            return type.Resolve();
+        }
+        catch (AssemblyResolutionException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>The extern becomes a managed method that passes its arguments to <paramref name="target"/>.</summary>
     private static void CallInstead(MethodDefinition method, MethodDefinition target)

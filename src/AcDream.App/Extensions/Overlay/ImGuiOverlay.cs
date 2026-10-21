@@ -33,6 +33,8 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     private bool _failed;
     private readonly List<IOverlayKeyboardSink> _sinks = new();
     private bool _imguiWantsKeyboard;
+    private const int ExternSourceKeyboardLag = 2;
+    private int _framesSinceExternSource = ExternSourceKeyboardLag + 1;
     private GCHandle _self;
     private IntPtr _clipboardUtf8;
 
@@ -47,6 +49,18 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
     public ImGuiInputQueue Input { get; } = new();
 
     public bool WantsMouse { get; private set; }
+
+    /// <summary>The mouse is over an ImGui window (last frame), also during a retail drag.</summary>
+    public bool PointerOverWindow { get; private set; }
+
+    /// <summary>
+    /// A retail drag is in progress. ImGui stops hovering windows while a button pressed
+    /// outside it is held, so during one the overlay submits an external drag source each
+    /// frame, which keeps <see cref="PointerOverWindow"/> answering.
+    /// </summary>
+    internal Func<bool>? ExternalDragActive { get; set; }
+
+    private const string ExternalDragPayload = "OPENAC_DRAG";
 
     public bool WantsKeyboard => _imguiWantsKeyboard || AnySinkCapturing();
 
@@ -284,6 +298,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             {
                 Input.Clear();
                 WantsMouse = false;
+                PointerOverWindow = false;
                 _imguiWantsKeyboard = false;
                 return;
             }
@@ -296,8 +311,26 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
             Input.ApplyTo(io);
             ImGui.NewFrame();
             _frameOpen = true;
+            // SourceNoPreviewTooltip: the retail ghost is the drag's only visual, so ImGui opens no
+            // (empty) preview tooltip under the pointer every frame of the drag.
+            bool externSource = ExternalDragActive?.Invoke() == true
+                && ImGui.BeginDragDropSource(ImGuiDragDropFlags.SourceExtern | ImGuiDragDropFlags.SourceNoPreviewTooltip);
+            if (externSource)
+            {
+                ImGui.SetDragDropPayload(ExternalDragPayload, IntPtr.Zero, 0);
+                ImGui.EndDragDropSource();
+            }
+
+            PointerOverWindow = ImGui.IsWindowHovered(ImGuiHoveredFlags.AnyWindow | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
             WantsMouse = io.WantCaptureMouse;
-            _imguiWantsKeyboard = io.WantCaptureKeyboard;
+            // The extern source holds ImGui's ActiveId, and ImGui reports WantCaptureKeyboard whenever
+            // ActiveId != 0. That is not a text field wanting keys, so while our source is up the keys
+            // stay with the game. WantCaptureKeyboard lags: once the source stops being submitted, ImGui
+            // drops the dead ActiveId a frame later and the flag clears the frame after that (measured on
+            // 1.91.6), so the source counts for this frame and the two after it. No text field can take
+            // ActiveId inside that window: the click that would activate one starts after the release.
+            _framesSinceExternSource = externSource ? 0 : Math.Min(_framesSinceExternSource + 1, ExternSourceKeyboardLag + 1);
+            _imguiWantsKeyboard = io.WantCaptureKeyboard && _framesSinceExternSource > ExternSourceKeyboardLag;
         }
         catch (Exception error)
         {
@@ -365,6 +398,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         Input.Accepting = false;
         Input.Clear();
         WantsMouse = false;
+        PointerOverWindow = false;
         _imguiWantsKeyboard = false;
         _sinks.Clear();
         ClipboardSource = null;
@@ -462,6 +496,7 @@ internal sealed class ImGuiOverlay : IClientOverlay, IDevToolsFrameLifecycle, ID
         Input.Accepting = false;
         Input.Clear();
         WantsMouse = false;
+        PointerOverWindow = false;
         _imguiWantsKeyboard = false;
         _log($"[ImGui] overlay stopped at {stage}: {error.GetType().Name}: {error.Message}");
     }

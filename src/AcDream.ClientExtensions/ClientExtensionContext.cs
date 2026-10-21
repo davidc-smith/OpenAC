@@ -53,4 +53,7 @@ public sealed class ClientExtensionContext
 
     /// <summary>The client's keyboard state; null in a host without a keyboard.</summary>
     public IClientInput? Input { get; init; }
+
+    /// <summary>Inventory items dragged over the overlay; null in a host without a retail UI.</summary>
+    public IClientItemDrops? ItemDrops { get; init; }
 }
