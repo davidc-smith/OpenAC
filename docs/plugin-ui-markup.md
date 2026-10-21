@@ -657,7 +657,11 @@ order.
 Sorting only changes what is drawn where. Every row index the list hands
 the plugin (`selected`, `onchange`, every column callback) is still the
 plugin's own index, the selection stays on the same row, and a button press
-in progress is cancelled if a sort moves the rows before the release.
+in progress is cancelled if a sort moves a different row under it before the
+release. The list scrolls to keep the selected row in view when the
+selection or the sort changes, but not when live data (a distance, say)
+reorders the rows under a sort, so the player can scroll away from the
+selection.
 
 - Without `sortcolumn` the client keeps the sort and, for a list with a
   `name`, remembers it per character; `onsort` is told each change.
@@ -666,19 +670,21 @@ in progress is cancelled if a sort moves the rows before the release.
   and direction asked for. Without `onsort` it only displays.
 
 With `resizable="true"` (which needs a header) the player drags the line
-between two header cells to resize the column to its left, down to 16 px,
-and double-clicks it to put the column back to its markup width. A
+between two header cells to resize the column to its left, down to 16 px
+and only as wide as leaves the columns to its right their own widths (16 px
+for an automatic one), and double-clicks it to put the column back to its markup width. A
 double-click counts only when both its clicks started from rest; the release
 of a drag is not the first click. The resize cursor shows over those lines.
 
 - Without `widths` the client keeps the widths and, for a named list,
   remembers them per character when the player lets go (a remembered width
   below 16 px is raised to 16); `onresize` is told every column's width for
-  each pixel the line moves.
+  each pixel the line moves and after a double-click reset.
 - With `widths="{Floats}"` the plugin keeps them: one entry per column in
   pixels, 0 for automatic, the last entry ignored (the last column always
-  takes the rest). A list of the wrong length is ignored. A drag only calls
-  `onresize`; without it the widths only display.
+  takes the rest). A list of the wrong length is ignored. A drag or a
+  double-click reset only calls `onresize`; without it the widths only
+  display, and the lines show no resize cursor and can't be grabbed.
 
 A `checkbox` column with `header="all"` draws a select-all box in its
 header: ticked when every row is ticked, clear when none is, indeterminate
