@@ -103,6 +103,8 @@ back at runtime instead.
 | `list onchange` | `Action<int>` | throws |
 | `checkbox checked` | `bool`, or `bool?` where null is indeterminate | throws |
 | `checkbox onchange` | `Action<bool>`, the new value | throws |
+| `number value` | `int`, `long`, `float`, `double` or `decimal` | throws |
+| `number onchange` | `Action<T>` of the same type as `value` | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
@@ -160,6 +162,7 @@ Unknown or miscased element names throw at build time.
 | `tab` | Tab button with optional icon | `x y w h text selected onclick icon iconkind` |
 | `toggle` | On/off lamp | `x y w h text checked onclick color` |
 | `checkbox` | Tick box, optionally indeterminate | `x y w h text checked onchange color` |
+| `number` | Number field with spin buttons | `x y w h value onchange min max step decimals color background` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
@@ -228,6 +231,44 @@ In a list, `<column type="checkbox">` takes the same `values` and
 `onchange` as `type="check"` and draws tick boxes instead of lamps.
 On a host older than checkboxes, a `<checkbox>` element or `type="checkbox"`
 column fails the build of its window as unknown.
+
+## Number field
+
+```xml
+<number x="8" y="8" w="80" h="20" value="{HealAt}" min="0" max="100" step="5"
+        onchange="{SetHealAt}"/>
+```
+
+A `<number>` is a one-line field that only ever hands back a valid number,
+with spin buttons at its right edge.
+
+- `value` binds an `int`, `long`, `float`, `double` or `decimal`; `onchange`
+  is an `Action<T>` of the same type. Both are required.
+- `min` and `max` default to the type's range (for `float` and `double`,
+  ±7.9×10^28). `step` defaults to 1 and must be above 0. `decimals` defaults
+  to 0 for `int` and `long` (and must stay 0) and to 2 otherwise, at most 10.
+  `step` must not have more decimal places than `decimals`, so a fractional
+  `step` on an `int` or `long` fails the build.
+- Typing accepts digits, a minus sign when `min` is below 0, and a point
+  when `decimals` is above 0. Text that isn't a number, or is out of range,
+  shows in red.
+- Enter, or leaving the field, commits: the value is rounded to `decimals`,
+  clamped to `min`..`max`, and `onchange` is called if it changed. Leaving the
+  field without changing the text reports nothing. Text that isn't a number
+  puts the bound value back. Escape puts it back too.
+- The spin buttons step once per press and repeat while held. Pressing one ends typing: the
+  typed text is committed and focus leaves the field. Up and Down
+  step while the field has focus, and so does the mouse wheel; the wheel
+  never steps an unfocused field, so scrolling a list past it is safe.
+  Up, Down and the wheel step from the number being typed, if it's a valid
+  number: typing 42 then pressing Up gives 42 plus `step`. Hold Shift for ten
+  steps. (macOS sends Shift with a mouse wheel as
+  sideways scrolling; the client reads a purely sideways tick while Shift is
+  held as the wheel, so it steps ten too.)
+- While nobody is typing in it, the field follows `value`.
+
+On a host older than number fields, a `<number>` fails the build of its
+window as unknown.
 
 ## Resizable panels and anchors
 

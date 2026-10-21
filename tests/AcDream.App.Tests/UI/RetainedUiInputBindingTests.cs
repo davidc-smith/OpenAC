@@ -168,6 +168,50 @@ public sealed class RetainedUiInputBindingTests
         Assert.True(keyboard.IsDisposalComplete);
     }
 
+    [Theory]
+    [InlineData(0, 1, false, 1)]
+    [InlineData(0, -1, true, -1)]
+    [InlineData(1, 0, true, 1)]     // macOS sends Shift+wheel as a sideways tick
+    [InlineData(-1, 0, true, -1)]
+    [InlineData(1, 0, false, 0)]    // a sideways swipe without Shift scrolls nothing
+    [InlineData(1, -1, true, -1)]   // any vertical part wins
+    [InlineData(0, 0, true, 0)]
+    public void Wheel_reads_a_sideways_tick_as_the_wheel_only_while_Shift_is_held(int dx, int dy, bool shift, int expected)
+        => Assert.Equal(expected, RetainedWheel.Vertical(dx, dy, shift));
+
+    [Theory]
+    [InlineData(true, new[] { 1 })]
+    [InlineData(false, new int[0])]
+    public void Sideways_tick_reaches_the_root_as_a_step_only_while_Shift_is_held(bool shift, int[] expected)
+    {
+        var surface = new MouseSurface();
+        var root = new UiRoot { Keyboard = ShiftKeyboard.Create(shift) };
+        var steps = new List<int>();
+        root.WorldScrollFallThrough += steps.Add;
+        new RetainedMouseInputBinding(surface, root, new HostQuiescenceGate()).Attach();
+
+        surface.Scroll(1, 0);
+
+        Assert.Equal(expected, steps);
+    }
+
+    public class ShiftKeyboard : System.Reflection.DispatchProxy
+    {
+        private bool _shift;
+
+        public static IKeyboard Create(bool shift)
+        {
+            var k = System.Reflection.DispatchProxy.Create<IKeyboard, ShiftKeyboard>();
+            ((ShiftKeyboard)k)._shift = shift;
+            return k;
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args) =>
+            method?.Name == "IsKeyPressed"
+                ? _shift && (Key)args![0]! == Key.ShiftLeft
+                : throw new NotSupportedException(method?.Name);
+    }
+
     private sealed class MouseSurface : IRetainedMouseSurface
     {
         public int FailAdd { get; init; }
@@ -180,12 +224,13 @@ public sealed class RetainedUiInputBindingTests
         public Action<MouseButton, int, int>? Down { get; private set; }
         private Action<MouseButton, int, int>? _up;
         private Action<int, int>? _move;
-        private Action<int>? _scroll;
+        private Action<int, int>? _scroll;
+        public void Scroll(int dx, int dy) => _scroll!(dx, dy);
 
         public void AddMouseDown(Action<MouseButton, int, int> callback) => Add(() => Down = callback);
         public void AddMouseUp(Action<MouseButton, int, int> callback) => Add(() => _up = callback);
         public void AddMouseMove(Action<int, int> callback) => Add(() => _move = callback);
-        public void AddScroll(Action<int> callback) => Add(() => _scroll = callback);
+        public void AddScroll(Action<int, int> callback) => Add(() => _scroll = callback);
         public void RemoveMouseDown(Action<MouseButton, int, int> callback) => Remove(() => Down = null);
         public void RemoveMouseUp(Action<MouseButton, int, int> callback) => Remove(() => _up = null);
         public void RemoveMouseMove(Action<int, int> callback)
@@ -198,7 +243,7 @@ public sealed class RetainedUiInputBindingTests
             }
             Remove(() => _move = null);
         }
-        public void RemoveScroll(Action<int> callback) => Remove(() => _scroll = null);
+        public void RemoveScroll(Action<int, int> callback) => Remove(() => _scroll = null);
 
         private void Add(Action publish)
         {
