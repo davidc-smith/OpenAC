@@ -6,6 +6,7 @@ using AcDream.App.Net;
 using AcDream.App.Rendering;
 using AcDream.App.Spells;
 using AcDream.App.UI.Layout;
+using AcDream.App.UI.Markup;
 using AcDream.App.UI.Testing;
 using AcDream.Core.Chat;
 using AcDream.Core.Combat;
@@ -406,6 +407,8 @@ public sealed class RetailUiRuntime : IDisposable
     private CharacterCreationUiMountCoordinator? _characterCreationMount;
     private PluginSidePanel? _pluginSidePanel;
     private PluginUiThemeSettings? _pluginThemes;
+    /// <summary>What plugin windows' markup controls remember per character; saved with the layout.</summary>
+    private MarkupControlStateStore? _controlState;
     private IDisposable? _pluginThemeFollow;
     private UiNineSlicePanel? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
@@ -766,6 +769,9 @@ public sealed class RetailUiRuntime : IDisposable
         Host.Tick(deltaSeconds);
         TooltipPresenter?.Tick();
         _automation?.Tick(deltaSeconds);
+        // Save writes only when a control changed something, so this persists
+        // each choice on the frame after it is made.
+        _controlState?.Save();
     }
 
     private System.Numerics.Vector2 _lastScreenSize;
@@ -1174,6 +1180,7 @@ public sealed class RetailUiRuntime : IDisposable
     public void SaveLayout()
     {
         _persistence?.SaveAll();
+        _controlState?.Save();
         SaveChatWindowFilters();
     }
 
@@ -4078,6 +4085,10 @@ public sealed class RetailUiRuntime : IDisposable
             _pluginThemeFollow = _bindings.Plugins.FollowTheme(_pluginThemes);
         }
 
+        _controlState ??= new MarkupControlStateStore(
+            _bindings.Persistence?.Store,
+            _bindings.Persistence?.CharacterKey ?? (() => "default"));
+
         IMarkupIconResolver iconResolver = new RetailMarkupIconResolver(
             _bindings.Assets.Dats,
             _bindings.Assets.Icons,
@@ -4095,7 +4106,8 @@ public sealed class RetailUiRuntime : IDisposable
                     _bindings.Assets.ResolveSprite,
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
-                    iconResolver, _pluginThemes);
+                    iconResolver, _pluginThemes,
+                    controlState: _controlState.ForWindow(panel.WindowName));
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
                 {
@@ -5141,7 +5153,11 @@ public sealed class RetailUiRuntime : IDisposable
 
         _shutdown ??= CreateShutdownTransaction(
             () => _automation?.Dispose(),
-            () => _persistence?.Dispose(),
+            () =>
+            {
+                _controlState?.Save(ignoreBackoff: true);
+                _persistence?.Dispose();
+            },
             () =>
             {
                 _characterSheetSubscription?.Dispose();

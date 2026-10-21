@@ -18,9 +18,14 @@ public sealed class MarkupControlStateStore
     private int _generation;
     private bool _dirty;
     private bool _loadFailed;
+    private const long RetryDelayMs = 5000;
+    private readonly Func<long> _clock;
+    private long _retryAfterMs;
+    private bool _reportedFailure;
 
-    public MarkupControlStateStore(SettingsStore? store, Func<string> characterKey)
+    public MarkupControlStateStore(SettingsStore? store, Func<string> characterKey, Func<long>? clockMs = null)
     {
+        _clock = clockMs ?? (() => Environment.TickCount64);
         _store = store;
         _characterKey = characterKey ?? throw new ArgumentNullException(nameof(characterKey));
     }
@@ -33,9 +38,14 @@ public sealed class MarkupControlStateStore
     }
 
     /// <summary>Writes the current character's values if any changed since the last save.</summary>
-    public void Save()
+    /// <param name="ignoreBackoff">
+    /// Skip the retry delay after a failure; for the final save at shutdown.
+    /// </param>
+    public void Save(bool ignoreBackoff = false)
     {
         if (!_dirty)
+            return;
+        if (!ignoreBackoff && _clock() < _retryAfterMs)
             return;
         if (_store is null || !CanPersist(_character))
         {
@@ -45,7 +55,10 @@ public sealed class MarkupControlStateStore
         if (_loadFailed)
         {
             if (!_store.TryLoadMarkupControlState(_character!, out var onDisk))
+            {
+                BackOff(null);
                 return;
+            }
             // The load failed before anything was read, so _values holds only this
             // session's changes: lay them over what is on disk now.
             foreach (var (key, value) in _values)
@@ -58,11 +71,25 @@ public sealed class MarkupControlStateStore
         {
             _store.SaveMarkupControlState(_character!, _values);
             _dirty = false;
+            _reportedFailure = false;
+            _retryAfterMs = 0;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"markup controls: failed to save {_character}: {ex.Message}");
+            BackOff($"markup controls: failed to save {_character}: {ex.Message}");
         }
+    }
+
+    // Save runs every frame: after a failure wait before trying again, and
+    // say so once rather than once per attempt.
+    private void BackOff(string? message)
+    {
+        _retryAfterMs = _clock() + RetryDelayMs;
+        if (_reportedFailure)
+            return;
+        _reportedFailure = true;
+        if (message is not null)
+            Console.WriteLine(message);
     }
 
     // Mirrors RetailWindowLayoutPersistence.CanPersist: the host's no-character
@@ -76,17 +103,20 @@ public sealed class MarkupControlStateStore
         string character = _characterKey() ?? string.Empty;
         if (_generation > 0 && string.Equals(character, _character, StringComparison.Ordinal))
             return;
-        Save();
+        Save(ignoreBackoff: true);
         if (_dirty)
             Console.WriteLine($"markup controls: unsaved changes for {_character} were dropped");
         _character = character;
         _dirty = false;
         _loadFailed = false;
+        _retryAfterMs = 0;
+        _reportedFailure = false;
         _values = new Dictionary<MarkupControlKey, string>();
         if (_store is not null && CanPersist(character)
             && !_store.TryLoadMarkupControlState(character, out _values))
         {
             _loadFailed = true;
+            _reportedFailure = true;
             Console.WriteLine($"markup controls: settings could not be read; {character} will not be saved until they can be");
         }
         _generation++;

@@ -159,15 +159,17 @@ public sealed class MarkupControlStateStoreTests : IDisposable
         File.WriteAllText(blocker, "x");
         try
         {
+            long now = 0;
             var store = new MarkupControlStateStore(
-                new SettingsStore(Path.Combine(blocker, "settings.json")), () => "alice");
+                new SettingsStore(Path.Combine(blocker, "settings.json")), () => "alice", () => now);
             var nav = store.ForWindow("nav");
             nav.Set("adv", "expanded", "false");
             store.Save();
             Assert.Equal("false", nav.Get("adv", "expanded"));
 
-            // Once the obstruction is gone, the next Save retries and succeeds.
+            // Once the obstruction is gone, a Save after the back-off retries and succeeds.
             File.Delete(blocker);
+            now = 5001;
             store.Save();
             Assert.True(File.Exists(Path.Combine(blocker, "settings.json")));
         }
@@ -252,7 +254,8 @@ public sealed class MarkupControlStateStoreTests : IDisposable
     public void ALaterSaveRetriesAFailedLoad()
     {
         File.WriteAllText(_path, "{ not json");
-        var store = NewStore();
+        long now = 0;
+        var store = new MarkupControlStateStore(new SettingsStore(_path), () => _character, () => now);
         var nav = store.ForWindow("nav");
         nav.Set("adv", "expanded", "false");
         store.Save();
@@ -261,6 +264,7 @@ public sealed class MarkupControlStateStoreTests : IDisposable
         new SettingsStore(_path + ".tmp").SaveWindowPosition("alice", "chat", new UiWindowPosition(1, 2));
         File.Copy(_path + ".tmp", _path, overwrite: true);
         File.Delete(_path + ".tmp");
+        now = 5001;
         store.Save();
 
         var settings = new SettingsStore(_path);
@@ -285,5 +289,86 @@ public sealed class MarkupControlStateStoreTests : IDisposable
         _character = "alice";
         Assert.Equal("false", NewStore().ForWindow("nav").Get("adv", "expanded"));
         Assert.Equal(new UiWindowPosition(1, 2), new SettingsStore(_path).LoadWindowPosition("alice", "chat"));
+    }
+
+    [Fact]
+    public void AFailedWriteIsNotRetriedUntilTheBackOffPasses()
+    {
+        string blocker = _path + ".blocker";
+        File.WriteAllText(blocker, "x");
+        string target = Path.Combine(blocker, "settings.json");
+        try
+        {
+            long now = 0;
+            var store = new MarkupControlStateStore(new SettingsStore(target), () => "alice", () => now);
+            store.ForWindow("nav").Set("adv", "expanded", "false");
+            for (int i = 0; i < 100; i++) store.Save();
+
+            File.Delete(blocker);
+            store.Save();
+            Assert.False(File.Exists(target));
+            now = 4999;
+            store.Save();
+            Assert.False(File.Exists(target));
+            now = 5000;
+            store.Save();
+            Assert.True(File.Exists(target));
+        }
+        finally
+        {
+            if (Directory.Exists(blocker)) Directory.Delete(blocker, true);
+            else if (File.Exists(blocker)) File.Delete(blocker);
+        }
+    }
+
+    [Fact]
+    public void AFailedLoadIsNotRetriedUntilTheBackOffPasses()
+    {
+        File.WriteAllText(_path, "{ not json");
+        long now = 0;
+        var store = new MarkupControlStateStore(new SettingsStore(_path), () => "alice", () => now);
+        store.ForWindow("nav").Set("adv", "expanded", "false");
+        store.Save();
+        Assert.Equal("{ not json", File.ReadAllText(_path));
+
+        new SettingsStore(_path).SaveMarkupControlState("alice",
+            new System.Collections.Generic.Dictionary<MarkupControlKey, string>
+            { [new MarkupControlKey("nav", "mobs", "widths")] = "1" });
+        string fixedText = File.ReadAllText(_path);
+
+        now = 1000;
+        store.Save();
+        Assert.Equal(fixedText, File.ReadAllText(_path));
+
+        now = 5001;
+        store.Save();
+        _character = "alice";
+        var fresh = NewStore().ForWindow("nav");
+        Assert.Equal("false", fresh.Get("adv", "expanded"));
+        Assert.Equal("1", fresh.Get("mobs", "widths"));
+    }
+
+    [Fact]
+    public void IgnoringTheBackOffTriesAgainAtOnce()
+    {
+        string blocker = _path + ".blocker";
+        File.WriteAllText(blocker, "x");
+        string target = Path.Combine(blocker, "settings.json");
+        try
+        {
+            var store = new MarkupControlStateStore(new SettingsStore(target), () => "alice", () => 0);
+            store.ForWindow("nav").Set("adv", "expanded", "false");
+            store.Save();
+            File.Delete(blocker);
+            store.Save();
+            Assert.False(File.Exists(target));
+            store.Save(ignoreBackoff: true);
+            Assert.True(File.Exists(target));
+        }
+        finally
+        {
+            if (Directory.Exists(blocker)) Directory.Delete(blocker, true);
+            else if (File.Exists(blocker)) File.Delete(blocker);
+        }
     }
 }
