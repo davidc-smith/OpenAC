@@ -19,6 +19,7 @@ internal static class PluginMarkupTheme
                 case UiMarkupToggle toggle: Bind(() => toggle.DatFont, f => toggle.DatFont = f); break;
                 case UiMarkupCheckbox checkbox: Bind(() => checkbox.DatFont, f => checkbox.DatFont = f); break;
                 case UiMarkupRadio radio: Bind(() => radio.DatFont, f => radio.DatFont = f); break;
+                case UiMarkupExpander expander: Bind(() => expander.Header.DatFont, f => expander.Header.DatFont = f); break;
                 case UiField field: Bind(() => field.DatFont, f => field.DatFont = f); break;
                 case UiMarkupNumber number: Bind(() => number.Field.DatFont, f => number.Field.DatFont = f); break;
                 case UiMenu menu:
@@ -70,6 +71,11 @@ internal static class PluginMarkupTheme
                 var separatorColor = separator.Color;
                 panel.AddThemeAction(p => {
                     if (Default("color")) separator.Color = p?.Border ?? separatorColor; });
+                break;
+            case UiMarkupExpander expander:
+                var expanderText = expander.Header.TextColor;
+                panel.AddThemeAction(p => { expander.Header.ThemePalette = p;
+                    if (Default("color")) expander.Header.TextColor = p?.Text ?? expanderText; });
                 break;
             case UiField field:
                 ThemeField(panel, field, Default);

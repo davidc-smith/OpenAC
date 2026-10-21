@@ -413,4 +413,67 @@ public sealed class MarkupExpanderTests : IDisposable
             : Markup(attributes);
         Assert.Throws<FormatException>(() => MarkupDocument.Build(markup, new Binding(), _ => (1u, 16, 16)));
     }
+
+    [Fact]
+    public void Expander_ArrowPointsDownWhenOpenAndRightWhenClosed()
+    {
+        var (root, _, expander) = Mount("", new Binding());
+        var open = MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(expander.Header), UiMarkupExpanderHeader.ClassicArrow);
+        Assert.Equal(3, open.Count);
+        Assert.All(open, q => Assert.Equal(1f, q.H, 3));
+        ClickHeader(root);
+        var closed = MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(expander.Header), UiMarkupExpanderHeader.ClassicArrow);
+        Assert.Equal(3, closed.Count);
+        Assert.All(closed, q => Assert.Equal(1f, q.W, 3));
+    }
+
+    [Fact]
+    public void Expander_DisabledDrawsFaded()
+    {
+        var (_, _, expander) = Mount("enabled=\"false\"", new Binding());
+        var renderer = MarkupDrawProbe.Draw(expander.Header);
+        var faded = UiMarkupExpanderHeader.ClassicArrow with { W = UiMarkupToggle.DisabledAlpha };
+        Assert.Equal(3, MarkupDrawProbe.CountQuads(renderer, faded));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupExpanderHeader.ClassicArrow));
+    }
+
+    [Fact]
+    public void Expander_FocusDrawsAnOutline()
+    {
+        var (_, _, expander) = Mount("", new Binding());
+        expander.Header.OnEvent(new UiEvent { Type = UiEventType.FocusGained });
+        var renderer = MarkupDrawProbe.Draw(expander.Header);
+        Assert.Equal(4, MarkupDrawProbe.CountQuads(renderer, UiMarkupExpanderHeader.FocusColor));
+    }
+
+    [Fact]
+    public void Expander_PluginThemeReachesTheHeaderAndTheChildren()
+    {
+        var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build("""
+            <panel theme="plugin" x="0" y="0" w="400" h="300">
+              <expander name="adv" x="8" y="8" w="200" h="100" text="Advanced">
+                <toggle x="4" y="4" w="120" h="16" text="Inner" checked="{AdvOpen}"/>
+              </expander>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16), themes: themes);
+        var expander = panel.Children.OfType<UiMarkupExpander>().Single();
+        Assert.Same(PluginUiPalette.Moss, expander.Header.ThemePalette);
+        Assert.Equal(PluginUiPalette.Moss.Text, expander.Header.TextColor);
+        var toggle = Assert.IsType<UiMarkupToggle>(expander.Content.Children[0]);
+        Assert.Same(PluginUiPalette.Moss, toggle.ThemePalette);
+    }
+
+    [Fact]
+    public void Expander_ExplicitColorSurvivesTheTheme()
+    {
+        var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build("""
+            <panel theme="plugin" x="0" y="0" w="400" h="300">
+              <expander x="8" y="8" w="200" h="100" text="A" color="#FFFF0000"/>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16), themes: themes);
+        var expander = panel.Children.OfType<UiMarkupExpander>().Single();
+        Assert.Equal(new System.Numerics.Vector4(1f, 0f, 0f, 1f), expander.Header.TextColor);
+    }
 }
