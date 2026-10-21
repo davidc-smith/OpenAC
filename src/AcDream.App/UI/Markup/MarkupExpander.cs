@@ -40,6 +40,12 @@ internal static class MarkupExpander
         context.BindColor(color, value => header.TextColor = value, source => header.TextColorSource = source);
 
         MarkupDocument.ApplyCommon(expander, el, binding);
+        // The header takes the hover, so it carries the tooltip's popup settings;
+        // its text comes from the expander (see UiMarkupExpanderHeader.GetTooltipText).
+        header.AuthoredTooltipEnabled = expander.AuthoredTooltipEnabled;
+        header.AuthoredTooltipRootElementId = expander.AuthoredTooltipRootElementId;
+        header.AuthoredTooltipLayoutDid = expander.AuthoredTooltipLayoutDid;
+        header.AuthoredTooltipDelaySeconds = expander.AuthoredTooltipDelaySeconds;
         if (expander.ExpandedSource is null)
             expander.Remembered = new RememberedValue(context.ControlState, expander.Name, "expanded");
 

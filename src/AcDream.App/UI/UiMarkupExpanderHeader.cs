@@ -28,6 +28,9 @@ public sealed class UiMarkupExpanderHeader : UiElement
 
     internal UiMarkupExpanderHeader(UiMarkupExpander owner) => _owner = owner;
 
+    /// <summary>The header takes the hover, so it shows its expander's tooltip.</summary>
+    public override string? GetTooltipText() => _owner.GetTooltipText();
+
     private bool Live => Enabled && _owner.Enabled;
 
     public override bool OnEvent(in UiEvent e)

@@ -489,6 +489,38 @@ public sealed class MarkupExpanderTests : IDisposable
     }
 
     [Fact]
+    public void Expander_TooltipShowsOnTheHeader()
+    {
+        var panel = MarkupDocument.Build("""
+            <panel x="0" y="0" w="400" h="300">
+              <expander x="8" y="8" w="200" h="100" text="A" tooltip="Hi"/>
+              <expander name="plain" x="8" y="120" w="200" h="40" text="B"/>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16));
+        var expander = (UiMarkupExpander)panel.Children[0];
+        Assert.Equal("Hi", expander.Header.GetTooltipText());
+        Assert.True(expander.Header.AuthoredTooltipEnabled);
+        Assert.NotEqual(0u, expander.Header.AuthoredTooltipRootElementId);
+        Assert.Null(((UiMarkupExpander)Named(panel, "plain")).Header.GetTooltipText());
+    }
+
+    [Fact]
+    public void Expander_ThemeSwapsInTheModernFont()
+    {
+        var modern = new UiDatFont(
+            fgTex: 2u, fgW: 32, fgH: 32, bgTex: 0, bgW: 0, bgH: 0,
+            lineHeight: 16f, baselineOffset: 12f,
+            new System.Collections.Generic.Dictionary<char, DatReaderWriter.Types.FontCharDesc>());
+        var themes = new PluginUiThemeSettings(null, modern) { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build("""
+            <panel theme="plugin" x="0" y="0" w="400" h="300">
+              <expander x="8" y="8" w="200" h="100" text="A"/>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16), themes: themes);
+        Assert.Same(modern, panel.Children.OfType<UiMarkupExpander>().Single().Header.DatFont);
+    }
+
+    [Fact]
     public void Expander_ExplicitColorSurvivesTheTheme()
     {
         var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
