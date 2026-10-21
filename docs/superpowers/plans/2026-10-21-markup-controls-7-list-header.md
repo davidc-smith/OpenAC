@@ -16,6 +16,8 @@
   - otherwise remembered as a comma list of whole pixels (kind `"widths"`).
 - **Commit rule.** Writes to the store happen only on commit: a header click, a drag end, or a double-click reset.
 
+**Status:** DONE 2026-10-22 — feat 5561afcb..fd03cfb0 (14 commits incl. review fixes; each builds; pushed). Added Task 7 select-all header (spec §2 said "with series 7"). Final review changed reveal to fire on selection/sort change only and press-cancel to compare the plugin row under the press; `UiMarkupListViewMap.Version` was removed. List property is `ColumnsResizable` (UiElement.Resizable means window resize). Series 9 should first split the map's view count from its plugin count.
+
 **Tech Stack:** C# / .NET 10, xUnit, headless `UiRoot` + `RecordingGpuDevice` tests.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` (branch `docs/markup-controls-spec`), "Shared rules" and section 8. Series 8 (multi-select) and 9 (tree) build on this plan's view map.
