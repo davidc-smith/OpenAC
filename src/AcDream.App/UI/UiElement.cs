@@ -183,6 +183,9 @@ public abstract class UiElement
     /// Null (the default) leaves every pointer message to the element itself.</summary>
     public UiPointerRegion? PointerRegion { get; set; }
 
+    /// <summary>The menu a right click on this element, or on a child that leaves it unhandled, opens.</summary>
+    internal IUiContextMenu? ContextMenu { get; set; }
+
     public virtual bool IsDragSource => PointerRegion?.DragPayloadAt is not null;
 
     public virtual bool HandlesClick => false;

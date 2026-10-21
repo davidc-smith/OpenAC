@@ -28,6 +28,7 @@ internal static class PluginMarkupTheme
                     break;
                 case UiMarkupLog log: Bind(() => log.DatFont, f => log.DatFont = f); break;
                 case UiMarkupList list: Bind(() => list.DatFont, f => list.DatFont = f); break;
+                case UiMarkupContextMenu contextMenu: Bind(() => contextMenu.DatFont, f => contextMenu.DatFont = f); break;
             }
         }
         bool Default(string name) => xml.Attribute(name) is null;
@@ -61,6 +62,9 @@ internal static class PluginMarkupTheme
                 var checkboxText = checkbox.TextColor;
                 panel.AddThemeAction(p => { checkbox.ThemePalette = p;
                     if (Default("color")) checkbox.TextColor = p?.Text ?? checkboxText; });
+                break;
+            case UiMarkupContextMenu contextMenu:
+                panel.AddThemeAction(p => contextMenu.ThemePalette = p);
                 break;
             case UiMarkupRadio radio:
                 var radioText = radio.TextColor;
