@@ -19,6 +19,7 @@ internal static class PluginMarkupTheme
                 case UiMarkupToggle toggle: Bind(() => toggle.DatFont, f => toggle.DatFont = f); break;
                 case UiMarkupCheckbox checkbox: Bind(() => checkbox.DatFont, f => checkbox.DatFont = f); break;
                 case UiField field: Bind(() => field.DatFont, f => field.DatFont = f); break;
+                case UiMarkupNumber number: Bind(() => number.Field.DatFont, f => number.Field.DatFont = f); break;
                 case UiMenu menu:
                     Bind(() => menu.DatFont, f => menu.DatFont = f);
                     Bind(() => menu.ButtonDatFont, f => menu.ButtonDatFont = f);
@@ -60,20 +61,11 @@ internal static class PluginMarkupTheme
                     if (Default("color")) checkbox.TextColor = p?.Text ?? checkboxText; });
                 break;
             case UiField field:
-                var fieldBg = field.BackgroundColor; var fieldText = field.TextColor;
-                var fieldOutline = field.Outline; var sprite = field.BackgroundSprite;
-                var focus = field.FocusFieldSprite; var left = field.FocusRailLeftSprite;
-                var right = field.FocusRailRightSprite; var selection = field.SelectionColor;
-                panel.AddThemeAction(p => {
-                    field.Outline = p is null && fieldOutline;
-                    field.BackgroundSprite = p is null ? sprite : 0;
-                    field.FocusFieldSprite = p is null ? focus : 0;
-                    field.FocusRailLeftSprite = p is null ? left : 0;
-                    field.FocusRailRightSprite = p is null ? right : 0;
-                    field.SelectionColor = p?.Selected ?? selection;
-                    if (Default("background")) field.BackgroundColor = p?.Field ?? fieldBg;
-                    if (Default("color")) field.TextColor = p?.Text ?? fieldText;
-                });
+                ThemeField(panel, field, Default);
+                break;
+            case UiMarkupNumber number:
+                ThemeField(panel, number.Field, Default);
+                panel.AddThemeAction(p => number.ThemePalette = p);
                 break;
             case UiMenu menu:
                 bool art = menu.RetailButtonArt, menuOutline = menu.Outline;
@@ -114,5 +106,24 @@ internal static class PluginMarkupTheme
                     scroll.PlainNubColor = p?.Muted ?? nub; });
                 break;
         }
+    }
+
+    /// <summary>A field's look under the theme: palette fills, no dat sprites, no outline.</summary>
+    private static void ThemeField(UiPluginMarkupPanel panel, UiField field, Func<string, bool> isDefault)
+    {
+        var fieldBg = field.BackgroundColor; var fieldText = field.TextColor;
+        var fieldOutline = field.Outline; var sprite = field.BackgroundSprite;
+        var focus = field.FocusFieldSprite; var left = field.FocusRailLeftSprite;
+        var right = field.FocusRailRightSprite; var selection = field.SelectionColor;
+        panel.AddThemeAction(p => {
+            field.Outline = p is null && fieldOutline;
+            field.BackgroundSprite = p is null ? sprite : 0;
+            field.FocusFieldSprite = p is null ? focus : 0;
+            field.FocusRailLeftSprite = p is null ? left : 0;
+            field.FocusRailRightSprite = p is null ? right : 0;
+            field.SelectionColor = p?.Selected ?? selection;
+            if (isDefault("background")) field.BackgroundColor = p?.Field ?? fieldBg;
+            if (isDefault("color")) field.TextColor = p?.Text ?? fieldText;
+        });
     }
 }

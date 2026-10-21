@@ -420,4 +420,59 @@ public class MarkupNumberTests
         root.Tick(2.0, 0);
         Assert.Equal(20, b.Count);
     }
+
+    private static UiMarkupNumber MountThemed(Binding binding)
+    {
+        var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build(
+            "<panel theme=\"plugin\" x=\"0\" y=\"0\" w=\"300\" h=\"100\">"
+            + $"<number x=\"8\" y=\"8\" w=\"80\" h=\"20\" {CountAttrs}/></panel>",
+            binding, _ => (1u, 16, 16), themes: themes);
+        return panel.Children.OfType<UiMarkupNumber>().Single();
+    }
+
+    [Fact]
+    public void Number_PluginThemeReachesTheInnerField()
+    {
+        var number = MountThemed(new Binding());
+        Assert.Same(PluginUiPalette.Moss, number.ThemePalette);
+        Assert.Equal(PluginUiPalette.Moss.Field, number.Field.BackgroundColor);
+    }
+
+    [Fact]
+    public void Number_ClassicDrawsTwoArrows()
+    {
+        var (_, number) = Mount(CountAttrs, new Binding());
+        var renderer = MarkupDrawProbe.Draw(number);
+        Assert.Equal(6, MarkupDrawProbe.CountQuads(renderer, UiMarkupNumber.ClassicSpinArrow));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupNumber.ClassicSpinPressed));
+    }
+
+    [Fact]
+    public void Number_HeldSpinDrawsPressed()
+    {
+        var (root, number) = Mount(CountAttrs, new Binding());
+        Press(root, SpinX, UpY);
+        var renderer = MarkupDrawProbe.Draw(number);
+        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, UiMarkupNumber.ClassicSpinPressed));
+    }
+
+    [Fact]
+    public void Number_DisabledDrawsFaded()
+    {
+        var (_, number) = Mount(CountAttrs + " enabled=\"false\"", new Binding());
+        var renderer = MarkupDrawProbe.Draw(number);
+        var faded = UiMarkupNumber.ClassicSpinArrow with { W = UiMarkupToggle.DisabledAlpha };
+        Assert.Equal(6, MarkupDrawProbe.CountQuads(renderer, faded));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupNumber.ClassicSpinArrow));
+    }
+
+    [Fact]
+    public void Number_ThemedDrawUsesThePalette()
+    {
+        var number = MountThemed(new Binding());
+        var renderer = MarkupDrawProbe.Draw(number);
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupNumber.ClassicSpinArrow));
+        Assert.True(MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Text) >= 6);
+    }
 }
