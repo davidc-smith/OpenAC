@@ -112,6 +112,10 @@ back at runtime instead.
 | `expander onchange` | `Action<bool>`, the new state | throws |
 | `split position` | `float`, the first pane's size; when bound, the plugin owns it | throws |
 | `split onchange` | `Action<float>`, the size asked for | throws |
+| `contextmenu items` | `IEnumerable<string>`, or a literal list `a\|-\|b`; `-` is a separator | throws |
+| `contextmenu enabled` | `IEnumerable<bool>`, one per item | throws |
+| `contextmenu onselect` | `Action<int>`, the item index; separators count | throws |
+| `contextmenu onopen` | `Action<int>`, the plugin row on a list, otherwise −1 | throws |
 | `list sortcolumn` | `int`, the sorted column (−1 for none); bound together with `sortdescending` | throws |
 | `list sortdescending` | `bool` | throws |
 | `list onsort` | `Action<int, bool>`, the column and direction asked for | throws |
@@ -183,6 +187,7 @@ Unknown or miscased element names throw at build time.
 | `separator` | A 1 px dividing line | `x y w h color` |
 | `expander` | A header that folds away the content below it | `name x y w h text expanded onchange open color` |
 | `split` | Two panes with a bar between them the player drags | `name x y w h orientation position onchange at min max` |
+| `contextmenu` | Right-click menu for the element it is inside | `items enabled onselect onopen` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
@@ -190,7 +195,7 @@ Unknown or miscased element names throw at build time.
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
-a binding.
+a binding. A `contextmenu` takes none of them.
 
 A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
@@ -452,6 +457,61 @@ under focus above.
 A disabled split can't be dragged, ignores the arrow keys, shows no resize
 cursor and draws its bar faded. On a host older
 than splits, a `<split>` fails the build of its window as unknown.
+
+## Context menu
+
+```xml
+<button x="8" y="8" w="80" h="20" text="Profile">
+  <contextmenu items="{ProfileMenu}" enabled="{ProfileMenuEnabled}" onselect="{OnProfileMenu}"/>
+</button>
+<list x="8" y="36" w="300" h="200" header="true" selected="{Sel}" onchange="{Pick}">
+  <column type="text" header="Name" items="{Names}" sort="text"/>
+  <contextmenu items="{RowMenu}" onopen="{OnRowMenuOpen}" onselect="{OnRowMenu}"/>
+</list>
+```
+
+A `<contextmenu>` inside an element gives that element a right-click menu.
+An element has at most one. The menu isn't drawn in place: a right click on
+the element (or on anything inside it that has no menu of its own) opens it
+at the cursor, flipped or shifted so it stays on the screen. A drag with the
+right button doesn't open it. The innermost menu wins. A `<group>` lets
+clicks on its empty space through, so a group's menu opens over its children
+only.
+
+`items` is a literal list (`Copy|-|Paste`) or a bound `IEnumerable<string>`,
+and `-` is a separator line. `enabled` optionally binds an
+`IEnumerable<bool>`, one flag per item; disabled items draw dimmed and can't
+be picked, and an item past the end of the list is enabled. Both are read
+once, when the menu opens. `onselect` gets the index of the item picked,
+counting separators, after the menu has closed. An empty item list doesn't
+open a menu, and the right click goes on to any enclosing element's menu.
+
+Hovering an item highlights it, and clicking it picks it; clicking a
+separator or a disabled item does nothing. While the menu is open it has
+the keyboard: Up and Down move between the items that can be picked
+(wrapping), Enter picks, Escape closes, and other keys do nothing, so the
+game doesn't act on them. When it closes the keyboard goes back to whatever
+had it before. A click outside the menu closes it (and does nothing else),
+as does opening another menu or drop-down, or the element being hidden or
+disabled.
+
+`onopen` is called as the menu opens, before `items` is read, so a plugin
+can change the items to suit. On a `<list>`, the right click first selects
+the row under the cursor (unless it is already one of the rows selected in a
+`selectmode="multi"` list) and `onopen` gets that row, as the plugin's own
+row index; over the header, the scrollbar or empty space it gets −1 and the
+selection stays as it is. On other elements `onopen` gets −1.
+
+In Classic the menu has the plain drop-down's colours; under
+`theme="plugin"` it takes the palette's field, border, text, muted and
+selected colours and the panel's font.
+
+A `<contextmenu>` without `items` or `onselect`, with an empty literal item,
+with `items`, `enabled`, `onselect` or `onopen` of the wrong type, with
+children, a second one on the same element, or one directly in `<panel>` or
+inside a `<column>` fails the build. A host older than context menus
+ignores the menu inside an element that has no children of its own (such as
+a `button`), and fails the build when it is inside a `<list>` or `<group>`.
 
 ## Resizable panels and anchors
 
