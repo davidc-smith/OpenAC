@@ -256,7 +256,8 @@ with spin buttons at its right edge.
   clamped to `min`..`max`, and `onchange` is called if it changed. Leaving the
   field without changing the text reports nothing. Text that isn't a number
   puts the bound value back. Escape puts it back too.
-- The spin buttons step once per click and repeat while held. Up and Down
+- The spin buttons step once per press and repeat while held. Pressing one ends typing: the
+  typed text is committed and focus leaves the field. Up and Down
   step while the field has focus, and so does the mouse wheel; the wheel
   never steps an unfocused field, so scrolling a list past it is safe.
   Up, Down and the wheel step from the number being typed, if it's a valid
