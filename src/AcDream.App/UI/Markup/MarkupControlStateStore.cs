@@ -103,6 +103,7 @@ public sealed class MarkupControlStateStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(control);
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        ArgumentNullException.ThrowIfNull(value);
         FollowCharacter();
         var key = new MarkupControlKey(window, control, kind);
         if (_values.TryGetValue(key, out string? current) && string.Equals(current, value, StringComparison.Ordinal))

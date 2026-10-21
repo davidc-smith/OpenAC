@@ -13,6 +13,20 @@ public sealed class MarkupControlStateStoreTests : IDisposable
     public void Dispose()
     {
         if (File.Exists(_path)) File.Delete(_path);
+        string blocker = _path + ".blocker";
+        try
+        {
+            if (Directory.Exists(blocker)) Directory.Delete(blocker, true);
+            else if (File.Exists(blocker)) File.Delete(blocker);
+        }
+        catch (IOException) { }
+    }
+
+    [Fact]
+    public void SetRejectsANullValue()
+    {
+        var nav = NewStore().ForWindow("nav");
+        Assert.Throws<ArgumentNullException>(() => nav.Set("adv", "expanded", null!));
     }
 
     private MarkupControlStateStore NewStore() => new(new SettingsStore(_path), () => _character);
@@ -151,10 +165,16 @@ public sealed class MarkupControlStateStoreTests : IDisposable
             nav.Set("adv", "expanded", "false");
             store.Save();
             Assert.Equal("false", nav.Get("adv", "expanded"));
+
+            // Once the obstruction is gone, the next Save retries and succeeds.
+            File.Delete(blocker);
+            store.Save();
+            Assert.True(File.Exists(Path.Combine(blocker, "settings.json")));
         }
         finally
         {
-            File.Delete(blocker);
+            if (Directory.Exists(blocker)) Directory.Delete(blocker, true);
+            else if (File.Exists(blocker)) File.Delete(blocker);
         }
     }
 
