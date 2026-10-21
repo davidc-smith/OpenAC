@@ -402,7 +402,7 @@ window as unknown.
 
 ```xml
 <split name="main" x="0" y="0" w="400" h="300" min="80" max="320">
-  <group><list x="0" y="0" w="100" h="300" anchor="left top right bottom" items="{Names}"/></group>
+  <group><list x="0" y="0" w="197" h="300" anchor="left top right bottom" items="{Names}"/></group>
   <group><label x="8" y="8" text="Details"/></group>
 </split>
 ```
@@ -411,7 +411,13 @@ A `<split>` holds exactly two `<group>` elements with a 5 px bar between
 them. With `orientation="horizontal"` (the default) the groups sit side by
 side; with `vertical` they are stacked. The split sizes and places its
 groups, so their own `x y w h` and `anchor` are ignored; anchor the elements
-inside them to fill a group.
+inside them to fill a group. They still honour `visible`, `enabled`,
+`background` and `border`, and each clips what it holds to its own size.
+
+The groups' contents are laid out against the starting group sizes: `at`, or
+half of what is left after the 5 px bar (197 in the example above), whatever
+position the client remembers or the plugin binds. So author and anchor the
+children to fill a group at that size.
 
 The player drags the bar to share the space out. Its position is the first
 group's size in pixels, kept between `min` (default 0) and `max` (default
@@ -422,8 +428,9 @@ and the second takes the rest.
   (default half). If the split has a `name`, the client remembers where the
   player left the bar per character, when they let go of it, and forgets it
   again when it is back at `at`.
-- With `position="{Float}"` the plugin keeps it: dragging only calls
-  `onchange` with the size asked for, and the split follows the property.
+- With `position="{Float}"` the plugin keeps it: dragging and the arrow
+  keys only call `onchange` with the size asked for, and the split follows
+  the property.
   Without `onchange` it only displays. Bound positions are never remembered
   by the client.
 - `onchange` is called for every pixel the bar moves during a drag, not
@@ -432,7 +439,8 @@ and the second takes the rest.
 A focused bar moves 8 px with the arrow keys along its axis, as described
 under focus above.
 
-A disabled split can't be dragged and draws its bar faded. On a host older
+A disabled split can't be dragged, ignores the arrow keys, shows no resize
+cursor and draws its bar faded. On a host older
 than splits, a `<split>` fails the build of its window as unknown.
 
 ## Resizable panels and anchors
