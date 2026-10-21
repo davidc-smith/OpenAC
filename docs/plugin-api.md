@@ -1296,8 +1296,10 @@ member for, such as F13; the example then keeps the current chord. A chord
 that collides with a client binding or another plugin's bound hotkey is still
 stored as the override, so `EffectiveChord` (and the box) shows it, but the
 registration is left unbound: `IsBound` is false and the old chord stops
-firing too. It binds later if the other binding is freed. Check `IsBound`
-after rebinding if the plugin should tell the player.
+firing too. It binds later if the other plugin's hotkey is disposed or
+rebound; a client binding the player frees is only noticed when the
+hotkeys are next resolved (next session). Check `IsBound` after rebinding
+if the plugin should tell the player.
 
 ## Host window
 
