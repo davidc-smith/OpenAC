@@ -110,6 +110,8 @@ back at runtime instead.
 | `radio onchange` | `Action<int>`, the option picked | throws |
 | `expander expanded` | `bool`; when bound, the plugin owns the state | throws |
 | `expander onchange` | `Action<bool>`, the new state | throws |
+| `split position` | `float`, the first pane's size; when bound, the plugin owns it | throws |
+| `split onchange` | `Action<float>`, the size asked for | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
@@ -171,6 +173,7 @@ Unknown or miscased element names throw at build time.
 | `radio` | One choice of several, as round buttons or a segmented bar | `x y w h items selected onchange orientation style color` |
 | `separator` | A 1 px dividing line | `x y w h color` |
 | `expander` | A header that folds away the content below it | `name x y w h text expanded onchange open color` |
+| `split` | Two panes with a bar between them the player drags | `name x y w h orientation position onchange at min max` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
@@ -187,7 +190,8 @@ Clicking a `button`, `tab`, `toggle`, `checkbox`, `radio`, or `expander` (its
 header) invokes its action without taking keyboard focus from the game. Use Tab to focus these controls:
 Enter or Space then activates a `button`, `tab`, `toggle`, `checkbox` or
 `expander` (its header). A focused `radio` uses the arrow keys instead; Enter
-and Space do nothing on it.
+and Space do nothing on it. A focused `split` bar moves 8 px with the arrow
+keys along its axis (Left/Right side by side, Up/Down stacked).
 
 A `field` shows its bound `text` and goes on following it: while nobody is
 typing in the field, a value that changes behind it -- a profile loaded after
@@ -393,6 +397,43 @@ top is above the expander's bottom, stay put.
 
 On a host older than expanders, an `<expander>` fails the build of its
 window as unknown.
+
+## Split
+
+```xml
+<split name="main" x="0" y="0" w="400" h="300" min="80" max="320">
+  <group><list x="0" y="0" w="100" h="300" anchor="left top right bottom" items="{Names}"/></group>
+  <group><label x="8" y="8" text="Details"/></group>
+</split>
+```
+
+A `<split>` holds exactly two `<group>` elements with a 5 px bar between
+them. With `orientation="horizontal"` (the default) the groups sit side by
+side; with `vertical` they are stacked. The split sizes and places its
+groups, so their own `x y w h` and `anchor` are ignored; anchor the elements
+inside them to fill a group.
+
+The player drags the bar to share the space out. Its position is the first
+group's size in pixels, kept between `min` (default 0) and `max` (default
+all of it). When the split itself resizes, the first group keeps its size
+and the second takes the rest.
+
+- Without `position` the client keeps the position. It starts at `at`
+  (default half). If the split has a `name`, the client remembers where the
+  player left the bar per character, when they let go of it, and forgets it
+  again when it is back at `at`.
+- With `position="{Float}"` the plugin keeps it: dragging only calls
+  `onchange` with the size asked for, and the split follows the property.
+  Without `onchange` it only displays. Bound positions are never remembered
+  by the client.
+- `onchange` is called for every pixel the bar moves during a drag, not
+  only when the player lets go.
+
+A focused bar moves 8 px with the arrow keys along its axis, as described
+under focus above.
+
+A disabled split can't be dragged and draws its bar faded. On a host older
+than splits, a `<split>` fails the build of its window as unknown.
 
 ## Resizable panels and anchors
 
