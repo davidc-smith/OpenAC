@@ -84,6 +84,26 @@ public class UiRootDragReleaseInterceptorTests
     }
 
     [Fact]
+    public void AClaimedDragClearsTheHoverTargetsHighlightAndTheSourcesWaitingState()
+    {
+        var (root, source, _) = Scene();
+        var other = new UiItemSlot { Left = 200, Top = 200, Width = 32, Height = 32 };
+        root.AddChild(other);
+        root.DragReleaseInterceptor = (_, _) => true;
+
+        root.OnMouseDown(UiMouseButton.Left, 20, 20);
+        root.OnMouseMove(30, 30);
+        root.OnMouseMove(210, 210);   // DragEnter on the other slot: no list → Reject highlight
+        Assert.Equal(UiItemSlot.DragAcceptState.Reject, other.DragAcceptVisual);
+        Assert.True(source.WaitingVisual);
+
+        root.OnMouseUp(UiMouseButton.Left, 210, 210);
+
+        Assert.Equal(UiItemSlot.DragAcceptState.None, other.DragAcceptVisual);
+        Assert.False(source.WaitingVisual);
+    }
+
+    [Fact]
     public void APlainClickNeverAsks()
     {
         var (root, _, _) = Scene();

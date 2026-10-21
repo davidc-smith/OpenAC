@@ -1161,6 +1161,15 @@ public sealed class UiRoot : UiElement
     /// <summary>The drag ends where it began: the source shows the item again, nothing is dropped.</summary>
     private void CancelDrag()
     {
+        // Leave the hovered element the way UpdateDragHover does, so a drop highlight
+        // (accept/reject) raised by its DragEnter does not stick after the drag ends.
+        if (_lastDragHoverTarget is not null && DragSource is not null)
+        {
+            var eLeave = new UiEvent(DragSource.EventId, _lastDragHoverTarget,
+                                     UiEventType.DragOver, Data1: MouseX, Data2: MouseY,
+                                     Payload: DragPayload);
+            _lastDragHoverTarget.OnEvent(in eLeave);
+        }
         DragSource?.SetDragSourceActive(false, DragPayload);
         DragSource = null;
         DragPayload = null;
