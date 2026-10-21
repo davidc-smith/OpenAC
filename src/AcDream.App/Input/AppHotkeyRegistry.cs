@@ -333,7 +333,7 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
 
     private readonly record struct StoredChord(string Key, bool Ctrl, bool Alt, bool Shift);
 
-    private static Key? MapKey(PluginKey key) => key switch
+    internal static Key? MapKey(PluginKey key) => key switch
     {
         PluginKey.A => Key.A, PluginKey.B => Key.B, PluginKey.C => Key.C,
         PluginKey.D => Key.D, PluginKey.E => Key.E, PluginKey.F => Key.F,
