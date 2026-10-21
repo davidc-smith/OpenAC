@@ -613,12 +613,25 @@ internal static class Program
             return true;
         if (a is not ByReferenceType { ElementType: var ea } || b is not ByReferenceType { ElementType: var eb })
             return false;
-        if (ea.Resolve() is not { IsValueType: true } da || eb.Resolve() is not { IsValueType: true } db)
+        if (TryResolve(ea) is not { IsValueType: true } da || TryResolve(eb) is not { IsValueType: true } db)
             return false;
         FieldDefinition[] fa = da.Fields.Where(f => !f.IsStatic).ToArray();
         FieldDefinition[] fb = db.Fields.Where(f => !f.IsStatic).ToArray();
         return fa.Length == fb.Length
             && fa.Zip(fb).All(pair => pair.First.Name == pair.Second.Name && pair.First.FieldType.FullName == pair.Second.FieldType.FullName);
+    }
+
+    /// <summary>The type's definition, or null when its assembly can't be found: no match, not a failed run.</summary>
+    private static TypeDefinition? TryResolve(TypeReference type)
+    {
+        try
+        {
+            return type.Resolve();
+        }
+        catch (AssemblyResolutionException)
+        {
+            return null;
+        }
     }
 
     /// <summary>The extern becomes a managed method that passes its arguments to <paramref name="target"/>.</summary>
