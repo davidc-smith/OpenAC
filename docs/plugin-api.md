@@ -1237,9 +1237,9 @@ While anything in the interface has keyboard focus (the chat bar, a text
 field, a control reached with Tab), a hotkey fires only if Ctrl or Alt is
 part of the chord; otherwise every letter typed would also be a candidate
 hotkey press. Clicking a button does not give it keyboard focus. While a
-modal dialog is open, or a key rebind is being captured
-(`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
-chords included.
+modal dialog is open, a key rebind is being captured
+(`InputDispatcher.BeginCapture`), or a markup `<hotkey>` box is recording,
+no hotkey fires at all, Ctrl and Alt chords included.
 
 Plugin hotkeys are a raw keyboard subscription, not a route through
 InputDispatcher's action/scope engine (a dynamic per-plugin action space
@@ -1270,6 +1270,40 @@ design sketch put overrides in `keybinds.json` itself; this was changed
 so a corrupt or hand-edited plugin override file can never touch the
 client's own binding schema). There is no in-client rebind UI yet; a
 plugin (or a future Settings panel) calls `Rebind` directly.
+
+A markup `<hotkey>` box lets the player pick the chord. Bind its `value` to
+the registration's chord as text and rebind from its `onchange`:
+
+```csharp
+public string QuickHealKey => _quickHeal.EffectiveChord.ToHotkeyText();
+
+public Action<string> SetQuickHealKey => text =>
+{
+    if (text.Length == 0)
+        _quickHeal.Rebind(default); // the player cleared the box: unbind
+    else if (PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord))
+        _quickHeal.Rebind(chord);
+};
+```
+
+```xml
+<hotkey x="8" y="8" w="140" h="20" value="{QuickHealKey}" onchange="{SetQuickHealKey}"/>
+```
+
+`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order, the
+key by the box's name such as `Keypad5` or by its `PluginKey` name such as
+`Numpad5`) and `ToHotkeyText()` writes it back. `TryParseHotkeyText` returns false for
+an empty string (the player cleared the box) and for keys `PluginKey` has no
+member for, such as F13; the example keeps the current chord for the latter.
+Rebinding to the default chord (no key) unbinds the hotkey: the override is
+stored, `IsBound` is false, and the box reads back as `None`. A chord
+that collides with a client binding or another plugin's bound hotkey is still
+stored as the override, so `EffectiveChord` (and the box) shows it, but the
+registration is left unbound: `IsBound` is false and the old chord stops
+firing too. It binds later if the other plugin's hotkey is disposed or
+rebound; a client binding the player frees is only noticed when the
+hotkeys are next resolved (next session). Check `IsBound` after rebinding
+if the plugin should tell the player.
 
 ## Host window
 

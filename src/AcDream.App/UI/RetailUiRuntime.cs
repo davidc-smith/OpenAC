@@ -4094,6 +4094,20 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.Assets.Icons,
             _bindings.Toolbar.Objects);
 
+        // Hotkey boxes show keys by the game's own names. The table reads go
+        // through the dat lock like every other plugin-thread dat read.
+        Layout.RetailKeyNames keyNames;
+        lock (_bindings.Assets.DatLock)
+        {
+            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
+            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
+        }
+        Func<KeyChord, string> describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
+        {
+            lock (_bindings.Assets.DatLock)
+                return keyNames.Describe(key);
+        });
+
         foreach (var panel in _bindings.Plugins.Drain())
         {
             try
@@ -4107,7 +4121,8 @@ public sealed class RetailUiRuntime : IDisposable
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
                     iconResolver, _pluginThemes,
-                    controlState: _controlState.ForWindow(panel.WindowName));
+                    controlState: _controlState.ForWindow(panel.WindowName),
+                    describeKey: describeKey);
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
                 {

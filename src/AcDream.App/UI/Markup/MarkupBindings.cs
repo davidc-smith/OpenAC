@@ -196,6 +196,26 @@ internal static class MarkupBindings
         return () => property.GetValue(binding) is float value ? value : 0f;
     }
 
+    /// <summary>A required <c>string</c> property, read on each call; null reads as empty.</summary>
+    public static Func<string> BindRequiredStringReader(string? expression, object binding, string context)
+    {
+        if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
+            throw new FormatException($"{context} must be a string binding");
+        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        if (property is null || property.PropertyType != typeof(string))
+        {
+            throw new FormatException(
+                $"{expression} did not resolve to a string property on "
+                + binding.GetType().Name + $" ({context})");
+        }
+        return () => property.GetValue(binding) as string ?? string.Empty;
+    }
+
+    /// <summary>A required <c>Action&lt;string&gt;</c>.</summary>
+    public static Action<string> BindRequiredStringAction(string? attribute, object binding, string context) =>
+        BindOptionalAction<string>(attribute, binding, context, "string")
+        ?? throw new FormatException($"{context} must be an Action<string> binding");
+
     private static Action<T>? BindOptionalAction<T>(
         string? attribute, object binding, string context, string typeName)
     {
