@@ -357,6 +357,34 @@ public sealed class MarkupExpanderTests : IDisposable
     }
 
     [Fact]
+    public void Expander_SiblingMovedByACollapsedStretchedOneComesBackToItsAuthoredPlace()
+    {
+        // "fill" moves the button up by 132 (its own content). Collapsing "adv"
+        // then grows what fill restores by 82, but fill must still bring the
+        // button back by only the 132 it moved it.
+        var panel = MarkupDocument.Build("""
+            <panel x="0" y="0" w="400" h="300">
+              <expander name="adv" x="8" y="8" w="200" h="100" text="Adv"/>
+              <expander name="fill" x="8" y="120" w="200" h="150" anchor="left top bottom" text="Fill"/>
+              <button name="ok" x="8" y="275" w="80" h="20" anchor="left bottom" text="OK"/>
+            </panel>
+            """, new Binding(), _ => (1u, 16, 16));
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(panel);
+        MarkupDrawProbe.Draw(panel, 800f, 600f);
+        var fill = Named(panel, "fill");
+        var ok = Named(panel, "ok");
+        ClickAndDraw(root, 120 + 6);      // collapse fill: ok moves up 132 to 143
+        ClickAndDraw(root, 14);           // collapse adv: fill to 38, ok to 61
+        ClickAndDraw(root, 38 + 6);       // expand fill: ok back 132 to 193
+        Assert.Equal(193f, ok.Top);
+        ClickAndDraw(root, 14);           // expand adv
+        Assert.Equal(120f, fill.Top);
+        Assert.Equal(150f, fill.Height);
+        Assert.Equal(275f, ok.Top);
+    }
+
+    [Fact]
     public void Expander_ResizeBeforeDrawIsNotAbsorbed()
     {
         var markup = """

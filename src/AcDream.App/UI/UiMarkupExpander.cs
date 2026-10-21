@@ -37,10 +37,13 @@ public sealed class UiMarkupExpander : UiElement
 
     /// <summary>The state the layout is currently in (what the header arrow shows).</summary>
     internal bool LaidOutExpanded => _laidOutExpanded;
+    // The height to restore on expand (an expander above can change it while collapsed).
     private float _collapseDelta;
     private AnchorEdges? _expandedAnchors;
     private float _parentHeightAtCollapse;
-    private readonly List<(UiElement Element, bool Grew)> _moved = new();
+    // What collapsing moved, and by how much: that is what expanding gives back,
+    // even if _collapseDelta has changed since.
+    private readonly List<(UiElement Element, bool Grew, float Delta)> _moved = new();
 
     public UiMarkupExpander()
     {
@@ -175,7 +178,7 @@ public sealed class UiMarkupExpander : UiElement
                         Grow(sibling, _collapseDelta);
                     AddShift(sibling, _collapseDelta);
                     sibling.CaptureCurrentAnchorBaseline();
-                    _moved.Add((sibling, grows));
+                    _moved.Add((sibling, grows, _collapseDelta));
                 }
             }
             Content.Visible = false;
@@ -204,14 +207,14 @@ public sealed class UiMarkupExpander : UiElement
             }
             CaptureCurrentAnchorBaseline();
             Content.Visible = true;
-            foreach (var (sibling, grew) in _moved)
+            foreach (var (sibling, grew, delta) in _moved)
             {
                 if (!ReferenceEquals(sibling.Parent, parent))
                     continue;
-                sibling.Top += _collapseDelta;
+                sibling.Top += delta;
                 if (grew)
-                    Grow(sibling, -_collapseDelta);
-                AddShift(sibling, -_collapseDelta);
+                    Grow(sibling, -delta);
+                AddShift(sibling, -delta);
                 sibling.CaptureCurrentAnchorBaseline();
             }
             _moved.Clear();
