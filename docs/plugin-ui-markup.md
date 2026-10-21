@@ -105,6 +105,9 @@ back at runtime instead.
 | `checkbox onchange` | `Action<bool>`, the new value | throws |
 | `number value` | `int`, `long`, `float`, `double` or `decimal` | throws |
 | `number onchange` | `Action<T>` of the same type as `value` | throws |
+| `radio items` | `IEnumerable<string>`, or a literal list `a\|b\|c` | throws |
+| `radio selected` | `int`, the chosen option (−1 for none) | throws |
+| `radio onchange` | `Action<int>`, the option picked | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
@@ -163,6 +166,7 @@ Unknown or miscased element names throw at build time.
 | `toggle` | On/off lamp | `x y w h text checked onclick color` |
 | `checkbox` | Tick box, optionally indeterminate | `x y w h text checked onchange color` |
 | `number` | Number field with spin buttons | `x y w h value onchange min max step decimals color background` |
+| `radio` | One choice of several, as round buttons or a segmented bar | `x y w h items selected onchange orientation style color` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
@@ -175,9 +179,9 @@ a binding.
 A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
 
-Clicking a `button`, `tab`, `toggle`, or `checkbox` invokes its action without
-taking keyboard focus from the game. Use Tab to focus these controls for Enter
-or Space activation.
+Clicking a `button`, `tab`, `toggle`, `checkbox`, or `radio` invokes its action
+without taking keyboard focus from the game. Use Tab to focus these controls for
+Enter or Space activation.
 
 A `field` shows its bound `text` and goes on following it: while nobody is
 typing in the field, a value that changes behind it -- a profile loaded after
@@ -266,6 +270,44 @@ with spin buttons at its right edge.
 - While nobody is typing in it, the field follows `value`.
 
 On a host older than number fields, a `<number>` fails the build of its
+window as unknown.
+
+## Radio group
+
+```xml
+<radio x="8" y="8" w="200" h="54" items="Melee|Missile|Magic"
+       selected="{Mode}" onchange="{SetMode}"/>
+<radio x="8" y="70" w="210" h="20" items="{Ranges}" selected="{Range}"
+       onchange="{SetRange}" orientation="horizontal" style="segmented"/>
+```
+
+One `<radio>` is the whole group: the player picks one of its options.
+
+- `items` is a literal list separated by `|`, or a bound
+  `IEnumerable<string>` that the group re-reads every frame. A literal list
+  can't have an empty option: `a||b`, `a|` and `|` fail the build. A literal
+  that starts with `{` and ends with `}` is read as a binding. A `null` entry
+  in a bound list shows as a blank option.
+- `selected` binds an `int`, the chosen option; −1, or any number past the
+  last option, draws none chosen.
+- `onchange` receives the option the player picks. It isn't called for the
+  option already chosen. The plugin stores the choice; the group shows
+  whatever `selected` returns next frame. Without `onchange` the group
+  only displays.
+- `orientation` is `vertical` (the default, options stacked) or
+  `horizontal` (side by side). The box is shared equally between options.
+- `style` is `radio` (the default: a round button and caption per option)
+  or `segmented` (a joined bar of buttons, the chosen one lit, captions
+  centred).
+- A click picks an option when the button comes up over the option it went
+  down on.
+- The group is one Tab stop. While it has focus, Up or Left picks the
+  previous option and Down or Right the next, wrapping round; with nothing
+  chosen, Down or Right picks the first and Up or Left the last. A click
+  picks an option but doesn't keep keyboard focus, as with `<toggle>`:
+  after clicking, Tab back to the group to use the arrow keys again.
+
+On a host older than radio groups, a `<radio>` fails the build of its
 window as unknown.
 
 ## Resizable panels and anchors
