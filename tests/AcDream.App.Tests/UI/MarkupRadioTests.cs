@@ -134,6 +134,32 @@ public class MarkupRadioTests
     }
 
     [Fact]
+    public void Radio_CellEdgesLandOnWholePixels()
+    {
+        var b = new Binding { Mode = -1 };
+        var (_, radio) = Mount(Literal, b, "w=\"200\" h=\"50\"");
+        Assert.Equal(0, radio.IndexAt(5, 15));
+        Assert.Equal(1, radio.IndexAt(5, 16));
+        Assert.Equal(1, radio.IndexAt(5, 32));
+        Assert.Equal(2, radio.IndexAt(5, 33));
+        Assert.Equal(2, radio.IndexAt(5, 49));
+        Assert.Equal(-1, radio.IndexAt(5, 50));
+        var (root, _) = Mount(Literal, b, "w=\"200\" h=\"50\"");
+        Click(root, 20, 8 + 32);
+        Assert.Equal(1, b.LastChange);
+        Click(root, 20, 8 + 33);
+        Assert.Equal(2, b.LastChange);
+    }
+
+    [Fact]
+    public void Radio_ClicksDoNotBubbleToAParent()
+    {
+        var (_, radio) = Mount(Literal, new Binding());
+        Assert.True(radio.OnEvent(new UiEvent { Type = UiEventType.Click }));
+        Assert.True(radio.OnEvent(new UiEvent { Type = UiEventType.DoubleClick }));
+    }
+
+    [Fact]
     public void Radio_PressAndReleaseMustBeOnTheSameOption()
     {
         var b = new Binding();

@@ -48,9 +48,18 @@ public sealed class UiMarkupRadio : UiElement
         if (count == 0 || x < 0f || y < 0f || x >= Width || y >= Height)
             return -1;
         float along = Horizontal ? x : y;
-        float cell = (Horizontal ? Width : Height) / count;
-        return Math.Min(count - 1, (int)(along / cell));
+        float size = Horizontal ? Width : Height;
+        for (int i = 0; i < count; i++)
+        {
+            if (along >= Edge(i, size, count) && along < Edge(i + 1, size, count))
+                return i;
+        }
+        return -1;
     }
+
+    /// <summary>Where cell <paramref name="i"/> starts along an axis, on a whole pixel.</summary>
+    private static float Edge(int i, float size, int count) =>
+        i >= count ? size : MathF.Floor(i * size / count);
 
     private void Select(int index)
     {
@@ -89,6 +98,9 @@ public sealed class UiMarkupRadio : UiElement
             case UiEventType.CaptureChanged:
                 _pressed = -1;
                 return true;
+            case UiEventType.Click:
+            case UiEventType.DoubleClick:
+                return true;
             case UiEventType.KeyDown when _keyboardActivation.Focused && Enabled:
                 switch ((Silk.NET.Input.Key)e.Data0)
                 {
@@ -112,11 +124,11 @@ public sealed class UiMarkupRadio : UiElement
     {
         if (Horizontal)
         {
-            float w = Width / count;
-            return (index * w, 0f, w, Height);
+            float x0 = Edge(index, Width, count);
+            return (x0, 0f, Edge(index + 1, Width, count) - x0, Height);
         }
-        float h = Height / count;
-        return (0f, index * h, Width, h);
+        float y0 = Edge(index, Height, count);
+        return (0f, y0, Width, Edge(index + 1, Height, count) - y0);
     }
 
     protected override void OnDraw(UiRenderContext ctx)
