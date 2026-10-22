@@ -1,0 +1,48 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-22-gateway-split-4-cast-without-selecting.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Runtime gate check at a given target",
+      "status": "pending",
+      "description": "**Goal:** `RuntimeSpellCastState.EvaluateCastGate(spellId, targetId)` answers from the given target without reading the selection.\n\n**Files:**\n- Modify: `src/AcDream.Runtime/Gameplay/RuntimeSpellCastState.cs` (the `EvaluateCastGate(uint spellId)` method, ~line 64)\n- Test: `tests/AcDream.Runtime.Tests/Gameplay/RuntimeSpellCastStateTests.cs`\n\n**Acceptance Criteria:**\n- [ ] With object 99 selected, `EvaluateCastGate(1, 77u)` for a targeted spell returns `TargetCompatible` and the fake's compatibility check saw target 77, not 99.\n- [ ] `EvaluateCastGate(1, 0u)` for a targeted spell returns `NoTargetSelected` even with 99 selected.\n- [ ] A self-targeted spell returns `NoTargetNeeded` for any target.\n- [ ] `EvaluateCastGate(1)` still answers from the selection (existing tests pass).\n\n**Verify:** `dotnet test tests/AcDream.Runtime.Tests --filter \"FullyQualifiedName~RuntimeSpellCastStateTests\"` \u2192 all pass\n\n```json:metadata\n{\"files\": [\"src/AcDream.Runtime/Gameplay/RuntimeSpellCastState.cs\", \"tests/AcDream.Runtime.Tests/Gameplay/RuntimeSpellCastStateTests.cs\"], \"verifyCommand\": \"dotnet test tests/AcDream.Runtime.Tests --filter \\\"FullyQualifiedName~RuntimeSpellCastStateTests\\\"\", \"acceptanceCriteria\": [\"With object 99 selected, `EvaluateCastGate(1, 77u)` for a targeted spell returns `TargetCompatible` and the fake's compatibility check saw target 77, not 99.\", \"`EvaluateCastGate(1, 0u)` for a targeted spell returns `NoTargetSelected` even with 99 selected.\", \"A self-targeted spell returns `NoTargetNeeded` for any target.\", \"`EvaluateCastGate(1)` still answers from the selection (existing tests pass).\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Plugin contract and host members, contract fork.6",
+      "status": "pending",
+      "blockedBy": [
+        1
+      ],
+      "description": "**Goal:** `IMagicCommands.EvaluateGateWithoutSelecting` / `RequestCastWithoutSelecting` exist with refusing defaults, the inert surface answers `Unavailable`, `RuntimeAutomationSurface` implements them without touching the selection, the contract is `0.1.26-fork.6`, and `docs/plugin-api.md` documents them.\n\n**Files:**\n- Modify: `src/AcDream.Plugin.Abstractions/Automation.cs` (`IMagicCommands` ~line 1076-1140; `NoOpAutomationSurface` magic members ~line 1452-1463)\n- Modify: `src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj:39`\n- Modify: `src/AcDream.Runtime/Plugins/RuntimeAutomationSurface.cs` (magic members ~4138-4225; `SelectExplicitTarget` ~6341)\n- Modify: `docs/plugin-api.md` (end of `## Spells`, before `## Storage`)\n- Test: `tests/AcDream.Runtime.Tests/Plugins/CampaignAutomationSurfaceTests.cs`\n\n**Acceptance Criteria:**\n- [ ] With object A selected and active object B, `EvaluateGateWithoutSelecting(42, B)` is `Ready`, `RequestCastWithoutSelecting(42, B)` is `Sent`, the operations fake saw a targeted send to B, and `Selection.SelectedObjectId` is still A.\n- [ ] An inactive/unknown target gives `Refused` / `IncompatibleTarget`, sends nothing, and leaves the selection alone.\n- [ ] `RequestCast(42, B)` (selecting overload) still changes the selection to B.\n- [ ] `NoOpAutomationSurface.Instance` answers `Unavailable` for both new members; an `IMagicCommands` implementation that does not override them answers `Refused` / `Unavailable`.\n- [ ] `ForkContractVersion` is `0.1.26-fork.6`; `docs/plugin-api.md` names both members and the contract.\n\n**Verify:** `dotnet test tests/AcDream.Runtime.Tests --filter \"FullyQualifiedName~CampaignAutomationSurfaceTests\"` \u2192 all pass; `dotnet build src/AcDream.Plugin.Abstractions -c Release` \u2192 0 warnings 0 errors\n\n```json:metadata\n{\"files\": [\"src/AcDream.Plugin.Abstractions/Automation.cs\", \"src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj\", \"src/AcDream.Runtime/Plugins/RuntimeAutomationSurface.cs\", \"tests/AcDream.Runtime.Tests/Plugins/CampaignAutomationSurfaceTests.cs\", \"docs/plugin-api.md\"], \"verifyCommand\": \"dotnet test tests/AcDream.Runtime.Tests --filter \\\"FullyQualifiedName~CampaignAutomationSurfaceTests\\\"\", \"acceptanceCriteria\": [\"With object A selected and active object B, `EvaluateGateWithoutSelecting(42, B)` is `Ready`, `RequestCastWithoutSelecting(42, B)` is `Sent`, the operations fake saw a targeted send to B, and `Selection.SelectedObjectId` is still A.\", \"An inactive/unknown target gives `Refused` / `IncompatibleTarget`, sends nothing, and leaves the selection alone.\", \"`RequestCast(42, B)` (selecting overload) still changes the selection to B.\", \"`NoOpAutomationSurface.Instance` answers `Unavailable` for both new members; an `IMagicCommands` implementation that does not override them answers `Refused` / `Unavailable`.\", \"`ForkContractVersion` is `0.1.26-fork.6`; `docs/plugin-api.md` names both members and the contract.\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Full suite, merge to main and rynth, push",
+      "status": "pending",
+      "blockedBy": [
+        2
+      ],
+      "description": "**Goal:** The branch is merged into `main` and `main` into `rynth`, both pushed, with the full suite inside the baseline on each.\n\n**Files:**\n- No source changes (merge commits only; conflict resolution if any).\n\n**Acceptance Criteria:**\n- [ ] Full OpenAC suite on `feat/cast-without-selecting`: failures \u2286 `presplit-failed.txt`.\n- [ ] `main` has a `--no-ff` merge of the branch; `rynth` has a merge of `main`; both pushed to `origin`.\n- [ ] `rynth` builds, and its `RuntimeSpellCastStateTests` + `CampaignAutomationSurfaceTests` pass.\n\n**Verify:** `git log --oneline -1 origin/main origin/rynth` shows the two merge commits; `python3 $HOME/code/OpenAC/split-baseline/failed-tests.py \u2026` reports no new failures.\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"git log --oneline -1 origin/main origin/rynth\", \"acceptanceCriteria\": [\"Full OpenAC suite on `feat/cast-without-selecting`: failures \\u2286 `presplit-failed.txt`.\", \"`main` has a `--no-ff` merge of the branch; `rynth` has a merge of `main`; both pushed to `origin`.\", \"`rynth` builds, and its `RuntimeSpellCastStateTests` + `CampaignAutomationSurfaceTests` pass.\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Aethrix casts without selecting",
+      "status": "pending",
+      "blockedBy": [
+        3
+      ],
+      "description": "**Goal:** Aethrix builds against contract `0.1.26-fork.6` and `MagicSession.Send` uses `EvaluateGateWithoutSelecting` / `RequestCastWithoutSelecting`.\n\n**Files:** (repo `~/code/OpenAC/OpenAC-Plugins-Aethrix`)\n- Modify: `Directory.Build.props:37` (`PluginApiPackageVersion`)\n- Modify: `src/Aethrix/Core/Magic/MagicSession.cs:261,273`\n- Modify: `tests/Aethrix.Tests/Fakes/FakeAutomation.cs` (magic fake, ~line 656-690)\n- Test: the test file that covers `MagicSession` (find it with `grep -rln \"MagicSession\" tests/Aethrix.Tests`; if none fits, `tests/Aethrix.Tests/Combat/MagicFacetTests.cs`)\n- Modify: `docs/api-gaps.md` (new resolved entry `## 79.`)\n\n**Acceptance Criteria:**\n- [ ] `PluginApiPackageVersion` is `0.1.26-fork.6` and `tools/pack-contract.sh` packs it from `../OpenAC` on `main`.\n- [ ] `MagicSession.Send` calls only the `WithoutSelecting` members; `grep -n \"EvaluateGate(\\|RequestCast(\" src/Aethrix/Core/Magic/MagicSession.cs` finds nothing.\n- [ ] The fake counts calls to the selecting overloads (`SelectingCalls`); a test drives a cast through the facet and asserts `SelectingCalls == 0` and the cast reached `Casts`.\n- [ ] Full Aethrix suite passes.\n\n**Verify:** `dotnet test` in the Aethrix repo \u2192 all pass\n\n```json:metadata\n{\"files\": [\"Directory.Build.props\", \"src/Aethrix/Core/Magic/MagicSession.cs\", \"tests/Aethrix.Tests/Fakes/FakeAutomation.cs\", \"docs/api-gaps.md\"], \"verifyCommand\": \"dotnet test (Aethrix repo)\", \"acceptanceCriteria\": [\"`PluginApiPackageVersion` is `0.1.26-fork.6` and `tools/pack-contract.sh` packs it from `../OpenAC` on `main`.\", \"`MagicSession.Send` calls only the `WithoutSelecting` members; `grep -n \\\"EvaluateGate(\\\\|RequestCast(\\\" src/Aethrix/Core/Magic/MagicSession.cs` finds nothing.\", \"The fake counts calls to the selecting overloads (`SelectingCalls`); a test drives a cast through the facet and asserts `SelectingCalls == 0` and the cast reached `Casts`.\", \"Full Aethrix suite passes.\"], \"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Live check (user)",
+      "status": "pending",
+      "blockedBy": [
+        4
+      ],
+      "description": "**Goal:** The user confirms in the client that Aethrix combat casts at creatures while another object stays selected.\n\n**Files:** none\n\n**Acceptance Criteria:**\n- [ ] The user reports: with a non-target object selected, Aethrix combat casts land on the creature and the selection does not change.\n\n**Verify:** the user's report.\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"user report\", \"acceptanceCriteria\": [\"The user reports: with a non-target object selected, Aethrix combat casts land on the creature and the selection does not change.\"], \"modelTier\": \"standard\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-10-22T18:05:29.883089"
+}
