@@ -25,7 +25,22 @@ internal abstract class UiPluginDialog : UiElement
     /// <summary>Called with the index of the button picked; the host closes the dialog.</summary>
     public Action<int>? Chosen { get; set; }
 
+    /// <summary>
+    /// True once a button press (rather than a key or the host) answered the
+    /// dialog. Pressing a button takes the keyboard focus off the dialog
+    /// first, since buttons do not accept focus, so the host goes by this to
+    /// tell that the player was on the dialog when it answered.
+    /// </summary>
+    public bool AnsweredByPress { get; private set; }
+
     protected void Choose(int index) => Chosen?.Invoke(index);
+
+    /// <summary>Answers from a press on one of the dialog's buttons.</summary>
+    protected void ChooseByPress(int index)
+    {
+        AnsweredByPress = true;
+        Choose(index);
+    }
 
     /// <summary>Focused, it leaves the keyboard to the game but for its answer keys.</summary>
     internal override bool HoldsKeyboard => false;
@@ -33,6 +48,11 @@ internal abstract class UiPluginDialog : UiElement
     /// <summary>Enter, keypad Enter and Escape answer it; every other key is the game's.</summary>
     internal override bool ClaimsKey(Silk.NET.Input.Key key) =>
         key is Silk.NET.Input.Key.Enter or Silk.NET.Input.Key.KeypadEnter or Silk.NET.Input.Key.Escape;
+
+    // A held answer key must not repeat into the next queued dialog, nor
+    // its char land in the field that gets the focus back.
+    private void SwallowHeldKey(Silk.NET.Input.Key key) =>
+        FindRoot()?.SuppressPhysicalKeyUntilRelease(key);
 
     /// <summary>Centres the dialog on the owner window, or on the screen without one, and keeps it on screen.</summary>
     public void Place(UiElement? owner, Vector2 screen)
@@ -49,13 +69,16 @@ internal abstract class UiPluginDialog : UiElement
         switch (e.Type)
         {
             case UiEventType.KeyDown:
-                switch ((Silk.NET.Input.Key)e.Data0)
+                var key = (Silk.NET.Input.Key)e.Data0;
+                switch (key)
                 {
                     case Silk.NET.Input.Key.Enter:
                     case Silk.NET.Input.Key.KeypadEnter:
+                        SwallowHeldKey(key);
                         Choose(0);
                         return true;
                     case Silk.NET.Input.Key.Escape:
+                        SwallowHeldKey(key);
                         Choose(CancelIndex);
                         return true;
                     default:

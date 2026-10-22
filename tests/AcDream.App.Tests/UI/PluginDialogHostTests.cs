@@ -40,7 +40,20 @@ public sealed class PluginDialogHostTests
         public IDisposable Confirm(UiElement? owner, List<int> answers, params string[] buttons) =>
             Host.Confirm("Title", "Message", buttons.Length == 0 ? ["OK", "Cancel"] : buttons, owner, answers.Add)!;
 
-        public void Press(Key key) => Root.OnKeyDown((int)key);
+        /// <summary>A key pressed and released.</summary>
+        public void Press(Key key)
+        {
+            Root.OnKeyDown((int)key);
+            Root.OnKeyUp((int)key);
+        }
+
+        public void ClickAt(UiElement element)
+        {
+            Vector2 p = element.ScreenPosition;
+            int x = (int)p.X + 4, y = (int)p.Y + 4;
+            Root.OnMouseDown(UiMouseButton.Left, x, y);
+            Root.OnMouseUp(UiMouseButton.Left, x, y);
+        }
     }
 
     [Fact]
@@ -350,5 +363,93 @@ public sealed class PluginDialogHostTests
         Assert.NotNull(f.Host.ShownFor(f.Owner));
         f.Press(Key.Enter);
         Assert.Equal([0], second);
+    }
+
+    [Fact]
+    public void FocusComesBackAfterADrawnButtonAnswers()
+    {
+        var f = new Fixture();
+        f.Root.SetKeyboardFocus(f.OtherField);
+        var answers = new List<int>();
+        f.Confirm(f.Owner, answers);
+        var view = Assert.IsType<UiDrawnPluginDialog>(f.Host.ShownFor(f.Owner));
+
+        f.ClickAt(view.Buttons[1]);
+
+        Assert.Equal([1], answers);
+        Assert.Same(f.OtherField, f.Root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void FocusComesBackAfterARetailButtonAnswers()
+    {
+        var f = new Fixture(FixtureLoader.LoadConfirmationDialog);
+        f.Root.SetKeyboardFocus(f.OtherField);
+        var answers = new List<int>();
+        f.Confirm(f.Owner, answers, "Yes", "No");
+        var view = Assert.IsType<UiRetailPluginDialog>(f.Host.ShownFor(f.Owner));
+        MarkupDrawProbe.Draw(f.Root, 800f, 600f); // lays out anchored retail parts
+
+        f.ClickAt(view.Buttons[0]);
+
+        Assert.Equal([0], answers);
+        Assert.Same(f.OtherField, f.Root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void APressAnswerLeavesFocusThePlayerMovedElsewhere()
+    {
+        var f = new Fixture();
+        f.Root.SetKeyboardFocus(f.OwnerField);
+        var answers = new List<int>();
+        IDisposable handle = f.Confirm(f.Owner, answers);
+        var view = Assert.IsType<UiDrawnPluginDialog>(f.Host.ShownFor(f.Owner));
+
+        // The press lands on a button, then the player clicks into another
+        // window before the answer is taken.
+        Vector2 p = view.Buttons[0].ScreenPosition;
+        f.Root.OnMouseDown(UiMouseButton.Left, (int)p.X + 4, (int)p.Y + 4);
+        f.Root.SetKeyboardFocus(f.OtherField);
+        f.Root.OnMouseUp(UiMouseButton.Left, (int)p.X + 4, (int)p.Y + 4);
+        handle.Dispose();
+
+        Assert.Same(f.OtherField, f.Root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void AHeldEnterAnswersOneDialogUntilItIsReleased()
+    {
+        var f = new Fixture();
+        var first = new List<int>();
+        var second = new List<int>();
+        f.Confirm(f.Owner, first);
+        f.Confirm(f.Owner, second);
+
+        f.Root.OnKeyDown((int)Key.Enter);
+        f.Root.OnKeyDown((int)Key.Enter);   // auto-repeat, no release yet
+        Assert.Equal([0], first);
+        Assert.Empty(second);
+        Assert.NotNull(f.Host.ShownFor(f.Owner));
+
+        f.Root.OnKeyUp((int)Key.Enter);
+        f.Root.OnKeyDown((int)Key.Enter);
+        Assert.Equal([0], second);
+    }
+
+    [Fact]
+    public void AnAnswerKeysCharDoesNotLandInTheFieldThatGetsFocusBack()
+    {
+        var f = new Fixture();
+        var field = new UiField { Left = 10f, Top = 40f, Width = 150f, Height = 40f, OneLine = false }; // takes Enter's CR as a newline
+        f.Other.AddChild(field);
+        f.Root.SetKeyboardFocus(field);
+        f.Confirm(f.Owner, []);
+
+        f.Root.OnKeyDown((int)Key.Enter);
+        f.Root.OnChar('\r');
+        f.Root.OnKeyUp((int)Key.Enter);
+
+        Assert.Same(field, f.Root.KeyboardFocus);
+        Assert.Equal(string.Empty, field.Text);
     }
 }

@@ -107,7 +107,7 @@ internal sealed class UiRetailPluginDialog : UiPluginDialog
             button.LayoutPolicy = null;
             button.Anchors = AnchorEdges.None;
             button.Label = buttons[i];
-            button.OnClick = () => dialog.Choose(index);
+            button.OnClick = () => dialog.ChooseByPress(index);
             if (row.Count == 1)
                 button.Left = MathF.Round((popup.Width - buttonWidth) * 0.5f);
             else if (row.Count >= 3)

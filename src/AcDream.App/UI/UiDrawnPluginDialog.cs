@@ -69,7 +69,7 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
                 Left = x, Top = Height - Pad - ButtonHeight, Width = widths[i], Height = ButtonHeight,
                 Text = buttons[i], DatFont = font,
             };
-            button.Click += () => Choose(index);
+            button.Click += () => ChooseByPress(index);
             AddChild(button);
             _buttons[i] = button;
             x += widths[i] + ButtonGap;
@@ -79,7 +79,7 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
             Left = Width - CloseSize - 2f, Top = MathF.Round((TitleHeight - CloseSize) * 0.5f),
             Width = CloseSize, Height = CloseSize, Text = "x", DatFont = font,
         };
-        CloseButton.Click += () => Choose(CancelIndex);
+        CloseButton.Click += () => ChooseByPress(CancelIndex);
         AddChild(CloseButton);
         ApplyColors(palette());
     }

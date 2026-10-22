@@ -202,7 +202,11 @@ internal sealed class PluginDialogHost : IDisposable
         if (entry.View is { } view)
         {
             view.Chosen = null;
-            bool hadFocus = ReferenceEquals(_root.KeyboardFocus, view);
+            // A button press takes the focus off the dialog before it
+            // answers, so an answer by press counts as having it unless the
+            // focus has since gone somewhere else.
+            bool hadFocus = ReferenceEquals(_root.KeyboardFocus, view)
+                || (view.AnsweredByPress && _root.KeyboardFocus is null);
             entry.Block?.Dispose();
             entry.Block = null;
             _root.RemoveChild(view);
