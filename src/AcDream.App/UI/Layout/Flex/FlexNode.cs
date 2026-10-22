@@ -34,6 +34,14 @@ public sealed class FlexNode
     /// <summary>The container scrolls vertically: its items are laid out with no height limit.</summary>
     public bool ScrollY { get; set; }
 
+    /// <summary>
+    /// Thickness of each scrollbar this scrolling container shows, taken from
+    /// its viewport while that bar is shown, so its items lay out beside the
+    /// bar rather than under it. 0, the default, reserves nothing: the
+    /// container lays out at its full size and shows no bars.
+    /// </summary>
+    public float ScrollbarSize { get; set; }
+
     public List<FlexNode> Children { get; } = new();
 
     // ── Item settings ───────────────────────────────────────────────────
@@ -83,6 +91,23 @@ public sealed class FlexNode
     /// </summary>
     public FlexSize ContentSize { get; internal set; }
 
+    /// <summary>
+    /// After an arrange of a scrolling container with a
+    /// <see cref="ScrollbarSize"/>: whether it shows a horizontal bar (its
+    /// content is wider than its viewport and it scrolls horizontally).
+    /// </summary>
+    public bool ScrollbarX { get; internal set; }
+
+    /// <summary>As <see cref="ScrollbarX"/>, for the vertical bar.</summary>
+    public bool ScrollbarY { get; internal set; }
+
+    /// <summary>
+    /// After an arrange, the part of <see cref="Rect"/> the container's items
+    /// are laid out in and seen through: its size less any bars shown. The
+    /// whole rect when no bars are shown.
+    /// </summary>
+    public FlexSize Viewport { get; internal set; }
+
     // Measure-pass results the arrange pass reads: preferred size with the
     // Width/Height overrides applied but not clamped, and resolved limits.
     internal FlexSize PreferredUnclamped;
@@ -97,6 +122,13 @@ public sealed class FlexNode
     // when false.
     internal bool SizeDependent;
     internal bool HeightForWidth;
+
+    // Measure-pass result for a scrolling container: its content would be
+    // size-dependent (along HeightForWidth) if it did not scroll. Such a
+    // container scrolling along its parent's main axis is sized there by the
+    // extent of that content, like a size-dependent node, but may shrink to
+    // its scroll viewport minimum.
+    internal bool ScrollsDependentContent;
 
     // Arrange scratch, reused so a steady-state layout allocates nothing.
     internal readonly List<int> LineEnds = new();

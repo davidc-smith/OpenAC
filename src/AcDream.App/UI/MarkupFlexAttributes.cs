@@ -93,6 +93,19 @@ internal static class MarkupFlexAttributes
     }
 
     /// <summary>
+    /// The axes <c>scroll</c> asks <paramref name="el"/> (a group or the root
+    /// panel) to scroll on; neither when it is absent.
+    /// </summary>
+    internal static (bool X, bool Y) Scroll(XElement el) => (string?)el.Attribute("scroll") switch
+    {
+        null => (false, false),
+        "x" => (true, false),
+        "y" => (false, true),
+        "both" => (true, true),
+        string other => throw Error(el, "scroll", other, "must be x, y or both"),
+    };
+
+    /// <summary>
     /// A root panel's authored content-area size or limit, checked like a
     /// flex number: null when absent.
     /// </summary>

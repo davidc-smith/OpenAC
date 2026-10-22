@@ -58,6 +58,7 @@ public sealed partial class UiMarkupList : UiElement
     private const float ScrollButtonExtent = 16f;
 
     private int _topRow;
+    internal int TopRowForTest => _topRow;
     private IReadOnlyList<UiMarkupListColumn>? _columns;
 
     // The selection and sort last scrolled into view: only a change to either
@@ -211,7 +212,8 @@ public sealed partial class UiMarkupList : UiElement
         if (TryHandleScrollbarEvent(e, contentWidth, items.Count, visibleRows))
             return true;
 
-        if (e.Type == UiEventType.Scroll)
+        // A list with nothing to scroll leaves the wheel to the group around it.
+        if (e.Type == UiEventType.Scroll && items.Count > visibleRows)
         {
             _topRow -= Math.Sign(e.Data0);
             ClampTop(items.Count, visibleRows);
@@ -708,7 +710,7 @@ public sealed partial class UiMarkupList : UiElement
         if (TryHandleScrollbarEvent(e, contentWidth, rowCount, visibleRows))
             return true;
 
-        if (e.Type == UiEventType.Scroll)
+        if (e.Type == UiEventType.Scroll && rowCount > visibleRows)
         {
             _topRow -= Math.Sign(e.Data0);
             ClampTop(rowCount, visibleRows);

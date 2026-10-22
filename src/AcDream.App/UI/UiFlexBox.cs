@@ -44,7 +44,7 @@ internal sealed class UiFlexBox
     internal int MeasureCount { get; set; }
 
     /// <summary>Adds a control or an absolute group as a measured leaf.</summary>
-    public UiFlexItem AddLeaf(UiElement element, FlexNode node, FlexSize? authoredSize = null)
+    public UiFlexItem AddLeaf(UiElement element, FlexNode node, FlexMeasurement? authoredSize = null)
     {
         var item = new UiFlexItem(this, element, node, inner: null, authoredSize);
         node.Measure = item.Measure;
@@ -158,12 +158,12 @@ internal sealed class UiFlexBox
 internal sealed class UiFlexItem
 {
     private readonly UiFlexBox _owner;
-    private readonly FlexSize? _authoredSize;
+    private readonly FlexMeasurement? _authoredSize;
     private string _text = string.Empty;
     private UiDatFont? _font;
     private bool _themed;
 
-    internal UiFlexItem(UiFlexBox owner, UiElement element, FlexNode node, UiFlexBox? inner, FlexSize? authoredSize)
+    internal UiFlexItem(UiFlexBox owner, UiElement element, FlexNode node, UiFlexBox? inner, FlexMeasurement? authoredSize)
     {
         _owner = owner;
         Element = element;
@@ -187,7 +187,7 @@ internal sealed class UiFlexItem
         _font = MarkupContentSize.Font(Element);
         _themed = MarkupContentSize.Themed(Element);
         if (_authoredSize is { } authored)
-            return new FlexMeasurement(authored, authored);
+            return authored;
         return MarkupContentSize.Measure(Element, _text) ?? default;
     }
 

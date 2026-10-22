@@ -60,13 +60,14 @@ public sealed class MarkupFlexWindowTests
     {
         MarkupWindow window = Window("layout=\"column\" gap=\"4\" padding=\"8\"");
 
-        // Content: max(38, 28) + 16 wide; 24 + 4 + 14 + 16 tall.
+        // Content: 24 + 4 + 14 + 16 tall; max(38, 28) + 16 = 54 wide, widened
+        // to fill the title bar's 96-point frame minimum.
         var content = (UiPluginContentHost)window.ContentRoot;
-        Assert.Equal((54f, 58f), (content.Width, content.Height));
-        Assert.Equal((64f, 87f), (window.Frame.Width, window.Frame.Height));
-        Assert.Equal((64f, 87f), (window.Frame.MinWidth, window.Frame.MinHeight));
-        Assert.Equal(64f, window.TitleBar!.Width);
-        Assert.Equal(64f - PluginWindowChrome.TitleBarHeight, window.TitleBar.Close.Left);
+        Assert.Equal((86f, 58f), (content.Width, content.Height));
+        Assert.Equal((96f, 87f), (window.Frame.Width, window.Frame.Height));
+        Assert.Equal((96f, 87f), (window.Frame.MinWidth, window.Frame.MinHeight));
+        Assert.Equal(96f, window.TitleBar!.Width);
+        Assert.Equal(96f - PluginWindowChrome.TitleBarHeight, window.TitleBar.Close.Left);
     }
 
     [Fact]
@@ -94,9 +95,9 @@ public sealed class MarkupFlexWindowTests
     {
         MarkupWindow window = Window("layout=\"row\" w=\"20\" h=\"10\"");
 
-        // Content minimum: 38 + 28 wide, 24 tall.
-        Assert.Equal((76f, 53f), (window.Frame.Width, window.Frame.Height));
-        Assert.Equal((76f, 53f), (window.Frame.MinWidth, window.Frame.MinHeight));
+        // Content minimum: 24 tall; 38 + 28 wide, under the bar's 96-point frame floor.
+        Assert.Equal((96f, 53f), (window.Frame.Width, window.Frame.Height));
+        Assert.Equal((96f, 53f), (window.Frame.MinWidth, window.Frame.MinHeight));
     }
 
     [Fact]
@@ -104,7 +105,8 @@ public sealed class MarkupFlexWindowTests
     {
         MarkupWindow window = Window("layout=\"row\" w=\"300\" h=\"100\" minw=\"30\" minh=\"200\"");
 
-        Assert.Equal((40f, 229f), (window.Frame.MinWidth, window.Frame.MinHeight));
+        // minw 30 + 10 is under the bar's floor, which still applies.
+        Assert.Equal((96f, 229f), (window.Frame.MinWidth, window.Frame.MinHeight));
         Assert.Equal((310f, 229f), (window.Frame.Width, window.Frame.Height));
     }
 
@@ -146,17 +148,17 @@ public sealed class MarkupFlexWindowTests
         var resized = new List<string>();
         Assert.True(root.WindowManager.TryGet("plugin:demo:main", out RetailWindowHandle handle));
         handle.Resized += _ => resized.Add("resized");
-        Assert.Equal(60f, window.Frame.Width);
+        Assert.Equal(96f, window.Frame.Width);   // the bar's floor
 
-        binding.Caption = "ABCDEFGHIJ";   // 70 points
-        Frame(root);                       // lays out, finds the new minimum
-        Frame(root);                       // the tick reports it; the window grows
+        binding.Caption = "ABCDEFGHIJKLMNOP";   // 112 points
+        Frame(root);                             // lays out, finds the new minimum
+        Frame(root);                             // the tick reports it; the window grows
 
-        Assert.Equal(80f, window.Frame.MinWidth);
-        Assert.Equal(80f, window.Frame.Width);
+        Assert.Equal(122f, window.Frame.MinWidth);
+        Assert.Equal(122f, window.Frame.Width);
         Assert.Equal(["resized"], resized);
         Frame(root);
-        Assert.Equal(70f, window.ContentRoot.Width);
+        Assert.Equal(112f, window.ContentRoot.Width);
     }
 
     [Fact]
@@ -186,11 +188,23 @@ public sealed class MarkupFlexWindowTests
         UiRoot root = Mount(window, "plugin:demo:main");
         Assert.True(root.WindowManager.TryGet("plugin:demo:main", out RetailWindowHandle handle));
 
-        // Row: 38 (OK button) + 28 (ABCD) wide, 24 tall; chrome 10 wide, 29 tall.
-        Assert.Equal((76f, 53f), (window.Frame.MinWidth, window.Frame.MinHeight));
+        // Row: 24 tall plus 29 of chrome; 38 (OK button) + 28 (ABCD) + 10 wide, under the bar's 96 floor.
+        Assert.Equal((96f, 53f), (window.Frame.MinWidth, window.Frame.MinHeight));
 
         Assert.True(handle.ResizeTo(1, 1));
 
-        Assert.Equal((76f, 53f), (window.Frame.Width, window.Frame.Height));
+        Assert.Equal((96f, 53f), (window.Frame.Width, window.Frame.Height));
+    }
+
+    [Fact]
+    public void A_window_with_a_bar_is_never_narrower_than_the_bar_needs()
+    {
+        MarkupWindow absolute = Window("w=\"20\" h=\"20\" titlebar=\"true\"", body: "");
+        MarkupWindow bare = Window("layout=\"row\" titlebar=\"false\"", body: "<label text=\"A\" />");
+
+        Assert.Equal((96f, 96f), (absolute.Frame.Width, absolute.Frame.MinWidth));
+        Assert.Equal(86f, absolute.ContentRoot.Width);
+        Assert.Equal(96f - PluginWindowChrome.TitleBarHeight, absolute.TitleBar!.Close.Left);
+        Assert.Equal(17f, bare.Frame.Width);   // 7 + 10: no bar, no floor
     }
 }

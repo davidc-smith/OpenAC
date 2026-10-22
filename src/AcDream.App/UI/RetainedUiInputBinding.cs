@@ -19,6 +19,7 @@ internal interface IRetainedMouseSurface
     void RemoveMouseUp(Action<MouseButton, int, int> callback);
     void AddMouseMove(Action<int, int> callback);
     void RemoveMouseMove(Action<int, int> callback);
+    /// <summary>Wheel steps as (dx, dy), each -1, 0 or +1: +1 is left or up.</summary>
     void AddScroll(Action<int, int> callback);
     void RemoveScroll(Action<int, int> callback);
 }
@@ -121,11 +122,15 @@ internal sealed class SilkRetainedMouseSurface : IRetainedMouseSurface
     }
     private void OnScroll(IMouse _, ScrollWheel scroll)
     {
-        // Each wheel event is a directional action, including small trackpad deltas.
-        int dx = float.IsNaN(scroll.X) ? 0 : Math.Sign(scroll.X);
-        int dy = float.IsNaN(scroll.Y) ? 0 : Math.Sign(scroll.Y);
-        if (dx != 0 || dy != 0)
-            _scrollCallback?.Invoke(dx, dy);
+        // Each wheel event is a directional action on each axis, including small trackpad deltas.
+        // Trackpads add noise on the off axis, so only the dominant axis counts.
+        float x = float.IsNaN(scroll.X) ? 0f : scroll.X, y = float.IsNaN(scroll.Y) ? 0f : scroll.Y;
+        if (x != 0f && y != 0f)
+        {
+            if (Math.Abs(x) >= Math.Abs(y)) y = 0f; else x = 0f;
+        }
+        int dx = Math.Sign(x), dy = Math.Sign(y);
+        if (dx != 0 || dy != 0) _scrollCallback?.Invoke(dx, dy);
     }
 }
 
@@ -201,15 +206,7 @@ internal sealed class RetainedMouseInputBinding : IRetainedUiInputBinding
     private void OnUp(MouseButton button, int x, int y) =>
         Invoke(() => _root.OnMouseUp(MapButton(button), x, y));
     private void OnMove(int x, int y) => Invoke(() => _root.OnMouseMove(x, y));
-    private void OnScroll(int dx, int dy) => Invoke(() =>
-    {
-        int step = RetainedWheel.Vertical(dx, dy, ShiftHeld());
-        if (step != 0)
-            _root.OnScroll(step);
-    });
-
-    private bool ShiftHeld() => _root.Keyboard is { } keyboard
-        && (keyboard.IsKeyPressed(Key.ShiftLeft) || keyboard.IsKeyPressed(Key.ShiftRight));
+    private void OnScroll(int dx, int dy) => Invoke(() => _root.OnScroll(dx, dy, _root.ShiftHeld));
 
     private void Invoke(Action callback) =>
         _quiescence.Invoke(() =>
@@ -448,15 +445,4 @@ internal sealed class RetainedKeyboardInputBinding : IRetainedUiInputBinding
         throw new InvalidOperationException(
             "Retained keyboard registration failed and was rolled back.", attachError);
     }
-}
-
-/// <summary>
-/// Turns one wheel event into a vertical step. macOS delivers Shift+wheel
-/// from a mouse as a sideways scroll, so a purely sideways tick counts as
-/// the wheel while Shift is held; any vertical part is read as is.
-/// </summary>
-internal static class RetainedWheel
-{
-    public static int Vertical(int dx, int dy, bool shiftHeld) =>
-        dy != 0 ? Math.Sign(dy) : shiftHeld ? Math.Sign(dx) : 0;
 }

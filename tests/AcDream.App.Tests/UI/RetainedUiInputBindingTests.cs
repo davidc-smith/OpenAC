@@ -168,16 +168,22 @@ public sealed class RetainedUiInputBindingTests
         Assert.True(keyboard.IsDisposalComplete);
     }
 
-    [Theory]
-    [InlineData(0, 1, false, 1)]
-    [InlineData(0, -1, true, -1)]
-    [InlineData(1, 0, true, 1)]     // macOS sends Shift+wheel as a sideways tick
-    [InlineData(-1, 0, true, -1)]
-    [InlineData(1, 0, false, 0)]    // a sideways swipe without Shift scrolls nothing
-    [InlineData(1, -1, true, -1)]   // any vertical part wins
-    [InlineData(0, 0, true, 0)]
-    public void Wheel_reads_a_sideways_tick_as_the_wheel_only_while_Shift_is_held(int dx, int dy, bool shift, int expected)
-        => Assert.Equal(expected, RetainedWheel.Vertical(dx, dy, shift));
+    [Fact]
+    public void MouseScrollPassesBothStepsAndTheRootsShiftState()
+    {
+        var surface = new MouseSurface();
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var world = new List<int>();
+        root.WorldScrollFallThrough += world.Add;
+        using var binding = new RetainedMouseInputBinding(surface, root, new HostQuiescenceGate());
+        binding.Attach();
+
+        surface.Scroll(0, -1);   // vertical over the world: falls through
+        surface.Scroll(1, 0);    // horizontal over the world: goes nowhere
+
+        Assert.Equal(new[] { -1 }, world);
+        Assert.False(root.ShiftHeld);   // no keyboard attached
+    }
 
     [Theory]
     [InlineData(true, new[] { 1 })]
@@ -225,12 +231,12 @@ public sealed class RetainedUiInputBindingTests
         private Action<MouseButton, int, int>? _up;
         private Action<int, int>? _move;
         private Action<int, int>? _scroll;
-        public void Scroll(int dx, int dy) => _scroll!(dx, dy);
 
         public void AddMouseDown(Action<MouseButton, int, int> callback) => Add(() => Down = callback);
         public void AddMouseUp(Action<MouseButton, int, int> callback) => Add(() => _up = callback);
         public void AddMouseMove(Action<int, int> callback) => Add(() => _move = callback);
         public void AddScroll(Action<int, int> callback) => Add(() => _scroll = callback);
+        public void Scroll(int dx, int dy) => _scroll?.Invoke(dx, dy);
         public void RemoveMouseDown(Action<MouseButton, int, int> callback) => Remove(() => Down = null);
         public void RemoveMouseUp(Action<MouseButton, int, int> callback) => Remove(() => _up = null);
         public void RemoveMouseMove(Action<int, int> callback)
