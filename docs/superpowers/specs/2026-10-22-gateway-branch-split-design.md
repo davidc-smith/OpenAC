@@ -155,6 +155,8 @@ a launcher only compares releases from its own feed.
 - Releasing Rynth binaries publicly must follow the RynthCore and RynthSuite
   licences.
 
+*Plan 3 (2026-10-22): the lookup reads `releases.atom`, not the REST API, which the launcher never calls; see `docs/ci-and-releases.md`.*
+
 ## 5. Working setup
 
 - Worktrees: `~/code/OpenAC/OpenAC` on `main`, `~/code/OpenAC/OpenAC-rynth` on

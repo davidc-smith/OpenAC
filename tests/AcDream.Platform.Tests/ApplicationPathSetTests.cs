@@ -19,7 +19,7 @@ public sealed class ApplicationPathSetTests
 
         ApplicationPathSet paths = ApplicationPathSet.Resolve(platform: platform);
 
-        string expected = Path.Combine(platform.LocalApplicationData, "OpenAC");
+        string expected = Path.Combine(platform.LocalApplicationData, OpenACProductIdentity.DataFolderName);
         Assert.Equal(expected, paths.RootDirectory);
         Assert.Equal(expected, paths.DataDirectory);
         Assert.Equal(Path.Combine(expected, "settings"), paths.ConfigDirectory);
@@ -42,12 +42,12 @@ public sealed class ApplicationPathSetTests
         ApplicationPathSet paths = ApplicationPathSet.Resolve(platform: platform);
 
         Assert.Equal(
-            Path.Combine(home, "Library", "Application Support", "OpenAC"),
+            Path.Combine(home, "Library", "Application Support", OpenACProductIdentity.DataFolderName),
             paths.RootDirectory);
         Assert.Equal(Path.Combine(paths.RootDirectory, "cache"), paths.CacheDirectory);
     }
 
-    /// <summary>Mutation: ignoring XDG_DATA_HOME, or using "OpenAC" on Linux, fails this.</summary>
+    /// <summary>Mutation: ignoring XDG_DATA_HOME, or using the product's Windows/macOS folder name on Linux, fails this.</summary>
     [Fact]
     public void LinuxDefaultRootFollowsXdgDataHome()
     {
@@ -67,9 +67,9 @@ public sealed class ApplicationPathSetTests
 
         ApplicationPathSet paths = ApplicationPathSet.Resolve(platform: platform);
 
-        Assert.Equal(Path.Combine(root, "data", "openac"), paths.RootDirectory);
-        Assert.Equal(Path.Combine(root, "data", "openac", "settings"), paths.ConfigDirectory);
-        Assert.Equal(Path.Combine(root, "data", "openac", "cache"), paths.CacheDirectory);
+        Assert.Equal(Path.Combine(root, "data", OpenACProductIdentity.LinuxDataFolderName), paths.RootDirectory);
+        Assert.Equal(Path.Combine(root, "data", OpenACProductIdentity.LinuxDataFolderName, "settings"), paths.ConfigDirectory);
+        Assert.Equal(Path.Combine(root, "data", OpenACProductIdentity.LinuxDataFolderName, "cache"), paths.CacheDirectory);
     }
 
     /// <summary>Mutation: a missing ".local/share" fallback fails this.</summary>
@@ -81,7 +81,7 @@ public sealed class ApplicationPathSetTests
 
         ApplicationPathSet paths = ApplicationPathSet.Resolve(platform: platform);
 
-        Assert.Equal(Path.Combine(home, ".local", "share", "openac"), paths.RootDirectory);
+        Assert.Equal(Path.Combine(home, ".local", "share", OpenACProductIdentity.LinuxDataFolderName), paths.RootDirectory);
     }
 
     /// <summary>Mutation: moving any one member off its folder under the root fails this.</summary>
@@ -333,7 +333,7 @@ public sealed class ApplicationPathSetTests
     }
 
     private static string PointerPath(FixtureEnvironment platform) =>
-        Path.Combine(platform.LocalApplicationData, "OpenAC", "root.json");
+        Path.Combine(platform.LocalApplicationData, OpenACProductIdentity.DataFolderName, "root.json");
 
     private static string PointerText(string root) =>
         "{ \"version\": 1, \"root\": " + System.Text.Json.JsonSerializer.Serialize(root) + " }";

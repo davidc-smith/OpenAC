@@ -32,6 +32,12 @@
     <OpenACReleaseVersion>$(Version)-$(OpenACReleaseLabel).$(OpenACReleaseNumber)</OpenACReleaseVersion>
     <InformationalVersion>$(OpenACReleaseVersion)$(OpenACReleaseMetadata)</InformationalVersion>
     <Product>$(OpenACProduct)</Product>
+    <!-- Per-product names, all from the product so each branch line installs side by side:
+         openac-gateway / openac-gateway-rynth. -->
+    <OpenACProductSlug>$(OpenACProduct.ToLowerInvariant().Replace(' ', '-'))</OpenACProductSlug>
+    <!-- Release tags and the launcher's feed filter: gateway-v / gateway-rynth-v. -->
+    <OpenACReleaseTagPrefix>$(OpenACProductSlug.Replace('openac-', ''))-v</OpenACReleaseTagPrefix>
+    <OpenACBundleIdentifier>org.openac.$(OpenACProductSlug.Replace('openac-', ''))</OpenACBundleIdentifier>
   </PropertyGroup>
 
   <!-- XML documentation files of our own assemblies feed the IDE and the plugin

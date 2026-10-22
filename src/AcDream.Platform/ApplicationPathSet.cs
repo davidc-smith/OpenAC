@@ -176,9 +176,10 @@ public sealed record ApplicationPathSet(
     }
 
     /// <summary>
-    /// The per-user default root: <c>%LOCALAPPDATA%\OpenAC</c> on Windows,
-    /// <c>~/Library/Application Support/OpenAC</c> on macOS and
-    /// <c>$XDG_DATA_HOME/openac</c> (or <c>~/.local/share/openac</c>) on Linux.
+    /// The per-user default root, named after the product
+    /// (<see cref="OpenACProductIdentity.DataFolderName"/>): <c>%LOCALAPPDATA%\OpenAC Gateway</c> on
+    /// Windows, <c>~/Library/Application Support/OpenAC Gateway</c> on macOS and
+    /// <c>$XDG_DATA_HOME/openac-gateway</c> (or <c>~/.local/share/openac-gateway</c>) on Linux.
     /// It is the only place the pointer file is read from.
     /// </summary>
     public static string ResolveDefaultRoot(
@@ -192,7 +193,7 @@ public sealed record ApplicationPathSet(
                 RequireFolder(
                     platform,
                     Environment.SpecialFolder.LocalApplicationData),
-                "OpenAC");
+                OpenACProductIdentity.DataFolderName);
         }
         else if (platform.IsMacOS)
         {
@@ -200,7 +201,7 @@ public sealed record ApplicationPathSet(
                 RequireFolder(platform, Environment.SpecialFolder.UserProfile),
                 "Library",
                 "Application Support",
-                "OpenAC");
+                OpenACProductIdentity.DataFolderName);
         }
         else
         {
@@ -213,7 +214,7 @@ public sealed record ApplicationPathSet(
                         Environment.SpecialFolder.UserProfile),
                     ".local",
                     "share"),
-                "openac");
+                OpenACProductIdentity.LinuxDataFolderName);
         }
 
         return Normalize(root, platform);

@@ -1,5 +1,6 @@
 using AcDream.Headless.Configuration;
 using AcDream.Headless.Platform;
+using AcDream.Platform;
 
 namespace AcDream.Headless.Tests;
 
@@ -31,7 +32,7 @@ public sealed class HeadlessPathSetTests
             new HeadlessPathOverrides(),
             platform);
 
-        string openac = Path.Combine(root, "data", "openac");
+        string openac = Path.Combine(root, "data", OpenACProductIdentity.LinuxDataFolderName);
         Assert.Equal(Path.Combine(openac, "settings"), paths.ConfigDirectory);
         Assert.Equal(openac, paths.DataDirectory);
         Assert.Equal(Path.Combine(openac, "cache"), paths.CacheDirectory);
@@ -85,13 +86,13 @@ public sealed class HeadlessPathSetTests
             platform);
 
         Assert.EndsWith(
-            Path.Combine("AppData", "Local", "OpenAC", "settings"),
+            Path.Combine("AppData", "Local", OpenACProductIdentity.DataFolderName, "settings"),
             paths.ConfigDirectory);
         Assert.EndsWith(
-            Path.Combine("AppData", "Local", "OpenAC"),
+            Path.Combine("AppData", "Local", OpenACProductIdentity.DataFolderName),
             paths.DataDirectory);
         Assert.EndsWith(
-            Path.Combine("AppData", "Local", "OpenAC", "cache"),
+            Path.Combine("AppData", "Local", OpenACProductIdentity.DataFolderName, "cache"),
             paths.CacheDirectory);
     }
 
@@ -116,7 +117,7 @@ public sealed class HeadlessPathSetTests
         Assert.Equal(Path.Combine("root", "cache", "plugin-peers"), paths.PluginPeersDirectory);
     }
 
-    /// <summary>Mutation: a macOS default other than Application Support/OpenAC fails this.</summary>
+    /// <summary>Mutation: a macOS default other than Application Support/<the product's folder> fails this.</summary>
     [Fact]
     public void MacOSUsesApplicationSupportLikeTheGraphicalClient()
     {
@@ -133,7 +134,7 @@ public sealed class HeadlessPathSetTests
             platform);
 
         Assert.Equal(
-            Path.Combine(root, "Users", "bot", "Library", "Application Support", "OpenAC"),
+            Path.Combine(root, "Users", "bot", "Library", "Application Support", OpenACProductIdentity.DataFolderName),
             paths.DataDirectory);
     }
 

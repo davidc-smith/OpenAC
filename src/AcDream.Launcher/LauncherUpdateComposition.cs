@@ -60,7 +60,7 @@ internal sealed class LauncherUpdateComposition : IDisposable
         ArgumentNullException.ThrowIfNull(launcherVersion);
         ArgumentNullException.ThrowIfNull(hasRunningSessions);
         Uri manifestUri = updateManifestUri
-            ?? ReleaseManifestClient.ProductionManifestUri;
+            ?? ReleaseManifestClient.ProductionUpdateFeedUri;
         var versions = new ClientVersionStore(paths);
         HttpClient? artifactClient = null;
         ReleaseManifestClient? manifestClient = null;
@@ -138,7 +138,7 @@ internal sealed class LauncherUpdateComposition : IDisposable
     private static ReleaseManifestClient CreateManifestClient(Uri manifestUri)
     {
         ArgumentNullException.ThrowIfNull(manifestUri);
-        return manifestUri == ReleaseManifestClient.ProductionManifestUri
+        return manifestUri == ReleaseManifestClient.ProductionUpdateFeedUri
             ? new ReleaseManifestClient(TimeSpan.FromSeconds(15))
             : ReleaseManifestClient.CreateLocalUpdateFeedOverride(
                 manifestUri,

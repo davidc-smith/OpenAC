@@ -16,6 +16,16 @@ if ($PSVersionTable.PSVersion.Major -lt 7 -or -not $IsMacOS) {
 $publish = [IO.Path]::GetFullPath($PublishDirectory)
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $zip = [IO.Path]::GetFullPath($ZipPath)
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+function Get-OpenACProperty([string]$Name) {
+    $value = & dotnet msbuild (Join-Path $repoRoot 'src/AcDream.App/AcDream.App.csproj') "-getProperty:$Name"
+    if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($value)) { throw "Could not read $Name from the build." }
+    return ([string]($value -join "`n")).Trim()
+}
+# Each product line ships its own bundle so OpenAC Gateway and OpenAC Gateway Rynth install side by side.
+$product = Get-OpenACProperty 'OpenACProduct'
+$bundleIdentifier = Get-OpenACProperty 'OpenACBundleIdentifier'
+$bundleName = "$product.app"
 if (-not (Test-Path -LiteralPath $publish -PathType Container)) {
     throw "Published launcher directory '$publish' does not exist."
 }
@@ -28,7 +38,7 @@ foreach ($required in @($launcher, $bake)) {
     }
 }
 
-$bundle = Join-Path $output 'OpenAC.app'
+$bundle = Join-Path $output $bundleName
 if (Test-Path -LiteralPath $bundle) {
     Remove-Item -LiteralPath $bundle -Recurse -Force
 }
@@ -54,7 +64,6 @@ Get-ChildItem -LiteralPath $publish -Force | ForEach-Object {
 & /bin/chmod 755 (Join-Path $macos 'acdream-launcher') (Join-Path $macos 'acdream-bake')
 if ($LASTEXITCODE -ne 0) { throw 'chmod failed for a macOS launcher executable.' }
 
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $iconSources = @{
     'icon_16x16.png' = 'acdream-launcher-16.png'
     'icon_16x16@2x.png' = 'acdream-launcher-32.png'
@@ -90,15 +99,15 @@ $plist = @"
 <plist version="1.0">
 <dict>
   <key>CFBundleDisplayName</key>
-  <string>OpenAC</string>
+  <string>$product</string>
   <key>CFBundleExecutable</key>
   <string>acdream-launcher</string>
   <key>CFBundleIconFile</key>
   <string>OpenAC.icns</string>
   <key>CFBundleIdentifier</key>
-  <string>org.openac.launcher</string>
+  <string>$bundleIdentifier</string>
   <key>CFBundleName</key>
-  <string>OpenAC</string>
+  <string>$product</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -145,14 +154,14 @@ $privacyManifest = @"
     [Text.UTF8Encoding]::new($false))
 
 & /usr/bin/plutil -lint (Join-Path $contents 'Info.plist')
-if ($LASTEXITCODE -ne 0) { throw 'OpenAC.app Info.plist did not validate.' }
+if ($LASTEXITCODE -ne 0) { throw "$bundleName Info.plist did not validate." }
 foreach ($required in @(
     (Join-Path $macos 'acdream-launcher'),
     (Join-Path $macos 'acdream-bake'),
     (Join-Path $resources 'OpenAC.icns'),
     (Join-Path $resources 'PrivacyInfo.xcprivacy'))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "OpenAC.app is missing '$required'."
+        throw "$bundleName is missing '$required'."
     }
 }
 
@@ -165,7 +174,7 @@ $notCode = foreach ($entry in Get-ChildItem -LiteralPath $macos -File -Recurse |
     if (-not $kind.StartsWith('Mach-O', [StringComparison]::Ordinal)) { $entry.FullName }
 }
 if (@($notCode).Count -gt 0) {
-    throw "OpenAC.app/Contents/MacOS may hold only code, but the launcher publish output put these there: $(@($notCode) -join ', ')."
+    throw "$bundleName/Contents/MacOS may hold only code, but the launcher publish output put these there: $(@($notCode) -join ', ')."
 }
 
 # Sign every executable nested in the bundle before signing the bundle itself.
@@ -181,24 +190,24 @@ foreach ($candidate in Get-ChildItem -LiteralPath $macos -File -Recurse | Sort-O
     if ($LASTEXITCODE -ne 0) { throw "Nested signature validation failed for '$($candidate.FullName)'." }
 }
 & /usr/bin/codesign --force --sign - --timestamp=none $bundle
-if ($LASTEXITCODE -ne 0) { throw 'Could not ad-hoc sign OpenAC.app.' }
+if ($LASTEXITCODE -ne 0) { throw "Could not ad-hoc sign $bundleName." }
 & /usr/bin/codesign --verify --deep --strict $bundle
-if ($LASTEXITCODE -ne 0) { throw 'OpenAC.app signature validation failed.' }
+if ($LASTEXITCODE -ne 0) { throw "$bundleName signature validation failed." }
 
 New-Item -ItemType Directory -Path (Split-Path -Parent $zip) -Force | Out-Null
 # This macOS stamps com.apple.provenance on every file; --sequesterRsrc would store it as
 # __MACOSX/ AppleDouble entries that the bundle check below rejects. The signatures are embedded
 # in the Mach-O files and _CodeSignature, so extended attributes are not needed.
 & /usr/bin/ditto -c -k --norsrc --noextattr --keepParent $bundle $zip
-if ($LASTEXITCODE -ne 0) { throw 'ditto could not archive OpenAC.app.' }
+if ($LASTEXITCODE -ne 0) { throw "ditto could not archive $bundleName." }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($zip)
 try {
     if ($archive.Entries.Count -eq 0 -or @($archive.Entries | Where-Object {
-            -not $_.FullName.StartsWith('OpenAC.app/', [StringComparison]::Ordinal)
+            -not $_.FullName.StartsWith("$bundleName/", [StringComparison]::Ordinal)
         }).Count -ne 0) {
-        throw 'The macOS launcher ZIP must contain only the OpenAC.app bundle.'
+        throw "The macOS launcher ZIP must contain only the $bundleName bundle."
     }
 } finally {
     $archive.Dispose()

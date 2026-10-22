@@ -37,6 +37,7 @@ function Get-OpenACProperty([string]$Name) {
     return ([string]($value -join "`n")).Trim()
 }
 $repositoryVersion = Get-OpenACProperty 'OpenACReleaseVersion'
+$releaseTagPrefix = Get-OpenACProperty 'OpenACReleaseTagPrefix'
 $releaseRepository = [string]($buildProperties.Project.PropertyGroup | ForEach-Object { $_.OpenACReleaseRepository } | Where-Object { $_ } | Select-Object -First 1)
 if ([string]::IsNullOrWhiteSpace($releaseRepository)) {
     throw 'Directory.Build.props has no OpenACReleaseRepository.'
@@ -65,7 +66,8 @@ if ([System.Management.Automation.SemanticVersion]::new($MinimumLauncherVersion)
 }
 
 $RawBase = if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
-    "https://github.com/$releaseRepository/releases/download/v$Version"
+    # Fork releases are tagged per product (gateway-v… / gateway-rynth-v…, see BRANCHING.md).
+    "https://github.com/$releaseRepository/releases/download/$releaseTagPrefix$Version"
 } else {
     $BaseUrl.TrimEnd('/')
 }
@@ -76,7 +78,7 @@ if ($MacOnly -and ($IncludeLinux -or $IncludeMacOS -or -not [string]::IsNullOrWh
     throw '-MacOnly cannot be combined with another platform-selection parameter.'
 }
 if ($IncludeMacOS -and -not $IsMacOS) {
-    throw '-IncludeMacOS packages an OpenAC.app bundle and must run on macOS.'
+    throw '-IncludeMacOS packages a macOS app bundle and must run on macOS.'
 }
 if (-not [string]::IsNullOrWhiteSpace($MacArtifactsDirectory) -and $IncludeMacOS) {
     throw 'Use either -IncludeMacOS or -MacArtifactsDirectory, not both.'
