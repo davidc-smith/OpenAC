@@ -216,6 +216,48 @@ internal static class MarkupBindings
         BindOptionalAction<string>(attribute, binding, context, "string")
         ?? throw new FormatException($"{context} must be an Action<string> binding");
 
+    /// <summary>
+    /// A required colour pair: <c>value</c> a <c>uint</c>, <c>int</c> or
+    /// <c>string</c> (#AARRGGBB) property and <c>onchange</c> an <c>Action</c> of
+    /// the same type, read and written as packed 0xAARRGGBB. Text that is not
+    /// exactly #AARRGGBB reads as opaque white, as a bound colour attribute does.
+    /// <c>element</c> is the element name; the contexts are "&lt;element&gt; value"
+    /// and "&lt;element&gt; onchange".
+    /// </summary>
+    public static (Func<uint> Read, Action<uint> Write) BindRequiredColor(
+        string? value, string? onchange, object binding, string element)
+    {
+        string valueContext = element + " value";
+        string changeContext = element + " onchange";
+        if (string.IsNullOrWhiteSpace(value) || !MarkupDocument.IsBinding(value))
+            throw new FormatException($"{valueContext} must be a uint, int or string binding");
+        PropertyInfo? property = binding.GetType().GetProperty(value[1..^1]);
+        Type? type = property?.PropertyType;
+        if (property is null || (type != typeof(uint) && type != typeof(int) && type != typeof(string)))
+        {
+            throw new FormatException(
+                $"{value} did not resolve to a uint, int or string property on "
+                + binding.GetType().Name + $" ({valueContext})");
+        }
+        if (type == typeof(uint))
+        {
+            Action<uint> set = BindOptionalAction<uint>(onchange, binding, changeContext, "uint")
+                ?? throw new FormatException($"{changeContext} must be an Action<uint> binding");
+            return (() => property.GetValue(binding) is uint packed ? packed : MarkupColorValue.White, set);
+        }
+        if (type == typeof(int))
+        {
+            Action<int> set = BindOptionalAction<int>(onchange, binding, changeContext, "int")
+                ?? throw new FormatException($"{changeContext} must be an Action<int> binding");
+            return (() => property.GetValue(binding) is int packed ? unchecked((uint)packed) : MarkupColorValue.White,
+                packed => set(unchecked((int)packed)));
+        }
+        Action<string> setText = BindOptionalAction<string>(onchange, binding, changeContext, "string")
+            ?? throw new FormatException($"{changeContext} must be an Action<string> binding");
+        return (() => MarkupColorValue.ParseStrict(property.GetValue(binding) as string) ?? MarkupColorValue.White,
+            packed => setText(MarkupColorValue.Format(packed)));
+    }
+
     private static Action<T>? BindOptionalAction<T>(
         string? attribute, object binding, string context, string typeName)
     {

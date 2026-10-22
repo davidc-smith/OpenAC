@@ -107,6 +107,8 @@ back at runtime instead.
 | `number onchange` | `Action<T>` of the same type as `value` | throws |
 | `hotkey value` | `string`, `Ctrl+Alt+Shift+Key`; empty is unbound | throws |
 | `hotkey onchange` | `Action<string>` | throws |
+| `color value` | `uint`, `int` or `string` `#AARRGGBB` | throws |
+| `color onchange` | `Action<T>` of the same type as `value` | throws |
 | `radio items` | `IEnumerable<string>`, or a literal list `a\|b\|c` | throws |
 | `radio selected` | `int`, the chosen option (−1 for none) | throws |
 | `radio onchange` | `Action<int>`, the option picked | throws |
@@ -186,6 +188,7 @@ Unknown or miscased element names throw at build time.
 | `checkbox` | Tick box, optionally indeterminate | `x y w h text checked onchange color` |
 | `number` | Number field with spin buttons | `x y w h value onchange min max step decimals color background` |
 | `hotkey` | A box that records a key chord | `x y w h value onchange` |
+| `color` | A colour swatch that opens a picker | `x y w h value onchange alpha` |
 | `radio` | One choice of several, as round buttons or a segmented bar | `x y w h items selected onchange orientation style color` |
 | `separator` | A 1 px dividing line | `x y w h color` |
 | `expander` | A header that folds away the content below it | `name x y w h text expanded onchange open color` |
@@ -204,7 +207,7 @@ A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
 
 Clicking a `button`, `tab`, `toggle`, `checkbox`, `radio`, or `expander` (its
-header) invokes its action without taking keyboard focus from the game. A `hotkey` is the exception: clicking it takes focus, while it records. Use Tab to focus these controls:
+header) invokes its action without taking keyboard focus from the game. A `hotkey` is the exception: clicking it takes focus, while it records. A `color` swatch doesn't take focus on click either, but its open picker holds the keyboard until it closes. Use Tab to focus these controls:
 Enter or Space then activates a `button`, `tab`, `toggle`, `checkbox` or
 `expander` (its header). A focused `radio` uses the arrow keys instead; Enter
 and Space do nothing on it. A focused `split` bar moves 8 px with the arrow
@@ -352,6 +355,60 @@ text, muted and accent colours and the panel's font.
 A `<hotkey>` without `value` or `onchange`, or with either bound to the wrong
 type, fails the build. On a host older than hotkey boxes, a `<hotkey>` fails
 the build of its window as unknown.
+
+## Colour picker
+
+```xml
+<color x="8" y="8" w="40" h="18" value="{BarColor}" onchange="{SetBarColor}" alpha="true"/>
+```
+
+A `<color>` shows a colour as a swatch. Clicking it, or Enter or Space while
+it has focus, opens a picker below it (above it near the bottom of the
+screen).
+
+- `value` binds a `uint`, an `int` or a `string`, and `onchange` an `Action`
+  of the same type; both are required. Numbers are `0xAARRGGBB`, the byte
+  order of the `#AARRGGBB` literal; a string must be exactly `#AARRGGBB`
+  (any case), and anything else shows as white. `onchange` hands strings back
+  as `#AARRGGBB` in upper case.
+- `alpha="true"` adds an alpha strip. Without it (the default) every colour
+  the picker reports is opaque, and a translucent `value` opens in the picker
+  (and is reported, if the player changes it) as the same colour made opaque.
+- The picker has a saturation/value square, a hue strip, the alpha strip, a
+  hex field, a row of palette colours and a row of recently picked colours.
+  The palette row is the theme's colours under `theme="plugin"`, and a fixed
+  set of basic colours in Classic.
+- `onchange` is called live while the player drags, at most once per frame,
+  and only when the colour differs from `value`. The swatch always shows
+  `value`, so a plugin that ignores the call keeps its colour.
+- The hex field takes `#RRGGBB` or `#AARRGGBB` (the `#` is optional). Six
+  digits keep the current alpha. Clicking the field starts editing; the text
+  applies on Enter, when the player clicks elsewhere in the picker, or when
+  the picker closes. Text it can't read changes nothing.
+- Clicking outside the picker, Enter (outside the hex field), Tab or
+  Shift+Tab, anything else that takes the keyboard focus, or the swatch being
+  hidden or disabled closes it and keeps the colour. Tab moves the focus to the
+  control after the swatch and Shift+Tab to the swatch itself; in a window with
+  no other control, Tab also lands on the swatch. Escape closes it and puts back the colour it
+  opened with, calling `onchange` with that colour if it had already reported
+  another. The click outside that closes the picker is swallowed: neither its
+  press nor its release reaches the game or the window under it.
+- The recent row holds the last 8 colours picked with any `<color>`, newest
+  first, remembered for the character and shared by every picker. A colour is
+  added when the picker closes with a colour different from the one it opened
+  with (not on Escape).
+- Clicking the swatch doesn't take keyboard focus from the game. The open
+  picker holds the keyboard, and gives it back when it closes.
+
+In Classic the swatch has a thin border that turns gold while it has focus or
+is open, with a checkerboard behind translucent colours; under
+`theme="plugin"` the swatch and picker take the palette's colours and the
+panel's font.
+
+A `<color>` without `value` or `onchange`, with either bound to an
+unsupported type, with `onchange` of a different type from `value`, or with
+`alpha` other than `true` or `false`, fails the build. On a host older than
+colour pickers, a `<color>` fails the build of its window as unknown.
 
 ## Radio group
 
