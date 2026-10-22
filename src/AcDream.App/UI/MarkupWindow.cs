@@ -44,11 +44,11 @@ internal sealed class MarkupWindow(
     /// <see cref="RetailWindowManager.EnforceMinimumSize"/>.
     /// </summary>
     internal void TrackContentMinimum(
-        UiPluginContentHost content, float chromeW, float chromeH, float? authoredMinW, float? authoredMinH)
+        UiPluginContentHost content, float chromeH, float? authoredMinW, float? authoredMinH)
     {
         content.ContentMinimumChanged += minimum =>
         {
-            Frame.MinWidth = (authoredMinW ?? minimum.Width) + chromeW;
+            Frame.MinWidth = PluginWindowChrome.FrameMinimumWidth(authoredMinW ?? minimum.Width, TitleBar is not null);
             Frame.MinHeight = (authoredMinH ?? minimum.Height) + chromeH;
             if (_manager is { } manager && _name is { } name)
             {

@@ -20,6 +20,8 @@ public static class UiEventType
     public const int Tooltip      = 0x07;
     public const int DoubleClick  = 0x08;
     public const int Scroll       = 0x0A;
+    /// <summary>A horizontal wheel step (a sideways swipe, a tilt wheel, or Shift with the wheel); Data0 is +1 toward the start (left), -1 toward the end.</summary>
+    public const int ScrollHorizontal = 0x0B;
     public const int RightClick   = 0x0E;
     public const int DragBegin    = 0x15;
     public const int DragOver     = 0x1C;

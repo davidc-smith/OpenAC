@@ -263,6 +263,20 @@ public class MarkupNumberTests
     }
 
     [Fact]
+    public void Number_ShiftSidewaysTickStepsTenWhenNothingScrollsSideways()
+    {
+        var b = new Binding();
+        var (root, number) = Mount(CountAttrs, b);
+        root.OnMouseMove(30, 15);
+        root.SetKeyboardFocus(number.Field);
+        number.ShiftHeld = () => true;
+        root.OnScroll(1, 0, shift: true);   // macOS: Shift+wheel arrives as a sideways tick
+        Assert.Equal(60, b.Count);
+        root.OnScroll(1, 0, shift: false);  // a plain sideways swipe steps nothing
+        Assert.Equal(60, b.Count);
+    }
+
+    [Fact]
     public void Number_SpinButtonsStepAndRepeatWhileHeld()
     {
         var b = new Binding();

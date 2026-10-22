@@ -106,6 +106,26 @@ public sealed class MarkupWindowMountTests : IDisposable
     }
 
     [Fact]
+    public void TheDockLeavesItsMinimizeOffALayoutWindowWithoutABar()
+    {
+        var root = new UiRoot { Width = 1280, Height = 720 };
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), null, new PluginUiThemeSettings());
+        root.AddChild(shelf);
+
+        MarkupWindow bare = MarkupDocument.BuildWindow(
+            "<panel x=\"100\" y=\"100\" layout=\"column\" titlebar=\"false\"><button text=\"OK\" /></panel>",
+            new object(), _ => (0u, 0, 0));
+        root.AddChild(bare.Frame);
+        RetailWindowHandle handle = bare.Register(root.WindowManager, "plugin:c:main",
+            new PluginWindowVisibilityController(null, true));
+        shelf.Add(new PluginUiOwner("c", "C"), new PluginPanelDescriptor("main", "C"), handle);
+
+        Assert.DoesNotContain(bare.Frame.Children, c => c is UiSimpleButton { Text: "–" });
+
+        root.WindowManager.Unregister("plugin:c:main");
+    }
+
+    [Fact]
     public void ASavedSizeSurvivesTheSameBarMarkup()
     {
         const string xml = "<panel x=\"0\" y=\"0\" w=\"300\" h=\"200\" resizable=\"true\" titlebar=\"true\" />";

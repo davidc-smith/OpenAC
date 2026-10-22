@@ -709,6 +709,9 @@ public sealed class UiRoot : UiElement
             return;
         }
 
+        // Focus may scroll a scrolling ancestor to reveal the target; the
+        // press is reported where it landed, so read the position first.
+        var sp = target.ScreenPosition;
         if (btn == UiMouseButton.Left)
             SetKeyboardFocus(target.AcceptsFocus && target.FocusOnMouseClick ? target : null);
 
@@ -780,7 +783,6 @@ public sealed class UiRoot : UiElement
             UiMouseButton.Middle => UiEventType.MiddleDown,
             _ => UiEventType.MouseDown,
         };
-        var sp = target.ScreenPosition;
         var e = new UiEvent(target.EventId, target, rawType,
                             Data0: (int)flags, Data1: (int)(x - sp.X), Data2: (int)(y - sp.Y));
         BubbleEvent(target, in e);
@@ -882,7 +884,80 @@ public sealed class UiRoot : UiElement
         WorldMouseFallThrough?.Invoke(btn, x, y, flags);
     }
 
-    public void OnScroll(int dy)
+    /// <summary>A vertical wheel step: +1 up, -1 down.</summary>
+    public void OnScroll(int dy) => OnScroll(0, dy, shift: false);
+
+    /// <summary>
+    /// A wheel event with its horizontal and vertical steps (each -1, 0 or +1;
+    /// +1 is left or up) and whether Shift was held. Shift turns a vertical
+    /// step into a horizontal one before routing, as most applications do. A
+    /// vertical step is routed as it always has been: to the element under the
+    /// pointer and up through its parents until one consumes it, else to the
+    /// world. A horizontal step goes the same way as a
+    /// <see cref="UiEventType.ScrollHorizontal"/> event, which only a group
+    /// scrolling horizontally consumes; nothing passes it to the world. A Shift
+    /// step that nothing horizontal takes is routed as the vertical step it was.
+    /// The same goes for a sideways step with Shift held, which is what macOS
+    /// sends for Shift with a mouse wheel: a <c>scroll="x"</c> group under
+    /// the pointer takes it, and otherwise it is routed as a vertical step.
+    ///
+    /// <para>A step the interface takes may move content under the pointer, so
+    /// the hover is checked again; and taken anywhere but over an open popup,
+    /// it closes the popup, which may have scrolled away with its group.</para>
+    /// </summary>
+    public void OnScroll(int dx, int dy, bool shift)
+    {
+        bool overPopup = PopupHit(MouseX, MouseY) is not null;
+        bool taken;
+        if (shift && dx == 0 && dy != 0)
+        {
+            taken = RouteHorizontal(dy) || RouteVertical(dy);
+        }
+        else if (shift && dy == 0 && dx != 0)
+        {
+            // macOS sends Shift with a mouse wheel as a sideways tick: it
+            // scrolls sideways where something does, else it is the wheel.
+            taken = RouteHorizontal(dx) || RouteVertical(dx);
+        }
+        else
+        {
+            taken = false;
+            if (dx != 0) taken |= RouteHorizontal(dx);
+            if (dy != 0) taken |= RouteVertical(dy);
+        }
+        if (!taken) return;
+
+        if (!overPopup && _activePopup is not null)
+        {
+            var dismiss = _activePopupDismiss;
+            _activePopup = null;
+            _activePopupDismiss = null;
+            dismiss?.Invoke();
+        }
+        // As a move would: not while a resize, window drag or capture owns the pointer.
+        if (_resizeTarget is null && _windowDragTarget is null && Captured is null)
+            UpdateHover(MouseX, MouseY);
+    }
+
+    /// <summary>Whether shift is held on the attached keyboard.</summary>
+    internal bool ShiftHeld =>
+        Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true;
+
+    private bool RouteHorizontal(int dx)
+    {
+        UiElement? popup = PopupHit(MouseX, MouseY);
+        UiElement? target = popup ?? HitTestTopDown(MouseX, MouseY).element;
+        if (target is null) return false;
+        if (popup is null && BlockerFor(target) is not null) return false;
+        var sp = target.ScreenPosition;
+        var e = new UiEvent(target.EventId, target, UiEventType.ScrollHorizontal, Data0: Math.Sign(dx),
+                            Data1: (int)(MouseX - sp.X), Data2: (int)(MouseY - sp.Y));
+        return BubbleEvent(target, in e);
+    }
+
+    /// <summary>Routes a vertical step; true when the interface took it.</summary>
+    private bool RouteVertical(int dy)
     {
         if (PopupHit(MouseX, MouseY) is { } popupTarget)
         {
@@ -890,21 +965,20 @@ public sealed class UiRoot : UiElement
             var pe = new UiEvent(popupTarget.EventId, popupTarget, UiEventType.Scroll,
                                  Data0: dy,
                                  Data1: (int)(MouseX - pp.X), Data2: (int)(MouseY - pp.Y));
-            BubbleEvent(popupTarget, in pe);
-            return;
+            return BubbleEvent(popupTarget, in pe);
         }
 
         var (target, lx, ly) = HitTestTopDown(MouseX, MouseY);
         if (target is null)
         {
             WorldScrollFallThrough?.Invoke(dy);
-            return;
+            return false;
         }
         if (BlockerFor(target) is not null)
-            return;
+            return false;   // a window-modal dialog owns this window: the step goes nowhere
         var e = new UiEvent(target.EventId, target, UiEventType.Scroll, Data0: dy,
                             Data1: (int)lx, Data2: (int)ly);
-        BubbleEvent(target, in e);
+        return BubbleEvent(target, in e);
     }
 
     public void OnKeyDown(int vk, uint lparam = 0)
@@ -923,9 +997,7 @@ public sealed class UiRoot : UiElement
             return;
         }
 
-        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(
-                Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
-                || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true))
+        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(ShiftHeld))
             return;
 
         // Focus widget first.
@@ -1047,8 +1119,17 @@ public sealed class UiRoot : UiElement
         {
             var gained = new UiEvent(e.EventId, e, UiEventType.FocusGained);
             e.OnEvent(in gained);
+            RevealInScrollingAncestors(e);
         }
         KeyboardFocusChanged?.Invoke(previous, e);
+    }
+
+    /// <summary>Scrolls each scrolling ancestor of <paramref name="e"/>, innermost first, just far enough to show it.</summary>
+    private static void RevealInScrollingAncestors(UiElement e)
+    {
+        for (UiElement? p = e.Parent; p is not null; p = p.Parent)
+            if (p is IUiScrollHost { ScrollArea: { } area })
+                area.Reveal(e);
     }
 
     private bool IsAvailableInputTarget(UiElement element)
