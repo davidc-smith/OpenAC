@@ -15,7 +15,7 @@
 (1) number: Shift+wheel steps 1x not 10x (Shift+spin-button click does 10x);
 (2) hotkey: left or right Shift both show as LSHIFT;
 (3) Classic list header drawn on the scrollbar-track chain art makes captions hard to read;
-(4) tree: "arrows didn't do anything" (to clarify: expand arrows vs Left/Right keys); branch menu works, but nothing showed dimmed.
+(4) tree: Left/Right keys did nothing after click Note + Tab (expand triangles fine). Menu dimming not a defect: the user right-clicked a rule row, where the items are meant to be enabled.
 
 **Tech Stack:** C# / .NET 10, xUnit, headless `UiRoot` + `MarkupDrawProbe` (`RecordingGpuDevice`).
 
