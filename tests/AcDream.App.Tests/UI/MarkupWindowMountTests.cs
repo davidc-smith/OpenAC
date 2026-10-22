@@ -1,3 +1,4 @@
+using System.Numerics;
 using AcDream.App.UI;
 using AcDream.Plugin.Abstractions;
 using AcDream.UI.Abstractions.Panels.Settings;
@@ -103,6 +104,99 @@ public sealed class MarkupWindowMountTests : IDisposable
 
         root.WindowManager.Unregister("plugin:a:main");
         root.WindowManager.Unregister("plugin:b:main");
+    }
+
+    private static UiSimpleButton SidepanelMinimize(
+        UiRoot root, PluginSidePanel shelf, string id, string attrs, PluginUiThemeSettings settings)
+    {
+        UiNineSlicePanel frame = MarkupDocument.Build(
+            $"<panel x=\"100\" y=\"100\" w=\"200\" h=\"100\" {attrs} />", new object(), _ => (0u, 0, 0),
+            themes: settings);
+        root.AddChild(frame);
+        RetailWindowHandle handle = root.WindowManager.Register($"plugin:{id}:main", frame);
+        shelf.Add(new PluginUiOwner(id, id), new PluginPanelDescriptor("main", id), handle);
+        return frame.Children.OfType<UiSimpleButton>().Single(c => c.Text == "–");
+    }
+
+    [Fact]
+    public void AThemedWindowsMinimizeTakesThePaletteAndFont()
+    {
+        var root = new UiRoot { Width = 1280, Height = 720 };
+        var classicFont = BundledUiFont.Bake(12).CreateFont(1);
+        var modern = BundledUiFont.Bake(16).CreateFont(3);
+        var settings = new PluginUiThemeSettings(null, modern) { Theme = PluginUiTheme.Moss };
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), classicFont, settings);
+        root.AddChild(shelf);
+
+        UiSimpleButton themed = SidepanelMinimize(root, shelf, "a", "theme=\"plugin\"", settings);
+        UiSimpleButton plain = SidepanelMinimize(root, shelf, "b", "", settings);
+        root.Tick(0.016, 1);
+
+        Assert.Equal(PluginUiPalette.Moss.Field, themed.BackgroundColor);
+        Assert.Equal(PluginUiPalette.Moss.Border, themed.BorderColor);
+        Assert.Equal(PluginUiPalette.Moss.Text, themed.TextColor);
+        Assert.False(themed.Outline);
+        Assert.Same(modern, themed.DatFont);
+        // A window that did not opt in keeps the Classic button under any theme.
+        Assert.Same(classicFont, plain.DatFont);
+        Assert.True(plain.Outline);
+        Assert.NotEqual(PluginUiPalette.Moss.Field, plain.BackgroundColor);
+    }
+
+    [Fact]
+    public void AThemedWindowsMinimizeFollowsALiveSwitchBothWays()
+    {
+        var root = new UiRoot { Width = 1280, Height = 720 };
+        var classicFont = BundledUiFont.Bake(12).CreateFont(1);
+        var modern = BundledUiFont.Bake(16).CreateFont(3);
+        var settings = new PluginUiThemeSettings(null, modern);
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), classicFont, settings);
+        root.AddChild(shelf);
+
+        UiSimpleButton themed = SidepanelMinimize(root, shelf, "a", "theme=\"plugin\"", settings);
+        UiSimpleButton plain = SidepanelMinimize(root, shelf, "b", "", settings);
+        root.Tick(0.016, 1);
+        var classic = (plain.BackgroundColor, plain.BorderColor, plain.TextColor, plain.Outline, plain.DatFont,
+            plain.Width, plain.Height, plain.Left, plain.Top, plain.BorderThickness);
+        (Vector4, Vector4, Vector4, bool, UiDatFont?,
+            float, float, float, float, float) Look() =>
+            (themed.BackgroundColor, themed.BorderColor, themed.TextColor, themed.Outline, themed.DatFont,
+                themed.Width, themed.Height, themed.Left, themed.Top, themed.BorderThickness);
+        Assert.Equal(classic, Look());
+
+        settings.Theme = PluginUiTheme.Brass;
+        root.Tick(0.016, 2);
+        Assert.Equal(PluginUiPalette.Brass.Field, themed.BackgroundColor);
+        Assert.Equal(PluginUiPalette.Brass.Border, themed.BorderColor);
+        Assert.Equal(PluginUiPalette.Brass.Text, themed.TextColor);
+        Assert.False(themed.Outline);
+        Assert.Same(modern, themed.DatFont);
+
+        settings.Theme = PluginUiTheme.Classic;
+        root.Tick(0.016, 3);
+        Assert.Equal(classic, Look());
+    }
+
+    [Fact]
+    public void ADetachedMinimizeIsLeftAloneByALaterThemeSwitch()
+    {
+        var root = new UiRoot { Width = 1280, Height = 720 };
+        var settings = new PluginUiThemeSettings();
+        using var shelf = new PluginSidePanel(root.WindowManager, _ => (0u, 0, 0), null, settings);
+        root.AddChild(shelf);
+        UiSimpleButton minimize = SidepanelMinimize(root, shelf, "a", "theme=\"plugin\"", settings);
+        UiElement frame = minimize.Parent!;
+        root.Tick(0.016, 1);
+        Vector4 classicFace = minimize.BackgroundColor;
+
+        frame.RemoveChild(minimize);
+        settings.Theme = PluginUiTheme.Moss;
+        root.Tick(0.016, 2);
+
+        Assert.Same(PluginUiPalette.Moss, ((UiPluginMarkupPanel)frame).Palette);
+        Assert.Equal(classicFace, minimize.BackgroundColor);
+        Assert.True(minimize.Outline);
+        root.WindowManager.Unregister("plugin:a:main");
     }
 
     [Fact]
