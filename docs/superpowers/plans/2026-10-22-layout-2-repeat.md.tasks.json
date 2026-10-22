@@ -56,7 +56,7 @@
   {
    "id": 7,
    "subject": "Task 7: Whole-branch check, push, live check (user present)",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     6
    ],
@@ -65,12 +65,12 @@
   {
    "id": 8,
    "subject": "Task 8: Fork main takes it",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     7
    ],
    "description": "**Goal:** Fork `main` gets flex and `<repeat>` by merge, with the next contract version, and Aethrix is told.\n\n**Files:** a merge commit on `main`, `src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj` (`ForkContractVersion`), and the contract notes doc where `fork.5` is documented (`git grep -n \"fork.5\" -- docs src | head`)\n\n**Acceptance Criteria:**\n- [ ] On a `merge/markup-repeat` branch from current `main` (worktree `.worktrees/merge-repeat`), run `git merge --no-ff feat/markup-repeat`. Every conflict in a flex, title-bar, scroll or theme file is resolved to `main`'s version. The repeat additions are kept and adapted to `main`'s code: `main`'s `MarkupDocument` has file icons and markup canvas, so the binding-source rewrite must also cover those code paths.\n- [ ] On `main` a `<canvas>` inside a repeat template fails the build (R9), with a test.\n- [ ] `git diff main merge/markup-repeat --stat` shows only:\n  - repeat work: `MarkupBindingSource`, `KeyedControlState`, `MarkupRepeat`, `UiMarkupRepeat`, the AddElement/Bind* rewrite, the Task 2 plumbing, tests, docs, the sample;\n  - the PR 236 → flex fixes that `main` lacked: the themed \"–\" (only if it doesn't clash with `main`'s ghost minimize; otherwise keep `main`'s) and the flat thumb (only where `main` has no modern thumb).\n  Anything else is a merge mistake.\n- [ ] `ForkContractVersion` is bumped to the next free version after whatever `main` has then. The gateway-split plan 2 may have changed the scheme; follow it.\n- [ ] The fork gate: Release build with 0 warnings outside `external/`; App test failures equal `main`'s baseline by name (measure `main` first with the same script).\n- [ ] Merge into `main` (fast-forward or `--no-ff` per the fork's habit), push `main`, then merge `main` into `rynth` per `BRANCHING.md`, build, test and push.\n- [ ] Aethrix is told the contract version and fork commit. Update `~/code/OpenAC/OpenAC-Plugins-Aethrix`'s api-gaps #78 to resolved, in the same style as earlier resolved gaps, without committing Aethrix unless the user asks.\n\n**Verify:** the fork gate output, and `git log --oneline -1 origin/main`.\n\n**Steps:**\n\n- [ ] **Step 1:** Measure `main`'s baseline.\n- [ ] **Step 2:** Merge, resolve and adapt.\n- [ ] **Step 3:** Add the canvas rule with its test.\n- [ ] **Step 4:** Bump the contract, run the gate, merge, push, carry it into `rynth`, and write the Aethrix note.\n\n```json:metadata\n{\"files\": [\"src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj\"], \"verifyCommand\": \"the fork gate output, and `git log --oneline -1 origin/main`.\", \"acceptanceCriteria\": [\"On a `merge/markup-repeat` branch from current `main` (worktree `.worktrees/merge-repeat`), run `git merge --no-ff feat/markup-repeat`. Every conflict in a flex, title-bar, scroll or theme file is resolved to `main`'s version. The repeat additions are kept and adapted to `main`'s code: `main`'s `MarkupDocument` has file icons and markup canvas, so the binding-source rewrite must also cover those code paths.\", \"On `main` a `<canvas>` inside a repeat template fails the build (R9), with a test.\", \"`git diff main merge/markup-repeat --stat` shows only:\", \"`ForkContractVersion` is bumped to the next free version after whatever `main` has then. The gateway-split plan 2 may have changed the scheme; follow it.\", \"The fork gate: Release build with 0 warnings outside `external/`; App test failures equal `main`'s baseline by name (measure `main` first with the same script).\", \"Merge into `main` (fast-forward or `--no-ff` per the fork's habit), push `main`, then merge `main` into `rynth` per `BRANCHING.md`, build, test and push.\", \"Aethrix is told the contract version and fork commit. Update `~/code/OpenAC/OpenAC-Plugins-Aethrix`'s api-gaps #78 to resolved, in the same style as earlier resolved gaps, without committing Aethrix unless the user asks.\"], \"modelTier\": \"frontier\"}\n```"
   }
  ],
- "lastUpdated": "2026-10-22T17:54:56.846945+00:00"
+ "lastUpdated": "2026-10-22T19:26:22.752953+00:00"
 }
