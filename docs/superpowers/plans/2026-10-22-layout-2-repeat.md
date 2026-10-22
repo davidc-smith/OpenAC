@@ -57,7 +57,7 @@ cd /Users/davidsmith/code/OpenAC/OpenAC/.worktrees/markup-repeat && git grep -n 
 - R1: one copy per item, in list order. An empty or null list builds nothing.
 - R2: inside a template, `{Name}` resolves only on the innermost repeat's item, with the same rules and types as on a window binding.
 - R3: names are checked against `T` at build time, even when the list is empty. Members only on a subtype of `T` are invisible. Attributes that fall back silently today still do.
-- R4: `items` and every key are read each tick. Nothing changes when the list instance, the count, the key sequence and every item reference all match the last tick.
+- R4: `items` and every key are read each tick. Nothing changes when the count, the key sequence and every item reference all match the last tick, even if the list is a new instance (ruled in the final review).
 - R5: with `key`, a copy whose key is still in the list is kept (with its focus, half-typed field text, open menu, expander state and scroll) and moved, and its source follows the new item object. New keys get new copies and missing keys lose theirs. Without `key`, copies match by index. Duplicate keys are logged once per repeat and fall back to index matching.
 - R6: a `<repeat>` whose parent is not a flex container (a window root or a `<group>` with `layout`) fails the build.
 - R7: repeats nest at any depth.

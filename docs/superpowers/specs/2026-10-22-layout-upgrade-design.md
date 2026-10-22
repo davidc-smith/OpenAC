@@ -162,9 +162,10 @@ with `layout`) fails the build. It takes no `x y w h`.
 `AddChild` stays as is.
 
 **Each tick (R4).** The marker reads `items`, then each item's key (or
-uses the index when there is no `key`). If the list instance, the count,
-the key sequence and every item reference all match the last tick, it does
-nothing. Otherwise it reconciles:
+uses the index when there is no `key`). If the count, the key sequence
+and every item reference all match the last tick, it does nothing, even
+when the list is a new instance (a computed `Where`/`ToList` list).
+Otherwise it reconciles:
 
 - keyed: a copy whose key is still present is kept and its source's
   `Current` set to the new item; copies for missing keys are removed; new
