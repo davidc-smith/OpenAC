@@ -181,4 +181,33 @@ public sealed class ControlsDemoSampleTests
         Assert.DoesNotContain("Peridot", binding.Names);
         Assert.Empty(binding.Picked);
     }
+
+    [Theory]
+    [MemberData(nameof(Themes))]
+    public void Tree_builds_and_lays_out(PluginUiTheme theme)
+    {
+        var (_, panel) = Mount("tree.xml", new TreeBinding(), theme);
+        AssertInside(panel);
+    }
+
+    [Fact]
+    public void Tree_menu_turns_a_whole_branch_off()
+    {
+        var binding = new TreeBinding();
+
+        binding.MenuOpened(0);
+        binding.MenuPicked(1);   // Disable branch
+
+        Assert.All(binding.On.Take(7), Assert.False);
+        Assert.All(binding.On.Skip(7), Assert.True);
+        Assert.Equal("Looting branch off", binding.Status);
+    }
+
+    [Fact]
+    public void Tree_reports_expansion_by_name()
+    {
+        var binding = new TreeBinding();
+        binding.Expanded("combat.targets", false);
+        Assert.Equal("Targets collapsed", binding.Status);
+    }
 }
