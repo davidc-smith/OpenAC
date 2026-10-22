@@ -156,6 +156,58 @@ public interface IUiRegistry
     bool FocusControl(string viewName, string controlName) => false;
 
     /// <summary>
+    /// Asks the player a question in a dialog box with one to four buttons
+    /// and reports which one they picked. The dialog is window-modal: it
+    /// blocks only <see cref="PluginDialog.OwnerView"/>, which draws dimmed
+    /// and ignores presses until the dialog is answered, while every other
+    /// window, chat and the game work as usual. The dialog takes the keyboard
+    /// focus when it opens; while it has it, Enter, keypad Enter and Escape
+    /// answer it and every other key still goes to the game. Focus goes back
+    /// where it was when the dialog closes, unless the player moved it in the
+    /// meantime. Several dialogs for the same owner queue and show one at a
+    /// time. Call it from the thread that calls the plugin's tick.
+    /// </summary>
+    /// <param name="dialog">The dialog's title, message, buttons and owner window.</param>
+    /// <param name="onResult">
+    /// Called exactly once, on the thread that calls the plugin's tick, with
+    /// the index of the button picked. Enter picks the first button. Escape,
+    /// the close button, the owner window closing and the plugin unloading
+    /// report the last one.
+    /// </param>
+    /// <returns>
+    /// True when the dialog was queued. False on a host that draws nothing
+    /// (which is what the default implementation does), before the interface
+    /// is up, and when the dialog could not be put on screen; then
+    /// <paramref name="onResult"/> is never called.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// On a host that draws: the dialog has no buttons, more than four, or a
+    /// blank one.
+    /// </exception>
+    bool Confirm(PluginDialog dialog, Action<int> onResult) => false;
+
+    /// <summary>
+    /// Shows one of this plugin's own windows, as <see cref="ShowPanel"/>
+    /// does, and makes it modal over another of its windows: the owner draws
+    /// dimmed and ignores presses until the shown window is hidden, by
+    /// <see cref="HidePanel"/> or its close button, or removed, or the owner
+    /// is removed. An owner that is only hidden stays blocked. Only the
+    /// owner is blocked; every other window and the game work as usual.
+    /// </summary>
+    /// <param name="viewName">The id or title of the window to show.</param>
+    /// <param name="ownerView">
+    /// The id or title of the window it blocks. Null, an unknown window, the
+    /// shown window itself, or a window the shown window is already blocked
+    /// by (directly or through other modal windows) blocks nothing.
+    /// </param>
+    /// <returns>
+    /// False when this plugin has no such window to show, before the window
+    /// has been put on screen, and on a host that draws nothing -- which is
+    /// what the default implementation does.
+    /// </returns>
+    bool ShowModal(string viewName, string? ownerView = null) => false;
+
+    /// <summary>
     /// Shows one of the client's own windows if it is hidden, hides it if
     /// shown. Returns whether the window ended up visible; a no-window host
     /// or a window this build does not mount always returns <c>false</c>.
@@ -296,6 +348,24 @@ public interface IScopedUiRegistry : IUiRegistry
 
     /// <summary>Moves keyboard focus to one plugin input control.</summary>
     bool FocusControl(PluginUiOwner owner, string viewName, string controlName) => false;
+
+    /// <summary>
+    /// Queues one plugin's dialog; see <see cref="IUiRegistry.Confirm"/>.
+    /// Disposing the returned handle answers the dialog with its last button
+    /// if it is still open or queued, which is how a plugin's dialogs end
+    /// when it unloads; once the dialog is answered it does nothing.
+    /// </summary>
+    /// <param name="owner">The plugin the dialog belongs to; its windows are the ones <see cref="PluginDialog.OwnerView"/> names.</param>
+    /// <param name="dialog">The dialog's title, message, buttons and owner window.</param>
+    /// <param name="onResult">Called exactly once with the index of the button picked.</param>
+    /// <returns>The dialog's handle, or null on a host that draws nothing, which never calls back.</returns>
+    IDisposable? Confirm(PluginUiOwner owner, PluginDialog dialog, Action<int> onResult) => null;
+
+    /// <summary>
+    /// Shows one plugin's window modal over another of its windows; see
+    /// <see cref="IUiRegistry.ShowModal"/>. False on a host that draws nothing.
+    /// </summary>
+    bool ShowModal(PluginUiOwner owner, string viewName, string? ownerView = null) => false;
 
     /// <summary>
     /// One plugin's image surface, the same object on every call for the

@@ -411,7 +411,7 @@ public sealed class InputDispatcher : IDisposable
             return; // SUPPRESS the action — don't run binding lookup below
         }
 
-        if (_mouse.WantCaptureKeyboard) return;
+        if (_mouse.ClaimsKey(key)) return;
         var chord = KeyboardChord(key, mods);
         _currentPhysicalChord = chord;
         try

@@ -197,7 +197,7 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
         if (modalScope || focus?.IsModalOpen == true)
             return;
         bool typing = activeScope == InputScope.Chat
-            || focus?.HasKeyboardFocus == true;
+            || focus?.ClaimsKey(key) == true;
 
         foreach (Entry entry in snapshot)
         {

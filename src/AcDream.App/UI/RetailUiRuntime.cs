@@ -410,6 +410,10 @@ public sealed class RetailUiRuntime : IDisposable
     /// <summary>What plugin windows' markup controls remember per character; saved with the layout.</summary>
     private MarkupControlStateStore? _controlState;
     private IDisposable? _pluginThemeFollow;
+    /// <summary>Plugins' Confirm boxes and modal windows.</summary>
+    private PluginDialogHost? _pluginDialogs;
+    /// <summary>A fresh retail confirmation layout for a plugin's Confirm box; null until the dialog catalog resolves.</summary>
+    private Func<ImportedLayout?>? _pluginDialogLayout;
     private UiNineSlicePanel? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
     private bool _pluginsMounted;
@@ -759,6 +763,7 @@ public sealed class RetailUiRuntime : IDisposable
         _characterCreationMount?.Tick();
         CharacterCreationController?.Tick();
         DialogFactory?.Tick();
+        _pluginDialogs?.Tick();
         // Windows a plugin registered after the UI came up (a server-fed panel
         // arrives once the character is in the world). Same path as the first
         // mount; each registration is drained once.
@@ -3800,6 +3805,8 @@ public sealed class RetailUiRuntime : IDisposable
         }
 
         DialogFactory = new RetailDialogFactory(Host.Root, CreateLayout);
+        // Plugins' Confirm boxes borrow the confirmation layout's art.
+        _pluginDialogLayout = () => CreateLayout(RetailDialogType.Confirmation);
         var confirmationStrings = new DatStringResolver(_bindings.Assets.Dats);
         string? ComposeConfirmation(uint type, string bareName)
         {
@@ -4083,6 +4090,11 @@ public sealed class RetailUiRuntime : IDisposable
             // Canvases paint their own pixels, so plugins are told the theme
             // the player saved and every one they pick after it.
             _pluginThemeFollow = _bindings.Plugins.FollowTheme(_pluginThemes);
+            _pluginDialogs = new PluginDialogHost(
+                Host.Root,
+                () => _pluginDialogLayout?.Invoke(),
+                _bindings.Assets.DefaultFont);
+            _bindings.Plugins.BindPluginDialogs(_pluginDialogs);
         }
 
         _controlState ??= new MarkupControlStateStore(
@@ -5194,6 +5206,9 @@ public sealed class RetailUiRuntime : IDisposable
                 if (SalvageController is { } salvage)
                     _bindings.Inventory.ItemInteraction.PolicyActionRequested -= salvage.HandlePolicyAction;
                 _bindings.Plugins?.UnbindClientWindowControl();
+                // Open plugin dialogs are answered with their last button.
+                _pluginDialogs?.Dispose();
+                _pluginDialogs = null;
                 _pluginThemeFollow?.Dispose();
                 _pluginThemeFollow = null;
                 // Canvases come down before their images: a canvas may be
