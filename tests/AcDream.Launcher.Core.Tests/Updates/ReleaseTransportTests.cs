@@ -321,6 +321,45 @@ public sealed class ReleaseManifestClientTests
         Assert.Equal(requestsAfterFailure, handler.Requests.Count);
     }
 
+    /// <summary>Mutation: forgetting the previous release when a refetch starts (rather than when it
+    /// fails) sends a concurrent reader (the rynth navdata pin check) to its built-in fallback while
+    /// the updater merely rechecks in the background.</summary>
+    [Fact]
+    public async Task ARefetchInFlightKeepsThePreviousReleaseReadable()
+    {
+        var feedRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var heldFeed = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new SequenceHandler((request, index) =>
+        {
+            switch (index)
+            {
+                case 0:
+                    return Task.FromResult(Ok(FeedOf("gateway-v2.0.0")));
+                case 2:
+                    feedRequested.SetResult();
+                    return heldFeed.Task;
+                case 3:
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                default:
+                    return Task.FromResult(Ok(ValidJson()));
+            }
+        });
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        await source.FetchAsync();
+        Task<ReleaseManifest> refetch = source.FetchAsync();
+        await feedRequested.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        _ = await source.FetchLauncherFingerprintAsync();
+        Assert.False(refetch.IsCompleted);
+        heldFeed.SetResult(Ok(FeedOf("gateway-v2.0.0")));
+        await refetch.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(
+            new Uri(Download("gateway-v2.0.0", LauncherFingerprintDocument.FileName)),
+            handler.Requests[3]);
+    }
+
     [Fact]
     public async Task NoFingerprintIsFetchedBeforeAReleaseIsKnown()
     {
@@ -340,9 +379,14 @@ public sealed class ReleaseManifestClientTests
     }
 
     private sealed class SequenceHandler(
-        Func<HttpRequestMessage, int, HttpResponseMessage> respond)
+        Func<HttpRequestMessage, int, Task<HttpResponseMessage>> respond)
         : HttpMessageHandler
     {
+        public SequenceHandler(Func<HttpRequestMessage, int, HttpResponseMessage> respond)
+            : this((request, index) => Task.FromResult(respond(request, index)))
+        {
+        }
+
         public List<Uri> Requests { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(
@@ -353,7 +397,7 @@ public sealed class ReleaseManifestClientTests
                 ?? throw new InvalidOperationException("Test request has no URI.");
             int index = Requests.Count;
             Requests.Add(uri);
-            return Task.FromResult(respond(request, index));
+            return respond(request, index);
         }
     }
 }

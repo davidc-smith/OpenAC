@@ -64,8 +64,9 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     private readonly bool _allowLoopbackHttp;
 
     /// <summary>The manifest the last feed-mode <see cref="FetchAsync"/> downloaded; files published
-    /// beside it (the fingerprint) are read from the same release.</summary>
-    private Uri? _releaseManifestUri;
+    /// beside it (the fingerprint) are read from the same release. Volatile: on the rynth branch the
+    /// navdata pin check reads it from outside the updater's operation gate.</summary>
+    private volatile Uri? _releaseManifestUri;
 
     public ReleaseManifestClient(TimeSpan? timeout = null)
         : this(
@@ -191,28 +192,36 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
                 _allowLoopbackHttp);
         }
 
-        // A failed refetch must not leave files beside an older release readable.
-        _releaseManifestUri = null;
-        ProductFeedRelease release = ProductReleaseFeed.Newest(
-                await FetchBytesAsync(feed.FeedUri, "releases feed", MaximumFeedBytes, cancellationToken)
-                    .ConfigureAwait(false),
-                feed.Repository,
-                feed.TagPrefix)
-            ?? throw new LauncherUpdateException(
-                $"No '{feed.TagPrefix}' release is among the newest releases of {feed.Repository}.");
-        Uri manifestUri = GitHubReleaseLocator.TaggedAsset(feed.Repository, release.Tag, "manifest.json");
-        ReleaseManifest manifest = Parse(
-            await FetchBytesAsync(manifestUri, "release manifest", MaximumManifestBytes, cancellationToken)
-                .ConfigureAwait(false),
-            _allowLoopbackHttp);
-        if (manifest.Version.CompareTo(release.Version) != 0)
+        // The previous release stays readable while the refetch is in flight (a concurrent pin or
+        // fingerprint read still sees it); a failed refetch must not leave it readable afterwards.
+        try
         {
-            throw new LauncherUpdateException(
-                $"Release {release.Tag} carries a manifest for version {manifest.Version.Value}.");
-        }
+            ProductFeedRelease release = ProductReleaseFeed.Newest(
+                    await FetchBytesAsync(feed.FeedUri, "releases feed", MaximumFeedBytes, cancellationToken)
+                        .ConfigureAwait(false),
+                    feed.Repository,
+                    feed.TagPrefix)
+                ?? throw new LauncherUpdateException(
+                    $"No '{feed.TagPrefix}' release is among the newest releases of {feed.Repository}.");
+            Uri manifestUri = GitHubReleaseLocator.TaggedAsset(feed.Repository, release.Tag, "manifest.json");
+            ReleaseManifest manifest = Parse(
+                await FetchBytesAsync(manifestUri, "release manifest", MaximumManifestBytes, cancellationToken)
+                    .ConfigureAwait(false),
+                _allowLoopbackHttp);
+            if (manifest.Version.CompareTo(release.Version) != 0)
+            {
+                throw new LauncherUpdateException(
+                    $"Release {release.Tag} carries a manifest for version {manifest.Version.Value}.");
+            }
 
-        _releaseManifestUri = manifestUri;
-        return manifest;
+            _releaseManifestUri = manifestUri;
+            return manifest;
+        }
+        catch
+        {
+            _releaseManifestUri = null;
+            throw;
+        }
     }
 
     /// <summary>A file published beside the release manifest, or null in feed mode before
