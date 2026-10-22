@@ -98,4 +98,26 @@ public sealed class ControlsDemoSampleTests
         Assert.Equal("Hotkeys: radar not usable, pause unbound", binding.KeyNote);
         Assert.Equal("Radar key set to F13", binding.Status);
     }
+
+    [Theory]
+    [MemberData(nameof(Themes))]
+    public void Layout_builds_and_lays_out(PluginUiTheme theme)
+    {
+        var (_, panel) = Mount("layout.xml", new LayoutBinding(), theme);
+        AssertInside(panel);
+    }
+
+    [Fact]
+    public void Layout_bound_expander_only_asks_and_the_unbound_one_reports()
+    {
+        var binding = new LayoutBinding();
+        var (root, panel) = Mount("layout.xml", binding);
+
+        Click(root, panel, 200, 103);   // "Advanced (bound)" header
+        Assert.False(binding.AdvancedOpen);
+        Assert.Equal("Advanced folded", binding.Status);
+
+        Click(root, panel, 200, 37);    // "General" header
+        Assert.Equal("General folded", binding.Status);
+    }
 }
