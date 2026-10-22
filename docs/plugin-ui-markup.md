@@ -368,7 +368,8 @@ screen).
   (any case), and anything else shows as white. `onchange` hands strings back
   as `#AARRGGBB` in upper case.
 - `alpha="true"` adds an alpha strip. Without it (the default) every colour
-  the picker reports is opaque.
+  the picker reports is opaque, and a translucent `value` opens in the picker
+  (and is reported, if the player changes it) as the same colour made opaque.
 - The picker has a saturation/value square, a hue strip, the alpha strip, a
   hex field, a row of palette colours and a row of recently picked colours.
   The palette row is the theme's colours under `theme="plugin"`, and a fixed
@@ -380,9 +381,11 @@ screen).
   digits keep the current alpha. Clicking the field starts editing; the text
   applies on Enter, when the player clicks elsewhere in the picker, or when
   the picker closes. Text it can't read changes nothing.
-- Clicking outside the picker, Enter (outside the hex field), Tab when it
-  moves the focus to another control, or the swatch being hidden or disabled
-  closes it and keeps the colour. Escape closes it and puts back the colour it
+- Clicking outside the picker, Enter (outside the hex field), Tab or
+  Shift+Tab, anything else that takes the keyboard focus, or the swatch being
+  hidden or disabled closes it and keeps the colour. Tab moves the focus to the
+  control after the swatch and Shift+Tab to the swatch itself; in a window with
+  no other control, Tab also lands on the swatch. Escape closes it and puts back the colour it
   opened with, calling `onchange` with that colour if it had already reported
   another. The click outside that closes the picker is swallowed: neither its
   press nor its release reaches the game or the window under it.

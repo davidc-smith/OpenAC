@@ -6,6 +6,10 @@ namespace AcDream.App.UI.Markup;
 /// With a state (the store's <see cref="MarkupControlStateStore.Shared"/>) the
 /// list is remembered for the character as "#AARRGGBB" text, comma-separated;
 /// without one it lasts only as long as the list does. UI thread only.
+/// <para>Each window's build makes its own list over the same shared state,
+/// so the stored text is the truth: every read and every add re-reads it, and
+/// decodes it again when it changed (another window's pick, or a character
+/// switch, which makes the state answer for the new character).</para>
 /// </summary>
 public sealed class MarkupRecentColors
 {
@@ -13,20 +17,24 @@ public sealed class MarkupRecentColors
     public const string Control = "color";
     public const string Kind = "recent";
 
-    private readonly RememberedValue _remembered;
+    private readonly IMarkupControlState? _state;
+    private bool _read;
+    private string? _text;           // the stored text the list was decoded from
     private List<uint> _colors = new();
+    private IReadOnlyList<uint>? _snapshot;
 
     public MarkupRecentColors(IMarkupControlState? state)
     {
-        _remembered = new RememberedValue(state, Control, Kind);
+        _state = state;
     }
 
+    /// <summary>A read-only copy of the list, the same one until the list changes.</summary>
     public IReadOnlyList<uint> Colors
     {
         get
         {
             Refresh();
-            return _colors;
+            return _snapshot ??= Array.AsReadOnly(_colors.ToArray());
         }
     }
 
@@ -38,13 +46,24 @@ public sealed class MarkupRecentColors
         _colors.Insert(0, argb);
         if (_colors.Count > Capacity)
             _colors.RemoveRange(Capacity, _colors.Count - Capacity);
-        _remembered.Remember(Encode(_colors));
+        _snapshot = null;
+        if (_state is null)
+            return;
+        _text = Encode(_colors);
+        _state.Set(Control, Kind, _text);
     }
 
     private void Refresh()
     {
-        if (_remembered.TryRefresh(out string? text))
-            _colors = Decode(text);
+        if (_state is null)
+            return;
+        string? text = _state.Get(Control, Kind);
+        if (_read && text == _text)
+            return;
+        _read = true;
+        _text = text;
+        _colors = Decode(text);
+        _snapshot = null;
     }
 
     internal static string Encode(IEnumerable<uint> colors) =>

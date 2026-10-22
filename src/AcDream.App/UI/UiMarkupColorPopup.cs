@@ -48,6 +48,7 @@ public sealed class UiMarkupColorPopup : UiElement
     private float _hue, _sat, _val, _alpha;
     private uint _color;             // the working colour
     private uint _opened;            // the bound colour when it opened
+    private uint _start;             // the working colour it opened with (opaque without alpha)
     private uint? _pending;          // edited, not yet reported
     private DragTarget _drag;
     private bool _hexEditing;
@@ -98,6 +99,7 @@ public sealed class UiMarkupColorPopup : UiElement
         _hue = 0f;
         _sat = 0f;
         SetWorking(_owner.AllowAlpha ? _opened : MarkupColorValue.WithAlpha(_opened, 0xFF));
+        _start = _color;
         _pending = null;
         _drag = DragTarget.None;
         _hexEditing = false;
@@ -105,6 +107,7 @@ public sealed class UiMarkupColorPopup : UiElement
         _open = true;
         _root = root;
         IsEditControl = true;   // UiRoot only sends Char events to edit controls
+        TabStop = true;         // so Tab moves the focus on, and losing it closes the popup
         root.SetActivePopup(this, Dismissed);
         _returnFocus = root.KeyboardFocus;
         root.SetKeyboardFocus(this);
@@ -131,12 +134,14 @@ public sealed class UiMarkupColorPopup : UiElement
     /// owner hiding or leaving the tree. UiRoot swallows an outside press but
     /// not its release, which has no capture target and would reach the world,
     /// so while a button is down with nothing captured (the outside press) the
-    /// closed popup takes the capture and swallows the release too.
+    /// closed popup takes the capture and swallows the release too. When the
+    /// owner is no longer available the root is dropping a stale popup and
+    /// lets that press through, so its release must go through as well.
     /// </summary>
     private void Dismissed()
     {
         UiRoot? root = _root;
-        bool pressTail = root is not null && root.Captured is null
+        bool pressTail = root is not null && root.Captured is null && Available(_owner)
             && (root.LeftButtonDown || root.RightButtonDown || root.MiddleButtonDown);
         Close(keep: true);
         if (pressTail && root!.Captured is null && ReferenceEquals(FindRoot(), root))
@@ -154,7 +159,7 @@ public sealed class UiMarkupColorPopup : UiElement
         if (keep)
             CommitHex();
         uint? report = keep ? _pending : _opened;
-        bool remember = keep && _color != _opened;
+        bool remember = keep && _color != _start;
         uint final = _color;
 
         _open = false;
@@ -162,6 +167,7 @@ public sealed class UiMarkupColorPopup : UiElement
         _drag = DragTarget.None;
         _hexEditing = false;
         IsEditControl = false;
+        TabStop = false;
         ReleaseTextures();
         UiElement? previous = _returnFocus;
         _returnFocus = null;

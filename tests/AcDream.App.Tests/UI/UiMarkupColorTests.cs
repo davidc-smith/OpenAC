@@ -302,6 +302,91 @@ public class UiMarkupColorTests
     }
 
     [Fact]
+    public void Tab_ClosesKeepsTheColourAndMovesToTheNextStop()
+    {
+        var recent = new MarkupRecentColors(null);
+        var (root, swatch, model) = Mount(recent: recent);
+        root.RemoveChild(swatch);
+        var window = new UiPanel { Left = 0, Top = 0, Width = 400, Height = 300 };
+        var other = new UiMarkupColor { Left = 300, Top = 10, Width = 40, Height = 18 };
+        window.AddChild(swatch);
+        window.AddChild(other);
+        root.AddChild(window);
+        Press(root, 20, 15);
+        Assert.True(swatch.IsOpen);
+        Press(root, 158, 36 + 64);       // pending cyan
+        Key1(root, Key.Tab);
+        Assert.False(swatch.IsOpen);
+        Assert.Equal(new uint[] { 0xFF00FFFFu }, model.Reports);
+        Assert.Equal(new uint[] { 0xFF00FFFFu }, recent.Colors);
+        Assert.Same(other, root.KeyboardFocus);
+        // Closed, the popup is no tab stop: Tab cycles the two swatches only.
+        Key1(root, Key.Tab);
+        Assert.Same(swatch, root.KeyboardFocus);
+        Key1(root, Key.Tab);
+        Assert.Same(other, root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void ShiftTab_ClosesKeepsTheColourAndFocusesTheSwatch()
+    {
+        var (root, swatch, model) = Mount();
+        root.RemoveChild(swatch);
+        var window = new UiPanel { Left = 0, Top = 0, Width = 400, Height = 300 };
+        window.AddChild(new UiMarkupColor { Left = 300, Top = 10, Width = 40, Height = 18 });
+        window.AddChild(swatch);
+        root.AddChild(window);
+        var keyboard = new AcDream.App.Tests.Plugins.FakeKeyboard();
+        root.Keyboard = keyboard;
+        Press(root, 20, 15);
+        Press(root, 158, 36 + 64);
+        keyboard.Held.Add(Key.ShiftLeft);
+        Key1(root, Key.Tab);
+        Assert.False(swatch.IsOpen);
+        Assert.Equal(new uint[] { 0xFF00FFFFu }, model.Reports);
+        Assert.Same(swatch, root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void Tab_OnALoneSwatchClosesAndFocusesTheSwatch()
+    {
+        var (root, swatch, model) = Opened();
+        Press(root, 158, 36 + 64);
+        Key1(root, Key.Tab);
+        Assert.False(swatch.IsOpen);
+        Assert.Equal(new uint[] { 0xFF00FFFFu }, model.Reports);
+        Assert.Same(swatch, root.KeyboardFocus);
+        Assert.False(swatch.Popup.TabStop);
+    }
+
+    [Fact]
+    public void WithoutAlpha_ATranslucentValueOpenedAndClosedRemembersNothing()
+    {
+        var recent = new MarkupRecentColors(null);
+        var (root, swatch, model) = Mount(value: 0x80FF0000u, recent: recent);
+        Press(root, 20, 15);
+        Assert.Equal(0xFFFF0000u, swatch.Popup.Color);
+        Press(root, 600, 500);
+        Assert.False(swatch.IsOpen);
+        Assert.Empty(model.Reports);
+        Assert.Empty(recent.Colors);
+    }
+
+    [Fact]
+    public void StaleDismiss_DisabledBeforeATickLetsTheWorldHaveThePressAndRelease()
+    {
+        var (root, swatch, _) = Opened();
+        int fallThrough = 0;
+        root.WorldMouseFallThrough += (_, _, _, _) => fallThrough++;
+        swatch.Enabled = false;          // no tick yet: the press finds the registration stale
+        root.OnMouseDown(UiMouseButton.Left, 600, 500);
+        Assert.False(swatch.IsOpen);
+        Assert.Null(root.Captured);
+        root.OnMouseUp(UiMouseButton.Left, 600, 500);
+        Assert.Equal(2, fallThrough);
+    }
+
+    [Fact]
     public void Disabling_ClosesOnTheNextTickAndKeeps()
     {
         var (root, swatch, model) = Opened();

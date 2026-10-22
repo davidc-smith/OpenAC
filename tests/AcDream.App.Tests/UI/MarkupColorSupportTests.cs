@@ -108,6 +108,48 @@ public class MarkupColorSupportTests
     }
 
     [Fact]
+    public void Recent_TwoListsOverOneStateShareTheirPicks()
+    {
+        // Each window's build makes its own list over the store's shared state.
+        var state = new FakeState();
+        var a = new MarkupRecentColors(state);
+        var b = new MarkupRecentColors(state);
+        Assert.Empty(a.Colors);
+        Assert.Empty(b.Colors);
+        a.Add(0xFF111111u);
+        Assert.Equal(new uint[] { 0xFF111111 }, b.Colors);
+        b.Add(0xFF222222u);
+        Assert.Equal(new uint[] { 0xFF222222, 0xFF111111 }, a.Colors);
+        Assert.Equal("#FF222222,#FF111111", state.Values[("color", "recent")]);
+    }
+
+    [Fact]
+    public void Recent_AddWithoutReadingFirstKeepsTheOtherListsPicks()
+    {
+        var state = new FakeState();
+        var a = new MarkupRecentColors(state);
+        var b = new MarkupRecentColors(state);
+        _ = b.Colors;
+        a.Add(0xFF111111u);
+        b.Add(0xFF222222u);
+        Assert.Equal("#FF222222,#FF111111", state.Values[("color", "recent")]);
+    }
+
+    [Fact]
+    public void Recent_ColorsIsASnapshotThatCannotBeChanged()
+    {
+        var recent = new MarkupRecentColors(null);
+        recent.Add(0xFF111111u);
+        IReadOnlyList<uint> before = recent.Colors;
+        Assert.Same(before, recent.Colors);              // cached until it changes
+        Assert.False(before is List<uint>);
+        Assert.Throws<NotSupportedException>(() => ((IList<uint>)before).Add(1u));
+        recent.Add(0xFF222222u);
+        Assert.Equal(new uint[] { 0xFF111111 }, before); // the old snapshot stays as it was
+        Assert.Equal(new uint[] { 0xFF222222, 0xFF111111 }, recent.Colors);
+    }
+
+    [Fact]
     public void Store_SharedUsesTheReservedWindowKey()
     {
         var store = new MarkupControlStateStore(null, () => "Alice");
