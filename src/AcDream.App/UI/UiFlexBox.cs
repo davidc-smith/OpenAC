@@ -130,6 +130,7 @@ internal sealed class UiFlexBox
         foreach (UiFlexItem item in box.Items)
         {
             item.Node.Hidden = !item.Element.Visible;
+            item.SyncCollapse();
             if (item.Inner is { } inner) SyncHidden(inner);
         }
     }
@@ -162,6 +163,7 @@ internal sealed class UiFlexItem
     private string _text = string.Empty;
     private UiDatFont? _font;
     private bool _themed;
+    private bool _collapsed;
 
     internal UiFlexItem(UiFlexBox owner, UiElement element, FlexNode node, UiFlexBox? inner, FlexMeasurement? authoredSize)
     {
@@ -186,14 +188,36 @@ internal sealed class UiFlexItem
         _text = MarkupContentSize.Text(Element);
         _font = MarkupContentSize.Font(Element);
         _themed = MarkupContentSize.Themed(Element);
+        _collapsed = MarkupContentSize.Collapsed(Element);
         if (_authoredSize is { } authored)
             return authored;
         return MarkupContentSize.Measure(Element, _text) ?? default;
+    }
+
+    /// <summary>An expander's authored <c>maxh</c>, applied only while it is expanded.</summary>
+    internal float? ExpandedMaxHeight { get; set; }
+
+    /// <summary>An expander's authored <c>minh</c>, applied only while it is expanded.</summary>
+    internal float? ExpandedMinHeight { get; set; }
+
+    /// <summary>
+    /// Caps a collapsed expander at its header, so neither grow along a
+    /// column nor stretch across a row opens it up.
+    /// </summary>
+    internal void SyncCollapse()
+    {
+        if (Element is UiMarkupExpander { FlexPlaced: true } expander)
+        {
+            bool open = expander.Expanded;
+            Node.MaxHeight = open ? ExpandedMaxHeight : UiMarkupExpander.HeaderHeight;
+            Node.MinHeight = open ? ExpandedMinHeight : null;
+        }
     }
 
     /// <summary>Whether the caption, font or theme the leaf was measured from has changed.</summary>
     internal bool InputsChanged() =>
         !ReferenceEquals(_font, MarkupContentSize.Font(Element))
         || _themed != MarkupContentSize.Themed(Element)
+        || _collapsed != MarkupContentSize.Collapsed(Element)
         || !string.Equals(_text, MarkupContentSize.Text(Element), StringComparison.Ordinal);
 }

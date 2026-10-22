@@ -32,6 +32,16 @@ public sealed class UiMarkupExpander : UiElement
 
     public bool IsRemembered => Remembered?.IsActive == true;
 
+    /// <summary>
+    /// Set when a flex container places the expander: collapsing then only
+    /// hides the content, and the container gives the space back by laying
+    /// out again, instead of the expander moving its siblings.
+    /// </summary>
+    internal bool FlexPlaced { get; set; }
+
+    /// <summary>The height a flex container gives the expander while it is expanded: its authored <c>h</c>.</summary>
+    internal float ExpandedHeight { get; set; }
+
     private bool? _hostExpanded;
     private bool _laidOutExpanded = true;
 
@@ -148,6 +158,11 @@ public sealed class UiMarkupExpander : UiElement
         if (expanded == _laidOutExpanded)
             return;
         _laidOutExpanded = expanded;
+        if (FlexPlaced)
+        {
+            Content.Visible = expanded;
+            return;
+        }
         UiElement? parent = Parent;
 
         // Bring every rect up to the current parent size before changing it, so
