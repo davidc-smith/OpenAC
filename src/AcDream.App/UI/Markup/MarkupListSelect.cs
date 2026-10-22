@@ -5,7 +5,7 @@ namespace AcDream.App.UI.Markup;
 /// <summary>A list's selection: <c>selectmode</c>, <c>selected</c>, <c>onchange</c> and <c>selectionband</c>.</summary>
 internal static class MarkupListSelect
 {
-    public static void Apply(XElement el, UiMarkupList list, object binding)
+    public static void Apply(XElement el, UiMarkupList list, MarkupBindingSource binding)
     {
         string? mode = (string?)el.Attribute("selectmode");
         string? selected = (string?)el.Attribute("selected");
@@ -18,7 +18,7 @@ internal static class MarkupListSelect
                 {
                     throw new FormatException(
                         $"<list onchange=\"{onChange}\"> did not resolve to an "
-                        + $"Action<int> property on {binding.GetType().Name}");
+                        + $"Action<int> property on {binding.TypeName}");
                 }
                 list.SelectedIndexSource = MarkupDocument.BindRequiredIntReader(selected, binding, "list selected");
                 list.SelectionChanged = changed;

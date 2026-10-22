@@ -82,7 +82,7 @@ public class MarkupHotkeyTextTests
     public void StringReader_ReadsEachCallAndNullIsEmpty()
     {
         var binding = new Binding();
-        Func<string> read = MarkupBindings.BindRequiredStringReader("{Key}", binding, "hotkey value");
+        Func<string> read = MarkupBindings.BindRequiredStringReader("{Key}", MarkupBindingSource.For(binding), "hotkey value");
         Assert.Equal("Ctrl+F", read());
         binding.Key = null;
         Assert.Equal("", read());
@@ -96,7 +96,7 @@ public class MarkupHotkeyTextTests
     public void StringReader_RejectsAnythingButAStringBinding(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredStringReader(expression, new Binding(), "hotkey value"));
+            () => MarkupBindings.BindRequiredStringReader(expression, MarkupBindingSource.For(new Binding()), "hotkey value"));
         Assert.Contains("hotkey value", ex.Message);
     }
 
@@ -104,7 +104,7 @@ public class MarkupHotkeyTextTests
     public void StringAction_Invokes()
     {
         var binding = new Binding();
-        MarkupBindings.BindRequiredStringAction("{SetKey}", binding, "hotkey onchange")("Alt+G");
+        MarkupBindings.BindRequiredStringAction("{SetKey}", MarkupBindingSource.For(binding), "hotkey onchange")("Alt+G");
         Assert.Equal("Alt+G", binding.Last);
     }
 
@@ -116,7 +116,7 @@ public class MarkupHotkeyTextTests
     public void StringAction_RejectsAbsentLiteralAndWrongTypes(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredStringAction(expression, new Binding(), "hotkey onchange"));
+            () => MarkupBindings.BindRequiredStringAction(expression, MarkupBindingSource.For(new Binding()), "hotkey onchange"));
         Assert.Contains("hotkey onchange", ex.Message);
     }
 }

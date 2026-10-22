@@ -23,8 +23,8 @@ public class MarkupRadioTests
     public void IntAction_MissingIsNullAndBoundInvokes()
     {
         var b = new Binding();
-        Assert.Null(MarkupBindings.BindIntAction(null, b, "ctx"));
-        MarkupBindings.BindIntAction("{SetMode}", b, "ctx")!(2);
+        Assert.Null(MarkupBindings.BindIntAction(null, MarkupBindingSource.For(b), "ctx"));
+        MarkupBindings.BindIntAction("{SetMode}", MarkupBindingSource.For(b), "ctx")!(2);
         Assert.Equal(2, b.Mode);
     }
 
@@ -35,7 +35,7 @@ public class MarkupRadioTests
     public void IntAction_RejectsLiteralsAndWrongTypes(string attribute)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindIntAction(attribute, new Binding(), "radio onchange"));
+            () => MarkupBindings.BindIntAction(attribute, MarkupBindingSource.For(new Binding()), "radio onchange"));
         Assert.Contains("radio onchange", ex.Message);
         Assert.Contains("Action<int>", ex.Message);
     }

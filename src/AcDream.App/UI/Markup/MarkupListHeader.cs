@@ -19,7 +19,7 @@ internal static class MarkupListHeader
     }
 
     public static void Apply(
-        XElement el, IReadOnlyList<XElement> columnEls, UiMarkupList list, object binding,
+        XElement el, IReadOnlyList<XElement> columnEls, UiMarkupList list, MarkupBindingSource binding,
         MarkupBuildContext context)
     {
         list.ShowHeader = Bool(el, "header");
@@ -52,7 +52,7 @@ internal static class MarkupListHeader
             ApplyColumn(columnEls[i], columns[i], i, binding);
     }
 
-    private static void ApplyColumn(XElement columnEl, UiMarkupListColumn column, int index, object binding)
+    private static void ApplyColumn(XElement columnEl, UiMarkupListColumn column, int index, MarkupBindingSource binding)
     {
         string? header = (string?)columnEl.Attribute("header");
         string? onAll = (string?)columnEl.Attribute("onall");

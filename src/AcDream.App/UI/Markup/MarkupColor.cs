@@ -4,7 +4,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupColor
 {
-    public static UiMarkupColor Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupColor Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         var (read, write) = MarkupBindings.BindRequiredColor(
             (string?)el.Attribute("value"), (string?)el.Attribute("onchange"), binding, "color");

@@ -8,7 +8,7 @@ namespace AcDream.App.UI.Markup;
 /// </summary>
 internal static class MarkupContextMenu
 {
-    public static UiMarkupContextMenu? Attach(XElement ownerEl, UiElement owner, object binding, MarkupBuildContext context)
+    public static UiMarkupContextMenu? Attach(XElement ownerEl, UiElement owner, MarkupBindingSource binding, MarkupBuildContext context)
     {
         XElement[] menus = ownerEl.Elements("contextmenu").ToArray();
         if (menus.Length == 0)
@@ -45,7 +45,7 @@ internal static class MarkupContextMenu
     }
 
     /// <summary>A bound string list, or a literal list separated by <c>|</c>.</summary>
-    private static Func<IReadOnlyList<string>> Items(string? expression, object binding)
+    private static Func<IReadOnlyList<string>> Items(string? expression, MarkupBindingSource binding)
     {
         if (string.IsNullOrEmpty(expression))
             throw new FormatException("contextmenu items must list at least one item");

@@ -7,7 +7,7 @@ internal static class MarkupListTree
 {
     private static readonly string[] TreeAttributes = ["levels", "keys", "expanded", "onexpand", "collapsed"];
 
-    public static void Apply(XElement el, UiMarkupList list, object binding, MarkupBuildContext context)
+    public static void Apply(XElement el, UiMarkupList list, MarkupBindingSource binding, MarkupBuildContext context)
     {
         if (!MarkupDocument.B(el, "tree", false))
         {
