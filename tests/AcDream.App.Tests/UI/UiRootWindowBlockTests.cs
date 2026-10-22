@@ -219,4 +219,53 @@ public sealed class UiRootWindowBlockTests
 
         Assert.Throws<ArgumentException>(() => f.Root.BlockWindow(f.OwnerButton, f.Dialog));
     }
+
+    [Fact]
+    public void EachButtonKeepsItsOwnSwallowedRelease()
+    {
+        var f = new Fixture();
+        f.Root.BlockWindow(f.Owner, f.Dialog);
+
+        f.Root.OnMouseDown(UiMouseButton.Right, 30, 30);
+        f.Root.OnMouseDown(UiMouseButton.Left, 30, 30);
+        f.Root.OnMouseUp(UiMouseButton.Right, 30, 30);
+        f.Root.OnMouseUp(UiMouseButton.Left, 30, 30);
+
+        Assert.Equal(0, f.WorldMouse);
+    }
+
+    [Fact]
+    public void ALostSwallowedReleaseDoesNotEatTheNextClick()
+    {
+        var f = new Fixture();
+        IDisposable block = f.Root.BlockWindow(f.Owner, f.Dialog);
+        f.Root.OnMouseDown(UiMouseButton.Left, 30, 30); // release never arrives
+        block.Dispose();
+
+        f.Click(30, 30);
+
+        Assert.Equal(1, f.OwnerClicks);
+    }
+
+    [Fact]
+    public void ADropOntoABlockedWindowGoesNowhere()
+    {
+        var f = new Fixture();
+        var slot = new UiItemSlot { Left = 0f, Top = 0f, Width = 32f, Height = 32f };
+        slot.SetItem(0x50000A01u, 0x99u);
+        f.Other.AddChild(slot);
+        int outside = 0;
+        f.Root.DragReleasedOutsideUi += (_, _, _) => outside++;
+        f.Root.BlockWindow(f.Owner, f.Dialog);
+
+        f.Root.OnMouseDown(UiMouseButton.Left, 405, 15);
+        f.Root.OnMouseMove(420, 30);
+        f.Root.OnMouseMove(130, 80);
+        Assert.Same(slot, f.Root.DragSource);
+        f.Root.OnMouseUp(UiMouseButton.Left, 130, 80);
+
+        Assert.DoesNotContain(UiEventType.DropReleased, f.OwnerScroller.Types);
+        Assert.Equal(0, outside);
+        Assert.Null(f.Root.DragSource);
+    }
 }

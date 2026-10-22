@@ -536,7 +536,8 @@ public sealed class UiRoot : UiElement
     // release and all, and flashes its newest blocker.
     private readonly Dictionary<UiElement, List<UiElement>> _windowBlocks =
         new(ReferenceEqualityComparer.Instance);
-    private UiMouseButton? _swallowedRelease;
+    // Buttons whose press was swallowed and whose release is still due.
+    private readonly HashSet<UiMouseButton> _swallowedReleases = new();
 
     /// <summary>
     /// Blocks a top-level window until the returned handle is disposed: it
@@ -648,6 +649,8 @@ public sealed class UiRoot : UiElement
         (x, y) = MapWindowToCanvas(x, y);
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: true);
+        // A new press means any earlier swallowed release for this button was lost.
+        _swallowedReleases.Remove(btn);
         _pressX = x; _pressY = y;
 
         if (Modal is not null && !ContainsAbsolute(Modal, x, y))
@@ -688,7 +691,7 @@ public sealed class UiRoot : UiElement
         {
             // A window-modal dialog owns this window: the press, and its
             // release, go nowhere but flash the dialog.
-            _swallowedRelease = btn;
+            _swallowedReleases.Add(btn);
             FlashBlocker(blocker);
             return;
         }
@@ -775,11 +778,8 @@ public sealed class UiRoot : UiElement
         (x, y) = MapWindowToCanvas(x, y);
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: false);
-        if (_swallowedRelease == btn)
-        {
-            _swallowedRelease = null;
+        if (_swallowedReleases.Remove(btn))
             return;
-        }
 
         if (_resizeTarget is not null)
         {
@@ -1175,7 +1175,11 @@ public sealed class UiRoot : UiElement
         source?.SetDragSourceActive(false, payload);
 
         var (t, lx, ly) = HitTestTopDown(x, y);
-        if (t is not null)
+        if (t is not null && BlockerFor(t) is not null)
+        {
+            // Dropped onto a window a dialog blocks: the drop goes nowhere.
+        }
+        else if (t is not null)
         {
             var e = new UiEvent(source!.EventId, t, UiEventType.DropReleased,
                                 Data1: (int)lx, Data2: (int)ly, Payload: payload);
