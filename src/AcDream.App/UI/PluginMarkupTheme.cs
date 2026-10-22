@@ -3,6 +3,26 @@ namespace AcDream.App.UI;
 
 internal static class PluginMarkupTheme
 {
+    /// <summary>
+    /// Themes a window's title bar: the palette for its close button, and the
+    /// theme's font and text colour without outline under a theme; Classic's
+    /// own font, title colour and outline back under Classic. The themed close
+    /// button's "x" takes the theme's font; Classic draws a sprite, so no font.
+    /// </summary>
+    public static void RegisterTitleBar(UiPluginMarkupPanel panel, PluginTitleBar bar)
+    {
+        UiDatFont? classicFont = bar.DatFont;
+        var classicColor = bar.TextColor;
+        panel.AddThemeAction(p =>
+        {
+            bar.ThemePalette = p;
+            bar.DatFont = p is null ? classicFont : panel.ModernFont ?? classicFont;
+            bar.TextColor = p?.Text ?? classicColor;
+            bar.Outline = p is null;
+            bar.Close.DatFont = p is null ? null : panel.ModernFont;
+        });
+    }
+
     public static void Register(UiPluginMarkupPanel panel, UiElement element, XElement xml)
     {
         if (panel.ModernFont is { } modern)
