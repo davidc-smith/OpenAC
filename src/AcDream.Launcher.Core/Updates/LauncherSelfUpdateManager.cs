@@ -666,7 +666,7 @@ public sealed class LauncherSelfUpdateManager
             ? pending.TransactionId
             : null;
         string transactionContainer = pending?.InstallationKind == LauncherInstallationKind.MacBundle
-            || string.Equals(Path.GetFileName(target), "OpenAC.app", StringComparison.Ordinal)
+            || string.Equals(Path.GetFileName(target), OpenACProductIdentity.MacAppBundleName, StringComparison.Ordinal)
             ? Path.GetDirectoryName(target)
                 ?? throw new LauncherUpdateException("The app bundle has no containing directory.")
             : target;
@@ -772,7 +772,7 @@ public sealed class LauncherSelfUpdateManager
                 StringComparison.Ordinal)))
         {
             throw new LauncherUpdateException(
-                "The macOS launcher ZIP must contain exactly the OpenAC.app bundle root and launcher executable.");
+                $"The macOS launcher ZIP must contain exactly the {layout.PayloadRoot} bundle root and launcher executable.");
         }
     }
 

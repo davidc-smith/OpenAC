@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using AcDream.Launcher.Core.Updates;
+using AcDream.Platform;
 
 namespace AcDream.Launcher.Core.Tests.Updates;
 
@@ -91,12 +92,14 @@ public sealed class ReleaseManifestClientTests
 
         Assert.Equal("2.1.0", manifest.Version.Value);
         Assert.Equal(client.LongLength, manifest.RequireClient("win-x64").Size);
-        // The fork's own feed until it merges back upstream: one property in
-        // Directory.Build.props (OpenACReleaseRepository) names the repository.
+        // Both products release from one repository; each launcher reads the releases feed and
+        // takes only its own tag prefix (Directory.Build.props OpenACReleaseRepository/OpenACProduct).
         Assert.Equal(
-            "https://github.com/davidc-smith/OpenAC/releases/latest/download/manifest.json",
-            ReleaseManifestClient.ProductionManifestUri.AbsoluteUri);
-        Assert.Equal(Uri.UriSchemeHttps, ReleaseManifestClient.ProductionManifestUri.Scheme);
+            "https://github.com/davidc-smith/OpenAC/releases.atom",
+            ReleaseManifestClient.ProductionUpdateFeedUri.AbsoluteUri);
+        Assert.Equal(
+            OpenACProductIdentity.Slug["openac-".Length..] + "-v",
+            ReleaseManifestClient.ReleaseTagPrefix);
     }
 
     [Fact]
@@ -159,7 +162,7 @@ public sealed class ReleaseManifestClientTests
             HttpStatusCode.Found,
             new Uri("http://127.0.0.1/manifest.json")));
         using var source = ReleaseManifestClient.CreateForTransportTest(
-            ReleaseManifestClient.ProductionManifestUri,
+            ReleaseManifestClient.ProductionUpdateFeedUri,
             allowLoopbackHttp: false,
             handler);
 
@@ -167,7 +170,7 @@ public sealed class ReleaseManifestClientTests
             () => source.FetchAsync());
 
         Assert.Contains("HTTPS", error.Message, StringComparison.Ordinal);
-        Assert.Equal([ReleaseManifestClient.ProductionManifestUri], handler.Requests);
+        Assert.Equal([ReleaseManifestClient.ProductionUpdateFeedUri], handler.Requests);
     }
 
     [Fact]
@@ -232,6 +235,142 @@ public sealed class ReleaseManifestClientTests
         {"schemaVersion":1,"version":"2.0.0","minimumLauncherVersion":"1.0.0","clients":{"win-x64":{"url":"https://example.test/client","sha256":"{{{{new string('a', 64)}}}}","size":12}},"launchers":{"win-x64":{"url":"https://example.test/launcher","sha256":"{{{{new string('b', 64)}}}}","size":12}}}
         """;
 
+    private static readonly Uri FeedUri = new("https://github.com/davidc-smith/OpenAC/releases.atom");
+
+    private static string Download(string tag, string file) =>
+        $"https://github.com/davidc-smith/OpenAC/releases/download/{tag}/{file}";
+
+    private static HttpResponseMessage Ok(string body) =>
+        new(HttpStatusCode.OK) { Content = new ByteArrayContent(Encoding.UTF8.GetBytes(body)) };
+
+    private static string FeedOf(params string[] tags) =>
+        ProductReleaseFeedTests.Feed(tags.Select(tag => ProductReleaseFeedTests.Entry(ProductReleaseFeedTests.Link(tag))).ToArray());
+
+    [Fact]
+    public async Task TheFeedPicksThisProductsNewestReleaseAndItsManifest()
+    {
+        var handler = new SequenceHandler((request, index) => index switch
+        {
+            0 => Ok(FeedOf("gateway-rynth-v3.0.0", "gateway-v2.0.0", "gateway-v1.9.0")),
+            1 => Ok(ValidJson()),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        ReleaseManifest manifest = await source.FetchAsync();
+        _ = await source.FetchLauncherFingerprintAsync();
+
+        Assert.Equal("2.0.0", manifest.Version.Value);
+        Assert.Equal(
+            [FeedUri, new Uri(Download("gateway-v2.0.0", "manifest.json")),
+             new Uri(Download("gateway-v2.0.0", LauncherFingerprintDocument.FileName))],
+            handler.Requests);
+    }
+
+    /// <summary>Mutation: skipping the tag/version check lets a mis-tagged release (or a manifest
+    /// uploaded to the wrong release) install a different version than the tag promised.</summary>
+    [Fact]
+    public async Task AManifestWhoseVersionDiffersFromItsTagIsRejected()
+    {
+        var handler = new SequenceHandler((request, index) => index == 0
+            ? Ok(FeedOf("gateway-v2.0.1"))
+            : Ok(ValidJson()));
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        LauncherUpdateException error = await Assert.ThrowsAsync<LauncherUpdateException>(
+            () => source.FetchAsync());
+
+        Assert.Contains("gateway-v2.0.1", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AFeedWithoutThisProductsReleaseIsAnError()
+    {
+        var handler = new SequenceHandler((request, _) => Ok(FeedOf("gateway-rynth-v2.0.0", "v2.0.0")));
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        LauncherUpdateException error = await Assert.ThrowsAsync<LauncherUpdateException>(
+            () => source.FetchAsync());
+
+        Assert.Contains("gateway-v", error.Message, StringComparison.Ordinal);
+        Assert.Equal([FeedUri], handler.Requests);
+    }
+
+    /// <summary>Mutation: keeping the previous release after a failed refetch lets files beside it
+    /// (the fingerprint) be read from an older release than the launcher now believes in.</summary>
+    [Fact]
+    public async Task AFailedRefetchForgetsThePreviousRelease()
+    {
+        var handler = new SequenceHandler((request, index) => index switch
+        {
+            0 => Ok(FeedOf("gateway-v2.0.0")),
+            2 => Ok(FeedOf("gateway-v2.0.1")),
+            _ => Ok(ValidJson()),
+        });
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        await source.FetchAsync();
+        await Assert.ThrowsAsync<LauncherUpdateException>(() => source.FetchAsync());
+        int requestsAfterFailure = handler.Requests.Count;
+
+        Assert.Null(await source.FetchLauncherFingerprintAsync());
+        Assert.Equal(requestsAfterFailure, handler.Requests.Count);
+    }
+
+    /// <summary>Mutation: forgetting the previous release when a refetch starts (rather than when it
+    /// fails) sends a concurrent reader (the rynth navdata pin check) to its built-in fallback while
+    /// the updater merely rechecks in the background.</summary>
+    [Fact]
+    public async Task ARefetchInFlightKeepsThePreviousReleaseReadable()
+    {
+        var feedRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var heldFeed = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new SequenceHandler((request, index) =>
+        {
+            switch (index)
+            {
+                case 0:
+                    return Task.FromResult(Ok(FeedOf("gateway-v2.0.0")));
+                case 2:
+                    feedRequested.SetResult();
+                    return heldFeed.Task;
+                case 3:
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                default:
+                    return Task.FromResult(Ok(ValidJson()));
+            }
+        });
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        await source.FetchAsync();
+        Task<ReleaseManifest> refetch = source.FetchAsync();
+        await feedRequested.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        _ = await source.FetchLauncherFingerprintAsync();
+        Assert.False(refetch.IsCompleted);
+        heldFeed.SetResult(Ok(FeedOf("gateway-v2.0.0")));
+        await refetch.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(
+            new Uri(Download("gateway-v2.0.0", LauncherFingerprintDocument.FileName)),
+            handler.Requests[3]);
+    }
+
+    [Fact]
+    public async Task NoFingerprintIsFetchedBeforeAReleaseIsKnown()
+    {
+        var handler = new SequenceHandler((request, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        Assert.Null(await source.FetchLauncherFingerprintAsync());
+        Assert.Empty(handler.Requests);
+    }
+
     private static HttpResponseMessage Redirect(HttpStatusCode status, Uri location)
     {
         var response = new HttpResponseMessage(status);
@@ -240,9 +379,14 @@ public sealed class ReleaseManifestClientTests
     }
 
     private sealed class SequenceHandler(
-        Func<HttpRequestMessage, int, HttpResponseMessage> respond)
+        Func<HttpRequestMessage, int, Task<HttpResponseMessage>> respond)
         : HttpMessageHandler
     {
+        public SequenceHandler(Func<HttpRequestMessage, int, HttpResponseMessage> respond)
+            : this((request, index) => Task.FromResult(respond(request, index)))
+        {
+        }
+
         public List<Uri> Requests { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(
@@ -253,7 +397,7 @@ public sealed class ReleaseManifestClientTests
                 ?? throw new InvalidOperationException("Test request has no URI.");
             int index = Requests.Count;
             Requests.Add(uri);
-            return Task.FromResult(respond(request, index));
+            return respond(request, index);
         }
     }
 }

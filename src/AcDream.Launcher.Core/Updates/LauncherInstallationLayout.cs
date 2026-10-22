@@ -1,3 +1,5 @@
+using AcDream.Platform;
+
 namespace AcDream.Launcher.Core.Updates;
 
 public enum LauncherInstallationKind
@@ -37,17 +39,17 @@ public sealed record LauncherInstallationLayout(
         string root = NormalizeDirectory(installedRoot);
         if (!string.Equals(
                 Path.GetFileName(root),
-                "OpenAC.app",
+                OpenACProductIdentity.MacAppBundleName,
                 StringComparison.Ordinal))
         {
             throw new LauncherUpdateException(
-                "The macOS launcher must run from OpenAC.app.");
+                $"The macOS launcher must run from {OpenACProductIdentity.MacAppBundleName}.");
         }
 
         return new LauncherInstallationLayout(
             LauncherInstallationKind.MacBundle,
             root,
-            "OpenAC.app",
+            OpenACProductIdentity.MacAppBundleName,
             Path.Combine(
                 "Contents",
                 "MacOS",
@@ -66,10 +68,10 @@ public sealed record LauncherInstallationLayout(
         DirectoryInfo? current = new(baseDirectory);
         if (!string.Equals(current.Name, "MacOS", StringComparison.Ordinal)
             || !string.Equals(current.Parent?.Name, "Contents", StringComparison.Ordinal)
-            || !string.Equals(current.Parent?.Parent?.Name, "OpenAC.app", StringComparison.Ordinal))
+            || !string.Equals(current.Parent?.Parent?.Name, OpenACProductIdentity.MacAppBundleName, StringComparison.Ordinal))
         {
             throw new LauncherUpdateException(
-                "The macOS launcher must run from OpenAC.app/Contents/MacOS.");
+                $"The macOS launcher must run from {OpenACProductIdentity.MacAppBundleName}/Contents/MacOS.");
         }
 
         return MacBundle(current.Parent?.Parent?.FullName

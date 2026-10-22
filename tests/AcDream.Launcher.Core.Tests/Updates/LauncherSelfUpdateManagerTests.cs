@@ -1,10 +1,13 @@
 using AcDream.Launcher.Core.Updates;
+using AcDream.Platform;
 using System.Text.Json.Nodes;
 
 namespace AcDream.Launcher.Core.Tests.Updates;
 
 public sealed class LauncherSelfUpdateManagerTests : IDisposable
 {
+    private static readonly string Bundle = OpenACProductIdentity.MacAppBundleName;
+
     private readonly string _root = Path.Combine(
         Path.GetTempPath(),
         "acdream-self-update-tests",
@@ -22,7 +25,7 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
     public async Task MacBundleApplyAndRollbackRenameTheWholeAppWithoutWritingInsideIt()
     {
         string container = Path.Combine(_root, "Applications");
-        string bundle = Path.Combine(container, "OpenAC.app");
+        string bundle = Path.Combine(container, Bundle);
         string launcher = Path.Combine(bundle, "Contents", "MacOS", "acdream-launcher");
         string support = Path.Combine(bundle, "Contents", "Resources", "support.dat");
         Directory.CreateDirectory(Path.GetDirectoryName(launcher)!);
@@ -33,9 +36,9 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
         LauncherInstallationLayout layout = LauncherInstallationLayout.MacBundle(bundle, "osx-arm64");
         byte[] archive = UpdateTestData.CreateZip(
         [
-            ("OpenAC.app/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED),
-            ("OpenAC.app/Contents/Info.plist", "<plist/>"u8.ToArray(), 0x81A4),
-            ("OpenAC.app/Contents/Resources/support.dat", "new-support"u8.ToArray(), 0x81A4),
+            ($"{Bundle}/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED),
+            ($"{Bundle}/Contents/Info.plist", "<plist/>"u8.ToArray(), 0x81A4),
+            ($"{Bundle}/Contents/Resources/support.dat", "new-support"u8.ToArray(), 0x81A4),
         ]);
         using var server = new LocalHttpFixture();
         server.Add("launcher.zip", archive);
@@ -60,7 +63,7 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
         Assert.Equal("new-support", await File.ReadAllTextAsync(support));
         Assert.False(File.Exists(Path.Combine(bundle, LauncherSelfUpdateManager.InstallRecordFileName)));
         Assert.True(Directory.Exists(Path.Combine(
-            manager.GetTargetTransactionDirectory(applied), "backup", "OpenAC.app")));
+            manager.GetTargetTransactionDirectory(applied), "backup", Bundle)));
 
         SelfUpdatePlan rolledBack = await manager.RollbackAwaitingConfirmationAsync(bundle);
         Assert.Equal(SelfUpdatePlanState.RolledBack, rolledBack.State);
@@ -72,14 +75,14 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
     [Fact]
     public async Task MacBundleStageRejectsFilesOutsideOpenAcApp()
     {
-        string bundle = Path.Combine(_root, "Applications", "OpenAC.app");
+        string bundle = Path.Combine(_root, "Applications", Bundle);
         string launcher = Path.Combine(bundle, "Contents", "MacOS", "acdream-launcher");
         Directory.CreateDirectory(Path.GetDirectoryName(launcher)!);
         await File.WriteAllTextAsync(launcher, "old-launcher");
         LauncherInstallationLayout layout = LauncherInstallationLayout.MacBundle(bundle, "osx-arm64");
         byte[] archive = UpdateTestData.CreateZip(
         [
-            ("OpenAC.app/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED),
+            ($"{Bundle}/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED),
             ("outside-bundle", "unexpected"u8.ToArray(), 0x81A4),
         ]);
         using var server = new LocalHttpFixture();
@@ -105,12 +108,12 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
     [Fact]
     public async Task MacBundleStageRequiresInfoPlist()
     {
-        string bundle = Path.Combine(_root, "Applications", "OpenAC.app");
+        string bundle = Path.Combine(_root, "Applications", Bundle);
         string launcher = Path.Combine(bundle, "Contents", "MacOS", "acdream-launcher");
         Directory.CreateDirectory(Path.GetDirectoryName(launcher)!);
         await File.WriteAllTextAsync(launcher, "old-launcher");
         byte[] archive = UpdateTestData.CreateZip(
-            [("OpenAC.app/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED)]);
+            [($"{Bundle}/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED)]);
         using var server = new LocalHttpFixture();
         server.Add("launcher.zip", archive);
         using var http = new HttpClient();
@@ -170,13 +173,13 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
             SelfUpdatePlan staged = Assert.IsType<SelfUpdatePlan>(
                 await scenario.Manager.LoadPendingAsync());
             string swap = scenario.Manager.GetTargetTransactionDirectory(staged);
-            string incoming = Path.Combine(swap, "incoming", "OpenAC.app");
+            string incoming = Path.Combine(swap, "incoming", Bundle);
             CopyDirectory(
-                Path.Combine(scenario.Manager.GetPayloadDirectory(staged.TransactionId), "OpenAC.app"),
+                Path.Combine(scenario.Manager.GetPayloadDirectory(staged.TransactionId), Bundle),
                 incoming);
             await SetBundleApplyingAsync(scenario.Manager.PendingPlanPath);
 
-            string backup = Path.Combine(swap, "backup", "OpenAC.app");
+            string backup = Path.Combine(swap, "backup", Bundle);
             if (boundary >= 1)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
@@ -774,7 +777,7 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
     private async Task<MacBundleScenario> CreateMacBundleScenarioAsync()
     {
         string root = Path.Combine(_root, Guid.NewGuid().ToString("N"));
-        string bundle = Path.Combine(root, "Applications", "OpenAC.app");
+        string bundle = Path.Combine(root, "Applications", Bundle);
         string launcher = Path.Combine(bundle, "Contents", "MacOS", "acdream-launcher");
         string support = Path.Combine(bundle, "Contents", "Resources", "support.dat");
         Directory.CreateDirectory(Path.GetDirectoryName(launcher)!);
@@ -783,9 +786,9 @@ public sealed class LauncherSelfUpdateManagerTests : IDisposable
         await File.WriteAllTextAsync(support, "old-support");
         byte[] archive = UpdateTestData.CreateZip(
         [
-            ("OpenAC.app/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED),
-            ("OpenAC.app/Contents/Info.plist", "<plist/>"u8.ToArray(), 0x81A4),
-            ("OpenAC.app/Contents/Resources/support.dat", "new-support"u8.ToArray(), 0x81A4),
+            ($"{Bundle}/Contents/MacOS/acdream-launcher", "new-launcher"u8.ToArray(), 0x81ED),
+            ($"{Bundle}/Contents/Info.plist", "<plist/>"u8.ToArray(), 0x81A4),
+            ($"{Bundle}/Contents/Resources/support.dat", "new-support"u8.ToArray(), 0x81A4),
         ]);
         var server = new LocalHttpFixture();
         server.Add("launcher.zip", archive);

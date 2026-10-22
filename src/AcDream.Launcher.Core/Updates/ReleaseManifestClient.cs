@@ -2,6 +2,7 @@ using System.Net;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AcDream.Launcher.Core.Plugins;
 
 namespace AcDream.Launcher.Core.Updates;
 
@@ -29,8 +30,21 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
             .FirstOrDefault(attribute => attribute.Key == "OpenAC.ReleaseRepository")?.Value
         ?? throw new InvalidOperationException("The launcher was built without a release repository.");
 
-    public static Uri ProductionManifestUri { get; } = new(
-        $"https://github.com/{ReleaseRepository}/releases/latest/download/manifest.json");
+    /// <summary>The tag prefix of this product's releases (Directory.Build.props
+    /// OpenACReleaseTagPrefix: <c>gateway-v</c> or <c>gateway-rynth-v</c>).</summary>
+    public static string ReleaseTagPrefix { get; } =
+        typeof(ReleaseManifestClient).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "OpenAC.ReleaseTagPrefix")?.Value
+        ?? throw new InvalidOperationException("The launcher was built without a release tag prefix.");
+
+    /// <summary>The production update feed: the repository's releases Atom feed, read for the newest
+    /// release tagged <see cref="ReleaseTagPrefix"/>. Not GitHub's "latest" release: both products
+    /// release from one repository and GitHub has one "latest" per repository.</summary>
+    public static Uri ProductionUpdateFeedUri { get; } =
+        GitHubReleaseLocator.ReleasesFeed(ReleaseRepository);
+
+    /// <summary>Ten entries with full release notes (see <see cref="ProductReleaseFeed"/>).</summary>
+    public const int MaximumFeedBytes = 4 * 1024 * 1024;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -41,12 +55,23 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     };
 
     private readonly HttpClient _httpClient;
-    private readonly Uri _manifestUri;
+    /// <summary>A fixed manifest (overrides and fixtures); null in feed mode.</summary>
+    private readonly Uri? _manifestUri;
+
+    /// <summary>Feed mode (production): where to look and which tags are this product's.</summary>
+    private readonly (Uri FeedUri, string Repository, string TagPrefix)? _feed;
+
     private readonly bool _allowLoopbackHttp;
+
+    /// <summary>The manifest the last feed-mode <see cref="FetchAsync"/> downloaded; files published
+    /// beside it (the fingerprint) are read from the same release. Volatile: on the rynth branch the
+    /// navdata pin check reads it from outside the updater's operation gate.</summary>
+    private volatile Uri? _releaseManifestUri;
 
     public ReleaseManifestClient(TimeSpan? timeout = null)
         : this(
-            ProductionManifestUri,
+            manifestUri: null,
+            (ProductionUpdateFeedUri, ReleaseRepository, ReleaseTagPrefix),
             allowLoopbackHttp: false,
             CreateRedirectDisabledHandler(),
             timeout)
@@ -58,12 +83,32 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
         bool allowLoopbackHttp,
         HttpMessageHandler handler,
         TimeSpan? timeout)
+        : this(
+            manifestUri ?? throw new ArgumentNullException(nameof(manifestUri)),
+            feed: null,
+            allowLoopbackHttp,
+            handler,
+            timeout)
     {
-        ArgumentNullException.ThrowIfNull(manifestUri);
+    }
+
+    private ReleaseManifestClient(
+        Uri? manifestUri,
+        (Uri FeedUri, string Repository, string TagPrefix)? feed,
+        bool allowLoopbackHttp,
+        HttpMessageHandler handler,
+        TimeSpan? timeout)
+    {
         ArgumentNullException.ThrowIfNull(handler);
+        if ((manifestUri is null) == (feed is null))
+        {
+            throw new ArgumentException("Exactly one of a manifest URI and a release feed is required.");
+        }
+
         _manifestUri = manifestUri;
+        _feed = feed;
         _allowLoopbackHttp = allowLoopbackHttp;
-        RequireTransport(_manifestUri, "manifest", _allowLoopbackHttp);
+        RequireTransport(manifestUri ?? feed!.Value.FeedUri, "manifest", _allowLoopbackHttp);
         _httpClient = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = timeout ?? TimeSpan.FromSeconds(15),
@@ -125,11 +170,64 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
             handler,
             TimeSpan.FromSeconds(15));
 
+    internal static ReleaseManifestClient CreateFeedForTransportTest(
+        Uri feedUri,
+        string repository,
+        string tagPrefix,
+        HttpMessageHandler handler) => new(
+            manifestUri: null,
+            (feedUri, repository, tagPrefix),
+            allowLoopbackHttp: false,
+            handler,
+            TimeSpan.FromSeconds(15));
+
     public async Task<ReleaseManifest> FetchAsync(
-        CancellationToken cancellationToken = default) =>
-        Parse(
-            await FetchBytesAsync(_manifestUri, "release manifest", cancellationToken).ConfigureAwait(false),
-            _allowLoopbackHttp);
+        CancellationToken cancellationToken = default)
+    {
+        if (_feed is not { } feed)
+        {
+            return Parse(
+                await FetchBytesAsync(_manifestUri!, "release manifest", MaximumManifestBytes, cancellationToken)
+                    .ConfigureAwait(false),
+                _allowLoopbackHttp);
+        }
+
+        // The previous release stays readable while the refetch is in flight (a concurrent pin or
+        // fingerprint read still sees it); a failed refetch must not leave it readable afterwards.
+        try
+        {
+            ProductFeedRelease release = ProductReleaseFeed.Newest(
+                    await FetchBytesAsync(feed.FeedUri, "releases feed", MaximumFeedBytes, cancellationToken)
+                        .ConfigureAwait(false),
+                    feed.Repository,
+                    feed.TagPrefix)
+                ?? throw new LauncherUpdateException(
+                    $"No '{feed.TagPrefix}' release is among the newest releases of {feed.Repository}.");
+            Uri manifestUri = GitHubReleaseLocator.TaggedAsset(feed.Repository, release.Tag, "manifest.json");
+            ReleaseManifest manifest = Parse(
+                await FetchBytesAsync(manifestUri, "release manifest", MaximumManifestBytes, cancellationToken)
+                    .ConfigureAwait(false),
+                _allowLoopbackHttp);
+            if (manifest.Version.CompareTo(release.Version) != 0)
+            {
+                throw new LauncherUpdateException(
+                    $"Release {release.Tag} carries a manifest for version {manifest.Version.Value}.");
+            }
+
+            _releaseManifestUri = manifestUri;
+            return manifest;
+        }
+        catch
+        {
+            _releaseManifestUri = null;
+            throw;
+        }
+    }
+
+    /// <summary>A file published beside the release manifest, or null in feed mode before
+    /// <see cref="FetchAsync"/> has found the release.</summary>
+    private Uri? ReleaseFileUri(string fileName) =>
+        (_manifestUri ?? _releaseManifestUri) is { } manifestUri ? new Uri(manifestUri, fileName) : null;
 
     /// <summary>How long the optional fingerprint may take before the check goes on without it.</summary>
     internal TimeSpan FingerprintTimeout { get; set; } = TimeSpan.FromSeconds(5);
@@ -137,13 +235,19 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     public async Task<LauncherFingerprintDocument?> FetchLauncherFingerprintAsync(
         CancellationToken cancellationToken = default)
     {
+        if (ReleaseFileUri(LauncherFingerprintDocument.FileName) is not { } fingerprintUri)
+        {
+            return null;
+        }
+
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(FingerprintTimeout);
         try
         {
             byte[] bytes = await FetchBytesAsync(
-                    new Uri(_manifestUri, LauncherFingerprintDocument.FileName),
+                    fingerprintUri,
                     "launcher fingerprint",
+                    MaximumManifestBytes,
                     timeout.Token)
                 .ConfigureAwait(false);
             return ParseFingerprint(bytes);
@@ -188,6 +292,7 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     private async Task<byte[]> FetchBytesAsync(
         Uri start,
         string description,
+        int maximumBytes,
         CancellationToken cancellationToken)
     {
         try
@@ -234,7 +339,7 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
                 }
 
                 response.EnsureSuccessStatusCode();
-                return await ReadBytesAsync(response, description, cancellationToken)
+                return await ReadBytesAsync(response, description, maximumBytes, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -315,13 +420,14 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
     private static async Task<byte[]> ReadBytesAsync(
         HttpResponseMessage response,
         string description,
+        int maximumBytes,
         CancellationToken cancellationToken)
     {
         if (response.Content.Headers.ContentLength is long contentLength
-            && contentLength > MaximumManifestBytes)
+            && contentLength > maximumBytes)
         {
             throw new LauncherUpdateException(
-                $"The {description} is larger than {MaximumManifestBytes} bytes.");
+                $"The {description} is larger than {maximumBytes} bytes.");
         }
 
         await using Stream input = await response.Content
@@ -338,10 +444,10 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
                 break;
             }
 
-            if (output.Length + read > MaximumManifestBytes)
+            if (output.Length + read > maximumBytes)
             {
                 throw new LauncherUpdateException(
-                    $"The {description} is larger than {MaximumManifestBytes} bytes.");
+                    $"The {description} is larger than {maximumBytes} bytes.");
             }
 
             output.Write(buffer, 0, read);

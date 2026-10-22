@@ -2,11 +2,12 @@
 param(
     # Build and check everything, then print the tag/upload commands instead of running them.
     [switch]$DryRun,
-    # Publish from a branch other than main (dry runs on a feature branch).
+    # Publish from a branch other than the product's release branch (dry runs on a feature branch).
     [switch]$AllowBranch
 )
 
-# The fork's own release, built on this Mac (osx-arm64 only) until the fork releases through
+# The fork's own release, tagged <prefix><version> from the product's branch, built on this Mac
+# (osx-arm64 only) until the fork releases through
 # GitHub Actions: the client and launcher zips, manifest.json, and
 # launcher-fingerprint.json, published to the OpenACReleaseRepository in Directory.Build.props.
 Set-StrictMode -Version Latest
@@ -27,11 +28,20 @@ function Get-OpenACProperty([string]$Name) {
 [xml]$props = Get-Content -LiteralPath (Join-Path $RepoRoot 'Directory.Build.props') -Raw
 $version = Get-OpenACProperty 'OpenACReleaseVersion'
 $product = Get-OpenACProperty 'OpenACProduct'
+$tagPrefix = Get-OpenACProperty 'OpenACReleaseTagPrefix'
+$label = Get-OpenACProperty 'OpenACReleaseLabel'
+# Each product releases from the branch line that owns it (BRANCHING.md).
+$releaseBranch = switch ($label) {
+    'gateway' { 'main' }
+    'rynth' { 'rynth' }
+    default { throw "No release branch is known for release label '$label'." }
+}
+if ($tagPrefix -notmatch '^[a-z]+(-[a-z]+)*-v$') { throw "Tag prefix '$tagPrefix' is not '<product>-v'." }
 $repository = [string]($props.Project.PropertyGroup | ForEach-Object { $_.OpenACReleaseRepository } | Where-Object { $_ } | Select-Object -First 1)
 if ($version -notmatch '-(gateway|rynth)\.\d+$') { throw "Version '$version' is not an OpenAC Gateway release version (x.y.z-gateway.n or x.y.z-rynth.n)." }
 if ([string]::IsNullOrWhiteSpace($repository)) { throw 'Directory.Build.props has no OpenACReleaseRepository.' }
 
-if ($AllowBranch -and -not $DryRun) { throw '-AllowBranch is for dry runs only; publish from main.' }
+if ($AllowBranch -and -not $DryRun) { throw "-AllowBranch is for dry runs only; publish from $releaseBranch." }
 
 $status = & git -C $RepoRoot status --porcelain
 if ($LASTEXITCODE) { throw 'git status failed.' }
@@ -39,8 +49,8 @@ if ($status) { throw 'The working tree has changes; commit or stash them first.'
 $branch = (& git -C $RepoRoot rev-parse --abbrev-ref HEAD)
 if ($LASTEXITCODE) { throw 'git rev-parse failed.' }
 $branch = $branch.Trim()
-if ($branch -ne 'main' -and -not $AllowBranch) { throw "On '$branch'; fork releases come from main (or pass -AllowBranch for a dry run)." }
-$tag = "v$version"
+if ($branch -ne $releaseBranch -and -not $AllowBranch) { throw "On '$branch'; $product releases come from $releaseBranch (or pass -AllowBranch for a dry run)." }
+$tag = "$tagPrefix$version"
 
 if (-not $DryRun) {
     # Everything that can fail cheaply is checked before the build or any side effect.
@@ -53,14 +63,14 @@ if (-not $DryRun) {
     $remoteTag = & git -C $RepoRoot ls-remote --tags origin "refs/tags/$tag"
     if ($LASTEXITCODE) { throw 'git ls-remote against origin failed.' }
     if ($remoteTag) { throw "Tag $tag already exists on origin." }
-    & git -C $RepoRoot fetch origin main
-    if ($LASTEXITCODE) { throw 'git fetch origin main failed.' }
+    & git -C $RepoRoot fetch origin $releaseBranch
+    if ($LASTEXITCODE) { throw "git fetch origin $releaseBranch failed." }
     $head = (& git -C $RepoRoot rev-parse HEAD)
     if ($LASTEXITCODE) { throw 'git rev-parse HEAD failed.' }
     $head = $head.Trim()
-    $originMain = (& git -C $RepoRoot rev-parse origin/main)
-    if ($LASTEXITCODE) { throw 'git rev-parse origin/main failed.' }
-    if ($originMain.Trim() -ne $head) { throw 'HEAD is not origin/main; push main first.' }
+    $originMain = (& git -C $RepoRoot rev-parse "origin/$releaseBranch")
+    if ($LASTEXITCODE) { throw "git rev-parse origin/$releaseBranch failed." }
+    if ($originMain.Trim() -ne $head) { throw "HEAD is not origin/$releaseBranch; push $releaseBranch first." }
 }
 
 $cleanupFailed = $false
@@ -92,12 +102,14 @@ foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Release file '$file' is missing." }
 }
 
-# No --prerelease; --latest keeps the launcher's releases/latest/download route on this release.
+# Marked not-latest on purpose (--latest=false; gh otherwise marks it latest by date/version):
+# both products release here and each launcher finds its own newest release by tag prefix on
+# the releases feed, never through releases/latest.
 $notes = "$product release $version (macOS Apple silicon only)."
 $commands = @(
     "git -C `"$RepoRoot`" tag $tag",
     "git -C `"$RepoRoot`" push origin $tag",
-    "gh release create $tag -R $repository --title `"$product $version`" --notes `"$notes`" --latest $($files -join ' ')"
+    "gh release create $tag -R $repository --title `"$product $version`" --notes `"$notes`" --latest=false $($files -join ' ')"
 )
 if ($DryRun) {
     Write-Host 'Dry run: the release would be published with:' -ForegroundColor Cyan
@@ -112,6 +124,6 @@ if ($LASTEXITCODE) {
     & git -C $RepoRoot tag -d $tag
     throw "git push of $tag failed; the local tag was deleted."
 }
-& gh release create $tag -R $repository --title "$product $version" --notes $notes --latest @files
+& gh release create $tag -R $repository --title "$product $version" --notes $notes --latest=false @files
 if ($LASTEXITCODE) { throw 'gh release create failed; the tag is pushed, re-run gh release create by hand.' }
 Write-Host "Published $tag to https://github.com/$repository/releases/tag/$tag" -ForegroundColor Green
