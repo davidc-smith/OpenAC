@@ -562,7 +562,7 @@ git commit -m "feat(plugins): cast at a target without selecting it (contract 0.
 
 **Goal:** Aethrix builds against contract `0.1.26-fork.6` and `MagicSession.Send` uses `EvaluateGateWithoutSelecting` / `RequestCastWithoutSelecting`.
 
-**Files (repo `~/code/OpenAC/OpenAC-Plugins-Aethrix`):**
+**Files:** (repo `~/code/OpenAC/OpenAC-Plugins-Aethrix`)
 - Modify: `Directory.Build.props:37` (`PluginApiPackageVersion`)
 - Modify: `src/Aethrix/Core/Magic/MagicSession.cs:261,273`
 - Modify: `tests/Aethrix.Tests/Fakes/FakeAutomation.cs` (magic fake, ~line 656-690)
