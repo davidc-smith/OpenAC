@@ -199,7 +199,7 @@ public sealed class UiRootWheelRoutingTests
     }
 
     [Fact]
-    public void A_shift_sideways_tick_nothing_horizontal_takes_is_a_vertical_step()
+    public void A_shift_sideways_tick_nothing_horizontal_takes_is_a_vertical_step_and_a_plain_one_reaches_nothing()
     {
         var root = new UiRoot { Width = 800, Height = 600 };
         var world = new List<int>();
@@ -231,11 +231,21 @@ public sealed class UiRootWheelRoutingTests
         var (root, frame, strip, world) = StripWindow();
         var dialog = new UiPanel { Left = 400f, Top = 300f, Width = 120f, Height = 60f, AcceptsFocus = true };
         root.AddChild(dialog);
-        root.BlockWindow(frame, dialog);
-        float before = strip.ScrollArea!.X.ScrollY;
+        float start = strip.ScrollArea!.X.ScrollY;
         root.OnMouseMove(20, 20);
 
+        // Guard: unblocked, this very step moves the group.
+        IDisposable block = root.BlockWindow(frame, dialog);
+        block.Dispose();
+        root.OnScroll(-1, 0, shift: true);
+        Assert.NotEqual(start, strip.ScrollArea.X.ScrollY);
         root.OnScroll(1, 0, shift: true);
+        root.OnScroll(1, 0, shift: true);
+        float before = strip.ScrollArea.X.ScrollY;
+        world.Clear();
+
+        root.BlockWindow(frame, dialog);
+        root.OnScroll(-1, 0, shift: true);
 
         Assert.Equal(before, strip.ScrollArea.X.ScrollY);
         Assert.Empty(world);
