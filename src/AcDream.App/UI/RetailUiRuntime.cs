@@ -6,6 +6,7 @@ using AcDream.App.Net;
 using AcDream.App.Rendering;
 using AcDream.App.Spells;
 using AcDream.App.UI.Layout;
+using AcDream.App.UI.Markup;
 using AcDream.App.UI.Testing;
 using AcDream.Core.Chat;
 using AcDream.Core.Combat;
@@ -418,7 +419,13 @@ public sealed class RetailUiRuntime : IDisposable
     private CharacterCreationUiMountCoordinator? _characterCreationMount;
     private PluginSidePanel? _pluginSidePanel;
     private PluginUiThemeSettings? _pluginThemes;
+    /// <summary>What plugin windows' markup controls remember per character; saved with the layout.</summary>
+    private MarkupControlStateStore? _controlState;
     private IDisposable? _pluginThemeFollow;
+    /// <summary>Plugins' Confirm boxes and modal windows.</summary>
+    private PluginDialogHost? _pluginDialogs;
+    /// <summary>A fresh retail confirmation layout for a plugin's Confirm box; null until the dialog catalog resolves.</summary>
+    private Func<ImportedLayout?>? _pluginDialogLayout;
     private PluginAppearanceWindow? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
     private PluginSvgIconCache? _pluginSvgIcons;
@@ -787,6 +794,7 @@ public sealed class RetailUiRuntime : IDisposable
         _characterCreationMount?.Tick();
         CharacterCreationController?.Tick();
         DialogFactory?.Tick();
+        _pluginDialogs?.Tick();
         // Windows a plugin registered after the UI came up (a server-fed panel
         // arrives once the character is in the world). Same path as the first
         // mount; each registration is drained once.
@@ -798,6 +806,9 @@ public sealed class RetailUiRuntime : IDisposable
         Host.Tick(deltaSeconds);
         TooltipPresenter?.Tick();
         _automation?.Tick(deltaSeconds);
+        // Save writes only when a control changed something, so this persists
+        // each choice on the frame after it is made.
+        _controlState?.Save();
     }
 
     private System.Numerics.Vector2 _lastScreenSize;
@@ -1223,6 +1234,7 @@ public sealed class RetailUiRuntime : IDisposable
     public void SaveLayout()
     {
         _persistence?.SaveAll();
+        _controlState?.Save();
         SaveChatWindowFilters();
     }
 
@@ -3873,6 +3885,8 @@ public sealed class RetailUiRuntime : IDisposable
         }
 
         DialogFactory = new RetailDialogFactory(Host.Root, CreateLayout);
+        // Plugins' Confirm boxes borrow the confirmation layout's art.
+        _pluginDialogLayout = () => CreateLayout(RetailDialogType.Confirmation);
         var confirmationStrings = new DatStringResolver(_bindings.Assets.Dats);
         string? ComposeConfirmation(uint type, string bareName)
         {
@@ -4157,7 +4171,16 @@ public sealed class RetailUiRuntime : IDisposable
             // Canvases paint their own pixels, so plugins are told the theme
             // the player saved and every one they pick after it.
             _pluginThemeFollow = _bindings.Plugins.FollowTheme(_pluginThemes);
+            _pluginDialogs = new PluginDialogHost(
+                Host.Root,
+                () => _pluginDialogLayout?.Invoke(),
+                _bindings.Assets.DefaultFont);
+            _bindings.Plugins.BindPluginDialogs(_pluginDialogs);
         }
+
+        _controlState ??= new MarkupControlStateStore(
+            _bindings.Persistence?.Store,
+            _bindings.Persistence?.CharacterKey ?? (() => "default"));
 
         IMarkupIconResolver iconResolver = new RetailMarkupIconResolver(
             _bindings.Assets.Dats,
@@ -4175,6 +4198,23 @@ public sealed class RetailUiRuntime : IDisposable
         _pluginSvgIcons ??= new PluginSvgIconCache(new RetailPluginFontBackend(textures));
         var dockIcons = new PluginDockIconSource(_pluginSvgIcons, _pluginDockImages, ResolvePluginFileIcon);
 
+        // Hotkey boxes show keys by the game's own names. The table reads go
+        // through the dat lock like every other plugin-thread dat read.
+        Layout.RetailKeyNames keyNames;
+        lock (_bindings.Assets.DatLock)
+        {
+            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
+            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
+        }
+        Func<KeyChord, string> describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
+        {
+            lock (_bindings.Assets.DatLock)
+                return keyNames.Describe(key);
+        });
+
+        // Colour pickers upload their gradients while open and give them back on close.
+        var markupTextures = new RetailMarkupTextureService(_bindings.Assets.TextureCache);
+
         foreach (var panel in _bindings.Plugins.Drain())
         {
             try
@@ -4189,7 +4229,11 @@ public sealed class RetailUiRuntime : IDisposable
                     _bindings.Assets.DefaultFont,
                     new PluginMarkupIconResolver(iconResolver, _pluginFileIcons, panel.Owner.Id, panel.PluginDirectory),
                     _pluginThemes,
-                    fallbackTitle: panel.Descriptor.Title);
+                    fallbackTitle: panel.Descriptor.Title,
+                    controlState: _controlState.ForWindow(panel.WindowName),
+                    describeKey: describeKey,
+                    textures: markupTextures,
+                    sharedControlState: _controlState.Shared);
                 UiNineSlicePanel element = window.Frame;
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
@@ -5311,6 +5355,7 @@ public sealed class RetailUiRuntime : IDisposable
             () => _automation?.Dispose(),
             () =>
             {
+                _controlState?.Save(ignoreBackoff: true);
                 // Flushes a pending canvas move through the same store, so first.
                 try { _canvasPositions?.Dispose(); }
                 finally { _persistence?.Dispose(); }
@@ -5338,6 +5383,9 @@ public sealed class RetailUiRuntime : IDisposable
                 if (SalvageController is { } salvage)
                     _bindings.Inventory.ItemInteraction.PolicyActionRequested -= salvage.HandlePolicyAction;
                 _bindings.Plugins?.UnbindClientWindowControl();
+                // Open plugin dialogs are answered with their last button.
+                _pluginDialogs?.Dispose();
+                _pluginDialogs = null;
                 _pluginThemeFollow?.Dispose();
                 _pluginThemeFollow = null;
                 Host.Root.PressStarting -= ReportPressToCanvases;

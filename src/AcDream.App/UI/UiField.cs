@@ -85,6 +85,13 @@ public sealed class UiField : UiElement
     public Action<string>? OnFocusLost { get; set; }
 
     /// <summary>
+    /// Runs when Escape ends the edit, before focus is released and
+    /// <see cref="OnFocusLost"/> fires, so an owner can treat Escape as
+    /// "cancel" rather than as an ordinary focus loss.
+    /// </summary>
+    public Action? OnEscape { get; set; }
+
+    /// <summary>
     /// True while an Enter submit that handed the text to <see cref="OnSubmit"/>,
     /// or cleared it, is under way, including the focus loss that ends it.
     /// </summary>
@@ -875,6 +882,7 @@ public sealed class UiField : UiElement
                 switch (key)
                 {
                     case Silk.NET.Input.Key.Escape:
+                        OnEscape?.Invoke();
                         FindRoot()?.SetKeyboardFocus(null);
                         return true;
 

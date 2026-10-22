@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace AcDream.App.UI;
 
-public sealed class UiMarkupList : UiElement
+public sealed partial class UiMarkupList : UiElement
 {
     public PluginUiPalette? ThemePalette { get; set; }
 
@@ -26,6 +26,10 @@ public sealed class UiMarkupList : UiElement
             _cachedCheckRows = new IReadOnlyList<bool>?[count];
             _cachedIconRows = new IReadOnlyList<uint>?[count];
             _cachedLayout = new (float x, float w)[count];
+            _markupWidths = new float[count];
+            for (int i = 0; i < count; i++)
+                _markupWidths[i] = i == count - 1 || value![i].IsAutoWidth ? 0f : value[i].Width;
+            _hostWidths = null;
             _scratchIsAuto = new bool[count];
             _scratchFixedWidth = new float[count];
             _cachedRowCount = 0;
@@ -57,7 +61,15 @@ public sealed class UiMarkupList : UiElement
     internal int TopRowForTest => _topRow;
     private IReadOnlyList<UiMarkupListColumn>? _columns;
 
+    // The selection and sort last scrolled into view: only a change to either
+    // (a pick or a header click) reveals the selection, never live data
+    // reordering the rows.
     private int _lastRevealedSelected = int.MinValue;
+    private (int Column, bool Descending) _lastRevealedSort = (int.MinValue, false);
+
+    // Which plugin row each view row shows. Positions (_topRow, hover and
+    // press rows) are view rows; data and callbacks use plugin rows.
+    private readonly UiMarkupListViewMap _view = new();
 
     private readonly UiScrollable _scroll = new();
 
@@ -83,8 +95,9 @@ public sealed class UiMarkupList : UiElement
 
     // What the list showed when the button went down: a release fires by row
     // index, so the press is dropped if the list scrolls, its row count
-    // changes, or the pressed button's caption changes before then.
-    private int _pressTopRow, _pressRowCount;
+    // changes, another plugin row moves under it, or the pressed button's
+    // caption changes before then.
+    private int _pressTopRow, _pressRowCount, _pressPluginRow;
     private string _pressCaption = string.Empty;
 
     // The pointer's last position in list space, so the hovered button can be
@@ -94,8 +107,8 @@ public sealed class UiMarkupList : UiElement
 
     public override bool HandlesClick => true;
 
-    /// <summary>Button cells show hover, so a list with any takes moves while hovered.</summary>
-    public override bool ReceivesHoverMouseMove => _hasButtons;
+    /// <summary>Button cells and header boundaries show hover, so such a list takes moves while hovered.</summary>
+    public override bool ReceivesHoverMouseMove => _hasButtons || _resizable;
 
     protected override void OnDraw(UiRenderContext context)
     {
@@ -113,18 +126,24 @@ public sealed class UiMarkupList : UiElement
             : 0f;
         int visibleRows = VisibleRows;
         int selected = SelectedIndexSource();
-        if (selected != _lastRevealedSelected)
+        int reveal = MultiSelect ? _leadRow : selected;
+        if (reveal != _lastRevealedSelected)
         {
-            _lastRevealedSelected = selected;
-            if (selected >= 0 && selected < items.Count)
+            _lastRevealedSelected = reveal;
+            if (reveal >= 0 && reveal < items.Count)
             {
-                if (selected < _topRow)
-                    _topRow = selected;
-                else if (selected >= _topRow + visibleRows)
-                    _topRow = selected - visibleRows + 1;
+                if (reveal < _topRow)
+                    _topRow = reveal;
+                else if (reveal >= _topRow + visibleRows)
+                    _topRow = reveal - visibleRows + 1;
             }
         }
         ClampTop(items.Count, visibleRows);
+        if (MultiSelect)
+        {
+            _view.SetIdentity(items.Count);
+            RefreshSelectedMask(items.Count);
+        }
 
         bool showScrollbar = items.Count > visibleRows;
         float contentWidth = showScrollbar ? MathF.Max(0f, Width - ScrollbarWidth) : Width;
@@ -134,7 +153,7 @@ public sealed class UiMarkupList : UiElement
         for (int index = _topRow; index < end; index++)
         {
             float y = (index - _topRow) * RowHeight;
-            if (index == selected && SelectionBandEnabled)
+            if (RowBanded(index, selected))
                 DrawSelectionBand(context, y, contentWidth);
 
             if (iconIds is not null && index < iconIds.Count && IconResolve is { } resolve)
@@ -174,10 +193,13 @@ public sealed class UiMarkupList : UiElement
 
         if (showScrollbar)
             DrawScrollbar(context, contentWidth, items.Count, visibleRows);
+        DrawSelectionFocus(context);
     }
 
     public override bool OnEvent(in UiEvent e)
     {
+        if ((MultiSelect || IsTree) && HandleSelectionEvent(e))
+            return true;
         if (Columns is { Count: > 0 } columns)
             return OnEventColumns(e, columns);
 
@@ -201,12 +223,16 @@ public sealed class UiMarkupList : UiElement
         int row = (int)MathF.Floor(e.Data2 / MathF.Max(1f, RowHeight));
         int index = _topRow + row;
         if (row >= 0 && row < visibleRows && index >= 0 && index < items.Count)
-            SelectionChanged?.Invoke(index);
+        {
+            if (MultiSelect)
+                _view.SetIdentity(items.Count);
+            PickRow(index);
+        }
         return true;
     }
 
     private int VisibleRows => Math.Max(1, (int)MathF.Floor(
-        Height / MathF.Max(1f, RowHeight)));
+        RowsHeight / MathF.Max(1f, RowHeight)));
 
     private void ClampTop(int count, int visibleRows) =>
         _topRow = Math.Clamp(_topRow, 0, Math.Max(0, count - visibleRows));
@@ -221,13 +247,14 @@ public sealed class UiMarkupList : UiElement
     private void ComputeColumnLayout(IReadOnlyList<UiMarkupListColumn> columns, float totalWidth)
     {
         int n = columns.Count;
+        IReadOnlyList<float> widths = WidthState;
         float x = 0f;
         float sumFixed = 0f;
         int autoCount = 0;
         for (int i = 0; i < n; i++)
         {
             bool last = i == n - 1;
-            bool auto = last || columns[i].IsAutoWidth;
+            bool auto = last || !(widths[i] > 0f);
             _scratchIsAuto[i] = auto;
             if (auto)
             {
@@ -235,7 +262,7 @@ public sealed class UiMarkupList : UiElement
                 continue;
             }
             float avail = MathF.Max(0f, totalWidth - x);
-            float w = MathF.Min(MathF.Max(0f, columns[i].Width), avail);
+            float w = MathF.Min(MathF.Max(0f, widths[i]), avail);
             _scratchFixedWidth[i] = w;
             x += w;
             sumFixed += w;
@@ -267,25 +294,32 @@ public sealed class UiMarkupList : UiElement
     private void DrawColumns(UiRenderContext context, IReadOnlyList<UiMarkupListColumn> columns)
     {
         int rowCount = RefreshRows(columns);
+        int viewCount = _view.ViewCount;
 
         int visibleRows = VisibleRows;
-        bool showScrollbar = rowCount > visibleRows;
+        bool showScrollbar = viewCount > visibleRows;
         float contentWidth = showScrollbar ? MathF.Max(0f, Width - ScrollbarWidth) : Width;
         ComputeColumnLayout(columns, contentWidth);
 
         int selected = SelectedIndexSource();
-        if (selected != _lastRevealedSelected)
+        int reveal = MultiSelect ? _leadRow : selected;
+        int selectedView = _view.ViewRow(reveal);
+        (int Column, bool Descending) sort = CurrentSort;
+        if (reveal != _lastRevealedSelected || sort != _lastRevealedSort)
         {
-            _lastRevealedSelected = selected;
-            if (selected >= 0 && selected < rowCount)
+            _lastRevealedSelected = reveal;
+            _lastRevealedSort = sort;
+            if (selectedView >= 0)
             {
-                if (selected < _topRow)
-                    _topRow = selected;
-                else if (selected >= _topRow + visibleRows)
-                    _topRow = selected - visibleRows + 1;
+                if (selectedView < _topRow)
+                    _topRow = selectedView;
+                else if (selectedView >= _topRow + visibleRows)
+                    _topRow = selectedView - visibleRows + 1;
             }
         }
-        ClampTop(rowCount, visibleRows);
+        ClampTop(viewCount, visibleRows);
+        if (MultiSelect)
+            RefreshSelectedMask(rowCount);
         if (_hasButtons)
         {
             CancelPressIfRowsMoved();
@@ -293,12 +327,15 @@ public sealed class UiMarkupList : UiElement
         }
 
         DrawContainer(context);
+        if (HeaderVisible)
+            DrawHeader(context, columns);
 
-        int end = Math.Min(rowCount, _topRow + visibleRows);
-        for (int index = _topRow; index < end; index++)
+        int end = Math.Min(viewCount, _topRow + visibleRows);
+        for (int view = _topRow; view < end; view++)
         {
-            float y = (index - _topRow) * RowHeight;
-            if (index == selected && SelectionBandEnabled)
+            int row = _view.PluginRow(view);
+            float y = RowsTop + (view - _topRow) * RowHeight;
+            if (RowBanded(row, selected))
                 DrawSelectionBand(context, y, contentWidth);
 
             for (int c = 0; c < columns.Count; c++)
@@ -313,16 +350,19 @@ public sealed class UiMarkupList : UiElement
                     switch (columns[c].Kind)
                     {
                         case UiMarkupListColumnKind.Text:
-                            DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], index, cellX, y);
+                            if (c == TreeColumn)
+                                DrawTreeCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
+                            else
+                                DrawTextCell(context, _cachedTextRows[c], _cachedColorRows[c], row, cellX, y);
                             break;
                         case UiMarkupListColumnKind.Check:
-                            DrawCheckCell(context, _cachedCheckRows[c], index, cellX, cellW, y);
+                            DrawCheckCell(context, _cachedCheckRows[c], row, cellX, cellW, y, columns[c].Boxed);
                             break;
                         case UiMarkupListColumnKind.Icon:
-                            DrawIconCell(context, columns[c], _cachedIconRows[c], index, cellX, cellW, y);
+                            DrawIconCell(context, columns[c], _cachedIconRows[c], row, cellX, cellW, y);
                             break;
                         case UiMarkupListColumnKind.Button:
-                            DrawButtonCell(context, c, index, cellX, cellW, y);
+                            DrawButtonCell(context, c, view, row, cellX, cellW, y);
                             break;
                     }
                 }
@@ -334,7 +374,8 @@ public sealed class UiMarkupList : UiElement
         }
 
         if (showScrollbar)
-            DrawScrollbar(context, contentWidth, rowCount, visibleRows);
+            DrawScrollbar(context, contentWidth, viewCount, visibleRows);
+        DrawSelectionFocus(context);
     }
 
     /// <summary>Reads every column's rows from its binding; returns the row count, the longest column.</summary>
@@ -366,8 +407,13 @@ public sealed class UiMarkupList : UiElement
             }
         }
         _cachedRowCount = rowCount;
+        RebuildView(columns, rowCount);
         return rowCount;
     }
+
+    /// <summary>Re-derives the row order after the rows were read.</summary>
+    private void RebuildView(IReadOnlyList<UiMarkupListColumn> columns, int rowCount) =>
+        SortView(columns, rowCount);
 
     private void DrawTextCell(
         UiRenderContext context, IReadOnlyList<string>? texts, IReadOnlyList<uint>? colors,
@@ -386,13 +432,16 @@ public sealed class UiMarkupList : UiElement
     }
 
     private void DrawCheckCell(
-        UiRenderContext context, IReadOnlyList<bool>? flags, int index, float cellX, float cellW, float y)
+        UiRenderContext context, IReadOnlyList<bool>? flags, int index, float cellX, float cellW, float y,
+        bool boxed)
     {
         bool isChecked = flags is not null && index < flags.Count && flags[index];
         float extent = MathF.Max(0f, cellW - 2f);
-        float lampX = cellX + 1f + MathF.Max(0f, extent - UiCheckLamp.LampSize) * 0.5f;
-        float lampY = y + MathF.Max(1f, (RowHeight - UiCheckLamp.LampSize) * 0.5f);
-        if (ThemePalette is { } p) p.DrawCheck(context, lampX, lampY, isChecked);
+        float size = boxed ? UiCheckBoxGlyph.Size : UiCheckLamp.LampSize;
+        float lampX = cellX + 1f + MathF.Max(0f, extent - size) * 0.5f;
+        float lampY = y + MathF.Max(1f, (RowHeight - size) * 0.5f);
+        if (boxed) UiCheckBoxGlyph.Draw(context, lampX, lampY, isChecked, ThemePalette);
+        else if (ThemePalette is { } p) p.DrawCheck(context, lampX, lampY, isChecked);
         else UiCheckLamp.Draw(context, lampX, lampY, isChecked);
     }
 
@@ -428,12 +477,12 @@ public sealed class UiMarkupList : UiElement
     /// otherwise a flat face that a disabled list fades to the alpha a disabled
     /// toggle's caption takes.
     /// </summary>
-    private void DrawButtonCell(UiRenderContext context, int column, int index, float cellX, float cellW, float y)
+    private void DrawButtonCell(UiRenderContext context, int column, int view, int row, float cellX, float cellW, float y)
     {
-        if (!HasButtonCaption(column, index, out string caption))
+        if (!HasButtonCaption(column, row, out string caption))
             return;
         (float x, float top, float w, float h) = ButtonRect(_columns![column], cellX, cellW, y);
-        UiControlState state = ButtonState(index, column);
+        UiControlState state = ButtonState(view, column);
         Vector4 textColor = TextColor;
         if (ThemePalette is { } p)
         {
@@ -529,14 +578,16 @@ public sealed class UiMarkupList : UiElement
     }
 
     internal UiControlState ButtonStateForTest(int index, int column) =>
-        HasButtonCaption(column, index, out _) ? ButtonState(index, column) : UiControlState.Normal;
+        HasButtonCaption(column, _view.PluginRow(index), out _) ? ButtonState(index, column) : UiControlState.Normal;
 
     /// <summary>The button cell at a point inside the list, or (-1, -1) where there is none.</summary>
     private (int index, int column) ButtonCellAt(float localX, float localY, float contentWidth, int visibleRows)
     {
         if (_columns is not { } columns || localX < 0f || localX >= contentWidth)
             return (-1, -1);
-        int row = (int)MathF.Floor(localY / MathF.Max(1f, RowHeight));
+        if (localY < RowsTop)
+            return (-1, -1);
+        int row = (int)MathF.Floor((localY - RowsTop) / MathF.Max(1f, RowHeight));
         int index = _topRow + row;
         if (row < 0 || row >= visibleRows)
             return (-1, -1);
@@ -545,9 +596,9 @@ public sealed class UiMarkupList : UiElement
             (float cellX, float cellW) = _cachedLayout[c];
             if (localX < cellX || localX >= cellX + cellW)
                 continue;
-            if (!HasButtonCaption(c, index, out _))
+            if (!HasButtonCaption(c, _view.PluginRow(index), out _))
                 return (-1, -1);
-            (float bx, float by, float bw, float bh) = ButtonRect(columns[c], cellX, cellW, row * RowHeight);
+            (float bx, float by, float bw, float bh) = ButtonRect(columns[c], cellX, cellW, RowsTop + row * RowHeight);
             bool onButton = localX >= bx && localX < bx + bw && localY >= by && localY < by + bh;
             return onButton ? (index, c) : (-1, -1);
         }
@@ -583,15 +634,17 @@ public sealed class UiMarkupList : UiElement
     {
         _pressTopRow = _topRow;
         _pressRowCount = _cachedRowCount;
-        HasButtonCaption(_pressColumn, _pressRow, out _pressCaption);
+        _pressPluginRow = _view.PluginRow(_pressRow);
+        HasButtonCaption(_pressColumn, _view.PluginRow(_pressRow), out _pressCaption);
     }
 
     /// <summary>
-    /// Drops the press when the row under it may no longer be the item that was
-    /// pressed: the list scrolled, its row count changed, or the pressed
-    /// button's caption changed or went empty. Other columns are left out on
-    /// purpose: a live column such as a distance changes every frame and would
-    /// make the buttons beside it unreliable.
+    /// Drops the press when the row under it may no longer be the item that
+    /// was pressed: the list scrolled, its row count changed, a sort moved
+    /// another plugin row under it, or the pressed button's caption changed or
+    /// went empty. Other columns and rows are left out on purpose: a live
+    /// column such as a distance changes every frame, and a sort by it swaps
+    /// rows elsewhere just as often, which would make the buttons unreliable.
     /// </summary>
     private void CancelPressIfRowsMoved()
     {
@@ -599,7 +652,8 @@ public sealed class UiMarkupList : UiElement
             return;
         bool moved = _topRow != _pressTopRow
             || _cachedRowCount != _pressRowCount
-            || !HasButtonCaption(_pressColumn, _pressRow, out string caption)
+            || _view.PluginRow(_pressRow) != _pressPluginRow
+            || !HasButtonCaption(_pressColumn, _view.PluginRow(_pressRow), out string caption)
             || !string.Equals(caption, _pressCaption, StringComparison.Ordinal);
         if (moved)
             _pressRow = _pressColumn = -1;
@@ -642,7 +696,7 @@ public sealed class UiMarkupList : UiElement
                 (_hoverRow, _hoverColumn) = ButtonCellAt(e.Data1, e.Data2, contentWidth, visibleRows);
                 if (index < 0 || !Enabled || (_hoverRow, _hoverColumn) != (index, column))
                     return false;
-                columns[column].ButtonClicked?.Invoke(index);
+                columns[column].ButtonClicked?.Invoke(_view.PluginRow(index));
                 return true;
             }
             default:
@@ -652,11 +706,13 @@ public sealed class UiMarkupList : UiElement
 
     private bool OnEventColumns(in UiEvent e, IReadOnlyList<UiMarkupListColumn> columns)
     {
-        int rowCount = _cachedRowCount;
+        int rowCount = _view.ViewCount; // rows shown
         int visibleRows = VisibleRows;
         float contentWidth = rowCount > visibleRows
             ? MathF.Max(0f, Width - ScrollbarWidth)
             : Width;
+        if (HandleHeaderEvent(e, contentWidth))
+            return true;
         if (_hasButtons && TrackButtonPointer(e, columns, contentWidth, visibleRows))
             return true;
         if (TryHandleScrollbarEvent(e, contentWidth, rowCount, visibleRows))
@@ -679,10 +735,13 @@ public sealed class UiMarkupList : UiElement
         if (e.Type != UiEventType.MouseDown || !Enabled)
             return false;
 
-        int row = (int)MathF.Floor(e.Data2 / MathF.Max(1f, RowHeight));
+        if (e.Data2 < RowsTop)
+            return true;
+        int row = (int)MathF.Floor((e.Data2 - RowsTop) / MathF.Max(1f, RowHeight));
         int index = _topRow + row;
         if (row < 0 || row >= visibleRows || index < 0 || index >= rowCount)
             return true;
+        int pluginRow = _view.PluginRow(index);
 
         float localX = e.Data1;
         for (int c = 0; c < columns.Count; c++)
@@ -693,23 +752,27 @@ public sealed class UiMarkupList : UiElement
             switch (columns[c].Kind)
             {
                 case UiMarkupListColumnKind.Text:
-                    if (columns[c].TextClicked is { } onTextClick)
+                    if (c == TreeColumn && OnTreeArrow(pluginRow, cellX, localX))
                     {
-                        if (index < (_cachedTextRows[c]?.Count ?? 0))
-                            onTextClick(index);
+                        ToggleExpanded(pluginRow);
+                    }
+                    else if (columns[c].TextClicked is { } onTextClick)
+                    {
+                        if (pluginRow < (_cachedTextRows[c]?.Count ?? 0))
+                            onTextClick(pluginRow);
                     }
                     else
                     {
-                        SelectionChanged?.Invoke(index);
+                        PickRow(pluginRow);
                     }
                     break;
                 case UiMarkupListColumnKind.Check:
-                    if (index < (_cachedCheckRows[c]?.Count ?? 0))
-                        columns[c].CheckChanged?.Invoke(index);
+                    if (pluginRow < (_cachedCheckRows[c]?.Count ?? 0))
+                        columns[c].CheckChanged?.Invoke(pluginRow);
                     break;
                 case UiMarkupListColumnKind.Icon:
-                    if (index < (_cachedIconRows[c]?.Count ?? 0))
-                        columns[c].IconClicked?.Invoke(index);
+                    if (pluginRow < (_cachedIconRows[c]?.Count ?? 0))
+                        columns[c].IconClicked?.Invoke(pluginRow);
                     break;
                 case UiMarkupListColumnKind.Button:
                     // Fires on release over the same button; see TrackButtonPointer.
@@ -757,24 +820,25 @@ public sealed class UiMarkupList : UiElement
     private void DrawScrollbar(UiRenderContext ctx, float x, int rowCount, int visibleRows)
     {
         ConfigureScroll(rowCount, visibleRows);
+        float barTop = RowsTop, barHeight = RowsHeight;
         if (ThemePalette is { } p)
         {
-            float button = Math.Min(ScrollButtonExtent, Height / 2);
-            var (top, size) = UiScrollbar.ThumbRect(_scroll, button, Math.Max(0, Height - 2 * button));
+            float button = Math.Min(ScrollButtonExtent, barHeight / 2);
+            var (top, size) = UiScrollbar.ThumbRect(_scroll, barTop + button, Math.Max(0, barHeight - 2 * button));
             PluginUiStyle.ScrollThumb(ctx, p, x, top, ScrollbarWidth, size, active: _draggingThumb);
             return;
         }
         if (SpriteResolve is not { } resolve) return;
 
-        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, Height);
-        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, Height - decExtent);
+        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight);
+        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight - decExtent);
 
-        DrawTiledSprite(ctx, resolve, RetailScrollbarChrome.Track, x, 0f, ScrollbarWidth, Height);
-        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.UpNormal, x, 0f, ScrollbarWidth, decExtent);
-        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.DownNormal, x, Height - incExtent, ScrollbarWidth, incExtent);
+        DrawTiledSprite(ctx, resolve, RetailScrollbarChrome.Track, x, barTop, ScrollbarWidth, barHeight);
+        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.UpNormal, x, barTop, ScrollbarWidth, decExtent);
+        DrawFlatSprite(ctx, resolve, RetailScrollbarChrome.DownNormal, x, barTop + barHeight - incExtent, ScrollbarWidth, incExtent);
 
-        float trackTop = decExtent;
-        float trackLen = MathF.Max(0f, Height - decExtent - incExtent);
+        float trackTop = barTop + decExtent;
+        float trackLen = MathF.Max(0f, barHeight - decExtent - incExtent);
         var (ty, th) = UiScrollbar.ThumbRect(_scroll, trackTop, trackLen);
         const float capH = 3f;
         if (th >= 2f * capH)
@@ -828,17 +892,19 @@ public sealed class UiMarkupList : UiElement
         if (rowCount <= visibleRows) return false;
         if (e.Type != UiEventType.MouseDown || !Enabled) return false;
         if (e.Data1 < contentWidth) return false;
+        float barTop = RowsTop, barHeight = RowsHeight;
+        if (e.Data2 < barTop) return false;
 
         ConfigureScroll(rowCount, visibleRows);
-        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, Height);
-        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, Height - decExtent);
+        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight);
+        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight - decExtent);
         float ly = e.Data2;
 
-        if (ly < decExtent) { StepRow(-1, rowCount, visibleRows); return true; }
-        if (ly >= Height - incExtent) { StepRow(1, rowCount, visibleRows); return true; }
+        if (ly < barTop + decExtent) { StepRow(-1, rowCount, visibleRows); return true; }
+        if (ly >= barTop + barHeight - incExtent) { StepRow(1, rowCount, visibleRows); return true; }
 
-        float trackTop = decExtent;
-        float trackLen = MathF.Max(0f, Height - decExtent - incExtent);
+        float trackTop = barTop + decExtent;
+        float trackLen = MathF.Max(0f, barHeight - decExtent - incExtent);
         var (ty, th) = UiScrollbar.ThumbRect(_scroll, trackTop, trackLen);
         if (ly >= ty && ly <= ty + th)
         {
@@ -855,10 +921,11 @@ public sealed class UiMarkupList : UiElement
     private void DragThumb(float ly, int rowCount, int visibleRows)
     {
         ConfigureScroll(rowCount, visibleRows);
-        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, Height);
-        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, Height - decExtent);
-        float trackTop = decExtent;
-        float trackLen = MathF.Max(0f, Height - decExtent - incExtent);
+        float barTop = RowsTop, barHeight = RowsHeight;
+        float decExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight);
+        float incExtent = Math.Clamp(ScrollButtonExtent, 0f, barHeight - decExtent);
+        float trackTop = barTop + decExtent;
+        float trackLen = MathF.Max(0f, barHeight - decExtent - incExtent);
         var (_, thumbH) = UiScrollbar.ThumbRect(_scroll, trackTop, trackLen);
         float travel = MathF.Max(1f, trackLen - thumbH);
         float ratio = (ly - _thumbDragOffset - trackTop) / travel;

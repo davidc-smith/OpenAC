@@ -21,4 +21,12 @@ public interface IMouseSource
     bool WantCaptureMouse { get; }
 
     bool WantCaptureKeyboard { get; }
+
+    /// <summary>
+    /// Whether the interface keeps <paramref name="key"/>'s press from the
+    /// game. Defaults to <see cref="WantCaptureKeyboard"/>; a source whose
+    /// focused element claims only some keys (a dialog's Enter and Escape)
+    /// answers per key while <see cref="WantCaptureKeyboard"/> stays false.
+    /// </summary>
+    bool ClaimsKey(Key key) => WantCaptureKeyboard;
 }

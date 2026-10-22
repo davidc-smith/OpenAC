@@ -100,6 +100,17 @@ public sealed class SilkRetainedMouseScrollTests
         Assert.Equal(new[] { (0, 1) }, steps);
     }
 
+    [Fact]
+    public void ZeroOnBothAxes_invokesNoCallback()
+    {
+        IMouse mouse = DispatchProxy.Create<IMouse, WheelMouseProxy>();
+        var surface = new SilkRetainedMouseSurface(mouse);
+        int calls = 0;
+        surface.AddScroll((_, _) => calls++);
+        ((WheelMouseProxy)mouse).Raise(mouse, new ScrollWheel(0f, 0f));
+        Assert.Equal(0, calls);
+    }
+
     public class WheelMouseProxy : DispatchProxy
     {
         private Action<IMouse, ScrollWheel>? _scroll;

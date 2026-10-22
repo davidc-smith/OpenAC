@@ -57,7 +57,10 @@ internal sealed class FakeKeyboard : Silk.NET.Input.IKeyboard
         }
     }
 
-    public bool IsKeyPressed(Silk.NET.Input.Key key) => false;
+    /// <summary>Keys reported as held; empty by default.</summary>
+    public HashSet<Silk.NET.Input.Key> Held { get; } = new();
+
+    public bool IsKeyPressed(Silk.NET.Input.Key key) => Held.Contains(key);
     public bool IsScancodePressed(int scancode) => false;
     public void BeginInput() { }
     public void EndInput() { }

@@ -33,6 +33,7 @@
     <Project Path="samples/AcDream.Plugins.WorldMarkersDemo/AcDream.Plugins.WorldMarkersDemo.csproj" />
     <Project Path="samples/AcDream.Plugins.FlexDemo/AcDream.Plugins.FlexDemo.csproj" />
     <Project Path="samples/AcDream.Plugins.ThemeGallery/AcDream.Plugins.ThemeGallery.csproj" />
+    <Project Path="samples/AcDream.Plugins.ControlsDemo/AcDream.Plugins.ControlsDemo.csproj" />
     <Project Path="samples/AcDream.RenderPacks.AtmosphericTier2/AcDream.RenderPacks.AtmosphericTier2.csproj" />
     <Project Path="samples/AcDream.RenderPacks.NoOp/AcDream.RenderPacks.NoOp.csproj" />
     <Project Path="samples/AcDream.RenderPacks.ShadowsOnlyTier2/AcDream.RenderPacks.ShadowsOnlyTier2.csproj" />

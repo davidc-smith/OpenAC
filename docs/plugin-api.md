@@ -1271,9 +1271,9 @@ While anything in the interface has keyboard focus (the chat bar, a text
 field, a control reached with Tab, a plugin canvas with keyboard focus), a
 hotkey fires only if Ctrl or Alt is part of the chord; otherwise every
 letter typed would also be a candidate hotkey press. Clicking a button does not give it keyboard focus. While a
-modal dialog is open, or a key rebind is being captured
-(`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
-chords included.
+modal dialog is open, a key rebind is being captured
+(`InputDispatcher.BeginCapture`), or a markup `<hotkey>` box is recording,
+no hotkey fires at all, Ctrl and Alt chords included.
 
 Plugin hotkeys are a raw keyboard subscription, not a route through
 InputDispatcher's action/scope engine (a dynamic per-plugin action space
@@ -1304,6 +1304,40 @@ design sketch put overrides in `keybinds.json` itself; this was changed
 so a corrupt or hand-edited plugin override file can never touch the
 client's own binding schema). There is no in-client rebind UI yet; a
 plugin (or a future Settings panel) calls `Rebind` directly.
+
+A markup `<hotkey>` box lets the player pick the chord. Bind its `value` to
+the registration's chord as text and rebind from its `onchange`:
+
+```csharp
+public string QuickHealKey => _quickHeal.EffectiveChord.ToHotkeyText();
+
+public Action<string> SetQuickHealKey => text =>
+{
+    if (text.Length == 0)
+        _quickHeal.Rebind(default); // the player cleared the box: unbind
+    else if (PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord))
+        _quickHeal.Rebind(chord);
+};
+```
+
+```xml
+<hotkey x="8" y="8" w="140" h="20" value="{QuickHealKey}" onchange="{SetQuickHealKey}"/>
+```
+
+`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order, the
+key by the box's name such as `Keypad5` or by its `PluginKey` name such as
+`Numpad5`) and `ToHotkeyText()` writes it back. `TryParseHotkeyText` returns false for
+an empty string (the player cleared the box) and for keys `PluginKey` has no
+member for, such as F13; the example keeps the current chord for the latter.
+Rebinding to the default chord (no key) unbinds the hotkey: the override is
+stored, `IsBound` is false, and the box reads back as `None`. A chord
+that collides with a client binding or another plugin's bound hotkey is still
+stored as the override, so `EffectiveChord` (and the box) shows it, but the
+registration is left unbound: `IsBound` is false and the old chord stops
+firing too. It binds later if the other plugin's hotkey is disposed or
+rebound; a client binding the player frees is only noticed when the
+hotkeys are next resolved (next session). Check `IsBound` after rebinding
+if the plugin should tell the player.
 
 ## Host window
 
@@ -1728,6 +1762,87 @@ plugin loaded early hears the saved theme arrive through `ThemeChanged`.
 
 Without a window, and on a host that predates themes, `Theme` answers
 `PluginUiThemeInfo.Classic` and `ThemeChanged` is never raised.
+
+## Dialogs
+
+```csharp
+bool shown = host.Ui.Confirm(
+    new PluginDialog(
+        "Delete profile",
+        $"Delete the profile \"{name}\"? This cannot be undone.",
+        Buttons: ["Delete", "Keep"],
+        OwnerView: "main"),
+    index =>
+    {
+        if (index == 0)
+            DeleteProfile(name);
+    });
+
+host.Ui.ShowModal("profile-editor", ownerView: "main");
+```
+
+Dialogs are **window-modal**: a dialog blocks only its owner window. The
+owner draws dimmed, and a click on it does nothing but flash the dialog and
+bring it to the front. Presses, scrolls and drops on the owner are refused and
+nothing inside it can take the keyboard focus. Every other window, chat,
+movement and the game's hotkeys work as usual, even while a dialog has the
+keyboard focus. There is no way for a plugin to block the whole screen.
+
+`Confirm` shows a message box and calls back with the index of the button
+the player picked.
+
+- `Buttons` lists one to four captions, left to right; null means OK and
+  Cancel. No buttons, more than four, or a blank caption throws
+  `ArgumentException`.
+- Enter picks the first button. Escape, the box's close button, the owner
+  window closing and your plugin unloading all answer with the **last**
+  button, so make the last one the safe choice.
+- `OwnerView` is the id or title of one of your own windows. The box is
+  centred on that window, follows it if it moves, and blocks it. Without one,
+  or with a window that doesn't exist or is hidden at the time, the box is
+  centred on the screen and blocks nothing.
+- The callback runs exactly once per dialog, on the thread that calls your
+  tick, after the box has gone. Call `Confirm` from that thread too.
+- Several dialogs for the same window wait their turn and show one at a
+  time. Dialogs for different windows show together. Dialogs without a window
+  share one queue.
+- The box takes the keyboard focus when it opens. While it has the focus,
+  Enter, keypad Enter and Escape are the box's: they answer it and do nothing
+  else (Enter does not open chat, Escape does not reach the game). Every
+  other key goes to the game as usual, so the player can keep moving, and
+  game and plugin hotkeys keep working. Holding the answering key down does
+  not answer the next dialog in the queue; it has to be pressed again.
+- When the box closes it gives the keyboard focus back to whatever had it
+  before, unless the player has moved the focus somewhere else in the
+  meantime.
+- It looks like the client's own confirmation box, unless the owner window
+  uses `theme="plugin"` and the player has picked a plugin theme. Then it is
+  drawn in the theme's colours, with a close button in its title bar. The
+  client's box has no title bar, so it shows the title as a gold first line.
+  The drawn box widens to fit its buttons and its title. The client's box
+  keeps its own width except for three or four buttons that would not fit in
+  it, when it widens to fit them. Either way the message wraps to the box's
+  width.
+
+`ShowModal` shows one of your windows, as `ShowPanel` does, and blocks
+`ownerView` until that window is hidden again, by `HidePanel` or its close
+button, or is removed. Showing a window that your own markup keeps hidden
+ends the block at once. The block also ends if the owner window is removed;
+an owner that is merely hidden stays blocked, and is still blocked when it
+is shown again. Without an owner, with an owner that doesn't exist, with the
+window itself as the owner, or with an owner that the window is already
+blocked by (directly, or through other modal windows), it is just
+`ShowPanel`. It returns `false`, and shows nothing, if you have no such
+window.
+
+On a host without a window, and before the interface is up, `Confirm` and
+`ShowModal` return `false` and the callback is never called. `Confirm` also
+returns `false`, without calling back, in the rare case that the box cannot
+be put on screen.
+
+The `samples/AcDream.Plugins.ControlsDemo` plugin's Dialogs window shows
+message boxes with two, three and four buttons, one without an owner, two
+queued for one window, and a modal editor opened with `ShowModal`.
 
 ## Canvases
 

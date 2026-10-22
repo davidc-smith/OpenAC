@@ -32,6 +32,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The ControlsDemo sample's bindings, so its markup is tested against the real classes. -->
+    <ProjectReference Include="..\..\samples\AcDream.Plugins.ControlsDemo\AcDream.Plugins.ControlsDemo.csproj" />
     <ProjectReference Include="..\..\src\AcDream.App\AcDream.App.csproj" />
     <ProjectReference Include="..\..\src\AcDream.Launcher.Core\AcDream.Launcher.Core.csproj" />
     <!-- The vendor panel test drives the client-command dispatcher, whose

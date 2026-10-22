@@ -147,6 +147,9 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
     public UiDatFont? ModernFont => _settings.ModernFont;
     public UiDatFont? ModernTitleFont => _settings.ModernTitleFont;
     public bool HasModernFont => _settings.HasModernFont;
+
+    /// <summary>The palette the panel draws with now, or null under Classic.</summary>
+    internal PluginUiPalette? Palette => _settings.Palette;
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
         _apply.Add(action);

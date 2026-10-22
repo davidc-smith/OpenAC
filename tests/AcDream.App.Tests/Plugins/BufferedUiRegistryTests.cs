@@ -152,6 +152,48 @@ public class BufferedUiRegistryTests
             new PluginUiOwner("another.plugin", "Other"), "Status View"));
     }
 
+    [Fact]
+    public void SetControlLabelReachesExpanders()
+    {
+        var registry = new BufferedUiRegistry();
+        var owner = new PluginUiOwner("edwards.tank", "Tank");
+        registry.RegisterPanelContent(
+            owner, new PluginPanelDescriptor("meta", "Status View"), "<panel />", new object());
+        BufferedUiRegistry.Pending pending = Assert.Single(registry.Drain());
+        var root = new UiRoot();
+        var panel = new UiPanel();
+        var expander = new UiMarkupExpander { Name = "adv" };
+        expander.Header.Text = "Old";
+        expander.Header.TextSource = () => "bound";
+        panel.AddChild(expander);
+        root.AddChild(panel);
+        registry.CompleteMount(pending, root, panel);
+
+        Assert.True(registry.SetControlLabel(owner, "Status View", "adv", "New"));
+        Assert.Equal("New", expander.Header.Text);
+        Assert.Null(expander.Header.TextSource);
+    }
+
+    [Fact]
+    public void SetControlLabelReachesCheckboxes()
+    {
+        var registry = new BufferedUiRegistry();
+        var owner = new PluginUiOwner("edwards.tank", "Tank");
+        registry.RegisterPanelContent(
+            owner, new PluginPanelDescriptor("meta", "Status View"), "<panel />", new object());
+        BufferedUiRegistry.Pending pending = Assert.Single(registry.Drain());
+        var root = new UiRoot();
+        var panel = new UiPanel();
+        var box = new UiMarkupCheckbox { Name = "Loot", Text = "Old", TextSource = () => "bound" };
+        panel.AddChild(box);
+        root.AddChild(panel);
+        registry.CompleteMount(pending, root, panel);
+
+        Assert.True(registry.SetControlLabel(owner, "Status View", "Loot", "New"));
+        Assert.Equal("New", box.Text);
+        Assert.Null(box.TextSource);
+    }
+
     /// <summary>
     /// A plugin reopens its own window after the player closed it with the
     /// close button. Before this the window stayed shut: the close cleared

@@ -179,10 +179,45 @@ public abstract class UiElement
     public bool TabStop         { get; set; }
 
     /// <summary>
+    /// True while this element, holding keyboard focus, takes every key press
+    /// (a hotkey box recording), so plugin hotkeys must not fire either.
+    /// </summary>
+    internal virtual bool CapturesAllKeys => false;
+
+    /// <summary>
+    /// True when this element, holding keyboard focus, takes the keyboard
+    /// from the game: held movement keys stop and game and plugin hotkeys go
+    /// quiet. Every element does but a plugin dialog, which claims only the
+    /// keys that answer it (see <see cref="ClaimsKey"/>).
+    /// </summary>
+    internal virtual bool HoldsKeyboard => true;
+
+    /// <summary>
+    /// True when this element, holding keyboard focus, keeps
+    /// <paramref name="key"/>'s press from the game. Every key while it
+    /// <see cref="HoldsKeyboard"/>; none otherwise unless it overrides this.
+    /// </summary>
+    internal virtual bool ClaimsKey(Silk.NET.Input.Key key) => HoldsKeyboard;
+
+    /// <summary>
     /// True if this is a text-entry (edit box); used by focus routing
     /// to suppress global hotkeys while typing.
     /// </summary>
     public bool IsEditControl   { get; set; }
+
+    /// <summary>
+    /// How many window-modal dialogs block this top-level window; while it is
+    /// above zero the window draws dimmed. Kept by <see cref="UiRoot.BlockWindow"/>.
+    /// </summary>
+    internal int ModalBlockCount { get; set; }
+
+    /// <summary>Seconds left of the blink a press on a blocked window sets off on its dialog.</summary>
+    internal float ModalFlashSeconds { get; set; }
+
+    internal const float ModalFlashDuration = 0.6f;
+    internal static readonly Vector4 ModalDimColor = new(0f, 0f, 0f, 0.45f);
+    /// <summary>The gold of the markup focus outline.</summary>
+    internal static readonly Vector4 ModalFlashColor = new(1f, 0.82f, 0.25f, 1f);
 
     private int _zOrder;
 
@@ -222,6 +257,9 @@ public abstract class UiElement
     /// <summary>Set to make this element an interactive mask over an image map.
     /// Null (the default) leaves every pointer message to the element itself.</summary>
     public UiPointerRegion? PointerRegion { get; set; }
+
+    /// <summary>The menu a right click on this element, or on a child that leaves it unhandled, opens.</summary>
+    internal IUiContextMenu? ContextMenu { get; set; }
 
     public virtual bool IsDragSource => PointerRegion?.DragPayloadAt is not null;
 
@@ -479,6 +517,10 @@ public abstract class UiElement
                 }
 
                 OnDrawAfterChildren(ctx);
+                if (ModalBlockCount > 0)
+                    ctx.DrawFill(0f, 0f, Width, Height, ModalDimColor);
+                if (ModalFlashSeconds > 0f && ((int)(ModalFlashSeconds * 10f) & 1) == 0)
+                    ctx.DrawRectOutline(0f, 0f, Width, Height, ModalFlashColor, 2f);
             }
         }
         finally
@@ -562,6 +604,8 @@ public abstract class UiElement
         if (VisibleSource is { } visibility)
             Visible = visibility();
         if (!Visible) return;
+        if (ModalFlashSeconds > 0f)
+            ModalFlashSeconds = MathF.Max(0f, ModalFlashSeconds - (float)dt);
         if (EnabledSource is { } enabled)
             Enabled = enabled();
         OnTick(dt);
