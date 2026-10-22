@@ -32,6 +32,9 @@ public sealed class PluginThemeControlTests
         public Action<string> SetKey => _ => { };
         public uint Colour => 0xFF336699;
         public Action<uint> SetColour => _ => { };
+        public IReadOnlyList<string> TreeNames => ["A", "A1", "B"];
+        public IReadOnlyList<int> TreeLevels => [0, 1, 0];
+        public IReadOnlyList<string> TreeKeys => ["a", "a1", "b"];
     }
 
     /// <summary>Builds one themed window around <paramref name="body"/>, switched to Moss.</summary>
@@ -320,6 +323,136 @@ public sealed class PluginThemeControlTests
         Assert.True(HasExactColor(DrawElement(hotkey), PluginUiStyle.FocusGlow(P)));
         root.SetKeyboardFocus(colour);
         Assert.True(HasExactColor(DrawElement(colour), PluginUiStyle.FocusGlow(P)));
+    }
+
+    [Fact]
+    public void AThemedListHeaderSitsInsideTheRoundedContainer()
+    {
+        var (_, panel) = Themed(
+            "<list x=\"0\" y=\"0\" w=\"200\" h=\"80\" header=\"true\" selected=\"{Index}\" onchange=\"{Choose}\">" +
+            "<column type=\"text\" header=\"Name\" items=\"{Items}\"/></list>");
+        var list = Assert.IsType<UiMarkupList>(panel.Children[0]);
+        var v = DrawElement(list);
+        Assert.False(VertexAt(v, 0f, 0f, P.Field));                           // no square band at the corner
+        var underline = v.Where(p => MathF.Abs(p.Position.Y - (UiMarkupList.HeaderHeight - 1f)) < 0.01f
+            && Vector4.Distance(p.Color, P.Border) < 0.01f).ToList();
+        Assert.NotEmpty(underline);
+        Assert.Equal(PluginUiStyle.RowInset, underline.Min(p => p.Position.X), 2);
+        Assert.Equal(200f - PluginUiStyle.RowInset, underline.Max(p => p.Position.X), 2);
+    }
+
+    [Fact]
+    public void AThemedTreeArrowIsASmoothChevron()
+    {
+        var (_, panel) = Themed(
+            "<list x=\"0\" y=\"0\" w=\"200\" h=\"80\" tree=\"true\" levels=\"{TreeLevels}\" keys=\"{TreeKeys}\" selected=\"{Index}\" onchange=\"{Choose}\">" +
+            "<column type=\"text\" items=\"{TreeNames}\"/></list>");
+        var list = Assert.IsType<UiMarkupList>(panel.Children[0]);
+        // Row 0 (the parent "A") spans y 0..18; its arrow slot is x 3..15.
+        var arrow = DrawElement(list)
+            .Where(p => p.Position.X < 16f && p.Position.Y < 18f && p.Color.W > 0.05f
+                && MathF.Abs(p.Color.X - P.Text.X) < 0.004f && MathF.Abs(p.Color.Y - P.Text.Y) < 0.004f
+                && MathF.Abs(p.Color.Z - P.Text.Z) < 0.004f)
+            .ToList();
+        Assert.NotEmpty(arrow);
+        Assert.Contains(arrow, p => MathF.Abs(p.Position.X - MathF.Round(p.Position.X)) > 0.01f);
+    }
+
+    [Fact]
+    public void AThemedExpanderArrowIsAMutedChevron()
+    {
+        var (_, panel) = Themed("<expander x=\"8\" y=\"8\" w=\"200\" h=\"100\" text=\"Advanced\"/>");
+        var expander = Assert.IsType<UiMarkupExpander>(panel.Children[0]);
+        float left = expander.Header.ScreenPosition.X;
+        var arrow = DrawElement(expander.Header)
+            .Where(p => p.Position.X < left + UiMarkupExpanderHeader.CaptionX && p.Color.W > 0.05f
+                && MathF.Abs(p.Color.X - P.Muted.X) < 0.004f && MathF.Abs(p.Color.Y - P.Muted.Y) < 0.004f
+                && MathF.Abs(p.Color.Z - P.Muted.Z) < 0.004f)
+            .ToList();
+        Assert.NotEmpty(arrow);
+        Assert.Contains(arrow, p => MathF.Abs(p.Position.X - MathF.Round(p.Position.X)) > 0.01f);
+    }
+
+    [Fact]
+    public void AThemedSplitBarIsASlimGripPill()
+    {
+        var (_, panel) = Themed(
+            "<split x=\"10\" y=\"10\" w=\"305\" h=\"200\"><group/><group/></split>");
+        var split = Assert.IsType<UiMarkupSplit>(panel.Children[0]);
+        var v = DrawElement(split.Bar);
+        Assert.False(ThemeDrawCapture.HasColor(v, P.Field));
+        var grip = v.Where(p => p.Color.W > 0.05f && MathF.Abs(p.Color.X - P.Border.X) < 0.004f
+            && MathF.Abs(p.Color.Y - P.Border.Y) < 0.004f && MathF.Abs(p.Color.Z - P.Border.Z) < 0.004f).ToList();
+        Assert.NotEmpty(grip);
+        float Along((Vector2 Position, Vector4 Color) p) => split.Horizontal ? p.Position.Y : p.Position.X;
+        Assert.True(grip.Max(Along) - grip.Min(Along) <= 24.01f);
+    }
+
+    private static List<(Vector2 Position, Vector4 Color)> DrawOverlays(UiRoot root)
+    {
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        root.DrawOverlays(ctx);
+        return ThemeDrawCapture.Vertices(renderer);
+    }
+
+    private static bool IsShadow((Vector2 Position, Vector4 Color) p) =>
+        p.Color.W > 0f && p.Color.X == 0f && p.Color.Y == 0f && p.Color.Z == 0f;
+
+    [Fact]
+    public void AThemedContextMenuIsShadowedAndHoversInTheHoverColour()
+    {
+        var (root, panel) = Themed(
+            "<button x=\"10\" y=\"10\" w=\"80\" h=\"20\" text=\"Go\" onclick=\"{Click}\">" +
+            "<contextmenu items=\"{Items}\" onselect=\"{Choose}\"/></button>");
+        var menu = panel.Children[0].Children.OfType<UiMarkupContextMenu>().Single();
+        root.OnMouseDown(UiMouseButton.Right, 20, 15);
+        root.OnMouseUp(UiMouseButton.Right, 20, 15);
+        Assert.True(menu.IsOpen);
+        var (x, y, w, h) = menu.PopupScreenRect;
+        Assert.Contains(DrawOverlays(root), p => IsShadow(p) && p.Position.Y > y + h);
+
+        root.OnKeyDown((int)Silk.NET.Input.Key.Down);
+        var keyed = DrawOverlays(root);
+        Assert.True(HasExactColor(keyed, PluginUiStyle.Hover(P, P.Field)));
+        Assert.False(ThemeDrawCapture.HasColor(keyed, P.Selected));
+    }
+
+    [Fact]
+    public void AThemedColourPopupIsShadowed()
+    {
+        var (root, panel) = Themed(
+            "<color x=\"10\" y=\"40\" w=\"40\" h=\"24\" value=\"{Colour}\" onchange=\"{SetColour}\" />");
+        var colour = Assert.IsType<UiMarkupColor>(panel.Children[0]);
+        root.OnMouseDown(UiMouseButton.Left, 20, 50);
+        root.OnMouseUp(UiMouseButton.Left, 20, 50);
+        Assert.True(colour.IsOpen);
+        var (x, y, w, h) = colour.Popup.PopupScreenRect;
+        Assert.Contains(DrawOverlays(root), p => IsShadow(p)
+            && (p.Position.Y > y + h || p.Position.X > x + w || p.Position.X < x || p.Position.Y < y));
+    }
+
+    [Fact]
+    public void AThemedDrawnDialogIsARoundedWindowWithItsTitleInTheTitleFont()
+    {
+        var atlas = BundledUiFont.Bake();
+        var body = atlas.CreateFont(41);
+        var title = atlas.CreateFont(42);
+        var dialog = new UiDrawnPluginDialog(
+            "Delete", "Delete it?", ["OK", "Cancel"], body, () => P, titleFont: title);
+        Assert.All(dialog.Buttons, b => Assert.Same(P, b.ThemePalette));
+        Assert.Same(P, dialog.CloseButton.ThemePalette);
+
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        dialog.DrawSelfAndChildren(ctx);
+        var segments = renderer.DebugSpriteSegmentVerts;
+        float MinY(IReadOnlyList<float> f) => Enumerable.Range(0, f.Count / 8).Min(i => f[i * 8 + 1]);
+        float MaxY(IReadOnlyList<float> f) => Enumerable.Range(0, f.Count / 8).Max(i => f[i * 8 + 1]);
+        var titled = segments.Where(s => s.Texture == 42u && s.Verts.Count > 0).ToList();
+        Assert.NotEmpty(titled);
+        Assert.All(titled, s => Assert.True(MaxY(s.Verts) <= UiDrawnPluginDialog.TitleHeight));
+        Assert.Contains(segments, s => s.Texture == 41u && s.Verts.Count > 0
+            && MinY(s.Verts) >= UiDrawnPluginDialog.TitleHeight);
+        Assert.False(VertexAt(ThemeDrawCapture.Vertices(renderer), 0f, 0f, P.Border));
     }
 
     [Fact]

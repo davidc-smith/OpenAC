@@ -111,6 +111,21 @@ public sealed partial class UiMarkupList
     /// <summary>▾ (expanded: four rows narrowing) or ▸ (collapsed: four columns narrowing) in the arrow slot.</summary>
     private void DrawTreeArrow(UiRenderContext context, float slotX, float rowY, bool expanded)
     {
+        if (ThemePalette is not null)
+        {
+            // The plugin theme: a smooth chevron, down when expanded, right when collapsed.
+            float cy = rowY + RowHeight * 0.5f;
+            if (expanded)
+            {
+                PluginUiStyle.Chevron(context, slotX + 2f, cy - 2f, 7f, 4f, TextColor);
+            }
+            else
+            {
+                context.DrawSmoothLine(slotX + 3.5f, cy - 3.5f, slotX + 7f, cy, TextColor, 1.5f);
+                context.DrawSmoothLine(slotX + 7f, cy, slotX + 3.5f, cy + 3.5f, TextColor, 1.5f);
+            }
+            return;
+        }
         float top = rowY + MathF.Floor((RowHeight - 7f) * 0.5f);
         for (int i = 0; i < 4; i++)
         {

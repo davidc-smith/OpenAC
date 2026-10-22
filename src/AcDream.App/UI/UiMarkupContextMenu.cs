@@ -274,13 +274,21 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         Vector4 border = p?.Border ?? ClassicBorder;
         Vector4 text = p?.Text ?? ClassicText;
         Vector4 disabled = p?.Muted ?? ClassicDisabledText;
-        Vector4 highlight = p?.Selected ?? ClassicHighlight;
+        Vector4 highlight = p is null ? ClassicHighlight : PluginUiStyle.Hover(p, p.Field);
         Vector4 separator = p?.Border ?? ClassicSeparator;
         ctx.PushAlphaAbsolute(1f);
         try
         {
-            ctx.DrawFill(_x, _y, _w, _h, background);
-            ctx.DrawRectOutline(_x, _y, _w, _h, border, 1f);
+            if (p is not null)
+            {
+                PluginUiStyle.PopupShadow(ctx, _x, _y, _w, _h);
+                PluginUiStyle.Surface(ctx, _x, _y, _w, _h, PluginUiStyle.ContainerRadius, background, border);
+            }
+            else
+            {
+                ctx.DrawFill(_x, _y, _w, _h, background);
+                ctx.DrawRectOutline(_x, _y, _w, _h, border, 1f);
+            }
             for (int i = 0; i < _items.Length; i++)
             {
                 float top = _y + _rowTops[i];
@@ -291,7 +299,12 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
                     continue;
                 }
                 if (i == _highlight)
-                    ctx.DrawFill(_x + 1f, top, _w - 2f, ItemHeight, highlight);
+                {
+                    if (p is not null)
+                        PluginUiStyle.Row(ctx, _x, top, _w, ItemHeight, highlight);
+                    else
+                        ctx.DrawFill(_x + 1f, top, _w - 2f, ItemHeight, highlight);
+                }
                 UiCaption.Draw(ctx, DatFont, _items[i], _x + TextIndent, top, ItemHeight,
                     _enabled[i] ? text : disabled, outline: p is null);
             }

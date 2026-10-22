@@ -123,10 +123,29 @@ public sealed class UiMarkupSplitBar : UiElement
     {
         if (Width <= 0f || Height <= 0f)
             return;
-        Vector4 fill = Fade(ThemePalette?.Field ?? ClassicFill);
-        Vector4 grip = Fade(Hot
-            ? ThemePalette?.Accent ?? ClassicHot
-            : ThemePalette?.Border ?? ClassicGrip);
+        if (ThemePalette is { } p)
+        {
+            // The plugin theme: no band, only a slim grip pill across the middle.
+            Vector4 pill = Fade(Hot ? p.Accent : p.Border);
+            const float GripLength = 24f, GripWidth = 3f;
+            if (_owner.Horizontal)
+            {
+                float length = MathF.Min(GripLength, Height);
+                ctx.FillRoundedRect(MathF.Floor((Width - GripWidth) * 0.5f), MathF.Floor((Height - length) * 0.5f),
+                    GripWidth, length, GripWidth * 0.5f, pill);
+            }
+            else
+            {
+                float length = MathF.Min(GripLength, Width);
+                ctx.FillRoundedRect(MathF.Floor((Width - length) * 0.5f), MathF.Floor((Height - GripWidth) * 0.5f),
+                    length, GripWidth, GripWidth * 0.5f, pill);
+            }
+            if (_focused)
+                PluginUiStyle.FocusRing(ctx, p, Width, Height, PluginUiStyle.SmallRadius);
+            return;
+        }
+        Vector4 fill = Fade(ClassicFill);
+        Vector4 grip = Fade(Hot ? ClassicHot : ClassicGrip);
         ctx.DrawFill(0f, 0f, Width, Height, fill);
         if (_owner.Horizontal)
             ctx.DrawFill(MathF.Floor((Width - 1f) * 0.5f), 0f, 1f, Height, grip);

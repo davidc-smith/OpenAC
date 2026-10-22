@@ -22,13 +22,22 @@ public sealed partial class UiMarkupList
 
     /// <summary>
     /// The header: Classic draws the list's own dark background under the
-    /// captions, the plugin theme its field colour; both draw a
-    /// border-coloured underline and a line between cells.
+    /// captions and a border-coloured underline; the plugin theme lets the
+    /// rounded container show through and draws only an underline inset like
+    /// the rows. Both draw a line between cells.
     /// </summary>
     private void DrawHeader(UiRenderContext context, IReadOnlyList<UiMarkupListColumn> columns)
     {
-        context.DrawFill(0f, 0f, Width, HeaderHeight, ThemePalette is { } palette ? palette.Field : BackgroundColor);
-        context.DrawFill(0f, HeaderHeight - 1f, Width, 1f, BorderColor);
+        if (ThemePalette is null)
+        {
+            context.DrawFill(0f, 0f, Width, HeaderHeight, BackgroundColor);
+            context.DrawFill(0f, HeaderHeight - 1f, Width, 1f, BorderColor);
+        }
+        else
+        {
+            context.DrawFill(PluginUiStyle.RowInset, HeaderHeight - 1f,
+                Width - 2f * PluginUiStyle.RowInset, 1f, BorderColor);
+        }
 
         (int sorted, bool descending) = CurrentSort;
         for (int c = 0; c < columns.Count; c++)

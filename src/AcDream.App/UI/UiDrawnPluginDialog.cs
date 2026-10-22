@@ -31,19 +31,22 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
 
     private readonly string _title;
     private readonly UiDatFont? _font;
+    private readonly UiDatFont? _titleFont;
     private readonly Func<PluginUiPalette?> _palette;
     private readonly float _lineHeight;
     private readonly UiSimpleButton[] _buttons;
 
     public UiDrawnPluginDialog(
         string title, string message, IReadOnlyList<string> buttons,
-        UiDatFont? font, Func<PluginUiPalette?> palette)
+        UiDatFont? font, Func<PluginUiPalette?> palette, UiDatFont? titleFont = null)
         : base(buttons.Count)
     {
         _title = title;
         _font = font;
+        _titleFont = titleFont ?? font;
         _palette = palette;
         Func<string, float> measure = font is { } dat ? dat.MeasureWidth : static text => text.Length * 7f;
+        Func<string, float> measureTitle = _titleFont is { } t ? t.MeasureWidth : measure;
         _lineHeight = font?.LineHeight ?? 14f;
 
         var widths = new float[buttons.Count];
@@ -54,7 +57,7 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
             row += widths[i];
         }
         Width = MathF.Max(BoxMinWidth, MathF.Max(row + 2f * Pad,
-            MathF.Ceiling(measure(title)) + 2f * Pad + CloseSize + 4f));
+            MathF.Ceiling(measureTitle(title)) + 2f * Pad + CloseSize + 4f));
         Lines = message.Length == 0 ? Array.Empty<string>() : UiText.WrapWords(message, measure, Width - 2f * Pad);
         float messageHeight = Lines.Count * _lineHeight;
         Height = TitleHeight + Pad + (messageHeight > 0f ? messageHeight + Pad : 0f) + ButtonHeight + Pad;
@@ -106,15 +109,29 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
         button.BorderColor = isDefault ? p?.Accent ?? ClassicDefaultBorder : p?.Border ?? ClassicBorder;
         button.TextColor = p?.Text ?? ClassicText;
         button.Outline = p is null;
+        button.ThemePalette = p;
     }
 
     protected override void OnDraw(UiRenderContext ctx)
     {
         PluginUiPalette? p = _palette();
         Vector4 text = p?.Text ?? ClassicText;
-        ctx.DrawFill(0f, 0f, Width, Height, p?.Background ?? ClassicBackground);
-        ctx.DrawFill(0f, 0f, Width, TitleHeight, p?.Field ?? ClassicTitleBar);
-        UiCaption.Draw(ctx, _font, _title, Pad, 0f, TitleHeight, text, outline: p is null);
+        if (p is not null)
+        {
+            // The plugin theme: a rounded, shadowed window with a soft header band.
+            PluginUiStyle.WindowShadow(ctx, Width, Height);
+            PluginUiStyle.Surface(ctx, 0f, 0f, Width, Height, PluginUiStyle.WindowRadius, p.Background, p.Border);
+            ctx.FillVerticalGradient(0f, 0f, Width, TitleHeight,
+                new CanvasCornerRadii(PluginUiStyle.WindowRadius, PluginUiStyle.WindowRadius, 0f, 0f),
+                PluginUiStyle.Mix(p.Background, p.Text, 0.06f), PluginUiStyle.Mix(p.Background, p.Text, 0.02f));
+            ctx.DrawFill(0f, TitleHeight, Width, 1f, p.Border);
+        }
+        else
+        {
+            ctx.DrawFill(0f, 0f, Width, Height, ClassicBackground);
+            ctx.DrawFill(0f, 0f, Width, TitleHeight, ClassicTitleBar);
+        }
+        UiCaption.Draw(ctx, _titleFont, _title, Pad, 0f, TitleHeight, text, outline: p is null);
         float y = TitleHeight + Pad;
         foreach (string line in Lines)
         {
@@ -123,6 +140,10 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
         }
     }
 
-    protected override void OnDrawAfterChildren(UiRenderContext ctx) =>
-        ctx.DrawRectOutline(0f, 0f, Width, Height, _palette()?.Border ?? ClassicBorder, 1f);
+    protected override void OnDrawAfterChildren(UiRenderContext ctx)
+    {
+        // Classic only: the themed window's edge is part of its rounded surface.
+        if (_palette() is null)
+            ctx.DrawRectOutline(0f, 0f, Width, Height, ClassicBorder, 1f);
+    }
 }

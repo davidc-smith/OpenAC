@@ -430,8 +430,16 @@ public sealed class UiMarkupColorPopup : UiElement
         ctx.PushAlphaAbsolute(1f);
         try
         {
-            ctx.DrawFill(_x, _y, _w, _h, p?.Field ?? UiMarkupContextMenu.ClassicBackground);
-            ctx.DrawRectOutline(_x, _y, _w, _h, border, 1f);
+            if (p is not null)
+            {
+                PluginUiStyle.PopupShadow(ctx, _x, _y, _w, _h);
+                PluginUiStyle.Surface(ctx, _x, _y, _w, _h, PluginUiStyle.ContainerRadius, p.Field, border);
+            }
+            else
+            {
+                ctx.DrawFill(_x, _y, _w, _h, UiMarkupContextMenu.ClassicBackground);
+                ctx.DrawRectOutline(_x, _y, _w, _h, border, 1f);
+            }
             DrawSquare(ctx, _x + Pad, _y + Pad);
             DrawHue(ctx, _x + HueX, _y + Pad);
             if (_owner.AllowAlpha)

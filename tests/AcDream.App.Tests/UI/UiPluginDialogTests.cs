@@ -117,7 +117,11 @@ public sealed class UiPluginDialogTests
 
         PluginUiPalette? palette = PluginUiPalette.Moss;
         var themed = Drawn(palette: () => palette);
-        Assert.Equal(1, MarkupDrawProbe.CountQuads(MarkupDrawProbe.Draw(themed), PluginUiPalette.Moss.Background));
+        // A rounded surface: the background colour, but no opaque square corner at (0, 0).
+        var vertices = ThemeDrawCapture.Vertices(MarkupDrawProbe.Draw(themed));
+        Assert.Contains(vertices, v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Background) < 0.01f);
+        Assert.DoesNotContain(vertices, v => v.Position == Vector2.Zero
+            && Vector4.Distance(v.Color, PluginUiPalette.Moss.Background) < 0.01f);
         Assert.Equal(PluginUiPalette.Moss.Accent, themed.Buttons[0].BorderColor);
 
         palette = PluginUiPalette.Brass;

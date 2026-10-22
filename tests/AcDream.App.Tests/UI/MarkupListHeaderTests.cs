@@ -158,13 +158,15 @@ public sealed class MarkupListHeaderTests : IDisposable
     }
 
     [Fact]
-    public void Header_PluginThemeUsesTheFieldAndBorderTokens()
+    public void Header_PluginThemeDrawsOnlyAnInsetBorderUnderline()
     {
         var themes = new PluginUiThemeSettings { Theme = PluginUiTheme.Moss };
         var (_, list) = Mount("", new Binding(), themes: themes);
         var renderer = MarkupDrawProbe.Draw(list);
-        Assert.Contains((0f, 0f, 300f, 18f), MarkupDrawProbe.QuadBounds(renderer, PluginUiPalette.Moss.Field));
-        Assert.Contains((0f, 17f, 300f, 1f), MarkupDrawProbe.QuadBounds(renderer, PluginUiPalette.Moss.Border));
+        // No square header band: the rounded container shows through.
+        Assert.DoesNotContain((0f, 0f, 300f, 18f), MarkupDrawProbe.QuadBounds(renderer, PluginUiPalette.Moss.Field));
+        Assert.Contains((PluginUiStyle.RowInset, 17f, 300f - 2f * PluginUiStyle.RowInset, 1f),
+            MarkupDrawProbe.QuadBounds(renderer, PluginUiPalette.Moss.Border));
         Assert.Empty(SpriteQuads(renderer, RetailScrollbarChrome.Track));
     }
 

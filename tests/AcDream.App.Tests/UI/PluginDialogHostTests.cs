@@ -218,7 +218,9 @@ public sealed class PluginDialogHostTests
         f.Confirm(themed, []);
 
         var view = Assert.IsType<UiDrawnPluginDialog>(f.Host.ShownFor(themed));
-        Assert.Equal(1, MarkupDrawProbe.CountQuads(MarkupDrawProbe.Draw(view), PluginUiPalette.Moss.Background));
+        Assert.True(ThemeDrawCapture.HasColor(
+            ThemeDrawCapture.Vertices(MarkupDrawProbe.Draw(view)), PluginUiPalette.Moss.Background));
+        Assert.Same(PluginUiPalette.Moss, view.Buttons[0].ThemePalette);
     }
 
     [Fact]

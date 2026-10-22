@@ -504,8 +504,9 @@ public sealed class MarkupSplitTests : IDisposable
         var split = panel.Children.OfType<UiMarkupSplit>().Single();
         Assert.Same(PluginUiPalette.Moss, split.Bar.ThemePalette);
         var renderer = MarkupDrawProbe.Draw(split.Bar);
-        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Field));
-        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Border));
+        // No field band; the grip is a rounded pill in the border colour.
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Field));
+        Assert.True(ThemeDrawCapture.HasColor(ThemeDrawCapture.Vertices(renderer), PluginUiPalette.Moss.Border));
         var toggle = Assert.IsType<UiMarkupToggle>(split.First!.Children[0]);
         Assert.Same(PluginUiPalette.Moss, toggle.ThemePalette);
     }

@@ -240,7 +240,8 @@ internal sealed class PluginDialogHost : IDisposable
         if (entry.Owner is UiPluginMarkupPanel panel && panel.Palette is not null)
         {
             return new UiDrawnPluginDialog(
-                entry.Title, entry.Message, entry.Buttons, panel.ModernFont ?? _font, () => panel.Palette);
+                entry.Title, entry.Message, entry.Buttons, panel.ModernFont ?? _font, () => panel.Palette,
+                titleFont: panel.ModernTitleFont ?? panel.ModernFont ?? _font);
         }
         try
         {

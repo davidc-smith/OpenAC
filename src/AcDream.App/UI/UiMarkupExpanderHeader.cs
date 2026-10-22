@@ -65,7 +65,42 @@ public sealed class UiMarkupExpanderHeader : UiElement
 
     protected override void OnDraw(UiRenderContext ctx)
     {
-        Vector4 arrow = Fade(ThemePalette?.Text ?? ClassicArrow);
+        if (ThemePalette is { } p)
+        {
+            // The plugin theme: a muted smooth chevron within the arrow's CaptionX points.
+            Vector4 muted = Fade(p.Muted);
+            float cy = Height * 0.5f;
+            if (_owner.LaidOutExpanded)
+            {
+                PluginUiStyle.Chevron(ctx, 3f, cy - 2f, 7f, 4f, muted);
+            }
+            else
+            {
+                ctx.DrawSmoothLine(4.5f, cy - 3.5f, 8f, cy, muted, 1.5f);
+                ctx.DrawSmoothLine(8f, cy, 4.5f, cy + 3.5f, muted, 1.5f);
+            }
+        }
+        else
+        {
+            DrawClassicArrow(ctx);
+        }
+
+        string caption = TextSource?.Invoke() ?? Text;
+        Vector4 text = Fade(TextColorSource?.Invoke() ?? TextColor);
+        UiCaption.Draw(ctx, DatFont, caption, CaptionX, 0f, Height, text, outline: ThemePalette is null);
+
+        if (_keyboardActivation.Focused)
+        {
+            if (ThemePalette is { } palette)
+                PluginUiStyle.FocusRing(ctx, palette, Width, Height, PluginUiStyle.SmallRadius);
+            else
+                ctx.DrawRectOutline(0f, 0f, Width, Height, FocusColor, 1f);
+        }
+    }
+
+    private void DrawClassicArrow(UiRenderContext ctx)
+    {
+        Vector4 arrow = Fade(ClassicArrow);
         float top = MathF.Floor((Height - 5f) * 0.5f);
         if (_owner.LaidOutExpanded)
         {
@@ -77,12 +112,5 @@ public sealed class UiMarkupExpanderHeader : UiElement
             for (int column = 0; column < 3; column++)
                 ctx.DrawFill(4f + column, top + column, 1f, 5f - column * 2, arrow);
         }
-
-        string caption = TextSource?.Invoke() ?? Text;
-        Vector4 text = Fade(TextColorSource?.Invoke() ?? TextColor);
-        UiCaption.Draw(ctx, DatFont, caption, CaptionX, 0f, Height, text, outline: ThemePalette is null);
-
-        if (_keyboardActivation.Focused)
-            ctx.DrawRectOutline(0f, 0f, Width, Height, FocusColor, 1f);
     }
 }
