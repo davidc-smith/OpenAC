@@ -924,6 +924,9 @@ public sealed class UiRoot : UiElement
     /// <see cref="UiEventType.ScrollHorizontal"/> event, which only a group
     /// scrolling horizontally consumes; nothing passes it to the world. A Shift
     /// step that nothing horizontal takes is routed as the vertical step it was.
+    /// The same goes for a sideways step with Shift held, which is what macOS
+    /// sends for Shift with a mouse wheel: a <c>scroll="x"</c> group under
+    /// the pointer takes it, and otherwise it is routed as a vertical step.
     ///
     /// <para>A step the interface takes may move content under the pointer, so
     /// the hover is checked again; and taken anywhere but over an open popup,
@@ -932,13 +935,20 @@ public sealed class UiRoot : UiElement
     public void OnScroll(int dx, int dy, bool shift)
     {
         bool overPopup = PopupHit(MouseX, MouseY) is not null;
-        bool taken = false;
-        if (shift && dy != 0 && dx == 0)
+        bool taken;
+        if (shift && dx == 0 && dy != 0)
         {
             taken = RouteHorizontal(dy) || RouteVertical(dy);
         }
+        else if (shift && dy == 0 && dx != 0)
+        {
+            // macOS sends Shift with a mouse wheel as a sideways tick: it
+            // scrolls sideways where something does, else it is the wheel.
+            taken = RouteHorizontal(dx) || RouteVertical(dx);
+        }
         else
         {
+            taken = false;
             if (dx != 0) taken |= RouteHorizontal(dx);
             if (dy != 0) taken |= RouteVertical(dy);
         }

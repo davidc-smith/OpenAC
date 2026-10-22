@@ -464,9 +464,7 @@ with spin buttons at its right edge.
   never steps an unfocused field, so scrolling a list past it is safe.
   Up, Down and the wheel step from the number being typed, if it's a valid
   number: typing 42 then pressing Up gives 42 plus `step`. Hold Shift for ten
-  steps. (macOS sends Shift with a mouse wheel as
-  sideways scrolling; the client reads a purely sideways tick while Shift is
-  held as the wheel, so it steps ten too.)
+  steps.
 - While nobody is typing in it, the field follows `value`.
 
 On a host older than number fields, a `<number>` fails the build of its
@@ -1065,7 +1063,11 @@ wheel pass to a group around it. Scrolling closes an open menu, unless the
 pointer is over the menu's popup. A sideways swipe, a tilt wheel, or Shift with the wheel
 scrolls horizontally. Only `scroll="x"` and `scroll="both"` groups take a
 horizontal step; a Shift step that no such group takes scrolls vertically as
-before. One wheel step moves 48 points (three 16-point
+before. macOS sends Shift with a mouse wheel as a sideways step, and the same
+rule applies: it scrolls a horizontal group under the pointer, else it is the
+wheel, so Shift+wheel still steps a focused `<number>` by ten. A focused
+number inside a horizontally scrolling group loses Shift+wheel to the group.
+One wheel step moves 48 points (three 16-point
 lines); the bar's arrows move 16 and a click in its track a page.
 
 **Focus** moves into view: when Tab (or a click) gives a control keyboard

@@ -1,4 +1,5 @@
 using AcDream.App.UI;
+using AcDream.App.UI.Layout.Flex;
 
 namespace AcDream.App.Tests.UI;
 
@@ -175,5 +176,68 @@ public sealed class UiRootWheelRoutingTests
 
         Assert.Equal([UiEventType.HoverEnter, UiEventType.HoverLeave], inner.Hover);
         Assert.Equal([UiEventType.HoverEnter], outer.Hover);
+    }
+
+    private static (UiRoot Root, UiNineSlicePanel Frame, IUiScrollHost Strip, List<int> World) StripWindow()
+    {
+        var frame = MarkupDocument.Build("""
+            <panel x="0" y="0" w="300" h="200">
+              <group name="strip" x="0" y="0" w="100" h="40" scroll="x">
+                <button x="0" y="0" w="90" h="24" text="Wide" />
+                <button x="300" y="0" w="30" h="24" text="Far" />
+              </group>
+            </panel>
+            """, new object(), _ => (0u, 0, 0));
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(frame);
+        root.Tick(0, 0);
+        ThemeDrawCapture.Draw(root);
+        var world = new List<int>();
+        root.WorldScrollFallThrough += world.Add;
+        var strip = (IUiScrollHost)frame.Children.First(c => c.Name == "strip");
+        return (root, frame, strip, world);
+    }
+
+    [Fact]
+    public void A_shift_sideways_tick_nothing_horizontal_takes_is_a_vertical_step()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var world = new List<int>();
+        root.WorldScrollFallThrough += world.Add;
+        root.OnMouseMove(400, 300);
+
+        root.OnScroll(1, 0, shift: true);
+        root.OnScroll(-1, 0, shift: false);
+
+        Assert.Equal(new[] { 1 }, world);
+    }
+
+    [Fact]
+    public void A_shift_sideways_tick_scrolls_a_horizontal_group_first()
+    {
+        var (root, _, strip, world) = StripWindow();
+        float before = strip.ScrollArea!.X.ScrollY;
+        root.OnMouseMove(20, 20);
+
+        root.OnScroll(-1, 0, shift: true);
+
+        Assert.NotEqual(before, strip.ScrollArea.X.ScrollY);
+        Assert.Empty(world);
+    }
+
+    [Fact]
+    public void A_shift_sideways_tick_over_a_window_a_dialog_blocks_goes_nowhere()
+    {
+        var (root, frame, strip, world) = StripWindow();
+        var dialog = new UiPanel { Left = 400f, Top = 300f, Width = 120f, Height = 60f, AcceptsFocus = true };
+        root.AddChild(dialog);
+        root.BlockWindow(frame, dialog);
+        float before = strip.ScrollArea!.X.ScrollY;
+        root.OnMouseMove(20, 20);
+
+        root.OnScroll(1, 0, shift: true);
+
+        Assert.Equal(before, strip.ScrollArea.X.ScrollY);
+        Assert.Empty(world);
     }
 }
