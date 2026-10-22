@@ -214,11 +214,12 @@ launcher zips, `manifest.json`, `launcher-fingerprint.json`), tags
 titled `<product> <version>` with `gh` (logged in as an account that
 can publish to the repository); it accepts only a `-gateway.n` or `-rynth.n` version. The
 launcher fingerprint ignores `<Version>` and `OpenACReleaseNumber`, so a release-number bump alone
-does not change it. `-DryRun` builds and checks, then prints those commands.
+does not change it. For now the script publishes from `main` only; OpenAC Gateway Rynth releases
+(from `rynth`) arrive with the per-product tags and launcher feeds in Plan 3. `-DryRun` builds and checks, then prints those commands.
 Windows and Linux launchers find no payload for their RID in a fork release and report
 "Updates could not be checked".
 
-Pushing the `v*-fork` tag also triggers the fork's `ci.yml` (its tag trigger). The release
+Pushing the `v*` release tag also triggers the fork's `ci.yml` (its tag trigger). The release
 job cannot publish there (its gates and branch guard), so those runs are noise: disable
 Actions on the fork or ignore them.
 
