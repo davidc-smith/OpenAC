@@ -102,6 +102,62 @@ public sealed class RuntimeRemoteFirstEntryStateTests
         Assert.Equal(Cell, body.CellPosition.ObjCellId);
     }
 
+    /// <summary>
+    /// A server object created where a player stands (a lifestone a recall
+    /// landed the player on) keeps the server's position. The player is moved
+    /// off it instead, by the accepted-position drive's arrival-overlap check.
+    /// </summary>
+    [Fact]
+    public void RemoteCreatedOnAPlayer_KeepsTheServerPosition()
+    {
+        using var fixture = new Fixture(
+            residentWorld: true, setupTableId: SetupId, objectDescriptionFlags: NotAPlayer);
+        RegisterOccupant(fixture, EntityCollisionFlags.IsPlayer);
+
+        Assert.Equal(RuntimeRemoteFirstEntryStatus.Completed, fixture.Advance(out _));
+
+        PhysicsBody body = Assert.IsType<PhysicsBody>(fixture.Record.PhysicsBody);
+        Assert.Equal(SpawnPosition, body.Position);
+    }
+
+    [Fact]
+    public void RemoteCreatedOnAnObject_IsStillPlacedBesideIt()
+    {
+        using var fixture = new Fixture(
+            residentWorld: true, setupTableId: SetupId, objectDescriptionFlags: NotAPlayer);
+        RegisterOccupant(fixture, EntityCollisionFlags.None);
+
+        Assert.Equal(RuntimeRemoteFirstEntryStatus.Completed, fixture.Advance(out _));
+
+        PhysicsBody body = Assert.IsType<PhysicsBody>(fixture.Record.PhysicsBody);
+        Assert.True(Vector3.Distance(SpawnPosition, body.Position) > 0.5f);
+    }
+
+    private static readonly Vector3 SpawnPosition = new(1f, 2f, 3f);
+
+    // A lifestone's description flags carry no player bit.
+    private const uint NotAPlayer = 0u;
+
+    private static void RegisterOccupant(Fixture fixture, EntityCollisionFlags flags) =>
+        fixture.Lifetime.Physics.Engine.ShadowObjects.RegisterMultiPart(
+            0x50000001u,
+            SpawnPosition,
+            Quaternion.Identity,
+            [
+                ShadowShape.Sphere(
+                    0x01000001u,
+                    Vector3.Zero,
+                    Quaternion.Identity,
+                    scale: 1f,
+                    radius: 1f),
+            ],
+            state: (uint)PhysicsStateFlags.Gravity,
+            flags: flags,
+            worldOffsetX: 0f,
+            worldOffsetY: 0f,
+            landblockId: Landblock,
+            seedCellId: Cell);
+
     [Fact]
     public void ProjectileFlavorFullSequenceCompletesWithMissileState()
     {
@@ -731,7 +787,8 @@ public sealed class RuntimeRemoteFirstEntryStateTests
         float? friction = 0.5f,
         float? elasticity = 0.05f,
         float? translucency = null,
-        PhysicsMovementData? movement = null)
+        PhysicsMovementData? movement = null,
+        uint objectDescriptionFlags = 0x8u)
     {
         CreateObject.ServerPosition? position = includePosition
             ? new CreateObject.ServerPosition(Cell, 1f, 2f, 3f, 1f, 0f, 0f, 0f)
@@ -781,7 +838,7 @@ public sealed class RuntimeRemoteFirstEntryStateTests
             MotionState: null,
             MotionTableId: 0x09000001u,
             PhysicsState: physics.RawState,
-            ObjectDescriptionFlags: 0x8u,
+            ObjectDescriptionFlags: objectDescriptionFlags,
             Friction: friction,
             Elasticity: elasticity,
             InstanceSequence: incarnation,
@@ -855,7 +912,8 @@ public sealed class RuntimeRemoteFirstEntryStateTests
             uint rawState = (uint)(PhysicsStateFlags.Gravity
                 | PhysicsStateFlags.ReportCollisions),
             bool isLocalPlayer = false,
-            PhysicsMovementData? movement = null)
+            PhysicsMovementData? movement = null,
+            uint objectDescriptionFlags = 0x8u)
         {
             if (residentWorld)
             {
@@ -888,7 +946,8 @@ public sealed class RuntimeRemoteFirstEntryStateTests
                     incarnation: 1,
                     setupTableId: setupTableId,
                     rawState: rawState,
-                    movement: movement),
+                    movement: movement,
+                    objectDescriptionFlags: objectDescriptionFlags),
                 isLocalPlayer).Canonical!;
             Assert.True(Lifetime.TryGetInitialCreateResidence(
                 Record, out RuntimeInitialCreateResidenceLease lease));

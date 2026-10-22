@@ -922,6 +922,11 @@ AppearanceSynchronization:
             return materialized;
         }
 
+        // An object can arrive on the spot the local player was already put
+        // down on (a recall onto a lifestone the client had not loaded yet).
+        if (expectedCanonical.Key is { } arrivedKey)
+            _acceptedPositionDrive?.RequestArrivalOverlapCheck(arrivedKey.LocalEntityId);
+
         if (!_runtime.TryGetProjection(
                 expectedCanonical,
                 out expectedRecord))

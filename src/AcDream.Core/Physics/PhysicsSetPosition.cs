@@ -88,7 +88,11 @@ internal readonly record struct PhysicsSetPositionRequest(
     float ScatterRadiusX = 0f,
     float ScatterRadiusY = 0f,
     uint ScatterAttempts = 0u,
-    uint? CurrentCellId = null);
+    uint? CurrentCellId = null,
+    // Players are not obstacles to this placement. A server object arriving
+    // where a player stands keeps the server's position; the player is the one
+    // moved off it.
+    bool PassThroughPlayers = false);
 
 internal readonly record struct PhysicsSetPositionResult(
     PhysicsSetPositionError Error,

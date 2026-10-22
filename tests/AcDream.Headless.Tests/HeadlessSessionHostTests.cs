@@ -3772,6 +3772,7 @@ public sealed class HeadlessSessionHostTests
                 0f,
                 0u,
                 cell,
+                false,
             ],
             culture: null)!;
         Type runtimeMarker = typeof(RuntimePhysicsState);

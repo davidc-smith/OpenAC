@@ -404,6 +404,41 @@ public static class PhysicsDiagnostics
             $"[local-tp] cause={cause} host={LocalTeleportHostKind} status={placementStatus} gen={portalGeneration} seq={teleportSequence} dest=0x{destinationCell:X8} resolved=0x{resolvedCell:X8} hookTail={hookTailText} leash={leashText} autorun={autorunText}"));
     }
 
+    /// <summary>
+    /// The local player was found standing inside an object that arrived after
+    /// it was placed. A move off the object always prints; the other outcomes
+    /// print under <see cref="ProbeLocalTeleportEnabled"/>.
+    /// </summary>
+    public static void LogLocalArrivalOverlap(
+        string status,
+        string playerState,
+        uint fromCell,
+        Vector3 from,
+        uint toCell,
+        Vector3 to,
+        bool positionSent)
+    {
+        if (status != "Moved" && !ProbeLocalTeleportEnabled) return;
+        Console.WriteLine(System.FormattableString.Invariant(
+            $"[local-overlap] status={status} host={LocalTeleportHostKind} state={playerState} from=0x{fromCell:X8}({from.X:F3},{from.Y:F3},{from.Z:F3}) to=0x{toCell:X8}({to.X:F3},{to.Y:F3},{to.Z:F3}) moved={Vector3.Distance(from, to):F3} sent={positionSent}"));
+    }
+
+    /// <summary>One object standing within reach of a player the overlap
+    /// check just moved, printed with the <c>Moved</c> line.</summary>
+    public static void LogLocalArrivalOverlapObject(
+        uint entityId,
+        uint serverGuid,
+        bool self,
+        string collisionType,
+        float radius,
+        uint state,
+        string flags,
+        float distance)
+    {
+        Console.WriteLine(System.FormattableString.Invariant(
+            $"[local-overlap]   near id=0x{entityId:X8} guid=0x{serverGuid:X8} self={self} type={collisionType} r={radius:F3} state=0x{state:X} flags={flags} dist={distance:F3}"));
+    }
+
     public static bool ProbeStepWalkEnabled { get; set; } =
         Environment.GetEnvironmentVariable("ACDREAM_PROBE_STEP_WALK") == "1";
 
