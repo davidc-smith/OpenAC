@@ -61,16 +61,24 @@ public sealed class RuntimeSpellCastState
         EvaluateCastGate(spellId)
             is SpellCastGate.NoTargetNeeded or SpellCastGate.TargetCompatible;
 
-    public SpellCastGate EvaluateCastGate(uint spellId)
+    public SpellCastGate EvaluateCastGate(uint spellId) =>
+        EvaluateCastGate(spellId, _selection.SelectedObjectId ?? 0u);
+
+    /// <summary>
+    /// Whether casting at <paramref name="targetId"/> would be accepted,
+    /// without reading the selection; 0 is no target. A self or untargeted
+    /// spell needs no target, as in <see cref="EvaluateCastGate(uint)"/>.
+    /// </summary>
+    public SpellCastGate EvaluateCastGate(uint spellId, uint targetId)
     {
         if (!_spellbook.Knows(spellId)
             || !_spellbook.TryGetMetadata(spellId, out SpellMetadata spell))
             return SpellCastGate.Unknown;
         if (spell.IsSelfTargeted || spell.IsUntargeted || spell.TargetMask == 0u)
             return SpellCastGate.NoTargetNeeded;
-        if (_selection.SelectedObjectId is not (uint target and not 0u))
+        if (targetId == 0u)
             return SpellCastGate.NoTargetSelected;
-        return _operations.IsTargetCompatible(target, spell, showMessage: false)
+        return _operations.IsTargetCompatible(targetId, spell, showMessage: false)
             ? SpellCastGate.TargetCompatible
             : SpellCastGate.TargetIncompatible;
     }
