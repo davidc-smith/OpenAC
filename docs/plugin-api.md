@@ -1339,6 +1339,9 @@ rebound; a client binding the player frees is only noticed when the
 hotkeys are next resolved (next session). Check `IsBound` after rebinding
 if the plugin should tell the player.
 
+`TryParseHotkeyText` and `ToHotkeyText` need contract `0.1.26-fork.5`; build against
+it to call them, as an older host lacks them.
+
 ## Host window
 
 ```csharp
@@ -1786,7 +1789,8 @@ owner draws dimmed, and a click on it does nothing but flash the dialog and
 bring it to the front. Presses, scrolls and drops on the owner are refused and
 nothing inside it can take the keyboard focus. Every other window, chat,
 movement and the game's hotkeys work as usual, even while a dialog has the
-keyboard focus. There is no way for a plugin to block the whole screen.
+keyboard focus. There is no way for a plugin to block the whole screen. `Confirm` and `ShowModal` need contract
+`0.1.26-fork.5`; build against it to call them, as an older host lacks them.
 
 `Confirm` shows a message box and calls back with the index of the button
 the player picked.
