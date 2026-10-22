@@ -36,14 +36,14 @@ if ($supportedRids -notcontains $Rid) {
 }
 
 $releaseVersionOutput = & dotnet msbuild (Join-Path $RepoRoot 'src/AcDream.App/AcDream.App.csproj') '-getProperty:OpenACReleaseVersion'
-$repositoryVersion = ([string]($releaseVersionOutput -join "`n")).Trim()
-if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($repositoryVersion)) {
+$releaseVersion = ([string]($releaseVersionOutput -join "`n")).Trim()
+if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($releaseVersion)) {
     throw 'Could not read OpenACReleaseVersion from the build.'
 }
 # Build metadata sorts equal to the release (SemVer 2.0 precedence ignores
 # anything after '+'), so the launcher neither offers a downgrade nor treats
 # a plugin's minHostVersion as unmet against this trial install.
-$TrialVersion = "$repositoryVersion+trial"
+$TrialVersion = "$releaseVersion+trial"
 
 $ScratchRoot = if ([IO.Path]::IsPathRooted($Root)) {
     [IO.Path]::GetFullPath($Root)
@@ -67,7 +67,7 @@ foreach ($directory in @($ConfigDir, $DataDir, $CacheDir)) {
 
 Write-Host 'acdream launcher trial' -ForegroundColor Cyan
 Write-Host "  rid     : $Rid"
-Write-Host "  version : $repositoryVersion (installed as $TrialVersion)"
+Write-Host "  version : $releaseVersion (installed as $TrialVersion)"
 Write-Host "  root    : $ScratchRoot"
 Write-Host ''
 
@@ -79,7 +79,6 @@ function Invoke-TrialPublish {
         '-c', 'Release',
         '-r', $Rid,
         '--self-contained', 'true',
-        "-p:Version=$repositoryVersion",
         # No SourceLink '+<sha>' suffix: LauncherVersion parses this as SemVer.
         '-p:IncludeSourceRevisionInInformationalVersion=false',
         '-o', $OutputDirectory,
