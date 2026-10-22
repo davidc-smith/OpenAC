@@ -24,6 +24,20 @@ internal static class MarkupHotkeyText
     }
 
     /// <summary>
+    /// What a hotkey box shows: the modifiers as Ctrl, Alt and Shift (the
+    /// string never says which side), then the key by the given name, which
+    /// is asked for the key alone.
+    /// </summary>
+    public static string Describe(KeyChord chord, Func<KeyChord, string> keyName)
+    {
+        var text = new StringBuilder();
+        if ((chord.Modifiers & ModifierMask.Ctrl) != 0) text.Append("Ctrl+");
+        if ((chord.Modifiers & ModifierMask.Alt) != 0) text.Append("Alt+");
+        if ((chord.Modifiers & ModifierMask.Shift) != 0) text.Append("Shift+");
+        return text.Append(keyName(chord with { Modifiers = ModifierMask.None })).ToString();
+    }
+
+    /// <summary>
     /// Reads a hotkey string: modifiers in any order and any case, then the
     /// key. Null for empty or unreadable text, which shows as unbound.
     /// </summary>

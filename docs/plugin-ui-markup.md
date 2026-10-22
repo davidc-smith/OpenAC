@@ -334,7 +334,9 @@ plugin decides what the chord does; the box only edits the string.
   returns false for an empty (unbound) string and for keys a plugin hotkey
   can't use, such as F13 or Caps Lock, which the box can still record. See
   [Hotkeys](plugin-api.md#hotkeys).
-- The box shows the chord by the game's key names. An empty value, or one it
+- The box shows the modifiers as Ctrl, Alt and Shift (never left or right,
+since the string doesn't record a side) and the key by the game's own key
+names. An empty value, or one it
   can't read, shows `None`.
 - Clicking the box, or Enter or Space while it has focus, starts recording:
   the box shows `Press a key...` and takes every key press for itself, so

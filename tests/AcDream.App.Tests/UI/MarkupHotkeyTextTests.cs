@@ -16,6 +16,24 @@ public class MarkupHotkeyTextTests
     }
 
     [Fact]
+    public void Describe_names_modifiers_plainly_and_only_the_key_by_the_game()
+    {
+        var asked = new List<KeyChord>();
+        string text = MarkupHotkeyText.Describe(
+            new KeyChord(Key.F, ModifierMask.Shift | ModifierMask.Ctrl | ModifierMask.Alt),
+            chord => { asked.Add(chord); return "F-KEY"; });
+
+        Assert.Equal("Ctrl+Alt+Shift+F-KEY", text);
+        Assert.Equal([new KeyChord(Key.F, ModifierMask.None)], asked);
+    }
+
+    [Fact]
+    public void Describe_without_modifiers_is_the_game_name()
+    {
+        Assert.Equal("NUMPAD 5", MarkupHotkeyText.Describe(new KeyChord(Key.Keypad5, ModifierMask.None), _ => "NUMPAD 5"));
+    }
+
+    [Fact]
     public void Format_WritesModifiersInCanonicalOrder()
     {
         var mods = ModifierMask.Shift | ModifierMask.Ctrl | ModifierMask.Alt | ModifierMask.Win;

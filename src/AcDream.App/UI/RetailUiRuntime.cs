@@ -4114,11 +4114,11 @@ public sealed class RetailUiRuntime : IDisposable
             var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
             keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
         }
-        Func<KeyChord, string> describeKey = chord =>
+        Func<KeyChord, string> describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
         {
             lock (_bindings.Assets.DatLock)
-                return keyNames.Describe(chord);
-        };
+                return keyNames.Describe(key);
+        });
 
         // Colour pickers upload their gradients while open and give them back on close.
         var markupTextures = new RetailMarkupTextureService(_bindings.Assets.TextureCache);
