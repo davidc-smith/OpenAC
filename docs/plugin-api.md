@@ -1503,8 +1503,8 @@ Dialogs are **window-modal**: a dialog blocks only its owner window. The
 owner draws dimmed, and a click on it does nothing but flash the dialog and
 bring it to the front. Presses, scrolls and drops on the owner are refused and
 nothing inside it can take the keyboard focus. Every other window, chat,
-movement and the game's hotkeys work as usual. There is no way for a plugin to
-block the whole screen.
+movement and the game's hotkeys work as usual, even while a dialog has the
+keyboard focus. There is no way for a plugin to block the whole screen.
 
 `Confirm` shows a message box and calls back with the index of the button
 the player picked.
@@ -1524,24 +1524,39 @@ the player picked.
 - Several dialogs for the same window wait their turn and show one at a
   time. Dialogs for different windows show together. Dialogs without a window
   share one queue.
-- The box takes the keyboard focus, so Enter and Escape reach it, and gives
-  it back when it closes. Any other key goes to the game as usual.
+- The box takes the keyboard focus when it opens. While it has the focus,
+  Enter, keypad Enter and Escape are the box's: they answer it and do nothing
+  else (Enter does not open chat, Escape does not reach the game). Every
+  other key goes to the game as usual, so the player can keep moving, and
+  game and plugin hotkeys keep working. Holding the answering key down does
+  not answer the next dialog in the queue; it has to be pressed again.
+- When the box closes it gives the keyboard focus back to whatever had it
+  before, unless the player has moved the focus somewhere else in the
+  meantime.
 - It looks like the client's own confirmation box, unless the owner window
   uses `theme="plugin"` and the player has picked a plugin theme. Then it is
   drawn in the theme's colours, with a close button in its title bar. The
   client's box has no title bar, so it shows the title as a gold first line.
-  Either box widens to fit its buttons, and the message wraps to the new
+  The drawn box widens to fit its buttons and its title. The client's box
+  keeps its own width except for three or four buttons that would not fit in
+  it, when it widens to fit them. Either way the message wraps to the box's
   width.
 
 `ShowModal` shows one of your windows, as `ShowPanel` does, and blocks
 `ownerView` until that window is hidden again, by `HidePanel` or its close
-button. Showing a window that your own markup keeps hidden ends the block at
-once. Without an owner, with an owner that doesn't exist, or with the window
-itself as the owner, it is just `ShowPanel`. It returns `false`, and shows
-nothing, if you have no such window.
+button, or is removed. Showing a window that your own markup keeps hidden
+ends the block at once. The block also ends if the owner window is removed;
+an owner that is merely hidden stays blocked, and is still blocked when it
+is shown again. Without an owner, with an owner that doesn't exist, with the
+window itself as the owner, or with an owner that the window is already
+blocked by (directly, or through other modal windows), it is just
+`ShowPanel`. It returns `false`, and shows nothing, if you have no such
+window.
 
-On a host without a window, `Confirm` and `ShowModal` return `false` and
-the callback is never called.
+On a host without a window, and before the interface is up, `Confirm` and
+`ShowModal` return `false` and the callback is never called. `Confirm` also
+returns `false`, without calling back, in the rare case that the box cannot
+be put on screen.
 
 ## Canvases
 

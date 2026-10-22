@@ -160,9 +160,12 @@ public interface IUiRegistry
     /// and reports which one they picked. The dialog is window-modal: it
     /// blocks only <see cref="PluginDialog.OwnerView"/>, which draws dimmed
     /// and ignores presses until the dialog is answered, while every other
-    /// window, chat and the game work as usual. Several dialogs for the same
-    /// owner queue and show one at a time. Call it from the thread that calls
-    /// the plugin's tick.
+    /// window, chat and the game work as usual. The dialog takes the keyboard
+    /// focus when it opens; while it has it, Enter, keypad Enter and Escape
+    /// answer it and every other key still goes to the game. Focus goes back
+    /// where it was when the dialog closes, unless the player moved it in the
+    /// meantime. Several dialogs for the same owner queue and show one at a
+    /// time. Call it from the thread that calls the plugin's tick.
     /// </summary>
     /// <param name="dialog">The dialog's title, message, buttons and owner window.</param>
     /// <param name="onResult">
@@ -172,8 +175,9 @@ public interface IUiRegistry
     /// report the last one.
     /// </param>
     /// <returns>
-    /// True when the dialog was queued. False on a host that draws nothing --
-    /// which is what the default implementation does -- and then
+    /// True when the dialog was queued. False on a host that draws nothing
+    /// (which is what the default implementation does), before the interface
+    /// is up, and when the dialog could not be put on screen; then
     /// <paramref name="onResult"/> is never called.
     /// </returns>
     /// <exception cref="ArgumentException">
@@ -186,13 +190,15 @@ public interface IUiRegistry
     /// Shows one of this plugin's own windows, as <see cref="ShowPanel"/>
     /// does, and makes it modal over another of its windows: the owner draws
     /// dimmed and ignores presses until the shown window is hidden, by
-    /// <see cref="HidePanel"/> or its close button, or removed. Only the
+    /// <see cref="HidePanel"/> or its close button, or removed, or the owner
+    /// is removed. An owner that is only hidden stays blocked. Only the
     /// owner is blocked; every other window and the game work as usual.
     /// </summary>
     /// <param name="viewName">The id or title of the window to show.</param>
     /// <param name="ownerView">
-    /// The id or title of the window it blocks. Null, an unknown window, or
-    /// the shown window itself blocks nothing.
+    /// The id or title of the window it blocks. Null, an unknown window, the
+    /// shown window itself, or a window the shown window is already blocked
+    /// by (directly or through other modal windows) blocks nothing.
     /// </param>
     /// <returns>
     /// False when this plugin has no such window to show, before the window
