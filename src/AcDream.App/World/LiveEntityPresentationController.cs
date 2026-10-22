@@ -16,6 +16,7 @@ public sealed class LiveEntityPresentationController : IDisposable
     private readonly Action<uint> _clearInvalidTarget;
     private readonly Func<(int X, int Y)> _liveCenter;
     private readonly Action<uint>? _onShadowRestored;
+    private Action<uint>? _shadowRestoredListener;
     private readonly LiveEntityPartArrayEnterWorldPort _partArrayEnterWorld;
     private readonly HashSet<RuntimeEntityKey> _readyOwners = [];
     private readonly HashSet<RuntimeEntityKey> _suspendedShadowOwners = [];
@@ -239,7 +240,32 @@ public sealed class LiveEntityPresentationController : IDisposable
             centerX,
             centerY);
         _onShadowRestored?.Invoke(record.ServerGuid);
+        _shadowRestoredListener?.Invoke(record.ServerGuid);
         return true;
+    }
+
+    /// <summary>
+    /// Binds a listener told each time an object's collision comes back, for
+    /// owners composed after this controller. One listener at a time.
+    /// </summary>
+    internal IDisposable BindShadowRestored(Action<uint> listener)
+    {
+        ArgumentNullException.ThrowIfNull(listener);
+        if (_shadowRestoredListener is not null)
+            throw new InvalidOperationException("A shadow-restored listener is already bound.");
+        _shadowRestoredListener = listener;
+        return new ShadowRestoredBinding(this, listener);
+    }
+
+    private sealed class ShadowRestoredBinding(
+        LiveEntityPresentationController owner,
+        Action<uint> listener) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (ReferenceEquals(owner._shadowRestoredListener, listener))
+                owner._shadowRestoredListener = null;
+        }
     }
 
     private void OnProjectionVisibilityChanged(LiveEntityRecord record, bool visible)

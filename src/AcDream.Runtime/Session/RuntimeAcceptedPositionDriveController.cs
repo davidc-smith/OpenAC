@@ -58,6 +58,8 @@ public sealed class RuntimeAcceptedPositionDriveController
 
     private Pending? _pending;
     private AcceptedForceObservation? _newestForce;
+    private bool _arrivalOverlapCheckRequested;
+    private bool _arrivalOverlapPositionOwed;
     private object? _routeOwner;
 
     internal RuntimeAcceptedPositionDriveController(
@@ -144,6 +146,8 @@ public sealed class RuntimeAcceptedPositionDriveController
     {
         _newestForce = null;
         _lastCommittedPortal = null;
+        _arrivalOverlapCheckRequested = false;
+        _arrivalOverlapPositionOwed = false;
         if (_pending is not { } pending)
             return;
         _pending = null;
@@ -455,7 +459,10 @@ public sealed class RuntimeAcceptedPositionDriveController
     internal void Advance()
     {
         if (_pending is not { } pending)
+        {
+            AdvanceArrivalOverlap();
             return;
+        }
 
         RuntimeSetPositionState setPosition = _entityObjects.Physics.SetPosition;
         if (pending.AwaitingCommitWake)
@@ -576,6 +583,135 @@ public sealed class RuntimeAcceptedPositionDriveController
             pending.Route,
             pending.PositionEventOwed);
     }
+
+    /// <summary>
+    /// Asks the next <see cref="Advance"/> to check whether the local player now
+    /// stands inside an object that arrived after it was placed, and if so to
+    /// move the player off it. The object keeps the position the server gave it.
+    /// </summary>
+    internal void RequestArrivalOverlapCheck() =>
+        _arrivalOverlapCheckRequested = true;
+
+    private void AdvanceArrivalOverlap()
+    {
+        PlayerMovementController? controller = _localController();
+        if (_arrivalOverlapPositionOwed
+            && controller is { State: PlayerState.InWorld, CanSendPositionEvent: true })
+        {
+            _arrivalOverlapPositionOwed = false;
+            _localPlayerOutbound.SendImmediatePosition(_session(), controller);
+            PhysicsDiagnostics.LogLocalArrivalOverlap(
+                "PositionSent",
+                controller.State.ToString(),
+                controller.CellId,
+                controller.Position,
+                controller.CellId,
+                controller.Position,
+                positionSent: true);
+        }
+
+        if (!_arrivalOverlapCheckRequested)
+            return;
+
+        if (controller is null
+            || _usePositionFromServer()
+            || !_entityObjects.Entities.TryGetActive(
+                _localPlayerServerGuid(), out RuntimeEntityRecord record)
+            || record.PhysicsBody is not { InWorld: true } body
+            || _entityObjects.TryGetInitialCreateResidence(record, out _))
+        {
+            _arrivalOverlapCheckRequested = false;
+            return;
+        }
+
+        RuntimeSetPositionState setPosition = _entityObjects.Physics.SetPosition;
+        RuntimeSetPositionMoverPreparationStatus status =
+            setPosition.TryBuildCurrentFrameCommand(
+                record,
+                RuntimeSetPositionOperationKind.LocalAuthoritative,
+                ArrivalOverlapFlags,
+                _collisionSource,
+                _clock.SimulationTimeSeconds,
+                out RuntimeSetPositionCommand command);
+        if (status.IsRetryable())
+            return;
+        _arrivalOverlapCheckRequested = false;
+        if (status != RuntimeSetPositionMoverPreparationStatus.Prepared)
+            return;
+
+        Vector3 before = body.Position;
+        uint beforeCell = record.FullCellId;
+        PhysicsSetPositionResult probe =
+            _entityObjects.Physics.Engine.SetPosition(command.Physics);
+        if (!probe.IsCommitted
+            || Vector3.DistanceSquared(probe.Position, command.Physics.Position)
+                < ArrivalOverlapToleranceSquared)
+        {
+            PhysicsDiagnostics.LogLocalArrivalOverlap(
+                probe.IsCommitted ? "Clear" : "Unplaceable",
+                controller.State.ToString(),
+                beforeCell,
+                before,
+                probe.CellId,
+                probe.Position,
+                positionSent: false);
+            return;
+        }
+
+        RuntimeEntityPlacementToken token = setPosition.TryBeginExclusivePlacement(
+            record,
+            record.PositionAuthorityVersion,
+            RuntimeSetPositionOperationKind.LocalAuthoritative);
+        if (!token.IsValid)
+        {
+            // Another placement owns the player; look again once it settles.
+            _arrivalOverlapCheckRequested = true;
+            return;
+        }
+
+        RuntimeSetPositionOutcome outcome =
+            setPosition.SubmitPreparedPlacement(token, command);
+        if (outcome.Status
+            != RuntimeSetPositionStatus.CommittedHostAcknowledgementPending)
+        {
+            CancelToken(setPosition, token);
+            PhysicsDiagnostics.LogLocalArrivalOverlap(
+                outcome.Status.ToString(),
+                controller.State.ToString(),
+                beforeCell,
+                before,
+                probe.CellId,
+                probe.Position,
+                positionSent: false);
+            return;
+        }
+
+        bool leashArmed = controller.PositionManager?.Constraint?.IsConstrained
+            ?? false;
+        controller.CommitCanonicalForcePositionFrame();
+        if (leashArmed)
+            controller.ArmConstraintLeashAtCommittedPlacement();
+
+        // The server is told only once the player is in the world: during the
+        // portal exit it still treats the player as teleporting.
+        bool sent = controller is { State: PlayerState.InWorld, CanSendPositionEvent: true };
+        if (sent)
+            _localPlayerOutbound.SendImmediatePosition(_session(), controller);
+        _arrivalOverlapPositionOwed = !sent;
+        PhysicsDiagnostics.LogLocalArrivalOverlap(
+            "Moved",
+            controller.State.ToString(),
+            beforeCell,
+            before,
+            record.FullCellId,
+            body.Position,
+            positionSent: sent);
+    }
+
+    private const PhysicsSetPositionFlags ArrivalOverlapFlags =
+        PhysicsSetPositionFlags.Placement | PhysicsSetPositionFlags.Slide;
+
+    private const float ArrivalOverlapToleranceSquared = 0.01f * 0.01f;
 
     private void SettlePending(
         RuntimeEntityRecord terminalRecord,

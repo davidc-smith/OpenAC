@@ -1502,7 +1502,8 @@ internal sealed class RuntimeSetPositionState : IDisposable
         uint scatterAttempts = 0u,
         float shadowWorldOffsetX = 0f,
         float shadowWorldOffsetY = 0f,
-        bool resolveWorldOffsetFromRuntimeFrame = false)
+        bool resolveWorldOffsetFromRuntimeFrame = false,
+        bool passThroughPlayers = false)
     {
         EnsureNotDisposed();
         ArgumentNullException.ThrowIfNull(record);
@@ -1542,8 +1543,87 @@ internal sealed class RuntimeSetPositionState : IDisposable
             shadowWorldOffsetX,
             shadowWorldOffsetY,
             portal,
-            resolveWorldOffsetFromRuntimeFrame);
+            resolveWorldOffsetFromRuntimeFrame,
+            passThroughPlayers);
         return PrepareMover(token, preparation, out command);
+    }
+
+    /// <summary>
+    /// Builds a placement command for <paramref name="record"/> at the pose its
+    /// body holds now, rather than at the last server-accepted position the
+    /// authored path uses. The caller owns the token and the submit.
+    /// </summary>
+    internal RuntimeSetPositionMoverPreparationStatus TryBuildCurrentFrameCommand(
+        RuntimeEntityRecord record,
+        RuntimeSetPositionOperationKind operationKind,
+        PhysicsSetPositionFlags flags,
+        IPreparedCollisionSource collisionSource,
+        double gameTime,
+        out RuntimeSetPositionCommand command)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(collisionSource);
+        command = default;
+        if (record.PhysicsBody is not { InWorld: true } body
+            || body.CellPosition.ObjCellId == 0u)
+        {
+            return RuntimeSetPositionMoverPreparationStatus.InvalidData;
+        }
+
+        uint setupTableId = CanonicalSetupTableId(record);
+        RuntimeSetPositionMoverSetup setup;
+        if (setupTableId == 0u)
+        {
+            setup = RuntimeSetPositionMoverSetup.ResolvedAbsent;
+        }
+        else
+        {
+            PreparedCollisionReadResult<FlatSetupCollision> read =
+                collisionSource.ReadSetupCollision(setupTableId);
+            if (read.Status != PreparedAssetReadStatus.Loaded
+                || read.Data is null)
+            {
+                return RuntimeSetPositionMoverPreparationStatus
+                    .RetrySetupUnavailable;
+            }
+            setup = RuntimeSetPositionMoverSetup.Resolved(
+                setupTableId, read.Data);
+        }
+
+        Position current = body.CellPosition;
+        if (!_physics.TryGetWorldFrameOffset(
+                current.ObjCellId,
+                out float worldOffsetX,
+                out float worldOffsetY))
+        {
+            return RuntimeSetPositionMoverPreparationStatus
+                .RetryWorldFrameUnavailable;
+        }
+
+        var preparation = new RuntimeSetPositionMoverPreparation(
+            setup,
+            operationKind,
+            gameTime,
+            PhysicsPlacementClass.Ordinary,
+            flags,
+            ShadowWorldOffsetX: worldOffsetX,
+            ShadowWorldOffsetY: worldOffsetY);
+        return RuntimeSetPositionMoverPreparer.TryBuild(
+                record,
+                ServerPositionFrom(
+                    current.ObjCellId,
+                    current.Frame.Origin,
+                    body.Orientation),
+                setupTableId,
+                operationKind,
+                default,
+                record.VelocityAuthorityVersion,
+                preparation,
+                out command)
+            && IsStructurallyValid(command.Physics)
+            ? RuntimeSetPositionMoverPreparationStatus.Prepared
+            : RuntimeSetPositionMoverPreparationStatus.InvalidData;
     }
 
     internal bool IsExactPreparedPlacementCurrent(

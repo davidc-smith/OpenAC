@@ -1137,6 +1137,7 @@ public sealed class PhysicsEngine
             !request.MoverPhysicsState.HasFlag(PhysicsStateFlags.Missile);
         transition.ObjectInfo.MoverPhysicsState = request.MoverPhysicsState;
         transition.ObjectInfo.SelfEntityId = request.MovingEntityId;
+        transition.ObjectInfo.PassThroughPlayers = request.PassThroughPlayers;
         transition.ObjectInfo.State = request.MoverFlags;
         transition.ObjectInfo.Ethereal = request.MoverPhysicsState.HasFlag(
             PhysicsStateFlags.Ethereal);
