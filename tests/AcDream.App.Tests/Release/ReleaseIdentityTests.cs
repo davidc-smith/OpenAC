@@ -27,6 +27,12 @@ public sealed class ReleaseIdentityTests
         Assert.StartsWith(host.ToString() + "-", release);
     }
 
+    [Fact]
+    public void TheClientNamesItselfByProduct() =>
+        Assert.Equal(
+            typeof(AcDream.App.Rendering.GameWindow).Assembly.GetCustomAttribute<AssemblyProductAttribute>()!.Product,
+            AcDream.App.ProductIdentity.Name);
+
     [Theory]
     [MemberData(nameof(ShippedAssemblies))]
     public void TheProductIsAnOpenACGatewayEdition(Assembly assembly)

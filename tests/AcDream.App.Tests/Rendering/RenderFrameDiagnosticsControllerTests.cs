@@ -68,7 +68,7 @@ public sealed class RenderFrameDiagnosticsControllerTests
 
         Assert.Equal(["facts", "title", "resources", "log"], harness.Calls);
         Assert.Equal(
-            $"acdream {RenderFrameDiagnosticsController.ProductVersion} | 4 fps | 250.0 ms | lb 17/43 | ent 3721/anim 226 | "
+            $"{AcDream.App.ProductIdentity.Name} {RenderFrameDiagnosticsController.ProductVersion} | 4 fps | 250.0 ms | lb 17/43 | ent 3721/anim 226 | "
             + "PY117 Leafcull 22 DawnsongAndHalf (df=0.3125)",
             harness.Title);
         Assert.Equal(
