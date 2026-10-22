@@ -1,4 +1,4 @@
-<panel title="Flex Controls" layout="column" padding="8" gap="6" w="320" h="420"
+<panel x="120" y="420" title="Flex Controls" layout="column" padding="8" gap="6" w="320" h="420"
        resizable="true" theme="plugin">
   <group layout="row" gap="8" align="center">
     <checkbox text="Loot" checked="{Loot}" onchange="{SetLoot}" />
