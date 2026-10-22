@@ -3,7 +3,6 @@
     <Project Path="src/AcDream.App/AcDream.App.csproj" />
     <Project Path="src/AcDream.Bake/AcDream.Bake.csproj" />
     <Project Path="src/AcDream.Cli/AcDream.Cli.csproj" />
-    <Project Path="src/AcDream.ClientExtensions/AcDream.ClientExtensions.csproj" />
     <Project Path="src/AcDream.Content/AcDream.Content.csproj" />
     <Project Path="src/AcDream.Core/AcDream.Core.csproj" />
     <Project Path="src/AcDream.Core.Net/AcDream.Core.Net.csproj" />
@@ -14,18 +13,7 @@
     <Project Path="src/AcDream.PluginCheck/AcDream.PluginCheck.csproj" />
     <Project Path="src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj" />
     <Project Path="src/AcDream.Runtime/AcDream.Runtime.csproj" />
-    <Project Path="src/AcDream.Rynth.EngineUi/AcDream.Rynth.EngineUi.csproj" />
-    <Project Path="src/AcDream.Rynth.Host/AcDream.Rynth.Host.csproj" />
     <Project Path="src/AcDream.Rynth.NavData/AcDream.Rynth.NavData.csproj" />
-    <Project Path="src/AcDream.Rynth.Plugin.RynthLua/AcDream.Rynth.Plugin.RynthLua.csproj" />
-    <Project Path="src/AcDream.Rynth.Plugin.RynthNav/AcDream.Rynth.Plugin.RynthNav.csproj" />
-    <Project Path="src/AcDream.Rynth.Plugin.RynthOracle/AcDream.Rynth.Plugin.RynthOracle.csproj" />
-    <Project Path="src/AcDream.Rynth.Plugin.RynthInventory/AcDream.Rynth.Plugin.RynthInventory.csproj" />
-    <Project Path="src/AcDream.Rynth.Plugin.RynthAi/AcDream.Rynth.Plugin.RynthAi.csproj" />
-    <Project Path="src/AcDream.Rynth.Plugin.RynthChat/AcDream.Rynth.Plugin.RynthChat.csproj" />
-    <Project Path="src/AcDream.Rynth.Plugin.RynthTracker/AcDream.Rynth.Plugin.RynthTracker.csproj" />
-    <Project Path="src/AcDream.Rynth.ScriptWindows/AcDream.Rynth.ScriptWindows.csproj" />
-    <Project Path="src/AcDream.Rynth.Sdk/AcDream.Rynth.Sdk.csproj" />
     <Project Path="src/AcDream.UI.Abstractions/AcDream.UI.Abstractions.csproj" />
   </Folder>
   <Folder Name="/samples/">
@@ -69,7 +57,6 @@
     <Project Path="tests/AcDream.Plugin.Tests/AcDream.Plugin.Tests.csproj" />
     <Project Path="tests/AcDream.RenderPackValidator.Tests/AcDream.RenderPackValidator.Tests.csproj" />
     <Project Path="tests/AcDream.Runtime.Tests/AcDream.Runtime.Tests.csproj" />
-    <Project Path="tests/AcDream.Rynth.Host.Tests/AcDream.Rynth.Host.Tests.csproj" />
     <Project Path="tests/AcDream.Rynth.NavData.Tests/AcDream.Rynth.NavData.Tests.csproj" />
     <Project Path="tests/AcDream.Tools.RynthInteropRedirect.Tests/AcDream.Tools.RynthInteropRedirect.Tests.csproj" />
     <Project Path="tests/AcDream.Tools.RynthTypeExtract.Tests/AcDream.Tools.RynthTypeExtract.Tests.csproj" />

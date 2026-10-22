@@ -130,8 +130,7 @@ public sealed class SilkKeyboardSource : IKeyboardSource, IDisposable
         }
     }
 
-    public bool IsHeld(Key key) =>
-        _surface.IsKeyPressed(key) && !AcDream.App.Extensions.Overlay.OverlayInputGate.KeyTaken(key);
+    public bool IsHeld(Key key) => _surface.IsKeyPressed(key);
 
     public ModifierMask CurrentModifiers => ReadModifiers();
 
@@ -144,26 +143,19 @@ public sealed class SilkKeyboardSource : IKeyboardSource, IDisposable
         EnsureDetachTransaction().CompleteOrThrow();
     }
 
-    private void OnKeyDown(Key key)
-    {
-        // Read at event time: the gate's answer belongs to this press.
-        bool taken = AcDream.App.Extensions.Overlay.OverlayInputGate.KeyTaken(key);
+    private void OnKeyDown(Key key) =>
         _quiescence.Invoke(() =>
         {
-            if (Volatile.Read(ref _active) != 0 && !taken)
+            if (Volatile.Read(ref _active) != 0)
                 KeyDown?.Invoke(key, ReadModifiers());
         });
-    }
 
-    private void OnKeyUp(Key key)
-    {
-        bool taken = AcDream.App.Extensions.Overlay.OverlayInputGate.KeyTaken(key);
+    private void OnKeyUp(Key key) =>
         _quiescence.Invoke(() =>
         {
-            if (Volatile.Read(ref _active) != 0 && !taken)
+            if (Volatile.Read(ref _active) != 0)
                 KeyUp?.Invoke(key, ReadModifiers());
         });
-    }
 
     private ModifierMask ReadModifiers()
     {
