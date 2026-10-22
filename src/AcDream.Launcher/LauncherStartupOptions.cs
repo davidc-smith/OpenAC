@@ -73,7 +73,7 @@ internal sealed class LauncherStartupOptions
                 // non-resolving sentinel keeps the probe display- and
                 // user-profile-free even under a deliberately broken runtime.
                 new ApplicationPathSet(string.Empty, string.Empty, string.Empty),
-                ReleaseManifestClient.ProductionManifestUri,
+                ReleaseManifestClient.ProductionUpdateFeedUri,
                 PluginCatalog.ProductionListUri,
                 publicArguments);
         }
@@ -169,7 +169,7 @@ internal sealed class LauncherStartupOptions
         return new LauncherStartupOptions(
             mode,
             paths,
-            updateManifestUri ?? ReleaseManifestClient.ProductionManifestUri,
+            updateManifestUri ?? ReleaseManifestClient.ProductionUpdateFeedUri,
             pluginListUri ?? PluginCatalog.ProductionListUri,
             publicArguments,
             controlPipe);
