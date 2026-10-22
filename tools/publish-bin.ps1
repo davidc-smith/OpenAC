@@ -31,7 +31,12 @@ if (-not (Test-Path (Join-Path $RepoRoot 'AcDream.slnx'))) {
 }
 
 [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $RepoRoot 'Directory.Build.props') -Raw
-$repositoryVersion = [string]$buildProperties.Project.PropertyGroup.Version
+function Get-OpenACProperty([string]$Name) {
+    $value = & dotnet msbuild (Join-Path $RepoRoot 'src/AcDream.App/AcDream.App.csproj') "-getProperty:$Name"
+    if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($value)) { throw "Could not read $Name from the build." }
+    return ([string]($value -join "`n")).Trim()
+}
+$repositoryVersion = Get-OpenACProperty 'OpenACReleaseVersion'
 $releaseRepository = [string]($buildProperties.Project.PropertyGroup | ForEach-Object { $_.OpenACReleaseRepository } | Where-Object { $_ } | Select-Object -First 1)
 if ([string]::IsNullOrWhiteSpace($releaseRepository)) {
     throw 'Directory.Build.props has no OpenACReleaseRepository.'
@@ -39,7 +44,7 @@ if ([string]::IsNullOrWhiteSpace($releaseRepository)) {
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = $repositoryVersion
 } elseif ($Version -cne $repositoryVersion) {
-    throw "Requested version '$Version' differs from repository version '$repositoryVersion'. Update Directory.Build.props before publishing."
+    throw "Requested version '$Version' differs from the repository's release version '$repositoryVersion'. Update Directory.Build.props before publishing."
 }
 
 if ([string]::IsNullOrWhiteSpace($MinimumLauncherVersion)) {
@@ -121,7 +126,6 @@ function Invoke-Publish {
     $arguments = @(
         'publish', (Join-Path $RepoRoot $Project),
         '-r', $Rid,
-        "-p:Version=$Version",
         '-o', $OutputDirectory
     ) + $CommonPublishFlags
     if ($SingleFile) { $arguments += '-p:PublishSingleFile=true' }

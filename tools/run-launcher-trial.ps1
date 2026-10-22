@@ -35,10 +35,10 @@ if ($supportedRids -notcontains $Rid) {
     throw "run-launcher-trial does not support RID '$Rid'. Supported: $($supportedRids -join ', ')."
 }
 
-[xml]$buildProperties = Get-Content -LiteralPath (Join-Path $RepoRoot 'Directory.Build.props') -Raw
-$repositoryVersion = [string]$buildProperties.Project.PropertyGroup.Version
-if ([string]::IsNullOrWhiteSpace($repositoryVersion)) {
-    throw 'Directory.Build.props has no <Version>.'
+$releaseVersionOutput = & dotnet msbuild (Join-Path $RepoRoot 'src/AcDream.App/AcDream.App.csproj') '-getProperty:OpenACReleaseVersion'
+$repositoryVersion = ([string]($releaseVersionOutput -join "`n")).Trim()
+if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($repositoryVersion)) {
+    throw 'Could not read OpenACReleaseVersion from the build.'
 }
 # Build metadata sorts equal to the release (SemVer 2.0 precedence ignores
 # anything after '+'), so the launcher neither offers a downgrade nor treats
