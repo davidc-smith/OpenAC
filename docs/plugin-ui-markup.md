@@ -722,6 +722,11 @@ half of what is left after the 5 px bar (197 in the example above), whatever
 position the client remembers or the plugin binds. So author and anchor the
 children to fill a group at that size.
 
+A pane may be a flex container: `<group layout="column">` (or `row`) as a
+pane lays out its children in whatever size the split gives it, and again
+whenever the bar moves. The pane's content minimum doesn't limit the bar; set
+the split's `min` and `max` for that.
+
 The player drags the bar to share the space out. Its position is the first
 group's size in pixels, kept between `min` (default 0) and `max` (default
 all of it). When the split itself resizes, the first group keeps its size

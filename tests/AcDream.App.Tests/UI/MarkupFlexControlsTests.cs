@@ -26,6 +26,8 @@ public sealed class MarkupFlexControlsTests
         public Action<string> SetKey => v => Key = v;
         public uint Colour { get; set; } = 0xFF336699;
         public Action<uint> SetColour => v => Colour = v;
+        public float Pos { get; set; } = 100f;
+        public Action<float> SetPos => v => Pos = v;
         public Action<int> Pick => _ => { };
     }
 
@@ -265,5 +267,33 @@ public sealed class MarkupFlexControlsTests
         ThemeDrawCapture.Draw(root);
 
         Assert.Equal(UiMarkupExpander.HeaderHeight, Find(frame, "b").Top);
+    }
+
+    [Fact]
+    public void Split_panes_may_be_flex_containers_that_follow_the_bar()
+    {
+        var binding = new Binding();
+        var (root, frame) = Mount("""
+            <group x="0" y="0" w="300" h="300" layout="column">
+              <split name="s" w="205" h="100" at="100" position="{Pos}" onchange="{SetPos}">
+                <group name="left" layout="column" padding="4">
+                  <button name="b1" text="One" />
+                </group>
+                <group name="right" layout="row">
+                  <button name="b2" text="Two" grow="1" />
+                </group>
+              </split>
+            </group>
+            """, binding);
+
+        Assert.IsType<UiFlexGroup>(Find(frame, "left"));
+        Assert.Equal(new FlexRect(4f, 4f, 92f, 24f), Rect(Find(frame, "b1")));
+        Assert.Equal(100f, Find(frame, "b2").Width);
+
+        binding.Pos = 150f;
+        Frame(root);
+
+        Assert.Equal(142f, Find(frame, "b1").Width);
+        Assert.Equal(50f, Find(frame, "b2").Width);
     }
 }
