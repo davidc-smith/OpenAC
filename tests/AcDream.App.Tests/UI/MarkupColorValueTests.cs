@@ -106,7 +106,7 @@ public class MarkupColorValueTests
     public void BindRequiredColor_Uint()
     {
         var b = new Binding();
-        var (read, write) = MarkupBindings.BindRequiredColor("{U}", "{SetU}", b, "color");
+        var (read, write) = MarkupBindings.BindRequiredColor("{U}", "{SetU}", MarkupBindingSource.For(b), "color");
         Assert.Equal(0x80112233u, read());
         write(0x01020304u);
         Assert.Equal(0x01020304u, b.LastU);
@@ -116,7 +116,7 @@ public class MarkupColorValueTests
     public void BindRequiredColor_IntIsTheSameBits()
     {
         var b = new Binding();
-        var (read, write) = MarkupBindings.BindRequiredColor("{I}", "{SetI}", b, "color");
+        var (read, write) = MarkupBindings.BindRequiredColor("{I}", "{SetI}", MarkupBindingSource.For(b), "color");
         Assert.Equal(0xFF445566u, read());
         write(0xFF000001u);
         Assert.Equal(unchecked((int)0xFF000001u), b.LastI);
@@ -126,7 +126,7 @@ public class MarkupColorValueTests
     public void BindRequiredColor_StringReadsStrictlyAndWritesUpperCase()
     {
         var b = new Binding();
-        var (read, write) = MarkupBindings.BindRequiredColor("{S}", "{SetS}", b, "color");
+        var (read, write) = MarkupBindings.BindRequiredColor("{S}", "{SetS}", MarkupBindingSource.For(b), "color");
         Assert.Equal(0xFF778899u, read());
         b.S = "#778899";   // not #AARRGGBB: white, as a bound colour attribute
         Assert.Equal(0xFFFFFFFFu, read());
@@ -149,7 +149,7 @@ public class MarkupColorValueTests
     public void BindRequiredColor_BadBindingsThrow(string? value, string? onchange, string context)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredColor(value, onchange, new Binding(), "color"));
+            () => MarkupBindings.BindRequiredColor(value, onchange, MarkupBindingSource.For(new Binding()), "color"));
         Assert.Contains(context, ex.Message);
     }
 }

@@ -46,10 +46,13 @@ public static class MarkupDocument
         IMarkupTextureService? textures = null, IMarkupControlState? sharedControlState = null)
     {
         var root = XDocument.Parse(xml).Root ?? throw new FormatException("empty markup");
+        var source = MarkupBindingSource.For(binding);
         if (root.Name.LocalName != "panel")
             throw new FormatException($"root must be <panel>, got <{root.Name.LocalName}>");
         if (root.Element("contextmenu") is not null)
             throw new FormatException("<contextmenu> goes inside the element it belongs to, not directly in <panel>");
+        MarkupRepeat.RejectCanvases(root);
+        MarkupRepeat.RejectUnkeyedNames(root);
 
         bool themed = (string?)root.Attribute("theme") == "plugin";
         if (themed) themes ??= new PluginUiThemeSettings();
@@ -101,14 +104,14 @@ public static class MarkupDocument
         string? visible = (string?)root.Attribute("visible");
         if (visible is not null && IsBinding(visible))
         {
-            PropertyInfo? flag = binding.GetType().GetProperty(visible[1..^1]);
+            PropertyInfo? flag = source.Property(visible[1..^1]);
             if (flag is null || flag.PropertyType != typeof(bool))
             {
                 throw new FormatException(
                     $"<panel visible=\"{visible}\"> did not resolve to a bool property "
-                    + $"on {binding.GetType().Name}");
+                    + $"on {source.TypeName}");
             }
-            panel.VisibleSource = () => flag.GetValue(binding) is true;
+            panel.VisibleSource = () => source.Read(flag) is true;
         }
 
         string? title = (string?)root.Attribute("title");
@@ -174,7 +177,7 @@ public static class MarkupDocument
 
         var recentColors = new MarkupRecentColors(sharedControlState);
         foreach (var el in root.Elements())
-            AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes,
+            AddElement(contentParent, el, source, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes,
                 controlState, describeKey, textures, recentColors, rootFlex);
 
         if (rootFlex is not null)
@@ -234,7 +237,7 @@ public static class MarkupDocument
     private static void AddElement(
         UiElement parent,
         XElement el,
-        object binding,
+        MarkupBindingSource binding,
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
         IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
@@ -245,7 +248,7 @@ public static class MarkupDocument
     {
         int firstChild = parent.Children.Count;
         if (flex is null) MarkupFlexAttributes.RejectItem(el);
-        void BindColorSource(string? expression, object model, Action<Vector4> setValue,
+        void BindColorSource(string? expression, MarkupBindingSource model, Action<Vector4> setValue,
             Action<Func<Vector4>> setSource)
         {
             if (expression?.StartsWith("theme:", StringComparison.Ordinal) == true)
@@ -374,7 +377,7 @@ public static class MarkupDocument
                     {
                         throw new FormatException(
                             $"<button onclick=\"{clickName}\"> did not resolve to an "
-                            + $"Action property on {binding.GetType().Name}");
+                            + $"Action property on {binding.TypeName}");
                     }
                     var button = new UiSimpleButton
                     {
@@ -479,7 +482,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<tab onclick=\"{tabClickName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
                 }
 
                 var tab = new UiMarkupTabButton
@@ -512,7 +515,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<toggle onclick=\"{toggleClickName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
                 }
 
                 string? toggleCaption = (string?)el.Attribute("text");
@@ -583,7 +586,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<slider onchange=\"{changeName}\"> did not resolve to an "
-                        + $"Action<float> property on {binding.GetType().Name}");
+                        + $"Action<float> property on {binding.TypeName}");
                 }
 
                 // KB 08 §3 gap: VVS's HudHSlider exposes an arbitrary Min/Max
@@ -640,7 +643,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<field onchange=\"{fieldChangeName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
                 string? submitName = (string?)el.Attribute("onsubmit");
                 Action<string>? submitted = BindStringAction(submitName, binding);
@@ -648,7 +651,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<field onsubmit=\"{submitName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
 
                 string? blurName = (string?)el.Attribute("onblur");
@@ -657,7 +660,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<field onblur=\"{blurName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
 
                 string? upName = (string?)el.Attribute("onup");
@@ -665,14 +668,14 @@ public static class MarkupDocument
                 if (upName is not null && onUp is null)
                     throw new FormatException(
                         $"<field onup=\"{upName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
 
                 string? downName = (string?)el.Attribute("ondown");
                 Action? onDown = BindAction(downName, binding);
                 if (downName is not null && onDown is null)
                     throw new FormatException(
                         $"<field ondown=\"{downName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
 
                 var field = new UiField
                 {
@@ -734,7 +737,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<menu onchange=\"{menuChangeName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
                 Func<IReadOnlyList<string>> menuItems = BindStringList(
                     (string?)el.Attribute("items"),
@@ -916,6 +919,14 @@ public static class MarkupDocument
                 parent.AddChild(canvas);
                 break;
             }
+            case "repeat":
+                MarkupRepeat.Build(parent, el, binding, flex,
+                    new MarkupRepeat.BuildArgs(resolve, datFont, icons, themedPanel, themes, controlState,
+                        describeKey, textures, recentColors),
+                    (container, child, source, state, box) => AddElement(container, child, source, resolve, datFont,
+                        icons, themedPanel, themes, state, describeKey, textures, recentColors, box));
+                break;
+
             case "contextmenu":
                 // Built onto its owner element after the owner's own case; see the tail below.
                 break;
@@ -923,7 +934,8 @@ public static class MarkupDocument
             default:
                 throw new FormatException($"unknown element <{el.Name.LocalName}>");
         }
-        if (parent.Children.Count > firstChild)
+        // A repeat's marker takes no theme, menu or flex item; its copies took their own.
+        if (parent.Children.Count > firstChild && parent.Children[firstChild] is not UiMarkupRepeat)
         {
             UiElement built = parent.Children[firstChild];
             if (themedPanel is not null)
@@ -1041,7 +1053,7 @@ public static class MarkupDocument
     /// validated at build even with no resolver wired, so a typo fails early.
     /// </summary>
     private static void ApplyButtonIcon(
-        UiSimpleButton button, XElement el, object binding,
+        UiSimpleButton button, XElement el, MarkupBindingSource binding,
         IMarkupIconResolver? icons, string context)
     {
         string? iconExpression = (string?)el.Attribute("icon");
@@ -1125,18 +1137,18 @@ public static class MarkupDocument
     /// build; a null or blank path at draw time draws nothing.
     /// </summary>
     private static Func<string?> BindPathLiteralOrBinding(
-        string expression, object binding, string context)
+        string expression, MarkupBindingSource binding, string context)
     {
         if (!IsBinding(expression))
             return () => expression;
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(string))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a string property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => (string?)property.GetValue(binding);
+        return () => (string?)binding.Read(property);
     }
 
     /// <summary>
@@ -1186,21 +1198,21 @@ public static class MarkupDocument
     }
 
     private static Func<uint> BindUintLiteralOrBinding(
-        string expression, object binding, string context)
+        string expression, MarkupBindingSource binding, string context)
     {
         if (!IsBinding(expression))
         {
             uint literal = ParseUintLiteral(expression, context);
             return () => literal;
         }
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null)
         {
             throw new FormatException(
                 $"{expression} did not resolve to a property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) switch
+        return () => binding.Read(property) switch
         {
             uint u => u,
             null => 0u,
@@ -1237,7 +1249,7 @@ public static class MarkupDocument
         throw new FormatException($"{context}=\"{text}\" is not a valid uint literal");
     }
 
-    internal static Func<string?> BindString(string? attribute, object binding)
+    internal static Func<string?> BindString(string? attribute, MarkupBindingSource binding)
     {
         if (attribute is null)
             return static () => null;
@@ -1245,143 +1257,143 @@ public static class MarkupDocument
             return () => attribute;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null)
             return () => attribute;
-        return () => property.GetValue(binding)?.ToString();
+        return () => binding.Read(property)?.ToString();
     }
 
-    private static Action? BindAction(string? attribute, object binding)
+    private static Action? BindAction(string? attribute, MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null || !typeof(Action).IsAssignableFrom(property.PropertyType))
             return null;
 
-        return () => (property.GetValue(binding) as Action)?.Invoke();
+        return () => (binding.Read(property) as Action)?.Invoke();
     }
 
     private static Action<float>? BindFloatAction(
         string? attribute,
-        object binding)
+        MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null
             || !typeof(Action<float>).IsAssignableFrom(property.PropertyType))
             return null;
-        return value => (property.GetValue(binding) as Action<float>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<float>)?.Invoke(value);
     }
 
     private static Action<string>? BindStringAction(
         string? attribute,
-        object binding)
+        MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null
             || !typeof(Action<string>).IsAssignableFrom(property.PropertyType))
         {
             return null;
         }
-        return value => (property.GetValue(binding) as Action<string>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<string>)?.Invoke(value);
     }
 
-    internal static Action<int>? BindIntAction(string? attribute, object binding)
+    internal static Action<int>? BindIntAction(string? attribute, MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null
             || !typeof(Action<int>).IsAssignableFrom(property.PropertyType))
         {
             return null;
         }
-        return value => (property.GetValue(binding) as Action<int>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<int>)?.Invoke(value);
     }
 
     internal static Func<IReadOnlyList<string>> BindStringList(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context, bool preserveSnapshot = false)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be a string-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null
             || !typeof(IEnumerable<string>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<string> property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        return () => property.GetValue(binding) is IEnumerable<string> values
+        return () => binding.Read(property) is IEnumerable<string> values
             ? preserveSnapshot && values is IReadOnlyList<string> snapshot ? snapshot : values.ToArray()
             : Array.Empty<string>();
     }
 
     private static Func<IReadOnlyList<uint>> BindUintList(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context)
     {
         if (string.IsNullOrWhiteSpace(expression))
             return static () => Array.Empty<uint>();
         if (!IsBinding(expression))
             throw new FormatException($"{context} must be a uint-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null)
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<uint> or "
-                + "IEnumerable<int> property on " + binding.GetType().Name);
+                + "IEnumerable<int> property on " + binding.TypeName);
         }
         if (typeof(IEnumerable<uint>).IsAssignableFrom(property.PropertyType))
         {
-            return () => property.GetValue(binding) is IEnumerable<uint> values
+            return () => binding.Read(property) is IEnumerable<uint> values
                 ? values.ToArray()
                 : Array.Empty<uint>();
         }
         if (typeof(IEnumerable<int>).IsAssignableFrom(property.PropertyType))
         {
-            return () => property.GetValue(binding) is IEnumerable<int> values
+            return () => binding.Read(property) is IEnumerable<int> values
                 ? values.Select(static v => v < 0 ? 0u : (uint)v).ToArray()
                 : Array.Empty<uint>();
         }
         throw new FormatException(
             $"{expression} did not resolve to an IEnumerable<uint> or "
-            + "IEnumerable<int> property on " + binding.GetType().Name);
+            + "IEnumerable<int> property on " + binding.TypeName);
     }
 
     internal static Func<IReadOnlyList<bool>> BindBoolList(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be a bool-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null
             || !typeof(IEnumerable<bool>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<bool> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) is IEnumerable<bool> values
+        return () => binding.Read(property) is IEnumerable<bool> values
             ? values.ToArray()
             : Array.Empty<bool>();
     }
 
     private static Func<IReadOnlyList<uint>> BindRequiredUintList(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression))
             throw new FormatException($"{context} must be a uint-list binding");
@@ -1389,22 +1401,22 @@ public static class MarkupDocument
     }
 
     internal static Action<int> BindRequiredIntAction(
-        string? attribute, object binding, string context)
+        string? attribute, MarkupBindingSource binding, string context)
     {
         if (attribute is null || !IsBinding(attribute))
             throw new FormatException($"{context} must be an Action<int> binding");
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null || !typeof(Action<int>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{attribute} did not resolve to an Action<int> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return value => (property.GetValue(binding) as Action<int>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<int>)?.Invoke(value);
     }
 
     private static UiMarkupListColumn BuildListColumn(
-        XElement columnEl, object binding, IMarkupIconResolver? icons, int index, bool isLast)
+        XElement columnEl, MarkupBindingSource binding, IMarkupIconResolver? icons, int index, bool isLast)
     {
         string? type = (string?)columnEl.Attribute("type");
         (float width, bool isAutoWidth) = ParseColumnWidth(columnEl, index, type, isLast);
@@ -1424,7 +1436,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"{ColumnContext(index, "text", "onclick")} did not resolve to an "
-                        + $"Action<int> property on {binding.GetType().Name}");
+                        + $"Action<int> property on {binding.TypeName}");
                 }
                 return UiMarkupListColumn.Text(width, textSource, colorsSource, textOnClick, isAutoWidth);
             }
@@ -1514,7 +1526,7 @@ public static class MarkupDocument
     internal static void ApplyCommon(
         UiElement element,
         XElement source,
-        object binding)
+        MarkupBindingSource binding)
     {
         element.Name = (string?)source.Attribute("name")
             ?? (string?)source.Attribute("id");
@@ -1540,7 +1552,7 @@ public static class MarkupDocument
 
     private static void BindBool(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         Action<bool> setLiteral,
         Action<Func<bool>> setSource)
     {
@@ -1553,14 +1565,14 @@ public static class MarkupDocument
             return;
         }
 
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(bool))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a bool property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        Func<bool> source = () => property.GetValue(binding) is true;
+        Func<bool> source = () => binding.Read(property) is true;
         setSource(source);
 
         // Ticks apply the source, but the window's first measurement comes
@@ -1576,37 +1588,37 @@ public static class MarkupDocument
 
     internal static Func<bool> BindRequiredBoolReader(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be a bool binding");
 
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(bool))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a bool property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        return () => property.GetValue(binding) is true;
+        return () => binding.Read(property) is true;
     }
 
     internal static Func<int> BindRequiredIntReader(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be an int binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(int))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an int property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        return () => property.GetValue(binding) is int value ? value : -1;
+        return () => binding.Read(property) is int value ? value : -1;
     }
 
     internal static float F(XElement e, string attr)
@@ -1661,17 +1673,17 @@ public static class MarkupDocument
     /// </summary>
     private static void BindColorSource(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         Action<Vector4> setValue,
         Action<Func<Vector4>> setSource)
     {
         if (expression is null || !IsBinding(expression))
             return;
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null)
             return;
 
-        Vector4 Read() => ColorFromBoundValue(property.GetValue(binding));
+        Vector4 Read() => ColorFromBoundValue(binding.Read(property));
         setValue(Read());
         setSource(Read);
     }
@@ -1691,11 +1703,11 @@ public static class MarkupDocument
         _ => Vector4.One,
     };
 
-    private static Func<float?> BindFloat(string? expr, object binding)
+    private static Func<float?> BindFloat(string? expr, MarkupBindingSource binding)
     {
         var pi = Prop(expr, binding);
         if (pi is null) return () => 0f;
-        return () => pi.GetValue(binding) switch
+        return () => binding.Read(pi) switch
         {
             float f  => f,
             null     => (float?)null,
@@ -1703,11 +1715,11 @@ public static class MarkupDocument
         };
     }
 
-    private static Func<uint?> BindUint(string? expr, object binding)
+    private static Func<uint?> BindUint(string? expr, MarkupBindingSource binding)
     {
         var pi = Prop(expr, binding);
         if (pi is null) return () => null;
-        return () => pi.GetValue(binding) switch
+        return () => binding.Read(pi) switch
         {
             uint u => u,
             null   => (uint?)null,
@@ -1715,10 +1727,10 @@ public static class MarkupDocument
         };
     }
 
-    private static PropertyInfo? Prop(string? expr, object binding)
+    private static PropertyInfo? Prop(string? expr, MarkupBindingSource binding)
     {
         if (expr is null || expr.Length < 3 || expr[0] != '{' || expr[^1] != '}') return null;
-        return binding.GetType().GetProperty(expr[1..^1]);
+        return binding.Property(expr[1..^1]);
     }
 
     private static uint Hex(string? s)

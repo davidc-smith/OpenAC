@@ -36,7 +36,7 @@ public sealed class MarkupSplitTests : IDisposable
     public void FloatReader_ReadsTheProperty()
     {
         var b = new Binding();
-        var read = MarkupBindings.BindRequiredFloatReader("{At}", b, "split position");
+        var read = MarkupBindings.BindRequiredFloatReader("{At}", MarkupBindingSource.For(b), "split position");
         Assert.Equal(120f, read());
         b.At = 7.5f;
         Assert.Equal(7.5f, read());
@@ -50,7 +50,7 @@ public sealed class MarkupSplitTests : IDisposable
     public void FloatReader_RejectsAbsentLiteralsAndWrongTypes(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredFloatReader(expression, new Binding(), "split position"));
+            () => MarkupBindings.BindRequiredFloatReader(expression, MarkupBindingSource.For(new Binding()), "split position"));
         Assert.Contains("split position", ex.Message);
         Assert.Contains("float", ex.Message);
     }
@@ -59,8 +59,8 @@ public sealed class MarkupSplitTests : IDisposable
     public void FloatAction_MissingIsNullAndBoundInvokes()
     {
         var b = new Binding();
-        Assert.Null(MarkupBindings.BindFloatAction(null, b, "ctx"));
-        MarkupBindings.BindFloatAction("{SetAt}", b, "ctx")!(3f);
+        Assert.Null(MarkupBindings.BindFloatAction(null, MarkupBindingSource.For(b), "ctx"));
+        MarkupBindings.BindFloatAction("{SetAt}", MarkupBindingSource.For(b), "ctx")!(3f);
         Assert.Equal(3f, b.At);
     }
 
@@ -71,7 +71,7 @@ public sealed class MarkupSplitTests : IDisposable
     public void FloatAction_RejectsLiteralsAndWrongTypes(string attribute)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindFloatAction(attribute, new Binding(), "split onchange"));
+            () => MarkupBindings.BindFloatAction(attribute, MarkupBindingSource.For(new Binding()), "split onchange"));
         Assert.Contains("split onchange", ex.Message);
         Assert.Contains("Action<float>", ex.Message);
     }

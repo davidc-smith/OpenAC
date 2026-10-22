@@ -4,7 +4,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupCheckbox
 {
-    public static UiMarkupCheckbox Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupCheckbox Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         string? caption = (string?)el.Attribute("text");
         var box = new UiMarkupCheckbox

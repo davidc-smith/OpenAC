@@ -312,6 +312,7 @@ public abstract class UiElement
     private readonly List<UiElement> _children = new();
     private UiElement[]? _childrenBackToFront;
     private UiElement[]? _childrenFrontToBack;
+    private UiElement[]? _childrenTickOrder;
     public IReadOnlyList<UiElement> Children => _children;
 
     public virtual void AddChild(UiElement child)
@@ -319,6 +320,28 @@ public abstract class UiElement
         if (child.Parent is not null) child.Parent.RemoveChild(child);
         child.Parent = this;
         _children.Add(child);
+        InvalidateChildOrder();
+    }
+
+    /// <summary>Adds <paramref name="child"/> at <paramref name="index"/>, taking it from its old parent as <see cref="AddChild"/> does.</summary>
+    internal void InsertChild(int index, UiElement child)
+    {
+        if (child.Parent is not null) child.Parent.RemoveChild(child);
+        child.Parent = this;
+        _children.Insert(index, child);
+        InvalidateChildOrder();
+    }
+
+    /// <summary>Moves a child to <paramref name="index"/> in place: it keeps its parent, focus and state.</summary>
+    internal void MoveChild(UiElement child, int index)
+    {
+        if (child.Parent != this) throw new ArgumentException("not a child of this element", nameof(child));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, _children.Count);
+        int old = _children.IndexOf(child);
+        if (old == index) return;
+        _children.RemoveAt(old);
+        _children.Insert(index, child);
         InvalidateChildOrder();
     }
 
@@ -377,6 +400,7 @@ public abstract class UiElement
     {
         _childrenBackToFront = null;
         _childrenFrontToBack = null;
+        _childrenTickOrder = null;
     }
 
     public virtual bool ConsumesDatChildren => false;
@@ -609,8 +633,14 @@ public abstract class UiElement
         if (EnabledSource is { } enabled)
             Enabled = enabled();
         OnTick(dt);
-        for (int i = 0; i < _children.Count; i++)
-            _children[i].TickSelfAndChildren(dt);
+        // Insertion order, from a snapshot: a child may change its siblings from OnTick.
+        UiElement[] order = _childrenTickOrder ??= _children.ToArray();
+        for (int i = 0; i < order.Length; i++)
+        {
+            // Removed earlier in this tick by a sibling.
+            if (!ReferenceEquals(order[i].Parent, this)) continue;
+            order[i].TickSelfAndChildren(dt);
+        }
     }
 
     /// <summary>
