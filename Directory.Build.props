@@ -9,7 +9,12 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
-    <Version>0.1.26-fork.1</Version>
+    <!-- Upstream's version, unchanged between upstream syncs: lock files record it.
+         Our release version is OpenACReleaseVersion below (see BRANCHING.md). -->
+    <Version>0.1.26</Version>
+    <OpenACProduct>OpenAC Gateway</OpenACProduct>
+    <OpenACReleaseLabel>gateway</OpenACReleaseLabel>
+    <OpenACReleaseNumber>1</OpenACReleaseNumber>
     <!-- The GitHub repository whose releases are the launcher's update feed and the
          publish script's asset addresses: the fork's own until it merges back upstream. -->
     <OpenACReleaseRepository>davidc-smith/OpenAC</OpenACReleaseRepository>
@@ -17,6 +22,16 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' == ''">$(MSBuildProjectDirectory)/packages.neutral.lock.json</NuGetLockFilePath>
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' != ''">$(MSBuildProjectDirectory)/packages.$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
+  </PropertyGroup>
+
+  <!-- A product line's own identity (the rynth branch's Gateway Rynth); main has no such file. -->
+  <Import Project="$(MSBuildThisFileDirectory)Directory.Branch.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)Directory.Branch.props')" />
+
+  <PropertyGroup>
+    <OpenACReleaseVersion>$(Version)-$(OpenACReleaseLabel).$(OpenACReleaseNumber)</OpenACReleaseVersion>
+    <InformationalVersion>$(OpenACReleaseVersion)$(OpenACReleaseMetadata)</InformationalVersion>
+    <Product>$(OpenACProduct)</Product>
   </PropertyGroup>
 
   <!-- XML documentation files of our own assemblies feed the IDE and the plugin
