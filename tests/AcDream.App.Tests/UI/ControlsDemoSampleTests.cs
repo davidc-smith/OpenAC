@@ -78,4 +78,24 @@ public sealed class ControlsDemoSampleTests
         Assert.Null(binding.AllPickups);
         Assert.Equal("Rares off", binding.Status);
     }
+
+    [Theory]
+    [MemberData(nameof(Themes))]
+    public void Pickers_builds_and_lays_out(PluginUiTheme theme)
+    {
+        var (_, panel) = Mount("pickers.xml", new PickersBinding(), theme);
+        AssertInside(panel);
+    }
+
+    [Fact]
+    public void Pickers_note_says_which_chords_a_plugin_hotkey_can_use()
+    {
+        var binding = new PickersBinding();
+        Assert.Equal("Hotkeys: radar usable, pause unbound", binding.KeyNote);
+
+        binding.SetRadarKey("F13");
+
+        Assert.Equal("Hotkeys: radar not usable, pause unbound", binding.KeyNote);
+        Assert.Equal("Radar key set to F13", binding.Status);
+    }
 }

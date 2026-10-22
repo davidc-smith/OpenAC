@@ -29,6 +29,7 @@ public sealed class ControlsDemoPlugin : IAcDreamPlugin
             _windows.Add(host.Ui.RegisterPanel(descriptor, Markup(file), binding));
 
         Add(new PluginPanelDescriptor("inputs", "Controls: Inputs") { IconText = "CI" }, "inputs.xml", new InputsBinding());
+        Add(new PluginPanelDescriptor("pickers", "Controls: Keys and colours") { IconText = "CK" }, "pickers.xml", new PickersBinding());
         // Later windows are added here.
     }
 
