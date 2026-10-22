@@ -13,7 +13,6 @@
     <Project Path="src/AcDream.PluginCheck/AcDream.PluginCheck.csproj" />
     <Project Path="src/AcDream.Plugin.Abstractions/AcDream.Plugin.Abstractions.csproj" />
     <Project Path="src/AcDream.Runtime/AcDream.Runtime.csproj" />
-    <Project Path="src/AcDream.Rynth.NavData/AcDream.Rynth.NavData.csproj" />
     <Project Path="src/AcDream.UI.Abstractions/AcDream.UI.Abstractions.csproj" />
   </Folder>
   <Folder Name="/samples/">
@@ -28,9 +27,6 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/RenderPackValidator/AcDream.Tools.RenderPackValidator.csproj" />
-    <Project Path="tools/RynthInteropRedirect/AcDream.Tools.RynthInteropRedirect.csproj" />
-    <Project Path="tools/RynthTypeExtract/AcDream.Tools.RynthTypeExtract.csproj" />
-    <Project Path="tools/RynthNavData/AcDream.Tools.RynthNavData.csproj" />
     <Project Path="tools/ShaderCompiler/ShaderCompiler.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -57,10 +53,6 @@
     <Project Path="tests/AcDream.Plugin.Tests/AcDream.Plugin.Tests.csproj" />
     <Project Path="tests/AcDream.RenderPackValidator.Tests/AcDream.RenderPackValidator.Tests.csproj" />
     <Project Path="tests/AcDream.Runtime.Tests/AcDream.Runtime.Tests.csproj" />
-    <Project Path="tests/AcDream.Rynth.NavData.Tests/AcDream.Rynth.NavData.Tests.csproj" />
-    <Project Path="tests/AcDream.Tools.RynthInteropRedirect.Tests/AcDream.Tools.RynthInteropRedirect.Tests.csproj" />
-    <Project Path="tests/AcDream.Tools.RynthTypeExtract.Tests/AcDream.Tools.RynthTypeExtract.Tests.csproj" />
-    <Project Path="tests/AcDream.Tools.RynthNavData.Tests/AcDream.Tools.RynthNavData.Tests.csproj" />
     <Project Path="tests/AcDream.UI.Abstractions.Tests/AcDream.UI.Abstractions.Tests.csproj" />
   </Folder>
 </Solution>
