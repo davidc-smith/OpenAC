@@ -200,28 +200,40 @@ runtime described above; `-MacVulkanRuntimeDirectory` overrides where).
 
 Until the fork merges back upstream, its launcher updates from the fork's own releases:
 `OpenACReleaseRepository` in `Directory.Build.props` names the repository
-(`davidc-smith/OpenAC`), and both the launcher's feed
-(`releases/latest/download/manifest.json`) and `publish-bin.ps1`'s asset addresses come
-from it. Fork release versions are `OpenACReleaseVersion` (`Directory.Build.props`): `x.y.z-gateway.n`
+(`davidc-smith/OpenAC`), and both the launcher's feed and `publish-bin.ps1`'s asset addresses
+come from it. Each product has its own tag prefix, derived from `OpenACProduct` as
+`OpenACReleaseTagPrefix`: `gateway-v` for OpenAC Gateway and `gateway-rynth-v` for OpenAC Gateway
+Rynth. A release's tag is `<prefix><version>`, for example `gateway-v0.1.26-gateway.1` or
+`gateway-rynth-v0.1.26-rynth.1`; plain `v…` tags are never used in the fork.
+
+The launcher never calls the GitHub API. It reads
+`https://github.com/davidc-smith/OpenAC/releases.atom`, keeps the entries whose tag is its own
+prefix plus a SemVer version, and takes the highest version among them. It then downloads the
+manifest from `releases/download/<tag>/manifest.json` and the launcher fingerprint from the same
+tag folder; the manifest's version must equal the tag's version. `--update-manifest-uri` still
+overrides all of this with a direct manifest address. Operational note: the feed lists only the
+newest ten releases of the whole repository. If more than ten releases of one product follow the
+other product's last release, the other product's launcher finds none and reports that no release
+was found, so publish both products together. Fork release versions are `OpenACReleaseVersion` (`Directory.Build.props`): `x.y.z-gateway.n`
 on `main` (OpenAC Gateway) and `x.y.z-rynth.n` on `rynth` (OpenAC Gateway Rynth, set in
 `Directory.Branch.props`); the scripts read it with `dotnet msbuild -getProperty`. They are published as ordinary (not pre-release)
-releases so the `latest` route serves them.
+releases, not marked as the latest release (GitHub has one "latest" per repository, which the
+launchers no longer use).
 
 Build and publish one on a Mac with `pwsh tools/publish-fork-release.ps1` from a clean
-`main`: it runs `publish-bin.ps1 -MacOnly`, checks the four files (the osx-arm64 client and
+`main` (OpenAC Gateway) or `rynth` (OpenAC Gateway Rynth): it runs `publish-bin.ps1 -MacOnly`, checks the four files (the osx-arm64 client and
 launcher zips, `manifest.json`, `launcher-fingerprint.json`), tags
-`v<version>` (still, until the per-product tags arrive), pushes the tag and creates the release
-titled `<product> <version>` with `gh` (logged in as an account that
+`<prefix><version>`, pushes the tag and creates the release
+titled `<product> <version>` with `gh` (without `--latest`; logged in as an account that
 can publish to the repository); it accepts only a `-gateway.n` or `-rynth.n` version. The
 launcher fingerprint ignores `<Version>` and `OpenACReleaseNumber`, so a release-number bump alone
-does not change it. For now the script publishes from `main` only; OpenAC Gateway Rynth releases
-(from `rynth`) arrive with the per-product tags and launcher feeds in Plan 3. `-DryRun` builds and checks, then prints those commands.
+does not change it. The release branch comes from `OpenACReleaseLabel` (Gateway: `main`, Rynth: `rynth`). `-DryRun` builds and checks, then prints those commands.
 Windows and Linux launchers find no payload for their RID in a fork release and report
 "Updates could not be checked".
 
-Pushing the `v*` release tag also triggers the fork's `ci.yml` (its tag trigger). The release
-job cannot publish there (its gates and branch guard), so those runs are noise: disable
-Actions on the fork or ignore them.
+Fork tags do not match `ci.yml`'s `v*` trigger; `ci.yml` is upstream's release workflow and is
+left unchanged in the fork (its macOS checks still name `OpenAC.app`). Actions do not run on the
+fork.
 
 ### Two release trains
 
@@ -239,8 +251,8 @@ release train**, and the publish steps read nothing but its answer. The tag is
 the decision: a version carrying a SemVer pre-release part is a test build.
 That is what keeps a test build away from players, because the launcher polls
 `https://github.com/<OpenACReleaseRepository>/releases/latest/download/manifest.json`
-(`eriknihlen/OpenAC` upstream, `davidc-smith/OpenAC` in the fork; see
-[Fork releases](#fork-releases-mac-only-local)) and GitHub's `latest` route
+(`eriknihlen/OpenAC` upstream; the fork's launchers instead read the `releases.atom` feed
+for their own tag prefix, see [Fork releases](#fork-releases-mac-only-local)) and GitHub's `latest` route
 skips pre-releases. Every step that touches the release passes the same pair
 of flags, including the one that attaches the Intel assets afterwards, because
 anything else there would reset them on the release it appends to.

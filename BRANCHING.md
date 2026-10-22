@@ -44,6 +44,6 @@ Use merges, not cherry-picks, so `git log main ^rynth` shows what `rynth` has no
     release is merged.
 - The plugin contract (`ForkContractVersion` in `AcDream.Plugin.Abstractions.csproj`) keeps its own
   `x.y.z-fork.N` counter, bumped only when the plugin API changes.
-- Release tags and the two launchers' update feeds are described in
-  `docs/superpowers/specs/2026-10-22-gateway-branch-split-design.md` §4. Tags and launchers per
-  product arrive with Plan 3.
+- Releases are tagged `gateway-v<version>` (from `main`) and `gateway-rynth-v<version>` (from
+  `rynth`), never plain `v…`. Each launcher reads the repository's `releases.atom` feed and installs
+  only the newest release with its own prefix; see `docs/ci-and-releases.md` (Fork releases).

@@ -305,6 +305,16 @@ release that only changes the shared game code leaves the launcher as it is,
 because its preparation tool still prepares valid data until the recipe version
 goes up.
 
+### Product folders and side-by-side installs
+
+In the fork, the default install root is named after the product: Windows
+`%LOCALAPPDATA%\OpenAC Gateway`, macOS `~/Library/Application Support/OpenAC Gateway`, Linux
+`$XDG_DATA_HOME/openac-gateway` (OpenAC Gateway Rynth: `OpenAC Gateway Rynth` /
+`openac-gateway-rynth`). The macOS app is `OpenAC Gateway.app` (bundle ID `org.openac.gateway`;
+Rynth: `OpenAC Gateway Rynth.app`, `org.openac.gateway-rynth`), so both products and upstream
+OpenAC can be installed side by side. An older fork build's data in `OpenAC` is not moved
+automatically.
+
 ### Coming from 0.1.16 or earlier
 
 OpenAC now keeps everything in one install folder (Windows
