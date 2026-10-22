@@ -55,6 +55,12 @@ public sealed class LauncherFingerprintContractTests
             pak + "\n// elsewhere in the content code\n")));
         Assert.Equal(fingerprint, Fingerprint(WithFile(head, "Directory.Build.props",
             Regex.Replace(props, "<Version>[^<]*</Version>", "<Version>99.0.0</Version>"))));
+        Assert.Equal(fingerprint, Fingerprint(WithFile(head, "Directory.Build.props",
+            Regex.Replace(props, "<OpenACReleaseNumber>[^<]*</OpenACReleaseNumber>",
+                "<OpenACReleaseNumber>99</OpenACReleaseNumber>"))));
+        Assert.NotEqual(fingerprint, Fingerprint(WithFile(head, "Directory.Build.props",
+            Regex.Replace(props, "<OpenACProduct>[^<]*</OpenACProduct>",
+                "<OpenACProduct>Another Product</OpenACProduct>"))));
 
         Assert.NotEqual(fingerprint, Fingerprint(WithFile(head, "src/AcDream.Launcher/App.axaml.cs",
             Git("show", "HEAD:src/AcDream.Launcher/App.axaml.cs") + "\n// a launcher change\n")));

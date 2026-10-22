@@ -74,7 +74,9 @@ public sealed class CharacterManagementUiControllerTests
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!
             .InformationalVersion.Split('+')[0];
 
-        Assert.Equal($"OpenAC {expectedVersion}", Assert.Single(version.LinesProvider()).Text);
+        string product = typeof(CharacterManagementUiController).Assembly
+            .GetCustomAttribute<AssemblyProductAttribute>()!.Product;
+        Assert.Equal($"{product} {expectedVersion}", Assert.Single(version.LinesProvider()).Text);
         Assert.Equal(new Vector4(0.65f, 0.65f, 0.65f, 1f), Assert.Single(version.LinesProvider()).Color);
         Assert.Null(version.DatFont);
         Assert.Equal(new Vector2(8f, 6f), version.ScreenPosition);

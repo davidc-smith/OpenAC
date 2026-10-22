@@ -202,18 +202,24 @@ Until the fork merges back upstream, its launcher updates from the fork's own re
 `OpenACReleaseRepository` in `Directory.Build.props` names the repository
 (`davidc-smith/OpenAC`), and both the launcher's feed
 (`releases/latest/download/manifest.json`) and `publish-bin.ps1`'s asset addresses come
-from it. Fork versions are `x.y.z-fork.n`; they are published as ordinary (not pre-release)
+from it. Fork release versions are `OpenACReleaseVersion` (`Directory.Build.props`): `x.y.z-gateway.n`
+on `main` (OpenAC Gateway) and `x.y.z-rynth.n` on `rynth` (OpenAC Gateway Rynth, set in
+`Directory.Branch.props`); the scripts read it with `dotnet msbuild -getProperty`. They are published as ordinary (not pre-release)
 releases so the `latest` route serves them.
 
 Build and publish one on a Mac with `pwsh tools/publish-fork-release.ps1` from a clean
 `main`: it runs `publish-bin.ps1 -MacOnly`, checks the four files (the osx-arm64 client and
 launcher zips, `manifest.json`, `launcher-fingerprint.json`), tags
-`v<version>`, pushes the tag and creates the release with `gh` (logged in as an account that
-can publish to the repository). `-DryRun` builds and checks, then prints those commands.
+`v<version>` (still, until the per-product tags arrive), pushes the tag and creates the release
+titled `<product> <version>` with `gh` (logged in as an account that
+can publish to the repository); it accepts only a `-gateway.n` or `-rynth.n` version. The
+launcher fingerprint ignores `<Version>` and `OpenACReleaseNumber`, so a release-number bump alone
+does not change it. For now the script publishes from `main` only; OpenAC Gateway Rynth releases
+(from `rynth`) arrive with the per-product tags and launcher feeds in Plan 3. `-DryRun` builds and checks, then prints those commands.
 Windows and Linux launchers find no payload for their RID in a fork release and report
 "Updates could not be checked".
 
-Pushing the `v*-fork` tag also triggers the fork's `ci.yml` (its tag trigger). The release
+Pushing the `v*` release tag also triggers the fork's `ci.yml` (its tag trigger). The release
 job cannot publish there (its gates and branch guard), so those runs are noise: disable
 Actions on the fork or ignore them.
 

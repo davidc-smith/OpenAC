@@ -201,7 +201,7 @@ public sealed partial class App : Application
         };
         var window = new Window
         {
-            Title = "OpenAC",
+            Title = LauncherProduct.Name,
             Width = 560,
             SizeToContent = SizeToContent.Height,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,

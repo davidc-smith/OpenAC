@@ -20,6 +20,8 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = LauncherProduct.Name;
+        ProductHeader.Text = LauncherProduct.Name;
         _statusTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(250),
