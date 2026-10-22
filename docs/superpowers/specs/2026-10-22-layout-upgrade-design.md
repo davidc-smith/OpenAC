@@ -1,8 +1,8 @@
 # Plugin layout upgrade: flex upstream and `<repeat>`
 
-Date: 2026-10-22. Status: agreed with the user for part 1 and part 2a;
-parts 2b and 2c are recommendations the user has not yet reviewed (marked
-**[recommended]**).
+Date: 2026-10-22. Status: agreed with the user (part 1 and 2a on 2026-10-22; 2b and 2c
+confirmed after the flex port: copies straight into the container,
+remembered state per item by key, docs-only plugin test support).
 
 ## Why
 
@@ -148,7 +148,7 @@ or `IEnumerable<T>`; any other type (including non-generic `IEnumerable`)
 fails the build. `T` comes from that declared type. `key` binds to any
 property on `T`.
 
-### 2b. Copies, reconcile and cleanup [recommended]
+### 2b. Copies, reconcile and cleanup (agreed)
 
 **Placement (R6).** The builder adds a zero-size, non-flex marker element
 (`UiMarkupRepeat`) to the flex container, in the position the `<repeat>`
@@ -194,7 +194,7 @@ enclosing repeat without `key` fails the build.
 exist upstream; the fork merge adds "a canvas inside a template fails the
 build" on `main`.
 
-### 2c. Limits, tests, docs, sample [recommended]
+### 2c. Limits, tests, docs, sample (agreed)
 
 **Performance (R10).** 150 copies of a five-control row in a scrolling
 group. A test measures reconcile plus arrange for that shape and bounds it
