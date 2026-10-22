@@ -4,7 +4,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupSeparator
 {
-    public static UiMarkupSeparator Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupSeparator Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         var separator = new UiMarkupSeparator
         {

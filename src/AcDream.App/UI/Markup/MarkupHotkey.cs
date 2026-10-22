@@ -4,7 +4,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupHotkey
 {
-    public static UiMarkupHotkey Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupHotkey Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         var hotkey = new UiMarkupHotkey
         {
