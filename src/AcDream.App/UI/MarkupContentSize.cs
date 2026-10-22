@@ -133,6 +133,13 @@ internal static class MarkupContentSize
                 return Fixed(SeparatorSize, SeparatorSize);
             case UiMarkupSplit:
                 return new FlexMeasurement(new FlexSize(ListWidth, ListHeight), new FlexSize(ListMinWidth, ListMinHeight));
+            case UiMarkupExpander expander:
+            {
+                // The header's arrow and caption, at the height for its state.
+                float min = UiMarkupExpanderHeader.CaptionX + MathF.Ceiling(TextWidth(expander.Header.DatFont, text));
+                float height = expander.Expanded ? expander.ExpandedHeight : UiMarkupExpander.HeaderHeight;
+                return new FlexMeasurement(new FlexSize(MathF.Max(ListWidth, min), height), new FlexSize(min, height));
+            }
             default:
                 return null;
         }
@@ -159,6 +166,7 @@ internal static class MarkupContentSize
         UiMarkupToggle toggle => toggle.TextSource?.Invoke() ?? toggle.Text,
         UiMarkupCheckbox checkbox => checkbox.TextSource?.Invoke() ?? checkbox.Text,
         UiMarkupRadio radio => string.Join("\n", radio.Items),
+        UiMarkupExpander expander => expander.Header.TextSource?.Invoke() ?? expander.Header.Text,
         _ => string.Empty,
     };
 
@@ -174,8 +182,12 @@ internal static class MarkupContentSize
         UiMarkupRadio radio => radio.DatFont,
         UiMarkupNumber number => number.Field.DatFont,
         UiMarkupHotkey hotkey => hotkey.DatFont,
+        UiMarkupExpander expander => expander.Header.DatFont,
         _ => null,
     };
+
+    /// <summary>Whether a control is an expander showing only its header.</summary>
+    internal static bool Collapsed(UiElement element) => element is UiMarkupExpander { Expanded: false };
 
     /// <summary>Whether a control's size depends on the theme beyond its font.</summary>
     internal static bool Themed(UiElement element) => element is UiMarkupToggle { ThemePalette: not null };

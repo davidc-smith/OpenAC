@@ -690,6 +690,13 @@ top is above the expander's bottom, stay put.
   Without `onchange` it only displays. Bound state is never remembered by the
   client.
 
+Inside a flex container an expander is a flex item: its `h` is the height it
+takes while expanded, and collapsed it is just its 18-point header. The
+container lays out again when it folds, so the items after it move up and
+`grow` items take the space, and the expander doesn't move its siblings itself
+as it does in an absolute window. A collapsed expander never grows or
+stretches.
+
 On a host older than expanders, an `<expander>` fails the build of its
 window as unknown.
 
@@ -966,6 +973,7 @@ is inside and is never a flex item.
 | `color` | 40 × 24 |
 | `separator` | 9 points thick, stretched along the container's cross axis: across a column, down a row |
 | `split` | 160 × 80 (60 × 40 at least) |
+| `expander` | its `h` while expanded, 18 while collapsed; 160 wide (its caption and arrow at least) |
 | `icon` | 32 × 32 |
 | `field`, `menu` | 120 wide (40 at least); tall as a button (at least 24, or the font's line plus 8) |
 | `slider` / `meter` | 120 wide (40 at least), 16 / 12 tall (fixed) |

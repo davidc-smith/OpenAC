@@ -949,6 +949,15 @@ public static class MarkupDocument
             : flex.AddLeaf(element, new FlexNode(),
                 el.Name.LocalName == "group" ? AbsoluteGroupSize(element) : null);
         MarkupFlexAttributes.ReadItem(el, item.Node);
+        if (element is UiMarkupExpander expander)
+        {
+            // Its h is the expanded height, given only while it is expanded;
+            // collapsed it measures as its header (MarkupContentSize).
+            expander.FlexPlaced = true;
+            expander.ExpandedHeight = item.Node.Height ?? expander.Height;
+            item.Node.Height = null;
+            item.ExpandedMaxHeight = item.Node.MaxHeight;
+        }
         element.Anchors = AnchorEdges.None;
         if (element is UiLabel label) label.SizedByLayout = true;
         if (element is UiMenu menu)

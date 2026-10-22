@@ -14,6 +14,8 @@ public sealed class MarkupFlexControlsTests
     private sealed class Binding
     {
         public bool On { get; set; } = true;
+        public bool Open { get; set; } = true;
+        public Action<bool> SetOpen => v => Open = v;
         public Action<bool> SetOn => v => On = v;
         public string Caption { get; set; } = "AB";
         public int Choice { get; set; }
@@ -150,5 +152,89 @@ public sealed class MarkupFlexControlsTests
         Frame(root);
 
         Assert.Equal(45f, Find(frame, "b").Left);
+    }
+
+    private const string ExpanderColumn = """
+        <group x="0" y="0" w="200" h="300" layout="column">
+          <expander name="e" text="Opts" h="100">
+            <label x="4" y="4" text="AB" />
+          </expander>
+          <button name="b" text="OK" />
+        </group>
+        """;
+
+    [Fact]
+    public void Collapsing_an_expander_in_a_column_gives_its_space_back_to_the_layout()
+    {
+        var (root, frame) = Mount(ExpanderColumn, new Binding());
+        var e = (UiMarkupExpander)Find(frame, "e");
+        UiElement b = Find(frame, "b");
+        Assert.Equal(new FlexRect(0f, 0f, 200f, 100f), Rect(e));
+        Assert.Equal(100f, b.Top);
+
+        e.Toggle();
+        Frame(root);
+        Assert.Equal(new FlexRect(0f, 0f, 200f, UiMarkupExpander.HeaderHeight), Rect(e));
+        Assert.False(e.Content.Visible);
+        Assert.Equal(UiMarkupExpander.HeaderHeight, b.Top);
+
+        e.Toggle();
+        Frame(root);
+        Assert.Equal(100f, e.Height);
+        Assert.True(e.Content.Visible);
+        Assert.Equal(100f, b.Top);
+    }
+
+    [Fact]
+    public void A_growing_expander_keeps_its_header_height_while_collapsed()
+    {
+        var (root, frame) = Mount("""
+            <group x="0" y="0" w="200" h="300" layout="column">
+              <expander name="e" text="Opts" h="100" grow="1" />
+              <button name="b" text="OK" />
+            </group>
+            """, new Binding());
+        var e = (UiMarkupExpander)Find(frame, "e");
+        Assert.Equal(276f, e.Height);
+
+        e.Toggle();
+        Frame(root);
+        Assert.Equal(UiMarkupExpander.HeaderHeight, e.Height);
+        Assert.Equal(UiMarkupExpander.HeaderHeight, Find(frame, "b").Top);
+    }
+
+    [Fact]
+    public void A_collapsed_expander_in_a_row_is_not_stretched()
+    {
+        var (root, frame) = Mount("""
+            <group x="0" y="0" w="300" h="120" layout="row">
+              <expander name="e" text="Opts" w="150" h="100" />
+              <button text="OK" />
+            </group>
+            """, new Binding());
+        var e = (UiMarkupExpander)Find(frame, "e");
+        Assert.Equal(120f, e.Height);
+
+        e.Toggle();
+        Frame(root);
+        Assert.Equal(UiMarkupExpander.HeaderHeight, e.Height);
+    }
+
+    [Fact]
+    public void A_bound_expander_reflows_when_its_binding_flips()
+    {
+        var binding = new Binding();
+        var (root, frame) = Mount("""
+            <group x="0" y="0" w="200" h="300" layout="column">
+              <expander name="e" text="Opts" h="100" expanded="{Open}" onchange="{SetOpen}" />
+              <button name="b" text="OK" />
+            </group>
+            """, binding);
+        Assert.Equal(100f, Find(frame, "b").Top);
+
+        binding.Open = false;
+        Frame(root);
+
+        Assert.Equal(UiMarkupExpander.HeaderHeight, Find(frame, "b").Top);
     }
 }
