@@ -156,8 +156,9 @@ buttons and tabs show an accent ring when focused, and menus show an accent
 edge while open. Tabs are pills and toggles are switches.
 The markup controls (checkbox, radio, number, hotkey, colour, expander,
 split, list header and tree, the context menu and colour popups, and the
-Confirm box) take the modern shapes too; the Confirm box's title uses the
-title's SemiBold weight.
+Confirm box) take the modern shapes too; the Confirm box's title and a
+list's header row use the title's SemiBold weight, and the Confirm box closes
+with the title bar's plain X.
 A themed toggle's caption starts 18 points further right than in Classic, so
 give toggles room for it. On high-density displays themed text is drawn from
 a sharper bake of the font; measurements, and so layout, are the same on

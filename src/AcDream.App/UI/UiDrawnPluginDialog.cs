@@ -77,7 +77,7 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
             _buttons[i] = button;
             x += widths[i] + ButtonGap;
         }
-        CloseButton = new UiSimpleButton
+        CloseButton = new CloseX
         {
             Left = Width - CloseSize - 2f, Top = MathF.Round((TitleHeight - CloseSize) * 0.5f),
             Width = CloseSize, Height = CloseSize, Text = "x", DatFont = font,
@@ -145,5 +145,17 @@ internal sealed class UiDrawnPluginDialog : UiPluginDialog
         // Classic only: the themed window's edge is part of its rounded surface.
         if (_palette() is null)
             ctx.DrawRectOutline(0f, 0f, Width, Height, ClassicBorder, 1f);
+    }
+
+    /// <summary>The close button: a plugin title bar's ghost X under a theme, a plain "x" button in Classic.</summary>
+    private sealed class CloseX : UiSimpleButton
+    {
+        protected override void OnDraw(UiRenderContext ctx)
+        {
+            if (ThemePalette is { } palette)
+                PluginUiStyle.CloseButton(ctx, palette, Width, Height, ThemeState, KeyboardFocused);
+            else
+                base.OnDraw(ctx);
+        }
     }
 }

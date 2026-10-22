@@ -82,8 +82,9 @@ public sealed partial class UiMarkupList
 
     private void DrawCaption(UiRenderContext context, string text, float x, float top, float height, Vector4 color)
     {
-        float textY = top + MathF.Max(0f, (height - (DatFont?.LineHeight ?? 14f)) * 0.5f);
-        if (DatFont is { } font)
+        UiDatFont? headerFont = HeaderFont ?? DatFont;
+        float textY = top + MathF.Max(0f, (height - (headerFont?.LineHeight ?? 14f)) * 0.5f);
+        if (headerFont is { } font)
             context.DrawStringDat(font, text, x, textY, color, ThemePalette is null);
         else
             context.DrawString(text, x, textY, color);

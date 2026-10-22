@@ -165,6 +165,7 @@ internal static class PluginMarkupTheme
                 var lbf = list.ButtonColor; var lbe = list.ButtonBorderColor;
                 panel.AddThemeAction(p => {
                     list.ThemePalette = p; list.BackgroundColor = p?.Field ?? lb;
+                    list.HeaderFont = p is null ? null : panel.ModernTitleFont;
                     list.BorderColor = p?.Border ?? le; list.TextColor = p?.Text ?? lt;
                     list.SelectedColor = p?.Selected ?? ls; list.SelectionBandEnabled = p is not null || band;
                     // The list's own ground is the field colour, so its buttons take the window's.
