@@ -1136,6 +1136,29 @@ public interface IMagicCommands
             : PluginCastRequestResult.Unavailable;
 
     /// <summary>
+    /// Whether casting this spell at a particular object would be accepted,
+    /// without selecting it: the player's selection is neither read nor
+    /// changed. Reports <see cref="PluginCastGate.Refused"/> when that
+    /// object is not in the world, and on a host that cannot cast without
+    /// selecting.
+    /// </summary>
+    PluginCastGate EvaluateGateWithoutSelecting(
+        uint spellId, uint targetObjectId) =>
+        PluginCastGate.Refused;
+
+    /// <summary>
+    /// Casts the spell at the given object without selecting it, and reports
+    /// what happened; the player's selection is neither read nor changed.
+    /// Reports <see cref="PluginCastRequestResult.IncompatibleTarget"/> when
+    /// that object is not in the world, and
+    /// <see cref="PluginCastRequestResult.Unavailable"/> on a host that
+    /// cannot cast without selecting.
+    /// </summary>
+    PluginCastRequestResult RequestCastWithoutSelecting(
+        uint spellId, uint targetObjectId) =>
+        PluginCastRequestResult.Unavailable;
+
+    /// <summary>
     /// Whether the character is carrying everything the spell's formula
     /// consumes. True when the host cannot tell.
     /// </summary>
@@ -1455,6 +1478,16 @@ public sealed class NoOpAutomationSurface
 
     /// <inheritdoc/>
     public bool Cast(uint spellId, uint targetObjectId) => false;
+
+    /// <inheritdoc/>
+    public PluginCastGate EvaluateGateWithoutSelecting(
+        uint spellId, uint targetObjectId) =>
+        PluginCastGate.Unavailable;
+
+    /// <inheritdoc/>
+    public PluginCastRequestResult RequestCastWithoutSelecting(
+        uint spellId, uint targetObjectId) =>
+        PluginCastRequestResult.Unavailable;
 
     /// <inheritdoc/>
     public PluginCombatSnapshot Snapshot => default;
