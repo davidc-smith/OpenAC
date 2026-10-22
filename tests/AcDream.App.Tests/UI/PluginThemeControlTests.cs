@@ -456,6 +456,24 @@ public sealed class PluginThemeControlTests
     }
 
     [Fact]
+    public void AThemedDrawnDialogsCloseButtonIsTheTitleBarsGhostX()
+    {
+        var font = BundledUiFont.Bake().CreateFont(41);
+        var themed = new UiDrawnPluginDialog("Delete", "Delete it?", ["OK"], font, () => P);
+        var (renderer, ctx) = ThemeDrawCapture.Context();
+        themed.CloseButton.DrawSelfAndChildren(ctx);
+        Assert.DoesNotContain(renderer.DebugSpriteSegmentVerts, s => s.Texture == 41u && s.Verts.Count > 0);
+        var vertices = ThemeDrawCapture.Vertices(renderer);
+        Assert.True(ThemeDrawCapture.HasColor(vertices, P.Muted));
+        Assert.False(ThemeDrawCapture.HasColor(vertices, P.Field));
+
+        var classic = new UiDrawnPluginDialog("Delete", "Delete it?", ["OK"], font, static () => null);
+        (renderer, ctx) = ThemeDrawCapture.Context();
+        classic.CloseButton.DrawSelfAndChildren(ctx);
+        Assert.Contains(renderer.DebugSpriteSegmentVerts, s => s.Texture == 41u && s.Verts.Count > 0);
+    }
+
+    [Fact]
     public void SwitchingToClassicClearsEveryControlsPalette()
     {
         var settings = new PluginUiThemeSettings { Theme = PluginUiTheme.Brass };
