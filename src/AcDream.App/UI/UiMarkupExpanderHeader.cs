@@ -8,6 +8,9 @@ namespace AcDream.App.UI;
 /// </summary>
 public sealed class UiMarkupExpanderHeader : UiElement
 {
+    /// <summary>Where the caption starts: after the arrow.</summary>
+    internal const float CaptionX = 14f;
+
     public static readonly Vector4 ClassicArrow = new(0.80f, 0.74f, 0.55f, 1f);
     public static readonly Vector4 FocusColor = new(1f, 0.82f, 0.25f, 1f);
 
@@ -77,7 +80,7 @@ public sealed class UiMarkupExpanderHeader : UiElement
 
         string caption = TextSource?.Invoke() ?? Text;
         Vector4 text = Fade(TextColorSource?.Invoke() ?? TextColor);
-        UiCaption.Draw(ctx, DatFont, caption, 14f, 0f, Height, text, outline: ThemePalette is null);
+        UiCaption.Draw(ctx, DatFont, caption, CaptionX, 0f, Height, text, outline: ThemePalette is null);
 
         if (_keyboardActivation.Focused)
             ctx.DrawRectOutline(0f, 0f, Width, Height, FocusColor, 1f);
