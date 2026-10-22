@@ -4,14 +4,14 @@
   {
    "id": 1,
    "subject": "Task 1: Flex engine",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [],
    "description": "**Goal:** Add the pure flex layout engine (`UI/Layout/Flex/*`) in its series-1 form, with its tests.\n\n**Files:**\n- Create: `src/AcDream.App/UI/Layout/Flex/FlexTypes.cs`, `FlexNode.cs`, `FlexLayout.cs`\n- Create: `tests/AcDream.App.Tests/UI/Layout/Flex/FlexTestNodes.cs`, `FlexLayoutMeasureTests.cs`, `FlexLayoutArrangeTests.cs`, `FlexLayoutNestingTests.cs`, `FlexLayoutFuzzTests.cs`, `FlexLayoutWrapScrollTests.cs`, `FlexLayoutScalingTests.cs`\n\n**Acceptance Criteria:**\n- [ ] The engine files equal the series-1 state: the tree at the tip of `flex/engine` (17c77905) for these paths. They have no `ScrollbarThickness`, no scrollbar settle and no grid lines, which come in Task 4.\n- [ ] The flex engine tests pass (`FullyQualifiedName~Layout.Flex`).\n- [ ] The gate passes: no new failures, 0 warnings, the fork-only grep is empty.\n- [ ] One commit: `feat(ui): flex layout engine for plugin markup`.\n\n**Verify:** `dotnet test tests/AcDream.App.Tests -c Release --filter \"FullyQualifiedName~Layout.Flex\"` \u2192 all pass; then the gate.\n\n**Steps:**\n\n- [ ] **Step 1: Bring the series-1 files from the `flex/engine` tip.** These paths are new on the branch and the engine series touched nothing else (classify-C \"Port instructions per series\", 1-engine):\n\n```bash\ncd /Users/davidsmith/code/OpenAC/OpenAC/.worktrees/plugin-flex-layout\ngit checkout 17c77905 -- src/AcDream.App/UI/Layout/Flex/FlexTypes.cs src/AcDream.App/UI/Layout/Flex/FlexNode.cs src/AcDream.App/UI/Layout/Flex/FlexLayout.cs tests/AcDream.App.Tests/UI/Layout/Flex/\ngit status --short\n```\n\nThe listing should show exactly the 3 source files and the engine test files. If `FlexFitTests.cs` or `FlexLayoutScrollbarTests.cs` appear, delete them, because they belong to Tasks 3 and 4.\nThen apply the one later engine-only change: the allocation test takes the least of five rounds (ddcc2d13), with `git show ddcc2d13 -- tests/AcDream.App.Tests/UI/Layout/Flex/FlexLayoutScalingTests.cs | git apply`.\nAlso check whether a later engine fix to the 1-engine parts landed after 17c77905. Run `git diff 17c77905 eca0047c -- src/AcDream.App/UI/Layout/Flex/FlexLayout.cs`. Only 8463b376 and ce549264 (scroll, Task 4) should show; if any other commit shows, apply it too.\n\n- [ ] **Step 2: Build and run the engine tests.** Expected: all pass, and the build has 0 warnings.\n\n- [ ] **Step 3: Run the full gate** (section \"How every task verifies\", label `task1`).\n\n- [ ] **Step 4: Commit.**\n\n```bash\ngit add src/AcDream.App/UI/Layout/Flex tests/AcDream.App.Tests/UI/Layout/Flex\ngit commit -m \"feat(ui): flex layout engine for plugin markup\n\nA small flexbox subset in plain C#: rows and columns, grow and shrink,\nwrap, gaps, padding, alignment, content minimums and height for width.\nNothing uses it yet.\n\nClaude-Session: https://claude.ai/code/session_01C83Twxs4TYLEbsJtnPsN4a\"\n```\n\n```json:metadata\n{\"files\": [\"src/AcDream.App/UI/Layout/Flex/FlexTypes.cs\", \"tests/AcDream.App.Tests/UI/Layout/Flex/FlexTestNodes.cs\"], \"verifyCommand\": \"`dotnet test tests/AcDream.App.Tests -c Release --filter \\\"FullyQualifiedName~Layout.Flex\\\"` \\u2192 all pass; then the gate.\", \"acceptanceCriteria\": [\"The engine files equal the series-1 state: the tree at the tip of `flex/engine` (17c77905) for these paths. They have no `ScrollbarThickness`, no scrollbar settle and no grid lines, which come in Task 4.\", \"The flex engine tests pass (`FullyQualifiedName~Layout.Flex`).\", \"The gate passes: no new failures, 0 warnings, the fork-only grep is empty.\", \"One commit: `feat(ui): flex layout engine for plugin markup`.\"], \"modelTier\": \"standard\"}\n```"
   },
   {
    "id": 2,
    "subject": "Task 2: Window chrome and title bar",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     1
    ],
@@ -20,7 +20,7 @@
   {
    "id": 3,
    "subject": "Task 3: Flex layout in markup",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     2
    ],
@@ -29,7 +29,7 @@
   {
    "id": 4,
    "subject": "Task 4: Scrolling groups and wheel routing",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     3
    ],
@@ -38,7 +38,7 @@
   {
    "id": 5,
    "subject": "Task 5: New controls in flex",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     4
    ],
@@ -47,7 +47,7 @@
   {
    "id": 6,
    "subject": "Task 6: A flex window's first size follows bound visible",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     5
    ],
@@ -56,7 +56,7 @@
   {
    "id": 7,
    "subject": "Task 7: FlexDemo sample and flex docs",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     6
    ],
@@ -65,7 +65,7 @@
   {
    "id": 8,
    "subject": "Task 8: Whole-branch audit and push",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     7
    ],
@@ -81,5 +81,5 @@
    "description": "> **USER-ORDERED GATE \u2014 NON-SKIPPABLE.** Live client checks need the user present and their go-ahead.\n\n**Goal:** See the flex port working in a real client against the local ACE server, in Classic and in the plugin theme.\n\n**Files:** none. A defect becomes a `fix(ui): \u2026` commit on the branch, with the gate rerun.\n\n**Acceptance Criteria:**\n- [ ] The user has said they are available. Don't launch a client before that.\n- [ ] Built from this worktree, with FlexDemo and ControlsDemo installed to `~/OpenAC-dev/plugins/`, running against 10.10.20.20 through `~/OpenAC-dev/dev-client.env`, never Dreamweave.\n- [ ] Each of these is checked by the user, in both Classic and theme:\n  - Flex Finder resizes and reflows.\n  - Settings opens at its one-page height and its profile list scrolls.\n  - Gallery scrolls sideways with the trackpad and with Shift+wheel.\n  - The Flex Controls expander reflows, and split panes resize.\n  - The title bar X closes a window and the tooltip says where it went.\n  - The themed close X and the scrollbar thumbs are flat palette shapes.\n  - The ControlsDemo windows (non-flex) are unchanged.\n- [ ] The user says it passed, or every defect found is fixed and checked again.\n\n**Verify:** the user's confirmation in the conversation.\n\n**Steps:**\n\n- [ ] **Step 1:** Ask the user whether they are available for the live check. Wait for their answer.\n- [ ] **Step 2:** Build Release. Copy `samples/AcDream.Plugins.FlexDemo/bin/Release/net10.0/` and the ControlsDemo output into `~/OpenAC-dev/plugins/sample.flex-demo` and `sample.controls-demo`. Launch the dev client from this worktree the way `live-testing-rules` describes, then go through the checklist with the user.\n\n```json:metadata\n{\"files\": [\"samples/AcDream.Plugins.FlexDemo/bin/Release/net10.0/\"], \"verifyCommand\": \"the user's confirmation in the conversation.\", \"acceptanceCriteria\": [\"The user has said they are available. Don't launch a client before that.\", \"Built from this worktree, with FlexDemo and ControlsDemo installed to `~/OpenAC-dev/plugins/`, running against 10.10.20.20 through `~/OpenAC-dev/dev-client.env`, never Dreamweave.\", \"Each of these is checked by the user, in both Classic and theme:\", \"The user says it passed, or every defect found is fixed and checked again.\"], \"modelTier\": \"standard\", \"userGate\": true, \"tags\": [\"user-gate\"]}\n```"
   }
  ],
- "lastUpdated": "2026-10-22"
+ "lastUpdated": "2026-10-22T17:15:00+02:00"
 }
