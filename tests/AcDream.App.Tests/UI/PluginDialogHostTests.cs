@@ -452,4 +452,88 @@ public sealed class PluginDialogHostTests
         Assert.Same(field, f.Root.KeyboardFocus);
         Assert.Equal(string.Empty, field.Text);
     }
+
+    // An element whose blur handler throws: giving a dialog the focus fails.
+    private sealed class ThrowingBlur : UiElement
+    {
+        public bool Throw { get; set; }
+
+        public ThrowingBlur() => AcceptsFocus = true;
+
+        public override bool OnEvent(in UiEvent e) =>
+            e.Type == UiEventType.FocusLost && Throw
+                ? throw new InvalidOperationException("blur failed")
+                : base.OnEvent(in e);
+    }
+
+    [Fact]
+    public void AConfirmThatCannotBeShownQueuesNothingAndNeverAnswers()
+    {
+        var f = new Fixture();
+        var thrower = new ThrowingBlur { Left = 10f, Top = 40f, Width = 20f, Height = 20f, Throw = true };
+        f.Other.AddChild(thrower);
+        f.Root.SetKeyboardFocus(thrower);
+        var answers = new List<int>();
+
+        IDisposable? handle = f.Host.Confirm("T", "M", ["OK", "Cancel"], f.Owner, answers.Add);
+
+        Assert.Null(handle);
+        Assert.Equal(0, f.Host.PendingCount);
+        Assert.Null(f.Host.ShownFor(f.Owner));
+        Assert.Equal(0, f.Owner.ModalBlockCount);
+        Assert.DoesNotContain(f.Root.Children, c => c is UiPluginDialog);
+        f.Host.Tick();
+        Assert.Empty(answers);
+    }
+
+    [Fact]
+    public void AQueuedDialogThatCannotBeShownOnTickIsAnsweredWithItsLastButton()
+    {
+        var f = new Fixture();
+        var thrower = new ThrowingBlur { Left = 10f, Top = 40f, Width = 20f, Height = 20f };
+        f.Other.AddChild(thrower);
+        var first = new List<int>();
+        var second = new List<int>();
+        f.Confirm(f.Owner, first);
+        f.Confirm(f.Owner, second, "A", "B", "C");
+        f.Owner.Visible = false;
+        f.Press(Key.Enter);   // the next waits for its owner
+        f.Owner.Visible = true;
+        f.Root.SetKeyboardFocus(thrower);
+        thrower.Throw = true;
+
+        f.Host.Tick();
+        f.Host.Tick();
+
+        Assert.Equal([0], first);
+        Assert.Equal([2], second);
+        Assert.Equal(0, f.Host.PendingCount);
+        Assert.Equal(0, f.Owner.ModalBlockCount);
+        Assert.DoesNotContain(f.Root.Children, c => c is UiPluginDialog);
+    }
+
+    [Fact]
+    public void TwoPanelsCannotBeShownModalOverEachOther()
+    {
+        var f = new Fixture();
+
+        f.Host.ShowModal(f.Other, f.Owner);   // Other over Owner
+        f.Host.ShowModal(f.Owner, f.Other);   // refused: Owner is blocked by Other
+
+        Assert.Equal(1, f.Owner.ModalBlockCount);
+        Assert.Equal(0, f.Other.ModalBlockCount);
+
+        var third = new UiPanel { Left = 300f, Top = 300f, Width = 100f, Height = 100f };
+        f.Root.AddChild(third);
+        f.Host.ShowModal(third, f.Other);     // third over Other over Owner
+        f.Host.ShowModal(f.Owner, third);     // refused: a cycle through Other
+        Assert.Equal(0, third.ModalBlockCount);
+        Assert.Equal(1, f.Other.ModalBlockCount);
+
+        f.Other.Visible = false;              // Other's modal ends
+        f.Host.Tick();
+        f.Other.Visible = true;
+        f.Host.ShowModal(f.Owner, f.Other);   // allowed once Other no longer blocks Owner
+        Assert.Equal(2, f.Other.ModalBlockCount); // by third and by Owner
+    }
 }

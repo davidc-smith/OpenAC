@@ -53,7 +53,9 @@ internal sealed class PluginDialogHost : IDisposable
 
     /// <summary>
     /// Queues a dialog and returns a handle whose disposal answers it with
-    /// its last button; null once the host is disposed. An owner that is not
+    /// its last button; null once the host is disposed, or when the dialog
+    /// was due on screen at once and could not be shown (nothing is queued
+    /// then and the answer never runs). An owner that is not
     /// a shown top-level window counts as none: the dialog is centred on the
     /// screen and blocks nothing. Button-count and caption validation is the
     /// caller's (the registry's) job.
@@ -78,8 +80,13 @@ internal sealed class PluginDialogHost : IDisposable
             Title = title, Message = message, Buttons = buttons, Owner = owner, OnResult = onResult,
         };
         _confirms.Add(entry);
-        if (ReferenceEquals(HeadFor(owner), entry))
-            Show(entry);
+        if (ReferenceEquals(HeadFor(owner), entry) && !TryShow(entry))
+        {
+            // Never shown, never queued: the plugin hears false, not an answer.
+            entry.Done = true;
+            _confirms.Remove(entry);
+            return null;
+        }
         return new ConfirmHandle(this, entry);
     }
 
@@ -89,12 +96,16 @@ internal sealed class PluginDialogHost : IDisposable
     /// nothing; over another owner the block moves. No owner, an unmounted
     /// one, or the panel itself blocks nothing. Unlike <c>Confirm</c>, a
     /// mounted-but-hidden owner is still blocked; the modal ends only when the
-    /// panel hides or goes, or the owner is removed.
+    /// panel hides or goes, or the owner is removed. A panel is not shown
+    /// modal over a window it is itself blocked by (directly or through other
+    /// modals): the two would block each other for good.
     /// </summary>
     public void ShowModal(UiElement panel, UiElement? owner)
     {
         ArgumentNullException.ThrowIfNull(panel);
         if (_disposed)
+            return;
+        if (owner is not null && BlockedBy(panel, owner))
             return;
         foreach (ModalEntry existing in _modals.Where(m => ReferenceEquals(m.Panel, panel)).ToArray())
         {
@@ -125,8 +136,8 @@ internal sealed class PluginDialogHost : IDisposable
                 Finish(entry, entry.CancelIndex);
             else if (entry.View is null)
             {
-                if (ReferenceEquals(HeadFor(entry.Owner), entry))
-                    Show(entry);
+                if (ReferenceEquals(HeadFor(entry.Owner), entry) && !TryShow(entry))
+                    Finish(entry, entry.CancelIndex);
             }
             else
                 entry.View.Place(entry.Owner, _root.EffectiveCanvasSize);
@@ -158,15 +169,67 @@ internal sealed class PluginDialogHost : IDisposable
     private ConfirmEntry? HeadFor(UiElement? owner) =>
         _confirms.FirstOrDefault(entry => ReferenceEquals(entry.Owner, owner));
 
+    // Whether window is blocked by panel, directly or through a chain of
+    // modal panels each blocking the next.
+    private bool BlockedBy(UiElement window, UiElement panel)
+    {
+        var seen = new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
+        var pending = new Stack<UiElement>();
+        pending.Push(panel);
+        while (pending.Count > 0)
+        {
+            UiElement blocker = pending.Pop();
+            if (!seen.Add(blocker))
+                continue;
+            foreach (ModalEntry modal in _modals)
+            {
+                if (!ReferenceEquals(modal.Panel, blocker))
+                    continue;
+                if (ReferenceEquals(modal.Owner, window))
+                    return true;
+                pending.Push(modal.Owner);
+            }
+        }
+        return false;
+    }
+
+    // Shows the dialog, or undoes what was done and returns false when the
+    // view cannot be built or mounted.
+    private bool TryShow(ConfirmEntry entry)
+    {
+        try
+        {
+            Show(entry);
+            return true;
+        }
+        catch (Exception error)
+        {
+            Console.WriteLine($"[UI] plugin dialog could not be shown: {error.Message}");
+            entry.Block?.Dispose();
+            entry.Block = null;
+            if (entry.View is { } view)
+            {
+                view.Chosen = null;
+                bool hadFocus = ReferenceEquals(_root.KeyboardFocus, view);
+                if (ReferenceEquals(view.Parent, _root))
+                    _root.RemoveChild(view);
+                entry.View = null;
+                if (hadFocus && entry.PreviousFocus is { } previous && _root.CanFocus(previous))
+                    _root.SetKeyboardFocus(previous);
+            }
+            return false;
+        }
+    }
+
     private void Show(ConfirmEntry entry)
     {
         UiPluginDialog view = CreateView(entry);
+        entry.View = view;
         entry.PreviousFocus = _root.KeyboardFocus;
         view.Chosen = index => Finish(entry, index);
         _root.AddChild(view);
         _root.BringToFront(view);
         view.Place(entry.Owner, _root.EffectiveCanvasSize);
-        entry.View = view;
         if (entry.Owner is { } owner)
             entry.Block = _root.BlockWindow(owner, view);
         _root.SetKeyboardFocus(view);
@@ -213,8 +276,10 @@ internal sealed class PluginDialogHost : IDisposable
             entry.View = null;
             if (hadFocus && entry.PreviousFocus is { } previous && _root.CanFocus(previous))
                 _root.SetKeyboardFocus(previous);
+            // One that cannot be shown stays queued; Tick tries once more and
+            // then answers it with its last button, after this answer.
             if (!_disposed && HeadFor(entry.Owner) is { } next && !OwnerGone(next.Owner))
-                Show(next);
+                TryShow(next);
         }
         try
         {
