@@ -177,8 +177,8 @@ Unknown or miscased element names throw at build time.
 
 | Element | Purpose | Attributes |
 |---|---|---|
-| `panel` (root) | The window | `x y w h title visible resizable minw minh resize` |
-| `group` | Layout container | `x y w h background border` |
+| `panel` (root) | The window | `x y w h title visible resizable minw minh resize titlebar scroll`, and the flex container attributes |
+| `group` | Layout container | `x y w h background border scroll`, and the flex container attributes |
 | `label` | Text | `x y text color` |
 | `button` | Button with caption and optional icon | `x y w h text color background border onclick icon iconkind` |
 | `icon` | An icon | `x y w h did` or `spell` or `item`, `tooltip` |
@@ -201,7 +201,9 @@ Unknown or miscased element names throw at build time.
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
-a binding. A `contextmenu` takes none of them.
+a binding. A `contextmenu` takes none of them. Inside a flex container
+elements take the flex item attributes instead of `x`, `y` and `anchor` (see
+[Flex layout](#flex-layout)).
 
 A `field` can bind `onup` and `ondown` to handle arrow keys while focused.
 Fields without these callbacks retain their usual history navigation.
@@ -242,6 +244,47 @@ text when Enter ends the edit.
 border, no sprite art) or `retail` (the game's own pushbutton or scrollbar
 art). A `menu` always opens as one scrolling column of at most `rows` entries;
 when the entries overflow, the popup shows the game's scrollbar.
+
+## Title bar
+
+`titlebar="true"` on the root `<panel>` gives the window a host title bar
+(a root with `layout` has it unless it says `titlebar="false"`; see
+[Flex layout](#flex-layout)):
+the window's name on the left and a close button on the right, drawn in the
+window's look (the game's close art in Classic; in the shared themes a plain
+palette button with an "x"). The name is the panel's `title`, or the title the
+window was registered with when the markup has none. `titlebar` takes
+`true` or `false`; anything else fails the build.
+
+With the bar on, the window has a **content area** inside the chrome:
+
+- children's `x`/`y` are measured from the content area's top-left corner,
+  so nothing you place can sit under the title;
+- `w`, `h`, `minw` and `minh` describe the content area, and the host adds
+  the chrome: 5 points left, right and bottom, and the 24-point bar on top
+  (the frame is 10 points wider and 29 points taller);
+- the root's `x`/`y` still position the window's outer frame, while children
+  are placed from the content area's corner;
+- dragging the bar moves the window;
+- the frame is never narrower than 96 points, so the close button always
+  leaves room for the start of the title; a narrower window opens at 96.
+
+```xml
+<panel x="120" y="120" w="300" h="160" title="Buff Bot" titlebar="true">
+  <label x="8" y="8" text="Ready" />
+  <button x="212" y="128" w="80" h="24" text="Start" onclick="{Start}" anchor="right bottom" />
+</panel>
+```
+
+The close button does what the window's shelf button does: it closes the
+window for the player and the plugin keeps running; the shelf button (or
+`ShowPanel`) opens it again. A window with a bar does not get the shelf's
+"–" button, since its X does the same thing; the X's tooltip says so. A window
+kept out of the shelf (registered with `ShowInSidePanel` off) has no shelf
+button, so after the player closes it only the plugin's `ShowPanel` opens it
+again; give players a way to call it, such as a command or a button. Turning
+the bar on for an existing window changes its size, so a size the player
+saved is reset once (the position is kept).
 
 The `samples/AcDream.Plugins.ControlsDemo` plugin opens one window per group
 of the controls below (inputs, keys and colours, layout, table, tree, and
@@ -303,9 +346,8 @@ with spin buttons at its right edge.
   never steps an unfocused field, so scrolling a list past it is safe.
   Up, Down and the wheel step from the number being typed, if it's a valid
   number: typing 42 then pressing Up gives 42 plus `step`. Hold Shift for ten
-  steps. (macOS sends Shift with a mouse wheel as
-  sideways scrolling; the client reads a purely sideways tick while Shift is
-  held as the wheel, so it steps ten too.)
+  steps. (On macOS, Shift with a mouse wheel arrives as a sideways step; see
+  the wheel in [Scrolling groups](#scrolling-groups).)
 - While nobody is typing in it, the field follows `value`.
 
 On a host older than number fields, a `<number>` fails the build of its
@@ -530,7 +572,8 @@ top is above the expander's bottom, stay put.
   Two remembered controls with the same `name` in one window share what they
   remember, so give each its own name.
 - A hidden expander applies its state when it is shown; while hidden it still
-  occupies its space as last laid out.
+  occupies its space as last laid out (in an absolute window; a hidden flex
+  item takes no space).
 - Without `expanded` the client keeps the state. It starts from `open`
   (`true` by default, or `false`). If the expander has a `name`, the client
   remembers the player's choice per character with the window's other
@@ -540,6 +583,15 @@ top is above the expander's bottom, stay put.
   `onchange` with the state asked for, and the expander follows the property.
   Without `onchange` it only displays. Bound state is never remembered by the
   client.
+
+Inside a flex container an expander is a flex item: its `h` is its preferred
+height while expanded (across a row it stretches like any item unless
+`alignself` says otherwise), and collapsed it is just its 18-point header.
+The container lays out again when it folds, so the items after it move up
+and `grow` items take the space, and the expander doesn't move its siblings
+itself as it does in an absolute window. A collapsed expander never grows or
+stretches. Without a `w` it starts 160 wide, its content size, and right
+anchors inside it are measured from that width.
 
 On a host older than expanders, an `<expander>` fails the build of its
 window as unknown.
@@ -564,6 +616,15 @@ The groups' contents are laid out against the starting group sizes: `at`, or
 half of what is left after the 5 px bar (197 in the example above), whatever
 position the client remembers or the plugin binds. So author and anchor the
 children to fill a group at that size.
+
+A pane may be a flex container: `<group layout="column">` (or `row`) as a
+pane lays out its children in whatever size the split gives it, and again
+whenever the bar moves. The pane's content minimum doesn't limit the bar; set
+the split's `min` and `max` for that.
+
+A split inside a flex container without `w` or `h` starts at its content
+size, 160 × 80 (its bar at 77 unless `at` says otherwise), and right and
+bottom anchors in its groups are measured from that size.
 
 The player drags the bar to share the space out. Its position is the first
 group's size in pixels, kept between `min` (default 0) and `max` (default
@@ -700,6 +761,200 @@ An unknown anchor token, or a value that is present and names no edge at all,
 throws at build time naming the element and the value. Changing a panel's authored
 size or limits in a later plugin version resets each user's stored size once;
 their saved position is kept.
+
+## Flex layout
+
+`layout="row"` or `layout="column"` on a `<group>` or on the root `<panel>`
+makes it a **flex container**: it places its children itself, one after
+another along its main axis, sized to their content and sharing out the
+space that is left. A container without `layout` keeps absolute placement.
+The rules are a practical subset of CSS flexbox. The
+`samples/AcDream.Plugins.FlexDemo` plugin has four flex windows to resize
+and compare: a finder, a settings form, a scrolling gallery, and the newer
+controls inside flex.
+
+```xml
+<panel title="Buff Bot" layout="column" padding="8" gap="6" resizable="true">
+  <group layout="row" gap="4">
+    <field grow="1" text="{Search}" onchange="{SetSearch}" />
+    <button text="Find" onclick="{Find}" />
+  </group>
+  <list grow="1" items="{Results}" selected="{Selected}" onchange="{Select}" />
+  <group layout="row" justify="end" gap="4">
+    <button text="OK" onclick="{Ok}" />
+    <button text="Cancel" onclick="{Cancel}" />
+  </group>
+</panel>
+```
+
+### Container attributes
+
+| Attribute | Values | Default |
+|---|---|---|
+| `layout` | `row`, `column` | absent: absolute placement |
+| `gap` | points between items, and between wrapped lines | `0` |
+| `padding` | 1, 2 or 4 numbers in CSS order: all; vertical horizontal; top right bottom left | `0` |
+| `justify` | `start`, `center`, `end`, `space-between` | `start` |
+| `align` | `start`, `center`, `end`, `stretch` (across the line) | `stretch` |
+| `wrap` | `true`, `false` (rows only) | `false` |
+
+`gap`, `padding`, `justify`, `align` and `wrap` need `layout` on the same
+element. Only rows wrap in this version: `wrap="true"` on a column fails the
+build.
+
+### Item attributes
+
+Every child of a flex container may carry:
+
+| Attribute | Meaning | Default |
+|---|---|---|
+| `grow` | share of the space left over on the main axis | `0` |
+| `shrink` | share of the space missing, weighted by the item's basis | `1` |
+| `basis` | `auto` or points: the item's starting size on the main axis | `auto`: its `w`/`h` on that axis, else its content size |
+| `w`, `h` | preferred size, in place of the content size | the content size |
+| `minw`, `maxw`, `minh`, `maxh` | limits | min: the content minimum; max: none |
+| `alignself` | `start`, `center`, `end`, `stretch` | the container's `align` |
+
+An item never shrinks below its content (a button below its caption) unless
+`minw`/`minh` allow it. `x`, `y` and `anchor` on a flex item fail the build,
+and so do `grow`, `shrink`, `basis`, `alignself` and the limits on a child
+of a container without `layout`. A `<contextmenu>` belongs to the element it
+is inside and is never a flex item.
+
+### Content sizes
+
+| Element | Size |
+|---|---|
+| `label` | its text, one line tall |
+| `button`, `tab` | its caption with 12 points either side (and a square for its icon); at least 24 points tall, taller when the font's line plus 8 is more |
+| `toggle` | its lamp, then its caption; at least 20 points tall, taller when the font's line plus 4 is more |
+| `checkbox` | box, then its caption; tall as a toggle |
+| `radio` | one cell per option along its `orientation`, each as wide as the widest caption (box, caption and 8 points; segmented: the caption with 12 points either side) and as tall as a toggle (segmented: as a button) |
+| `number` | 120 wide (54 at least: a field and its spin); tall as a field |
+| `hotkey` | 120 wide (40 at least); tall as a field |
+| `color` | 40 × 24 |
+| `separator` | 9 points thick, stretched along the container's cross axis (across a column, down a row) unless `align`/`alignself` says otherwise |
+| `split` | 160 × 80 (60 × 40 at least) |
+| `expander` | its `h` while expanded, 18 while collapsed; 160 wide (its caption and arrow at least) |
+| `icon` | 32 × 32 |
+| `field`, `menu` | 120 wide (40 at least); tall as a button (at least 24, or the font's line plus 8) |
+| `slider` / `meter` | 120 wide (40 at least), 16 / 12 tall (fixed) |
+| `list`, `log` | 160 × 80 (60 × 40 at least) |
+| `group` with `layout` | what its own items need |
+| `group` without `layout` | its `w` × `h` |
+
+Sizes follow what is shown: a bound caption that gets longer, a hidden item
+(which takes no space), or a switch of the shared appearance lays the
+container out again on the next frame. A label inside a flex container
+draws in the box it is given, its line centred top to bottom.
+
+### Mixing absolute and flex
+
+The two nest freely. A group without `layout` inside a flex container is an
+item of its authored `w` × `h`; when the container gives it another size, its
+own children follow their `anchor`s exactly as in a resized window. A
+`<group layout>` inside an absolute container is placed by its `x`, `y`,
+`w`, `h` and `anchor` like any element, and lays out its children in
+whatever size that gives it. It needs its own `w` and `h` for that: without
+them it is empty and shows nothing.
+
+### Flex windows
+
+`layout` on the root `<panel>` lays out the window's content area:
+
+- the window gets the [title bar](#title-bar) unless the root says
+  `titlebar="false"` (without it the content area is inset by the 5-point
+  border on every side);
+- `w` and `h` may be left out: the window then opens at the size its
+  content needs. A size below what the content needs opens at the latter;
+- `minw` and `minh` default to what the content needs, so a window never
+  shrinks (by dragging, or by a restored layout) to a size that cuts its
+  content off. When the content needs more later (a longer caption), the
+  window grows to fit, even when it is not resizable, and stays on screen;
+- the opening size and minimum follow bound `visible` (and `enabled`) as the
+  bindings read when the window is built: a tabbed window whose pages are
+  sibling groups with `visible="{XTabSelected}"` opens sized for the shown
+  page, not every page stacked. A binding that throws at that point counts
+  as visible until the first frame reads it;
+- as with the title bar, the window's saved size is reset once when its
+  markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout`,
+  `titlebar` or `scroll` change. Captions and appearance never reset it.
+
+Windows only grow to fit: when the content later needs less room, the window
+keeps its size. A wrapping root's minimum height is the height of its
+narrowest layout, so a wide wrapping window cannot be made shorter than that;
+give it `scroll="y"` (see [Scrolling groups](#scrolling-groups)) to let it.
+
+A layout root with `titlebar="false"` shows no title text in the window (its
+`title` still names it in the shelf), and gets no shelf "–" button either,
+since its content reaches the corner where the button would sit: the player
+closes it from its shelf button, the plugin with `HidePanel`.
+
+A root that wraps should state its `w`: without it the window opens one
+line wide.
+
+## Scrolling groups
+
+`scroll="y"`, `scroll="x"` or `scroll="both"` on a `<group>` makes it scroll
+along those axes when its content does not fit; on the root `<panel>` it
+scrolls the window's content area. Without `scroll` content that does not fit
+is cut off, as before; any other value fails the build.
+
+```xml
+<panel title="Spells" layout="column" padding="8" gap="6" w="240" h="200" resizable="true">
+  <label text="Known spells" />
+  <group layout="row" wrap="true" gap="4" scroll="y" grow="1">
+    <icon spell="{Spell1}" />
+    <icon spell="{Spell2}" />
+    <!-- ... -->
+  </group>
+</panel>
+```
+
+- **Flex groups** lay their items out without a limit along the scrolling
+  axis: a scrolling column keeps every item at its size instead of shrinking
+  it, and a wrapping row with `scroll="y"` keeps its width and grows downward.
+  Items do not grow to fill a scrolling axis either; `grow` there has no space
+  to share.
+- **Groups without `layout`** scroll over their children as placed: the
+  scrolled area reaches the right and bottom edges of the furthest visible
+  child, measured from the group's top-left corner. A child at negative
+  coordinates is not reachable; leave your own margin after the last child if
+  you want one.
+- A **bar** (16 points) appears on each scrolling axis only while the content
+  overflows it, beside the content rather than over it: the content is laid
+  out (or its anchors applied) in the room left, so a right-anchored child
+  moves in beside the bar. When both bars show, the corner square stays empty.
+  Classic uses the game's scrollbar art; in the shared themes a themed bar
+  draws a flat thumb in the palette's muted colour.
+- **In a flex container** a scrolling group may shrink to a 40-point view
+  along each axis it scrolls (plus the other bar's 16 points), so it never
+  holds its window open. A scrolling wrapping row in a column shows all its
+  lines when the window has room and scrolls when it does not. On the root,
+  the window's minimum along a scrolling axis is that small view too.
+- The root needs a content area to scroll: `scroll` on a root `<panel>`
+  without `layout` and without `titlebar="true"` fails the build.
+
+**The wheel** scrolls the innermost thing under the pointer that can scroll:
+a `list` or `log` inside a scrolling group scrolls itself, and the group
+scrolls everywhere else. A group, list or log with nothing to scroll lets
+the wheel pass to a group around it. Scrolling closes an open menu, unless
+the pointer is over the menu's popup. A sideways swipe, a tilt wheel, or
+Shift with the wheel scrolls horizontally. Only `scroll="x"` and
+`scroll="both"` groups take a horizontal step; a Shift step that no such
+group takes scrolls vertically as before. macOS sends Shift with a mouse
+wheel as a sideways step, and the same rule applies: it scrolls a horizontal
+group under the pointer, else it is the wheel, so Shift+wheel still steps a
+focused `<number>` by ten. A focused number inside a horizontally scrolling
+group loses Shift+wheel to the group. One wheel step moves 48 points (three
+16-point lines); the bar's arrows move 16 and a click in its track a page.
+
+**Focus** moves into view: when Tab (or a click) gives a control keyboard
+focus, each scrolling group around it scrolls just far enough to show it.
+
+The scroll position survives hiding and showing the group and a change of
+appearance, is pulled back when the group grows or its content shrinks, and
+is not saved between sessions. Plugins cannot read or set it in this version.
 
 ## Icon ids
 
@@ -1055,9 +1310,11 @@ or touches a plugin window's own visibility.
 
 A plugin window is on screen only while two things agree: the player's own
 request (its shelf button and its close button) and, when the markup binds
-the root's `visible`, the plugin's binding. Closing the window with its
-close button clears the player's request, so setting the binding back to
-true does not reopen it. `ShowPanel` and `HidePanel` make that request from
+the root's `visible`, the plugin's binding. The close button is the title
+bar's X (see [Title bar](#title-bar)), or, without a bar, the shelf's "–" on
+the window's corner (absolute windows only). Closing the window with it
+clears the player's request, so setting the binding back to true does not
+reopen it. `ShowPanel` and `HidePanel` make that request from
 the plugin, exactly as the shelf button does:
 
 ```csharp
@@ -1116,6 +1373,19 @@ The theme plugins read is covered by `BufferedUiRegistryThemeTests` under
 `tests/AcDream.App.Tests/`, by `ScopedUiRegistryThemeTests` for the scoped
 forwarder, and by `PluginThemeContractTests` and the headless suite for the
 Classic answer.
+
+The flex engine is covered by `FlexLayoutMeasureTests`,
+`FlexLayoutArrangeTests`, `FlexLayoutNestingTests`, `FlexLayoutScalingTests`,
+`FlexLayoutScrollbarTests`, `FlexLayoutWrapScrollTests`, `FlexFitTests` and
+`FlexLayoutFuzzTests` under `tests/AcDream.App.Tests/UI/Layout/Flex/`. Flex
+markup, title bars and scrolling groups are covered by `MarkupFlexTests`,
+`MarkupFlexAttributesTests`, `MarkupContentSizeTests`,
+`MarkupFlexControlsTests`, `MarkupFlexWindowTests`, `MarkupTitleBarTests`,
+`MarkupScrollWindowTests`, `MarkupWindowMountTests`, `PluginTitleBarTests`,
+`PluginWindowChromeTests`, `UiContentOffsetTests`,
+`RetailWindowManagerMinimumTests`, `UiScrollGroupTests`,
+`UiRootWheelRoutingTests` and `FlexDemoSampleTests` under
+`tests/AcDream.App.Tests/UI/`.
 
 ## Scrolling transcripts
 
