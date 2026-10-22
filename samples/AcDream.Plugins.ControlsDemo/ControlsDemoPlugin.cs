@@ -8,7 +8,8 @@ namespace AcDream.Plugins.ControlsDemo;
 /// fields, radio groups, separators), Keys and colours (hotkey boxes, colour
 /// pickers), Layout (a split holding expanders), Table (a list with a header,
 /// sorting, resizable columns, multi-select and a context menu), Tree (a tree
-/// list) and Dialogs (message boxes and a modal editor). Every window opts in
+/// list), Repeat (a row built for each item of a list) and Dialogs (message
+/// boxes and a modal editor). Every window opts in
 /// to the plugin theme, so switching Plugin appearance from the shelf's
 /// right-click menu shows each control in Classic and in both modern themes.
 /// </summary>
@@ -33,6 +34,7 @@ public sealed class ControlsDemoPlugin : IAcDreamPlugin
         Add(new PluginPanelDescriptor("layout", "Controls: Layout") { IconText = "CL" }, "layout.xml", new LayoutBinding());
         Add(new PluginPanelDescriptor("table", "Controls: Table") { IconText = "CT" }, "table.xml", new TableBinding(host.Ui));
         Add(new PluginPanelDescriptor("tree", "Controls: Tree") { IconText = "CR" }, "tree.xml", new TreeBinding());
+        Add(new PluginPanelDescriptor("repeat", "Controls: Repeat") { IconText = "CP" }, "repeat.xml", new RepeatBinding());
         var profile = new Profile();
         var editor = new EditorBinding(host.Ui, profile);
         Add(new PluginPanelDescriptor("dialogs", "Controls: Dialogs") { IconText = "CD" }, "dialogs.xml",

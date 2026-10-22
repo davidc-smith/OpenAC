@@ -5,7 +5,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupSplit
 {
-    public static UiMarkupSplit Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupSplit Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         bool horizontal = (string?)el.Attribute("orientation") switch
         {

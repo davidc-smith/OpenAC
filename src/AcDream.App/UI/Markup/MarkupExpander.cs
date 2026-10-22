@@ -4,7 +4,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupExpander
 {
-    public static UiMarkupExpander Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupExpander Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         float height = MarkupDocument.F(el, "h");
         if (height < UiMarkupExpander.HeaderHeight)

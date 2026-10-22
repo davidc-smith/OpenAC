@@ -4,7 +4,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupRadio
 {
-    public static UiMarkupRadio Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupRadio Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         var radio = new UiMarkupRadio
         {
@@ -33,7 +33,7 @@ internal static class MarkupRadio
     }
 
     /// <summary>A bound string list, or a literal list separated by <c>|</c>.</summary>
-    private static Func<IReadOnlyList<string>> Items(string? expression, object binding)
+    private static Func<IReadOnlyList<string>> Items(string? expression, MarkupBindingSource binding)
     {
         if (string.IsNullOrEmpty(expression))
             throw new FormatException("radio items must list at least one option");

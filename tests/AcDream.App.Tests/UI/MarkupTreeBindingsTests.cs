@@ -22,7 +22,7 @@ public sealed class MarkupTreeBindingsTests
     public void StringSetReader_ReadsALiveSetWithoutCopying()
     {
         var b = new Binding();
-        var read = MarkupBindings.BindRequiredStringSetReader("{Set}", b, "list expanded");
+        var read = MarkupBindings.BindRequiredStringSetReader("{Set}", MarkupBindingSource.For(b), "list expanded");
         Assert.Same(b.Set, read());
         b.Set = new HashSet<string> { "z" };
         Assert.Contains("z", read());
@@ -32,11 +32,11 @@ public sealed class MarkupTreeBindingsTests
     public void StringSetReader_CopiesOtherEnumerablesAndReadsNullAsEmpty()
     {
         var b = new Binding();
-        var set = MarkupBindings.BindRequiredStringSetReader("{List}", b, "list expanded")();
+        var set = MarkupBindings.BindRequiredStringSetReader("{List}", MarkupBindingSource.For(b), "list expanded")();
         Assert.Single(set);
         Assert.Contains("b", set);
         Assert.False(set.Contains("B"));   // ordinal
-        Assert.Empty(MarkupBindings.BindRequiredStringSetReader("{Nothing}", b, "list expanded")());
+        Assert.Empty(MarkupBindings.BindRequiredStringSetReader("{Nothing}", MarkupBindingSource.For(b), "list expanded")());
     }
 
     [Theory]
@@ -48,7 +48,7 @@ public sealed class MarkupTreeBindingsTests
     public void StringSetReader_ThrowsNamingContext(string? expression)
     {
         var ex = Assert.Throws<FormatException>(() =>
-            MarkupBindings.BindRequiredStringSetReader(expression, new Binding(), "list expanded"));
+            MarkupBindings.BindRequiredStringSetReader(expression, MarkupBindingSource.For(new Binding()), "list expanded"));
         Assert.Contains("list expanded", ex.Message);
     }
 
@@ -56,8 +56,8 @@ public sealed class MarkupTreeBindingsTests
     public void StringBoolAction_MissingIsNullAndBoundInvokes()
     {
         var b = new Binding();
-        Assert.Null(MarkupBindings.BindStringBoolAction(null, b, "list onexpand"));
-        MarkupBindings.BindStringBoolAction("{SetExpand}", b, "list onexpand")!("k", true);
+        Assert.Null(MarkupBindings.BindStringBoolAction(null, MarkupBindingSource.For(b), "list onexpand"));
+        MarkupBindings.BindStringBoolAction("{SetExpand}", MarkupBindingSource.For(b), "list onexpand")!("k", true);
         Assert.Equal(("k", true), b.Last);
     }
 
@@ -68,7 +68,7 @@ public sealed class MarkupTreeBindingsTests
     public void StringBoolAction_ThrowsNamingContextAndType(string expression)
     {
         var ex = Assert.Throws<FormatException>(() =>
-            MarkupBindings.BindStringBoolAction(expression, new Binding(), "list onexpand"));
+            MarkupBindings.BindStringBoolAction(expression, MarkupBindingSource.For(new Binding()), "list onexpand"));
         Assert.Contains("list onexpand", ex.Message);
         Assert.Contains("Action<string, bool>", ex.Message);
     }

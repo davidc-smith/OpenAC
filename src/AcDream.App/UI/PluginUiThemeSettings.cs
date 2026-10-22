@@ -150,9 +150,45 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
 
     /// <summary>The palette the panel draws with now, or null under Classic.</summary>
     internal PluginUiPalette? Palette => _settings.Palette;
+    private ThemeActionScope? _scope;
+
+    /// <summary>
+    /// Starts recording the theme actions added until the scope is disposed;
+    /// disposing it removes them, so a repeat copy's look stops following the
+    /// theme once the copy is gone.
+    /// </summary>
+    internal ThemeActionScope BeginThemeScope()
+    {
+        if (_scope is not null) throw new InvalidOperationException("a theme scope is already open");
+        return _scope = new ThemeActionScope(this);
+    }
+
+    internal sealed class ThemeActionScope(UiPluginMarkupPanel panel) : IDisposable
+    {
+        internal readonly List<Action<PluginUiPalette?>> Actions = new();
+        private bool _closed, _disposed;
+
+        /// <summary>Stops recording; the actions keep running until <see cref="Dispose"/>.</summary>
+        public void Close()
+        {
+            if (_closed) return;
+            _closed = true;
+            if (ReferenceEquals(panel._scope, this)) panel._scope = null;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            Close();
+            _disposed = true;
+            foreach (var action in Actions) panel._apply.Remove(action);
+        }
+    }
+
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
         _apply.Add(action);
+        _scope?.Actions.Add(action);
         action(_settings.Palette);
     }
     protected override void OnTick(double dt)

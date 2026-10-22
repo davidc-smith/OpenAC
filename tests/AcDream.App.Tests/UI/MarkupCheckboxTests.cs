@@ -26,10 +26,10 @@ public class MarkupCheckboxTests
     public void CheckState_ReadsBoolAndNullableBool()
     {
         var binding = new Binding { Loot = true, Mixed = null };
-        Assert.True(MarkupBindings.BindRequiredNullableBoolReader("{Loot}", binding, "ctx")());
-        Assert.Null(MarkupBindings.BindRequiredNullableBoolReader("{Mixed}", binding, "ctx")());
+        Assert.True(MarkupBindings.BindRequiredNullableBoolReader("{Loot}", MarkupBindingSource.For(binding), "ctx")());
+        Assert.Null(MarkupBindings.BindRequiredNullableBoolReader("{Mixed}", MarkupBindingSource.For(binding), "ctx")());
         binding.Mixed = false;
-        Assert.False(MarkupBindings.BindRequiredNullableBoolReader("{Mixed}", binding, "ctx")());
+        Assert.False(MarkupBindings.BindRequiredNullableBoolReader("{Mixed}", MarkupBindingSource.For(binding), "ctx")());
     }
 
     [Theory]
@@ -40,7 +40,7 @@ public class MarkupCheckboxTests
     public void CheckState_RejectsAnythingButABoolBinding(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredNullableBoolReader(expression, new Binding(), "checkbox checked"));
+            () => MarkupBindings.BindRequiredNullableBoolReader(expression, MarkupBindingSource.For(new Binding()), "checkbox checked"));
         Assert.Contains("checkbox checked", ex.Message);
     }
 
@@ -48,8 +48,8 @@ public class MarkupCheckboxTests
     public void BoolAction_MissingIsNullAndBoundInvokes()
     {
         var binding = new Binding();
-        Assert.Null(MarkupBindings.BindBoolAction(null, binding, "ctx"));
-        MarkupBindings.BindBoolAction("{SetLoot}", binding, "ctx")!(true);
+        Assert.Null(MarkupBindings.BindBoolAction(null, MarkupBindingSource.For(binding), "ctx"));
+        MarkupBindings.BindBoolAction("{SetLoot}", MarkupBindingSource.For(binding), "ctx")!(true);
         Assert.True(binding.Loot);
     }
 
@@ -60,7 +60,7 @@ public class MarkupCheckboxTests
     public void BoolAction_RejectsLiteralsAndWrongTypes(string expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindBoolAction(expression, new Binding(), "checkbox onchange"));
+            () => MarkupBindings.BindBoolAction(expression, MarkupBindingSource.For(new Binding()), "checkbox onchange"));
         Assert.Contains("checkbox onchange", ex.Message);
     }
 
