@@ -211,29 +211,33 @@ The launcher never calls the GitHub API. It reads
 prefix plus a SemVer version, and takes the highest version among them. It then downloads the
 manifest from `releases/download/<tag>/manifest.json` and the launcher fingerprint from the same
 tag folder; the manifest's version must equal the tag's version. `--update-manifest-uri` still
-overrides all of this with a direct manifest address. Operational note: the feed lists only the
-newest ten releases of the whole repository. If more than ten releases of one product follow the
-other product's last release, the other product's launcher finds none and reports that no release
-was found, so publish both products together. Fork release versions are `OpenACReleaseVersion` (`Directory.Build.props`): `x.y.z-gateway.n`
-on `main` (OpenAC Gateway) and `x.y.z-rynth.n` on `rynth` (OpenAC Gateway Rynth, set in
-`Directory.Branch.props`); the scripts read it with `dotnet msbuild -getProperty`. They are published as ordinary (not pre-release)
-releases, not marked as the latest release (GitHub has one "latest" per repository, which the
-launchers no longer use).
+overrides all of this with a direct manifest address.
+
+Operational note: the feed lists only the newest ten releases of the whole repository. If more
+than ten releases of one product follow the other product's last release, the other product's
+launcher finds none and reports that no release was found, so publish both products together.
+
+Fork release versions are `OpenACReleaseVersion` (`Directory.Build.props`): `x.y.z-gateway.n` on
+`main` (OpenAC Gateway) and `x.y.z-rynth.n` on `rynth` (OpenAC Gateway Rynth, set in
+`Directory.Branch.props`); the scripts read it with `dotnet msbuild -getProperty`. They are
+published as ordinary (not pre-release) releases, not marked as the latest release (GitHub has
+one "latest" per repository, which the launchers no longer use).
 
 Build and publish one on a Mac with `pwsh tools/publish-fork-release.ps1` from a clean
-`main` (OpenAC Gateway) or `rynth` (OpenAC Gateway Rynth): it runs `publish-bin.ps1 -MacOnly`, checks the four files (the osx-arm64 client and
-launcher zips, `manifest.json`, `launcher-fingerprint.json`), tags
+`main` (OpenAC Gateway) or `rynth` (OpenAC Gateway Rynth): it runs `publish-bin.ps1 -MacOnly`,
+checks the four files (the osx-arm64 client and launcher zips, `manifest.json`, `launcher-fingerprint.json`), tags
 `<prefix><version>`, pushes the tag and creates the release
 titled `<product> <version>` with `gh` (without `--latest`; logged in as an account that
 can publish to the repository); it accepts only a `-gateway.n` or `-rynth.n` version. The
 launcher fingerprint ignores `<Version>` and `OpenACReleaseNumber`, so a release-number bump alone
-does not change it. The release branch comes from `OpenACReleaseLabel` (Gateway: `main`, Rynth: `rynth`). `-DryRun` builds and checks, then prints those commands.
+does not change it. The release branch comes from `OpenACReleaseLabel` (Gateway: `main`, Rynth:
+`rynth`). `-DryRun` builds and checks, then prints those commands.
 Windows and Linux launchers find no payload for their RID in a fork release and report
 "Updates could not be checked".
 
-Fork tags do not match `ci.yml`'s `v*` trigger; `ci.yml` is upstream's release workflow and is
-left unchanged in the fork (its macOS checks still name `OpenAC.app`). Actions do not run on the
-fork.
+Pushing a fork release tag (`gateway-v…` or `gateway-rynth-v…`) does not match `ci.yml`'s `v*`
+trigger, so it starts no `ci.yml` release run. `ci.yml` is upstream's workflow and is left
+unchanged in the fork; its macOS checks still name `OpenAC.app`.
 
 ### Two release trains
 
