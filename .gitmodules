@@ -1,6 +1,0 @@
-[submodule "external/RynthCore"]
-	path = external/RynthCore
-	url = https://aelrynth.com/git/rynth/RynthCore.git
-[submodule "external/RynthSuite"]
-	path = external/RynthSuite
-	url = https://aelrynth.com/git/RynthSuite.git

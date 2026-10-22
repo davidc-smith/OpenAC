@@ -206,8 +206,8 @@ from it. Fork versions are `x.y.z-fork.n`; they are published as ordinary (not p
 releases so the `latest` route serves them.
 
 Build and publish one on a Mac with `pwsh tools/publish-fork-release.ps1` from a clean
-`main`: it runs `publish-bin.ps1 -MacOnly`, checks the five files (the osx-arm64 client and
-launcher zips, `manifest.json`, `launcher-fingerprint.json`, `rynth-navdata.json`), tags
+`main`: it runs `publish-bin.ps1 -MacOnly`, checks the four files (the osx-arm64 client and
+launcher zips, `manifest.json`, `launcher-fingerprint.json`), tags
 `v<version>`, pushes the tag and creates the release with `gh` (logged in as an account that
 can publish to the repository). `-DryRun` builds and checks, then prints those commands.
 Windows and Linux launchers find no payload for their RID in a fork release and report
@@ -216,12 +216,6 @@ Windows and Linux launchers find no payload for their RID in a fork release and 
 Pushing the `v*-fork` tag also triggers the fork's `ci.yml` (its tag trigger). The release
 job cannot publish there (its gates and branch guard), so those runs are noise: disable
 Actions on the fork or ignore them.
-
-`rynth-navdata.json` is `external/rynth-navdata.json` with a `schemaVersion`: the RynthNav
-navdata archive this release was tested with. It lives beside `manifest.json` for the same
-reason as the fingerprint. The launcher also carries the pin it was built with, and
-`external/rynth-navdata.json`, `external/RynthCore` and `src/AcDream.Rynth.NavData` are
-launcher fingerprint inputs, so a new pin updates the launcher.
 
 ### Two release trains
 

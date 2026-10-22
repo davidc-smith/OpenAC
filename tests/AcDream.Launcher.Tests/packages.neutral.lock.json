@@ -362,14 +362,10 @@
       "acdream.launcher.core": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Platform": "[0.1.26-fork.1, )",
-          "AcDream.Rynth.NavData": "[0.1.26-fork.1, )"
+          "AcDream.Platform": "[0.1.26-fork.1, )"
         }
       },
       "acdream.platform": {
-        "type": "Project"
-      },
-      "acdream.rynth.navdata": {
         "type": "Project"
       },
       "Avalonia": {

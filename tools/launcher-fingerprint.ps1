@@ -11,9 +11,6 @@ not update itself. The inputs are:
   AcDream.Platform (the install paths and platform seams the launcher is
   built on);
 - the preparation tool's own project, AcDream.Bake;
-- the RynthNav navdata the launcher installs: src/AcDream.Rynth.NavData, the
-  pin in external/rynth-navdata.json and the RynthCore source it compiles,
-  external/RynthCore;
 - the prepared-data recipe: the pak format version and the bake tool version
   in AcDream.Content (Pak/PakFormat.cs), which the prepared data and the
   session config carry and which already decide when prepared data must be
@@ -60,16 +57,12 @@ $CommonPublishFlags = @(
 )
 
 # The launcher's own code, the bake tool's own project, and the build and
-# packaging files, and the navdata library with the RynthCore source and pin it
-# builds from; the shared game code the bake tool links is left out.
+# packaging files; the shared game code the bake tool links is left out.
 $LauncherOwnPaths = @(
     'src/AcDream.Launcher',
     'src/AcDream.Launcher.Core',
     'src/AcDream.Platform',
     'src/AcDream.Bake',
-    'src/AcDream.Rynth.NavData',
-    'external/rynth-navdata.json',
-    'external/RynthCore',
     'assets/icons',
     'global.json',
     'Directory.Packages.props',
