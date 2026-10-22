@@ -1494,8 +1494,9 @@ Expected: the 7 commits of Tasks 1–7 (plus any review-fix commits), and "no su
   - Inputs: select-all dash; number commit/spin/wheel; radio arrows after Tab.
   - Keys and colours: record, Escape, Backspace; picker drag, Escape, hex.
   - Layout: split drag remembered after a relog; "General" fold remembered.
-  - Table: sort, resize, double-click reset, Ctrl/Shift-click, select-all, context menu, Remove confirm.
-  - Tree: arrows, Left/Right, expansion remembered, branch menu.
+  - Table: sort, resize, double-click reset, Ctrl/Shift-click, select-all, context menu, Remove confirm; keys Up/Down, Shift+Up/Down, Ctrl/Cmd+A after clicking the field and pressing Tab.
+  - Tree: arrows, Left/Right after clicking the field and pressing Tab, expansion remembered, branch menu (disabled over the header).
+  - Note: the "No owner" box always draws in the client look (only a `theme="plugin"` owner gets the themed box); not a theme defect.
   - Dialogs: every button; Escape answers last; owner blocked while other windows, chat and movement work; editor modal.
 - [ ] Each defect is recorded with window, theme and steps. None is fixed inside this task.
 
