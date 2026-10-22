@@ -70,6 +70,13 @@ public sealed class ProductReleaseFeedTests
             ProductReleaseFeed.Newest(Encoding.UTF8.GetBytes(xml), Repo, "gateway-v"));
     }
 
+    [Theory]
+    [InlineData("davidc-smith")]
+    [InlineData("davidc-smith/OpenAC/extra")]
+    public void ARepoThatIsNotOwnerSlashNameIsRejected(string repo) =>
+        Assert.Throws<ArgumentException>(() =>
+            ProductReleaseFeed.Newest(Encoding.UTF8.GetBytes(Feed(Entry(Link("gateway-v1.0.0")))), repo, "gateway-v"));
+
     internal static string Feed(params string[] entries) =>
         $"""<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">{string.Concat(entries)}</feed>""";
 

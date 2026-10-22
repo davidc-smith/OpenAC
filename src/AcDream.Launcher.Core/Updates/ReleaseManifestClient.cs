@@ -191,6 +191,8 @@ public sealed class ReleaseManifestClient : IReleaseManifestClient, IDisposable
                 _allowLoopbackHttp);
         }
 
+        // A failed refetch must not leave files beside an older release readable.
+        _releaseManifestUri = null;
         ProductFeedRelease release = ProductReleaseFeed.Newest(
                 await FetchBytesAsync(feed.FeedUri, "releases feed", MaximumFeedBytes, cancellationToken)
                     .ConfigureAwait(false),

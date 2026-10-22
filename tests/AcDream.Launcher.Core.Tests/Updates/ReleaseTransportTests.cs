@@ -299,6 +299,28 @@ public sealed class ReleaseManifestClientTests
         Assert.Equal([FeedUri], handler.Requests);
     }
 
+    /// <summary>Mutation: keeping the previous release after a failed refetch lets files beside it
+    /// (the fingerprint) be read from an older release than the launcher now believes in.</summary>
+    [Fact]
+    public async Task AFailedRefetchForgetsThePreviousRelease()
+    {
+        var handler = new SequenceHandler((request, index) => index switch
+        {
+            0 => Ok(FeedOf("gateway-v2.0.0")),
+            2 => Ok(FeedOf("gateway-v2.0.1")),
+            _ => Ok(ValidJson()),
+        });
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-v", handler);
+
+        await source.FetchAsync();
+        await Assert.ThrowsAsync<LauncherUpdateException>(() => source.FetchAsync());
+        int requestsAfterFailure = handler.Requests.Count;
+
+        Assert.Null(await source.FetchLauncherFingerprintAsync());
+        Assert.Equal(requestsAfterFailure, handler.Requests.Count);
+    }
+
     [Fact]
     public async Task NoFingerprintIsFetchedBeforeAReleaseIsKnown()
     {

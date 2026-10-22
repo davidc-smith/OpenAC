@@ -1,5 +1,6 @@
 using System.Xml;
 using System.Xml.Linq;
+using AcDream.Launcher.Core.Plugins;
 
 namespace AcDream.Launcher.Core.Updates;
 
@@ -31,6 +32,10 @@ public static class ProductReleaseFeed
         ArgumentNullException.ThrowIfNull(content);
         ArgumentException.ThrowIfNullOrWhiteSpace(repo);
         ArgumentException.ThrowIfNullOrWhiteSpace(tagPrefix);
+        if (!GitHubReleaseLocator.IsValidRepo(repo))
+        {
+            throw new ArgumentException($"'{repo}' is not an 'owner/name' repository.", nameof(repo));
+        }
 
         XDocument document;
         var settings = new XmlReaderSettings
