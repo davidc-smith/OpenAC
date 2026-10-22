@@ -1481,6 +1481,68 @@ plugin loaded early hears the saved theme arrive through `ThemeChanged`.
 Without a window, and on a host that predates themes, `Theme` answers
 `PluginUiThemeInfo.Classic` and `ThemeChanged` is never raised.
 
+## Dialogs
+
+```csharp
+bool shown = host.Ui.Confirm(
+    new PluginDialog(
+        "Delete profile",
+        $"Delete the profile \"{name}\"? This cannot be undone.",
+        Buttons: ["Delete", "Keep"],
+        OwnerView: "main"),
+    index =>
+    {
+        if (index == 0)
+            DeleteProfile(name);
+    });
+
+host.Ui.ShowModal("profile-editor", ownerView: "main");
+```
+
+Dialogs are **window-modal**: a dialog blocks only its owner window. The
+owner draws dimmed, and a click on it does nothing but flash the dialog and
+bring it to the front. Presses, scrolls and drops on the owner are refused and
+nothing inside it can take the keyboard focus. Every other window, chat,
+movement and the game's hotkeys work as usual. There is no way for a plugin to
+block the whole screen.
+
+`Confirm` shows a message box and calls back with the index of the button
+the player picked.
+
+- `Buttons` lists one to four captions, left to right; null means OK and
+  Cancel. No buttons, more than four, or a blank caption throws
+  `ArgumentException`.
+- Enter picks the first button. Escape, the box's close button, the owner
+  window closing and your plugin unloading all answer with the **last**
+  button, so make the last one the safe choice.
+- `OwnerView` is the id or title of one of your own windows. The box is
+  centred on that window, follows it if it moves, and blocks it. Without one,
+  or with a window that doesn't exist or is hidden at the time, the box is
+  centred on the screen and blocks nothing.
+- The callback runs exactly once per dialog, on the thread that calls your
+  tick, after the box has gone. Call `Confirm` from that thread too.
+- Several dialogs for the same window wait their turn and show one at a
+  time. Dialogs for different windows show together. Dialogs without a window
+  share one queue.
+- The box takes the keyboard focus, so Enter and Escape reach it, and gives
+  it back when it closes. Any other key goes to the game as usual.
+- It looks like the client's own confirmation box, unless the owner window
+  uses `theme="plugin"` and the player has picked a plugin theme. Then it is
+  drawn in the theme's colours, with a close button in its title bar. The
+  client's box has no title bar, so it shows the title as a gold first line.
+  Either box widens to fit its buttons, and the message wraps to the new
+  width.
+
+`ShowModal` shows one of your windows, as `ShowPanel` does, and blocks
+`ownerView` until that window is hidden again, by `HidePanel` or its close
+button. Showing a window that your own markup keeps hidden ends the block at
+once. Without an owner, with an owner that doesn't exist, or with the window
+itself as the owner, it is just `ShowPanel`. It returns `false`, and shows
+nothing, if you have no such window.
+
+On a host without a window, `Confirm` and `ShowModal` return `false` and
+the callback is never called.
+
 ## Canvases
 
 A canvas is a rectangle the plugin paints, shown over the world and under
