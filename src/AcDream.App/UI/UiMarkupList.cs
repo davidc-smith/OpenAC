@@ -38,6 +38,8 @@ public sealed partial class UiMarkupList : UiElement
         }
     }
     public UiDatFont? DatFont { get; set; }
+    /// <summary>The header row's font when set (the title weight under a plugin theme); otherwise <see cref="DatFont"/>.</summary>
+    public UiDatFont? HeaderFont { get; set; }
     public float RowHeight { get; set; } = 18f;
     public float Padding { get; set; } = 3f;
     public Vector4 BackgroundColor { get; set; } = new(0f, 0f, 0f, 0.92f);

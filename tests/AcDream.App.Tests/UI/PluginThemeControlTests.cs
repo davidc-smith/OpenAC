@@ -342,6 +342,42 @@ public sealed class PluginThemeControlTests
     }
 
     [Fact]
+    public void AThemedListHeaderIsInTheTitleWeightAndClassicsIsNot()
+    {
+        var atlas = BundledUiFont.Bake();
+        UiDatFont body = atlas.CreateFont(41), bold = atlas.CreateFont(42);
+        var settings = new PluginUiThemeSettings(modernFont: new(() => body), modernTitleFont: new(() => bold))
+            { Theme = PluginUiTheme.Moss };
+        var panel = MarkupDocument.Build(
+            "<panel x=\"0\" y=\"0\" w=\"400\" h=\"300\" theme=\"plugin\">" +
+            "<list x=\"0\" y=\"0\" w=\"200\" h=\"80\" header=\"true\" selected=\"{Index}\" onchange=\"{Choose}\">" +
+            "<column type=\"text\" header=\"Name\" items=\"{Items}\"/></list></panel>",
+            new Binding(), _ => (0u, 0, 0), themes: settings);
+        var root = new UiRoot { Width = 600, Height = 600 };
+        root.AddChild(panel);
+        root.Tick(0.016, 1);
+        var list = Assert.IsType<UiMarkupList>(panel.Children[0]);
+
+        IReadOnlyList<(uint Texture, float MaxY)> Text()
+        {
+            var (renderer, ctx) = ThemeDrawCapture.Context();
+            list.DrawSelfAndChildren(ctx);
+            return renderer.DebugSpriteSegmentVerts.Where(s => s.Verts.Count > 0)
+                .Select(s => (s.Texture, Enumerable.Range(0, s.Verts.Count / 8).Max(i => s.Verts[i * 8 + 1])))
+                .ToList();
+        }
+
+        var themed = Text();
+        Assert.Contains(themed, s => s.Texture == 42u && s.MaxY <= UiMarkupList.HeaderHeight);
+        Assert.DoesNotContain(themed, s => s.Texture == 42u && s.MaxY > UiMarkupList.HeaderHeight);
+        Assert.Contains(themed, s => s.Texture == 41u && s.MaxY > UiMarkupList.HeaderHeight);
+
+        settings.Theme = PluginUiTheme.Classic;
+        root.Tick(0.016, 1);
+        Assert.DoesNotContain(Text(), s => s.Texture == 42u);
+    }
+
+    [Fact]
     public void AThemedTreeArrowIsASmoothChevron()
     {
         var (_, panel) = Themed(
