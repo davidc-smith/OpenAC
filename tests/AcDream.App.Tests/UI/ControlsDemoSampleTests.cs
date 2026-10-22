@@ -91,12 +91,29 @@ public sealed class ControlsDemoSampleTests
     public void Pickers_note_says_which_chords_a_plugin_hotkey_can_use()
     {
         var binding = new PickersBinding();
-        Assert.Equal("Hotkeys: radar usable, pause unbound", binding.KeyNote);
+        Assert.Equal("Usable: radar yes, pause unbound", binding.KeyNote);
 
         binding.SetRadarKey("F13");
 
-        Assert.Equal("Hotkeys: radar not usable, pause unbound", binding.KeyNote);
-        Assert.Equal("Radar key set to F13", binding.Status);
+        Assert.Equal("Usable: radar no, pause unbound", binding.KeyNote);
+        Assert.Equal("Radar: F13", binding.Status);
+
+        binding.SetRadarKey(string.Empty);
+        Assert.Equal("Radar cleared", binding.Status);
+    }
+
+    [Fact]
+    public void Pickers_status_and_note_stay_within_forty_characters()
+    {
+        var binding = new PickersBinding();
+        binding.SetRadarKey("Ctrl+Alt+Shift+KeypadMultiply");
+        Assert.True(binding.Status.Length <= 40, binding.Status);
+        binding.SetPauseKey("Ctrl+Alt+Shift+KeypadMultiply");
+        Assert.True(binding.Status.Length <= 40, binding.Status);
+        Assert.True(binding.KeyNote.Length <= 40, binding.KeyNote);
+        binding.SetRadarKey("F13");
+        binding.SetPauseKey("F14");
+        Assert.True(binding.KeyNote.Length <= 40, binding.KeyNote);
     }
 
     [Theory]
@@ -182,6 +199,64 @@ public sealed class ControlsDemoSampleTests
         Assert.Empty(binding.Picked);
     }
 
+    [Fact]
+    public void Table_right_click_menu_clears_keep_on_the_clicked_row_only()
+    {
+        var binding = new TableBinding(new FakeUi());
+        binding.KeepAll(true);
+        var (root, panel) = Mount("table.xml", binding);
+
+        // Row 2 (Scroll of Blade Blessing): 54 list top + 18 header + 2 rows of 18 + half a row.
+        Click(root, panel, 100, 117);
+        Assert.Equal([2], binding.Picked);
+        MarkupDrawProbe.Draw(root, 1600, 900);
+
+        int sx = (int)(panel.Left + 100), sy = (int)(panel.Top + 117);
+        root.OnMouseDown(UiMouseButton.Right, sx, sy);
+        root.OnMouseUp(UiMouseButton.Right, sx, sy);
+        root.Tick(0, 0);
+        MarkupDrawProbe.Draw(root, 1600, 900);
+        Assert.Equal("Menu on Scroll of Blade Blessing", binding.Status);
+
+        // "Don't keep" is the second item: 3 px menu padding, then 18 px per item.
+        root.OnMouseDown(UiMouseButton.Left, sx + 20, sy + 30);
+        root.OnMouseUp(UiMouseButton.Left, sx + 20, sy + 30);
+        root.Tick(0, 0);
+
+        Assert.Equal([true, true, false, true, true, true, true, true], binding.Keep);
+    }
+
+    private sealed record Rect(string File, float X, float Y, float W, float H)
+    {
+        public bool Overlaps(Rect o) => X < o.X + o.W && o.X < X + W && Y < o.Y + o.H && o.Y < Y + H;
+    }
+
+    [Fact]
+    public void Windows_sit_right_of_the_shelf_on_screen_and_clear_of_each_other()
+    {
+        string[] files = ["inputs.xml", "pickers.xml", "layout.xml", "table.xml", "tree.xml", "dialogs.xml", "editor.xml"];
+        var windows = files.Select(file =>
+        {
+            var root = System.Xml.Linq.XDocument.Parse(Markup(file)).Root!;
+            Assert.Equal("panel", root.Name.LocalName);
+            float V(string name) => float.Parse(root.Attribute(name)!.Value, System.Globalization.CultureInfo.InvariantCulture);
+            return new Rect(file, V("x"), V("y"), V("w"), V("h"));
+        }).ToList();
+
+        foreach (Rect w in windows)
+        {
+            Assert.True(w.X >= 56f, $"{w.File} starts over the plugin shelf");
+            Assert.True(w.Y >= 0f && w.X + w.W <= 1280f && w.Y + w.H <= 720f, $"{w.File} does not fit 1280x720");
+        }
+        for (int a = 0; a < windows.Count; a++)
+            for (int b = a + 1; b < windows.Count; b++)
+            {
+                bool editorOverDialogs = new[] { windows[a].File, windows[b].File }.Order().SequenceEqual(["dialogs.xml", "editor.xml"]);
+                if (editorOverDialogs) continue;
+                Assert.False(windows[a].Overlaps(windows[b]), $"{windows[a].File} overlaps {windows[b].File}");
+            }
+    }
+
     [Theory]
     [MemberData(nameof(Themes))]
     public void Tree_builds_and_lays_out(PluginUiTheme theme)
@@ -201,6 +276,20 @@ public sealed class ControlsDemoSampleTests
         Assert.All(binding.On.Take(7), Assert.False);
         Assert.All(binding.On.Skip(7), Assert.True);
         Assert.Equal("Looting branch off", binding.Status);
+    }
+
+    [Fact]
+    public void Tree_menu_is_dimmed_over_the_header()
+    {
+        var binding = new TreeBinding();
+
+        binding.MenuOpened(-1);
+        Assert.All(binding.MenuEnabled, Assert.False);
+        Assert.Equal("Right-click a rule", binding.Status);
+
+        binding.MenuOpened(3);
+        Assert.Equal(2, binding.MenuEnabled.Count);
+        Assert.All(binding.MenuEnabled, Assert.True);
     }
 
     [Fact]
@@ -239,6 +328,7 @@ public sealed class ControlsDemoSampleTests
         binding.AskTwo();
         Assert.Equal(3, ui.Dialogs.Count);
         Assert.Equal("dialogs", ui.Dialogs[2].Dialog.OwnerView);
+        Assert.Equal("dialogs", ui.Dialogs[1].Dialog.OwnerView);
     }
 
     [Fact]
@@ -262,6 +352,21 @@ public sealed class ControlsDemoSampleTests
         editor.Save();
         Assert.Equal("Mage, level 126, on login", binding.ProfileSummary);
         Assert.Equal(["editor", "editor"], ui.Hidden);
+        Assert.Equal("Profile saved", binding.Status);
+    }
+
+    [Fact]
+    public void Dialogs_status_follows_the_editor_from_open_to_cancel()
+    {
+        var ui = new FakeUi();
+        var profile = new Profile();
+        var editor = new EditorBinding(ui, profile);
+        var binding = new DialogsBinding(ui, profile, editor);
+
+        binding.EditProfile();
+        Assert.Equal("Editing the profile", binding.Status);
+        editor.Cancel();
+        Assert.Equal("Edit cancelled", binding.Status);
     }
 
     [Fact]

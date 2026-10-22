@@ -5,7 +5,8 @@ namespace AcDream.Plugins.ControlsDemo;
 /// <summary>
 /// The modal "Edit profile" window. It edits a copy, so Cancel and the close
 /// button change nothing; Save copies it back. Hiding the window ends the
-/// block on the Dialogs window.
+/// block on the Dialogs window. <see cref="Report"/> tells the Dialogs window
+/// how it ended.
 /// </summary>
 public sealed class EditorBinding(IUiRegistry ui, Profile profile)
 {
@@ -15,6 +16,9 @@ public sealed class EditorBinding(IUiRegistry ui, Profile profile)
     public Action<int> SetLevel => value => Level = value;
     public bool UseOnLogin { get; private set; } = profile.UseOnLogin;
     public Action<bool> SetUseOnLogin => value => UseOnLogin = value;
+
+    /// <summary>Told "Profile saved" or "Edit cancelled" when the window ends.</summary>
+    public Action<string>? Report { get; set; }
 
     /// <summary>Starts a fresh copy; called before the window is shown.</summary>
     public void Load()
@@ -30,7 +34,12 @@ public sealed class EditorBinding(IUiRegistry ui, Profile profile)
         profile.Level = Level;
         profile.UseOnLogin = UseOnLogin;
         ui.HidePanel("editor");
+        Report?.Invoke("Profile saved");
     };
 
-    public Action Cancel => () => ui.HidePanel("editor");
+    public Action Cancel => () =>
+    {
+        ui.HidePanel("editor");
+        Report?.Invoke("Edit cancelled");
+    };
 }

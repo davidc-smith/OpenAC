@@ -63,6 +63,10 @@ public sealed class TableBinding
         Status = keep ? "Keeping everything" : "Keeping nothing";
     };
 
+    /// <summary>A free-text note; its only job is to give the window a field to click, so Tab can reach the list.</summary>
+    public string Note { get; private set; } = string.Empty;
+    public Action<string> SetNote => value => Note = value;
+
     public Action<int> Act => row => Status = $"Used {_items[row].Name}";
 
     /// <summary>The right-clicked row (already selected by the list), or -1 over the header.</summary>

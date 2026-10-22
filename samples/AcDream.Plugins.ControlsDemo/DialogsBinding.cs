@@ -8,9 +8,21 @@ namespace AcDream.Plugins.ControlsDemo;
 /// this window, and a modal editor. The last button is always the safe one,
 /// because Escape, the close button and unloading answer with it.
 /// </summary>
-public sealed class DialogsBinding(IUiRegistry ui, Profile profile, EditorBinding editor)
+public sealed class DialogsBinding
 {
     private const string Owner = "dialogs";
+
+    private readonly IUiRegistry ui;
+    private readonly Profile profile;
+    private readonly EditorBinding editor;
+
+    public DialogsBinding(IUiRegistry ui, Profile profile, EditorBinding editor)
+    {
+        this.ui = ui;
+        this.profile = profile;
+        this.editor = editor;
+        editor.Report = message => Status = message;
+    }
 
     public Action AskDefault => () => Ask(new PluginDialog(
         "Two buttons", "No buttons given means OK and Cancel. Escape answers Cancel.", OwnerView: Owner));

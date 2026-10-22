@@ -1,4 +1,4 @@
-<panel x="330" y="60" w="300" h="200" title="Controls: Keys and colours" theme="plugin">
+<panel x="366" y="40" w="300" h="200" title="Controls: Keys and colours" theme="plugin">
   <label x="10" y="30" text="Toggle radar" />
   <hotkey x="130" y="28" w="160" h="20" value="{RadarKey}" onchange="{SetRadarKey}" />
   <label x="10" y="56" text="Pause macro" />

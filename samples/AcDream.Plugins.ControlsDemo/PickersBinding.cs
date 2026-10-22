@@ -10,12 +10,12 @@ namespace AcDream.Plugins.ControlsDemo;
 public sealed class PickersBinding
 {
     public string RadarKey { get; private set; } = "Ctrl+R";
-    public Action<string> SetRadarKey => value => { RadarKey = value; Status = $"Radar key {Describe(value)}"; };
+    public Action<string> SetRadarKey => value => { RadarKey = value; Status = Describe("Radar", value); };
     public string PauseKey { get; private set; } = string.Empty;
-    public Action<string> SetPauseKey => value => { PauseKey = value; Status = $"Pause key {Describe(value)}"; };
+    public Action<string> SetPauseKey => value => { PauseKey = value; Status = Describe("Pause", value); };
 
     /// <summary>A box can record keys (F13, Caps Lock) that a plugin hotkey can't use.</summary>
-    public string KeyNote => $"Hotkeys: radar {Usable(RadarKey)}, pause {Usable(PauseKey)}";
+    public string KeyNote => $"Usable: radar {Usable(RadarKey)}, pause {Usable(PauseKey)}";
 
     /// <summary>0xAARRGGBB, with the picker's alpha strip.</summary>
     public uint BarColor { get; private set; } = 0xC040A040;
@@ -27,10 +27,11 @@ public sealed class PickersBinding
 
     public string Status { get; private set; } = "Click a box or a swatch";
 
-    private static string Describe(string chord) => chord.Length == 0 ? "cleared" : $"set to {chord}";
+    /// <summary>Kept to 40 characters even for the longest key names.</summary>
+    private static string Describe(string what, string chord) => chord.Length == 0 ? $"{what} cleared" : $"{what}: {chord}";
 
     private static string Usable(string chord) =>
         chord.Length == 0 ? "unbound"
-        : PluginKeyChord.TryParseHotkeyText(chord, out _) ? "usable"
-        : "not usable";
+        : PluginKeyChord.TryParseHotkeyText(chord, out _) ? "yes"
+        : "no";
 }

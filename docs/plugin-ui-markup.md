@@ -248,7 +248,7 @@ of the controls below (inputs, keys and colours, layout, table, tree, and
 dialogs), each with a status line that shows what its callbacks receive.
 Every window uses `theme="plugin"`, so switching **Plugin appearance** shows
 each control in Classic and in both modern themes. Its markup files are
-working examples of every element in this guide from `<checkbox>` on.
+working examples of each of the new controls, from `<checkbox>` to trees.
 
 ## Checkbox
 

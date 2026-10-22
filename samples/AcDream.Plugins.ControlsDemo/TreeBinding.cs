@@ -64,7 +64,18 @@ public sealed class TreeBinding
     public Action<string, bool> Expanded => (key, open) =>
         Status = $"{_rules.First(r => r.Key == key).Name} {(open ? "expanded" : "collapsed")}";
 
-    public Action<int> MenuOpened => row => _menuRow = row;
+    public Action<int> MenuOpened => row =>
+    {
+        _menuRow = row;
+        if (row < 0) Status = "Right-click a rule";
+    };
+
+    /// <summary>The menu does nothing over the header (row -1), so its items are dimmed there.</summary>
+    public IReadOnlyList<bool> MenuEnabled => [_menuRow >= 0, _menuRow >= 0];
+
+    /// <summary>A free-text note; its only job is to give the window a field to click, so Tab can reach the list.</summary>
+    public string Note { get; private set; } = string.Empty;
+    public Action<string> SetNote => value => Note = value;
 
     /// <summary>Items are Enable branch|Disable branch.</summary>
     public Action<int> MenuPicked => index =>

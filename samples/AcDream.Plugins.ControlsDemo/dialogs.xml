@@ -1,4 +1,4 @@
-<panel x="640" y="60" w="300" h="176" title="Controls: Dialogs" theme="plugin">
+<panel x="676" y="40" w="300" h="176" title="Controls: Dialogs" theme="plugin">
   <button x="10" y="28" w="135" h="22" text="OK / Cancel" onclick="{AskDefault}" />
   <button x="155" y="28" w="135" h="22" text="Three buttons" onclick="{AskThree}" />
   <button x="10" y="56" w="135" h="22" text="Four buttons" onclick="{AskFour}" />
