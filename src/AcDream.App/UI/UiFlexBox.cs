@@ -66,6 +66,8 @@ internal sealed class UiFlexBox
     {
         Node.Children.Add(item.Node);
         Items.Add(item);
+        // An item added after the first layout (a repeat's new copy) lays out again.
+        _structureChanged = true;
     }
 
     /// <summary>Inserts a built item at <paramref name="index"/>, in step with its element's place among the children.</summary>

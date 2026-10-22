@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Globalization;
 using System.Reflection;
 using System.Xml.Linq;
@@ -23,7 +22,7 @@ internal sealed class UiMarkupRepeat : UiElement
         object? key, int index, MarkupBindingSource source, IReadOnlyList<UiElement> elements,
         UiPluginMarkupPanel.ThemeActionScope? scope, KeyedControlState? state)
     {
-        public object? Key { get; set; } = key;
+        public object? Key { get; } = key;
         public int Index { get; set; } = index;
         public MarkupBindingSource Source { get; } = source;
         public IReadOnlyList<UiElement> Elements { get; } = elements;
@@ -34,6 +33,14 @@ internal sealed class UiMarkupRepeat : UiElement
     private readonly XElement[] _template;
     private readonly MarkupRepeat.BuildArgs _args;
     private readonly MarkupRepeat.AddElement _add;
+    private readonly ListReader _list;
+    // Reused by the matching, so it allocates only when something changed.
+    private readonly Dictionary<object, Copy> _byKey = new();
+    private readonly HashSet<object> _seenKeys = new();
+    private readonly HashSet<Copy> _kept = new();
+    private readonly List<Copy?> _order = new();
+    private bool _loggedDuplicates;
+    private bool _released;
 
     internal UiMarkupRepeat(
         XElement[] template, string itemsExpression, MarkupBindingSource parentSource, PropertyInfo items,
@@ -50,6 +57,7 @@ internal sealed class UiMarkupRepeat : UiElement
         Flex = flex;
         _args = args;
         _add = add;
+        _list = ListReader.For(itemType, key);
         ClickThrough = true;
         Anchors = AnchorEdges.None;
     }
@@ -75,9 +83,6 @@ internal sealed class UiMarkupRepeat : UiElement
     /// <summary>The copies in list order.</summary>
     internal List<Copy> Copies { get; } = new();
 
-    /// <summary>The list as it reads now; null when the property is null.</summary>
-    internal IEnumerable? ReadList() => ParentSource.Read(Items) as IEnumerable;
-
     internal object? KeyOf(object? item) =>
         KeyProperty is not null && item is not null ? KeyProperty.GetValue(item) : null;
 
@@ -87,14 +92,213 @@ internal sealed class UiMarkupRepeat : UiElement
     /// </summary>
     internal void BuildInitialCopies()
     {
-        int index = 0;
-        if (ReadList() is { } list)
-        {
-            foreach (object? item in list)
-                BuildCopy(item, index++);
-        }
-        if (index == 0)
+        _list.Read(ParentSource.Read(Items));
+        for (int i = 0; i < _list.Count; i++)
+            BuildCopy(_list.Item(i), i);
+        if (_list.Count == 0)
             CheckBuild();
+    }
+
+    /// <summary>
+    /// Reads the list and keys and, when they changed (R4), keeps, moves,
+    /// adds and removes copies to match (R5). Copies built here tick from the
+    /// next tick on (the parent ticks a snapshot of its children), and their
+    /// bindings show their values from then.
+    /// </summary>
+    protected override void OnTick(double deltaSeconds)
+    {
+        // A removed marker still ticks once this tick, from its parent's
+        // snapshot; it must not build into a tree that has left the window.
+        if (_released || Parent is null)
+            return;
+        if (!_list.Read(ParentSource.Read(Items)))
+            return;
+        try
+        {
+            if (KeyProperty is not null && KeysUnique())
+            {
+                _loggedDuplicates = false;
+                MatchByKey();
+            }
+            else
+            {
+                if (KeyProperty is not null && !_loggedDuplicates)
+                {
+                    Console.WriteLine($"markup <repeat items=\"{ItemsExpression}\">: duplicate or missing keys; rows are matched by position");
+                    _loggedDuplicates = true;
+                }
+                MatchByIndex();
+            }
+        }
+        catch
+        {
+            // Try again next tick, as a binding that throws does.
+            _list.Forget();
+            throw;
+        }
+    }
+
+    /// <summary>Whether every key is set and different; a null key falls back to position matching like a duplicate.</summary>
+    private bool KeysUnique()
+    {
+        _seenKeys.Clear();
+        for (int i = 0; i < _list.Count; i++)
+        {
+            if (_list.Key(i) is not { } key || !_seenKeys.Add(key))
+                return false;
+        }
+        return true;
+    }
+
+    private void MatchByKey()
+    {
+        _byKey.Clear();
+        _kept.Clear();
+        _order.Clear();
+        foreach (Copy copy in Copies)
+        {
+            if (copy.Key is { } key)
+                _byKey.TryAdd(key, copy);
+        }
+        for (int i = 0; i < _list.Count; i++)
+        {
+            if (_byKey.Remove(_list.Key(i)!, out Copy? copy))
+            {
+                copy.Source.Current = _list.Item(i);
+                _kept.Add(copy);
+            }
+            _order.Add(copy);
+        }
+        foreach (Copy copy in Copies)
+        {
+            if (!_kept.Contains(copy))
+                Release(copy);
+        }
+
+        Copies.Clear();
+        int childAt = IndexOfChild(this) + 1;
+        int itemAt = FlexIndexAfter(childAt - 1);
+        int next = 0;
+        try
+        {
+            for (; next < _order.Count; next++)
+            {
+                if (_order[next] is { } kept)
+                {
+                    kept.Index = next;
+                    Copies.Add(kept);
+                    Place(kept, ref childAt, ref itemAt);
+                }
+                else
+                {
+                    BuildCopy(_list.Item(next), next);
+                    childAt = IndexOfChild(EndBefore(next + 1)) + 1;
+                    itemAt = FlexIndexAfter(childAt - 1);
+                }
+            }
+        }
+        catch
+        {
+            // The kept copies not reached yet stay tracked; next tick puts them in order.
+            for (int i = next + 1; i < _order.Count; i++)
+            {
+                if (_order[i] is { } kept)
+                {
+                    kept.Index = Copies.Count;
+                    Copies.Add(kept);
+                }
+            }
+            throw;
+        }
+        finally
+        {
+            _order.Clear();
+            _kept.Clear();
+            _byKey.Clear();
+        }
+    }
+
+    private void MatchByIndex()
+    {
+        int count = _list.Count;
+        for (int i = 0; i < Math.Min(count, Copies.Count); i++)
+            Copies[i].Source.Current = _list.Item(i);
+        for (int i = Copies.Count - 1; i >= count; i--)
+        {
+            Release(Copies[i]);
+            Copies.RemoveAt(i);
+        }
+        for (int i = Copies.Count; i < count; i++)
+            BuildCopy(_list.Item(i), i);
+    }
+
+    /// <summary>
+    /// Moves a kept copy's elements (and its nested repeats' copies) to
+    /// <paramref name="childAt"/> and its flex items to <paramref name="itemAt"/>,
+    /// leaving whatever is already in place alone.
+    /// </summary>
+    private void Place(Copy copy, ref int childAt, ref int itemAt)
+    {
+        foreach (UiElement element in Span(copy))
+        {
+            if (!ReferenceEquals(Container.Children[childAt], element))
+                Container.MoveChild(element, childAt);
+            childAt++;
+            if (element is UiMarkupRepeat)
+                continue;   // markers have no flex item
+            if (itemAt < Flex.Items.Count && ReferenceEquals(Flex.Items[itemAt].Element, element))
+                itemAt++;
+            else if (HasItem(element))
+                Flex.Move(element, itemAt++);
+        }
+    }
+
+    private bool HasItem(UiElement element)
+    {
+        foreach (UiFlexItem item in Flex.Items)
+            if (ReferenceEquals(item.Element, element)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Takes a copy out: its elements leave the container (the root drops
+    /// focus, capture and popups inside them) and the flex box; nested
+    /// repeats give back their copies, disposable elements are disposed, and
+    /// its theme actions stop.
+    /// </summary>
+    private void Release(Copy copy)
+    {
+        foreach (UiElement element in copy.Elements)
+        {
+            Container.RemoveChild(element);
+            Flex.Remove(element);
+        }
+        foreach (UiElement element in copy.Elements)
+            ReleaseSubtree(element);
+        copy.Scope?.Dispose();
+    }
+
+    /// <summary>Releases every copy, for a marker leaving with the copy it sits in; it does nothing after.</summary>
+    private void ReleaseCopies()
+    {
+        _released = true;
+        foreach (Copy copy in Copies)
+            Release(copy);
+        Copies.Clear();
+    }
+
+    private static void ReleaseSubtree(UiElement element)
+    {
+        if (element is UiMarkupRepeat repeat)
+            repeat.ReleaseCopies();
+        if (element is IDisposable disposable)
+            disposable.Dispose();
+        // A nested repeat takes its copies out of this list as it is walked.
+        foreach (UiElement child in element.Children.ToArray())
+        {
+            if (ReferenceEquals(child.Parent, element))
+                ReleaseSubtree(child);
+        }
     }
 
     /// <summary>
@@ -109,7 +313,24 @@ internal sealed class UiMarkupRepeat : UiElement
             : null;
         var source = new MarkupBindingSource(ItemType) { Current = item };
         int firstChild = Container.Children.Count, firstItem = Flex.Items.Count;
-        var scope = BuildTemplate(Container, source, state ?? _args.ControlState, Flex, out var pending);
+        UiPluginMarkupPanel.ThemeActionScope? scope;
+        List<UiMarkupRepeat> pending;
+        try
+        {
+            scope = BuildTemplate(Container, source, state ?? _args.ControlState, Flex, out pending);
+        }
+        catch
+        {
+            // A copy is built whole or not at all (BuildTemplate has dropped the scope).
+            while (Container.Children.Count > firstChild)
+            {
+                UiElement built = Container.Children[^1];
+                Container.RemoveChild(built);
+                Flex.Remove(built);
+                ReleaseSubtree(built);
+            }
+            throw;
+        }
         scope?.Close();
 
         var elements = new UiElement[Container.Children.Count - firstChild];
@@ -132,7 +353,18 @@ internal sealed class UiMarkupRepeat : UiElement
         Copies.Insert(index, copy);
         for (int i = index + 1; i < Copies.Count; i++)
             Copies[i].Index = i;
-        BuildPending(pending);
+        try
+        {
+            BuildPending(pending);
+        }
+        catch
+        {
+            Copies.RemoveAt(index);
+            for (int i = index; i < Copies.Count; i++)
+                Copies[i].Index = i;
+            Release(copy);
+            throw;
+        }
         return copy;
     }
 
@@ -233,5 +465,95 @@ internal sealed class UiMarkupRepeat : UiElement
             if (item >= 0) return item + 1;
         }
         return 0;
+    }
+
+    /// <summary>
+    /// The list and its keys as last read, in reused buffers, so a tick where
+    /// nothing changed allocates nothing (for a list or array; another
+    /// <c>IEnumerable&lt;T&gt;</c> costs its enumerator).
+    /// </summary>
+    private abstract class ListReader
+    {
+        public static ListReader For(Type itemType, PropertyInfo? key) =>
+            (ListReader)Activator.CreateInstance(
+                typeof(ListReader<,>).MakeGenericType(itemType, key?.PropertyType ?? typeof(object)), key)!;
+
+        public abstract int Count { get; }
+
+        public abstract object? Item(int index);
+
+        /// <summary>The item's key; null without <c>key</c> or for a null item.</summary>
+        public abstract object? Key(int index);
+
+        /// <summary>Reads <paramref name="list"/>; false when its items and keys all match the last read.</summary>
+        public abstract bool Read(object? list);
+
+        /// <summary>Makes the next read count as a change.</summary>
+        public abstract void Forget();
+    }
+
+    private sealed class ListReader<T, TKey> : ListReader
+    {
+        private static readonly bool ByReference = !typeof(T).IsValueType;
+        private readonly Func<T, TKey>? _key;
+        private List<T> _items = new(), _lastItems = new();
+        private List<TKey> _keys = new(), _lastKeys = new();
+        private bool _forgot = true;
+
+        public ListReader(PropertyInfo? key)
+        {
+            if (key is null)
+                return;
+            _key = ByReference && key.GetMethod is { IsStatic: false } getter
+                ? getter.CreateDelegate<Func<T, TKey>>()
+                : item => (TKey)key.GetValue(item)!;
+        }
+
+        public override int Count => _items.Count;
+
+        public override object? Item(int index) => _items[index];
+
+        public override object? Key(int index) =>
+            _key is null || _items[index] is null ? null : _keys[index];
+
+        public override void Forget() => _forgot = true;
+
+        public override bool Read(object? list)
+        {
+            (_items, _lastItems) = (_lastItems, _items);
+            (_keys, _lastKeys) = (_lastKeys, _keys);
+            _items.Clear();
+            _keys.Clear();
+            switch (list)
+            {
+                case IReadOnlyList<T> readOnly:
+                    for (int i = 0; i < readOnly.Count; i++) _items.Add(readOnly[i]);
+                    break;
+                case IList<T> writable:
+                    for (int i = 0; i < writable.Count; i++) _items.Add(writable[i]);
+                    break;
+                case IEnumerable<T> sequence:
+                    foreach (T item in sequence) _items.Add(item);
+                    break;
+            }
+            if (_key is not null)
+            {
+                foreach (T item in _items)
+                    _keys.Add(item is null ? default! : _key(item));
+            }
+
+            // The list instance does not count: a list built on every read with the same items is no change.
+            bool changed = _forgot || _items.Count != _lastItems.Count;
+            for (int i = 0; !changed && i < _items.Count; i++)
+            {
+                changed = ByReference
+                    ? !ReferenceEquals(_items[i], _lastItems[i])
+                    : !EqualityComparer<T>.Default.Equals(_items[i], _lastItems[i]);
+            }
+            for (int i = 0; !changed && i < _keys.Count; i++)
+                changed = !EqualityComparer<TKey>.Default.Equals(_keys[i], _lastKeys[i]);
+            _forgot = false;
+            return changed;
+        }
     }
 }
