@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using AcDream.Core.Chat;
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
@@ -4135,7 +4136,19 @@ internal sealed class RuntimeAutomationSurface
     /// </summary>
     public bool IsCasting => false;
 
-    public PluginCastGate EvaluateGate(uint spellId)
+    public PluginCastGate EvaluateGate(uint spellId) =>
+        EvaluateGateAt(spellId, cast => cast.EvaluateCastGate(spellId));
+
+    public PluginCastGate EvaluateGateWithoutSelecting(
+        uint spellId, uint targetObjectId) =>
+        IsCastTarget(targetObjectId, out _)
+            ? EvaluateGateAt(
+                spellId,
+                cast => cast.EvaluateCastGate(spellId, targetObjectId))
+            : PluginCastGate.Refused;
+
+    private PluginCastGate EvaluateGateAt(
+        uint spellId, Func<RuntimeSpellCastState, SpellCastGate> evaluate)
     {
         RuntimeSpellCastState? cast;
         Spellbook? spellbook;
@@ -4148,7 +4161,7 @@ internal sealed class RuntimeAutomationSurface
             return PluginCastGate.Unavailable;
         if (!spellbook.Knows(spellId))
             return PluginCastGate.NotKnown;
-        return cast.EvaluateCastGate(spellId) switch
+        return evaluate(cast) switch
         {
             SpellCastGate.Unknown => PluginCastGate.NotKnown,
             SpellCastGate.NoTargetNeeded => PluginCastGate.Ready,
@@ -4162,14 +4175,24 @@ internal sealed class RuntimeAutomationSurface
     public bool Cast(uint spellId) =>
         RequestCast(spellId) == PluginCastRequestResult.Sent;
 
-    public PluginCastRequestResult RequestCast(uint spellId)
+    public PluginCastRequestResult RequestCast(uint spellId) =>
+        RequestCastAt(cast => cast.Cast(spellId));
+
+    public PluginCastRequestResult RequestCastWithoutSelecting(
+        uint spellId, uint targetObjectId) =>
+        IsCastTarget(targetObjectId, out _)
+            ? RequestCastAt(cast => cast.Cast(spellId, targetObjectId))
+            : PluginCastRequestResult.IncompatibleTarget;
+
+    private PluginCastRequestResult RequestCastAt(
+        Func<RuntimeSpellCastState, CastRequestResult> send)
     {
         RuntimeSpellCastState? cast;
         lock (_gate)
             cast = _cast;
         if (cast is null)
             return PluginCastRequestResult.Unavailable;
-        return cast.Cast(spellId) switch
+        return send(cast) switch
         {
             CastRequestResult.Sent => PluginCastRequestResult.Sent,
             CastRequestResult.UnknownSpell => PluginCastRequestResult.UnknownSpell,
@@ -6340,18 +6363,22 @@ internal sealed class RuntimeAutomationSurface
 
     private bool SelectExplicitTarget(uint targetObjectId)
     {
-        GameRuntime? runtime;
-        lock (_gate)
-            runtime = _runtime;
-        if (runtime is null || !IsAvailable || targetObjectId == 0u
-            || !runtime.EntityObjects.Entities.TryGetActive(targetObjectId, out _))
-        {
+        if (!IsCastTarget(targetObjectId, out GameRuntime? runtime))
             return false;
-        }
         runtime.ActionOwner.Selection.Select(
             targetObjectId,
             SelectionChangeSource.Plugin);
         return true;
+    }
+
+    private bool IsCastTarget(
+        uint targetObjectId,
+        [NotNullWhen(true)] out GameRuntime? runtime)
+    {
+        lock (_gate)
+            runtime = _runtime;
+        return runtime is not null && IsAvailable && targetObjectId != 0u
+            && runtime.EntityObjects.Entities.TryGetActive(targetObjectId, out _);
     }
 
     private static PluginCombatMode Project(CombatMode mode) => mode switch
