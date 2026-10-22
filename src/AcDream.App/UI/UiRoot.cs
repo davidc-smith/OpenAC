@@ -112,7 +112,11 @@ public sealed class UiRoot : UiElement
         || PopupHit(MouseX, MouseY) is not null
         || HitTestTopDown(MouseX, MouseY).element is not null;
 
-    public bool WantsKeyboard => KeyboardFocus is not null;
+    /// <summary>Whether the focused element takes the keyboard from the game (a plugin dialog does not; it claims only its answer keys).</summary>
+    public bool WantsKeyboard => KeyboardFocus is { HoldsKeyboard: true };
+
+    /// <summary>Whether the focused element keeps this key's press from the game.</summary>
+    public bool FocusClaimsKey(Silk.NET.Input.Key key) => KeyboardFocus?.ClaimsKey(key) == true;
 
     private bool _uiLocked;
     public bool UiLocked

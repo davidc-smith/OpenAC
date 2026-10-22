@@ -27,6 +27,13 @@ internal abstract class UiPluginDialog : UiElement
 
     protected void Choose(int index) => Chosen?.Invoke(index);
 
+    /// <summary>Focused, it leaves the keyboard to the game but for its answer keys.</summary>
+    internal override bool HoldsKeyboard => false;
+
+    /// <summary>Enter, keypad Enter and Escape answer it; every other key is the game's.</summary>
+    internal override bool ClaimsKey(Silk.NET.Input.Key key) =>
+        key is Silk.NET.Input.Key.Enter or Silk.NET.Input.Key.KeypadEnter or Silk.NET.Input.Key.Escape;
+
     /// <summary>Centres the dialog on the owner window, or on the screen without one, and keeps it on screen.</summary>
     public void Place(UiElement? owner, Vector2 screen)
     {

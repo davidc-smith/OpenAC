@@ -153,6 +153,21 @@ public abstract class UiElement
     internal virtual bool CapturesAllKeys => false;
 
     /// <summary>
+    /// True when this element, holding keyboard focus, takes the keyboard
+    /// from the game: held movement keys stop and game and plugin hotkeys go
+    /// quiet. Every element does but a plugin dialog, which claims only the
+    /// keys that answer it (see <see cref="ClaimsKey"/>).
+    /// </summary>
+    internal virtual bool HoldsKeyboard => true;
+
+    /// <summary>
+    /// True when this element, holding keyboard focus, keeps
+    /// <paramref name="key"/>'s press from the game. Every key while it
+    /// <see cref="HoldsKeyboard"/>; none otherwise unless it overrides this.
+    /// </summary>
+    internal virtual bool ClaimsKey(Silk.NET.Input.Key key) => HoldsKeyboard;
+
+    /// <summary>
     /// True if this is a text-entry (edit box); used by focus routing
     /// to suppress global hotkeys while typing.
     /// </summary>
