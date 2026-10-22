@@ -61,6 +61,13 @@ public class UiLabel : UiElement
 
     public bool Outline { get; set; } = true;
 
+    /// <summary>
+    /// Set for a label inside a flex container: its size comes from the
+    /// layout (<see cref="MarkupContentSize"/>), so it no longer sizes itself
+    /// to its text when drawn, and its line is centred in the height it is given.
+    /// </summary>
+    internal bool SizedByLayout { get; set; }
+
     public UiLabel() { ClickThrough = true; }
 
     protected override bool ClipsChildren => false;
@@ -69,17 +76,25 @@ public class UiLabel : UiElement
     {
         string text = TextSource?.Invoke() ?? Text;
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
-        float w = DatFont is { } df
-            ? df.MeasureWidth(text)
-            : (ctx.DefaultFont?.MeasureWidth(text) ?? text.Length * 7f);
         float h = DatFont?.LineHeight
             ?? ctx.DefaultFont?.LineHeight ?? 14f;
-        if (w != Width) Width = w;
-        if (h != Height) Height = h;
-        if (DatFont is { } dat)
-            ctx.DrawStringDat(dat, text, 0, 0, textColor, Outline);
+        float y = 0f;
+        if (SizedByLayout)
+        {
+            y = MathF.Floor((Height - h) / 2f + 0.5f);
+        }
         else
-            ctx.DrawString(text, 0, 0, textColor);
+        {
+            float w = DatFont is { } df
+                ? df.MeasureWidth(text)
+                : (ctx.DefaultFont?.MeasureWidth(text) ?? text.Length * 7f);
+            if (w != Width) Width = w;
+            if (h != Height) Height = h;
+        }
+        if (DatFont is { } dat)
+            ctx.DrawStringDat(dat, text, 0, y, textColor, Outline);
+        else
+            ctx.DrawString(text, 0, y, textColor);
     }
 }
 
