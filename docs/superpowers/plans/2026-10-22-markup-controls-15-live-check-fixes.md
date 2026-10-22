@@ -17,6 +17,8 @@
    - A single-select list takes no Up/Down (`UiMarkupList.Selection.cs` returns `false` when `!MultiSelect`), so after Tab there's no keyboard way to pick a row.
    - The focus path from field to Tab to tree works (UiRoot moves focus before offering Tab to the field).
 
+**Status:** Tasks 1-5 DONE 2026-10-22 — feat f399562b..a585d80d (6 commits: 4 fixes, 1 Task 1 test fix round, 1 final-review fix wave). Gate: 162 = baseline, 0 warnings, every commit builds. Final-review fixes: hidden selected tree row acts as its nearest shown parent; Trees/Hotkey docs wording; AppendModifiers shared. Parked: Shift + pure-sideways trackpad/tilt ticks now step (matches Windows/X11); macOS Shift+wheel note only under Number. Task 6 live re-check pending.
+
 **Tech Stack:** C# / .NET 10, xUnit, headless `UiRoot` + `MarkupDrawProbe`, Silk.NET input.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` (branch `docs/markup-controls-spec`): §2 number, §8 list header, §10 tree, §12 hotkey, §16 live check. Evidence: plan 14 Status line (live check findings) on the same branch.
