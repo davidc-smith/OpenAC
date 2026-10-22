@@ -15,7 +15,7 @@
 - **Widgets.** `UiMarkupColor` is the swatch: a tab stop that doesn't take focus on click. Its child `UiMarkupColorPopup` takes no room and draws in the overlay pass, like `UiMarkupContextMenu`. While open, the popup holds the root's popup slot and the keyboard focus (so Escape and hex typing reach it), with `IsEditControl` set so `UiRoot.OnChar` delivers characters. Edits set a pending colour that is reported on the next tick (at most once per frame) and on close.
 - **Wiring.** `MarkupBuildContext` gains `Textures` and `RecentColors`. `MarkupDocument.Build` gains `textures` and `sharedControlState`, and creates one `MarkupRecentColors` per build. `RetailUiRuntime.MountPlugins` passes the retail service and `_controlState.Shared`.
 
-**Status:** not started.
+**Status:** DONE 2026-10-22 — feat 618e80d4..ce1bea87 (6 commits: 5 tasks + final-review fix; each task commit builds; gate = baseline 162, 0 warnings). Deviation in Task 3: the popup takes pointer capture in its dismiss so the outside press's release is swallowed too (UiRoot lets it through); context menu/UiMenu still let it through (follow-up: one UiRoot-level swallow for all popups). Final review fix: popup is a tab stop while open (Tab/Shift+Tab close and keep), recent colours re-read the shared state on every access (shared across windows, no overwrite), alpha-off no-op close remembers nothing, the dismiss grab requires an available owner. Deferred: Space/Enter-close/'#'/right-edge/other-button test gaps; PaletteSwatches allocation per themed draw; ramps regenerated per open; MarkupBuildContext summary wrap.
 
 **Tech Stack:** C# / .NET 10, xUnit, headless `UiRoot` + `RecordingGpuDevice` (`MarkupDrawProbe`) tests, Silk.NET `Key`.
 

@@ -393,8 +393,12 @@ them.
 - Live: `onchange` fires while dragging (at most once per frame). A click
   outside the popup closes it and keeps the current colour. Escape closes it
   and restores the colour the popup opened with, reporting it if it differs.
-- The square and strips are textures from `IMarkupTextureService`, rebuilt
-  when the hue changes and freed when the popup closes.
+- The square and strips are textures from `IMarkupTextureService`, uploaded
+  when the popup opens and freed when it closes. (Amendment 2026-10-22, plan
+  12: the textures are static. The square is a fill of the pure hue with a
+  white→clear and a clear→black ramp drawn over it, so nothing is rebuilt
+  when the hue changes. Recent colours are re-read from the shared state on
+  every access, so every window sees the same list.)
 
 ## 14. Dialogs (series 13)
 
