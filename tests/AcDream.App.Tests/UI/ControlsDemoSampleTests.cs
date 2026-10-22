@@ -120,4 +120,65 @@ public sealed class ControlsDemoSampleTests
         Click(root, panel, 200, 37);    // "General" header
         Assert.Equal("General folded", binding.Status);
     }
+
+    /// <summary>Records dialogs, modal shows and hides; a test answers a dialog by calling its callback.</summary>
+    private sealed class FakeUi : IUiRegistry
+    {
+        public List<(PluginDialog Dialog, Action<int> OnResult)> Dialogs { get; } = [];
+        public List<(string View, string? Owner)> Modals { get; } = [];
+        public List<string> Hidden { get; } = [];
+
+        public void AddMarkupPanel(string markupPath, object binding) => throw new NotSupportedException();
+        public void AddPanel(PluginPanelDescriptor descriptor, string markupPath, object binding) => throw new NotSupportedException();
+        public bool Confirm(PluginDialog dialog, Action<int> onResult) { Dialogs.Add((dialog, onResult)); return true; }
+        public bool ShowModal(string viewName, string? ownerView = null) { Modals.Add((viewName, ownerView)); return true; }
+        public bool HidePanel(string viewName) { Hidden.Add(viewName); return true; }
+    }
+
+    [Theory]
+    [MemberData(nameof(Themes))]
+    public void Table_builds_and_lays_out(PluginUiTheme theme)
+    {
+        var (_, panel) = Mount("table.xml", new TableBinding(new FakeUi()), theme);
+        AssertInside(panel);
+    }
+
+    [Fact]
+    public void Table_keep_all_and_the_menu_change_the_rows_they_should()
+    {
+        var binding = new TableBinding(new FakeUi());
+
+        binding.KeepAll(true);
+        Assert.All(binding.Keep, Assert.True);
+
+        binding.SetPicked([2, 5]);
+        binding.MenuOpened(5);
+        binding.MenuPicked(1);   // Don't keep
+
+        Assert.Equal([true, true, false, true, true, false, true, true], binding.Keep);
+    }
+
+    [Fact]
+    public void Table_remove_asks_first_and_removes_only_on_the_first_button()
+    {
+        var ui = new FakeUi();
+        var binding = new TableBinding(ui);
+        binding.SetPicked([1, 3]);
+
+        binding.RemoveSelected();
+        var (dialog, answer) = Assert.Single(ui.Dialogs);
+        Assert.Equal(["Remove", "Keep"], dialog.EffectiveButtons);
+        Assert.Equal("table", dialog.OwnerView);
+
+        answer(1);
+        Assert.Equal(8, binding.Names.Count);
+        Assert.Equal("Nothing removed", binding.Status);
+
+        binding.RemoveSelected();
+        ui.Dialogs[1].OnResult(0);
+        Assert.Equal(6, binding.Names.Count);
+        Assert.DoesNotContain("Steel Salvage", binding.Names);
+        Assert.DoesNotContain("Peridot", binding.Names);
+        Assert.Empty(binding.Picked);
+    }
 }

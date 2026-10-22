@@ -1,0 +1,15 @@
+<panel x="450" y="290" w="460" h="316" title="Controls: Table" theme="plugin" resizable="true" minw="380" minh="200">
+  <list name="loot" x="10" y="28" w="440" h="230" header="true" resizable="true" selectmode="multi"
+        selected="{Picked}" onchange="{SetPicked}" anchor="left top right bottom">
+    <column type="checkbox" header="all" width="24" values="{Keep}" onchange="{ToggleKeep}" onall="{KeepAll}" />
+    <column type="text" header="Item" width="170" items="{Names}" sort="text" />
+    <column type="text" header="Value" width="70" items="{Values}" sort="number" />
+    <column type="text" header="Burden" width="80" items="{Burdens}" sort="number" sortkeys="{BurdenKeys}" />
+    <column type="button" items="{Actions}" onclick="{Act}" buttonw="56" buttonh="16" />
+    <contextmenu items="Keep|Don't keep|-|Remove..." onopen="{MenuOpened}" onselect="{MenuPicked}" />
+  </list>
+  <button x="10" y="266" w="90" h="20" text="Add row" onclick="{AddRow}" anchor="left bottom" />
+  <button x="106" y="266" w="130" h="20" text="Remove selected" onclick="{RemoveSelected}"
+          enabled="{HasSelection}" anchor="left bottom" />
+  <label x="10" y="292" text="{Status}" anchor="left bottom" />
+</panel>

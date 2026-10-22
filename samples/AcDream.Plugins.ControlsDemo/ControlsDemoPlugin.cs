@@ -31,6 +31,7 @@ public sealed class ControlsDemoPlugin : IAcDreamPlugin
         Add(new PluginPanelDescriptor("inputs", "Controls: Inputs") { IconText = "CI" }, "inputs.xml", new InputsBinding());
         Add(new PluginPanelDescriptor("pickers", "Controls: Keys and colours") { IconText = "CK" }, "pickers.xml", new PickersBinding());
         Add(new PluginPanelDescriptor("layout", "Controls: Layout") { IconText = "CL" }, "layout.xml", new LayoutBinding());
+        Add(new PluginPanelDescriptor("table", "Controls: Table") { IconText = "CT" }, "table.xml", new TableBinding(host.Ui));
         // Later windows are added here.
     }
 
