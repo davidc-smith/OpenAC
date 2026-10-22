@@ -19,6 +19,7 @@ internal sealed class UiFlexBox
 {
     private float _laidWidth = float.NaN, _laidHeight = float.NaN;
     private bool _laidOut;
+    private bool _structureChanged;
 
     public FlexNode Node { get; } = new();
 
@@ -67,6 +68,48 @@ internal sealed class UiFlexBox
         Items.Add(item);
     }
 
+    /// <summary>Inserts a built item at <paramref name="index"/>, in step with its element's place among the children.</summary>
+    public void Insert(int index, UiFlexItem item)
+    {
+        Node.Children.Insert(index, item.Node);
+        Items.Insert(index, item);
+        _structureChanged = true;
+    }
+
+    /// <summary>Removes the item for <paramref name="element"/>; false when it has none.</summary>
+    public bool Remove(UiElement element)
+    {
+        int index = IndexOf(element);
+        if (index < 0) return false;
+        Node.Children.RemoveAt(index);
+        Items.RemoveAt(index);
+        _structureChanged = true;
+        return true;
+    }
+
+    /// <summary>Moves the item for <paramref name="element"/> to <paramref name="index"/>.</summary>
+    public void Move(UiElement element, int index)
+    {
+        int old = IndexOf(element);
+        if (old < 0) throw new ArgumentException("not an item of this container", nameof(element));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Items.Count);
+        if (old == index) return;
+        UiFlexItem item = Items[old];
+        Node.Children.RemoveAt(old);
+        Items.RemoveAt(old);
+        Node.Children.Insert(index, item.Node);
+        Items.Insert(index, item);
+        _structureChanged = true;
+    }
+
+    private int IndexOf(UiElement element)
+    {
+        for (int i = 0; i < Items.Count; i++)
+            if (ReferenceEquals(Items[i].Element, element)) return i;
+        return -1;
+    }
+
     /// <summary>
     /// Measures the tree now, outside a draw: the window's first measurement
     /// at build time. Returns the preferred size and the fitted minimum.
@@ -106,6 +149,7 @@ internal sealed class UiFlexBox
         }
         FlexLayout.Arrange(Node, new FlexRect(0f, 0f, width, height));
         Place(this);
+        ClearStructure(this);
         _laidOut = true;
         _laidWidth = width;
         _laidHeight = height;
@@ -115,6 +159,7 @@ internal sealed class UiFlexBox
     /// <summary>Whether any shown item's visibility or measured inputs changed, at any depth.</summary>
     private static bool Changed(UiFlexBox box)
     {
+        if (box._structureChanged) return true;
         foreach (UiFlexItem item in box.Items)
         {
             bool hidden = !item.Element.Visible;
@@ -123,6 +168,13 @@ internal sealed class UiFlexBox
             if (item.Inner is { } inner ? Changed(inner) : item.InputsChanged()) return true;
         }
         return false;
+    }
+
+    private static void ClearStructure(UiFlexBox box)
+    {
+        box._structureChanged = false;
+        foreach (UiFlexItem item in box.Items)
+            if (item.Inner is { } inner) ClearStructure(inner);
     }
 
     private static void SyncHidden(UiFlexBox box)
