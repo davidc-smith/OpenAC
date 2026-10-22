@@ -120,7 +120,7 @@ internal sealed class CharacterManagementUiController : IDisposable
             ?? assembly.GetName().Version?.ToString(3)
             ?? "unknown";
         UiText.Line[] versionLines =
-            [new($"OpenAC {version}", new Vector4(0.65f, 0.65f, 0.65f, 1f))];
+            [new($"{AcDream.App.ProductIdentity.Name} {version}", new Vector4(0.65f, 0.65f, 0.65f, 1f))];
         Root.AddChild(new UiText
         {
             Name = "ClientVersion",

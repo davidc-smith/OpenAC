@@ -233,7 +233,8 @@ either client: `policy` (which bot policy drives a windowless session; a
 graphical session is driven by the player). The windowless client likewise
 accepts and ignores `rynth`. The one field the graphical
 client refuses is `"mode": "probe"`, because a probe never selects a
-character and there is no windowed session to show.
+character and there is no windowed session to show. OpenAC Gateway accepts no
+`rynth` or `rynthPump` keys in the session document (they belong to OpenAC Gateway Rynth).
 
 Where a document and a startup option say the same thing, the document wins:
 its `pluginTags` outranks `ACDREAM_PLUGIN_TAGS`, its `rynth` outranks

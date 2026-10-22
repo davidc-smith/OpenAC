@@ -66,7 +66,7 @@ public sealed class GameWindow :
         return defaults with
         {
             Size = size,
-            Title = "acdream — Vulkan",
+            Title = AcDream.App.ProductIdentity.Name,
             VSync = useVSync,
             WindowBorder = border,
             IsVisible = !exactAutomationFramebuffer,

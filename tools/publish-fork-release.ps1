@@ -19,10 +19,16 @@ if (-not $IsMacOS) { throw 'Fork releases are built on macOS (osx-arm64).' }
 
 $RepoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 # Read the properties the same way publish-bin.ps1 does (several PropertyGroups are allowed).
+function Get-OpenACProperty([string]$Name) {
+    $value = & dotnet msbuild (Join-Path $RepoRoot 'src/AcDream.App/AcDream.App.csproj') "-getProperty:$Name"
+    if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($value)) { throw "Could not read $Name from the build." }
+    return ([string]($value -join "`n")).Trim()
+}
 [xml]$props = Get-Content -LiteralPath (Join-Path $RepoRoot 'Directory.Build.props') -Raw
-$version = [string]$props.Project.PropertyGroup.Version
+$version = Get-OpenACProperty 'OpenACReleaseVersion'
+$product = Get-OpenACProperty 'OpenACProduct'
 $repository = [string]($props.Project.PropertyGroup | ForEach-Object { $_.OpenACReleaseRepository } | Where-Object { $_ } | Select-Object -First 1)
-if ($version -notmatch '-fork\.\d+$') { throw "Version '$version' is not a fork version (x.y.z-fork.n)." }
+if ($version -notmatch '-(gateway|rynth)\.\d+$') { throw "Version '$version' is not an OpenAC Gateway release version (x.y.z-gateway.n or x.y.z-rynth.n)." }
 if ([string]::IsNullOrWhiteSpace($repository)) { throw 'Directory.Build.props has no OpenACReleaseRepository.' }
 
 if ($AllowBranch -and -not $DryRun) { throw '-AllowBranch is for dry runs only; publish from main.' }
@@ -87,11 +93,11 @@ foreach ($file in $files) {
 }
 
 # No --prerelease; --latest keeps the launcher's releases/latest/download route on this release.
-$notes = "OpenAC fork release $version (macOS Apple silicon only). The launcher installs the RynthNav navdata pinned in rynth-navdata.json."
+$notes = "$product release $version (macOS Apple silicon only). The launcher installs the RynthNav navdata pinned in rynth-navdata.json."
 $commands = @(
     "git -C `"$RepoRoot`" tag $tag",
     "git -C `"$RepoRoot`" push origin $tag",
-    "gh release create $tag -R $repository --title `"OpenAC $version`" --notes `"$notes`" --latest $($files -join ' ')"
+    "gh release create $tag -R $repository --title `"$product $version`" --notes `"$notes`" --latest $($files -join ' ')"
 )
 if ($DryRun) {
     Write-Host 'Dry run: the release would be published with:' -ForegroundColor Cyan
@@ -106,6 +112,6 @@ if ($LASTEXITCODE) {
     & git -C $RepoRoot tag -d $tag
     throw "git push of $tag failed; the local tag was deleted."
 }
-& gh release create $tag -R $repository --title "OpenAC $version" --notes $notes --latest @files
+& gh release create $tag -R $repository --title "$product $version" --notes $notes --latest @files
 if ($LASTEXITCODE) { throw 'gh release create failed; the tag is pushed, re-run gh release create by hand.' }
 Write-Host "Published $tag to https://github.com/$repository/releases/tag/$tag" -ForegroundColor Green

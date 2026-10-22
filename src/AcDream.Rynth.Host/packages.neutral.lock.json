@@ -25,20 +25,20 @@
       "acdream.clientextensions": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Runtime": "[0.1.26-fork.1, )"
+          "AcDream.Runtime": "[0.1.26, )"
         }
       },
       "acdream.content": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Core": "[0.1.26-fork.1, )",
+          "AcDream.Core": "[0.1.26, )",
           "Microsoft.Extensions.Logging.Abstractions": "[9.0.9, )"
         }
       },
       "acdream.core": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Plugin.Abstractions": "[0.1.26-fork.1, )",
+          "AcDream.Plugin.Abstractions": "[0.1.26, )",
           "BCnEncoder.Net": "[2.2.1, )",
           "Chorizite.DatReaderWriter": "[2.1.7, )",
           "Serilog": "[4.0.2, )",
@@ -49,7 +49,7 @@
       "acdream.core.net": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Core": "[0.1.26-fork.1, )"
+          "AcDream.Core": "[0.1.26, )"
         }
       },
       "acdream.platform": {
@@ -61,50 +61,50 @@
       "acdream.runtime": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Content": "[0.1.26-fork.1, )",
-          "AcDream.Core": "[0.1.26-fork.1, )",
-          "AcDream.Core.Net": "[0.1.26-fork.1, )",
-          "AcDream.Platform": "[0.1.26-fork.1, )",
-          "AcDream.Plugin.Abstractions": "[0.1.26-fork.1, )"
+          "AcDream.Content": "[0.1.26, )",
+          "AcDream.Core": "[0.1.26, )",
+          "AcDream.Core.Net": "[0.1.26, )",
+          "AcDream.Platform": "[0.1.26, )",
+          "AcDream.Plugin.Abstractions": "[0.1.26, )"
         }
       },
       "acdream.rynth.engineui": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.ScriptWindows": "[0.1.26-fork.1, )",
+          "AcDream.Rynth.ScriptWindows": "[0.1.26, )",
           "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
         }
       },
       "acdream.rynth.plugin.rynthai": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.Sdk": "[0.1.26-fork.1, )",
+          "AcDream.Rynth.Sdk": "[0.1.26, )",
           "ImGui.NET": "[1.91.6.1, 1.91.6.1]"
         }
       },
       "acdream.rynth.plugin.rynthchat": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.Sdk": "[0.1.26-fork.1, )"
+          "AcDream.Rynth.Sdk": "[0.1.26, )"
         }
       },
       "acdream.rynth.plugin.rynthinventory": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.Sdk": "[0.1.26-fork.1, )"
+          "AcDream.Rynth.Sdk": "[0.1.26, )"
         }
       },
       "acdream.rynth.plugin.rynthlua": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.Sdk": "[0.1.26-fork.1, )",
+          "AcDream.Rynth.Sdk": "[0.1.26, )",
           "MoonSharp": "[2.0.0, )"
         }
       },
       "acdream.rynth.plugin.rynthnav": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.Sdk": "[0.1.26-fork.1, )",
+          "AcDream.Rynth.Sdk": "[0.1.26, )",
           "DotRecast.Core": "[2026.1.3, )",
           "DotRecast.Detour": "[2026.1.3, )"
         }
@@ -112,13 +112,13 @@
       "acdream.rynth.plugin.rynthoracle": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.Sdk": "[0.1.26-fork.1, )"
+          "AcDream.Rynth.Sdk": "[0.1.26, )"
         }
       },
       "acdream.rynth.plugin.rynthtracker": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Rynth.Sdk": "[0.1.26-fork.1, )"
+          "AcDream.Rynth.Sdk": "[0.1.26, )"
         }
       },
       "acdream.rynth.scriptwindows": {

@@ -19,7 +19,8 @@ not update itself. The inputs are:
   session config carry and which already decide when prepared data must be
   rebuilt;
 - the build-wide files (global.json, Directory.Packages.props, NuGet.Config,
-  and Directory.Build.props without its release version), the launcher
+  and Directory.Build.props, plus Directory.Branch.props where a branch has
+  one, each without its <Version> and OpenACReleaseNumber), the launcher
   icons, and the scripts that build and package the payload;
 - the .NET SDK the build resolves and the runtime it bundles, which a
   self-contained launcher carries, so a runtime security update reaches it;
@@ -28,7 +29,7 @@ not update itself. The inputs are:
 The shared game code (AcDream.Core, AcDream.Content apart from the recipe,
 and the rest) is deliberately not an input: the bake tool an older launcher
 carries still prepares valid data until the recipe version goes up. The
-release version alone changes nothing. Files are read as git object ids from
+release version and release number alone change nothing. Files are read as git object ids from
 a committed tree, so the value is the same on every runner and line-ending
 setting.
 
@@ -95,8 +96,17 @@ function Get-LauncherFingerprintInputs([string]$At = 'HEAD') {
 
     # The release version alone must not change the fingerprint; everything
     # else in the build-wide properties counts.
-    $props = Read-CommittedText $At 'Directory.Build.props'
-    $inputs['Directory.Build.props'] = [regex]::Replace($props, '<Version>[^<]*</Version>', '<Version />')
+    # The release number (OpenACReleaseNumber) is part of the release version too.
+    foreach ($propsFile in @('Directory.Build.props', 'Directory.Branch.props')) {
+        # Directory.Branch.props exists only on a branch line that has its own identity.
+        if ($propsFile -ne 'Directory.Build.props') {
+            & git -C $FingerprintRepoRoot cat-file -e "${At}:$propsFile" 2>$null
+            if ($LASTEXITCODE) { continue }
+        }
+        $props = Read-CommittedText $At $propsFile
+        $props = [regex]::Replace($props, '<Version>[^<]*</Version>', '<Version />')
+        $inputs[$propsFile] = [regex]::Replace($props, '<OpenACReleaseNumber>[^<]*</OpenACReleaseNumber>', '<OpenACReleaseNumber />')
+    }
 
     # The recipe the prepared data is built to: its values, not the rest of the file.
     $pak = Read-CommittedText $At 'src/AcDream.Content/Pak/PakFormat.cs'

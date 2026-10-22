@@ -234,7 +234,7 @@ internal sealed class RenderFrameDiagnosticsController :
         int visibleLandblocks,
         int totalLandblocks,
         RenderFrameTitleFacts facts) =>
-        $"acdream {ProductVersion} | {fps:F0} fps | {averageFrameMilliseconds:F1} ms | "
+        $"{AcDream.App.ProductIdentity.Name} {ProductVersion} | {fps:F0} fps | {averageFrameMilliseconds:F1} ms | "
         + $"lb {visibleLandblocks}/{totalLandblocks} | "
         + $"ent {facts.EntityCount}/anim {facts.AnimatedEntityCount} | "
         + $"PY{facts.Calendar.Year} {facts.Calendar.Month} {facts.Calendar.Day} "

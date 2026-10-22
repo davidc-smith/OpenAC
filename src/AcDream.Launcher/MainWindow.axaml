@@ -126,7 +126,7 @@
     <Border Padding="18,10" Background="#152029">
       <Grid ColumnDefinitions="*,Auto">
       <StackPanel Spacing="1">
-        <TextBlock Text="OpenAC" FontFamily="Georgia,serif" FontSize="27" Foreground="#DBB573" />
+        <TextBlock x:Name="ProductHeader" Text="OpenAC" FontFamily="Georgia,serif" FontSize="27" Foreground="#DBB573" />
         <TextBlock Text="Asheron's Call forever." FontFamily="Georgia,serif" FontSize="18" Foreground="#F0E4CD" />
       </StackPanel>
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
