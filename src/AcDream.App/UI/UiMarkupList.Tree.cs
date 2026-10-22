@@ -180,11 +180,20 @@ public sealed partial class UiMarkupList
     /// <summary>
     /// Right expands a collapsed parent or moves to an expanded one's first
     /// child; Left collapses an expanded parent or moves to the row's parent.
-    /// Acts on the selected row (single) or the lead (multi) when it is shown.
+    /// Acts on the selected row (single) or the lead (multi) when it is shown;
+    /// with nothing selected in a single-select tree, either key selects the
+    /// first shown row.
     /// </summary>
     private void HandleTreeKey(bool right)
     {
         int row = MultiSelect ? _leadRow : SelectedIndexSource();
+        if (!MultiSelect && row < 0)
+        {
+            // Nothing selected yet: start at the first shown row.
+            if (_view.ViewCount > 0)
+                SelectionChanged?.Invoke(_view.PluginRow(0));
+            return;
+        }
         int view = _view.ViewRow(row);
         if (view < 0)
             return;

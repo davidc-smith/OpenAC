@@ -63,6 +63,22 @@ public sealed class ControlsDemoSampleTests
     }
 
     [Fact]
+    public void Tree_keys_work_after_tabbing_from_the_note_field()
+    {
+        var binding = new TreeBinding();
+        var (root, panel) = Mount("tree.xml", binding);
+        UiElement note = panel.Children.First(c => c.TabStop);   // the Note field comes first in tab order
+        Click(root, panel, note.Left + 4f, note.Top + note.Height / 2f);
+
+        root.OnKeyDown((int)Silk.NET.Input.Key.Tab);
+        Assert.IsType<UiMarkupList>(root.KeyboardFocus);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Right);
+
+        Assert.Equal(0, binding.Selected);
+        Assert.Equal("Looting selected", binding.Status);
+    }
+
+    [Fact]
     public void Inputs_select_all_ticks_every_pickup_and_shows_a_dash_when_they_disagree()
     {
         var binding = new InputsBinding();

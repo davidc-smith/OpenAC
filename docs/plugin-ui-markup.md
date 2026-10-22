@@ -976,7 +976,11 @@ row without selecting it, and does not fire the column's `onclick`. The list
 takes keyboard focus with Tab from another focused control in the same
 window; clicking a row does not focus it. While focused, Right expands the
 selected row or, if it is already expanded, moves to its first child, and
-Left collapses it or moves to its parent. In a multi-select list the keys
+Left collapses it or moves to its parent.
+In a single-select tree, Up and Down move the selection to the row above or
+below (the first row when none is selected), and Left or Right with no row
+selected selects the first row; none of these keys reach the game while the
+tree has focus. In a multi-select list the keys
 act on the last row picked or stepped to, so they do nothing until the
 player has picked one.
 

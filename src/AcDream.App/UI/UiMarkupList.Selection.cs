@@ -81,10 +81,29 @@ public sealed partial class UiMarkupList
     private bool _selectionFocused;
 
     /// <summary>
+    /// Up and Down in a focused single-select tree: the row above or below,
+    /// as shown, or the first row when none is selected. Taken even at the
+    /// ends, so the game doesn't act on them.
+    /// </summary>
+    private bool HandleSingleStep(Key key)
+    {
+        int delta = key switch { Key.Up => -1, Key.Down => 1, _ => 0 };
+        if (delta == 0)
+            return false;
+        RefreshSelectionRows();
+        int current = SelectedIndexSource();
+        int next = UiMarkupListSelection.Step(current, delta, _view);
+        if (next >= 0 && next != current)
+            SelectionChanged?.Invoke(next);
+        return true;
+    }
+
+    /// <summary>
     /// Focus and keys for a list. A tab-stop list tracks focus; while focused,
     /// a tree takes Left/Right, and a multi-select list takes Up/Down (Shift
     /// extends from the anchor) and Ctrl/Cmd+A to select every shown row. Up
-    /// and Down are taken only in multi-select; other keys fall through.
+    /// and Down are taken in multi-select and in a single-select tree; other
+    /// keys fall through.
     /// </summary>
     private bool HandleSelectionEvent(in UiEvent e)
     {
@@ -111,7 +130,7 @@ public sealed partial class UiMarkupList
             return true;
         }
         if (!MultiSelect)
-            return false;
+            return IsTree && HandleSingleStep(key);
         if (key == Key.A && keys.Add)
         {
             RefreshSelectionRows();

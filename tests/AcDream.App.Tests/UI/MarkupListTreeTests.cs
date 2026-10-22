@@ -432,21 +432,46 @@ public sealed class MarkupListTreeTests
     }
 
     [Fact]
-    public void SingleMode_UpDownFallThrough_LeftRightDoNot()
+    public void SingleMode_UpDownMoveTheSelectionAndStayOutOfTheGame()
     {
         var b = new Binding { Selected = 0 };
         var m = Mount(b);
         var fell = new List<int>();
         m.Root.WorldKeyFallThrough += (vk, _) => fell.Add(vk);
         m.Root.SetKeyboardFocus(m.List);
-        Press(m, Key.Up);
+
         Press(m, Key.Down);
-        Assert.Equal(2, fell.Count);
-        Assert.Empty(b.Picks);
-        fell.Clear();
-        Press(m, Key.Left);
-        Press(m, Key.Right);
+        Press(m, Key.Up);
+        Press(m, Key.Up);       // already on the first row: taken, no change
+
+        Assert.Equal([1, 0], b.Picks);
         Assert.Empty(fell);
+    }
+
+    [Fact]
+    public void SingleMode_UpDownWithNothingSelectedPickTheFirstRow()
+    {
+        var b = new Binding();
+        var m = Mount(b);
+        m.Root.SetKeyboardFocus(m.List);
+        Press(m, Key.Down);
+        Assert.Equal([0], b.Picks);
+    }
+
+    [Fact]
+    public void SingleMode_LeftRightWithNothingSelectedPickTheFirstRow()
+    {
+        var b = new Binding();
+        var m = Mount(b);
+        m.Root.SetKeyboardFocus(m.List);
+
+        Press(m, Key.Right);    // nothing selected: the first row
+        Press(m, Key.Right);    // A is an expanded parent: its first child
+        Assert.Equal([0, 1], b.Picks);
+
+        b.Selected = -1;
+        Press(m, Key.Left);
+        Assert.Equal([0, 1, 0], b.Picks);
     }
 
     [Fact]
