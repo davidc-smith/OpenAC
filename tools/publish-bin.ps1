@@ -76,7 +76,7 @@ if ($MacOnly -and ($IncludeLinux -or $IncludeMacOS -or -not [string]::IsNullOrWh
     throw '-MacOnly cannot be combined with another platform-selection parameter.'
 }
 if ($IncludeMacOS -and -not $IsMacOS) {
-    throw '-IncludeMacOS packages an OpenAC.app bundle and must run on macOS.'
+    throw '-IncludeMacOS packages a macOS app bundle and must run on macOS.'
 }
 if (-not [string]::IsNullOrWhiteSpace($MacArtifactsDirectory) -and $IncludeMacOS) {
     throw 'Use either -IncludeMacOS or -MacArtifactsDirectory, not both.'
