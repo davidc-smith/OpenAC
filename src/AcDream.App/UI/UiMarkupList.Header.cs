@@ -21,16 +21,13 @@ public sealed partial class UiMarkupList
     private int _headerPressColumn = -1;
 
     /// <summary>
-    /// The header: Classic draws the scrollbar track art under the captions,
-    /// the plugin theme its field colour; both draw a border-coloured underline
-    /// and a line between cells.
+    /// The header: Classic draws the list's own dark background under the
+    /// captions, the plugin theme its field colour; both draw a
+    /// border-coloured underline and a line between cells.
     /// </summary>
     private void DrawHeader(UiRenderContext context, IReadOnlyList<UiMarkupListColumn> columns)
     {
-        if (ThemePalette is { } palette)
-            context.DrawFill(0f, 0f, Width, HeaderHeight, palette.Field);
-        else if (SpriteResolve is { } resolve)
-            DrawTiledSprite(context, resolve, RetailScrollbarChrome.Track, 0f, 0f, Width, HeaderHeight);
+        context.DrawFill(0f, 0f, Width, HeaderHeight, ThemePalette is { } palette ? palette.Field : BackgroundColor);
         context.DrawFill(0f, HeaderHeight - 1f, Width, 1f, BorderColor);
 
         (int sorted, bool descending) = CurrentSort;

@@ -145,11 +145,12 @@ public sealed class MarkupListHeaderTests : IDisposable
     }
 
     [Fact]
-    public void Header_ClassicFaceIsTheTrackArtWithAnUnderlineAndSeparators()
+    public void Header_ClassicFaceIsTheListBackgroundWithAnUnderlineAndSeparators()
     {
         var (_, list) = Mount("", new Binding());
         var renderer = MarkupDrawProbe.Draw(list);
-        Assert.Equal(new[] { (0f, 0f, 300f, 18f) }, SpriteQuads(renderer, RetailScrollbarChrome.Track));
+        Assert.Contains((0f, 0f, 300f, 18f), MarkupDrawProbe.QuadBounds(renderer, list.BackgroundColor));
+        Assert.DoesNotContain(SpriteQuads(renderer, RetailScrollbarChrome.Track), q => q.Item2 < 18f);
         var lines = MarkupDrawProbe.QuadBounds(renderer, list.BorderColor);
         Assert.Contains((0f, 17f, 300f, 1f), lines);
         foreach (float x in new[] { 119f, 199f, 239f })

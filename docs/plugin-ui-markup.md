@@ -829,7 +829,7 @@ band unless `selectionband="true"`.
 
 `header="true"` draws an 18 px row of column captions above the rows; the
 rows and the scrollbar start under it. A column's `header` is a literal or a
-bound string. Classic draws the header on the game's scrollbar track art; a
+bound string. Classic draws the header on the list's own dark background; a
 themed window uses its field colour. Both draw a line under the header and
 between cells.
 
