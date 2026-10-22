@@ -21,7 +21,7 @@ public sealed class SilkRetainedMouseScrollTests
         root.AddChild(list);
         root.OnMouseMove(18, 234);
         var surface = new SilkRetainedMouseSurface(mouse);
-        Action<int> onScroll = root.OnScroll;
+        Action<int, int> onScroll = (_, dy) => root.OnScroll(dy);
         surface.AddScroll(onScroll);
 
         ((WheelMouseProxy)mouse).Raise(mouse, delta);
@@ -44,7 +44,7 @@ public sealed class SilkRetainedMouseScrollTests
         IMouse mouse = DispatchProxy.Create<IMouse, WheelMouseProxy>();
         var surface = new SilkRetainedMouseSurface(mouse);
         var steps = new List<int>();
-        surface.AddScroll(steps.Add);
+        surface.AddScroll((_, dy) => steps.Add(dy));
         ((WheelMouseProxy)mouse).Raise(mouse, delta);
         Assert.Equal(new[] { expected }, steps);
     }
@@ -55,7 +55,7 @@ public sealed class SilkRetainedMouseScrollTests
         IMouse mouse = DispatchProxy.Create<IMouse, WheelMouseProxy>();
         var surface = new SilkRetainedMouseSurface(mouse);
         var steps = new List<int>();
-        surface.AddScroll(steps.Add);
+        surface.AddScroll((_, dy) => steps.Add(dy));
         ((WheelMouseProxy)mouse).Raise(mouse, 0f);
         Assert.Empty(steps);
     }

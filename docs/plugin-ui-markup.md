@@ -303,7 +303,9 @@ with spin buttons at its right edge.
   never steps an unfocused field, so scrolling a list past it is safe.
   Up, Down and the wheel step from the number being typed, if it's a valid
   number: typing 42 then pressing Up gives 42 plus `step`. Hold Shift for ten
-  steps.
+  steps. (macOS sends Shift with a mouse wheel as
+  sideways scrolling; the client reads a purely sideways tick while Shift is
+  held as the wheel, so it steps ten too.)
 - While nobody is typing in it, the field follows `value`.
 
 On a host older than number fields, a `<number>` fails the build of its
