@@ -179,6 +179,39 @@ public sealed class RetainedUiInputBindingTests
     public void Wheel_reads_a_sideways_tick_as_the_wheel_only_while_Shift_is_held(int dx, int dy, bool shift, int expected)
         => Assert.Equal(expected, RetainedWheel.Vertical(dx, dy, shift));
 
+    [Theory]
+    [InlineData(true, new[] { 1 })]
+    [InlineData(false, new int[0])]
+    public void Sideways_tick_reaches_the_root_as_a_step_only_while_Shift_is_held(bool shift, int[] expected)
+    {
+        var surface = new MouseSurface();
+        var root = new UiRoot { Keyboard = ShiftKeyboard.Create(shift) };
+        var steps = new List<int>();
+        root.WorldScrollFallThrough += steps.Add;
+        new RetainedMouseInputBinding(surface, root, new HostQuiescenceGate()).Attach();
+
+        surface.Scroll(1, 0);
+
+        Assert.Equal(expected, steps);
+    }
+
+    public class ShiftKeyboard : System.Reflection.DispatchProxy
+    {
+        private bool _shift;
+
+        public static IKeyboard Create(bool shift)
+        {
+            var k = System.Reflection.DispatchProxy.Create<IKeyboard, ShiftKeyboard>();
+            ((ShiftKeyboard)(object)k)._shift = shift;
+            return k;
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args) =>
+            method?.Name == "IsKeyPressed"
+                ? _shift && (Key)args![0]! == Key.ShiftLeft
+                : throw new NotSupportedException(method?.Name);
+    }
+
     private sealed class MouseSurface : IRetainedMouseSurface
     {
         public int FailAdd { get; init; }
@@ -192,6 +225,7 @@ public sealed class RetainedUiInputBindingTests
         private Action<MouseButton, int, int>? _up;
         private Action<int, int>? _move;
         private Action<int, int>? _scroll;
+        public void Scroll(int dx, int dy) => _scroll!(dx, dy);
 
         public void AddMouseDown(Action<MouseButton, int, int> callback) => Add(() => Down = callback);
         public void AddMouseUp(Action<MouseButton, int, int> callback) => Add(() => _up = callback);
