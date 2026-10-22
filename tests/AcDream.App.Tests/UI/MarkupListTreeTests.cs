@@ -449,6 +449,56 @@ public sealed class MarkupListTreeTests
     }
 
     [Fact]
+    public void SingleMode_DownOnTheLastRowIsTakenAndChangesNothing()
+    {
+        var b = new Binding { Selected = 5 };   // B1, the last shown row
+        var m = Mount(b);
+        var fell = new List<int>();
+        m.Root.WorldKeyFallThrough += (vk, _) => fell.Add(vk);
+        m.Root.SetKeyboardFocus(m.List);
+
+        Press(m, Key.Down);
+
+        Assert.Empty(b.Picks);
+        Assert.Empty(fell);
+    }
+
+    [Fact]
+    public void SingleMode_UpDownFromARowHiddenInACollapsedParentStartAtThatParent()
+    {
+        var b = new Binding { Selected = 3 };   // A2a
+        var m = Mount(b);
+        Click(m, ArrowX(0), RowY(0));           // collapse A: shown rows A, B, B1
+        m.Root.SetKeyboardFocus(m.List);
+
+        Press(m, Key.Down);
+        Assert.Equal([4], b.Picks);             // the row after A, not the first row
+
+        b.Selected = 3;
+        b.Picks.Clear();
+        Redraw(m.List);
+        Press(m, Key.Up);
+        Assert.Equal([0], b.Picks);             // A is the first row: stays on it
+    }
+
+    [Fact]
+    public void SingleMode_LeftRightFromARowHiddenInACollapsedParentActOnThatParent()
+    {
+        var b = new Binding { Selected = 3 };   // A2a, hidden once A2 collapses
+        var m = Mount(b);
+        Click(m, ArrowX(1), RowY(2));           // collapse A2
+        m.Root.SetKeyboardFocus(m.List);
+
+        Press(m, Key.Left);                     // collapsed A2: to its parent
+        Assert.Equal([0], b.Picks);
+
+        b.Selected = 3;
+        Redraw(m.List);
+        Press(m, Key.Right);                    // collapsed A2: expands
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, ViewOrder(m, b));
+    }
+
+    [Fact]
     public void SingleMode_UpDownWithNothingSelectedPickTheFirstRow()
     {
         var b = new Binding();

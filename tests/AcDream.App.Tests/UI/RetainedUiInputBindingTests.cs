@@ -202,7 +202,7 @@ public sealed class RetainedUiInputBindingTests
         public static IKeyboard Create(bool shift)
         {
             var k = System.Reflection.DispatchProxy.Create<IKeyboard, ShiftKeyboard>();
-            ((ShiftKeyboard)(object)k)._shift = shift;
+            ((ShiftKeyboard)k)._shift = shift;
             return k;
         }
 

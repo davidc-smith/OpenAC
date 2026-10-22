@@ -17,9 +17,7 @@ internal static class MarkupHotkeyText
         if (chord.Device != 0 || !IsChordKey(chord.Key))
             return string.Empty;
         var text = new StringBuilder();
-        if ((chord.Modifiers & ModifierMask.Ctrl) != 0) text.Append("Ctrl+");
-        if ((chord.Modifiers & ModifierMask.Alt) != 0) text.Append("Alt+");
-        if ((chord.Modifiers & ModifierMask.Shift) != 0) text.Append("Shift+");
+        AppendModifiers(text, chord.Modifiers);
         return text.Append(chord.Key.ToString()).ToString();
     }
 
@@ -31,9 +29,7 @@ internal static class MarkupHotkeyText
     public static string Describe(KeyChord chord, Func<KeyChord, string> keyName)
     {
         var text = new StringBuilder();
-        if ((chord.Modifiers & ModifierMask.Ctrl) != 0) text.Append("Ctrl+");
-        if ((chord.Modifiers & ModifierMask.Alt) != 0) text.Append("Alt+");
-        if ((chord.Modifiers & ModifierMask.Shift) != 0) text.Append("Shift+");
+        AppendModifiers(text, chord.Modifiers);
         return text.Append(keyName(chord with { Modifiers = ModifierMask.None })).ToString();
     }
 
@@ -68,6 +64,13 @@ internal static class MarkupHotkeyText
     public static bool IsModifier(Key key) => key is Key.ShiftLeft or Key.ShiftRight
         or Key.ControlLeft or Key.ControlRight or Key.AltLeft or Key.AltRight
         or Key.SuperLeft or Key.SuperRight;
+
+    private static void AppendModifiers(StringBuilder text, ModifierMask modifiers)
+    {
+        if ((modifiers & ModifierMask.Ctrl) != 0) text.Append("Ctrl+");
+        if ((modifiers & ModifierMask.Alt) != 0) text.Append("Alt+");
+        if ((modifiers & ModifierMask.Shift) != 0) text.Append("Shift+");
+    }
 
     private static ModifierMask ModifierNamed(string name) =>
         string.Equals(name, "Ctrl", StringComparison.OrdinalIgnoreCase) ? ModifierMask.Ctrl

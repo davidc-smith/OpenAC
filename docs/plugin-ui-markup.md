@@ -335,8 +335,8 @@ plugin decides what the chord does; the box only edits the string.
   can't use, such as F13 or Caps Lock, which the box can still record. See
   [Hotkeys](plugin-api.md#hotkeys).
 - The box shows the modifiers as Ctrl, Alt and Shift (never left or right,
-since the string doesn't record a side) and the key by the game's own key
-names. An empty value, or one it
+  since the string doesn't record a side) and the key by the game's own key
+  names. An empty value, or one it
   can't read, shows `None`.
 - Clicking the box, or Enter or Space while it has focus, starts recording:
   the box shows `Press a key...` and takes every key press for itself, so
@@ -980,9 +980,10 @@ Left collapses it or moves to its parent.
 In a single-select tree, Up and Down move the selection to the row above or
 below (the first row when none is selected), and Left or Right with no row
 selected selects the first row; none of these keys reach the game while the
-tree has focus. In a multi-select list the keys
-act on the last row picked or stepped to, so they do nothing until the
-player has picked one.
+tree has focus. If the selected row is hidden inside a collapsed parent, the
+keys start from that parent. In a multi-select list, Left and Right act on
+the last row picked or stepped to, so they do nothing until the player has
+picked one.
 
 - Without `expanded` the client keeps the expanded state: every row starts
   expanded, or collapsed with `collapsed="true"`, and a list with a `name`

@@ -82,8 +82,9 @@ public sealed partial class UiMarkupList
 
     /// <summary>
     /// Up and Down in a focused single-select tree: the row above or below,
-    /// as shown, or the first row when none is selected. Taken even at the
-    /// ends, so the game doesn't act on them.
+    /// as shown, or the first row when none is selected. When the selected row
+    /// is hidden inside a collapsed parent, the step starts from that parent.
+    /// Taken even at the ends, so the game doesn't act on them.
     /// </summary>
     private bool HandleSingleStep(Key key)
     {
@@ -91,9 +92,10 @@ public sealed partial class UiMarkupList
         if (delta == 0)
             return false;
         RefreshSelectionRows();
-        int current = SelectedIndexSource();
+        int selected = SelectedIndexSource();
+        int current = ShownRowFor(selected);
         int next = UiMarkupListSelection.Step(current, delta, _view);
-        if (next >= 0 && next != current)
+        if (next >= 0 && next != selected)
             SelectionChanged?.Invoke(next);
         return true;
     }

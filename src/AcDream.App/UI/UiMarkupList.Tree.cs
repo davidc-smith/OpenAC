@@ -180,9 +180,11 @@ public sealed partial class UiMarkupList
     /// <summary>
     /// Right expands a collapsed parent or moves to an expanded one's first
     /// child; Left collapses an expanded parent or moves to the row's parent.
-    /// Acts on the selected row (single) or the lead (multi) when it is shown;
-    /// with nothing selected in a single-select tree, either key selects the
-    /// first shown row.
+    /// Acts on the selected row (single) or the lead (multi). A single-select
+    /// row hidden inside a collapsed parent acts as its nearest shown
+    /// ancestor, so Right expands that parent and Left moves up from it; a
+    /// multi lead is never hidden. With nothing selected in a single-select
+    /// tree, either key selects the first shown row.
     /// </summary>
     private void HandleTreeKey(bool right)
     {
@@ -194,6 +196,7 @@ public sealed partial class UiMarkupList
                 SelectionChanged?.Invoke(_view.PluginRow(0));
             return;
         }
+        row = ShownRowFor(row);
         int view = _view.ViewRow(row);
         if (view < 0)
             return;
@@ -212,6 +215,14 @@ public sealed partial class UiMarkupList
             ToggleExpanded(row);
         else if (_tree.Parent(row) >= 0)
             MoveTreeSelection(_tree.Parent(row));
+    }
+
+    /// <summary>The row itself when shown, else its nearest shown ancestor; -1 when none or out of range.</summary>
+    private int ShownRowFor(int row)
+    {
+        while (row >= 0 && _view.ViewRow(row) < 0)
+            row = _tree.Parent(row);
+        return row;
     }
 
     private void MoveTreeSelection(int row)
