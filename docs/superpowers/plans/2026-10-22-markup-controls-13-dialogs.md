@@ -27,6 +27,8 @@
   - keeps `ShowModal` blocks until the modal panel hides or is removed.
 - **Wiring.** `BufferedUiRegistry` validates the dialog, resolves view names to mounted window elements and forwards to the bound host. `RetailUiRuntime` creates the host, binds it, ticks it and disposes it.
 
+**Status:** DONE 2026-10-22 — feat ce1bea87..ac92737c (13 commits: 6 tasks, 3 task-review fixes, 4 final-review fixes; each task commit builds; gate = baseline 162, 0 warnings). Rulings: per-button swallowed releases + drops refused on blocked windows (T2); retail button bar widened with the box (T3); Tick shows a stalled queued dialog (T4). Final review: a focused dialog stopped movement/game/plugin hotkeys (any UI focus makes InputDispatcher ignore keys) — fixed by key-selective capture (UiElement.HoldsKeyboard/ClaimsKey, additive ClaimsKey on IMouseSource/IHotkeyFocusSource; a dialog claims only Enter/KeypadEnter/Escape); also focus return after a mouse answer, held answer key suppressed, Show-failure guard, mutual modals refused, docs corrected. Parked: dialog widgets reuse context-menu/hotkey colour constants (cross-series); Ctrl/Alt+Enter/Escape double-fire; auto-repeat Enter after the last dialog may open chat; press-off-button leaves focus null; hover reaches blocked windows.
+
 **Tech Stack:** C# / .NET 10, xUnit, headless `UiRoot` + `RecordingGpuDevice` (`MarkupDrawProbe`) tests, retail layout fixtures (`FixtureLoader.LoadConfirmationDialog`), Silk.NET `Key`.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` (branch `docs/markup-controls-spec`), "Delivery" (contract), "Shared rules" and section 14.
