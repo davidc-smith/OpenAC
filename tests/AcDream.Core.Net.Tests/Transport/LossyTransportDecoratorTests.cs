@@ -221,7 +221,7 @@ public sealed class LossyTransportDecoratorTests
     {
         var fake = new FakeAceTransport
         {
-            AutoAdvanceOnBlockingReceive = TimeSpan.FromSeconds(3),
+            AutoAdvanceOnBlockingReceive = TimeSpan.FromMilliseconds(200),
         };
         var lossy = new LossyTransportDecorator(
             fake, dropPercent: 5, seed: 424242, NetDropDirection.Both);

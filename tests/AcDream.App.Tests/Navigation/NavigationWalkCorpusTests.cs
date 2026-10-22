@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using AcDream.Runtime.Navigation;
 using AcDream.App.Tests.Rendering;
 using AcDream.Core.Navigation;
@@ -252,13 +253,45 @@ public sealed class NavigationWalkCorpusTests
         {
             string want = index < expected.Length ? expected[index] : "(nothing)";
             string got = index < lines.Count ? lines[index] : "(nothing)";
-            if (want != got)
+            if (!SameWalk(want, got))
                 differences.AppendLine($"line {index + 1}\n  recorded: {want}\n  walked:   {got}");
         }
         Assert.True(
             differences.Length == 0,
             $"The walks differ from {RecordFile}. If the change is meant, record them again with ACDREAM_UPDATE_WALK_CORPUS=1.\n{differences}");
     }
+
+    /// <summary>
+    /// Two lines tell the same walk when they match word for word and each decimal is at most one in
+    /// its last place from the record. A walk integrates thousands of frames of trigonometry, and the
+    /// platform maths libraries round its last bits differently, so a distance a millimetre from a
+    /// rounding edge (2.1491 here, 2.15 on the recording machine) reads 2.1 on one and 2.2 on another.
+    /// Counts carry no such slack.
+    /// </summary>
+    private static bool SameWalk(string want, string got)
+    {
+        if (want == got)
+            return true;
+        if (DecimalNumber.Replace(want, "#") != DecimalNumber.Replace(got, "#"))
+            return false;
+        MatchCollection wanted = DecimalNumber.Matches(want);
+        MatchCollection walked = DecimalNumber.Matches(got);
+        for (int i = 0; i < wanted.Count; i++)
+        {
+            string w = wanted[i].Value;
+            string g = walked[i].Value;
+            int places = w.Length - w.IndexOf('.') - 1;
+            if (places != g.Length - g.IndexOf('.') - 1)
+                return false;
+            double step = Math.Pow(10, -places);
+            double apart = Math.Abs(double.Parse(w, CultureInfo.InvariantCulture) - double.Parse(g, CultureInfo.InvariantCulture));
+            if (apart > step * 1.5)
+                return false;
+        }
+        return true;
+    }
+
+    private static readonly Regex DecimalNumber = new(@"-?\d+\.\d+", RegexOptions.CultureInvariant);
 
     private sealed record WalkCase(
         string Name,
