@@ -210,4 +210,73 @@ public sealed class ControlsDemoSampleTests
         binding.Expanded("combat.targets", false);
         Assert.Equal("Targets collapsed", binding.Status);
     }
+
+    [Theory]
+    [MemberData(nameof(Themes))]
+    public void Dialogs_and_editor_build_and_lay_out(PluginUiTheme theme)
+    {
+        var ui = new FakeUi();
+        var profile = new Profile();
+        var editor = new EditorBinding(ui, profile);
+        AssertInside(Mount("dialogs.xml", new DialogsBinding(ui, profile, editor), theme).Panel);
+        AssertInside(Mount("editor.xml", editor, theme).Panel);
+    }
+
+    [Fact]
+    public void Dialogs_buttons_ask_this_window_and_report_the_answer()
+    {
+        var ui = new FakeUi();
+        var profile = new Profile();
+        var binding = new DialogsBinding(ui, profile, new EditorBinding(ui, profile));
+
+        binding.AskThree();
+        var (dialog, answer) = Assert.Single(ui.Dialogs);
+        Assert.Equal("dialogs", dialog.OwnerView);
+        Assert.Equal(["Save", "Discard", "Cancel"], dialog.EffectiveButtons);
+        answer(1);
+        Assert.Equal("Unsaved changes: Discard", binding.Status);
+
+        binding.AskTwo();
+        Assert.Equal(3, ui.Dialogs.Count);
+        Assert.Equal("dialogs", ui.Dialogs[2].Dialog.OwnerView);
+    }
+
+    [Fact]
+    public void Edit_profile_is_modal_and_only_save_changes_the_profile()
+    {
+        var ui = new FakeUi();
+        var profile = new Profile();
+        var editor = new EditorBinding(ui, profile);
+        var binding = new DialogsBinding(ui, profile, editor);
+
+        binding.EditProfile();
+        Assert.Equal(("editor", (string?)"dialogs"), Assert.Single(ui.Modals));
+        editor.SetName("Mage");
+        editor.Cancel();
+        Assert.Equal("Hunter, level 126", binding.ProfileSummary);
+
+        binding.EditProfile();
+        Assert.Equal("Hunter", editor.Name);
+        editor.SetName("Mage");
+        editor.SetUseOnLogin(true);
+        editor.Save();
+        Assert.Equal("Mage, level 126, on login", binding.ProfileSummary);
+        Assert.Equal(["editor", "editor"], ui.Hidden);
+    }
+
+    [Fact]
+    public void Reset_profile_asks_and_resets_on_the_first_button()
+    {
+        var ui = new FakeUi();
+        var profile = new Profile { Name = "Mage", Level = 200 };
+        var binding = new DialogsBinding(ui, profile, new EditorBinding(ui, profile));
+
+        binding.ProfileMenu(1);
+        var (dialog, answer) = Assert.Single(ui.Dialogs);
+        Assert.Equal(["Reset", "Keep"], dialog.EffectiveButtons);
+        answer(0);
+
+        Assert.Equal("Hunter, level 126", binding.ProfileSummary);
+        Assert.Equal("Reset profile: Reset", binding.Status);
+    }
 }

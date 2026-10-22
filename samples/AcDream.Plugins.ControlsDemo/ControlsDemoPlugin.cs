@@ -33,7 +33,13 @@ public sealed class ControlsDemoPlugin : IAcDreamPlugin
         Add(new PluginPanelDescriptor("layout", "Controls: Layout") { IconText = "CL" }, "layout.xml", new LayoutBinding());
         Add(new PluginPanelDescriptor("table", "Controls: Table") { IconText = "CT" }, "table.xml", new TableBinding(host.Ui));
         Add(new PluginPanelDescriptor("tree", "Controls: Tree") { IconText = "CR" }, "tree.xml", new TreeBinding());
-        // Later windows are added here.
+        var profile = new Profile();
+        var editor = new EditorBinding(host.Ui, profile);
+        Add(new PluginPanelDescriptor("dialogs", "Controls: Dialogs") { IconText = "CD" }, "dialogs.xml",
+            new DialogsBinding(host.Ui, profile, editor));
+        // Opened only by the Dialogs window, modal over it.
+        Add(new PluginPanelDescriptor("editor", "Edit profile") { StartVisible = false, ShowInSidePanel = false },
+            "editor.xml", editor);
     }
 
     public void Disable()
