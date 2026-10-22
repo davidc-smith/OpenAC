@@ -18,5 +18,6 @@
     <None Include="finder.xml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="settings.xml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="gallery.xml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="controls.xml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

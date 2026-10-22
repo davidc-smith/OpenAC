@@ -3,7 +3,7 @@ using AcDream.Plugin.Abstractions;
 namespace AcDream.Plugins.FlexDemo;
 
 /// <summary>
-/// Three windows laid out with markup flex instead of coordinates: a finder
+/// Four windows laid out with markup flex instead of coordinates: a finder
 /// (a toolbar over a list that takes the spare height, over a footer), a
 /// settings form whose summary line and button caption change length at
 /// runtime, so the window grows to fit them, and a gallery of spell icons
@@ -11,7 +11,10 @@ namespace AcDream.Plugins.FlexDemo;
 /// sideways (swipe, tilt the wheel, or hold Shift). Resize the finder and the
 /// gallery, make the settings window short to scroll it, switch the shared
 /// appearance from the dock's gear, and press "Show details" to watch them
-/// reflow.
+/// reflow. The fourth window, Flex Controls, puts the newer markup controls
+/// inside flex: a checkbox, a segmented radio, a number, a separator, two
+/// expanders that push their neighbours when they fold, and a split whose
+/// panes are a column and a row.
 /// </summary>
 public sealed class FlexDemoPlugin : IAcDreamPlugin
 {
@@ -19,8 +22,10 @@ public sealed class FlexDemoPlugin : IAcDreamPlugin
     private IDisposable? _finder;
     private IDisposable? _settings;
     private IDisposable? _gallery;
+    private IDisposable? _controls;
     private readonly FinderBinding _finderBinding = new();
     private readonly SettingsBinding _settingsBinding = new();
+    private readonly ControlsBinding _controlsBinding = new();
 
     public void Initialize(IPluginHost host) => _host = host;
 
@@ -39,6 +44,9 @@ public sealed class FlexDemoPlugin : IAcDreamPlugin
         _gallery = host.Ui.RegisterPanel(
             new PluginPanelDescriptor("gallery", "Flex Gallery") { IconText = "FG", StartVisible = true },
             Markup("gallery.xml"), new GalleryBinding());
+        _controls = host.Ui.RegisterPanel(
+            new PluginPanelDescriptor("controls", "Flex Controls") { IconText = "FC", StartVisible = true },
+            Markup("controls.xml"), _controlsBinding);
     }
 
     public void Disable()
@@ -49,6 +57,20 @@ public sealed class FlexDemoPlugin : IAcDreamPlugin
         _settings = null;
         _gallery?.Dispose();
         _gallery = null;
+        _controls?.Dispose();
+        _controls = null;
+    }
+
+    /// <summary>The new markup controls inside flex: what each one last reported.</summary>
+    public sealed class ControlsBinding
+    {
+        public bool Loot { get; private set; } = true;
+        public Action<bool> SetLoot => value => { Loot = value; Status = $"Loot {value}"; };
+        public int Speed { get; private set; }
+        public Action<int> SetSpeed => value => { Speed = value; Status = $"Speed {value}"; };
+        public int HealAt { get; private set; } = 60;
+        public Action<int> SetHealAt => value => { HealAt = value; Status = $"Heal at {value}%"; };
+        public string Status { get; private set; } = "Fold an expander or drag the split";
     }
 
     /// <summary>The gallery's icons are literal spell ids; it binds nothing.</summary>

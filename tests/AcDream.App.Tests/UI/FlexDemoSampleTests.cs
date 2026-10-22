@@ -43,6 +43,28 @@ public sealed class FlexDemoSampleTests
         public Action Apply => () => { };
     }
 
+    private sealed class ControlsB
+    {
+        public bool Loot => true;
+        public Action<bool> SetLoot => _ => { };
+        public int Speed => 0;
+        public Action<int> SetSpeed => _ => { };
+        public int HealAt => 60;
+        public Action<int> SetHealAt => _ => { };
+        public string Status => "Fold an expander or drag the split";
+    }
+
+    private static UiElement? TryFind(UiElement element, string name)
+    {
+        if (element.Name == name) return element;
+        foreach (UiElement child in element.Children)
+            if (TryFind(child, name) is { } found) return found;
+        return null;
+    }
+
+    private static UiElement FindByName(UiElement root, string name) =>
+        TryFind(root, name) ?? throw new InvalidOperationException($"no element named {name}");
+
     private static string Markup(string file)
     {
         string? directory = AppContext.BaseDirectory;
@@ -145,5 +167,21 @@ public sealed class FlexDemoSampleTests
         root.OnScroll(0, -1, shift: true);
 
         Assert.Equal(48, strip.ScrollArea.X.ScrollY);
+    }
+
+    [Fact]
+    public void The_controls_window_reflows_when_an_expander_folds()
+    {
+        var (root, window) = Mount("controls.xml", new ControlsB());
+        var first = (UiMarkupExpander)FindByName(window.Frame, "first");
+        var second = FindByName(window.Frame, "second");
+        Assert.IsType<UiFlexGroup>(FindByName(window.Frame, "left"));
+        float before = second.Top;
+
+        first.Toggle();
+        root.Tick(0, 0);
+        ThemeDrawCapture.Draw(root);
+
+        Assert.Equal(before - (80f - UiMarkupExpander.HeaderHeight), second.Top);
     }
 }
