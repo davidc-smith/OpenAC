@@ -1,6 +1,7 @@
 using System.Numerics;
 using AcDream.App.Rendering;
 using AcDream.App.Streaming;
+using AcDream.App.Tests.Rendering;
 using AcDream.App.Update;
 using AcDream.App.World;
 using AcDream.Content.Vfx;
@@ -187,8 +188,8 @@ public sealed class RecallTeleportAnimationTests
     [Trait("Lane", "InstalledDat")]
     public void InstalledRecall_HiddenEnterWorldPublishesFinishedCyclicPoseWithoutAdvancingTime()
     {
-        string datDir = @"C:\Turbine\Asheron's Call";
-        if (!File.Exists(Path.Combine(datDir, "client_portal.dat")))
+        string? datDir = InstalledDatTestPath.Resolve();
+        if (datDir is null || !File.Exists(Path.Combine(datDir, "client_portal.dat")))
             throw new InvalidOperationException(
                 "Lane=InstalledDat requires installed retail DATs; see docs/release-gate.md.");
 
