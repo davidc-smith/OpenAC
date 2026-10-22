@@ -24,18 +24,29 @@ internal sealed class PluginTitleBar : UiElement
     public PluginTitleBar(Func<uint, (uint, int, int)> resolve, float frameWidth)
     {
         ClickThrough = true;
-        Width = frameWidth;
         Height = PluginWindowChrome.TitleBarHeight;
         Anchors = AnchorEdges.Left | AnchorEdges.Top | AnchorEdges.Right;
         Close = new PluginCloseButton(resolve)
         {
-            Left = frameWidth - PluginWindowChrome.TitleBarHeight,
             Top = PluginWindowChrome.Border,
             Width = PluginWindowChrome.CloseButtonSize,
             Height = PluginWindowChrome.CloseButtonSize,
         };
         Close.Click += () => CloseRequested?.Invoke();
         AddChild(Close);
+        SetFrameWidth(frameWidth);
+    }
+
+    /// <summary>
+    /// Spans the bar across a frame <paramref name="frameWidth"/> wide, with
+    /// the close button at its right inset. Used before the window's anchors
+    /// are captured: once by the constructor, and again when a window sized by
+    /// its content learns its width.
+    /// </summary>
+    internal void SetFrameWidth(float frameWidth)
+    {
+        Width = frameWidth;
+        Close.Left = frameWidth - PluginWindowChrome.TitleBarHeight;
     }
 
     internal PluginCloseButton Close { get; }

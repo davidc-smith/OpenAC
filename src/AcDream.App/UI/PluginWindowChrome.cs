@@ -24,6 +24,12 @@ internal static class PluginWindowChrome
     internal const float HorizontalInsets = 2f * Border;
     internal const float VerticalInsets = TitleBarHeight + Border;
 
+    /// <summary>The top inset of a content area: the title bar, or the border alone without one.</summary>
+    internal static float TopInset(bool titleBar) => titleBar ? TitleBarHeight : Border;
+
+    /// <summary>The chrome above and below a content area, with or without a title bar.</summary>
+    internal static float VerticalInsetsFor(bool titleBar) => titleBar ? VerticalInsets : 2f * Border;
+
     /// <summary>
     /// Bumped whenever the insets above change, so windows whose chrome grew
     /// or shrank drop their saved size once.

@@ -9,6 +9,9 @@ namespace AcDream.App.UI;
 internal sealed class MarkupWindow(
     UiNineSlicePanel frame, UiElement contentRoot, PluginTitleBar? titleBar, int authoredGeometryRevision)
 {
+    private RetailWindowManager? _manager;
+    private string? _name;
+
     public UiNineSlicePanel Frame { get; } = frame;
     public UiElement ContentRoot { get; } = contentRoot;
     public PluginTitleBar? TitleBar { get; } = titleBar;
@@ -28,6 +31,32 @@ internal sealed class MarkupWindow(
             name, Frame, ContentRoot, controller, authoredGeometryRevision: AuthoredGeometryRevision);
         if (TitleBar is { } bar)
             bar.CloseRequested += () => manager.Close(name);
+        _manager = manager;
+        _name = name;
         return handle;
+    }
+
+    /// <summary>
+    /// Keeps the frame's minimum on the content's: when a flex content area
+    /// finds its content needs more room (a longer caption), the frame's
+    /// minimum becomes that plus the chrome, unless the markup states its own
+    /// <c>minw</c>/<c>minh</c>, and a registered window is grown to it through
+    /// <see cref="RetailWindowManager.EnforceMinimumSize"/>.
+    /// </summary>
+    internal void TrackContentMinimum(
+        UiPluginContentHost content, float chromeW, float chromeH, float? authoredMinW, float? authoredMinH)
+    {
+        content.ContentMinimumChanged += minimum =>
+        {
+            Frame.MinWidth = (authoredMinW ?? minimum.Width) + chromeW;
+            Frame.MinHeight = (authoredMinH ?? minimum.Height) + chromeH;
+            if (_manager is { } manager && _name is { } name)
+            {
+                manager.EnforceMinimumSize(name);
+                return;
+            }
+            Frame.Width = MathF.Max(Frame.Width, Frame.MinWidth);
+            Frame.Height = MathF.Max(Frame.Height, Frame.MinHeight);
+        };
     }
 }
