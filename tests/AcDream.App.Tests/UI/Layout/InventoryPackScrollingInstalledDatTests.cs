@@ -1,3 +1,4 @@
+using AcDream.App.Tests.Rendering;
 using AcDream.App.UI;
 using AcDream.App.UI.Layout;
 using AcDream.Core.Items;
@@ -13,8 +14,13 @@ public sealed class InventoryPackScrollingInstalledDatTests
     [InlineData(8)]
     public void AugmentedPackColumn_showsEverySideSlotWithoutScrolling(int capacity)
     {
-        string datDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "Documents", "Asheron's Call");
+        string? datDir = InstalledDatTestPath.Resolve();
+        if (datDir is null)
+        {
+            Assert.Fail("Lane=InstalledDat requires an installed retail DAT directory; see docs/release-gate.md.");
+            return;
+        }
+
         using var dats = new BoundedTestDatCollection(datDir);
         ElementInfo info = LayoutImporter.ImportInfos(dats, 0x21000023u)!;
         ImportedLayout layout = LayoutImporter.Build(info, resolve: _ => (1u, 16, 16), datFont: null);
