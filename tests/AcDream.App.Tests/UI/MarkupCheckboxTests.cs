@@ -1,3 +1,4 @@
+using System.Numerics;
 using AcDream.App.UI;
 using AcDream.App.UI.Markup;
 
@@ -104,7 +105,7 @@ public class MarkupCheckboxTests
     }
 
     [Fact]
-    public void Checkbox_CheckedUnderPluginThemeDrawsAccentTickAndBorder()
+    public void Checkbox_CheckedUnderPluginThemeDrawsAnAccentBoxWithATick()
     {
         var box = new UiMarkupCheckbox
         {
@@ -113,8 +114,10 @@ public class MarkupCheckboxTests
         };
         box.CheckedSource = () => true;
         var renderer = MarkupDrawProbe.Draw(box);
-        // 7 tick fills plus the 4 quads of the 1px outline.
-        Assert.Equal(11, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Accent));
+        // The modern rounded box (PluginUiStyle.Check): an accent box with a tick in the field colour.
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Accent) < 0.01f);
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Field) < 0.01f);
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiCheckBoxGlyph.ClassicMark));
     }
 
     [Fact]

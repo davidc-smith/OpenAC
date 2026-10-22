@@ -22,6 +22,20 @@ internal static class UiCheckBoxGlyph
 
     public static void Draw(UiRenderContext ctx, float x, float y, bool? state, PluginUiPalette? palette)
     {
+        if (palette is { } themed)
+        {
+            if (state is null)
+            {
+                PluginUiStyle.Surface(ctx, x, y, Size, Size, PluginUiStyle.SmallRadius, themed.Accent, themed.Accent);
+                ctx.DrawSmoothLine(x + 3f, y + 5.5f, x + 8f, y + 5.5f, themed.Field, 1.5f);
+            }
+            else
+            {
+                PluginUiStyle.Check(ctx, themed, x, y, state == true);
+            }
+            return;
+        }
+
         Vector4 fill = palette?.Field ?? ClassicFill;
         Vector4 border = palette is { } p ? (state == false ? p.Border : p.Accent) : ClassicBorder;
         Vector4 mark = palette?.Accent ?? ClassicMark;

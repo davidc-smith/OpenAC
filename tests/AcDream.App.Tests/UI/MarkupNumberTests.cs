@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Numerics;
 using AcDream.App.UI;
 using AcDream.App.UI.Markup;
 using Silk.NET.Input;
@@ -513,6 +514,7 @@ public class MarkupNumberTests
         var number = MountThemed(new Binding());
         var renderer = MarkupDrawProbe.Draw(number);
         Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupNumber.ClassicSpinArrow));
-        Assert.True(MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Text) >= 6);
+        // Chevrons in the muted colour beside the field, not the Classic pixel arrows.
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Muted) < 0.01f);
     }
 }

@@ -230,9 +230,13 @@ public sealed class UiMarkupHotkey : UiElement
     {
         PluginUiPalette? p = ThemePalette;
         Vector4 focus = p?.Accent ?? FocusColor;
-        ctx.DrawFill(0f, 0f, Width, Height, Fade(p?.Field ?? ClassicBackground));
-        ctx.DrawRectOutline(0f, 0f, Width, Height,
-            Fade(IsFocused || IsCapturing ? focus : p?.Border ?? ClassicBorder), 1f);
+        if (p is not null)
+            PluginUiStyle.Field(ctx, p, Width, Height, Fade(p.Field), IsFocused || IsCapturing);
+        else
+        {
+            ctx.DrawFill(0f, 0f, Width, Height, Fade(ClassicBackground));
+            ctx.DrawRectOutline(0f, 0f, Width, Height, Fade(IsFocused || IsCapturing ? focus : ClassicBorder), 1f);
+        }
 
         string text = DisplayText;
         Vector4 color = IsCapturing ? focus

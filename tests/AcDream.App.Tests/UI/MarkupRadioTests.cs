@@ -327,7 +327,8 @@ public class MarkupRadioTests
         Assert.Same(PluginUiPalette.Moss, radio.ThemePalette);
         Assert.Equal(PluginUiPalette.Moss.Text, radio.TextColor);
         var renderer = MarkupDrawProbe.Draw(radio);
-        Assert.Equal(6, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Accent));
+        // Round buttons (ellipses), the chosen one ringed and marked in the accent.
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Accent) < 0.01f);
         Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiRadioGlyph.ClassicMark));
     }
 
@@ -336,7 +337,8 @@ public class MarkupRadioTests
     {
         var radio = MountThemed(Literal + " style=\"segmented\"", new Binding { Mode = 1 });
         var renderer = MarkupDrawProbe.Draw(radio);
-        Assert.Equal(1, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Selected));
+        // A rounded track with the chosen option as a pill in the selected colour.
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Selected) < 0.01f);
         Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupRadio.ClassicSegmentSelected));
     }
 

@@ -141,7 +141,12 @@ public sealed class UiMarkupRadio : UiElement
             DrawSegments(ctx, items, selected, text, outline);
         else
             DrawButtons(ctx, items, selected, text, outline);
-        if (_keyboardActivation.Focused)
+        if (!_keyboardActivation.Focused)
+            return;
+        if (ThemePalette is { } p)
+            PluginUiStyle.FocusRing(ctx, p, Width, Height,
+                Segmented ? PluginUiStyle.ControlRadius : PluginUiStyle.SmallRadius);
+        else
             ctx.DrawRectOutline(0f, 0f, Width, Height, FocusColor, 1f);
     }
 
@@ -168,6 +173,22 @@ public sealed class UiMarkupRadio : UiElement
     private void DrawSegments(
         UiRenderContext ctx, IReadOnlyList<string> items, int selected, Vector4 text, bool outline)
     {
+        if (ThemePalette is { } p)
+        {
+            // A rounded track, the chosen option a pill inside it.
+            PluginUiStyle.Surface(ctx, 0f, 0f, Width, Height, PluginUiStyle.ControlRadius, Fade(p.Field), Fade(p.Border));
+            for (int i = 0; i < items.Count; i++)
+            {
+                var (x, y, w, h) = Cell(i, items.Count);
+                if (i == selected)
+                    ctx.FillRoundedRect(x + 2f, y + 2f, w - 4f, h - 4f, PluginUiStyle.SmallRadius, Fade(p.Selected));
+                ctx.PushClip(x, y, w, h);
+                try { UiCaption.DrawCentred(ctx, DatFont, items[i] ?? string.Empty, x, y, w, h, text, outline); }
+                finally { ctx.PopClip(); }
+            }
+            return;
+        }
+
         Vector4 face = Fade(ThemePalette?.Field ?? ClassicSegmentFace);
         Vector4 chosen = Fade(ThemePalette?.Selected ?? ClassicSegmentSelected);
         Vector4 border = Fade(ThemePalette?.Border ?? ClassicSegmentBorder);

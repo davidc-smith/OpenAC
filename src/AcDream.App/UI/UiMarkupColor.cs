@@ -75,12 +75,19 @@ public sealed class UiMarkupColor : UiElement
         PluginUiPalette? p = ThemePalette;
         uint argb = Value;
         float w = Width - 2f, h = Height - 2f;
+        bool focused = _keyboard.Focused || IsOpen;
+        if (p is not null)
+        {
+            if (MarkupColorValue.Alpha(argb) < 0xFF)
+                DrawChecker(ctx, 1f, 1f, w, h, Fade);
+            ctx.FillRoundedRect(1f, 1f, w, h, PluginUiStyle.ControlRadius - 1f, Fade(MarkupColorValue.ToVector4(argb)));
+            PluginUiStyle.Field(ctx, p, Width, Height, Vector4.Zero, focused);
+            return;
+        }
         if (MarkupColorValue.Alpha(argb) < 0xFF)
             DrawChecker(ctx, 1f, 1f, w, h, Fade);
         ctx.DrawFill(1f, 1f, w, h, Fade(MarkupColorValue.ToVector4(argb)));
-        bool focused = _keyboard.Focused || IsOpen;
-        ctx.DrawRectOutline(0f, 0f, Width, Height,
-            Fade(focused ? p?.Accent ?? FocusColor : p?.Border ?? ClassicBorder), 1f);
+        ctx.DrawRectOutline(0f, 0f, Width, Height, Fade(focused ? FocusColor : ClassicBorder), 1f);
     }
 
     /// <summary>The light/dark squares drawn behind a translucent colour.</summary>

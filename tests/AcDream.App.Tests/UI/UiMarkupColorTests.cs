@@ -460,7 +460,9 @@ public class UiMarkupColorTests
         var (_, swatch, _) = Mount();
         swatch.ThemePalette = PluginUiPalette.Moss;
         var renderer = MarkupDrawProbe.Draw(swatch);
-        Assert.Equal(4, MarkupDrawProbe.CountQuads(renderer, PluginUiPalette.Moss.Border));
+        // The rounded field edge (PluginUiStyle.Field), not the Classic square outline.
+        Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Border) < 0.01f);
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupColor.ClassicBorder));
     }
 
     [Fact]

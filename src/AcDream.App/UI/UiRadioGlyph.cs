@@ -22,6 +22,15 @@ internal static class UiRadioGlyph
         Vector4 well = Alpha(palette?.Field ?? ClassicWell, alpha);
         Vector4 mark = Alpha(palette?.Accent ?? ClassicMark, alpha);
 
+        if (palette is not null)
+        {
+            ctx.FillEllipse(x, y, Size, Size, ring);
+            ctx.FillEllipse(x + 1f, y + 1f, Size - 2f, Size - 2f, well);
+            if (selected)
+                ctx.FillEllipse(x + 3f, y + 3f, Size - 6f, Size - 6f, mark);
+            return;
+        }
+
         ctx.DrawFill(x + 3f, y, 5f, 1f, ring);
         ctx.DrawFill(x + 1f, y + 1f, 9f, 2f, ring);
         ctx.DrawFill(x, y + 3f, 11f, 5f, ring);

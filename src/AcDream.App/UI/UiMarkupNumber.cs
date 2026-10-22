@@ -218,6 +218,23 @@ public sealed class UiMarkupNumber : UiElement
         LayoutField();
         float x = Width - SpinWidth;
         float half = MathF.Floor(Height * 0.5f);
+        if (ThemePalette is { } p)
+        {
+            // Ghost spin buttons beside the field: a pressed face, and chevrons.
+            Vector4 pressedFace = Fade(PluginUiStyle.Pressed(PluginUiStyle.Hover(p, p.Field)));
+            if (_spinDirection > 0)
+                ctx.FillRoundedRect(x + 1f, 1f, SpinWidth - 2f, half - 1f, PluginUiStyle.SmallRadius, pressedFace);
+            else if (_spinDirection < 0)
+                ctx.FillRoundedRect(x + 1f, half, SpinWidth - 2f, Height - half - 1f, PluginUiStyle.SmallRadius, pressedFace);
+            Vector4 chevron = Fade(p.Muted);
+            float cx = x + (SpinWidth - 6f) * 0.5f;
+            float upY = MathF.Floor(half * 0.5f);
+            ctx.DrawSmoothLine(cx, upY + 1.5f, cx + 3f, upY - 1.5f, chevron, 1.5f);
+            ctx.DrawSmoothLine(cx + 3f, upY - 1.5f, cx + 6f, upY + 1.5f, chevron, 1.5f);
+            PluginUiStyle.Chevron(ctx, cx, MathF.Floor(half + (Height - half) * 0.5f) - 1.5f, 6f, 3f, chevron);
+            return;
+        }
+
         Vector4 face = Fade(ThemePalette?.Field ?? ClassicSpinFace);
         Vector4 pressed = Fade(ThemePalette?.Selected ?? ClassicSpinPressed);
         Vector4 border = Fade(ThemePalette?.Border ?? ClassicSpinBorder);

@@ -22,6 +22,16 @@ public sealed class PluginThemeControlTests
         public Action<float> Changed => _ => { };
         public IReadOnlyList<string> Log => Enumerable.Range(0, 40).Select(i => $"line {i}").ToArray();
         public float Fill => 0.5f;
+        public bool? Maybe => null;
+        public Action<bool> SetFlag => _ => { };
+        public int Choice => 1;
+        public Action<int> Choose => _ => { };
+        public int Count => 3;
+        public Action<int> SetCount => _ => { };
+        public string Key => "Ctrl+K";
+        public Action<string> SetKey => _ => { };
+        public uint Colour => 0xFF336699;
+        public Action<uint> SetColour => _ => { };
     }
 
     /// <summary>Builds one themed window around <paramref name="body"/>, switched to Moss.</summary>
@@ -227,6 +237,89 @@ public sealed class PluginThemeControlTests
         settings.Theme = PluginUiTheme.Classic;
         root.Tick(0.016, 2);
         Assert.Equal(classicHover, menu.PlainHoverColor);
+    }
+
+    private static bool VertexAt(IEnumerable<(Vector2 Position, Vector4 Color)> v, float x, float y, Vector4 color) =>
+        v.Any(p => MathF.Abs(p.Position.X - x) < 0.01f && MathF.Abs(p.Position.Y - y) < 0.01f
+            && Vector4.Distance(p.Color, color) < 0.01f);
+
+    /// <summary>Whether a vertex carries this exact colour, alpha included (HasColor ignores alpha).</summary>
+    private static bool HasExactColor(IEnumerable<(Vector2 Position, Vector4 Color)> v, Vector4 color) =>
+        v.Any(p => Vector4.Distance(p.Color, color) < 0.01f);
+
+    private static readonly Vector4 Gold = new(1f, 0.82f, 0.25f, 1f);
+
+    [Fact]
+    public void AThemedCheckboxIsARoundedTickBoxWithAFocusRing()
+    {
+        var (root, panel) = Themed(
+            "<checkbox x=\"10\" y=\"10\" w=\"120\" h=\"20\" text=\"Loot\" checked=\"{On}\" onchange=\"{SetFlag}\" />" +
+            "<checkbox x=\"10\" y=\"40\" w=\"120\" h=\"20\" text=\"Some\" checked=\"{Maybe}\" onchange=\"{SetFlag}\" />");
+        var on = Assert.IsType<UiMarkupCheckbox>(panel.Children[0]);
+        var some = Assert.IsType<UiMarkupCheckbox>(panel.Children[1]);
+        var v = DrawElement(on);
+        Assert.True(ThemeDrawCapture.HasColor(v, P.Accent));
+        // The box sits at (1, 4.5) inside the checkbox at (10, 10): its square corner would be (11, 14.5).
+        Assert.False(VertexAt(v, 11f, 14.5f, P.Accent));                  // rounded, no square corner
+        Assert.True(ThemeDrawCapture.HasColor(DrawElement(some), P.Field)); // the dash
+
+        root.SetKeyboardFocus(on);
+        var focused = DrawElement(on);
+        Assert.True(HasExactColor(focused, PluginUiStyle.FocusRingColor(P)));
+        Assert.False(ThemeDrawCapture.HasColor(focused, Gold));
+    }
+
+    [Fact]
+    public void AThemedRadioButtonIsRound()
+    {
+        var (_, panel) = Themed(
+            "<radio x=\"10\" y=\"10\" w=\"120\" h=\"40\" items=\"A|B\" selected=\"{Choice}\" onchange=\"{Choose}\" />");
+        var radio = Assert.IsType<UiMarkupRadio>(panel.Children[0]);
+        var accent = DrawElement(radio).Where(p => Vector4.Distance(p.Color, P.Accent) < 0.01f).ToList();
+        Assert.NotEmpty(accent);
+        // Option 1 is the second 20-point cell (local y 20); its glyph sits at (11, 10 + 20 + 4.5).
+        var centre = new Vector2(11f + 5.5f, 30f + 4.5f + 5.5f);
+        Assert.All(accent, p => Assert.True(Vector2.Distance(p.Position, centre) <= 5.6f, $"{p.Position}"));
+    }
+
+    [Fact]
+    public void AThemedSegmentedRadioIsARoundedTrackWithASelectedPill()
+    {
+        var (_, panel) = Themed(
+            "<radio x=\"10\" y=\"10\" w=\"120\" h=\"24\" items=\"A|B\" orientation=\"horizontal\" style=\"segmented\" selected=\"{Choice}\" onchange=\"{Choose}\" />");
+        var radio = Assert.IsType<UiMarkupRadio>(panel.Children[0]);
+        Assert.True(radio.Segmented);
+        var v = DrawElement(radio);
+        Assert.True(ThemeDrawCapture.HasColor(v, P.Selected));
+        Assert.False(VertexAt(v, 10f, 10f, P.Field));
+    }
+
+    [Fact]
+    public void AThemedNumberSpinHasChevronsAndNoSquareOutline()
+    {
+        var (_, panel) = Themed(
+            "<number x=\"10\" y=\"10\" w=\"100\" h=\"24\" value=\"{Count}\" onchange=\"{SetCount}\" />");
+        var number = Assert.IsType<UiMarkupNumber>(panel.Children[0]);
+        var v = DrawElement(number);
+        float spinX = number.Left + number.Width - UiMarkupNumber.SpinWidth;
+        Assert.DoesNotContain(v, p => p.Position.X > spinX + 0.5f && Vector4.Distance(p.Color, P.Border) < 0.01f);
+        Assert.Contains(v, p => p.Position.X > spinX && Vector4.Distance(p.Color, P.Muted) < 0.01f);
+    }
+
+    [Fact]
+    public void AThemedHotkeyAndColourGlowWhenFocused()
+    {
+        var (root, panel) = Themed(
+            "<hotkey x=\"10\" y=\"10\" w=\"120\" h=\"24\" value=\"{Key}\" onchange=\"{SetKey}\" />" +
+            "<color x=\"10\" y=\"40\" w=\"40\" h=\"24\" value=\"{Colour}\" onchange=\"{SetColour}\" />");
+        var hotkey = Assert.IsType<UiMarkupHotkey>(panel.Children[0]);
+        var colour = Assert.IsType<UiMarkupColor>(panel.Children[1]);
+        Assert.False(VertexAt(DrawElement(hotkey), 10f, 10f, P.Border));
+
+        root.SetKeyboardFocus(hotkey);
+        Assert.True(HasExactColor(DrawElement(hotkey), PluginUiStyle.FocusGlow(P)));
+        root.SetKeyboardFocus(colour);
+        Assert.True(HasExactColor(DrawElement(colour), PluginUiStyle.FocusGlow(P)));
     }
 
     [Fact]

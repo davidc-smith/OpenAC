@@ -52,7 +52,7 @@ public sealed class UiMarkupCheckbox : UiElement
 
     protected override void OnDraw(UiRenderContext ctx)
     {
-        if (_keyboardActivation.Focused)
+        if (_keyboardActivation.Focused && ThemePalette is null)
             ctx.DrawRectOutline(0f, 0f, Width, Height, new Vector4(1f, 0.82f, 0.25f, 1f), 1f);
 
         float boxY = MathF.Max(1f, (Height - UiCheckBoxGlyph.Size) * 0.5f);
@@ -70,5 +70,7 @@ public sealed class UiMarkupCheckbox : UiElement
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
         Vector4 color = Enabled ? textColor : textColor with { W = UiMarkupToggle.DisabledAlpha };
         UiCaption.Draw(ctx, DatFont, caption, 17f, 0f, Height, color, outline: ThemePalette is null);
+        if (_keyboardActivation.Focused && ThemePalette is { } p)
+            PluginUiStyle.FocusRing(ctx, p, Width, Height, PluginUiStyle.SmallRadius);
     }
 }
