@@ -243,6 +243,13 @@ border, no sprite art) or `retail` (the game's own pushbutton or scrollbar
 art). A `menu` always opens as one scrolling column of at most `rows` entries;
 when the entries overflow, the popup shows the game's scrollbar.
 
+The `samples/AcDream.Plugins.ControlsDemo` plugin opens one window per group
+of the controls below (inputs, keys and colours, layout, table, tree, and
+dialogs), each with a status line that shows what its callbacks receive.
+Every window uses `theme="plugin"`, so switching **Plugin appearance** shows
+each control in Classic and in both modern themes. Its markup files are
+working examples of every element in this guide from `<checkbox>` on.
+
 ## Checkbox
 
 ```xml
