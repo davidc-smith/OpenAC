@@ -237,7 +237,7 @@ public class UiMarkupHotkeyTests
         var (_, box, _) = Mount("F5");
         box.ThemePalette = PluginUiPalette.Moss;
         var renderer = MarkupDrawProbe.Draw(box);
-        // The modern rounded field (PluginUiStyle.Field), not the Classic square box.
+        // The palette's colours, not Classic's; the rounded shape is PluginThemeControlTests' to check.
         Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Field) < 0.01f);
         Assert.Contains(ThemeDrawCapture.Vertices(renderer), v => Vector4.Distance(v.Color, PluginUiPalette.Moss.Border) < 0.01f);
         Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupHotkey.ClassicBorder));
