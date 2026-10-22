@@ -2105,6 +2105,50 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             bool visible) =>
             _inner.SetControlVisible(_owner, viewName, controlName, visible);
 
+        public bool ShowModal(string viewName, string? ownerView = null) =>
+            _inner.ShowModal(_owner, viewName, ownerView);
+
+        // An open dialog's handle is tracked like any other registration, so
+        // an unloading plugin's dialogs are answered with their last button;
+        // the answer lets go of it again.
+        public bool Confirm(PluginDialog dialog, Action<int> onResult)
+        {
+            ArgumentNullException.ThrowIfNull(dialog);
+            ArgumentNullException.ThrowIfNull(onResult);
+            lock (_gate)
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+            }
+
+            IDisposable? registration = null;
+            bool answered = false;
+            IDisposable? handle = _inner.Confirm(_owner, dialog, index =>
+            {
+                IDisposable? release;
+                lock (_gate)
+                {
+                    answered = true;
+                    release = registration;
+                }
+                release?.Dispose();
+                onResult(index);
+            });
+            if (handle is null)
+                return false;
+
+            IDisposable tracked = TrackRegistration(handle);
+            bool early;
+            lock (_gate)
+            {
+                registration = tracked;
+                early = answered;
+            }
+            if (early)
+                tracked.Dispose();
+            return true;
+        }
+
         // Client-window control is global (retained top-level windows the
         // player toggles with a keybind or toolbar button), not scoped to
         // this plugin's own registered views, so it forwards straight to
