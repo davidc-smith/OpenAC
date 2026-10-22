@@ -4108,6 +4108,9 @@ public sealed class RetailUiRuntime : IDisposable
                 return keyNames.Describe(chord);
         };
 
+        // Colour pickers upload their gradients while open and give them back on close.
+        var markupTextures = new RetailMarkupTextureService(_bindings.Assets.TextureCache);
+
         foreach (var panel in _bindings.Plugins.Drain())
         {
             try
@@ -4122,7 +4125,9 @@ public sealed class RetailUiRuntime : IDisposable
                     _bindings.Assets.DefaultFont,
                     iconResolver, _pluginThemes,
                     controlState: _controlState.ForWindow(panel.WindowName),
-                    describeKey: describeKey);
+                    describeKey: describeKey,
+                    textures: markupTextures,
+                    sharedControlState: _controlState.Shared);
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
                 {

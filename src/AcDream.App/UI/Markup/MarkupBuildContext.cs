@@ -17,7 +17,9 @@ internal delegate void MarkupColorBinder(
 /// the window's remembered control state (null when nothing is remembered),
 /// and <see cref="AddChild"/>, which builds one child element into a
 /// container exactly as the document builds any element. <see cref="DescribeKey"/>
-/// is the host's key names for hotkeys (null shows the canonical string).
+/// is the host's key names for hotkeys (null shows the canonical string). <see cref="Textures"/> uploads
+/// short-lived textures (null: controls draw without them) and
+/// <see cref="RecentColors"/> is the document's one recent-colours list.
 /// </summary>
 internal sealed record MarkupBuildContext(
     Func<uint, (uint, int, int)> Resolve,
@@ -26,4 +28,6 @@ internal sealed record MarkupBuildContext(
     MarkupColorBinder BindColor,
     IMarkupControlState? ControlState = null,
     Action<UiElement, XElement>? AddChild = null,
-    Func<KeyChord, string>? DescribeKey = null);
+    Func<KeyChord, string>? DescribeKey = null,
+    IMarkupTextureService? Textures = null,
+    MarkupRecentColors? RecentColors = null);
