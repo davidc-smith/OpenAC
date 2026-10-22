@@ -1,3 +1,4 @@
+using AcDream.App.Rendering;
 using AcDream.App.UI;
 using AcDream.App.UI.Layout.Flex;
 
@@ -96,6 +97,84 @@ public sealed class MarkupFlexControlsTests
             """, new Binding());
 
         Assert.Equal(54f, Find(frame, "n").Width);
+    }
+
+    // Draws the root with a real baked font on the given fields and returns the
+    // screen x range of every glyph quad drawn with that font's texture.
+    private static List<(float Left, float Right)> GlyphSpans(UiRoot root, params UiField[] fields)
+    {
+        var font = BundledUiFont.Bake().CreateFont(42);
+        foreach (UiField field in fields)
+            field.DatFont = font;
+        root.Tick(0, 0);
+        var (renderer, ctx) = ThemeDrawCapture.Context(root.Width, root.Height);
+        root.Draw(ctx);
+        var spans = new List<(float, float)>();
+        foreach (var seg in renderer.DebugSpriteSegmentVerts.Where(s => s.Texture == 42u))
+            for (int q = 0; q + 4 * TextRenderer.FloatsPerVertex <= seg.Verts.Count; q += 4 * TextRenderer.FloatsPerVertex)
+            {
+                float lo = float.MaxValue, hi = float.MinValue;
+                for (int v = 0; v < 4; v++)
+                {
+                    float x = seg.Verts[q + v * TextRenderer.FloatsPerVertex];
+                    lo = MathF.Min(lo, x);
+                    hi = MathF.Max(hi, x);
+                }
+                spans.Add((lo, hi));
+            }
+        return spans;
+    }
+
+    private static void AssertGlyphsInside(List<(float Left, float Right)> spans, float left, float right)
+    {
+        Assert.NotEmpty(spans);
+        Assert.All(spans, s =>
+        {
+            Assert.InRange(s.Left, left, right);
+            Assert.InRange(s.Right, left, right);
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_number_in_a_row_without_a_size_shows_its_value(bool absolute)
+    {
+        string number = absolute
+            ? "<number name=\"n\" x=\"0\" y=\"0\" w=\"160\" h=\"24\" value=\"{Count}\" onchange=\"{SetCount}\" />"
+            : """
+              <group x="0" y="0" w="300" h="40" layout="row" gap="6" align="center">
+                <label text="Heal at %" />
+                <number name="n" value="{Count}" onchange="{SetCount}" min="0" max="100" step="5" grow="1" />
+              </group>
+              """;
+        var (root, frame) = Mount(number, new Binding { Count = 65 });
+        var n = (UiMarkupNumber)Find(frame, "n");
+
+        var spans = GlyphSpans(root, n.Field);
+
+        Assert.Equal(n.Width - UiMarkupNumber.SpinWidth, n.Field.Width);
+        Assert.Equal(n.Height, n.Field.Height);
+        float left = n.ScreenPosition.X;
+        AssertGlyphsInside(spans, left, left + n.Width - UiMarkupNumber.SpinWidth);
+    }
+
+    [Fact]
+    public void A_field_in_a_row_without_a_size_shows_its_text()
+    {
+        var (root, frame) = Mount("""
+            <group x="0" y="0" w="300" h="40" layout="row" gap="6" align="center">
+              <label text="Name" />
+              <field name="f" text="ABC" grow="1" />
+            </group>
+            """, new Binding());
+        var f = (UiField)Find(frame, "f");
+
+        var spans = GlyphSpans(root, f);
+
+        Assert.True(f.Width > 0f);
+        float left = f.ScreenPosition.X;
+        AssertGlyphsInside(spans, left, left + f.Width);
     }
 
     [Fact]

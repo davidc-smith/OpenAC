@@ -57,6 +57,9 @@ public sealed class UiMarkupNumber : UiElement
             RecordHistory = false,
             SelectAllOnFocus = true,
             MaxCharacters = 41,   // sign + 29 digits + point + 10 decimals
+            // LayoutField places the field; an anchor would put back the size
+            // it was captured at, which is 0 for a number a flex row sizes.
+            Anchors = AnchorEdges.None,
         };
         Field.CharacterFilter = AcceptsCharacter;
         Field.OnUp = () => StepBy(1);
