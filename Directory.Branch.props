@@ -1,0 +1,11 @@
+<Project>
+  <!-- OpenAC Gateway Rynth: the rynth branch's product identity (see BRANCHING.md).
+       Imported by Directory.Build.props; this file never exists on main. -->
+  <PropertyGroup>
+    <OpenACGatewayReleaseNumber>$(OpenACReleaseNumber)</OpenACGatewayReleaseNumber>
+    <OpenACProduct>OpenAC Gateway Rynth</OpenACProduct>
+    <OpenACReleaseLabel>rynth</OpenACReleaseLabel>
+    <OpenACReleaseNumber>1</OpenACReleaseNumber>
+    <OpenACReleaseMetadata>+gateway.$(OpenACGatewayReleaseNumber)</OpenACReleaseMetadata>
+  </PropertyGroup>
+</Project>
