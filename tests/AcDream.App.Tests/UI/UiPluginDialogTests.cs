@@ -144,9 +144,10 @@ public sealed class UiPluginDialogTests
     public void TwoRetailButtonsSitWhereYesAndNoDo()
     {
         var dialog = Retail("Yes", "No");
+        Mount(dialog);
 
         Assert.Equal(400f, dialog.Width);
-        Assert.Equal([80f, 240f], dialog.Buttons.Select(b => b.Left));
+        Assert.Equal([80f, 240f], dialog.Buttons.Select(b => b.ScreenPosition.X - dialog.ScreenPosition.X));
         Assert.Equal(["Yes", "No"], dialog.Buttons.Select(b => b.Label));
     }
 
@@ -157,8 +158,9 @@ public sealed class UiPluginDialogTests
         var dialog = UiRetailPluginDialog.TryCreate(
             layout, FixtureLoader.LoadConfirmationDialog, "", "Done.", ["OK"])!;
 
+        Mount(dialog);
         UiButton only = Assert.Single(dialog.Buttons);
-        Assert.Equal(160f, only.Left);
+        Assert.Equal(160f, only.ScreenPosition.X - dialog.ScreenPosition.X);
         Assert.False(((UiButton)layout.FindElement(RetailConfirmationDialogView.RejectButtonId)!).Visible);
     }
 
@@ -166,9 +168,11 @@ public sealed class UiPluginDialogTests
     public void FourRetailButtonsWidenTheBox()
     {
         var dialog = Retail("A", "B", "C", "D");
+        Mount(dialog);
 
         Assert.Equal(416f, dialog.Width);
-        Assert.Equal([24f, 120f, 216f, 312f], dialog.Buttons.Select(b => b.Left));
+        Assert.Equal([24f, 120f, 216f, 312f], dialog.Buttons.Select(b => b.ScreenPosition.X - dialog.ScreenPosition.X));
+        Assert.Equal(386f, dialog.Message.Width); // 370 + the 16 px the box grew
         Assert.Equal(4, dialog.Buttons.Distinct().Count());
         Assert.All(dialog.Buttons, b => Assert.Same(dialog.Buttons[0].Parent, b.Parent));
     }

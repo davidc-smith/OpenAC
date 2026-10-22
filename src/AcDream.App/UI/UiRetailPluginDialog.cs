@@ -16,7 +16,7 @@ internal sealed class UiRetailPluginDialog : UiPluginDialog
     public const float RowGap = 16f;
     public const float RowMargin = 24f;
     /// <summary>The gold of the markup focus outline.</summary>
-    public static readonly Vector4 TitleColor = new(1f, 0.82f, 0.25f, 1f);
+    public static readonly Vector4 TitleColor = UiMarkupHotkey.FocusColor;
 
     private UiRetailPluginDialog(int buttonCount, UiElement popup, UiText message, IReadOnlyList<UiButton> buttons)
         : base(buttonCount)
@@ -77,12 +77,24 @@ internal sealed class UiRetailPluginDialog : UiPluginDialog
             pending.TrySetRetailState(0x19u); // the retail "nothing else waiting" state
 
         float buttonWidth = accept.Width;
+        float popupHeight = popup.Height;
         if (row.Count >= 3)
         {
-            popup.Width = MathF.Max(popup.Width,
-                row.Count * buttonWidth + (row.Count - 1) * RowGap + 2f * RowMargin);
+            float grow = MathF.Max(popup.Width,
+                row.Count * buttonWidth + (row.Count - 1) * RowGap + 2f * RowMargin) - popup.Width;
+            popup.Width += grow;
+            text.Width += grow; // keep the 15 px margins either side
         }
         SetLines(popup, text, title, message);
+
+        // Take the button bar out of layout: it spans the popup at the bottom
+        // edge. Left to its policy it would stay at its 400 px width and be
+        // re-centred in a widened popup, shifting the row.
+        bar.LayoutPolicy = null;
+        bar.Anchors = AnchorEdges.None;
+        bar.Left = 0f;
+        bar.Width = popup.Width;
+        bar.Top += popup.Height - popupHeight;
 
         var dialog = new UiRetailPluginDialog(buttons.Count, popup, text, row);
         // The bar spans the popup, so its width is the popup's.
