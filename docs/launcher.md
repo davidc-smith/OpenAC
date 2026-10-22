@@ -313,7 +313,11 @@ In the fork, the default install root is named after the product: Windows
 `openac-gateway-rynth`). The macOS app is `OpenAC Gateway.app` (bundle ID `org.openac.gateway`;
 Rynth: `OpenAC Gateway Rynth.app`, `org.openac.gateway-rynth`), so both products and upstream
 OpenAC can be installed side by side. An older fork build's data in `OpenAC` is not moved
-automatically.
+automatically. To keep it, copy that folder's contents (settings, clients, plugins) into the
+product folder by hand, but not a `root.json` that points at a moved install root unless that
+root is meant for this product only: two products must not share one root. On macOS the launcher
+must keep its bundle name (`OpenAC Gateway.app` / `OpenAC Gateway Rynth.app`); a renamed copy,
+such as a Finder duplicate, refuses to start and self-update.
 
 ### Coming from 0.1.16 or earlier
 

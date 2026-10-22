@@ -102,13 +102,14 @@ foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Release file '$file' is missing." }
 }
 
-# Not marked latest on purpose: both products release here and each launcher finds its own
-# newest release by tag prefix on the releases feed, never through releases/latest.
+# Marked not-latest on purpose (--latest=false; gh otherwise marks it latest by date/version):
+# both products release here and each launcher finds its own newest release by tag prefix on
+# the releases feed, never through releases/latest.
 $notes = "$product release $version (macOS Apple silicon only)."
 $commands = @(
     "git -C `"$RepoRoot`" tag $tag",
     "git -C `"$RepoRoot`" push origin $tag",
-    "gh release create $tag -R $repository --title `"$product $version`" --notes `"$notes`" $($files -join ' ')"
+    "gh release create $tag -R $repository --title `"$product $version`" --notes `"$notes`" --latest=false $($files -join ' ')"
 )
 if ($DryRun) {
     Write-Host 'Dry run: the release would be published with:' -ForegroundColor Cyan
@@ -123,6 +124,6 @@ if ($LASTEXITCODE) {
     & git -C $RepoRoot tag -d $tag
     throw "git push of $tag failed; the local tag was deleted."
 }
-& gh release create $tag -R $repository --title "$product $version" --notes $notes @files
+& gh release create $tag -R $repository --title "$product $version" --notes $notes --latest=false @files
 if ($LASTEXITCODE) { throw 'gh release create failed; the tag is pushed, re-run gh release create by hand.' }
 Write-Host "Published $tag to https://github.com/$repository/releases/tag/$tag" -ForegroundColor Green

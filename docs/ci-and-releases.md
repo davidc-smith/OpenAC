@@ -220,14 +220,16 @@ launcher finds none and reports that no release was found, so publish both produ
 Fork release versions are `OpenACReleaseVersion` (`Directory.Build.props`): `x.y.z-gateway.n` on
 `main` (OpenAC Gateway) and `x.y.z-rynth.n` on `rynth` (OpenAC Gateway Rynth, set in
 `Directory.Branch.props`); the scripts read it with `dotnet msbuild -getProperty`. They are
-published as ordinary (not pre-release) releases, not marked as the latest release (GitHub has
-one "latest" per repository, which the launchers no longer use).
+published as ordinary (not pre-release) releases with `--latest=false`, so none is marked as the
+latest release (GitHub has one "latest" per repository, which the launchers no longer use). Fork
+launchers built before the split poll `releases/latest` and must be replaced by hand: with no
+latest release they report that updates could not be checked.
 
 Build and publish one on a Mac with `pwsh tools/publish-fork-release.ps1` from a clean
 `main` (OpenAC Gateway) or `rynth` (OpenAC Gateway Rynth): it runs `publish-bin.ps1 -MacOnly`,
 checks the four files (the osx-arm64 client and launcher zips, `manifest.json`, `launcher-fingerprint.json`), tags
 `<prefix><version>`, pushes the tag and creates the release
-titled `<product> <version>` with `gh` (without `--latest`; logged in as an account that
+titled `<product> <version>` with `gh` (with `--latest=false`; logged in as an account that
 can publish to the repository); it accepts only a `-gateway.n` or `-rynth.n` version. The
 launcher fingerprint ignores `<Version>` and `OpenACReleaseNumber`, so a release-number bump alone
 does not change it. The release branch comes from `OpenACReleaseLabel` (Gateway: `main`, Rynth:

@@ -831,7 +831,7 @@ git commit -m "feat(launcher): update from this product's newest tagged release 
 - Modify: `tools/publish-fork-release.ps1`
 
 **Acceptance Criteria:**
-- [ ] `pwsh tools/publish-fork-release.ps1 -DryRun -AllowBranch` (on `feat/gateway-launchers`) completes and prints `git … tag gateway-v0.1.26-gateway.1` and `gh release create gateway-v0.1.26-gateway.1 -R davidc-smith/OpenAC --title "OpenAC Gateway 0.1.26-gateway.1"` with no `--latest`.
+- [ ] `pwsh tools/publish-fork-release.ps1 -DryRun -AllowBranch` (on `feat/gateway-launchers`) completes and prints `git … tag gateway-v0.1.26-gateway.1` and `gh release create gateway-v0.1.26-gateway.1 -R davidc-smith/OpenAC --title "OpenAC Gateway 0.1.26-gateway.1"` with `--latest=false`.
 - [ ] Every `url` in `bin/manifest.json` starts with `https://github.com/davidc-smith/OpenAC/releases/download/gateway-v0.1.26-gateway.1/`.
 - [ ] `unzip -l bin/launcher-osx-arm64.zip` lists only `OpenAC Gateway.app/…`; its `Info.plist` has `CFBundleIdentifier` `org.openac.gateway` and `CFBundleName` `OpenAC Gateway`.
 - [ ] After the dry run `git status --porcelain` is empty (lock files restored by the script).
