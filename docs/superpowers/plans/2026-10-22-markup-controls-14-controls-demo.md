@@ -11,6 +11,8 @@
 - Each window has a `Status` line saying what the last callback received. A tester can then see the callback contract without a debugger.
 - Tests: `tests/AcDream.App.Tests/UI/ControlsDemoSampleTests.cs` references the sample project and uses its real binding classes, so the markup and bindings cannot drift apart. It reads the markup from `samples/` as `FlexDemoSampleTests` does on fork main. Every window must build and draw in all three themes, with its children inside the window, and key interactions are tested.
 
+**Status:** Tasks 1-7 DONE 2026-10-22 — feat ac92737c..f399562b (8 commits: 7 tasks + 1 final-review fix; gate = baseline 162, 0 warnings, every commit builds). Final-review fixes: focusable field before the Table/Tree lists (Tab-only list focus), windows moved right of the left shelf and inside 1280x720 (+ test), tree selectionband, no tooltip on a disabled box, status strings <=40, tree menu disabled over the header, editor reports Save/Cancel, e2e context-menu test. Task 8 live check pending.
+
 **Tech Stack:** C# / .NET 10, xUnit, headless `UiRoot` + `MarkupDrawProbe` (`RecordingGpuDevice`).
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` (branch `docs/markup-controls-spec`), §16 "Sample plugin" and "Live check"; control behaviour as documented in `docs/plugin-ui-markup.md` and `docs/plugin-api.md` "Dialogs" on `feat/markup-controls`.
