@@ -154,6 +154,10 @@ band behind its title, set in Noto Sans SemiBold; buttons, fields, menus,
 lists and logs are rounded, and buttons, tabs and menus react to the pointer;
 buttons and tabs show an accent ring when focused, and menus show an accent
 edge while open. Tabs are pills and toggles are switches.
+The markup controls (checkbox, radio, number, hotkey, colour, expander,
+split, list header and tree, the context menu and colour popups, and the
+Confirm box) take the modern shapes too; the Confirm box's title uses the
+title's SemiBold weight.
 A themed toggle's caption starts 18 points further right than in Classic, so
 give toggles room for it. On high-density displays themed text is drawn from
 a sharper bake of the font; measurements, and so layout, are the same on
@@ -172,10 +176,6 @@ Canvases are not restyled: a plugin reads the theme, its palette and the
 window sizes from `host.Ui.Theme`, repaints on `host.Ui.ThemeChanged`, and
 can set titles in the same SemiBold sans with
 `host.Ui.Fonts.Bundled(size, PluginFontWeight.SemiBold)`. See "Plugin theme"
-in the plugin API guide.
-
-Canvases are not restyled: a plugin reads the theme and its palette from
-`host.Ui.Theme` and repaints on `host.Ui.ThemeChanged`. See "Plugin theme"
 in the plugin API guide.
 
 Set `searchable="true"` on a menu to add an editable search band. Each typed
@@ -679,7 +679,8 @@ top is above the expander's bottom, stay put.
   Two remembered controls with the same `name` in one window share what they
   remember, so give each its own name.
 - A hidden expander applies its state when it is shown; while hidden it still
-  occupies its space as last laid out.
+  occupies its space as last laid out (in an absolute window; a hidden flex
+  item takes no space).
 - Without `expanded` the client keeps the state. It starts from `open`
   (`true` by default, or `false`). If the expander has a `name`, the client
   remembers the player's choice per character with the window's other
@@ -982,7 +983,7 @@ is inside and is never a flex item.
 | `number` | 120 wide (54 at least: a field and its spin); tall as a field |
 | `hotkey` | 120 wide (40 at least); tall as a field |
 | `color` | 40 × 24 |
-| `separator` | 9 points thick, stretched along the container's cross axis: across a column, down a row |
+| `separator` | 9 points thick, stretched along the container's cross axis (across a column, down a row) unless `align`/`alignself` says otherwise |
 | `split` | 160 × 80 (60 × 40 at least) |
 | `expander` | its `h` while expanded, 18 while collapsed; 160 wide (its caption and arrow at least) |
 | `icon` | 32 × 32 |
