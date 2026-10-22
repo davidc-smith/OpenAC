@@ -16,6 +16,8 @@
 - **Flex.** Every new element already passes through `AddElement`'s tail, so it becomes a flex item once the merge passes `flex` through. Task 4 gives each one a content size in `MarkupContentSize`. Task 5 stops a flex-placed expander from moving its siblings and lets the container reflow instead. Task 6 proves that a `<group layout>` pane, which the fork already lays out as a flex root, works inside `<split>`.
 - **Theme.** Tasks 7 and 8 draw the new controls' themed state with the fork's `PluginUiStyle` shapes (rounded surfaces, focus ring and glow, chevrons, popup shadow), as the fork's existing controls do. The themed Confirm box title takes the SemiBold title font, as fork window titles do.
 
+**Status:** DONE 2026-10-22. Merge 54d19bb (a5db2384 + a585d80d); fork commits to 22640176; main fast-forwarded and pushed (a5db2384..22640176). Gate PASS (0 warnings outside external/, failures ⊆ 171-name fork baseline, all first-parent commits build). Live check passed; one live defect fixed in 22640176 (flex <number> inner field anchored at zero baseline) and re-checked OK. Contract 0.1.26-fork.5.
+
 **Tech Stack:** C# / .NET 10, xUnit, Silk.NET input, the fork's in-house `FlexLayout` and `PluginUiStyle`.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-markup-controls-design.md` §15 (on `docs/markup-controls-spec`). Also read the fork's flex spec, `docs/superpowers/specs/2026-10-05-plugin-flex-layout-design.md` (branch `docs/flex-layout-spec`), and `docs/plugin-ui-markup.md` "Flex layout" on fork main.
