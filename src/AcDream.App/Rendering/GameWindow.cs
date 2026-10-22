@@ -281,9 +281,6 @@ public sealed class GameWindow :
     private readonly AcDream.Runtime.Plugins.RuntimeAutomationSurface? _automation;
     private readonly AcDream.App.Input.AppHotkeyRegistry? _hotkeyRegistry;
     private readonly GameRuntime _runtime;
-    private readonly AcDream.App.Extensions.ClientExtensionHost _extensions;
-    private readonly AcDream.App.Extensions.Overlay.ImGuiOverlay _overlay = new(line => Serilog.Log.Information("{OverlayLine}", line));
-    private IDisposable? _keyGate;
     private readonly IDisposable _runtimeHostLease;
     private RuntimeCommunicationState _runtimeCommunication =>
         _runtime.CommunicationOwner;
@@ -361,7 +358,6 @@ public sealed class GameWindow :
     private AcDream.UI.Abstractions.Panels.Chat.ChatVM? _retailChatVm;
     private AcDream.App.UI.UiHost? _uiHost;
     private AcDream.App.UI.RetailUiRuntime? _retailUiRuntime;
-    private readonly AcDream.App.Extensions.ClientChatSeam _chatSeam = new(line => Serilog.Log.Information("{ExtensionLine}", line));
     private readonly AcDream.App.UI.RetailUiRuntimeLease _retailUiLease = new();
     private InteractionUiLateBindings? _interactionUiLateBindings;
     private readonly DeferredRenderFrameDiagnosticsSource _uiFrameDiagnostics = new();
@@ -479,8 +475,6 @@ public sealed class GameWindow :
     private AcDream.Core.Net.WorldSession? LiveSession =>
         _liveSessionHost?.CurrentSession;
     private readonly AcDream.App.World.LiveWorldOriginState _liveWorldOrigin = new();
-    private readonly AcDream.App.Extensions.ClientScreen _clientScreen;
-    private readonly AcDream.App.Extensions.ClientItemDrops _itemDrops;
     private int _liveCenterX => _liveWorldOrigin.CenterX;
     private int _liveCenterY => _liveWorldOrigin.CenterY;
     private static readonly IReadOnlyDictionary<uint, AcDream.Core.Net.WorldSession.EntitySpawn> EmptyLiveSpawnMap =
@@ -540,18 +534,6 @@ public sealed class GameWindow :
         _runtimeHostLease = _runtime.AcquireHostLease(
             "graphical GameWindow");
         _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
-        _clientScreen = new(_liveWorldOrigin);
-        _itemDrops = new(() => _uiHost?.Root.DragPayload, () => _overlay.PointerOverWindow,
-            line => Serilog.Log.Warning("{ExtensionLine}", line));
-        _overlay.ExternalDragActive = () => _uiHost?.Root.DragPayload is not null;
-        _extensions = new AcDream.App.Extensions.ClientExtensionHost(options.Rynth, options.RynthPump);
-        if (!options.Rynth)
-            Serilog.Log.Information("Rynth is turned off for this session; it is not loaded.");
-        else if (!options.RynthPump)
-            Serilog.Log.Information("The Rynth pump is turned off for this session; the plugins tick on the frame thread.");
-        _extensions.Attach(_runtime, _automation?.PluginCommands, _overlay, text => _pluginSessionCommands?.SubmitChatText(text) == true, stateDirectory: _applicationPaths.PluginFilesDirectory("rynth"), chat: _chatSeam, automation: _automation, worldTriangles: WorldTriangles, datDirectory: options.DatDir, screen: _clientScreen, input: new AcDream.App.Extensions.ClientInputState(
-            () => _retainedInputCapture is { } capture && capture.HasKeyboardFocus,
-            () => _automation?.IsInputActive == true), itemDrops: _itemDrops);
         _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             _runtime.PlayerIdentity);
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
@@ -576,7 +558,7 @@ public sealed class GameWindow :
                 AcDream.Core.Net.Messages.CharacterOptionId.DisplayTimeStamps);
         _retainedInputCapture = new AcDream.App.Input.RetainedUiInputCaptureSlot();
         _inputCapture = new AcDream.App.Input.CompositeInputCaptureSource(
-            new AcDream.App.Input.DevToolsInputCaptureSource(options.DevTools, () => _overlay.WantsMouse, () => _overlay.WantsKeyboard),
+            new AcDream.App.Input.DevToolsInputCaptureSource(options.DevTools),
             _retainedInputCapture);
         _movementInput = new AcDream.App.Input.DispatcherMovementInputSource(
             _playerControllerSlot,
@@ -1017,10 +999,6 @@ public sealed class GameWindow :
         {
             _uiHost = retained.Host;
             _retailUiRuntime = retained.Runtime;
-            _retailUiRuntime.ExtensionChat = _chatSeam;
-            _clientScreen.BindWindows(_retailUiRuntime.Host.WindowManager);
-            _uiHost.Root.DragReleaseInterceptor = _itemDrops.InterceptRelease;
-            _overlay.BindIcons(retained.Runtime.ImageBackend);
             _retailChatVm = retained.Chat;
             _characterSheetProvider = retained.CharacterSheet;
             _frameScreenshots = retained.Screenshots;
@@ -1240,24 +1218,13 @@ public sealed class GameWindow :
             GameWindowPlatformAcquisition.Acquire(
                 CreateGraphics,
                 static graphics => graphics.Dispose(),
-                () => AttachKeyGate(_window!.CreateInput()),
-                input =>
-                {
-                    Interlocked.Exchange(ref _keyGate, null)?.Dispose();
-                    input.Dispose();
-                },
+                () => _window!.CreateInput(),
+                static input => input.Dispose(),
                 this);
         if (_graphics is null || _input is null)
             throw new InvalidOperationException(
                 "Platform acquisition returned without publishing both owners.");
         return platform;
-    }
-
-    // The key gate must be the keyboard's first subscriber, so it goes on as the context is made.
-    private IInputContext AttachKeyGate(IInputContext input)
-    {
-        _keyGate = _overlay.AttachKeyGate(input, _window);
-        return input;
     }
 
     // The retained capture is the swapchain's size in pixels; the frame asks
@@ -1433,7 +1400,6 @@ public sealed class GameWindow :
                             hostInputCamera.CameraController,
                             _window!,
                             viewPlane);
-                        _clientScreen.BindCamera(selectionCamera.UiSnapshot);
                         return selectionCamera;
                     },
                     _uiFrameDiagnostics,
@@ -1631,7 +1597,7 @@ public sealed class GameWindow :
                         _renderPackDiagnostics,
                         WorldLines,
                         _uiRegistry?.WorldMarkerStore,
-                        WorldTriangles) { Overlay = _overlay },
+                        WorldTriangles),
                     this).Compose(
                         platformResult,
                         hostInputCamera,
@@ -1663,7 +1629,6 @@ public sealed class GameWindow :
                     == RuntimeCharacterSelectionLifecycle.InWorld);
         }
         _pluginTick.Feed(dt);
-        _extensions.Tick(dt);
         _renderLoopArmed = false;
     }
 
@@ -1722,10 +1687,6 @@ public sealed class GameWindow :
         if (!_lifetime.HasShutdownRoots)
         {
             PersistKeyBindingsAtShutdown();
-            _extensions.Dispose();
-            _clientScreen.BindWindows(null);
-            if (_uiHost is not null) _uiHost.Root.DragReleaseInterceptor = null;
-            _clientScreen.BindCamera(null);
             _audioMixerCommand?.Dispose();
             if (_runtime.Session.IsInWorld)
                 _statusWriter.Disconnected(_options.SessionId ?? "app", "stopped");
@@ -1873,8 +1834,7 @@ public sealed class GameWindow :
             _dats,
             _preparedAssets,
             _input,
-            _graphics,
-            Interlocked.Exchange(ref _keyGate, null)));
+            _graphics));
     private void OnFocusChanged(bool focused)
         => _windowFocus.HandleFocusChanged(focused);
 

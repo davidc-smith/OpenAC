@@ -211,7 +211,7 @@ internal sealed class RetainedMouseInputBinding : IRetainedUiInputBinding
     private void Invoke(Action callback) =>
         _quiescence.Invoke(() =>
         {
-            if (Volatile.Read(ref _active) != 0 && !AcDream.App.Extensions.Overlay.OverlayInputGate.SuppressMouse)
+            if (Volatile.Read(ref _active) != 0)
                 callback();
         });
 
@@ -359,9 +359,9 @@ internal sealed class RetainedKeyboardInputBinding : IRetainedUiInputBinding
         _surface = surface ?? throw new ArgumentNullException(nameof(surface));
         _root = root ?? throw new ArgumentNullException(nameof(root));
         _quiescence = quiescence ?? throw new ArgumentNullException(nameof(quiescence));
-        _down = key => Invoke(() => _root.OnKeyDown((int)key), AcDream.App.Extensions.Overlay.OverlayInputGate.KeyTaken(key));
-        _up = key => Invoke(() => _root.OnKeyUp((int)key), AcDream.App.Extensions.Overlay.OverlayInputGate.KeyTaken(key));
-        _char = value => Invoke(() => _root.OnChar(value), AcDream.App.Extensions.Overlay.OverlayInputGate.CharTaken);
+        _down = key => Invoke(() => _root.OnKeyDown((int)key));
+        _up = key => Invoke(() => _root.OnKeyUp((int)key));
+        _char = value => Invoke(() => _root.OnChar(value));
     }
 
     public bool IsDisposalComplete => _attached.All(static value => !value);
@@ -400,10 +400,10 @@ internal sealed class RetainedKeyboardInputBinding : IRetainedUiInputBinding
         EnsureDetachTransaction().CompleteOrThrow();
     }
 
-    private void Invoke(Action callback, bool taken) =>
+    private void Invoke(Action callback) =>
         _quiescence.Invoke(() =>
         {
-            if (Volatile.Read(ref _active) != 0 && !taken && !AcDream.App.Extensions.Overlay.OverlayInputGate.SuppressKeyboard)
+            if (Volatile.Read(ref _active) != 0)
                 callback();
         });
 

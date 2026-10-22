@@ -4,9 +4,6 @@
     "net10.0": {
       "acdream.platform": {
         "type": "Project"
-      },
-      "acdream.rynth.navdata": {
-        "type": "Project"
       }
     }
   }

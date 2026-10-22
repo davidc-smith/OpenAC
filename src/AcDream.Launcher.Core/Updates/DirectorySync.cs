@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace AcDream.Launcher.Core.NavData;
+namespace AcDream.Launcher.Core.Updates;
 
 /// <summary>Makes a rename inside a directory durable by fsyncing the directory itself.</summary>
 internal static partial class DirectorySync

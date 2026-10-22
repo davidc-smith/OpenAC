@@ -7,8 +7,8 @@ param(
 )
 
 # The fork's own release, built on this Mac (osx-arm64 only) until the fork releases through
-# GitHub Actions: the client and launcher zips, manifest.json, launcher-fingerprint.json and
-# rynth-navdata.json, published to the OpenACReleaseRepository in Directory.Build.props.
+# GitHub Actions: the client and launcher zips, manifest.json, and
+# launcher-fingerprint.json, published to the OpenACReleaseRepository in Directory.Build.props.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 # Check $LASTEXITCODE by hand so the custom messages below win over pwsh's own native-command error.
@@ -80,14 +80,14 @@ finally {
 if ($cleanupFailed) { throw 'Restoring the lock files failed.' }
 
 $bin = Join-Path $RepoRoot 'bin'
-$files = @('client-osx-arm64.zip', 'launcher-osx-arm64.zip', 'manifest.json', 'launcher-fingerprint.json', 'rynth-navdata.json') |
+$files = @('client-osx-arm64.zip', 'launcher-osx-arm64.zip', 'manifest.json', 'launcher-fingerprint.json') |
     ForEach-Object { Join-Path $bin $_ }
 foreach ($file in $files) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Release file '$file' is missing." }
 }
 
 # No --prerelease; --latest keeps the launcher's releases/latest/download route on this release.
-$notes = "OpenAC fork release $version (macOS Apple silicon only). The launcher installs the RynthNav navdata pinned in rynth-navdata.json."
+$notes = "OpenAC fork release $version (macOS Apple silicon only)."
 $commands = @(
     "git -C `"$RepoRoot`" tag $tag",
     "git -C `"$RepoRoot`" push origin $tag",

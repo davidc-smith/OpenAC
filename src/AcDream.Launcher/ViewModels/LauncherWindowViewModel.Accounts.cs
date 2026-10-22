@@ -88,7 +88,7 @@ public sealed partial class LauncherWindowViewModel
         try
         {
             await _automaticRelaunch.PollAsync(CanInteract && IsRelaunchDelayValid &&
-                !_isInstallationChecking && !_isClientCompatibilityCheckBlocking && !NavData.IsBusy).ConfigureAwait(true);
+                !_isInstallationChecking && !_isClientCompatibilityCheckBlocking).ConfigureAwait(true);
         }
         catch (Exception error) { if (!_disposed) OnAutomaticRelaunchFailed(error); }
     }
@@ -290,8 +290,7 @@ public sealed partial class LauncherWindowViewModel
     private bool CanStartRows => CanInteract;
 
     private string? GetRowDisabledReason(LauncherAccountServerRowViewModel row) =>
-        NavDataLaunchBlock is { } navDataBlock ? navDataBlock
-        : !CanStartRows ? "Finish the current operation or close the dialog first."
+        !CanStartRows ? "Finish the current operation or close the dialog first."
         : _startingRows.Contains((row.ServerName, row.AccountName)) ? "This account is starting."
         : GetRowLaunchBlock(row);
 
@@ -299,7 +298,6 @@ public sealed partial class LauncherWindowViewModel
 
     private string? GetRowLaunchBlock(LauncherAccountServerRowViewModel row, string? characterName, LaunchMode mode, bool fresh = false)
     {
-        if (NavDataLaunchBlock is { } navDataBlock) return navDataBlock;
         if (_isInstallationChecking || _isClientCompatibilityCheckBlocking) return "Checking installation and client compatibility…";
         if (row.IsActive) return "This account already has an active session on this server.";
         if (mode == LaunchMode.Headless && characterName is null) return "Choose a character for Headless mode.";

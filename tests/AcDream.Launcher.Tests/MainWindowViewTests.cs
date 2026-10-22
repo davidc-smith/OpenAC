@@ -39,7 +39,6 @@ public sealed class MainWindowViewTests
         ("FirstRunDatDirectoryTextBox", typeof(TextBox)),
         ("FirstRunCloseButton", typeof(Button)),
         ("UpdateCloseButton", typeof(Button)),
-        ("NavDataDialog", typeof(Border)),
         ("OwnServerNameTextBox", typeof(TextBox)),
         ("MigrationNoticeCloseButton", typeof(Button)),
     ];
@@ -63,60 +62,6 @@ public sealed class MainWindowViewTests
         ARefusedStartShowsItsReason();
         TheAddServerDialogListsKnownServersAndFocusesItsNameField();
         TheOptionsMenuActsOnItsOwnRow();
-        TheNavDataBannerAndDialogBindItsCommands();
-    }
-
-    /// <summary>The banner's Install, the dialog's Cancel and Close, and the menu item are bound to
-    /// the navdata view model; a misspelled binding path fails this. Reads the markup as XML, so it
-    /// needs no headless window and runs in the default lane on every OS.</summary>
-    [Fact]
-    public void TheNavDataBannerAndDialogBindItsCommandsInMarkup()
-    {
-        XDocument document = XDocument.Load(Path.Combine(
-            FindRepositoryRoot(), "src", "AcDream.Launcher", "MainWindow.axaml"));
-        XNamespace avalonia = "https://github.com/avaloniaui";
-        XElement[] buttons = [.. document.Descendants(avalonia + "Button")];
-
-        int Count(string command) =>
-            buttons.Count(button => (string?)button.Attribute("Command") == "{Binding " + command + "}");
-
-        Assert.True(Count("NavData.InstallCommand") >= 2, "banner Install and the menu item");
-        Assert.Contains(buttons, button =>
-            (string?)button.Attribute("Command") == "{Binding NavData.InstallCommand}"
-            && (string?)button.Attribute("Content") == "Install / update RynthNav navdata");
-        Assert.True(Count("NavData.NotNowCommand") >= 1);
-        Assert.True(Count("NavData.CancelCommand") >= 1);
-        Assert.True(Count("NavData.CloseCommand") >= 1);
-        Assert.Contains(document.Descendants(), element =>
-            (string?)element.Attribute("IsVisible") == "{Binding ShowNavDataBanner}");
-        Assert.Contains(document.Descendants(avalonia + "ProgressBar"), bar =>
-            (string?)bar.Attribute("Value") == "{Binding NavData.ProgressPercent}"
-            && (string?)bar.Attribute("IsIndeterminate") == "{Binding NavData.IsProgressIndeterminate}");
-    }
-
-    /// <summary>The same bindings resolved against a real window; part of the manual sweep.</summary>
-    private static void TheNavDataBannerAndDialogBindItsCommands()
-    {
-        using LauncherWindowViewModel viewModel = CreateViewModel();
-        var window = new MainWindow { DataContext = viewModel };
-        try
-        {
-            window.Show();
-            window.UpdateLayout();
-            Dispatcher.UIThread.RunJobs();
-
-            Button[] buttons = window.GetVisualDescendants().OfType<Button>().ToArray();
-            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.InstallCommand));
-            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.NotNowCommand));
-            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.CancelCommand));
-            Assert.Contains(buttons, button => ReferenceEquals(button.Command, viewModel.NavData.CloseCommand));
-            Assert.False(viewModel.ShowNavDataBanner);
-            Assert.False(((Border)GetNamedField(window, "NavDataDialog")!).IsVisible);
-        }
-        finally
-        {
-            CloseTestWindow(window);
-        }
     }
 
     private static void TheOptionsMenuActsOnItsOwnRow()

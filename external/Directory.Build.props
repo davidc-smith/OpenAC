@@ -1,7 +1,0 @@
-<Project>
-  <!-- external/ holds third-party submodules (RynthCore, RynthSuite) that are compiled
-       through our own wrapper projects under src/. Our wrapper projects under src/ compile
-       those sources, so this file only matters if someone builds a submodule's own
-       project in place: it stops the repo-wide Directory.Build.props from applying
-       to it. -->
-</Project>

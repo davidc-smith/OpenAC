@@ -6,7 +6,7 @@ namespace AcDream.Launcher.Core.Tests;
 public sealed class LauncherCoreDependencyBoundaryTests
 {
     [Fact]
-    public void LauncherCoreProjectReferencesOnlyPlatformAndNavDataAndDeclaresNoPackages()
+    public void LauncherCoreProjectReferencesOnlyPlatformAndDeclaresNoPackages()
     {
         string repositoryRoot = FindRepositoryRoot();
         string projectPath = Path.Combine(
@@ -23,7 +23,7 @@ public sealed class LauncherCoreDependencyBoundaryTests
                 : Path.GetFileName(include.Replace('\\', '/')))
             .ToList();
 
-        Assert.Equal(["AcDream.Platform.csproj", "AcDream.Rynth.NavData.csproj"], projectReferences);
+        Assert.Equal(["AcDream.Platform.csproj"], projectReferences);
         Assert.Empty(project.Descendants("PackageReference"));
     }
 

@@ -21,7 +21,6 @@ public sealed class LauncherFingerprintContractTests
         foreach (string expected in new[]
                  {
                      "src/AcDream.Launcher", "src/AcDream.Launcher.Core", "src/AcDream.Platform", "src/AcDream.Bake",
-                     "src/AcDream.Rynth.NavData", "external/rynth-navdata.json", "external/RynthCore",
                      "recipe.CurrentFormatVersion", "recipe.CurrentBakeToolVersion",
                      "assets/icons", "global.json", "Directory.Packages.props", "NuGet.Config", "Directory.Build.props",
                      "tools/publish-bin.ps1", "tools/package-macos-launcher.ps1", "tools/launcher-fingerprint.ps1",
@@ -59,8 +58,6 @@ public sealed class LauncherFingerprintContractTests
 
         Assert.NotEqual(fingerprint, Fingerprint(WithFile(head, "src/AcDream.Launcher/App.axaml.cs",
             Git("show", "HEAD:src/AcDream.Launcher/App.axaml.cs") + "\n// a launcher change\n")));
-        Assert.NotEqual(fingerprint, Fingerprint(WithFile(head, "external/rynth-navdata.json",
-            Git("show", "HEAD:external/rynth-navdata.json").Replace("2026-10-19", "2026-10-20"))));
         Assert.NotEqual(fingerprint, Fingerprint(WithFile(head, "src/AcDream.Bake/AcDream.Bake.csproj",
             Git("show", "HEAD:src/AcDream.Bake/AcDream.Bake.csproj") + "\n<!-- a bake tool change -->\n")));
         Assert.NotEqual(fingerprint, Fingerprint(WithFile(head, "src/AcDream.Content/Pak/PakFormat.cs",

@@ -39,7 +39,7 @@ internal static class AtomicJsonFile
 
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporaryPath, fullPath, overwrite: true);
-            NavData.DirectorySync.TryFlush(directory);
+            DirectorySync.TryFlush(directory);
         }
         finally
         {
@@ -76,7 +76,7 @@ internal static class AtomicJsonFile
 
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporaryPath, fullPath, overwrite: true);
-            NavData.DirectorySync.TryFlush(directory);
+            DirectorySync.TryFlush(directory);
         }
         finally
         {

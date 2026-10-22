@@ -3,7 +3,6 @@ using System.Net.Http;
 using AcDream.Launcher.Core.Status;
 using AcDream.Launcher.Core.Installation;
 using AcDream.Launcher.Core.Launching;
-using AcDream.Launcher.Core.NavData;
 using AcDream.Launcher.Core.Orchestration;
 using AcDream.Launcher.Core.Profiles;
 using AcDream.Launcher.Core.Updates;
@@ -74,14 +73,13 @@ public sealed partial class App : Application
                     "acdream-bake" + executableSuffix));
 
             LauncherVersion launcherVersion = GetLauncherVersion();
-            Func<bool> hasRunningSessions = () =>
-                _orchestrator?.GetSnapshot().Sessions.Any(session => session.IsActive) == true;
             LauncherUpdateComposition updates = LauncherUpdateComposition.Create(
                 paths,
                 rid,
                 launcherVersion,
                 layout.InstalledRoot,
-                hasRunningSessions,
+                () => _orchestrator?.GetSnapshot().Sessions.Any(session => session.IsActive)
+                    == true,
                 updateManifestUri: startupOptions.UpdateManifestUri,
                 installationLayout: layout,
                 launcherFingerprint: GetLauncherFingerprint());
@@ -113,17 +111,6 @@ public sealed partial class App : Application
                         startupOptions.PublicArguments,
                         token);
 
-            var navData = new RynthNavDataViewModel(
-                updates.ManifestClient is { } manifestClient
-                    ? LauncherNavDataService.ForThisMachine(
-                        manifestClient,
-                        updates.Versions.Barrier,
-                        hasRunningSessions)
-                    : null,
-                LauncherNavDataConsentStore.ForApplicationPaths(paths),
-                new AvaloniaUiDispatcher(),
-                () => !hasRunningSessions());
-
             _viewModel = new LauncherWindowViewModel(
                 _orchestrator,
                 new AvaloniaUiDispatcher(),
@@ -131,8 +118,7 @@ public sealed partial class App : Application
                 updates.Updater,
                 applyLauncherUpdate,
                 () => desktop.Shutdown(),
-                checkedAccountStore: LauncherCheckedAccountStore.ForApplicationPaths(paths),
-                navData: navData);
+                checkedAccountStore: LauncherCheckedAccountStore.ForApplicationPaths(paths));
             LauncherWindowViewModel windowViewModel = _viewModel;
             _viewModel.ConfigureInstallFolder(new InstallFolderViewModel(
                 paths,

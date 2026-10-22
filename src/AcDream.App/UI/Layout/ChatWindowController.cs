@@ -415,46 +415,6 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
 
     // ── Max/min implementation ─────────────────────────────────────────────
 
-    /// <summary>
-    /// Asked before any action that would focus the chat entry; true when a
-    /// client extension took it (IClientChat.ClaimChatEntry), so the entry
-    /// stays shut and the action counts as handled.
-    /// </summary>
-    internal Func<bool>? ExtensionEntryClaim { get; set; }
-
-    private bool ExtensionClaimsEntry() => ExtensionEntryClaim?.Invoke() == true;
-
-    private bool _extensionHidden;
-    private bool _visibleBeforeExtensionHid;
-
-    /// <summary>
-    /// An extension's chat window took over (IClientChat.SetChatWindowHidden):
-    /// hide this one, and on release put back whatever it was before. Called
-    /// every frame, so a toggle that shows the window meanwhile is undone.
-    /// </summary>
-    internal void SetExtensionHidden(bool hidden)
-    {
-        if (hidden)
-        {
-            if (!_extensionHidden)
-            {
-                _extensionHidden = true;
-                _visibleBeforeExtensionHid = Root.Visible;
-            }
-
-            Root.Visible = false;
-            // Hiding clears focus only when Visible changes: an input focused while
-            // the window was already hidden would keep typing out of sight.
-            if (FindRootOf(Root) is { } root && IsWithin(root.KeyboardFocus, Root))
-                root.SetKeyboardFocus(null);
-        }
-        else if (_extensionHidden)
-        {
-            _extensionHidden = false;
-            Root.Visible = _visibleBeforeExtensionHid;
-        }
-    }
-
     public void AttachWindow(RetailWindowHandle handle)
     {
         ArgumentNullException.ThrowIfNull(handle);
@@ -533,14 +493,10 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
         => new(
             Maximized: _maximized,
             PersistedTop: _maximized ? _normalTop : null,
-            PersistedHeight: _maximized ? _normalHeight : null,
-            // An extension's hide is not the player's choice: persist theirs.
-            RequestedVisible: _extensionHidden ? _visibleBeforeExtensionHid : null);
+            PersistedHeight: _maximized ? _normalHeight : null);
 
     public void RestoreWindowState(RetainedWindowState state)
     {
-        if (_extensionHidden && state.RequestedVisible is { } restoredVisible)
-            _visibleBeforeExtensionHid = restoredVisible;
         if ((state.PersistedTop.HasValue || state.PersistedHeight.HasValue)
             && WindowHandle is { IsRegistered: true } handle)
         {
@@ -710,16 +666,12 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
 
     internal void StartTell(string name)
     {
-        if (ExtensionClaimsEntry())
-            return;
         Input.SetText($"@tell {name}, ");
         FindRootOf(Input)?.SetKeyboardFocus(Input);
     }
 
     internal void EnterChatMode(KeyChord? physicalChord = null)
     {
-        if (ExtensionClaimsEntry())
-            return;
         UiRoot? root = FindRootOf(Input);
         root?.SetKeyboardFocus(Input);
         if (physicalChord is { Device: 0 } chord)
@@ -732,8 +684,6 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
         UiRoot? root = FindRootOf(Input);
         if (root is null)
             return;
-        if (!ReferenceEquals(root.KeyboardFocus, Input) && ExtensionClaimsEntry())
-            return;
         root.SetKeyboardFocus(ReferenceEquals(root.KeyboardFocus, Input) ? null : Input);
         if (physicalChord is { Device: 0 } chord)
             root.SuppressPhysicalKeyUntilRelease(chord.Key);
@@ -741,8 +691,6 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
 
     internal void StartCommand()
     {
-        if (ExtensionClaimsEntry())
-            return;
         Input.SetText("/");
         FindRootOf(Input)?.SetKeyboardFocus(Input);
     }
@@ -751,14 +699,6 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
     {
         if (!string.IsNullOrEmpty(name))
             StartTell(name);
-    }
-
-    private static bool IsWithin(UiElement? element, UiElement subtree)
-    {
-        for (UiElement? at = element; at is not null; at = at.Parent)
-            if (ReferenceEquals(at, subtree))
-                return true;
-        return false;
     }
 
     private static UiRoot? FindRootOf(UiElement element)

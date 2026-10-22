@@ -37,7 +37,6 @@ public sealed class SessionConfigPluginFieldParityTests
             windowless.LoginCommandDelayMs,
             windowed.LoginCommandDelayMs);
         Assert.Equal(windowless.StatusFile, windowed.StatusFile);
-        Assert.Equal(windowless.Rynth, windowed.Rynth);
         AssertSamePluginSettings(
             windowless.PluginSettings,
             windowed.PluginSettings);
@@ -57,7 +56,6 @@ public sealed class SessionConfigPluginFieldParityTests
             ["/tell someone, hi", "/vt start"],
             windowed.LoginCommands);
         Assert.Equal(750, windowed.LoginCommandDelayMs);
-        Assert.False(windowed.Rynth);
         Assert.NotNull(windowed.CharacterOptions);
         Assert.True(windowed.CharacterOptions!["UseChargeAttack"]);
         Assert.Equal(

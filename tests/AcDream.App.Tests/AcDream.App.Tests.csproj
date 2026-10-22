@@ -27,11 +27,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- One shared HOME/XDG sandbox for every test that loads RynthInventory. -->
-    <Compile Include="..\AcDream.Rynth.Host.Tests\RynthConfigSandbox.cs" Link="RynthConfigSandbox.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <!-- The ControlsDemo sample's bindings, so its markup is tested against the real classes. -->
     <ProjectReference Include="..\..\samples\AcDream.Plugins.ControlsDemo\AcDream.Plugins.ControlsDemo.csproj" />
     <ProjectReference Include="..\..\src\AcDream.App\AcDream.App.csproj" />

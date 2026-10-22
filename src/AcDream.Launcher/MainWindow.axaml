@@ -159,17 +159,6 @@
           <Button Grid.Column="1" Content="Review update" Classes="primary" Command="{Binding ReviewUpdateCommand}" />
         </Grid>
       </Border>
-      <Border Background="#292820" Padding="14,8" IsVisible="{Binding ShowNavDataBanner}">
-        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-          <StackPanel>
-            <TextBlock Text="{Binding NavData.BannerText}" FontWeight="SemiBold" />
-            <TextBlock Text="Map tiles for RynthNav's outdoor routes. Once installed, the launcher keeps them current." Classes="muted" TextWrapping="Wrap" />
-            <TextBlock Text="{Binding NavData.Error}" Foreground="#FFB0A0" IsVisible="{Binding NavData.HasError}" TextWrapping="Wrap" />
-          </StackPanel>
-          <Button Grid.Column="1" Content="Not now" AutomationProperties.Name="Not now: RynthNav navdata" Command="{Binding NavData.NotNowCommand}" />
-          <Button Grid.Column="2" Content="Install" Classes="primary" AutomationProperties.Name="Install the RynthNav navdata" Command="{Binding NavData.InstallCommand}" />
-        </Grid>
-      </Border>
     </StackPanel>
     <Border Grid.Row="2" Margin="14,10,14,0" BorderBrush="#35434B" BorderThickness="0,0,0,1">
       <Grid ColumnDefinitions="*,Auto">
@@ -477,8 +466,6 @@
                 <Button Content="Verify files" Command="{Binding VerifyContentCommand}" />
                 <Button Content="Check for updates" Command="{Binding CheckForUpdatesCommand}" />
                 <TextBlock Text="{Binding UpdatePrompt.Status}" TextWrapping="Wrap" Classes="muted" />
-                <Button Content="Install / update RynthNav navdata" Command="{Binding NavData.InstallCommand}" />
-                <TextBlock Text="{Binding NavData.Status}" TextWrapping="Wrap" Classes="muted" />
               </StackPanel></Flyout></Button.Flyout>
             </Button>
             <Button Content="Log" Command="{Binding OpenSessionLogCommand}" />
@@ -740,45 +727,6 @@
                     IsDefault="True"
                     AutomationProperties.Name="Install the update"
                     Command="{Binding UpdatePrompt.UpdateCommand}" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
-    </Border>
-    <Border x:Name="NavDataDialog"
-            Grid.RowSpan="5"
-            ZIndex="30"
-            Background="#C010151D"
-            Focusable="True"
-            KeyboardNavigation.TabNavigation="Cycle"
-            KeyDown="OnModalKeyDown"
-            AutomationProperties.Name="RynthNav navdata dialog"
-            IsVisible="{Binding NavData.IsOpen}">
-      <Border Classes="card" Width="520" HorizontalAlignment="Center" VerticalAlignment="Center">
-        <StackPanel Spacing="14">
-          <TextBlock Text="RynthNav navdata" FontSize="24" FontWeight="Bold" />
-          <TextBlock Text="{Binding NavData.BannerText}" TextWrapping="Wrap" Classes="muted" />
-          <Border Background="#24344B" Padding="10" CornerRadius="5">
-            <StackPanel Spacing="8">
-              <TextBlock Text="{Binding NavData.Status}" TextWrapping="Wrap" />
-              <ProgressBar Minimum="0"
-                           Maximum="100"
-                           Value="{Binding NavData.ProgressPercent}"
-                           IsIndeterminate="{Binding NavData.IsProgressIndeterminate}"
-                           IsVisible="{Binding NavData.IsBusy}" />
-            </StackPanel>
-          </Border>
-          <Border Background="#5B2630" Padding="10" CornerRadius="5" IsVisible="{Binding NavData.HasError}">
-            <TextBlock Text="{Binding NavData.Error}" TextWrapping="Wrap" />
-          </Border>
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-            <Button Content="Cancel"
-                    AutomationProperties.Name="Cancel the RynthNav navdata install"
-                    IsVisible="{Binding NavData.IsBusy}"
-                    Command="{Binding NavData.CancelCommand}" />
-            <Button Content="Close"
-                    AutomationProperties.Name="Close the RynthNav navdata dialog"
-                    IsVisible="{Binding !NavData.IsBusy}"
-                    Command="{Binding NavData.CloseCommand}" />
           </StackPanel>
         </StackPanel>
       </Border>

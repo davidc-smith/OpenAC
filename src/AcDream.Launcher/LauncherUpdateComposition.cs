@@ -41,10 +41,6 @@ internal sealed class LauncherUpdateComposition : IDisposable
 
     internal Uri UpdateManifestUri { get; }
 
-    /// <summary>The release feed client (the override one with --update-manifest-uri, so a test
-    /// release is read for its own navdata pin); null when update storage is unavailable.</summary>
-    internal IReleaseManifestClient? ManifestClient => _manifestClient;
-
     public static LauncherUpdateComposition Create(
         ApplicationPathSet paths,
         string rid,

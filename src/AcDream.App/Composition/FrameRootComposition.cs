@@ -66,7 +66,6 @@ internal sealed record FrameRootDependencies(
         Runtime.MovementOwner;
 
     public SelectionState Selection => Runtime.ActionOwner.Selection;
-    public AcDream.App.Extensions.Overlay.ImGuiOverlay? Overlay { get; init; }
 
     public CombatState Combat => Runtime.ActionOwner.Combat;
 }
@@ -806,7 +805,6 @@ internal sealed class FrameRootCompositionPhase
             interaction.RetainedUi?.Screenshots is { } frameScreenshots
                 ? new PrivateFrameScreenshot(frameScreenshots)
                 : null;
-        if (d.Overlay?.Start(host.GpuDevice, host.GpuFrameLifetime, d.Window, d.Input) is { } overlayGpu) bindings.Adopt("imgui-overlay", overlayGpu);
         var privatePresentation = new PrivatePresentationRenderer(
             new LocalPlayerPortalViewport(
                 session.LocalTeleport,
@@ -818,10 +816,10 @@ internal sealed class FrameRootCompositionPhase
                 live.ChargenPreviewController,
                 live.SummaryPreviewController),
             retainedGameplayUi,
-            devTools: d.Overlay);
+            devTools: null);
         var framePreparation = new RenderFramePreparationController(
             renderFrameResources,
-            devTools: d.Overlay,
+            devTools: null,
             renderWeatherFrame,
             live.PaperdollPresenter);
         IRenderFramePostDiagnosticsPhase postDiagnostics =
@@ -857,7 +855,7 @@ internal sealed class FrameRootCompositionPhase
             privatePresentation,
             live.FrameDiagnostics,
             postDiagnostics,
-            (IRenderFrameFailureRecovery?)d.Overlay ?? NullRenderFrameFailureRecovery.Instance,
+            NullRenderFrameFailureRecovery.Instance,
             d.BuildingDegrades,
             privateScreenshot,
             d.FrameProfiler);
