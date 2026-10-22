@@ -51,6 +51,7 @@ public static class MarkupDocument
             throw new FormatException($"root must be <panel>, got <{root.Name.LocalName}>");
         if (root.Element("contextmenu") is not null)
             throw new FormatException("<contextmenu> goes inside the element it belongs to, not directly in <panel>");
+        MarkupRepeat.RejectUnkeyedNames(root);
 
         bool themed = (string?)root.Attribute("theme") == "plugin";
         if (themed) themes ??= new PluginUiThemeSettings();
@@ -866,6 +867,14 @@ public static class MarkupDocument
                 parent.AddChild(list);
                 break;
 
+            case "repeat":
+                MarkupRepeat.Build(parent, el, binding, flex,
+                    new MarkupRepeat.BuildArgs(resolve, datFont, icons, themedPanel, themes, controlState,
+                        describeKey, textures, recentColors),
+                    (container, child, source, state, box) => AddElement(container, child, source, resolve, datFont,
+                        icons, themedPanel, themes, state, describeKey, textures, recentColors, box));
+                break;
+
             case "contextmenu":
                 // Built onto its owner element after the owner's own case; see the tail below.
                 break;
@@ -873,7 +882,8 @@ public static class MarkupDocument
             default:
                 throw new FormatException($"unknown element <{el.Name.LocalName}>");
         }
-        if (parent.Children.Count > firstChild)
+        // A repeat's marker takes no theme, menu or flex item; its copies took their own.
+        if (parent.Children.Count > firstChild && parent.Children[firstChild] is not UiMarkupRepeat)
         {
             UiElement built = parent.Children[firstChild];
             if (themedPanel is not null)

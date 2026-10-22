@@ -18,6 +18,13 @@ internal sealed class MarkupBindingSource(Type type)
 
     public string TypeName => Type.Name;
 
+    /// <summary>
+    /// Set while a repeat copy bound to this source is being built: the
+    /// repeats met inside it, which build their own copies once the copy's
+    /// theme scope has closed (scopes don't nest).
+    /// </summary>
+    internal List<UiMarkupRepeat>? PendingRepeats { get; set; }
+
     public static MarkupBindingSource For(object binding) =>
         new(binding.GetType()) { Current = binding };
 
