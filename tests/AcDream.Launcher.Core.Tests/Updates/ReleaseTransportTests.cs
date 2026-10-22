@@ -299,6 +299,28 @@ public sealed class ReleaseManifestClientTests
         Assert.Equal([FeedUri], handler.Requests);
     }
 
+    /// <summary>Mutation: reading the pin through a fixed file name (the fingerprint's) or from
+    /// outside the release the manifest came from fails this.</summary>
+    [Fact]
+    public async Task TheNavDataPinIsReadFromTheSameReleaseAsTheManifest()
+    {
+        var handler = new SequenceHandler((request, index) => index switch
+        {
+            0 => Ok(FeedOf("gateway-rynth-v2.0.0")),
+            1 => Ok(ValidJson()),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        using var source = ReleaseManifestClient.CreateFeedForTransportTest(
+            FeedUri, "davidc-smith/OpenAC", "gateway-rynth-v", handler);
+
+        _ = await source.FetchAsync();
+        Assert.Null(await source.FetchNavDataPinAsync());
+
+        Assert.Equal(
+            new Uri(Download("gateway-rynth-v2.0.0", AcDream.Launcher.Core.NavData.ReleaseNavDataPin.FileName)),
+            handler.Requests[^1]);
+    }
+
     /// <summary>Mutation: keeping the previous release after a failed refetch lets files beside it
     /// (the fingerprint) be read from an older release than the launcher now believes in.</summary>
     [Fact]
