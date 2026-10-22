@@ -287,6 +287,57 @@ public sealed class RuntimeSpellCastStateTests
         Assert.Equal(0, operations.TargetedSends);
     }
 
+    [Fact]
+    public void GateAtTarget_AnswersFromThatTargetNotTheSelection()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
+        var operations = new FakeOperations { LocalPlayerId = 42u };
+        RuntimeSpellCastState state = Create(book, operations, selected: 99u);
+
+        Assert.Equal(SpellCastGate.TargetCompatible, state.EvaluateCastGate(1, 77u));
+        Assert.Equal(77u, operations.LastCompatibilityTarget);
+    }
+
+    [Fact]
+    public void GateAtTarget_IncompatibleTargetIsIncompatibleEvenWithASelection()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
+        var operations = new FakeOperations { LocalPlayerId = 42u, TargetCompatible = false };
+        RuntimeSpellCastState state = Create(book, operations, selected: 99u);
+
+        Assert.Equal(SpellCastGate.TargetIncompatible, state.EvaluateCastGate(1, 77u));
+    }
+
+    [Fact]
+    public void GateAtTarget_ZeroIsNoTargetEvenWithASelection()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
+        var operations = new FakeOperations { LocalPlayerId = 42u };
+        RuntimeSpellCastState state = Create(book, operations, selected: 99u);
+
+        Assert.Equal(SpellCastGate.NoTargetSelected, state.EvaluateCastGate(1, 0u));
+    }
+
+    [Fact]
+    public void GateAtTarget_SelfSpellNeedsNoTarget()
+    {
+        Spellbook book = MakeBook(flags: 0x8, untargeted: true, targetMask: 0x10);
+        RuntimeSpellCastState state = Create(book, new FakeOperations { LocalPlayerId = 42u });
+
+        Assert.Equal(SpellCastGate.NoTargetNeeded, state.EvaluateCastGate(1, 77u));
+    }
+
+    [Fact]
+    public void Gate_WithoutATargetStillReadsTheSelection()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: false, targetMask: 0x10);
+        var operations = new FakeOperations { LocalPlayerId = 42u };
+        RuntimeSpellCastState state = Create(book, operations, selected: 99u);
+
+        Assert.Equal(SpellCastGate.TargetCompatible, state.EvaluateCastGate(1));
+        Assert.Equal(99u, operations.LastCompatibilityTarget);
+    }
+
     private static RuntimeSpellCastState Create(
         Spellbook book,
         FakeOperations operations,
@@ -334,10 +385,16 @@ public sealed class RuntimeSpellCastStateTests
 
         public bool HasRequiredComponents(uint spellId) => HasComponents;
 
+        public uint LastCompatibilityTarget { get; private set; }
+
         public bool IsTargetCompatible(
             uint targetId,
             SpellMetadata spell,
-            bool showMessage) => TargetCompatible;
+            bool showMessage)
+        {
+            LastCompatibilityTarget = targetId;
+            return TargetCompatible;
+        }
 
         public void StopCompletely() => StopAction?.Invoke();
 
