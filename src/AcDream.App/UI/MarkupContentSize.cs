@@ -35,6 +35,18 @@ internal static class MarkupContentSize
     /// <summary>Where a themed toggle's caption starts: switch and gap.</summary>
     internal const float ThemedToggleCaptionX = 1f + PluginUiStyle.SwitchWidth + PluginUiStyle.SwitchCaptionGap;
 
+    /// <summary>Where a checkbox's or radio button's caption starts: box and gap.</summary>
+    internal const float CheckCaptionX = 17f;
+
+    /// <summary>Room after each round radio option's caption.</summary>
+    internal const float RadioOptionGap = 8f;
+
+    /// <summary>A colour swatch's width.</summary>
+    internal const float ColorWidth = 40f;
+
+    /// <summary>A separator's thickness across its line: the line and room either side.</summary>
+    internal const float SeparatorSize = 9f;
+
     internal const float IconSize = 32f;
 
     internal const float FieldWidth = 120f;
@@ -57,6 +69,10 @@ internal static class MarkupContentSize
     /// <summary>The height of a button, tab, field or menu set in <paramref name="font"/>.</summary>
     internal static float ControlHeightFor(UiDatFont? font) =>
         MathF.Max(ControlHeight, MathF.Ceiling(LineHeight(font) + ControlTextPadding));
+
+    /// <summary>The height of a toggle, checkbox or round radio option set in <paramref name="font"/>.</summary>
+    internal static float ToggleHeightFor(UiDatFont? font) =>
+        MathF.Max(ToggleHeight, MathF.Ceiling(LineHeight(font) + 4f));
 
     /// <summary>
     /// The content size of a markup control, or null for an element this
@@ -82,7 +98,7 @@ internal static class MarkupContentSize
             case UiMarkupToggle toggle:
             {
                 float captionX = toggle.ThemePalette is null ? ClassicToggleCaptionX : ThemedToggleCaptionX;
-                float height = MathF.Max(ToggleHeight, MathF.Ceiling(LineHeight(toggle.DatFont) + 4f));
+                float height = ToggleHeightFor(toggle.DatFont);
                 return Fixed(captionX + MathF.Ceiling(TextWidth(toggle.DatFont, text)), height);
             }
             case UiMarkupIcon:
@@ -101,9 +117,38 @@ internal static class MarkupContentSize
                 // Nothing of its own: its w/h, basis or grow, or the container's
                 // stretch, decide its size.
                 return Fixed(0f, 0f);
+            case UiMarkupCheckbox checkbox:
+                return Fixed(CheckCaptionX + MathF.Ceiling(TextWidth(checkbox.DatFont, text)), ToggleHeightFor(checkbox.DatFont));
+            case UiMarkupRadio radio:
+                return RadioSize(radio);
+            case UiMarkupNumber number:
+                return Range(FieldWidth, FieldMinWidth + UiMarkupNumber.SpinWidth, ControlHeightFor(number.Field.DatFont));
+            case UiMarkupHotkey hotkey:
+                return Range(FieldWidth, FieldMinWidth, ControlHeightFor(hotkey.DatFont));
+            case UiMarkupColor:
+                return Fixed(ColorWidth, ControlHeight);
+            case UiMarkupSeparator:
+                // Stretched along the container's cross axis by the default align,
+                // it lies across a column and down a row (UiMarkupSeparator.Vertical).
+                return Fixed(SeparatorSize, SeparatorSize);
+            case UiMarkupSplit:
+                return new FlexMeasurement(new FlexSize(ListWidth, ListHeight), new FlexSize(ListMinWidth, ListMinHeight));
             default:
                 return null;
         }
+    }
+
+    /// <summary>A radio group's cells: each as wide as its widest caption, one per option along its orientation.</summary>
+    private static FlexMeasurement RadioSize(UiMarkupRadio radio)
+    {
+        IReadOnlyList<string> items = radio.Items;
+        float widest = 0f;
+        foreach (string item in items)
+            widest = MathF.Max(widest, MathF.Ceiling(TextWidth(radio.DatFont, item ?? string.Empty)));
+        float cellW = radio.Segmented ? widest + 2f * ButtonPaddingX : CheckCaptionX + widest + RadioOptionGap;
+        float cellH = radio.Segmented ? ControlHeightFor(radio.DatFont) : ToggleHeightFor(radio.DatFont);
+        int count = Math.Max(1, items.Count);
+        return radio.Horizontal ? Fixed(cellW * count, cellH) : Fixed(cellW, cellH * count);
     }
 
     /// <summary>The caption a control shows now: what its size depends on besides its font.</summary>
@@ -112,6 +157,8 @@ internal static class MarkupContentSize
         UiLabel label => label.TextSource?.Invoke() ?? label.Text,
         UiSimpleButton button => button.TextSource?.Invoke() ?? button.Text,
         UiMarkupToggle toggle => toggle.TextSource?.Invoke() ?? toggle.Text,
+        UiMarkupCheckbox checkbox => checkbox.TextSource?.Invoke() ?? checkbox.Text,
+        UiMarkupRadio radio => string.Join("\n", radio.Items),
         _ => string.Empty,
     };
 
@@ -123,6 +170,10 @@ internal static class MarkupContentSize
         UiMarkupToggle toggle => toggle.DatFont,
         UiField field => field.DatFont,
         UiMenu menu => menu.ButtonDatFont ?? menu.DatFont,
+        UiMarkupCheckbox checkbox => checkbox.DatFont,
+        UiMarkupRadio radio => radio.DatFont,
+        UiMarkupNumber number => number.Field.DatFont,
+        UiMarkupHotkey hotkey => hotkey.DatFont,
         _ => null,
     };
 

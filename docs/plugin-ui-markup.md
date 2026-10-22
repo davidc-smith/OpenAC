@@ -949,7 +949,8 @@ Every child of a flex container may carry:
 An item never shrinks below its content (a button below its caption) unless
 `minw`/`minh` allow it. `x`, `y` and `anchor` on a flex item fail the build,
 and so do `grow`, `shrink`, `basis`, `alignself` and the limits on a child
-of a container without `layout`.
+of a container without `layout`. A `<contextmenu>` belongs to the element it
+is inside and is never a flex item.
 
 ### Content sizes
 
@@ -958,6 +959,13 @@ of a container without `layout`.
 | `label` | its text, one line tall |
 | `button`, `tab` | its caption with 12 points either side (and a square for its icon); at least 24 points tall, taller when the font's line plus 8 is more |
 | `toggle` | lamp or switch, then its caption; at least 20 points tall, taller when the font's line plus 4 is more |
+| `checkbox` | box, then its caption; tall as a toggle |
+| `radio` | one cell per option along its `orientation`, each as wide as the widest caption (box, caption and 8 points; segmented: the caption with 12 points either side) and as tall as a toggle (segmented: as a button) |
+| `number` | 120 wide (54 at least: a field and its spin); tall as a field |
+| `hotkey` | 120 wide (40 at least); tall as a field |
+| `color` | 40 × 24 |
+| `separator` | 9 points thick, stretched along the container's cross axis: across a column, down a row |
+| `split` | 160 × 80 (60 × 40 at least) |
 | `icon` | 32 × 32 |
 | `field`, `menu` | 120 wide (40 at least); tall as a button (at least 24, or the font's line plus 8) |
 | `slider` / `meter` | 120 wide (40 at least), 16 / 12 tall (fixed) |
