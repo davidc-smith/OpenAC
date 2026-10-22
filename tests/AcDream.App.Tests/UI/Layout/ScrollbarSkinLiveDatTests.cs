@@ -1,3 +1,4 @@
+using AcDream.App.Tests.Rendering;
 using AcDream.App.UI;
 using AcDream.App.UI.Layout;
 using DatReaderWriter;
@@ -8,9 +9,9 @@ namespace AcDream.App.Tests.UI.Layout;
 public sealed class ScrollbarSkinLiveDatTests
 {
     private static string DatDirectory =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "Documents", "Asheron's Call");
+        InstalledDatTestPath.Resolve()
+        ?? throw new InvalidOperationException(
+            "Lane=InstalledDat requires an installed retail DAT directory; see docs/release-gate.md.");
 
     [InstalledDatFact]
     public void VerticalBaseSkin_DesignatesUpArrowAsIncrement_WithThreeStateMedia()
