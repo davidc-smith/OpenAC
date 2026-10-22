@@ -175,6 +175,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                 Anchors = AnchorEdges.Top | AnchorEdges.Right,
             };
             handle.OuterFrame.AddChild(minimize);
+            if (handle.OuterFrame is UiPluginMarkupPanel themed)
+                PluginMarkupTheme.RegisterMinimize(themed, minimize);
         }
 
         _entries.Add(handle, new ShelfEntry(button, minimize));
