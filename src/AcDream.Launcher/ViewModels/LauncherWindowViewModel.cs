@@ -528,13 +528,11 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
 
         if (ReferenceEquals(sender, FirstRunWizardShell)
             && e.PropertyName == nameof(FirstRunInstallerViewModel.IsOpen)
-            && !FirstRunWizardShell.IsOpen)
+            && !FirstRunWizardShell.IsOpen
+            && _openUpdateAfterContentCompletion)
         {
-            if (_openUpdateAfterContentCompletion)
-            {
-                _openUpdateAfterContentCompletion = false;
-                UpdatePrompt.TryOpenPendingUpdate();
-            }
+            _openUpdateAfterContentCompletion = false;
+            UpdatePrompt.TryOpenPendingUpdate();
         }
     }
 

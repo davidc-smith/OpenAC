@@ -73,14 +73,13 @@ public sealed partial class App : Application
                     "acdream-bake" + executableSuffix));
 
             LauncherVersion launcherVersion = GetLauncherVersion();
-            Func<bool> hasRunningSessions = () =>
-                _orchestrator?.GetSnapshot().Sessions.Any(session => session.IsActive) == true;
             LauncherUpdateComposition updates = LauncherUpdateComposition.Create(
                 paths,
                 rid,
                 launcherVersion,
                 layout.InstalledRoot,
-                hasRunningSessions,
+                () => _orchestrator?.GetSnapshot().Sessions.Any(session => session.IsActive)
+                    == true,
                 updateManifestUri: startupOptions.UpdateManifestUri,
                 installationLayout: layout,
                 launcherFingerprint: GetLauncherFingerprint());
