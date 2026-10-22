@@ -160,7 +160,7 @@ public sealed class FakeAceTransportTests
         var lossy = new LossyTransportDecorator(
             fake,
             dropPercent: 50,
-            seed: 13,
+            seed: 749,
             NetDropDirection.In);
         var session = new WorldSession(
             new IPEndPoint(IPAddress.Loopback, 9000),
@@ -222,6 +222,8 @@ public sealed class FakeAceTransportTests
             Assert.Equal(
                 new[]
                 {
+                    DddInterrogationResponse.Opcode,
+                    0xF7EAu,
                     CharacterEnterWorld.EnterWorldRequestOpcode,
                     CharacterEnterWorld.EnterWorldOpcode,
                 },
