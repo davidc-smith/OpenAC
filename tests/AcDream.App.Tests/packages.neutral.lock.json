@@ -275,6 +275,12 @@
       "acdream.plugin.abstractions": {
         "type": "Project"
       },
+      "acdream.plugins.controlsdemo": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Plugin.Abstractions": "[0.1.26, )"
+        }
+      },
       "acdream.runtime": {
         "type": "Project",
         "dependencies": {
