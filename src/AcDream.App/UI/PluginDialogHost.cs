@@ -55,7 +55,8 @@ internal sealed class PluginDialogHost : IDisposable
     /// Queues a dialog and returns a handle whose disposal answers it with
     /// its last button; null once the host is disposed. An owner that is not
     /// a shown top-level window counts as none: the dialog is centred on the
-    /// screen and blocks nothing.
+    /// screen and blocks nothing. Button-count and caption validation is the
+    /// caller's (the registry's) job.
     /// </summary>
     public IDisposable? Confirm(
         string title, string message, IReadOnlyList<string> buttons,
@@ -86,7 +87,9 @@ internal sealed class PluginDialogHost : IDisposable
     /// Blocks <paramref name="owner"/> until <paramref name="panel"/> is
     /// hidden or removed. The same panel again over the same owner changes
     /// nothing; over another owner the block moves. No owner, an unmounted
-    /// one, or the panel itself blocks nothing.
+    /// one, or the panel itself blocks nothing. Unlike <c>Confirm</c>, a
+    /// mounted-but-hidden owner is still blocked; the modal ends only when the
+    /// panel hides or goes, or the owner is removed.
     /// </summary>
     public void ShowModal(UiElement panel, UiElement? owner)
     {
@@ -120,8 +123,13 @@ internal sealed class PluginDialogHost : IDisposable
                 continue;
             if (entry.Owner is not null && OwnerGone(entry.Owner))
                 Finish(entry, entry.CancelIndex);
+            else if (entry.View is null)
+            {
+                if (ReferenceEquals(HeadFor(entry.Owner), entry))
+                    Show(entry);
+            }
             else
-                entry.View?.Place(entry.Owner, _root.EffectiveCanvasSize);
+                entry.View.Place(entry.Owner, _root.EffectiveCanvasSize);
         }
         foreach (ModalEntry modal in _modals.ToArray())
         {

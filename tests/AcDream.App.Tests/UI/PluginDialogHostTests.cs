@@ -331,4 +331,24 @@ public sealed class PluginDialogHostTests
 
         Assert.Equal(left + 50f, view.Left);
     }
+
+    [Fact]
+    public void AQueuedDialogShowsOnTickWhenItsOwnerReturnsAfterAStall()
+    {
+        var f = new Fixture();
+        var first = new List<int>();
+        var second = new List<int>();
+        f.Confirm(f.Owner, first);
+        f.Confirm(f.Owner, second);
+
+        f.Owner.Visible = false;
+        f.Press(Key.Enter);
+        f.Owner.Visible = true;
+        f.Host.Tick();
+
+        Assert.Equal([0], first);
+        Assert.NotNull(f.Host.ShownFor(f.Owner));
+        f.Press(Key.Enter);
+        Assert.Equal([0], second);
+    }
 }
