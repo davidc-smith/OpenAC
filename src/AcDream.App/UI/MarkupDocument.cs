@@ -11,8 +11,8 @@ namespace AcDream.App.UI;
 
 public static class MarkupDocument
 {
-    private const uint RuntimeTooltipRootElementId = 0x10000397u;
-    private const uint RuntimeTooltipLayoutDid = 0x21000041u;
+    internal const uint RuntimeTooltipRootElementId = 0x10000397u;
+    internal const uint RuntimeTooltipLayoutDid = 0x21000041u;
 
     /// <summary>
     /// What separates the edge names in an anchor attribute. An author writes
@@ -24,6 +24,22 @@ public static class MarkupDocument
         string xml, object binding, Func<uint, (uint, int, int)> resolve,
         ControlsIni? style = null, UiDatFont? datFont = null,
         IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null,
+        IMarkupControlState? controlState = null,
+        Func<KeyChord, string>? describeKey = null,
+        IMarkupTextureService? textures = null, IMarkupControlState? sharedControlState = null)
+        => BuildWindow(xml, binding, resolve, style, datFont, icons, themes, fallbackTitle: null,
+            controlState, describeKey, textures, sharedControlState).Frame;
+
+    /// <summary>
+    /// Builds a markup window and what mounting it needs (see
+    /// <see cref="MarkupWindow"/>). <paramref name="fallbackTitle"/> names the
+    /// title bar when the markup has no <c>title</c>: the registration's title.
+    /// </summary>
+    internal static MarkupWindow BuildWindow(
+        string xml, object binding, Func<uint, (uint, int, int)> resolve,
+        ControlsIni? style = null, UiDatFont? datFont = null,
+        IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null,
+        string? fallbackTitle = null,
         IMarkupControlState? controlState = null,
         Func<KeyChord, string>? describeKey = null,
         IMarkupTextureService? textures = null, IMarkupControlState? sharedControlState = null)
@@ -39,13 +55,20 @@ public static class MarkupDocument
         UiNineSlicePanel panel = themed
             ? new UiPluginMarkupPanel(resolve, themes ?? new PluginUiThemeSettings())
             : new UiNineSlicePanel(resolve);
+
+        // A window with chrome has a content area: its authored sizes are the
+        // area inside the border and title bar, and the frame adds the chrome.
+        bool hasTitleBar = TitleBar(root);
+        float chromeW = hasTitleBar ? PluginWindowChrome.HorizontalInsets : 0f;
+        float chromeH = hasTitleBar ? PluginWindowChrome.VerticalInsets : 0f;
+        float contentW = F(root, "w"), contentH = F(root, "h");
         panel.Left = F(root, "x"); panel.Top = F(root, "y");
-        panel.Width = F(root, "w"); panel.Height = F(root, "h");
+        panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
 
         bool resizable = B(root, "resizable", false);
         panel.Resizable = resizable;
-        panel.MinWidth = FOr(root, "minw", panel.Width);
-        panel.MinHeight = FOr(root, "minh", panel.Height);
+        panel.MinWidth = FOr(root, "minw", contentW) + chromeW;
+        panel.MinHeight = FOr(root, "minh", contentH) + chromeH;
         panel.ResizeX = resizable;
         panel.ResizeY = resizable;
 
@@ -70,21 +93,46 @@ public static class MarkupDocument
         }
 
         string? title = (string?)root.Attribute("title");
-        if (!string.IsNullOrEmpty(title))
+        Vector4 titleColor = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
+        UiElement contentParent = panel;
+        PluginTitleBar? titleBar = null;
+        if (hasTitleBar)
         {
-            Vector4 tc = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
+            titleBar = new PluginTitleBar(resolve, panel.Width)
+            {
+                Title = string.IsNullOrEmpty(title) ? fallbackTitle ?? string.Empty : title,
+                DatFont = datFont,
+                TextColor = titleColor,
+            };
+            titleBar.Close.AuthoredTooltipRootElementId = RuntimeTooltipRootElementId;
+            titleBar.Close.AuthoredTooltipLayoutDid = RuntimeTooltipLayoutDid;
+            titleBar.Close.AuthoredTooltipEnabled = true;
+            panel.AddChild(titleBar);
+            var content = new UiPluginContentHost
+            {
+                Left = PluginWindowChrome.Border,
+                Top = PluginWindowChrome.TitleBarHeight,
+                Width = contentW,
+                Height = contentH,
+            };
+            panel.AddChild(content);
+            contentParent = content;
+            if (panel is UiPluginMarkupPanel barPanel)
+                PluginMarkupTheme.RegisterTitleBar(barPanel, titleBar);
+        }
+        else if (!string.IsNullOrEmpty(title))
+        {
             panel.AddChild(new UiLabel
             {
-                Text = title, Left = 8, Top = 4, TextColor = tc, DatFont = datFont,
+                Text = title, Left = 8, Top = 4, TextColor = titleColor, DatFont = datFont,
             });
+            if (panel is UiPluginMarkupPanel titlePanel)
+                PluginMarkupTheme.Register(titlePanel, panel.Children[^1], new XElement("label"));
         }
-
-        if (panel is UiPluginMarkupPanel titlePanel && panel.Children.Count > 0)
-            PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
 
         var recentColors = new MarkupRecentColors(sharedControlState);
         foreach (var el in root.Elements())
-            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, controlState, describeKey, textures, recentColors);
+            AddElement(contentParent, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, controlState, describeKey, textures, recentColors);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -93,8 +141,25 @@ public static class MarkupDocument
         // would otherwise measure its children against the resized parent the first
         // time it is opened.
         panel.CaptureAuthoredAnchorBaselines();
-        return panel;
+
+        int revision = hasTitleBar
+            ? RetailWindowManager.ComputeAuthoredGeometryRevision(PluginWindowChrome.AuthoredInputs(root))
+            : RetailWindowManager.ComputeAuthoredGeometryRevision(
+                panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
+        return new MarkupWindow(panel, contentParent, titleBar, revision);
     }
+
+    /// <summary>
+    /// Whether the root asks for the host title bar: off unless
+    /// <c>titlebar="true"</c>.
+    /// </summary>
+    private static bool TitleBar(XElement root) => (string?)root.Attribute("titlebar") switch
+    {
+        null or "false" => false,
+        "true" => true,
+        string other => throw new FormatException(
+            $"<panel titlebar=\"{other}\"> must be true or false"),
+    };
 
     private static void AddElement(
         UiElement parent,

@@ -100,6 +100,29 @@ public sealed class RetailWindowManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// The revision of a window whose geometry its markup states rather than
+    /// measures: one entry per authored input, null where it is absent. FNV-1a,
+    /// so the value is the same in every process; it is saved with the window's
+    /// layout.
+    /// </summary>
+    public static int ComputeAuthoredGeometryRevision(IReadOnlyList<string?> authoredInputs)
+    {
+        ArgumentNullException.ThrowIfNull(authoredInputs);
+        const uint Prime = 16777619u;
+        uint hash = 2166136261u;
+        unchecked
+        {
+            foreach (string? input in authoredInputs)
+            {
+                foreach (char c in input ?? "\0absent")
+                    hash = (hash ^ c) * Prime;
+                hash = (hash ^ 0xFFFFu) * Prime;   // between inputs
+            }
+        }
+        return (int)(hash & 0x7FFFFFFFu);
+    }
+
     public bool TryGet(string name, out RetailWindowHandle handle)
         => _byName.TryGetValue(name, out handle!);
 
