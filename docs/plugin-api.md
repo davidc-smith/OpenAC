@@ -1558,6 +1558,10 @@ On a host without a window, and before the interface is up, `Confirm` and
 returns `false`, without calling back, in the rare case that the box cannot
 be put on screen.
 
+The `samples/AcDream.Plugins.ControlsDemo` plugin's Dialogs window shows
+message boxes with two, three and four buttons, one without an owner, two
+queued for one window, and a modal editor opened with `ShowModal`.
+
 ## Canvases
 
 A canvas is a rectangle the plugin paints, shown over the world and under
