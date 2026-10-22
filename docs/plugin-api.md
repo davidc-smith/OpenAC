@@ -499,12 +499,15 @@ if (magic.EvaluateGateWithoutSelecting(spellId, creatureId) == PluginCastGate.Re
     magic.RequestCastWithoutSelecting(spellId, creatureId);
 ```
 
-The target must be in the world, or the gate is `Refused` and the request
-`IncompatibleTarget`; self and untargeted spells ignore it. A host without
-them refuses (`Refused` / `Unavailable`) rather than selecting.
+The object must be in the world for every spell, or the gate is `Refused` and
+the request `IncompatibleTarget` (pass the player's id for a self spell). Self
+and untargeted spells are then cast as usual, regardless of it. A host whose
+contract has the members but does not implement them answers `Refused` /
+`Unavailable` and never selects.
+
 They need contract `0.1.26-fork.6`: build against contract `0.1.26-fork.6` to
 call them. An older host checks only MAJOR.MINOR.PATCH, so the plugin loads,
-and the calls get the refusing defaults.
+but the call fails with `MissingMethodException`.
 
 ## Storage
 

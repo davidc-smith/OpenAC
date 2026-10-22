@@ -429,6 +429,34 @@ public sealed class CampaignAutomationSurfaceTests
     }
 
     [Fact]
+    public void CastWithoutSelectingIsUnavailableWhileUnbound()
+    {
+        using var surface = new RuntimeAutomationSurface();
+
+        Assert.Equal(
+            PluginCastGate.Unavailable,
+            surface.Magic.EvaluateGateWithoutSelecting(42u, 0x70000002u));
+        Assert.Equal(
+            PluginCastRequestResult.Unavailable,
+            surface.Magic.RequestCastWithoutSelecting(42u, 0x70000002u));
+    }
+
+    [Fact]
+    public void CastWithoutSelectingAnswersNotKnownBeforeCheckingTheTarget()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        GameRuntime runtime = host.Runtime;
+        runtime.CharacterOwner.InstallSpellMetadata(SpellTable.Create([DurationSpell()]));
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        Assert.Equal(
+            PluginCastGate.NotKnown,
+            surface.Magic.EvaluateGateWithoutSelecting(42u, 0x70000099u));
+    }
+
+    [Fact]
     public void TheSelectingCastOverloadStillSelects()
     {
         const uint target = 0x70000002u;

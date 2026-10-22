@@ -4141,14 +4141,15 @@ internal sealed class RuntimeAutomationSurface
 
     public PluginCastGate EvaluateGateWithoutSelecting(
         uint spellId, uint targetObjectId) =>
-        IsCastTarget(targetObjectId, out _)
-            ? EvaluateGateAt(
-                spellId,
-                cast => cast.EvaluateCastGate(spellId, targetObjectId))
-            : PluginCastGate.Refused;
+        EvaluateGateAt(
+            spellId,
+            cast => cast.EvaluateCastGate(spellId, targetObjectId),
+            targetObjectId);
 
     private PluginCastGate EvaluateGateAt(
-        uint spellId, Func<RuntimeSpellCastState, SpellCastGate> evaluate)
+        uint spellId,
+        Func<RuntimeSpellCastState, SpellCastGate> evaluate,
+        uint? requiredTarget = null)
     {
         RuntimeSpellCastState? cast;
         Spellbook? spellbook;
@@ -4161,6 +4162,8 @@ internal sealed class RuntimeAutomationSurface
             return PluginCastGate.Unavailable;
         if (!spellbook.Knows(spellId))
             return PluginCastGate.NotKnown;
+        if (requiredTarget is uint target && !IsCastTarget(target, out _))
+            return PluginCastGate.Refused;
         return evaluate(cast) switch
         {
             SpellCastGate.Unknown => PluginCastGate.NotKnown,
@@ -4180,18 +4183,27 @@ internal sealed class RuntimeAutomationSurface
 
     public PluginCastRequestResult RequestCastWithoutSelecting(
         uint spellId, uint targetObjectId) =>
-        IsCastTarget(targetObjectId, out _)
-            ? RequestCastAt(cast => cast.Cast(spellId, targetObjectId))
-            : PluginCastRequestResult.IncompatibleTarget;
+        RequestCastAt(cast => cast.Cast(spellId, targetObjectId), targetObjectId);
 
     private PluginCastRequestResult RequestCastAt(
-        Func<RuntimeSpellCastState, CastRequestResult> send)
+        Func<RuntimeSpellCastState, CastRequestResult> send,
+        uint? requiredTarget = null)
     {
         RuntimeSpellCastState? cast;
         lock (_gate)
             cast = _cast;
         if (cast is null)
             return PluginCastRequestResult.Unavailable;
+        if (requiredTarget is uint target)
+        {
+            GameRuntime? runtime;
+            lock (_gate)
+                runtime = _runtime;
+            if (runtime is null || !IsAvailable)
+                return PluginCastRequestResult.Unavailable;
+            if (!IsCastTarget(target, out _))
+                return PluginCastRequestResult.IncompatibleTarget;
+        }
         return send(cast) switch
         {
             CastRequestResult.Sent => PluginCastRequestResult.Sent,
