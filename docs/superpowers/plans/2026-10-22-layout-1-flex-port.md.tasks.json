@@ -74,12 +74,12 @@
   {
    "id": 9,
    "subject": "Task 9: Live check of FlexDemo and ControlsDemo (user presen",
-   "status": "pending",
+   "status": "completed",
    "blockedBy": [
     8
    ],
    "description": "> **USER-ORDERED GATE \u2014 NON-SKIPPABLE.** Live client checks need the user present and their go-ahead.\n\n**Goal:** See the flex port working in a real client against the local ACE server, in Classic and in the plugin theme.\n\n**Files:** none. A defect becomes a `fix(ui): \u2026` commit on the branch, with the gate rerun.\n\n**Acceptance Criteria:**\n- [ ] The user has said they are available. Don't launch a client before that.\n- [ ] Built from this worktree, with FlexDemo and ControlsDemo installed to `~/OpenAC-dev/plugins/`, running against 10.10.20.20 through `~/OpenAC-dev/dev-client.env`, never Dreamweave.\n- [ ] Each of these is checked by the user, in both Classic and theme:\n  - Flex Finder resizes and reflows.\n  - Settings opens at its one-page height and its profile list scrolls.\n  - Gallery scrolls sideways with the trackpad and with Shift+wheel.\n  - The Flex Controls expander reflows, and split panes resize.\n  - The title bar X closes a window and the tooltip says where it went.\n  - The themed close X and the scrollbar thumbs are flat palette shapes.\n  - The ControlsDemo windows (non-flex) are unchanged.\n- [ ] The user says it passed, or every defect found is fixed and checked again.\n\n**Verify:** the user's confirmation in the conversation.\n\n**Steps:**\n\n- [ ] **Step 1:** Ask the user whether they are available for the live check. Wait for their answer.\n- [ ] **Step 2:** Build Release. Copy `samples/AcDream.Plugins.FlexDemo/bin/Release/net10.0/` and the ControlsDemo output into `~/OpenAC-dev/plugins/sample.flex-demo` and `sample.controls-demo`. Launch the dev client from this worktree the way `live-testing-rules` describes, then go through the checklist with the user.\n\n```json:metadata\n{\"files\": [\"samples/AcDream.Plugins.FlexDemo/bin/Release/net10.0/\"], \"verifyCommand\": \"the user's confirmation in the conversation.\", \"acceptanceCriteria\": [\"The user has said they are available. Don't launch a client before that.\", \"Built from this worktree, with FlexDemo and ControlsDemo installed to `~/OpenAC-dev/plugins/`, running against 10.10.20.20 through `~/OpenAC-dev/dev-client.env`, never Dreamweave.\", \"Each of these is checked by the user, in both Classic and theme:\", \"The user says it passed, or every defect found is fixed and checked again.\"], \"modelTier\": \"standard\", \"userGate\": true, \"tags\": [\"user-gate\"]}\n```"
   }
  ],
- "lastUpdated": "2026-10-22T17:15:00+02:00"
+ "lastUpdated": "2026-10-22T19:00:00+02:00"
 }
