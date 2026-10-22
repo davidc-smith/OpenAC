@@ -29,6 +29,8 @@ public sealed class FlexDemoSampleTests
         public IReadOnlyList<string> Profiles { get; } = ["Mage", "Melee"];
         public string Profile => "Mage";
         public Action<string> SetProfile => _ => { };
+        public int ProfileIndex => 0;
+        public Action<int> PickProfile => _ => { };
         public string Target => "Asheron";
         public Action<string> SetTarget => _ => { };
         public bool AutoRebuff => true;
