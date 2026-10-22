@@ -96,27 +96,45 @@ The launcher's fork update feed (updating from `davidc-smith/OpenAC`) stays on
 ## 3. Names and versions
 
 - Product names: **OpenAC Gateway** (`main`), **OpenAC Gateway Rynth**
-  (`rynth`). Used in the window title, About, the launcher, app bundle names
-  and release titles.
-- Client version: four parts, `U1.U2.U3.N`. The first three are upstream's
-  version; `N` is our release counter on that base and resets to 0 when an
-  upstream release is merged. First Gateway release: `0.1.26.0`.
-  `0.1.26.5` > `0.1.26` and `0.1.27.0` > `0.1.26.9`, so update checks compare
-  correctly (unlike `0.1.26-fork.N`, which SemVer orders *below* `0.1.26`).
-- Rynth version: the same shape with its own counter. Its informational
-  version records the Gateway release it was built from, e.g.
-  `0.1.26.2+gateway.0.1.26.4`. The part after `+` shows in About and logs and
-  is ignored in comparisons.
-- Tags: `gateway-v0.1.26.N` and `gateway-rynth-v0.1.26.N`. Never plain `v…`,
-  so they cannot be confused with upstream's tags.
+  (`rynth`). Used in the client window title, the character-screen version
+  line, the launcher's window and header (Plan 2), and app bundle names,
+  install folders and release titles (Plan 3).
+- Moving an install from Gateway Rynth to Gateway: the session-config loaders
+  reject unknown fields, so a hand-written session document must drop any
+  `rynth` / `rynthPump` keys first.
+*Revised 2026-10-22 (Plan 2 design).* The four-part `U1.U2.U3.N` scheme first
+agreed here was dropped: the launcher parses every client version as strict
+SemVer 2.0 (`LauncherVersion`), so a fourth number would need launcher changes.
+The worry that `-fork.N` sorts below upstream's `0.1.26` does not apply either:
+a launcher only compares releases from its own feed.
+
+- Client version: `U1.U2.U3-gateway.N` on `main` and `U1.U2.U3-rynth.N` on
+  `rynth`. The first three numbers are upstream's version; `N` is that
+  product's release counter on that base, reset to 1 when an upstream release
+  is merged. First Gateway release: `0.1.26-gateway.1`. Within one feed SemVer
+  orders them correctly (`-gateway.9` < `-gateway.10` < `0.1.27-gateway.1`), and
+  plugin host checks keep reading only `U1.U2.U3`.
+- `<Version>` stays at upstream's plain base (`0.1.26`), so the ~47 lock files
+  that record it change only on upstream syncs. The release version lives in
+  separate properties in `Directory.Build.props`: `OpenACProduct`,
+  `OpenACReleaseLabel`, `OpenACReleaseNumber`, and the computed
+  `OpenACReleaseVersion` (`$(Version)-$(OpenACReleaseLabel).$(OpenACReleaseNumber)`),
+  which feeds `InformationalVersion`. `<Product>` comes from `OpenACProduct`.
+- `rynth`'s identity lives in its own file, `Directory.Branch.props`, which
+  `Directory.Build.props` imports only when it exists (it never exists on
+  `main`). It sets the Rynth product name, label and counter, and records the
+  Gateway release it was built from as build metadata, e.g.
+  `0.1.26-rynth.1+gateway.1`. Because `main` never touches that file, Gateway
+  release bumps merge into `rynth` without conflicts.
+- The launcher fingerprint ignores `OpenACReleaseNumber` exactly as it already
+  ignores `<Version>`, so a release bump alone does not force a launcher update.
+- Tags: `gateway-v…` and `gateway-rynth-v…` (Plan 3, with the launcher's
+  release lookup). Never plain `v…`, so they cannot be confused with upstream's
+  tags.
 - Plugin contract version (`ForkContractVersion` in
-  `AcDream.Plugin.Abstractions.csproj`): moves to the same four-part form,
-  e.g. `0.1.26.6`. Its counter is independent of the client's and goes up only
-  when the plugin API changes. The current value `0.1.26-fork.5` maps to
-  `0.1.26.5`. Aethrix's package reference is updated to match.
-- Version properties live in `Directory.Build.props`; `rynth` overrides the
-  product name, version and tag prefix there, which is its expected
-  permanent difference from `main` in that file.
+  `AcDream.Plugin.Abstractions.csproj`): unchanged, `0.1.26-fork.N` with its own
+  counter. It only matters to Aethrix's packaging, and renaming it would need
+  matching changes in the Aethrix repo for no functional gain.
 
 ## 4. Launcher and releases
 
