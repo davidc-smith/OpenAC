@@ -39,6 +39,12 @@ public sealed class MarkupControlStateStore
         return new WindowState(this, windowName);
     }
 
+    /// <summary>The window key for values every markup window shares, such as recent colours.</summary>
+    public const string SharedWindow = "*";
+
+    /// <summary>The values every markup window shares for the character.</summary>
+    public IMarkupControlState Shared => ForWindow(SharedWindow);
+
     /// <summary>Writes the current character's values if any changed since the last save.</summary>
     /// <param name="ignoreBackoff">
     /// Skip the retry delay after a failure; for the final save at shutdown.
