@@ -1439,7 +1439,7 @@ public sealed class RuntimeAcceptedPositionDriveControllerTests
         Vector3 placed = controller.Position;
 
         RegisterArrivedBlocker(runtime, placed);
-        drive.RequestArrivalOverlapCheck();
+        drive.RequestArrivalOverlapCheck(ArrivedBlockerId);
         drive.Advance();
 
         Assert.True(
@@ -1465,7 +1465,7 @@ public sealed class RuntimeAcceptedPositionDriveControllerTests
         controller.State = PlayerState.PortalSpace;
 
         RegisterArrivedBlocker(runtime, placed);
-        drive.RequestArrivalOverlapCheck();
+        drive.RequestArrivalOverlapCheck(ArrivedBlockerId);
         drive.Advance();
 
         Vector3 moved = controller.Position;
@@ -1509,7 +1509,7 @@ public sealed class RuntimeAcceptedPositionDriveControllerTests
         Vector3 placed = controller.Position;
 
         RegisterArrivedBlocker(runtime, placed + new Vector3(20f, 20f, 0f));
-        drive.RequestArrivalOverlapCheck();
+        drive.RequestArrivalOverlapCheck(ArrivedBlockerId);
         drive.Advance();
 
         Assert.Equal(placed, controller.Position);
@@ -1528,16 +1528,42 @@ public sealed class RuntimeAcceptedPositionDriveControllerTests
         Vector3 placed = controller.Position;
 
         RegisterArrivedBlocker(runtime, placed);
-        drive.RequestArrivalOverlapCheck();
+        drive.RequestArrivalOverlapCheck(ArrivedBlockerId);
         drive.Advance();
 
         Assert.Equal(placed, controller.Position);
         Assert.Empty(gameActions);
     }
 
-    private static void RegisterArrivedBlocker(GameRuntime runtime, Vector3 center) =>
+    [Fact]
+    public void ArrivalOverlap_AnObjectThatDidNotJustArrive_LeavesThePlayerWhereItIs()
+    {
+        // A player standing against the world's own geometry or a long-resident
+        // object fails a placement test too; only a just-arrived object counts.
+        using StartedRuntime started = StartRuntime();
+        GameRuntime runtime = started.Runtime;
+        (_, PlayerMovementController controller) = EnterLocalPlayer(runtime);
+        RuntimeAcceptedPositionDriveController drive =
+            CreateAcceptedPositionDrive(runtime, out List<byte[]> gameActions);
+        Vector3 placed = controller.Position;
+
+        RegisterArrivedBlocker(runtime, placed);
+        RegisterArrivedBlocker(runtime, placed + new Vector3(20f, 20f, 0f), OtherArrivalId);
+        drive.RequestArrivalOverlapCheck(OtherArrivalId);
+        drive.Advance();
+
+        Assert.Equal(placed, controller.Position);
+        Assert.Empty(gameActions);
+    }
+
+    private const uint OtherArrivalId = 0x70000003u;
+
+    private static void RegisterArrivedBlocker(
+        GameRuntime runtime,
+        Vector3 center,
+        uint entityId = ArrivedBlockerId) =>
         runtime.EntityObjects.Physics.Engine.ShadowObjects.RegisterMultiPart(
-            ArrivedBlockerId,
+            entityId,
             center,
             Quaternion.Identity,
             [

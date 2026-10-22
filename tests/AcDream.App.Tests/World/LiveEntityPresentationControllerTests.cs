@@ -96,7 +96,7 @@ public sealed class LiveEntityPresentationControllerTests
             out _,
             out _));
         Assert.True(fixture.Controller.OnStateAccepted(Fixture.Guid));
-        Assert.Equal([Fixture.Guid], restored);
+        Assert.Equal([fixture.Entity.Id], restored);
 
         binding.Dispose();
         IDisposable rebound = fixture.Controller.BindShadowRestored(_ => { });

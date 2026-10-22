@@ -240,13 +240,14 @@ public sealed class LiveEntityPresentationController : IDisposable
             centerX,
             centerY);
         _onShadowRestored?.Invoke(record.ServerGuid);
-        _shadowRestoredListener?.Invoke(record.ServerGuid);
+        _shadowRestoredListener?.Invoke(entity.Id);
         return true;
     }
 
     /// <summary>
-    /// Binds a listener told each time an object's collision comes back, for
-    /// owners composed after this controller. One listener at a time.
+    /// Binds a listener told the local entity id of each object whose collision
+    /// comes back, for owners composed after this controller. One listener at
+    /// a time.
     /// </summary>
     internal IDisposable BindShadowRestored(Action<uint> listener)
     {
