@@ -29,6 +29,7 @@ public sealed class MarkupFlexControlsTests
         public float Pos { get; set; } = 100f;
         public Action<float> SetPos => v => Pos = v;
         public Action<int> Pick => _ => { };
+        public IReadOnlyList<string> Names { get; } = ["A", "B"];
     }
 
     private static (UiRoot Root, UiNineSlicePanel Frame) Mount(string body, object binding)
@@ -295,5 +296,45 @@ public sealed class MarkupFlexControlsTests
 
         Assert.Equal(142f, Find(frame, "b1").Width);
         Assert.Equal(50f, Find(frame, "b2").Width);
+    }
+
+    [Fact]
+    public void A_split_without_a_size_anchors_its_panes_children_to_its_content_size()
+    {
+        // Built at the content size (160 x 80, bar at 77), so the list's
+        // authored box leaves 4 points on every side of the second pane.
+        var (_, frame) = Mount("""
+            <group x="0" y="0" w="300" h="300" layout="column">
+              <split name="s" grow="1">
+                <group name="left" />
+                <group name="right">
+                  <list name="l" x="4" y="4" w="70" h="72" anchor="left top right bottom" items="{Names}" selected="{Choice}" />
+                </group>
+              </split>
+            </group>
+            """, new Binding());
+
+        UiElement right = Find(frame, "right");
+        UiElement list = Find(frame, "l");
+        Assert.Equal(new FlexRect(0f, 0f, 300f, 300f), Rect(Find(frame, "s")));
+        Assert.Equal(new FlexRect(82f, 0f, 218f, 300f), Rect(right));
+        Assert.Equal(new FlexRect(4f, 4f, right.Width - 8f, right.Height - 8f), Rect(list));
+    }
+
+    [Fact]
+    public void An_expander_without_a_width_anchors_its_content_to_its_content_size()
+    {
+        // Built 160 wide, so the list's authored box leaves 4 points each side.
+        var (_, frame) = Mount("""
+            <group x="0" y="0" w="200" h="300" layout="column">
+              <expander name="e" text="Opts" h="100">
+                <list name="l" x="4" y="4" w="152" h="60" anchor="left top right" items="{Names}" selected="{Choice}" />
+              </expander>
+            </group>
+            """, new Binding());
+
+        var e = (UiMarkupExpander)Find(frame, "e");
+        Assert.Equal(200f, e.Content.Width);
+        Assert.Equal(new FlexRect(4f, 4f, e.Content.Width - 8f, 60f), Rect(Find(frame, "l")));
     }
 }

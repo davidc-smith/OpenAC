@@ -696,7 +696,8 @@ says otherwise), and collapsed it is just its 18-point header. The
 container lays out again when it folds, so the items after it move up and
 `grow` items take the space, and the expander doesn't move its siblings itself
 as it does in an absolute window. A collapsed expander never grows or
-stretches.
+stretches. Without a `w` it starts 160 wide, its content size, and right
+anchors inside it are measured from that width.
 
 On a host older than expanders, an `<expander>` fails the build of its
 window as unknown.
@@ -726,6 +727,10 @@ A pane may be a flex container: `<group layout="column">` (or `row`) as a
 pane lays out its children in whatever size the split gives it, and again
 whenever the bar moves. The pane's content minimum doesn't limit the bar; set
 the split's `min` and `max` for that.
+
+A split inside a flex container without `w` or `h` starts at its content
+size, 160 × 80 (its bar at 77 unless `at` says otherwise), and right and
+bottom anchors in its groups are measured from that size.
 
 The player drags the bar to share the space out. Its position is the first
 group's size in pixels, kept between `min` (default 0) and `max` (default

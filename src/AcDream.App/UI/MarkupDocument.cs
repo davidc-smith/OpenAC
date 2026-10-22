@@ -958,6 +958,26 @@ public static class MarkupDocument
             item.Node.Height = null;
             item.ExpandedMaxHeight = item.Node.MaxHeight;
             item.ExpandedMinHeight = item.Node.MinHeight;
+            // Without a w, start at the content width, so its content's anchors
+            // are captured against a real box rather than a 0-wide one.
+            if (expander.Width <= 0f)
+            {
+                expander.Width = MarkupContentSize.ListWidth;
+                expander.LayoutParts();
+            }
+        }
+        if (element is UiMarkupSplit split && (split.Width <= 0f || split.Height <= 0f))
+        {
+            // Without a w or h, start at the content size, so the panes' children
+            // capture their anchors against real panes rather than 0-sized ones.
+            if (split.Width <= 0f) split.Width = MarkupContentSize.ListWidth;
+            if (split.Height <= 0f) split.Height = MarkupContentSize.ListHeight;
+            if (el.Attribute("at") is null)
+            {
+                float room = (split.Horizontal ? split.Width : split.Height) - UiMarkupSplit.BarSize;
+                split.DefaultPosition = MathF.Floor(MathF.Max(0f, room) / 2f);
+            }
+            split.LayoutAtDefault();
         }
         element.Anchors = AnchorEdges.None;
         if (element is UiLabel label) label.SizedByLayout = true;
