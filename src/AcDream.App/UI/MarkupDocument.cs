@@ -957,6 +957,7 @@ public static class MarkupDocument
             expander.ExpandedHeight = item.Node.Height ?? expander.Height;
             item.Node.Height = null;
             item.ExpandedMaxHeight = item.Node.MaxHeight;
+            item.ExpandedMinHeight = item.Node.MinHeight;
         }
         element.Anchors = AnchorEdges.None;
         if (element is UiLabel label) label.SizedByLayout = true;

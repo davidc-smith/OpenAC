@@ -183,6 +183,32 @@ public sealed class MarkupFlexControlsTests
         Assert.Equal(100f, e.Height);
         Assert.True(e.Content.Visible);
         Assert.Equal(100f, b.Top);
+        Assert.Equal(82f, e.Content.Height);
+        UiElement label = e.Content.Children.OfType<UiLabel>().Single();
+        Assert.Equal(4f, label.Left);
+        Assert.Equal(4f, label.Top);
+    }
+
+    [Fact]
+    public void A_flex_expander_does_not_move_its_siblings_itself()
+    {
+        var (root, frame) = Mount(ExpanderColumn, new Binding());
+        var e = (UiMarkupExpander)Find(frame, "e");
+        UiElement b = Find(frame, "b");
+
+        e.Toggle();
+        // Before the next frame nothing has moved: only the container places items.
+        Assert.False(e.Content.Visible);
+        Assert.Equal(100f, e.Height);
+        Assert.Equal(100f, b.Top);
+
+        Frame(root);
+        Assert.Equal(UiMarkupExpander.HeaderHeight, b.Top);
+
+        e.Toggle();
+        Assert.Equal(UiMarkupExpander.HeaderHeight, b.Top);
+        Frame(root);
+        Assert.Equal(100f, b.Top);
     }
 
     [Fact]
@@ -190,12 +216,13 @@ public sealed class MarkupFlexControlsTests
     {
         var (root, frame) = Mount("""
             <group x="0" y="0" w="200" h="300" layout="column">
-              <expander name="e" text="Opts" h="100" grow="1" />
+              <expander name="e" text="Opts" h="100" grow="1" minh="50" />
               <button name="b" text="OK" />
             </group>
             """, new Binding());
         var e = (UiMarkupExpander)Find(frame, "e");
         Assert.Equal(276f, e.Height);
+        Assert.Equal(258f, e.Content.Height);
 
         e.Toggle();
         Frame(root);
@@ -233,7 +260,9 @@ public sealed class MarkupFlexControlsTests
         Assert.Equal(100f, Find(frame, "b").Top);
 
         binding.Open = false;
-        Frame(root);
+        root.Tick(0, 0);
+        Assert.Equal(100f, Find(frame, "b").Top);
+        ThemeDrawCapture.Draw(root);
 
         Assert.Equal(UiMarkupExpander.HeaderHeight, Find(frame, "b").Top);
     }

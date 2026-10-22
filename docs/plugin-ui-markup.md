@@ -690,8 +690,9 @@ top is above the expander's bottom, stay put.
   Without `onchange` it only displays. Bound state is never remembered by the
   client.
 
-Inside a flex container an expander is a flex item: its `h` is the height it
-takes while expanded, and collapsed it is just its 18-point header. The
+Inside a flex container an expander is a flex item: its `h` is its preferred height
+while expanded (across a row it stretches like any item unless `alignself`
+says otherwise), and collapsed it is just its 18-point header. The
 container lays out again when it folds, so the items after it move up and
 `grow` items take the space, and the expander doesn't move its siblings itself
 as it does in an absolute window. A collapsed expander never grows or

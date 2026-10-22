@@ -197,6 +197,9 @@ internal sealed class UiFlexItem
     /// <summary>An expander's authored <c>maxh</c>, applied only while it is expanded.</summary>
     internal float? ExpandedMaxHeight { get; set; }
 
+    /// <summary>An expander's authored <c>minh</c>, applied only while it is expanded.</summary>
+    internal float? ExpandedMinHeight { get; set; }
+
     /// <summary>
     /// Caps a collapsed expander at its header, so neither grow along a
     /// column nor stretch across a row opens it up.
@@ -204,7 +207,11 @@ internal sealed class UiFlexItem
     internal void SyncCollapse()
     {
         if (Element is UiMarkupExpander { FlexPlaced: true } expander)
-            Node.MaxHeight = expander.Expanded ? ExpandedMaxHeight : UiMarkupExpander.HeaderHeight;
+        {
+            bool open = expander.Expanded;
+            Node.MaxHeight = open ? ExpandedMaxHeight : UiMarkupExpander.HeaderHeight;
+            Node.MinHeight = open ? ExpandedMinHeight : null;
+        }
     }
 
     /// <summary>Whether the caption, font or theme the leaf was measured from has changed.</summary>

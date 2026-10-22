@@ -332,6 +332,7 @@ public sealed class MarkupFlexTests
             <group name="g" x="0" y="0" w="300" h="60" layout="row" wrap="true" gap="2">
               <label text="AB" /><button text="OK" /><field grow="1" />
               <group layout="column"><toggle text="ABC" checked="{Shown}" /><meter /></group>
+              <expander name="x" text="Opts" h="40" />
             </group>
             """, new Binding());
         UiFlexBox flex = ((UiFlexGroup)Find(frame, "g")).Flex;
