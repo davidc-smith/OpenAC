@@ -131,6 +131,11 @@ back at runtime instead.
 | `list onexpand` | `Action<string, bool>`, the key and the state asked for | throws |
 | `column` attributes | see "Columns" | see "Columns" |
 
+Inside `<repeat items="{X}">`, names resolve on the element type of
+property `X` of the enclosing scope, and nothing else is visible. The window's
+own binding object cannot be reached from inside a repeat. See
+[Repeat](#repeat).
+
 Hex literals need the `0x` prefix; `did="165"` is decimal 165, `did="0x165"`
 is hex. `list colors` values are `0xRRGGBB`; every `color`, `background`, and
 `border` attribute is `#AARRGGBB`.
@@ -198,10 +203,12 @@ Unknown or miscased element names throw at build time.
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
 | `list` | Scrolling rows | `x y w h selectmode selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize tree levels keys expanded onexpand collapsed`; column form only) |
+| `repeat` | One copy of its children per item of a list (flex containers only) | `items key` |
 
 Every element except the root also accepts `name` (or `id`), `visible`,
 `enabled`, `tooltip`, and `anchor`. The root `panel` accepts `visible` only as
-a binding. A `contextmenu` takes none of them. Inside a flex container
+a binding. A `contextmenu` takes none of them, and a `repeat` takes only
+`items` and `key` (see [Repeat](#repeat)). Inside a flex container
 elements take the flex item attributes instead of `x`, `y` and `anchor` (see
 [Flex layout](#flex-layout)).
 
@@ -974,6 +981,142 @@ The scroll position survives hiding and showing the group and a change of
 appearance, is pulled back when the group grows or its content shrinks, and
 is not saved between sessions. Plugins cannot read or set it in this version.
 
+## Repeat
+
+`<repeat>` builds one copy of its children for each item of a list, and keeps
+the copies in step as the list changes. Use it for rows you cannot list in
+the markup, because the plugin decides how many there are.
+
+```xml
+<repeat items="{Rows}" key="{Id}">
+  <group layout="row" gap="6" h="22">
+    <checkbox checked="{On}" onchange="{SetOn}" w="20"/>
+    <label text="{Label}" grow="1"/>
+    <number value="{Value}" onchange="{SetValue}" w="80"/>
+  </group>
+</repeat>
+```
+
+The children of `<repeat>` are the template. `<repeat>` takes only `items`
+and `key`. `x`, `y`, `w`, `h`, `anchor` and the flex item attributes on
+`<repeat>` fail the build. Put them on the template's top-level elements
+instead: each copy's top-level elements are items of the surrounding flex
+container, in list order, where the `<repeat>` stands. A `<repeat>` takes no
+space of its own. An empty or null list builds nothing.
+
+### Items
+
+`items` is required. It must be a binding to a property declared as
+`IReadOnlyList<T>`, `IList<T>` or `IEnumerable<T>` (or a type that implements
+exactly one `IEnumerable<T>`). `T` is the declared type, whatever the list
+holds at run time. A `string`, a non-generic `IEnumerable`, a literal, or a
+missing property fails the build with `FormatException`.
+
+The client reads `items` and every key each tick. When the count, the keys
+and every item reference are all the same as the last tick, it does nothing,
+even when the list is a new instance: a property that builds its list on
+every read (`=> _all.Where(...).ToList()`) costs only that read. Change a
+list by assigning a new list, or by changing the one you have; both are seen
+on the next tick. Edit an item's own properties in place when only its values
+change: the bindings inside the copy read them every frame.
+
+### Which names a template can see
+
+Inside `<repeat items="{X}">`, names resolve on the element type of property
+`X` of the enclosing scope, and nothing else is visible. Names follow the
+same rules and types as in a window binding (see [Bindings](#bindings)), and
+are checked at build time even when the list is empty. A member that exists
+only on a subtype of `T` is not visible. An attribute that falls back
+silently in a window binding still falls back silently here.
+
+A plugin that checks its own markup can follow the same rule: the window's
+binding resolves the names outside every `<repeat>`, and for each `<repeat>`,
+`T` resolves the names inside it.
+
+### Keys
+
+`key` is optional. It is a binding to a property of `T`. Keys are compared
+with `Equals`.
+
+With `key`, a copy follows its item. When the list changes, a copy whose key
+is still in the list is kept and moved to its new place. It keeps its focus,
+the half-typed text in a field, an open menu, an expander's state and a
+group's scroll position. Its bindings then read the new item object with that
+key. A new key gets a new copy. A key that is gone loses its copy, and the
+copy's focus, popups and theme hooks go with it.
+
+Without `key`, copies match by position: the first copy shows the first item,
+and so on. A copy keeps what the player did to it, so after a shuffle each
+row shows another item with the same half-typed text.
+
+Keys must differ and must not be null. When two keys are equal, or a key is
+null, the repeat writes one line to the console (`duplicate or missing keys;
+rows are matched by position`) and matches by position, as if it had no
+`key`. It goes back to matching by key when the keys are good again.
+
+A copy built during a tick starts following its item from the next tick.
+
+### Where it can go
+
+`<repeat>` must be a direct child of a flex container: a root `<panel>` or a
+`<group>` with `layout`. Anywhere else fails the build. In particular it does
+not work directly inside an `<expander>` or a `<split>` pane, because those
+are not flex containers. Put a `<group layout="column">` inside the pane and
+the repeat in that.
+
+A `<contextmenu>` goes inside the template element it belongs to. One placed
+directly in `<repeat>` fails the build.
+
+### Nesting
+
+Repeats nest to any depth. The inner `items` is read on the outer item:
+
+```xml
+<repeat items="{Sections}" key="{Id}">
+  <label text="{Title}"/>
+  <repeat items="{Rows}" key="{Id}">
+    <label text="{Name}"/>
+  </repeat>
+</repeat>
+```
+
+Here `{Rows}` is a property of the section type, and `{Id}` in the inner
+repeat is a property of the row type. The inner copies sit in the same flex
+container as the outer ones, after their section's label.
+
+### Remembered names
+
+A `name` (or `id`) inside a template is remembered per item. The client
+stores it as `name#k1/k2`: the name, then the key of each enclosing repeat,
+outermost first (`Convert.ToString` of the key, culture-invariant). Keys are
+joined with `/`, so keys that themselves contain `/` can collide; use keys
+without `/`. Each item keeps its own expander, split or list state, and it
+follows the item when the list is reordered.
+
+An element with a `name` or `id` inside any `<repeat>` without `key` fails
+the build, since it would have no per-item name. In a nested repeat, every
+enclosing repeat needs `key`.
+
+### Other attributes
+
+Everything else works inside a template: `visible`, `enabled` and `tooltip`
+bindings, bound colours, `<contextmenu>`, scrolling groups and the plugin
+theme. Copies pick up a change of appearance with the rest of the window.
+
+About 150 copies of a five-control row in a scrolling group build and lay out
+without a visible pause.
+
+### Older hosts
+
+A host that does not know `<repeat>` fails on the unknown element when it
+builds the panel. A plugin that needs it should say so in its
+`minHostVersion` in [the plugin manifest](plugin-manifest.md), or the player
+only sees the error in the log.
+
+`samples/AcDream.Plugins.ControlsDemo` has a "Controls: Repeat" window with
+rows of a checkbox, a name, a menu and a number, and buttons to add a row,
+remove the last, and shuffle.
+
 ## Icon ids
 
 An icon id is either a full data-file id (`0x06xxxxxx`) or a bare index below
@@ -1404,6 +1547,12 @@ markup, title bars and scrolling groups are covered by `MarkupFlexTests`,
 `RetailWindowManagerMinimumTests`, `UiScrollGroupTests`,
 `UiRootWheelRoutingTests` and `FlexDemoSampleTests` under
 `tests/AcDream.App.Tests/UI/`.
+
+Repeat is covered by `MarkupBindingSourceTests`, `UiElementChildOrderTests`,
+`UiFlexBoxStructureTests`, `PluginThemeScopeTests`, `KeyedControlStateTests`,
+`MarkupRepeatBuildTests`, `MarkupRepeatReconcileTests` and
+`MarkupRepeatScaleTests` under `tests/AcDream.App.Tests/UI/` (the sample's
+window is in `ControlsDemoSampleTests`).
 
 ## Scrolling transcripts
 
