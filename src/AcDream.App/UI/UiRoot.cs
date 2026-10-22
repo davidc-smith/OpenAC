@@ -531,6 +531,99 @@ public sealed class UiRoot : UiElement
         _activePopupDismiss = null;
     }
 
+    // Window-modal dialogs: each blocked top-level window with the elements
+    // blocking it, newest last. A press on a blocked window is swallowed,
+    // release and all, and flashes its newest blocker.
+    private readonly Dictionary<UiElement, List<UiElement>> _windowBlocks =
+        new(ReferenceEqualityComparer.Instance);
+    private UiMouseButton? _swallowedRelease;
+
+    /// <summary>
+    /// Blocks a top-level window until the returned handle is disposed: it
+    /// draws dimmed, presses and scrolls on it are swallowed, and nothing in
+    /// it can take the keyboard focus. A blocked press flashes
+    /// <paramref name="blocker"/>, brings its window to the front and gives
+    /// it the keyboard focus when it accepts focus. Blocking closes a popup
+    /// open in the window and takes pointer capture and keyboard focus out
+    /// of it.
+    /// </summary>
+    internal IDisposable BlockWindow(UiElement window, UiElement blocker)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(blocker);
+        if (!ReferenceEquals(window.Parent, this))
+            throw new ArgumentException("Only a top-level window can be blocked.", nameof(window));
+        if (!_windowBlocks.TryGetValue(window, out List<UiElement>? blockers))
+            _windowBlocks[window] = blockers = new List<UiElement>();
+        blockers.Add(blocker);
+        window.ModalBlockCount++;
+
+        if (_activePopup is { } popup && IsWithinSubtree(popup, window))
+        {
+            var dismiss = _activePopupDismiss;
+            _activePopup = null;
+            _activePopupDismiss = null;
+            dismiss?.Invoke();
+        }
+        if (Captured is { } captured && IsWithinSubtree(captured, window))
+            ReleaseCapture();
+        if (KeyboardFocus is { } focused && IsWithinSubtree(focused, window))
+            SetKeyboardFocus(null);
+        return new WindowBlock(this, window, blocker);
+    }
+
+    /// <summary>Whether an element can take the keyboard focus now: shown, enabled, mounted, and not in a blocked window.</summary>
+    internal bool CanFocus(UiElement element) =>
+        IsAvailableInputTarget(element) && BlockerFor(element) is null;
+
+    private void Unblock(UiElement window, UiElement blocker)
+    {
+        if (!_windowBlocks.TryGetValue(window, out List<UiElement>? blockers)
+            || !blockers.Remove(blocker))
+            return;
+        window.ModalBlockCount--;
+        if (blockers.Count == 0)
+            _windowBlocks.Remove(window);
+    }
+
+    // The newest element blocking the top-level window an element is in.
+    private UiElement? BlockerFor(UiElement element)
+    {
+        if (_windowBlocks.Count == 0)
+            return null;
+        UiElement top = TopLevelOf(element);
+        return ReferenceEquals(top.Parent, this)
+            && _windowBlocks.TryGetValue(top, out List<UiElement>? blockers)
+            ? blockers[^1]
+            : null;
+    }
+
+    private UiElement TopLevelOf(UiElement element)
+    {
+        UiElement top = element;
+        while (top.Parent is not null && !ReferenceEquals(top.Parent, this))
+            top = top.Parent;
+        return top;
+    }
+
+    private void FlashBlocker(UiElement blocker)
+    {
+        blocker.ModalFlashSeconds = UiElement.ModalFlashDuration;
+        UiElement top = TopLevelOf(blocker);
+        if (ReferenceEquals(top.Parent, this))
+            BringToFront(top);
+        if (blocker.AcceptsFocus && CanFocus(blocker))
+            SetKeyboardFocus(blocker);
+    }
+
+    private sealed class WindowBlock(UiRoot root, UiElement window, UiElement blocker) : IDisposable
+    {
+        private UiRoot? _root = root;
+
+        public void Dispose() =>
+            Interlocked.Exchange(ref _root, null)?.Unblock(window, blocker);
+    }
+
     private UiElement? PopupHit(int x, int y)
     {
         if (_activePopup is not { } popup) return null;
@@ -588,6 +681,15 @@ public sealed class UiRoot : UiElement
         {
             if (btn == UiMouseButton.Left) SetKeyboardFocus(null);
             WorldMouseFallThrough?.Invoke(btn, x, y, flags);
+            return;
+        }
+
+        if (BlockerFor(target) is { } blocker)
+        {
+            // A window-modal dialog owns this window: the press, and its
+            // release, go nowhere but flash the dialog.
+            _swallowedRelease = btn;
+            FlashBlocker(blocker);
             return;
         }
 
@@ -673,6 +775,11 @@ public sealed class UiRoot : UiElement
         (x, y) = MapWindowToCanvas(x, y);
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: false);
+        if (_swallowedRelease == btn)
+        {
+            _swallowedRelease = null;
+            return;
+        }
 
         if (_resizeTarget is not null)
         {
@@ -780,6 +887,8 @@ public sealed class UiRoot : UiElement
             WorldScrollFallThrough?.Invoke(dy);
             return;
         }
+        if (BlockerFor(target) is not null)
+            return;
         var e = new UiEvent(target.EventId, target, UiEventType.Scroll, Data0: dy,
                             Data1: (int)lx, Data2: (int)ly);
         BubbleEvent(target, in e);
@@ -898,6 +1007,8 @@ public sealed class UiRoot : UiElement
 
     public void SetKeyboardFocus(UiElement? e)
     {
+        if (e is not null && BlockerFor(e) is not null)
+            return;
         if (e is UiField field && field.Keyboard is null)
             field.Keyboard = Keyboard;
         if (KeyboardFocus == e) return;

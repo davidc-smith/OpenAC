@@ -158,6 +158,20 @@ public abstract class UiElement
     /// </summary>
     public bool IsEditControl   { get; set; }
 
+    /// <summary>
+    /// How many window-modal dialogs block this top-level window; while it is
+    /// above zero the window draws dimmed. Kept by <see cref="UiRoot.BlockWindow"/>.
+    /// </summary>
+    internal int ModalBlockCount { get; set; }
+
+    /// <summary>Seconds left of the blink a press on a blocked window sets off on its dialog.</summary>
+    internal float ModalFlashSeconds { get; set; }
+
+    internal const float ModalFlashDuration = 0.6f;
+    internal static readonly Vector4 ModalDimColor = new(0f, 0f, 0f, 0.45f);
+    /// <summary>The gold of the markup focus outline.</summary>
+    internal static readonly Vector4 ModalFlashColor = new(1f, 0.82f, 0.25f, 1f);
+
     private int _zOrder;
 
     /// <summary>Painter's-algorithm z-order within siblings. Higher = on top.</summary>
@@ -440,6 +454,10 @@ public abstract class UiElement
                 }
 
                 OnDrawAfterChildren(ctx);
+                if (ModalBlockCount > 0)
+                    ctx.DrawFill(0f, 0f, Width, Height, ModalDimColor);
+                if (ModalFlashSeconds > 0f && ((int)(ModalFlashSeconds * 10f) & 1) == 0)
+                    ctx.DrawRectOutline(0f, 0f, Width, Height, ModalFlashColor, 2f);
             }
         }
         finally
@@ -498,6 +516,8 @@ public abstract class UiElement
         if (VisibleSource is { } visibility)
             Visible = visibility();
         if (!Visible) return;
+        if (ModalFlashSeconds > 0f)
+            ModalFlashSeconds = MathF.Max(0f, ModalFlashSeconds - (float)dt);
         if (EnabledSource is { } enabled)
             Enabled = enabled();
         OnTick(dt);
