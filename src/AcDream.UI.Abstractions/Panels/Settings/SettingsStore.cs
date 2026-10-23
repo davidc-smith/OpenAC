@@ -684,8 +684,12 @@ public sealed class SettingsStore
         var dir = Path.GetDirectoryName(_path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         if (!File.Exists(_path)) return new JsonObject();
+        // A file that cannot be read fails the save: starting from an empty
+        // root would write away every section this save does not own. One
+        // that reads but does not parse loads as defaults, so it starts over.
+        string text = File.ReadAllText(_path);
         JsonObject root;
-        try { root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject ?? new JsonObject(); }
+        try { root = JsonNode.Parse(text) as JsonObject ?? new JsonObject(); }
         catch { return new JsonObject(); }
         MigrateSectionsInPlace(root);
         return root;
@@ -708,7 +712,27 @@ public sealed class SettingsStore
     }
 
     private void WriteMutableRoot(JsonObject root)
-        => File.WriteAllText(_path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        => WriteSettingsFile(root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+    /// <summary>
+    /// Writes the whole file through a temporary file beside it, so a save
+    /// that fails part way leaves the old file whole.
+    /// </summary>
+    private void WriteSettingsFile(string text)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(_path))!;
+        string temporary = Path.Combine(directory, $".{Path.GetFileName(_path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(temporary, text);
+            File.Move(temporary, _path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+                File.Delete(temporary);
+        }
+    }
 
     private static JsonObject GetOrCreateObject(JsonObject parent, string key)
     {
@@ -879,10 +903,12 @@ public sealed class SettingsStore
         var preservedKeys = new SortedDictionary<string, string>(StringComparer.Ordinal);
         if (File.Exists(_path))
         {
+            // As LoadMutableRoot: a read error fails the save, a file that
+            // does not parse is started over.
+            string text = File.ReadAllText(_path);
             try
             {
-                using var stream = File.OpenRead(_path);
-                var doc  = JsonDocument.Parse(stream);
+                using var doc = JsonDocument.Parse(text);
                 int storedVersion = ReadSchemaVersion(doc.RootElement);
                 foreach (var prop in doc.RootElement.EnumerateObject())
                 {
@@ -912,7 +938,7 @@ public sealed class SettingsStore
         sb.Append("  \"version\": ").Append(CurrentSchemaVersion).AppendLine();
         sb.Append('}').AppendLine();
 
-        File.WriteAllText(_path, sb.ToString());
+        WriteSettingsFile(sb.ToString());
     }
 
     /// <summary>
