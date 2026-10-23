@@ -3,11 +3,12 @@ namespace AcDream.App.UI;
 /// <summary>
 /// A built markup window and what mounting it needs: the frame to add to
 /// the root, the element that holds its authored content (the frame itself
-/// unless the window has chrome), its title bar if it has one, and the
-/// revision its saved size is kept under.
+/// unless the window has chrome), its title bar if it has one, the
+/// revision its saved size is kept under, and what the build ignored.
 /// </summary>
 internal sealed class MarkupWindow(
-    UiNineSlicePanel frame, UiElement contentRoot, PluginTitleBar? titleBar, int authoredGeometryRevision)
+    UiNineSlicePanel frame, UiElement contentRoot, PluginTitleBar? titleBar, int authoredGeometryRevision,
+    IReadOnlyList<string>? warnings = null)
 {
     private RetailWindowManager? _manager;
     private string? _name;
@@ -21,6 +22,12 @@ internal sealed class MarkupWindow(
     public UiElement ContentRoot { get; } = contentRoot;
     public PluginTitleBar? TitleBar { get; } = titleBar;
     public int AuthoredGeometryRevision { get; } = authoredGeometryRevision;
+
+    /// <summary>
+    /// Attributes the build ignored, one line each: flex attributes on markup
+    /// that does not use flex, which older builds ignored silently.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; } = warnings ?? [];
 
     /// <summary>
     /// Registers the mounted frame under <paramref name="name"/>, with the

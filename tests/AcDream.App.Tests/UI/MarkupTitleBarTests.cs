@@ -48,11 +48,13 @@ public sealed class MarkupTitleBarTests
     [InlineData("yes")]
     [InlineData("True")]
     [InlineData("")]
-    public void AnythingButTrueOrFalseIsABuildError(string value)
+    public void AnythingButTrueOrFalseIsReportedAndCountsAsAbsent(string value)
     {
-        var ex = Assert.Throws<FormatException>(() => Window($"titlebar=\"{value}\""));
-        Assert.Contains("titlebar", ex.Message);
-        Assert.Contains($"\"{value}\"", ex.Message);
+        MarkupWindow window = Window($"titlebar=\"{value}\"");
+        string warning = Assert.Single(window.Warnings);
+        Assert.Contains("titlebar", warning);
+        Assert.Contains($"\"{value}\"", warning);
+        Assert.Null(window.TitleBar);
     }
 
     [Fact]

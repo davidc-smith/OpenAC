@@ -254,7 +254,8 @@ the window's name on the left and a close button on the right, drawn in the
 window's look (the game's close art in Classic; in the shared themes a plain
 palette button with an "x"). The name is the panel's `title`, or the title the
 window was registered with when the markup has none. `titlebar` takes
-`true` or `false`; anything else fails the build.
+`true` or `false`; anything else is ignored, with a warning in the client
+log.
 
 With the bar on, the window has a **content area** inside the chrome:
 
@@ -799,8 +800,9 @@ controls inside flex.
 | `wrap` | `true`, `false` (rows only) | `false` |
 
 `gap`, `padding`, `justify`, `align` and `wrap` need `layout` on the same
-element. Only rows wrap in this version: `wrap="true"` on a column fails the
-build.
+element; without it they are ignored, with a warning in the client log, and
+so is a `layout` other than `row` or `column` (the element stays absolute).
+Only rows wrap in this version: `wrap="true"` on a column fails the build.
 
 ### Item attributes
 
@@ -817,10 +819,15 @@ Every child of a flex container may carry:
 
 An item never shrinks below its content (a button below its caption) unless
 `minw`/`minh` allow it; a label is the exception (see below). `x`, `y` and
-`anchor` on a flex item fail the build,
-and so do `grow`, `shrink`, `basis`, `alignself` and the limits on a child
-of a container without `layout`. A `<contextmenu>` belongs to the element it
-is inside and is never a flex item.
+`anchor` on a flex item fail the build. `grow`, `shrink`, `basis`,
+`alignself` and the limits on a child of a container without `layout` are
+ignored, with a warning in the client log. A `<contextmenu>` belongs to the
+element it is inside and is never a flex item.
+
+Markup that uses flex fails the build on a bad value (an unknown keyword, a
+negative or non-finite number, inverted limits), as the rest of the markup
+does. The warnings are for markup that does not use flex: hosts before flex
+ignored these attributes, so a window with a stray one still opens.
 
 ### Content sizes
 
@@ -906,7 +913,8 @@ line wide.
 `scroll="y"`, `scroll="x"` or `scroll="both"` on a `<group>` makes it scroll
 along those axes when its content does not fit; on the root `<panel>` it
 scrolls the window's content area. Without `scroll` content that does not fit
-is cut off, as before; any other value fails the build.
+is cut off, as before; any other value is ignored, with a warning in the
+client log.
 
 ```xml
 <panel title="Spells" layout="column" padding="8" gap="6" w="240" h="200" resizable="true">
@@ -941,7 +949,8 @@ is cut off, as before; any other value fails the build.
   lines when the window has room and scrolls when it does not. On the root,
   the window's minimum along a scrolling axis is that small view too.
 - The root needs a content area to scroll: `scroll` on a root `<panel>`
-  without `layout` and without `titlebar="true"` fails the build.
+  without `layout` and without `titlebar="true"` is ignored, with a warning
+  in the client log.
 
 **The wheel** scrolls the innermost thing under the pointer that can scroll:
 a `list` or `log` inside a scrolling group scrolls itself, and the group

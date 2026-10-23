@@ -134,10 +134,10 @@ public sealed class MarkupFlexWindowTests
     }
 
     [Fact]
-    public void Container_attributes_on_a_root_without_layout_fail_the_build()
+    public void Container_attributes_on_a_root_without_layout_are_reported()
     {
-        var ex = Assert.Throws<FormatException>(() => Window("w=\"10\" h=\"10\" gap=\"4\"", body: ""));
-        Assert.Contains("gap=\"4\"", ex.Message);
+        MarkupWindow window = Window("w=\"10\" h=\"10\" gap=\"4\"", body: "");
+        Assert.Contains("gap=\"4\"", Assert.Single(window.Warnings));
     }
 
     [Fact]

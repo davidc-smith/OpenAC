@@ -5,11 +5,14 @@ using AcDream.App.UI.Layout.Flex;
 namespace AcDream.App.UI;
 
 /// <summary>
-/// Reads the flex attributes of plugin markup onto <see cref="FlexNode"/>s and
-/// rejects every misuse at build time: container attributes on an element
-/// without <c>layout</c>, item attributes under an absolute container,
-/// placement attributes on a flex item, unknown keywords, negative or
-/// non-finite numbers and inverted limits.
+/// Reads the flex attributes of plugin markup onto <see cref="FlexNode"/>s.
+/// Inside flex (a container with <c>layout</c> and its items) every misuse
+/// fails the build: placement attributes on a flex item, unknown keywords,
+/// negative or non-finite numbers and inverted limits. Markup that does not
+/// use flex was built before these attributes existed, when they were
+/// ignored, so on it a stray one (container attributes without
+/// <c>layout</c>, item attributes under an absolute container, an unknown
+/// <c>layout</c> or <c>scroll</c>) is reported to <c>warnings</c> and ignored.
 /// </summary>
 internal static class MarkupFlexAttributes
 {
@@ -18,20 +21,28 @@ internal static class MarkupFlexAttributes
     private static readonly string[] LimitAttributes = ["minw", "maxw", "minh", "maxh"];
     private static readonly string[] PlacementAttributes = ["x", "y", "anchor"];
 
-    /// <summary>Whether <paramref name="el"/> is a flex container; throws on an unknown <c>layout</c>.</summary>
-    internal static bool IsContainer(XElement el) => (string?)el.Attribute("layout") switch
+    /// <summary>
+    /// Whether <paramref name="el"/> is a flex container. An unknown
+    /// <c>layout</c> is reported and leaves it absolute.
+    /// </summary>
+    internal static bool IsContainer(XElement el, ICollection<string> warnings)
     {
-        null => false,
-        "row" or "column" => true,
-        string other => throw Error(el, "layout", other, "must be row or column"),
-    };
+        switch ((string?)el.Attribute("layout"))
+        {
+            case null: return false;
+            case "row" or "column": return true;
+            case string other:
+                warnings.Add(Ignored(el, "layout", other, "must be row or column"));
+                return false;
+        }
+    }
 
-    /// <summary>Rejects container attributes on <paramref name="el"/>, which has no <c>layout</c>.</summary>
-    internal static void RejectContainer(XElement el)
+    /// <summary>Reports container attributes on <paramref name="el"/>, which has no <c>layout</c>.</summary>
+    internal static void RejectContainer(XElement el, ICollection<string> warnings)
     {
         foreach (string name in ContainerAttributes)
             if (el.Attribute(name) is { } a)
-                throw Error(el, name, a.Value, "needs layout=\"row\" or layout=\"column\" on the same element");
+                warnings.Add(Ignored(el, name, a.Value, "needs layout=\"row\" or layout=\"column\" on the same element"));
     }
 
     /// <summary>Reads the container attributes of <paramref name="el"/>, which has <c>layout</c>, onto <paramref name="node"/>.</summary>
@@ -84,26 +95,32 @@ internal static class MarkupFlexAttributes
         CheckLimits(el, "minh", node.MinHeight, "maxh", node.MaxHeight);
     }
 
-    /// <summary>Rejects item attributes on <paramref name="el"/>, a child of an absolute container.</summary>
-    internal static void RejectItem(XElement el)
+    /// <summary>Reports item attributes on <paramref name="el"/>, a child of an absolute container.</summary>
+    internal static void RejectItem(XElement el, ICollection<string> warnings)
     {
         foreach (string name in ItemOnlyAttributes.Concat(LimitAttributes))
             if (el.Attribute(name) is { } a)
-                throw Error(el, name, a.Value, "only applies to a child of a layout=\"row\" or layout=\"column\" container");
+                warnings.Add(Ignored(el, name, a.Value, "only applies to a child of a layout=\"row\" or layout=\"column\" container"));
     }
 
     /// <summary>
     /// The axes <c>scroll</c> asks <paramref name="el"/> (a group or the root
-    /// panel) to scroll on; neither when it is absent.
+    /// panel) to scroll on; neither when it is absent. An unknown value is
+    /// reported and scrolls neither.
     /// </summary>
-    internal static (bool X, bool Y) Scroll(XElement el) => (string?)el.Attribute("scroll") switch
+    internal static (bool X, bool Y) Scroll(XElement el, ICollection<string> warnings)
     {
-        null => (false, false),
-        "x" => (true, false),
-        "y" => (false, true),
-        "both" => (true, true),
-        string other => throw Error(el, "scroll", other, "must be x, y or both"),
-    };
+        switch ((string?)el.Attribute("scroll"))
+        {
+            case null: return (false, false);
+            case "x": return (true, false);
+            case "y": return (false, true);
+            case "both": return (true, true);
+            case string other:
+                warnings.Add(Ignored(el, "scroll", other, "must be x, y or both"));
+                return (false, false);
+        }
+    }
 
     /// <summary>
     /// A root panel's authored content-area size or limit, checked like a
@@ -165,6 +182,10 @@ internal static class MarkupFlexAttributes
 
     private static FormatException Error(XElement el, string name, string value, string problem) =>
         new($"{Identity(el)} {name}=\"{value}\" {problem}");
+
+    /// <summary>The warning for an attribute the build ignores.</summary>
+    internal static string Ignored(XElement el, string name, string value, string problem) =>
+        $"{Identity(el)} {name}=\"{value}\" {problem}; ignored";
 
     private static string Format(float value) => value.ToString(CultureInfo.InvariantCulture);
 
