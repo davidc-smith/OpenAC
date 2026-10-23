@@ -107,6 +107,30 @@ public sealed class RuntimeEntityObjectLifetimeTests
     }
 
     [Fact]
+    public void Replacement_RecreatesAHeldObjectWhateverItsInstance()
+    {
+        var lifetime = new RuntimeEntityObjectLifetime();
+        WorldSession.EntitySpawn spawn = Spawn(0x70000004u, 3, "hook");
+        RuntimeEntityRecord first = lifetime.RegisterEntity(spawn).Canonical!;
+
+        RuntimeEntityRegistrationResult same = lifetime.RegisterEntity(
+            spawn with { Name = "hook with item", SetupTableId = 0x02000002u },
+            replaceExisting: true);
+        RuntimeEntityRegistrationResult older = lifetime.RegisterEntity(
+            Spawn(0x70000004u, 2, "older"),
+            replaceExisting: true);
+
+        Assert.Equal(CreateObjectTimestampDisposition.NewGeneration, same.Inbound.Disposition);
+        Assert.True(same.ReplacedExistingGeneration);
+        Assert.NotSame(first, same.Canonical);
+        Assert.Equal(0x02000002u, same.Canonical!.Snapshot.SetupTableId);
+        Assert.True(older.ReplacedExistingGeneration);
+        Assert.True(lifetime.Entities.TryGetActive(0x70000004u, out RuntimeEntityRecord current));
+        Assert.Same(older.Canonical, current);
+        Assert.Equal((ushort)2, current.Incarnation);
+    }
+
+    [Fact]
     public void AcceptedDelete_RemovesOnlyMatchingLogicalGeneration()
     {
         var lifetime = new RuntimeEntityObjectLifetime();

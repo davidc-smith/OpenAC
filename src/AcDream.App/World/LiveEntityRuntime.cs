@@ -424,7 +424,8 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
 
     public LiveEntityRegistrationResult RegisterLiveEntity(
         WorldSession.EntitySpawn incoming,
-        bool isLocalPlayer = false)
+        bool isLocalPlayer = false,
+        bool replaceExisting = false)
     {
         if (_isClearing || _sessionClearPendingFinalization || _isRegisteringResources)
         {
@@ -438,7 +439,8 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
             _entityObjects.RegisterEntityWithInitialResidence(
                 incoming,
                 isLocalPlayer,
-                RetirePriorProjection);
+                RetirePriorProjection,
+                replaceExisting);
         RuntimeEntityRecord? canonical = registration.Canonical;
         LiveEntityRecord? projection = canonical is null
             ? null
@@ -1963,22 +1965,6 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
     public bool TryApplyObjDesc(ObjDescEvent.Parsed update, out WorldSession.EntitySpawn accepted)
         => _entityObjects.TryApplyObjDesc(
             update,
-            canonical =>
-            {
-                if (_projections.TryGet(
-                        canonical,
-                        out LiveEntityRecord? record))
-                {
-                    record.NoteObjDescProjectionSynchronization();
-                }
-            },
-            out accepted);
-
-    public bool TryApplyDescriptionRefresh(
-        WorldSession.EntitySpawn incoming,
-        out WorldSession.EntitySpawn accepted)
-        => _entityObjects.TryApplyDescriptionRefresh(
-            incoming,
             canonical =>
             {
                 if (_projections.TryGet(

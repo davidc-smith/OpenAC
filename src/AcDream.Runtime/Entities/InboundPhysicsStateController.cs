@@ -42,22 +42,41 @@ public sealed class InboundPhysicsStateController
         return false;
     }
 
+    /// <summary>True while an object with this id is held.</summary>
+    public bool IsKnown(uint guid) => _gates.ContainsKey(guid);
+
+    /// <param name="replaceExisting">
+    /// A re-sent description (0xF7DB): an object already held is replaced by
+    /// it as a new generation, whatever instance it carries.
+    /// </param>
     public CreateObjectTimestampDisposition PreviewCreateDisposition(
-        WorldSession.EntitySpawn incoming) =>
+        WorldSession.EntitySpawn incoming,
+        bool replaceExisting = false) =>
         _gates.TryGetValue(incoming.Guid, out PhysicsTimestampGate? gate)
-            ? gate.PreviewCreateObject(incoming.InstanceSequence)
+            ? replaceExisting
+                ? CreateObjectTimestampDisposition.NewGeneration
+                : gate.PreviewCreateObject(incoming.InstanceSequence)
             : CreateObjectTimestampDisposition.InitialGeneration;
 
-    public InboundCreateResult AcceptCreate(WorldSession.EntitySpawn incoming) =>
-        AcceptCreateCore(incoming, deferSameGenerationWeenieDescription: false);
+    public InboundCreateResult AcceptCreate(
+        WorldSession.EntitySpawn incoming,
+        bool replaceExisting = false) =>
+        AcceptCreateCore(
+            incoming,
+            deferSameGenerationWeenieDescription: false,
+            replaceExisting);
 
     internal InboundCreateResult AcceptCreateDeferredSameGeneration(
         WorldSession.EntitySpawn incoming) =>
-        AcceptCreateCore(incoming, deferSameGenerationWeenieDescription: true);
+        AcceptCreateCore(
+            incoming,
+            deferSameGenerationWeenieDescription: true,
+            replaceExisting: false);
 
     private InboundCreateResult AcceptCreateCore(
         WorldSession.EntitySpawn incoming,
-        bool deferSameGenerationWeenieDescription)
+        bool deferSameGenerationWeenieDescription,
+        bool replaceExisting)
     {
         if (!_gates.TryGetValue(incoming.Guid, out PhysicsTimestampGate? gate))
         {
@@ -66,16 +85,27 @@ public sealed class InboundPhysicsStateController
         }
 
         PhysicsTimestamps timestamps = SpawnTimestamps(incoming);
-        CreateObjectTimestampDisposition disposition = gate.SeedForCreateObject(
-            timestamps.Position,
-            timestamps.Movement,
-            timestamps.State,
-            timestamps.Vector,
-            timestamps.Teleport,
-            timestamps.ServerControlledMove,
-            timestamps.ForcePosition,
-            timestamps.ObjDesc,
-            timestamps.Instance);
+        CreateObjectTimestampDisposition disposition = replaceExisting
+            ? gate.SeedForReplacement(
+                timestamps.Position,
+                timestamps.Movement,
+                timestamps.State,
+                timestamps.Vector,
+                timestamps.Teleport,
+                timestamps.ServerControlledMove,
+                timestamps.ForcePosition,
+                timestamps.ObjDesc,
+                timestamps.Instance)
+            : gate.SeedForCreateObject(
+                timestamps.Position,
+                timestamps.Movement,
+                timestamps.State,
+                timestamps.Vector,
+                timestamps.Teleport,
+                timestamps.ServerControlledMove,
+                timestamps.ForcePosition,
+                timestamps.ObjDesc,
+                timestamps.Instance);
 
         if (disposition is CreateObjectTimestampDisposition.StaleGeneration)
             return new InboundCreateResult(disposition, default, null, Current(gate));
@@ -126,65 +156,6 @@ public sealed class InboundPhysicsStateController
         accepted = ApplyAcceptedObjDesc(old, update);
         _snapshots[update.Guid] = accepted;
         return true;
-    }
-
-    /// <summary>
-    /// Applies a re-sent description (0xF7DB) of an object we already hold.
-    /// Unlike a same-generation create, which keeps the model it first
-    /// arrived with, this replaces the object's model: its setup, scale,
-    /// placement and appearance. ACE hangs an item on a house hook this way,
-    /// giving the hook the item's setup and hook placement. Where the object
-    /// is and its timestamps stay as they are.
-    /// </summary>
-    public bool TryApplyDescriptionRefresh(
-        WorldSession.EntitySpawn incoming,
-        out WorldSession.EntitySpawn accepted)
-    {
-        if (!TryGet(incoming.Guid, out PhysicsTimestampGate? gate, out WorldSession.EntitySpawn old)
-            || !gate.IsCurrentInstance(incoming.InstanceSequence))
-        {
-            accepted = default;
-            return false;
-        }
-
-        accepted = ApplyDescriptionRefresh(old, incoming);
-        _snapshots[incoming.Guid] = accepted;
-        return true;
-    }
-
-    internal static WorldSession.EntitySpawn ApplyDescriptionRefresh(
-        WorldSession.EntitySpawn old,
-        WorldSession.EntitySpawn incoming)
-    {
-        PhysicsSpawnData? physics = old.Physics;
-        if (physics is { } retained && incoming.Physics is { } refreshed)
-        {
-            physics = retained with
-            {
-                AnimationFrame = refreshed.AnimationFrame,
-                SetupTableId = refreshed.SetupTableId,
-                MotionTableId = refreshed.MotionTableId,
-                SoundTableId = refreshed.SoundTableId,
-                PhysicsScriptTableId = refreshed.PhysicsScriptTableId,
-                Scale = refreshed.Scale,
-                Translucency = refreshed.Translucency,
-                DefaultScriptType = refreshed.DefaultScriptType,
-                DefaultScriptIntensity = refreshed.DefaultScriptIntensity,
-            };
-        }
-
-        return MergeUntimestampedCreate(old, incoming) with
-        {
-            SetupTableId = incoming.SetupTableId ?? old.SetupTableId,
-            AnimPartChanges = incoming.AnimPartChanges,
-            TextureChanges = incoming.TextureChanges,
-            SubPalettes = incoming.SubPalettes,
-            BasePaletteId = incoming.BasePaletteId,
-            ObjScale = incoming.ObjScale,
-            MotionTableId = incoming.MotionTableId,
-            PlacementId = incoming.PlacementId,
-            Physics = physics,
-        };
     }
 
     internal bool ApplyAcceptedObjDescSnapshot(

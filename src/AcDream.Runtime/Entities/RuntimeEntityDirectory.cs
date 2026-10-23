@@ -61,16 +61,22 @@ public sealed class RuntimeEntityDirectory
     public IReadOnlyDictionary<uint, WorldSession.EntitySpawn> Snapshots => _inbound.Snapshots;
     public ParentAttachmentState ParentAttachments { get; } = new();
 
-    public InboundCreateResult AcceptCreate(WorldSession.EntitySpawn incoming) =>
-        _inbound.AcceptCreate(incoming);
+    public InboundCreateResult AcceptCreate(
+        WorldSession.EntitySpawn incoming,
+        bool replaceExisting = false) =>
+        _inbound.AcceptCreate(incoming, replaceExisting);
 
     internal InboundCreateResult AcceptCreateDeferredSameGeneration(
         WorldSession.EntitySpawn incoming) =>
         _inbound.AcceptCreateDeferredSameGeneration(incoming);
 
     public CreateObjectTimestampDisposition PreviewCreateDisposition(
-        WorldSession.EntitySpawn incoming) =>
-        _inbound.PreviewCreateDisposition(incoming);
+        WorldSession.EntitySpawn incoming,
+        bool replaceExisting = false) =>
+        _inbound.PreviewCreateDisposition(incoming, replaceExisting);
+
+    /// <summary>True while an object with this id is held.</summary>
+    public bool IsKnown(uint guid) => _inbound.IsKnown(guid);
 
     public bool TryDelete(
         AcDream.Core.Net.Messages.DeleteObject.Parsed delete,
@@ -550,11 +556,6 @@ public sealed class RuntimeEntityDirectory
         AcDream.Core.Net.Messages.ObjDescEvent.Parsed update,
         out WorldSession.EntitySpawn accepted) =>
         _inbound.TryApplyObjDesc(update, out accepted);
-
-    public bool TryApplyDescriptionRefresh(
-        WorldSession.EntitySpawn incoming,
-        out WorldSession.EntitySpawn accepted) =>
-        _inbound.TryApplyDescriptionRefresh(incoming, out accepted);
 
     public bool TryApplyPickup(
         AcDream.Core.Net.Messages.PickupEvent.Parsed update,
