@@ -1526,7 +1526,8 @@ the player picked.
   that has gone stale (the thing it asks about has gone, say): a box still
   showing closes, one still queued never shows, and the callback gets the
   last button as if the player had pressed Escape. Once the dialog is
-  answered, disposing the handle does nothing.
+  answered, disposing the handle does nothing. Dispose it on the thread that
+  calls your tick: disposing changes the interface straight away.
 - Several dialogs for the same window wait their turn and show one at a
   time. Dialogs for different windows show together. Dialogs without a window
   share one queue.
