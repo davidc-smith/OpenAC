@@ -67,6 +67,11 @@ public sealed class ObjectInfo
 
     public uint SelfEntityId;
 
+    /// <summary>Server guid of the mover. House owner, guest and monarch ids
+    /// are server guids; <see cref="SelfEntityId"/> is the client's own id
+    /// for the mover's entity. Zero when unknown.</summary>
+    public uint MoverObjectId;
+
     /// <summary>Player shadows are not obstacles (see
     /// <see cref="PhysicsSetPositionRequest.PassThroughPlayers"/>).</summary>
     public bool PassThroughPlayers;
@@ -115,7 +120,7 @@ public sealed class ObjectInfo
         ClientObject? restrictionObject = objects?.Get(cellRestrictionObj);
         if (restrictionObject is null) return TransitionState.Collided;
 
-        uint moverId = SelfEntityId;
+        uint moverId = MoverObjectId;
         uint houseOwnerId = restrictionObject.HouseOwnerId ?? 0;
         if (houseOwnerId == 0 || houseOwnerId == moverId) return TransitionState.OK;
 
@@ -146,6 +151,7 @@ public sealed class ObjectInfo
         MoverPhysicsState = PhysicsStateFlags.None;
         TargetId = 0;
         SelfEntityId = 0;
+        MoverObjectId = 0;
         PassThroughPlayers = false;
         MoverHasGravity = false;
         VelocityKilled = false;
@@ -163,6 +169,7 @@ public sealed class ObjectInfo
         MoverPhysicsState = source.MoverPhysicsState;
         TargetId = source.TargetId;
         SelfEntityId = source.SelfEntityId;
+        MoverObjectId = source.MoverObjectId;
         PassThroughPlayers = source.PassThroughPlayers;
         MoverHasGravity = source.MoverHasGravity;
         VelocityKilled = source.VelocityKilled;

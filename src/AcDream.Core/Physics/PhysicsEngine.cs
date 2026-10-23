@@ -1137,6 +1137,7 @@ public sealed class PhysicsEngine
             !request.MoverPhysicsState.HasFlag(PhysicsStateFlags.Missile);
         transition.ObjectInfo.MoverPhysicsState = request.MoverPhysicsState;
         transition.ObjectInfo.SelfEntityId = request.MovingEntityId;
+        transition.ObjectInfo.MoverObjectId = request.MovingObjectId;
         transition.ObjectInfo.PassThroughPlayers = request.PassThroughPlayers;
         transition.ObjectInfo.State = request.MoverFlags;
         transition.ObjectInfo.Ethereal = request.MoverPhysicsState.HasFlag(
@@ -1531,7 +1532,8 @@ public sealed class PhysicsEngine
         Quaternion? endOrientation = null,
         uint designatedTargetId = 0,
         ImmutableArray<FlatCollisionSphere> sphereList = default,
-        float sphereScale = 1f)
+        float sphereScale = 1f,
+        uint movingObjectId = 0)
     {
         bool captureEnabled = PhysicsResolveCapture.IsEnabled
                               && (moverFlags & ObjectInfoState.IsPlayer) != 0;
@@ -1550,6 +1552,7 @@ public sealed class PhysicsEngine
 
             transition.ObjectInfo.StepDown = true;
             transition.ObjectInfo.SelfEntityId = movingEntityId;
+            transition.ObjectInfo.MoverObjectId = movingObjectId;
             transition.ObjectInfo.MoverPhysicsState = body?.State ?? PhysicsStateFlags.None;
             transition.ObjectInfo.TargetId = designatedTargetId;
 
