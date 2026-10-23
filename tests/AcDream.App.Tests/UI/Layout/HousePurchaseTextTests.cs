@@ -24,6 +24,14 @@ public sealed class HousePurchaseTextTests
     }
 
     [Fact]
+    public void OwnerLine_IsNone_WhenTheNameIsEmpty_WhateverTheOwnerId()
+    {
+        // The server sends an empty name when it cannot find the owner.
+        Assert.Equal("Owner: None", HousePurchaseText.OwnerLine(Profile(owner: 5u, ownerName: "")));
+        Assert.Equal("Owner: Sammy", HousePurchaseText.OwnerLine(Profile(owner: 0u, ownerName: "Sammy")));
+    }
+
+    [Fact]
     public void RequirementText_Buy_OneLineOfPlainNumbers()
     {
         Assert.Equal("50000 Pyreals, 1 Bone Totem",
