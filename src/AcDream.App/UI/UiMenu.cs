@@ -10,7 +10,18 @@ public sealed class UiMenu : UiElement
 {
     public readonly record struct MenuItem(string Label, object? Payload);
 
-    public IReadOnlyList<MenuItem> Items { get; set; } = System.Array.Empty<MenuItem>();
+    private IReadOnlyList<MenuItem> _items = System.Array.Empty<MenuItem>();
+
+    public IReadOnlyList<MenuItem> Items
+    {
+        get => _items;
+        set
+        {
+            _items = value;
+            // A list replaced while the popup is open refits it now, not at the next opening.
+            if (_open && FitsLongLabels) MeasureItemsFitWidth();
+        }
+    }
 
     /// <summary>Enables a live popup label filter without changing the selected payload.</summary>
     public bool Searchable { get; set; }
@@ -402,15 +413,36 @@ public sealed class UiMenu : UiElement
     private float MeasureCaption(string s, UiDatFont? font)
         => font?.MeasureWidth(s) ?? Font?.MeasureWidth(s) ?? s.Length * 7f;
 
-    /// <summary>The caption, cut short with an ellipsis when it is wider than <paramref name="maxWidth"/>.</summary>
+    private string? _fitSource;
+    private UiDatFont? _fitFont;
+    private AcDream.App.Rendering.BitmapFont? _fitBitmapFont;
+    private float _fitMaxWidth;
+    private string _fitCaption = "";
+
+    /// <summary>The caption, cut short with an ellipsis when it is wider than <paramref name="maxWidth"/>.
+    /// Remembers the last result, so an unchanged caption is not measured again each frame.</summary>
     private string FitCaption(string caption, UiDatFont? font, float maxWidth)
     {
-        if (!FitsLongLabels || MeasureCaption(caption, font) <= maxWidth) return caption;
+        if (!FitsLongLabels) return caption;
+        if (caption == _fitSource && ReferenceEquals(font, _fitFont)
+            && ReferenceEquals(Font, _fitBitmapFont) && maxWidth == _fitMaxWidth)
+            return _fitCaption;
+        _fitSource = caption;
+        _fitFont = font;
+        _fitBitmapFont = Font;
+        _fitMaxWidth = maxWidth;
+        return _fitCaption = ShortenCaption(caption, font, maxWidth);
+    }
+
+    private string ShortenCaption(string caption, UiDatFont? font, float maxWidth)
+    {
+        if (MeasureCaption(caption, font) <= maxWidth) return caption;
         // A dat font without the ellipsis glyph, or a bitmap font, gets three dots.
         string dots = font is { } f ? (f.TryGetGlyph('…', out _) ? "…" : "...")
             : Font is not null ? "..." : "…";
         for (int n = caption.Length - 1; n > 0; n--)
         {
+            if (char.IsLowSurrogate(caption[n])) continue;   // never split a surrogate pair
             string cut = caption[..n].TrimEnd() + dots;
             if (MeasureCaption(cut, font) <= maxWidth) return cut;
         }
@@ -782,14 +814,12 @@ public sealed class UiMenu : UiElement
 
     protected override bool OnHitTest(float lx, float ly)
     {
-        if (!_open) return base.OnHitTest(lx, ly);
+        // G7: the button itself, plus the popup on whichever side it opens. Across the
+        // button row only the button counts, so a popup wider than the button does not
+        // take the space beside it.
+        if (!_open || (ly >= 0 && ly < Height)) return base.OnHitTest(lx, ly);
         float popupLeft = PopupLeft;
-        bool inButtonRow = ly >= 0 && ly < Height;
-        float left = inButtonRow ? MathF.Min(0f, popupLeft) : popupLeft;
-        float right = inButtonRow ? MathF.Max(Width, popupLeft + OuterW) : popupLeft + OuterW;
-        if (lx < left || lx >= right) return false;
-        // G7: the union of the button itself + the popup, whichever side it opens on.
-        return OpenUpward ? (ly >= -OuterH && ly < Height) : (ly >= 0 && ly < Height + OuterH);
+        return lx >= popupLeft && lx < popupLeft + OuterW && ly >= PopupTop && ly < PopupTop + OuterH;
     }
 
     public override bool OnEvent(in UiEvent e)
