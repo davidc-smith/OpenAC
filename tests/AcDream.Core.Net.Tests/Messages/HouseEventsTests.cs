@@ -246,4 +246,30 @@ public sealed class HouseEventsTests
 
         Assert.Null(GameEvents.ParseHouseProfile(wire));
     }
+
+    [Fact]
+    public void BuildBuyHouse_WritesSlumlordCountAndGuids()
+    {
+        byte[] body = ClientCommandRequests.BuildBuyHouse(
+            7u, 0x70000100u, [0x60000001u, 0x60000002u]);
+
+        Assert.Equal(28, body.Length);
+        Assert.Equal(7u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(4)));
+        Assert.Equal(0x021Cu, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(8)));
+        Assert.Equal(0x70000100u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(12)));
+        Assert.Equal(2u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(16)));
+        Assert.Equal(0x60000001u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(20)));
+        Assert.Equal(0x60000002u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(24)));
+    }
+
+    [Fact]
+    public void BuildRentHouse_EmptyList_WritesZeroCount()
+    {
+        byte[] body = ClientCommandRequests.BuildRentHouse(3u, 0x70000100u, []);
+
+        Assert.Equal(20, body.Length);
+        Assert.Equal(0x0221u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(8)));
+        Assert.Equal(0x70000100u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(12)));
+        Assert.Equal(0u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(16)));
+    }
 }
