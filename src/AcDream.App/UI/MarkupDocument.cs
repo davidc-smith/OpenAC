@@ -774,6 +774,7 @@ public static class MarkupDocument
                     RetailButtonArt = menuRetailButtonArt,
                     Scrollable = true,
                     PopupScrollbarHideWhenDisabled = true,
+                    FitsLongLabels = true,
                     ButtonLabelProvider = () => menuSelected() ?? string.Empty,
                     OnSelect = payload =>
                     {
