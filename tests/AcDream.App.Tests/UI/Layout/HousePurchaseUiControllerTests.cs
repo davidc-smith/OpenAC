@@ -33,7 +33,9 @@ public sealed class HousePurchaseUiControllerTests
         public List<string> Reports { get; } = [];
         public List<string> Sent { get; } = [];
         public List<string> Questions { get; } = [];
-        public Action? Yes;
+        public Action<bool>? Answer;
+        public Action? Yes => Answer is { } answer ? () => answer(true) : null;
+        public Action? No => Answer is { } answer ? () => answer(false) : null;
 
         public Harness()
         {
@@ -73,7 +75,7 @@ public sealed class HousePurchaseUiControllerTests
                 SetWindowVisible: v => Visible = v,
                 Report: Reports.Add,
                 PlayerGuid: () => Player,
-                Confirm: (question, yes) => { Questions.Add(question); Yes = yes; },
+                Confirm: (question, answer) => { Questions.Add(question); Answer = answer; },
                 ResolveAppropriateName: ItemTooltipCaptionNames.Resolve))!;
         }
 
@@ -197,6 +199,37 @@ public sealed class HousePurchaseUiControllerTests
 
         Assert.Equal([HousePurchaseText.OthersMaintenanceConfirmation], h.Questions);
         Assert.Single(h.Sent);
+    }
+
+    [Fact]
+    public void ANo_ClosesTheWindow_AndEmptiesTheStrips()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 50_000);
+        h.Item(2, 273u, stack: 10);
+        h.Open();
+        h.Drop(h.BuyList, 1);
+        h.BuyButton.OnClick!();
+
+        h.No!();
+        h.Controller.Tick();
+
+        Assert.Empty(h.Sent);
+        Assert.False(h.State.View.Snapshot.IsOpen);
+        Assert.False(h.Visible);
+        Assert.Empty(h.State.View.GetStaged(HousePurchaseTab.Buy));
+
+        // Maintenance on someone else's house: a no closes it too.
+        h.Open(owner: 0x50000042u);
+        h.Drop(h.RentList, 2);
+        h.RentButton.OnClick!();
+
+        h.No!();
+        h.Controller.Tick();
+
+        Assert.Empty(h.Sent);
+        Assert.False(h.Visible);
+        Assert.Empty(h.State.View.GetStaged(HousePurchaseTab.Rent));
     }
 
     [Fact]

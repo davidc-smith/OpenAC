@@ -4777,7 +4777,7 @@ public sealed class RetailUiRuntime : IDisposable
         Console.WriteLine("[UI] retail house purchase window from LayoutDesc 0x2100000E.");
     }
 
-    private void ConfirmHousePayment(string question, Action onYes)
+    private void ConfirmHousePayment(string question, Action<bool> answer)
     {
         if (EnsureDialogFactory() is not { } dialogs)
         {
@@ -4785,10 +4785,7 @@ public sealed class RetailUiRuntime : IDisposable
             return;
         }
         dialogs.MakeDialog(RetailDialogData.Confirmation(question), result =>
-        {
-            if (result.GetBoolean(RetailDialogProperty.ConfirmationResult))
-                onYes();
-        });
+            answer(result.GetBoolean(RetailDialogProperty.ConfirmationResult)));
     }
 
     private void ConfigureCharacterManagement()

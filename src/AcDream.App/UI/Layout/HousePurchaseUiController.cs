@@ -46,8 +46,8 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         Action<bool> SetWindowVisible,
         Action<string> Report,
         Func<uint> PlayerGuid,
-        // Asks a yes/no question; runs the action only on yes.
-        Action<string, Action> Confirm,
+        // Asks a yes/no question and passes on the answer.
+        Action<string, Action<bool>> Confirm,
         // Composes an item's displayed name, material prefix included, as the
         // other item strips do.
         Func<ClientObject, string> ResolveAppropriateName,
@@ -263,7 +263,18 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
             return;
         }
         uint slumlord = profile.SlumlordGuid;
-        _bindings.Confirm(question, () => Send(tab, slumlord));
+        _bindings.Confirm(question, yes =>
+        {
+            if (yes) Send(tab, slumlord);
+            else Decline();
+        });
+    }
+
+    // A no closes the window, which empties both strips.
+    private void Decline()
+    {
+        if (_disposed || !_bindings.Purchase.Snapshot.IsOpen) return;
+        _bindings.Close();
     }
 
     // Re-checked on a yes: the window may have closed or moved on meanwhile.
