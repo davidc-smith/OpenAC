@@ -96,6 +96,28 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
+    public void Stage_APack_StagesTheItemsInItThatAreNeeded()
+    {
+        Item(1, Totem, container: Pack);
+        Item(2, 1234u, container: Pack);
+        Item(3, Pyreal, stack: 100, container: Pack);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, Pack));
+        Assert.Equal([1u, 3u], _state.View.GetStaged(HousePurchaseTab.Buy).Order());
+    }
+
+    [Fact]
+    public void Stage_APackWithNothingNeeded_IsNotRequired()
+    {
+        Item(1, 1234u, container: Pack);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.NotRequired, _state.Stage(HousePurchaseTab.Buy, Pack));
+        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Buy));
+    }
+
+    [Fact]
     public void Stage_TradeNote_CountsItsValueTowardsPyreals()
     {
         Item(1, 2621u, value: 10_000, type: ItemType.PromissoryNote);

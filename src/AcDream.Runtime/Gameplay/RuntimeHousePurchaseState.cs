@@ -95,6 +95,8 @@ public sealed class RuntimeHousePurchaseState
         }
     }
 
+    /// <summary>Stages one item, or for a pack, every item in it that the
+    /// tab accepts.</summary>
     public HouseStageResult Stage(HousePurchaseTab tab, uint itemGuid)
     {
         lock (_gate)
@@ -111,26 +113,43 @@ public sealed class RuntimeHousePurchaseState
             if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)
                 return HouseStageResult.NotInInventory;
 
-            List<uint> staged = Staged(tab);
-            if (staged.Contains(itemGuid))
-                return HouseStageResult.AlreadyStaged;
+            if ((item.Type & ItemType.Container) != 0)
+            {
+                bool any = false;
+                foreach (uint content in _objects.GetContents(itemGuid))
+                    any |= StageItemLocked(profile, tab, content) == HouseStageResult.Staged;
+                return any ? HouseStageResult.Staged : HouseStageResult.NotRequired;
+            }
 
-            IReadOnlyList<GameEvents.HousePayment> lines = Lines(profile, tab);
-            int line = LineIndex(lines, item);
-            if (line < 0)
-                return HouseStageResult.NotRequired;
-            int owed = lines[line].Num - lines[line].Paid - StagedAmountLocked(tab, line);
-            if (owed <= 0)
-                return HouseStageResult.AlreadyCovered;
-            // A stack may run over (the server takes only what it needs), but
-            // a note can't be split, so it must fit in what is still owed.
-            if (IsTradeNote(item) && item.Value > owed)
-                return HouseStageResult.NoteTooLarge;
-
-            staged.Add(itemGuid);
-            _revision++;
-            return HouseStageResult.Staged;
+            return StageItemLocked(profile, tab, itemGuid);
         }
+    }
+
+    private HouseStageResult StageItemLocked(
+        GameEvents.HouseProfile profile, HousePurchaseTab tab, uint itemGuid)
+    {
+        if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)
+            return HouseStageResult.NotInInventory;
+
+        List<uint> staged = Staged(tab);
+        if (staged.Contains(itemGuid))
+            return HouseStageResult.AlreadyStaged;
+
+        IReadOnlyList<GameEvents.HousePayment> lines = Lines(profile, tab);
+        int line = LineIndex(lines, item);
+        if (line < 0)
+            return HouseStageResult.NotRequired;
+        int owed = lines[line].Num - lines[line].Paid - StagedAmountLocked(tab, line);
+        if (owed <= 0)
+            return HouseStageResult.AlreadyCovered;
+        // A stack may run over (the server takes only what it needs), but
+        // a note can't be split, so it must fit in what is still owed.
+        if (IsTradeNote(item) && item.Value > owed)
+            return HouseStageResult.NoteTooLarge;
+
+        staged.Add(itemGuid);
+        _revision++;
+        return HouseStageResult.Staged;
     }
 
     public void Unstage(HousePurchaseTab tab, uint itemGuid)
