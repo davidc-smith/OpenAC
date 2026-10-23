@@ -1,4 +1,5 @@
 using AcDream.App.UI;
+using Silk.NET.Input;
 
 namespace AcDream.App.Input;
 
@@ -7,6 +8,13 @@ internal interface IInputCaptureSource
     bool WantCaptureMouse { get; }
     bool WantCaptureKeyboard { get; }
     bool DevToolsWantCaptureKeyboard { get; }
+
+    /// <summary>
+    /// Whether <paramref name="key"/>'s press is kept from the game. It can
+    /// be true while <see cref="WantCaptureKeyboard"/> is false: a focused
+    /// plugin dialog claims only the keys that answer it.
+    /// </summary>
+    bool ClaimsKey(Key key) => WantCaptureKeyboard;
 }
 
 internal sealed class DevToolsInputCaptureSource
@@ -37,7 +45,9 @@ internal sealed class RetainedUiInputCaptureSlot : IHotkeyFocusSource
     public bool WantCaptureMouse => Root?.WantsMouse ?? false;
     public bool WantCaptureKeyboard => Root?.WantsKeyboard ?? false;
 
-    public bool HasKeyboardFocus => Root?.KeyboardFocus is not null;
+    public bool HasKeyboardFocus => Root?.KeyboardFocus is { HoldsKeyboard: true };
+    public bool ClaimsKey(Key key) => Root?.FocusClaimsKey(key) ?? false;
+    public bool IsCapturingKeys => Root?.KeyboardFocus?.CapturesAllKeys == true;
     public bool IsModalOpen => Root?.Modal is not null;
 
     private void Unbind(UiRoot expected)
@@ -83,4 +93,7 @@ internal sealed class CompositeInputCaptureSource : IInputCaptureSource
 
     public bool DevToolsWantCaptureKeyboard =>
         _devTools.WantCaptureKeyboard;
+
+    public bool ClaimsKey(Key key) =>
+        DevToolsWantCaptureKeyboard || _retained.ClaimsKey(key);
 }

@@ -286,4 +286,24 @@ public class UiFieldTests
         Assert.True(input.OnEvent(new UiEvent(
             0, input, UiEventType.KeyDown, Data0: (int)Silk.NET.Input.Key.Escape)));
     }
+
+    [Fact]
+    public void Escape_RunsOnEscapeBeforeFocusIsLost()
+    {
+        var order = new List<string>();
+        var field = new UiField
+        {
+            Width = 100, Height = 20,
+            OnEscape = () => order.Add("escape"),
+            OnFocusLost = _ => order.Add("lost"),
+        };
+        var root = new UiRoot { Width = 400, Height = 300 };
+        root.AddChild(field);
+        root.SetKeyboardFocus(field);
+
+        root.OnKeyDown((int)Silk.NET.Input.Key.Escape);
+
+        Assert.Equal(new[] { "escape", "lost" }, order);
+        Assert.Null(root.KeyboardFocus);
+    }
 }

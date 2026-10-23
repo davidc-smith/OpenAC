@@ -3,7 +3,9 @@ using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Xml.Linq;
+using AcDream.App.UI.Markup;
 using AcDream.Plugin.Abstractions;
+using AcDream.UI.Abstractions.Input;
 
 namespace AcDream.App.UI;
 
@@ -21,11 +23,16 @@ public static class MarkupDocument
     public static UiNineSlicePanel Build(
         string xml, object binding, Func<uint, (uint, int, int)> resolve,
         ControlsIni? style = null, UiDatFont? datFont = null,
-        IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null)
+        IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null,
+        IMarkupControlState? controlState = null,
+        Func<KeyChord, string>? describeKey = null,
+        IMarkupTextureService? textures = null, IMarkupControlState? sharedControlState = null)
     {
         var root = XDocument.Parse(xml).Root ?? throw new FormatException("empty markup");
         if (root.Name.LocalName != "panel")
             throw new FormatException($"root must be <panel>, got <{root.Name.LocalName}>");
+        if (root.Element("contextmenu") is not null)
+            throw new FormatException("<contextmenu> goes inside the element it belongs to, not directly in <panel>");
 
         bool themed = (string?)root.Attribute("theme") == "plugin";
         if (themed) themes ??= new PluginUiThemeSettings();
@@ -75,8 +82,9 @@ public static class MarkupDocument
         if (panel is UiPluginMarkupPanel titlePanel && panel.Children.Count > 0)
             PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
 
+        var recentColors = new MarkupRecentColors(sharedControlState);
         foreach (var el in root.Elements())
-            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes);
+            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, controlState, describeKey, textures, recentColors);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -94,7 +102,10 @@ public static class MarkupDocument
         object binding,
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
-        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes)
+        IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
+        IMarkupControlState? controlState,
+        Func<KeyChord, string>? describeKey,
+        IMarkupTextureService? textures, MarkupRecentColors recentColors)
     {
         int firstChild = parent.Children.Count;
         void BindColorSource(string? expression, object model, Action<Vector4> setValue,
@@ -110,6 +121,13 @@ public static class MarkupDocument
             }
             else MarkupDocument.BindColorSource(expression, model, setValue, setSource);
         }
+        MarkupBuildContext Context() => new(
+            resolve, datFont, icons,
+            (expression, setValue, setSource) => BindColorSource(expression, binding, setValue, setSource),
+            controlState,
+            (container, child) => AddElement(
+                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey, textures, recentColors),
+            describeKey, textures, recentColors);
         switch (el.Name.LocalName)
         {
             case "group":
@@ -139,7 +157,7 @@ public static class MarkupDocument
                 ApplyCommon(group, el, binding);
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
-                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes);
+                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey, textures, recentColors);
                 break;
 
             case "meter":
@@ -357,6 +375,38 @@ public static class MarkupDocument
                     source => toggle.TextColorSource = source);
                 ApplyCommon(toggle, el, binding);
                 parent.AddChild(toggle);
+                break;
+
+            case "checkbox":
+                parent.AddChild(MarkupCheckbox.Build(el, binding, Context()));
+                break;
+
+            case "number":
+                parent.AddChild(MarkupNumber.Build(el, binding, Context()));
+                break;
+
+            case "color":
+                parent.AddChild(MarkupColor.Build(el, binding, Context()));
+                break;
+
+            case "hotkey":
+                parent.AddChild(MarkupHotkey.Build(el, binding, Context()));
+                break;
+
+            case "radio":
+                parent.AddChild(MarkupRadio.Build(el, binding, Context()));
+                break;
+
+            case "separator":
+                parent.AddChild(MarkupSeparator.Build(el, binding, Context()));
+                break;
+
+            case "expander":
+                parent.AddChild(MarkupExpander.Build(el, binding, Context()));
+                break;
+
+            case "split":
+                parent.AddChild(MarkupSplit.Build(el, binding, Context()));
                 break;
 
             case "slider":
@@ -590,16 +640,9 @@ public static class MarkupDocument
                 break;
 
             case "list":
-                string? listChangeName = (string?)el.Attribute("onchange");
-                Action<int>? listChanged = BindIntAction(listChangeName, binding);
-                if (listChangeName is not null && listChanged is null)
-                {
-                    throw new FormatException(
-                        $"<list onchange=\"{listChangeName}\"> did not resolve to an "
-                        + $"Action<int> property on {binding.GetType().Name}");
-                }
-
-                var listChildren = el.Elements().ToList();
+                var listChildren = el.Elements()
+                    .Where(static child => child.Name.LocalName != "contextmenu")
+                    .ToList();
                 foreach (var child in listChildren)
                 {
                     if (child.Name.LocalName != "column")
@@ -607,6 +650,8 @@ public static class MarkupDocument
                         throw new FormatException(
                             $"<list> children must all be <column>, got <{child.Name.LocalName}>");
                     }
+                    if (child.Element("contextmenu") is not null)
+                        throw new FormatException("<contextmenu> goes on the <list>, not on a <column>");
                 }
                 bool listUsesColumns = listChildren.Count > 0;
                 if (listUsesColumns
@@ -629,13 +674,8 @@ public static class MarkupDocument
                     RowHeight = Math.Max(12f, FOr(el, "rowheight", 18f)),
                     DatFont = datFont,
                     SpriteResolve = resolve,
-                    SelectedIndexSource = BindRequiredIntReader(
-                        (string?)el.Attribute("selected"),
-                        binding,
-                        "list selected"),
-                    SelectionChanged = listChanged,
-                    SelectionBandEnabled = B(el, "selectionband", false),
                 };
+                MarkupListSelect.Apply(el, list, binding);
 
                 if (listUsesColumns)
                 {
@@ -670,14 +710,29 @@ public static class MarkupDocument
                     }
                 }
                 ApplyCommon(list, el, binding);
+                if (listUsesColumns)
+                    MarkupListHeader.Apply(el, listChildren, list, binding, Context());
+                else
+                    MarkupListHeader.RejectWithoutColumns(el);
+                MarkupListTree.Apply(el, list, binding, Context());
                 parent.AddChild(list);
+                break;
+
+            case "contextmenu":
+                // Built onto its owner element after the owner's own case; see the tail below.
                 break;
 
             default:
                 throw new FormatException($"unknown element <{el.Name.LocalName}>");
         }
-        if (themedPanel is not null && parent.Children.Count > firstChild)
-            PluginMarkupTheme.Register(themedPanel, parent.Children[firstChild], el);
+        if (parent.Children.Count > firstChild)
+        {
+            UiElement built = parent.Children[firstChild];
+            if (themedPanel is not null)
+                PluginMarkupTheme.Register(themedPanel, built, el);
+            if (MarkupContextMenu.Attach(el, built, binding, Context()) is { } contextMenu && themedPanel is not null)
+                PluginMarkupTheme.Register(themedPanel, contextMenu, el.Element("contextmenu")!);
+        }
     }
 
     /// <summary>
@@ -798,7 +853,7 @@ public static class MarkupDocument
         throw new FormatException($"{context}=\"{text}\" is not a valid uint literal");
     }
 
-    private static Func<string?> BindString(string? attribute, object binding)
+    internal static Func<string?> BindString(string? attribute, object binding)
     {
         if (attribute is null)
             return static () => null;
@@ -857,7 +912,7 @@ public static class MarkupDocument
         return value => (property.GetValue(binding) as Action<string>)?.Invoke(value);
     }
 
-    private static Action<int>? BindIntAction(string? attribute, object binding)
+    internal static Action<int>? BindIntAction(string? attribute, object binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
@@ -870,7 +925,7 @@ public static class MarkupDocument
         return value => (property.GetValue(binding) as Action<int>)?.Invoke(value);
     }
 
-    private static Func<IReadOnlyList<string>> BindStringList(
+    internal static Func<IReadOnlyList<string>> BindStringList(
         string? expression,
         object binding,
         string context, bool preserveSnapshot = false)
@@ -923,7 +978,7 @@ public static class MarkupDocument
             + "IEnumerable<int> property on " + binding.GetType().Name);
     }
 
-    private static Func<IReadOnlyList<bool>> BindBoolList(
+    internal static Func<IReadOnlyList<bool>> BindBoolList(
         string? expression, object binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
@@ -949,7 +1004,7 @@ public static class MarkupDocument
         return BindUintList(expression, binding, context);
     }
 
-    private static Action<int> BindRequiredIntAction(
+    internal static Action<int> BindRequiredIntAction(
         string? attribute, object binding, string context)
     {
         if (attribute is null || !IsBinding(attribute))
@@ -990,12 +1045,13 @@ public static class MarkupDocument
                 return UiMarkupListColumn.Text(width, textSource, colorsSource, textOnClick, isAutoWidth);
             }
             case "check":
+            case "checkbox":
             {
                 var checkSource = BindBoolList(
-                    (string?)columnEl.Attribute("values"), binding, ColumnContext(index, "check", "values"));
+                    (string?)columnEl.Attribute("values"), binding, ColumnContext(index, type, "values"));
                 var onChange = BindRequiredIntAction(
-                    (string?)columnEl.Attribute("onchange"), binding, ColumnContext(index, "check", "onchange"));
-                return UiMarkupListColumn.Check(width, checkSource, onChange, isAutoWidth);
+                    (string?)columnEl.Attribute("onchange"), binding, ColumnContext(index, type, "onchange"));
+                return UiMarkupListColumn.Check(width, checkSource, onChange, isAutoWidth, boxed: type == "checkbox");
             }
             case "icon":
             {
@@ -1021,7 +1077,7 @@ public static class MarkupDocument
             }
             default:
                 throw new FormatException(
-                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, icon, or button)");
+                    $"column[{index}] has unknown type=\"{type}\" (expected text, check, checkbox, icon, or button)");
         }
     }
 
@@ -1054,10 +1110,10 @@ public static class MarkupDocument
         return (width, false);
     }
 
-    private static bool IsBinding(string value) =>
+    internal static bool IsBinding(string value) =>
         value.Length > 2 && value[0] == '{' && value[^1] == '}';
 
-    private static void ApplyCommon(
+    internal static void ApplyCommon(
         UiElement element,
         XElement source,
         object binding)
@@ -1109,7 +1165,7 @@ public static class MarkupDocument
         setSource(() => property.GetValue(binding) is true);
     }
 
-    private static Func<bool> BindRequiredBoolReader(
+    internal static Func<bool> BindRequiredBoolReader(
         string? expression,
         object binding,
         string context)
@@ -1127,7 +1183,7 @@ public static class MarkupDocument
         return () => property.GetValue(binding) is true;
     }
 
-    private static Func<int> BindRequiredIntReader(
+    internal static Func<int> BindRequiredIntReader(
         string? expression,
         object binding,
         string context)
@@ -1144,11 +1200,11 @@ public static class MarkupDocument
         return () => property.GetValue(binding) is int value ? value : -1;
     }
 
-    private static float F(XElement e, string attr)
+    internal static float F(XElement e, string attr)
         => float.TryParse((string?)e.Attribute(attr), NumberStyles.Float,
             CultureInfo.InvariantCulture, out var v) ? v : 0f;
 
-    private static float FOr(XElement e, string attr, float fallback)
+    internal static float FOr(XElement e, string attr, float fallback)
         => float.TryParse((string?)e.Attribute(attr), NumberStyles.Float,
             CultureInfo.InvariantCulture, out float value) ? value : fallback;
 
@@ -1156,12 +1212,12 @@ public static class MarkupDocument
         => int.TryParse((string?)e.Attribute(attr), NumberStyles.Integer,
             CultureInfo.InvariantCulture, out int value) ? value : fallback;
 
-    private static bool B(XElement e, string attr, bool fallback)
+    internal static bool B(XElement e, string attr, bool fallback)
         => bool.TryParse((string?)e.Attribute(attr), out bool value)
             ? value
             : fallback;
 
-    private static Vector4 Color(string? hex)
+    internal static Vector4 Color(string? hex)
     {
         if (hex?.StartsWith("theme:", StringComparison.Ordinal) == true)
             hex = hex.Contains('|') ? hex[(hex.IndexOf('|') + 1)..] : null;

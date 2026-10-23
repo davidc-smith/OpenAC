@@ -91,6 +91,9 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
     public UiPluginMarkupPanel(Func<uint, (uint, int, int)> resolve, PluginUiThemeSettings settings)
         : base(resolve) => _settings = settings;
     public UiDatFont? ModernFont => _settings.ModernFont;
+
+    /// <summary>The palette the panel draws with now, or null under Classic.</summary>
+    internal PluginUiPalette? Palette => _settings.Palette;
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
         _apply.Add(action);

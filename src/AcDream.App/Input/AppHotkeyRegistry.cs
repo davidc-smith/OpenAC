@@ -167,8 +167,9 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
     // Not routed through InputDispatcher's action/scope machinery -- a
     // dynamic per-plugin action space large enough for that would be a much
     // bigger change (see the plugin-api.md Hotkeys note for the recorded
-    // deviation). A rebind capture in progress (BeginCapture), an open
-    // modal and a modal scope (Dialog/EditField) suppress every hotkey;
+    // deviation). A rebind capture in progress (BeginCapture), a focused
+    // element taking every key (a hotkey box recording), an open modal and
+    // a modal scope (Dialog/EditField) suppress every hotkey;
     // while anything holds keyboard focus (chat, a text field) only a chord
     // with Ctrl or Alt fires, so typed letters are never hotkey presses.
     // The interface's focus is the live signal: no production code pushes
@@ -189,12 +190,14 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
         }
         if (dispatcher is not null && dispatcher.IsCapturing)
             return;
+        if (focus?.IsCapturingKeys == true)
+            return;
         InputScope? activeScope = dispatcher?.ActiveScope;
         bool modalScope = activeScope is InputScope.Dialog or InputScope.EditField;
         if (modalScope || focus?.IsModalOpen == true)
             return;
         bool typing = activeScope == InputScope.Chat
-            || focus?.HasKeyboardFocus == true;
+            || focus?.ClaimsKey(key) == true;
 
         foreach (Entry entry in snapshot)
         {
@@ -330,7 +333,7 @@ public sealed class AppHotkeyRegistry : IHotkeyRegistry
 
     private readonly record struct StoredChord(string Key, bool Ctrl, bool Alt, bool Shift);
 
-    private static Key? MapKey(PluginKey key) => key switch
+    internal static Key? MapKey(PluginKey key) => key switch
     {
         PluginKey.A => Key.A, PluginKey.B => Key.B, PluginKey.C => Key.C,
         PluginKey.D => Key.D, PluginKey.E => Key.E, PluginKey.F => Key.F,

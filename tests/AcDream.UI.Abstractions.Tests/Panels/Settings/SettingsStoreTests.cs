@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using AcDream.UI.Abstractions.Panels.Settings;
 
 namespace AcDream.UI.Abstractions.Tests.Panels.Settings;
@@ -17,6 +19,39 @@ public sealed class SettingsStoreTests : System.IDisposable
     public void Dispose()
     {
         if (File.Exists(_tempPath)) File.Delete(_tempPath);
+    }
+
+    [Fact]
+    public void A_save_that_cannot_read_the_file_fails_and_leaves_it_alone()
+    {
+        var store = new SettingsStore(_tempPath);
+        store.SaveWindowPosition("alice", "chat", new UiWindowPosition(10, 20));
+        store.SaveChat(ChatSettings.Default);
+        string before = File.ReadAllText(_tempPath);
+
+        // A lock held elsewhere: the read fails, so writing would drop every
+        // section the save could not see.
+        using (new FileStream(_tempPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.ThrowsAny<IOException>(() => store.SaveMarkupControlState(
+                "alice", new Dictionary<MarkupControlKey, string> { [new("nav", "adv", "expanded")] = "true" }));
+            Assert.ThrowsAny<IOException>(() => store.SaveDisplay(DisplaySettings.Default with { UiOnly = true }));
+        }
+
+        Assert.Equal(before, File.ReadAllText(_tempPath));
+    }
+
+    [Fact]
+    public void Saves_leave_no_temporary_file_beside_the_settings()
+    {
+        var store = new SettingsStore(_tempPath);
+        store.SaveWindowPosition("alice", "chat", new UiWindowPosition(10, 20));
+        store.SaveDisplay(DisplaySettings.Default);
+
+        string directory = Path.GetDirectoryName(_tempPath)!;
+        Assert.Empty(Directory.GetFiles(directory, Path.GetFileName(_tempPath) + "*.tmp")
+            .Concat(Directory.GetFiles(directory, "." + Path.GetFileName(_tempPath) + "*.tmp")));
+        Assert.Equal(new UiWindowPosition(10, 20), store.LoadWindowPosition("alice", "chat"));
     }
 
     [Fact]

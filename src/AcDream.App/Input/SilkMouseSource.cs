@@ -190,6 +190,7 @@ public sealed class SilkMouseSource : IMouseSource, IDisposable
     public bool IsHeld(MouseButton button) => _surface.IsButtonPressed(button);
     public bool WantCaptureMouse => _capture.WantCaptureMouse;
     public bool WantCaptureKeyboard => _capture.WantCaptureKeyboard;
+    public bool ClaimsKey(Key key) => _capture.ClaimsKey(key);
 
     public void Deactivate() => Interlocked.Exchange(ref _active, 0);
 

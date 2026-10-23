@@ -61,6 +61,28 @@ public class InputDispatcherTests
     }
 
     [Fact]
+    public void A_claimed_key_is_suppressed_while_every_other_key_still_drives_the_game()
+    {
+        // A focused plugin dialog claims only its answer keys.
+        var (dispatcher, kb, mouse, bindings, fired) = Build();
+        bindings.Add(new Binding(new KeyChord(Key.Enter, ModifierMask.None), InputAction.EnterChatMode));
+        bindings.Add(new Binding(new KeyChord(Key.Escape, ModifierMask.None), InputAction.EscapeKey));
+        bindings.Add(new Binding(new KeyChord(Key.W, ModifierMask.None), InputAction.MovementForward));
+        mouse.ClaimedKeys.Add(Key.Enter);
+        mouse.ClaimedKeys.Add(Key.Escape);
+
+        kb.EmitKeyDown(Key.Enter, ModifierMask.None);
+        kb.EmitKeyDown(Key.Escape, ModifierMask.None);
+        Assert.Empty(fired);
+
+        kb.EmitKeyDown(Key.W, ModifierMask.None);
+        Assert.Single(fired);
+        Assert.Equal(InputAction.MovementForward, fired[0].Item1);
+        Assert.True(dispatcher.IsActionHeld(InputAction.MovementForward));
+        Assert.False(dispatcher.WantsTextInput);
+    }
+
+    [Fact]
     public void WantCaptureMouse_suppresses_MouseDown_events()
     {
         var (_, _, mouse, bindings, fired) = Build();
