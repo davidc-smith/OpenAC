@@ -955,8 +955,9 @@ client log.
 **The wheel** scrolls the innermost thing under the pointer that can scroll:
 a `list` or `log` inside a scrolling group scrolls itself, and the group
 scrolls everywhere else. A group, list or log with nothing to scroll lets
-the wheel pass to a group around it. Scrolling closes an open menu, unless
-the pointer is over the menu's popup. A sideways swipe, a tilt wheel, or
+the wheel pass to a group around it. A wheel step that anything takes, a
+built-in window included, closes an open menu or popup, unless the pointer
+is over the popup. A sideways swipe, a tilt wheel, or
 Shift with the wheel scrolls horizontally. Only `scroll="x"` and
 `scroll="both"` groups take a horizontal step; a Shift step that no such
 group takes scrolls vertically as before. macOS sends Shift with a mouse
