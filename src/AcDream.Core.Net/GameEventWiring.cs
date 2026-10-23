@@ -61,6 +61,7 @@ public static class GameEventWiring
         Action<uint /*weenieError*/>? onHouseStatus = null,
         Action<uint /*rentTime*/>? onHouseUpdateRentTime = null,
         Action<IReadOnlyList<GameEvents.HousePayment>>? onHouseUpdateRentPayment = null,
+        Action<GameEvents.HouseProfile>? onHouseProfile = null,
         Action<IReadOnlyDictionary<uint, ContractTracker>>? onContractTable = null,
         Action<ContractTrackerUpdate>? onContractUpdate = null,
         Action<uint /*displayTitleId*/, IReadOnlyList<uint> /*titleIds*/>? onCharacterTitleTable = null,
@@ -324,6 +325,15 @@ public static class GameEventWiring
             {
                 var p = GameEvents.ParseUpdateRentPayment(e.Payload.Span);
                 if (p is not null) onHouseUpdateRentPayment(p);
+            });
+        }
+
+        if (onHouseProfile is not null)
+        {
+            registrar.Register(GameEventType.HouseProfile, e =>
+            {
+                var p = GameEvents.ParseHouseProfile(e.Payload.Span);
+                if (p is not null) onHouseProfile(p.Value);
             });
         }
 
