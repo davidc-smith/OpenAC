@@ -92,7 +92,9 @@ internal readonly record struct PhysicsSetPositionRequest(
     // Players are not obstacles to this placement. A server object arriving
     // where a player stands keeps the server's position; the player is the one
     // moved off it.
-    bool PassThroughPlayers = false);
+    bool PassThroughPlayers = false,
+    // The mover's server guid, for house entry restrictions.
+    uint MovingObjectId = 0u);
 
 internal readonly record struct PhysicsSetPositionResult(
     PhysicsSetPositionError Error,

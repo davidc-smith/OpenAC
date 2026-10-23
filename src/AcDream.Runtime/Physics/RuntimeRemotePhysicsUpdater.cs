@@ -291,7 +291,8 @@ internal sealed class RuntimeRemotePhysicsUpdater
                           | AcDream.Core.Physics.ObjectInfoState.EdgeSlide
                         : AcDream.Core.Physics.ObjectInfoState.EdgeSlide)
                         | moverPvpState,
-                    movingEntityId: localEntityId);
+                    movingEntityId: localEntityId,
+                    movingObjectId: serverGuid);
 
                 committedCellId = CommitSweepOutcome(
                     rm.Body, resolveResult, preIntegratePos, dt, committedCellId);
@@ -606,6 +607,7 @@ internal sealed class RuntimeRemotePhysicsUpdater
                     : AcDream.Core.Physics.ObjectInfoState.EdgeSlide)
                     | moverPvpState,
                 movingEntityId: localEntityId,
+                movingObjectId: record.ServerGuid,
                 sphereList: sphereList,
                 sphereScale: sphereScale);
             rm.Body.Position = resolved.Position;

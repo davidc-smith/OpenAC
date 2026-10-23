@@ -494,6 +494,30 @@ public sealed class ClientObjectTableTests
     }
 
     [Fact]
+    public void HouseOwnerInstanceIdUpdate_SetsAndClearsHouseOwnerId()
+    {
+        // A purchase or abandon announces the new owner with a public
+        // instance-id update (0x02DA); the entry gate reads HouseOwnerId.
+        const uint houseGuid = 0x7E166000u;
+        const uint ownerGuid = 0x50000001u;
+        var table = new ClientObjectTable();
+        ClientObject house = table.Ingest(FullWeenie(houseGuid));
+        Assert.Null(house.HouseOwnerId);
+
+        Assert.True(table.UpdateInstanceIdProperty(
+            houseGuid,
+            ClientObjectTable.HouseOwnerPropertyId,
+            ownerGuid));
+        Assert.Equal(ownerGuid, house.HouseOwnerId);
+
+        Assert.True(table.UpdateInstanceIdProperty(
+            houseGuid,
+            ClientObjectTable.HouseOwnerPropertyId,
+            value: 0u));
+        Assert.Null(house.HouseOwnerId);
+    }
+
+    [Fact]
     public void WeenieData_Construct()
     {
         var d = new WeenieData(Guid: 1, Name: "x", Type: ItemType.Misc, WeenieClassId: 2,

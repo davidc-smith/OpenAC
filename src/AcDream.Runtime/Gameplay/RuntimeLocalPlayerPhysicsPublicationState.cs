@@ -199,6 +199,7 @@ internal sealed class RuntimeLocalPlayerPhysicsPublicationState : IDisposable
             _physics.Engine,
             options);
         controller.LocalEntityId = record.Key!.Value.LocalEntityId;
+        controller.ServerGuid = record.ServerGuid;
         controller.StepUpHeight = command.Physics.StepUpHeight;
         controller.StepDownHeight = command.Physics.StepDownHeight;
 

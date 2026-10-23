@@ -42,6 +42,10 @@ public sealed class RuntimeLocalPlayerFirstEntryStateTests
             Assert.IsType<PlayerMovementController>(fixture.Movement.Controller);
         Assert.Same(body, controller.PhysicsBody);
         Assert.True(controller.IsRuntimePublished);
+        // House entry restrictions compare server guids, so the controller
+        // carries the player's server guid beside its local entity id.
+        Assert.Equal(fixture.Record.ServerGuid, controller.ServerGuid);
+        Assert.NotEqual(controller.LocalEntityId, controller.ServerGuid);
         Assert.NotNull(fixture.Record.PhysicsHost);
         Assert.True(fixture.Lifetime.Physics.IsSpatialRoot(fixture.Record));
         Assert.Equal(0, fixture.Conductor.CaptureOwnership().ActiveCount);
