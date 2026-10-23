@@ -944,6 +944,7 @@ public sealed class GameRuntime
             {
                 _events.EmitMovement(MovementOwner.Snapshot);
                 RuntimeVendorRangeQuery.EnforceRange(this);
+                RuntimeHousePurchaseRangeQuery.EnforceRange(this);
             },
             ArmedApproachDrive);
         frame.BindMotionArming(LocalPlayerMotion);
