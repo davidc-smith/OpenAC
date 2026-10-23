@@ -345,6 +345,32 @@ public abstract class UiElement
         return true;
     }
 
+    /// <summary>
+    /// Removes every child in <paramref name="children"/> as <see cref="RemoveChild"/>
+    /// would, in one pass over the children rather than a search for each.
+    /// </summary>
+    internal virtual void RemoveChildren(IReadOnlySet<UiElement> children)
+    {
+        UiRoot? root = FindRoot();
+        if (root is not null)
+        {
+            foreach (UiElement child in _children.ToArray())
+                if (children.Contains(child)) root.OnSubtreeRemoving(child);
+        }
+        int kept = 0;
+        for (int i = 0; i < _children.Count; i++)
+        {
+            UiElement child = _children[i];
+            if (children.Contains(child))
+                child.Parent = null;
+            else
+                _children[kept++] = child;
+        }
+        if (kept == _children.Count) return;
+        _children.RemoveRange(kept, _children.Count - kept);
+        InvalidateChildOrder();
+    }
+
     internal UiElement[] ChildrenBackToFrontSnapshot()
     {
         if (_childrenBackToFront is not null)

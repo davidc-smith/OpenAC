@@ -66,6 +66,21 @@ public sealed class UiFlexBoxStructureTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void RemoveAll_relayouts_without_the_elements(bool nested)
+    {
+        var (box, k, root) = Build(nested);
+
+        box.RemoveAll(new HashSet<UiElement> { k[0], k[2] });
+
+        AssertOrder(box, k[1]);
+        Assert.True(root.EnsureLayout(200f, 40f));
+        Assert.Equal(0f, k[1].Left);
+        Assert.False(box.TryMove(k[0], 0));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void Move_relayouts_in_the_new_order(bool nested)
     {
         var (box, k, root) = Build(nested);

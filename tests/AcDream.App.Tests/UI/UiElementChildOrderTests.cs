@@ -156,5 +156,36 @@ public sealed class UiElementChildOrderTests
         Assert.Equal(1, added.Ticks);
     }
 
+    [Fact]
+    public void RemoveChildren_removes_the_set_in_one_pass_keeping_the_order_of_the_rest()
+    {
+        var parent = Parent(out var kids, 5);
+        UiElement[] before = parent.ChildrenBackToFrontSnapshot();
+
+        parent.RemoveChildren(new HashSet<UiElement> { kids[0], kids[2], kids[4] });
+
+        Assert.Equal(new[] { kids[1], kids[3] }, parent.Children);
+        Assert.Null(kids[0].Parent);
+        Assert.Null(kids[4].Parent);
+        Assert.Same(parent, kids[1].Parent);
+        Assert.NotSame(before, parent.ChildrenBackToFrontSnapshot());
+    }
+
+    [Fact]
+    public void RemoveChildren_drops_focus_inside_a_removed_child()
+    {
+        var root = new UiRoot { Width = 100, Height = 100 };
+        var parent = new UiPanel();
+        var field = new UiField { Width = 50, Height = 20 };
+        parent.AddChild(field);
+        root.AddChild(parent);
+        root.SetKeyboardFocus(field);
+        Assert.Same(field, root.KeyboardFocus);
+
+        parent.RemoveChildren(new HashSet<UiElement> { field });
+
+        Assert.Null(root.KeyboardFocus);
+    }
+
     private sealed class TestElement : UiElement;
 }
