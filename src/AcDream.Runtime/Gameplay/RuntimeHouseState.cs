@@ -239,21 +239,9 @@ public sealed class RuntimeHouseState
             string quantity = includePaid
                 ? $"{payment.Paid.ToString(CultureInfo.InvariantCulture)}/{payment.Num.ToString(CultureInfo.InvariantCulture)}"
                 : payment.Num.ToString(CultureInfo.InvariantCulture);
-            parts[i] = quantity + " " + PaymentName(payment);
+            parts[i] = quantity + " " + HousePaymentNames.For(payment);
         }
         return string.Join(", ", parts);
-    }
-
-    private static string PaymentName(GameEvents.HousePayment payment)
-    {
-        if (payment.Num == 1)
-            return payment.Name;
-        if (!string.IsNullOrEmpty(payment.PluralName))
-            return payment.PluralName;
-
-        return payment.Name.EndsWith('s') || payment.Name.EndsWith('x')
-            ? payment.Name + "es"
-            : payment.Name + "s";
     }
 
     private static long GetRentPeriodSeconds(uint houseType) =>

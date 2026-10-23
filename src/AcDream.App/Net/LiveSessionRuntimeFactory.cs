@@ -315,6 +315,7 @@ internal sealed class LiveSessionRuntimeFactory
                 Allegiance: _domain.Runtime.AllegianceOwner,
                 Trade: _domain.Runtime.TradeOwner,
                 House: _domain.Runtime.HouseOwner,
+                HousePurchase: _domain.Runtime.HousePurchaseOwner,
                 Contracts: _domain.Runtime.ContractsOwner,
                 PlayerGuid: () => _player.Identity.ServerGuid,
                 OnLocalPlayerDeath:
