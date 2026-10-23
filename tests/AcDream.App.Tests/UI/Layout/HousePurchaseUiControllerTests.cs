@@ -324,7 +324,7 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
-    public void AStagedStackGrowing_EnablesBuy()
+    public void AStagedStackGrowing_PaysNoMoreThanWhenItWasStaged()
     {
         using var h = new Harness();
         h.Item(1, 273u, stack: 10);
@@ -336,7 +336,8 @@ public sealed class HousePurchaseUiControllerTests
         h.Objects.NotifyObjectUpdated(1);
         h.Controller.Tick();
 
-        Assert.True(h.BuyButton.Enabled);
+        Assert.Equal(1, Harness.Staged(h.BuyList));
+        Assert.False(h.BuyButton.Enabled);
     }
 
     [Fact]

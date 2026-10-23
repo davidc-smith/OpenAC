@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using AcDream.Content;
 using AcDream.Content.CharGen;
+using AcDream.Core.Items;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Core.Physics;
@@ -67,6 +68,54 @@ public sealed class HeadlessSessionHostTests
         Assert.Equal(
             ChargenFixtureContentFactory.HeritageId,
             creation.View.Snapshot.HeritageId);
+    }
+
+    [Fact]
+    public void ContentLease_InstallsTheTradeNoteMapIntoTheSlumlordState()
+    {
+        using var owner = new HeadlessProcessContentOwner(
+            ContentDescriptor(),
+            _ => { },
+            new TradeNoteFixtureContentFactory());
+        HeadlessProcessContentOwner.HeadlessProcessContentLease lease =
+            owner.AcquireLease("trade-note-fixture");
+        using var credential = new HeadlessCredentialSecret("fixture", "password");
+        using var diagnosticsOutput = new StringWriter();
+        using var host = new HeadlessSessionHost(
+            Descriptor(),
+            credential,
+            new HeadlessDiagnosticWriter(diagnosticsOutput),
+            new FixtureSessionOperations(),
+            contentLease: lease);
+
+        const uint player = 0x50000001u;
+        const uint note = 0x70000001u;
+        host.Runtime.PlayerIdentity.ServerGuid = player;
+        ClientObjectTable objects = host.Runtime.EntityObjects.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = player, Type = ItemType.Creature });
+        objects.AddOrUpdate(new ClientObject { ObjectId = note, WeenieClassId = 2623u, StackSize = 1 });
+        objects.MoveItem(note, player, 0);
+        RuntimeHousePurchaseState purchase = host.Runtime.HousePurchaseOwner;
+        purchase.ApplyProfile(new GameEvents.HouseProfile(
+            0x70000100u, 1u, 0u, 1u, -1, -1, -1, -1, false, 1u, "",
+            [new(5_000, 0, RuntimeHousePurchaseState.PyrealWcid, "Pyreal", "Pyreals")],
+            []));
+
+        Assert.Equal(HouseStageResult.Staged, purchase.Stage(HousePurchaseTab.Buy, note));
+        Assert.Equal(1_000, purchase.View.GetStagedAmount(HousePurchaseTab.Buy, 0));
+    }
+
+    private sealed class TradeNoteFixtureContentFactory : IHeadlessProcessContentFactory
+    {
+        public HeadlessOpenedProcessContent Open(
+            HeadlessContentDescriptor descriptor,
+            Action<string> diagnostic) =>
+            new(
+                new FixtureChargenDatReaderWriter(),
+                DispatchProxy.Create<ITestPreparedSource, TestResourceProxy>(),
+                MagicCatalog.Empty,
+                ImmutableArray.CreateRange(new float[256]),
+                new Dictionary<uint, int> { [2623u] = 1_000 });
     }
 
     [Fact]

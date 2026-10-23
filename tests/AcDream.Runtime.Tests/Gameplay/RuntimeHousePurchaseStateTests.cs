@@ -13,6 +13,15 @@ public sealed class RuntimeHousePurchaseStateTests
     private const uint OtherSlumlord = 0x70000200u;
     private const uint Pyreal = 273u;
     private const uint Totem = 9000u;
+    private const uint Note1000 = 2623u;
+    private const uint Note5000 = 2624u;
+    private const uint Note10000 = 2625u;
+
+    // The trade-note classes and their denominations, as the portal data has them.
+    private static readonly Dictionary<uint, int> Notes = new()
+    {
+        [2621u] = 100, [2622u] = 500, [Note1000] = 1_000, [Note5000] = 5_000, [Note10000] = 10_000,
+    };
 
     private readonly ClientObjectTable _objects = new();
     private readonly RuntimeHousePurchaseState _state;
@@ -24,7 +33,11 @@ public sealed class RuntimeHousePurchaseStateTests
         _objects.AddOrUpdate(new ClientObject { ObjectId = Pack, Type = ItemType.Container });
         _objects.MoveItem(Pack, Player, 0);
         _state = new RuntimeHousePurchaseState(_objects, () => Player);
+        _state.InstallTradeNoteDenominations(Notes);
     }
+
+    private ClientObject Note(uint id, uint wcid, int stack = 1) =>
+        Item(id, wcid, stack, value: Notes[wcid] * stack, type: ItemType.PromissoryNote);
 
     private ClientObject Item(
         uint id, uint wcid, int stack = 1, int value = 0,
@@ -120,7 +133,7 @@ public sealed class RuntimeHousePurchaseStateTests
     [Fact]
     public void Stage_TradeNote_CountsItsValueTowardsPyreals()
     {
-        Item(1, 2621u, value: 10_000, type: ItemType.PromissoryNote);
+        Note(1, Note10000);
         _state.ApplyProfile(Profile());
 
         Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 1));
@@ -131,8 +144,8 @@ public sealed class RuntimeHousePurchaseStateTests
     public void Stage_TradeNote_OnlyIfItFitsInWhatIsStillOwed()
     {
         Item(1, Pyreal, stack: 45_000);
-        Item(2, 2621u, value: 10_000, type: ItemType.PromissoryNote);
-        Item(3, 2621u, value: 5_000, type: ItemType.PromissoryNote);
+        Note(2, Note10000);
+        Note(3, Note5000);
         _state.ApplyProfile(Profile());
         _state.Stage(HousePurchaseTab.Buy, 1);
 
@@ -141,12 +154,108 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
-    public void Stage_AStackMayRunOverWhatIsOwed()
+    public void Stage_AStackOfNotes_CountsOnlyTheNotesThatFit()
+    {
+        Note(1, Note1000, stack: 3);
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 2_500)]));
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Rent, 1));
+        Assert.Equal(2_000, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+    }
+
+    [Fact]
+    public void Stage_ANoteStack_IsRefusedOnlyWhenOneNoteIsMoreThanOwed()
+    {
+        Note(1, Note1000, stack: 5);
+        Note(2, Note1000, stack: 5);
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 1_500)]));
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Rent, 1));
+        Assert.Equal(1_000, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+        Assert.Equal(HouseStageResult.NoteTooLarge, _state.Stage(HousePurchaseTab.Rent, 2));
+    }
+
+    [Fact]
+    public void Stage_ATradeNoteIsKnownByItsClass_NotByItsItemType()
+    {
+        // A promissory note of a class the portal data does not list pays nothing.
+        Item(1, 99_999u, value: 1_000, type: ItemType.PromissoryNote);
+        // A listed class pays its denomination, whatever its type and value say.
+        Item(2, Note1000, stack: 2, value: 7);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.NotRequired, _state.Stage(HousePurchaseTab.Buy, 1));
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 2));
+        Assert.Equal(2_000, _state.View.GetStagedAmount(HousePurchaseTab.Buy, 0));
+    }
+
+    [Fact]
+    public void Stage_AStackMayRunOverWhatIsOwed_ButCountsOnlyWhatIsOwed()
     {
         Item(1, Pyreal, stack: 60_000);
         _state.ApplyProfile(Profile());
 
         Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 1));
+        Assert.Equal(50_000, _state.View.GetStagedAmount(HousePurchaseTab.Buy, 0));
+    }
+
+    [Fact]
+    public void Unstage_TakesOffTheWholeStack_EvenThePartThatDidNotCount()
+    {
+        Item(1, Pyreal, stack: 2_000);
+        Item(2, Pyreal, stack: 1_000);
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 2_500)]));
+        _state.Stage(HousePurchaseTab.Rent, 1);
+        _state.Stage(HousePurchaseTab.Rent, 2);
+        Assert.Equal(2_500, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+
+        _state.Unstage(HousePurchaseTab.Rent, 2);
+
+        Assert.Equal(1_500, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+    }
+
+    [Fact]
+    public void Unstage_ANoteStack_TakesOffEveryNoteInIt_AndNeverBelowZero()
+    {
+        Note(1, Note1000, stack: 3);
+        Item(2, Pyreal, stack: 2_000);
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 2_500)]));
+        _state.Stage(HousePurchaseTab.Rent, 1);
+        Assert.Equal(2_000, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+        _state.Stage(HousePurchaseTab.Rent, 2);
+        Assert.Equal(2_500, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+
+        // Three notes are 3000, more than the 2500 counted: the line drops to 0.
+        _state.Unstage(HousePurchaseTab.Rent, 1);
+
+        Assert.Equal(0, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+    }
+
+    [Fact]
+    public void AStagedItemLeavingTheInventory_TakesOffItsPayment()
+    {
+        Item(1, Pyreal, stack: 2_000);
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 5_000)]));
+        _state.Stage(HousePurchaseTab.Rent, 1);
+
+        _objects.Remove(1);
+        _state.Revalidate();
+
+        Assert.Equal(0, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+    }
+
+    [Fact]
+    public void AStagedStackChangingSize_KeepsWhatItPaidWhenStaged()
+    {
+        ClientObject coins = Item(1, Pyreal, stack: 2_000);
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 5_000)]));
+        _state.Stage(HousePurchaseTab.Rent, 1);
+
+        coins.StackSize = 4_000;
+        _objects.NotifyObjectUpdated(1);
+        _state.Revalidate();
+
+        Assert.Equal(2_000, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
     }
 
     [Fact]

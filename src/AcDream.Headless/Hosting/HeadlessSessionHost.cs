@@ -280,6 +280,8 @@ internal sealed class HeadlessSessionHost : IDisposable
                     chargenOptions = ChargenTableReader.Load(content.Dats);
                 runtime.Session.CharacterCreationState.InstallOptions(
                     chargenOptions);
+                runtime.HousePurchaseOwner.InstallTradeNoteDenominations(
+                    content.TradeNotes);
             }
             gameplay.Bind(
                 runtime,

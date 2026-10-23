@@ -317,8 +317,9 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     }
 
     private void OnObjectRemoved(ClientObject item) => _bindings.Revalidate();
-    // A staged stack can merge or split without any state change, so the
-    // revision gate would keep the Buy button as it was.
+    // A staged item can change (a stack merging or splitting) without any
+    // state change, so the revision gate would keep its slot as it was. What
+    // it paid when staged stays as it was.
     private void OnObjectUpdated(ClientObject item)
     {
         if (_disposed || !_bindings.Purchase.Snapshot.IsOpen) return;
