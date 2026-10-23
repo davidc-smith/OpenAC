@@ -125,18 +125,19 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
-    public void AnOwnedHouse_OpensOnMaintenance_AndTabsSwitch()
+    public void AProfileArriving_NeverSwitchesTheTab_OnlyAClickDoes()
     {
         using var h = new Harness();
         h.Open(owner: Player);
 
-        Assert.True(h.RentPage.Visible);
-        Assert.False(h.BuyPage.Visible);
-
-        h.BuyTab.OnClick!();
-
         Assert.True(h.BuyPage.Visible);
         Assert.False(h.RentPage.Visible);
+
+        h.RentTab.OnClick!();
+        h.Open();
+
+        Assert.True(h.RentPage.Visible);
+        Assert.False(h.BuyPage.Visible);
     }
 
     [Fact]

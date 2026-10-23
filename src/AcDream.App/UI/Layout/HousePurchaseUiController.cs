@@ -69,8 +69,6 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     private HousePurchaseTab _selected = HousePurchaseTab.Buy;
     private long _lastRevision = long.MinValue;
     private bool _wasOpen;
-    private uint _shownSlumlord;
-    private uint _shownOwner;
     private GameEvents.HouseProfile? _textProfile;
     private bool _disposed;
 
@@ -163,18 +161,11 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
 
         if (snapshot.Revision == _lastRevision) return;
         _lastRevision = snapshot.Revision;
+        // A profile arriving never changes the tab; only the player does.
         if (snapshot.Profile is not { } profile)
         {
-            _shownSlumlord = 0u;
             _textProfile = null;
             return;
-        }
-
-        if (profile.SlumlordGuid != _shownSlumlord || profile.OwnerGuid != _shownOwner)
-        {
-            _shownSlumlord = profile.SlumlordGuid;
-            _shownOwner = profile.OwnerGuid;
-            Select(profile.OwnerGuid != 0u ? HousePurchaseTab.Rent : HousePurchaseTab.Buy);
         }
 
         // The text is rebuilt only when a new profile arrives, not as items
