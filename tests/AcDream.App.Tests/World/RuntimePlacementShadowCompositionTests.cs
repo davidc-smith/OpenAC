@@ -153,6 +153,71 @@ public sealed class RuntimePlacementShadowCompositionTests
     }
 
     [Fact]
+    public void PortalPlace_ThenHide_PlayerKeepsItsCollisionAtTheDestination()
+    {
+        // The server sends the teleport position before the Hidden state, so
+        // the placement can commit a frame before the hide arrives. The hide
+        // must not take away the collision the placement just put down.
+        Fixture fixture = Fixture.Create();
+        LiveEntityRecord record = fixture.Materialize(Spawn(Guid, 1, SourceCell));
+        WorldEntity entity = Assert.IsType<WorldEntity>(record.WorldEntity);
+        fixture.Physics.ShadowObjects.Register(
+            entity.Id,
+            gfxObjId: entity.SourceGfxObjOrSetupId,
+            worldPos: SourcePosition,
+            rotation: Quaternion.Identity,
+            radius: 0.48f,
+            worldOffsetX: 0f,
+            worldOffsetY: 0f,
+            landblockId: SourceCell & 0xFFFF0000u,
+            collisionType: ShadowCollisionType.Sphere,
+            cylHeight: 1.835f,
+            seedCellId: SourceCell);
+        fixture.Synchronizer.Sync(entity, SourceCell, force: true);
+        using var presentation = new LiveEntityPresentationController(
+            fixture.Runtime,
+            fixture.Physics.ShadowObjects,
+            (_, _, _) => true,
+            new LiveEntityPartArrayEnterWorldPort(_ => { }),
+            isLocalPlayer: guid => guid == Guid);
+        Assert.True(presentation.OnLiveEntityReady(Guid));
+
+        RuntimePortalPlacementAuthority portal = fixture.BeginPortal(
+            DestinationCell,
+            teleportSequence: 1);
+        record.FullCellId = DestinationCell;
+        record.CanonicalLandblockId = (DestinationCell & 0xFFFF0000u) | 0xFFFFu;
+        record.Canonical.AdvancePlacementCommit();
+        RuntimePlacementProjectionSnapshot place = Placement(
+            fixture,
+            record,
+            portal,
+            DestinationPosition,
+            DestinationOrientation);
+        Assert.True(fixture.Sink.TryApply(in place));
+
+        Assert.True(fixture.Runtime.TryApplyState(
+            new SetState.Parsed(
+                Guid,
+                (uint)(PhysicsStateFlags.Hidden
+                    | PhysicsStateFlags.IgnoreCollisions
+                    | PhysicsStateFlags.ReportCollisions),
+                1,
+                2),
+            out _,
+            out _));
+        Assert.True(presentation.OnStateAccepted(Guid));
+        Assert.True(fixture.Runtime.IsHidden(Guid));
+        fixture.Synchronizer.Sync(entity, DestinationCell);
+
+        Assert.Contains(
+            fixture.Physics.ShadowObjects.GetObjectsInCell(DestinationCell),
+            e => e.EntityId == entity.Id);
+        Assert.Equal(0, fixture.Physics.ShadowObjects.SuspendedRegistrationCount);
+        Assert.False(presentation.HasDeferredShadowRestore(Guid));
+    }
+
+    [Fact]
     public void Place_ThenOrdinaryTick_DoesNotNeedToSelfHeal_RealShadowAlreadyRight()
     {
         Fixture fixture = Fixture.Create();

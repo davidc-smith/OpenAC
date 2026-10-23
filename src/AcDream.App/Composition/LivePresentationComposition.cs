@@ -627,7 +627,8 @@ internal sealed class LivePresentationCompositionPhase
                         partArrayLifecycle.HandleEnterWorld),
                     equippedLease.Resource.SetDirectChildrenNoDraw,
                     d.MotionBindings.ClearTargetForHiddenEntity,
-                    d.WorldOrigin.GetCenter),
+                    d.WorldOrigin.GetCenter,
+                    isLocalPlayer: guid => guid == d.PlayerIdentity.ServerGuid),
                 static value => value.Dispose());
             bindings.Adopt(
                 "live-entity pvp bitfield sync",
