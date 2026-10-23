@@ -74,7 +74,7 @@ public sealed class RuntimeChatFeedTests
                 .Select(span => span.Text)));
     }
 
-    // -- Coordinate links: only a plugin's own line carries one ----------
+    // -- Coordinate links: a pair the line shows is a link to that pair ----
 
     private static ChatTextSpan CoordinateSpan(RuntimeChatLine line) =>
         Assert.Single(line.Spans!, span => span.Tag is { Type: "COORD" });
@@ -83,8 +83,14 @@ public sealed class RuntimeChatFeedTests
         line.Spans?.Any(span => span.Tag is { } tag
             && string.Equals(tag.Type, "COORD", StringComparison.OrdinalIgnoreCase)) == true;
 
+    private static (double EastWest, double NorthSouth) Target(ChatTextSpan span)
+    {
+        Assert.True(span.Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
+        return (eastWest, northSouth);
+    }
+
     [Fact]
-    public void ACoordinateAPlayerTypesIsNotALink()
+    public void ACoordinateAPlayerWritesIsALinkToThePairItShows()
     {
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
@@ -98,14 +104,18 @@ public sealed class RuntimeChatFeedTests
         Assert.Equal("Bob says, \"meet at 42.1N 33.5E\"", lines[0].Text);
         foreach (RuntimeChatLine line in lines)
         {
-            Assert.False(HasCoordinateLink(line));
+            ChatTextSpan coordinate = CoordinateSpan(line);
+            Assert.Equal("42.1N 33.5E", coordinate.Text);
+            Assert.Equal((33.5, 42.1), Target(coordinate));
             // The speaker's name is still the tell link it always was.
-            Assert.Equal("Bob", Assert.Single(line.Spans!, span => span.Tag is not null).Text);
+            ChatTextSpan name = Assert.Single(line.Spans!, span => span.Tag is { IsTell: true });
+            Assert.Equal("Bob", name.Text);
+            Assert.Equal(line.Text, string.Concat(line.Spans!.Select(span => span.Text)));
         }
     }
 
     [Fact]
-    public void ACoordinateInTheCharactersOwnLineOrAServerLineIsNotALink()
+    public void ACoordinateInTheCharactersOwnLineOrAServerLineIsALink()
     {
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
@@ -114,33 +124,84 @@ public sealed class RuntimeChatFeedTests
 
         IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
 
-        Assert.Null(lines[0].Spans);
-        Assert.Null(lines[1].Spans);
+        Assert.Equal("You say, \"here 1N 2E\"", lines[0].Text);
+        Assert.Equal("1N 2E", CoordinateSpan(lines[0]).Text);
+        Assert.Equal((2d, 1d), Target(CoordinateSpan(lines[0])));
         Assert.Equal("Your corpse is located at (42.1N, 33.5E).", lines[1].Text);
+        ChatTextSpan corpse = CoordinateSpan(lines[1]);
+        Assert.Equal("42.1N, 33.5E", corpse.Text);
+        Assert.Equal((33.5, 42.1), Target(corpse));
+        Assert.Equal(lines[1].Text, string.Concat(lines[1].Spans!.Select(span => span.Text)));
     }
 
     [Fact]
-    public void ACoordinateTagAPlayerTypesIsNotALink()
+    public void ACoordinateTagAPlayerTypesNeverLinksItsHiddenValue()
     {
         // A player who types the tag must not be able to show one place and
-        // hand plugins another: the caption is plain text, the tag goes nowhere.
+        // hand plugins another. The tag's hidden value is never a link; a
+        // caption that is itself a pair is linked to that shown pair, exactly
+        // as if the player had written it plainly.
         const string Typed = "<COORD:World:0N, 0E>42.1N 33.5E<\\COORD>";
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
         log.OnLocalSpeech("Bob", Typed, OtherPlayerGuid, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
         log.OnTellReceived("Bob", Typed, OtherPlayerGuid, (uint)RetailLogTextType.Tell);
         log.OnChannelBroadcast(7u, "Bob", Typed, channelName: "Fellowship");
+        log.OnSystemMessage("<COORD:World:0N, 0E>42.1N 33.5E<\\COORD>", chatType: 0u);
 
         IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
 
-        Assert.Equal(3, lines.Count);
+        Assert.Equal(4, lines.Count);
         Assert.Equal("Bob says, \"42.1N 33.5E\"", lines[0].Text);
+        Assert.Equal("42.1N 33.5E", lines[3].Text);
         foreach (RuntimeChatLine line in lines)
         {
-            Assert.False(HasCoordinateLink(line));
-            Assert.Equal("Bob", Assert.Single(line.Spans!, span => span.Tag is not null).Text);
+            ChatTextSpan coordinate = CoordinateSpan(line);
+            Assert.Equal("42.1N 33.5E", coordinate.Text);
+            Assert.Equal((33.5, 42.1), Target(coordinate));
             Assert.Equal(line.Text, string.Concat(line.Spans!.Select(span => span.Text)));
         }
+    }
+
+    [Fact]
+    public void ACoordinateTagAPlayerTypesOverWordsIsNoLink()
+    {
+        const string Typed = "<COORD:World:0N, 0E>the bridge<\\COORD>";
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnLocalSpeech("Bob", Typed, OtherPlayerGuid, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+        log.OnSystemMessage(Typed, chatType: 0u);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("Bob says, \"the bridge\"", lines[0].Text);
+        Assert.False(HasCoordinateLink(lines[0]));
+        Assert.Equal("Bob", Assert.Single(lines[0].Spans!, span => span.Tag is not null).Text);
+        Assert.Equal("the bridge", lines[1].Text);
+        Assert.Null(lines[1].Spans);
+    }
+
+    [Fact]
+    public void APairTheLineShowsAcrossAHiddenTagIsOneLink()
+    {
+        // The pair is found in the text as shown: a hidden tag that splits
+        // it does not stop it being read, and one it glues to a word does.
+        var log = new ChatLog();
+        using var feed = new RuntimeChatFeed(log);
+        log.OnLocalSpeech(
+            "Bob", "at <COORD:World:0N, 0E>42.1N<\\COORD> 33.5E", OtherPlayerGuid,
+            isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
+        log.OnSystemMessage("x<COORD:World:0N, 0E>42.1N 33.5E<\\COORD>", chatType: 0u);
+
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Equal("Bob says, \"at 42.1N 33.5E\"", lines[0].Text);
+        ChatTextSpan coordinate = CoordinateSpan(lines[0]);
+        Assert.Equal("42.1N 33.5E", coordinate.Text);
+        Assert.Equal((33.5, 42.1), Target(coordinate));
+        Assert.Equal(lines[0].Text, string.Concat(lines[0].Spans!.Select(span => span.Text)));
+        Assert.Equal("x42.1N 33.5E", lines[1].Text);
+        Assert.Null(lines[1].Spans);
     }
 
     [Fact]
@@ -149,8 +210,14 @@ public sealed class RuntimeChatFeedTests
         var log = new ChatLog();
         using var feed = new RuntimeChatFeed(log);
         log.OnCombatLine("You hit 3N 4E for 9 points.", (uint)RetailLogTextType.CombatSelf);
+        log.OnCombatLine(
+            "You hit <DID:DID:0x06001234>the drudge<\\DID> at 3N 4E.",
+            (uint)RetailLogTextType.CombatSelf);
 
-        Assert.Null(Assert.Single(feed.Snapshot()).Spans);
+        IReadOnlyList<RuntimeChatLine> lines = feed.Snapshot();
+
+        Assert.Null(lines[0].Spans);
+        Assert.False(HasCoordinateLink(lines[1]));
     }
 
     // -- A plugin's own line ----------------------------------------------
