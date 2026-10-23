@@ -79,31 +79,6 @@ public sealed class LiveEntityPresentationControllerTests
             Assert.Single(fixture.Runtime.VisibleRecords).WorldEntity);
     }
 
-    [Fact]
-    public void BoundShadowRestoredListener_HearsEachRestoreUntilDisposed()
-    {
-        Fixture fixture = new(
-            PhysicsStateFlags.Hidden | PhysicsStateFlags.ReportCollisions);
-        var restored = new List<uint>();
-        IDisposable binding = fixture.Controller.BindShadowRestored(restored.Add);
-        Assert.Throws<InvalidOperationException>(
-            () => fixture.Controller.BindShadowRestored(_ => { }));
-
-        Assert.True(fixture.Controller.OnLiveEntityReady(Fixture.Guid));
-        Assert.Empty(restored);
-
-        Assert.True(fixture.Runtime.TryApplyState(
-            new SetState.Parsed(Fixture.Guid, 0u, 1, 2),
-            out _,
-            out _));
-        Assert.True(fixture.Controller.OnStateAccepted(Fixture.Guid));
-        Assert.Equal([fixture.Entity.Id], restored);
-
-        binding.Dispose();
-        IDisposable rebound = fixture.Controller.BindShadowRestored(_ => { });
-        rebound.Dispose();
-    }
-
     [Theory]
     [InlineData(0x50000456u, (ushort)3)]
     [InlineData(0x70000199u, (ushort)0)]

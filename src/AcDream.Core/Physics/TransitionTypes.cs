@@ -72,10 +72,6 @@ public sealed class ObjectInfo
     /// for the mover's entity. Zero when unknown.</summary>
     public uint MoverObjectId;
 
-    /// <summary>Player shadows are not obstacles (see
-    /// <see cref="PhysicsSetPositionRequest.PassThroughPlayers"/>).</summary>
-    public bool PassThroughPlayers;
-
     public bool MoverHasGravity;
 
     public bool Contact => (State & ObjectInfoState.Contact) != 0;
@@ -152,7 +148,6 @@ public sealed class ObjectInfo
         TargetId = 0;
         SelfEntityId = 0;
         MoverObjectId = 0;
-        PassThroughPlayers = false;
         MoverHasGravity = false;
         VelocityKilled = false;
     }
@@ -170,7 +165,6 @@ public sealed class ObjectInfo
         TargetId = source.TargetId;
         SelfEntityId = source.SelfEntityId;
         MoverObjectId = source.MoverObjectId;
-        PassThroughPlayers = source.PassThroughPlayers;
         MoverHasGravity = source.MoverHasGravity;
         VelocityKilled = source.VelocityKilled;
     }
@@ -2713,12 +2707,6 @@ public sealed class Transition
         foreach (ShadowEntry obj in nearbyObjs.Entries)
         {
             if (oi.SelfEntityId != 0 && obj.EntityId == oi.SelfEntityId)
-            {
-                continue;
-            }
-
-            if (oi.PassThroughPlayers
-                && (obj.Flags & EntityCollisionFlags.IsPlayer) != 0)
             {
                 continue;
             }

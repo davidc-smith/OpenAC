@@ -894,14 +894,12 @@ public sealed class RuntimePlacementPresentationSinkTests
                 spatial,
                 resources,
                 physics);
-            var identity = new LocalPlayerIdentityState { ServerGuid = Guid };
             var origin = new LiveWorldOriginState();
             origin.SetPlaceholder(0, 0);
             var localShadow = new LocalPlayerShadowState();
             var synchronizer = new LocalPlayerShadowSynchronizer(
                 physics,
                 runtime,
-                identity,
                 origin,
                 localShadow);
             return new Fixture(
@@ -1029,13 +1027,11 @@ public sealed class RuntimePlacementPresentationSinkTests
 
             var effectPoses = new EntityEffectPoseRegistry();
             var localShadow = new LocalPlayerShadowState();
-            var localShadowIdentity = new LocalPlayerIdentityState { ServerGuid = Guid };
             var localShadowOrigin = new LiveWorldOriginState();
             localShadowOrigin.SetPlaceholder(0, 0);
             var synchronizer = new LocalPlayerShadowSynchronizer(
                 engine,
                 runtime,
-                localShadowIdentity,
                 localShadowOrigin,
                 localShadow);
             WorldEntity entity = record.WorldEntity!;

@@ -81,8 +81,7 @@ internal readonly record struct RuntimeSetPositionMoverPreparation(
     float ShadowWorldOffsetX = 0f,
     float ShadowWorldOffsetY = 0f,
     RuntimePortalPlacementAuthority Portal = default,
-    bool ResolveWorldOffsetFromRuntimeFrame = false,
-    bool PassThroughPlayers = false);
+    bool ResolveWorldOffsetFromRuntimeFrame = false);
 
 internal static class RuntimeSetPositionMoverPreparer
 {
@@ -158,8 +157,7 @@ internal static class RuntimeSetPositionMoverPreparer
             preparation.Line,
             preparation.ScatterRadiusX,
             preparation.ScatterRadiusY,
-            preparation.ScatterAttempts,
-            PassThroughPlayers: preparation.PassThroughPlayers);
+            preparation.ScatterAttempts);
         command = new RuntimeSetPositionCommand(
             request,
             preparation.Kind,

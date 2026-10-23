@@ -503,7 +503,6 @@ internal sealed class LivePresentationCompositionPhase
             var localPlayerShadowSynchronizer = new LocalPlayerShadowSynchronizer(
                 d.PhysicsEngine,
                 liveEntities,
-                d.PlayerIdentity,
                 d.WorldOrigin,
                 d.LocalPlayerShadow);
             var placementProjection = new RuntimePlacementPresentationSink(

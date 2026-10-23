@@ -3772,7 +3772,6 @@ public sealed class HeadlessSessionHostTests
                 0f,
                 0u,
                 cell,
-                false,
                 0u,
             ],
             culture: null)!;
