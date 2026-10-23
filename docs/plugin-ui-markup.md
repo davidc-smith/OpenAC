@@ -1099,6 +1099,11 @@ remembered), so short-lived keys such as item or monster ids don't pile up
 in the settings file. An item that comes back starts from its markup
 defaults. Closing the window forgets nothing.
 
+The by-name calls on `IUiRegistry` (`ControlExists`, `SetControlLabel`,
+`SetControlVisible`) don't reach inside a `<repeat>`: a template name is on
+every row, so it names no single control. Bind the row's own properties
+instead.
+
 An element with a `name` or `id` inside any `<repeat>` without `key` fails
 the build, since it would have no per-item name. In a nested repeat, every
 enclosing repeat needs `key`.

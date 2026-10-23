@@ -897,12 +897,24 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 || registration.Descriptor.Title.Equals(
                     viewName, StringComparison.Ordinal)));
 
+    // A name inside a <repeat> template is on every row, so it names no one
+    // control: the rows (a marker's copies, its siblings) are not searched.
     private static UiElement? FindByName(UiElement root, string name)
     {
         if (root.Name?.Equals(name, StringComparison.Ordinal) == true)
             return root;
+        HashSet<UiElement>? rows = null;
         foreach (UiElement child in root.Children)
         {
+            if (child is UiMarkupRepeat repeat)
+            {
+                rows ??= new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
+                foreach (UiMarkupRepeat.Copy copy in repeat.Copies)
+                    rows.UnionWith(repeat.Span(copy));
+                continue;
+            }
+            if (rows?.Contains(child) == true)
+                continue;
             UiElement? found = FindByName(child, name);
             if (found is not null)
                 return found;
