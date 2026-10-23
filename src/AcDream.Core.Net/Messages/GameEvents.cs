@@ -910,6 +910,57 @@ public static class GameEvents
         return ReadHousePaymentList(payload, ref pos);
     }
 
+    /// <summary>One permanent guest in a 0x0257 house access record.</summary>
+    public readonly record struct HouseGuest(uint Guid, string Name, bool Storage);
+
+    /// <summary>
+    /// 0x0257 UpdateHAR: the owner's house access record, i.e. the guest
+    /// list (ACE GameEventUpdateHAR / HouseAccess.Write). Roommates are the
+    /// owner's other characters on the same account.
+    /// </summary>
+    public readonly record struct HouseAccess(
+        uint Bitmask,
+        uint MonarchId,
+        IReadOnlyList<HouseGuest> Guests,
+        IReadOnlyList<uint> Roommates)
+    {
+        public bool OpenToEveryone => (Bitmask & 0x1u) != 0;
+        public bool AllegianceGuests => (Bitmask & 0x2u) != 0;
+        public bool AllegianceStorage => (Bitmask & 0x4u) != 0;
+    }
+
+    public static HouseAccess? ParseUpdateHar(ReadOnlySpan<byte> payload)
+    {
+        try
+        {
+            int pos = 0;
+            if (payload.Length < 16) return null;
+            pos += 4; // version, 0x10000002 on ACE
+            uint bitmask = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            uint monarchId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            ushort guestCount = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(pos)); pos += 4; // + bucket count
+
+            var guests = new List<HouseGuest>(guestCount);
+            for (int i = 0; i < guestCount; i++)
+            {
+                if (payload.Length - pos < 8) return null;
+                uint guid = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+                bool storage = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)) != 0; pos += 4;
+                guests.Add(new HouseGuest(guid, ReadString16L(payload, ref pos), storage));
+            }
+
+            if (payload.Length - pos < 4) return null;
+            uint roommateCount = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            if (roommateCount > (payload.Length - pos) / 4) return null;
+            var roommates = new uint[roommateCount];
+            for (int i = 0; i < roommates.Length; i++, pos += 4)
+                roommates[i] = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos));
+
+            return new HouseAccess(bitmask, monarchId, guests, roommates);
+        }
+        catch { return null; }
+    }
+
     // ── Shared string reader (matches LoginRequest.ReadString16L) ───────────
 
     private static string ReadString16L(ReadOnlySpan<byte> source, ref int pos)

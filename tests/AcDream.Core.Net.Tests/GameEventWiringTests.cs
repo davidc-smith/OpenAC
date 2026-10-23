@@ -1919,6 +1919,33 @@ public sealed class GameEventWiringTests
         Assert.Empty(rentPayment);
     }
 
+    [Fact]
+    public void AGuestListReply_PrintsTheListInGreen()
+    {
+        var lines = new List<(string Text, RetailLogTextType Type)>();
+        var dispatcher = new GameEventDispatcher();
+        GameEventWiring.WireAll(
+            dispatcher, new ClientObjectTable(), new CombatState(), new Spellbook(), new ChatLog(),
+            onInterfaceText: (text, type) => lines.Add((text, type)));
+
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u).Write(0u).Write(0u)
+            .Write((ushort)1).Write((ushort)64)
+            .Write(0x50000002u).Write(1u).WriteString16L("Alice")
+            .Write(0)
+            .ToArray();
+        dispatcher.Dispatch(GameEventEnvelope.TryParse(
+            WrapEnvelope(GameEventType.UpdateHAR, wire))!.Value);
+
+        Assert.Equal(
+            new[]
+            {
+                ("Guests:", RetailLogTextType.Default),
+                (" Alice*", RetailLogTextType.Default),
+            },
+            lines);
+    }
+
     // OpenAC #44: the client is the only thing that says an enchantment ran
     // out, so the plain removal announces it; a dispel does not, since the
     // dispel's own text arrives as ordinary chat.

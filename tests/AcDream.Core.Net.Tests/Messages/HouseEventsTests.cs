@@ -140,4 +140,59 @@ public sealed class HouseEventsTests
 
         Assert.Null(GameEvents.ParseHouseData(wire));
     }
+
+    [Fact]
+    public void ParseUpdateHar_ReadsFlagsGuestsAndRoommates()
+    {
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u)  // version
+            .Write(0x5u)         // open house + allegiance storage
+            .Write(0x50000001u)  // monarch
+            .Write((ushort)2).Write((ushort)64)
+            .Write(0x50000002u).Write(0u).WriteString16L("Alice")
+            .Write(0x50000003u).Write(1u).WriteString16L("Bob")
+            .Write(1).Write(0x50000004u)
+            .ToArray();
+
+        GameEvents.HouseAccess? har = GameEvents.ParseUpdateHar(wire);
+
+        Assert.NotNull(har);
+        Assert.True(har!.Value.OpenToEveryone);
+        Assert.False(har.Value.AllegianceGuests);
+        Assert.True(har.Value.AllegianceStorage);
+        Assert.Equal(0x50000001u, har.Value.MonarchId);
+        Assert.Collection(har.Value.Guests,
+            g => Assert.Equal(new GameEvents.HouseGuest(0x50000002u, "Alice", false), g),
+            g => Assert.Equal(new GameEvents.HouseGuest(0x50000003u, "Bob", true), g));
+        Assert.Equal(new[] { 0x50000004u }, har.Value.Roommates);
+    }
+
+    [Fact]
+    public void ParseUpdateHar_EmptyPrivateHouse_RoundTrips()
+    {
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u).Write(0u).Write(0u)
+            .Write((ushort)0).Write((ushort)64)
+            .Write(0)
+            .ToArray();
+
+        GameEvents.HouseAccess? har = GameEvents.ParseUpdateHar(wire);
+
+        Assert.NotNull(har);
+        Assert.False(har!.Value.OpenToEveryone);
+        Assert.Empty(har.Value.Guests);
+        Assert.Empty(har.Value.Roommates);
+    }
+
+    [Fact]
+    public void ParseUpdateHar_TruncatedGuest_ReturnsNull()
+    {
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u).Write(0u).Write(0u)
+            .Write((ushort)1).Write((ushort)64)
+            .Write(0x50000002u)
+            .ToArray();
+
+        Assert.Null(GameEvents.ParseUpdateHar(wire));
+    }
 }
