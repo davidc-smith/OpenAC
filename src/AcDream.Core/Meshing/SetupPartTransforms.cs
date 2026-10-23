@@ -9,30 +9,37 @@ namespace AcDream.Core.Meshing;
 public static class SetupPartTransforms
 {
     /// <summary>
-    /// The pose an object without a motion cycle rests in. When the server
-    /// sends a placement (the physics AnimationFrame, e.g. Hook for an item
-    /// hung on a house hook), use that frame, or Default when the setup lacks
-    /// it. Without one, Resting is preferred, then Default, then whatever
-    /// frame the setup has.
+    /// The placement a server object rests in when no motion cycle poses it.
+    /// An object the server sent motion data for keeps Resting. Otherwise it
+    /// takes the placement the server named (the physics AnimationFrame, e.g.
+    /// Hook for an item hung on a house hook), and Default when it named none.
     /// </summary>
-    public static AnimationFrame? ResolvePlacementFrame(Setup setup, uint? placementId)
+    public static uint ObjectPlacementId(uint? placementId, bool hasMovementData) =>
+        hasMovementData
+            ? (uint)Placement.Resting
+            : placementId ?? (uint)Placement.Default;
+
+    /// <summary>
+    /// The frame a setup is posed in for a placement: that placement's frame,
+    /// else Default, else none.
+    /// </summary>
+    public static AnimationFrame? ResolvePlacementFrame(Setup setup, uint placementId)
     {
         ArgumentNullException.ThrowIfNull(setup);
-        if (placementId is { } id)
-        {
-            if (setup.PlacementFrames.TryGetValue((Placement)id, out var placed))
-                return placed;
-            if (setup.PlacementFrames.TryGetValue(Placement.Default, out var fallback))
-                return fallback;
-        }
-        if (setup.PlacementFrames.TryGetValue(Placement.Resting, out var resting))
-            return resting;
-        if (setup.PlacementFrames.TryGetValue(Placement.Default, out var def))
-            return def;
-        foreach (var kvp in setup.PlacementFrames)
-            return kvp.Value;
+        if (setup.PlacementFrames.TryGetValue((Placement)placementId, out var placed))
+            return placed;
+        if (setup.PlacementFrames.TryGetValue(Placement.Default, out var fallback))
+            return fallback;
         return null;
     }
+
+    /// <summary>
+    /// The pose a server object rests in for a placement. When the setup has
+    /// neither that placement nor Default, the pose has no part frames: every
+    /// part sits at the object's origin, unrotated.
+    /// </summary>
+    public static AnimationFrame ResolveObjectPose(Setup setup, uint placementId) =>
+        ResolvePlacementFrame(setup, placementId) ?? new AnimationFrame(0);
 
     public static IReadOnlyList<Matrix4x4> Compute(
         Setup setup,
@@ -40,7 +47,23 @@ public static class SetupPartTransforms
         float objectScale = 1.0f)
     {
         ArgumentNullException.ThrowIfNull(setup);
-        AnimationFrame? source = motionFrameOverride ?? ResolvePlacementFrame(setup, placementId: null);
+        AnimationFrame? source = motionFrameOverride;
+        if (source is null && setup.PlacementFrames.TryGetValue(Placement.Resting, out var resting))
+        {
+            source = resting;
+        }
+        else if (source is null && setup.PlacementFrames.TryGetValue(Placement.Default, out var def))
+        {
+            source = def;
+        }
+        else if (source is null)
+        {
+            foreach (var kvp in setup.PlacementFrames)
+            {
+                source = kvp.Value;
+                break;
+            }
+        }
 
         if (source is null)
             return Array.Empty<Matrix4x4>();
