@@ -367,6 +367,7 @@ internal static class TransitionExactComparer
         if (Different("ObjectInfo.MoverPhysicsState", a.MoverPhysicsState, b.MoverPhysicsState, out path, out av, out bv)) return true;
         if (Different("ObjectInfo.TargetId", a.TargetId, b.TargetId, out path, out av, out bv)) return true;
         if (Different("ObjectInfo.SelfEntityId", a.SelfEntityId, b.SelfEntityId, out path, out av, out bv)) return true;
+        if (Different("ObjectInfo.MoverObjectId", a.MoverObjectId, b.MoverObjectId, out path, out av, out bv)) return true;
         if (Different("ObjectInfo.PassThroughPlayers", a.PassThroughPlayers, b.PassThroughPlayers, out path, out av, out bv)) return true;
         if (Different("ObjectInfo.MoverHasGravity", a.MoverHasGravity, b.MoverHasGravity, out path, out av, out bv)) return true;
         if (Different("ObjectInfo.VelocityKilled", a.VelocityKilled, b.VelocityKilled, out path, out av, out bv)) return true;

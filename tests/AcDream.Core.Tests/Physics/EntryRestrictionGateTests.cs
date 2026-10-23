@@ -13,6 +13,10 @@ public sealed class EntryRestrictionGateTests
     private const uint RestrictionObjGuid = 0x80001234u;
     private const uint MoverGuid = 0x50000001u;
 
+    // The client's own id for the mover's entity. Physics uses it to skip the
+    // mover's own shadow; it is never the server guid the house lists hold.
+    private const uint MoverLocalId = 1_000_042u;
+
     [Fact]
     public void OrdinaryCell_NoRestrictionObj_IsNoOp_ForPlayer()
     {
@@ -42,7 +46,7 @@ public sealed class EntryRestrictionGateTests
     [Fact]
     public void RestrictedCell_PlayerMover_UnresolvedRestrictionObject_FailsClosed()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
 
         Assert.Equal(
             TransitionState.Collided,
@@ -52,7 +56,7 @@ public sealed class EntryRestrictionGateTests
     [Fact]
     public void RestrictedCell_PlayerMover_ResolvedButObjectsTableHasNoRow_FailsClosed()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         var objects = new ClientObjectTable();
 
         Assert.Equal(
@@ -66,7 +70,7 @@ public sealed class EntryRestrictionGateTests
         var mover = new ObjectInfo
         {
             State = ObjectInfoState.IsPlayer | ObjectInfoState.CanBypassMoveRestrictions,
-            SelfEntityId = MoverGuid,
+            SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid,
         };
 
         Assert.Equal(
@@ -92,7 +96,7 @@ public sealed class EntryRestrictionGateTests
     [Fact]
     public void ResolvedUnownedHouse_NoOwnerNoRestrictions_Admits()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         var objects = MakeObjectsWithRestrictionObject(houseOwnerId: null, restrictions: null);
 
         Assert.Equal(
@@ -103,7 +107,7 @@ public sealed class EntryRestrictionGateTests
     [Fact]
     public void ResolvedHouse_MoverIsOwner_Admits()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         var closedList = new HouseRestrictionRecord(
             OpenToPublic: false,
             AllegianceMonarchId: 0,
@@ -116,9 +120,49 @@ public sealed class EntryRestrictionGateTests
     }
 
     [Fact]
+    public void ResolvedHouse_ClosedHouseOwnedByMover_AdmitsByServerGuidNotLocalId()
+    {
+        var mover = new ObjectInfo
+        {
+            State = ObjectInfoState.IsPlayer,
+            SelfEntityId = MoverLocalId,
+            MoverObjectId = MoverGuid,
+        };
+        var closedList = new HouseRestrictionRecord(
+            OpenToPublic: false,
+            AllegianceMonarchId: 0,
+            Guests: new Dictionary<uint, uint>());
+        var objects = MakeObjectsWithRestrictionObject(houseOwnerId: MoverGuid, restrictions: closedList);
+
+        Assert.Equal(
+            TransitionState.OK,
+            mover.CheckEntryRestrictions(RestrictionObjGuid, objects));
+    }
+
+    [Fact]
+    public void ResolvedHouse_ClosedHouse_LocalIdMatchingAGuestDoesNotAdmit()
+    {
+        var mover = new ObjectInfo
+        {
+            State = ObjectInfoState.IsPlayer,
+            SelfEntityId = MoverLocalId,
+            MoverObjectId = 0x50000077u,
+        };
+        var restrictions = new HouseRestrictionRecord(
+            OpenToPublic: false,
+            AllegianceMonarchId: 0,
+            Guests: new Dictionary<uint, uint> { [MoverLocalId] = 0u });
+        var objects = MakeObjectsWithRestrictionObject(houseOwnerId: 0x50000099u, restrictions: restrictions);
+
+        Assert.Equal(
+            TransitionState.Collided,
+            mover.CheckEntryRestrictions(RestrictionObjGuid, objects));
+    }
+
+    [Fact]
     public void ResolvedHouse_NoRestrictionDb_Admits()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         const uint otherOwnerId = 0x50000099u;
         var objects = MakeObjectsWithRestrictionObject(houseOwnerId: otherOwnerId, restrictions: null);
 
@@ -130,7 +174,7 @@ public sealed class EntryRestrictionGateTests
     [Fact]
     public void ResolvedHouse_PresentListExcludesMover_Blocks()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         const uint otherOwnerId = 0x50000099u;
         var restrictions = new HouseRestrictionRecord(
             OpenToPublic: false,
@@ -146,7 +190,7 @@ public sealed class EntryRestrictionGateTests
     [Fact]
     public void ResolvedHouse_PresentListIncludesMover_Admits()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         const uint otherOwnerId = 0x50000099u;
         var restrictions = new HouseRestrictionRecord(
             OpenToPublic: false,
@@ -164,7 +208,7 @@ public sealed class EntryRestrictionGateTests
     {
         // Flags bit 0 set (open to public) -- everyone in, regardless of the
         // guest table or allegiance.
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         const uint otherOwnerId = 0x50000099u;
         var restrictions = new HouseRestrictionRecord(
             OpenToPublic: true,
@@ -180,7 +224,7 @@ public sealed class EntryRestrictionGateTests
     [Fact]
     public void ResolvedHouse_MoverSharesAllegianceMonarch_Admits()
     {
-        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = ObjectInfoState.IsPlayer, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
         const uint otherOwnerId = 0x50000099u;
         const uint monarchId = 0x50000500u;
         var restrictions = new HouseRestrictionRecord(
@@ -235,7 +279,7 @@ public sealed class EntryRestrictionGateTests
         ObjectInfoState moverState =
             ObjectInfoState.IsPlayer | EntityCollisionFlagsExt.FromPwdBitfield(bitfield).ToMoverState();
 
-        var mover = new ObjectInfo { State = moverState, SelfEntityId = MoverGuid };
+        var mover = new ObjectInfo { State = moverState, SelfEntityId = MoverLocalId, MoverObjectId = MoverGuid };
 
         Assert.Equal(
             TransitionState.OK,
@@ -351,7 +395,8 @@ public sealed class EntryRestrictionGateTests
         var to = new Vector3(0.7f, 0f, 0.2f);
         var t = BSPStepUpFixtures.MakeGroundedTransition(from, to, cellId: CellId);
         t.ObjectInfo.State |= ObjectInfoState.IsPlayer;
-        t.ObjectInfo.SelfEntityId = MoverGuid;
+        t.ObjectInfo.SelfEntityId = MoverLocalId;
+        t.ObjectInfo.MoverObjectId = MoverGuid;
 
         t.FindTransitionalPosition(engine);
 
@@ -375,7 +420,8 @@ public sealed class EntryRestrictionGateTests
         var to = new Vector3(0.7f, 0f, 0.2f);
         var t = BSPStepUpFixtures.MakeGroundedTransition(from, to, cellId: CellId);
         t.ObjectInfo.State |= ObjectInfoState.IsPlayer;
-        t.ObjectInfo.SelfEntityId = MoverGuid;
+        t.ObjectInfo.SelfEntityId = MoverLocalId;
+        t.ObjectInfo.MoverObjectId = MoverGuid;
 
         t.FindTransitionalPosition(engine);
 

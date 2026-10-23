@@ -206,6 +206,7 @@ internal sealed class RuntimeOrdinaryPhysicsUpdater
                     : ObjectInfoState.EdgeSlide)
                     | moverPvpState,
                 movingEntityId: movingEntityId,
+                movingObjectId: record.ServerGuid,
                 sphereList: sphereList,
                 sphereScale: sphereScale);
 
