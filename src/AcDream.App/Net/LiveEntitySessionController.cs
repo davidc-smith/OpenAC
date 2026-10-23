@@ -41,6 +41,7 @@ internal sealed class LiveEntitySessionController
         OnParentUpdated,
         OnTeleportStarted,
         OnAppearanceUpdated,
+        OnDescriptionRefreshed,
         OnPlayPhysicsScript,
         OnPlayPhysicsScriptType,
         OnSoundEvent);
@@ -84,6 +85,10 @@ internal sealed class LiveEntitySessionController
     private void OnAppearanceUpdated(ObjDescEvent.Parsed value) =>
         _inbound.Run(_hydration, value,
             static (owner, message) => owner.OnAppearance(message));
+
+    private void OnDescriptionRefreshed(WorldSession.EntitySpawn value) =>
+        _inbound.Run(_hydration, value,
+            static (owner, message) => owner.OnDescriptionRefresh(message));
 
     private void OnPlayPhysicsScript(PlayPhysicsScript value) =>
         _inbound.Run(_effects, value,

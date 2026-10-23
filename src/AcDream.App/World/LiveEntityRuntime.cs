@@ -1974,6 +1974,22 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
             },
             out accepted);
 
+    public bool TryApplyDescriptionRefresh(
+        WorldSession.EntitySpawn incoming,
+        out WorldSession.EntitySpawn accepted)
+        => _entityObjects.TryApplyDescriptionRefresh(
+            incoming,
+            canonical =>
+            {
+                if (_projections.TryGet(
+                        canonical,
+                        out LiveEntityRecord? record))
+                {
+                    record.NoteObjDescProjectionSynchronization();
+                }
+            },
+            out accepted);
+
     public bool TryApplyPickup(PickupEvent.Parsed update, out WorldSession.EntitySpawn accepted)
         => _entityObjects.TryApplyPickup(
             update,

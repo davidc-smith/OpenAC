@@ -357,6 +357,33 @@ AppearanceSynchronization:
         }
     }
 
+    public bool OnDescriptionRefresh(WorldSession.EntitySpawn update)
+    {
+        lock (_datLock)
+        {
+            if (!_runtime.TryApplyDescriptionRefresh(update, out _))
+                return false;
+
+            if (!_runtime.TryGetRecord(
+                    update.Guid,
+                    out LiveEntityRecord record))
+            {
+                return _runtime.TryGetCanonical(
+                        update.Guid,
+                        out RuntimeEntityRecord canonical)
+                    && ProjectExact(
+                        canonical,
+                        canonical.Snapshot,
+                        LiveProjectionPurpose.SpatialRecovery,
+                        canonical.CreateIntegrationVersion);
+            }
+
+            return SynchronizeAppearance(
+                record,
+                record.ObjDescAuthorityVersion);
+        }
+    }
+
     public bool OnPickup(PickupEvent.Parsed update)
     {
         if (!_runtime.TryApplyPickup(update, out _))

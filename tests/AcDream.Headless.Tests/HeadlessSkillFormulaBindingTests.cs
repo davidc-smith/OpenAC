@@ -147,6 +147,7 @@ public sealed class HeadlessSkillFormulaBindingTests
         ParentUpdated: _ => { },
         TeleportStarted: _ => { },
         AppearanceUpdated: _ => { },
+        DescriptionRefreshed: _ => { },
         PlayPhysicsScript: _ => { },
         PlayPhysicsScriptType: _ => { },
         SoundEvent: _ => { });

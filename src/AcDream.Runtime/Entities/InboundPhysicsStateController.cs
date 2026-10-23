@@ -128,6 +128,65 @@ public sealed class InboundPhysicsStateController
         return true;
     }
 
+    /// <summary>
+    /// Applies a re-sent description (0xF7DB) of an object we already hold.
+    /// Unlike a same-generation create, which keeps the model it first
+    /// arrived with, this replaces the object's model: its setup, scale,
+    /// placement and appearance. ACE hangs an item on a house hook this way,
+    /// giving the hook the item's setup and hook placement. Where the object
+    /// is and its timestamps stay as they are.
+    /// </summary>
+    public bool TryApplyDescriptionRefresh(
+        WorldSession.EntitySpawn incoming,
+        out WorldSession.EntitySpawn accepted)
+    {
+        if (!TryGet(incoming.Guid, out PhysicsTimestampGate? gate, out WorldSession.EntitySpawn old)
+            || !gate.IsCurrentInstance(incoming.InstanceSequence))
+        {
+            accepted = default;
+            return false;
+        }
+
+        accepted = ApplyDescriptionRefresh(old, incoming);
+        _snapshots[incoming.Guid] = accepted;
+        return true;
+    }
+
+    internal static WorldSession.EntitySpawn ApplyDescriptionRefresh(
+        WorldSession.EntitySpawn old,
+        WorldSession.EntitySpawn incoming)
+    {
+        PhysicsSpawnData? physics = old.Physics;
+        if (physics is { } retained && incoming.Physics is { } refreshed)
+        {
+            physics = retained with
+            {
+                AnimationFrame = refreshed.AnimationFrame,
+                SetupTableId = refreshed.SetupTableId,
+                MotionTableId = refreshed.MotionTableId,
+                SoundTableId = refreshed.SoundTableId,
+                PhysicsScriptTableId = refreshed.PhysicsScriptTableId,
+                Scale = refreshed.Scale,
+                Translucency = refreshed.Translucency,
+                DefaultScriptType = refreshed.DefaultScriptType,
+                DefaultScriptIntensity = refreshed.DefaultScriptIntensity,
+            };
+        }
+
+        return MergeUntimestampedCreate(old, incoming) with
+        {
+            SetupTableId = incoming.SetupTableId ?? old.SetupTableId,
+            AnimPartChanges = incoming.AnimPartChanges,
+            TextureChanges = incoming.TextureChanges,
+            SubPalettes = incoming.SubPalettes,
+            BasePaletteId = incoming.BasePaletteId,
+            ObjScale = incoming.ObjScale,
+            MotionTableId = incoming.MotionTableId,
+            PlacementId = incoming.PlacementId,
+            Physics = physics,
+        };
+    }
+
     internal bool ApplyAcceptedObjDescSnapshot(
         uint guid,
         ObjDescEvent.Parsed update,
