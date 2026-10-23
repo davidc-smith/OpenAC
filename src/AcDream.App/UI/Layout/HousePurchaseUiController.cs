@@ -241,12 +241,12 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         && !(tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
         && (tab != HousePurchaseTab.Buy || BuyCovered(profile));
 
-    // Rent may be part-paid; a purchase needs every line met.
+    // Rent may be part-paid; a purchase needs every line met by the staged
+    // items alone.
     private bool BuyCovered(GameEvents.HouseProfile profile)
     {
         for (int i = 0; i < profile.Buy.Count; i++)
-            if (profile.Buy[i].Paid + _bindings.Purchase.GetStagedAmount(HousePurchaseTab.Buy, i)
-                < profile.Buy[i].Num)
+            if (_bindings.Purchase.GetStagedAmount(HousePurchaseTab.Buy, i) < profile.Buy[i].Num)
                 return false;
         return true;
     }

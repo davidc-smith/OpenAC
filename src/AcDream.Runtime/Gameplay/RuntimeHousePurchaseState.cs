@@ -71,26 +71,20 @@ public sealed class RuntimeHousePurchaseState
 
     public IRuntimeHousePurchaseView View { get; }
 
+    /// <summary>Every profile, the same house's included, empties both
+    /// strips: staging starts again from nothing, whatever the server says
+    /// is already paid.</summary>
     public void ApplyProfile(GameEvents.HouseProfile profile)
     {
         lock (_gate)
         {
-            bool sameHouse = _profile is { } current
-                && current.SlumlordGuid == profile.SlumlordGuid;
             _profile = profile with
             {
                 Buy = (profile.Buy ?? []).ToArray(),
                 Rent = (profile.Rent ?? []).ToArray(),
             };
-            if (sameHouse)
-            {
-                RevalidateLocked();
-            }
-            else
-            {
-                _buy.Clear();
-                _rent.Clear();
-            }
+            _buy.Clear();
+            _rent.Clear();
             _revision++;
         }
     }
@@ -139,7 +133,8 @@ public sealed class RuntimeHousePurchaseState
         int line = LineIndex(lines, item);
         if (line < 0)
             return HouseStageResult.NotRequired;
-        int owed = lines[line].Num - lines[line].Paid - StagedAmountLocked(tab, line);
+        // Only staged items count; the server's paid amount is shown, not used.
+        int owed = lines[line].Num - StagedAmountLocked(tab, line);
         if (owed <= 0)
             return HouseStageResult.AlreadyCovered;
         // A stack may run over (the server takes only what it needs), but

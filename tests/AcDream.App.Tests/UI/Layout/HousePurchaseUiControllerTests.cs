@@ -230,6 +230,23 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
+    public void Buy_CountsOnlyTheStagedItems_NotWhatTheServerSaysIsPaid()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 10_000);
+        h.State.ApplyProfile(new GameEvents.HouseProfile(
+            Slumlord, 1u, 0u, 1u, -1, -1, -1, -1, false, 1u, "",
+            [new(50_000, 40_000, 273u, "Pyreal", "Pyreals")],
+            [new(5_000, 0, 273u, "Pyreal", "Pyreals")]));
+        h.Controller.Tick();
+
+        h.Drop(h.BuyList, 1);
+
+        Assert.Equal(1, Harness.Staged(h.BuyList));
+        Assert.False(h.BuyButton.Enabled);
+    }
+
+    [Fact]
     public void Drop_Refused_OnlyAnItemNotCarriedIsReported()
     {
         using var h = new Harness();

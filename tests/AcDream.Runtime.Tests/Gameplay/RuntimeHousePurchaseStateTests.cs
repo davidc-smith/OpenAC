@@ -171,12 +171,28 @@ public sealed class RuntimeHousePurchaseStateTests
     [Fact]
     public void Stage_RefusesALineAlreadyCovered()
     {
-        Item(1, Pyreal, stack: 30_000);
+        Item(1, Pyreal, stack: 50_000);
         Item(2, Pyreal, stack: 5);
-        _state.ApplyProfile(Profile(buy: [Pay(Pyreal, 50_000, paid: 20_000)]));
+        _state.ApplyProfile(Profile(buy: [Pay(Pyreal, 50_000)]));
 
         Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 1));
         Assert.Equal(HouseStageResult.AlreadyCovered, _state.Stage(HousePurchaseTab.Buy, 2));
+    }
+
+    [Fact]
+    public void Stage_CountsFromZero_NotFromWhatTheServerSaysIsPaid()
+    {
+        Item(1, Pyreal, stack: 5_000);
+        Item(2, Pyreal, stack: 5_000);
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 5_000, paid: 4_000)]));
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Rent, 1));
+        Assert.Equal(5_000, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
+
+        // Maintenance already paid in full still takes an item.
+        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 5_000, paid: 5_000)]));
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Rent, 2));
     }
 
     [Fact]
@@ -232,18 +248,20 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
-    public void ApplyProfile_FromTheSameSlumlord_KeepsItemsStillHeld()
+    public void ApplyProfile_FromTheSameSlumlord_EmptiesBothStrips()
     {
         Item(1, Pyreal, stack: 10);
         Item(2, Pyreal, stack: 20);
         _state.ApplyProfile(Profile(owner: Player));
         _state.Stage(HousePurchaseTab.Rent, 1);
-        _state.Stage(HousePurchaseTab.Rent, 2);
-        _objects.Remove(2);
+        _state.ApplyProfile(Profile(owner: 0u));
+        _state.Stage(HousePurchaseTab.Buy, 2);
 
-        _state.ApplyProfile(Profile(owner: Player, rent: [Pay(Pyreal, 5_000, paid: 20)]));
+        _state.ApplyProfile(Profile(owner: 0u, rent: [Pay(Pyreal, 5_000, paid: 20)]));
 
-        Assert.Equal([1u], _state.View.GetStaged(HousePurchaseTab.Rent));
+        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Rent));
+        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Buy));
+        Assert.Equal(0, _state.View.GetStagedAmount(HousePurchaseTab.Buy, 0));
     }
 
     [Fact]
@@ -265,19 +283,16 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
-    public void ClearStaged_EmptiesOnlyThatTab()
+    public void ClearStaged_EmptiesTheTab()
     {
         Item(1, Pyreal, stack: 10);
-        Item(2, Pyreal, stack: 10);
-        _state.ApplyProfile(Profile(owner: Player, buy: [Pay(Pyreal, 50_000)]));
+        _state.ApplyProfile(Profile(owner: Player));
         _state.Stage(HousePurchaseTab.Rent, 1);
-        _state.ApplyProfile(Profile(owner: 0u));
-        _state.Stage(HousePurchaseTab.Buy, 2);
 
-        _state.ClearStaged(HousePurchaseTab.Buy);
+        _state.ClearStaged(HousePurchaseTab.Rent);
 
-        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Buy));
-        Assert.Equal([1u], _state.View.GetStaged(HousePurchaseTab.Rent));
+        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Rent));
+        Assert.Equal(0, _state.View.GetStagedAmount(HousePurchaseTab.Rent, 0));
     }
 
     [Fact]
