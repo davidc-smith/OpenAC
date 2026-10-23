@@ -14,6 +14,11 @@ internal sealed class UiMarkupListTreeShape
     private bool[] _collapsed = Array.Empty<bool>();
     private int[] _path = Array.Empty<int>();
 
+    // The shape when the view order was last built from it.
+    private int[] _builtLevels = Array.Empty<int>();
+    private bool[] _builtCollapsed = Array.Empty<bool>();
+    private int _builtCount = -1;
+
     public int Count { get; private set; }
 
     /// <summary>Loads <paramref name="count"/> rows' levels; every row starts expanded.</summary>
@@ -66,5 +71,34 @@ internal sealed class UiMarkupListTreeShape
     {
         if ((uint)row < (uint)Count)
             _collapsed[row] = collapsed;
+    }
+
+    /// <summary>Whether the levels or the collapsed rows differ from when <see cref="MarkBuilt"/> was last called.</summary>
+    public bool Changed
+    {
+        get
+        {
+            if (Count != _builtCount)
+                return true;
+            for (int row = 0; row < Count; row++)
+            {
+                if (_levels[row] != _builtLevels[row] || _collapsed[row] != _builtCollapsed[row])
+                    return true;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>Notes the shape a view order has just been built from.</summary>
+    public void MarkBuilt()
+    {
+        if (_builtLevels.Length < Count)
+        {
+            _builtLevels = new int[Count];
+            _builtCollapsed = new bool[Count];
+        }
+        Array.Copy(_levels, _builtLevels, Count);
+        Array.Copy(_collapsed, _builtCollapsed, Count);
+        _builtCount = Count;
     }
 }
