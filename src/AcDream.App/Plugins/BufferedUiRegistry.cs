@@ -903,17 +903,9 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
     {
         if (root.Name?.Equals(name, StringComparison.Ordinal) == true)
             return root;
-        HashSet<UiElement>? rows = null;
         foreach (UiElement child in root.Children)
         {
-            if (child is UiMarkupRepeat repeat)
-            {
-                rows ??= new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
-                foreach (UiMarkupRepeat.Copy copy in repeat.Copies)
-                    rows.UnionWith(repeat.Span(copy));
-                continue;
-            }
-            if (rows?.Contains(child) == true)
+            if (child is UiMarkupRepeat || child.IsRepeatRow)
                 continue;
             UiElement? found = FindByName(child, name);
             if (found is not null)

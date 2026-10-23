@@ -426,6 +426,7 @@ internal sealed class UiMarkupRepeat : UiElement
         for (int i = 0; i < elements.Length; i++)
         {
             elements[i] = Container.Children[firstChild + i];
+            elements[i].IsRepeatRow = true;
             elements[i].CaptureAuthoredAnchorBaselines();
         }
         int newItems = Flex.Items.Count - firstItem;
