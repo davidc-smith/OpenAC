@@ -76,17 +76,7 @@ public static class FlexLayout
             ? measure(null)
             : MeasureChildren(node);
 
-        float prefW = Positive(node.Width ?? content.Preferred.Width);
-        float prefH = Positive(node.Height ?? content.Preferred.Height);
-
-        // CSS min-width:auto: the content minimum, but never more than an
-        // explicit preferred size, and never more than the maximum.
-        float autoMinW = node.Width is { } w ? MathF.Min(Positive(w), Positive(content.Minimum.Width)) : Positive(content.Minimum.Width);
-        float autoMinH = node.Height is { } h ? MathF.Min(Positive(h), Positive(content.Minimum.Height)) : Positive(content.Minimum.Height);
-        float maxW = node.MaxWidth is { } mw ? Positive(mw) : float.MaxValue;
-        float maxH = node.MaxHeight is { } mh ? Positive(mh) : float.MaxValue;
-        float minW = MathF.Min(node.MinWidth is { } nw ? Positive(nw) : autoMinW, maxW);
-        float minH = MathF.Min(node.MinHeight is { } nh ? Positive(nh) : autoMinH, maxH);
+        var (prefW, prefH, minW, minH, maxW, maxH) = Limits(node, content);
 
         MarkSizeDependent(node);
 
@@ -108,6 +98,37 @@ public static class FlexLayout
         node.Measured = new FlexMeasurement(
             new FlexSize(Math.Clamp(prefW, floorW, maxW), Math.Clamp(prefH, floorH, maxH)),
             new FlexSize(minW, minH));
+    }
+
+    /// <summary>
+    /// What a leaf measured at <paramref name="content"/> resolves to once its
+    /// own sizes and limits apply: the <see cref="FlexNode.Measured"/> a
+    /// measure would give it. Two contents that resolve alike lay out alike,
+    /// so a leaf whose content changed only needs a new layout when this does.
+    /// </summary>
+    internal static FlexMeasurement ResolveLeaf(FlexNode node, FlexMeasurement content)
+    {
+        var (prefW, prefH, minW, minH, maxW, maxH) = Limits(node, content);
+        return new FlexMeasurement(
+            new FlexSize(Math.Clamp(prefW, minW, maxW), Math.Clamp(prefH, minH, maxH)),
+            new FlexSize(minW, minH));
+    }
+
+    private static (float PrefW, float PrefH, float MinW, float MinH, float MaxW, float MaxH) Limits(
+        FlexNode node, FlexMeasurement content)
+    {
+        float prefW = Positive(node.Width ?? content.Preferred.Width);
+        float prefH = Positive(node.Height ?? content.Preferred.Height);
+
+        // CSS min-width:auto: the content minimum, but never more than an
+        // explicit preferred size, and never more than the maximum.
+        float autoMinW = node.Width is { } w ? MathF.Min(Positive(w), Positive(content.Minimum.Width)) : Positive(content.Minimum.Width);
+        float autoMinH = node.Height is { } h ? MathF.Min(Positive(h), Positive(content.Minimum.Height)) : Positive(content.Minimum.Height);
+        float maxW = node.MaxWidth is { } mw ? Positive(mw) : float.MaxValue;
+        float maxH = node.MaxHeight is { } mh ? Positive(mh) : float.MaxValue;
+        float minW = MathF.Min(node.MinWidth is { } nw ? Positive(nw) : autoMinW, maxW);
+        float minH = MathF.Min(node.MinHeight is { } nh ? Positive(nh) : autoMinH, maxH);
+        return (prefW, prefH, minW, minH, maxW, maxH);
     }
 
     /// <summary>

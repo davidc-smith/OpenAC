@@ -12,8 +12,11 @@ namespace AcDream.App.UI;
 /// flex container nested inside it, whose nodes are inner nodes of its tree
 /// (height-for-width only works across inner nodes). A root lays its tree
 /// out when it is drawn, and only when something changed: its size, a child's
-/// visibility, or the inputs a child was measured from (caption, font,
-/// theme). Nothing calls into it to invalidate; it compares at draw.</para>
+/// visibility, or a leaf's measured size. Each leaf keeps its last
+/// measurement and measures again only when what it was measured from
+/// (caption, font, theme) changed, so a bound caption that changes every
+/// frame costs one measure, and no layout unless its size changed. Nothing
+/// calls into it to invalidate; it compares at draw.</para>
 /// </summary>
 internal sealed class UiFlexBox
 {
@@ -73,6 +76,7 @@ internal sealed class UiFlexBox
     /// </summary>
     public FlexMeasurement MeasureNow()
     {
+        Changed(this);
         SyncHidden(this);
         FlexSize minimum = FlexFit.Minimum(Node);
         Minimum = minimum;
@@ -91,7 +95,9 @@ internal sealed class UiFlexBox
     public bool EnsureLayout(float width, float height)
     {
         if (!IsRoot) return false;
-        bool contentChanged = !_laidOut || Changed(this);
+        // Changed runs even before the first layout: it brings the leaves
+        // measured at build up to date.
+        bool contentChanged = Changed(this) | !_laidOut;
         if (!contentChanged && width == _laidWidth && height == _laidHeight) return false;
 
         SyncHidden(this);
@@ -112,17 +118,22 @@ internal sealed class UiFlexBox
         return true;
     }
 
-    /// <summary>Whether any shown item's visibility or measured inputs changed, at any depth.</summary>
+    /// <summary>
+    /// Whether any item's visibility or any shown leaf's size changed, at any
+    /// depth. Every shown leaf is brought up to date on the way, so the
+    /// layout that follows measures nothing it already knows.
+    /// </summary>
     private static bool Changed(UiFlexBox box)
     {
+        bool changed = false;
         foreach (UiFlexItem item in box.Items)
         {
             bool hidden = !item.Element.Visible;
-            if (hidden != item.Node.Hidden) return true;
+            if (hidden != item.Node.Hidden) changed = true;
             if (hidden) continue;
-            if (item.Inner is { } inner ? Changed(inner) : item.InputsChanged()) return true;
+            changed |= item.Inner is { } inner ? Changed(inner) : item.Refresh();
         }
-        return false;
+        return changed;
     }
 
     private static void SyncHidden(UiFlexBox box)
@@ -152,15 +163,18 @@ internal sealed class UiFlexBox
 }
 
 /// <summary>
-/// One child of a flex container: the element, its node, and the inputs its
-/// size was last measured from, so a change of caption, font or theme is
-/// noticed at the next draw.
+/// One child of a flex container: the element, its node, and for a leaf its
+/// last measurement and the inputs it was made from, so a change of caption,
+/// font or theme is noticed at the next draw and nothing else is measured twice.
 /// </summary>
 internal sealed class UiFlexItem
 {
     private readonly UiFlexBox _owner;
     private readonly FlexMeasurement? _authoredSize;
+    private FlexMeasurement _measured;
+    private bool _hasMeasured;
     private string _text = string.Empty;
+    private string[] _options = [];
     private UiDatFont? _font;
     private bool _themed;
     private bool _collapsed;
@@ -181,17 +195,57 @@ internal sealed class UiFlexItem
     /// <summary>The nested container's box when this item is a flex group; null for a leaf.</summary>
     public UiFlexBox? Inner { get; }
 
-    /// <summary>The leaf's measure callback: its content size, recording what it was measured from.</summary>
+    /// <summary>
+    /// The leaf's measure callback: its content size. A leaf is measured the
+    /// first time it is asked; after that this returns the last measurement,
+    /// which <see cref="Refresh"/> keeps current.
+    /// </summary>
     internal FlexMeasurement Measure(float? availableWidth)
+    {
+        if (_authoredSize is { } authored)
+            return authored;
+        if (!_hasMeasured) MeasureContent();
+        return _measured;
+    }
+
+    /// <summary>
+    /// Measures the leaf again if what it was measured from changed. Returns
+    /// whether that changes the size it lays out at; a fixed-size leaf never does.
+    /// </summary>
+    internal bool Refresh()
+    {
+        if (!_hasMeasured) return false;
+        if (_collapsed != MarkupContentSize.Collapsed(Element))
+        {
+            // An expander opening or closing changes its limits (SyncCollapse), not just its content.
+            MeasureContent();
+            return true;
+        }
+        if (IsFixed || !InputsChanged()) return false;
+        FlexMeasurement before = FlexLayout.ResolveLeaf(Node, _measured);
+        MeasureContent();
+        return FlexLayout.ResolveLeaf(Node, _measured) != before;
+    }
+
+    /// <summary>
+    /// Whether the leaf's size never depends on its content: an absolute group
+    /// of its authored size, or a control whose markup states its width, height
+    /// and both minimums.
+    /// </summary>
+    private bool IsFixed =>
+        _authoredSize is not null
+        || (Node.Width is not null && Node.Height is not null && Node.MinWidth is not null && Node.MinHeight is not null);
+
+    private void MeasureContent()
     {
         _owner.MeasureCount++;
         _text = MarkupContentSize.Text(Element);
         _font = MarkupContentSize.Font(Element);
         _themed = MarkupContentSize.Themed(Element);
         _collapsed = MarkupContentSize.Collapsed(Element);
-        if (_authoredSize is { } authored)
-            return authored;
-        return MarkupContentSize.Measure(Element, _text) ?? default;
+        if (Element is UiMarkupRadio radio) _options = [.. radio.Items];
+        _measured = MarkupContentSize.Measure(Element, _text) ?? default;
+        _hasMeasured = true;
     }
 
     /// <summary>An expander's authored <c>maxh</c>, applied only while it is expanded.</summary>
@@ -214,10 +268,18 @@ internal sealed class UiFlexItem
         }
     }
 
-    /// <summary>Whether the caption, font or theme the leaf was measured from has changed.</summary>
-    internal bool InputsChanged() =>
+    /// <summary>Whether the caption, options, font or theme the leaf was measured from has changed.</summary>
+    private bool InputsChanged() =>
         !ReferenceEquals(_font, MarkupContentSize.Font(Element))
         || _themed != MarkupContentSize.Themed(Element)
-        || _collapsed != MarkupContentSize.Collapsed(Element)
+        || (Element is UiMarkupRadio radio && !SameOptions(radio.Items))
         || !string.Equals(_text, MarkupContentSize.Text(Element), StringComparison.Ordinal);
+
+    private bool SameOptions(IReadOnlyList<string> items)
+    {
+        if (items.Count != _options.Length) return false;
+        for (int i = 0; i < _options.Length; i++)
+            if (!string.Equals(items[i], _options[i], StringComparison.Ordinal)) return false;
+        return true;
+    }
 }
