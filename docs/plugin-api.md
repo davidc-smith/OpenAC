@@ -124,7 +124,7 @@ writes in one of the client's own text classes, so a plugin's own output can
 use the colour the class carries. `Submit(text)` still runs the full chat
 pipeline, commands included.
 
-A line a plugin posts may carry a coordinate link. The tag's caption is shown
+A line a plugin posts may carry a coordinate tag. The tag's caption is shown
 in the link colour, and clicking it raises `LinkClicked`:
 
 ```csharp
@@ -139,17 +139,20 @@ written.
 ### Chat links
 
 `LinkClicked` is raised when the player clicks a coordinate link in the main
-chat window. Only a line a plugin posted carries one: its `COORD` tags, and
-every coordinate pair `PluginChatCoordinateParser` reads in its plain text
-("meet at 42.1N 33.5E"). A pair is a number and a compass letter twice,
-neither inside a longer word, so "10n 20east" is not one.
+chat window. Every coordinate pair `PluginChatCoordinateParser` reads in the
+text a line shows is a link, in every line except combat text: what players
+say, tell and post on channels ("meet at 42.1N 33.5E"), the server's own
+lines ("Your corpse is located at (42.1N, 33.5E).") and a plugin's. A pair is
+a number and a compass letter twice, neither inside a longer word, so
+"10n 20east" is not one. The click reports the pair exactly as shown.
 
-What players say, tell and post on channels, and the server's own lines
-("Your corpse is located at (42.1N, 33.5E).") are shown exactly as they
-arrived and hold no coordinate link, even when a player types a `COORD` tag.
-A plugin that wants the coordinates in those lines reads them from `Received`
-with `PluginChatCoordinateParser`. `PluginChatCoordinateLinkRouter` hands the
-coordinates of a clicked link to a callback:
+A line a plugin posted also carries its `COORD` tags as links. In any other
+line a `COORD` tag is not a link: a player who types
+`<COORD:World:0N, 0E>42.1N 33.5E<\COORD>` gets its caption shown as plain
+text, and the hidden `0N, 0E` is never reported. When the caption is itself a
+pair, as here, that shown pair is a link like any other, to 42.1N 33.5E.
+`PluginChatCoordinateLinkRouter` hands the coordinates of a clicked link to a
+callback:
 
 ```csharp
 var router = new PluginChatCoordinateLinkRouter(
