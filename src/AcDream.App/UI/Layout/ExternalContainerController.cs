@@ -240,11 +240,10 @@ public sealed class ExternalContainerController : IItemListDragHandler, IRetaine
             item.ObjectId,
             _selection.SelectedObjectId ?? 0u,
             fullStack);
-        // A reorder inside the container lands left of the hovered item; an
-        // item arriving from the inventory goes to the top.
-        int? requested = item.ContainerId != _openContainer
-            ? 0
-            : ContentsDropPlacement(item.ObjectId, targetCell, wholeStack: amount >= fullStack);
+        // Lands left of the hovered item, whether it is reordered inside the
+        // container or arrives from the inventory.
+        int? requested = ContentsDropPlacement(
+            item.ObjectId, targetCell, wholeStack: amount >= fullStack);
         if (requested is not int placement)
             return;                                          // the item is already there
 

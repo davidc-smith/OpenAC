@@ -436,10 +436,11 @@ public sealed class ExternalContainerControllerTests
         Assert.Equal(new uint[] { pickup }, h.Pickups);
     }
 
-    // ── OpenAC #34: an item from the pack lands at the top of the chest.
+    // ── OpenAC #250: an item from the pack lands left of the chest item it
+    //    was dropped on.
 
     [Fact]
-    public void DropOwnedItemIntoChest_goesToTheTop()
+    public void DropOwnedItemIntoChest_landsLeftOfTheItemDroppedOn()
     {
         using var h = new Harness();
         const uint first = 0x70000101u;
@@ -455,7 +456,7 @@ public sealed class ExternalContainerControllerTests
 
         h.Controller.HandleDropRelease(h.Contents, h.Contents.GetItem(1)!, payload);
 
-        Assert.Equal(new[] { (Item, Chest, 0) }, h.Puts);
+        Assert.Equal(new[] { (Item, Chest, 1) }, h.Puts);
     }
 
     // ── OpenAC #249: a reorder inside the chest lands left of the item it

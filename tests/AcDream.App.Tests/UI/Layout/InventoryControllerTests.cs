@@ -1146,7 +1146,7 @@ public class InventoryControllerTests
         Workmanship: null);
 
     [Fact]
-    public void Drop_fromElsewhereOntoOccupiedGridCell_goesToTheTop()
+    public void Drop_fromElsewhereOntoOccupiedGridCell_landsLeftOfIt()
     {
         var (layout, grid, _, _, _, _, _, _) = BuildLayout();
         var objects = new ClientObjectTable();
@@ -1159,7 +1159,7 @@ public class InventoryControllerTests
         var bCell = grid.GetItem(1)!;                          // ItemId == 0xB, SlotIndex 1
         ((IItemListDragHandler)ctrl).HandleDropRelease(grid, bCell, Payload(0xFFFFu));
 
-        Assert.Contains((0xFFFFu, Player, 0), puts);
+        Assert.Contains((0xFFFFu, Player, 1), puts);
         Assert.Equal(0u, objects.Get(0xFFFFu)!.ContainerId);
     }
 
@@ -1183,15 +1183,15 @@ public class InventoryControllerTests
 
         ctrl.HandleDropRelease(grid, grid.GetItem(1)!, payload);
 
-        Assert.Equal(new[] { (loot, Player, 0) }, puts);
+        Assert.Equal(new[] { (loot, Player, 1) }, puts);           // left of B, the cell it was dropped on
         Assert.Equal(chest, objects.Get(loot)!.ContainerId);
-        Assert.Equal(loot, grid.GetItem(0)!.ItemId);
-        Assert.True(grid.GetItem(0)!.WaitingVisual);
-        Assert.True(grid.GetItem(0)!.Selected);
-        Assert.Equal(0xAu, grid.GetItem(1)!.ItemId);
+        Assert.Equal(0xAu, grid.GetItem(0)!.ItemId);
+        Assert.Equal(loot, grid.GetItem(1)!.ItemId);
+        Assert.True(grid.GetItem(1)!.WaitingVisual);
+        Assert.True(grid.GetItem(1)!.Selected);
         Assert.Equal(0xBu, grid.GetItem(2)!.ItemId);
 
-        objects.ApplyConfirmedServerMove(loot, Player, 0u, newSlot: 0);
+        objects.ApplyConfirmedServerMove(loot, Player, 0u, newSlot: 1);
 
         UiItemSlot confirmed = Enumerable.Range(0, grid.GetNumUIItems())
             .Select(i => grid.GetItem(i)!)
@@ -1750,7 +1750,7 @@ public class InventoryControllerTests
         var payload = new ItemDragPayload(loot, ItemDragSource.Ground, 0, source);
 
         ctrl.HandleDropRelease(grid, grid.GetItem(1)!, payload);
-        Assert.Equal(loot, grid.GetItem(0)!.ItemId);
+        Assert.Equal(loot, grid.GetItem(1)!.ItemId);                  // the empty cell past A appends
 
         objects.RejectMove(loot, weenieError: 0x29u);
 
@@ -1761,7 +1761,7 @@ public class InventoryControllerTests
     }
 
     [Fact]
-    public void Drop_fromElsewhereOntoEmptyGridCell_goesToTheTop()
+    public void Drop_fromElsewhereOntoEmptyGridCell_appends()
     {
         var (layout, grid, _, _, _, _, _, _) = BuildLayout();
         var objects = new ClientObjectTable();
@@ -1773,7 +1773,7 @@ public class InventoryControllerTests
         var emptyCell = grid.GetItem(5)!;
         ((IItemListDragHandler)ctrl).HandleDropRelease(grid, emptyCell, Payload(0xFFFFu));
 
-        Assert.Contains((0xFFFFu, Player, 0), puts);
+        Assert.Contains((0xFFFFu, Player, 1), puts);
     }
 
     [Fact]
@@ -2220,10 +2220,10 @@ public class InventoryControllerTests
             controller.OnDragOver(containers, emptyPackSlot, payload));
         controller.HandleDropRelease(containers, emptyPackSlot, payload);
 
-        Assert.Equal(new[] { (droppedPack, Player, 0) }, puts);
+        Assert.Equal(new[] { (droppedPack, Player, 2) }, puts);       // after the two packs
         Assert.True(interaction.TryGetPendingBackpackPlacement(droppedPack, out var pending));
         Assert.Equal(Player, pending.ContainerId);
-        Assert.Equal(0, pending.Placement);
+        Assert.Equal(2, pending.Placement);
     }
 
     [Fact]
@@ -2701,11 +2701,60 @@ public class InventoryControllerTests
         Assert.Equal(-1, grid.GetItem(0)!.ShortcutNum);
     }
 
-    // ── OpenAC #34: a move between containers lands at the top; only a
-    //    reorder inside the same list keeps the hovered slot.
+    // ── OpenAC #34: a drop on a pack's icon lands at that pack's top.
+    // ── OpenAC #250: a drop on a cell of the grid lands left of the item
+    //    under it, wherever the item came from.
 
     [Fact]
-    public void SidePackItem_droppedOnTheMainGrid_goesToTheTop()
+    public void EquippedItem_droppedOnAGridItem_landsLeftOfIt()
+    {
+        const uint shield = 0xE0u;
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xAu, Player, slot: 0);
+        SeedContained(objects, 0xBu, Player, slot: 1);
+        SeedContained(objects, 0xCu, Player, slot: 2);
+        objects.AddOrUpdate(new ClientObject { ObjectId = shield, Type = ItemType.Armor });
+        Assert.True(objects.ApplyServerMove(
+            shield,
+            newContainerId: 0u,
+            newWielderId: Player,
+            newEquipLocation: EquipMask.Shield));
+        var puts = new List<(uint item, uint container, int placement)>();
+        using var ctrl = Bind(layout, objects, puts: puts);
+        var source = new UiItemSlot { SourceKind = ItemDragSource.Equipment };
+        source.SetItem(shield, 0u);
+
+        ctrl.HandleDropRelease(
+            grid, grid.GetItem(2)!, new ItemDragPayload(shield, ItemDragSource.Equipment, 0, source));
+
+        Assert.Equal(new[] { (shield, Player, 2) }, puts);     // A B C -> A B shield C
+    }
+
+    [Fact]
+    public void EquippedItem_droppedOnAnEmptyCell_appends()
+    {
+        const uint shield = 0xE0u;
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xAu, Player, slot: 0);
+        SeedContained(objects, 0xBu, Player, slot: 1);
+        objects.AddOrUpdate(new ClientObject { ObjectId = shield, Type = ItemType.Armor });
+        objects.ApplyServerMove(shield, newContainerId: 0u, newWielderId: Player,
+            newEquipLocation: EquipMask.Shield);
+        var puts = new List<(uint item, uint container, int placement)>();
+        using var ctrl = Bind(layout, objects, puts: puts);
+        var source = new UiItemSlot { SourceKind = ItemDragSource.Equipment };
+        source.SetItem(shield, 0u);
+
+        ctrl.HandleDropRelease(
+            grid, grid.GetItem(7)!, new ItemDragPayload(shield, ItemDragSource.Equipment, 0, source));
+
+        Assert.Equal(new[] { (shield, Player, 2) }, puts);
+    }
+
+    [Fact]
+    public void SidePackItem_droppedOnTheMainGrid_landsLeftOfTheItemDroppedOn()
     {
         var (layout, grid, _, _, _, _, _, _) = BuildLayout();
         var objects = new ClientObjectTable();
@@ -2718,7 +2767,7 @@ public class InventoryControllerTests
 
         ctrl.HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xC1u));
 
-        Assert.Equal(new[] { (0xC1u, Player, 0) }, puts);
+        Assert.Equal(new[] { (0xC1u, Player, 1) }, puts);           // A B -> A C1 B
     }
 
     [Fact]

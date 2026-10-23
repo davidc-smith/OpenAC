@@ -1003,11 +1003,9 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         if (targetList == _contentsGrid)
         {
             container = EffectiveOpen();
-            // A reorder inside the list lands left of the hovered item;
-            // anything that arrives from elsewhere goes to the top.
-            requested = dragged?.ContainerId != container
-                ? 0
-                : ListDropPlacement(container, item, bags: false, targetCell, wholeStack);
+            // Lands left of the hovered item, wherever it came from: this
+            // pack, another pack, the paperdoll or the ground.
+            requested = ListDropPlacement(container, item, bags: false, targetCell, wholeStack);
         }
         else if (targetList == _containerList || targetList == _topContainer)
         {
@@ -1015,7 +1013,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             {
                 container = _playerGuid();
                 if (container == 0u) return;
-                requested = dragged?.ContainerId != container || targetList != _containerList
+                requested = targetList != _containerList
                     ? 0
                     : ListDropPlacement(container, item, bags: true, targetCell, wholeStack);
             }
