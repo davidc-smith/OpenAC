@@ -84,23 +84,49 @@ internal sealed class UiFlexBox
         return true;
     }
 
+    /// <summary>Removes the items for every element in <paramref name="elements"/>, in one pass.</summary>
+    public void RemoveAll(IReadOnlySet<UiElement> elements)
+    {
+        int kept = 0;
+        for (int i = 0; i < Items.Count; i++)
+        {
+            if (elements.Contains(Items[i].Element)) continue;
+            Items[kept] = Items[i];
+            Node.Children[kept] = Node.Children[i];
+            kept++;
+        }
+        if (kept == Items.Count) return;
+        Items.RemoveRange(kept, Items.Count - kept);
+        Node.Children.RemoveRange(kept, Node.Children.Count - kept);
+        _structureChanged = true;
+    }
+
     /// <summary>Moves the item for <paramref name="element"/> to <paramref name="index"/>.</summary>
     public void Move(UiElement element, int index)
     {
+        if (!TryMove(element, index))
+            throw new ArgumentException("not an item of this container", nameof(element));
+    }
+
+    /// <summary>Moves the item for <paramref name="element"/> to <paramref name="index"/>; false when it has none.</summary>
+    public bool TryMove(UiElement element, int index)
+    {
         int old = IndexOf(element);
-        if (old < 0) throw new ArgumentException("not an item of this container", nameof(element));
+        if (old < 0) return false;
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Items.Count);
-        if (old == index) return;
+        if (old == index) return true;
         UiFlexItem item = Items[old];
         Node.Children.RemoveAt(old);
         Items.RemoveAt(old);
         Node.Children.Insert(index, item.Node);
         Items.Insert(index, item);
         _structureChanged = true;
+        return true;
     }
 
-    private int IndexOf(UiElement element)
+    /// <summary>The index of <paramref name="element"/>'s item; -1 when it has none.</summary>
+    internal int IndexOf(UiElement element)
     {
         for (int i = 0; i < Items.Count; i++)
             if (ReferenceEquals(Items[i].Element, element)) return i;

@@ -20,6 +20,15 @@ public sealed class MarkupRepeatScaleTests
     private const double BuildBoundMs = 30.4;
     private const double TickBoundMs = 2.2;
     private const double ShuffleBoundMs = 11.6;
+    // 1000 rows in a themed window, least of three rounds, Release, this machine
+    // under load, 2026-10-23 (before the batched release, a keyless clear took 41 ms):
+    //   clear (keyed or keyless)  1.0 ms
+    //   replace every key         70 ms
+    //   refill from empty         55 ms  (building the rows; about 55 us a row)
+    // Each bound is 4x the measured value.
+    private const double ClearBoundMs = 4.0;
+    private const double ReplaceBoundMs = 280;
+    private const double RefillBoundMs = 220;
 
     private const int RowCount = 150;
 
@@ -72,11 +81,12 @@ public sealed class MarkupRepeatScaleTests
     }
 
     // Binding must expose Choices as items for the menu; Picked is the selection.
-    private static Rig Build(Binding binding)
+    private static Rig Build(Binding binding, bool themed = false, bool keyed = true)
     {
+        string body = keyed ? Body : Body.Replace(" key=\"{Id}\"", "");
         var window = MarkupDocument.BuildWindow(
-            $"<panel x=\"0\" y=\"0\" w=\"400\" h=\"300\" layout=\"column\">{Body}</panel>",
-            binding, _ => (0u, 0, 0), fallbackTitle: "Scale");
+            $"<panel x=\"0\" y=\"0\" w=\"400\" h=\"300\" layout=\"column\"{(themed ? " theme=\"plugin\"" : "")}>{body}</panel>",
+            binding, _ => (0u, 0, 0), themes: themed ? new PluginUiThemeSettings() : null, fallbackTitle: "Scale");
         var root = new UiRoot { Width = 800, Height = 600 };
         root.AddChild(window.Frame);
         var rig = new Rig { Root = root };
@@ -140,6 +150,52 @@ public sealed class MarkupRepeatScaleTests
         Assert.True(build <= BuildBoundMs, $"build {build:F2} ms");
         Assert.True(tick <= TickBoundMs, $"tick {tick:F2} ms");
         Assert.True(shuffle <= ShuffleBoundMs, $"shuffle {shuffle:F2} ms");
+    }
+
+    private static Row[] MakeRows(int count, string prefix) =>
+        Enumerable.Range(0, count).Select(i => new Row { Id = prefix + i, Label = "Row " + i, Value = i }).ToArray();
+
+    [Fact]
+    [Trait("Lane", "Timing")]
+    public void A_1000_row_themed_repeat_clears_replaces_and_refills_within_bounds()
+    {
+        double clear = double.MaxValue, replace = double.MaxValue, refill = double.MaxValue, keyless = double.MaxValue;
+        for (int round = 0; round < 3; round++)
+        {
+            // Without a key, rows are removed from the end of the list.
+            var unkeyed = new Binding { Rows = MakeRows(1000, "k") };
+            var plain = Build(unkeyed, themed: true, keyed: false);
+            unkeyed.Rows = [];
+            long t1 = Stopwatch.GetTimestamp();
+            plain.Frame();
+            keyless = Math.Min(keyless, Ms(Stopwatch.GetTimestamp() - t1));
+            Assert.Empty(plain.Marker.Copies);
+
+            var binding = new Binding { Rows = MakeRows(1000, "a") };
+            var rig = Build(binding, themed: true);
+            rig.Frame();
+
+            binding.Rows = MakeRows(1000, "b");
+            long t0 = Stopwatch.GetTimestamp();
+            rig.Frame();
+            replace = Math.Min(replace, Ms(Stopwatch.GetTimestamp() - t0));
+            Assert.Equal(1000, rig.Marker.Copies.Count);
+
+            binding.Rows = [];
+            t0 = Stopwatch.GetTimestamp();
+            rig.Frame();
+            clear = Math.Min(clear, Ms(Stopwatch.GetTimestamp() - t0));
+            Assert.Empty(rig.Marker.Copies);
+
+            binding.Rows = MakeRows(1000, "c");
+            t0 = Stopwatch.GetTimestamp();
+            rig.Frame();
+            refill = Math.Min(refill, Ms(Stopwatch.GetTimestamp() - t0));
+        }
+        Assert.True(clear <= ClearBoundMs, $"clear {clear:F2} ms");
+        Assert.True(keyless <= ClearBoundMs, $"keyless clear {keyless:F2} ms");
+        Assert.True(replace <= ReplaceBoundMs, $"replace {replace:F2} ms");
+        Assert.True(refill <= RefillBoundMs, $"refill {refill:F2} ms");
     }
 
     [Fact]
