@@ -457,4 +457,31 @@ public sealed class ExternalContainerControllerTests
 
         Assert.Equal(new[] { (Item, Chest, 0) }, h.Puts);
     }
+
+    // ── OpenAC #249: a reorder inside the chest lands left of the item it
+    //    was dropped on; the server closes the old slot up first.
+
+    [Fact]
+    public void ReorderInsideChest_landsLeftOfTheItemDroppedOn()
+    {
+        using var h = new Harness();
+        const uint first = 0x70000101u;
+        const uint second = 0x70000102u;
+        const uint third = 0x70000103u;
+        foreach (uint id in new[] { first, second, third })
+            h.Objects.AddOrUpdate(new ClientObject { ObjectId = id, Type = ItemType.Misc, ContainerId = Chest });
+        h.Open(Chest,
+            new ContainerContentEntry(first, 0u),
+            new ContainerContentEntry(second, 0u),
+            new ContainerContentEntry(third, 0u));
+        var source = new UiItemSlot { SourceKind = ItemDragSource.Inventory };
+        source.SetItem(first, 0u);
+        var payload = new ItemDragPayload(first, ItemDragSource.Inventory, 0, source);
+
+        h.Controller.HandleDropRelease(h.Contents, h.Contents.GetItem(1)!, payload);
+        Assert.Empty(h.Puts);                                  // already left of the second
+
+        h.Controller.HandleDropRelease(h.Contents, h.Contents.GetItem(2)!, payload);
+        Assert.Equal(new[] { (first, Chest, 1) }, h.Puts);     // 1 2 3 -> 2 1 3
+    }
 }

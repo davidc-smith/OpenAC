@@ -1830,7 +1830,7 @@ public class InventoryControllerTests
         ctrl.HandleDropRelease(grid, grid.GetItem(4)!, Payload(0xAu));
 
         Assert.Empty(splits);
-        Assert.Equal(new[] { (0xAu, Player, 2) }, puts);
+        Assert.Equal(new[] { (0xAu, Player, 1) }, puts);           // A B -> B A: its old slot closes up
     }
 
     [Fact]
@@ -1917,10 +1917,95 @@ public class InventoryControllerTests
         var merges = new List<(uint source, uint target, uint amount)>();
         var ctrl = Bind(layout, objects, puts: puts, merges: merges);
 
-        ctrl.HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xAu));
+        ctrl.HandleDropRelease(grid, grid.GetItem(0)!, Payload(0xBu));
 
         Assert.Empty(merges);
-        Assert.Contains((0xAu, Player, 1), puts);
+        Assert.Contains((0xBu, Player, 0), puts);
+    }
+
+    // #249: a reorder inside the pack lands to the left of the item it was
+    // dropped on. The server takes the item out of its old slot first, so
+    // an item moving later asks for one slot less than the hovered cell.
+    [Fact]
+    public void Reorder_laterInThePack_landsLeftOfTheItemDroppedOn()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        SeedContained(objects, 0xC, Player, slot: 2);
+        SeedContained(objects, 0xD, Player, slot: 3);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(grid, grid.GetItem(3)!, Payload(0xAu));
+
+        Assert.Equal(new[] { (0xAu, Player, 2) }, puts);       // A B C D -> B C A D
+    }
+
+    [Fact]
+    public void Reorder_earlierInThePack_takesTheSlotOfTheItemDroppedOn()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        SeedContained(objects, 0xC, Player, slot: 2);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xCu));
+
+        Assert.Equal(new[] { (0xCu, Player, 1) }, puts);       // A B C -> A C B
+    }
+
+    [Fact]
+    public void Reorder_ontoItselfOrItsRightNeighbour_sendsNothing()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = (IItemListDragHandler)Bind(layout, objects, puts: puts);
+
+        ctrl.HandleDropRelease(grid, grid.GetItem(0)!, Payload(0xAu));
+        ctrl.HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xAu));
+
+        Assert.Empty(puts);                                    // A is already left of B
+    }
+
+    [Fact]
+    public void Reorder_ontoTheEmptyCellsPastTheLastItem_appends()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        SeedContained(objects, 0xC, Player, slot: 2);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(grid, grid.GetItem(5)!, Payload(0xAu));
+
+        Assert.Equal(new[] { (0xAu, Player, 2) }, puts);       // A B C -> B C A
+    }
+
+    [Fact]
+    public void Reorder_sidePackLaterInTheColumn_landsAboveThePackDroppedOn()
+    {
+        var (layout, _, containers, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedBag(objects, 0xC1, slot: 0);
+        SeedBag(objects, 0xC2, slot: 1);
+        SeedBag(objects, 0xC3, slot: 2);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(
+            containers, containers.GetItem(2)!, Payload(0xC1u));
+
+        Assert.Equal(new[] { (0xC1u, Player, 1) }, puts);      // C1 C2 C3 -> C2 C1 C3
     }
 
     [Fact]

@@ -587,6 +587,30 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         return count;
     }
 
+    /// <summary>
+    /// The placement a drop on a cell of one of the pack's own lists asks
+    /// for: the loose-item grid (<paramref name="bags"/> false) or the pack
+    /// column (true). Null when the drop leaves the item where it is.
+    /// </summary>
+    private int? ListDropPlacement(
+        uint containerId, uint itemId, bool bags, UiItemSlot targetCell, bool wholeStack)
+    {
+        int count = 0, source = -1;
+        foreach (uint guid in _objects.GetContents(containerId))
+        {
+            if (_objects.Get(guid) is not { } listed
+                || listed.CurrentlyEquippedLocation != EquipMask.None
+                || IsBag(listed) != bags)
+            {
+                continue;
+            }
+            if (guid == itemId) source = count;
+            count++;
+        }
+        int dropIndex = targetCell.ItemId != 0u ? targetCell.SlotIndex : int.MaxValue;   // an empty cell is past the last item
+        return ItemListDropPlacement.Resolve(dropIndex, count, source, wholeStack);
+    }
+
     private int CountLooseContents(uint containerId)
     {
         int count = 0;
@@ -969,17 +993,21 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
 
         ClientObject? dragged = _objects.Get(item);
         bool sourceIsBag = dragged is not null && IsBag(dragged);
-        uint container; int placement;
+        uint fullStack = (uint)Math.Max(dragged?.StackSize ?? 1, 1);
+        uint splitSize = dragged is null
+            ? fullStack
+            : _stackSplitQuantity?.GetObjectSplitSize(
+                item, _selection.SelectedObjectId ?? 0u, fullStack) ?? fullStack;
+        bool wholeStack = splitSize >= fullStack;
+        uint container; int? requested;
         if (targetList == _contentsGrid)
         {
             container = EffectiveOpen();
-            // Reordering inside the list keeps the hovered slot; anything that
-            // arrives from elsewhere goes to the top, the way the game does it.
-            placement = dragged?.ContainerId != container
+            // A reorder inside the list lands left of the hovered item;
+            // anything that arrives from elsewhere goes to the top.
+            requested = dragged?.ContainerId != container
                 ? 0
-                : targetCell.ItemId != 0
-                    ? targetCell.SlotIndex
-                    : CountLooseContents(container);                                          // first empty = append after visible loose items
+                : ListDropPlacement(container, item, bags: false, targetCell, wholeStack);
         }
         else if (targetList == _containerList || targetList == _topContainer)
         {
@@ -987,16 +1015,16 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             {
                 container = _playerGuid();
                 if (container == 0u) return;
-                placement = dragged?.ContainerId != container
+                requested = dragged?.ContainerId != container || targetList != _containerList
                     ? 0
-                    : Math.Max(0, targetCell.SlotIndex);
+                    : ListDropPlacement(container, item, bags: true, targetCell, wholeStack);
             }
             else
             {
                 if (targetCell.ItemId == 0 || targetCell.ItemId == item) return;
                 container = targetCell.ItemId;                                                  // the bag / main pack
                 if (IsContainerFull(container)) return;                                         // red already shown
-                placement = 0;                                                                  // a drop on a pack goes to its top
+                requested = 0;                                                                  // a drop on a pack goes to its top
             }
         }
         else return;
@@ -1006,17 +1034,15 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             // The named pack was full; the pack that has room takes the item
             // at its top, like any arrival from elsewhere.
             container = fallthrough;
-            placement = 0;
+            requested = 0;
         }
 
+        if (requested is not int placement) return;                                            // the item is already there
         if (container == item) return;                                                         // never into itself
 
-        if (_objects.Get(item) is { } source)
+        if (dragged is not null)
         {
-            uint fullStack = (uint)Math.Max(source.StackSize, 1);
-            uint splitSize = _stackSplitQuantity?.GetObjectSplitSize(
-                item, _selection.SelectedObjectId ?? 0u, fullStack) ?? fullStack;
-            if (splitSize < fullStack)
+            if (!wholeStack)
             {
                 if (_itemInteraction is not null)
                 {
