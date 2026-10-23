@@ -1014,8 +1014,10 @@ is inside and is never a flex item.
 
 Sizes follow what is shown: a bound caption that gets longer, a hidden item
 (which takes no space), or a switch of the shared appearance lays the
-container out again on the next frame. A label inside a flex container
-draws in the box it is given, its line centred top to bottom.
+container out again on the next frame, but only when a size really changed:
+a caption that changes and keeps its width, or a control whose `w`, `h`,
+`minw` and `minh` are all stated, lays nothing out. A label inside a flex
+container draws in the box it is given, its line centred top to bottom.
 
 ### Mixing absolute and flex
 
