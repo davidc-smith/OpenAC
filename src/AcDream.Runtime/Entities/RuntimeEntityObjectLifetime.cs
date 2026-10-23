@@ -952,6 +952,45 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
             () => canonical.ObjDescAuthorityVersion == authorityVersion);
     }
 
+    /// <summary>
+    /// Applies a re-sent description (0xF7DB) that replaces an object's model.
+    /// It moves the object's appearance on like an ObjDesc does, so the host
+    /// rebuilds what it draws. An object still waiting to enter the world keeps
+    /// the description it arrived with.
+    /// </summary>
+    public bool TryApplyDescriptionRefresh(
+        WorldSession.EntitySpawn incoming,
+        Action<RuntimeEntityRecord>? acknowledgeProjection,
+        out WorldSession.EntitySpawn accepted)
+    {
+        EnsureNotDisposed();
+        if (TryGetPendingInitialResidence(
+                incoming.Guid,
+                out RuntimeEntityRecord pending,
+                out _))
+        {
+            accepted = pending.Snapshot;
+            return false;
+        }
+        bool applied = Entities.TryApplyDescriptionRefresh(incoming, out accepted);
+        if (!applied
+            || !Entities.TryGetActive(
+                incoming.Guid,
+                out RuntimeEntityRecord canonical))
+        {
+            return applied;
+        }
+
+        Entities.RefreshSnapshot(canonical, accepted);
+        Entities.AdvanceObjDescAuthority(canonical);
+        ulong authorityVersion = canonical.ObjDescAuthorityVersion;
+        return AcknowledgeProjectionAndPublish(
+            canonical,
+            () => acknowledgeProjection?.Invoke(canonical),
+            RuntimeEntityChange.Updated,
+            () => canonical.ObjDescAuthorityVersion == authorityVersion);
+    }
+
     public bool TryApplyPickup(
         PickupEvent.Parsed update,
         Action<RuntimeEntityRecord>? acknowledgeProjection,

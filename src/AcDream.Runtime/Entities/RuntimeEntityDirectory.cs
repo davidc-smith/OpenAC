@@ -551,6 +551,11 @@ public sealed class RuntimeEntityDirectory
         out WorldSession.EntitySpawn accepted) =>
         _inbound.TryApplyObjDesc(update, out accepted);
 
+    public bool TryApplyDescriptionRefresh(
+        WorldSession.EntitySpawn incoming,
+        out WorldSession.EntitySpawn accepted) =>
+        _inbound.TryApplyDescriptionRefresh(incoming, out accepted);
+
     public bool TryApplyPickup(
         AcDream.Core.Net.Messages.PickupEvent.Parsed update,
         out WorldSession.EntitySpawn accepted) =>
