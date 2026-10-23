@@ -29,15 +29,15 @@ public class MarkupNumberTests
     public void NumberReader_ReadsEveryNumericTypeAsDecimal()
     {
         var b = new Binding();
-        var (count, countType) = MarkupBindings.BindRequiredNumberReader("{Count}", b, "ctx");
+        var (count, countType) = MarkupBindings.BindRequiredNumberReader("{Count}", MarkupBindingSource.For(b), "ctx");
         Assert.Equal(10m, count());
         Assert.Equal(typeof(int), countType);
-        Assert.Equal(0.5m, MarkupBindings.BindRequiredNumberReader("{Ratio}", b, "ctx").Read());
-        Assert.Equal(5m, MarkupBindings.BindRequiredNumberReader("{Big}", b, "ctx").Read());
-        Assert.Equal(1.5m, MarkupBindings.BindRequiredNumberReader("{Scale}", b, "ctx").Read());
+        Assert.Equal(0.5m, MarkupBindings.BindRequiredNumberReader("{Ratio}", MarkupBindingSource.For(b), "ctx").Read());
+        Assert.Equal(5m, MarkupBindings.BindRequiredNumberReader("{Big}", MarkupBindingSource.For(b), "ctx").Read());
+        Assert.Equal(1.5m, MarkupBindings.BindRequiredNumberReader("{Scale}", MarkupBindingSource.For(b), "ctx").Read());
         b.Scale = 0.1f;
-        Assert.Equal(0.1m, MarkupBindings.BindRequiredNumberReader("{Scale}", b, "ctx").Read());
-        Assert.Equal(b.Money, MarkupBindings.BindRequiredNumberReader("{Money}", b, "ctx").Read());
+        Assert.Equal(0.1m, MarkupBindings.BindRequiredNumberReader("{Scale}", MarkupBindingSource.For(b), "ctx").Read());
+        Assert.Equal(b.Money, MarkupBindings.BindRequiredNumberReader("{Money}", MarkupBindingSource.For(b), "ctx").Read());
     }
 
     [Theory]
@@ -48,7 +48,7 @@ public class MarkupNumberTests
     public void NumberReader_ClampsUnrepresentableDoubles(double value, int expected)
     {
         var b = new Binding { Ratio = value };
-        decimal read = MarkupBindings.BindRequiredNumberReader("{Ratio}", b, "ctx").Read();
+        decimal read = MarkupBindings.BindRequiredNumberReader("{Ratio}", MarkupBindingSource.For(b), "ctx").Read();
         Assert.Equal(expected switch { 1 => decimal.MaxValue, -1 => decimal.MinValue, _ => 0m }, read);
     }
 
@@ -60,7 +60,7 @@ public class MarkupNumberTests
     public void NumberReader_RejectsNonNumbers(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredNumberReader(expression, new Binding(), "number value"));
+            () => MarkupBindings.BindRequiredNumberReader(expression, MarkupBindingSource.For(new Binding()), "number value"));
         Assert.Contains("number value", ex.Message);
     }
 
@@ -68,11 +68,11 @@ public class MarkupNumberTests
     public void NumberAction_ConvertsToTheBoundType()
     {
         var b = new Binding();
-        MarkupBindings.BindRequiredNumberAction("{SetCount}", b, typeof(int), "ctx")(42m);
-        MarkupBindings.BindRequiredNumberAction("{SetRatio}", b, typeof(double), "ctx")(0.25m);
-        MarkupBindings.BindRequiredNumberAction("{SetBig}", b, typeof(long), "ctx")(9_000_000_000m);
-        MarkupBindings.BindRequiredNumberAction("{SetScale}", b, typeof(float), "ctx")(2.5m);
-        MarkupBindings.BindRequiredNumberAction("{SetMoney}", b, typeof(decimal), "ctx")(1.25m);
+        MarkupBindings.BindRequiredNumberAction("{SetCount}", MarkupBindingSource.For(b), typeof(int), "ctx")(42m);
+        MarkupBindings.BindRequiredNumberAction("{SetRatio}", MarkupBindingSource.For(b), typeof(double), "ctx")(0.25m);
+        MarkupBindings.BindRequiredNumberAction("{SetBig}", MarkupBindingSource.For(b), typeof(long), "ctx")(9_000_000_000m);
+        MarkupBindings.BindRequiredNumberAction("{SetScale}", MarkupBindingSource.For(b), typeof(float), "ctx")(2.5m);
+        MarkupBindings.BindRequiredNumberAction("{SetMoney}", MarkupBindingSource.For(b), typeof(decimal), "ctx")(1.25m);
         Assert.Equal(42, b.Count);
         Assert.Equal(0.25, b.Ratio);
         Assert.Equal(9_000_000_000L, b.Big);
@@ -88,7 +88,7 @@ public class MarkupNumberTests
     public void NumberAction_RequiresActionOfTheValueType(string? attribute)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredNumberAction(attribute, new Binding(), typeof(int), "number onchange"));
+            () => MarkupBindings.BindRequiredNumberAction(attribute, MarkupBindingSource.For(new Binding()), typeof(int), "number onchange"));
         Assert.Contains("number onchange", ex.Message);
     }
 
@@ -260,6 +260,20 @@ public class MarkupNumberTests
         Assert.Equal(15, b.Count);
         root.OnScroll(-1);
         Assert.Equal(10, b.Count);
+    }
+
+    [Fact]
+    public void Number_ShiftSidewaysTickStepsTenWhenNothingScrollsSideways()
+    {
+        var b = new Binding();
+        var (root, number) = Mount(CountAttrs, b);
+        root.OnMouseMove(30, 15);
+        root.SetKeyboardFocus(number.Field);
+        number.ShiftHeld = () => true;
+        root.OnScroll(1, 0, shift: true);   // macOS: Shift+wheel arrives as a sideways tick
+        Assert.Equal(60, b.Count);
+        root.OnScroll(1, 0, shift: false);  // a plain sideways swipe steps nothing
+        Assert.Equal(60, b.Count);
     }
 
     [Fact]

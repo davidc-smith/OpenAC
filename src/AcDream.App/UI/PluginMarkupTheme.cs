@@ -3,6 +3,48 @@ namespace AcDream.App.UI;
 
 internal static class PluginMarkupTheme
 {
+    /// <summary>
+    /// Themes a window's title bar: the palette for its close button, and the
+    /// theme's font and text colour without outline under a theme; Classic's
+    /// own font, title colour and outline back under Classic. The themed close
+    /// button's "x" takes the theme's font; Classic draws a sprite, so no font.
+    /// </summary>
+    public static void RegisterTitleBar(UiPluginMarkupPanel panel, PluginTitleBar bar)
+    {
+        UiDatFont? classicFont = bar.DatFont;
+        var classicColor = bar.TextColor;
+        panel.AddThemeAction(p =>
+        {
+            bar.ThemePalette = p;
+            bar.DatFont = p is null ? classicFont : panel.ModernFont ?? classicFont;
+            bar.TextColor = p?.Text ?? classicColor;
+            bar.Outline = p is null;
+            bar.Close.DatFont = p is null ? null : panel.ModernFont;
+        });
+    }
+
+    /// <summary>
+    /// Themes the plugin sidepanel's "–" button on a window without a title
+    /// bar the way the bar's close button is themed: a flat face, edge and
+    /// caption in the palette and the theme's font; Classic's look back under Classic.
+    /// </summary>
+    public static void RegisterMinimize(UiPluginMarkupPanel panel, UiSimpleButton button)
+    {
+        var bg = button.BackgroundColor; var border = button.BorderColor;
+        var text = button.TextColor; bool outline = button.Outline;
+        UiDatFont? classicFont = button.DatFont;
+        panel.AddThemeAction(p =>
+        {
+            // The sidepanel removes the button when the window leaves it; a detached one is left as it was.
+            if (button.Parent is null) return;
+            button.BackgroundColor = p?.Field ?? bg;
+            button.BorderColor = p?.Border ?? border;
+            button.TextColor = p?.Text ?? text;
+            button.Outline = p is null && outline;
+            button.DatFont = p is null ? classicFont : panel.ModernFont ?? classicFont;
+        });
+    }
+
     public static void Register(UiPluginMarkupPanel panel, UiElement element, XElement xml)
     {
         if (panel.ModernFont is { } modern)

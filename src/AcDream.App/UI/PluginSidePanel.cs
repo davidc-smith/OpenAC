@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Numerics;
 using AcDream.Plugin.Abstractions;
 
@@ -112,7 +113,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
     public int EntryCount => _entries.Count;
 
     /// <summary>
-    /// Adds one manifest-scoped plugin window and its minimize affordance.
+    /// Adds one manifest-scoped plugin window, its shelf button and, unless
+    /// the window has a title bar (whose X replaces it), its minimize button.
     /// Duplicate handles are idempotent.
     /// </summary>
     public void Add(
@@ -151,15 +153,31 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
                 handle.Show();
         };
 
-        var minimize = new PluginMinimizeButton(handle, _font)
+        // A window with a title bar already has a close button, which does
+        // what "-" would; the bar's X takes its place and says where the
+        // window went.
+        PluginMinimizeButton? minimize = null;
+        if (handle.OuterFrame.Children.OfType<PluginTitleBar>().FirstOrDefault() is { } titleBar)
         {
-            Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
-            Top = 3f,
-            Width = 18f,
-            Height = 17f,
-            Anchors = AnchorEdges.Top | AnchorEdges.Right,
-        };
-        handle.OuterFrame.AddChild(minimize);
+            titleBar.Close.Tooltip = PluginWindowChrome.DockedCloseTooltip;
+        }
+        // A layout window without a bar has content right up to its
+        // 5-point border, where "-" would sit over it; it is closed
+        // from its shelf button (or HidePanel), as the author chose no chrome.
+        else if (!handle.OuterFrame.Children.OfType<UiPluginContentHost>().Any())
+        {
+            minimize = new PluginMinimizeButton(handle, _font)
+            {
+                Left = MathF.Max(8f, handle.OuterFrame.Width - 23f),
+                Top = 3f,
+                Width = 18f,
+                Height = 17f,
+                Anchors = AnchorEdges.Top | AnchorEdges.Right,
+            };
+            handle.OuterFrame.AddChild(minimize);
+            if (handle.OuterFrame is UiPluginMarkupPanel themed)
+                PluginMarkupTheme.RegisterMinimize(themed, minimize);
+        }
 
         _entries.Add(handle, new ShelfEntry(button, minimize));
         AddChild(button);
@@ -322,8 +340,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             return;
 
         RemoveChild(entry.Button);
-        if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
-            handle.OuterFrame.RemoveChild(entry.Minimize);
+        if (entry.Minimize is { } minimize && ReferenceEquals(minimize.Parent, handle.OuterFrame))
+            handle.OuterFrame.RemoveChild(minimize);
         entry.Button.DisposeSubscriptions();
         Reflow();
     }
@@ -454,8 +472,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         foreach ((RetailWindowHandle handle, ShelfEntry entry) in _entries)
         {
             entry.Button.DisposeSubscriptions();
-            if (ReferenceEquals(entry.Minimize.Parent, handle.OuterFrame))
-                handle.OuterFrame.RemoveChild(entry.Minimize);
+            if (entry.Minimize is { } minimize && ReferenceEquals(minimize.Parent, handle.OuterFrame))
+                handle.OuterFrame.RemoveChild(minimize);
         }
         _entries.Clear();
         Visible = false;
@@ -463,7 +481,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
 
     private readonly record struct ShelfEntry(
         PluginShelfButton Button,
-        PluginMinimizeButton Minimize);
+        PluginMinimizeButton? Minimize);
 
     private sealed class ShelfToggleButton(Func<bool> compact, Func<bool> collapsed) : UiSimpleButton
     {

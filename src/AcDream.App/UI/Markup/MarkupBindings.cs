@@ -14,70 +14,70 @@ internal static class MarkupBindings
     /// A required tri-state binding: a <c>bool</c> property, or a <c>bool?</c>
     /// one whose null means indeterminate.
     /// </summary>
-    public static Func<bool?> BindRequiredNullableBoolReader(string? expression, object binding, string context)
+    public static Func<bool?> BindRequiredNullableBoolReader(string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a bool or bool? binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null
             || (property.PropertyType != typeof(bool) && property.PropertyType != typeof(bool?)))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a bool or bool? property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) as bool?;
+        return () => binding.Read(property) as bool?;
     }
 
     /// <summary>An optional <c>Action&lt;bool&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<bool>? BindBoolAction(string? attribute, object binding, string context) =>
+    public static Action<bool>? BindBoolAction(string? attribute, MarkupBindingSource binding, string context) =>
         BindOptionalAction<bool>(attribute, binding, context, "bool");
 
     /// <summary>An optional <c>Action&lt;int&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<int>? BindIntAction(string? attribute, object binding, string context) =>
+    public static Action<int>? BindIntAction(string? attribute, MarkupBindingSource binding, string context) =>
         BindOptionalAction<int>(attribute, binding, context, "int");
 
     /// <summary>An optional <c>Action&lt;float&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<float>? BindFloatAction(string? attribute, object binding, string context) =>
+    public static Action<float>? BindFloatAction(string? attribute, MarkupBindingSource binding, string context) =>
         BindOptionalAction<float>(attribute, binding, context, "float");
 
     /// <summary>An optional <c>Action&lt;int, bool&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<int, bool>? BindIntBoolAction(string? attribute, object binding, string context)
+    public static Action<int, bool>? BindIntBoolAction(string? attribute, MarkupBindingSource binding, string context)
     {
         if (attribute is null)
             return null;
         if (!MarkupDocument.IsBinding(attribute))
             throw new FormatException($"{context} must be an Action<int, bool> binding");
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null || !typeof(Action<int, bool>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{attribute} did not resolve to an Action<int, bool> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return (first, second) => (property.GetValue(binding) as Action<int, bool>)?.Invoke(first, second);
+        return (first, second) => (binding.Read(property) as Action<int, bool>)?.Invoke(first, second);
     }
 
     /// <summary>A required list of floats (any <c>IEnumerable&lt;float&gt;</c>), copied on each read.</summary>
     public static Func<IReadOnlyList<float>> BindRequiredFloatListReader(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a float-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || !typeof(IEnumerable<float>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<float> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) is IEnumerable<float> values
+        return () => binding.Read(property) is IEnumerable<float> values
             ? values.ToArray()
             : Array.Empty<float>();
     }
 
     /// <summary>An optional <c>Action&lt;IReadOnlyList&lt;float&gt;&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<IReadOnlyList<float>>? BindFloatListAction(string? attribute, object binding, string context) =>
+    public static Action<IReadOnlyList<float>>? BindFloatListAction(string? attribute, MarkupBindingSource binding, string context) =>
         BindOptionalAction<IReadOnlyList<float>>(attribute, binding, context, "IReadOnlyList<float>");
 
     /// <summary>
@@ -86,18 +86,18 @@ internal static class MarkupBindings
     /// (read every frame, so not copied), otherwise a copy. Null reads as empty.
     /// </summary>
     public static Func<IReadOnlyList<int>> BindRequiredIntListReader(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be an int-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || !typeof(IEnumerable<int>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<int> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) switch
+        return () => binding.Read(property) switch
         {
             IReadOnlyList<int> list => list,
             IEnumerable<int> values => values.ToArray(),
@@ -106,7 +106,7 @@ internal static class MarkupBindings
     }
 
     /// <summary>An optional <c>Action&lt;IReadOnlyList&lt;int&gt;&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<IReadOnlyList<int>>? BindIntListAction(string? attribute, object binding, string context) =>
+    public static Action<IReadOnlyList<int>>? BindIntListAction(string? attribute, MarkupBindingSource binding, string context) =>
         BindOptionalAction<IReadOnlyList<int>>(attribute, binding, context, "IReadOnlyList<int>");
 
     private static readonly IReadOnlySet<string> NoStrings = new HashSet<string>(StringComparer.Ordinal);
@@ -117,18 +117,18 @@ internal static class MarkupBindings
     /// <c>IEnumerable&lt;string&gt;</c> copied into an ordinal set. Null reads as empty.
     /// </summary>
     public static Func<IReadOnlySet<string>> BindRequiredStringSetReader(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a string-set binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || !typeof(IEnumerable<string>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<string> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) switch
+        return () => binding.Read(property) switch
         {
             IReadOnlySet<string> set => set,
             IEnumerable<string> values => new HashSet<string>(values, StringComparer.Ordinal),
@@ -137,20 +137,20 @@ internal static class MarkupBindings
     }
 
     /// <summary>An optional <c>Action&lt;string, bool&gt;</c>; null when the attribute is absent.</summary>
-    public static Action<string, bool>? BindStringBoolAction(string? attribute, object binding, string context)
+    public static Action<string, bool>? BindStringBoolAction(string? attribute, MarkupBindingSource binding, string context)
     {
         if (attribute is null)
             return null;
         if (!MarkupDocument.IsBinding(attribute))
             throw new FormatException($"{context} must be an Action<string, bool> binding");
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null || !typeof(Action<string, bool>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{attribute} did not resolve to an Action<string, bool> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return (key, value) => (property.GetValue(binding) as Action<string, bool>)?.Invoke(key, value);
+        return (key, value) => (binding.Read(property) as Action<string, bool>)?.Invoke(key, value);
     }
 
     /// <summary>
@@ -159,60 +159,60 @@ internal static class MarkupBindings
     /// pair is set.
     /// </summary>
     public static (Func<IReadOnlyList<double>>? Numbers, Func<IReadOnlyList<string>>? Texts) BindSortKeys(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a binding to a list of double or string");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is not null && typeof(IEnumerable<double>).IsAssignableFrom(property.PropertyType))
         {
-            return (() => property.GetValue(binding) is IEnumerable<double> values
+            return (() => binding.Read(property) is IEnumerable<double> values
                 ? values.ToArray()
                 : Array.Empty<double>(), null);
         }
         if (property is not null && typeof(IEnumerable<string>).IsAssignableFrom(property.PropertyType))
         {
-            return (null, () => property.GetValue(binding) is IEnumerable<string> values
+            return (null, () => binding.Read(property) is IEnumerable<string> values
                 ? values.ToArray()
                 : Array.Empty<string>());
         }
         throw new FormatException(
             $"{expression} did not resolve to an IReadOnlyList<double> or IReadOnlyList<string> property on "
-            + binding.GetType().Name + $" ({context})");
+            + binding.TypeName + $" ({context})");
     }
 
     /// <summary>A required <c>float</c> binding, read live.</summary>
-    public static Func<float> BindRequiredFloatReader(string? expression, object binding, string context)
+    public static Func<float> BindRequiredFloatReader(string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a float binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(float))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a float property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) is float value ? value : 0f;
+        return () => binding.Read(property) is float value ? value : 0f;
     }
 
     /// <summary>A required <c>string</c> property, read on each call; null reads as empty.</summary>
-    public static Func<string> BindRequiredStringReader(string? expression, object binding, string context)
+    public static Func<string> BindRequiredStringReader(string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a string binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(string))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a string property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) as string ?? string.Empty;
+        return () => binding.Read(property) as string ?? string.Empty;
     }
 
     /// <summary>A required <c>Action&lt;string&gt;</c>.</summary>
-    public static Action<string> BindRequiredStringAction(string? attribute, object binding, string context) =>
+    public static Action<string> BindRequiredStringAction(string? attribute, MarkupBindingSource binding, string context) =>
         BindOptionalAction<string>(attribute, binding, context, "string")
         ?? throw new FormatException($"{context} must be an Action<string> binding");
 
@@ -225,54 +225,54 @@ internal static class MarkupBindings
     /// and "&lt;element&gt; onchange".
     /// </summary>
     public static (Func<uint> Read, Action<uint> Write) BindRequiredColor(
-        string? value, string? onchange, object binding, string element)
+        string? value, string? onchange, MarkupBindingSource binding, string element)
     {
         string valueContext = element + " value";
         string changeContext = element + " onchange";
         if (string.IsNullOrWhiteSpace(value) || !MarkupDocument.IsBinding(value))
             throw new FormatException($"{valueContext} must be a uint, int or string binding");
-        PropertyInfo? property = binding.GetType().GetProperty(value[1..^1]);
+        PropertyInfo? property = binding.Property(value[1..^1]);
         Type? type = property?.PropertyType;
         if (property is null || (type != typeof(uint) && type != typeof(int) && type != typeof(string)))
         {
             throw new FormatException(
                 $"{value} did not resolve to a uint, int or string property on "
-                + binding.GetType().Name + $" ({valueContext})");
+                + binding.TypeName + $" ({valueContext})");
         }
         if (type == typeof(uint))
         {
             Action<uint> set = BindOptionalAction<uint>(onchange, binding, changeContext, "uint")
                 ?? throw new FormatException($"{changeContext} must be an Action<uint> binding");
-            return (() => property.GetValue(binding) is uint packed ? packed : MarkupColorValue.White, set);
+            return (() => binding.Read(property) is uint packed ? packed : MarkupColorValue.White, set);
         }
         if (type == typeof(int))
         {
             Action<int> set = BindOptionalAction<int>(onchange, binding, changeContext, "int")
                 ?? throw new FormatException($"{changeContext} must be an Action<int> binding");
-            return (() => property.GetValue(binding) is int packed ? unchecked((uint)packed) : MarkupColorValue.White,
+            return (() => binding.Read(property) is int packed ? unchecked((uint)packed) : MarkupColorValue.White,
                 packed => set(unchecked((int)packed)));
         }
         Action<string> setText = BindOptionalAction<string>(onchange, binding, changeContext, "string")
             ?? throw new FormatException($"{changeContext} must be an Action<string> binding");
-        return (() => MarkupColorValue.ParseStrict(property.GetValue(binding) as string) ?? MarkupColorValue.White,
+        return (() => MarkupColorValue.ParseStrict(binding.Read(property) as string) ?? MarkupColorValue.White,
             packed => setText(MarkupColorValue.Format(packed)));
     }
 
     private static Action<T>? BindOptionalAction<T>(
-        string? attribute, object binding, string context, string typeName)
+        string? attribute, MarkupBindingSource binding, string context, string typeName)
     {
         if (attribute is null)
             return null;
         if (!MarkupDocument.IsBinding(attribute))
             throw new FormatException($"{context} must be an Action<{typeName}> binding");
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null || !typeof(Action<T>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{attribute} did not resolve to an Action<{typeName}> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return value => (property.GetValue(binding) as Action<T>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<T>)?.Invoke(value);
     }
 
     private static readonly Type[] NumberTypes =
@@ -284,18 +284,18 @@ internal static class MarkupBindings
     /// matching <c>onchange</c> must take.
     /// </summary>
     public static (Func<decimal> Read, Type ValueType) BindRequiredNumberReader(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !MarkupDocument.IsBinding(expression))
             throw new FormatException($"{context} must be a number binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || Array.IndexOf(NumberTypes, property.PropertyType) < 0)
         {
             throw new FormatException(
                 $"{expression} did not resolve to an int, long, float, double or decimal property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return (() => ToDecimal(property.GetValue(binding)), property.PropertyType);
+        return (() => ToDecimal(binding.Read(property)), property.PropertyType);
     }
 
     /// <summary>
@@ -304,20 +304,20 @@ internal static class MarkupBindings
     /// <c>T</c>'s range.
     /// </summary>
     public static Action<decimal> BindRequiredNumberAction(
-        string? attribute, object binding, Type valueType, string context)
+        string? attribute, MarkupBindingSource binding, Type valueType, string context)
     {
         string expected = $"Action<{valueType.Name}>";
         if (string.IsNullOrWhiteSpace(attribute) || !MarkupDocument.IsBinding(attribute))
             throw new FormatException($"{context} must be an {expected} binding");
         Type actionType = typeof(Action<>).MakeGenericType(valueType);
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null || !actionType.IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{attribute} did not resolve to an {expected} property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        object? Target() => property.GetValue(binding);
+        object? Target() => binding.Read(property);
         return valueType == typeof(int) ? value => (Target() as Action<int>)?.Invoke((int)value)
             : valueType == typeof(long) ? value => (Target() as Action<long>)?.Invoke((long)value)
             : valueType == typeof(float) ? value => (Target() as Action<float>)?.Invoke((float)value)

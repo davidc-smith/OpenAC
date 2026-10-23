@@ -86,7 +86,11 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
 internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
 {
     private readonly PluginUiThemeSettings _settings;
+    // The window's own theme actions; each repeat copy's sit in its scope,
+    // so dropping a copy is one flag, not a search of every action.
     private readonly List<Action<PluginUiPalette?>> _apply = new();
+    private readonly List<ThemeActionScope> _scopes = new();
+    private int _disposedScopes;
     private PluginUiTheme? _last;
     public UiPluginMarkupPanel(Func<uint, (uint, int, int)> resolve, PluginUiThemeSettings settings)
         : base(resolve) => _settings = settings;
@@ -94,17 +98,79 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
 
     /// <summary>The palette the panel draws with now, or null under Classic.</summary>
     internal PluginUiPalette? Palette => _settings.Palette;
+    private ThemeActionScope? _scope;
+
+    /// <summary>
+    /// Starts recording the theme actions added until the scope is disposed;
+    /// disposing it removes them, so a repeat copy's look stops following the
+    /// theme once the copy is gone.
+    /// </summary>
+    internal ThemeActionScope BeginThemeScope()
+    {
+        if (_scope is not null) throw new InvalidOperationException("a theme scope is already open");
+        _scope = new ThemeActionScope(this);
+        _scopes.Add(_scope);
+        return _scope;
+    }
+
+    /// <summary>How many theme actions run on a theme change: the window's and every live scope's.</summary>
+    internal int ThemeActionCount
+    {
+        get
+        {
+            int count = _apply.Count;
+            foreach (var scope in _scopes)
+                if (!scope.Disposed) count += scope.Actions.Count;
+            return count;
+        }
+    }
+
+    internal sealed class ThemeActionScope(UiPluginMarkupPanel panel) : IDisposable
+    {
+        internal readonly List<Action<PluginUiPalette?>> Actions = new();
+        private bool _closed;
+
+        internal bool Disposed { get; private set; }
+
+        /// <summary>Stops recording; the actions keep running until <see cref="Dispose"/>.</summary>
+        public void Close()
+        {
+            if (_closed) return;
+            _closed = true;
+            if (ReferenceEquals(panel._scope, this)) panel._scope = null;
+        }
+
+        /// <summary>Stops the actions; the panel drops the scope on its next tick.</summary>
+        public void Dispose()
+        {
+            if (Disposed) return;
+            Close();
+            Disposed = true;
+            panel._disposedScopes++;
+        }
+    }
+
     public void AddThemeAction(Action<PluginUiPalette?> action)
     {
-        _apply.Add(action);
+        (_scope?.Actions ?? _apply).Add(action);
         action(_settings.Palette);
     }
     protected override void OnTick(double dt)
     {
         base.OnTick(dt);
+        if (_disposedScopes > 0)
+        {
+            _scopes.RemoveAll(static scope => scope.Disposed);
+            _disposedScopes = 0;
+        }
         if (_last == _settings.Theme) return;
         _last = _settings.Theme;
         foreach (var apply in _apply) apply(_settings.Palette);
+        foreach (var scope in _scopes)
+        {
+            if (scope.Disposed) continue;
+            foreach (var apply in scope.Actions) apply(_settings.Palette);
+        }
     }
     protected override void OnDraw(UiRenderContext ctx)
     {

@@ -24,8 +24,8 @@ public sealed class MarkupListBindingsTests
     public void IntBoolAction_MissingIsNullAndBoundInvokes()
     {
         var b = new Binding();
-        Assert.Null(MarkupBindings.BindIntBoolAction(null, b, "list onsort"));
-        MarkupBindings.BindIntBoolAction("{SetSort}", b, "list onsort")!(2, true);
+        Assert.Null(MarkupBindings.BindIntBoolAction(null, MarkupBindingSource.For(b), "list onsort"));
+        MarkupBindings.BindIntBoolAction("{SetSort}", MarkupBindingSource.For(b), "list onsort")!(2, true);
         Assert.Equal((2, true), b.LastSort);
     }
 
@@ -36,7 +36,7 @@ public sealed class MarkupListBindingsTests
     public void IntBoolAction_RejectsLiteralsAndWrongTypes(string attribute)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindIntBoolAction(attribute, new Binding(), "list onsort"));
+            () => MarkupBindings.BindIntBoolAction(attribute, MarkupBindingSource.For(new Binding()), "list onsort"));
         Assert.Contains("list onsort", ex.Message);
         Assert.Contains("Action<int, bool>", ex.Message);
     }
@@ -45,7 +45,7 @@ public sealed class MarkupListBindingsTests
     public void FloatListReader_SnapshotsTheList()
     {
         var b = new Binding();
-        var read = MarkupBindings.BindRequiredFloatListReader("{Widths}", b, "list widths");
+        var read = MarkupBindings.BindRequiredFloatListReader("{Widths}", MarkupBindingSource.For(b), "list widths");
         IReadOnlyList<float> first = read();
         b.Widths[0] = 99f;
         Assert.Equal(new[] { 120f, 80f }, first);
@@ -60,7 +60,7 @@ public sealed class MarkupListBindingsTests
     public void FloatListReader_RejectsAbsentLiteralsAndWrongTypes(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindRequiredFloatListReader(expression, new Binding(), "list widths"));
+            () => MarkupBindings.BindRequiredFloatListReader(expression, MarkupBindingSource.For(new Binding()), "list widths"));
         Assert.Contains("list widths", ex.Message);
     }
 
@@ -68,8 +68,8 @@ public sealed class MarkupListBindingsTests
     public void FloatListAction_MissingIsNullAndBoundInvokes()
     {
         var b = new Binding();
-        Assert.Null(MarkupBindings.BindFloatListAction(null, b, "list onresize"));
-        MarkupBindings.BindFloatListAction("{SetWidths}", b, "list onresize")!(new[] { 1f });
+        Assert.Null(MarkupBindings.BindFloatListAction(null, MarkupBindingSource.For(b), "list onresize"));
+        MarkupBindings.BindFloatListAction("{SetWidths}", MarkupBindingSource.For(b), "list onresize")!(new[] { 1f });
         Assert.Equal(new[] { 1f }, b.LastWidths);
     }
 
@@ -79,7 +79,7 @@ public sealed class MarkupListBindingsTests
     public void FloatListAction_RejectsLiteralsAndWrongTypes(string attribute)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindFloatListAction(attribute, new Binding(), "list onresize"));
+            () => MarkupBindings.BindFloatListAction(attribute, MarkupBindingSource.For(new Binding()), "list onresize"));
         Assert.Contains("Action<IReadOnlyList<float>>", ex.Message);
     }
 
@@ -87,10 +87,10 @@ public sealed class MarkupListBindingsTests
     public void SortKeys_TakeDoublesOrStrings()
     {
         var b = new Binding();
-        var numbers = MarkupBindings.BindSortKeys("{DistKeys}", b, "column[1] sortkeys");
+        var numbers = MarkupBindings.BindSortKeys("{DistKeys}", MarkupBindingSource.For(b), "column[1] sortkeys");
         Assert.Null(numbers.Texts);
         Assert.Equal(new[] { 1.5, 2.5 }, numbers.Numbers!());
-        var texts = MarkupBindings.BindSortKeys("{NameKeys}", b, "column[0] sortkeys");
+        var texts = MarkupBindings.BindSortKeys("{NameKeys}", MarkupBindingSource.For(b), "column[0] sortkeys");
         Assert.Null(texts.Numbers);
         Assert.Equal(new[] { "a", "b" }, texts.Texts!());
     }
@@ -103,7 +103,7 @@ public sealed class MarkupListBindingsTests
     public void SortKeys_RejectEverythingElse(string? expression)
     {
         var ex = Assert.Throws<FormatException>(
-            () => MarkupBindings.BindSortKeys(expression, new Binding(), "column[1] sortkeys"));
+            () => MarkupBindings.BindSortKeys(expression, MarkupBindingSource.For(new Binding()), "column[1] sortkeys"));
         Assert.Contains("column[1] sortkeys", ex.Message);
     }
 }

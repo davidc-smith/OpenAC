@@ -22,7 +22,7 @@ public sealed class MarkupListSelectBindingsTests
     public void IntListReader_ReadsLiveListWithoutCopying()
     {
         var b = new Binding();
-        var read = MarkupBindings.BindRequiredIntListReader("{Rows}", b, "list selected");
+        var read = MarkupBindings.BindRequiredIntListReader("{Rows}", MarkupBindingSource.For(b), "list selected");
         Assert.Same(b.Rows, read());
         b.Rows = new List<int> { 3 };
         Assert.Equal(new[] { 3 }, read());
@@ -32,8 +32,8 @@ public sealed class MarkupListSelectBindingsTests
     public void IntListReader_CopiesOtherEnumerablesAndReadsNullAsEmpty()
     {
         var b = new Binding();
-        Assert.Equal(new[] { 5 }, MarkupBindings.BindRequiredIntListReader("{RowSet}", b, "list selected")());
-        Assert.Empty(MarkupBindings.BindRequiredIntListReader("{NullRows}", b, "list selected")());
+        Assert.Equal(new[] { 5 }, MarkupBindings.BindRequiredIntListReader("{RowSet}", MarkupBindingSource.For(b), "list selected")());
+        Assert.Empty(MarkupBindings.BindRequiredIntListReader("{NullRows}", MarkupBindingSource.For(b), "list selected")());
     }
 
     [Theory]
@@ -45,7 +45,7 @@ public sealed class MarkupListSelectBindingsTests
     public void IntListReader_ThrowsNamingContext(string? expression)
     {
         var ex = Assert.Throws<FormatException>(() =>
-            MarkupBindings.BindRequiredIntListReader(expression, new Binding(), "list selected"));
+            MarkupBindings.BindRequiredIntListReader(expression, MarkupBindingSource.For(new Binding()), "list selected"));
         Assert.Contains("list selected", ex.Message);
     }
 
@@ -53,8 +53,8 @@ public sealed class MarkupListSelectBindingsTests
     public void IntListAction_MissingIsNullAndBoundInvokes()
     {
         var b = new Binding();
-        Assert.Null(MarkupBindings.BindIntListAction(null, b, "list onchange"));
-        MarkupBindings.BindIntListAction("{SetRows}", b, "list onchange")!(new[] { 4, 1 });
+        Assert.Null(MarkupBindings.BindIntListAction(null, MarkupBindingSource.For(b), "list onchange"));
+        MarkupBindings.BindIntListAction("{SetRows}", MarkupBindingSource.For(b), "list onchange")!(new[] { 4, 1 });
         Assert.Equal(new[] { 4, 1 }, b.LastRows);
     }
 
@@ -65,7 +65,7 @@ public sealed class MarkupListSelectBindingsTests
     public void IntListAction_ThrowsNamingContextAndType(string expression)
     {
         var ex = Assert.Throws<FormatException>(() =>
-            MarkupBindings.BindIntListAction(expression, new Binding(), "list onchange"));
+            MarkupBindings.BindIntListAction(expression, MarkupBindingSource.For(new Binding()), "list onchange"));
         Assert.Contains("list onchange", ex.Message);
         Assert.Contains("Action<IReadOnlyList<int>>", ex.Message);
     }

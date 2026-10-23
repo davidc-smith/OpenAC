@@ -239,6 +239,61 @@ public sealed class ControlsDemoSampleTests
         Assert.Equal([true, true, false, true, true, true, true, true], binding.Keep);
     }
 
+    private static UiMarkupRepeat? FindRepeat(UiElement element)
+    {
+        if (element is UiMarkupRepeat repeat) return repeat;
+        foreach (UiElement child in element.Children)
+            if (FindRepeat(child) is { } found) return found;
+        return null;
+    }
+
+    [Theory]
+    [MemberData(nameof(Themes))]
+    public void Repeat_builds_and_lays_out(PluginUiTheme theme)
+    {
+        var (_, panel) = Mount("repeat.xml", new RepeatBinding(), theme);
+        AssertInside(panel);
+    }
+
+    [Fact]
+    public void Repeat_add_shuffle_and_remove_change_the_rows_and_shuffle_keeps_the_elements()
+    {
+        var binding = new RepeatBinding();
+        var (root, panel) = Mount("repeat.xml", binding);
+        UiMarkupRepeat repeat = FindRepeat(panel)!;
+        Assert.Equal(5, repeat.Copies.Count);
+        Assert.Equal("2 of 5 on", binding.Status);
+
+        binding.Add();
+        root.Tick(0, 0);
+        Assert.Equal(6, repeat.Copies.Count);
+
+        UiElement[] before = repeat.Copies.Select(c => c.Elements[0]).ToArray();
+        int[] ids = binding.Rows.Select(r => r.Id).ToArray();
+        binding.Shuffle();
+        root.Tick(0, 0);
+        int[] shuffled = binding.Rows.Select(r => r.Id).ToArray();
+        Assert.NotEqual(ids, shuffled);
+        UiElement[] after = repeat.Copies.Select(c => c.Elements[0]).ToArray();
+        Assert.Equal(before.Length, after.Length);
+        for (int i = 0; i < ids.Length; i++)
+            Assert.Same(before[Array.IndexOf(ids, shuffled[i])], after[i]);
+
+        binding.RemoveLast();
+        root.Tick(0, 0);
+        Assert.Equal(5, repeat.Copies.Count);
+    }
+
+    [Fact]
+    public void Repeat_row_edits_land_on_the_row_and_the_status_follows()
+    {
+        var binding = new RepeatBinding();
+        binding.Rows[1].SetOn(false);
+        Assert.Equal("1 of 5 on", binding.Status);
+        binding.Rows[1].SetValue(7);
+        Assert.Equal(7, binding.Rows[1].Value);
+    }
+
     private sealed record Rect(string File, float X, float Y, float W, float H)
     {
         public bool Overlaps(Rect o) => X < o.X + o.W && o.X < X + W && Y < o.Y + o.H && o.Y < Y + H;
@@ -247,7 +302,7 @@ public sealed class ControlsDemoSampleTests
     [Fact]
     public void Windows_sit_right_of_the_shelf_on_screen_and_clear_of_each_other()
     {
-        string[] files = ["inputs.xml", "pickers.xml", "layout.xml", "table.xml", "tree.xml", "dialogs.xml", "editor.xml"];
+        string[] files = ["inputs.xml", "pickers.xml", "layout.xml", "table.xml", "tree.xml", "dialogs.xml", "editor.xml", "repeat.xml"];
         var windows = files.Select(file =>
         {
             var root = System.Xml.Linq.XDocument.Parse(Markup(file)).Root!;

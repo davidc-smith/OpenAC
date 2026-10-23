@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Reflection;
 using System.Xml.Linq;
+using AcDream.App.UI.Layout.Flex;
 using AcDream.App.UI.Markup;
 using AcDream.Plugin.Abstractions;
 using AcDream.UI.Abstractions.Input;
@@ -11,8 +12,8 @@ namespace AcDream.App.UI;
 
 public static class MarkupDocument
 {
-    private const uint RuntimeTooltipRootElementId = 0x10000397u;
-    private const uint RuntimeTooltipLayoutDid = 0x21000041u;
+    internal const uint RuntimeTooltipRootElementId = 0x10000397u;
+    internal const uint RuntimeTooltipLayoutDid = 0x21000041u;
 
     /// <summary>
     /// What separates the edge names in an anchor attribute. An author writes
@@ -27,25 +28,71 @@ public static class MarkupDocument
         IMarkupControlState? controlState = null,
         Func<KeyChord, string>? describeKey = null,
         IMarkupTextureService? textures = null, IMarkupControlState? sharedControlState = null)
+        => BuildWindow(xml, binding, resolve, style, datFont, icons, themes, fallbackTitle: null,
+            controlState, describeKey, textures, sharedControlState).Frame;
+
+    /// <summary>
+    /// Builds a markup window and what mounting it needs (see
+    /// <see cref="MarkupWindow"/>). <paramref name="fallbackTitle"/> names the
+    /// title bar when the markup has no <c>title</c>: the registration's title.
+    /// </summary>
+    internal static MarkupWindow BuildWindow(
+        string xml, object binding, Func<uint, (uint, int, int)> resolve,
+        ControlsIni? style = null, UiDatFont? datFont = null,
+        IMarkupIconResolver? icons = null, PluginUiThemeSettings? themes = null,
+        string? fallbackTitle = null,
+        IMarkupControlState? controlState = null,
+        Func<KeyChord, string>? describeKey = null,
+        IMarkupTextureService? textures = null, IMarkupControlState? sharedControlState = null)
     {
         var root = XDocument.Parse(xml).Root ?? throw new FormatException("empty markup");
+        var source = MarkupBindingSource.For(binding);
         if (root.Name.LocalName != "panel")
             throw new FormatException($"root must be <panel>, got <{root.Name.LocalName}>");
         if (root.Element("contextmenu") is not null)
             throw new FormatException("<contextmenu> goes inside the element it belongs to, not directly in <panel>");
+        MarkupRepeat.RejectUnkeyedNames(root);
 
         bool themed = (string?)root.Attribute("theme") == "plugin";
         if (themed) themes ??= new PluginUiThemeSettings();
         UiNineSlicePanel panel = themed
             ? new UiPluginMarkupPanel(resolve, themes ?? new PluginUiThemeSettings())
             : new UiNineSlicePanel(resolve);
+
+        // A window with chrome or a flex layout has a content area: its authored
+        // sizes are the area inside the border (and title bar), and the frame
+        // adds the chrome. A root with layout gets the title bar by default.
+        var warnings = new List<string>();
+        bool hasLayout = MarkupFlexAttributes.IsContainer(root, warnings);
+        bool hasTitleBar = TitleBar(root, hasLayout, warnings);
+        bool hasContentArea = hasLayout || hasTitleBar;
+        var (rootScrollX, rootScrollY) = MarkupFlexAttributes.Scroll(root, warnings);
+        if ((rootScrollX || rootScrollY) && !hasContentArea)
+        {
+            warnings.Add(MarkupFlexAttributes.Ignored(root, "scroll", (string?)root.Attribute("scroll") ?? string.Empty,
+                "scrolls the window's content area, which needs layout=\"row|column\" or titlebar=\"true\" on the panel"));
+            (rootScrollX, rootScrollY) = (false, false);
+        }
+        float chromeW = hasContentArea ? PluginWindowChrome.HorizontalInsets : 0f;
+        float chromeH = hasContentArea ? PluginWindowChrome.VerticalInsetsFor(hasTitleBar) : 0f;
+        if (!hasLayout) MarkupFlexAttributes.RejectContainer(root, warnings);
+
+        // A layout root may leave its size to its content; it is measured once
+        // its children exist (below), so these are provisional for it.
+        float? authoredW = hasLayout ? MarkupFlexAttributes.RootSize(root, "w") : F(root, "w");
+        float? authoredH = hasLayout ? MarkupFlexAttributes.RootSize(root, "h") : F(root, "h");
+        float? authoredMinW = hasLayout ? MarkupFlexAttributes.RootSize(root, "minw") : null;
+        float? authoredMinH = hasLayout ? MarkupFlexAttributes.RootSize(root, "minh") : null;
+        float contentW = authoredW ?? 0f, contentH = authoredH ?? 0f;
         panel.Left = F(root, "x"); panel.Top = F(root, "y");
-        panel.Width = F(root, "w"); panel.Height = F(root, "h");
+        panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
 
         bool resizable = B(root, "resizable", false);
         panel.Resizable = resizable;
-        panel.MinWidth = FOr(root, "minw", panel.Width);
-        panel.MinHeight = FOr(root, "minh", panel.Height);
+        panel.MinWidth = hasContentArea
+            ? PluginWindowChrome.FrameMinimumWidth(FOr(root, "minw", contentW), hasTitleBar)
+            : FOr(root, "minw", contentW);
+        panel.MinHeight = FOr(root, "minh", contentH) + chromeH;
         panel.ResizeX = resizable;
         panel.ResizeY = resizable;
 
@@ -59,32 +106,97 @@ public static class MarkupDocument
         string? visible = (string?)root.Attribute("visible");
         if (visible is not null && IsBinding(visible))
         {
-            PropertyInfo? flag = binding.GetType().GetProperty(visible[1..^1]);
+            PropertyInfo? flag = source.Property(visible[1..^1]);
             if (flag is null || flag.PropertyType != typeof(bool))
             {
                 throw new FormatException(
                     $"<panel visible=\"{visible}\"> did not resolve to a bool property "
-                    + $"on {binding.GetType().Name}");
+                    + $"on {source.TypeName}");
             }
-            panel.VisibleSource = () => flag.GetValue(binding) is true;
+            panel.VisibleSource = () => source.Read(flag) is true;
         }
 
         string? title = (string?)root.Attribute("title");
-        if (!string.IsNullOrEmpty(title))
+        Vector4 titleColor = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
+        UiElement contentParent = panel;
+        UiPluginContentHost? content = null;
+        PluginTitleBar? titleBar = null;
+        if (hasTitleBar)
         {
-            Vector4 tc = style is not null && style.TryColor("title", "color", out var c) ? c : Vector4.One;
+            titleBar = new PluginTitleBar(resolve, panel.Width)
+            {
+                Title = string.IsNullOrEmpty(title) ? fallbackTitle ?? string.Empty : title,
+                DatFont = datFont,
+                TextColor = titleColor,
+            };
+            titleBar.Close.AuthoredTooltipRootElementId = RuntimeTooltipRootElementId;
+            titleBar.Close.AuthoredTooltipLayoutDid = RuntimeTooltipLayoutDid;
+            titleBar.Close.AuthoredTooltipEnabled = true;
+            panel.AddChild(titleBar);
+            if (panel is UiPluginMarkupPanel barPanel)
+                PluginMarkupTheme.RegisterTitleBar(barPanel, titleBar);
+        }
+        else if (!hasLayout && !string.IsNullOrEmpty(title))
+        {
             panel.AddChild(new UiLabel
             {
-                Text = title, Left = 8, Top = 4, TextColor = tc, DatFont = datFont,
+                Text = title, Left = 8, Top = 4, TextColor = titleColor, DatFont = datFont,
             });
+            if (panel is UiPluginMarkupPanel titlePanel)
+                PluginMarkupTheme.Register(titlePanel, panel.Children[^1], new XElement("label"));
+        }
+        if (hasContentArea)
+        {
+            content = new UiPluginContentHost
+            {
+                Left = PluginWindowChrome.Border,
+                Top = PluginWindowChrome.TopInset(hasTitleBar),
+                Width = contentW,
+                Height = contentH,
+            };
+            panel.AddChild(content);
+            contentParent = content;
         }
 
-        if (panel is UiPluginMarkupPanel titlePanel && panel.Children.Count > 0)
-            PluginMarkupTheme.Register(titlePanel, panel.Children[0], new XElement("label"));
+        UiFlexBox? rootFlex = null;
+        if (hasLayout)
+        {
+            rootFlex = content!.UseFlex();
+            MarkupFlexAttributes.ReadContainer(root, rootFlex.Node);
+        }
+        if (rootScrollX || rootScrollY)
+        {
+            content!.UseScroll(rootScrollX, rootScrollY, resolve);
+            if (panel is UiPluginMarkupPanel scrollPanel) content.ScrollArea!.RegisterTheme(scrollPanel);
+        }
 
         var recentColors = new MarkupRecentColors(sharedControlState);
         foreach (var el in root.Elements())
-            AddElement(panel, el, binding, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes, controlState, describeKey, textures, recentColors);
+            AddElement(contentParent, el, source, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes,
+                controlState, describeKey, textures, recentColors, warnings, rootFlex);
+
+        if (rootFlex is not null)
+        {
+            // The window's first measurement, with the fonts and theme known
+            // now: it sizes a root that states no w/h, and sets the minimum, so
+            // mounting and registration see real geometry. An authored size
+            // below the content's minimum opens at the minimum.
+            FlexMeasurement measured = rootFlex.MeasureNow();
+            float minW = authoredMinW ?? measured.Minimum.Width;
+            float minH = authoredMinH ?? measured.Minimum.Height;
+            contentW = MathF.Max(authoredW ?? measured.Preferred.Width, minW);
+            contentH = MathF.Max(authoredH ?? measured.Preferred.Height, minH);
+            panel.Width = contentW + chromeW; panel.Height = contentH + chromeH;
+            panel.MinWidth = PluginWindowChrome.FrameMinimumWidth(minW, hasTitleBar); panel.MinHeight = minH + chromeH;
+            content!.Width = contentW; content.Height = contentH;
+        }
+        if (hasTitleBar && panel.Width < PluginWindowChrome.MinimumBarFrameWidth)
+        {
+            // A window narrower than its title bar needs opens at the bar's minimum.
+            panel.Width = panel.MinWidth;
+            content!.Width = panel.Width - chromeW;
+        }
+        titleBar?.SetFrameWidth(panel.Width);
 
         // The whole document now sits at its authored sizes, so this is the one
         // moment every anchor margin can be read off the layout its author wrote.
@@ -93,22 +205,51 @@ public static class MarkupDocument
         // would otherwise measure its children against the resized parent the first
         // time it is opened.
         panel.CaptureAuthoredAnchorBaselines();
-        return panel;
+
+        int revision = hasContentArea
+            ? RetailWindowManager.ComputeAuthoredGeometryRevision(PluginWindowChrome.AuthoredInputs(root))
+            : RetailWindowManager.ComputeAuthoredGeometryRevision(
+                panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
+        var window = new MarkupWindow(panel, contentParent, titleBar, revision, warnings);
+        if (rootFlex is not null)
+            window.TrackContentMinimum(content!, chromeH, authoredMinW, authoredMinH);
+        return window;
+    }
+
+    /// <summary>
+    /// Whether the root asks for the host title bar: <c>titlebar</c> when it
+    /// is given, else on exactly when the root uses <c>layout</c>. Any other
+    /// value is reported and counts as absent.
+    /// </summary>
+    private static bool TitleBar(XElement root, bool hasLayout, ICollection<string> warnings)
+    {
+        switch ((string?)root.Attribute("titlebar"))
+        {
+            case null: return hasLayout;
+            case "false": return false;
+            case "true": return true;
+            case string other:
+                warnings.Add(MarkupFlexAttributes.Ignored(root, "titlebar", other, "must be true or false"));
+                return hasLayout;
+        }
     }
 
     private static void AddElement(
         UiElement parent,
         XElement el,
-        object binding,
+        MarkupBindingSource binding,
         Func<uint, (uint, int, int)> resolve,
         UiDatFont? datFont,
         IMarkupIconResolver? icons, UiPluginMarkupPanel? themedPanel, PluginUiThemeSettings? themes,
         IMarkupControlState? controlState,
         Func<KeyChord, string>? describeKey,
-        IMarkupTextureService? textures, MarkupRecentColors recentColors)
+        IMarkupTextureService? textures, MarkupRecentColors recentColors,
+        List<string> warnings,
+        UiFlexBox? flex = null)
     {
         int firstChild = parent.Children.Count;
-        void BindColorSource(string? expression, object model, Action<Vector4> setValue,
+        if (flex is null) MarkupFlexAttributes.RejectItem(el, warnings);
+        void BindColorSource(string? expression, MarkupBindingSource model, Action<Vector4> setValue,
             Action<Func<Vector4>> setSource)
         {
             if (expression?.StartsWith("theme:", StringComparison.Ordinal) == true)
@@ -126,26 +267,44 @@ public static class MarkupDocument
             (expression, setValue, setSource) => BindColorSource(expression, binding, setValue, setSource),
             controlState,
             (container, child) => AddElement(
-                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey, textures, recentColors),
+                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey, textures, recentColors,
+                warnings),
             describeKey, textures, recentColors);
         switch (el.Name.LocalName)
         {
             case "group":
-                var group = new UiPanel
+                UiFlexBox? groupFlex = null;
+                UiPanel group;
+                var (scrollX, scrollY) = MarkupFlexAttributes.Scroll(el, warnings);
+                bool scrolls = scrollX || scrollY;
+                if (MarkupFlexAttributes.IsContainer(el, warnings))
                 {
-                    Left = F(el, "x"),
-                    Top = F(el, "y"),
-                    Width = F(el, "w"),
-                    Height = F(el, "h"),
-                    BackgroundColor = el.Attribute("background") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("background")),
-                    BorderColor = el.Attribute("border") is null
-                        ? Vector4.Zero
-                        : Color((string?)el.Attribute("border")),
-                    BorderThickness = el.Attribute("border") is null ? 0f : 1f,
-                    ClickThrough = true,
-                };
+                    var flexGroup = new UiFlexGroup();
+                    MarkupFlexAttributes.ReadContainer(el, flexGroup.Flex.Node);
+                    if (scrolls) flexGroup.UseScroll(scrollX, scrollY, resolve);
+                    groupFlex = flexGroup.Flex;
+                    group = flexGroup;
+                }
+                else
+                {
+                    MarkupFlexAttributes.RejectContainer(el, warnings);
+                    group = scrolls ? new UiScrollPanel(scrollX, scrollY, resolve) : new UiPanel();
+                }
+                if (themedPanel is not null && group is IUiScrollHost { ScrollArea: { } groupScroll })
+                    groupScroll.RegisterTheme(themedPanel);
+                group.Left = F(el, "x");
+                group.Top = F(el, "y");
+                group.Width = F(el, "w");
+                group.Height = F(el, "h");
+                group.BackgroundColor = el.Attribute("background") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("background"));
+                group.BorderColor = el.Attribute("border") is null
+                    ? Vector4.Zero
+                    : Color((string?)el.Attribute("border"));
+                group.BorderThickness = el.Attribute("border") is null ? 0f : 1f;
+                // A scrolling group is hit-testable so the wheel reaches it over empty space.
+                group.ClickThrough = !scrolls;
                 BindColorSource(
                     (string?)el.Attribute("background"), binding,
                     value => group.BackgroundColor = value,
@@ -157,7 +316,8 @@ public static class MarkupDocument
                 ApplyCommon(group, el, binding);
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
-                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey, textures, recentColors);
+                    AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes,
+                        controlState, describeKey, textures, recentColors, warnings, groupFlex);
                 break;
 
             case "meter":
@@ -219,7 +379,7 @@ public static class MarkupDocument
                     {
                         throw new FormatException(
                             $"<button onclick=\"{clickName}\"> did not resolve to an "
-                            + $"Action property on {binding.GetType().Name}");
+                            + $"Action property on {binding.TypeName}");
                     }
                     var button = new UiSimpleButton
                     {
@@ -312,7 +472,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<tab onclick=\"{tabClickName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
                 }
 
                 var tab = new UiMarkupTabButton
@@ -345,7 +505,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<toggle onclick=\"{toggleClickName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
                 }
 
                 string? toggleCaption = (string?)el.Attribute("text");
@@ -416,7 +576,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<slider onchange=\"{changeName}\"> did not resolve to an "
-                        + $"Action<float> property on {binding.GetType().Name}");
+                        + $"Action<float> property on {binding.TypeName}");
                 }
 
                 // KB 08 §3 gap: VVS's HudHSlider exposes an arbitrary Min/Max
@@ -473,7 +633,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<field onchange=\"{fieldChangeName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
                 string? submitName = (string?)el.Attribute("onsubmit");
                 Action<string>? submitted = BindStringAction(submitName, binding);
@@ -481,7 +641,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<field onsubmit=\"{submitName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
 
                 string? blurName = (string?)el.Attribute("onblur");
@@ -490,7 +650,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<field onblur=\"{blurName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
 
                 string? upName = (string?)el.Attribute("onup");
@@ -498,14 +658,14 @@ public static class MarkupDocument
                 if (upName is not null && onUp is null)
                     throw new FormatException(
                         $"<field onup=\"{upName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
 
                 string? downName = (string?)el.Attribute("ondown");
                 Action? onDown = BindAction(downName, binding);
                 if (downName is not null && onDown is null)
                     throw new FormatException(
                         $"<field ondown=\"{downName}\"> did not resolve to an "
-                        + $"Action property on {binding.GetType().Name}");
+                        + $"Action property on {binding.TypeName}");
 
                 var field = new UiField
                 {
@@ -567,7 +727,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"<menu onchange=\"{menuChangeName}\"> did not resolve to an "
-                        + $"Action<string> property on {binding.GetType().Name}");
+                        + $"Action<string> property on {binding.TypeName}");
                 }
                 Func<IReadOnlyList<string>> menuItems = BindStringList(
                     (string?)el.Attribute("items"),
@@ -718,6 +878,14 @@ public static class MarkupDocument
                 parent.AddChild(list);
                 break;
 
+            case "repeat":
+                MarkupRepeat.Build(parent, el, binding, flex,
+                    new MarkupRepeat.BuildArgs(resolve, datFont, icons, themedPanel, themes, controlState,
+                        describeKey, textures, recentColors),
+                    (container, child, source, state, box) => AddElement(container, child, source, resolve, datFont,
+                        icons, themedPanel, themes, state, describeKey, textures, recentColors, warnings, box));
+                break;
+
             case "contextmenu":
                 // Built onto its owner element after the owner's own case; see the tail below.
                 break;
@@ -725,14 +893,91 @@ public static class MarkupDocument
             default:
                 throw new FormatException($"unknown element <{el.Name.LocalName}>");
         }
-        if (parent.Children.Count > firstChild)
+        // A repeat's marker takes no theme, menu or flex item; its copies took their own.
+        if (parent.Children.Count > firstChild && parent.Children[firstChild] is not UiMarkupRepeat)
         {
             UiElement built = parent.Children[firstChild];
             if (themedPanel is not null)
                 PluginMarkupTheme.Register(themedPanel, built, el);
             if (MarkupContextMenu.Attach(el, built, binding, Context()) is { } contextMenu && themedPanel is not null)
                 PluginMarkupTheme.Register(themedPanel, contextMenu, el.Element("contextmenu")!);
+            if (flex is not null)
+                AddFlexItem(flex, built, el);
         }
+    }
+
+    /// <summary>
+    /// Enters <paramref name="element"/>, just built from <paramref name="el"/>
+    /// under a flex container, into that container's layout: a flex group as an
+    /// inner node, an absolute group as a leaf of its authored size, any other
+    /// control as a leaf measured by <see cref="MarkupContentSize"/>. The
+    /// container places it, so it keeps no anchors.
+    /// </summary>
+    private static void AddFlexItem(UiFlexBox flex, UiElement element, XElement el)
+    {
+        UiFlexItem item = element is UiFlexGroup group
+            ? flex.AddContainer(group, group.Flex)
+            : flex.AddLeaf(element, new FlexNode(),
+                el.Name.LocalName == "group" ? AbsoluteGroupSize(element) : null);
+        MarkupFlexAttributes.ReadItem(el, item.Node);
+        if (element is UiMarkupExpander expander)
+        {
+            // Its h is the expanded height, given only while it is expanded;
+            // collapsed it measures as its header (MarkupContentSize).
+            expander.FlexPlaced = true;
+            expander.ExpandedHeight = item.Node.Height ?? expander.Height;
+            item.Node.Height = null;
+            item.ExpandedMaxHeight = item.Node.MaxHeight;
+            item.ExpandedMinHeight = item.Node.MinHeight;
+            // Without a w, start at the content width, so its content's anchors
+            // are captured against a real box rather than a 0-wide one.
+            if (expander.Width <= 0f)
+            {
+                expander.Width = MarkupContentSize.ListWidth;
+                expander.LayoutParts();
+            }
+        }
+        if (element is UiMarkupSplit split && (split.Width <= 0f || split.Height <= 0f))
+        {
+            // Without a w or h, start at the content size, so the panes' children
+            // capture their anchors against real panes rather than 0-sized ones.
+            if (split.Width <= 0f) split.Width = MarkupContentSize.ListWidth;
+            if (split.Height <= 0f) split.Height = MarkupContentSize.ListHeight;
+            if (el.Attribute("at") is null)
+            {
+                float room = (split.Horizontal ? split.Width : split.Height) - UiMarkupSplit.BarSize;
+                split.DefaultPosition = MathF.Floor(MathF.Max(0f, room) / 2f);
+            }
+            split.LayoutAtDefault();
+        }
+        element.Anchors = AnchorEdges.None;
+        if (element is UiLabel label) label.SizedByLayout = true;
+        if (element is UiMenu menu)
+        {
+            // A flex menu has no authored w (the container sizes it), so its
+            // popup column would stay at the 20-point minimum; match the popup
+            // to the laid-out menu on every open, as an absolute menu's is.
+            Action? refresh = menu.BeforeOpen;
+            menu.BeforeOpen = () =>
+            {
+                refresh?.Invoke();
+                menu.ColumnWidth = MathF.Max(20f, menu.Width);
+            };
+        }
+    }
+
+    /// <summary>
+    /// An absolute group's content size in a flex container: its authored
+    /// size, which is also its minimum, except along an axis it scrolls, where
+    /// it can shrink to a 40-point viewport (plus the other axis's bar).
+    /// </summary>
+    private static FlexMeasurement AbsoluteGroupSize(UiElement group)
+    {
+        var size = new FlexSize(group.Width, group.Height);
+        if (group is not UiScrollPanel { ScrollArea: var area }) return new FlexMeasurement(size, size);
+        float minW = area.ScrollsX ? FlexLayout.MinimumScrollViewport + (area.ScrollsY ? UiScrollArea.BarSize : 0f) : size.Width;
+        float minH = area.ScrollsY ? FlexLayout.MinimumScrollViewport + (area.ScrollsX ? UiScrollArea.BarSize : 0f) : size.Height;
+        return new FlexMeasurement(size, new FlexSize(MathF.Min(minW, size.Width), MathF.Min(minH, size.Height)));
     }
 
     /// <summary>
@@ -740,7 +985,7 @@ public static class MarkupDocument
     /// validated at build even with no resolver wired, so a typo fails early.
     /// </summary>
     private static void ApplyButtonIcon(
-        UiSimpleButton button, XElement el, object binding,
+        UiSimpleButton button, XElement el, MarkupBindingSource binding,
         IMarkupIconResolver? icons, string context)
     {
         string? iconExpression = (string?)el.Attribute("icon");
@@ -802,21 +1047,21 @@ public static class MarkupDocument
     }
 
     private static Func<uint> BindUintLiteralOrBinding(
-        string expression, object binding, string context)
+        string expression, MarkupBindingSource binding, string context)
     {
         if (!IsBinding(expression))
         {
             uint literal = ParseUintLiteral(expression, context);
             return () => literal;
         }
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null)
         {
             throw new FormatException(
                 $"{expression} did not resolve to a property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) switch
+        return () => binding.Read(property) switch
         {
             uint u => u,
             null => 0u,
@@ -853,7 +1098,7 @@ public static class MarkupDocument
         throw new FormatException($"{context}=\"{text}\" is not a valid uint literal");
     }
 
-    internal static Func<string?> BindString(string? attribute, object binding)
+    internal static Func<string?> BindString(string? attribute, MarkupBindingSource binding)
     {
         if (attribute is null)
             return static () => null;
@@ -861,143 +1106,143 @@ public static class MarkupDocument
             return () => attribute;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null)
             return () => attribute;
-        return () => property.GetValue(binding)?.ToString();
+        return () => binding.Read(property)?.ToString();
     }
 
-    private static Action? BindAction(string? attribute, object binding)
+    private static Action? BindAction(string? attribute, MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null || !typeof(Action).IsAssignableFrom(property.PropertyType))
             return null;
 
-        return () => (property.GetValue(binding) as Action)?.Invoke();
+        return () => (binding.Read(property) as Action)?.Invoke();
     }
 
     private static Action<float>? BindFloatAction(
         string? attribute,
-        object binding)
+        MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null
             || !typeof(Action<float>).IsAssignableFrom(property.PropertyType))
             return null;
-        return value => (property.GetValue(binding) as Action<float>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<float>)?.Invoke(value);
     }
 
     private static Action<string>? BindStringAction(
         string? attribute,
-        object binding)
+        MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
 
         string name = attribute[1..^1];
-        PropertyInfo? property = binding.GetType().GetProperty(name);
+        PropertyInfo? property = binding.Property(name);
         if (property is null
             || !typeof(Action<string>).IsAssignableFrom(property.PropertyType))
         {
             return null;
         }
-        return value => (property.GetValue(binding) as Action<string>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<string>)?.Invoke(value);
     }
 
-    internal static Action<int>? BindIntAction(string? attribute, object binding)
+    internal static Action<int>? BindIntAction(string? attribute, MarkupBindingSource binding)
     {
         if (attribute is null || !IsBinding(attribute))
             return null;
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null
             || !typeof(Action<int>).IsAssignableFrom(property.PropertyType))
         {
             return null;
         }
-        return value => (property.GetValue(binding) as Action<int>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<int>)?.Invoke(value);
     }
 
     internal static Func<IReadOnlyList<string>> BindStringList(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context, bool preserveSnapshot = false)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be a string-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null
             || !typeof(IEnumerable<string>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<string> property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        return () => property.GetValue(binding) is IEnumerable<string> values
+        return () => binding.Read(property) is IEnumerable<string> values
             ? preserveSnapshot && values is IReadOnlyList<string> snapshot ? snapshot : values.ToArray()
             : Array.Empty<string>();
     }
 
     private static Func<IReadOnlyList<uint>> BindUintList(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context)
     {
         if (string.IsNullOrWhiteSpace(expression))
             return static () => Array.Empty<uint>();
         if (!IsBinding(expression))
             throw new FormatException($"{context} must be a uint-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null)
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<uint> or "
-                + "IEnumerable<int> property on " + binding.GetType().Name);
+                + "IEnumerable<int> property on " + binding.TypeName);
         }
         if (typeof(IEnumerable<uint>).IsAssignableFrom(property.PropertyType))
         {
-            return () => property.GetValue(binding) is IEnumerable<uint> values
+            return () => binding.Read(property) is IEnumerable<uint> values
                 ? values.ToArray()
                 : Array.Empty<uint>();
         }
         if (typeof(IEnumerable<int>).IsAssignableFrom(property.PropertyType))
         {
-            return () => property.GetValue(binding) is IEnumerable<int> values
+            return () => binding.Read(property) is IEnumerable<int> values
                 ? values.Select(static v => v < 0 ? 0u : (uint)v).ToArray()
                 : Array.Empty<uint>();
         }
         throw new FormatException(
             $"{expression} did not resolve to an IEnumerable<uint> or "
-            + "IEnumerable<int> property on " + binding.GetType().Name);
+            + "IEnumerable<int> property on " + binding.TypeName);
     }
 
     internal static Func<IReadOnlyList<bool>> BindBoolList(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be a bool-list binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null
             || !typeof(IEnumerable<bool>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an IEnumerable<bool> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return () => property.GetValue(binding) is IEnumerable<bool> values
+        return () => binding.Read(property) is IEnumerable<bool> values
             ? values.ToArray()
             : Array.Empty<bool>();
     }
 
     private static Func<IReadOnlyList<uint>> BindRequiredUintList(
-        string? expression, object binding, string context)
+        string? expression, MarkupBindingSource binding, string context)
     {
         if (string.IsNullOrWhiteSpace(expression))
             throw new FormatException($"{context} must be a uint-list binding");
@@ -1005,22 +1250,22 @@ public static class MarkupDocument
     }
 
     internal static Action<int> BindRequiredIntAction(
-        string? attribute, object binding, string context)
+        string? attribute, MarkupBindingSource binding, string context)
     {
         if (attribute is null || !IsBinding(attribute))
             throw new FormatException($"{context} must be an Action<int> binding");
-        PropertyInfo? property = binding.GetType().GetProperty(attribute[1..^1]);
+        PropertyInfo? property = binding.Property(attribute[1..^1]);
         if (property is null || !typeof(Action<int>).IsAssignableFrom(property.PropertyType))
         {
             throw new FormatException(
                 $"{attribute} did not resolve to an Action<int> property on "
-                + binding.GetType().Name + $" ({context})");
+                + binding.TypeName + $" ({context})");
         }
-        return value => (property.GetValue(binding) as Action<int>)?.Invoke(value);
+        return value => (binding.Read(property) as Action<int>)?.Invoke(value);
     }
 
     private static UiMarkupListColumn BuildListColumn(
-        XElement columnEl, object binding, IMarkupIconResolver? icons, int index, bool isLast)
+        XElement columnEl, MarkupBindingSource binding, IMarkupIconResolver? icons, int index, bool isLast)
     {
         string? type = (string?)columnEl.Attribute("type");
         (float width, bool isAutoWidth) = ParseColumnWidth(columnEl, index, type, isLast);
@@ -1040,7 +1285,7 @@ public static class MarkupDocument
                 {
                     throw new FormatException(
                         $"{ColumnContext(index, "text", "onclick")} did not resolve to an "
-                        + $"Action<int> property on {binding.GetType().Name}");
+                        + $"Action<int> property on {binding.TypeName}");
                 }
                 return UiMarkupListColumn.Text(width, textSource, colorsSource, textOnClick, isAutoWidth);
             }
@@ -1116,7 +1361,7 @@ public static class MarkupDocument
     internal static void ApplyCommon(
         UiElement element,
         XElement source,
-        object binding)
+        MarkupBindingSource binding)
     {
         element.Name = (string?)source.Attribute("name")
             ?? (string?)source.Attribute("id");
@@ -1142,7 +1387,7 @@ public static class MarkupDocument
 
     private static void BindBool(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         Action<bool> setLiteral,
         Action<Func<bool>> setSource)
     {
@@ -1155,49 +1400,60 @@ public static class MarkupDocument
             return;
         }
 
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(bool))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a bool property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        setSource(() => property.GetValue(binding) is true);
+        Func<bool> source = () => binding.Read(property) is true;
+        setSource(source);
+
+        // Ticks apply the source, but the window's first measurement comes
+        // before any tick: seed the value it reports now so that measurement
+        // leaves out what is bound hidden (a tabbed window's other pages). A
+        // getter that throws this early leaves the default; the first tick
+        // reads it again as usual.
+        bool seeded;
+        try { seeded = source(); }
+        catch (TargetInvocationException) { return; }
+        setLiteral(seeded);
     }
 
     internal static Func<bool> BindRequiredBoolReader(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be a bool binding");
 
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(bool))
         {
             throw new FormatException(
                 $"{expression} did not resolve to a bool property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        return () => property.GetValue(binding) is true;
+        return () => binding.Read(property) is true;
     }
 
     internal static Func<int> BindRequiredIntReader(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         string context)
     {
         if (string.IsNullOrWhiteSpace(expression) || !IsBinding(expression))
             throw new FormatException($"{context} must be an int binding");
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null || property.PropertyType != typeof(int))
         {
             throw new FormatException(
                 $"{expression} did not resolve to an int property on "
-                + binding.GetType().Name);
+                + binding.TypeName);
         }
-        return () => property.GetValue(binding) is int value ? value : -1;
+        return () => binding.Read(property) is int value ? value : -1;
     }
 
     internal static float F(XElement e, string attr)
@@ -1252,17 +1508,17 @@ public static class MarkupDocument
     /// </summary>
     private static void BindColorSource(
         string? expression,
-        object binding,
+        MarkupBindingSource binding,
         Action<Vector4> setValue,
         Action<Func<Vector4>> setSource)
     {
         if (expression is null || !IsBinding(expression))
             return;
-        PropertyInfo? property = binding.GetType().GetProperty(expression[1..^1]);
+        PropertyInfo? property = binding.Property(expression[1..^1]);
         if (property is null)
             return;
 
-        Vector4 Read() => ColorFromBoundValue(property.GetValue(binding));
+        Vector4 Read() => ColorFromBoundValue(binding.Read(property));
         setValue(Read());
         setSource(Read);
     }
@@ -1282,11 +1538,11 @@ public static class MarkupDocument
         _ => Vector4.One,
     };
 
-    private static Func<float?> BindFloat(string? expr, object binding)
+    private static Func<float?> BindFloat(string? expr, MarkupBindingSource binding)
     {
         var pi = Prop(expr, binding);
         if (pi is null) return () => 0f;
-        return () => pi.GetValue(binding) switch
+        return () => binding.Read(pi) switch
         {
             float f  => f,
             null     => (float?)null,
@@ -1294,11 +1550,11 @@ public static class MarkupDocument
         };
     }
 
-    private static Func<uint?> BindUint(string? expr, object binding)
+    private static Func<uint?> BindUint(string? expr, MarkupBindingSource binding)
     {
         var pi = Prop(expr, binding);
         if (pi is null) return () => null;
-        return () => pi.GetValue(binding) switch
+        return () => binding.Read(pi) switch
         {
             uint u => u,
             null   => (uint?)null,
@@ -1306,10 +1562,10 @@ public static class MarkupDocument
         };
     }
 
-    private static PropertyInfo? Prop(string? expr, object binding)
+    private static PropertyInfo? Prop(string? expr, MarkupBindingSource binding)
     {
         if (expr is null || expr.Length < 3 || expr[0] != '{' || expr[^1] != '}') return null;
-        return binding.GetType().GetProperty(expr[1..^1]);
+        return binding.Property(expr[1..^1]);
     }
 
     private static uint Hex(string? s)

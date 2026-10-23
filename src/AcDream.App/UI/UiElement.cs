@@ -21,6 +21,12 @@ public abstract class UiElement
     /// <summary>Human-readable name for debugging / FindByName.</summary>
     public string? Name { get; set; }
 
+    /// <summary>
+    /// Built as one of a <c>&lt;repeat&gt;</c>'s copies, so its name is on
+    /// every row and lookups by name pass over it.
+    /// </summary>
+    internal bool IsRepeatRow { get; set; }
+
     public bool AuthoredInvisible { get; internal set; }
 
     public bool AuthoredTooltipEnabled { get; internal set; }
@@ -94,15 +100,42 @@ public abstract class UiElement
         get
         {
             var p = new Vector2(Left, Top);
+            UiElement child = this;
             var parent = Parent;
             while (parent is not null)
             {
-                p += new Vector2(parent.Left, parent.Top);
+                p += new Vector2(parent.Left, parent.Top) - parent.OffsetFor(child);
+                child = parent;
                 parent = parent.Parent;
             }
             return p;
         }
     }
+
+    // ── Scrolling ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Set on a child that stays put while its parent scrolls (a scrollbar):
+    /// it is neither offset nor clipped to the parent's viewport.
+    /// </summary>
+    internal bool ScrollChrome { get; set; }
+
+    /// <summary>
+    /// The size of the part of this element its scrolled children are seen
+    /// through, from its top-left corner; null (the default) for an element
+    /// that does not scroll. While set, every child except
+    /// <see cref="ScrollChrome"/> ones is clipped to it and moved by
+    /// <see cref="ContentOffset"/>, in drawing, hit-testing and
+    /// <see cref="ScreenPosition"/> alike.
+    /// </summary>
+    internal Vector2? ContentViewport { get; set; }
+
+    /// <summary>How far this element's content is scrolled, in points; used only while <see cref="ContentViewport"/> is set.</summary>
+    internal Vector2 ContentOffset { get; set; }
+
+    /// <summary>How far <paramref name="child"/> is moved by this element's scrolling.</summary>
+    private Vector2 OffsetFor(UiElement child) =>
+        ContentViewport is null || child.ScrollChrome ? Vector2.Zero : ContentOffset;
 
     // ── State flags ─────────────────────────────────────────────────────
     private bool _visible = true;
@@ -272,6 +305,7 @@ public abstract class UiElement
     private readonly List<UiElement> _children = new();
     private UiElement[]? _childrenBackToFront;
     private UiElement[]? _childrenFrontToBack;
+    private UiElement[]? _childrenTickOrder;
     public IReadOnlyList<UiElement> Children => _children;
 
     public virtual void AddChild(UiElement child)
@@ -279,6 +313,19 @@ public abstract class UiElement
         if (child.Parent is not null) child.Parent.RemoveChild(child);
         child.Parent = this;
         _children.Add(child);
+        InvalidateChildOrder();
+    }
+
+    /// <summary>Moves a child to <paramref name="index"/> in place: it keeps its parent, focus and state.</summary>
+    internal void MoveChild(UiElement child, int index)
+    {
+        if (child.Parent != this) throw new ArgumentException("not a child of this element", nameof(child));
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, _children.Count);
+        int old = _children.IndexOf(child);
+        if (old == index) return;
+        _children.RemoveAt(old);
+        _children.Insert(index, child);
         InvalidateChildOrder();
     }
 
@@ -302,6 +349,32 @@ public abstract class UiElement
         child.Parent = null;
         InvalidateChildOrder();
         return true;
+    }
+
+    /// <summary>
+    /// Removes every child in <paramref name="children"/> as <see cref="RemoveChild"/>
+    /// would, in one pass over the children rather than a search for each.
+    /// </summary>
+    internal virtual void RemoveChildren(IReadOnlySet<UiElement> children)
+    {
+        UiRoot? root = FindRoot();
+        if (root is not null)
+        {
+            foreach (UiElement child in _children.ToArray())
+                if (children.Contains(child)) root.OnSubtreeRemoving(child);
+        }
+        int kept = 0;
+        for (int i = 0; i < _children.Count; i++)
+        {
+            UiElement child = _children[i];
+            if (children.Contains(child))
+                child.Parent = null;
+            else
+                _children[kept++] = child;
+        }
+        if (kept == _children.Count) return;
+        _children.RemoveRange(kept, _children.Count - kept);
+        InvalidateChildOrder();
     }
 
     internal UiElement[] ChildrenBackToFrontSnapshot()
@@ -337,6 +410,7 @@ public abstract class UiElement
     {
         _childrenBackToFront = null;
         _childrenFrontToBack = null;
+        _childrenTickOrder = null;
     }
 
     public virtual bool ConsumesDatChildren => false;
@@ -458,14 +532,18 @@ public abstract class UiElement
             {
                 OnDraw(ctx);
 
-                for (int i = 0; i < _children.Count; i++)
-                    _children[i].ApplyAnchor(Width, Height);
+                LayoutChildren();
 
                 if (_children.Count > 0)
                 {
                     UiElement[] ordered = ChildrenBackToFrontSnapshot();
                     for (int i = 0; i < ordered.Length; i++)
-                        ordered[i].DrawSelfAndChildren(ctx);
+                    {
+                        if (ContentViewport is { } viewport && !ordered[i].ScrollChrome)
+                            DrawScrolled(ctx, ordered[i], viewport);
+                        else
+                            ordered[i].DrawSelfAndChildren(ctx);
+                    }
                 }
 
                 OnDrawAfterChildren(ctx);
@@ -481,6 +559,22 @@ public abstract class UiElement
                 ctx.PopClip();
             ctx.PopAlpha();
             ctx.PopTransform();
+        }
+    }
+
+    /// <summary>Draws a scrolled child: clipped to the viewport, moved by the content offset.</summary>
+    private void DrawScrolled(UiRenderContext ctx, UiElement child, Vector2 viewport)
+    {
+        ctx.PushClip(0f, 0f, viewport.X, viewport.Y);
+        ctx.PushTransform(-ContentOffset.X, -ContentOffset.Y);
+        try
+        {
+            child.DrawSelfAndChildren(ctx);
+        }
+        finally
+        {
+            ctx.PopTransform();
+            ctx.PopClip();
         }
     }
 
@@ -510,7 +604,16 @@ public abstract class UiElement
                 {
                     UiElement[] ordered = ChildrenBackToFrontSnapshot();
                     for (int i = 0; i < ordered.Length; i++)
-                        ordered[i].DrawOverlays(ctx);
+                    {
+                        if (ContentViewport is null || ordered[i].ScrollChrome)
+                        {
+                            ordered[i].DrawOverlays(ctx);
+                            continue;
+                        }
+                        ctx.PushTransform(-ContentOffset.X, -ContentOffset.Y);
+                        try { ordered[i].DrawOverlays(ctx); }
+                        finally { ctx.PopTransform(); }
+                    }
                 }
                 finally
                 {
@@ -536,8 +639,25 @@ public abstract class UiElement
         if (EnabledSource is { } enabled)
             Enabled = enabled();
         OnTick(dt);
+        // Insertion order, from a snapshot: a child may change its siblings from OnTick.
+        UiElement[] order = _childrenTickOrder ??= _children.ToArray();
+        for (int i = 0; i < order.Length; i++)
+        {
+            // Removed earlier in this tick by a sibling.
+            if (!ReferenceEquals(order[i].Parent, this)) continue;
+            order[i].TickSelfAndChildren(dt);
+        }
+    }
+
+    /// <summary>
+    /// Puts the children where they belong for this element's current size,
+    /// just before they are drawn: by default each child's anchors. A flex
+    /// container lays its items out here instead.
+    /// </summary>
+    private protected virtual void LayoutChildren()
+    {
         for (int i = 0; i < _children.Count; i++)
-            _children[i].TickSelfAndChildren(dt);
+            _children[i].ApplyAnchor(Width, Height);
     }
 
     internal UiElement? HitTest(float localX, float localY)
@@ -553,7 +673,15 @@ public abstract class UiElement
             for (int i = 0; i < ordered.Length; i++)
             {
                 var c = ordered[i];
-                var childHit = c.HitTest(localX - c.Left, localY - c.Top);
+                float x = localX, y = localY;
+                if (ContentViewport is { } viewport && !c.ScrollChrome)
+                {
+                    // Scrolled children are only reachable through the viewport.
+                    if (x < 0f || y < 0f || x >= viewport.X || y >= viewport.Y) continue;
+                    x += ContentOffset.X;
+                    y += ContentOffset.Y;
+                }
+                var childHit = c.HitTest(x - c.Left, y - c.Top);
                 if (childHit is not null) return childHit;
             }
         }

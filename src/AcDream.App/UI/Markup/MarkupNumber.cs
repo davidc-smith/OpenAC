@@ -6,7 +6,7 @@ namespace AcDream.App.UI.Markup;
 
 internal static class MarkupNumber
 {
-    public static UiMarkupNumber Build(XElement el, object binding, MarkupBuildContext context)
+    public static UiMarkupNumber Build(XElement el, MarkupBindingSource binding, MarkupBuildContext context)
     {
         var (read, valueType) = MarkupBindings.BindRequiredNumberReader(
             (string?)el.Attribute("value"), binding, "number value");
