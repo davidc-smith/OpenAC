@@ -82,7 +82,13 @@ internal static class MarkupContentSize
         switch (element)
         {
             case UiLabel label:
-                return Fixed(MathF.Ceiling(TextWidth(label.DatFont, text)), LineHeight(label.DatFont));
+            {
+                // A label may shrink to nothing (it draws "..." when cut short), so
+                // a long bound caption never raises its window's minimum.
+                float height = LineHeight(label.DatFont);
+                return new FlexMeasurement(
+                    new FlexSize(MathF.Ceiling(TextWidth(label.DatFont, text)), height), new FlexSize(0f, height));
+            }
             case UiSimpleButton button:
             {
                 float height = ControlHeightFor(button.DatFont);

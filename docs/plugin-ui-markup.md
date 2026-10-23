@@ -816,7 +816,8 @@ Every child of a flex container may carry:
 | `alignself` | `start`, `center`, `end`, `stretch` | the container's `align` |
 
 An item never shrinks below its content (a button below its caption) unless
-`minw`/`minh` allow it. `x`, `y` and `anchor` on a flex item fail the build,
+`minw`/`minh` allow it; a label is the exception (see below). `x`, `y` and
+`anchor` on a flex item fail the build,
 and so do `grow`, `shrink`, `basis`, `alignself` and the limits on a child
 of a container without `layout`. A `<contextmenu>` belongs to the element it
 is inside and is never a flex item.
@@ -825,7 +826,7 @@ is inside and is never a flex item.
 
 | Element | Size |
 |---|---|
-| `label` | its text, one line tall |
+| `label` | its text, one line tall; it may shrink to nothing (no `minw` of its own) |
 | `button`, `tab` | its caption with 12 points either side (and a square for its icon); at least 24 points tall, taller when the font's line plus 8 is more |
 | `toggle` | its lamp, then its caption; at least 20 points tall, taller when the font's line plus 4 is more |
 | `checkbox` | box, then its caption; tall as a toggle |
@@ -848,7 +849,9 @@ Sizes follow what is shown: a bound caption that gets longer, a hidden item
 container out again on the next frame, but only when a size really changed:
 a caption that changes and keeps its width, or a control whose `w`, `h`,
 `minw` and `minh` are all stated, lays nothing out. A label inside a flex
-container draws in the box it is given, its line centred top to bottom.
+container draws in the box it is given, its line centred top to bottom, and
+text wider than the box ends in "...". Give a label a `minw` to keep it from
+shrinking below that.
 
 ### Mixing absolute and flex
 
@@ -872,7 +875,8 @@ them it is empty and shows nothing.
 - `minw` and `minh` default to what the content needs, so a window never
   shrinks (by dragging, or by a restored layout) to a size that cuts its
   content off. When the content needs more later (a longer caption), the
-  window grows to fit, even when it is not resizable, and stays on screen;
+  window grows to fit, even when it is not resizable, and stays on screen.
+  A long label never needs more: it is cut short instead;
 - the opening size and minimum follow bound `visible` (and `enabled`) as the
   bindings read when the window is built: a tabbed window whose pages are
   sibling groups with `visible="{XTabSelected}"` opens sized for the shown
@@ -882,8 +886,10 @@ them it is empty and shows nothing.
   markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout`,
   `titlebar` or `scroll` change. Captions and appearance never reset it.
 
-Windows only grow to fit: when the content later needs less room, the window
-keeps its size. A wrapping root's minimum height is the height of its
+When the content needs less room again, a window that grew to fit goes back
+toward the size it had before (never below the new minimum), unless the
+player resized it in between; a window that never grew keeps its size. A
+wrapping root's minimum height is the height of its
 narrowest layout, so a wide wrapping window cannot be made shorter than that;
 give it `scroll="y"` (see [Scrolling groups](#scrolling-groups)) to let it.
 

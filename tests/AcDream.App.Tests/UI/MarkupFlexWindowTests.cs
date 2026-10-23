@@ -159,22 +159,87 @@ public sealed class MarkupFlexWindowTests
     public void A_longer_caption_raises_the_minimum_and_grows_a_registered_window()
     {
         var binding = new Binding();
-        MarkupWindow window = Window("layout=\"row\" w=\"50\" h=\"40\"", "<label text=\"{Caption}\" />", binding);
+        MarkupWindow window = Window("layout=\"row\" w=\"50\" h=\"40\"", "<button text=\"{Caption}\" />", binding);
         UiRoot root = Mount(window, "plugin:demo:main");
         var resized = new List<string>();
         Assert.True(root.WindowManager.TryGet("plugin:demo:main", out RetailWindowHandle handle));
         handle.Resized += _ => resized.Add("resized");
         Assert.Equal(96f, window.Frame.Width);   // the bar's floor
 
-        binding.Caption = "ABCDEFGHIJKLMNOP";   // 112 points
+        binding.Caption = "ABCDEFGHIJKLMNOP";   // 112 points, and 12 either side
         Frame(root);                             // lays out, finds the new minimum
         Frame(root);                             // the tick reports it; the window grows
 
-        Assert.Equal(122f, window.Frame.MinWidth);
-        Assert.Equal(122f, window.Frame.Width);
+        Assert.Equal(146f, window.Frame.MinWidth);
+        Assert.Equal(146f, window.Frame.Width);
         Assert.Equal(["resized"], resized);
         Frame(root);
-        Assert.Equal(112f, window.ContentRoot.Width);
+        Assert.Equal(136f, window.ContentRoot.Width);
+    }
+
+    [Fact]
+    public void A_window_grown_by_a_caption_goes_back_when_the_caption_shortens()
+    {
+        var binding = new Binding();
+        MarkupWindow window = Window("layout=\"row\" w=\"120\" h=\"40\"", "<button text=\"{Caption}\" />", binding);
+        UiRoot root = Mount(window, "plugin:demo:main");
+        Assert.Equal(130f, window.Frame.Width);
+
+        binding.Caption = "ABCDEFGHIJKLMNOPQRST";   // 140 + 24
+        Frame(root);
+        Frame(root);
+        Assert.Equal(174f, window.Frame.Width);
+
+        binding.Caption = "ABCDEFGHIJKLMNOP";       // 112 + 24: still more than the window had
+        Frame(root);
+        Frame(root);
+        Assert.Equal(146f, window.Frame.Width);
+
+        binding.Caption = "AB";
+        Frame(root);
+        Frame(root);
+        Assert.Equal(130f, window.Frame.Width);
+        Assert.Equal(96f, window.Frame.MinWidth);
+    }
+
+    [Fact]
+    public void A_window_sized_by_the_player_after_it_grew_keeps_that_size()
+    {
+        var binding = new Binding();
+        MarkupWindow window = Window(
+            "layout=\"row\" w=\"120\" h=\"40\" resizable=\"true\"", "<button text=\"{Caption}\" />", binding);
+        UiRoot root = Mount(window, "plugin:demo:main");
+        Assert.True(root.WindowManager.TryGet("plugin:demo:main", out RetailWindowHandle handle));
+
+        binding.Caption = "ABCDEFGHIJKLMNOPQRST";
+        Frame(root);
+        Frame(root);
+        Assert.Equal(174f, window.Frame.Width);
+        Assert.True(handle.ResizeTo(200f, 60f));
+
+        binding.Caption = "AB";
+        Frame(root);
+        Frame(root);
+        Assert.Equal(200f, window.Frame.Width);
+    }
+
+    [Fact]
+    public void A_long_label_caption_does_not_raise_the_minimum_and_draws_cut_short()
+    {
+        var binding = new Binding();
+        MarkupWindow window = Window("layout=\"row\" w=\"100\" h=\"40\"", "<label name=\"l\" text=\"{Caption}\" />", binding);
+        UiRoot root = Mount(window, "plugin:demo:main");
+        var label = (UiLabel)Named(window.ContentRoot, "l");
+
+        binding.Caption = new string('A', 150);
+        Frame(root);
+        Frame(root);
+
+        Assert.Equal((110f, 96f), (window.Frame.Width, window.Frame.MinWidth));
+        Assert.Equal(100f, label.Width);
+        // 7 points a character: eleven of them and "..." fill 98 of the 100.
+        Assert.Equal(new string('A', 11) + "...", label.Fitted(binding.Caption));
+        Assert.Equal("AB", label.Fitted("AB"));
     }
 
     [Fact]

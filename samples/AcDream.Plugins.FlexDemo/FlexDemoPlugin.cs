@@ -6,7 +6,8 @@ namespace AcDream.Plugins.FlexDemo;
 /// Four windows laid out with markup flex instead of coordinates: a finder
 /// (a toolbar over a list that takes the spare height, over a footer), a
 /// settings form whose summary line and button caption change length at
-/// runtime, so the window grows to fit them, and a gallery of spell icons
+/// runtime (the summary is cut short with "..." when the window is too narrow
+/// for it; the window grows to fit the caption), and a gallery of spell icons
 /// that wraps and scrolls, over a strip of recent spells that scrolls
 /// sideways (swipe, tilt the wheel, or hold Shift). Resize the finder and the
 /// gallery, make the settings window short to scroll it, switch the shared

@@ -385,6 +385,23 @@ public sealed class MarkupFlexTests
         Assert.Equal(measured, flex.MeasureCount);
     }
 
+    [Fact]
+    public void A_caption_in_a_fixed_width_control_changes_no_layout()
+    {
+        var binding = new Binding();
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="300" h="30" layout="row">
+              <label text="{Caption}" w="80" /><button text="OK" />
+            </group>
+            """, binding);
+        var flex = ((UiFlexGroup)Find(frame, "g")).Flex;
+
+        binding.Caption = "ABCDEF";
+
+        // Measured again, but a stated width resolves to the same size.
+        Assert.False(flex.EnsureLayout(300f, 30f));
+    }
+
     [Theory]
     [InlineData(50)]
     [InlineData(100)]

@@ -27,10 +27,10 @@ public sealed class MarkupContentSizeTests
         new(new FlexSize(w, h), new FlexSize(minW, minH));
 
     [Fact]
-    public void A_label_is_its_text_by_its_line()
+    public void A_label_is_its_text_by_its_line_and_may_shrink_to_nothing()
     {
-        Assert.Equal(Size(35f, 14f, 35f, 14f), Measure(new UiLabel { Text = "Hello" }));
-        Assert.Equal(Size(18f, 16f, 18f, 16f), Measure(new UiLabel { Text = "ABC", DatFont = Font(16f) }));
+        Assert.Equal(Size(35f, 14f, 0f, 14f), Measure(new UiLabel { Text = "Hello" }));
+        Assert.Equal(Size(18f, 16f, 0f, 16f), Measure(new UiLabel { Text = "ABC", DatFont = Font(16f) }));
     }
 
     [Fact]
