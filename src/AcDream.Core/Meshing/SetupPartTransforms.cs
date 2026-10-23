@@ -11,9 +11,9 @@ public static class SetupPartTransforms
     /// <summary>
     /// The pose an object without a motion cycle rests in. When the server
     /// sends a placement (the physics AnimationFrame, e.g. Hook for an item
-    /// hung on a house hook), retail's CPartArray::SetPlacementFrame uses that
-    /// frame and falls back to Default when the setup lacks it. Without one,
-    /// Resting is preferred, then Default, then whatever frame the setup has.
+    /// hung on a house hook), use that frame, or Default when the setup lacks
+    /// it. Without one, Resting is preferred, then Default, then whatever
+    /// frame the setup has.
     /// </summary>
     public static AnimationFrame? ResolvePlacementFrame(Setup setup, uint? placementId)
     {
