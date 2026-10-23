@@ -42,8 +42,10 @@ internal sealed class UiMarkupRepeat : UiElement
     private readonly List<Copy> _released = new();
     private readonly HashSet<UiElement> _releasing = new(ReferenceEqualityComparer.Instance);
     // The key paths of copies whose item left the list this tick, forgotten after matching.
-    private readonly HashSet<string> _forget = new();
+    private readonly HashSet<string> _forget = new(StringComparer.Ordinal);
     private IMarkupControlState? _forgetIn;
+    // The remembered names in the template, nested templates included; read on the first forget.
+    private HashSet<string>? _templateNames;
     private bool _loggedDuplicates;
     private bool _isReleased;
 
@@ -158,13 +160,27 @@ internal sealed class UiMarkupRepeat : UiElement
             return;
         try
         {
-            (_forgetIn as IForgetsKeyedState)?.ForgetKeyed(_forget);
+            (_forgetIn as IForgetsKeyedState)?.ForgetKeyed(_templateNames ??= TemplateNames(), _forget);
         }
         finally
         {
             _forget.Clear();
             _forgetIn = null;
         }
+    }
+
+    private HashSet<string> TemplateNames()
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (XElement root in _template)
+        {
+            foreach (XElement el in root.DescendantsAndSelf())
+            {
+                if (((string?)el.Attribute("name") ?? (string?)el.Attribute("id")) is { } name)
+                    names.Add(name);
+            }
+        }
+        return names;
     }
 
     /// <summary>Marks <paramref name="copy"/>'s remembered state to be forgotten after this tick's matching.</summary>
