@@ -71,6 +71,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     private bool _wasOpen;
     private uint _shownSlumlord;
     private uint _shownOwner;
+    private GameEvents.HouseProfile? _textProfile;
     private bool _disposed;
 
     private HousePurchaseUiController(ImportedLayout layout, Bindings bindings)
@@ -165,6 +166,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         if (snapshot.Profile is not { } profile)
         {
             _shownSlumlord = 0u;
+            _textProfile = null;
             return;
         }
 
@@ -175,8 +177,24 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
             Select(profile.OwnerGuid != 0u ? HousePurchaseTab.Rent : HousePurchaseTab.Buy);
         }
 
+        // The text is rebuilt only when a new profile arrives, not as items
+        // are staged. Each applied profile carries fresh payment arrays, so
+        // it never equals the one before it.
+        if (!_textProfile.Equals(profile))
+        {
+            _textProfile = profile;
+            SetText(_buy, profile);
+            SetText(_rent, profile);
+        }
+
         Refresh(_buy, profile);
         Refresh(_rent, profile);
+    }
+
+    private static void SetText(Page page, GameEvents.HouseProfile profile)
+    {
+        SetLines(page.Requirements, [HousePurchaseText.RequirementText(profile, page.Tab)]);
+        SetLines(page.Owner, [HousePurchaseText.OwnerLine(profile)]);
     }
 
     public void OnShown() => Tick();
@@ -196,15 +214,6 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     private void Refresh(Page page, GameEvents.HouseProfile profile)
     {
         IReadOnlyList<uint> staged = _bindings.Purchase.GetStaged(page.Tab);
-        IReadOnlyList<GameEvents.HousePayment> payments =
-            page.Tab == HousePurchaseTab.Buy ? profile.Buy : profile.Rent;
-        int[] stagedAmounts = new int[payments.Count];
-        for (int i = 0; i < stagedAmounts.Length; i++)
-            stagedAmounts[i] = _bindings.Purchase.GetStagedAmount(page.Tab, i);
-
-        SetLines(page.Requirements,
-            HousePurchaseText.RequirementLines(profile, page.Tab, stagedAmounts));
-        SetLines(page.Owner, [HousePurchaseText.OwnerLine(profile)]);
 
         using (page.List.DeferLayout())
         {
@@ -312,14 +321,13 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         if (PageFor(targetList) is not { } page
             || payload.SourceKind != ItemDragSource.Inventory)
             return;
-        HouseStageResult result = _bindings.Stage(page.Tab, payload.ObjId);
-        if (result != HouseStageResult.Staged)
-            _bindings.Report(HousePurchaseText.Refusal(result));
+        if (HousePurchaseText.Refusal(_bindings.Stage(page.Tab, payload.ObjId)) is { } refusal)
+            _bindings.Report(refusal);
     }
 
     private void OnObjectRemoved(ClientObject item) => _bindings.Revalidate();
     // A staged stack can merge or split without any state change, so the
-    // revision gate would keep showing the old amount.
+    // revision gate would keep the Buy button as it was.
     private void OnObjectUpdated(ClientObject item)
     {
         if (_disposed || !_bindings.Purchase.Snapshot.IsOpen) return;

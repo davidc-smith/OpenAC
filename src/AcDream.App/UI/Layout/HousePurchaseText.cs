@@ -1,4 +1,3 @@
-using System.Globalization;
 using AcDream.Core.Net.Messages;
 using AcDream.Runtime.Gameplay;
 
@@ -6,48 +5,10 @@ namespace AcDream.App.UI.Layout;
 
 /// <summary>
 /// Every line the slumlord window writes itself. The tab and button captions
-/// come from the dat; this wording does not, and is a placeholder until it
-/// is checked against a retail client (spec: Captions to check against
-/// retail).
+/// come from the dat.
 /// </summary>
 internal static class HousePurchaseText
 {
-    public static string OwnerLine(GameEvents.HouseProfile profile) =>
-        profile.OwnerGuid == 0u ? "For Sale" : "Owner: " + profile.OwnerName;
-
-    public static IReadOnlyList<string> RequirementLines(
-        GameEvents.HouseProfile profile,
-        HousePurchaseTab tab,
-        IReadOnlyList<int> stagedAmounts)
-    {
-        var lines = new List<string> { TypeName(profile.Type) };
-
-        if (profile.MinLevel >= 0 && profile.MaxLevel >= 0)
-            lines.Add($"Requires level {profile.MinLevel} to {profile.MaxLevel}");
-        else if (profile.MinLevel >= 0)
-            lines.Add($"Requires level {profile.MinLevel}+");
-        if (profile.MinAllegianceRank >= 0)
-            lines.Add($"Requires allegiance rank {profile.MinAllegianceRank}+");
-
-        if (tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
-        {
-            lines.Add("Maintenance is free this period.");
-            return lines;
-        }
-
-        IReadOnlyList<GameEvents.HousePayment> payments =
-            tab == HousePurchaseTab.Buy ? profile.Buy : profile.Rent;
-        for (int i = 0; i < payments.Count; i++)
-        {
-            GameEvents.HousePayment payment = payments[i];
-            int staged = i < stagedAmounts.Count ? stagedAmounts[i] : 0;
-            int count = Math.Min(payment.Paid + staged, payment.Num);
-            string line = $"{Number(count)}/{Number(payment.Num)} {HousePaymentNames.For(payment)}";
-            lines.Add(line);
-        }
-        return lines;
-    }
-
     public const uint ApartmentType = 4u;
 
     public const string BuyConfirmation =
@@ -55,6 +16,21 @@ internal static class HousePurchaseText
 
     public const string OthersMaintenanceConfirmation =
         "You are paying maintenance on someone else's house. Are you sure you wish to continue?";
+
+    public static string OwnerLine(GameEvents.HouseProfile profile) =>
+        "Owner: " + (profile.OwnerGuid == 0u ? "None" : profile.OwnerName);
+
+    /// <summary>The tab's requirements on one line: "N Name, N Name" to buy,
+    /// "paid/num Name, ..." for maintenance.</summary>
+    public static string RequirementText(GameEvents.HouseProfile profile, HousePurchaseTab tab)
+    {
+        IReadOnlyList<GameEvents.HousePayment> payments =
+            tab == HousePurchaseTab.Buy ? profile.Buy : profile.Rent;
+        return string.Join(", ", payments.Select(payment =>
+            tab == HousePurchaseTab.Buy
+                ? $"{payment.Num} {HousePaymentNames.For(payment)}"
+                : $"{payment.Paid}/{payment.Num} {HousePaymentNames.For(payment)}"));
+    }
 
     /// <summary>The question asked before paying, or null when none is:
     /// buying anything but an apartment, or paying maintenance on a house
@@ -67,29 +43,11 @@ internal static class HousePurchaseText
         _ => null,
     };
 
-    public static string Refusal(HouseStageResult result) => result switch
+    /// <summary>The chat line for a refused item, or null for the refusals
+    /// that print nothing.</summary>
+    public static string? Refusal(HouseStageResult result) => result switch
     {
-        HouseStageResult.NotOpen => "There is no house to pay for.",
-        HouseStageResult.AlreadyOwned => "This dwelling already has an owner.",
-        HouseStageResult.NotOwned => "This dwelling has no owner.",
-        HouseStageResult.MaintenanceFree => "Maintenance is free this period.",
-        HouseStageResult.NotInInventory => "That item is not in your pack.",
-        HouseStageResult.AlreadyStaged => "That item is already offered.",
-        HouseStageResult.NotRequired => "That item is not needed here.",
-        HouseStageResult.AlreadyCovered => "You have already offered enough of that.",
-        HouseStageResult.NoteTooLarge => "That note is worth more than is owed.",
-        _ => string.Empty,
+        HouseStageResult.NotInInventory => "You can only trade items you are carrying",
+        _ => null,
     };
-
-    private static string TypeName(uint type) => type switch
-    {
-        1u => "Cottage",
-        2u => "Villa",
-        3u => "Mansion",
-        4u => "Apartment",
-        _ => "Dwelling",
-    };
-
-    private static string Number(int value) =>
-        value.ToString("N0", CultureInfo.InvariantCulture);
 }
