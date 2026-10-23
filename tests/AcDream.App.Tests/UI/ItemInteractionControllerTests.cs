@@ -1498,6 +1498,95 @@ public sealed class ItemInteractionControllerTests
         Assert.Equal(new[] { (sword, (uint)EquipMask.MeleeWeapon) }, h.Wields);
     }
 
+    // A main pack with one item slot, already holding one item, and a sword
+    // in the main hand. The harness's own pack (Pack) is the side pack.
+    private static (uint Sword, uint Wand) FullMainPackWithSwordWielded(Harness h)
+    {
+        const uint sword = 0x50000B71u;
+        const uint wand = 0x50000B72u;
+        const uint filler = 0x50000B73u;
+        h.Objects.Get(Player)!.ItemsCapacity = 1;
+        h.Objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = filler,
+            Name = "Filler",
+            Type = ItemType.Misc,
+        });
+        h.Objects.MoveItem(filler, Player, 0);
+        h.Objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = sword,
+            Name = "Katar",
+            Type = ItemType.MeleeWeapon,
+            CombatUse = 1,
+            ValidLocations = EquipMask.MeleeWeapon,
+        });
+        // Wielded the way the server reports it: held by the player, in no
+        // container, so it takes no main-pack slot.
+        h.Objects.ApplyConfirmedServerWield(sword, Player, EquipMask.MeleeWeapon);
+        h.AddContained(wand, item =>
+        {
+            item.Name = "Wand";
+            item.Type = ItemType.Caster;
+            item.ValidLocations = EquipMask.Held;
+        });
+        return (sword, wand);
+    }
+
+    [Fact]
+    public void WieldWithFullMainPack_movesTheBlockerToTheFirstSidePackWithRoom()
+    {
+        var h = new Harness();
+        (uint sword, uint wand) = FullMainPackWithSwordWielded(h);
+
+        Assert.True(h.Controller.ActivateItem(wand));
+
+        Assert.Equal(new[] { (sword, Pack, 0) }, h.Puts);
+        Assert.Empty(h.Wields);
+        Assert.Equal(new[] { "Moving Katar to your backpack" }, h.SystemMessages);
+    }
+
+    [Fact]
+    public void WieldWithFullMainPack_blockerLandingInASidePackEndsTheSwitchWithoutWielding()
+    {
+        var h = new Harness();
+        (uint sword, uint wand) = FullMainPackWithSwordWielded(h);
+        Assert.True(h.Controller.ActivateItem(wand));
+
+        Assert.True(h.Objects.ApplyConfirmedServerMove(sword, Pack, 0u, 0));
+
+        // The wield follows only a blocker that landed in the main pack.
+        Assert.Empty(h.Wields);
+        Assert.False(h.Controller.IsAutoWieldBusy);
+
+        // The switch is over, so the next attempt wields straight away.
+        h.Now += 200;
+        Assert.True(h.Controller.ActivateItem(wand));
+        Assert.Equal(new[] { (wand, (uint)EquipMask.Held) }, h.Wields);
+    }
+
+    [Fact]
+    public void WieldWithEveryPackFull_sendsNothingAndSaysTheBlockerCannotBeUnwielded()
+    {
+        var h = new Harness();
+        (uint sword, uint wand) = FullMainPackWithSwordWielded(h);
+        h.Objects.Get(Pack)!.ItemsCapacity = 1;
+
+        Assert.False(h.Controller.ActivateItem(wand));
+
+        Assert.Empty(h.Puts);
+        Assert.Empty(h.Wields);
+        Assert.False(h.Controller.IsAutoWieldBusy);
+        Assert.Equal(
+            new[]
+            {
+                "Backpack is completely full!",
+                "Moving Katar to your backpack - cannot unwield the Katar",
+            },
+            h.SystemMessages);
+        Assert.Equal(EquipMask.MeleeWeapon, h.Objects.Get(sword)!.CurrentlyEquippedLocation);
+    }
+
     [Fact]
     public void PaperdollWeaponSwitch_toCrossbow_movesIncompatibleArrowsAfterBow()
     {
