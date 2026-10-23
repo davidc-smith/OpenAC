@@ -9,11 +9,12 @@ namespace AcDream.Runtime.Gameplay;
 /// <summary>
 /// Whether a window opened by using an object (a vendor, a slumlord) should
 /// close: on a teleport, when the object is gone, or when the player is no
-/// longer within its use radius.
+/// longer within its use radius, or within <c>range</c> metres when the
+/// window has a fixed reach of its own.
 /// </summary>
 internal static class RuntimeUseRange
 {
-    public static bool ShouldClose(GameRuntime runtime, uint targetGuid)
+    public static bool ShouldClose(GameRuntime runtime, uint targetGuid, float? range = null)
     {
         RuntimeWorldTransitState transit = runtime.TransitOwner;
         if (transit.HasPendingTeleportStart || transit.IsTeleportActive)
@@ -44,7 +45,7 @@ internal static class RuntimeUseRange
         // A target whose create message carried no use radius really has none:
         // the descriptor zeroes that field when its flag is absent, so an
         // absent radius means zero metres rather than "unknown, be generous".
-        float useRadius = targetRecord.Snapshot.UseRadius ?? 0f;
+        float useRadius = range ?? targetRecord.Snapshot.UseRadius ?? 0f;
 
         // Both bodies are measured as cylinders, each with its own girth AND
         // its own height, which is what the range check behind a vendor window

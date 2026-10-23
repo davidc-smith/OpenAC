@@ -37,6 +37,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         ClientObjectTable Objects,
         Func<HousePurchaseTab, uint, HouseStageResult> Stage,
         Action<HousePurchaseTab, uint> Unstage,
+        Action<HousePurchaseTab> ClearStaged,
         Action Revalidate,
         Action Close,
         Action<uint, IReadOnlyList<uint>> BuyHouse,
@@ -44,6 +45,9 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         Func<ItemType, uint, uint, uint, uint, uint> ResolveIcon,
         Action<bool> SetWindowVisible,
         Action<string> Report,
+        Func<uint> PlayerGuid,
+        // Asks a yes/no question; runs the action only on yes.
+        Action<string, Action> Confirm,
         // Composes an item's displayed name, material prefix included, as the
         // other item strips do.
         Func<ClientObject, string> ResolveAppropriateName,
@@ -65,8 +69,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     private HousePurchaseTab _selected = HousePurchaseTab.Buy;
     private long _lastRevision = long.MinValue;
     private bool _wasOpen;
-    private uint _shownSlumlord;
-    private uint _shownOwner;
+    private GameEvents.HouseProfile? _textProfile;
     private bool _disposed;
 
     private HousePurchaseUiController(ImportedLayout layout, Bindings bindings)
@@ -158,21 +161,31 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
 
         if (snapshot.Revision == _lastRevision) return;
         _lastRevision = snapshot.Revision;
+        // A profile arriving never changes the tab; only the player does.
         if (snapshot.Profile is not { } profile)
         {
-            _shownSlumlord = 0u;
+            _textProfile = null;
             return;
         }
 
-        if (profile.SlumlordGuid != _shownSlumlord || profile.OwnerGuid != _shownOwner)
+        // The text is rebuilt only when a new profile arrives, not as items
+        // are staged. Each applied profile carries fresh payment arrays, so
+        // it never equals the one before it.
+        if (!_textProfile.Equals(profile))
         {
-            _shownSlumlord = profile.SlumlordGuid;
-            _shownOwner = profile.OwnerGuid;
-            Select(profile.OwnerGuid != 0u ? HousePurchaseTab.Rent : HousePurchaseTab.Buy);
+            _textProfile = profile;
+            SetText(_buy, profile);
+            SetText(_rent, profile);
         }
 
         Refresh(_buy, profile);
         Refresh(_rent, profile);
+    }
+
+    private static void SetText(Page page, GameEvents.HouseProfile profile)
+    {
+        SetLines(page.Requirements, [HousePurchaseText.RequirementText(profile, page.Tab)]);
+        SetLines(page.Owner, [HousePurchaseText.OwnerLine(profile)]);
     }
 
     public void OnShown() => Tick();
@@ -192,15 +205,6 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     private void Refresh(Page page, GameEvents.HouseProfile profile)
     {
         IReadOnlyList<uint> staged = _bindings.Purchase.GetStaged(page.Tab);
-        IReadOnlyList<GameEvents.HousePayment> payments =
-            page.Tab == HousePurchaseTab.Buy ? profile.Buy : profile.Rent;
-        int[] stagedAmounts = new int[payments.Count];
-        for (int i = 0; i < stagedAmounts.Length; i++)
-            stagedAmounts[i] = _bindings.Purchase.GetStagedAmount(page.Tab, i);
-
-        SetLines(page.Requirements,
-            HousePurchaseText.RequirementLines(profile, page.Tab, stagedAmounts));
-        SetLines(page.Owner, [HousePurchaseText.OwnerLine(profile)]);
 
         using (page.List.DeferLayout())
         {
@@ -233,6 +237,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         HousePurchaseTab tab, GameEvents.HouseProfile profile, int stagedCount) =>
         stagedCount > 0
         && !(tab == HousePurchaseTab.Buy && profile.OwnerGuid != 0u)
+        && !(tab == HousePurchaseTab.Rent && profile.OwnerGuid == 0u)
         && !(tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
         && (tab != HousePurchaseTab.Buy || BuyCovered(profile));
 
@@ -249,12 +254,32 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     private void Submit(HousePurchaseTab tab)
     {
         if (_disposed || _bindings.Purchase.Snapshot.Profile is not { } profile) return;
+        if (!CanSubmit(tab, profile, _bindings.Purchase.GetStaged(tab).Count)) return;
+
+        string? question = HousePurchaseText.Confirmation(tab, profile, _bindings.PlayerGuid());
+        if (question is null)
+        {
+            Send(tab, profile.SlumlordGuid);
+            return;
+        }
+        uint slumlord = profile.SlumlordGuid;
+        _bindings.Confirm(question, () => Send(tab, slumlord));
+    }
+
+    // Re-checked on a yes: the window may have closed or moved on meanwhile.
+    private void Send(HousePurchaseTab tab, uint slumlord)
+    {
+        if (_disposed
+            || _bindings.Purchase.Snapshot.Profile is not { } profile
+            || profile.SlumlordGuid != slumlord)
+            return;
         uint[] staged = _bindings.Purchase.GetStaged(tab).ToArray();
         if (!CanSubmit(tab, profile, staged.Length)) return;
         if (tab == HousePurchaseTab.Buy)
             _bindings.BuyHouse(profile.SlumlordGuid, staged);
         else
             _bindings.RentHouse(profile.SlumlordGuid, staged);
+        _bindings.ClearStaged(tab);
     }
 
     private static void SetLines(UiText? text, IReadOnlyList<string> lines)
@@ -287,14 +312,13 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         if (PageFor(targetList) is not { } page
             || payload.SourceKind != ItemDragSource.Inventory)
             return;
-        HouseStageResult result = _bindings.Stage(page.Tab, payload.ObjId);
-        if (result != HouseStageResult.Staged)
-            _bindings.Report(HousePurchaseText.Refusal(result));
+        if (HousePurchaseText.Refusal(_bindings.Stage(page.Tab, payload.ObjId)) is { } refusal)
+            _bindings.Report(refusal);
     }
 
     private void OnObjectRemoved(ClientObject item) => _bindings.Revalidate();
     // A staged stack can merge or split without any state change, so the
-    // revision gate would keep showing the old amount.
+    // revision gate would keep the Buy button as it was.
     private void OnObjectUpdated(ClientObject item)
     {
         if (_disposed || !_bindings.Purchase.Snapshot.IsOpen) return;

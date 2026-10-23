@@ -16,54 +16,54 @@ public sealed class HousePurchaseTextTests
             [new(5_000, 1_250, 273u, "Pyreal", "Pyreals")]);
 
     [Fact]
-    public void OwnerLine_NamesTheOwnerOrSaysForSale()
+    public void OwnerLine_NamesTheOwnerOrNone()
     {
-        Assert.Equal("For Sale", HousePurchaseText.OwnerLine(Profile()));
+        Assert.Equal("Owner: None", HousePurchaseText.OwnerLine(Profile()));
         Assert.Equal("Owner: Sammy",
             HousePurchaseText.OwnerLine(Profile(owner: 5u, ownerName: "Sammy")));
     }
 
     [Fact]
-    public void RequirementLines_Buy_TypeThenPaymentsFilledInByStaged()
+    public void RequirementText_Buy_OneLineOfPlainNumbers()
     {
-        IReadOnlyList<string> lines = HousePurchaseText.RequirementLines(
-            Profile(), HousePurchaseTab.Buy, [8_000, 0]);
-
-        Assert.Equal(
-            ["Cottage", "8,000/50,000 Pyreals", "0/1 Bone Totem"],
-            lines);
+        Assert.Equal("50000 Pyreals, 1 Bone Totem",
+            HousePurchaseText.RequirementText(
+                Profile(minLevel: 20, minRank: 6, type: 3u), HousePurchaseTab.Buy));
     }
 
     [Fact]
-    public void RequirementLines_ShowLimits()
+    public void RequirementText_Maintenance_PaidOverOwed_EvenWhenFree()
     {
-        Assert.Contains("Requires level 20+",
-            HousePurchaseText.RequirementLines(Profile(minLevel: 20), HousePurchaseTab.Buy, [0, 0]));
-        Assert.Contains("Requires level 20 to 50",
-            HousePurchaseText.RequirementLines(Profile(minLevel: 20, maxLevel: 50), HousePurchaseTab.Buy, [0, 0]));
-        Assert.Contains("Requires allegiance rank 6+",
-            HousePurchaseText.RequirementLines(Profile(type: 3u, minRank: 6), HousePurchaseTab.Buy, [0, 0]));
+        Assert.Equal("1250/5000 Pyreals",
+            HousePurchaseText.RequirementText(Profile(), HousePurchaseTab.Rent));
+        Assert.Equal("1250/5000 Pyreals",
+            HousePurchaseText.RequirementText(Profile(maintenanceFree: true), HousePurchaseTab.Rent));
     }
 
     [Fact]
-    public void RequirementLines_Rent_PaidAmountsOrFree()
+    public void Confirmation_BuyingAHouseButNotAnApartment_AndOthersMaintenance()
     {
-        Assert.Equal(
-            ["Villa", "1,250/5,000 Pyreals"],
-            HousePurchaseText.RequirementLines(Profile(type: 2u), HousePurchaseTab.Rent, [0]));
-        Assert.Equal(
-            ["Mansion", "Maintenance is free this period."],
-            HousePurchaseText.RequirementLines(
-                Profile(type: 3u, maintenanceFree: true), HousePurchaseTab.Rent, [0]));
+        const uint me = 5u;
+        Assert.Equal(HousePurchaseText.BuyConfirmation,
+            HousePurchaseText.Confirmation(HousePurchaseTab.Buy, Profile(type: 1u), me));
+        Assert.Null(
+            HousePurchaseText.Confirmation(HousePurchaseTab.Buy, Profile(type: 4u), me));
+        Assert.Null(
+            HousePurchaseText.Confirmation(HousePurchaseTab.Rent, Profile(owner: me), me));
+        Assert.Equal(HousePurchaseText.OthersMaintenanceConfirmation,
+            HousePurchaseText.Confirmation(HousePurchaseTab.Rent, Profile(owner: 9u), me));
     }
 
     [Fact]
-    public void Refusal_HasASentenceForEveryRefusal()
+    public void Refusal_OnlyAnItemNotCarriedIsPrinted()
     {
         foreach (HouseStageResult result in Enum.GetValues<HouseStageResult>())
         {
-            if (result == HouseStageResult.Staged) continue;
-            Assert.False(string.IsNullOrWhiteSpace(HousePurchaseText.Refusal(result)));
+            string? refusal = HousePurchaseText.Refusal(result);
+            if (result == HouseStageResult.NotInInventory)
+                Assert.Equal("You can only trade items you are carrying", refusal);
+            else
+                Assert.Null(refusal);
         }
     }
 }

@@ -96,6 +96,28 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
+    public void Stage_APack_StagesTheItemsInItThatAreNeeded()
+    {
+        Item(1, Totem, container: Pack);
+        Item(2, 1234u, container: Pack);
+        Item(3, Pyreal, stack: 100, container: Pack);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, Pack));
+        Assert.Equal([1u, 3u], _state.View.GetStaged(HousePurchaseTab.Buy).Order());
+    }
+
+    [Fact]
+    public void Stage_APackWithNothingNeeded_IsNotRequired()
+    {
+        Item(1, 1234u, container: Pack);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.NotRequired, _state.Stage(HousePurchaseTab.Buy, Pack));
+        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Buy));
+    }
+
+    [Fact]
     public void Stage_TradeNote_CountsItsValueTowardsPyreals()
     {
         Item(1, 2621u, value: 10_000, type: ItemType.PromissoryNote);
@@ -103,6 +125,28 @@ public sealed class RuntimeHousePurchaseStateTests
 
         Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 1));
         Assert.Equal(10_000, _state.View.GetStagedAmount(HousePurchaseTab.Buy, 0));
+    }
+
+    [Fact]
+    public void Stage_TradeNote_OnlyIfItFitsInWhatIsStillOwed()
+    {
+        Item(1, Pyreal, stack: 45_000);
+        Item(2, 2621u, value: 10_000, type: ItemType.PromissoryNote);
+        Item(3, 2621u, value: 5_000, type: ItemType.PromissoryNote);
+        _state.ApplyProfile(Profile());
+        _state.Stage(HousePurchaseTab.Buy, 1);
+
+        Assert.Equal(HouseStageResult.NoteTooLarge, _state.Stage(HousePurchaseTab.Buy, 2));
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 3));
+    }
+
+    [Fact]
+    public void Stage_AStackMayRunOverWhatIsOwed()
+    {
+        Item(1, Pyreal, stack: 60_000);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 1));
     }
 
     [Fact]
@@ -142,6 +186,15 @@ public sealed class RuntimeHousePurchaseStateTests
         _state.ApplyProfile(Profile(owner: 0x50000042u));
 
         Assert.Equal(HouseStageResult.AlreadyOwned, _state.Stage(HousePurchaseTab.Buy, 1));
+    }
+
+    [Fact]
+    public void Stage_RefusesRentOnAnUnownedHouse()
+    {
+        Item(1, Pyreal, stack: 10);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.NotOwned, _state.Stage(HousePurchaseTab.Rent, 1));
     }
 
     [Fact]
@@ -209,6 +262,22 @@ public sealed class RuntimeHousePurchaseStateTests
         Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Buy));
         Assert.True(_state.Revalidate());
         Assert.True(_state.View.Snapshot.Revision > before);
+    }
+
+    [Fact]
+    public void ClearStaged_EmptiesOnlyThatTab()
+    {
+        Item(1, Pyreal, stack: 10);
+        Item(2, Pyreal, stack: 10);
+        _state.ApplyProfile(Profile(owner: Player, buy: [Pay(Pyreal, 50_000)]));
+        _state.Stage(HousePurchaseTab.Rent, 1);
+        _state.ApplyProfile(Profile(owner: 0u));
+        _state.Stage(HousePurchaseTab.Buy, 2);
+
+        _state.ClearStaged(HousePurchaseTab.Buy);
+
+        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Buy));
+        Assert.Equal([1u], _state.View.GetStaged(HousePurchaseTab.Rent));
     }
 
     [Fact]
