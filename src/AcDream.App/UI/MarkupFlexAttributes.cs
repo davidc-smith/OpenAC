@@ -32,7 +32,7 @@ internal static class MarkupFlexAttributes
             case null: return false;
             case "row" or "column": return true;
             case string other:
-                warnings.Add(Ignored(el, "layout", other, "must be row or column"));
+                Warn(warnings, Ignored(el, "layout", other, "must be row or column"));
                 return false;
         }
     }
@@ -42,7 +42,7 @@ internal static class MarkupFlexAttributes
     {
         foreach (string name in ContainerAttributes)
             if (el.Attribute(name) is { } a)
-                warnings.Add(Ignored(el, name, a.Value, "needs layout=\"row\" or layout=\"column\" on the same element"));
+                Warn(warnings, Ignored(el, name, a.Value, "needs layout=\"row\" or layout=\"column\" on the same element"));
     }
 
     /// <summary>Reads the container attributes of <paramref name="el"/>, which has <c>layout</c>, onto <paramref name="node"/>.</summary>
@@ -100,7 +100,7 @@ internal static class MarkupFlexAttributes
     {
         foreach (string name in ItemOnlyAttributes.Concat(LimitAttributes))
             if (el.Attribute(name) is { } a)
-                warnings.Add(Ignored(el, name, a.Value, "only applies to a child of a layout=\"row\" or layout=\"column\" container"));
+                Warn(warnings, Ignored(el, name, a.Value, "only applies to a child of a layout=\"row\" or layout=\"column\" container"));
     }
 
     /// <summary>
@@ -117,7 +117,7 @@ internal static class MarkupFlexAttributes
             case "y": return (false, true);
             case "both": return (true, true);
             case string other:
-                warnings.Add(Ignored(el, "scroll", other, "must be x, y or both"));
+                Warn(warnings, Ignored(el, "scroll", other, "must be x, y or both"));
                 return (false, false);
         }
     }
@@ -182,6 +182,16 @@ internal static class MarkupFlexAttributes
 
     private static FormatException Error(XElement el, string name, string value, string problem) =>
         new($"{Identity(el)} {name}=\"{value}\" {problem}");
+
+    /// <summary>
+    /// Adds <paramref name="message"/> unless it is already there: every
+    /// <c>&lt;repeat&gt;</c> row is built from the same template, so its stray
+    /// attribute is reported once, however many rows there are or come later.
+    /// </summary>
+    internal static void Warn(ICollection<string> warnings, string message)
+    {
+        if (!warnings.Contains(message)) warnings.Add(message);
+    }
 
     /// <summary>The warning for an attribute the build ignores.</summary>
     internal static string Ignored(XElement el, string name, string value, string problem) =>
