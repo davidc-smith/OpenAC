@@ -53,6 +53,83 @@ public sealed class InventoryContainerPlacementPolicyTests
             InventoryContainerPlacementPolicy.Evaluate(objects, 10u, Player, Player));
     }
 
+    private const uint FloorHook = 1u;
+    private const uint WallHook = 2u;
+
+    [Theory]
+    [InlineData(WallHook, InventoryContainerPlacementRejection.None)]
+    [InlineData(FloorHook, InventoryContainerPlacementRejection.WrongHookType)]
+    public void ItemGoesOnlyOnTheHookTypesItFits(
+        uint hookType,
+        InventoryContainerPlacementRejection expected)
+    {
+        ClientObjectTable objects = HookedHouse(hookType);
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 3u, Name = "Long Sword", Type = ItemType.MeleeWeapon, HookType = WallHook,
+        });
+
+        Assert.Equal(
+            expected,
+            InventoryContainerPlacementPolicy.Evaluate(objects, 3u, 2u, Player));
+    }
+
+    [Fact]
+    public void ItemWithNoHookTypeFitsNoHook()
+    {
+        ClientObjectTable objects = HookedHouse(WallHook);
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 3u, Name = "Coat", Type = ItemType.Armor,
+        });
+
+        Assert.Equal(
+            InventoryContainerPlacementRejection.WrongHookType,
+            InventoryContainerPlacementPolicy.Evaluate(objects, 3u, 2u, Player));
+    }
+
+    [Fact]
+    public void HookRefusesItemTypesItDoesNotTake()
+    {
+        ClientObjectTable objects = HookedHouse(WallHook, hookItemTypes: (uint)ItemType.Armor);
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 3u, Name = "Long Sword", Type = ItemType.MeleeWeapon, HookType = WallHook,
+        });
+
+        Assert.Equal(
+            InventoryContainerPlacementRejection.WrongHookType,
+            InventoryContainerPlacementPolicy.Evaluate(objects, 3u, 2u, Player));
+    }
+
+    [Fact]
+    public void WrongHookTypeMessage()
+    {
+        Assert.Equal(
+            "That item is of the wrong type to be placed on this hook.",
+            InventoryContainerPlacementPolicy.ComposeClientLocal(
+                InventoryContainerPlacementRejection.WrongHookType,
+                new ClientObject { ObjectId = 3u, Name = "Coat" },
+                new ClientObject { ObjectId = 2u, Name = "Wall Hook" },
+                Player));
+    }
+
+    private static ClientObjectTable HookedHouse(
+        uint hookType,
+        uint hookItemTypes = 0xFFFFFFFFu)
+    {
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 2u,
+            Name = "Hook",
+            ItemsCapacity = 1,
+            HookType = hookType,
+            HookItemTypes = hookItemTypes,
+        });
+        return objects;
+    }
+
     [Fact]
     public void FullMessageMatchesRetailContainerTypeBranches()
     {

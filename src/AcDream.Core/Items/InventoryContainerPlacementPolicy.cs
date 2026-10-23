@@ -12,6 +12,7 @@ public enum InventoryContainerPlacementRejection
     RecursiveContainment,
     ItemCapacityFull,
     ContainerCapacityFull,
+    WrongHookType,
 }
 
 public static class InventoryContainerPlacementPolicy
@@ -42,6 +43,8 @@ public static class InventoryContainerPlacementPolicy
             return InventoryContainerPlacementRejection.DestinationBeingTraded;
         if (itemId == destinationId || IsContainedBy(objects, destinationId, itemId))
             return InventoryContainerPlacementRejection.RecursiveContainment;
+        if (destination is { IsHook: true } && !FitsHook(item, destination))
+            return InventoryContainerPlacementRejection.WrongHookType;
 
         bool alreadyDirectlyContained = item.ContainerId == destinationId;
         if (IsContainer(item))
@@ -101,6 +104,8 @@ public static class InventoryContainerPlacementPolicy
                 destination?.ObjectId == playerId
                     ? $"{destinationName} can carry no more containers!"
                     : $"The {destinationName} can fit no more containers!",
+            InventoryContainerPlacementRejection.WrongHookType =>
+                "That item is of the wrong type to be placed on this hook.",
             _ => null,
         };
     }
@@ -132,6 +137,15 @@ public static class InventoryContainerPlacementPolicy
     /// </summary>
     public static bool IsFocus(ClientObject item)
         => item.ContainerTypeHint == FocusContainerType;
+
+    /// <summary>
+    /// An item names the kinds of hook it hangs on (floor, wall, ceiling,
+    /// yard, roof) and a hook names the item types it takes. An item that
+    /// names no hook kind fits none.
+    /// </summary>
+    private static bool FitsHook(ClientObject item, ClientObject hook)
+        => (item.HookType & hook.HookType) != 0u
+            && (hook.HookItemTypes & (uint)item.Type) != 0u;
 
     private static int CountItems(ClientObjectTable objects, uint containerId)
     {
