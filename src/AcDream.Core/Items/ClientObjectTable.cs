@@ -188,6 +188,7 @@ public sealed class ClientObjectTable
     public const uint CurrentWieldedLocationPropertyId = 10u;
     public const uint HookTypePropertyId = 151u;
     public const uint HookItemTypesPropertyId = 152u;
+    public const uint HouseOwnerPropertyId = 32u;
     public const uint SharedCooldownPropertyId = 280u;
     public const uint CooldownDurationPropertyId = 167u;
     public const uint PlayerKillerStatusPropertyId = 134u;
@@ -785,6 +786,7 @@ public sealed class ClientObjectTable
         if (!_objects.TryGetValue(itemId, out var item)) return false;
         ServerShowedObject(item);
         item.Properties.InstanceIds[propertyId] = value;
+        if (propertyId == HouseOwnerPropertyId) item.HouseOwnerId = value == 0u ? null : value;
         ObjectUpdated?.Invoke(item);
         return true;
     }

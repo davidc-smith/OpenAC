@@ -1619,6 +1619,7 @@ internal sealed class RuntimeSetPositionState : IDisposable
         {
             MoverPhysicsState = record.FinalPhysicsState,
             MovingEntityId = token.Entity.LocalEntityId,
+            MovingObjectId = record.ServerGuid,
             CurrentCellId = null,
         };
         if (!IsStructurallyValid(canonicalRequest))
@@ -2792,6 +2793,7 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 : command.Physics.CellLocalPosition,
             MoverPhysicsState = operation.Record.FinalPhysicsState,
             MovingEntityId = operation.Key.LocalEntityId,
+            MovingObjectId = operation.Record.ServerGuid,
             CurrentCellId = operation.WakeableLostCell
                 ? null
                 : body.InWorld
@@ -3360,6 +3362,7 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 CellLocalPosition = body.CellPosition.Frame.Origin,
                 MoverPhysicsState = record.FinalPhysicsState,
                 MovingEntityId = key.LocalEntityId,
+                MovingObjectId = record.ServerGuid,
                 CurrentCellId = null,
             };
             var result = new PhysicsSetPositionResult(
@@ -4765,6 +4768,7 @@ internal sealed class RuntimeSetPositionState : IDisposable
             {
                 MoverPhysicsState = record.FinalPhysicsState,
                 MovingEntityId = token.Entity.LocalEntityId,
+                MovingObjectId = record.ServerGuid,
                 CurrentCellId = null,
             },
         } == command;
