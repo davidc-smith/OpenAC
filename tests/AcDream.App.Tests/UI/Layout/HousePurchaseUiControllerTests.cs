@@ -94,10 +94,10 @@ public sealed class HousePurchaseUiControllerTests
             Controller.Tick();
         }
 
-        public void Drop(UiItemList list, uint id)
+        public void Drop(UiItemList list, uint id, ItemDragSource source = ItemDragSource.Inventory)
         {
             var cell = new UiItemSlot();
-            Controller.HandleDropRelease(list, cell, new ItemDragPayload(id, ItemDragSource.Inventory, 0, cell));
+            Controller.HandleDropRelease(list, cell, new ItemDragPayload(id, source, 0, cell));
             Controller.Tick();
         }
 
@@ -293,6 +293,46 @@ public sealed class HousePurchaseUiControllerTests
         h.Drop(h.BuyList, 2);
         Assert.Equal(["You can only trade items you are carrying"], h.Reports);
         Assert.Equal(0, Harness.Staged(h.BuyList));
+    }
+
+    [Fact]
+    public void Drop_FromTheGround_ACorpseOrAChest_IsReportedAsNotCarried()
+    {
+        using var h = new Harness();
+        const uint chest = 0x70000500u;
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = chest, Type = ItemType.Container });
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 2, WeenieClassId = 273u, StackSize = 10 });
+        h.Objects.MoveItem(2, chest, 0);
+        h.Open();
+
+        h.Drop(h.BuyList, 2, ItemDragSource.Ground);
+
+        Assert.Equal(["You can only trade items you are carrying"], h.Reports);
+        Assert.Equal(0, Harness.Staged(h.BuyList));
+    }
+
+    [Fact]
+    public void Drop_NotCarried_IsReportedEvenWhenTheTabTakesNothing()
+    {
+        using var h = new Harness();
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 2, WeenieClassId = 273u, StackSize = 10 });
+        h.Open(owner: Player);
+
+        h.Drop(h.BuyList, 2, ItemDragSource.Ground);
+
+        Assert.Equal(["You can only trade items you are carrying"], h.Reports);
+    }
+
+    [Fact]
+    public void Drop_AShortcut_IsIgnored()
+    {
+        using var h = new Harness();
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 2, WeenieClassId = 273u, StackSize = 10 });
+        h.Open();
+
+        h.Drop(h.BuyList, 2, ItemDragSource.ShortcutBar);
+
+        Assert.Empty(h.Reports);
     }
 
     [Fact]

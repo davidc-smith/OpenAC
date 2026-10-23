@@ -345,6 +345,19 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
+    public void Stage_AnItemNotCarried_IsNotInInventory_BeforeAnyTabRefusal()
+    {
+        Item(1, Pyreal, stack: 10, container: Ground);
+        _state.ApplyProfile(Profile(owner: 0x50000042u));
+
+        Assert.Equal(HouseStageResult.NotInInventory, _state.Stage(HousePurchaseTab.Buy, 1));
+
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.NotInInventory, _state.Stage(HousePurchaseTab.Rent, 1));
+    }
+
+    [Fact]
     public void ApplyProfile_FromAnotherSlumlord_ClearsStagedItems()
     {
         Item(1, Pyreal, stack: 10);

@@ -318,10 +318,12 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
             ? ItemDragAcceptance.Accept
             : ItemDragAcceptance.Reject;
 
+    // A drop from the ground, a chest or a corpse still reaches the state,
+    // which refuses it with the one printed refusal. Shortcuts never do.
     public void HandleDropRelease(UiItemList targetList, UiItemSlot targetCell, ItemDragPayload payload)
     {
         if (PageFor(targetList) is not { } page
-            || payload.SourceKind != ItemDragSource.Inventory)
+            || payload.SourceKind is not (ItemDragSource.Inventory or ItemDragSource.Ground))
             return;
         if (HousePurchaseText.Refusal(_bindings.Stage(page.Tab, payload.ObjId)) is { } refusal)
             _bindings.Report(refusal);

@@ -124,6 +124,9 @@ public sealed class RuntimeHousePurchaseState
         {
             if (_profile is not { } profile)
                 return HouseStageResult.NotOpen;
+            // An item not carried is refused first, whatever the tab.
+            if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)
+                return HouseStageResult.NotInInventory;
             if (tab == HousePurchaseTab.Buy && profile.OwnerGuid != 0u)
                 return HouseStageResult.AlreadyOwned;
             // Nobody pays maintenance on a house nobody owns.
@@ -131,8 +134,6 @@ public sealed class RuntimeHousePurchaseState
                 return HouseStageResult.NotOwned;
             if (tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
                 return HouseStageResult.MaintenanceFree;
-            if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)
-                return HouseStageResult.NotInInventory;
 
             if ((item.Type & ItemType.Container) != 0)
             {
