@@ -48,6 +48,25 @@ internal static class HousePurchaseText
         return lines;
     }
 
+    public const uint ApartmentType = 4u;
+
+    public const string BuyConfirmation =
+        "When you buy a landscape house like this one, you are restricted from buying another for 30 days. Are you sure you want to buy this house?";
+
+    public const string OthersMaintenanceConfirmation =
+        "You are paying maintenance on someone else's house. Are you sure you wish to continue?";
+
+    /// <summary>The question asked before paying, or null when none is:
+    /// buying anything but an apartment, or paying maintenance on a house
+    /// someone else owns.</summary>
+    public static string? Confirmation(
+        HousePurchaseTab tab, GameEvents.HouseProfile profile, uint playerGuid) => tab switch
+    {
+        HousePurchaseTab.Buy when profile.Type != ApartmentType => BuyConfirmation,
+        HousePurchaseTab.Rent when profile.OwnerGuid != playerGuid => OthersMaintenanceConfirmation,
+        _ => null,
+    };
+
     public static string Refusal(HouseStageResult result) => result switch
     {
         HouseStageResult.NotOpen => "There is no house to pay for.",

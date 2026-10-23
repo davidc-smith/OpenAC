@@ -45,6 +45,9 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         Func<ItemType, uint, uint, uint, uint, uint> ResolveIcon,
         Action<bool> SetWindowVisible,
         Action<string> Report,
+        Func<uint> PlayerGuid,
+        // Asks a yes/no question; runs the action only on yes.
+        Action<string, Action> Confirm,
         // Composes an item's displayed name, material prefix included, as the
         // other item strips do.
         Func<ClientObject, string> ResolveAppropriateName,
@@ -251,6 +254,25 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     private void Submit(HousePurchaseTab tab)
     {
         if (_disposed || _bindings.Purchase.Snapshot.Profile is not { } profile) return;
+        if (!CanSubmit(tab, profile, _bindings.Purchase.GetStaged(tab).Count)) return;
+
+        string? question = HousePurchaseText.Confirmation(tab, profile, _bindings.PlayerGuid());
+        if (question is null)
+        {
+            Send(tab, profile.SlumlordGuid);
+            return;
+        }
+        uint slumlord = profile.SlumlordGuid;
+        _bindings.Confirm(question, () => Send(tab, slumlord));
+    }
+
+    // Re-checked on a yes: the window may have closed or moved on meanwhile.
+    private void Send(HousePurchaseTab tab, uint slumlord)
+    {
+        if (_disposed
+            || _bindings.Purchase.Snapshot.Profile is not { } profile
+            || profile.SlumlordGuid != slumlord)
+            return;
         uint[] staged = _bindings.Purchase.GetStaged(tab).ToArray();
         if (!CanSubmit(tab, profile, staged.Length)) return;
         if (tab == HousePurchaseTab.Buy)

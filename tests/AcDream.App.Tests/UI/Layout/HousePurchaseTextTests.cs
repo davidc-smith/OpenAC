@@ -58,6 +58,20 @@ public sealed class HousePurchaseTextTests
     }
 
     [Fact]
+    public void Confirmation_BuyingAHouseButNotAnApartment_AndOthersMaintenance()
+    {
+        const uint me = 5u;
+        Assert.Equal(HousePurchaseText.BuyConfirmation,
+            HousePurchaseText.Confirmation(HousePurchaseTab.Buy, Profile(type: 1u), me));
+        Assert.Null(
+            HousePurchaseText.Confirmation(HousePurchaseTab.Buy, Profile(type: 4u), me));
+        Assert.Null(
+            HousePurchaseText.Confirmation(HousePurchaseTab.Rent, Profile(owner: me), me));
+        Assert.Equal(HousePurchaseText.OthersMaintenanceConfirmation,
+            HousePurchaseText.Confirmation(HousePurchaseTab.Rent, Profile(owner: 9u), me));
+    }
+
+    [Fact]
     public void Refusal_HasASentenceForEveryRefusal()
     {
         foreach (HouseStageResult result in Enum.GetValues<HouseStageResult>())

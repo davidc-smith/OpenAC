@@ -44,7 +44,8 @@ public sealed class HousePurchaseLayoutInstalledDatTests
         using HousePurchaseUiController? controller = HousePurchaseUiController.Bind(layout, new(
             state.View, objects, state.Stage, state.Unstage, state.ClearStaged, () => state.Revalidate(), state.Close,
             static (_, _) => { }, static (_, _) => { }, static (_, _, _, _, _) => 0u,
-            static _ => { }, static _ => { }, ItemTooltipCaptionNames.Resolve));
+            static _ => { }, static _ => { }, static () => 0u, static (_, _) => { },
+            ItemTooltipCaptionNames.Resolve));
         Assert.NotNull(controller);
     }
 
