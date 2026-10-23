@@ -236,9 +236,22 @@ public sealed class RetailWindowManager : IDisposable
     public bool EnforceMinimumSize(string name)
     {
         if (!_byName.TryGetValue(name, out var handle)) return false;
+        return EnforceMinimumSize(name, handle.OuterFrame.Width, handle.OuterFrame.Height);
+    }
+
+    /// <summary>
+    /// As <see cref="EnforceMinimumSize(string)"/>, starting from
+    /// <paramref name="width"/> x <paramref name="height"/> instead of the
+    /// window's current size, so a window that grew to fit its content can go
+    /// back to its earlier size (never below its minimum) when the content
+    /// needs less again.
+    /// </summary>
+    public bool EnforceMinimumSize(string name, float width, float height)
+    {
+        if (!_byName.TryGetValue(name, out var handle)) return false;
         var frame = handle.OuterFrame;
-        float width = MathF.Max(frame.Width, frame.MinWidth);
-        float height = MathF.Max(frame.Height, frame.MinHeight);
+        width = MathF.Max(width, frame.MinWidth);
+        height = MathF.Max(height, frame.MinHeight);
         float left = frame.Left, top = frame.Top;
         if (frame.Parent is { } parent)
         {

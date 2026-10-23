@@ -12,6 +12,11 @@ internal sealed class MarkupWindow(
     private RetailWindowManager? _manager;
     private string? _name;
 
+    // The size the window had before its content grew it, and the size it grew
+    // to; cleared once the player (or a restored layout) sizes it otherwise.
+    private (float Width, float Height)? _beforeGrowth;
+    private (float Width, float Height) _grownTo;
+
     public UiNineSlicePanel Frame { get; } = frame;
     public UiElement ContentRoot { get; } = contentRoot;
     public PluginTitleBar? TitleBar { get; } = titleBar;
@@ -44,7 +49,9 @@ internal sealed class MarkupWindow(
     /// finds its content needs more room (a longer caption), the frame's
     /// minimum becomes that plus the chrome, unless the markup states its own
     /// <c>minw</c>/<c>minh</c>, and a registered window is grown to it through
-    /// <see cref="RetailWindowManager.EnforceMinimumSize"/>.
+    /// <see cref="RetailWindowManager.EnforceMinimumSize(string, float, float)"/>.
+    /// When the content needs less again, a window it grew goes back toward
+    /// the size it had before, unless it was sized otherwise in between.
     /// </summary>
     internal void TrackContentMinimum(
         UiPluginContentHost content, float chromeH, float? authoredMinW, float? authoredMinH)
@@ -53,13 +60,25 @@ internal sealed class MarkupWindow(
         {
             Frame.MinWidth = PluginWindowChrome.FrameMinimumWidth(authoredMinW ?? minimum.Width, TitleBar is not null);
             Frame.MinHeight = (authoredMinH ?? minimum.Height) + chromeH;
+
+            (float Width, float Height) current = (Frame.Width, Frame.Height);
+            if (_beforeGrowth is not null && current != _grownTo) _beforeGrowth = null;
+            (float Width, float Height) from = _beforeGrowth ?? current;
             if (_manager is { } manager && _name is { } name)
+                manager.EnforceMinimumSize(name, from.Width, from.Height);
+            else
             {
-                manager.EnforceMinimumSize(name);
-                return;
+                Frame.Width = MathF.Max(from.Width, Frame.MinWidth);
+                Frame.Height = MathF.Max(from.Height, Frame.MinHeight);
             }
-            Frame.Width = MathF.Max(Frame.Width, Frame.MinWidth);
-            Frame.Height = MathF.Max(Frame.Height, Frame.MinHeight);
+
+            (float Width, float Height) now = (Frame.Width, Frame.Height);
+            if (now == from) _beforeGrowth = null;
+            else
+            {
+                _beforeGrowth = from;
+                _grownTo = now;
+            }
         };
     }
 }
