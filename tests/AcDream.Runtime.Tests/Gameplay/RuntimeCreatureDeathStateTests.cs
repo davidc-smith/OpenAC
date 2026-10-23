@@ -284,6 +284,7 @@ public sealed class RuntimeCreatureDeathStateTests
         ParentUpdated: _ => { },
         TeleportStarted: _ => { },
         AppearanceUpdated: _ => { },
+        DescriptionRefreshed: _ => { },
         PlayPhysicsScript: _ => { },
         PlayPhysicsScriptType: _ => { },
         SoundEvent: _ => { });

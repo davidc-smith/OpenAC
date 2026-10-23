@@ -98,6 +98,7 @@ public sealed class RuntimeLiveEntitySessionController
         OnParentUpdated,
         OnTeleportStarted,
         OnAppearanceUpdated,
+        OnDescriptionRefreshed,
         // Effect and sound playback are presentation: the no-window host parses
         // these packets and discards them, exactly as it does F754/F755.
         _ => { },
@@ -441,6 +442,12 @@ public sealed class RuntimeLiveEntitySessionController
 
     private void OnAppearanceUpdated(ObjDescEvent.Parsed update) =>
         _ = Entities.TryApplyObjDesc(
+            update,
+            acknowledgeProjection: null,
+            out _);
+
+    private void OnDescriptionRefreshed(WorldSession.EntitySpawn update) =>
+        _ = Entities.TryApplyDescriptionRefresh(
             update,
             acknowledgeProjection: null,
             out _);
