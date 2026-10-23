@@ -944,7 +944,8 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     AllegianceKick: guid => late.GameRuntime.AllegianceKick(guid),
                     AllegianceSetUpdateSubscription: on =>
                         late.GameRuntime.AllegianceSetUpdateSubscription(on),
-                    Trade: d.Runtime.Trade),
+                    Trade: d.Runtime.Trade,
+                    HousePurchase: d.Runtime.HousePurchaseOwner),
                 MapHouse: new MapHouseRuntimeBindings(
                     CurrentCalendar: d.CurrentCalendar,
                     PlayerCellId: () => d.PlayerController.Controller?.CellId ?? 0u,

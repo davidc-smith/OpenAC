@@ -67,7 +67,8 @@ public sealed record LiveSocialSessionBindings(
     RuntimeHouseState? House = null,
     RuntimeContractState? Contracts = null,
     Func<uint>? PlayerGuid = null,
-    Action<string>? OnLocalPlayerDeath = null);
+    Action<string>? OnLocalPlayerDeath = null,
+    RuntimeHousePurchaseState? HousePurchase = null);
 
 public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
 {
@@ -379,6 +380,9 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                     : null,
                 onHouseUpdateRentPayment: social.House is { } houseRentPayment
                     ? rent => houseRentPayment.ApplyRentPayment(rent, inventory.PlayerGuid())
+                    : null,
+                onHouseProfile: social.HousePurchase is { } housePurchase
+                    ? housePurchase.ApplyProfile
                     : null,
                 onContractTable: social.Contracts is { } contractTable
                     ? contractTable.ApplyTable

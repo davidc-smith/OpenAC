@@ -873,6 +873,56 @@ public static class GameEvents
         catch { return null; }
     }
 
+    /// <summary>
+    /// 0x021D HouseProfile: what a slumlord asks for to buy its house or pay
+    /// its maintenance (ACE GameEventHouseProfile / HouseProfile.Write).
+    /// </summary>
+    public readonly record struct HouseProfile(
+        uint SlumlordGuid,
+        uint DwellingId,
+        uint OwnerGuid,
+        uint Bitmask,
+        int MinLevel,
+        int MaxLevel,
+        int MinAllegianceRank,
+        int MaxAllegianceRank,
+        bool MaintenanceFree,
+        uint Type,
+        string OwnerName,
+        IReadOnlyList<HousePayment> Buy,
+        IReadOnlyList<HousePayment> Rent);
+
+    public static HouseProfile? ParseHouseProfile(ReadOnlySpan<byte> payload)
+    {
+        try
+        {
+            int pos = 0;
+            if (payload.Length < 40) return null;
+            uint slumlordGuid = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            uint dwellingId = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            uint ownerGuid = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            uint bitmask = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            int minLevel = BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            int maxLevel = BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            int minRank = BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            int maxRank = BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            bool maintenanceFree = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)) != 0; pos += 4;
+            uint type = BinaryPrimitives.ReadUInt32LittleEndian(payload.Slice(pos)); pos += 4;
+            string ownerName = ReadString16L(payload, ref pos);
+
+            List<HousePayment>? buy = ReadHousePaymentList(payload, ref pos);
+            if (buy is null) return null;
+            List<HousePayment>? rent = ReadHousePaymentList(payload, ref pos);
+            if (rent is null) return null;
+
+            return new HouseProfile(
+                slumlordGuid, dwellingId, ownerGuid, bitmask,
+                minLevel, maxLevel, minRank, maxRank,
+                maintenanceFree, type, ownerName, buy, rent);
+        }
+        catch { return null; }
+    }
+
     private static List<HousePayment>? ReadHousePaymentList(ReadOnlySpan<byte> payload, ref int pos)
     {
         if (payload.Length - pos < 4) return null;

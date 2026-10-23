@@ -8,6 +8,7 @@ using AcDream.Core.Net.Messages;
 using AcDream.Core.Spells;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
+using static AcDream.Runtime.Tests.Gameplay.UseRangeTestWorld;
 
 namespace AcDream.Runtime.Tests.Gameplay;
 
@@ -16,7 +17,6 @@ public sealed class RuntimeVendorRangeQueryTests
     private const uint Player = 0x50000001u;
     private const uint Vendor = 0x50000010u;
     private const uint Landblock = 0x01010001u;
-    private const uint SetupId = 0x02000001u;
 
     [Fact]
     public void EnforceRange_PlayerWithinVendorUseRadius_LeavesSessionOpen()
@@ -268,119 +268,9 @@ public sealed class RuntimeVendorRangeQueryTests
         Assert.Equal(0u, runtime.InventoryOwner.Vendor.VendorId);
     }
 
-    private static void CacheBody(GameRuntime runtime, float radius, float height) =>
-        runtime.EntityObjects.Physics.DataCache.CacheSetup(
-            SetupId,
-            new FlatSetupCollision(
-                ImmutableArray<FlatCollisionCylinder>.Empty,
-                [new FlatCollisionSphere(Vector3.Zero, radius)],
-                height: height,
-                radius: radius,
-                stepUpHeight: 0.4f,
-                stepDownHeight: 0.4f));
-
     private static void Open(GameRuntime runtime, uint vendorGuid) =>
         Assert.True(runtime.InventoryOwner.Vendor.Apply(
             vendorGuid,
             default,
             Array.Empty<VendorShopItem>()));
-
-    private static void SetPosition(
-        RuntimeEntityRecord record,
-        uint landblock,
-        float x,
-        float y,
-        float z = 5f)
-    {
-        record.Snapshot = record.Snapshot with
-        {
-            Position = new CreateObject.ServerPosition(
-                landblock, x, y, z, 1f, 0f, 0f, 0f),
-        };
-    }
-
-    private static GameRuntime Create()
-    {
-        var operations = new Operations();
-        return new GameRuntime(new GameRuntimeDependencies(
-            operations,
-            operations,
-            operations,
-            operations));
-    }
-
-    private static RuntimeEntityRecord Add(
-        GameRuntime runtime,
-        uint guid,
-        uint landblock,
-        float x,
-        float y,
-        float z = 5f,
-        float? useRadius = null)
-    {
-        RuntimeEntityRecord record = runtime.EntityObjects
-            .RegisterEntity(Spawn(guid, landblock, x, y, z, useRadius))
-            .Canonical!;
-        Assert.True(runtime.EntityObjects.ApplyAcceptedSpawn(
-            record,
-            record.CreateIntegrationVersion,
-            record.Snapshot,
-            replaceGeneration: false));
-        return record;
-    }
-
-    private static WorldSession.EntitySpawn Spawn(
-        uint guid,
-        uint landblock,
-        float x,
-        float y,
-        float z,
-        float? useRadius) =>
-        new(
-            guid,
-            new CreateObject.ServerPosition(landblock, x, y, z, 1f, 0f, 0f, 0f),
-            SetupId,
-            [],
-            [],
-            [],
-            null,
-            null,
-            guid.ToString("X8"),
-            null,
-            null,
-            null,
-            UseRadius: useRadius);
-
-    private sealed class Operations :
-        IRuntimeCombatAttackOperations,
-        IRuntimeCombatTargetOperations,
-        IRuntimeCombatModeOperations,
-        IRuntimeSpellCastOperations
-    {
-        public bool CanStartAttack(bool allowAutoTarget) => false;
-        public void PrepareAttackRequest() { }
-        public bool SendAttack(AttackHeight height, float power, bool allowAutoTarget) => false;
-        public void SendCancelAttack() { }
-        public bool IsDualWield => false;
-        public bool PlayerReadyForAttack => false;
-        public bool AutoRepeatAttack => false;
-        public bool AutoTarget => false;
-        public uint? SelectClosestTarget() => null;
-        public bool IsInWorld => false;
-        public IReadOnlyList<ClientObject> GetOrderedEquipment() => [];
-        public void NotifyExplicitCombatModeRequest() { }
-        public void SendChangeCombatMode(CombatMode mode) { }
-        public uint LocalPlayerId => 0u;
-        public bool CanSend => false;
-        public bool HasRequiredComponents(uint spellId) => false;
-        public bool IsTargetCompatible(
-            uint targetId,
-            SpellMetadata spell,
-            bool showMessage) => false;
-        public void StopCompletely() { }
-        public void SendUntargeted(uint spellId) { }
-        public void SendTargeted(uint targetId, uint spellId) { }
-        public void DisplayMessage(string message) { }
-        public void IncrementBusy() { }
-    }
 }

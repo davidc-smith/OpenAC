@@ -82,6 +82,8 @@ public static class ClientCommandRequests
     public const uint ListAllegianceOfficersOpcode = 0x02A6u;
     public const uint ClearAllegianceOfficersOpcode = 0x02A7u;
     public const uint HouseQueryOpcode = 0x021Eu;
+    public const uint BuyHouseOpcode = 0x021Cu;
+    public const uint RentHouseOpcode = 0x0221u;
 
     public static byte[] BuildMarketplace(uint sequence) =>
         BuildParameterless(sequence, MarketplaceOpcode);
@@ -274,6 +276,18 @@ public static class ClientCommandRequests
     public static byte[] BuildAbandonHouse(uint sequence) =>
         BuildParameterless(sequence, AbandonHouseOpcode);
 
+    // Buy at a slumlord — GameActionHouseBuyHouse.Handle: ReadUInt32()
+    // slumlord, ReadListUInt32() the items offered (u32 count, then guids).
+    public static byte[] BuildBuyHouse(
+        uint sequence, uint slumlordGuid, IReadOnlyList<uint> itemGuids) =>
+        BuildGuidList(sequence, BuyHouseOpcode, slumlordGuid, itemGuids);
+
+    // Pay maintenance at a slumlord — GameActionHouseRentHouse.Handle: the
+    // same body as BuyHouse.
+    public static byte[] BuildRentHouse(
+        uint sequence, uint slumlordGuid, IReadOnlyList<uint> itemGuids) =>
+        BuildGuidList(sequence, RentHouseOpcode, slumlordGuid, itemGuids);
+
     public static byte[] BuildBreakAllegianceBoot(
         uint sequence, string playerName, bool accountBoot) =>
         BuildStringUInt32(
@@ -415,6 +429,18 @@ public static class ClientCommandRequests
     {
         byte[] body = CreateBody(sequence, opcode, 4);
         BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(12), value);
+        return body;
+    }
+
+    private static byte[] BuildGuidList(
+        uint sequence, uint opcode, uint target, IReadOnlyList<uint> guids)
+    {
+        ArgumentNullException.ThrowIfNull(guids);
+        byte[] body = CreateBody(sequence, opcode, 8 + 4 * guids.Count);
+        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(12), target);
+        BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(16), (uint)guids.Count);
+        for (int i = 0; i < guids.Count; i++)
+            BinaryPrimitives.WriteUInt32LittleEndian(body.AsSpan(20 + 4 * i), guids[i]);
         return body;
     }
 
