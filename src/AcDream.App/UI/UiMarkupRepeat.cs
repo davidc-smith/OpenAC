@@ -544,6 +544,8 @@ internal sealed class UiMarkupRepeat : UiElement
     private sealed class ListReader<T, TKey> : ListReader
     {
         private static readonly bool ByReference = !typeof(T).IsValueType;
+        // A struct's getter takes its item by reference, so it is bound as one.
+        private delegate TKey StructGetter(ref T item);
         private readonly Func<T, TKey>? _key;
         private List<T> _items = new(), _lastItems = new();
         private List<TKey> _keys = new(), _lastKeys = new();
@@ -553,9 +555,16 @@ internal sealed class UiMarkupRepeat : UiElement
         {
             if (key is null)
                 return;
-            _key = ByReference && key.GetMethod is { IsStatic: false } getter
-                ? getter.CreateDelegate<Func<T, TKey>>()
-                : item => (TKey)key.GetValue(item)!;
+            // Typed getters, so reading a key boxes neither the item nor the key.
+            if (key.GetMethod is not { IsStatic: false } getter)
+                _key = item => (TKey)key.GetValue(item)!;
+            else if (ByReference)
+                _key = getter.CreateDelegate<Func<T, TKey>>();
+            else
+            {
+                StructGetter read = getter.CreateDelegate<StructGetter>();
+                _key = item => read(ref item);
+            }
         }
 
         public override int Count => _items.Count;

@@ -137,6 +137,30 @@ public sealed class MarkupRepeatReconcileTests
     private const string Keyed = "<repeat items=\"{Rows}\" key=\"{Id}\"><label text=\"{Label}\" h=\"20\"/></repeat>";
     private const string Keyless = "<repeat items=\"{Rows}\"><label text=\"{Label}\" h=\"20\"/></repeat>";
 
+    private readonly record struct Spot(uint Id, string Label);
+
+    private sealed class SpotBinding
+    {
+        public IReadOnlyList<Spot> Rows { get; set; } = [];
+    }
+
+    [Fact]
+    public void An_unchanged_tick_of_struct_items_allocates_nothing()
+    {
+        var binding = new SpotBinding { Rows = [new Spot(1, "a"), new Spot(2, "b")] };
+        var m = Mount(Keyed, binding);
+        for (int i = 0; i < 3; i++) m.Marker.TickSelfAndChildren(0.016);
+
+        long start = GC.GetAllocatedBytesForCurrentThread();
+        m.Marker.TickSelfAndChildren(0.016);
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
+
+        // The typed key read still sees a change.
+        binding.Rows = [new Spot(2, "b"), new Spot(3, "c")];
+        m.Frame();
+        Assert.Equal(new[] { "b", "c" }, Labels(m.Copies));
+    }
+
     // 1
     [Fact]
     public void Editing_an_item_in_place_rebuilds_nothing()
