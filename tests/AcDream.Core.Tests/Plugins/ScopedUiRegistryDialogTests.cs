@@ -90,7 +90,9 @@ public sealed class ScopedUiRegistryDialogTests
 
         Assert.Throws<ObjectDisposedException>(
             () => registry.Confirm(new PluginDialog("T", "M"), _ => { }));
+        Assert.Throws<ObjectDisposedException>(() => registry.ShowModal("options", "main"));
         Assert.Empty(ui.Requests);
+        Assert.Empty(ui.Modals);
     }
 
     private sealed class RecordingUiRegistry : IScopedUiRegistry

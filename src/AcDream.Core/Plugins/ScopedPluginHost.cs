@@ -2105,8 +2105,15 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             bool visible) =>
             _inner.SetControlVisible(_owner, viewName, controlName, visible);
 
-        public bool ShowModal(string viewName, string? ownerView = null) =>
-            _inner.ShowModal(_owner, viewName, ownerView);
+        public bool ShowModal(string viewName, string? ownerView = null)
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+            }
+            return _inner.ShowModal(_owner, viewName, ownerView);
+        }
 
         // An open dialog's handle is tracked like any other registration, so
         // an unloading plugin's dialogs are answered with their last button;
