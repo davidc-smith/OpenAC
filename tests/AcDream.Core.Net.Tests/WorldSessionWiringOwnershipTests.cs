@@ -33,6 +33,8 @@ public sealed class WorldSessionWiringOwnershipTests
         Assert.Equal(1, HandlerCount(session, nameof(session.EntityDescriptionRefreshed)));
         Assert.Equal(1, HandlerCount(session, nameof(session.ObjectDataIdPropertyUpdated)));
         Assert.Equal(1, HandlerCount(session, nameof(session.PlayerDataIdPropertyUpdated)));
+        Assert.Equal(1, HandlerCount(session, nameof(session.ObjectStringPropertyUpdated)));
+        Assert.Equal(1, HandlerCount(session, nameof(session.PlayerStringPropertyUpdated)));
         Assert.Equal(1, HandlerCount(session, nameof(session.ObjectInstanceIdPropertyUpdated)));
         Assert.Equal(1, HandlerCount(session, nameof(session.PlayerInstanceIdPropertyUpdated)));
         Assert.Equal(1, HandlerCount(session, nameof(session.PlayerPositionUpdated)));
@@ -48,6 +50,8 @@ public sealed class WorldSessionWiringOwnershipTests
         Assert.Equal(0, HandlerCount(session, nameof(session.EntityDescriptionRefreshed)));
         Assert.Equal(0, HandlerCount(session, nameof(session.ObjectDataIdPropertyUpdated)));
         Assert.Equal(0, HandlerCount(session, nameof(session.PlayerDataIdPropertyUpdated)));
+        Assert.Equal(0, HandlerCount(session, nameof(session.ObjectStringPropertyUpdated)));
+        Assert.Equal(0, HandlerCount(session, nameof(session.PlayerStringPropertyUpdated)));
         Assert.Equal(0, HandlerCount(session, nameof(session.ObjectInstanceIdPropertyUpdated)));
         Assert.Equal(0, HandlerCount(session, nameof(session.PlayerInstanceIdPropertyUpdated)));
         Assert.Equal(0, HandlerCount(session, nameof(session.PlayerPositionUpdated)));
