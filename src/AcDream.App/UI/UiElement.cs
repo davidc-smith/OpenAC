@@ -310,15 +310,6 @@ public abstract class UiElement
         InvalidateChildOrder();
     }
 
-    /// <summary>Adds <paramref name="child"/> at <paramref name="index"/>, taking it from its old parent as <see cref="AddChild"/> does.</summary>
-    internal void InsertChild(int index, UiElement child)
-    {
-        if (child.Parent is not null) child.Parent.RemoveChild(child);
-        child.Parent = this;
-        _children.Insert(index, child);
-        InvalidateChildOrder();
-    }
-
     /// <summary>Moves a child to <paramref name="index"/> in place: it keeps its parent, focus and state.</summary>
     internal void MoveChild(UiElement child, int index)
     {

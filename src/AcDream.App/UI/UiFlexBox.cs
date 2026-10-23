@@ -73,14 +73,6 @@ internal sealed class UiFlexBox
         _structureChanged = true;
     }
 
-    /// <summary>Inserts a built item at <paramref name="index"/>, in step with its element's place among the children.</summary>
-    public void Insert(int index, UiFlexItem item)
-    {
-        Node.Children.Insert(index, item.Node);
-        Items.Insert(index, item);
-        _structureChanged = true;
-    }
-
     /// <summary>Removes the item for <paramref name="element"/>; false when it has none.</summary>
     public bool Remove(UiElement element)
     {
