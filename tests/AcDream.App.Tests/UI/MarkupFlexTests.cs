@@ -152,10 +152,26 @@ public sealed class MarkupFlexTests
     }
 
     [Fact]
-    public void Item_attributes_under_an_absolute_group_fail_the_build()
+    public void Item_attributes_under_an_absolute_group_are_reported_and_the_window_still_builds()
     {
-        var ex = Assert.Throws<FormatException>(() => Mount("<group x=\"0\" y=\"0\" w=\"10\" h=\"10\"><label text=\"a\" grow=\"1\" /></group>"));
-        Assert.Contains("grow", ex.Message);
+        MarkupWindow window = MarkupDocument.BuildWindow(
+            "<panel w=\"300\" h=\"200\"><group x=\"0\" y=\"0\" w=\"10\" h=\"10\"><label text=\"a\" grow=\"1\" minw=\"4\" /></group></panel>",
+            new object(), _ => (0u, 0, 0));
+
+        Assert.Collection(window.Warnings,
+            w => Assert.Contains("grow=\"1\"", w),
+            w => Assert.Contains("minw=\"4\"", w));
+        Assert.Single(window.Frame.Children.OfType<UiPanel>().Single().Children.OfType<UiLabel>());
+    }
+
+    [Fact]
+    public void Markup_that_uses_no_flex_attributes_builds_without_warnings()
+    {
+        MarkupWindow window = MarkupDocument.BuildWindow(
+            "<panel w=\"300\" h=\"200\"><group x=\"0\" y=\"0\" w=\"10\" h=\"10\" layout=\"row\"><label text=\"a\" grow=\"1\" /></group></panel>",
+            new object(), _ => (0u, 0, 0));
+
+        Assert.Empty(window.Warnings);
     }
 
     [Fact]
@@ -309,20 +325,94 @@ public sealed class MarkupFlexTests
         Assert.Equal(measured, flex.MeasureCount);
     }
 
+    [Fact]
+    public void A_caption_that_changes_but_keeps_its_size_lays_nothing_out()
+    {
+        var binding = new Binding();
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="300" h="30" layout="row">
+              <label name="l" text="{Caption}" /><button text="OK" /><field grow="1" />
+            </group>
+            """, binding);
+        var flex = ((UiFlexGroup)Find(frame, "g")).Flex;
+        int measured = flex.MeasureCount;
+
+        binding.Caption = "CD";
+
+        Assert.False(flex.EnsureLayout(300f, 30f));
+        Assert.Equal(measured + 1, flex.MeasureCount);
+    }
+
+    [Fact]
+    public void A_caption_that_changes_size_measures_only_its_own_control()
+    {
+        var binding = new Binding();
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="300" h="30" layout="row">
+              <label name="l" text="{Caption}" /><button name="b" text="OK" /><field grow="1" />
+            </group>
+            """, binding);
+        var flex = ((UiFlexGroup)Find(frame, "g")).Flex;
+        int measured = flex.MeasureCount;
+
+        binding.Caption = "ABCD";
+        Frame(root);
+
+        Assert.Equal(measured + 1, flex.MeasureCount);
+        Assert.Equal(28f, Find(frame, "l").Width);
+        Assert.Equal(28f, Find(frame, "b").Left);
+    }
+
+    [Fact]
+    public void A_control_whose_markup_fixes_its_size_is_not_measured_again()
+    {
+        var binding = new Binding();
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="300" h="30" layout="row">
+              <label text="{Caption}" w="80" h="20" minw="80" minh="20" /><button text="OK" />
+            </group>
+            """, binding);
+        var flex = ((UiFlexGroup)Find(frame, "g")).Flex;
+        int measured = flex.MeasureCount;
+
+        binding.Caption = "A much longer caption than before";
+
+        Assert.False(flex.EnsureLayout(300f, 30f));
+        Assert.Equal(measured, flex.MeasureCount);
+    }
+
+    [Fact]
+    public void A_caption_in_a_fixed_width_control_changes_no_layout()
+    {
+        var binding = new Binding();
+        var (root, frame) = Mount("""
+            <group name="g" x="0" y="0" w="300" h="30" layout="row">
+              <label text="{Caption}" w="80" /><button text="OK" />
+            </group>
+            """, binding);
+        var flex = ((UiFlexGroup)Find(frame, "g")).Flex;
+
+        binding.Caption = "ABCDEF";
+
+        // Measured again, but a stated width resolves to the same size.
+        Assert.False(flex.EnsureLayout(300f, 30f));
+    }
+
     [Theory]
     [InlineData(50)]
     [InlineData(100)]
     [InlineData(200)]
-    public void A_wrapping_grid_measures_each_item_once_per_layout(int count)
+    public void A_wrapping_grid_measures_each_item_once(int count)
     {
         string icons = string.Concat(Enumerable.Repeat("<icon did=\"1\" />", count));
         var (_, frame) = Mount($"<group name=\"g\" x=\"0\" y=\"0\" w=\"300\" h=\"200\" layout=\"row\" wrap=\"true\">{icons}</group>");
         var group = (UiFlexGroup)Find(frame, "g");
-        int before = group.Flex.MeasureCount;
+        Assert.Equal(count, group.Flex.MeasureCount);
 
+        // A new size lays out again from the measurements already made.
         Assert.True(group.Flex.EnsureLayout(250f, 200f));
 
-        Assert.Equal(count, group.Flex.MeasureCount - before);
+        Assert.Equal(count, group.Flex.MeasureCount);
     }
 
     [Fact]

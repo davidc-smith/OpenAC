@@ -380,7 +380,8 @@ the window's name on the left and a close button on the right, drawn in the
 window's look (the game's close art in Classic; the header band and a ghost
 X in the shared themes). The name is the panel's `title`, or the title the
 window was registered with when the markup has none. `titlebar` takes
-`true` or `false`; anything else fails the build.
+`true` or `false`; anything else is ignored, with a warning in the client
+log.
 
 With the bar on, the window has a **content area** inside the chrome:
 
@@ -968,8 +969,9 @@ The rules are a practical subset of CSS flexbox.
 | `wrap` | `true`, `false` (rows only) | `false` |
 
 `gap`, `padding`, `justify`, `align` and `wrap` need `layout` on the same
-element. Only rows wrap in this version: `wrap="true"` on a column fails the
-build.
+element; without it they are ignored, with a warning in the client log, and
+so is a `layout` other than `row` or `column` (the element stays absolute).
+Only rows wrap in this version: `wrap="true"` on a column fails the build.
 
 ### Item attributes
 
@@ -985,16 +987,22 @@ Every child of a flex container may carry:
 | `alignself` | `start`, `center`, `end`, `stretch` | the container's `align` |
 
 An item never shrinks below its content (a button below its caption) unless
-`minw`/`minh` allow it. `x`, `y` and `anchor` on a flex item fail the build,
-and so do `grow`, `shrink`, `basis`, `alignself` and the limits on a child
-of a container without `layout`. A `<contextmenu>` belongs to the element it
-is inside and is never a flex item.
+`minw`/`minh` allow it; a label is the exception (see below). `x`, `y` and
+`anchor` on a flex item fail the build. `grow`, `shrink`, `basis`,
+`alignself` and the limits on a child of a container without `layout` are
+ignored, with a warning in the client log. A `<contextmenu>` belongs to the
+element it is inside and is never a flex item.
+
+Markup that uses flex fails the build on a bad value (an unknown keyword, a
+negative or non-finite number, inverted limits), as the rest of the markup
+does. The warnings are for markup that does not use flex: hosts before flex
+ignored these attributes, so a window with a stray one still opens.
 
 ### Content sizes
 
 | Element | Size |
 |---|---|
-| `label` | its text, one line tall |
+| `label` | its text, one line tall; it may shrink to nothing (no `minw` of its own) |
 | `button`, `tab` | its caption with 12 points either side (and a square for its icon); at least 24 points tall, taller when the font's line plus 8 is more |
 | `toggle` | lamp or switch, then its caption; at least 20 points tall, taller when the font's line plus 4 is more |
 | `checkbox` | box, then its caption; tall as a toggle |
@@ -1014,8 +1022,12 @@ is inside and is never a flex item.
 
 Sizes follow what is shown: a bound caption that gets longer, a hidden item
 (which takes no space), or a switch of the shared appearance lays the
-container out again on the next frame. A label inside a flex container
-draws in the box it is given, its line centred top to bottom.
+container out again on the next frame, but only when a size really changed:
+a caption that changes and keeps its width, or a control whose `w`, `h`,
+`minw` and `minh` are all stated, lays nothing out. A label inside a flex
+container draws in the box it is given, its line centred top to bottom, and
+text wider than the box ends in "...". Give a label a `minw` to keep it from
+shrinking below that.
 
 ### Mixing absolute and flex
 
@@ -1039,7 +1051,8 @@ them it is empty and shows nothing.
 - `minw` and `minh` default to what the content needs, so a window never
   shrinks (by dragging, or by a restored layout) to a size that cuts its
   content off. When the content needs more later (a longer caption), the
-  window grows to fit, even when it is not resizable, and stays on screen;
+  window grows to fit, even when it is not resizable, and stays on screen.
+  A long label never needs more: it is cut short instead;
 - the opening size and minimum follow bound `visible` (and `enabled`) as the
   bindings read when the window is built: a tabbed window whose pages are
   sibling groups with `visible="{XTabSelected}"` opens sized for the shown
@@ -1049,8 +1062,10 @@ them it is empty and shows nothing.
   markup's `w`, `h`, `minw`, `minh`, `resizable`, `resize`, `layout`,
   `titlebar` or `scroll` change. Captions and appearance never reset it.
 
-Windows only grow to fit: when the content later needs less room, the window
-keeps its size. A wrapping root's minimum height is the height of its
+When the content needs less room again, a window that grew to fit goes back
+toward the size it had before (never below the new minimum), unless the
+player resized it in between; a window that never grew keeps its size. A
+wrapping root's minimum height is the height of its
 narrowest layout, so a wide wrapping window cannot be made shorter than that;
 give it `scroll="y"` (see [Scrolling groups](#scrolling-groups)) to let it.
 
@@ -1067,7 +1082,8 @@ line wide.
 `scroll="y"`, `scroll="x"` or `scroll="both"` on a `<group>` makes it scroll
 along those axes when its content does not fit; on the root `<panel>` it
 scrolls the window's content area. Without `scroll` content that does not fit
-is cut off, as before; any other value fails the build.
+is cut off, as before; any other value is ignored, with a warning in the
+client log.
 
 ```xml
 <panel title="Spells" layout="column" padding="8" gap="6" w="240" h="200" resizable="true">
@@ -1101,21 +1117,23 @@ is cut off, as before; any other value fails the build.
   lines when the window has room and scrolls when it does not. On the root,
   the window's minimum along a scrolling axis is that small view too.
 - The root needs a content area to scroll: `scroll` on a root `<panel>`
-  without `layout` and without `titlebar="true"` fails the build.
+  without `layout` and without `titlebar="true"` is ignored, with a warning
+  in the client log.
 
 **The wheel** scrolls the innermost thing under the pointer that can scroll:
 a `list` or `log` inside a scrolling group scrolls itself, and the group
-scrolls everywhere else. A group, list or log with nothing to scroll lets the
-wheel pass to a group around it. Scrolling closes an open menu, unless the
-pointer is over the menu's popup. A sideways swipe, a tilt wheel, or Shift with the wheel
-scrolls horizontally. Only `scroll="x"` and `scroll="both"` groups take a
-horizontal step; a Shift step that no such group takes scrolls vertically as
-before. macOS sends Shift with a mouse wheel as a sideways step, and the same
-rule applies: it scrolls a horizontal group under the pointer, else it is the
-wheel, so Shift+wheel still steps a focused `<number>` by ten. A focused
-number inside a horizontally scrolling group loses Shift+wheel to the group.
-One wheel step moves 48 points (three 16-point
-lines); the bar's arrows move 16 and a click in its track a page.
+scrolls everywhere else. A group, list or log with nothing to scroll lets
+the wheel pass to a group around it. A wheel step that anything takes, a
+built-in window included, closes an open menu or popup, unless the pointer
+is over the popup. A sideways swipe, a tilt wheel, or
+Shift with the wheel scrolls horizontally. Only `scroll="x"` and
+`scroll="both"` groups take a horizontal step; a Shift step that no such
+group takes scrolls vertically as before. macOS sends Shift with a mouse
+wheel as a sideways step, and the same rule applies: it scrolls a horizontal
+group under the pointer, else it is the wheel, so Shift+wheel still steps a
+focused `<number>` by ten. A focused number inside a horizontally scrolling
+group loses Shift+wheel to the group. One wheel step moves 48 points (three
+16-point lines); the bar's arrows move 16 and a click in its track a page.
 
 **Focus** moves into view: when Tab (or a click) gives a control keyboard
 focus, each scrolling group around it scrolls just far enough to show it.

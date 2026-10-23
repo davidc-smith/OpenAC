@@ -66,6 +66,17 @@ public sealed class MarkupRepeatBuildTests
 
     private const string LabelTemplate = "<repeat items=\"{Rows}\"><label text=\"{Label}\"/></repeat>";
 
+    [Fact]
+    public void A_stray_attribute_in_a_template_is_reported_once_for_all_its_rows()
+    {
+        var binding = new Binding { Rows = Rows("a", "b", "c") };
+        MarkupWindow window = Window(
+            "<repeat items=\"{Rows}\"><group w=\"40\" h=\"20\"><label text=\"{Label}\" grow=\"1\"/></group></repeat>",
+            binding);
+
+        Assert.Contains("grow=\"1\"", Assert.Single(window.Warnings));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

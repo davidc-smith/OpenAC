@@ -85,7 +85,13 @@ internal static class MarkupContentSize
         switch (element)
         {
             case UiLabel label:
-                return Fixed(MathF.Ceiling(TextWidth(label.DatFont, text)), LineHeight(label.DatFont));
+            {
+                // A label may shrink to nothing (it draws "..." when cut short), so
+                // a long bound caption never raises its window's minimum.
+                float height = LineHeight(label.DatFont);
+                return new FlexMeasurement(
+                    new FlexSize(MathF.Ceiling(TextWidth(label.DatFont, text)), height), new FlexSize(0f, height));
+            }
             case UiSimpleButton button:
             {
                 float height = ControlHeightFor(button.DatFont);
@@ -158,14 +164,17 @@ internal static class MarkupContentSize
         return radio.Horizontal ? Fixed(cellW * count, cellH) : Fixed(cellW, cellH * count);
     }
 
-    /// <summary>The caption a control shows now: what its size depends on besides its font.</summary>
+    /// <summary>
+    /// The caption a control shows now: what its size depends on besides its
+    /// font. A radio group's options are compared item by item instead
+    /// (<see cref="UiFlexItem"/>), so they are not joined into one string each frame.
+    /// </summary>
     internal static string Text(UiElement element) => element switch
     {
         UiLabel label => label.TextSource?.Invoke() ?? label.Text,
         UiSimpleButton button => button.TextSource?.Invoke() ?? button.Text,
         UiMarkupToggle toggle => toggle.TextSource?.Invoke() ?? toggle.Text,
         UiMarkupCheckbox checkbox => checkbox.TextSource?.Invoke() ?? checkbox.Text,
-        UiMarkupRadio radio => string.Join("\n", radio.Items),
         UiMarkupExpander expander => expander.Header.TextSource?.Invoke() ?? expander.Header.Text,
         _ => string.Empty,
     };
