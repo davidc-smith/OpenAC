@@ -44,8 +44,8 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         Func<ItemType, uint, uint, uint, uint, uint> ResolveIcon,
         Action<bool> SetWindowVisible,
         Action<string> Report,
-        /// <summary>Composes an item's displayed name, material prefix
-        /// included, as the other item strips do.</summary>
+        // Composes an item's displayed name, material prefix included, as the
+        // other item strips do.
         Func<ClientObject, string> ResolveAppropriateName,
         uint EmptySlotSprite = 0u);
 
@@ -286,7 +286,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     // revision gate would keep showing the old amount.
     private void OnObjectUpdated(ClientObject item)
     {
-        if (_disposed) return;
+        if (_disposed || !_bindings.Purchase.Snapshot.IsOpen) return;
         if (!_bindings.Purchase.GetStaged(HousePurchaseTab.Buy).Contains(item.ObjectId)
             && !_bindings.Purchase.GetStaged(HousePurchaseTab.Rent).Contains(item.ObjectId))
             return;
