@@ -1,4 +1,3 @@
-using System.Collections;
 using AcDream.App.UI;
 using AcDream.App.UI.Markup;
 
@@ -120,12 +119,8 @@ public sealed class MarkupRepeatReconcileTests
     private static string[] Labels(IEnumerable<UiElement> elements) =>
         elements.OfType<UiLabel>().Select(label => label.TextSource!() ?? "").ToArray();
 
-    private static int ThemeActions(UiElement frame)
-    {
-        var field = typeof(UiPluginMarkupPanel).GetField("_apply",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        return ((ICollection)field.GetValue(frame)!).Count;
-    }
+    private static int ThemeActions(UiElement frame) =>
+        Assert.IsType<UiPluginMarkupPanel>(frame).ThemeActionCount;
 
     private static void Click(UiRoot root, UiElement element)
     {
