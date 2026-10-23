@@ -103,6 +103,53 @@ public sealed class UiMenuFitItemsTests
     }
 
     [Fact]
+    public void OpenWidenedMenu_ButtonRowBesideTheButton_IsNotTheMenus()
+    {
+        var menu = MakeMenu(100f, "Short", LongLabel);
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(menu);
+
+        Click(root, 10, 10);
+
+        Assert.True(menu.IsOpen);
+        Assert.True(menu.PopupOuterWidth > 200f);
+        Assert.Same(menu, menu.HitTest(50f, 10f));     // the button
+        Assert.Null(menu.HitTest(150f, 10f));          // beside it, over the popup's width
+        Assert.Same(menu, menu.HitTest(150f, 30f));    // the popup under it
+    }
+
+    [Fact]
+    public void ItemsReplacedWhileOpen_RemeasureThePopup()
+    {
+        var menu = MakeMenu(100f, "A", "B");
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(menu);
+        Click(root, 10, 10);
+        Assert.Equal(100f + 2 * Border, menu.PopupOuterWidth);
+
+        menu.Items = new[] { new UiMenu.MenuItem(LongLabel, LongLabel) };
+
+        float textRight = Border + UiMenu.PlainPadding + LongLabel.Length * 7f;
+        Assert.True(menu.PopupOuterWidth >= textRight + UiMenu.PlainPadding + Border,
+            $"popup {menu.PopupOuterWidth} did not grow for the new item ({textRight})");
+    }
+
+    [Fact]
+    public void LongCaption_IsNotCutInsideASurrogatePair()
+    {
+        string label = string.Concat(Enumerable.Repeat("\U0001F600", 20));   // 40 chars
+        var menu = MakeMenu(80f, label);
+        menu.ButtonLabelProvider = () => label;
+
+        string shown = menu.ButtonCaptionForTest;
+
+        Assert.EndsWith("…", shown);
+        string kept = shown[..^1];
+        Assert.True(kept.Length > 0 && kept.Length % 2 == 0, $"cut at {kept.Length}");
+        Assert.False(char.IsHighSurrogate(kept[^1]));
+    }
+
+    [Fact]
     public void LongSelectedLabel_EndsInAnEllipsisInsideTheButton()
     {
         var menu = MakeMenu(80f, LongLabel);
