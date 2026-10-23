@@ -4554,7 +4554,12 @@ public sealed class RetailUiRuntime : IDisposable
                 },
                 _bindings.Options.DisplaySystemMessage,
                 ResolveAppropriateItemName,
-                emptySlot));
+                emptySlot,
+                ExamineItem: id =>
+                {
+                    inventory.Selection.Select(id, SelectionChangeSource.Inventory);
+                    inventory.ItemInteraction.ExamineSelectedOrEnterMode(id);
+                }));
         if (controller is null)
         {
             Console.WriteLine("[UI] salvage window controls are unavailable.");
