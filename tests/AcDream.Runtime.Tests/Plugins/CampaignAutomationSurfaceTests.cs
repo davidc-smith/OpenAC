@@ -1,5 +1,8 @@
 using AcDream.Core.Chat;
 using AcDream.Core.Items;
+using AcDream.Core.Net;
+using AcDream.Core.Net.Messages;
+using AcDream.Runtime.Entities;
 using AcDream.Core.Physics;
 using AcDream.Core.Selection;
 using AcDream.Core.Spells;
@@ -369,6 +372,163 @@ public sealed class CampaignAutomationSurfaceTests
         Assert.Equal(2, runtime.InventoryOwner.Transactions.BusyCount);
         Assert.Equal(0, runtime.InventoryOwner.Transactions.ItemBusyCount);
         Assert.True(runtime.InventoryOwner.Transactions.CanBeginRequest);
+    }
+
+    [Fact]
+    public void CastWithoutSelectingSendsAtTheTargetAndKeepsTheSelection()
+    {
+        const uint selected = 0x70000001u;
+        const uint target = 0x70000002u;
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        GameRuntime runtime = host.Runtime;
+        runtime.CharacterOwner.InstallSpellMetadata(SpellTable.Create([DurationSpell()]));
+        runtime.CharacterOwner.Spellbook.OnSpellLearned(42u);
+        Activate(runtime, selected);
+        Activate(runtime, target);
+        runtime.ActionOwner.Selection.Select(selected, SelectionChangeSource.Plugin);
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        Assert.Equal(
+            PluginCastGate.Ready,
+            surface.Magic.EvaluateGateWithoutSelecting(42u, target));
+        Assert.Equal(
+            PluginCastRequestResult.Sent,
+            surface.Magic.RequestCastWithoutSelecting(42u, target));
+
+        Assert.Equal(
+            $"cast:{target}:42",
+            Assert.Single(host.GameplayTrace, line => line.StartsWith("cast:")
+                && line.Count(c => c == ':') == 2));
+        Assert.Equal(selected, runtime.ActionOwner.Selection.SelectedObjectId);
+    }
+
+    [Fact]
+    public void CastWithoutSelectingRefusesAnObjectThatIsNotInTheWorld()
+    {
+        const uint selected = 0x70000001u;
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        GameRuntime runtime = host.Runtime;
+        runtime.CharacterOwner.InstallSpellMetadata(SpellTable.Create([DurationSpell()]));
+        runtime.CharacterOwner.Spellbook.OnSpellLearned(42u);
+        Activate(runtime, selected);
+        runtime.ActionOwner.Selection.Select(selected, SelectionChangeSource.Plugin);
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        Assert.Equal(
+            PluginCastGate.Refused,
+            surface.Magic.EvaluateGateWithoutSelecting(42u, 0x70000099u));
+        Assert.Equal(
+            PluginCastRequestResult.IncompatibleTarget,
+            surface.Magic.RequestCastWithoutSelecting(42u, 0x70000099u));
+        Assert.DoesNotContain(host.GameplayTrace, line => line.StartsWith("cast:"));
+        Assert.Equal(selected, runtime.ActionOwner.Selection.SelectedObjectId);
+    }
+
+    [Fact]
+    public void CastWithoutSelectingIsUnavailableWhileUnbound()
+    {
+        using var surface = new RuntimeAutomationSurface();
+
+        Assert.Equal(
+            PluginCastGate.Unavailable,
+            surface.Magic.EvaluateGateWithoutSelecting(42u, 0x70000002u));
+        Assert.Equal(
+            PluginCastRequestResult.Unavailable,
+            surface.Magic.RequestCastWithoutSelecting(42u, 0x70000002u));
+    }
+
+    [Fact]
+    public void CastWithoutSelectingAnswersNotKnownBeforeCheckingTheTarget()
+    {
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        GameRuntime runtime = host.Runtime;
+        runtime.CharacterOwner.InstallSpellMetadata(SpellTable.Create([DurationSpell()]));
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        Assert.Equal(
+            PluginCastGate.NotKnown,
+            surface.Magic.EvaluateGateWithoutSelecting(42u, 0x70000099u));
+    }
+
+    [Fact]
+    public void TheSelectingCastOverloadStillSelects()
+    {
+        const uint target = 0x70000002u;
+        using var host = new NoWindowGameRuntimeHost();
+        Assert.Equal(RuntimeSessionStartStatus.Connected, host.Start().Status);
+        GameRuntime runtime = host.Runtime;
+        runtime.CharacterOwner.InstallSpellMetadata(SpellTable.Create([DurationSpell()]));
+        runtime.CharacterOwner.Spellbook.OnSpellLearned(42u);
+        Activate(runtime, target);
+        using var surface = new RuntimeAutomationSurface();
+        surface.Bind(runtime, runtime.CharacterOwner, runtime.ActionOwner.SpellCast);
+
+        Assert.Equal(
+            PluginCastRequestResult.Sent,
+            surface.Magic.RequestCast(42u, target));
+        Assert.Equal(target, runtime.ActionOwner.Selection.SelectedObjectId);
+    }
+
+    [Fact]
+    public void CastWithoutSelectingIsRefusedWhereTheHostLacksIt()
+    {
+        Assert.Equal(
+            PluginCastGate.Unavailable,
+            NoOpAutomationSurface.Instance.Magic.EvaluateGateWithoutSelecting(1u, 2u));
+        Assert.Equal(
+            PluginCastRequestResult.Unavailable,
+            NoOpAutomationSurface.Instance.Magic.RequestCastWithoutSelecting(1u, 2u));
+
+        IMagicCommands bare = new BareMagic();
+        Assert.Equal(PluginCastGate.Refused, bare.EvaluateGateWithoutSelecting(1u, 2u));
+        Assert.Equal(
+            PluginCastRequestResult.Unavailable,
+            bare.RequestCastWithoutSelecting(1u, 2u));
+    }
+
+    private sealed class BareMagic : IMagicCommands
+    {
+        public bool IsCasting => false;
+        public PluginCastGate EvaluateGate(uint spellId) => PluginCastGate.Ready;
+        public bool Cast(uint spellId) => true;
+    }
+
+    /// <summary>Puts <paramref name="guid"/> in the world as an active entity.</summary>
+    private static void Activate(GameRuntime runtime, uint guid)
+    {
+        var spawn = new WorldSession.EntitySpawn(
+            guid,
+            null,
+            0x02000001u,
+            Array.Empty<CreateObject.AnimPartChange>(),
+            Array.Empty<CreateObject.TextureChange>(),
+            Array.Empty<CreateObject.SubPaletteSwap>(),
+            null,
+            null,
+            "a creature",
+            null,
+            null,
+            null,
+            PhysicsState: 0,
+            InstanceSequence: 1,
+            MovementSequence: 1,
+            ServerControlSequence: 1,
+            PositionSequence: 1);
+        RuntimeEntityRecord record = runtime.EntityObjects
+            .RegisterEntity(spawn)
+            .Canonical!;
+        Assert.True(runtime.EntityObjects.ApplyAcceptedSpawn(
+            record,
+            record.CreateIntegrationVersion,
+            record.Snapshot,
+            replaceGeneration: false));
+        Assert.True(runtime.EntityObjects.Entities.TryGetActive(guid, out _));
     }
 
     [Fact]

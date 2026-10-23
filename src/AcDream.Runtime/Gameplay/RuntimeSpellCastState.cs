@@ -61,21 +61,40 @@ public sealed class RuntimeSpellCastState
         EvaluateCastGate(spellId)
             is SpellCastGate.NoTargetNeeded or SpellCastGate.TargetCompatible;
 
-    public SpellCastGate EvaluateCastGate(uint spellId)
+    public SpellCastGate EvaluateCastGate(uint spellId) =>
+        EvaluateCastGate(spellId, _selection.SelectedObjectId ?? 0u);
+
+    /// <summary>
+    /// Whether casting at <paramref name="targetId"/> would be accepted,
+    /// without reading the selection; 0 is no target. A self or untargeted
+    /// spell needs no target, as in <see cref="EvaluateCastGate(uint)"/>.
+    /// </summary>
+    public SpellCastGate EvaluateCastGate(uint spellId, uint targetId)
     {
         if (!_spellbook.Knows(spellId)
             || !_spellbook.TryGetMetadata(spellId, out SpellMetadata spell))
             return SpellCastGate.Unknown;
         if (spell.IsSelfTargeted || spell.IsUntargeted || spell.TargetMask == 0u)
             return SpellCastGate.NoTargetNeeded;
-        if (_selection.SelectedObjectId is not (uint target and not 0u))
+        if (targetId == 0u)
             return SpellCastGate.NoTargetSelected;
-        return _operations.IsTargetCompatible(target, spell, showMessage: false)
+        return _operations.IsTargetCompatible(targetId, spell, showMessage: false)
             ? SpellCastGate.TargetCompatible
             : SpellCastGate.TargetIncompatible;
     }
 
-    public CastRequestResult Cast(uint spellId)
+    public CastRequestResult Cast(uint spellId) =>
+        CastAt(spellId, _selection.SelectedObjectId);
+
+    /// <summary>
+    /// Casts at <paramref name="targetId"/> without reading or changing the
+    /// selection. A self or untargeted spell ignores the target, as
+    /// <see cref="Cast(uint)"/> ignores the selection; 0 is no target.
+    /// </summary>
+    public CastRequestResult Cast(uint spellId, uint targetId) =>
+        CastAt(spellId, targetId == 0u ? null : targetId);
+
+    private CastRequestResult CastAt(uint spellId, uint? candidateTarget)
     {
         if (!_spellbook.Knows(spellId) || !_spellbook.TryGetMetadata(spellId, out SpellMetadata spell))
         {
@@ -105,7 +124,7 @@ public sealed class RuntimeSpellCastState
         }
         else
         {
-            target = _selection.SelectedObjectId;
+            target = candidateTarget;
             untargeted = false;
             if (target is null or 0)
             {

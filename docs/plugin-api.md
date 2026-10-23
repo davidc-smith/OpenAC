@@ -477,6 +477,28 @@ decides this character's version of the component formula), `DisplayOrder`
 components). Decal-era tools call the last three a spell's generation, sort
 key and speed. A host that does not fill them reports 0.
 
+### Casting without selecting
+
+`EvaluateGate(spellId, target)` and `RequestCast(spellId, target)` select the
+target first, as a player clicking it would. To cast at an object and leave
+the player's selection alone, use the `WithoutSelecting` pair:
+
+```csharp
+IMagicCommands magic = host.Automation.Magic;
+if (magic.EvaluateGateWithoutSelecting(spellId, creatureId) == PluginCastGate.Ready)
+    magic.RequestCastWithoutSelecting(spellId, creatureId);
+```
+
+The object must be in the world for every spell, or the gate is `Refused` and
+the request `IncompatibleTarget` (pass the player's id for a self spell). Self
+and untargeted spells are then cast as usual, regardless of it. A host whose
+contract has the members but does not implement them answers `Refused` /
+`Unavailable` and never selects.
+
+They are newer than contract `0.1.26`. A host whose contract predates them
+loads the plugin (it checks only MAJOR.MINOR.PATCH), but the call fails with
+`MissingMethodException`.
+
 ## Storage
 
 `host.Storage.RootPath` is the absolute directory the plugin's keys are
