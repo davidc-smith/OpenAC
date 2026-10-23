@@ -105,7 +105,7 @@ did with it.
   - an item whose line is already covered by `paid` plus the items already
     staged on that tab (`AlreadyCovered`). Amounts are stack sizes; a trade
     note counts as its value.
-- `Unstage(tab, guid)`, `ClearStaged(tab)`, and `Close()`. `Close()` clears
+- `Unstage(tab, guid)` and `Close()`. `Close()` clears
   everything.
 - A staged item that is removed from the object table, or that moves out of
   the player's inventory, is unstaged.
