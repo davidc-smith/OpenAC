@@ -279,6 +279,19 @@ public sealed partial class WorldSession : IDisposable
     /// (0x02D7) — one PropertyDataId changed on the player.</summary>
     public event Action<PlayerDataIdPropertyUpdate>? PlayerDataIdPropertyUpdated;
 
+    public readonly record struct ObjectStringPropertyUpdate(
+        uint Guid, uint Property, string Value);
+
+    /// <summary>Fires on a public string property update (0x02D6) — a rename
+    /// (PropertyString.Name) arrives this way.</summary>
+    public event Action<ObjectStringPropertyUpdate>? ObjectStringPropertyUpdated;
+
+    public readonly record struct PlayerStringPropertyUpdate(uint Property, string Value);
+
+    /// <summary>Fires on a private string property update (0x02D5) — one
+    /// PropertyString changed on the player.</summary>
+    public event Action<PlayerStringPropertyUpdate>? PlayerStringPropertyUpdated;
+
     public readonly record struct ObjectInstanceIdPropertyUpdate(
         uint Guid, uint Property, uint Value);
 
@@ -1538,6 +1551,21 @@ public sealed partial class WorldSession : IDisposable
                     PlayerDataIdPropertyUpdated?.Invoke(
                         new PlayerDataIdPropertyUpdate(
                             p.Value.Property, p.Value.Value));
+            }
+            else if (op == PublicUpdatePropertyString.Opcode)
+            {
+                var p = PublicUpdatePropertyString.TryParse(body);
+                if (p is not null)
+                    ObjectStringPropertyUpdated?.Invoke(
+                        new ObjectStringPropertyUpdate(
+                            p.Value.Guid, p.Value.Property, p.Value.Value));
+            }
+            else if (op == PrivateUpdatePropertyString.Opcode)
+            {
+                var p = PrivateUpdatePropertyString.TryParse(body);
+                if (p is not null)
+                    PlayerStringPropertyUpdated?.Invoke(
+                        new PlayerStringPropertyUpdate(p.Value.Property, p.Value.Value));
             }
             else if (op == PublicUpdatePropertyInstanceId.Opcode)
             {
