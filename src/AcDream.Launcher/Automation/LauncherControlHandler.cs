@@ -41,10 +41,13 @@ internal sealed class LauncherControlHandler(ILauncherOrchestrator launcher,
                 return reloadClient is null ? new(false, Error: "Client reload is unavailable.")
                     : await reloadClient(token);
             case "start":
-                LauncherAccountSnapshot? selected = state.Servers
-                    .Where(s => string.Equals(s.Name, request.Server, StringComparison.Ordinal))
-                    .SelectMany(s => s.Accounts)
-                    .SingleOrDefault(a => string.Equals(a.AccountName, request.Account, StringComparison.Ordinal));
+                // The server by its exact name; the account whatever the case of its name.
+                LauncherAccountSnapshot? selected = AccountNames.Find(
+                    state.Servers
+                        .Where(s => string.Equals(s.Name, request.Server, StringComparison.Ordinal))
+                        .SelectMany(s => s.Accounts),
+                    a => a.AccountName,
+                    request.Account);
                 if (selected is null)
                     return new(false, Error: "Saved server/account not found.");
                 if (selected.SelectedLaunchMode != LaunchMode.Headless || string.IsNullOrWhiteSpace(selected.SelectedCharacter))

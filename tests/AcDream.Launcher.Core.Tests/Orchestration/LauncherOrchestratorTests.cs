@@ -464,6 +464,29 @@ public sealed class LauncherOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ASecondSpellingOfARunningAccountIsTheSameAccount()
+    {
+        using LauncherOrchestrator orchestrator = CreateOrchestrator(secondSpelling: "TestAccount");
+        await orchestrator.LaunchAsync("Local ACE", "testaccount", "+Acdream", LaunchMode.Headless);
+
+        foreach (string spelling in new[] { "TestAccount", "TESTACCOUNT" })
+        {
+            Assert.False(orchestrator.GetAccountLaunchCapability("Local ACE", spelling, LaunchMode.Headless).IsAvailable);
+            Assert.False(orchestrator.GetProbeCapability("Local ACE", spelling).IsAvailable);
+        }
+        Assert.All(orchestrator.GetAccountLaunchCapabilities(LaunchMode.Headless).Values,
+            capability => Assert.False(capability.IsAvailable));
+        Assert.All(orchestrator.GetSnapshot().Servers.Single().Accounts,
+            account => Assert.True(account.HasRunningActivity));
+        var refused = await Assert.ThrowsAsync<LauncherOperationException>(() =>
+            orchestrator.LaunchAsync("Local ACE", "TestAccount", "+Horan", LaunchMode.Headless));
+        Assert.Contains("already running for this account", refused.Message);
+        Assert.Throws<LauncherOperationException>(() =>
+            orchestrator.RemoveAccount("Local ACE", "TestAccount"));
+        Assert.Single(orchestrator.GetSnapshot().Sessions);
+    }
+
+    [Fact]
     public async Task ConcurrentPlayReservationsAllowExactlyOneActivityPerAccount()
     {
         using LauncherOrchestrator orchestrator = CreateOrchestrator();
@@ -886,7 +909,8 @@ public sealed class LauncherOrchestratorTests : IDisposable
         ILauncherProcessSupervisorFactory? supervisorFactory = null,
         IStatusEventSourceFactory? statusSourceFactory = null,
         LauncherExecutableSet? executables = null,
-        UpdateSessionBarrier? updateSessionBarrier = null)
+        UpdateSessionBarrier? updateSessionBarrier = null,
+        string? secondSpelling = null)
     {
         string profilePath = Path.Combine(
             _paths.ConfigDirectory,
@@ -905,6 +929,16 @@ public sealed class LauncherOrchestratorTests : IDisposable
                 LaunchMode.GuiSelect,
                 ["ExamplePlugin"]);
             store.SetAccountLoginCommands("Local ACE", "testaccount", ["/vt start"]);
+        }
+        if (secondSpelling is not null)
+        {
+            // A file saved before account names were compared without case can hold both.
+            store.Document.Servers[0].Accounts.Add(new AccountProfile
+            {
+                Account = secondSpelling,
+                Password = Password,
+                Characters = [new CharacterProfile { Name = "+Horan", Id = "0x5000000B" }],
+            });
         }
         store.Save();
 

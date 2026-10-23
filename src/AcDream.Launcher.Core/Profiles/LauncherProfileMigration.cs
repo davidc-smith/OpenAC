@@ -48,8 +48,8 @@ public static class LauncherProfileMigration
                 // the server shows the accounts it showed before.
                 accounts = [.. users.Select(user =>
                 {
-                    Version1Account? existing = accounts.Find(account =>
-                        account is not null && account.Account == user.Account);
+                    Version1Account? existing = AccountNames.Find(
+                        accounts.OfType<Version1Account>(), account => account.Account, user.Account);
                     return new Version1Account
                     {
                         Account = user.Account,

@@ -292,6 +292,55 @@ public sealed class LauncherProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void AccountNamesThatDifferOnlyInCaseAreOneAccount()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("Local ACE", "127.0.0.1", 9000);
+        store.AddAccount("Local ACE", "fefe", "pw");
+        store.AddAccount("Local ACE", "other", "pw");
+
+        Assert.Throws<LauncherProfileException>(() => store.AddAccount("Local ACE", "Fefe", "pw2"));
+        Assert.Throws<LauncherProfileException>(() => store.EditAccount("Local ACE", "other", newAccount: "FEFE"));
+        store.SetAccountLoginCommands("Local ACE", "FEFE", ["/vt start"]);
+        Assert.Equal(["/vt start"], store.Document.Servers[0].Accounts[0].LoginCommands);
+
+        // Retyping an account's own name in another case is a rename, kept as typed.
+        store.EditAccount("Local ACE", "fefe", newAccount: "Fefe");
+        Assert.Equal(["Fefe", "other"], store.Document.Servers[0].Accounts.Select(account => account.Account));
+
+        store.AddServer("Second", "second.example", 9000);
+        Assert.Equal(["Fefe", "other"], store.Document.Servers[1].Accounts.Select(account => account.Account));
+    }
+
+    [Fact]
+    public void AFileWithTwoSpellingsOfOneAccountKeepsBothAndRefusesAThird()
+    {
+        var store = new LauncherProfileStore(_filePath);
+        store.Load();
+        store.AddServer("Local ACE", "127.0.0.1", 9000);
+        store.AddAccount("Local ACE", "fefe", "lower");
+        store.Save();
+        JsonObject saved = JsonNode.Parse(File.ReadAllText(_filePath))!.AsObject();
+        JsonArray accounts = saved["servers"]!.AsArray()[0]!["accounts"]!.AsArray();
+        JsonNode upper = accounts[0]!.DeepClone();
+        upper["account"] = "Fefe";
+        upper["password"] = "upper";
+        accounts.Add(upper);
+        File.WriteAllText(_filePath, saved.ToJsonString());
+
+        var reloaded = new LauncherProfileStore(_filePath);
+        reloaded.Load();
+
+        Assert.Equal(["fefe", "Fefe"], reloaded.Document.Servers[0].Accounts.Select(account => account.Account));
+        Assert.Throws<LauncherProfileException>(() => reloaded.AddAccount("Local ACE", "FEFE", "third"));
+        reloaded.EditAccount("Local ACE", "Fefe", newPassword: "upper-changed");
+        reloaded.EditAccount("Local ACE", "FEFE", newPassword: "first-changed");
+        Assert.Equal(["first-changed", "upper-changed"],
+            reloaded.Document.Servers[0].Accounts.Select(account => account.Password));
+    }
+
+    [Fact]
     public void CharacterAndAccountSettersChangeOnlyWhatTheyName()
     {
         var store = new LauncherProfileStore(_filePath);
