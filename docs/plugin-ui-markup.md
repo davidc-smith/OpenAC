@@ -1122,17 +1122,18 @@ client log.
 
 **The wheel** scrolls the innermost thing under the pointer that can scroll:
 a `list` or `log` inside a scrolling group scrolls itself, and the group
-scrolls everywhere else. A group, list or log with nothing to scroll lets the
-wheel pass to a group around it. Scrolling closes an open menu, unless the
-pointer is over the menu's popup. A sideways swipe, a tilt wheel, or Shift with the wheel
-scrolls horizontally. Only `scroll="x"` and `scroll="both"` groups take a
-horizontal step; a Shift step that no such group takes scrolls vertically as
-before. macOS sends Shift with a mouse wheel as a sideways step, and the same
-rule applies: it scrolls a horizontal group under the pointer, else it is the
-wheel, so Shift+wheel still steps a focused `<number>` by ten. A focused
-number inside a horizontally scrolling group loses Shift+wheel to the group.
-One wheel step moves 48 points (three 16-point
-lines); the bar's arrows move 16 and a click in its track a page.
+scrolls everywhere else. A group, list or log with nothing to scroll lets
+the wheel pass to a group around it. A wheel step that anything takes, a
+built-in window included, closes an open menu or popup, unless the pointer
+is over the popup. A sideways swipe, a tilt wheel, or
+Shift with the wheel scrolls horizontally. Only `scroll="x"` and
+`scroll="both"` groups take a horizontal step; a Shift step that no such
+group takes scrolls vertically as before. macOS sends Shift with a mouse
+wheel as a sideways step, and the same rule applies: it scrolls a horizontal
+group under the pointer, else it is the wheel, so Shift+wheel still steps a
+focused `<number>` by ten. A focused number inside a horizontally scrolling
+group loses Shift+wheel to the group. One wheel step moves 48 points (three
+16-point lines); the bar's arrows move 16 and a click in its track a page.
 
 **Focus** moves into view: when Tab (or a click) gives a control keyboard
 focus, each scrolling group around it scrolls just far enough to show it.
