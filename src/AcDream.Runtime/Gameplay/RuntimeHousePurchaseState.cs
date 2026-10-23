@@ -16,6 +16,7 @@ public enum HouseStageResult
     Staged,
     NotOpen,
     AlreadyOwned,
+    NotOwned,
     MaintenanceFree,
     NotInInventory,
     AlreadyStaged,
@@ -101,6 +102,9 @@ public sealed class RuntimeHousePurchaseState
                 return HouseStageResult.NotOpen;
             if (tab == HousePurchaseTab.Buy && profile.OwnerGuid != 0u)
                 return HouseStageResult.AlreadyOwned;
+            // Nobody pays maintenance on a house nobody owns.
+            if (tab == HousePurchaseTab.Rent && profile.OwnerGuid == 0u)
+                return HouseStageResult.NotOwned;
             if (tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
                 return HouseStageResult.MaintenanceFree;
             if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)

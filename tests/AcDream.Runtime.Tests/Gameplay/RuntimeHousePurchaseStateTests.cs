@@ -145,6 +145,15 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
+    public void Stage_RefusesRentOnAnUnownedHouse()
+    {
+        Item(1, Pyreal, stack: 10);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.NotOwned, _state.Stage(HousePurchaseTab.Rent, 1));
+    }
+
+    [Fact]
     public void Stage_RefusesRentWhenMaintenanceIsFree()
     {
         Item(1, Pyreal, stack: 10);

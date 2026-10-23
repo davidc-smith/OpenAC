@@ -52,6 +52,7 @@ internal static class HousePurchaseText
     {
         HouseStageResult.NotOpen => "There is no house to pay for.",
         HouseStageResult.AlreadyOwned => "This dwelling already has an owner.",
+        HouseStageResult.NotOwned => "This dwelling has no owner.",
         HouseStageResult.MaintenanceFree => "Maintenance is free this period.",
         HouseStageResult.NotInInventory => "That item is not in your pack.",
         HouseStageResult.AlreadyStaged => "That item is already offered.",

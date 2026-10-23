@@ -233,6 +233,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         HousePurchaseTab tab, GameEvents.HouseProfile profile, int stagedCount) =>
         stagedCount > 0
         && !(tab == HousePurchaseTab.Buy && profile.OwnerGuid != 0u)
+        && !(tab == HousePurchaseTab.Rent && profile.OwnerGuid == 0u)
         && !(tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
         && (tab != HousePurchaseTab.Buy || BuyCovered(profile));
 
