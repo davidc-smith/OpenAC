@@ -70,6 +70,70 @@ public class SetupPartTransformsTests
     }
 
     [Fact]
+    public void ResolvePlacementFrame_UsesServerPlacement_WhenSetupHasIt()
+    {
+        Setup setup = HookedItemSetup();
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.Hook);
+
+        Assert.Same(setup.PlacementFrames[Placement.Hook], frame);
+    }
+
+    [Fact]
+    public void ResolvePlacementFrame_FallsBackToDefault_WhenServerPlacementMissing()
+    {
+        Setup setup = HookedItemSetup();
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Same(setup.PlacementFrames[Placement.Default], frame);
+    }
+
+    [Fact]
+    public void ResolvePlacementFrame_PrefersResting_WhenServerSendsNoPlacement()
+    {
+        Setup setup = HookedItemSetup();
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            placementId: null);
+
+        Assert.Same(setup.PlacementFrames[Placement.Resting], frame);
+    }
+
+    private static Setup HookedItemSetup() => new()
+    {
+        Parts = { 0x01000100u },
+        DefaultScale = { Vector3.One },
+        PlacementFrames =
+        {
+            [Placement.Default] = new AnimationFrame(1)
+            {
+                Frames = { new Frame { Origin = Vector3.Zero, Orientation = Quaternion.Identity } },
+            },
+            [Placement.Resting] = new AnimationFrame(1)
+            {
+                Frames = { new Frame { Origin = new Vector3(0, 0, 1f), Orientation = Quaternion.Identity } },
+            },
+            [Placement.Hook] = new AnimationFrame(1)
+            {
+                Frames =
+                {
+                    new Frame
+                    {
+                        Origin = Vector3.Zero,
+                        Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 2f),
+                    },
+                },
+            },
+        },
+    };
+
+    [Fact]
     public void Compute_ReturnsEmpty_WhenNoPlacementFrames()
     {
         var setup = new Setup
