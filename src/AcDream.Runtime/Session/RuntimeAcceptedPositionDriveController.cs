@@ -58,8 +58,6 @@ public sealed class RuntimeAcceptedPositionDriveController
 
     private Pending? _pending;
     private AcceptedForceObservation? _newestForce;
-    private readonly HashSet<uint> _arrivedEntityIds = [];
-    private bool _arrivalOverlapPositionOwed;
     private object? _routeOwner;
 
     internal RuntimeAcceptedPositionDriveController(
@@ -146,8 +144,6 @@ public sealed class RuntimeAcceptedPositionDriveController
     {
         _newestForce = null;
         _lastCommittedPortal = null;
-        _arrivedEntityIds.Clear();
-        _arrivalOverlapPositionOwed = false;
         if (_pending is not { } pending)
             return;
         _pending = null;
@@ -459,10 +455,7 @@ public sealed class RuntimeAcceptedPositionDriveController
     internal void Advance()
     {
         if (_pending is not { } pending)
-        {
-            AdvanceArrivalOverlap();
             return;
-        }
 
         RuntimeSetPositionState setPosition = _entityObjects.Physics.SetPosition;
         if (pending.AwaitingCommitWake)
@@ -583,247 +576,6 @@ public sealed class RuntimeAcceptedPositionDriveController
             pending.Route,
             pending.PositionEventOwed);
     }
-
-    /// <summary>
-    /// Notes that the object with local entity id <paramref name="localEntityId"/>
-    /// just gained collision (it arrived, or its collision came back). The next
-    /// <see cref="Advance"/> checks whether it stands on the local player and, if
-    /// so, moves the player off it. The object keeps the position the server
-    /// gave it. Only an overlap with a noted object moves the player: a player
-    /// merely standing close to the world's own geometry is left alone.
-    /// </summary>
-    internal void RequestArrivalOverlapCheck(uint localEntityId)
-    {
-        if (localEntityId != 0u)
-            _arrivedEntityIds.Add(localEntityId);
-    }
-
-    private void AdvanceArrivalOverlap()
-    {
-        PlayerMovementController? controller = _localController();
-        if (_arrivalOverlapPositionOwed
-            && controller is { State: PlayerState.InWorld, CanSendPositionEvent: true })
-        {
-            _arrivalOverlapPositionOwed = false;
-            _localPlayerOutbound.SendImmediatePosition(_session(), controller);
-            PhysicsDiagnostics.LogLocalArrivalOverlap(
-                "PositionSent",
-                controller.State.ToString(),
-                controller.CellId,
-                controller.Position,
-                controller.CellId,
-                controller.Position,
-                positionSent: true);
-        }
-
-        if (_arrivedEntityIds.Count == 0)
-            return;
-
-        if (controller is null
-            || _usePositionFromServer()
-            || !_entityObjects.Entities.TryGetActive(
-                _localPlayerServerGuid(), out RuntimeEntityRecord record)
-            || record.PhysicsBody is not { InWorld: true } body
-            || _entityObjects.TryGetInitialCreateResidence(record, out _))
-        {
-            _arrivedEntityIds.Clear();
-            return;
-        }
-
-        // Mid-teleport the record already names the destination cell while the
-        // body still stands at the source; look again once the two agree.
-        if (body.CellPosition.ObjCellId != record.FullCellId)
-            return;
-
-        RuntimeSetPositionState setPosition = _entityObjects.Physics.SetPosition;
-        RuntimeSetPositionMoverPreparationStatus status =
-            setPosition.TryBuildCurrentFrameCommand(
-                record,
-                RuntimeSetPositionOperationKind.LocalAuthoritative,
-                ArrivalOverlapFlags,
-                _collisionSource,
-                _clock.SimulationTimeSeconds,
-                out RuntimeSetPositionCommand command);
-        if (status.IsRetryable())
-            return;
-        if (status != RuntimeSetPositionMoverPreparationStatus.Prepared)
-        {
-            _arrivedEntityIds.Clear();
-            return;
-        }
-
-        Vector3 before = body.Position;
-        uint beforeCell = record.FullCellId;
-        uint selfEntityId = record.Key?.LocalEntityId ?? 0u;
-        uint overlapping = FindArrivedOverlap(
-            beforeCell, command.Physics, selfEntityId);
-        _arrivedEntityIds.Clear();
-        if (overlapping == 0u)
-            return;
-
-        PhysicsSetPositionResult probe =
-            _entityObjects.Physics.Engine.SetPosition(command.Physics);
-        if (!probe.IsCommitted
-            || Vector3.DistanceSquared(probe.Position, command.Physics.Position)
-                < ArrivalOverlapToleranceSquared)
-        {
-            PhysicsDiagnostics.LogLocalArrivalOverlap(
-                probe.IsCommitted ? "Clear" : "Unplaceable",
-                controller.State.ToString(),
-                beforeCell,
-                before,
-                probe.CellId,
-                probe.Position,
-                positionSent: false);
-            return;
-        }
-
-        RuntimeEntityPlacementToken token = setPosition.TryBeginExclusivePlacement(
-            record,
-            record.PositionAuthorityVersion,
-            RuntimeSetPositionOperationKind.LocalAuthoritative);
-        if (!token.IsValid)
-        {
-            // Another placement owns the player; look again once it settles.
-            _arrivedEntityIds.Add(overlapping);
-            return;
-        }
-
-        RuntimeSetPositionOutcome outcome =
-            setPosition.SubmitPreparedPlacement(token, command);
-        if (outcome.Status
-            != RuntimeSetPositionStatus.CommittedHostAcknowledgementPending)
-        {
-            CancelToken(setPosition, token);
-            PhysicsDiagnostics.LogLocalArrivalOverlap(
-                outcome.Status.ToString(),
-                controller.State.ToString(),
-                beforeCell,
-                before,
-                probe.CellId,
-                probe.Position,
-                positionSent: false);
-            return;
-        }
-
-        bool leashArmed = controller.PositionManager?.Constraint?.IsConstrained
-            ?? false;
-        controller.CommitCanonicalForcePositionFrame();
-        if (leashArmed)
-            controller.ArmConstraintLeashAtCommittedPlacement();
-
-        // The server is told only once the player is in the world: during the
-        // portal exit it still treats the player as teleporting.
-        bool sent = controller is { State: PlayerState.InWorld, CanSendPositionEvent: true };
-        if (sent)
-            _localPlayerOutbound.SendImmediatePosition(_session(), controller);
-        _arrivalOverlapPositionOwed = !sent;
-        PhysicsDiagnostics.LogLocalArrivalOverlap(
-            "Moved",
-            controller.State.ToString(),
-            beforeCell,
-            before,
-            record.FullCellId,
-            body.Position,
-            positionSent: sent);
-        LogArrivedObject(overlapping, beforeCell, before);
-    }
-
-    /// <summary>
-    /// The first noted arrival whose sphere or cylinder intersects one of the
-    /// player's spheres at the pose <paramref name="player"/> describes, or 0.
-    /// A BSP-shaped arrival is never counted: its bounding radius overstates it.
-    /// </summary>
-    private uint FindArrivedOverlap(
-        uint cellId,
-        in PhysicsSetPositionRequest player,
-        uint selfEntityId)
-    {
-        Span<(Vector3 Center, float Radius)> spheres =
-            stackalloc (Vector3, float)[MaxPlayerSpheres];
-        int count = 0;
-        if (player.Spheres.IsDefaultOrEmpty)
-        {
-            spheres[count++] = (
-                player.Position + new Vector3(0f, 0f, PhysicsGlobals.DummySphereRadius),
-                PhysicsGlobals.DummySphereRadius);
-        }
-        else
-        {
-            foreach (FlatCollisionSphere sphere in player.Spheres)
-            {
-                if (count == MaxPlayerSpheres)
-                    break;
-                spheres[count++] = (
-                    player.Position
-                        + Vector3.Transform(sphere.Origin * player.Scale, player.Orientation),
-                    sphere.Radius * player.Scale);
-            }
-        }
-
-        foreach (ShadowEntry entry in _entityObjects.Physics.Engine.ShadowObjects
-                     .GetObjectsInCell(cellId))
-        {
-            if (entry.EntityId == selfEntityId
-                || !_arrivedEntityIds.Contains(entry.EntityId)
-                || CollisionExemption.ShouldSkip(entry.State, entry.Flags, ObjectInfoState.IsPlayer)
-                || (entry.State & (uint)PhysicsStateFlags.Ethereal) != 0u)
-            {
-                continue;
-            }
-
-            for (int index = 0; index < count; index++)
-            {
-                (Vector3 center, float radius) = spheres[index];
-                bool overlaps = entry.CollisionType switch
-                {
-                    ShadowCollisionType.Sphere =>
-                        Vector3.Distance(center, entry.Position)
-                            < radius + entry.Radius - PhysicsGlobals.EPSILON,
-                    ShadowCollisionType.Cylinder =>
-                        new Vector2(center.X - entry.Position.X, center.Y - entry.Position.Y).Length()
-                            < radius + entry.Radius - PhysicsGlobals.EPSILON
-                        && center.Z + radius > entry.Position.Z
-                        && center.Z - radius < entry.Position.Z
-                            + (entry.CylHeight > 0f ? entry.CylHeight : entry.Radius * 4f),
-                    _ => false,
-                };
-                if (overlaps)
-                    return entry.EntityId;
-            }
-        }
-        return 0u;
-    }
-
-    private void LogArrivedObject(uint entityId, uint cellId, Vector3 position)
-    {
-        foreach (ShadowEntry entry in _entityObjects.Physics.Engine.ShadowObjects
-                     .GetObjectsInCell(cellId))
-        {
-            if (entry.EntityId != entityId)
-                continue;
-            uint guid = _entityObjects.Entities.TryGetByLocalId(
-                entry.EntityId, out RuntimeEntityRecord owner)
-                ? owner.ServerGuid
-                : 0u;
-            PhysicsDiagnostics.LogLocalArrivalOverlapObject(
-                entry.EntityId,
-                guid,
-                self: false,
-                entry.CollisionType.ToString(),
-                entry.Radius,
-                entry.State,
-                entry.Flags.ToString(),
-                Vector3.Distance(entry.Position, position));
-        }
-    }
-
-    private const int MaxPlayerSpheres = 4;
-
-    private const PhysicsSetPositionFlags ArrivalOverlapFlags =
-        PhysicsSetPositionFlags.Placement | PhysicsSetPositionFlags.Slide;
-
-    private const float ArrivalOverlapToleranceSquared = 0.01f * 0.01f;
 
     private void SettlePending(
         RuntimeEntityRecord terminalRecord,

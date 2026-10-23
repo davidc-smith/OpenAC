@@ -193,12 +193,7 @@ internal sealed class RuntimeRemoteFirstEntryState
                     collisionSource,
                     gameTime,
                     out RuntimeSetPositionCommand command,
-                    resolveWorldOffsetFromRuntimeFrame: true,
-                    // A server object arriving on a player stays where the
-                    // server put it; the local player is moved off it instead
-                    // (RuntimeAcceptedPositionDriveController arrival overlap).
-                    passThroughPlayers: lease.Route.OperationKind
-                        is RuntimeSetPositionOperationKind.RemoteAuthoritative);
+                    resolveWorldOffsetFromRuntimeFrame: true);
             if (moverStatus.IsRetryable())
             {
                 return RuntimeRemoteFirstEntryStatus.AwaitingCollisionSource;

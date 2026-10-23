@@ -1119,7 +1119,6 @@ public sealed class LandblockPhysicsPublisherTests
                 0f,
                 0u,
                 cell,
-                false,
                 0u,
             ],
             culture: null)!;
