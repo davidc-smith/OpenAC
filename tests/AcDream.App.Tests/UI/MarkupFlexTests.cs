@@ -152,10 +152,26 @@ public sealed class MarkupFlexTests
     }
 
     [Fact]
-    public void Item_attributes_under_an_absolute_group_fail_the_build()
+    public void Item_attributes_under_an_absolute_group_are_reported_and_the_window_still_builds()
     {
-        var ex = Assert.Throws<FormatException>(() => Mount("<group x=\"0\" y=\"0\" w=\"10\" h=\"10\"><label text=\"a\" grow=\"1\" /></group>"));
-        Assert.Contains("grow", ex.Message);
+        MarkupWindow window = MarkupDocument.BuildWindow(
+            "<panel w=\"300\" h=\"200\"><group x=\"0\" y=\"0\" w=\"10\" h=\"10\"><label text=\"a\" grow=\"1\" minw=\"4\" /></group></panel>",
+            new object(), _ => (0u, 0, 0));
+
+        Assert.Collection(window.Warnings,
+            w => Assert.Contains("grow=\"1\"", w),
+            w => Assert.Contains("minw=\"4\"", w));
+        Assert.Single(window.Frame.Children.OfType<UiPanel>().Single().Children.OfType<UiLabel>());
+    }
+
+    [Fact]
+    public void Markup_that_uses_no_flex_attributes_builds_without_warnings()
+    {
+        MarkupWindow window = MarkupDocument.BuildWindow(
+            "<panel w=\"300\" h=\"200\"><group x=\"0\" y=\"0\" w=\"10\" h=\"10\" layout=\"row\"><label text=\"a\" grow=\"1\" /></group></panel>",
+            new object(), _ => (0u, 0, 0));
+
+        Assert.Empty(window.Warnings);
     }
 
     [Fact]

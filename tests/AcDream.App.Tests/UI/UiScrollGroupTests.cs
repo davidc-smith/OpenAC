@@ -83,10 +83,13 @@ public sealed class UiScrollGroupTests
     }
 
     [Fact]
-    public void An_unknown_scroll_value_is_a_build_error()
+    public void An_unknown_scroll_value_is_reported_and_the_group_does_not_scroll()
     {
-        var error = Assert.Throws<FormatException>(() => Mount("<group name=\"g\" w=\"10\" h=\"10\" scroll=\"down\" />"));
-        Assert.Contains("<group name=\"g\"> scroll=\"down\" must be x, y or both", error.Message);
+        MarkupWindow window = MarkupDocument.BuildWindow(
+            "<panel w=\"300\" h=\"200\"><group name=\"g\" w=\"10\" h=\"10\" scroll=\"down\" /></panel>",
+            new object(), _ => (0u, 0, 0));
+        Assert.Contains("<group name=\"g\"> scroll=\"down\" must be x, y or both", Assert.Single(window.Warnings));
+        Assert.IsNotType<UiScrollPanel>(window.Frame.Children.Single(c => c.Name == "g"));
     }
 
     [Fact]

@@ -73,10 +73,11 @@ public sealed class MarkupScrollWindowTests
     }
 
     [Fact]
-    public void Scroll_on_a_root_without_a_content_area_is_a_build_error()
+    public void Scroll_on_a_root_without_a_content_area_is_reported_and_ignored()
     {
-        var error = Assert.Throws<FormatException>(() => Window("w=\"200\" h=\"100\" scroll=\"y\"", ""));
-        Assert.Contains("needs layout=\"row|column\" or titlebar=\"true\"", error.Message);
+        MarkupWindow window = Window("w=\"200\" h=\"100\" scroll=\"y\"", "");
+        Assert.Contains("needs layout=\"row|column\" or titlebar=\"true\"", Assert.Single(window.Warnings));
+        Assert.Same(window.Frame, window.ContentRoot);
     }
 
     [Fact]
