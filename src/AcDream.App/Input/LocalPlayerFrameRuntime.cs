@@ -117,8 +117,7 @@ internal sealed class LiveLocalPlayerFrameRuntime : ILocalPlayerFrameRuntime
 
     public void Project(
         PlayerMovementController controller,
-        MovementResult movement,
-        bool hidden) =>
+        MovementResult movement) =>
         _projection.Project(controller, movement);
 
     public void SendPreNetwork(

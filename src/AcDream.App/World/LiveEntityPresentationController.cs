@@ -16,6 +16,7 @@ public sealed class LiveEntityPresentationController : IDisposable
     private readonly Action<uint> _clearInvalidTarget;
     private readonly Func<(int X, int Y)> _liveCenter;
     private readonly Action<uint>? _onShadowRestored;
+    private readonly Func<uint, bool> _isLocalPlayer;
     private readonly LiveEntityPartArrayEnterWorldPort _partArrayEnterWorld;
     private readonly HashSet<RuntimeEntityKey> _readyOwners = [];
     private readonly HashSet<RuntimeEntityKey> _suspendedShadowOwners = [];
@@ -30,7 +31,8 @@ public sealed class LiveEntityPresentationController : IDisposable
         Action<uint, bool>? setDirectChildrenNoDraw = null,
         Action<uint>? clearInvalidTarget = null,
         Func<(int X, int Y)>? liveCenter = null,
-        Action<uint>? onShadowRestored = null)
+        Action<uint>? onShadowRestored = null,
+        Func<uint, bool>? isLocalPlayer = null)
     {
         _liveEntities = liveEntities ?? throw new ArgumentNullException(nameof(liveEntities));
         _shadows = shadows ?? throw new ArgumentNullException(nameof(shadows));
@@ -41,6 +43,7 @@ public sealed class LiveEntityPresentationController : IDisposable
         _clearInvalidTarget = clearInvalidTarget ?? (_ => { });
         _liveCenter = liveCenter ?? (() => (0, 0));
         _onShadowRestored = onShadowRestored;
+        _isLocalPlayer = isLocalPlayer ?? (_ => false);
         _liveEntities.ProjectionVisibilityChanged += OnProjectionVisibilityChanged;
     }
 
@@ -97,7 +100,9 @@ public sealed class LiveEntityPresentationController : IDisposable
     /// The landblock is the unit because that is the unit both the taking away
     /// and the giving back happen in. Two things are not waited for: an object
     /// whose record has gone away (there is nothing left to come back), and one
-    /// the server has hidden (a hidden object carries no collision at all).
+    /// the server has hidden (hiding takes an object's collision away until it
+    /// is shown again). The local player is the exception to that: hiding never
+    /// takes its collision, so it is never waiting here for being hidden.
     /// </para>
     /// </summary>
     public bool HasCollisionPendingRestore(uint destinationCell)
@@ -175,8 +180,16 @@ public sealed class LiveEntityPresentationController : IDisposable
                         _setDirectChildrenNoDraw(record.ServerGuid, true);
                         if (!IsCurrent(record, entity))
                             return false;
-                        _shadows.Suspend(entity.Id);
-                        _suspendedShadowOwners.Add(RequireProjectionKey(record));
+                        // The local player keeps its collision while hidden.
+                        // The server hides it for the whole portal-space stay,
+                        // and can send that hide a frame after the player was
+                        // placed at the destination; an object created there
+                        // in the meantime has to be placed against the player.
+                        if (!_isLocalPlayer(record.ServerGuid))
+                        {
+                            _shadows.Suspend(entity.Id);
+                            _suspendedShadowOwners.Add(RequireProjectionKey(record));
+                        }
                         _partArrayEnterWorld.HandleEnterWorld(entity.Id);
                         if (!IsCurrent(record, entity))
                             return false;

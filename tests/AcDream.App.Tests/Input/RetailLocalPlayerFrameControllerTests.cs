@@ -22,7 +22,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
             resolveLocalEntityId: () => 7u,
             handleTargeting: () => calls.Add("target"),
             isHidden: () => false,
-            project: (_, _, _) => calls.Add("project"),
+            project: (_, _) => calls.Add("project"),
             sendPreNetwork: (owner, movement, _) =>
             {
                 calls.Add("pre-outbound");
@@ -83,7 +83,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
             resolveLocalEntityId: () => 9u,
             handleTargeting: () => { },
             isHidden: () => false,
-            project: (_, _, _) => projections++,
+            project: (_, _) => projections++,
             sendPreNetwork: (_, _, _) => preNetwork++,
             sendPostNetwork: (_, _) => postNetwork++);
 
@@ -113,7 +113,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
             resolveLocalEntityId: () => 7u,
             handleTargeting: () => { },
             isHidden: () => false,
-            project: (_, movement, _) => projectedRoot = movement.RenderPosition,
+            project: (_, movement) => projectedRoot = movement.RenderPosition,
             sendPreNetwork: (_, _, _) => { },
             sendPostNetwork: (_, _) => { });
         var live = new RetailLiveFrameCoordinator(
@@ -144,7 +144,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
             resolveLocalEntityId: () => 7u,
             handleTargeting: () => positionSeenByTargetManager = controller.Position,
             isHidden: () => false,
-            project: (_, _, _) => { },
+            project: (_, _) => { },
             sendPreNetwork: (_, _, _) => { },
             sendPostNetwork: (_, _) => { });
 
@@ -175,7 +175,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
             handleTargeting: () => throw new InvalidOperationException(
                 "Frozen object advanced its manager tail."),
             isHidden: () => false,
-            project: (_, _, _) => projections++,
+            project: (_, _) => projections++,
             sendPreNetwork: (_, _, _) => preNetwork++,
             sendPostNetwork: (_, _) => postNetwork++,
             objectClockDisposition: () =>
@@ -205,7 +205,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
             resolveLocalEntityId: () => 7u,
             handleTargeting: () => { },
             isHidden: () => true,
-            project: (_, _, _) => { },
+            project: (_, _) => { },
             sendPreNetwork: (_, _, _) => { },
             sendPostNetwork: (_, _) => { });
 
@@ -236,7 +236,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
             resolveLocalEntityId: () => 7u,
             handleTargeting: () => targeting++,
             isHidden: () => false,
-            project: (_, _, _) => projections++,
+            project: (_, _) => projections++,
             sendPreNetwork: (_, _, _) => preNetwork++,
             sendPostNetwork: (_, _) => postNetwork++);
         float initialTime = controller.SimTimeSeconds;
@@ -280,12 +280,11 @@ public sealed class RetailLocalPlayerFrameControllerTests
                 () => 7u,
                 () => trace.Add("target"),
                 () => false,
-                (_, movement, hidden) =>
+                (_, movement) =>
                     trace.Add(
                         $"project:{movement.CellId:X8}:"
                         + $"{movement.ForwardCommand:X8}:"
-                        + $"{movement.ShouldSendMovementEvent}:"
-                        + $"{hidden}"),
+                        + $"{movement.ShouldSendMovementEvent}"),
                 (_, movement, hidden) =>
                     trace.Add(
                         $"pre:{movement.ForwardCommand:X8}:"
@@ -355,7 +354,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
         Func<uint> resolveLocalEntityId,
         Action handleTargeting,
         Func<bool> isHidden,
-        Action<PlayerMovementController, MovementResult, bool> project,
+        Action<PlayerMovementController, MovementResult> project,
         Action<PlayerMovementController, MovementResult, bool> sendPreNetwork,
         Action<PlayerMovementController, bool> sendPostNetwork,
         Func<RetailObjectClockDisposition>? objectClockDisposition = null) =>
@@ -378,7 +377,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
         Func<uint> resolveLocalEntityId,
         Action handleTargeting,
         Func<bool> isHidden,
-        Action<PlayerMovementController, MovementResult, bool> project,
+        Action<PlayerMovementController, MovementResult> project,
         Action<PlayerMovementController, MovementResult, bool> sendPreNetwork,
         Action<PlayerMovementController, bool> sendPostNetwork,
         Func<RetailObjectClockDisposition>? objectClockDisposition)
@@ -394,8 +393,7 @@ public sealed class RetailLocalPlayerFrameControllerTests
 
         public void Project(
             PlayerMovementController controller,
-            MovementResult movement,
-            bool hidden) => project(controller, movement, hidden);
+            MovementResult movement) => project(controller, movement);
 
         public void SendPreNetwork(
             PlayerMovementController controller,
