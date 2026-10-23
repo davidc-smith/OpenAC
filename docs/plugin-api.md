@@ -1290,11 +1290,12 @@ public Action<string> SetQuickHealKey => text =>
 <hotkey x="8" y="8" w="140" h="20" value="{QuickHealKey}" onchange="{SetQuickHealKey}"/>
 ```
 
-`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order, the
-key by the box's name such as `Keypad5` or by its `PluginKey` name such as
-`Numpad5`) and `ToHotkeyText()` writes it back. `TryParseHotkeyText` returns false for
-an empty string (the player cleared the box) and for keys `PluginKey` has no
-member for, such as F13; the example keeps the current chord for the latter.
+`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order,
+then the key by its `PluginKey` name, such as `Numpad5`) and `ToHotkeyText()`
+writes it back. The box records only keys `PluginKey` has, so its text always
+reads; `TryParseHotkeyText` returns false for an empty string (the player
+cleared the box) and for text that names no `PluginKey`, such as a hand-written
+`F13`.
 Rebinding to the default chord (no key) unbinds the hotkey: the override is
 stored, `IsBound` is false, and the box reads back as `None`. A chord
 that collides with a client binding or another plugin's bound hotkey is still

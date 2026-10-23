@@ -322,18 +322,28 @@ plugin decides what the chord does; the box only edits the string.
 
 - `value` binds a `string` and `onchange` an `Action<string>`; both are
   required. The string is `Ctrl+Alt+Shift+Key`: the modifiers that are held,
-  in that order, then the key's name as Silk.NET's `Key` spells it (`F`,
-  `F12`, `Number1`, `Keypad5`, `Enter`). Empty means unbound. When reading
-  `value` the box also accepts modifiers in any order and any case
-  (`shift+ctrl+f`), but `onchange` always hands back the exact form.
-- The string uses the box's own key names (`Keypad5`, `GraveAccent`), which
-  are not always `PluginKey` names (`Numpad5`, `Grave`). To register or
-  rebind the recorded chord as a plugin hotkey, read it with
-  `PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord)`; to show a
-  hotkey's chord in a box, bind `value` to `chord.ToHotkeyText()`. `TryParseHotkeyText`
-  returns false for an empty (unbound) string and for keys a plugin hotkey
-  can't use, such as F13 or Caps Lock, which the box can still record. See
-  [Hotkeys](plugin-api.md#hotkeys).
+  in that order, then the key's `PluginKey` name (`F`, `F12`, `Number1`,
+  `Numpad5`, `Grave`, `Enter`). Empty means unbound. When reading `value`
+  the box also accepts modifiers in any order and any case
+  (`shift+ctrl+f`), and the key in any case, but `onchange` always hands
+  back the exact form.
+- The key names are the members of `PluginKey`:
+  - letters `A` to `Z`; the number row `Number0` to `Number9`; `F1` to `F12`
+  - `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, `Delete`, `Insert`,
+    `Home`, `End`, `PageUp`, `PageDown`, `Up`, `Down`, `Left`, `Right`
+  - `Minus`, `Equal`, `LeftBracket`, `RightBracket`, `BackSlash`,
+    `Semicolon`, `Apostrophe`, `Comma`, `Period`, `Slash`, `Grave`
+  - the keypad: `Numpad0` to `Numpad9`, `NumpadDecimal`, `NumpadDivide`,
+    `NumpadMultiply`, `NumpadSubtract`, `NumpadAdd`, `NumpadEnter`
+  - `PrintScreen`, `Pause`
+
+  The box records only these keys, apart from Escape, Tab, Backspace and
+  Delete, which work the box (below); a `value` can still name them. Any
+  other key (F13, Caps Lock) doesn't end a recording, and a `value` naming
+  one shows `None`. So a recorded chord can always be registered:
+  read it with `PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord)`,
+  and show a hotkey's chord in a box by binding `value` to
+  `chord.ToHotkeyText()`. See [Hotkeys](plugin-api.md#hotkeys).
 - The box shows the modifiers as Ctrl, Alt and Shift (never left or right,
   since the string doesn't record a side) and the key by the game's own key
   names. An empty value, or one it

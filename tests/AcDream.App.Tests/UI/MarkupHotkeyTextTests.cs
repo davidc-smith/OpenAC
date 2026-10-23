@@ -1,4 +1,5 @@
 using AcDream.App.UI.Markup;
+using AcDream.Plugin.Abstractions;
 using AcDream.UI.Abstractions.Input;
 using Silk.NET.Input;
 
@@ -42,20 +43,45 @@ public class MarkupHotkeyTextTests
     }
 
     [Fact]
+    public void Format_SpellsTheKeyAsItsPluginKeyName()
+    {
+        Assert.Equal("Numpad5", MarkupHotkeyText.Format(new KeyChord(Key.Keypad5, ModifierMask.None)));
+        Assert.Equal("Ctrl+Grave", MarkupHotkeyText.Format(new KeyChord(Key.GraveAccent, ModifierMask.Ctrl)));
+        Assert.Equal("Alt+Number1", MarkupHotkeyText.Format(new KeyChord(Key.Number1, ModifierMask.Alt)));
+        Assert.Equal("NumpadEnter", MarkupHotkeyText.Format(new KeyChord(Key.KeypadEnter, ModifierMask.None)));
+    }
+
+    [Fact]
     public void Format_RefusesWhatNoHotkeyCanHold()
     {
         Assert.Equal("", MarkupHotkeyText.Format(new KeyChord(Key.F, ModifierMask.None, Device: 1)));
         Assert.Equal("", MarkupHotkeyText.Format(new KeyChord(Key.Unknown, ModifierMask.Ctrl)));
         Assert.Equal("", MarkupHotkeyText.Format(new KeyChord(Key.ShiftLeft, ModifierMask.Shift)));
+        Assert.Equal("", MarkupHotkeyText.Format(new KeyChord(Key.F13, ModifierMask.None)));
+        Assert.Equal("", MarkupHotkeyText.Format(new KeyChord(Key.CapsLock, ModifierMask.Ctrl)));
         Assert.Equal("", MarkupHotkeyText.Format(default));
+    }
+
+    [Fact]
+    public void EveryPluginKeyRoundTripsByItsOwnName()
+    {
+        foreach (PluginKey key in Enum.GetValues<PluginKey>())
+        {
+            if (key == PluginKey.Unknown)
+                continue;
+            KeyChord? chord = MarkupHotkeyText.Parse(key.ToString());
+            Assert.True(chord is not null, $"{key} does not parse");
+            Assert.Equal(key.ToString(), MarkupHotkeyText.Format(chord.Value));
+        }
     }
 
     [Theory]
     [InlineData("Ctrl+Alt+Shift+F", "Ctrl+Alt+Shift+F")]
     [InlineData("shift+ctrl+f", "Ctrl+Shift+F")]
     [InlineData("F12", "F12")]
-    [InlineData("Keypad5", "Keypad5")]
+    [InlineData("numpad5", "Numpad5")]
     [InlineData("Alt+Number1", "Alt+Number1")]
+    [InlineData("Ctrl+grave", "Ctrl+Grave")]
     public void Parse_ReadsAndRoundTripsToCanonical(string text, string canonical)
     {
         KeyChord? chord = MarkupHotkeyText.Parse(text);
@@ -75,6 +101,10 @@ public class MarkupHotkeyTextTests
     [InlineData("Unknown")]
     [InlineData("ShiftLeft")]
     [InlineData("Ctrl+Nope")]
+    [InlineData("Keypad5")]
+    [InlineData("GraveAccent")]
+    [InlineData("F13")]
+    [InlineData("CapsLock")]
     public void Parse_UnreadableIsUnbound(string? text) =>
         Assert.Null(MarkupHotkeyText.Parse(text));
 

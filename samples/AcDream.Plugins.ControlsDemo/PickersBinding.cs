@@ -1,10 +1,7 @@
-using AcDream.Plugin.Abstractions;
-
 namespace AcDream.Plugins.ControlsDemo;
 
 /// <summary>
-/// The Keys and colours window: two hotkey boxes, with a note saying whether
-/// each chord could be registered as a plugin hotkey, and two colour pickers
+/// The Keys and colours window: two hotkey boxes and two colour pickers
 /// whose colours paint a bar and a heading beside them.
 /// </summary>
 public sealed class PickersBinding
@@ -13,9 +10,6 @@ public sealed class PickersBinding
     public Action<string> SetRadarKey => value => { RadarKey = value; Status = Describe("Radar", value); };
     public string PauseKey { get; private set; } = string.Empty;
     public Action<string> SetPauseKey => value => { PauseKey = value; Status = Describe("Pause", value); };
-
-    /// <summary>A box can record keys (F13, Caps Lock) that a plugin hotkey can't use.</summary>
-    public string KeyNote => $"Usable: radar {Usable(RadarKey)}, pause {Usable(PauseKey)}";
 
     /// <summary>0xAARRGGBB, with the picker's alpha strip.</summary>
     public uint BarColor { get; private set; } = 0xC040A040;
@@ -29,9 +23,4 @@ public sealed class PickersBinding
 
     /// <summary>Kept to 40 characters even for the longest key names.</summary>
     private static string Describe(string what, string chord) => chord.Length == 0 ? $"{what} cleared" : $"{what}: {chord}";
-
-    private static string Usable(string chord) =>
-        chord.Length == 0 ? "unbound"
-        : PluginKeyChord.TryParseHotkeyText(chord, out _) ? "yes"
-        : "no";
 }

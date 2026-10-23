@@ -236,38 +236,17 @@ public readonly record struct PluginKeyChord(
     bool Shift = false)
 {
     /// <summary>
-    /// The markup hotkey box's names for the keys whose <see cref="PluginKey"/>
-    /// name differs; every other key is spelled the same way in both.
-    /// </summary>
-    private static readonly (PluginKey Key, string Name)[] HotkeyBoxNames =
-    [
-        (PluginKey.Numpad0, "Keypad0"), (PluginKey.Numpad1, "Keypad1"),
-        (PluginKey.Numpad2, "Keypad2"), (PluginKey.Numpad3, "Keypad3"),
-        (PluginKey.Numpad4, "Keypad4"), (PluginKey.Numpad5, "Keypad5"),
-        (PluginKey.Numpad6, "Keypad6"), (PluginKey.Numpad7, "Keypad7"),
-        (PluginKey.Numpad8, "Keypad8"), (PluginKey.Numpad9, "Keypad9"),
-        (PluginKey.NumpadDecimal, "KeypadDecimal"),
-        (PluginKey.NumpadDivide, "KeypadDivide"),
-        (PluginKey.NumpadMultiply, "KeypadMultiply"),
-        (PluginKey.NumpadSubtract, "KeypadSubtract"),
-        (PluginKey.NumpadAdd, "KeypadAdd"),
-        (PluginKey.NumpadEnter, "KeypadEnter"),
-        (PluginKey.Grave, "GraveAccent"),
-    ];
-
-    /// <summary>
     /// Reads the text a markup <c>&lt;hotkey&gt;</c> box reports, such as
     /// <c>Ctrl+Shift+F</c>: modifiers in any order and any case, then the
-    /// key, spelled the box's way (<c>Keypad5</c>, <c>GraveAccent</c>) or
-    /// as its <see cref="PluginKey"/> name (<c>Numpad5</c>, <c>Grave</c>).
+    /// key by its <see cref="PluginKey"/> name in any case (<c>Numpad5</c>,
+    /// <c>Grave</c>).
     /// </summary>
     /// <param name="text">The box's text.</param>
     /// <param name="chord">The chord read, or the default chord when this returns false.</param>
     /// <returns>
-    /// True when <paramref name="text"/> names a chord a plugin hotkey can
-    /// hold; false for empty text (an unbound box), text it can't read, and keys a
-    /// plugin hotkey can't use (a box can record keys such as F13 or Caps
-    /// Lock that <see cref="PluginKey"/> has no member for).
+    /// True when <paramref name="text"/> names a chord; false for empty text
+    /// (an unbound box) and text it can't read, such as a key
+    /// <see cref="PluginKey"/> has no member for.
     /// </returns>
     public static bool TryParseHotkeyText(string? text, out PluginKeyChord chord)
     {
@@ -295,7 +274,7 @@ public readonly record struct PluginKeyChord(
     /// box bound to it displays a registration's
     /// <see cref="IPluginHotkeyRegistration.EffectiveChord"/>:
     /// <c>Ctrl+</c>, <c>Alt+</c>, <c>Shift+</c> in that order, then the key
-    /// by the box's name. Empty when there is no key.
+    /// by its <see cref="PluginKey"/> name. Empty when there is no key.
     /// </summary>
     /// <returns>The box's text for this chord, or an empty string.</returns>
     public string ToHotkeyText()
@@ -306,32 +285,14 @@ public readonly record struct PluginKeyChord(
         if (Ctrl) text.Append("Ctrl+");
         if (Alt) text.Append("Alt+");
         if (Shift) text.Append("Shift+");
-        return text.Append(HotkeyBoxName(Key)).ToString();
+        return text.Append(Key.ToString()).ToString();
     }
 
     private static bool IsNamed(string part, string name) =>
         string.Equals(part, name, StringComparison.OrdinalIgnoreCase);
 
-    private static string HotkeyBoxName(PluginKey key)
-    {
-        foreach ((PluginKey aliased, string name) in HotkeyBoxNames)
-        {
-            if (aliased == key)
-                return name;
-        }
-        return key.ToString();
-    }
-
     private static bool TryReadKey(string name, out PluginKey key)
     {
-        foreach ((PluginKey aliased, string boxName) in HotkeyBoxNames)
-        {
-            if (IsNamed(name, boxName))
-            {
-                key = aliased;
-                return true;
-            }
-        }
         key = default;
         if (name.Length == 0 || !char.IsAsciiLetter(name[0]))
             return false;
