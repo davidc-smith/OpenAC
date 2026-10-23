@@ -23,6 +23,6 @@ public sealed class HouseGuestListTextTests
             ],
             []);
 
-        Assert.Equal(new[] { "Guests:", " Alice", " Bob*" }, HouseGuestListText.Lines(har));
+        Assert.Equal(new[] { "Guests:", " Alice", " Bob *" }, HouseGuestListText.Lines(har));
     }
 }
