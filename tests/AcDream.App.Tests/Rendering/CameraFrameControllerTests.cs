@@ -513,8 +513,7 @@ public sealed class CameraFrameControllerTests
             RetailObjectClockDisposition.Advance;
         public void Project(
             PlayerMovementController owner,
-            MovementResult movement,
-            bool hidden) => calls.Add("project");
+            MovementResult movement) => calls.Add("project");
         public void SendPreNetwork(
             PlayerMovementController owner,
             MovementResult movement,

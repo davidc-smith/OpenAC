@@ -119,8 +119,7 @@ public sealed class RuntimeLocalPlayerFrameControllerTests
 
         public void Project(
             PlayerMovementController controller,
-            MovementResult movement,
-            bool hidden) =>
+            MovementResult movement) =>
             ProjectCallCount++;
 
         public void SendPreNetwork(
