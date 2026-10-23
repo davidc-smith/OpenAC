@@ -2142,13 +2142,21 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             bool visible) =>
             _inner.SetControlVisible(_owner, viewName, controlName, visible);
 
-        public bool ShowModal(string viewName, string? ownerView = null) =>
-            _inner.ShowModal(_owner, viewName, ownerView);
+        public bool ShowModal(string viewName, string? ownerView = null)
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+            }
+            return _inner.ShowModal(_owner, viewName, ownerView);
+        }
 
         // An open dialog's handle is tracked like any other registration, so
         // an unloading plugin's dialogs are answered with their last button;
-        // the answer lets go of it again.
-        public bool Confirm(PluginDialog dialog, Action<int> onResult)
+        // the answer lets go of it again. The plugin gets the tracked handle,
+        // so withdrawing a dialog lets go of it too.
+        public IDisposable? Confirm(PluginDialog dialog, Action<int> onResult)
         {
             ArgumentNullException.ThrowIfNull(dialog);
             ArgumentNullException.ThrowIfNull(onResult);
@@ -2172,7 +2180,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 onResult(index);
             });
             if (handle is null)
-                return false;
+                return null;
 
             IDisposable tracked = TrackRegistration(handle);
             bool early;
@@ -2183,7 +2191,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
             if (early)
                 tracked.Dispose();
-            return true;
+            return tracked;
         }
 
         // Client-window control is global (retained top-level windows the

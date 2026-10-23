@@ -1,4 +1,6 @@
 using System.Text;
+using AcDream.App.Input;
+using AcDream.Plugin.Abstractions;
 using AcDream.UI.Abstractions.Input;
 using Silk.NET.Input;
 
@@ -7,18 +9,20 @@ namespace AcDream.App.UI.Markup;
 /// <summary>
 /// The hotkey string a markup <c>&lt;hotkey&gt;</c> hands its plugin:
 /// <c>Ctrl+Alt+Shift+Key</c>, modifiers in that order and the key spelled
-/// as its <see cref="Key"/> name. Empty is unbound.
+/// as its <see cref="PluginKey"/> name, so the box holds exactly the keys a
+/// plugin hotkey can bind. Empty is unbound.
 /// </summary>
 internal static class MarkupHotkeyText
 {
     /// <summary>The canonical string for a keyboard chord; empty for one no hotkey can hold.</summary>
     public static string Format(KeyChord chord)
     {
-        if (chord.Device != 0 || !IsChordKey(chord.Key))
+        PluginKey key = PluginKeyMap.FromSilk(chord.Key);
+        if (chord.Device != 0 || key == PluginKey.Unknown)
             return string.Empty;
         var text = new StringBuilder();
         AppendModifiers(text, chord.Modifiers);
-        return text.Append(chord.Key.ToString()).ToString();
+        return text.Append(key.ToString()).ToString();
     }
 
     /// <summary>
@@ -35,7 +39,8 @@ internal static class MarkupHotkeyText
 
     /// <summary>
     /// Reads a hotkey string: modifiers in any order and any case, then the
-    /// key. Null for empty or unreadable text, which shows as unbound.
+    /// key's <see cref="PluginKey"/> name in any case. Null for empty or
+    /// unreadable text, which shows as unbound.
     /// </summary>
     public static KeyChord? Parse(string? text)
     {
@@ -52,18 +57,14 @@ internal static class MarkupHotkeyText
         }
         string name = parts[^1];
         if (name.Length == 0 || !char.IsAsciiLetter(name[0]) || !name.All(char.IsAsciiLetterOrDigit)
-            || !Enum.TryParse(name, ignoreCase: true, out Key key) || !IsChordKey(key))
+            || !Enum.TryParse(name, ignoreCase: true, out PluginKey pluginKey)
+            || PluginKeyMap.ToSilk(pluginKey) is not { } key)
             return null;
         return new KeyChord(key, mods);
     }
 
-    /// <summary>A key a hotkey can end on: a named key that isn't a modifier.</summary>
-    public static bool IsChordKey(Key key) => key != Key.Unknown && Enum.IsDefined(key) && !IsModifier(key);
-
-    /// <summary>Shift, Ctrl, Alt or Super, left or right.</summary>
-    public static bool IsModifier(Key key) => key is Key.ShiftLeft or Key.ShiftRight
-        or Key.ControlLeft or Key.ControlRight or Key.AltLeft or Key.AltRight
-        or Key.SuperLeft or Key.SuperRight;
+    /// <summary>A key a hotkey can end on: one with a <see cref="PluginKey"/> name.</summary>
+    public static bool IsChordKey(Key key) => PluginKeyMap.FromSilk(key) != PluginKey.Unknown;
 
     private static void AppendModifiers(StringBuilder text, ModifierMask modifiers)
     {

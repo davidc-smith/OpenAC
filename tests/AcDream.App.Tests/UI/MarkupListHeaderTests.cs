@@ -267,6 +267,50 @@ public sealed class MarkupListHeaderTests : IDisposable
     }
 
     [Fact]
+    public void Sort_OrderIsRebuiltOnlyWhenTheRowsOrTheSortChange()
+    {
+        var b = new Binding();
+        var (root, list) = Mount("", b);
+        ClickAndDraw(root, list, NameX, HeaderY);
+        int builds = list.OrderBuilds;
+        Redraw(list);
+        Redraw(list);
+        b.Names = new List<string>(b.Names);   // the same rows in a fresh list
+        Redraw(list);
+        Assert.Equal(builds, list.OrderBuilds);
+
+        b.Names = new() { "mosswart", "Drudge", "Aardvark", "Banderling" };
+        Redraw(list);
+        Assert.Equal(builds + 1, list.OrderBuilds);
+        Assert.Equal(new[] { 2, 3, 1, 0 }, ViewOrder(root, list, b));
+
+        ClickAndDraw(root, list, NameX, HeaderY);   // descending
+        Assert.Equal(builds + 2, list.OrderBuilds);
+        Assert.Equal(new[] { 0, 1, 3, 2 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
+    public void Sort_NumberColumnFollowsAChangedCell()
+    {
+        var b = new Binding();
+        string columns = """
+              <column type="text" header="Name" width="120" items="{Names}"/>
+              <column type="text" header="Lvl" width="80" items="{Levels}" sort="number"/>
+              <column type="button" items="{Acts}" onclick="{Act}"/>
+            """;
+        var (root, list) = Mount("", b, columns: columns);
+        ClickAndDraw(root, list, DistX, HeaderY);
+        Assert.Equal(new[] { 2, 0, 3, 1 }, ViewOrder(root, list, b));
+        int builds = list.OrderBuilds;
+
+        b.Levels = new() { "10", "1", "2", "33" };
+        Redraw(list);
+
+        Assert.Equal(builds + 1, list.OrderBuilds);
+        Assert.Equal(new[] { 1, 2, 0, 3 }, ViewOrder(root, list, b));
+    }
+
+    [Fact]
     public void Sort_UnsortableHeadersAndDraggedPressesDoNothing()
     {
         var b = new Binding();

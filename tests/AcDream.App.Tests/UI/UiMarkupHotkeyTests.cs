@@ -113,6 +113,22 @@ public class UiMarkupHotkeyTests
         Assert.Empty(model.Reports);
     }
 
+    [Theory]
+    [InlineData(Key.F13)]
+    [InlineData(Key.CapsLock)]
+    public void AKeyWithNoPluginKeyName_KeepsWaiting(Key key)
+    {
+        var (root, box, model) = Mount();
+        Click(root);
+        model.Mods = ModifierMask.Ctrl;
+        Press(root, key);
+        Assert.True(box.IsCapturing);
+        Assert.Empty(model.Reports);
+
+        Press(root, Key.Keypad5);
+        Assert.Equal(["Ctrl+Numpad5"], model.Reports);
+    }
+
     [Fact]
     public void Enter_StartsAKeyboardCaptureThatKeepsFocus()
     {
@@ -164,6 +180,8 @@ public class UiMarkupHotkeyTests
     [Theory]
     [InlineData("", UiMarkupHotkey.UnboundText)]
     [InlineData("Ctrl+Nope", UiMarkupHotkey.UnboundText)]
+    [InlineData("Keypad5", UiMarkupHotkey.UnboundText)]
+    [InlineData("numpad5", "Numpad5")]
     [InlineData("shift+ctrl+f", "Ctrl+Shift+F")]
     public void DisplayText_WithoutKeyNamesShowsTheCanonicalString(string value, string shown)
     {

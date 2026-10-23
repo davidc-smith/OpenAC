@@ -104,32 +104,24 @@ public sealed class ControlsDemoSampleTests
     }
 
     [Fact]
-    public void Pickers_note_says_which_chords_a_plugin_hotkey_can_use()
+    public void Pickers_status_names_the_new_chord()
     {
         var binding = new PickersBinding();
-        Assert.Equal("Usable: radar yes, pause unbound", binding.KeyNote);
-
-        binding.SetRadarKey("F13");
-
-        Assert.Equal("Usable: radar no, pause unbound", binding.KeyNote);
-        Assert.Equal("Radar: F13", binding.Status);
+        binding.SetRadarKey("Ctrl+Numpad5");
+        Assert.Equal("Radar: Ctrl+Numpad5", binding.Status);
 
         binding.SetRadarKey(string.Empty);
         Assert.Equal("Radar cleared", binding.Status);
     }
 
     [Fact]
-    public void Pickers_status_and_note_stay_within_forty_characters()
+    public void Pickers_status_stays_within_forty_characters()
     {
         var binding = new PickersBinding();
-        binding.SetRadarKey("Ctrl+Alt+Shift+KeypadMultiply");
+        binding.SetRadarKey("Ctrl+Alt+Shift+NumpadMultiply");
         Assert.True(binding.Status.Length <= 40, binding.Status);
-        binding.SetPauseKey("Ctrl+Alt+Shift+KeypadMultiply");
+        binding.SetPauseKey("Ctrl+Alt+Shift+NumpadMultiply");
         Assert.True(binding.Status.Length <= 40, binding.Status);
-        Assert.True(binding.KeyNote.Length <= 40, binding.KeyNote);
-        binding.SetRadarKey("F13");
-        binding.SetPauseKey("F14");
-        Assert.True(binding.KeyNote.Length <= 40, binding.KeyNote);
     }
 
     [Theory]
@@ -163,9 +155,14 @@ public sealed class ControlsDemoSampleTests
 
         public void AddMarkupPanel(string markupPath, object binding) => throw new NotSupportedException();
         public void AddPanel(PluginPanelDescriptor descriptor, string markupPath, object binding) => throw new NotSupportedException();
-        public bool Confirm(PluginDialog dialog, Action<int> onResult) { Dialogs.Add((dialog, onResult)); return true; }
+        public IDisposable? Confirm(PluginDialog dialog, Action<int> onResult) { Dialogs.Add((dialog, onResult)); return new Withdraw(); }
         public bool ShowModal(string viewName, string? ownerView = null) { Modals.Add((viewName, ownerView)); return true; }
         public bool HidePanel(string viewName) { Hidden.Add(viewName); return true; }
+
+        private sealed class Withdraw : IDisposable
+        {
+            public void Dispose() { }
+        }
     }
 
     [Theory]

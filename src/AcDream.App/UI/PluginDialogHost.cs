@@ -232,7 +232,11 @@ internal sealed class PluginDialogHost : IDisposable
         view.Place(entry.Owner, _root.EffectiveCanvasSize);
         if (entry.Owner is { } owner)
             entry.Block = _root.BlockWindow(owner, view);
-        _root.SetKeyboardFocus(view);
+        // Focus in the owner went with the block. Focus anywhere else stays
+        // put: the player may be typing, and the next Enter must not answer
+        // a box they have not seen. A press on the blocked owner focuses it.
+        if (_root.KeyboardFocus is null)
+            _root.SetKeyboardFocus(view);
     }
 
     private UiPluginDialog CreateView(ConfirmEntry entry)

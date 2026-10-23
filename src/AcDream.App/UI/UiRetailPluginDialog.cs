@@ -4,12 +4,12 @@ using AcDream.App.UI.Layout;
 namespace AcDream.App.UI;
 
 /// <summary>
-/// A plugin dialog in the retail confirmation box's art (layout 0x15). The
-/// title is a gold first line over the message, since the retail box has no
-/// caption. Its buttons are retail buttons in the box's button bar: two sit
-/// where the retail Yes and No do, one is centred, and three or four are
-/// centred 16 px apart, widening the box when they need it. Buttons past
-/// the layout's own two are taken from further copies of the layout.
+/// A plugin dialog built from the confirmation box layout (0x15). The title
+/// is drawn as a gold first line above the message, as the layout has no
+/// caption. The buttons go in the layout's button bar: two use its accept
+/// and reject slots, one is centred, and three or four are centred 16 px
+/// apart, widening the box when they need it. Buttons past the layout's own
+/// two are taken from further copies of the layout.
 /// </summary>
 internal sealed class UiRetailPluginDialog : UiPluginDialog
 {
@@ -74,7 +74,7 @@ internal sealed class UiRetailPluginDialog : UiPluginDialog
         text.Padding = 0f;
         text.Selectable = false;
         if (layout.FindElement(RetailConfirmationDialogView.PendingDisplayId) is IUiDatStateful pending)
-            pending.TrySetRetailState(0x19u); // the retail "nothing else waiting" state
+            pending.TrySetRetailState(0x19u); // the pending display shows nothing waiting
 
         float buttonWidth = accept.Width;
         float popupHeight = popup.Height;
@@ -112,7 +112,7 @@ internal sealed class UiRetailPluginDialog : UiPluginDialog
                 button.Left = MathF.Round((popup.Width - buttonWidth) * 0.5f);
             else if (row.Count >= 3)
                 button.Left = start + i * (buttonWidth + RowGap);
-            // Two buttons keep the retail Yes/No places.
+            // Two buttons keep the layout's accept and reject places.
         }
 
         MakeClickThrough(popup);

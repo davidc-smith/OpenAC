@@ -14,11 +14,10 @@ public sealed class PluginKeyChordTextTests
     public static TheoryData<string, PluginKeyChord> Readable => new()
     {
         { "Ctrl+Alt+Shift+F", new PluginKeyChord(PluginKey.F, Ctrl: true, Alt: true, Shift: true) },
-        { "shift+ctrl+keypad5", new PluginKeyChord(PluginKey.Numpad5, Ctrl: true, Shift: true) },
+        { "shift+ctrl+numpad5", new PluginKeyChord(PluginKey.Numpad5, Ctrl: true, Shift: true) },
         { "Numpad5", new PluginKeyChord(PluginKey.Numpad5) },
-        { "GraveAccent", new PluginKeyChord(PluginKey.Grave) },
         { "Grave", new PluginKeyChord(PluginKey.Grave) },
-        { "KeypadEnter", new PluginKeyChord(PluginKey.NumpadEnter) },
+        { "NumpadEnter", new PluginKeyChord(PluginKey.NumpadEnter) },
         { "F12", new PluginKeyChord(PluginKey.F12) },
     };
 
@@ -35,6 +34,8 @@ public sealed class PluginKeyChordTextTests
     [InlineData("")]
     [InlineData("F13")]
     [InlineData("CapsLock")]
+    [InlineData("Keypad5")]
+    [InlineData("GraveAccent")]
     [InlineData("Ctrl+")]
     [InlineData("+F")]
     [InlineData("Ctrl+Ctrl+F")]
@@ -51,10 +52,10 @@ public sealed class PluginKeyChordTextTests
 
     [Theory]
     [InlineData(PluginKey.F, true, true, true, "Ctrl+Alt+Shift+F")]
-    [InlineData(PluginKey.Numpad5, false, false, false, "Keypad5")]
-    [InlineData(PluginKey.Grave, false, false, false, "GraveAccent")]
-    [InlineData(PluginKey.NumpadEnter, false, true, false, "Alt+KeypadEnter")]
-    public void ToHotkeyText_WritesTheBoxsSpelling(PluginKey key, bool ctrl, bool alt, bool shift, string expected) =>
+    [InlineData(PluginKey.Numpad5, false, false, false, "Numpad5")]
+    [InlineData(PluginKey.Grave, false, false, false, "Grave")]
+    [InlineData(PluginKey.NumpadEnter, false, true, false, "Alt+NumpadEnter")]
+    public void ToHotkeyText_SpellsTheKeyAsItsPluginKeyName(PluginKey key, bool ctrl, bool alt, bool shift, string expected) =>
         Assert.Equal(expected, new PluginKeyChord(key, ctrl, alt, shift).ToHotkeyText());
 
     [Fact]

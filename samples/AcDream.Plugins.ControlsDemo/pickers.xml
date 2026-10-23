@@ -3,7 +3,6 @@
   <hotkey x="130" y="28" w="160" h="20" value="{RadarKey}" onchange="{SetRadarKey}" />
   <label x="10" y="56" text="Pause macro" />
   <hotkey x="130" y="54" w="160" h="20" value="{PauseKey}" onchange="{SetPauseKey}" />
-  <label x="10" y="80" text="{KeyNote}" color="theme:muted|#FF9AA99E" />
   <separator x="10" y="102" w="280" h="1" />
   <label x="10" y="114" text="Bar colour" />
   <color x="130" y="112" w="40" h="18" value="{BarColor}" onchange="{SetBarColor}" alpha="true" />

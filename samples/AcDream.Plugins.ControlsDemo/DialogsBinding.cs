@@ -62,11 +62,11 @@ public sealed class DialogsBinding
 
     private void Ask(PluginDialog dialog, Action<int>? then = null)
     {
-        bool shown = ui.Confirm(dialog, index =>
+        IDisposable? shown = ui.Confirm(dialog, index =>
         {
             Status = $"{dialog.Title}: {dialog.EffectiveButtons[index]}";
             then?.Invoke(index);
         });
-        if (!shown) Status = "This host has no dialogs";
+        if (shown is null) Status = "This host has no dialogs";
     }
 }

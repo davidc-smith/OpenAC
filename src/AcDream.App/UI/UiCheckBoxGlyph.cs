@@ -4,9 +4,8 @@ namespace AcDream.App.UI;
 
 /// <summary>
 /// The markup checkbox's 11px square: an empty box, a pixel tick, or a dash
-/// for indeterminate. The retail client draws its checkboxes as lamps
-/// (<see cref="UiCheckLamp"/>), so Classic borrows the lamp's colours for a
-/// square box rather than a dat sprite.
+/// for indeterminate. Classic draws it as a square box in the colours of
+/// <see cref="UiCheckLamp"/> rather than from a dat sprite.
 /// </summary>
 internal static class UiCheckBoxGlyph
 {
