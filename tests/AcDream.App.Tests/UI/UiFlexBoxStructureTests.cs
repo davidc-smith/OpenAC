@@ -34,14 +34,13 @@ public sealed class UiFlexBoxStructureTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Insert_relayouts_in_the_new_order(bool nested)
+    public void An_item_added_after_layout_relayouts_in_the_new_order(bool nested)
     {
         var (box, k, root) = Build(nested);
         var added = new UiPanel();
-        var item = new UiFlexItem(box, added, Fixed(), null, null);
-        item.Node.Measure = item.Measure;
 
-        box.Insert(1, item);
+        box.AddLeaf(added, Fixed());
+        box.Move(added, 1);
 
         AssertOrder(box, k[0], added, k[1], k[2]);
         Assert.True(root.EnsureLayout(200f, 40f));
