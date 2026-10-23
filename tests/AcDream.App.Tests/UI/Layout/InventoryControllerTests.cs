@@ -70,7 +70,8 @@ public class InventoryControllerTests
         ShortcutStore? shortcuts = null,
         UiShortcutDigitGraphics? shortcutDigits = null,
         CombatState? combat = null,
-        Func<ItemType, uint, uint, uint, uint, uint>? iconIds = null)
+        Func<ItemType, uint, uint, uint, uint, uint>? iconIds = null,
+        Action? showWindow = null)
         => InventoryController.Bind(layout, objects, () => Player,
             iconIds: iconIds ?? ((_, _, _, _, _) => 0u),
             strength: strengthProvider ?? (() => strength), datFont: null,
@@ -90,7 +91,8 @@ public class InventoryControllerTests
             shortcuts: shortcuts,
             shortcutDigits: shortcutDigits,
             combat: combat,
-            resolveAppropriateName: ItemTooltipCaptionNames.Resolve);
+            resolveAppropriateName: ItemTooltipCaptionNames.Resolve,
+            showWindow: showWindow);
 
     // ── #35: a rend or imbue re-sends the whole item description; the cell has
     //        to pick up the new underlay without a relog.
@@ -722,6 +724,63 @@ public class InventoryControllerTests
         Assert.DoesNotContain(Player, uses);                   // no Use for the main pack
         Assert.Equal(0xAu, grid.GetItem(0)!.ItemId);           // grid back to the main pack
         Assert.Equal(102, grid.GetNumUIItems());
+    }
+
+    // Using the main pack from anywhere (a hotbar shortcut made by
+    // dragging the character) shows the inventory on the main pack and asks
+    // the server for nothing; a carried side pack opens the same way after
+    // its one use request.
+    [Fact]
+    public void UsingTheMainPack_showsTheInventoryOnTheMainPack_withoutAUse()
+    {
+        var (layout, grid, containers, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = Player,
+            Type = ItemType.Creature,
+            PublicWeenieBitfield = (uint)(PublicWeenieFlags.Player | PublicWeenieFlags.Stuck),
+            ItemsCapacity = 102,
+            ContainersCapacity = 7,
+            Useability = ItemUseability.No,
+        });
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedBag(objects, 0xC, slot: 1);
+        SeedContained(objects, 0xB1, 0xC, slot: 0);
+        var uses = new List<uint>();
+        long now = 1_000;
+        var transactions = new AcDream.Runtime.Gameplay.RuntimeInteractionTransactionState(
+            new InventoryTransactionState(objects));
+        using var interaction = new RuntimeItemInteraction(
+            objects,
+            transactions,
+            new InteractionState(),
+            playerGuid: () => Player,
+            sendUse: uses.Add,
+            sendUseWithTarget: null,
+            sendWield: null,
+            sendDrop: null,
+            nowMs: () => now);
+        int shown = 0;
+        InventoryController ctrl = Bind(
+            layout, objects, itemInteraction: interaction, showWindow: () => shown++);
+
+        Assert.True(interaction.ActivateItem(0xCu));           // a side pack, from the hotbar
+        Assert.Equal(new[] { 0xCu }, uses);
+        Assert.Equal(0xCu, ctrl.CurrentOpenContainerId);
+        Assert.Equal(0xB1u, grid.GetItem(0)!.ItemId);
+        Assert.Equal(1, shown);
+        Assert.True(containers.GetItem(0)!.IsOpenContainer);
+
+        transactions.CompleteUse(0u);                          // the pack's use is done
+        now += 1_000;
+        Assert.True(interaction.ActivateItem(Player));         // the main pack, from the hotbar
+
+        Assert.Equal(new[] { 0xCu }, uses);                    // nothing more went out
+        Assert.Equal(Player, ctrl.CurrentOpenContainerId);
+        Assert.Equal(0xAu, grid.GetItem(0)!.ItemId);
+        Assert.Equal(2, shown);
+        Assert.Equal(0, interaction.BusyCount);
     }
 
     [Fact]
