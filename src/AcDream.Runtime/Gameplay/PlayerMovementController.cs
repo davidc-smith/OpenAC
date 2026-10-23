@@ -92,6 +92,7 @@ public sealed class PlayerMovementController
     private float _objectScale = 1f;
     private PlayerState _state = PlayerState.InWorld;
     private uint _localEntityId;
+    private uint _serverGuid;
     private AcDream.Core.Physics.Motion.PositionManager? _positionManager;
 
     public Action<string, RetailLogTextType>? OnInterfaceText { get; set; }
@@ -239,6 +240,20 @@ public sealed class PlayerMovementController
                 return;
             EnsureConfigurationMutable();
             _localEntityId = value;
+        }
+    }
+
+    /// <summary>The player's server guid. House entry restrictions list
+    /// owners and guests by server guid, not by <see cref="LocalEntityId"/>.</summary>
+    public uint ServerGuid
+    {
+        get => _serverGuid;
+        set
+        {
+            if (value == _serverGuid)
+                return;
+            EnsureConfigurationMutable();
+            _serverGuid = value;
         }
     }
 
@@ -1541,6 +1556,7 @@ public sealed class PlayerMovementController
                     body: _body,
                     moverFlags: ObjectInfoState.IsPlayer | ObjectInfoState.EdgeSlide | OwnPvpFlags,
                     movingEntityId: LocalEntityId,
+                    movingObjectId: ServerGuid,
                     sphereList: SphereList,
                     sphereScale: ObjectScale);
                 _body.CommitTransitionPosition(resolved.CellId, resolved.Position);
@@ -1953,6 +1969,7 @@ public sealed class PlayerMovementController
                           | AcDream.Core.Physics.ObjectInfoState.EdgeSlide
                           | OwnPvpFlags,
                 movingEntityId: LocalEntityId,
+                movingObjectId: ServerGuid,
                 sphereList: SphereList,
                 sphereScale: ObjectScale);
 

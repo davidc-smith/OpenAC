@@ -88,7 +88,9 @@ internal readonly record struct PhysicsSetPositionRequest(
     float ScatterRadiusX = 0f,
     float ScatterRadiusY = 0f,
     uint ScatterAttempts = 0u,
-    uint? CurrentCellId = null);
+    uint? CurrentCellId = null,
+    // The mover's server guid, for house entry restrictions.
+    uint MovingObjectId = 0u);
 
 internal readonly record struct PhysicsSetPositionResult(
     PhysicsSetPositionError Error,
