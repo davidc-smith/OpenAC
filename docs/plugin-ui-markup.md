@@ -1093,6 +1093,12 @@ joined with `/`, so keys that themselves contain `/` can collide; use keys
 without `/`. Each item keeps its own expander, split or list state, and it
 follows the item when the list is reordered.
 
+When an item's key leaves the list, the client forgets what that item's
+controls remembered (and what the copies of repeats nested in it
+remembered), so short-lived keys such as item or monster ids don't pile up
+in the settings file. An item that comes back starts from its markup
+defaults. Closing the window forgets nothing.
+
 An element with a `name` or `id` inside any `<repeat>` without `key` fails
 the build, since it would have no per-item name. In a nested repeat, every
 enclosing repeat needs `key`.

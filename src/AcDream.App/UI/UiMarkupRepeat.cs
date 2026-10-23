@@ -39,6 +39,9 @@ internal sealed class UiMarkupRepeat : UiElement
     private readonly HashSet<object> _seenKeys = new();
     private readonly HashSet<Copy> _kept = new();
     private readonly List<Copy?> _order = new();
+    // The key paths of copies whose item left the list this tick, forgotten after matching.
+    private readonly HashSet<string> _forget = new();
+    private IMarkupControlState? _forgetIn;
     private bool _loggedDuplicates;
     private bool _released;
 
@@ -136,6 +139,39 @@ internal sealed class UiMarkupRepeat : UiElement
             _list.Forget();
             throw;
         }
+        finally
+        {
+            ForgetRemovedKeys();
+        }
+    }
+
+    /// <summary>
+    /// Drops the remembered state of the copies whose item left the list, so
+    /// short-lived keys (item or monster ids) don't pile up in the settings
+    /// file. A copy that only leaves with its window keeps its state.
+    /// </summary>
+    private void ForgetRemovedKeys()
+    {
+        if (_forget.Count == 0)
+            return;
+        try
+        {
+            (_forgetIn as IForgetsKeyedState)?.ForgetKeyed(_forget);
+        }
+        finally
+        {
+            _forget.Clear();
+            _forgetIn = null;
+        }
+    }
+
+    /// <summary>Marks <paramref name="copy"/>'s remembered state to be forgotten after this tick's matching.</summary>
+    private void ForgetLater(Copy copy)
+    {
+        if (copy.State is null)
+            return;
+        _forget.Add(copy.State.Path);
+        _forgetIn = copy.State.Root;
     }
 
     /// <summary>Whether every key is set and different; a null key falls back to position matching like a duplicate.</summary>
@@ -172,7 +208,10 @@ internal sealed class UiMarkupRepeat : UiElement
         foreach (Copy copy in Copies)
         {
             if (!_kept.Contains(copy))
+            {
+                ForgetLater(copy);
                 Release(copy);
+            }
         }
 
         Copies.Clear();
@@ -225,11 +264,21 @@ internal sealed class UiMarkupRepeat : UiElement
             Copies[i].Source.Current = _list.Item(i);
         for (int i = Copies.Count - 1; i >= count; i--)
         {
+            // With duplicate keys a removed copy's key may still be in the list.
+            if (Copies[i].State is not null && !ListHasKey(Copies[i].Key))
+                ForgetLater(Copies[i]);
             Release(Copies[i]);
             Copies.RemoveAt(i);
         }
         for (int i = Copies.Count; i < count; i++)
             BuildCopy(_list.Item(i), i);
+    }
+
+    private bool ListHasKey(object? key)
+    {
+        for (int i = 0; i < _list.Count; i++)
+            if (Equals(_list.Key(i), key)) return true;
+        return false;
     }
 
     /// <summary>
