@@ -186,11 +186,29 @@ public sealed class MarkupControlStateStore
         }
     }
 
-    private sealed class WindowState(MarkupControlStateStore owner, string window) : IMarkupControlState
+    // Values on disk while the load is failing are not in _values, so they stay.
+    private void ForgetKeyed(string window, IReadOnlySet<string> paths)
+    {
+        FollowCharacter();
+        List<MarkupControlKey>? forgotten = null;
+        foreach (MarkupControlKey key in _values.Keys)
+        {
+            if (string.Equals(key.Window, window, StringComparison.Ordinal) && KeyedControlState.IsUnder(key.Control, paths))
+                (forgotten ??= new()).Add(key);
+        }
+        if (forgotten is null)
+            return;
+        foreach (MarkupControlKey key in forgotten)
+            _values.Remove(key);
+        _dirty = true;
+    }
+
+    private sealed class WindowState(MarkupControlStateStore owner, string window) : IMarkupControlState, IForgetsKeyedState
     {
         public int Generation => owner.CurrentGeneration;
         public string? Get(string control, string kind) => owner.Get(window, control, kind);
         public void Set(string control, string kind, string value) => owner.Set(window, control, kind, value);
         public void Remove(string control, string kind) => owner.Remove(window, control, kind);
+        public void ForgetKeyed(IReadOnlySet<string> paths) => owner.ForgetKeyed(window, paths);
     }
 }

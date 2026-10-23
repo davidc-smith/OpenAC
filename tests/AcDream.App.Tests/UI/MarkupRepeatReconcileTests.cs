@@ -1,4 +1,3 @@
-using System.Collections;
 using AcDream.App.UI;
 using AcDream.App.UI.Markup;
 
@@ -47,13 +46,20 @@ public sealed class MarkupRepeatReconcileTests
         public IReadOnlyList<Row> Rows => rows.ToList();
     }
 
-    private sealed class FakeState : IMarkupControlState
+    private sealed class FakeState : IMarkupControlState, IForgetsKeyedState
     {
         public Dictionary<(string, string), string> Values { get; } = new();
         public int Generation => 1;
+        public int ForgetCalls { get; private set; }
         public string? Get(string control, string kind) => Values.GetValueOrDefault((control, kind));
         public void Set(string control, string kind, string value) => Values[(control, kind)] = value;
         public void Remove(string control, string kind) => Values.Remove((control, kind));
+        public void ForgetKeyed(IReadOnlySet<string> paths)
+        {
+            ForgetCalls++;
+            foreach (var key in Values.Keys.Where(k => KeyedControlState.IsUnder(k.Item1, paths)).ToList())
+                Values.Remove(key);
+        }
     }
 
     private sealed class FakeTextures : IMarkupTextureService
@@ -113,12 +119,8 @@ public sealed class MarkupRepeatReconcileTests
     private static string[] Labels(IEnumerable<UiElement> elements) =>
         elements.OfType<UiLabel>().Select(label => label.TextSource!() ?? "").ToArray();
 
-    private static int ThemeActions(UiElement frame)
-    {
-        var field = typeof(UiPluginMarkupPanel).GetField("_apply",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        return ((ICollection)field.GetValue(frame)!).Count;
-    }
+    private static int ThemeActions(UiElement frame) =>
+        Assert.IsType<UiPluginMarkupPanel>(frame).ThemeActionCount;
 
     private static void Click(UiRoot root, UiElement element)
     {
@@ -129,6 +131,30 @@ public sealed class MarkupRepeatReconcileTests
 
     private const string Keyed = "<repeat items=\"{Rows}\" key=\"{Id}\"><label text=\"{Label}\" h=\"20\"/></repeat>";
     private const string Keyless = "<repeat items=\"{Rows}\"><label text=\"{Label}\" h=\"20\"/></repeat>";
+
+    private readonly record struct Spot(uint Id, string Label);
+
+    private sealed class SpotBinding
+    {
+        public IReadOnlyList<Spot> Rows { get; set; } = [];
+    }
+
+    [Fact]
+    public void An_unchanged_tick_of_struct_items_allocates_nothing()
+    {
+        var binding = new SpotBinding { Rows = [new Spot(1, "a"), new Spot(2, "b")] };
+        var m = Mount(Keyed, binding);
+        for (int i = 0; i < 3; i++) m.Marker.TickSelfAndChildren(0.016);
+
+        long start = GC.GetAllocatedBytesForCurrentThread();
+        m.Marker.TickSelfAndChildren(0.016);
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
+
+        // The typed key read still sees a change.
+        binding.Rows = [new Spot(2, "b"), new Spot(3, "c")];
+        m.Frame();
+        Assert.Equal(new[] { "b", "c" }, Labels(m.Copies));
+    }
 
     // 1
     [Fact]
@@ -497,6 +523,66 @@ public sealed class MarkupRepeatReconcileTests
             + "</repeat></group></repeat>", sections, state: state);
         Assert.IsType<UiMarkupExpander>(nested.Copies[0].Children[1]).Toggle();
         Assert.Equal("true", state.Values[("inner#o/i", "expanded")]);
+    }
+
+    [Fact]
+    public void A_removed_key_forgets_its_remembered_state_in_one_call()
+    {
+        const string body = "<repeat items=\"{Rows}\" key=\"{Id}\">"
+            + "<expander name=\"section\" open=\"false\" h=\"60\" text=\"{Label}\"/></repeat>";
+        var state = new FakeState();
+        state.Values[("other", "expanded")] = "true";
+        var binding = new Binding { Rows = Rows("a", "b", "c") };
+        var m = Mount(body, binding, state: state);
+        foreach (UiElement copy in m.Copies)
+            Assert.IsType<UiMarkupExpander>(copy).Toggle();
+
+        binding.Rows = Rows("b");
+        m.Frame();
+
+        Assert.Equal(1, state.ForgetCalls);
+        Assert.Equal(["other", "section#b"], state.Values.Keys.Select(k => k.Item1).Order());
+    }
+
+    [Fact]
+    public void A_removed_section_forgets_its_nested_rows_state_and_a_removed_row_only_its_own()
+    {
+        var state = new FakeState();
+        var keep = new Section { Id = "o", Rows = Rows("i", "j") };
+        var sections = new Binding { Sections = [keep, new Section { Id = "p", Rows = Rows("i") }] };
+        var m = Mount("<repeat items=\"{Sections}\" key=\"{Id}\"><group layout=\"column\">"
+            + "<repeat items=\"{Rows}\" key=\"{Id}\"><expander name=\"inner\" open=\"false\" h=\"60\" text=\"{Label}\"/>"
+            + "</repeat></group></repeat>", sections, state: state);
+        foreach (UiMarkupExpander expander in m.Copies.SelectMany(c => c.Children).OfType<UiMarkupExpander>())
+            expander.Toggle();
+        Assert.Equal(3, state.Values.Count);
+
+        keep.Rows = Rows("i");
+        sections.Sections = [keep];
+        m.Frame();
+
+        Assert.Equal([("inner#o/i", "expanded")], state.Values.Keys);
+    }
+
+    [Fact]
+    public void With_duplicate_keys_a_removed_copy_whose_key_is_still_listed_keeps_its_state()
+    {
+        const string body = "<repeat items=\"{Rows}\" key=\"{Id}\">"
+            + "<expander name=\"section\" open=\"false\" h=\"60\" text=\"{Label}\"/></repeat>";
+        var state = new FakeState();
+        var binding = new Binding { Rows = Rows("a", "b", "a") };
+        var m = Mount(body, binding, state: state);
+        Assert.IsType<UiMarkupExpander>(m.Copies[0]).Toggle();
+        Assert.IsType<UiMarkupExpander>(m.Copies[1]).Toggle();
+
+        binding.Rows = Rows("a", "a");
+        m.Frame();
+        Assert.Contains(("section#a", "expanded"), state.Values.Keys);
+        Assert.Contains(("section#b", "expanded"), state.Values.Keys);
+
+        binding.Rows = Rows("a");
+        m.Frame();
+        Assert.Contains(("section#a", "expanded"), state.Values.Keys);
     }
 
     // 11

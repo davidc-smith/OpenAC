@@ -39,8 +39,13 @@ internal sealed class UiMarkupRepeat : UiElement
     private readonly HashSet<object> _seenKeys = new();
     private readonly HashSet<Copy> _kept = new();
     private readonly List<Copy?> _order = new();
+    private readonly List<Copy> _released = new();
+    private readonly HashSet<UiElement> _releasing = new(ReferenceEqualityComparer.Instance);
+    // The key paths of copies whose item left the list this tick, forgotten after matching.
+    private readonly HashSet<string> _forget = new();
+    private IMarkupControlState? _forgetIn;
     private bool _loggedDuplicates;
-    private bool _released;
+    private bool _isReleased;
 
     internal UiMarkupRepeat(
         XElement[] template, string itemsExpression, MarkupBindingSource parentSource, PropertyInfo items,
@@ -109,7 +114,7 @@ internal sealed class UiMarkupRepeat : UiElement
     {
         // A removed marker still ticks once this tick, from its parent's
         // snapshot; it must not build into a tree that has left the window.
-        if (_released || Parent is null)
+        if (_isReleased || Parent is null)
             return;
         if (!_list.Read(ParentSource.Read(Items)))
             return;
@@ -136,6 +141,39 @@ internal sealed class UiMarkupRepeat : UiElement
             _list.Forget();
             throw;
         }
+        finally
+        {
+            ForgetRemovedKeys();
+        }
+    }
+
+    /// <summary>
+    /// Drops the remembered state of the copies whose item left the list, so
+    /// short-lived keys (item or monster ids) don't pile up in the settings
+    /// file. A copy that only leaves with its window keeps its state.
+    /// </summary>
+    private void ForgetRemovedKeys()
+    {
+        if (_forget.Count == 0)
+            return;
+        try
+        {
+            (_forgetIn as IForgetsKeyedState)?.ForgetKeyed(_forget);
+        }
+        finally
+        {
+            _forget.Clear();
+            _forgetIn = null;
+        }
+    }
+
+    /// <summary>Marks <paramref name="copy"/>'s remembered state to be forgotten after this tick's matching.</summary>
+    private void ForgetLater(Copy copy)
+    {
+        if (copy.State is null)
+            return;
+        _forget.Add(copy.State.Path);
+        _forgetIn = copy.State.Root;
     }
 
     /// <summary>Whether every key is set and different; a null key falls back to position matching like a duplicate.</summary>
@@ -172,7 +210,18 @@ internal sealed class UiMarkupRepeat : UiElement
         foreach (Copy copy in Copies)
         {
             if (!_kept.Contains(copy))
-                Release(copy);
+            {
+                ForgetLater(copy);
+                _released.Add(copy);
+            }
+        }
+        try
+        {
+            Release(_released);
+        }
+        finally
+        {
+            _released.Clear();
         }
 
         Copies.Clear();
@@ -223,13 +272,34 @@ internal sealed class UiMarkupRepeat : UiElement
         int count = _list.Count;
         for (int i = 0; i < Math.Min(count, Copies.Count); i++)
             Copies[i].Source.Current = _list.Item(i);
-        for (int i = Copies.Count - 1; i >= count; i--)
+        if (Copies.Count > count)
         {
-            Release(Copies[i]);
-            Copies.RemoveAt(i);
+            for (int i = count; i < Copies.Count; i++)
+            {
+                // With duplicate keys a removed copy's key may still be in the list.
+                if (Copies[i].State is not null && !ListHasKey(Copies[i].Key))
+                    ForgetLater(Copies[i]);
+                _released.Add(Copies[i]);
+            }
+            Copies.RemoveRange(count, Copies.Count - count);
+            try
+            {
+                Release(_released);
+            }
+            finally
+            {
+                _released.Clear();
+            }
         }
         for (int i = Copies.Count; i < count; i++)
             BuildCopy(_list.Item(i), i);
+    }
+
+    private bool ListHasKey(object? key)
+    {
+        for (int i = 0; i < _list.Count; i++)
+            if (Equals(_list.Key(i), key)) return true;
+        return false;
     }
 
     /// <summary>
@@ -248,42 +318,45 @@ internal sealed class UiMarkupRepeat : UiElement
                 continue;   // markers have no flex item
             if (itemAt < Flex.Items.Count && ReferenceEquals(Flex.Items[itemAt].Element, element))
                 itemAt++;
-            else if (HasItem(element))
-                Flex.Move(element, itemAt++);
+            else if (Flex.TryMove(element, itemAt))
+                itemAt++;
         }
-    }
-
-    private bool HasItem(UiElement element)
-    {
-        foreach (UiFlexItem item in Flex.Items)
-            if (ReferenceEquals(item.Element, element)) return true;
-        return false;
     }
 
     /// <summary>
-    /// Takes a copy out: its elements leave the container (the root drops
-    /// focus, capture and popups inside them) and the flex box; nested
-    /// repeats give back their copies, disposable elements are disposed, and
-    /// its theme actions stop.
+    /// Takes copies out: their elements leave the container (the root drops
+    /// focus, capture and popups inside them) and the flex box, in one pass
+    /// each; nested repeats give back their copies, disposable elements are
+    /// disposed, and their theme actions stop.
     /// </summary>
-    private void Release(Copy copy)
+    private void Release(IReadOnlyList<Copy> copies)
     {
-        foreach (UiElement element in copy.Elements)
+        if (copies.Count == 0)
+            return;
+        try
         {
-            Container.RemoveChild(element);
-            Flex.Remove(element);
+            foreach (Copy copy in copies)
+                _releasing.UnionWith(copy.Elements);
+            Container.RemoveChildren(_releasing);
+            Flex.RemoveAll(_releasing);
         }
-        foreach (UiElement element in copy.Elements)
-            ReleaseSubtree(element);
-        copy.Scope?.Dispose();
+        finally
+        {
+            _releasing.Clear();
+        }
+        foreach (Copy copy in copies)
+        {
+            foreach (UiElement element in copy.Elements)
+                ReleaseSubtree(element);
+            copy.Scope?.Dispose();
+        }
     }
 
     /// <summary>Releases every copy, for a marker leaving with the copy it sits in; it does nothing after.</summary>
     private void ReleaseCopies()
     {
-        _released = true;
-        foreach (Copy copy in Copies)
-            Release(copy);
+        _isReleased = true;
+        Release(Copies);
         Copies.Clear();
     }
 
@@ -362,7 +435,7 @@ internal sealed class UiMarkupRepeat : UiElement
             Copies.RemoveAt(index);
             for (int i = index; i < Copies.Count; i++)
                 Copies[i].Index = i;
-            Release(copy);
+            Release([copy]);
             throw;
         }
         return copy;
@@ -460,8 +533,7 @@ internal sealed class UiMarkupRepeat : UiElement
     {
         for (int i = childIndex; i >= 0; i--)
         {
-            UiElement child = Container.Children[i];
-            int item = Flex.Items.FindIndex(it => ReferenceEquals(it.Element, child));
+            int item = Flex.IndexOf(Container.Children[i]);
             if (item >= 0) return item + 1;
         }
         return 0;
@@ -495,6 +567,8 @@ internal sealed class UiMarkupRepeat : UiElement
     private sealed class ListReader<T, TKey> : ListReader
     {
         private static readonly bool ByReference = !typeof(T).IsValueType;
+        // A struct's getter takes its item by reference, so it is bound as one.
+        private delegate TKey StructGetter(ref T item);
         private readonly Func<T, TKey>? _key;
         private List<T> _items = new(), _lastItems = new();
         private List<TKey> _keys = new(), _lastKeys = new();
@@ -504,9 +578,16 @@ internal sealed class UiMarkupRepeat : UiElement
         {
             if (key is null)
                 return;
-            _key = ByReference && key.GetMethod is { IsStatic: false } getter
-                ? getter.CreateDelegate<Func<T, TKey>>()
-                : item => (TKey)key.GetValue(item)!;
+            // Typed getters, so reading a key boxes neither the item nor the key.
+            if (key.GetMethod is not { IsStatic: false } getter)
+                _key = item => (TKey)key.GetValue(item)!;
+            else if (ByReference)
+                _key = getter.CreateDelegate<Func<T, TKey>>();
+            else
+            {
+                StructGetter read = getter.CreateDelegate<StructGetter>();
+                _key = item => read(ref item);
+            }
         }
 
         public override int Count => _items.Count;

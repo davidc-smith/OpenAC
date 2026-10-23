@@ -81,6 +81,32 @@ public sealed class MarkupControlStateStoreTests : IDisposable
     }
 
     [Fact]
+    public void ForgetKeyedDropsOnlyThatWindowsValuesUnderThePathsAndIsSaved()
+    {
+        var store = NewStore();
+        var nav = store.ForWindow("nav");
+        nav.Set("row#7", "expanded", "true");
+        nav.Set("row#7/3", "widths", "10");
+        nav.Set("row#70", "expanded", "true");
+        nav.Set("row#8", "expanded", "true");
+        nav.Set("adv", "expanded", "true");
+        store.ForWindow("loot").Set("row#7", "expanded", "true");
+        store.Save();
+
+        ((IForgetsKeyedState)nav).ForgetKeyed(new HashSet<string> { "7" });
+        store.Save();
+
+        var fresh = NewStore();
+        var freshNav = fresh.ForWindow("nav");
+        Assert.Null(freshNav.Get("row#7", "expanded"));
+        Assert.Null(freshNav.Get("row#7/3", "widths"));
+        Assert.Equal("true", freshNav.Get("row#70", "expanded"));
+        Assert.Equal("true", freshNav.Get("row#8", "expanded"));
+        Assert.Equal("true", freshNav.Get("adv", "expanded"));
+        Assert.Equal("true", fresh.ForWindow("loot").Get("row#7", "expanded"));
+    }
+
+    [Fact]
     public void EachCharacterHasItsOwnValues()
     {
         var store = NewStore();
