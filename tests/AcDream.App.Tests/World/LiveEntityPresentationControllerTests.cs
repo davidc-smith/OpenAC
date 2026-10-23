@@ -1,5 +1,6 @@
 using System.Numerics;
 using AcDream.App.Streaming;
+using AcDream.App.Tests.Rendering;
 using AcDream.App.World;
 using AcDream.Content.Vfx;
 using AcDream.Core.Net;
@@ -120,8 +121,8 @@ public sealed class LiveEntityPresentationControllerTests
         const uint magic = 0x80000049u;
         const uint ready = 0x41000003u;
         const uint magicPortal = 0x40000038u;
-        string datDir = @"C:\Turbine\Asheron's Call";
-        if (!File.Exists(Path.Combine(datDir, "client_portal.dat")))
+        string? datDir = InstalledDatTestPath.Resolve();
+        if (datDir is null || !File.Exists(Path.Combine(datDir, "client_portal.dat")))
             throw new InvalidOperationException(
                 "Lane=InstalledDat requires installed retail DATs; see docs/release-gate.md.");
 

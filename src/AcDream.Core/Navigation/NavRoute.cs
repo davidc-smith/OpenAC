@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 
 namespace AcDream.Core.Navigation;
@@ -333,8 +334,9 @@ public static class NavRouter
                 crowd,
                 priceCrowd,
                 clock,
-                $"nothing within {reach:0.#} m of the goal can be reached and see it, so the route ends at "
-                + $"the nearest spot that can, {away:0.0} m from it");
+                string.Create(CultureInfo.InvariantCulture,
+                    $"nothing within {reach:0.#} m of the goal can be reached and see it, so the route ends at "
+                    + $"the nearest spot that can, {away:0.0} m from it"));
         }
         int nearestUnseeing = avoided.Count == 0 ? goal.NearestAmong(search.Closed) : -1;
         if (nearestUnseeing >= 0)
@@ -351,19 +353,20 @@ public static class NavRouter
                 crowd,
                 priceCrowd,
                 clock,
-                $"no reachable spot can see the goal, so the route ends at the nearest spot, {away:0.0} m from it, "
-                + "without a line of sight");
+                string.Create(CultureInfo.InvariantCulture,
+                    $"no reachable spot can see the goal, so the route ends at the nearest spot, {away:0.0} m from it, "
+                    + $"without a line of sight"));
             return (unseeing with { EndsInSight = false }, untidiness);
         }
         NavRoute failed = nearGoalSeen
             ? Failed(
                 NavRouteOutcome.NoPath,
-                $"no clear path leads from the start to a spot within {FallbackReach:0} m that can see the goal",
+                string.Create(CultureInfo.InvariantCulture, $"no clear path leads from the start to a spot within {FallbackReach:0} m that can see the goal"),
                 search.Expansions,
                 clock)
             : Failed(
                 NavRouteOutcome.NoGoal,
-                $"no spot within {FallbackReach:0} m of the goal that the start can reach can see it",
+                string.Create(CultureInfo.InvariantCulture, $"no spot within {FallbackReach:0} m of the goal that the start can reach can see it"),
                 search.Expansions,
                 clock);
         return (failed, float.PositiveInfinity);
@@ -457,7 +460,7 @@ public static class NavRouter
                 crowd,
                 priceCrowd,
                 clock,
-                $"{ReachedEdgeReason}, {nearestAway:0} m from it").Route;
+                string.Create(CultureInfo.InvariantCulture, $"{ReachedEdgeReason}, {nearestAway:0} m from it")).Route;
         }
         if (nearest != start && Away(from, goal) - nearestAway >= grid.CellSize)
         {
@@ -471,7 +474,8 @@ public static class NavRouter
                 crowd,
                 priceCrowd,
                 clock,
-                $"the goal lies beyond this grid, and the route ends at the reachable spot nearest it, {nearestAway:0} m from it").Route;
+                string.Create(CultureInfo.InvariantCulture,
+                    $"the goal lies beyond this grid, and the route ends at the reachable spot nearest it, {nearestAway:0} m from it")).Route;
         }
         return end == Search.GaveUp
             ? SearchGaveUp(search, clock)
