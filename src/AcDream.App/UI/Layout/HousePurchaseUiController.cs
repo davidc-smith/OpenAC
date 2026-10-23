@@ -82,6 +82,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         RetailTabBinding.SetClick(_closeButton, () => _bindings.Close());
 
         bindings.Objects.ObjectRemoved += OnObjectRemoved;
+        bindings.Objects.ObjectUpdated += OnObjectUpdated;
         bindings.Objects.ObjectMoved += OnObjectMoved;
         bindings.Objects.ContainerContentsReplaced += OnContainerContentsReplaced;
 
@@ -281,6 +282,18 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
     }
 
     private void OnObjectRemoved(ClientObject item) => _bindings.Revalidate();
+    // A staged stack can merge or split without any state change, so the
+    // revision gate would keep showing the old amount.
+    private void OnObjectUpdated(ClientObject item)
+    {
+        if (_disposed) return;
+        if (!_bindings.Purchase.GetStaged(HousePurchaseTab.Buy).Contains(item.ObjectId)
+            && !_bindings.Purchase.GetStaged(HousePurchaseTab.Rent).Contains(item.ObjectId))
+            return;
+        _bindings.Revalidate();
+        _lastRevision = long.MinValue;
+    }
+
     private void OnObjectMoved(ClientObjectMove move) => _bindings.Revalidate();
     private void OnContainerContentsReplaced(uint containerId) => _bindings.Revalidate();
 
@@ -289,6 +302,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         if (_disposed) return;
         _disposed = true;
         _bindings.Objects.ObjectRemoved -= OnObjectRemoved;
+        _bindings.Objects.ObjectUpdated -= OnObjectUpdated;
         _bindings.Objects.ObjectMoved -= OnObjectMoved;
         _bindings.Objects.ContainerContentsReplaced -= OnContainerContentsReplaced;
         foreach (Page page in new[] { _buy, _rent })

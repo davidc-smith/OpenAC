@@ -186,13 +186,41 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
-    public void Buttons_DisabledForAnOwnedBuyAndFreeMaintenance()
+    public void Buttons_DisabledWhenOwnedBuy_AndFreeMaintenance_EvenWithItemsStaged()
     {
         using var h = new Harness();
-        h.Open(owner: Player, free: true);
+        h.Item(1, 273u, stack: 10);
+        h.Open();
+        h.Drop(h.BuyList, 1);
+        Assert.True(h.BuyButton.Enabled);
 
+        h.Open(owner: Player);
         Assert.False(h.BuyButton.Enabled);
+        h.BuyButton.OnClick!();
+        Assert.Empty(h.Sent);
+
+        h.Drop(h.RentList, 1);
+        Assert.True(h.RentButton.Enabled);
+        h.Open(owner: Player, free: true);
         Assert.False(h.RentButton.Enabled);
+        h.RentButton.OnClick!();
+        Assert.Empty(h.Sent);
+    }
+
+    [Fact]
+    public void AStagedStackChanging_RefreshesTheRequirementText()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 10);
+        h.Open();
+        h.Drop(h.BuyList, 1);
+        Assert.Contains("(+10 staged)", Harness.Text(h.BuyText));
+
+        h.Objects.Get(1)!.StackSize = 25;
+        h.Objects.NotifyObjectUpdated(1);
+        h.Controller.Tick();
+
+        Assert.Contains("(+25 staged)", Harness.Text(h.BuyText));
     }
 
     [Fact]
