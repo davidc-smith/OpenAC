@@ -9,20 +9,17 @@ internal sealed class LocalPlayerShadowSynchronizer
 {
     private readonly PhysicsEngine _physics;
     private readonly LiveEntityRuntime _liveEntities;
-    private readonly ILocalPlayerIdentitySource _identity;
     private readonly LiveWorldOriginState _origin;
     private readonly LocalPlayerShadowState _state;
 
     public LocalPlayerShadowSynchronizer(
         PhysicsEngine physics,
         LiveEntityRuntime liveEntities,
-        ILocalPlayerIdentitySource identity,
         LiveWorldOriginState origin,
         LocalPlayerShadowState state)
     {
         _physics = physics ?? throw new ArgumentNullException(nameof(physics));
         _liveEntities = liveEntities ?? throw new ArgumentNullException(nameof(liveEntities));
-        _identity = identity ?? throw new ArgumentNullException(nameof(identity));
         _origin = origin ?? throw new ArgumentNullException(nameof(origin));
         _state = state ?? throw new ArgumentNullException(nameof(state));
     }
@@ -45,8 +42,12 @@ internal sealed class LocalPlayerShadowSynchronizer
         bool force = false)
     {
         ArgumentNullException.ThrowIfNull(playerEntity);
-        if (_liveEntities.IsHidden(_identity.ServerGuid)
-            || cellId == 0
+        // Hiding does not take the player out of collision: a hidden player
+        // still stands in its cell and still blocks. The server hides the
+        // player for the whole portal-space stay, and an object created at the
+        // destination in that time has to be placed against the player, not
+        // on top of it.
+        if (cellId == 0
             || !IsCurrentVisibleProjection(playerEntity))
         {
             Suspend(playerEntity);

@@ -445,16 +445,11 @@ public sealed class RuntimeFirstEntryHostIntegrationTests
                                 .RuntimeLocalPlayerShadowDisposition
                                 .ProvenShapeless));
             var localShadowState = new LocalPlayerShadowState();
-            var localShadowIdentity = new LocalPlayerIdentityState
-            {
-                ServerGuid = playerGuid,
-            };
             var localShadowOrigin = new LiveWorldOriginState();
             localShadowOrigin.SetPlaceholder(0, 0);
             var localShadowSynchronizer = new LocalPlayerShadowSynchronizer(
                 EntityObjects.Physics.Engine,
                 Runtime,
-                localShadowIdentity,
                 localShadowOrigin,
                 localShadowState);
             var sink = new RuntimePlacementPresentationSink(
