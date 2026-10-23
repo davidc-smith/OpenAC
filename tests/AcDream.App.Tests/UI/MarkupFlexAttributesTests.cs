@@ -106,7 +106,6 @@ public sealed class MarkupFlexAttributesTests
     }
 
     [Theory]
-    [InlineData("<group layout=\"grid\" />", "layout=\"grid\"")]
     [InlineData("<group layout=\"row\" justify=\"around\" />", "justify=\"around\"")]
     [InlineData("<group layout=\"row\" align=\"baseline\" />", "align=\"baseline\"")]
     [InlineData("<group layout=\"row\" wrap=\"yes\" />", "wrap=\"yes\"")]
@@ -124,7 +123,7 @@ public sealed class MarkupFlexAttributesTests
         XElement el = El(xml);
         var ex = Assert.Throws<FormatException>(() =>
         {
-            if (MarkupFlexAttributes.IsContainer(el)) MarkupFlexAttributes.ReadContainer(el, new FlexNode());
+            if (MarkupFlexAttributes.IsContainer(el, [])) MarkupFlexAttributes.ReadContainer(el, new FlexNode());
         });
         Assert.Contains("<group>", ex.Message);
         Assert.Contains(expected, ex.Message);
@@ -136,12 +135,31 @@ public sealed class MarkupFlexAttributesTests
     [InlineData("justify=\"end\"")]
     [InlineData("align=\"center\"")]
     [InlineData("wrap=\"true\"")]
-    public void Container_attributes_without_layout_are_errors(string attr)
+    public void Container_attributes_without_layout_are_reported_and_ignored(string attr)
     {
-        var ex = Assert.Throws<FormatException>(() => MarkupFlexAttributes.RejectContainer(El($"<group name=\"g\" {attr} />")));
-        Assert.Contains("<group name=\"g\">", ex.Message);
-        Assert.Contains(attr, ex.Message);
-        Assert.Contains("layout", ex.Message);
+        var warnings = new List<string>();
+        MarkupFlexAttributes.RejectContainer(El($"<group name=\"g\" {attr} />"), warnings);
+        string warning = Assert.Single(warnings);
+        Assert.Contains("<group name=\"g\">", warning);
+        Assert.Contains(attr, warning);
+        Assert.Contains("layout", warning);
+        Assert.EndsWith("ignored", warning);
+    }
+
+    [Fact]
+    public void An_unknown_layout_is_reported_and_leaves_the_element_absolute()
+    {
+        var warnings = new List<string>();
+        Assert.False(MarkupFlexAttributes.IsContainer(El("<group layout=\"grid\" />"), warnings));
+        Assert.Contains("layout=\"grid\" must be row or column", Assert.Single(warnings));
+    }
+
+    [Fact]
+    public void An_unknown_scroll_is_reported_and_scrolls_neither_way()
+    {
+        var warnings = new List<string>();
+        Assert.Equal((false, false), MarkupFlexAttributes.Scroll(El("<group scroll=\"true\" />"), warnings));
+        Assert.Contains("scroll=\"true\" must be x, y or both", Assert.Single(warnings));
     }
 
     [Theory]
@@ -153,10 +171,11 @@ public sealed class MarkupFlexAttributesTests
     [InlineData("maxw=\"5\"")]
     [InlineData("minh=\"5\"")]
     [InlineData("maxh=\"5\"")]
-    public void Item_attributes_under_an_absolute_container_are_errors(string attr)
+    public void Item_attributes_under_an_absolute_container_are_reported_and_ignored(string attr)
     {
-        var ex = Assert.Throws<FormatException>(() => MarkupFlexAttributes.RejectItem(El($"<label {attr} />")));
-        Assert.Contains(attr, ex.Message);
+        var warnings = new List<string>();
+        MarkupFlexAttributes.RejectItem(El($"<label {attr} />"), warnings);
+        Assert.Contains(attr, Assert.Single(warnings));
     }
 
     [Theory]

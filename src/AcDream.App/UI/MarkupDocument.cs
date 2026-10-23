@@ -63,17 +63,20 @@ public static class MarkupDocument
         // A window with chrome or a flex layout has a content area: its authored
         // sizes are the area inside the border (and title bar), and the frame
         // adds the chrome. A root with layout gets the title bar by default.
-        bool hasLayout = MarkupFlexAttributes.IsContainer(root);
-        bool hasTitleBar = TitleBar(root, hasLayout);
+        var warnings = new List<string>();
+        bool hasLayout = MarkupFlexAttributes.IsContainer(root, warnings);
+        bool hasTitleBar = TitleBar(root, hasLayout, warnings);
         bool hasContentArea = hasLayout || hasTitleBar;
-        var (rootScrollX, rootScrollY) = MarkupFlexAttributes.Scroll(root);
+        var (rootScrollX, rootScrollY) = MarkupFlexAttributes.Scroll(root, warnings);
         if ((rootScrollX || rootScrollY) && !hasContentArea)
-            throw new FormatException(
-                $"<panel scroll=\"{(string?)root.Attribute("scroll")}\"> scrolls the window's content area, "
-                + "which needs layout=\"row|column\" or titlebar=\"true\" on the panel");
+        {
+            warnings.Add(MarkupFlexAttributes.Ignored(root, "scroll", (string?)root.Attribute("scroll") ?? string.Empty,
+                "scrolls the window's content area, which needs layout=\"row|column\" or titlebar=\"true\" on the panel"));
+            (rootScrollX, rootScrollY) = (false, false);
+        }
         float chromeW = hasContentArea ? PluginWindowChrome.HorizontalInsets : 0f;
         float chromeH = hasContentArea ? PluginWindowChrome.VerticalInsetsFor(hasTitleBar) : 0f;
-        if (!hasLayout) MarkupFlexAttributes.RejectContainer(root);
+        if (!hasLayout) MarkupFlexAttributes.RejectContainer(root, warnings);
 
         // A layout root may leave its size to its content; it is measured once
         // its children exist (below), so these are provisional for it.
@@ -178,7 +181,7 @@ public static class MarkupDocument
         var recentColors = new MarkupRecentColors(sharedControlState);
         foreach (var el in root.Elements())
             AddElement(contentParent, el, source, resolve, datFont, icons, panel as UiPluginMarkupPanel, themes,
-                controlState, describeKey, textures, recentColors, rootFlex);
+                controlState, describeKey, textures, recentColors, warnings, rootFlex);
 
         if (rootFlex is not null)
         {
@@ -215,7 +218,7 @@ public static class MarkupDocument
             ? RetailWindowManager.ComputeAuthoredGeometryRevision(PluginWindowChrome.AuthoredInputs(root))
             : RetailWindowManager.ComputeAuthoredGeometryRevision(
                 panel.Width, panel.Height, panel.MinWidth, panel.MinHeight, panel.Resizable);
-        var window = new MarkupWindow(panel, contentParent, titleBar, revision) { Canvases = CollectCanvases(panel) };
+        var window = new MarkupWindow(panel, contentParent, titleBar, revision, warnings) { Canvases = CollectCanvases(panel) };
         if (rootFlex is not null)
             window.TrackContentMinimum(content!, chromeH, authoredMinW, authoredMinH);
         return window;
@@ -223,16 +226,21 @@ public static class MarkupDocument
 
     /// <summary>
     /// Whether the root asks for the host title bar: <c>titlebar</c> when it
-    /// is given, else on exactly when the root uses <c>layout</c>.
+    /// is given, else on exactly when the root uses <c>layout</c>. Any other
+    /// value is reported and counts as absent.
     /// </summary>
-    private static bool TitleBar(XElement root, bool hasLayout) => (string?)root.Attribute("titlebar") switch
+    private static bool TitleBar(XElement root, bool hasLayout, ICollection<string> warnings)
     {
-        null => hasLayout,
-        "false" => false,
-        "true" => true,
-        string other => throw new FormatException(
-            $"<panel titlebar=\"{other}\"> must be true or false"),
-    };
+        switch ((string?)root.Attribute("titlebar"))
+        {
+            case null: return hasLayout;
+            case "false": return false;
+            case "true": return true;
+            case string other:
+                warnings.Add(MarkupFlexAttributes.Ignored(root, "titlebar", other, "must be true or false"));
+                return hasLayout;
+        }
+    }
 
     private static void AddElement(
         UiElement parent,
@@ -244,10 +252,11 @@ public static class MarkupDocument
         IMarkupControlState? controlState,
         Func<KeyChord, string>? describeKey,
         IMarkupTextureService? textures, MarkupRecentColors recentColors,
+        List<string> warnings,
         UiFlexBox? flex = null)
     {
         int firstChild = parent.Children.Count;
-        if (flex is null) MarkupFlexAttributes.RejectItem(el);
+        if (flex is null) MarkupFlexAttributes.RejectItem(el, warnings);
         void BindColorSource(string? expression, MarkupBindingSource model, Action<Vector4> setValue,
             Action<Func<Vector4>> setSource)
         {
@@ -266,16 +275,17 @@ public static class MarkupDocument
             (expression, setValue, setSource) => BindColorSource(expression, binding, setValue, setSource),
             controlState,
             (container, child) => AddElement(
-                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey, textures, recentColors),
+                container, child, binding, resolve, datFont, icons, themedPanel, themes, controlState, describeKey, textures, recentColors,
+                warnings),
             describeKey, textures, recentColors);
         switch (el.Name.LocalName)
         {
             case "group":
                 UiFlexBox? groupFlex = null;
                 UiPanel group;
-                var (scrollX, scrollY) = MarkupFlexAttributes.Scroll(el);
+                var (scrollX, scrollY) = MarkupFlexAttributes.Scroll(el, warnings);
                 bool scrolls = scrollX || scrollY;
-                if (MarkupFlexAttributes.IsContainer(el))
+                if (MarkupFlexAttributes.IsContainer(el, warnings))
                 {
                     var flexGroup = new UiFlexGroup();
                     MarkupFlexAttributes.ReadContainer(el, flexGroup.Flex.Node);
@@ -285,7 +295,7 @@ public static class MarkupDocument
                 }
                 else
                 {
-                    MarkupFlexAttributes.RejectContainer(el);
+                    MarkupFlexAttributes.RejectContainer(el, warnings);
                     group = scrolls ? new UiScrollPanel(scrollX, scrollY, resolve) : new UiPanel();
                 }
                 if (themedPanel is not null && group is IUiScrollHost { ScrollArea: { } groupScroll })
@@ -315,7 +325,7 @@ public static class MarkupDocument
                 parent.AddChild(group);
                 foreach (XElement child in el.Elements())
                     AddElement(group, child, binding, resolve, datFont, icons, themedPanel, themes,
-                        controlState, describeKey, textures, recentColors, groupFlex);
+                        controlState, describeKey, textures, recentColors, warnings, groupFlex);
                 break;
 
             case "meter":
@@ -925,7 +935,7 @@ public static class MarkupDocument
                     new MarkupRepeat.BuildArgs(resolve, datFont, icons, themedPanel, themes, controlState,
                         describeKey, textures, recentColors),
                     (container, child, source, state, box) => AddElement(container, child, source, resolve, datFont,
-                        icons, themedPanel, themes, state, describeKey, textures, recentColors, box));
+                        icons, themedPanel, themes, state, describeKey, textures, recentColors, warnings, box));
                 break;
 
             case "contextmenu":

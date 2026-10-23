@@ -4239,6 +4239,8 @@ public sealed class RetailUiRuntime : IDisposable
                     textures: markupTextures,
                     sharedControlState: _controlState.Shared);
                 UiNineSlicePanel element = window.Frame;
+                foreach (string warning in window.Warnings)
+                    Console.WriteLine($"[UI] plugin UI panel '{panel.MarkupPath}': {warning}");
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
                 {

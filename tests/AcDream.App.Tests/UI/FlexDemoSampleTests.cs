@@ -111,7 +111,7 @@ public sealed class FlexDemoSampleTests
     }
 
     [Fact]
-    public void The_settings_window_sizes_itself_and_grows_with_its_summary()
+    public void The_settings_window_sizes_itself_and_cuts_a_long_summary_short()
     {
         var settings = new Settings();
         var (root, window) = Mount("settings.xml", settings);
@@ -121,8 +121,10 @@ public sealed class FlexDemoSampleTests
         settings.Summary = "Mage on Asheron: rebuff on, announcements off, and a much longer line besides";
         for (int i = 0; i < 3; i++) { root.Tick(0, 0); ThemeDrawCapture.Draw(root); }
 
-        Assert.True(window.Frame.Width > width);
+        Assert.Equal(width, window.Frame.Width);
         AssertInside(window.ContentRoot);
+        UiLabel summary = window.ContentRoot.Children.OfType<UiLabel>().Single();
+        Assert.EndsWith("...", summary.Fitted(settings.Summary));
     }
 
     [Fact]
