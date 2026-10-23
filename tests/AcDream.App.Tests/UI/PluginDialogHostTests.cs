@@ -184,14 +184,44 @@ public sealed class PluginDialogHostTests
     }
 
     [Fact]
-    public void FocusComesBackWhenTheDialogCloses()
+    public void FocusOutsideTheOwnerStaysWhereItIs()
+    {
+        var f = new Fixture();
+        var field = new UiField { Left = 10f, Top = 40f, Width = 150f, Height = 20f };
+        f.Other.AddChild(field);
+        f.Root.SetKeyboardFocus(field);
+        var answers = new List<int>();
+
+        f.Confirm(f.Owner, answers);
+        Assert.Same(field, f.Root.KeyboardFocus);
+        f.Press(Key.Enter);   // the field's Enter, not the dialog's
+        Assert.Empty(answers);
+        Assert.NotNull(f.Host.ShownFor(f.Owner));
+
+        f.ClickAt(f.OwnerField);   // a press on the blocked owner hands the dialog the focus
+        Assert.Same(f.Host.ShownFor(f.Owner), f.Root.KeyboardFocus);
+        f.Press(Key.Enter);
+        Assert.Equal([0], answers);
+    }
+
+    [Fact]
+    public void AnOwnerlessDialogTakesFocusOnlyWhenNothingHasIt()
     {
         var f = new Fixture();
         f.Root.SetKeyboardFocus(f.OtherField);
-        f.Confirm(f.Owner, []);
-        f.Press(Key.Enter);
+        f.Confirm(null, []);
         Assert.Same(f.OtherField, f.Root.KeyboardFocus);
 
+        f.Host.ShownFor(null)!.Chosen!(0);
+        f.Root.SetKeyboardFocus(null);
+        f.Confirm(null, []);
+        Assert.Same(f.Host.ShownFor(null), f.Root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void FocusComesBackWhenTheDialogCloses()
+    {
+        var f = new Fixture();
         f.Root.SetKeyboardFocus(f.OwnerField);
         f.Confirm(f.Owner, []);
         Assert.NotSame(f.OwnerField, f.Root.KeyboardFocus);
@@ -441,7 +471,7 @@ public sealed class PluginDialogHostTests
     {
         var f = new Fixture();
         var field = new UiField { Left = 10f, Top = 40f, Width = 150f, Height = 40f, OneLine = false }; // takes Enter's CR as a newline
-        f.Other.AddChild(field);
+        f.Owner.AddChild(field);
         f.Root.SetKeyboardFocus(field);
         f.Confirm(f.Owner, []);
 
@@ -471,7 +501,7 @@ public sealed class PluginDialogHostTests
     {
         var f = new Fixture();
         var thrower = new ThrowingBlur { Left = 10f, Top = 40f, Width = 20f, Height = 20f, Throw = true };
-        f.Other.AddChild(thrower);
+        f.Owner.AddChild(thrower);
         f.Root.SetKeyboardFocus(thrower);
         var answers = new List<int>();
 
@@ -491,7 +521,7 @@ public sealed class PluginDialogHostTests
     {
         var f = new Fixture();
         var thrower = new ThrowingBlur { Left = 10f, Top = 40f, Width = 20f, Height = 20f };
-        f.Other.AddChild(thrower);
+        f.Owner.AddChild(thrower);
         var first = new List<int>();
         var second = new List<int>();
         f.Confirm(f.Owner, first);

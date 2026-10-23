@@ -161,11 +161,14 @@ public interface IUiRegistry
     /// blocks only <see cref="PluginDialog.OwnerView"/>, which draws dimmed
     /// and ignores presses until the dialog is answered, while every other
     /// window, chat and the game work as usual. The dialog takes the keyboard
-    /// focus when it opens; while it has it, Enter, keypad Enter and Escape
-    /// answer it and every other key still goes to the game. Focus goes back
-    /// where it was when the dialog closes, unless the player moved it in the
-    /// meantime. Several dialogs for the same owner queue and show one at a
-    /// time. Call it from the thread that calls the plugin's tick.
+    /// focus when it opens if nothing else has it or the focus was in the
+    /// owner window; focus elsewhere, such as chat the player is typing in,
+    /// stays put, and a press on the blocked owner hands the dialog the focus.
+    /// While it has it, Enter, keypad Enter and Escape answer it and every
+    /// other key still goes to the game. Focus it took goes back where it was
+    /// when the dialog closes, unless the player moved it in the meantime.
+    /// Several dialogs for the same owner queue and show one at a time. Call
+    /// it from the thread that calls the plugin's tick.
     /// </summary>
     /// <param name="dialog">The dialog's title, message, buttons and owner window.</param>
     /// <param name="onResult">
