@@ -74,6 +74,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
     private readonly ShortcutStore? _shortcuts;
     private readonly UiShortcutDigitGraphics? _shortcutDigits;
     private readonly CombatState? _combat;
+    private readonly Action? _showWindow;
     private bool _disposed;
 
     private readonly record struct PendingListPlacement(
@@ -110,7 +111,8 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         ShortcutStore? shortcuts,
         UiShortcutDigitGraphics? shortcutDigits,
         CombatState? combat,
-        Func<ClientObject, string> resolveAppropriateName)
+        Func<ClientObject, string> resolveAppropriateName,
+        Action? showWindow)
     {
         ArgumentNullException.ThrowIfNull(resolveAppropriateName);
         _objects    = objects;
@@ -118,6 +120,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         _shortcuts  = shortcuts;
         _shortcutDigits = shortcutDigits;
         _combat     = combat;
+        _showWindow = showWindow;
         _playerGuid = playerGuid;
         _iconIds    = iconIds;
         _dragIconIds = dragIconIds;
@@ -231,6 +234,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             _itemInteraction.PendingBackpackPlacementRequested += OnPendingBackpackPlacementRequested;
             _itemInteraction.PendingBackpackPlacementCancelled += OnPendingBackpackPlacementCancelled;
             _itemInteraction.PendingBackpackPlacementResolved += OnPendingBackpackPlacementResolved;
+            _itemInteraction.PolicyActionRequested += OnPolicyActionRequested;
         }
 
         Populate();
@@ -282,7 +286,10 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         Spellbook? burdenSpellbook = null,
         ShortcutStore? shortcuts = null,
         UiShortcutDigitGraphics? shortcutDigits = null,
-        CombatState? combat = null)
+        CombatState? combat = null,
+        /// <summary>Shows the inventory window; a pack the character carries
+        /// that is used from anywhere opens in it.</summary>
+        Action? showWindow = null)
         => new InventoryController(layout, objects, playerGuid, iconIds, dragIconIds, strength, selection,
                                    ownerName, datFont,
                                    contentsEmptySprite, sideBagEmptySprite, mainPackEmptySprite,
@@ -291,7 +298,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
                                    notifyMergeAttempt, itemInteraction,
                                    onClose, stackSplitQuantity, burdenSpellbook,
                                    shortcuts, shortcutDigits, combat,
-                                   resolveAppropriateName);
+                                   resolveAppropriateName, showWindow);
 
     private void OnObjectChanged(ClientObject o)
     {
@@ -1239,6 +1246,35 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         Populate();
     }
 
+    private void OnPolicyActionRequested(ItemPolicyAction action)
+    {
+        if (action.Kind == ItemPolicyActionKind.OpenContainedContainer)
+            OpenContainedContainer(action.ObjectId);
+    }
+
+    /// <summary>
+    /// A pack the character carries was used from anywhere (a hotbar
+    /// shortcut, a double-click): the window shows and opens on it, the main
+    /// pack when it is the character. Nothing goes to the server from here;
+    /// a side pack's use request went out with the use itself.
+    /// </summary>
+    public void OpenContainedContainer(uint guid)
+    {
+        if (_disposed || guid == 0 || _objects.Get(guid) is not { } item)
+            return;
+        uint player = _playerGuid();
+        bool owned = guid == player || _objects.IsOwnedByObject(guid, player);
+        if (!owned || !IsBag(item))
+            return;
+
+        _showWindow?.Invoke();
+        if (guid == EffectiveOpen()) { ApplyIndicators(); return; }
+
+        _contentsGrid?.Scroll.SetScrollY(0);
+        _openContainer = guid;
+        Populate();
+    }
+
     private void ApplyIndicators()
     {
         SetIndicators(_contentsGrid);
@@ -1372,6 +1408,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             _itemInteraction.PendingBackpackPlacementRequested -= OnPendingBackpackPlacementRequested;
             _itemInteraction.PendingBackpackPlacementCancelled -= OnPendingBackpackPlacementCancelled;
             _itemInteraction.PendingBackpackPlacementResolved -= OnPendingBackpackPlacementResolved;
+            _itemInteraction.PolicyActionRequested -= OnPolicyActionRequested;
         }
     }
 }

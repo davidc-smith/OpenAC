@@ -841,6 +841,71 @@ public sealed class ItemInteractionControllerTests
         Assert.Equal(new[] { 0x50000A04u }, h.Uses);
     }
 
+    // The main pack is the character itself, and the character is not a
+    // thing the server can be asked to use. Using it (a hotbar shortcut made by
+    // dragging the character) only opens the main pack in the inventory window;
+    // a use request for it is never answered on some servers, and the busy
+    // count it took then refused every later use until the next login.
+    private static void MakeThePlayerAPack(Harness h)
+        => h.Objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = Player,
+            Name = "Player",
+            Type = ItemType.Creature,
+            PublicWeenieBitfield = (uint)(PublicWeenieFlags.Player | PublicWeenieFlags.Stuck),
+            ItemsCapacity = 102,
+            ContainersCapacity = 7,
+            Useability = ItemUseability.No,
+        });
+
+    [Fact]
+    public void UsingThePlayer_opensTheMainPackWithoutAUseRequest()
+    {
+        var h = new Harness();
+        MakeThePlayerAPack(h);
+        var actions = new List<ItemPolicyAction>();
+        h.Controller.PolicyActionRequested += actions.Add;
+
+        Assert.True(h.Controller.ActivateItem(Player));
+
+        Assert.Empty(h.Uses);
+        Assert.Equal(0, h.Controller.BusyCount);
+        Assert.True(h.Controller.CanMakeInventoryRequest);
+        Assert.Equal(
+            [new ItemPolicyAction(ItemPolicyActionKind.OpenContainedContainer, Player)],
+            actions);
+    }
+
+    [Fact]
+    public void UsingThePlayer_onTheWalkThenUseRoute_takesNoReservation()
+    {
+        var requested = new List<uint>();
+        var h = new Harness(requestUse: (id, _) => requested.Add(id));
+        MakeThePlayerAPack(h);
+
+        h.Controller.ActivateItem(Player);
+
+        Assert.Empty(requested);
+        Assert.Equal(0, h.Controller.BusyCount);
+        Assert.True(h.Controller.CanMakeInventoryRequest);
+    }
+
+    [Fact]
+    public void UsingACarriedPack_sendsOneUseAndOpensThePackInTheInventory()
+    {
+        var h = new Harness();
+        var actions = new List<ItemPolicyAction>();
+        h.Controller.PolicyActionRequested += actions.Add;
+
+        Assert.True(h.Controller.ActivateItem(Pack));
+
+        Assert.Equal(new[] { Pack }, h.Uses);
+        Assert.Equal(1, h.Controller.BusyCount);
+        Assert.Equal(
+            [new ItemPolicyAction(ItemPolicyActionKind.OpenContainedContainer, Pack)],
+            actions);
+    }
+
     [Fact]
     public void EquippableItemWithFreeSlot_sendsGetAndWieldAndWaitsForServer()
     {

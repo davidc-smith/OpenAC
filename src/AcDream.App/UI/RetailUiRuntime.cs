@@ -4340,7 +4340,12 @@ public sealed class RetailUiRuntime : IDisposable
             b.Spellbook,
             _bindings.Toolbar.Shortcuts,
             LoadShortcutDigitGraphics(),
-            _bindings.Toolbar.Combat);
+            _bindings.Toolbar.Combat,
+            showWindow: () =>
+            {
+                if (!_panelUi.IsPanelVisible(RetailPanelCatalog.Inventory))
+                    _panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
+            });
         InventoryPanelController = inventory;
         PaperdollController paperdoll = PaperdollController.Bind(
             layout, b.Objects, b.PlayerGuid, b.ResolveIcon, b.Selection, b.ItemInteraction,
