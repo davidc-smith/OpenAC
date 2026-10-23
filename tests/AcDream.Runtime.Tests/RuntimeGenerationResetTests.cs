@@ -235,6 +235,21 @@ public sealed class RuntimeGenerationResetTests
         Assert.Equal(0, runtime.Allegiance.Snapshot.RecordCount);
     }
 
+    [Fact]
+    public void OpenHousePurchaseClosesAtGenerationReset()
+    {
+        using var runtime = Create();
+        runtime.PlayerIdentity.ServerGuid = 0x50000001u;
+        runtime.HousePurchaseOwner.ApplyProfile(
+            Gameplay.RuntimeHousePurchaseWiringTests.Profile(0x70000100u));
+        Assert.True(runtime.HousePurchase.Snapshot.IsOpen);
+
+        runtime.ResetGeneration(
+            new RuntimeGenerationToken(3), new RecordingResetHost(runtime));
+
+        Assert.False(runtime.HousePurchase.Snapshot.IsOpen);
+    }
+
     private static GameRuntime Create()
     {
         var operations = new Operations();

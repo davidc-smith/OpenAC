@@ -1248,6 +1248,7 @@ internal sealed class HeadlessSessionHost : IDisposable
                 Fellowship: Runtime.FellowshipOwner,
                 Allegiance: Runtime.AllegianceOwner,
                 House: Runtime.HouseOwner,
+                HousePurchase: Runtime.HousePurchaseOwner,
                 Contracts: Runtime.ContractsOwner,
                 PlayerGuid: () => Runtime.PlayerIdentity.ServerGuid,
                 OnLocalPlayerDeath:
