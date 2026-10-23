@@ -5,7 +5,7 @@ namespace AcDream.Core.Net;
 
 /// <summary>
 /// The chat lines retail prints, in green, for a 0x0257 guest list reply: a
-/// "Guests:" heading, then one guest per line indented by a space, with "*"
+/// "Guests:" heading, then one guest per line indented by a space, with " *"
 /// after anyone who may also use storage, or "None" when the list is empty.
 /// Both "@house guest list" and "@house storage list" ask for the same reply.
 /// </summary>
@@ -14,7 +14,7 @@ public static class HouseGuestListText
     public const string Heading = "Guests:";
     public const string Indent = " ";
     public const string Empty = Indent + "None";
-    public const string StorageMarker = "*";
+    public const string StorageMarker = " *";
 
     public static IReadOnlyList<string> Lines(GameEvents.HouseAccess access)
     {
