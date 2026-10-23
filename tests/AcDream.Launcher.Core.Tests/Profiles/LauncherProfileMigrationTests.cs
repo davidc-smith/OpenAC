@@ -177,6 +177,22 @@ public sealed class LauncherProfileMigrationTests : IDisposable
     }
 
     [Fact]
+    public void TheSharedUserListFindsAServersAccountWhateverTheCaseOfItsName()
+    {
+        const string json = """
+            {"version":1,
+             "servers":[{"name":"one","host":"h","port":9000,"accounts":[{"account":"fefe","password":"stale","characters":[{"name":"Hero","plugins":[],"loginCommands":[]}]}]}],
+             "users":[{"account":"Fefe","password":"pb"}]}
+            """;
+
+        LauncherProfileStore store = LoadVersion1(json);
+
+        AccountProfile account = Assert.Single(store.Document.Servers.Single().Accounts);
+        Assert.Equal("Fefe", account.Account);
+        Assert.Equal("Hero", Assert.Single(account.Characters).Name);
+    }
+
+    [Fact]
     public void TheOldFileIsKeptByteForByteAndTheNewOneWrittenOnce()
     {
         LauncherProfileStore store = LoadVersion1();

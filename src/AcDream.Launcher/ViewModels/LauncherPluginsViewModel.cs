@@ -1684,9 +1684,11 @@ public sealed class LauncherPluginsViewModel : ObservableObject, IDisposable
         {
             foreach (PluginCharacterOption option in accounts)
             {
-                LauncherAccountSnapshot? account = snapshots.FirstOrDefault(candidate =>
-                    string.Equals(candidate.ServerName, option.ServerName, StringComparison.Ordinal)
-                    && string.Equals(candidate.AccountName, option.AccountName, StringComparison.Ordinal));
+                LauncherAccountSnapshot? account = AccountNames.Find(
+                    snapshots.Where(candidate =>
+                        string.Equals(candidate.ServerName, option.ServerName, StringComparison.Ordinal)),
+                    candidate => candidate.AccountName,
+                    option.AccountName);
                 if (account is null || account.Plugins.Contains(pluginId, StringComparer.OrdinalIgnoreCase))
                 {
                     continue;

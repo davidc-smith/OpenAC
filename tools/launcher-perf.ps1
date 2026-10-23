@@ -12,20 +12,26 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $control = Join-Path $PSScriptRoot 'launcher-control.ps1'
-if (@($Accounts | Select-Object -Unique).Count -ne $Accounts.Count) { throw 'Accounts must be unique.' }
+# Account names are one account whatever their case, as the server treats them; server names stay exact.
+function Test-SameAccount([string]$A, [string]$B) { [string]::Equals($A, $B, [StringComparison]::OrdinalIgnoreCase) }
+function Test-SelectedAccount([string]$Name) { @($Accounts | Where-Object { Test-SameAccount $_ $Name }).Count -gt 0 }
+if ([Collections.Generic.HashSet[string]]::new([string[]]$Accounts, [StringComparer]::OrdinalIgnoreCase).Count -ne $Accounts.Count) { throw 'Accounts must be unique.' }
 function Read-State { & $control -Pipe $Pipe }
 function Get-Targets($state) {
     foreach ($accountName in $Accounts) {
-        $matches = @($state.accounts | Where-Object { $_.server -ceq $Server -and $_.account -ceq $accountName })
-        if ($matches.Count -ne 1) { throw "Saved account selection not found: $accountName" }
+        $matches = @($state.accounts | Where-Object { $_.server -ceq $Server -and (Test-SameAccount $_.account $accountName) })
+        if ($matches.Count -eq 0) { throw "Saved account selection not found: $accountName" }
+        # A file may hold two spellings of one account: the exact one, or else the first saved.
+        $exact = @($matches | Where-Object { $_.account -ceq $accountName })
+        if ($exact.Count -gt 0) { $matches = $exact }
         if ($matches[0].mode -ne 'Headless' -or -not $matches[0].character) { throw "Select a headless character for $accountName first." }
         $matches[0]
     }
 }
 function Get-Active($state) {
-    $activeSessions = @($state.sessions | Where-Object { $_.server -ceq $Server -and $_.account -cin $Accounts -and $_.active })
+    $activeSessions = @($state.sessions | Where-Object { $_.server -ceq $Server -and $_.active -and (Test-SelectedAccount $_.account) })
     foreach ($session in $activeSessions) {
-        $selection = $targets | Where-Object account -CEQ $session.account
+        $selection = $targets | Where-Object { Test-SameAccount $_.account $session.account } | Select-Object -First 1
         if ($session.mode -ne 'Headless' -or $session.character -cne $selection.character) {
             throw "Active session differs from the saved selection for $($session.account)."
         }

@@ -171,7 +171,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         lock (_gate)
         {
             ThrowIfDisposed();
-            var result = new Dictionary<(string, string), LauncherCapability>();
+            var result = new Dictionary<(string, string), LauncherCapability>(AccountNames.KeyComparer);
             foreach (ServerProfile server in _profileStore.Document.Servers)
             foreach (AccountProfile account in server.Accounts)
             {
@@ -200,7 +200,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 && !activity.ExitedGracefully
                 && activity.TerminalAt is not null
                 && string.Equals(activity.ServerName, serverName, StringComparison.Ordinal)
-                && string.Equals(activity.AccountName, accountName, StringComparison.Ordinal))
+                && AccountNames.Same(activity.AccountName, accountName))
             .OrderByDescending(activity => activity.TerminalAt)
             .FirstOrDefault();
         if (ungraceful?.TerminalAt is not { } terminalAt)
@@ -332,7 +332,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
             {
                 bool stillThere = _profileStore.Document.Servers.Any(server =>
                     server.Name == activity.ServerName
-                    && server.Accounts.Any(account => account.Account == activity.AccountName));
+                    && server.Accounts.Any(account => AccountNames.Same(account.Account, activity.AccountName)));
                 if (!stillThere)
                 {
                     throw new LauncherOperationException(
@@ -1126,10 +1126,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         CharacterListStatusEvent roster,
         bool updateStatus = true)
     {
-        if (!string.Equals(
-                roster.AccountName,
-                activity.AccountName,
-                StringComparison.Ordinal))
+        if (!AccountNames.Same(roster.AccountName, activity.AccountName))
         {
             activity.Error =
                 "Ignored a character roster whose account did not match the launched account.";
@@ -1196,10 +1193,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                             candidate.ServerName,
                             server.Name,
                             StringComparison.Ordinal)
-                        && string.Equals(
-                            candidate.AccountName,
-                            account.Account,
-                            StringComparison.Ordinal)
+                        && AccountNames.Same(candidate.AccountName, account.Account)
                         && string.Equals(
                             candidate.CharacterName,
                             character.Name,
@@ -1273,8 +1267,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(accountName);
         ServerProfile server = FindServerLocked(serverName);
-        return server.Accounts.Find(account =>
-                string.Equals(account.Account, accountName, StringComparison.Ordinal))
+        return AccountNames.Find(server.Accounts, account => account.Account, accountName)
             ?? throw new LauncherProfileException(
                 $"No account '{accountName}' on server '{serverName}'.");
     }
@@ -1303,7 +1296,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         _activities.LastOrDefault(activity =>
             activity.IsActive
             && string.Equals(activity.ServerName, serverName, StringComparison.Ordinal)
-            && string.Equals(activity.AccountName, accountName, StringComparison.Ordinal));
+            && AccountNames.Same(activity.AccountName, accountName));
 
     private void EnsureServerIdleLocked(string serverName)
     {
@@ -1334,7 +1327,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 activity.IsActive
                 && activity.Kind == LauncherActivityKind.Play
                 && string.Equals(activity.ServerName, serverName, StringComparison.Ordinal)
-                && string.Equals(activity.AccountName, accountName, StringComparison.Ordinal)
+                && AccountNames.Same(activity.AccountName, accountName)
                 && string.Equals(activity.CharacterName, characterName, StringComparison.Ordinal)))
         {
             throw new LauncherOperationException(
