@@ -106,6 +106,28 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
+    public void Stage_TradeNote_OnlyIfItFitsInWhatIsStillOwed()
+    {
+        Item(1, Pyreal, stack: 45_000);
+        Item(2, 2621u, value: 10_000, type: ItemType.PromissoryNote);
+        Item(3, 2621u, value: 5_000, type: ItemType.PromissoryNote);
+        _state.ApplyProfile(Profile());
+        _state.Stage(HousePurchaseTab.Buy, 1);
+
+        Assert.Equal(HouseStageResult.NoteTooLarge, _state.Stage(HousePurchaseTab.Buy, 2));
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 3));
+    }
+
+    [Fact]
+    public void Stage_AStackMayRunOverWhatIsOwed()
+    {
+        Item(1, Pyreal, stack: 60_000);
+        _state.ApplyProfile(Profile());
+
+        Assert.Equal(HouseStageResult.Staged, _state.Stage(HousePurchaseTab.Buy, 1));
+    }
+
+    [Fact]
     public void Stage_RefusesTheWrongClass()
     {
         Item(1, 1234u);

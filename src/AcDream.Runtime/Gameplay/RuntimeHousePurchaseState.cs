@@ -22,6 +22,7 @@ public enum HouseStageResult
     AlreadyStaged,
     NotRequired,
     AlreadyCovered,
+    NoteTooLarge,
 }
 
 public readonly record struct RuntimeHousePurchaseSnapshot(
@@ -118,8 +119,13 @@ public sealed class RuntimeHousePurchaseState
             int line = LineIndex(lines, item);
             if (line < 0)
                 return HouseStageResult.NotRequired;
-            if (lines[line].Paid + StagedAmountLocked(tab, line) >= lines[line].Num)
+            int owed = lines[line].Num - lines[line].Paid - StagedAmountLocked(tab, line);
+            if (owed <= 0)
                 return HouseStageResult.AlreadyCovered;
+            // A stack may run over (the server takes only what it needs), but
+            // a note can't be split, so it must fit in what is still owed.
+            if (IsTradeNote(item) && item.Value > owed)
+                return HouseStageResult.NoteTooLarge;
 
             staged.Add(itemGuid);
             _revision++;

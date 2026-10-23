@@ -58,6 +58,7 @@ internal static class HousePurchaseText
         HouseStageResult.AlreadyStaged => "That item is already offered.",
         HouseStageResult.NotRequired => "That item is not needed here.",
         HouseStageResult.AlreadyCovered => "You have already offered enough of that.",
+        HouseStageResult.NoteTooLarge => "That note is worth more than is owed.",
         _ => string.Empty,
     };
 
