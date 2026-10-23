@@ -511,6 +511,14 @@ internal sealed class DeferredSelectionUiAuthority
         return target?.PickAtCursor(includeSelf);
     }
 
+    public uint? PickAt(float mouseX, float mouseY, bool includeSelf)
+    {
+        SelectionInteractionController? target;
+        lock (_gate)
+            target = !_deactivated ? _interactions : null;
+        return target?.PickAt(mouseX, mouseY, includeSelf);
+    }
+
     public void SendUse(uint guid)
     {
         SelectionInteractionController? target;

@@ -250,6 +250,12 @@ public sealed record WorldTooltipRuntimeBindings(
     Func<uint, string?> ResolveName,
     Func<bool> Enabled);
 
+/// <summary>What a drag started on the world needs: the object at a screen
+/// point (the player included) and whether the player is out of combat.</summary>
+public sealed record WorldDragRuntimeBindings(
+    Func<float, float, uint?> ObjectAt,
+    Func<bool> OutOfCombat);
+
 public sealed record ConfirmationRuntimeBindings(
     Action<uint, uint, bool> SendResponse);
 
@@ -340,7 +346,8 @@ public sealed record RetailUiRuntimeBindings(
     BookRuntimeBindings? Book = null,
     Func<IReadOnlyList<PluginWorldLabel>>? WorldLabels = null,
     Func<uint, AcDream.App.Interaction.WorldLabelAnchor?>? WorldLabelAnchor = null,
-    PluginCanvasHostServices? PluginCanvases = null);
+    PluginCanvasHostServices? PluginCanvases = null,
+    WorldDragRuntimeBindings? WorldDrag = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -4344,6 +4351,16 @@ public sealed class RetailUiRuntime : IDisposable
         Host.WindowManager.AttachController(
             WindowNames.Inventory,
             new RetainedPanelControllerGroup(inventory, paperdoll));
+
+        if (_bindings.WorldDrag is { } worldDrag)
+        {
+            Host.Root.WorldDragRequested = (x, y) => WorldDrag.Build(
+                worldDrag.ObjectAt(x, y) ?? 0u,
+                b.PlayerGuid(),
+                worldDrag.OutOfCombat(),
+                b.ResolveIcon,
+                b.ResolveDragIcon);
+        }
 
         PaperdollViewportWidget = layout.FindElement(0x100001D5u) as UiViewport;
         InventoryFrame = (UiNineSlicePanel)handle.OuterFrame;

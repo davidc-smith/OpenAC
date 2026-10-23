@@ -1058,6 +1058,9 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                         || d.Character.LocalPlayer.Properties.GetBool(
                             (uint)AcDream.Core.Properties.PropertyBool.IsPsr)),
                 IsGameplayDisplay: () => d.Settings.IsGameplayDisplay,
+                WorldDrag: new WorldDragRuntimeBindings(
+                    (x, y) => late.Selection.PickAt(x, y, includeSelf: true),
+                    () => d.Actions.Combat.CurrentMode == CombatMode.NonCombat),
                 PluginCanvases: new PluginCanvasHostServices(
                     d.GpuDevice,
                     d.GpuFrameSource,
