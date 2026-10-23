@@ -32,6 +32,17 @@ public sealed class RuntimeHousePurchaseRangeQueryTests
     }
 
     [Fact]
+    public void BeyondTheUseRadius_ButWithinNineMetres_StaysOpen()
+    {
+        using GameRuntime runtime = Opened(out RuntimeEntityRecord player, out _);
+        SetPosition(player, Landblock, 110f, 100f);
+
+        RuntimeHousePurchaseRangeQuery.EnforceRange(runtime);
+
+        Assert.True(runtime.HousePurchase.Snapshot.IsOpen);
+    }
+
+    [Fact]
     public void WalkingAway_Closes()
     {
         using GameRuntime runtime = Opened(out RuntimeEntityRecord player, out _);

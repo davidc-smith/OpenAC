@@ -32,6 +32,8 @@ public sealed class HousePurchaseUiControllerTests
         public bool Visible;
         public List<string> Reports { get; } = [];
         public List<string> Sent { get; } = [];
+        public List<string> Questions { get; } = [];
+        public Action? Yes;
 
         public Harness()
         {
@@ -62,6 +64,7 @@ public sealed class HousePurchaseUiControllerTests
                 Objects: Objects,
                 Stage: State.Stage,
                 Unstage: State.Unstage,
+                ClearStaged: State.ClearStaged,
                 Revalidate: () => State.Revalidate(),
                 Close: State.Close,
                 BuyHouse: (s, items) => Sent.Add($"buy:{s:X8}:{string.Join(",", items)}"),
@@ -69,6 +72,8 @@ public sealed class HousePurchaseUiControllerTests
                 ResolveIcon: (_, icon, _, _, _) => icon,
                 SetWindowVisible: v => Visible = v,
                 Report: Reports.Add,
+                PlayerGuid: () => Player,
+                Confirm: (question, yes) => { Questions.Add(question); Yes = yes; },
                 ResolveAppropriateName: ItemTooltipCaptionNames.Resolve))!;
         }
 
@@ -78,10 +83,10 @@ public sealed class HousePurchaseUiControllerTests
             Objects.MoveItem(id, Player, 0);
         }
 
-        public void Open(uint owner = 0u, bool free = false)
+        public void Open(uint owner = 0u, bool free = false, uint type = 1u)
         {
             State.ApplyProfile(new GameEvents.HouseProfile(
-                Slumlord, 1u, owner, 1u, -1, -1, -1, -1, free, 1u, owner == 0u ? "" : "Sammy",
+                Slumlord, 1u, owner, 1u, -1, -1, -1, -1, free, type, owner == 0u ? "" : "Sammy",
                 [new(50_000, 0, 273u, "Pyreal", "Pyreals")],
                 [new(5_000, 0, 273u, "Pyreal", "Pyreals")]));
             Controller.Tick();
@@ -115,27 +120,28 @@ public sealed class HousePurchaseUiControllerTests
         Assert.True(h.Visible);
         Assert.True(h.BuyPage.Visible);
         Assert.False(h.RentPage.Visible);
-        Assert.Equal("For Sale", Harness.Text(h.BuyOwner));
-        Assert.Contains("0/50,000 Pyreals", Harness.Text(h.BuyText));
+        Assert.Equal("Owner: None", Harness.Text(h.BuyOwner));
+        Assert.Equal("50000 Pyreals", Harness.Text(h.BuyText));
     }
 
     [Fact]
-    public void AnOwnedHouse_OpensOnMaintenance_AndTabsSwitch()
+    public void AProfileArriving_NeverSwitchesTheTab_OnlyAClickDoes()
     {
         using var h = new Harness();
         h.Open(owner: Player);
 
-        Assert.True(h.RentPage.Visible);
-        Assert.False(h.BuyPage.Visible);
-
-        h.BuyTab.OnClick!();
-
         Assert.True(h.BuyPage.Visible);
         Assert.False(h.RentPage.Visible);
+
+        h.RentTab.OnClick!();
+        h.Open();
+
+        Assert.True(h.RentPage.Visible);
+        Assert.False(h.BuyPage.Visible);
     }
 
     [Fact]
-    public void Drop_StagesAndEnablesTheButton_WhichSendsTheStagedGuids()
+    public void Drop_StagesAndEnablesTheButton_WhichSendsTheStagedGuidsAndEmptiesTheStrip()
     {
         using var h = new Harness();
         h.Item(1, 273u, stack: 50_000);
@@ -146,11 +152,66 @@ public sealed class HousePurchaseUiControllerTests
 
         Assert.Equal(1, Harness.Staged(h.BuyList));
         Assert.True(h.BuyButton.Enabled);
-        Assert.Contains("50,000/50,000 Pyreals", Harness.Text(h.BuyText));
+
+        h.BuyButton.OnClick!();
+        Assert.Equal([HousePurchaseText.BuyConfirmation], h.Questions);
+        Assert.Empty(h.Sent);
+
+        h.Yes!();
+        h.Controller.Tick();
+
+        Assert.Equal(["buy:70000100:1"], h.Sent);
+        Assert.Equal(0, Harness.Staged(h.BuyList));
+        Assert.False(h.BuyButton.Enabled);
+    }
+
+    [Fact]
+    public void BuyingAnApartment_AsksNothing()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 50_000);
+        h.Open(type: HousePurchaseText.ApartmentType);
+        h.Drop(h.BuyList, 1);
 
         h.BuyButton.OnClick!();
 
+        Assert.Empty(h.Questions);
         Assert.Equal(["buy:70000100:1"], h.Sent);
+    }
+
+    [Fact]
+    public void Maintenance_AsksOnlyOnSomeoneElsesHouse()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 10);
+        h.Item(2, 273u, stack: 10);
+        h.Open(owner: Player);
+        h.Drop(h.RentList, 1);
+        h.RentButton.OnClick!();
+        Assert.Empty(h.Questions);
+        Assert.Equal(["rent:70000100:1"], h.Sent);
+
+        h.Open(owner: 0x50000042u);
+        h.Drop(h.RentList, 2);
+        h.RentButton.OnClick!();
+
+        Assert.Equal([HousePurchaseText.OthersMaintenanceConfirmation], h.Questions);
+        Assert.Single(h.Sent);
+    }
+
+    [Fact]
+    public void AYesAfterTheWindowClosed_SendsNothing()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 50_000);
+        h.Open();
+        h.Drop(h.BuyList, 1);
+        h.BuyButton.OnClick!();
+
+        h.Close.OnClick!();
+        h.Yes!();
+
+        Assert.Empty(h.Sent);
     }
 
     [Fact]
@@ -163,23 +224,45 @@ public sealed class HousePurchaseUiControllerTests
 
         h.Drop(h.BuyList, 1);
         Assert.False(h.BuyButton.Enabled);
-        Assert.Contains("20,000/50,000 Pyreals", Harness.Text(h.BuyText));
 
         h.Drop(h.BuyList, 2);
         Assert.True(h.BuyButton.Enabled);
     }
 
     [Fact]
-    public void Drop_Refused_IsReportedOnce()
+    public void Drop_Refused_OnlyAnItemNotCarriedIsReported()
     {
         using var h = new Harness();
         h.Item(1, 1234u);
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 2, WeenieClassId = 273u, StackSize = 10 });
         h.Open();
 
         h.Drop(h.BuyList, 1);
+        Assert.Empty(h.Reports);
 
-        Assert.Equal([HousePurchaseText.Refusal(HouseStageResult.NotRequired)], h.Reports);
+        h.Drop(h.BuyList, 2);
+        Assert.Equal(["You can only trade items you are carrying"], h.Reports);
         Assert.Equal(0, Harness.Staged(h.BuyList));
+    }
+
+    [Fact]
+    public void TheText_IsRebuiltOnlyWhenANewProfileArrives()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 10);
+        h.Open(owner: Player);
+        string before = Harness.Text(h.RentText);
+        Assert.Equal("0/5000 Pyreals", before);
+
+        h.Drop(h.RentList, 1);
+        Assert.Equal(before, Harness.Text(h.RentText));
+
+        h.State.ApplyProfile(new GameEvents.HouseProfile(
+            Slumlord, 1u, Player, 1u, -1, -1, -1, -1, false, 1u, "Sammy",
+            [new(50_000, 0, 273u, "Pyreal", "Pyreals")],
+            [new(5_000, 10, 273u, "Pyreal", "Pyreals")]));
+        h.Controller.Tick();
+        Assert.Equal("10/5000 Pyreals", Harness.Text(h.RentText));
     }
 
     [Fact]
@@ -224,19 +307,19 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
-    public void AStagedStackChanging_RefreshesTheRequirementText()
+    public void AStagedStackGrowing_EnablesBuy()
     {
         using var h = new Harness();
         h.Item(1, 273u, stack: 10);
         h.Open();
         h.Drop(h.BuyList, 1);
-        Assert.Contains("10/50,000 Pyreals", Harness.Text(h.BuyText));
+        Assert.False(h.BuyButton.Enabled);
 
-        h.Objects.Get(1)!.StackSize = 25;
+        h.Objects.Get(1)!.StackSize = 50_000;
         h.Objects.NotifyObjectUpdated(1);
         h.Controller.Tick();
 
-        Assert.Contains("25/50,000 Pyreals", Harness.Text(h.BuyText));
+        Assert.True(h.BuyButton.Enabled);
     }
 
     [Fact]

@@ -4931,6 +4931,7 @@ public sealed class RetailUiRuntime : IDisposable
                     Objects: _bindings.Inventory.Objects,
                     Stage: purchase.Stage,
                     Unstage: purchase.Unstage,
+                    ClearStaged: purchase.ClearStaged,
                     Revalidate: () => purchase.Revalidate(),
                     Close: purchase.Close,
                     BuyHouse: (slumlord, items) => _bindings.Options.CommandBus().Publish(
@@ -4944,6 +4945,8 @@ public sealed class RetailUiRuntime : IDisposable
                         else Host.HideWindow(WindowNames.HousePurchase);
                     },
                     Report: _bindings.Options.DisplaySystemMessage,
+                    PlayerGuid: _bindings.Social.LocalPlayerGuid,
+                    Confirm: ConfirmHousePayment,
                     ResolveAppropriateName: ResolveAppropriateItemName,
                     EmptySlotSprite: emptySlotSprite));
         if (controller is null)
@@ -4976,6 +4979,20 @@ public sealed class RetailUiRuntime : IDisposable
         HousePurchaseController = controller;
         Host.WindowManager.AttachController(WindowNames.HousePurchase, controller);
         Console.WriteLine("[UI] retail house purchase window from LayoutDesc 0x2100000E.");
+    }
+
+    private void ConfirmHousePayment(string question, Action onYes)
+    {
+        if (EnsureDialogFactory() is not { } dialogs)
+        {
+            Console.WriteLine("[UI] house purchase: no dialog factory to confirm the payment.");
+            return;
+        }
+        dialogs.MakeDialog(RetailDialogData.Confirmation(question), result =>
+        {
+            if (result.GetBoolean(RetailDialogProperty.ConfirmationResult))
+                onYes();
+        });
     }
 
     private void ConfigureCharacterManagement()
