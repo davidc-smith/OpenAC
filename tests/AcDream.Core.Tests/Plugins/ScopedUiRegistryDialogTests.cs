@@ -17,7 +17,7 @@ public sealed class ScopedUiRegistryDialogTests
         using var scope = new ScopedPluginHost(new StubHost(ui), "acdream.test", "Test");
         var dialog = new PluginDialog("Delete", "Delete the profile?", OwnerView: "main");
 
-        Assert.True(scope.Ui.Confirm(dialog, _ => { }));
+        Assert.NotNull(scope.Ui.Confirm(dialog, _ => { }));
 
         RecordingUiRegistry.Request request = Assert.Single(ui.Requests);
         Assert.Equal("acdream.test", request.Owner.Id);
@@ -31,7 +31,7 @@ public sealed class ScopedUiRegistryDialogTests
             new StubHost(NoOpUiRegistry.Instance), "acdream.test", "Test");
         bool called = false;
 
-        Assert.False(scope.Ui.Confirm(new PluginDialog("T", "M"), _ => called = true));
+        Assert.Null(scope.Ui.Confirm(new PluginDialog("T", "M"), _ => called = true));
         Assert.False(scope.Ui.ShowModal("options", "main"));
         Assert.False(called);
     }
@@ -67,6 +67,22 @@ public sealed class ScopedUiRegistryDialogTests
     }
 
     [Fact]
+    public void ThePluginWithdrawsADialogThroughItsHandle()
+    {
+        var ui = new RecordingUiRegistry();
+        var scope = new ScopedPluginHost(new StubHost(ui), "acdream.test", "Test");
+        var answers = new List<int>();
+        IDisposable handle = scope.Ui.Confirm(new PluginDialog("T", "M", ["Yes", "No", "Later"]), answers.Add)!;
+
+        handle.Dispose();
+        handle.Dispose();
+        scope.Dispose();
+
+        Assert.Equal([2], answers);
+        Assert.Equal(1, Assert.Single(ui.Requests).Handle.DisposeCount);
+    }
+
+    [Fact]
     public void ShowModalReachesTheHostUnderThePluginsOwnName()
     {
         var ui = new RecordingUiRegistry();
@@ -90,7 +106,9 @@ public sealed class ScopedUiRegistryDialogTests
 
         Assert.Throws<ObjectDisposedException>(
             () => registry.Confirm(new PluginDialog("T", "M"), _ => { }));
+        Assert.Throws<ObjectDisposedException>(() => registry.ShowModal("options", "main"));
         Assert.Empty(ui.Requests);
+        Assert.Empty(ui.Modals);
     }
 
     private sealed class RecordingUiRegistry : IScopedUiRegistry

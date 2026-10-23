@@ -1346,11 +1346,12 @@ public Action<string> SetQuickHealKey => text =>
 <hotkey x="8" y="8" w="140" h="20" value="{QuickHealKey}" onchange="{SetQuickHealKey}"/>
 ```
 
-`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order, the
-key by the box's name such as `Keypad5` or by its `PluginKey` name such as
-`Numpad5`) and `ToHotkeyText()` writes it back. `TryParseHotkeyText` returns false for
-an empty string (the player cleared the box) and for keys `PluginKey` has no
-member for, such as F13; the example keeps the current chord for the latter.
+`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order,
+then the key by its `PluginKey` name, such as `Numpad5`) and `ToHotkeyText()`
+writes it back. The box records only keys `PluginKey` has, so its text always
+reads; `TryParseHotkeyText` returns false for an empty string (the player
+cleared the box) and for text that names no `PluginKey`, such as a hand-written
+`F13`.
 Rebinding to the default chord (no key) unbinds the hotkey: the override is
 stored, `IsBound` is false, and the box reads back as `None`. A chord
 that collides with a client binding or another plugin's bound hotkey is still
@@ -1793,7 +1794,7 @@ Without a window, and on a host that predates themes, `Theme` answers
 ## Dialogs
 
 ```csharp
-bool shown = host.Ui.Confirm(
+IDisposable? question = host.Ui.Confirm(
     new PluginDialog(
         "Delete profile",
         $"Delete the profile \"{name}\"? This cannot be undone.",
@@ -1834,18 +1835,28 @@ the player picked.
   centred on the screen and blocks nothing.
 - The callback runs exactly once per dialog, on the thread that calls your
   tick, after the box has gone. Call `Confirm` from that thread too.
+- `Confirm` returns the dialog's handle (from contract `0.1.26-fork.8`;
+  before that it returned `bool`). Dispose it to withdraw a question
+  that has gone stale (the thing it asks about has gone, say): a box still
+  showing closes, one still queued never shows, and the callback gets the
+  last button as if the player had pressed Escape. Once the dialog is
+  answered, disposing the handle does nothing.
 - Several dialogs for the same window wait their turn and show one at a
   time. Dialogs for different windows show together. Dialogs without a window
   share one queue.
-- The box takes the keyboard focus when it opens. While it has the focus,
-  Enter, keypad Enter and Escape are the box's: they answer it and do nothing
-  else (Enter does not open chat, Escape does not reach the game). Every
+- The box takes the keyboard focus when it opens if nothing has it or the
+  focus was in the owner window. Focus anywhere else, such as chat the
+  player is typing in, stays where it is, so a box can't catch keys meant
+  for something else; a click on the blocked owner hands the box the focus.
+  While it has the focus, Enter, keypad Enter and Escape are the box's: they
+  answer it and do nothing else (Enter does not open chat, Escape does not
+  reach the game). Every
   other key goes to the game as usual, so the player can keep moving, and
   game and plugin hotkeys keep working. Holding the answering key down does
   not answer the next dialog in the queue; it has to be pressed again.
-- When the box closes it gives the keyboard focus back to whatever had it
-  before, unless the player has moved the focus somewhere else in the
-  meantime.
+- When a box that took the keyboard focus closes, it gives the focus back
+  to whatever had it before, unless the player has moved the focus
+  somewhere else in the meantime.
 - It looks like the client's own confirmation box, unless the owner window
   uses `theme="plugin"` and the player has picked a plugin theme. Then it is
   drawn in the theme's colours, with a close button in its title bar. The
@@ -1866,10 +1877,10 @@ blocked by (directly, or through other modal windows), it is just
 `ShowPanel`. It returns `false`, and shows nothing, if you have no such
 window.
 
-On a host without a window, and before the interface is up, `Confirm` and
-`ShowModal` return `false` and the callback is never called. `Confirm` also
-returns `false`, without calling back, in the rare case that the box cannot
-be put on screen.
+On a host without a window, and before the interface is up, `Confirm`
+returns `null`, `ShowModal` returns `false`, and the callback is never
+called. `Confirm` also returns `null`, without calling back, in the rare
+case that the box cannot be put on screen.
 
 The `samples/AcDream.Plugins.ControlsDemo` plugin's Dialogs window shows
 message boxes with two, three and four buttons, one without an owner, two

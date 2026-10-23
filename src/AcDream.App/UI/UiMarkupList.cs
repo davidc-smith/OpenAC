@@ -33,6 +33,7 @@ public sealed partial class UiMarkupList : UiElement
             _scratchIsAuto = new bool[count];
             _scratchFixedWidth = new float[count];
             _cachedRowCount = 0;
+            _orderStale = true;
             _hasButtons = value?.Any(static c => c.Kind == UiMarkupListColumnKind.Button) ?? false;
             ClearButtonPointer();
         }
@@ -144,6 +145,7 @@ public sealed partial class UiMarkupList : UiElement
         if (MultiSelect)
         {
             _view.SetIdentity(items.Count);
+            _orderStale = true;
             RefreshSelectedMask(items.Count);
         }
 
@@ -227,7 +229,10 @@ public sealed partial class UiMarkupList : UiElement
         if (row >= 0 && row < visibleRows && index >= 0 && index < items.Count)
         {
             if (MultiSelect)
+            {
                 _view.SetIdentity(items.Count);
+                _orderStale = true;
+            }
             PickRow(index);
         }
         return true;

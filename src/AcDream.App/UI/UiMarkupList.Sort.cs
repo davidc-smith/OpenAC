@@ -19,6 +19,20 @@ public sealed partial class UiMarkupList
     private (int Column, bool Descending)? _hostSort;
     private string?[] _textKeys = Array.Empty<string?>();
     private double[] _numberKeys = Array.Empty<double>();
+    // The cells a number column's keys were parsed from, so an unchanged cell
+    // isn't parsed again; only the first _parsedRows are this column's.
+    private string?[] _numberCells = Array.Empty<string?>();
+    private int _parsedRows;
+
+    // What the view order was last built from; the order is rebuilt only when one of these or a key changes.
+    private bool _orderStale = true;
+    private int _orderColumn;
+    private bool _orderDescending;
+    private int _orderRowCount;
+    private bool _orderTree;
+
+    /// <summary>How many times the row order has been built; for tests.</summary>
+    internal int OrderBuilds { get; private set; }
 
     /// <summary>The sort in force (bound, remembered or none); an unsortable or missing column is none.</summary>
     public (int Column, bool Descending) CurrentSort
@@ -84,54 +98,105 @@ public sealed partial class UiMarkupList
         SortChanged?.Invoke(next.Column, next.Descending);
     }
 
-    /// <summary>Orders the view by the sorted column's keys (the cells, or its sortkeys).</summary>
+    /// <summary>
+    /// Orders the view by the sorted column's keys (the cells, or its
+    /// sortkeys). Runs every frame the rows are read, but builds the order
+    /// again only when the sort, the row count, a key or the tree's shape
+    /// has changed since it was last built.
+    /// </summary>
     private void SortView(IReadOnlyList<UiMarkupListColumn> columns, int rowCount)
     {
         UiMarkupListTreeShape? tree = LoadTree(rowCount);
         (int sorted, bool descending) = CurrentSort;
-        if (sorted < 0)
-        {
-            _view.SetIdentity(rowCount, tree);
+        bool sameSort = !_orderStale && sorted == _orderColumn;
+        bool changed = !sameSort || descending != _orderDescending || rowCount != _orderRowCount
+            || (tree is not null) != _orderTree || tree?.Changed == true;
+        if (sorted >= 0)
+            changed |= LoadSortKeys(columns[sorted], sorted, rowCount, reuseParsed: sameSort);
+        if (!changed)
             return;
-        }
-        if (_textKeys.Length < rowCount)
-            _textKeys = new string?[rowCount];
-        if (_numberKeys.Length < rowCount)
-            _numberKeys = new double[rowCount];
 
-        UiMarkupListColumn column = columns[sorted];
+        _orderStale = false;
+        _orderColumn = sorted;
+        _orderDescending = descending;
+        _orderRowCount = rowCount;
+        _orderTree = tree is not null;
+        OrderBuilds++;
+        tree?.MarkBuilt();
+        if (sorted < 0)
+            _view.SetIdentity(rowCount, tree);
+        else if (UsesNumberKeys(columns[sorted]))
+            _view.SortByNumber(_numberKeys, rowCount, descending, tree);
+        else
+            _view.SortByText(_textKeys, rowCount, descending, tree);
+    }
+
+    private static bool UsesNumberKeys(UiMarkupListColumn column) =>
+        column.SortNumberKeys is not null || column.Sort is UiMarkupListSortKind.Bool or UiMarkupListSortKind.Number;
+
+    /// <summary>Reads the sorted column's keys for this frame; true when any differs from last frame's.</summary>
+    private bool LoadSortKeys(UiMarkupListColumn column, int sorted, int rowCount, bool reuseParsed)
+    {
+        bool changed = false;
+        if (_textKeys.Length < rowCount)
+        {
+            _textKeys = new string?[rowCount];
+            _numberKeys = new double[rowCount];
+            _numberCells = new string?[rowCount];
+            changed = true;
+            reuseParsed = false;
+        }
+
         if (column.SortNumberKeys is { } numbers)
         {
             IReadOnlyList<double> keys = numbers();
             for (int row = 0; row < rowCount; row++)
-                _numberKeys[row] = row < keys.Count ? keys[row] : double.NaN;
-            _view.SortByNumber(_numberKeys, rowCount, descending, tree);
-            return;
+                changed |= SetNumberKey(row, row < keys.Count ? keys[row] : double.NaN);
+            return changed;
         }
         if (column.Sort == UiMarkupListSortKind.Bool)
         {
             IReadOnlyList<bool>? flags = _cachedCheckRows[sorted];
             for (int row = 0; row < rowCount; row++)
-                _numberKeys[row] = flags is not null && row < flags.Count ? (flags[row] ? 1d : 0d) : double.NaN;
-            _view.SortByNumber(_numberKeys, rowCount, descending, tree);
-            return;
+                changed |= SetNumberKey(row, flags is not null && row < flags.Count ? (flags[row] ? 1d : 0d) : double.NaN);
+            return changed;
         }
         IReadOnlyList<string>? cells = column.SortTextKeys?.Invoke() ?? _cachedTextRows[sorted];
         if (column.Sort == UiMarkupListSortKind.Number)
         {
+            int parsed = reuseParsed ? _parsedRows : 0;
+            _parsedRows = rowCount;
             for (int row = 0; row < rowCount; row++)
             {
-                _numberKeys[row] = cells is not null && row < cells.Count
-                    && double.TryParse(cells[row], NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+                string? cell = cells is not null && row < cells.Count ? cells[row] : null;
+                if (row < parsed && string.Equals(cell, _numberCells[row], StringComparison.Ordinal))
+                    continue;
+                _numberCells[row] = cell;
+                changed |= SetNumberKey(row,
+                    double.TryParse(cell, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
                         ? value
-                        : double.NaN;
+                        : double.NaN);
             }
-            _view.SortByNumber(_numberKeys, rowCount, descending, tree);
-            return;
+            return changed;
         }
         for (int row = 0; row < rowCount; row++)
-            _textKeys[row] = cells is not null && row < cells.Count ? cells[row] : null;
-        _view.SortByText(_textKeys, rowCount, descending, tree);
+        {
+            string? cell = cells is not null && row < cells.Count ? cells[row] : null;
+            if (!string.Equals(cell, _textKeys[row], StringComparison.Ordinal))
+            {
+                _textKeys[row] = cell;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private bool SetNumberKey(int row, double key)
+    {
+        if (_numberKeys[row].Equals(key))
+            return false;
+        _numberKeys[row] = key;
+        return true;
     }
 
     /// <summary>▲ (ascending) or ▼ at the right of a sorted header cell.</summary>

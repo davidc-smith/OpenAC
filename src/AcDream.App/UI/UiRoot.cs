@@ -594,17 +594,26 @@ public sealed class UiRoot : UiElement
         blockers.Add(blocker);
         window.ModalBlockCount++;
 
-        if (_activePopup is { } popup && IsWithinSubtree(popup, window))
+        try
         {
-            var dismiss = _activePopupDismiss;
-            _activePopup = null;
-            _activePopupDismiss = null;
-            dismiss?.Invoke();
+            if (_activePopup is { } popup && IsWithinSubtree(popup, window))
+            {
+                var dismiss = _activePopupDismiss;
+                _activePopup = null;
+                _activePopupDismiss = null;
+                dismiss?.Invoke();
+            }
+            if (Captured is { } captured && IsWithinSubtree(captured, window))
+                ReleaseCapture();
+            if (KeyboardFocus is { } focused && IsWithinSubtree(focused, window))
+                SetKeyboardFocus(null);
         }
-        if (Captured is { } captured && IsWithinSubtree(captured, window))
-            ReleaseCapture();
-        if (KeyboardFocus is { } focused && IsWithinSubtree(focused, window))
-            SetKeyboardFocus(null);
+        catch
+        {
+            // A popup's dismiss or a blur handler threw: no handle comes back, so take the block off.
+            Unblock(window, blocker);
+            throw;
+        }
         return new WindowBlock(this, window, blocker);
     }
 

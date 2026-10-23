@@ -29,7 +29,7 @@ public sealed class PluginDialogContractTests
         var owner = new PluginUiOwner("acdream.test", "Test");
         bool called = false;
 
-        Assert.False(((IUiRegistry)registry).Confirm(new PluginDialog("T", "M"), _ => called = true));
+        Assert.Null(((IUiRegistry)registry).Confirm(new PluginDialog("T", "M"), _ => called = true));
         Assert.False(((IUiRegistry)registry).ShowModal("options", "main"));
         Assert.Null(registry.Confirm(owner, new PluginDialog("T", "M"), _ => called = true));
         Assert.False(registry.ShowModal(owner, "options", "main"));
@@ -42,7 +42,7 @@ public sealed class PluginDialogContractTests
         IScopedUiRegistry registry = NoOpUiRegistry.Instance;
         bool called = false;
 
-        Assert.False(((IUiRegistry)registry).Confirm(new PluginDialog("T", "M"), _ => called = true));
+        Assert.Null(((IUiRegistry)registry).Confirm(new PluginDialog("T", "M"), _ => called = true));
         Assert.Null(registry.Confirm(new PluginUiOwner("p", "P"), new PluginDialog("T", "M"), _ => called = true));
         Assert.False(((IUiRegistry)registry).ShowModal("options"));
         Assert.False(called);
