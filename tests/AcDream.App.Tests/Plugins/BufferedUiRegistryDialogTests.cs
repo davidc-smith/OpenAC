@@ -50,7 +50,7 @@ public sealed class BufferedUiRegistryDialogTests
         var f = new Fixture(bind: false);
 
         Assert.Null(f.Registry.Confirm(Owner, new PluginDialog("T", "M"), _ => { }));
-        Assert.False(f.Registry.Confirm(new PluginDialog("T", "M"), _ => { }));
+        Assert.Null(f.Registry.Confirm(new PluginDialog("T", "M"), _ => { }));
     }
 
     [Fact]

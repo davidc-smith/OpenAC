@@ -97,7 +97,7 @@ public sealed class TableBinding
         int[] rows = [.. Picked];
         string what = rows.Length == 1 ? _items[rows[0]].Name : $"{rows.Length} items";
         // The box blocks this window, so the rows can't change before the answer.
-        bool shown = _ui.Confirm(
+        IDisposable? shown = _ui.Confirm(
             new PluginDialog("Remove items", $"Remove {what} from the table?", ["Remove", "Keep"], OwnerView: "table"),
             answer =>
             {
@@ -107,7 +107,7 @@ public sealed class TableBinding
                 Rebuild();
                 Status = $"Removed {what}";
             });
-        if (!shown) Status = "This host has no dialogs";
+        if (shown is null) Status = "This host has no dialogs";
     };
 
     public string Status { get; private set; } = "Click, Ctrl-click or Shift-click rows";

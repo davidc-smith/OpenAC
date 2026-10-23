@@ -538,8 +538,8 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
         bool visible) => SetControlVisible(
             new PluginUiOwner("unscoped", "Plugin"), viewName, controlName, visible);
 
-    public bool Confirm(PluginDialog dialog, Action<int> onResult) =>
-        Confirm(new PluginUiOwner("unscoped", "Plugin"), dialog, onResult) is not null;
+    public IDisposable? Confirm(PluginDialog dialog, Action<int> onResult) =>
+        Confirm(new PluginUiOwner("unscoped", "Plugin"), dialog, onResult);
 
     public bool ShowModal(string viewName, string? ownerView = null) =>
         ShowModal(new PluginUiOwner("unscoped", "Plugin"), viewName, ownerView);
