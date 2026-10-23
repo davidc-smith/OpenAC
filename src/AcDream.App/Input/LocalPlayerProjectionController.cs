@@ -64,8 +64,7 @@ public sealed class LocalPlayerProjectionController
 
     public void Project(
         PlayerMovementController controller,
-        MovementResult movement,
-        bool hidden)
+        MovementResult movement)
     {
         WorldEntity? entity = _runtime.ResolveEntity();
         if (entity is null)
@@ -92,8 +91,7 @@ public sealed class LocalPlayerProjectionController
             return;
 
         _runtime.Rebucket(entity.ServerGuid, currentLandblock);
-        if (hidden
-            || movement.CellId == 0
+        if (movement.CellId == 0
             || !_runtime.IsCurrentVisibleProjection(entity))
         {
             _runtime.SuspendShadow(entity);
