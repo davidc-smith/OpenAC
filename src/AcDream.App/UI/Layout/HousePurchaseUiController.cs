@@ -229,11 +229,22 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
             page.Button.Enabled = CanSubmit(page.Tab, profile, staged.Count);
     }
 
-    private static bool CanSubmit(
+    private bool CanSubmit(
         HousePurchaseTab tab, GameEvents.HouseProfile profile, int stagedCount) =>
         stagedCount > 0
         && !(tab == HousePurchaseTab.Buy && profile.OwnerGuid != 0u)
-        && !(tab == HousePurchaseTab.Rent && profile.MaintenanceFree);
+        && !(tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
+        && (tab != HousePurchaseTab.Buy || BuyCovered(profile));
+
+    // Rent may be part-paid; a purchase needs every line met.
+    private bool BuyCovered(GameEvents.HouseProfile profile)
+    {
+        for (int i = 0; i < profile.Buy.Count; i++)
+            if (profile.Buy[i].Paid + _bindings.Purchase.GetStagedAmount(HousePurchaseTab.Buy, i)
+                < profile.Buy[i].Num)
+                return false;
+        return true;
+    }
 
     private void Submit(HousePurchaseTab tab)
     {

@@ -40,11 +40,9 @@ internal static class HousePurchaseText
         for (int i = 0; i < payments.Count; i++)
         {
             GameEvents.HousePayment payment = payments[i];
-            string line = $"{HousePaymentNames.For(payment)}: "
-                + $"{Number(payment.Paid)} / {Number(payment.Num)}";
             int staged = i < stagedAmounts.Count ? stagedAmounts[i] : 0;
-            if (staged > 0)
-                line += $" (+{Number(staged)} staged)";
+            int count = Math.Min(payment.Paid + staged, payment.Num);
+            string line = $"{Number(count)}/{Number(payment.Num)} {HousePaymentNames.For(payment)}";
             lines.Add(line);
         }
         return lines;

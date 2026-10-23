@@ -116,7 +116,7 @@ public sealed class HousePurchaseUiControllerTests
         Assert.True(h.BuyPage.Visible);
         Assert.False(h.RentPage.Visible);
         Assert.Equal("For Sale", Harness.Text(h.BuyOwner));
-        Assert.Contains("Pyreals: 0 / 50,000", Harness.Text(h.BuyText));
+        Assert.Contains("0/50,000 Pyreals", Harness.Text(h.BuyText));
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class HousePurchaseUiControllerTests
     public void Drop_StagesAndEnablesTheButton_WhichSendsTheStagedGuids()
     {
         using var h = new Harness();
-        h.Item(1, 273u, stack: 20_000);
+        h.Item(1, 273u, stack: 50_000);
         h.Open();
         Assert.False(h.BuyButton.Enabled);
 
@@ -146,11 +146,27 @@ public sealed class HousePurchaseUiControllerTests
 
         Assert.Equal(1, Harness.Staged(h.BuyList));
         Assert.True(h.BuyButton.Enabled);
-        Assert.Contains("(+20,000 staged)", Harness.Text(h.BuyText));
+        Assert.Contains("50,000/50,000 Pyreals", Harness.Text(h.BuyText));
 
         h.BuyButton.OnClick!();
 
         Assert.Equal(["buy:70000100:1"], h.Sent);
+    }
+
+    [Fact]
+    public void Buy_StaysDisabledUntilEveryLineIsCovered()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 20_000);
+        h.Item(2, 273u, stack: 30_000);
+        h.Open();
+
+        h.Drop(h.BuyList, 1);
+        Assert.False(h.BuyButton.Enabled);
+        Assert.Contains("20,000/50,000 Pyreals", Harness.Text(h.BuyText));
+
+        h.Drop(h.BuyList, 2);
+        Assert.True(h.BuyButton.Enabled);
     }
 
     [Fact]
@@ -189,7 +205,7 @@ public sealed class HousePurchaseUiControllerTests
     public void Buttons_DisabledWhenOwnedBuy_AndFreeMaintenance_EvenWithItemsStaged()
     {
         using var h = new Harness();
-        h.Item(1, 273u, stack: 10);
+        h.Item(1, 273u, stack: 50_000);
         h.Open();
         h.Drop(h.BuyList, 1);
         Assert.True(h.BuyButton.Enabled);
@@ -214,13 +230,13 @@ public sealed class HousePurchaseUiControllerTests
         h.Item(1, 273u, stack: 10);
         h.Open();
         h.Drop(h.BuyList, 1);
-        Assert.Contains("(+10 staged)", Harness.Text(h.BuyText));
+        Assert.Contains("10/50,000 Pyreals", Harness.Text(h.BuyText));
 
         h.Objects.Get(1)!.StackSize = 25;
         h.Objects.NotifyObjectUpdated(1);
         h.Controller.Tick();
 
-        Assert.Contains("(+25 staged)", Harness.Text(h.BuyText));
+        Assert.Contains("25/50,000 Pyreals", Harness.Text(h.BuyText));
     }
 
     [Fact]

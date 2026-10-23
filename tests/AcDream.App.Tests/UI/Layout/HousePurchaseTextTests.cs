@@ -24,13 +24,13 @@ public sealed class HousePurchaseTextTests
     }
 
     [Fact]
-    public void RequirementLines_Buy_TypeThenPaymentsWithStaged()
+    public void RequirementLines_Buy_TypeThenPaymentsFilledInByStaged()
     {
         IReadOnlyList<string> lines = HousePurchaseText.RequirementLines(
             Profile(), HousePurchaseTab.Buy, [8_000, 0]);
 
         Assert.Equal(
-            ["Cottage", "Pyreals: 0 / 50,000 (+8,000 staged)", "Bone Totem: 0 / 1"],
+            ["Cottage", "8,000/50,000 Pyreals", "0/1 Bone Totem"],
             lines);
     }
 
@@ -49,7 +49,7 @@ public sealed class HousePurchaseTextTests
     public void RequirementLines_Rent_PaidAmountsOrFree()
     {
         Assert.Equal(
-            ["Villa", "Pyreals: 1,250 / 5,000"],
+            ["Villa", "1,250/5,000 Pyreals"],
             HousePurchaseText.RequirementLines(Profile(type: 2u), HousePurchaseTab.Rent, [0]));
         Assert.Equal(
             ["Mansion", "Maintenance is free this period."],
