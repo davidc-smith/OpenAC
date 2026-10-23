@@ -142,6 +142,19 @@ public sealed class RuntimeHousePurchaseState
         }
     }
 
+    /// <summary>Empties one tab's strip, as sending its payment does.</summary>
+    public void ClearStaged(HousePurchaseTab tab)
+    {
+        lock (_gate)
+        {
+            List<uint> staged = Staged(tab);
+            if (staged.Count == 0)
+                return;
+            staged.Clear();
+            _revision++;
+        }
+    }
+
     /// <summary>Drops staged items that are no longer in the player's
     /// inventory. True when anything was dropped.</summary>
     public bool Revalidate()

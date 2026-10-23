@@ -42,7 +42,7 @@ public sealed class HousePurchaseLayoutInstalledDatTests
         var objects = new ClientObjectTable();
         var state = new RuntimeHousePurchaseState(objects, static () => 0u);
         using HousePurchaseUiController? controller = HousePurchaseUiController.Bind(layout, new(
-            state.View, objects, state.Stage, state.Unstage, () => state.Revalidate(), state.Close,
+            state.View, objects, state.Stage, state.Unstage, state.ClearStaged, () => state.Revalidate(), state.Close,
             static (_, _) => { }, static (_, _) => { }, static (_, _, _, _, _) => 0u,
             static _ => { }, static _ => { }, ItemTooltipCaptionNames.Resolve));
         Assert.NotNull(controller);

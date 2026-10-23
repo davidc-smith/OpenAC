@@ -243,6 +243,22 @@ public sealed class RuntimeHousePurchaseStateTests
     }
 
     [Fact]
+    public void ClearStaged_EmptiesOnlyThatTab()
+    {
+        Item(1, Pyreal, stack: 10);
+        Item(2, Pyreal, stack: 10);
+        _state.ApplyProfile(Profile(owner: Player, buy: [Pay(Pyreal, 50_000)]));
+        _state.Stage(HousePurchaseTab.Rent, 1);
+        _state.ApplyProfile(Profile(owner: 0u));
+        _state.Stage(HousePurchaseTab.Buy, 2);
+
+        _state.ClearStaged(HousePurchaseTab.Buy);
+
+        Assert.Empty(_state.View.GetStaged(HousePurchaseTab.Buy));
+        Assert.Equal([1u], _state.View.GetStaged(HousePurchaseTab.Rent));
+    }
+
+    [Fact]
     public void Unstage_AndClose()
     {
         Item(1, Pyreal, stack: 10);

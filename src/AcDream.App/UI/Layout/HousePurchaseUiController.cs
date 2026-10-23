@@ -37,6 +37,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
         ClientObjectTable Objects,
         Func<HousePurchaseTab, uint, HouseStageResult> Stage,
         Action<HousePurchaseTab, uint> Unstage,
+        Action<HousePurchaseTab> ClearStaged,
         Action Revalidate,
         Action Close,
         Action<uint, IReadOnlyList<uint>> BuyHouse,
@@ -256,6 +257,7 @@ public sealed class HousePurchaseUiController : IRetainedPanelController, IItemL
             _bindings.BuyHouse(profile.SlumlordGuid, staged);
         else
             _bindings.RentHouse(profile.SlumlordGuid, staged);
+        _bindings.ClearStaged(tab);
     }
 
     private static void SetLines(UiText? text, IReadOnlyList<string> lines)

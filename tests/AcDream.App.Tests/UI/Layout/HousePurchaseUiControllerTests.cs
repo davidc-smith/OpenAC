@@ -62,6 +62,7 @@ public sealed class HousePurchaseUiControllerTests
                 Objects: Objects,
                 Stage: State.Stage,
                 Unstage: State.Unstage,
+                ClearStaged: State.ClearStaged,
                 Revalidate: () => State.Revalidate(),
                 Close: State.Close,
                 BuyHouse: (s, items) => Sent.Add($"buy:{s:X8}:{string.Join(",", items)}"),
@@ -135,7 +136,7 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
-    public void Drop_StagesAndEnablesTheButton_WhichSendsTheStagedGuids()
+    public void Drop_StagesAndEnablesTheButton_WhichSendsTheStagedGuidsAndEmptiesTheStrip()
     {
         using var h = new Harness();
         h.Item(1, 273u, stack: 50_000);
@@ -149,8 +150,11 @@ public sealed class HousePurchaseUiControllerTests
         Assert.Contains("50,000/50,000 Pyreals", Harness.Text(h.BuyText));
 
         h.BuyButton.OnClick!();
+        h.Controller.Tick();
 
         Assert.Equal(["buy:70000100:1"], h.Sent);
+        Assert.Equal(0, Harness.Staged(h.BuyList));
+        Assert.False(h.BuyButton.Enabled);
     }
 
     [Fact]

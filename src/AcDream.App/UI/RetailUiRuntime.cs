@@ -4727,6 +4727,7 @@ public sealed class RetailUiRuntime : IDisposable
                     Objects: _bindings.Inventory.Objects,
                     Stage: purchase.Stage,
                     Unstage: purchase.Unstage,
+                    ClearStaged: purchase.ClearStaged,
                     Revalidate: () => purchase.Revalidate(),
                     Close: purchase.Close,
                     BuyHouse: (slumlord, items) => _bindings.Options.CommandBus().Publish(
