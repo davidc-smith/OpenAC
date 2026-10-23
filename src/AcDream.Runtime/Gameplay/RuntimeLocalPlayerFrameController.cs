@@ -17,8 +17,7 @@ public interface IRuntimeLocalPlayerFrameHost
     RetailObjectClockDisposition ObjectClockDisposition { get; }
     void Project(
         PlayerMovementController controller,
-        MovementResult movement,
-        bool hidden);
+        MovementResult movement);
     void SendPreNetwork(
         PlayerMovementController controller,
         MovementResult movement,
@@ -113,7 +112,7 @@ public sealed class RuntimeLocalPlayerFrameController
             bool rejectedHidden = _host.IsHidden;
             MovementResult rejected =
                 controller.CapturePresentationResult();
-            _host.Project(controller, rejected, rejectedHidden);
+            _host.Project(controller, rejected);
             _advancedFrame = new AdvancedFrame(
                 controller,
                 rejected,
@@ -135,7 +134,7 @@ public sealed class RuntimeLocalPlayerFrameController
             controller.SuspendObjectUpdate(deltaSeconds);
             MovementResult paused =
                 controller.CapturePresentationResult();
-            _host.Project(controller, paused, hidden);
+            _host.Project(controller, paused);
             _advancedFrame = new AdvancedFrame(
                 controller,
                 paused,
@@ -154,7 +153,7 @@ public sealed class RuntimeLocalPlayerFrameController
                 _input.Capture(),
                 _host.HandleTargeting);
 
-        _host.Project(controller, movement, hidden);
+        _host.Project(controller, movement);
         _host.SendPreNetwork(controller, movement, hidden);
         _advancedFrame = new AdvancedFrame(
             controller,
@@ -182,7 +181,7 @@ public sealed class RuntimeLocalPlayerFrameController
             MovementResult movement = RefreshSpatialFields(
                 advanced.Movement,
                 controller);
-            _host.Project(controller, movement, hidden);
+            _host.Project(controller, movement);
             _advancedFrame = new AdvancedFrame(
                 controller,
                 movement,
@@ -226,7 +225,7 @@ public sealed class RuntimeLocalPlayerFrameController
 
         MovementResult initial =
             controller.CapturePresentationResult();
-        _host.Project(controller, initial, hidden);
+        _host.Project(controller, initial);
         frame = new RuntimeLocalPlayerPresentationFrame(
             initial,
             hidden,
