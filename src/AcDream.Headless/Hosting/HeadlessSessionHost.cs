@@ -280,6 +280,8 @@ internal sealed class HeadlessSessionHost : IDisposable
                     chargenOptions = ChargenTableReader.Load(content.Dats);
                 runtime.Session.CharacterCreationState.InstallOptions(
                     chargenOptions);
+                runtime.HousePurchaseOwner.InstallTradeNoteDenominations(
+                    content.TradeNotes);
             }
             gameplay.Bind(
                 runtime,
@@ -1248,6 +1250,7 @@ internal sealed class HeadlessSessionHost : IDisposable
                 Fellowship: Runtime.FellowshipOwner,
                 Allegiance: Runtime.AllegianceOwner,
                 House: Runtime.HouseOwner,
+                HousePurchase: Runtime.HousePurchaseOwner,
                 Contracts: Runtime.ContractsOwner,
                 PlayerGuid: () => Runtime.PlayerIdentity.ServerGuid,
                 OnLocalPlayerDeath:

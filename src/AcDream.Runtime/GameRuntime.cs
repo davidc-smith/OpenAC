@@ -132,6 +132,7 @@ internal sealed class GameRuntimeConstructionContext
     public RuntimeJournalState? Journal { get; set; }
     public RuntimeBookState? Book { get; set; }
     public RuntimeHouseState? House { get; set; }
+    public RuntimeHousePurchaseState? HousePurchase { get; set; }
     public RuntimeLocalPlayerMovementState? Movement { get; set; }
     public RuntimeActionState? Actions { get; set; }
     public RuntimeItemInteraction? ItemInteraction { get; set; }
@@ -312,6 +313,9 @@ public sealed class GameRuntime
                 faultInjection);
 
             context.House = new RuntimeHouseState(context.EntityObjects.Objects);
+            context.HousePurchase = new RuntimeHousePurchaseState(
+                context.EntityObjects.Objects,
+                () => context.PlayerIdentity!.ServerGuid);
             Fault(
                 GameRuntimeConstructionPoint.HouseCreated,
                 context,
@@ -390,6 +394,7 @@ public sealed class GameRuntime
                 context.Allegiance,
                 context.Trade,
                 context.House,
+                context.HousePurchase,
                 context.Contracts,
                 context.Journal,
                 context.Book);
@@ -435,6 +440,7 @@ public sealed class GameRuntime
             JournalOwner = context.Journal;
             BookOwner = context.Book;
             HouseOwner = context.House;
+            HousePurchaseOwner = context.HousePurchase;
             MovementOwner = context.Movement;
             ActionOwner = context.Actions;
             ItemInteractionOwner = context.ItemInteraction;
@@ -612,6 +618,7 @@ public sealed class GameRuntime
     public RuntimeBookState BookOwner { get; }
 
     public RuntimeHouseState HouseOwner { get; }
+    public RuntimeHousePurchaseState HousePurchaseOwner { get; }
     public RuntimeActionState ActionOwner { get; }
 
     /// <summary>
@@ -794,6 +801,7 @@ public sealed class GameRuntime
     public IRuntimeAllegianceView Allegiance => AllegianceOwner.View;
 
     public IRuntimeTradeView Trade => TradeOwner.View;
+    public IRuntimeHousePurchaseView HousePurchase => HousePurchaseOwner.View;
     public IRuntimeContractView Contracts => ContractsOwner.View;
     public IRuntimeJournalView Journal => JournalOwner.View;
     public IRuntimeBookView Book => BookOwner.View;
@@ -936,6 +944,7 @@ public sealed class GameRuntime
             {
                 _events.EmitMovement(MovementOwner.Snapshot);
                 RuntimeVendorRangeQuery.EnforceRange(this);
+                RuntimeHousePurchaseRangeQuery.EnforceRange(this);
             },
             ArmedApproachDrive);
         frame.BindMotionArming(LocalPlayerMotion);

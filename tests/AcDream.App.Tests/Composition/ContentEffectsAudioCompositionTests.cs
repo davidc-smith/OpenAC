@@ -19,6 +19,7 @@ using AcDream.Core.Physics;
 using AcDream.Core.Rendering;
 using AcDream.Core.Spells;
 using AcDream.Core.Vfx;
+using AcDream.Runtime;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Physics;
 using AcDream.Runtime.Session;
@@ -84,6 +85,19 @@ public sealed class ContentEffectsAudioCompositionTests
         Assert.Same(mixer, fixture.Factory.LastMixerOptions);
         Assert.Equal(48, result.Audio!.Engine.MixerOptions.EffectiveVoiceCount);
         Assert.Equal(6, result.Audio!.Engine.MixerOptions.EffectiveMaxVoicesPerWave);
+    }
+
+    [Fact]
+    public void TheTradeNoteMapIsInstalledIntoTheRuntimeFromTheOpenedDats()
+    {
+        using var fixture = new Fixture();
+
+        ContentEffectsAudioResult result = fixture.Phase().Compose(
+            fixture.Platform,
+            fixture.Host);
+
+        Assert.Same(fixture.Dependencies.Runtime, fixture.Factory.TradeNoteRuntime);
+        Assert.Same(result.Dats, fixture.Factory.TradeNoteDats);
     }
 
     [Fact]
@@ -432,6 +446,15 @@ public sealed class ContentEffectsAudioCompositionTests
         public void InstallChargenOptions(
             LiveSessionController session,
             ChargenOptions options) { }
+        public void InstallTradeNoteDenominations(
+            GameRuntime runtime,
+            IDatReaderWriter dats)
+        {
+            TradeNoteRuntime = runtime;
+            TradeNoteDats = dats;
+        }
+        public GameRuntime? TradeNoteRuntime { get; private set; }
+        public IDatReaderWriter? TradeNoteDats { get; private set; }
         public IAnimationLoader CreateAnimationLoader(
             IDatReaderWriter dats,
             long maximumEstimatedBytes,

@@ -2284,6 +2284,18 @@ public sealed partial class WorldSession : IDisposable
         SendGameAction(ClientCommandRequests.BuildAbandonHouse(seq));
     }
 
+    public void SendBuyHouse(uint slumlordGuid, IReadOnlyList<uint> itemGuids)
+    {
+        uint seq = NextGameActionSequence();
+        SendGameAction(ClientCommandRequests.BuildBuyHouse(seq, slumlordGuid, itemGuids));
+    }
+
+    public void SendRentHouse(uint slumlordGuid, IReadOnlyList<uint> itemGuids)
+    {
+        uint seq = NextGameActionSequence();
+        SendGameAction(ClientCommandRequests.BuildRentHouse(seq, slumlordGuid, itemGuids));
+    }
+
     public void SendClearConsent()
     {
         uint seq = NextGameActionSequence();

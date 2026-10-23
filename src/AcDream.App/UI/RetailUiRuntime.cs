@@ -179,7 +179,8 @@ public sealed record SocialRuntimeBindings(
     Func<uint, RuntimeCommandResult> AllegianceBreak,
     Func<uint, RuntimeCommandResult> AllegianceKick,
     Func<bool, RuntimeCommandResult> AllegianceSetUpdateSubscription,
-    AcDream.Runtime.Gameplay.IRuntimeTradeView? Trade = null);
+    AcDream.Runtime.Gameplay.IRuntimeTradeView? Trade = null,
+    AcDream.Runtime.Gameplay.RuntimeHousePurchaseState? HousePurchase = null);
 
 public sealed record MapHouseRuntimeBindings(
     Func<AcDream.Core.World.DerethDateTime.Calendar> CurrentCalendar,
@@ -513,6 +514,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountVendor();
         MountSecureTrade();
         MountSalvage();
+        MountHousePurchase();
         MountItemCooldowns();
         if (bindings.Connection is { } connection)
         {
@@ -544,6 +546,7 @@ public sealed class RetailUiRuntime : IDisposable
                     WindowNames.SideVitals,
                     WindowNames.SecureTrade,
                     WindowNames.Salvage,
+                    WindowNames.HousePurchase,
                     WindowNames.PluginShelf,
                 ]);
             _persistence.ResetToDefaults();
@@ -756,6 +759,7 @@ public sealed class RetailUiRuntime : IDisposable
         _chatWindowController?.UpdateUnreadIndicator();
         JumpPowerbarController?.Tick();
         SecureTradeController?.Tick();
+        HousePurchaseController?.Tick();
         SelectedObjectController?.Tick(deltaSeconds);
         ExternalContainerController?.Tick();
         SocialPanelController?.Tick();
@@ -4748,6 +4752,108 @@ public sealed class RetailUiRuntime : IDisposable
             controller.RequestSecureTrade;
         Console.WriteLine(
             "[UI] retail secure trade panel mounted from LayoutDesc 0x2100000D.");
+    }
+
+    public Layout.HousePurchaseUiController? HousePurchaseController { get; private set; }
+
+    private void MountHousePurchase()
+    {
+        if (_bindings.Social.HousePurchase is not { } purchase)
+        {
+            Console.WriteLine("[UI] house purchase: no runtime house purchase state bound.");
+            return;
+        }
+
+        ImportedLayout? layout;
+        uint emptySlotSprite;
+        lock (_bindings.Assets.DatLock)
+        {
+            layout = LayoutImporter.Import(
+                _bindings.Assets.Dats,
+                Layout.HousePurchaseUiController.LayoutId,
+                Layout.HousePurchaseUiController.RootId,
+                _bindings.Assets.ResolveSprite,
+                _bindings.Assets.DefaultFont,
+                _bindings.Assets.ResolveFont);
+            emptySlotSprite = ItemListCellTemplate.ResolveEmptySprite(
+                _bindings.Assets.Dats,
+                Layout.HousePurchaseUiController.LayoutId,
+                Layout.HousePurchaseUiController.BuyItemsListId);
+        }
+        if (layout is null)
+        {
+            Console.WriteLine(
+                "[UI] house purchase: LayoutDesc 0x2100000E root 0x1000008C not found.");
+            return;
+        }
+
+        Layout.HousePurchaseUiController? controller =
+            Layout.HousePurchaseUiController.Bind(
+                layout,
+                new Layout.HousePurchaseUiController.Bindings(
+                    Purchase: purchase.View,
+                    Objects: _bindings.Inventory.Objects,
+                    Stage: purchase.Stage,
+                    Unstage: purchase.Unstage,
+                    ClearStaged: purchase.ClearStaged,
+                    Revalidate: () => purchase.Revalidate(),
+                    Close: purchase.Close,
+                    BuyHouse: (slumlord, items) => _bindings.Options.CommandBus().Publish(
+                        new BuyHouseRuntimeCmd(slumlord, items)),
+                    RentHouse: (slumlord, items) => _bindings.Options.CommandBus().Publish(
+                        new RentHouseRuntimeCmd(slumlord, items)),
+                    ResolveIcon: _bindings.Inventory.ResolveIcon,
+                    SetWindowVisible: visible =>
+                    {
+                        if (visible) Host.ShowWindow(WindowNames.HousePurchase);
+                        else Host.HideWindow(WindowNames.HousePurchase);
+                    },
+                    Report: _bindings.Options.DisplaySystemMessage,
+                    PlayerGuid: _bindings.Social.LocalPlayerGuid,
+                    Confirm: ConfirmHousePayment,
+                    ResolveAppropriateName: ResolveAppropriateItemName,
+                    EmptySlotSprite: emptySlotSprite));
+        if (controller is null)
+        {
+            Console.WriteLine("[UI] house purchase: required authored item lists are missing.");
+            return;
+        }
+
+        UiElement root = layout.Root;
+        RetailWindowFrame.Mount(
+            Host.Root,
+            root,
+            _bindings.Assets.ResolveSprite,
+            new RetailWindowFrame.Options
+            {
+                WindowName = WindowNames.HousePurchase,
+                Chrome = RetailWindowChrome.NineSlice,
+                Left = MathF.Max(0f, (Host.Root.Width - root.Width) * 0.5f),
+                Top = MathF.Max(0f, (Host.Root.Height - root.Height) * 0.5f),
+                ContentWidth = root.Width,
+                ContentHeight = root.Height,
+                MinWidth = root.Width,
+                MinHeight = root.Height,
+                Visible = false,
+                ResizeX = false,
+                ResizeY = false,
+                ConstrainResizeToParent = true,
+            });
+
+        HousePurchaseController = controller;
+        Host.WindowManager.AttachController(WindowNames.HousePurchase, controller);
+        Console.WriteLine("[UI] retail house purchase window from LayoutDesc 0x2100000E.");
+    }
+
+    private void ConfirmHousePayment(string question, Action<bool> answer)
+    {
+        if (EnsureDialogFactory() is not { } dialogs)
+        {
+            Console.WriteLine("[UI] house purchase: no dialog factory to confirm the payment.");
+            return;
+        }
+        dialogs.MakeDialog(RetailDialogData.Confirmation(question), result =>
+            answer(result.GetBoolean(RetailDialogProperty.ConfirmationResult)));
     }
 
     private void ConfigureCharacterManagement()
