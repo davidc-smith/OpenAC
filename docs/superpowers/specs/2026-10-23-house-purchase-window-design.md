@@ -158,6 +158,22 @@ The root is 0x1000008C, the title bar is 0x1000008D, and the close button is
 - Bottom line: "Drag items here to pay", "Fully paid", or "Maintenance is
   free this period", whichever applies.
 
+### Captions to check against retail
+
+The dats and ACE do not give retail's wording. Until the user checks a
+retail client (planned 2026-10-23/24 on their Windows PC), these are
+placeholders. Keep them in one place in the controller so they are easy to
+change:
+
+| Where | Placeholder |
+|---|---|
+| Tab titles / page titles | "Purchase", "Maintenance" |
+| Buttons | "Buy", "Pay" |
+| Unowned house line | "For sale" |
+| Bottom line | "Drag items here to pay", "Fully paid", "Maintenance is free this period" |
+| Staged suffix | "(+N staged)" |
+| Payment line | "Name: paid / num" |
+
 ## Errors
 
 - A profile that fails to parse is logged and ignored.
