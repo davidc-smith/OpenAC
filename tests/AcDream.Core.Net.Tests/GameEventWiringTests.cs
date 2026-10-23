@@ -1979,7 +1979,7 @@ public sealed class GameEventWiringTests
             new[]
             {
                 ("Guests:", RetailLogTextType.Default),
-                (" Alice*", RetailLogTextType.Default),
+                (" Alice *", RetailLogTextType.Default),
             },
             lines);
     }
