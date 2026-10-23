@@ -10,7 +10,18 @@ public sealed class UiMenu : UiElement
 {
     public readonly record struct MenuItem(string Label, object? Payload);
 
-    public IReadOnlyList<MenuItem> Items { get; set; } = System.Array.Empty<MenuItem>();
+    private IReadOnlyList<MenuItem> _items = System.Array.Empty<MenuItem>();
+
+    public IReadOnlyList<MenuItem> Items
+    {
+        get => _items;
+        set
+        {
+            _items = value;
+            // A list replaced while the popup is open refits it now, not at the next opening.
+            if (_open && FitsLongLabels) MeasureItemsFitWidth();
+        }
+    }
 
     /// <summary>Enables a live popup label filter without changing the selected payload.</summary>
     public bool Searchable { get; set; }
@@ -125,6 +136,54 @@ public sealed class UiMenu : UiElement
 
     public bool PopupSizeToContent { get; set; }
 
+    /// <summary>
+    /// Widens the popup to its longest item (never below
+    /// <see cref="ColumnWidth"/> or the button), shifts it left so it stays
+    /// inside its window (or the screen, when it is wider than the window),
+    /// and ends a button label too long for the button in an ellipsis.
+    /// Off for retail dat menus, whose widths are authored.
+    /// </summary>
+    public bool FitsLongLabels { get; set; }
+
+    private float _itemsFitWidth;
+
+    private float RowWidth => FitsLongLabels
+        ? MathF.Max(ColumnWidth, MathF.Max(_itemsFitWidth, Width - 2 * Border - EffectiveScrollbarWidth))
+        : ColumnWidth;
+
+    private void MeasureItemsFitWidth()
+    {
+        float pad = RetailButtonArt ? TextIndent : PlainPadding;
+        float widest = 0f;
+        foreach (MenuItem item in Items)
+            widest = MathF.Max(widest, MeasureText(item.Label));
+        _itemsFitWidth = widest + 2 * pad;
+    }
+
+    /// <summary>Where the popup starts, left of the button's own x when it is shifted off an edge.</summary>
+    private float PopupLeft
+    {
+        get
+        {
+            if (!FitsLongLabels || FindRoot() is not { } root) return 0f;
+            float sx = ScreenPosition.X;
+            float lo = 0f, hi = root.EffectiveCanvasSize.X;
+            for (UiElement? e = Parent; e is not null && !ReferenceEquals(e, root); e = e.Parent)
+            {
+                if (!e.Draggable && !e.Resizable) continue;
+                float wl = e.ScreenPosition.X;
+                float wlo = MathF.Max(lo, wl), whi = MathF.Min(hi, wl + e.Width);
+                if (OuterW <= whi - wlo) { lo = wlo; hi = whi; }
+                break;
+            }
+            return MathF.Max(lo - sx, MathF.Min(0f, hi - sx - OuterW));
+        }
+    }
+
+    internal float PopupLeftForTest => PopupLeft;
+
+    internal float PopupScrollbarLeftForTest => Border + RowWidth;
+
     public bool ButtonTextCentered { get; set; }
 
     public bool ItemTextCentered { get; set; }
@@ -171,6 +230,7 @@ public sealed class UiMenu : UiElement
             if (Items.Count == 0 && !Searchable) return;
             OnOpen?.Invoke();
             if (Searchable) FilterItems();
+            if (FitsLongLabels) MeasureItemsFitWidth();
         }
         if (!value)
         {
@@ -200,8 +260,8 @@ public sealed class UiMenu : UiElement
         ? 1
         : System.Math.Max(Searchable ? 1 : 0, (DisplayItems.Count + RowsPerColumn - 1) / System.Math.Max(1, RowsPerColumn));
     private float InteriorW => Scrollable
-        ? ColumnWidth + EffectiveScrollbarWidth
-        : ColumnCount * ColumnWidth;
+        ? RowWidth + EffectiveScrollbarWidth
+        : ColumnCount * RowWidth;
 
     private int EffectiveVisibleRows => Scrollable && PopupSizeToContent
         ? System.Math.Max(1, DisplayItems.Count)
@@ -284,10 +344,9 @@ public sealed class UiMenu : UiElement
             var (tex, tw, _) = resolve(_facePressed ? PressedSprite : NormalSprite);
             if (tex != 0 && tw > 0) DrawButtonFace(ctx, tex, tw);
         }
-        string caption = ButtonLabelProvider?.Invoke() ?? "";
         UiDatFont? captionFont = ButtonDatFont ?? DatFont;
-        float captionW = captionFont?.MeasureWidth(caption)
-            ?? Font?.MeasureWidth(caption) ?? caption.Length * 7f;
+        string caption = RetailCaption(captionFont);
+        float captionW = MeasureCaption(caption, captionFont);
         float captionLineH = captionFont?.LineHeight ?? Font?.LineHeight ?? 14f;
         float capX = ButtonTextCentered
             ? MathF.Max(0f, (Width - (ArrowCapClosedSprite != 0 ? ArrowCapWidth : 0f) - captionW) * 0.5f)
@@ -306,8 +365,8 @@ public sealed class UiMenu : UiElement
         Vector4 border = (_open || _facePressed) ? PlainOpenBorderColor : PlainBorderColor;
         ctx.DrawRectOutline(0f, 0f, Width, Height, border, 1f);
 
-        string caption = ButtonLabelProvider?.Invoke() ?? "";
         UiDatFont? captionFont = ButtonDatFont ?? DatFont;
+        string caption = PlainCaption(captionFont);
         float captionLineH = captionFont?.LineHeight ?? Font?.LineHeight ?? 14f;
         float textY = (Height - captionLineH) * 0.5f;
         if (captionFont is { } cf)
@@ -316,6 +375,59 @@ public sealed class UiMenu : UiElement
             ctx.DrawString(caption, PlainPadding, textY, PlainTextColor, Font);
 
         DrawPlainTriangle(ctx);
+    }
+
+    /// <summary>Room the plain look leaves right of the label for its chevron.</summary>
+    private const float PlainChevronReserve = 18f;
+
+    private string PlainCaption(UiDatFont? captionFont) => FitCaption(
+        ButtonLabelProvider?.Invoke() ?? "", captionFont, Width - PlainPadding - PlainChevronReserve);
+
+    private string RetailCaption(UiDatFont? captionFont) => FitCaption(
+        ButtonLabelProvider?.Invoke() ?? "", captionFont,
+        Width - (ArrowCapClosedSprite != 0 ? ArrowCapWidth : FaceCapR) - (ButtonTextCentered ? 0f : ButtonTextIndent));
+
+    internal string ButtonCaptionForTest => RetailButtonArt
+        ? RetailCaption(ButtonDatFont ?? DatFont)
+        : PlainCaption(ButtonDatFont ?? DatFont);
+
+    private float MeasureCaption(string s, UiDatFont? font)
+        => font?.MeasureWidth(s) ?? Font?.MeasureWidth(s) ?? s.Length * 7f;
+
+    private string? _fitSource;
+    private UiDatFont? _fitFont;
+    private AcDream.App.Rendering.BitmapFont? _fitBitmapFont;
+    private float _fitMaxWidth;
+    private string _fitCaption = "";
+
+    /// <summary>The caption, cut short with an ellipsis when it is wider than <paramref name="maxWidth"/>.
+    /// Remembers the last result, so an unchanged caption is not measured again each frame.</summary>
+    private string FitCaption(string caption, UiDatFont? font, float maxWidth)
+    {
+        if (!FitsLongLabels) return caption;
+        if (caption == _fitSource && ReferenceEquals(font, _fitFont)
+            && ReferenceEquals(Font, _fitBitmapFont) && maxWidth == _fitMaxWidth)
+            return _fitCaption;
+        _fitSource = caption;
+        _fitFont = font;
+        _fitBitmapFont = Font;
+        _fitMaxWidth = maxWidth;
+        return _fitCaption = ShortenCaption(caption, font, maxWidth);
+    }
+
+    private string ShortenCaption(string caption, UiDatFont? font, float maxWidth)
+    {
+        if (MeasureCaption(caption, font) <= maxWidth) return caption;
+        // A dat font without the ellipsis glyph, or a bitmap font, gets three dots.
+        string dots = font is { } f ? (f.TryGetGlyph('…', out _) ? "…" : "...")
+            : Font is not null ? "..." : "…";
+        for (int n = caption.Length - 1; n > 0; n--)
+        {
+            if (char.IsLowSurrogate(caption[n])) continue;   // never split a surrogate pair
+            string cut = caption[..n].TrimEnd() + dots;
+            if (MeasureCaption(cut, font) <= maxWidth) return cut;
+        }
+        return MeasureCaption(dots, font) <= maxWidth ? dots : "";
     }
 
     private void DrawPlainTriangle(UiRenderContext ctx)
@@ -362,7 +474,13 @@ public sealed class UiMenu : UiElement
     protected override void OnDrawOverlay(UiRenderContext ctx)
     {
         if (!_open) return;
+        ctx.PushTransform(PopupLeft, 0f);
+        try { DrawPopup(ctx); }
+        finally { ctx.PopTransform(); }
+    }
 
+    private void DrawPopup(UiRenderContext ctx)
+    {
         if (!RetailButtonArt)
         {
             ctx.PushAlphaAbsolute(1f);
@@ -404,9 +522,9 @@ public sealed class UiMenu : UiElement
         for (int i = 0; i < DisplayItems.Count; i++)
         {
             int col = i / RowsPerColumn, row = i % RowsPerColumn;
-            float x = inX + col * ColumnWidth, y = inY + row * RowHeight;
+            float x = inX + col * RowWidth, y = inY + row * RowHeight;
             bool selected = Equals(DisplayItems[i].Payload, Selected) || (Searchable && i == _hoveredPopupIndex);
-            DrawSprite(ctx, resolve, selected ? ItemHighlightSprite : ItemNormalSprite, x, y, ColumnWidth, RowHeight);
+            DrawSprite(ctx, resolve, selected ? ItemHighlightSprite : ItemNormalSprite, x, y, RowWidth, RowHeight);
         }
 
         float textY = (RowHeight - LineH()) * 0.5f;
@@ -415,14 +533,14 @@ public sealed class UiMenu : UiElement
             int col = i / RowsPerColumn, row = i % RowsPerColumn;
             // Items grey out when unavailable; when EnabledProvider is null all items are enabled.
             bool avail = EnabledProvider?.Invoke(DisplayItems[i].Payload) ?? true;
-            DrawLabel(ctx, DisplayItems[i].Label, inX + col * ColumnWidth + ItemTextX(DisplayItems[i].Label),
+            DrawLabel(ctx, DisplayItems[i].Label, inX + col * RowWidth + ItemTextX(DisplayItems[i].Label),
                       inY + row * RowHeight + textY,
                       avail ? TextColorAvailable : TextColorGhosted);
         }
     }
 
     private float ItemTextX(string label) => ItemTextCentered
-        ? MathF.Max(0f, (ColumnWidth - MeasureText(label)) * 0.5f)
+        ? MathF.Max(0f, (RowWidth - MeasureText(label)) * 0.5f)
         : TextIndent;
 
     private float MeasureText(string s)
@@ -436,7 +554,7 @@ public sealed class UiMenu : UiElement
         float inX = Border, inY = outerTop + Border + SearchHeight;
 
         DrawBevel(ctx, resolve, 0f, outerTop, OuterW, OuterH);
-        DrawSprite(ctx, resolve, PopupBgSprite, inX, inY, ColumnWidth, InteriorH);
+        DrawSprite(ctx, resolve, PopupBgSprite, inX, inY, RowWidth, InteriorH);
 
         int start = VisibleTopRow;
         int count = System.Math.Min(EffectiveVisibleRows, DisplayItems.Count - start);
@@ -446,7 +564,7 @@ public sealed class UiMenu : UiElement
             int idx = start + i;
             float y = inY + i * RowHeight;
             bool selected = Equals(DisplayItems[idx].Payload, Selected) || (Searchable && idx == _hoveredPopupIndex);
-            DrawSprite(ctx, resolve, selected ? ItemHighlightSprite : ItemNormalSprite, inX, y, ColumnWidth, RowHeight);
+            DrawSprite(ctx, resolve, selected ? ItemHighlightSprite : ItemNormalSprite, inX, y, RowWidth, RowHeight);
         }
         for (int i = 0; i < count; i++)
         {
@@ -457,7 +575,7 @@ public sealed class UiMenu : UiElement
                       avail ? TextColorAvailable : TextColorGhosted);
         }
 
-        DrawPopupScrollbar(ctx, resolve, inX + ColumnWidth, inY);
+        DrawPopupScrollbar(ctx, resolve, inX + RowWidth, inY);
     }
 
     private void ConfigurePopupScroll()
@@ -520,12 +638,12 @@ public sealed class UiMenu : UiElement
         for (int i = 0; i < DisplayItems.Count; i++)
         {
             int col = i / RowsPerColumn, row = i % RowsPerColumn;
-            float x = inX + col * ColumnWidth, y = inY + row * RowHeight;
+            float x = inX + col * RowWidth, y = inY + row * RowHeight;
             bool selected = Equals(DisplayItems[i].Payload, Selected) || (Searchable && i == _hoveredPopupIndex);
             if (selected)
-                ctx.DrawFill(x, y, ColumnWidth, RowHeight, PlainSelectedColor);
+                ctx.DrawFill(x, y, RowWidth, RowHeight, PlainSelectedColor);
             else if (i == _hoveredPopupIndex)
-                ctx.DrawFill(x, y, ColumnWidth, RowHeight, PlainHoverColor);
+                ctx.DrawFill(x, y, RowWidth, RowHeight, PlainHoverColor);
         }
 
         float textY = (RowHeight - LineH()) * 0.5f;
@@ -533,7 +651,7 @@ public sealed class UiMenu : UiElement
         {
             int col = i / RowsPerColumn, row = i % RowsPerColumn;
             bool avail = EnabledProvider?.Invoke(DisplayItems[i].Payload) ?? true;
-            DrawLabel(ctx, DisplayItems[i].Label, inX + col * ColumnWidth + PlainPadding,
+            DrawLabel(ctx, DisplayItems[i].Label, inX + col * RowWidth + PlainPadding,
                       inY + row * RowHeight + textY,
                       avail ? PlainTextColor : TextColorGhosted);
         }
@@ -558,9 +676,9 @@ public sealed class UiMenu : UiElement
             float y = inY + i * RowHeight;
             bool selected = Equals(DisplayItems[idx].Payload, Selected) || (Searchable && idx == _hoveredPopupIndex);
             if (selected)
-                ctx.DrawFill(inX, y, ColumnWidth, RowHeight, PlainSelectedColor);
+                ctx.DrawFill(inX, y, RowWidth, RowHeight, PlainSelectedColor);
             else if (idx == _hoveredPopupIndex)
-                ctx.DrawFill(inX, y, ColumnWidth, RowHeight, PlainHoverColor);
+                ctx.DrawFill(inX, y, RowWidth, RowHeight, PlainHoverColor);
         }
         for (int i = 0; i < count; i++)
         {
@@ -571,9 +689,9 @@ public sealed class UiMenu : UiElement
         }
 
         if (!PlainPopupScrollbar && SpriteResolve is { } resolve)
-            DrawPopupScrollbar(ctx, resolve, inX + ColumnWidth, inY);
+            DrawPopupScrollbar(ctx, resolve, inX + RowWidth, inY);
         else
-            DrawPopupScrollbarPlain(ctx, inX + ColumnWidth, inY);
+            DrawPopupScrollbarPlain(ctx, inX + RowWidth, inY);
     }
 
     private void DrawPopupScrollbarPlain(UiRenderContext ctx, float x, float y)
@@ -602,7 +720,7 @@ public sealed class UiMenu : UiElement
     private int HoveredGridIndex(float ix, float iy)
     {
         if (ix < 0 || ix >= InteriorW || iy < 0 || iy >= InteriorH) return -1;
-        int col = (int)(ix / ColumnWidth);
+        int col = (int)(ix / RowWidth);
         int row = (int)(iy / RowHeight);
         int idx = col * RowsPerColumn + row;
         return row >= 0 && row < RowsPerColumn && idx >= 0 && idx < DisplayItems.Count ? idx : -1;
@@ -610,7 +728,7 @@ public sealed class UiMenu : UiElement
 
     private int HoveredScrollableIndex(float ix, float iy)
     {
-        if (ix < 0 || ix >= ColumnWidth || iy < 0 || iy >= InteriorH) return -1;
+        if (ix < 0 || ix >= RowWidth || iy < 0 || iy >= InteriorH) return -1;
         int row = (int)(iy / RowHeight);
         int idx = VisibleTopRow + row;
         return row >= 0 && row < EffectiveVisibleRows && idx >= 0 && idx < DisplayItems.Count ? idx : -1;
@@ -652,10 +770,12 @@ public sealed class UiMenu : UiElement
 
     protected override bool OnHitTest(float lx, float ly)
     {
-        if (!_open) return base.OnHitTest(lx, ly);
-        if (lx < 0 || lx >= OuterW) return false;
-        // G7: the union of the button itself + the popup, whichever side it opens on.
-        return OpenUpward ? (ly >= -OuterH && ly < Height) : (ly >= 0 && ly < Height + OuterH);
+        // G7: the button itself, plus the popup on whichever side it opens. Across the
+        // button row only the button counts, so a popup wider than the button does not
+        // take the space beside it.
+        if (!_open || (ly >= 0 && ly < Height)) return base.OnHitTest(lx, ly);
+        float popupLeft = PopupLeft;
+        return lx >= popupLeft && lx < popupLeft + OuterW && ly >= PopupTop && ly < PopupTop + OuterH;
     }
 
     public override bool OnEvent(in UiEvent e)
@@ -673,7 +793,7 @@ public sealed class UiMenu : UiElement
         if (_selectingSearch && e.Type is UiEventType.MouseMove or UiEventType.MouseUp)
         {
             var searchPointer = new UiEvent(0, _searchField, e.Type, e.Data0,
-                (int)(e.Data1 - Border), (int)(e.Data2 - PopupTop - Border));
+                (int)(e.Data1 - PopupLeft - Border), (int)(e.Data2 - PopupTop - Border));
             _searchField.OnEvent(searchPointer);
             if (e.Type == UiEventType.MouseUp) _selectingSearch = false;
             return true;
@@ -734,7 +854,7 @@ public sealed class UiMenu : UiElement
 
         if (!RetailButtonArt && _open && e.Type == UiEventType.MouseMove)
         {
-            UpdatePlainPopupHover(e.Data1, e.Data2);
+            UpdatePlainPopupHover(e.Data1 - PopupLeft, e.Data2);
             return true;
         }
 
@@ -754,7 +874,7 @@ public sealed class UiMenu : UiElement
         bool clickedInPopup = OpenUpward ? ly < 0 : ly >= Height;
         if (_open && clickedInPopup)
         {
-            float ix = lx - Border, iy = ly - (PopupTop + Border + SearchHeight);
+            float ix = lx - PopupLeft - Border, iy = ly - (PopupTop + Border + SearchHeight);
             if (Searchable && iy < 0 && iy >= -SearchHeight)
             {
                 FindRoot()?.SetKeyboardFocus(this);
@@ -769,7 +889,7 @@ public sealed class UiMenu : UiElement
 
             if (ix >= 0 && ix < InteriorW && iy >= 0 && iy < InteriorH)
             {
-                int col = (int)(ix / ColumnWidth);
+                int col = (int)(ix / RowWidth);
                 int row = (int)(iy / RowHeight);
                 int idx = col * RowsPerColumn + row;
                 // Only pick enabled items.
@@ -797,7 +917,7 @@ public sealed class UiMenu : UiElement
 
     private bool HandleScrollablePopupMouseDown(float ix, float iy)
     {
-        if (ix >= 0 && ix < ColumnWidth && iy >= 0 && iy < InteriorH)
+        if (ix >= 0 && ix < RowWidth && iy >= 0 && iy < InteriorH)
         {
             int row = (int)(iy / RowHeight);
             int idx = VisibleTopRow + row;
@@ -810,7 +930,7 @@ public sealed class UiMenu : UiElement
             return true;
         }
 
-        float scrollbarX = ColumnWidth;
+        float scrollbarX = RowWidth;
         if (IsPopupScrollbarPresentationVisible
             && ix >= scrollbarX && ix < scrollbarX + ScrollbarWidth
             && iy >= 0 && iy < InteriorH)
