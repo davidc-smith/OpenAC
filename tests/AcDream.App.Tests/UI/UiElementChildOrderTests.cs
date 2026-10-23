@@ -78,99 +78,6 @@ public sealed class UiElementChildOrderTests
         return parent;
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(3)]
-    public void InsertChild_places_the_child_at_the_index(int index)
-    {
-        var parent = Parent(out var kids);
-        var added = new UiPanel();
-
-        parent.InsertChild(index, added);
-
-        var expected = kids.ToList();
-        expected.Insert(index, added);
-        Assert.Equal(expected, parent.Children);
-        Assert.Same(parent, added.Parent);
-    }
-
-    [Fact]
-    public void InsertChild_reparents_from_the_old_parent()
-    {
-        var parent = Parent(out _);
-        var other = Parent(out var otherKids, 1);
-
-        parent.InsertChild(0, otherKids[0]);
-
-        Assert.Empty(other.Children);
-        Assert.Same(parent, otherKids[0].Parent);
-    }
-
-    [Fact]
-    public void MoveChild_forward_and_backward()
-    {
-        var parent = Parent(out var k);
-
-        parent.MoveChild(k[0], 2);
-        Assert.Equal(new[] { k[1], k[2], k[0] }, parent.Children);
-
-        parent.MoveChild(k[0], 0);
-        Assert.Equal(new[] { k[0], k[1], k[2] }, parent.Children);
-    }
-
-    [Fact]
-    public void MoveChild_rejects_a_stranger()
-    {
-        var parent = Parent(out _);
-        Assert.Throws<ArgumentException>(() => parent.MoveChild(new UiPanel(), 0));
-    }
-
-    [Theory]
-    [InlineData(-1)]
-    [InlineData(3)]
-    public void MoveChild_to_an_out_of_range_index_throws_and_leaves_the_children(int index)
-    {
-        var parent = Parent(out var k);
-
-        Assert.Throws<ArgumentOutOfRangeException>(() => parent.MoveChild(k[0], index));
-
-        Assert.Equal(k, parent.Children);
-    }
-
-    [Fact]
-    public void MoveChild_keeps_keyboard_focus()
-    {
-        var root = new UiRoot();
-        var a = new UiPanel { AcceptsFocus = true };
-        var b = new UiPanel { AcceptsFocus = true };
-        root.AddChild(a);
-        root.AddChild(b);
-        root.SetKeyboardFocus(a);
-
-        root.MoveChild(a, 1);
-
-        Assert.Same(a, root.KeyboardFocus);
-    }
-
-    [Fact]
-    public void MoveChild_changes_the_tick_order()
-    {
-        var parent = new UiPanel();
-        var order = new List<Counted>();
-        var a = new Counted { OnTicked = order.Add };
-        var b = new Counted { OnTicked = order.Add };
-        parent.AddChild(a);
-        parent.AddChild(b);
-        parent.TickSelfAndChildren(0.01);
-        parent.MoveChild(a, 1);
-        order.Clear();
-
-        parent.TickSelfAndChildren(0.01);
-
-        Assert.Equal(new[] { b, a }, order);
-    }
-
     [Fact]
     public void A_child_changing_its_siblings_during_a_tick_ticks_each_remaining_snapshot_child_once()
     {
@@ -184,8 +91,10 @@ public sealed class UiElementChildOrderTests
         b.OnTicked = self =>
         {
             if (self.Ticks > 1) return;
-            parent.InsertChild(0, before);          // before the cursor
-            parent.InsertChild(4, after);           // after the cursor
+            parent.AddChild(before);
+            parent.MoveChild(before, 0);            // before the cursor
+            parent.AddChild(after);
+            parent.MoveChild(after, 4);             // after the cursor
             parent.RemoveChild(a);                  // already ticked
             parent.RemoveChild(c);                  // not yet ticked, but in the snapshot
         };
@@ -214,38 +123,68 @@ public sealed class UiElementChildOrderTests
     }
 
     [Fact]
-    public void InsertChild_and_MoveChild_invalidate_the_traversal_snapshots()
+    public void MoveChild_invalidates_the_traversal_snapshots()
     {
         var parent = new UiPanel();
         var a = new UiPanel();
         var b = new UiPanel();
+        var c = new UiPanel();
+        parent.AddChild(c);
         parent.AddChild(a);
         parent.AddChild(b);
-        UiElement[] beforeInsert = parent.ChildrenBackToFrontSnapshot();
+        UiElement[] beforeMove = parent.ChildrenBackToFrontSnapshot();
 
-        var c = new UiPanel();
-        parent.InsertChild(0, c);
-        UiElement[] afterInsert = parent.ChildrenBackToFrontSnapshot();
         parent.MoveChild(c, 2);
         UiElement[] afterMove = parent.ChildrenBackToFrontSnapshot();
 
-        Assert.NotSame(beforeInsert, afterInsert);
-        Assert.NotSame(afterInsert, afterMove);
+        Assert.NotSame(beforeMove, afterMove);
         Assert.Equal(new[] { a, b, c }, afterMove);
     }
 
     [Fact]
-    public void InsertChild_after_a_tick_ticks_the_new_child()
+    public void A_child_moved_in_after_a_tick_ticks_on_the_next()
     {
         var parent = new UiPanel();
         parent.AddChild(new Counted());
         parent.TickSelfAndChildren(0.01);
         var added = new Counted();
 
-        parent.InsertChild(0, added);
+        parent.AddChild(added);
+        parent.MoveChild(added, 0);
         parent.TickSelfAndChildren(0.01);
 
         Assert.Equal(1, added.Ticks);
+    }
+
+    [Fact]
+    public void RemoveChildren_removes_the_set_in_one_pass_keeping_the_order_of_the_rest()
+    {
+        var parent = Parent(out var kids, 5);
+        UiElement[] before = parent.ChildrenBackToFrontSnapshot();
+
+        parent.RemoveChildren(new HashSet<UiElement> { kids[0], kids[2], kids[4] });
+
+        Assert.Equal(new[] { kids[1], kids[3] }, parent.Children);
+        Assert.Null(kids[0].Parent);
+        Assert.Null(kids[4].Parent);
+        Assert.Same(parent, kids[1].Parent);
+        Assert.NotSame(before, parent.ChildrenBackToFrontSnapshot());
+    }
+
+    [Fact]
+    public void RemoveChildren_drops_focus_inside_a_removed_child()
+    {
+        var root = new UiRoot { Width = 100, Height = 100 };
+        var parent = new UiPanel();
+        var field = new UiField { Width = 50, Height = 20 };
+        parent.AddChild(field);
+        root.AddChild(parent);
+        root.SetKeyboardFocus(field);
+        Assert.Same(field, root.KeyboardFocus);
+
+        parent.RemoveChildren(new HashSet<UiElement> { field });
+
+        Assert.Null(root.KeyboardFocus);
     }
 
     private sealed class TestElement : UiElement;

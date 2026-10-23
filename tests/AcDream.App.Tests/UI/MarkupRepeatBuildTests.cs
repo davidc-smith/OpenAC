@@ -456,12 +456,8 @@ public sealed class MarkupRepeatBuildTests
         Assert.Equal(content.Children.Skip(1), outer.Span(outer.Copies[0]));
     }
 
-    private static int ThemeActions(UiElement frame)
-    {
-        var field = typeof(UiPluginMarkupPanel).GetField("_apply",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        return ((ICollection)field.GetValue(frame)!).Count;
-    }
+    private static int ThemeActions(UiElement frame) =>
+        Assert.IsType<UiPluginMarkupPanel>(frame).ThemeActionCount;
 
     [Fact]
     public void A_context_menu_in_a_template_belongs_to_its_copy()

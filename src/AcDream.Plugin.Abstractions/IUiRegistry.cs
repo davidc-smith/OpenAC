@@ -152,6 +152,8 @@ public interface IUiRegistry
     /// <summary>
     /// Whether one of this plugin's own windows contains a named control.
     /// False when the window or the control is not found.
+    /// Controls inside a <c>&lt;repeat&gt;</c> template are not found: the
+    /// name is on every row.
     /// </summary>
     bool ControlExists(string viewName, string controlName) => false;
 
@@ -159,6 +161,8 @@ public interface IUiRegistry
     /// Replaces the text of a named button, toggle, checkbox, expander or label in one of this
     /// plugin's own windows, dropping whatever binding the markup gave it.
     /// Returns false when the control is not found or carries no text.
+    /// Controls inside a <c>&lt;repeat&gt;</c> template are not found: the
+    /// name is on every row.
     /// </summary>
     bool SetControlLabel(string viewName, string controlName, string label) => false;
 
@@ -166,6 +170,8 @@ public interface IUiRegistry
     /// Shows or hides a named control in one of this plugin's own windows,
     /// dropping whatever binding the markup gave its visibility. Returns
     /// false when the control is not found.
+    /// Controls inside a <c>&lt;repeat&gt;</c> template are not found: the
+    /// name is on every row.
     /// </summary>
     bool SetControlVisible(string viewName, string controlName, bool visible) => false;
 
