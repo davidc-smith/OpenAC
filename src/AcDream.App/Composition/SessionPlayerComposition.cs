@@ -615,10 +615,6 @@ internal sealed class SessionPlayerCompositionPhase
                     portal.RevealGeneration,
                     portal.TeleportSequence,
                     portal.Projection.DestinationCell));
-        bindings.Adopt(
-            "arrival overlap on collision restore",
-            live.Presentation.BindShadowRestored(
-                acceptedPositionDrive.RequestArrivalOverlapCheck));
         // Arming another creature's body from the server's word about it is one
         // implementation for every client, and it owns the drive that carries
         // out an accepted re-placement, so a body the server moved lands in

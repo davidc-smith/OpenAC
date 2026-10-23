@@ -92,6 +92,67 @@ public sealed class RuntimePlacementShadowCompositionTests
     }
 
     [Fact]
+    public void PortalPlace_HiddenPlayerKeepsItsCollisionAtTheDestination()
+    {
+        // The server hides the player and sets IgnoreCollisions for the whole
+        // portal-space stay. A hidden player still blocks, so an object
+        // created at the destination before the player materializes is placed
+        // against the player.
+        Fixture fixture = Fixture.Create();
+        LiveEntityRecord record = fixture.Materialize(Spawn(
+            Guid,
+            1,
+            SourceCell,
+            PhysicsStateFlags.Hidden
+                | PhysicsStateFlags.IgnoreCollisions
+                | PhysicsStateFlags.Gravity));
+        WorldEntity entity = Assert.IsType<WorldEntity>(record.WorldEntity);
+        Assert.True(fixture.Runtime.IsHidden(Guid));
+
+        fixture.Physics.ShadowObjects.Register(
+            entity.Id,
+            gfxObjId: entity.SourceGfxObjOrSetupId,
+            worldPos: SourcePosition,
+            rotation: Quaternion.Identity,
+            radius: 0.48f,
+            worldOffsetX: 0f,
+            worldOffsetY: 0f,
+            landblockId: SourceCell & 0xFFFF0000u,
+            collisionType: ShadowCollisionType.Sphere,
+            cylHeight: 1.835f,
+            seedCellId: SourceCell);
+        fixture.Synchronizer.Sync(entity, SourceCell, force: true);
+        Assert.Contains(
+            fixture.Physics.ShadowObjects.GetObjectsInCell(SourceCell),
+            e => e.EntityId == entity.Id);
+
+        RuntimePortalPlacementAuthority portal = fixture.BeginPortal(
+            DestinationCell,
+            teleportSequence: 1);
+        record.FullCellId = DestinationCell;
+        record.CanonicalLandblockId = (DestinationCell & 0xFFFF0000u) | 0xFFFFu;
+        record.Canonical.AdvancePlacementCommit();
+        RuntimePlacementProjectionSnapshot place = Placement(
+            fixture,
+            record,
+            portal,
+            DestinationPosition,
+            DestinationOrientation);
+
+        Assert.True(fixture.Sink.TryApply(in place));
+
+        Assert.Equal(
+            new LocalPlayerShadowState.Snapshot(
+                DestinationPosition,
+                DestinationOrientation,
+                DestinationCell),
+            fixture.LocalShadow.Current);
+        Assert.Contains(
+            fixture.Physics.ShadowObjects.GetObjectsInCell(DestinationCell),
+            e => e.EntityId == entity.Id);
+    }
+
+    [Fact]
     public void Place_ThenOrdinaryTick_DoesNotNeedToSelfHeal_RealShadowAlreadyRight()
     {
         Fixture fixture = Fixture.Create();
@@ -269,7 +330,8 @@ public sealed class RuntimePlacementShadowCompositionTests
     private static WorldSession.EntitySpawn Spawn(
         uint guid,
         ushort instance,
-        uint cell)
+        uint cell,
+        PhysicsStateFlags state = PhysicsStateFlags.ReportCollisions)
     {
         var position = new CreateObject.ServerPosition(
             cell, 10f, 10f, 5f, 1f, 0f, 0f, 0f);
@@ -284,7 +346,7 @@ public sealed class RuntimePlacementShadowCompositionTests
             ObjDesc: 1,
             Instance: instance);
         var physics = new PhysicsSpawnData(
-            RawState: (uint)PhysicsStateFlags.ReportCollisions,
+            RawState: (uint)state,
             Position: position,
             Movement: null,
             AnimationFrame: null,
@@ -317,7 +379,7 @@ public sealed class RuntimePlacementShadowCompositionTests
             null,
             null,
             0x09000001u,
-            PhysicsState: (uint)PhysicsStateFlags.ReportCollisions,
+            PhysicsState: (uint)state,
             InstanceSequence: instance,
             MovementSequence: 1,
             ServerControlSequence: 1,
@@ -388,14 +450,12 @@ public sealed class RuntimePlacementShadowCompositionTests
                 resources,
                 physics);
 
-            var identity = new LocalPlayerIdentityState { ServerGuid = Guid };
             var origin = new LiveWorldOriginState();
             origin.SetPlaceholder(0, 0);
             var localShadow = new LocalPlayerShadowState();
             var synchronizer = new LocalPlayerShadowSynchronizer(
                 physics,
                 runtime,
-                identity,
                 origin,
                 localShadow);
 

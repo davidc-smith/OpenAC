@@ -10,9 +10,10 @@ using Xunit.Abstractions;
 namespace AcDream.Core.Tests.Physics;
 
 // A recall into a landblock the client has not loaded places the player before
-// the server's CreateObject for the lifestone it arrives on. The lifestone then
-// lands on the player, who can no longer move. The lifestone keeps the position
-// the server gave it; a fresh placement of the player is what gets it out.
+// the server's CreateObject for the lifestone it arrives on. The server keeps
+// the player hidden for the whole portal-space stay, but a hidden player still
+// has its collision, so the lifestone is placed against it and slides clear,
+// as any object created where something already stands does.
 [Trait("Lane", "InstalledDat")]
 public sealed class LifestoneLateCreateOverlapInstalledDatTests
 {
@@ -23,6 +24,8 @@ public sealed class LifestoneLateCreateOverlapInstalledDatTests
     private const uint LifestoneSetup = 0x020002EEu;
     private const uint HumanSetup = 0x02000001u;
     private const uint LifestoneState = 0x410u; // ACE lifestone: Gravity | IgnoreCollisions
+    // ACE player while teleporting: Hidden | Gravity | IgnoreCollisions.
+    private const uint PortalSpacePlayerState = 0x4410u;
 
     private static readonly Vector3 Spot = new(20f, 20f, 0f);
     private static readonly Quaternion Heading = Quaternion.Identity;
@@ -32,7 +35,7 @@ public sealed class LifestoneLateCreateOverlapInstalledDatTests
     public LifestoneLateCreateOverlapInstalledDatTests(ITestOutputHelper output) => _out = output;
 
     [Fact]
-    public void LifestoneArrivingOnThePlacedPlayer_TrapsIt()
+    public void LifestoneArrivingOnAHiddenPlayer_SlidesClearAndThePlayerCanWalk()
     {
         using Scene scene = Scene.Load();
         (PhysicsEngine engine, PhysicsDataCache cache) = NewEngine(scene);
@@ -40,65 +43,30 @@ public sealed class LifestoneLateCreateOverlapInstalledDatTests
         PhysicsSetPositionResult placed = PlacePlayer(engine, scene, Spot);
         Assert.True(placed.IsCommitted);
         Assert.True(Vector3.Distance(placed.Position, Spot) < 0.05f);
-
-        RegisterLifestone(engine, cache, scene, Spot);
-
-        foreach (Vector3 step in new[] { new Vector3(0f, 0.5f, 0f), new Vector3(0.5f, 0f, 0f), new Vector3(0f, -0.5f, 0f) })
-        {
-            ResolveResult move = TryWalk(engine, scene, placed.Position, step);
-            _out.WriteLine($"walk {step}: ok={move.Ok} pos={move.Position} obj=0x{move.LastCollidedObjectId:X8}");
-            Assert.True(Vector3.Distance(move.Position, placed.Position) < 0.01f);
-        }
-    }
-
-    [Fact]
-    public void PlacingThePlayerAgain_MovesItOffTheLifestone()
-    {
-        using Scene scene = Scene.Load();
-        (PhysicsEngine engine, PhysicsDataCache cache) = NewEngine(scene);
-        PhysicsSetPositionResult placed = PlacePlayer(engine, scene, Spot);
-        RegisterLifestone(engine, cache, scene, Spot);
-
-        PhysicsSetPositionResult replaced = engine.SetPosition(new PhysicsSetPositionRequest(
-            placed.Position, Heading, Cell, placed.Position, scene.Human.Spheres,
-            Scale: 1f,
-            StepUpHeight: scene.Human.StepUpHeight,
-            StepDownHeight: scene.Human.StepDownHeight,
-            MoverFlags: ObjectInfoState.IsPlayer | ObjectInfoState.EdgeSlide,
-            MovingEntityId: PlayerId,
-            Flags: PhysicsSetPositionFlags.Placement | PhysicsSetPositionFlags.Slide));
-        _out.WriteLine($"replaced: err={replaced.Error} pos={replaced.Position} moved={Vector3.Distance(replaced.Position, Spot):F3}");
-
-        Assert.True(replaced.IsCommitted);
-        Assert.True(Vector3.Distance(replaced.Position, Spot) > 2f);
-        ResolveResult away = TryWalk(engine, scene, replaced.Position,
-            Vector3.Normalize(replaced.Position - Spot) * 0.5f);
-        Assert.True(away.Ok && Vector3.Distance(away.Position, replaced.Position) > 0.4f);
-    }
-
-    [Fact]
-    public void LifestoneArrivingOnAPlayersShadow_StaysWhereTheServerPutIt()
-    {
-        using Scene scene = Scene.Load();
-        (PhysicsEngine engine, PhysicsDataCache cache) = NewEngine(scene);
         engine.ShadowObjects.RegisterMultiPart(
-            PlayerId, Spot, Heading,
+            PlayerId, placed.Position, Heading,
             ShadowShapeBuilder.FromSetup(scene.HumanSetup, 1f, _ => false),
-            state: (uint)PhysicsStateFlags.Gravity,
+            state: PortalSpacePlayerState,
             flags: EntityCollisionFlags.HasWeenie | EntityCollisionFlags.IsPlayer,
             0f, 0f, Landblock, seedCellId: Cell, isStatic: false);
-        RegisterLifestone(engine, cache, scene, Spot);
 
         PhysicsSetPositionResult stone = engine.SetPosition(new PhysicsSetPositionRequest(
             Spot, Heading, Cell, Spot, scene.Lifestone.Spheres, 1f, 0f, 0f,
             MoverPhysicsState: (PhysicsStateFlags)LifestoneState,
             MovingEntityId: LifestoneId,
-            Flags: PhysicsSetPositionFlags.Placement | PhysicsSetPositionFlags.Slide,
-            PassThroughPlayers: true));
-        _out.WriteLine($"stone: err={stone.Error} pos={stone.Position}");
-
+            Flags: PhysicsSetPositionFlags.Placement | PhysicsSetPositionFlags.Slide));
+        _out.WriteLine($"stone: err={stone.Error} pos={stone.Position} moved={Vector3.Distance(stone.Position, Spot):F3}");
         Assert.True(stone.IsCommitted);
-        Assert.True(Vector3.Distance(stone.Position, Spot) < 0.01f);
+        Assert.True(Vector3.Distance(stone.Position, placed.Position) > 2f);
+
+        RegisterLifestone(engine, cache, scene, stone.Position);
+        foreach (Vector3 step in new[] { new Vector3(0f, 0.5f, 0f), new Vector3(0.5f, 0f, 0f), new Vector3(0f, -0.5f, 0f) })
+        {
+            ResolveResult move = TryWalk(engine, scene, placed.Position, step);
+            _out.WriteLine($"walk {step}: ok={move.Ok} pos={move.Position} obj=0x{move.LastCollidedObjectId:X8}");
+            Assert.True(move.Ok);
+            Assert.True(Vector3.Distance(move.Position, placed.Position) > 0.4f);
+        }
     }
 
     [Fact]

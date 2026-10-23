@@ -815,7 +815,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
 
         private IRuntimePlacementProjectionSink CreatePlacementSink(uint guid)
         {
-            var identity = new LocalPlayerIdentityState { ServerGuid = guid };
             var origin = new LiveWorldOriginState();
             origin.SetPlaceholder(0, 0);
             return new RuntimePlacementPresentationSink(
@@ -825,7 +824,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
                 new LocalPlayerShadowSynchronizer(
                     Lifetime.Physics.Engine,
                     Runtime,
-                    identity,
                     origin,
                     new LocalPlayerShadowState()),
                 () => guid);
