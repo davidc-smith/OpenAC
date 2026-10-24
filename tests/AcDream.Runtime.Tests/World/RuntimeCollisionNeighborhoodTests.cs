@@ -1,6 +1,10 @@
 using System.Collections.Immutable;
 using System.Numerics;
 using AcDream.Content;
+using AcDream.Core.Net.Messages;
+using AcDream.Core.Physics;
+using AcDream.Runtime.Entities;
+using AcDream.Runtime.Physics;
 using AcDream.Core.World;
 using AcDream.Runtime.Tests.Gameplay;
 using AcDream.Runtime.World;
@@ -286,6 +290,120 @@ public sealed class RuntimeCollisionNeighborhoodTests
         int cellX = (int)((at.X - (blockX * 192f)) / 24f);
         int cellY = (int)((at.Y - (blockY * 192f)) / 24f);
         return (x << 24) | (y << 16) | (uint)((cellX * 8) + cellY + 1);
+    }
+
+    /// <summary>
+    /// A door is a server object: its collision is registered, under the
+    /// door's own id, in the collision the session host owns, and the server
+    /// opening it (the door turning ethereal) or closing it reaches that
+    /// collision by the id. It keeps following the door when the door's
+    /// landblock is withdrawn behind a walk and published again on the way
+    /// back: a door opened meanwhile is open when its landblock returns.
+    /// </summary>
+    [Fact]
+    public void ADoorsCollisionFollowsItsOpenAndClosedStateByItsId()
+    {
+        const uint Door = 0x7A0000D0u;
+        const uint DoorCell = 0x282A0025u;
+        var doorAt = new Vector3(96f, 100f, 0f);
+        using GameRuntime runtime = NewRuntime();
+        var neighborhood = new RuntimeCollisionNeighborhood(runtime, new FlatContent());
+        runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+        neighborhood.CenterOn(Arrival);
+        Drive(neighborhood, Arrival);
+        PhysicsEngine engine = runtime.EntityObjects.Physics.Engine;
+
+        // The server creates the closed door; its collision goes in under
+        // its id, the way every server object's does.
+        RuntimeEntityRecord door = runtime.EntityObjects
+            .RegisterEntity(RuntimeEntityTestSpawns.Spawn(
+                Door, DoorCell, doorAt.X, doorAt.Y, PhysicsStateFlags.ReportCollisions, doorAt.Z))
+            .Canonical!;
+        runtime.EntityObjects.ApplyAcceptedSpawn(
+            door,
+            door.CreateIntegrationVersion,
+            door.Snapshot,
+            replaceGeneration: false);
+        uint doorId = Assert.IsType<uint>(door.LocalEntityId);
+        LiveEntityCollisionBuilder.Register(
+            engine.ShadowObjects,
+            new LiveEntityCollisionRegistration(
+                doorId,
+                0x02000001u,
+                doorAt,
+                Quaternion.Identity,
+                [ShadowShape.Cylinder(0x02000001u, Vector3.Zero, Quaternion.Identity, 1f, 1f, 3f)],
+                (uint)door.FinalPhysicsState,
+                EntityCollisionFlags.HasWeenie,
+                0f,
+                0f,
+                DoorCell,
+                DoorCell,
+                []));
+        Assert.True(Blocked(engine), "The closed door lets a walker through.");
+
+        ushort stateSequence = 1;
+        SetDoor(open: true);
+        Assert.True(IsEthereal(engine, doorId), "The open door's collision is still solid.");
+        Assert.False(Blocked(engine), "The open door still blocks.");
+        SetDoor(open: false);
+        Assert.False(IsEthereal(engine, doorId));
+        Assert.True(Blocked(engine), "The closed door lets a walker through.");
+
+        // Walk two landblocks east: the door's landblock is withdrawn. The
+        // server opens the door meanwhile; walk back and it is open.
+        neighborhood.Follow(0x292A0001u);
+        Drive(neighborhood, 0x292A0001u);
+        neighborhood.Follow(0x2A2A0001u);
+        Drive(neighborhood, 0x2A2A0001u);
+        Assert.False(neighborhood.IsCollisionPublished(DoorCell));
+        SetDoor(open: true);
+        neighborhood.Follow(0x292A0001u);
+        Drive(neighborhood, 0x292A0001u);
+        neighborhood.Follow(Arrival);
+        Drive(neighborhood, Arrival);
+        Assert.True(neighborhood.IsCollisionPublished(DoorCell));
+        Assert.True(IsEthereal(engine, doorId), "The door opened while away came back closed.");
+        Assert.False(Blocked(engine), "The door opened while away blocks.");
+        SetDoor(open: false);
+        Assert.True(Blocked(engine), "The door closed again lets a walker through.");
+
+        void SetDoor(bool open)
+        {
+            stateSequence++;
+            uint state = (uint)PhysicsStateFlags.ReportCollisions
+                | (open ? (uint)PhysicsStateFlags.Ethereal : 0u);
+            Assert.True(runtime.EntityObjects.TryApplyState(
+                new SetState.Parsed(Door, state, InstanceSequence: 1, StateSequence: stateSequence),
+                null,
+                out _,
+                out _));
+        }
+    }
+
+    /// <summary>Whether a walker going north through where the door stands is stopped.</summary>
+    private static bool Blocked(PhysicsEngine engine)
+    {
+        ResolveResult result = engine.ResolveWithTransition(
+            new Vector3(96f, 95f, 0f),
+            new Vector3(96f, 105f, 0f),
+            0x282A0025u,
+            sphereRadius: 0.48f,
+            sphereHeight: 1.835f,
+            stepUpHeight: 0.4f,
+            stepDownHeight: 0.4f,
+            isOnGround: true);
+        return !result.Ok || result.Position.Y < 100f;
+    }
+
+    private static bool IsEthereal(PhysicsEngine engine, uint entityId)
+    {
+        ShadowEntry[] entries = engine.ShadowObjects.AllEntriesForDebug()
+            .Where(entry => entry.EntityId == entityId)
+            .ToArray();
+        Assert.NotEmpty(entries);
+        return entries.All(entry =>
+            ((PhysicsStateFlags)entry.State).HasFlag(PhysicsStateFlags.Ethereal));
     }
 
     private static void Drive(
