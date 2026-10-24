@@ -153,7 +153,7 @@ public sealed class GraphicalSessionCollisionTests : IDisposable
         return offset;
     }
 
-    private static WorldSession.EntitySpawn Spawn(uint guid, uint cellId)
+    internal static WorldSession.EntitySpawn Spawn(uint guid, uint cellId)
     {
         var position = new CreateObject.ServerPosition(
             cellId, 96f, 97f, 50f, 1f, 0f, 0f, 0f);

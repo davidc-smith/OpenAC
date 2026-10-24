@@ -95,6 +95,8 @@ internal sealed class RuntimeCollisionGenerationTransaction
     private readonly RuntimePhysicsState _physics;
     private readonly RuntimeCollisionAdmission _admission;
     private readonly PreparedLandblockCollisionGeneration _prepared;
+    private readonly IRuntimeCollisionStaging _staging;
+    private bool _stagingCommitted;
     private bool _ownerCaptureCommitted;
     private int _refreshCursor;
     private bool _sealCommitted;
@@ -102,11 +104,13 @@ internal sealed class RuntimeCollisionGenerationTransaction
     private RuntimeCollisionGenerationTransaction(
         RuntimePhysicsState physics,
         RuntimeCollisionAdmission admission,
-        PreparedLandblockCollisionGeneration prepared)
+        PreparedLandblockCollisionGeneration prepared,
+        IRuntimeCollisionStaging staging)
     {
         _physics = physics;
         _admission = admission;
         _prepared = prepared;
+        _staging = staging;
     }
 
     internal uint LandblockId => _admission.LandblockId;
@@ -114,12 +118,40 @@ internal sealed class RuntimeCollisionGenerationTransaction
     internal bool CompletionCommitted { get; private set; }
     internal bool CancellationRequested { get; private set; }
 
+    /// <summary>
+    /// A generation whose collision is staged all at once, before this
+    /// returns.
+    /// </summary>
     internal static RuntimeCollisionGenerationTransaction Begin(
         RuntimePhysicsState physics,
         uint landblockId,
         Action<RuntimeCollisionAdmission>? afterAdmission,
         Action<RuntimeCollisionAdmission,
             PreparedLandblockCollisionGeneration> stage)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+        return Begin(
+            physics,
+            landblockId,
+            afterAdmission,
+            (admission, prepared) =>
+            {
+                stage(admission, prepared);
+                return AlreadyStaged.Instance;
+            });
+    }
+
+    /// <summary>
+    /// A generation whose collision is staged by the returned steps, one
+    /// per <see cref="Advance"/>, before it is sealed and committed.
+    /// </summary>
+    internal static RuntimeCollisionGenerationTransaction Begin(
+        RuntimePhysicsState physics,
+        uint landblockId,
+        Action<RuntimeCollisionAdmission>? afterAdmission,
+        Func<RuntimeCollisionAdmission,
+            PreparedLandblockCollisionGeneration,
+            IRuntimeCollisionStaging> stage)
     {
         ArgumentNullException.ThrowIfNull(physics);
         ArgumentNullException.ThrowIfNull(stage);
@@ -131,11 +163,12 @@ internal sealed class RuntimeCollisionGenerationTransaction
         {
             afterAdmission?.Invoke(admission);
             prepared = physics.PrepareCollisionGeneration(admission);
-            stage(admission, prepared);
+            IRuntimeCollisionStaging staging = stage(admission, prepared);
             return new RuntimeCollisionGenerationTransaction(
                 physics,
                 admission,
-                prepared);
+                prepared,
+                staging);
         }
         catch (Exception publicationError)
         {
@@ -156,6 +189,26 @@ internal sealed class RuntimeCollisionGenerationTransaction
                 "A cancelled collision generation cannot resume.");
         if (CompletionCommitted)
             return new(true, false, false, false);
+
+        if (!_stagingCommitted)
+        {
+            try
+            {
+                _stagingCommitted = _staging.AdvanceOne();
+            }
+            catch (Exception stagingError)
+            {
+                CancellationRequested = true;
+                if (!_physics.CancelCollisionGeneration(_admission, _prepared))
+                {
+                    throw new AggregateException(
+                        "Collision staging failed and its pre-engine cancellation did not converge.",
+                        stagingError);
+                }
+                throw;
+            }
+            return new(false, true, false, false);
+        }
 
         if (!EngineMutationCommitted)
         {
@@ -224,6 +277,199 @@ internal sealed class RuntimeCollisionGenerationTransaction
         return completed;
     }
 
+}
+
+/// <summary>
+/// Builds a landblock's collision into its prepared generation, a little at
+/// a time, before the generation is sealed and committed.
+/// </summary>
+internal interface IRuntimeCollisionStaging
+{
+    /// <summary>Does one small piece of the work; true once all of it is done.</summary>
+    bool AdvanceOne();
+}
+
+/// <summary>Staging that was done before the transaction began.</summary>
+internal sealed class AlreadyStaged : IRuntimeCollisionStaging
+{
+    internal static readonly AlreadyStaged Instance = new();
+
+    private AlreadyStaged()
+    {
+    }
+
+    public bool AdvanceOne() => true;
+}
+
+/// <summary>
+/// One loaded landblock's collision staged into its prepared generation one
+/// piece per step: each interior cell, each building, each prepared object
+/// and setup, the landblock itself, each static object, each owner to
+/// re-file. A step is small, so a client drawing frames can stop between any
+/// two; the order is the order a whole landblock is published in at once.
+/// </summary>
+internal sealed class LandblockCollisionStaging : IRuntimeCollisionStaging
+{
+    private enum Phase
+    {
+        Cells,
+        Buildings,
+        GfxObjects,
+        Setups,
+        Landblock,
+        Statics,
+        RefloodCapture,
+        Reflood,
+        Done,
+    }
+
+    private readonly RuntimePhysicsState _physics;
+    private readonly RuntimeCollisionAdmission _admission;
+    private readonly PreparedLandblockCollisionGeneration _prepared;
+    private readonly LoadedLandblock _landblock;
+    private readonly LandblockCollisionBuild _collisions;
+    private readonly TerrainSurface _terrain;
+    private readonly Vector3 _origin;
+    private readonly uint _currentCellId;
+    private readonly List<CellSurface> _cellSurfaces = [];
+    private readonly List<PortalPlane> _portalPlanes = [];
+    private readonly KeyValuePair<uint, FlatGfxObjCollisionAsset>[] _gfxObjects;
+    private readonly KeyValuePair<uint, FlatSetupCollision>[] _setups;
+    private uint[] _refloodOwners = [];
+    private Phase _phase;
+    private int _cursor;
+
+    internal LandblockCollisionStaging(
+        RuntimePhysicsState physics,
+        RuntimeCollisionAdmission admission,
+        PreparedLandblockCollisionGeneration prepared,
+        LoadedCollisionContent content,
+        TerrainSurface terrain,
+        Vector3 origin,
+        uint currentCellId)
+    {
+        _physics = physics;
+        _admission = admission;
+        _prepared = prepared;
+        _landblock = content.Landblock;
+        _collisions = content.Collisions;
+        _terrain = terrain;
+        _origin = origin;
+        _currentCellId = currentCellId;
+        _gfxObjects = [.. _collisions.GfxObjs];
+        _setups = [.. _collisions.Setups];
+    }
+
+    public bool AdvanceOne()
+    {
+        PhysicsDataCache cache = _prepared.DataCache;
+        while (true)
+        {
+            switch (_phase)
+            {
+                case Phase.Cells:
+                    if ((uint)_cursor
+                        < LandblockPhysicsContentBuilder.CellCount(_landblock))
+                    {
+                        LandblockPhysicsContentBuilder.PublishPreparedCell(
+                            cache,
+                            _landblock,
+                            _collisions,
+                            _origin,
+                            (uint)_cursor++,
+                            _cellSurfaces,
+                            _portalPlanes);
+                        return false;
+                    }
+                    Next();
+                    continue;
+                case Phase.Buildings:
+                    if (_cursor
+                        < LandblockPhysicsContentBuilder.BuildingCount(_landblock))
+                    {
+                        LandblockPhysicsContentBuilder.CacheBuilding(
+                            cache,
+                            _landblock,
+                            _terrain,
+                            _origin,
+                            _cursor++);
+                        return false;
+                    }
+                    Next();
+                    continue;
+                case Phase.GfxObjects:
+                    if (_cursor < _gfxObjects.Length)
+                    {
+                        (uint id, FlatGfxObjCollisionAsset asset) =
+                            _gfxObjects[_cursor++];
+                        cache.CacheGfxObj(id, asset);
+                        return false;
+                    }
+                    Next();
+                    continue;
+                case Phase.Setups:
+                    if (_cursor < _setups.Length)
+                    {
+                        (uint id, FlatSetupCollision setup) =
+                            _setups[_cursor++];
+                        cache.CacheSetup(id, setup);
+                        return false;
+                    }
+                    Next();
+                    continue;
+                case Phase.Landblock:
+                    _physics.StageCollisionAssets(
+                        _admission,
+                        _prepared,
+                        new RuntimeLandblockCollisionAssets(
+                            _admission.LandblockId,
+                            _terrain,
+                            _cellSurfaces,
+                            _portalPlanes,
+                            _origin.X,
+                            _origin.Y,
+                            _currentCellId));
+                    Next();
+                    return false;
+                case Phase.Statics:
+                    if (_cursor < _landblock.Entities.Count)
+                    {
+                        _ = LandblockPhysicsContentBuilder.PublishStaticEntity(
+                            _prepared.Engine,
+                            cache,
+                            _landblock,
+                            _origin,
+                            _landblock.Entities[_cursor++]);
+                        return false;
+                    }
+                    Next();
+                    continue;
+                case Phase.RefloodCapture:
+                    _refloodOwners = _prepared.Engine.ShadowObjects
+                        .CaptureRefloodOwnersForLandblock(_landblock.LandblockId);
+                    Next();
+                    return false;
+                case Phase.Reflood:
+                    if (_cursor < _refloodOwners.Length)
+                    {
+                        _prepared.Engine.ShadowObjects.RefloodOwnerForLandblock(
+                            _refloodOwners[_cursor++],
+                            _landblock.LandblockId);
+                        return false;
+                    }
+                    Next();
+                    continue;
+                default:
+                    return true;
+            }
+        }
+    }
+
+    private void Next()
+    {
+        _phase++;
+        _cursor = 0;
+    }
 }
 
 /// <summary>
@@ -458,8 +704,10 @@ internal sealed class RuntimeCollisionNeighborhood
         }
 
         RuntimePhysicsState physics = _runtime.EntityObjects.Physics;
-        LoadedLandblock landblock = content.Landblock;
-        LandblockCollisionBuild collisions = content.Collisions;
+        TerrainSurface terrain =
+            LandblockPhysicsContentBuilder.BuildTerrainSurface(
+                content.Landblock,
+                _content.HeightTable.AsSpan());
         return RuntimeCollisionGenerationTransaction.Begin(
             physics,
             landblockId,
@@ -467,48 +715,16 @@ internal sealed class RuntimeCollisionNeighborhood
             (admission, prepared) =>
             {
                 prepared.SetAssetClosure(
-                    [.. collisions.GfxObjIds],
-                    [.. collisions.SetupIds]);
-                PhysicsDataCache cache = prepared.DataCache;
-                TerrainSurface terrain =
-                    LandblockPhysicsContentBuilder.BuildTerrainSurface(
-                        landblock,
-                        _content.HeightTable.AsSpan());
-                var cellSurfaces = new List<CellSurface>();
-                var portalPlanes = new List<PortalPlane>();
-                LandblockPhysicsContentBuilder.PublishPreparedCells(
-                    cache,
-                    landblock,
-                    collisions,
-                    origin,
-                    cellSurfaces,
-                    portalPlanes);
-                LandblockPhysicsContentBuilder.CacheBuildings(
-                    cache,
-                    landblock,
-                    terrain,
-                    origin);
-                LandblockPhysicsContentBuilder.CachePreparedObjects(
-                    cache,
-                    collisions);
-                physics.StageCollisionAssets(
+                    [.. content.Collisions.GfxObjIds],
+                    [.. content.Collisions.SetupIds]);
+                return new LandblockCollisionStaging(
+                    physics,
                     admission,
                     prepared,
-                    new RuntimeLandblockCollisionAssets(
-                        landblockId,
-                        terrain,
-                        cellSurfaces,
-                        portalPlanes,
-                        origin.X,
-                        origin.Y,
-                        currentCellId));
-                _ = LandblockPhysicsContentBuilder
-                    .PublishStaticCollision(
-                        prepared.Engine,
-                        cache,
-                        landblock,
-                        collisions,
-                        origin);
+                    content,
+                    terrain,
+                    origin,
+                    currentCellId);
             });
     }
 
@@ -592,7 +808,7 @@ internal sealed class RuntimeCollisionNeighborhood
                 if (!TryTakeLoaded(spec, out LoadedCollisionContent? loaded))
                     return;
                 _publicationQueue.Dequeue();
-                _pendingPublication = CreatePublication(
+     _pendingPublication = CreatePublication(
                     spec.LandblockId,
                     spec.Origin,
                     _requestedFullCell,
@@ -602,8 +818,20 @@ internal sealed class RuntimeCollisionNeighborhood
                     continue;
             }
 
-            RuntimeCollisionGenerationAdvance advance =
-                _pendingPublication.Advance();
+            RuntimeCollisionGenerationAdvance advance;
+            try
+            {
+                advance = _pendingPublication.Advance();
+            }
+            catch when (_pendingPublication.CancellationRequested
+                && !_pendingPublication.EngineMutationCommitted)
+            {
+                // Staging failed and withdrew its generation: nothing of
+                // this landblock was published, and the next one is free
+                // to go.
+                _pendingPublication = null;
+                throw;
+            }
             if (advance.Completed)
             {
                 _resident.Add(_pendingPublication.LandblockId);

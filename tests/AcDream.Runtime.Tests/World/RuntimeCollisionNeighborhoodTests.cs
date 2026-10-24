@@ -209,6 +209,55 @@ public sealed class RuntimeCollisionNeighborhoodTests
             gameplay,
             gameplay));
     }
+    [Fact]
+    public void ALandblocksStaticObjectsAreStagedOneStepEach()
+    {
+        // The same neighborhood published twice, once with no static objects
+        // and once with sixty in the arrival's landblock; one step of work
+        // per call. Staging a landblock is cut into small steps, so the
+        // objects add a step each, instead of all going in one step that
+        // holds the caller's frame.
+        int Steps(int statics)
+        {
+            using GameRuntime runtime = NewRuntime();
+            int steps = 0;
+            bool spent = false;
+            var neighborhood = new RuntimeCollisionNeighborhood(
+                runtime,
+                new FlatContent { StaticsInArrival = statics },
+                new RuntimeCollisionPacing
+                {
+                    IsFrameSpent = () =>
+                    {
+                        if (spent)
+                            return true;
+                        spent = true;
+                        return false;
+                    },
+                });
+            runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+            neighborhood.CenterOn(Arrival);
+            for (int call = 0;
+                call < 100_000
+                    && !(neighborhood.IsQuiescent
+                        && runtime.EntityObjects.Physics.Engine.LandblockCount == 9);
+                call++)
+            {
+                spent = false;
+                neighborhood.Pump();
+                steps++;
+            }
+            Assert.Equal(9, runtime.EntityObjects.Physics.Engine.LandblockCount);
+            return steps;
+        }
+
+        int without = Steps(0);
+        int with = Steps(60);
+
+        Assert.True(
+            with - without >= 60,
+            $"Sixty static objects took {with - without} more steps; they were staged together.");
+    }
 
     /// <summary>Every landblock flat, empty and present.</summary>
     private sealed class FlatContent : IRuntimeCollisionContent
@@ -223,6 +272,9 @@ public sealed class RuntimeCollisionNeighborhoodTests
 
         public ImmutableArray<float> HeightTable { get; } =
             ImmutableArray.CreateRange(new float[256]);
+
+        /// <summary>Static objects with no collision in the arrival's landblock.</summary>
+        public int StaticsInArrival { get; init; }
 
         /// <summary>The thread each landblock was loaded on.</summary>
         public System.Collections.Concurrent.ConcurrentBag<int> LoadThreads { get; } = [];
@@ -241,10 +293,29 @@ public sealed class RuntimeCollisionNeighborhoodTests
                     Terrain = new TerrainInfo[81],
                     Height = new byte[81],
                 },
-                Array.Empty<WorldEntity>(),
+                Statics(landblockId),
                 PhysicsDatBundle.Empty);
             collisions = LandblockCollisionBuild.Empty;
             return true;
+        }
+
+        private IReadOnlyList<WorldEntity> Statics(uint landblockId)
+        {
+            if ((landblockId & 0xFFFF0000u) != (Arrival & 0xFFFF0000u))
+                return Array.Empty<WorldEntity>();
+            var statics = new WorldEntity[StaticsInArrival];
+            for (int index = 0; index < statics.Length; index++)
+            {
+                statics[index] = new WorldEntity
+                {
+                    Id = 0x80000000u + (uint)index,
+                    SourceGfxObjOrSetupId = 0x02000042u,
+                    Position = new Vector3(index, 10f, 0f),
+                    Rotation = Quaternion.Identity,
+                    MeshRefs = Array.Empty<MeshRef>(),
+                };
+            }
+            return statics;
         }
     }
 }
