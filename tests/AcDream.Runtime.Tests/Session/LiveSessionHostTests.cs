@@ -255,6 +255,58 @@ public sealed class LiveSessionHostTests
         Assert.Null(host.CurrentSession);
     }
 
+    [Fact]
+    public void ReplacingTheEventRouteLetsTheOldGoBeforeTheNewTakesTheSameConnection()
+    {
+        var calls = new List<string>();
+        var operations = new TestOperations(calls);
+        var controller = new LiveSessionController(operations);
+        var first = new TestEventRouting(calls);
+        var second = new TestEventRouting(calls);
+        var routes = new Queue<TestEventRouting>([first, second]);
+        var sessions = new List<WorldSession>();
+        LiveSessionHost host = CreateHost(
+            controller,
+            calls,
+            session =>
+            {
+                sessions.Add(session);
+                return routes.Dequeue();
+            },
+            _ => new TestCommandRouting(calls));
+        Assert.Equal(LiveSessionStartStatus.Connected, host.Start(LiveOptions()).Status);
+        calls.Clear();
+
+        Assert.True(host.ReplaceEventRoute());
+
+        Assert.Equal(["dispose-events", "attach-events"], calls);
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.AttachCount);
+        Assert.Equal(2, sessions.Count);
+        Assert.Same(sessions[0], sessions[1]);
+        Assert.True(host.IsInWorld);
+
+        // Ending the session lets go of the route that holds it now.
+        controller.Dispose();
+        Assert.Equal(1, second.DisposeCount);
+        Assert.Equal(1, first.DisposeCount);
+    }
+
+    [Fact]
+    public void ReplacingTheEventRouteWithNoConnectionDoesNothing()
+    {
+        var calls = new List<string>();
+        var controller = new LiveSessionController(new TestOperations(calls));
+        LiveSessionHost host = CreateHost(
+            controller,
+            calls,
+            _ => throw new InvalidOperationException("must not bind"),
+            _ => throw new InvalidOperationException("must not bind"));
+
+        Assert.False(host.ReplaceEventRoute());
+        Assert.Empty(calls);
+    }
+
     private static LiveSessionHost CreateHost(
         LiveSessionController controller,
         List<string> calls,
