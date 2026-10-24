@@ -40,6 +40,7 @@ internal sealed class GraphicalSessionHost : IDisposable
     private RuntimeWindowlessSessionRoute? _windowlessRoute;
     private GraphicalWindowlessSessionFrame? _windowlessFrame;
     private GraphicalSessionDrives? _drives;
+    private bool _sessionStarted;
     private bool _disposed;
 
     internal GraphicalSessionHost(
@@ -320,6 +321,42 @@ internal sealed class GraphicalSessionHost : IDisposable
                 Console.WriteLine));
     }
 
+
+    /// <summary>
+    /// Starts the session with no window: connects and plays as the session
+    /// document says. A window opened later joins it.
+    /// </summary>
+    internal void StartSession()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_sessionStarted)
+            throw new InvalidOperationException("The session has already started.");
+        _sessionStarted = true;
+        AcDream.App.Composition.SessionStartCompositionPhase.Report(
+            new DirectGameRuntimeCommandAdapter(Runtime, LiveSession.Host)
+                .Session.Start(Runtime.Generation),
+            Console.WriteLine);
+    }
+
+    /// <summary>
+    /// Called by a window once it is built. A window opened at the start of
+    /// the process starts the session itself, as it always has (false). A
+    /// window opened on a session already started joins it (true): it takes
+    /// hold of the connection the session plays on, the route that held it
+    /// lets go, and the window is given what it missed.
+    /// </summary>
+    internal bool JoinPlayingSession()
+    {
+        if (!_sessionStarted)
+        {
+            _sessionStarted = true;
+            return false;
+        }
+
+        if (LiveSession.TakeOverPlayingConnection(_drives))
+            _windowlessRoute?.ReleaseConnection();
+        return true;
+    }
     /// <summary>The window presenting the session, if one is open.</summary>
     internal GameWindow? Window => _window;
 
@@ -410,6 +447,9 @@ internal sealed class GraphicalSessionHost : IDisposable
         // be read, moved or deleted freely.
         StatusWriter.Dispose();
         _windowlessRoute?.Dispose();
+        // No landblock may still be read in the background once the game
+        // files are closed.
+        Collision.Neighborhood.StopBackgroundWork();
         _collisionContentLease?.Dispose();
         // The game files outlive every window that borrowed them.
         _content?.Dispose();

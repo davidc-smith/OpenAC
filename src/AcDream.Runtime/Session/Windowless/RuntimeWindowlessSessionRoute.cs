@@ -299,6 +299,23 @@ internal sealed class RuntimeWindowlessSessionRoute : IDisposable
     internal void ForgetSession() => _currentSession = null;
 
     /// <summary>
+    /// Another route (a window's) has taken hold of the connection while the
+    /// session plays on: what this route kept for it is let go. The drives
+    /// it may share stay with whoever holds them; the expiry of objects out
+    /// of sight is the new route's. Taking hold of a connection again builds
+    /// all of it anew.
+    /// </summary>
+    internal void ReleaseConnection()
+    {
+        _liveness?.Dispose();
+        _liveness = null;
+        _eventRoute = null;
+        _entities = null;
+        _worldProjection = null;
+        _currentSession = null;
+    }
+
+    /// <summary>
     /// Ends the portal reveal of the current connection before the world
     /// transit resets, as a client with a window does.
     /// </summary>

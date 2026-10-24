@@ -97,6 +97,29 @@ public sealed class LiveEntityHydrationControllerTests
         Assert.Equal(1, fixture.Ready.PublishCount);
     }
 
+    /// <summary>
+    /// A window opening on a session that already plays draws what the
+    /// session already knows: the world is measured in the session's frame,
+    /// drawn around the character, and every object in a landblock already
+    /// drawn is drawn from the session's record of it.
+    /// </summary>
+    [Fact]
+    public void PresentPlayingWorld_DrawsWhatTheSessionKnowsInTheSessionsFrame()
+    {
+        using var fixture = new Fixture(originKnown: false);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+        Assert.False(fixture.Runtime.TryGetRecord(Guid, out _));
+        fixture.Origin.IsKnownValue = true;
+        fixture.Origin.AlreadyLoadedLandblocks = [Cell];
+
+        fixture.Controller.PresentPlayingWorld(0xA9B4FFFFu, 0xA9B30040u);
+
+        Assert.Equal([(0xA9B4FFFFu, 0xA9B30040u)], fixture.Origin.PlayingSessionInitializations);
+        Assert.NotNull(fixture.Record.WorldEntity);
+        Assert.Single(fixture.Materializer.Calls);
+        Assert.Equal(LiveProjectionPurpose.SpatialRecovery, fixture.Materializer.Calls[0].Purpose);
+    }
+
     [Fact]
     public void InitialPlayerOriginRecovery_DoesNotReenterSameHydrationTransaction()
     {
@@ -2880,6 +2903,14 @@ public sealed class LiveEntityHydrationControllerTests
         public bool IsKnown => IsKnownValue;
         public LiveEntityOriginInitialization TryInitialize(WorldSession.EntitySpawn spawn) =>
             new(IsKnownValue, AlreadyLoadedLandblocks);
+        public List<(uint Frame, uint Cell)> PlayingSessionInitializations { get; } = [];
+        public LiveEntityOriginInitialization TryInitializeForPlayingSession(
+            uint frameCenterLandblockId,
+            uint playerCellId)
+        {
+            PlayingSessionInitializations.Add((frameCenterLandblockId, playerCellId));
+            return new(IsKnownValue, AlreadyLoadedLandblocks);
+        }
     }
 
     private sealed class RecordingNetworkSink : ILiveEntityNetworkUpdateSink

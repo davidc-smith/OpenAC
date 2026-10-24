@@ -1513,7 +1513,8 @@ public sealed class GameWindow :
                         sessionPlayer),
             frameRoots => new SessionStartCompositionPhase(
                 new SessionStartDependencies(
-                    Console.WriteLine))
+                    Console.WriteLine,
+                    _host.JoinPlayingSession))
                 .Start(frameRoots));
 
         ApplyPluginAutomationBindings();

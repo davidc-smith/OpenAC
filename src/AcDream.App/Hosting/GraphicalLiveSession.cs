@@ -148,6 +148,72 @@ internal sealed class GraphicalLiveSession
         return new PresentationLease(this, presentation);
     }
 
+    /// <summary>
+    /// The window just attached takes hold of the connection the session
+    /// already plays on, and is given what it missed. The route that held
+    /// the connection lets go first; the drives' work in flight is handed to
+    /// the window's route. Returns false when no connection is open: then
+    /// the window takes hold of the next one as it opens.
+    /// </summary>
+    internal bool TakeOverPlayingConnection(GraphicalSessionDrives? drives)
+    {
+        GraphicalSessionPresentation window = _presentation
+            ?? throw new InvalidOperationException(
+                "No window is attached to take over the connection.");
+        bool replaced = false;
+        void Replace() => replaced = Host.ReplaceEventRoute();
+        if (drives is null)
+            Replace();
+        else
+            drives.HandOver(Replace);
+        if (!replaced)
+            return false;
+
+        GraphicalAutomationCapabilities.PresentPlayingSession(
+            window,
+            Host.IsInWorld ? Host.EnteredCharacter : null,
+            _runtime.CharacterOwner.Options,
+            _runtime.EntityObjects.Physics.WorldFrameCenterLandblockId,
+            _runtime.MovementOwner.Controller?.CellId ?? 0u);
+        return true;
+    }
+
+    /// <summary>
+    /// Why a window cannot open on the session at this moment, or null when
+    /// it can. A window takes the session over between steps, never in the
+    /// middle of one whose drawing only a window present from its start
+    /// would have: connecting, entering the world until the server has been
+    /// told the character arrived, a portal, a logout.
+    /// </summary>
+    internal string? WhyAWindowCannotOpenNow() =>
+        WhyAWindowCannotOpen(
+            _runtime.CharacterSelection.Snapshot.Lifecycle,
+            Host.CurrentSession?.LoginCompleteSent ?? false,
+            _runtime.TransitOwner.IsTeleportActive
+                || _runtime.TransitOwner.HasPendingTeleportStart,
+            _runtime.TransitOwner.IsLogoutActive);
+
+    internal static string? WhyAWindowCannotOpen(
+        RuntimeCharacterSelectionLifecycle lifecycle,
+        bool loginCompleteSent,
+        bool inPortal,
+        bool loggingOut)
+    {
+        if (lifecycle is RuntimeCharacterSelectionLifecycle.Connecting)
+            return "connecting";
+        if (lifecycle is RuntimeCharacterSelectionLifecycle.EnteringWorld
+            || (lifecycle is RuntimeCharacterSelectionLifecycle.InWorld
+                && !loginCompleteSent))
+        {
+            return "entering the world";
+        }
+        if (inPortal)
+            return "in a portal";
+        if (loggingOut)
+            return "logging out";
+        return null;
+    }
+
     private void Detach(GraphicalSessionPresentation presentation)
     {
         if (ReferenceEquals(_presentation, presentation))

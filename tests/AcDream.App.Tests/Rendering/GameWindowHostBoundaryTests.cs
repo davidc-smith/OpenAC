@@ -105,6 +105,17 @@ public sealed class GameWindowHostBoundaryTests
     }
 
     [Fact]
+    public void SessionHost_StopsBackgroundCollisionLoadsBeforeClosingTheGameFiles()
+    {
+        AssertCallOrder(
+            RequiredMethod(typeof(AcDream.App.Hosting.GraphicalSessionHost), "Dispose"),
+            (typeof(AcDream.Runtime.World.RuntimeCollisionNeighborhood),
+                nameof(AcDream.Runtime.World.RuntimeCollisionNeighborhood.StopBackgroundWork)),
+            (typeof(AcDream.App.Hosting.GraphicalSessionContent),
+                nameof(AcDream.App.Hosting.GraphicalSessionContent.Dispose)));
+    }
+
+    [Fact]
     public void SessionDrives_AreTheSessionHostsAndTheWindowBuildsNone()
     {
         // A second set of drives would note every creature's first entry a

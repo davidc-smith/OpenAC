@@ -138,6 +138,12 @@ public sealed class LiveSessionHost
     public IRuntimeConnectionView Connection => _controller.Connection;
     public bool IsInWorld => _controller.IsInWorld;
 
+    /// <summary>
+    /// The character this session entered the world with, until the session
+    /// resets; what a window opening on the playing session presents.
+    /// </summary>
+    public LiveSessionCharacterSelection? EnteredCharacter { get; private set; }
+
     /// <summary>True when the last session ended because the server went silent.</summary>
     public bool ConnectionLost => _controller.ConnectionLost;
 
@@ -266,6 +272,7 @@ public sealed class LiveSessionHost
         RuntimeGenerationToken retiringGeneration)
     {
         DrainPendingRouteRollback();
+        EnteredCharacter = null;
         _loginCommands?.Cancel(retiringGeneration);
         _reset(retiringGeneration);
     }
@@ -284,6 +291,7 @@ public sealed class LiveSessionHost
 
     private void ApplyEnteredWorld(LiveSessionCharacterSelection selection)
     {
+        EnteredCharacter = selection;
         string name = selection.CharacterName;
         _enteredWorld.ResumeWorldAudio?.Invoke();
         _enteredWorld.SetActiveCharacter(name);

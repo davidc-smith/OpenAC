@@ -293,6 +293,29 @@ public sealed class LiveSessionHostTests
     }
 
     [Fact]
+    public void TheHostRemembersTheCharacterItEnteredWithUntilTheSessionResets()
+    {
+        var calls = new List<string>();
+        var controller = new LiveSessionController(new TestOperations(calls));
+        LiveSessionHost host = CreateHost(
+            controller,
+            calls,
+            _ => new TestEventRouting(calls),
+            _ => new TestCommandRouting(calls));
+        Assert.Null(host.EnteredCharacter);
+
+        Assert.Equal(LiveSessionStartStatus.Connected, host.Start(LiveOptions()).Status);
+
+        Assert.Equal(0x50000002u, host.EnteredCharacter?.CharacterId);
+        Assert.Equal("Ready", host.EnteredCharacter?.CharacterName);
+
+        // Stopping resets the session, and the session forgets it.
+        _ = host.Stop(controller.Generation);
+        Assert.Null(host.EnteredCharacter);
+        controller.Dispose();
+    }
+
+    [Fact]
     public void ReplacingTheEventRouteWithNoConnectionDoesNothing()
     {
         var calls = new List<string>();
