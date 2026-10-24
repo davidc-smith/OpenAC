@@ -63,6 +63,59 @@ public sealed class RhiWorldTextureArrayTests
     }
 
     [Fact]
+    public void APreparedChainIsOnlyUploadedForAnUncompressedLayer()
+    {
+        using var device = new RecordingGpuDevice();
+        var arrays = new RhiWorldTextureArrayFactory(device);
+        byte[] level0 = Rgba(Extent, Extent);
+        byte[][] chain = WorldTextureMipChains.Build(TextureFormat.RGBA8, level0, Extent, Extent);
+
+        using IWorldTextureArray array = arrays.CreateClampedArray(TextureFormat.RGBA8, Extent, Extent, 4);
+        array.UpdateLayer(1, level0, null, null, chain);
+        long uploaded = array.ProcessDirtyUpdates();
+
+        RecordingGpuTexture texture = LastCreatedTexture(device);
+        Assert.False(texture.MipChainGenerated);
+        Assert.Equal([0, 1, 2, 3, 4, 5, 6], texture.Uploads.Select(u => u.MipLevel));
+        Assert.All(texture.Uploads, upload => Assert.Equal(1, upload.Layer));
+        Assert.Equal(WorldTextureMipChains.Bytes(chain), uploaded);
+    }
+
+    [Fact]
+    public void APreparedChainIsOnlyUploadedForABlockCompressedLayer()
+    {
+        using var device = new RecordingGpuDevice();
+        var arrays = new RhiWorldTextureArrayFactory(device);
+        byte[] level0 = Bc1(Extent, Extent);
+        byte[][] chain = WorldTextureMipChains.Build(TextureFormat.DXT1, level0, Extent, Extent);
+
+        using IWorldTextureArray array = arrays.CreateClampedArray(TextureFormat.DXT1, Extent, Extent, 2);
+        array.UpdateLayer(0, level0, null, null, chain);
+        array.ProcessDirtyUpdates();
+
+        RecordingGpuTexture texture = LastCreatedTexture(device);
+        Assert.False(texture.MipChainGenerated);
+        Assert.Equal([0, 1, 2, 3, 4, 5, 6], texture.Uploads.Select(u => u.MipLevel));
+        for (int level = 1; level < 7; level++)
+            Assert.Equal(chain[level - 1].Length, texture.Uploads[level].ByteCount);
+    }
+
+    [Fact]
+    public void AChainOfTheWrongLengthIsIgnoredAndTheLayerGetsItsOwn()
+    {
+        using var device = new RecordingGpuDevice();
+        var arrays = new RhiWorldTextureArrayFactory(device);
+
+        using IWorldTextureArray array = arrays.CreateClampedArray(TextureFormat.RGBA8, Extent, Extent, 1);
+        array.UpdateLayer(0, Rgba(Extent, Extent), null, null, [new byte[16]]);
+        array.ProcessDirtyUpdates();
+
+        RecordingGpuTexture texture = LastCreatedTexture(device);
+        Assert.True(texture.MipChainGenerated);
+        Assert.Equal([(0, 0, Extent * Extent * 4)], texture.Uploads);
+    }
+
+    [Fact]
     public void EveryArrayIsAddressableThroughBothAddressModes()
     {
         using var device = new RecordingGpuDevice();

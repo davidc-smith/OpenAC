@@ -29,7 +29,9 @@ internal static class BlockCompressionMipChain
         int mipLevelCount)
     {
         var levels = new List<Level>(Math.Max(0, mipLevelCount - 1));
-        byte[] current = rgba.ToArray();
+        // Level 1 is filtered straight from the caller's level 0; no copy of
+        // it is made.
+        ReadOnlySpan<byte> current = rgba;
         int currentWidth = width;
         int currentHeight = height;
 
