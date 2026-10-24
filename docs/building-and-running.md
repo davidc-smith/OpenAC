@@ -260,7 +260,9 @@ standard error gets `[<session id>] ended: no available character matches Id(134
 `disconnected` and `exited` (code 5) giving that text as `reason`.
 While it waits, `/quit` ends it and `/window` waits for the next login. With
 no window the client also walks (`/nav`, plugin walks), lets plugins answer
-the server's confirmations, and sets the document's `characterOptions`, as
+the server's confirmations, logs the character off when a plugin asks (back
+to character selection, as with a window), and sets the document's
+`characterOptions`, as
 the headless client does. Exit codes: 0 graceful, 2 usage, 3 configuration,
 4 credential, 5 connection, 6 runtime.
 

@@ -1701,6 +1701,10 @@ public sealed partial class WorldSession : IDisposable
     /// </summary>
     internal void AssumeLoginCompleteForTesting() => LoginCompleteSent = true;
 
+    /// <summary>The server's log-off confirmation, for a session never negotiated.</summary>
+    internal void ConfirmCharacterLogOffForTesting() =>
+        Interlocked.Exchange(ref _characterLogOffConfirmed, 1);
+
     /// <summary>Tells the server the login, or a portal arrival, is complete.</summary>
     public void SendLoginComplete()
     {

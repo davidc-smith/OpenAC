@@ -217,13 +217,14 @@ internal sealed class WindowlessSessionFixture : IDisposable
 
         public void DisposeSession(WorldSession session) => session.Dispose();
 
-        public void RequestCharacterLogOff(WorldSession session)
-        {
-        }
+        internal int LogOffRequests { get; private set; }
 
-        public void ReturnToCharacterSelect(WorldSession session)
-        {
-        }
+        internal int ReturnsToCharacterSelection { get; private set; }
+
+        public void RequestCharacterLogOff(WorldSession session) => LogOffRequests++;
+
+        public void ReturnToCharacterSelect(WorldSession session) =>
+            ReturnsToCharacterSelection++;
     }
 
     /// <summary>A clock that moves only when told to.</summary>

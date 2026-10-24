@@ -129,7 +129,7 @@ internal static class ObservedHostRecords
             // comparing a host against a part it never passes.
             SessionCommands = Part<DirectGameRuntimeCommandAdapter>(),
             NavigationWalk = Part<AcDream.Runtime.Navigation.NavigationWalkController>(),
-            Logout = Part<AcDream.Headless.Hosting.HeadlessLogoutAutomation>(),
+            Logout = Part<AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout>(),
             AnswerConfirmation = NoteAndAnswer,
         });
 

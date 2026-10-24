@@ -125,7 +125,7 @@ public sealed class SharedContentSeamParityTests
                 MagicCatalog = MagicCatalog.Empty,
                 NavigationWalk =
                     Part<AcDream.Runtime.Navigation.NavigationWalkController>(),
-                Logout = Part<AcDream.Headless.Hosting.HeadlessLogoutAutomation>(),
+                Logout = Part<AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout>(),
                 AnswerConfirmation = static (_, _) => true,
             });
 

@@ -89,6 +89,61 @@ public sealed class WindowlessSessionGapsTests
     }
 
     /// <summary>
+    /// A plugin's logout with no window logs the character off: one log-off
+    /// request goes to the server, no second one while it is under way, and
+    /// once the server confirms it the character is back at character
+    /// selection, as with a window (and in the Rust client); the connection
+    /// stays. Port of
+    /// <c>HeadlessSessionHostTests.PluginDrivenLogoutRoutesThroughTheHostsOwnStopAndClearsTheSession</c>
+    /// and <c>RequestLogoutSendsOneLogoffAndCanRequestLogoutGoesFalseWhilePending</c>.
+    /// </summary>
+    [Fact]
+    public void A_plugin_logout_with_no_window_logs_the_character_off()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.EnterWorld();
+        ILoginAutomation login = ((IAutomationSurface)session.Automation).Login;
+
+        Assert.True(login.CanRequestLogout);
+        Assert.True(login.Logout());
+
+        Assert.Equal(1, session.Connections.LogOffRequests);
+        Assert.True(session.Host.Runtime.TransitOwner.IsLogoutActive);
+        Assert.False(login.CanRequestLogout);
+        Assert.False(login.RequestLogout());
+        Assert.Equal(1, session.Connections.LogOffRequests);
+
+        // Nothing happens until the server confirms it.
+        Assert.False(session.Update());
+        Assert.True(session.Host.Runtime.Session.IsInWorld);
+
+        session.Connections.Sessions[^1].ConfirmCharacterLogOffForTesting();
+        Assert.False(session.Update());
+
+        Assert.Equal(1, session.Connections.ReturnsToCharacterSelection);
+        Assert.False(session.Host.Runtime.Session.IsInWorld);
+        Assert.False(session.Host.Runtime.TransitOwner.IsLogoutActive);
+        Assert.NotNull(session.Host.LiveSession.Host.CurrentSession);
+        Assert.False(login.CanRequestLogout);
+
+        // Back in the world on a new login (as after a lost server), a second
+        // log off runs to its end as the first did.
+        var commands = session.Host.CommandsWithoutWindow.Session;
+        commands.Stop(session.Host.Runtime.Generation);
+        commands.Start(session.Host.Runtime.Generation);
+        for (int frame = 0; frame < 20 && !session.Host.Runtime.Session.IsInWorld; frame++)
+            Assert.False(session.Update());
+        Assert.True(session.Host.Runtime.Session.IsInWorld);
+        Assert.True(login.RequestLogout());
+        session.Connections.Sessions[^1].ConfirmCharacterLogOffForTesting();
+        Assert.False(session.Update());
+
+        Assert.Equal(2, session.Connections.ReturnsToCharacterSelection);
+        Assert.False(session.Host.Runtime.Session.IsInWorld);
+        Assert.False(session.Host.Runtime.TransitOwner.IsLogoutActive);
+    }
+
+    /// <summary>
     /// The server settling a question on its own leaves nothing to answer.
     /// Port of
     /// <c>HeadlessSessionHostTests.AConfirmationDoneOnTheWireClearsThePendingConfirmationThroughProductionRouting</c>.

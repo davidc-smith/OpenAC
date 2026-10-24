@@ -882,7 +882,7 @@ public sealed class HeadlessSessionHostTests
             host.Tick(0.015d);
             Assert.False(host.IsPolicyComplete);
 
-            time.Advance(HeadlessLogoutAutomation.DefaultConfirmationDeadline
+            time.Advance(AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout.DefaultConfirmationDeadline
                 + TimeSpan.FromSeconds(1));
             host.Tick(0.015d);
 

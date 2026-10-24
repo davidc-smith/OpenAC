@@ -143,6 +143,9 @@ internal sealed class GraphicalSessionHost : IDisposable
             session => CommandsWithoutWindow.CreateRoute(session));
         Confirmations = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations(
             () => LiveSession.Host.CurrentSession);
+        WindowlessLogout = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout(
+            Runtime,
+            _time);
         // The session's walks, planned over its own collision and walked
         // whether or not a window is open.
         Navigation = new GraphicalSessionNavigation(
@@ -207,6 +210,12 @@ internal sealed class GraphicalSessionHost : IDisposable
     /// answered by plugins as on every client without a window.
     /// </summary>
     internal AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations Confirmations { get; }
+
+    /// <summary>
+    /// A plugin's log off while no window is attached, stepped by the
+    /// session's own update: the one every client without a window runs.
+    /// </summary>
+    internal AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout WindowlessLogout { get; }
 
     /// <summary>
     /// The session's walks: kept across windows, stepped by whatever presents
@@ -597,6 +606,9 @@ internal sealed class GraphicalSessionHost : IDisposable
                     SubmitChatTextWithoutWindow = SubmitChatText,
                     NavigationWalk = Navigation.Walk,
                     AnswerConfirmationWithoutWindow = Confirmations.TryAnswer,
+                    LogoutWithoutWindow = new AcDream.Runtime.Plugins.RuntimeAutomationLogoutCommands(
+                        WindowlessLogout.TryRequestLogout,
+                        () => WindowlessLogout.CanRequestLogout),
                 }));
     }
 
@@ -642,6 +654,23 @@ internal sealed class GraphicalSessionHost : IDisposable
         Collision.Tick();
         frame.TickSessionFrame(new UpdateFrameInput(hostDeltaSeconds));
         _pluginTick.Feed(hostDeltaSeconds);
+        // Where the windowless client steps it: after the plugins' tick.
+        if (_window is null)
+            TickLogoutWithoutWindow();
+    }
+
+    private void TickLogoutWithoutWindow()
+    {
+        switch (WindowlessLogout.Tick())
+        {
+            case AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogoutOutcome.Completed:
+                Console.WriteLine("live: logout confirmed — returning to character select");
+                break;
+            case AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogoutOutcome.TimedOut:
+                Console.Error.WriteLine(
+                    "live: a plugin-requested logout was never confirmed by the server");
+                break;
+        }
     }
 
     /// <summary>
