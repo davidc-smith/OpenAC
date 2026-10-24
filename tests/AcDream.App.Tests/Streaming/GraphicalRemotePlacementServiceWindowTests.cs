@@ -16,7 +16,7 @@ public sealed class GraphicalRemotePlacementServiceWindowTests
         var state = new GpuWorldState();
 
         Assert.Throws<ArgumentNullException>(() =>
-            new GraphicalRemotePlacementServiceWindow(state, null!));
+            new GraphicalRemotePlacementServiceWindow(state, null!, static _ => true));
         Assert.DoesNotContain(
             typeof(GraphicalRemotePlacementServiceWindow)
                 .GetConstructors(
@@ -36,9 +36,35 @@ public sealed class GraphicalRemotePlacementServiceWindowTests
             Array.Empty<AcDream.Core.World.WorldEntity>()));
         var window = new GraphicalRemotePlacementServiceWindow(
             state,
+            static _ => true,
             static _ => true);
 
         Assert.True(window.IsWithinServiceWindow(OutdoorCell));
+    }
+
+    [Fact]
+    public void False_WhenTheSessionHasNotPublishedTheCellsCollision()
+    {
+        // Drawn and near is not enough: a body cannot be put down where the
+        // session has no collision yet. The cell asked about is passed on
+        // as it is.
+        var state = new GpuWorldState();
+        state.AddLandblock(new LoadedLandblock(
+            CanonicalLandblock,
+            new LandBlock(),
+            Array.Empty<AcDream.Core.World.WorldEntity>()));
+        uint asked = 0;
+        var window = new GraphicalRemotePlacementServiceWindow(
+            state,
+            static _ => true,
+            cell =>
+            {
+                asked = cell;
+                return false;
+            });
+
+        Assert.False(window.IsWithinServiceWindow(OutdoorCell));
+        Assert.Equal(OutdoorCell, asked);
     }
 
     [Fact]
@@ -47,6 +73,7 @@ public sealed class GraphicalRemotePlacementServiceWindowTests
         var state = new GpuWorldState();
         var window = new GraphicalRemotePlacementServiceWindow(
             state,
+            static _ => true,
             static _ => true);
 
         Assert.False(window.IsWithinServiceWindow(OutdoorCell));
@@ -62,6 +89,7 @@ public sealed class GraphicalRemotePlacementServiceWindowTests
         Assert.True(state.IsNearTierOrPending(CanonicalLandblock));
         var window = new GraphicalRemotePlacementServiceWindow(
             state,
+            static _ => true,
             static _ => true);
 
         Assert.False(window.IsWithinServiceWindow(OutdoorCell));
@@ -77,6 +105,7 @@ public sealed class GraphicalRemotePlacementServiceWindowTests
             Array.Empty<AcDream.Core.World.WorldEntity>()));
         var window = new GraphicalRemotePlacementServiceWindow(
             state,
+            static _ => true,
             static _ => true);
         Assert.True(window.IsWithinServiceWindow(OutdoorCell));
 
@@ -100,7 +129,8 @@ public sealed class GraphicalRemotePlacementServiceWindowTests
             {
                 observed = id;
                 return false;
-            });
+            },
+            static _ => true);
 
         Assert.False(window.IsWithinServiceWindow(OutdoorCell));
         Assert.Equal(CanonicalLandblock, observed);

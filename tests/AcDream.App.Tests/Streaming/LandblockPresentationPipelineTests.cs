@@ -77,7 +77,6 @@ public sealed class LandblockPresentationPipelineTests
             .Select(parameter => parameter.ParameterType)
             .ToArray();
         Assert.Contains(typeof(LandblockRenderPublisher), pipelineParameterTypes);
-        Assert.Contains(typeof(LandblockPhysicsPublisher), pipelineParameterTypes);
         Assert.Contains(typeof(LandblockStaticPresentationPublisher), pipelineParameterTypes);
         Assert.DoesNotContain(
             pipeline.GetParameters(),

@@ -79,10 +79,14 @@ public sealed class RuntimePhysicsOwnershipTests
             appRoot,
             "Rendering",
             "GameWindow.cs"));
+        // Both hosts publish collision through the one neighborhood the
+        // runtime owns.
         string headlessProjection = File.ReadAllText(Path.Combine(
-            headlessRoot,
-            "Hosting",
-            "HeadlessSessionWorldProjection.cs"));
+            root,
+            "src",
+            "AcDream.Runtime",
+            "World",
+            "RuntimeCollisionNeighborhood.cs"));
         string productionHosts = string.Join(
             "\n",
             Directory.EnumerateFiles(
@@ -153,9 +157,9 @@ public sealed class RuntimePhysicsOwnershipTests
             "World",
             "LiveEntityRuntime.cs"));
         string collisionPublisher = File.ReadAllText(Path.Combine(
-            appRoot,
-            "Streaming",
-            "LandblockPhysicsPublisher.cs"));
+            runtimeRoot,
+            "World",
+            "RuntimeCollisionNeighborhood.cs"));
         string runtimeRemote = File.ReadAllText(Path.Combine(
             runtimeRoot,
             "Physics",

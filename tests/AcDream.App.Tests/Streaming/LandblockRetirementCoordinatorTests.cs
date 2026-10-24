@@ -55,27 +55,27 @@ public sealed class LandblockRetirementCoordinatorTests
     }
 
     [Fact]
-    public void BudgetedPendingPhysicsPollsExactlyOncePerAdvance()
+    public void BudgetedPendingStagePollsExactlyOncePerAdvance()
     {
         const uint landblockId = 0x2023FFFFu;
         var state = StateWith(landblockId);
-        int physicsPolls = 0;
-        int terrainPolls = 0;
-        bool acknowledgePhysics = false;
+        int pendingPolls = 0;
+        int laterPolls = 0;
+        bool acknowledgePending = false;
         LandblockRetirementOperationResult AdvancePresentation(
             LandblockRetirementTicket ticket) =>
             ticket.NextIncompleteStage switch
             {
-                LandblockRetirementStage.Physics => ticket.RunOnceStep(
-                    LandblockRetirementStage.Physics,
-                    () =>
-                    {
-                        physicsPolls++;
-                        return acknowledgePhysics;
-                    }),
                 LandblockRetirementStage.Terrain => ticket.RunOnceStep(
                     LandblockRetirementStage.Terrain,
-                    () => terrainPolls++),
+                    () =>
+                    {
+                        pendingPolls++;
+                        return acknowledgePending;
+                    }),
+                LandblockRetirementStage.CellVisibility => ticket.RunOnceStep(
+                    LandblockRetirementStage.CellVisibility,
+                    () => laterPolls++),
                 { } stage => ticket.RunOnceStep(stage, () => { }),
             };
         LandblockRetirementCoordinator coordinator =
@@ -93,18 +93,18 @@ public sealed class LandblockRetirementCoordinatorTests
         coordinator.Advance(first);
         first.FinishFrame();
 
-        Assert.Equal(1, physicsPolls);
-        Assert.Equal(0, terrainPolls);
+        Assert.Equal(1, pendingPolls);
+        Assert.Equal(0, laterPolls);
         Assert.Equal(0, first.Snapshot.FailureCount);
         Assert.Equal(1, coordinator.PendingCount);
 
-        acknowledgePhysics = true;
+        acknowledgePending = true;
         var second = new StreamingWorkMeter(Budget(maxEntityOperations: 64));
         coordinator.Advance(second);
         second.FinishFrame();
 
-        Assert.Equal(2, physicsPolls);
-        Assert.Equal(1, terrainPolls);
+        Assert.Equal(2, pendingPolls);
+        Assert.Equal(1, laterPolls);
         Assert.Equal(0, second.Snapshot.FailureCount);
         Assert.Equal(0, coordinator.PendingCount);
     }
