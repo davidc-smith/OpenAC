@@ -18,6 +18,9 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
     private readonly GraphicalHostPlatformServices _platform;
     private readonly FramePacingPolicy _pacing;
     private readonly Action<string> _log;
+    // The capability report's write, on a worker; waited for on dispose so a
+    // run that ends at once (the capability probe) still leaves it on disk.
+    private Task _capabilityReportWrite = Task.CompletedTask;
 
     private Silk.NET.Vulkan.Vk? _vk;
     private Instance _instance;
@@ -299,7 +302,7 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         string reportPath = Path.Combine(
             _platform.Paths.DiagnosticsDirectory,
             VulkanCapabilityGuard.ReportFileName);
-        VulkanCapabilityReportWriter.Write(reportPath, record);
+        _capabilityReportWrite = VulkanCapabilityReportWriter.WriteForGate(reportPath, record, _log);
         VulkanCapabilityGuard.ThrowIfUnsupported(record, reportPath);
 
         _log(
@@ -422,6 +425,9 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+
+        // Never faults: a failed write is logged by the writer.
+        _capabilityReportWrite.Wait();
 
         Silk.NET.Vulkan.Vk? vk = _vk;
         if (vk is not null && _device.Handle != 0)

@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
+using System.Threading.Tasks;
 using AcDream.App.Platform;
 using AcDream.App.Rendering.Gpu.Vk;
 using Silk.NET.Vulkan;
@@ -171,5 +174,94 @@ public sealed class VulkanCapabilityReportContractTests
         Assert.Equal(
             JsonSerializer.Serialize(record, reflection),
             VulkanCapabilityReportWriter.Serialize(record));
+    }
+
+    [Fact]
+    public void AFailingDeviceHasItsReportOnDiskBeforeTheGateRaisesItsError()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "acdream-report-" + Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, VulkanCapabilityGuard.ReportFileName);
+        int backgroundWrites = 0;
+        try
+        {
+            Task write = VulkanCapabilityReportWriter.WriteForGate(
+                path,
+                LavapipeShapedRecord("timelineSemaphore"),
+                _ => { },
+                work =>
+                {
+                    backgroundWrites++;
+                    work();
+                    return Task.CompletedTask;
+                });
+
+            Assert.True(write.IsCompletedSuccessfully);
+            Assert.Equal(0, backgroundWrites);
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void APassingDeviceHasItsReportWrittenOnAWorker()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "acdream-report-" + Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, VulkanCapabilityGuard.ReportFileName);
+        Action? handedOff = null;
+        try
+        {
+            VulkanCapabilityRecord record = LavapipeShapedRecord();
+            Assert.True(record.IsSupported);
+
+            Task write = VulkanCapabilityReportWriter.WriteForGate(
+                path,
+                record,
+                _ => { },
+                work =>
+                {
+                    handedOff = work;
+                    return Task.CompletedTask;
+                });
+
+            Assert.NotNull(handedOff);
+            Assert.False(File.Exists(path));
+            handedOff!();
+            Assert.Equal(
+                VulkanCapabilityReportWriter.Serialize(record),
+                File.ReadAllText(path));
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task AReportThatCannotBeWrittenOnTheWorkerIsLoggedNotThrown()
+    {
+        string blocker = Path.Combine(Path.GetTempPath(), "acdream-report-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(blocker, "a file where the report's folder would go");
+        var lines = new List<string>();
+        try
+        {
+            Task write = VulkanCapabilityReportWriter.WriteForGate(
+                Path.Combine(blocker, VulkanCapabilityGuard.ReportFileName),
+                LavapipeShapedRecord(),
+                lines.Add);
+
+            await write;
+            Assert.True(write.IsCompletedSuccessfully);
+            Assert.Single(lines);
+            Assert.Contains("capability report", lines[0]);
+        }
+        finally
+        {
+            File.Delete(blocker);
+        }
     }
 }
