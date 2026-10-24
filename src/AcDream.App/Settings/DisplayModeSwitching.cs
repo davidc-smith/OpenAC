@@ -129,7 +129,8 @@ internal sealed unsafe class GlfwDisplayModeSwitcher : IDisplayModeSwitcher
         }
         catch (GlfwException ex)
         {
-            // Non-Windows platforms throw; Windows never reaches here.
+            // Platforms without mode switching throw, and Windows throws
+            // when it refuses a display-settings query mid-change.
             error = ex.Message;
             return false;
         }
