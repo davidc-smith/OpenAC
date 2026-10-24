@@ -8,6 +8,39 @@ namespace AcDream.Core.Meshing;
 
 public static class SetupPartTransforms
 {
+    /// <summary>
+    /// The placement a server object rests in when no motion cycle poses it.
+    /// An object the server sent motion data for keeps Resting. Otherwise it
+    /// takes the placement the server named (the physics AnimationFrame, e.g.
+    /// Hook for an item hung on a house hook), and Default when it named none.
+    /// </summary>
+    public static uint ObjectPlacementId(uint? placementId, bool hasMovementData) =>
+        hasMovementData
+            ? (uint)Placement.Resting
+            : placementId ?? (uint)Placement.Default;
+
+    /// <summary>
+    /// The frame a setup is posed in for a placement: that placement's frame,
+    /// else Default, else none.
+    /// </summary>
+    public static AnimationFrame? ResolvePlacementFrame(Setup setup, uint placementId)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        if (setup.PlacementFrames.TryGetValue((Placement)placementId, out var placed))
+            return placed;
+        if (setup.PlacementFrames.TryGetValue(Placement.Default, out var fallback))
+            return fallback;
+        return null;
+    }
+
+    /// <summary>
+    /// The pose a server object rests in for a placement. When the setup has
+    /// neither that placement nor Default, the pose has no part frames: every
+    /// part sits at the object's origin, unrotated.
+    /// </summary>
+    public static AnimationFrame ResolveObjectPose(Setup setup, uint placementId) =>
+        ResolvePlacementFrame(setup, placementId) ?? new AnimationFrame(0);
+
     public static IReadOnlyList<Matrix4x4> Compute(
         Setup setup,
         AnimationFrame? motionFrameOverride = null,
