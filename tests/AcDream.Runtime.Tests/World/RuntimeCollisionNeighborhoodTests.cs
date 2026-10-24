@@ -88,6 +88,94 @@ public sealed class RuntimeCollisionNeighborhoodTests
         Assert.Equal(new Vector3(-192f, 0f, 0f), OffsetOf(runtime, Arrival));
     }
 
+    [Fact]
+    public void ReleaseWithdrawsEverythingPublishedAndTheNextArrivalStartsAfresh()
+    {
+        using GameRuntime runtime = NewRuntime();
+        var neighborhood = new RuntimeCollisionNeighborhood(
+            runtime,
+            new FlatContent());
+        runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+        neighborhood.CenterOn(Arrival);
+        Drive(neighborhood, Arrival);
+        Assert.Equal(9, runtime.EntityObjects.Physics.Engine.LandblockCount);
+
+        neighborhood.Release();
+        for (int pump = 0; pump < 20 && neighborhood.HasPublishedCollision; pump++)
+            neighborhood.Pump();
+
+        Assert.False(neighborhood.HasPublishedCollision);
+        Assert.Equal(0, runtime.EntityObjects.Physics.Engine.LandblockCount);
+        Assert.Equal(0u, neighborhood.FrameLandblock);
+        Assert.False(neighborhood.IsReady(Arrival));
+
+        // The same place again is a fresh arrival, not a no-op.
+        neighborhood.CenterOn(Arrival);
+        Drive(neighborhood, Arrival);
+        Assert.Equal(9, runtime.EntityObjects.Physics.Engine.LandblockCount);
+    }
+
+    [Fact]
+    public void APacedNeighborhoodStopsWhenTheFrameIsSpentAndCarriesOnNextCall()
+    {
+        using GameRuntime runtime = NewRuntime();
+        int checksThisFrame = 0;
+        var neighborhood = new RuntimeCollisionNeighborhood(
+            runtime,
+            new FlatContent(),
+            new RuntimeCollisionPacing
+            {
+                // Two steps of work per call, then the frame is spent.
+                IsFrameSpent = () => ++checksThisFrame > 2,
+            });
+        runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+
+        neighborhood.CenterOn(Arrival);
+
+        Assert.False(neighborhood.IsReady(Arrival));
+        Assert.Equal(0, runtime.EntityObjects.Physics.Engine.LandblockCount);
+
+        int calls = 1;
+        while (runtime.EntityObjects.Physics.Engine.LandblockCount < 9 && calls < 10_000)
+        {
+            checksThisFrame = 0;
+            neighborhood.Pump();
+            calls++;
+        }
+        Assert.Equal(9, runtime.EntityObjects.Physics.Engine.LandblockCount);
+        Assert.True(calls > 9, $"Published in {calls} calls, not spread over frames.");
+        checksThisFrame = 0;
+        Assert.True(neighborhood.IsReady(Arrival));
+    }
+
+    [Fact]
+    public void ABackgroundNeighborhoodLoadsLandblocksOffTheCallersThread()
+    {
+        using GameRuntime runtime = NewRuntime();
+        var content = new FlatContent();
+        var neighborhood = new RuntimeCollisionNeighborhood(
+            runtime,
+            content,
+            new RuntimeCollisionPacing { LoadInBackground = true });
+        runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+
+        neighborhood.CenterOn(Arrival);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (runtime.EntityObjects.Physics.Engine.LandblockCount < 9
+            && clock.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            neighborhood.Pump();
+            Thread.Sleep(1);
+        }
+
+        Assert.Equal(9, runtime.EntityObjects.Physics.Engine.LandblockCount);
+        Assert.Equal(9, content.LoadThreads.Count);
+        Assert.DoesNotContain(
+            System.Environment.CurrentManagedThreadId,
+            content.LoadThreads);
+        Assert.True(neighborhood.IsReady(Arrival));
+    }
+
     private static void Drive(
         RuntimeCollisionNeighborhood neighborhood,
         uint cell)
@@ -136,12 +224,16 @@ public sealed class RuntimeCollisionNeighborhoodTests
         public ImmutableArray<float> HeightTable { get; } =
             ImmutableArray.CreateRange(new float[256]);
 
+        /// <summary>The thread each landblock was loaded on.</summary>
+        public System.Collections.Concurrent.ConcurrentBag<int> LoadThreads { get; } = [];
+
         public bool TryLoadCollisionLandblock(
             uint landblockId,
             Vector3 origin,
             out LoadedLandblock landblock,
             out LandblockCollisionBuild collisions)
         {
+            LoadThreads.Add(System.Environment.CurrentManagedThreadId);
             landblock = new LoadedLandblock(
                 landblockId,
                 new LandBlock

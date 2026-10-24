@@ -226,6 +226,29 @@ internal sealed class RuntimeCollisionGenerationTransaction
 
 }
 
+/// <summary>
+/// How a collision neighborhood spreads its work. By default it does everything
+/// asked of it at once, on the caller's thread, which is what a client with no
+/// frame to keep wants. A client drawing frames loads landblocks on worker
+/// threads and stops for the frame once its share of the frame is spent.
+/// </summary>
+internal sealed class RuntimeCollisionPacing
+{
+    /// <summary>Load each landblock's content on a worker thread.</summary>
+    public bool LoadInBackground { get; init; }
+
+    /// <summary>
+    /// Asked between steps of work; true stops the work until the next
+    /// call. Null never stops.
+    /// </summary>
+    public Func<bool>? IsFrameSpent { get; init; }
+}
+
+/// <summary>One landblock's collision content, loaded.</summary>
+internal sealed record LoadedCollisionContent(
+    LoadedLandblock Landblock,
+    LandblockCollisionBuild Collisions);
+
 internal sealed class RuntimeCollisionNeighborhood
     : IRuntimeCollisionNeighborhood,
       AcDream.Runtime.Session.IRuntimeRemotePlacementServiceWindow
@@ -237,6 +260,9 @@ internal sealed class RuntimeCollisionNeighborhood
 
     private readonly GameRuntime _runtime;
     private readonly IRuntimeCollisionContent _content;
+    private readonly RuntimeCollisionPacing _pacing;
+    private readonly Dictionary<PublicationSpec, Task<LoadedCollisionContent?>> _loads = [];
+    private CancellationTokenSource? _loadsSuperseded;
     private readonly HashSet<uint> _resident = [];
     private readonly Queue<uint> _retirementQueue = [];
     private readonly Queue<PublicationSpec> _publicationQueue = [];
@@ -255,12 +281,14 @@ internal sealed class RuntimeCollisionNeighborhood
 
     internal RuntimeCollisionNeighborhood(
         GameRuntime runtime,
-        IRuntimeCollisionContent content)
+        IRuntimeCollisionContent content,
+        RuntimeCollisionPacing? pacing = null)
     {
         _runtime = runtime
             ?? throw new ArgumentNullException(nameof(runtime));
         _content = content
             ?? throw new ArgumentNullException(nameof(content));
+        _pacing = pacing ?? new RuntimeCollisionPacing();
     }
 
     public void CenterOn(uint fullCellId)
@@ -416,13 +444,10 @@ internal sealed class RuntimeCollisionNeighborhood
         uint landblockId,
         Vector3 origin,
         uint currentCellId,
-        bool required)
+        bool required,
+        LoadedCollisionContent? loaded)
     {
-        if (!_content.TryLoadCollisionLandblock(
-                landblockId,
-                origin,
-                out LoadedLandblock landblock,
-                out LandblockCollisionBuild collisions))
+        if (loaded is not { } content)
         {
             if (required)
             {
@@ -433,6 +458,8 @@ internal sealed class RuntimeCollisionNeighborhood
         }
 
         RuntimePhysicsState physics = _runtime.EntityObjects.Physics;
+        LoadedLandblock landblock = content.Landblock;
+        LandblockCollisionBuild collisions = content.Collisions;
         return RuntimeCollisionGenerationTransaction.Begin(
             physics,
             landblockId,
@@ -524,6 +551,8 @@ internal sealed class RuntimeCollisionNeighborhood
 
         while (_retirementQueue.TryPeek(out uint retiring))
         {
+            if (IsFrameSpent())
+                return;
             RuntimeCollisionMutationResult result = _runtime.EntityObjects
                 .Physics.WithdrawCollision(retiring);
             if (!result.Completed)
@@ -531,6 +560,10 @@ internal sealed class RuntimeCollisionNeighborhood
             _retirementQueue.Dequeue();
             _resident.Remove(retiring);
         }
+
+        // Released: nothing is asked for until the next arrival.
+        if (_requestedCenterLandblock == 0u)
+            return;
 
         if (!_publicationPlanBuilt)
         {
@@ -540,24 +573,31 @@ internal sealed class RuntimeCollisionNeighborhood
                 _resident,
                 _publicationQueue);
             _publicationPlanBuilt = true;
+            StartBackgroundLoads();
         }
 
         while (true)
         {
+            if (IsFrameSpent())
+                return;
             if (_pendingPublication is null)
             {
-                if (!_publicationQueue.TryDequeue(out PublicationSpec spec))
+                if (!_publicationQueue.TryPeek(out PublicationSpec spec))
                 {
                     _centerLandblock = _requestedCenterLandblock;
                     _runtime.EntityObjects.Physics.Engine
                         .UpdatePlayerCurrCell(_requestedFullCell);
                     return;
                 }
+                if (!TryTakeLoaded(spec, out LoadedCollisionContent? loaded))
+                    return;
+                _publicationQueue.Dequeue();
                 _pendingPublication = CreatePublication(
                     spec.LandblockId,
                     spec.Origin,
                     _requestedFullCell,
-                    spec.Required);
+                    spec.Required,
+                    loaded);
                 if (_pendingPublication is null)
                     continue;
             }
@@ -642,6 +682,31 @@ internal sealed class RuntimeCollisionNeighborhood
     /// </summary>
     internal uint FrameLandblock => _frameLandblock;
 
+    /// <summary>Whether any landblock's collision is published.</summary>
+    internal bool HasPublishedCollision => _resident.Count != 0;
+
+    /// <summary>
+    /// Withdraws every landblock this published and forgets the centre and
+    /// the frame: the session that needed them has ended. The withdrawal
+    /// runs over this call and the following <see cref="Pump"/> calls.
+    /// </summary>
+    internal void Release()
+    {
+        _requestedFrameLandblock = 0u;
+        _requestedFrameGeneration = default;
+        _requestedCenterLandblock = 0u;
+        _requestedFullCell = 0u;
+        _resetRequired = true;
+        _slideRequired = false;
+        _publicationPlanBuilt = false;
+        _publicationQueue.Clear();
+        _pendingPublicationCancellation = _pendingPublication is not null;
+        AdvanceWork();
+    }
+
+    /// <summary>Carries on with whatever work is outstanding.</summary>
+    internal void Pump() => AdvanceWork();
+
     /// <summary>
     /// The runtime's frame. Before the runtime has one (no character placed
     /// yet) the requested centre is the frame: it is the landblock the
@@ -653,6 +718,104 @@ internal sealed class RuntimeCollisionNeighborhood
             _runtime.EntityObjects.Physics.WorldFrameCenterLandblockId;
         return runtimeFrame != 0u ? runtimeFrame : center;
     }
+
+    private bool IsFrameSpent() => _pacing.IsFrameSpent?.Invoke() == true;
+
+    /// <summary>
+    /// Starts loading the landblocks the plan asks for, in the plan's order,
+    /// one after another on one worker thread, when this neighborhood loads
+    /// in the background. A plan that replaces this one stops the loads it
+    /// no longer wants; their results are never read.
+    /// </summary>
+    private void StartBackgroundLoads()
+    {
+        if (!_pacing.LoadInBackground)
+            return;
+        _loadsSuperseded?.Cancel();
+        var superseded = new CancellationTokenSource();
+        _loadsSuperseded = superseded;
+        var wanted = new HashSet<PublicationSpec>(_publicationQueue);
+        // Only a finished load carries over to the new plan: one still
+        // running belongs to the superseded worker and is loaded again.
+        foreach (PublicationSpec stale in _loads
+                     .Where(pair => !wanted.Contains(pair.Key)
+                         || !pair.Value.IsCompletedSuccessfully)
+                     .Select(pair => pair.Key)
+                     .ToArray())
+        {
+            _loads.Remove(stale);
+        }
+        var batch = new List<(PublicationSpec Spec, TaskCompletionSource<LoadedCollisionContent?> Result)>();
+        foreach (PublicationSpec spec in _publicationQueue)
+        {
+            if (_loads.ContainsKey(spec))
+                continue;
+            var result = new TaskCompletionSource<LoadedCollisionContent?>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _loads[spec] = result.Task;
+            batch.Add((spec, result));
+        }
+        if (batch.Count == 0)
+            return;
+        CancellationToken token = superseded.Token;
+        _ = Task.Run(() =>
+        {
+            foreach ((PublicationSpec spec, TaskCompletionSource<LoadedCollisionContent?> result) in batch)
+            {
+                if (token.IsCancellationRequested)
+                {
+                    result.TrySetCanceled(token);
+                    continue;
+                }
+                try
+                {
+                    result.TrySetResult(Load(spec));
+                }
+                catch (Exception error)
+                {
+                    result.TrySetException(error);
+                }
+            }
+        });
+    }
+
+    /// <summary>
+    /// The content for the next landblock to publish: loaded here, or taken
+    /// from its worker once that has finished. False while it is still
+    /// loading. A load that failed throws here, on the caller's thread.
+    /// </summary>
+    private bool TryTakeLoaded(
+        PublicationSpec spec,
+        out LoadedCollisionContent? loaded)
+    {
+        if (!_pacing.LoadInBackground)
+        {
+            loaded = Load(spec);
+            return true;
+        }
+        if (!_loads.TryGetValue(spec, out Task<LoadedCollisionContent?>? load))
+        {
+            load = Task.Run(() => Load(spec));
+            _loads[spec] = load;
+        }
+        if (!load.IsCompleted)
+        {
+            loaded = null;
+            return false;
+        }
+        _loads.Remove(spec);
+        loaded = load.GetAwaiter().GetResult();
+        return true;
+    }
+
+    private LoadedCollisionContent? Load(PublicationSpec spec) =>
+        _content.TryLoadCollisionLandblock(
+            spec.LandblockId,
+            spec.Origin,
+            out LoadedLandblock landblock,
+            out LandblockCollisionBuild collisions)
+            ? new LoadedCollisionContent(landblock, collisions)
+            : null;
 
     private static uint CanonicalLandblock(uint fullCellId) =>
         (fullCellId & 0xFFFF0000u) | 0xFFFFu;
