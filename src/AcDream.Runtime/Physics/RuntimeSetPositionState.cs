@@ -620,6 +620,21 @@ internal sealed class RuntimeSetPositionState : IDisposable
     }
 
     internal int PendingProjectionCount => _pendingProjection.Count;
+
+    /// <summary>
+    /// Whether this entity has been put down and the placement waits for the
+    /// presentation to acknowledge it.
+    /// </summary>
+    internal bool IsPlacementAwaitingPresentation(RuntimeEntityKey key)
+    {
+        EnsureNotDisposed();
+        return _operations.TryGetValue(key, out Operation? operation)
+            && operation.ProjectionSequence != 0UL
+            && _pendingProjection.TryGetValue(
+                operation.ProjectionSequence,
+                out RuntimePlacementProjectionSnapshot pending)
+            && pending.Kind is RuntimePlacementProjectionKind.Place;
+    }
     internal bool CanBeginAuthoredPlacementSequence =>
         _nextOperationId != ulong.MaxValue;
 
