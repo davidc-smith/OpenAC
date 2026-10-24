@@ -110,6 +110,7 @@ internal sealed class StreamingFrameController : IStreamingFramePhase
     private readonly IStreamingOriginConvergence _originConvergence;
     private readonly IStreamingFrameBackend _streaming;
     private readonly ILiveProjectionRescueRebucketter _rescues;
+    private readonly OfflineWorldReveal? _offlineReveal;
 
     public StreamingFrameController(
         bool liveModeEnabled,
@@ -122,7 +123,8 @@ internal sealed class StreamingFrameController : IStreamingFramePhase
         IStreamingDungeonCellSource dungeonCell,
         IStreamingOriginConvergence originConvergence,
         IStreamingFrameBackend streaming,
-        ILiveProjectionRescueRebucketter rescues)
+        ILiveProjectionRescueRebucketter rescues,
+        OfflineWorldReveal? offlineReveal = null)
     {
         _liveModeEnabled = liveModeEnabled;
         _playerMode = playerMode ?? throw new ArgumentNullException(nameof(playerMode));
@@ -139,6 +141,7 @@ internal sealed class StreamingFrameController : IStreamingFramePhase
             ?? throw new ArgumentNullException(nameof(originConvergence));
         _streaming = streaming ?? throw new ArgumentNullException(nameof(streaming));
         _rescues = rescues ?? throw new ArgumentNullException(nameof(rescues));
+        _offlineReveal = offlineReveal;
     }
 
     public void Tick()
@@ -169,6 +172,11 @@ internal sealed class StreamingFrameController : IStreamingFramePhase
             observerCy = (int)(cellLandblock & 0xFFu);
         }
 
+        // The offline view has no login to reveal the world: its own reveal
+        // follows the camera, ahead of the frame's streaming work so that
+        // work already runs at the reveal's budget.
+        if (!_liveModeEnabled)
+            _offlineReveal?.Observe(observerCx, observerCy);
         _streaming.Tick(observerCx, observerCy, gate.InsideDungeon);
         _rescues.RebucketAll(observerCx, observerCy);
     }

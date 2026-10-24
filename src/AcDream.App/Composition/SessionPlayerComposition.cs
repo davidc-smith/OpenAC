@@ -131,7 +131,8 @@ internal sealed record SessionPlayerResult(
     CurrentGameRuntimeAdapter GameRuntime,
     GameplayInputActionRouter? GameplayActions,
     SessionPlayerRuntimeBindings RuntimeBindings,
-    ISealedDungeonCellClassifier? SealedDungeonCells = null);
+    ISealedDungeonCellClassifier? SealedDungeonCells = null,
+    OfflineWorldReveal? OfflineReveal = null);
 
 internal interface IGameWindowSessionPlayerPublication
 {
@@ -446,6 +447,16 @@ internal sealed class SessionPlayerCompositionPhase
             revealResourceDiagnostics,
             live.Presentation.HasCollisionPendingRestore);
         Fault(SessionPlayerCompositionPoint.WorldRevealCreated);
+        OfflineWorldReveal? offlineReveal = d.Options.LiveMode
+            ? null
+            : new OfflineWorldReveal(
+                streaming,
+                revealRenderResources,
+                () => StreamingDiagnostics.ApplyRevealRadiusOverride(
+                    new StreamingRevealWindow(
+                        streaming.NearRadius,
+                        streaming.FarRadius)),
+                streaming.IsRenderNeighborhoodResident);
 
         return CompleteSessionPlayer(
             host,
@@ -458,6 +469,7 @@ internal sealed class SessionPlayerCompositionPhase
             streaming,
             streamingOriginRecenter,
             worldReveal,
+            offlineReveal,
             spawnClaimClassifier,
             bindings,
             liveSessionCommands,
@@ -476,6 +488,7 @@ internal sealed class SessionPlayerCompositionPhase
         StreamingController streaming,
         StreamingOriginRecenterCoordinator streamingOriginRecenter,
         WorldRevealCoordinator worldReveal,
+        OfflineWorldReveal? offlineReveal,
         DatSpawnClaimHydrationClassifier spawnClaimClassifier,
         SessionPlayerRuntimeBindings bindings,
         LiveSessionCommandSurface liveSessionCommands,
@@ -799,7 +812,8 @@ internal sealed class SessionPlayerCompositionPhase
             streaming,
             new LiveProjectionRescueRebucketter(
                 live.WorldState,
-                live.LiveEntities));
+                live.LiveEntities),
+            offlineReveal);
         IAmbientFramePhase? BuildAmbientFrame()
         {
             if (content.Audio?.Ambient is not { } ambient)
@@ -1248,7 +1262,8 @@ internal sealed class SessionPlayerCompositionPhase
             gameRuntime,
             gameplayActionsLease?.Resource,
             bindings,
-            sealedDungeonCells);
+            sealedDungeonCells,
+            offlineReveal);
         _publication.PublishSessionPlayer(result);
 
         streamerLease.Transfer();
