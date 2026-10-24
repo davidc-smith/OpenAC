@@ -176,26 +176,38 @@ internal static class ObservedHostRecords
         GraphicalAutomationCapabilities.BuildSessionHostBindings(
             new GraphicalSessionHostParts
             {
-                CreateEvents = NoEventRoute,
                 CreateCommands = NoCommandRoute,
-                Reset = NoteGeneration,
+                ResetWithoutWindow = NoteGeneration,
+                Presentation = () => WindowedPresentation,
                 Identity = Part<AcDream.App.Input.LocalPlayerIdentityState>(),
                 Communication = Part<AcDream.Runtime.Gameplay
                     .RuntimeCommunicationState>(),
                 Combat = Part<AcDream.Core.Combat.CombatState>(),
-                Settings = Part<AcDream.App.Settings.RuntimeSettingsController>(),
-                PlayerModeAutoEntry = Part<AcDream.App.Input.PlayerModeAutoEntry>(),
-                WorldState = Part<AcDream.App.Streaming.GpuWorldState>(),
-                Teleport = Part<AcDream.App.Streaming
-                    .DeferredLocalPlayerTeleportNetworkSink>(),
                 StatusWriter = Part<SessionStatusWriter>(),
                 SessionId = "census",
-                Vitals = Part<AcDream.UI.Abstractions.Panels.Vitals.VitalsVM>(),
-                RetainedUi = Part<AcDream.App.UI.RetailUiRuntime>(),
-                Paperdoll = Part<AcDream.App.Rendering.PaperdollFramePresenter>(),
-                WorldAudio = Part<AcDream.App.Audio.WorldAudioSessionGate>(),
                 LoginCommands = Part<AcDream.Runtime.Chat.LoginCommandSequence>(),
             });
+
+    /// <summary>
+    /// What an attached window lends the windowed session, with every part
+    /// present.
+    /// </summary>
+    private static readonly GraphicalSessionPresentation WindowedPresentation =
+        new()
+        {
+            CreateEvents = NoEventRoute,
+            Reset = NoteGeneration,
+            ClientCommands = new AcDream.Runtime.Chat.RuntimeClientCommandHostBindings(),
+            Settings = Part<AcDream.App.Settings.RuntimeSettingsController>(),
+            PlayerModeAutoEntry = Part<AcDream.App.Input.PlayerModeAutoEntry>(),
+            WorldState = Part<AcDream.App.Streaming.GpuWorldState>(),
+            Teleport = Part<AcDream.App.Streaming
+                .DeferredLocalPlayerTeleportNetworkSink>(),
+            Vitals = Part<AcDream.UI.Abstractions.Panels.Vitals.VitalsVM>(),
+            RetainedUi = Part<AcDream.App.UI.RetailUiRuntime>(),
+            Paperdoll = Part<AcDream.App.Rendering.PaperdollFramePresenter>(),
+            WorldAudio = Part<AcDream.App.Audio.WorldAudioSessionGate>(),
+        };
 
     /// <summary>The same, for the windowless host.</summary>
     internal static LiveSessionHostBindings WindowlessSessionHostBindings() =>

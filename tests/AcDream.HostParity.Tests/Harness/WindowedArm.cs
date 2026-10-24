@@ -274,40 +274,49 @@ internal sealed class WindowedArm : ParityArm
         _teleport = new AcDream.App.Streaming
             .DeferredLocalPlayerTeleportNetworkSink();
         _teleport.Bind(new UndrawnTeleportPresentation(_warnings.Add));
+        // A window is attached for the whole run: the harness drives the
+        // session as the client does with its window open.
+        var presentation = new GraphicalSessionPresentation
+        {
+            CreateEvents = routing.CreateEvents,
+            Reset = reset,
+            // The harness routes commands itself; nothing here is reached.
+            ClientCommands = new AcDream.Runtime.Chat.RuntimeClientCommandHostBindings(),
+            Settings = _settings,
+            PlayerModeAutoEntry = new AcDream.App.Input.PlayerModeAutoEntry(
+                isLiveInWorld: () => Runtime.Lifecycle.State
+                    == RuntimeLifecycleState.InWorld,
+                isPlayerEntityPresent: () => HasLiveBody,
+                isPlayerControllerReady: () => HasLiveBody,
+                // Player mode is about where the camera goes and what the
+                // keyboard steers, so a run with nothing drawn never
+                // reaches it. It is armed all the same, from the real
+                // class, so the arming itself is under the harness.
+                isWorldReady: () => false,
+                enterPlayerMode: () => _warnings.Add(
+                    "player mode: nothing is drawn, so there is no camera "
+                    + "to put behind the character")),
+            WorldState = _worldState,
+            Teleport = _teleport,
+            // The four a drawn client lends its session host, absent here
+            // for the same reason the census says they are.
+            Vitals = null,
+            RetainedUi = null,
+            Paperdoll = null,
+            WorldAudio = null,
+        };
         return GraphicalAutomationCapabilities.BuildSessionHostBindings(
             new GraphicalSessionHostParts
             {
-                CreateEvents = routing.CreateEvents,
                 CreateCommands = routing.CreateCommands,
-                Reset = reset,
+                ResetWithoutWindow = reset,
+                Presentation = () => presentation,
                 Identity = new AcDream.App.Input.LocalPlayerIdentityState(
                     Runtime.PlayerIdentity),
                 Communication = Runtime.CommunicationOwner,
                 Combat = Runtime.ActionOwner.Combat,
-                Settings = _settings,
-                PlayerModeAutoEntry = new AcDream.App.Input.PlayerModeAutoEntry(
-                    isLiveInWorld: () => Runtime.Lifecycle.State
-                        == RuntimeLifecycleState.InWorld,
-                    isPlayerEntityPresent: () => HasLiveBody,
-                    isPlayerControllerReady: () => HasLiveBody,
-                    // Player mode is about where the camera goes and what the
-                    // keyboard steers, so a run with nothing drawn never
-                    // reaches it. It is armed all the same, from the real
-                    // class, so the arming itself is under the harness.
-                    isWorldReady: () => false,
-                    enterPlayerMode: () => _warnings.Add(
-                        "player mode: nothing is drawn, so there is no camera "
-                        + "to put behind the character")),
-                WorldState = _worldState,
-                Teleport = _teleport,
                 StatusWriter = _status,
                 SessionId = Name,
-                // The four a drawn client lends its session host, absent here
-                // for the same reason the census says they are.
-                Vitals = null,
-                RetainedUi = null,
-                Paperdoll = null,
-                WorldAudio = null,
                 LoginCommands = null,
                 Warn = _warnings.Add,
             });

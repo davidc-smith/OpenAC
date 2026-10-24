@@ -40,7 +40,8 @@ internal sealed class GraphicalSessionHost : IDisposable
         RuntimeOptions options,
         WorldGameState worldGameState,
         WorldEvents worldEvents,
-        RuntimeAutomationSurface? automation = null)
+        RuntimeAutomationSurface? automation = null,
+        string? chatLogDirectory = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         WorldGameState = worldGameState
@@ -85,6 +86,21 @@ internal sealed class GraphicalSessionHost : IDisposable
             line => Serilog.Log.Warning("{Line}", line));
         WorldGameState.BindWorldEntities(PluginWorldEntities);
         WorldEvents.BindWorldEntities(PluginWorldEntities);
+        PlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
+            Runtime.PlayerIdentity);
+        // The live session is the host's too: it connects, routes commands and
+        // runs the login steps whether or not a window is open; a window lends
+        // it what only a window can do while it is attached.
+        LiveSession = new GraphicalLiveSession(
+            Runtime,
+            PlayerIdentity,
+            options,
+            StatusWriter,
+            SessionId,
+            automation is null ? null : automation.TryHandlePluginCommand,
+            automation is null ? null : automation.InterceptChatInput,
+            Console.WriteLine,
+            chatLogDirectory);
     }
 
     internal RuntimeOptions Options => _options;
@@ -117,6 +133,12 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal RuntimeAutomationSurface? Automation { get; }
 
     internal RuntimeWorldEntityProjection PluginWorldEntities { get; }
+
+    /// <summary>Which character this session plays, as the client reads it.</summary>
+    internal AcDream.App.Input.LocalPlayerIdentityState PlayerIdentity { get; }
+
+    /// <summary>The live session: connection, command routing, login steps.</summary>
+    internal GraphicalLiveSession LiveSession { get; }
 
     /// <summary>
     /// Marshals plugin work that must run on the update thread (clipboard,
