@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using AcDream.App.Hosting;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Plugin.Abstractions;
@@ -179,6 +180,107 @@ public sealed class WindowlessSessionGapsTests
 
         Assert.True(session.Host.Runtime.CharacterOwner.Options.HasServerSeed);
         Assert.Empty(sent);
+    }
+
+    /// <summary>
+    /// A session with no window whose server falls silent logs in again
+    /// every 30 s until an attempt gets back into the world, instead of
+    /// ending; none is made early. Port of
+    /// <c>HeadlessProcessSchedulerTests.LostServer_IsRetriedEvery30SecondsUntilALoginGetsBackIn</c>
+    /// and Rust <c>relogin.rs</c>
+    /// <c>a_lost_server_is_retried_every_30_seconds_until_a_login_gets_back_in</c>.
+    /// </summary>
+    [Fact]
+    public void A_server_falling_silent_with_no_window_is_logged_into_again_every_30_seconds()
+    {
+        var time = new WindowlessSessionFixture.ManualTime();
+        using var session = new WindowlessSessionFixture(time: time);
+        session.EnterWorld();
+        TimeSpan retry = TimeSpan.FromSeconds(30);
+        Assert.Equal(retry, GraphicalSessionHost.LostConnectionRetryInterval);
+        Assert.False(session.Update());
+
+        // The server goes away: the session finds it lost, ends the stay and
+        // waits to log in again instead of ending.
+        session.Connections.ServerDown = true;
+        Assert.False(session.Update());
+        Assert.False(session.Host.Runtime.Session.IsInWorld);
+        Assert.True(session.Host.IsRecoveringLostConnection);
+        Assert.Single(session.Connections.Sessions);
+        Assert.Equal("disconnected", session.StatusEvents()[^1]);
+
+        // Every attempt against the gone server fails and the next waits
+        // another 30 s; none is made a moment early.
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            time.Advance(retry - TimeSpan.FromTicks(1));
+            Assert.False(session.Update());
+            Assert.Equal(attempt, session.Connections.Sessions.Count);
+
+            time.Advance(TimeSpan.FromTicks(1));
+            Assert.False(session.Update());
+            Assert.Equal(attempt + 1, session.Connections.Sessions.Count);
+            Assert.True(session.Host.IsRecoveringLostConnection);
+            Assert.False(session.Host.Runtime.Session.IsInWorld);
+        }
+
+        // The server is back: the next attempt logs in and play resumes.
+        session.Connections.ServerDown = false;
+        time.Advance(retry);
+        for (int frame = 0; frame < 5 && !session.Host.Runtime.Session.IsInWorld; frame++)
+            Assert.False(session.Update());
+        Assert.Equal(5, session.Connections.Sessions.Count);
+        Assert.True(session.Host.Runtime.Session.IsInWorld);
+        Assert.False(session.Host.IsRecoveringLostConnection);
+        Assert.False(session.Update());
+        Assert.Equal(
+            ["enteredWorld", "disconnected", "enteredWorld"],
+            session.StatusEvents()
+                .Where(e => e is "enteredWorld" or "disconnected")
+                .ToArray());
+
+        Assert.Equal(GraphicalSessionEnd.Graceful, session.End());
+    }
+
+    /// <summary>
+    /// An account that no longer has the character to enter ends the
+    /// recovery, and the session ends with the connection's exit code. Port
+    /// of Rust <c>runner_relogin_tests.rs</c>
+    /// <c>a_failed_attempt_waits_another_interval_and_a_missing_character_ends_the_recovery</c>
+    /// (its second half; the first is the test above).
+    /// </summary>
+    [Fact]
+    public void Logging_in_again_to_an_account_without_the_character_ends_the_session()
+    {
+        var time = new WindowlessSessionFixture.ManualTime();
+        using var session = new WindowlessSessionFixture(time: time);
+        session.EnterWorld();
+        session.Connections.ServerDown = true;
+        Assert.False(session.Update());
+        Assert.True(session.Host.IsRecoveringLostConnection);
+
+        session.Connections.ServerDown = false;
+        session.Connections.Roster.Clear();
+        session.Connections.Roster.Add(
+            new CharacterList.Character(0x50000002u, "+Someone", 0u));
+        time.Advance(GraphicalSessionHost.LostConnectionRetryInterval);
+        bool ended = false;
+        for (int frame = 0; frame < 5 && !ended; frame++)
+            ended = session.Update();
+
+        Assert.True(ended);
+        Assert.Equal(2, session.Connections.Sessions.Count);
+        Assert.Equal(GraphicalSessionEnd.ConnectionLost, session.End(connectionEnded: true));
+        // The loss is said once, when it happens; the attempt that found no
+        // character had connected, and the exit closes that connection.
+        string[] lines = session.StatusLines();
+        Assert.Equal(
+            ["connection-lost", "process-exit"],
+            lines.Where(line => line.Contains("\"e\":\"disconnected\"", StringComparison.Ordinal))
+                .Select(line => System.Text.Json.JsonDocument.Parse(line)
+                    .RootElement.GetProperty("reason").GetString()!)
+                .ToArray());
+        Assert.Contains("\"code\":5", lines[^1], StringComparison.Ordinal);
     }
 
     private static byte[] PlayerDescription(uint options1, uint options2)

@@ -89,19 +89,46 @@ internal sealed class WindowlessSessionFixture : IDisposable
     /// <summary>One update of the session with no window.</summary>
     internal void Tick() => Host.Tick(0.015, Host.WindowlessFrame);
 
+    /// <summary>
+    /// One turn of the session's loop with no window: an update, then the
+    /// connection's step. True when the session's connection is gone for
+    /// good and the session ends.
+    /// </summary>
+    internal bool Update()
+    {
+        Tick();
+        return Host.StepConnectionWithoutWindow();
+    }
+
     /// <summary>The events of the status file, in order.</summary>
     internal string[] StatusEvents() =>
-        File.Exists(StatusPath)
-            ? [.. File.ReadAllLines(StatusPath)
-                .Select(line => System.Text.Json.JsonDocument.Parse(line)
-                    .RootElement.GetProperty("e").GetString()!)]
-            : [];
+        [.. StatusLines()
+            .Select(line => System.Text.Json.JsonDocument.Parse(line)
+                .RootElement.GetProperty("e").GetString()!)];
 
-    /// <summary>Logs off and shuts the session down, as <c>/quit</c> does.</summary>
-    internal GraphicalSessionEnd End()
+    /// <summary>The lines of the status file, read while the session writes it.</summary>
+    internal string[] StatusLines()
+    {
+        if (!File.Exists(StatusPath))
+            return [];
+        using var stream = new FileStream(
+            StatusPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd()
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    /// <summary>
+    /// Logs off and shuts the session down, as <c>/quit</c> does, or as the
+    /// loop does once the connection is gone for good.
+    /// </summary>
+    internal GraphicalSessionEnd End(bool connectionEnded = false)
     {
         _ended = true;
-        return Host.EndSessionWithoutWindow();
+        return Host.EndSessionWithoutWindow(connectionEnded);
     }
 
     public void Dispose()
@@ -197,6 +224,19 @@ internal sealed class WindowlessSessionFixture : IDisposable
         public void ReturnToCharacterSelect(WorldSession session)
         {
         }
+    }
+
+    /// <summary>A clock that moves only when told to.</summary>
+    internal sealed class ManualTime : TimeProvider
+    {
+        private long _timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => _timestamp;
+
+        internal void Advance(TimeSpan duration) =>
+            _timestamp = checked(_timestamp + duration.Ticks);
     }
 
     private sealed class NoTransport : IWorldSessionTransport

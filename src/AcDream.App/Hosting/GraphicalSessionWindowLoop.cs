@@ -135,7 +135,7 @@ internal sealed class GraphicalSessionWindowLoop
 
                 TimeSpan now = clock.Elapsed;
                 _host.Tick((now - last).TotalSeconds, _host.WindowlessFrame);
-                if (_host.ConnectionEnded)
+                if (_host.StepConnectionWithoutWindow())
                 {
                     _machine.Step(WindowAttachInput.ShutdownRequested);
                     return _host.EndSessionWithoutWindow(connectionEnded: true);
@@ -154,7 +154,9 @@ internal sealed class GraphicalSessionWindowLoop
 
     /// <summary>
     /// The next request to act on while no window is attached; an open
-    /// that must wait for the session's current step stays queued.
+    /// that must wait for the session's current step stays queued, and so
+    /// does one asked for while the session waits to log in again: the next
+    /// connection takes it.
     /// </summary>
     private WindowAttachInput? TakeRequestWhileDetached()
     {
@@ -162,7 +164,8 @@ internal sealed class GraphicalSessionWindowLoop
             return null;
         if (input is WindowAttachInput.AttachRequested
             && _host.HasSessionStarted
-            && _host.LiveSession.WhyAWindowCannotOpenNow() is not null)
+            && (_host.IsRecoveringLostConnection
+                || _host.LiveSession.WhyAWindowCannotOpenNow() is not null))
         {
             return null;
         }

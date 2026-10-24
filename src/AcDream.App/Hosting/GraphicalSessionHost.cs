@@ -43,6 +43,9 @@ internal sealed class GraphicalSessionHost : IDisposable
     private GraphicalSessionDrives? _drives;
     private bool _sessionStarted;
     private bool _startFailed;
+    private bool _recovering;
+    private bool _reloginUnderWay;
+    private long _reloginScheduledAt;
     private DirectGameRuntimeCommandAdapter? _commandsWithoutWindow;
     private GraphicalSessionWindowLoop? _windowLoop;
     private bool _disposed;
@@ -401,14 +404,118 @@ internal sealed class GraphicalSessionHost : IDisposable
     }
 
     /// <summary>
-    /// Whether the session's connection is gone with no window to show it: a
-    /// start that could not connect, or a server that went silent. The
-    /// session then ends with the connection's exit code.
+    /// How long a session that lost its server with no window attached waits
+    /// before each attempt to log in again: 30 s, as every client without a
+    /// window waits.
     /// </summary>
-    internal bool ConnectionEnded =>
-        _startFailed
-        || LiveSession.Host.ConnectionLost
-        || LiveSession.Host.Connection.Snapshot.Status is RuntimeConnectionStatus.Failed;
+    internal static TimeSpan LostConnectionRetryInterval { get; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// True from the moment the server is found gone with no window attached
+    /// until a login gets back into the world.
+    /// </summary>
+    internal bool IsRecoveringLostConnection => _recovering;
+
+    /// <summary>
+    /// The session's connection, stepped after each update while no window is
+    /// attached. A server that falls silent ends the stay (plugins hear the
+    /// log off) and the session logs in again every
+    /// <see cref="LostConnectionRetryInterval"/>, entering its character as
+    /// at the start, until an attempt gets back in; each failure says so and
+    /// waits another interval. True when the connection is gone for good and
+    /// the session ends with the connection's exit code: a start that never
+    /// got in, a connection that failed or that the server ended, or an
+    /// attempt to log in again that finds no character to enter.
+    /// </summary>
+    internal bool StepConnectionWithoutWindow()
+    {
+        if (_startFailed)
+            return true;
+        long now = _time.GetTimestamp();
+        if (!_recovering)
+        {
+            if (LiveSession.Host.ConnectionLost)
+            {
+                BeginLostConnectionRecovery(now);
+                return false;
+            }
+            return LiveSession.Host.Connection.Snapshot.Status
+                is RuntimeConnectionStatus.Failed;
+        }
+
+        if (_reloginUnderWay)
+        {
+            if (Runtime.Session.IsInWorld)
+            {
+                _recovering = false;
+                _reloginUnderWay = false;
+                return false;
+            }
+            RuntimeConnectionSnapshot connection = LiveSession.Host.Connection.Snapshot;
+            if (LiveSession.Host.ConnectionLost
+                || connection.Status is RuntimeConnectionStatus.Failed)
+            {
+                ReloginFailed(now, connection.Error ?? "the server stopped answering");
+                return false;
+            }
+            if (LiveSession.Host.CurrentSession is null)
+            {
+                // Connected, then let go without failing or entering: the
+                // account has no such character, which no later attempt
+                // changes.
+                Console.Error.WriteLine(
+                    "live: logging in again found no character to enter; the session ends");
+                return true;
+            }
+            return false;
+        }
+
+        if (_time.GetElapsedTime(_reloginScheduledAt, now) < LostConnectionRetryInterval)
+            return false;
+        _reloginUnderWay = true;
+        RuntimeSessionStartResult result =
+            CommandsWithoutWindow.Session.Start(Runtime.Generation);
+        switch (result.Status)
+        {
+            case RuntimeSessionStartStatus.Failed:
+                ReloginFailed(
+                    now,
+                    result.Error?.Message ?? "the connection could not be opened");
+                return false;
+            case RuntimeSessionStartStatus.NoCharacters:
+            case RuntimeSessionStartStatus.MissingCredentials:
+                Console.Error.WriteLine(
+                    $"live: logging in again ended ({result.Status}); the session ends");
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void BeginLostConnectionRecovery(long now)
+    {
+        // The end is recorded like any other; the next login opens another.
+        StatusWriter.Disconnected(SessionId, "connection-lost");
+        RuntimeTeardownAcknowledgement stopped =
+            CommandsWithoutWindow.Session.Stop(Runtime.Generation);
+        if (!stopped.IsComplete && stopped.Error is { } error)
+            Console.Error.WriteLine($"live: the lost session did not stop cleanly: {error.Message}");
+        _recovering = true;
+        _reloginUnderWay = false;
+        _reloginScheduledAt = now;
+        Console.Error.WriteLine(
+            "live: the connection to the server was lost; logging in again in "
+            + $"{LostConnectionRetryInterval.TotalSeconds:0} s");
+    }
+
+    private void ReloginFailed(long now, string error)
+    {
+        _reloginUnderWay = false;
+        _reloginScheduledAt = now;
+        Console.Error.WriteLine(
+            $"live: logging in again failed: {error}; next attempt in "
+            + $"{LostConnectionRetryInterval.TotalSeconds:0} s");
+    }
 
     /// <summary>Whether the session has started, with or without a window.</summary>
     internal bool HasSessionStarted => _sessionStarted;
@@ -584,9 +691,15 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal GraphicalSessionEnd EndSessionWithoutWindow(bool connectionEnded = false)
     {
         if (connectionEnded)
-            StatusWriter.Disconnected(SessionId, "connection-lost");
+        {
+            // A session logging in again already said its connection went.
+            if (!_recovering)
+                StatusWriter.Disconnected(SessionId, "connection-lost");
+        }
         else
+        {
             ReportSessionStopping();
+        }
         var failures = new List<Exception>();
         void Step(string name, Action step)
         {

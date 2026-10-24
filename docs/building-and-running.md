@@ -249,8 +249,16 @@ closed, or one whose GPU device was lost, leaves the session playing (without
 the console it logs off). Ctrl+C and Ctrl+Break log off and exit. The
 document's `statusFile` also gets `windowOpened`, `windowClosed` (`reason`:
 `requested`, `closedByUser`, `renderFailed`, `shutdown`) and `windowFailed`
-(`error`). Exit codes: 0 graceful, 2 usage, 3 configuration, 4 credential,
-5 connection, 6 runtime.
+(`error`). A server silent for too long while no window is open ends the
+stay (`disconnected` with `connection-lost`; plugins hear the log off) and
+the client logs in again every 30 s, entering the document's character as at
+the start, until an attempt gets back in; each failed attempt says so on
+standard error. An account without that character ends the session (exit 5).
+While it waits, `/quit` ends it and `/window` waits for the next login. With
+no window the client also walks (`/nav`, plugin walks), lets plugins answer
+the server's confirmations, and sets the document's `characterOptions`, as
+the headless client does. Exit codes: 0 graceful, 2 usage, 3 configuration,
+4 credential, 5 connection, 6 runtime.
 
 Where a document and a startup option say the same thing, the document wins:
 its `pluginTags` outranks `ACDREAM_PLUGIN_TAGS`, and its `pluginSettings`
