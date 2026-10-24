@@ -146,4 +146,30 @@ public sealed class VulkanCapabilityReportContractTests
         Assert.Contains("timelineSemaphore", message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void TheGeneratedSerializerWritesWhatTheReflectionSerializerWrote()
+    {
+        // The options the report was written with before its serializer was
+        // generated; a field, name, enum spelling or indent that differs
+        // would change the file the CI job and support read.
+        var reflection = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+        };
+        VulkanCapabilityRecord record = LavapipeShapedRecord("timelineSemaphore") with
+        {
+            RequestedDeviceOverride = "1",
+            AvailableDevices =
+            [
+                new VulkanPhysicalDeviceCandidate(
+                    0, "llvmpipe", PhysicalDeviceType.Cpu, 1, 2, 3, 4, 5),
+            ],
+        };
+
+        Assert.Equal(
+            JsonSerializer.Serialize(record, reflection),
+            VulkanCapabilityReportWriter.Serialize(record));
+    }
 }

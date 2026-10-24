@@ -158,6 +158,14 @@ else
     runtimeOptions = RuntimeOptions.FromEnvironment(datDir);
 }
 
+// The game files open on a worker while the rest of the start runs; they
+// are taken, and any failure to open them reported, where the session takes
+// them below, before the plugins start.
+Task<GraphicalSessionContent>? contentOpening = runtimeOptions.VulkanCapabilityProbe
+    ? null
+    : Task.Run(() => GraphicalSessionContent.Open(
+        runtimeOptions,
+        line => Log.Warning("{Line}", line)));
 // The startup settings each plugin was given. A session-config document that
 // names them is the more specific instruction and outranks the launch option
 // pointing at a file. A named file that cannot be read is a startup fault and
@@ -228,14 +236,12 @@ using var sessionHost = new GraphicalSessionHost(
 // The game files are the session's, opened once for the process: the
 // session plays from them with or without a window, and a window borrows
 // them.
-if (!runtimeOptions.VulkanCapabilityProbe)
+if (contentOpening is not null)
 {
     GraphicalSessionContent content;
     try
     {
-        content = GraphicalSessionContent.Open(
-            runtimeOptions,
-            line => Log.Warning("{Line}", line));
+        content = contentOpening.GetAwaiter().GetResult();
     }
     catch (Exception error)
         when (error is IOException

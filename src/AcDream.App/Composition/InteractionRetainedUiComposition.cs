@@ -556,7 +556,7 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                 : ControlsIni.Parse(string.Empty);
             UiDatFont? defaultFont;
             lock (d.DatLock)
-                defaultFont = UiDatFont.Load(d.Dats, d.TextureCache);
+                defaultFont = UiDatFont.Load(d.Dats, d.TextureCache, datLock: d.DatLock);
             var datFontCache = new ConcurrentDictionary<uint, UiDatFont?>();
             if (defaultFont is not null)
                 datFontCache.TryAdd(UiDatFont.DefaultFontId, defaultFont);
@@ -564,7 +564,7 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                 datFontCache.GetOrAdd(fontDid, id =>
                 {
                     lock (d.DatLock)
-                        return UiDatFont.Load(d.Dats, d.TextureCache, id);
+                        return UiDatFont.Load(d.Dats, d.TextureCache, id, d.DatLock);
                 });
             d.Log(defaultFont is not null
                 ? "[UI] vitals dat-font 0x40000000 loaded for numeric overlay."
