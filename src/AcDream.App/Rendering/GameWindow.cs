@@ -513,11 +513,9 @@ public sealed class GameWindow :
         _datLock = host.Content?.DatLock ?? new object();
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
             _runtime);
-        _worldEnvironment = new AcDream.App.World.WorldEnvironmentController(
-            _runtime.EnvironmentOwner,
-            options.ForcedDayGroupIndex,
-            Console.WriteLine,
-            options.PinnedWorldDayFraction);
+        // The sky and the world clock are the session's, set up once from
+        // the game files; every window draws the same ones.
+        _worldEnvironment = host.WorldEnvironment;
         var alphaScratchBudgets =
             AcDream.App.Rendering.Residency.AlphaScratchBudgetProfile.Create(
                 _options.ResidencyBudgets.AlphaScratchBytes);
@@ -569,13 +567,10 @@ public sealed class GameWindow :
                     movement, cellId, update),
             (host, targetGuid) =>
                 _liveEntityMotionBindings.StickToObjectFromWire(host, targetGuid));
-        _movementTruthDiagnostics =
-            new AcDream.App.Input.MovementTruthDiagnosticController(
-                options.DumpMoveTruth,
-                _playerControllerSlot,
-                _localPlayerIdentity);
-        _localPlayerOutbound = new LocalPlayerOutboundController(
-            _movementTruthDiagnostics);
+        // What the character tells the server about its own movement is the
+        // session's, sent with or without a window.
+        _movementTruthDiagnostics = host.MovementTruth;
+        _localPlayerOutbound = host.LocalPlayerOutbound;
     }
 
     public void Run()
@@ -1262,7 +1257,6 @@ public sealed class GameWindow :
                 const uint initialCenterLandblockId = 0xA9B4FFFFu;
                 WorldRenderResult worldRender = new WorldRenderCompositionPhase(
                     new WorldRenderDependencies(
-                        _worldEnvironment,
                         _renderResourceLifetime,
                         _gpuDevice!.Retirement,
                         _options.ResidencyBudgets,
@@ -1455,7 +1449,8 @@ public sealed class GameWindow :
                     _portalTunnelFallback,
                     Console.WriteLine,
                     _host.LiveSession,
-                    _host.Collision),
+                    _host.Collision,
+                    _host.EnsureDrives),
                 this).Compose(
                     hostInputCamera,
                     contentEffectsAudio,

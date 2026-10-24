@@ -39,6 +39,7 @@ internal sealed class GraphicalSessionHost : IDisposable
     private IDisposable? _collisionContentLease;
     private RuntimeWindowlessSessionRoute? _windowlessRoute;
     private GraphicalWindowlessSessionFrame? _windowlessFrame;
+    private GraphicalSessionDrives? _drives;
     private bool _disposed;
 
     internal GraphicalSessionHost(
@@ -96,6 +97,21 @@ internal sealed class GraphicalSessionHost : IDisposable
         // Collision is the session's, built here with no window: the same
         // neighborhood around the character the windowless client keeps.
         Collision = new GraphicalSessionCollision(Runtime);
+        // What the character tells the server about its own movement, sent
+        // with or without a window.
+        MovementTruth = new AcDream.App.Input.MovementTruthDiagnosticController(
+            options.DumpMoveTruth,
+            Runtime.MovementOwner,
+            PlayerIdentity);
+        LocalPlayerOutbound = new AcDream.Runtime.Gameplay.LocalPlayerOutboundController(
+            MovementTruth);
+        // The sky and the world clock: set up once from the game files and
+        // kept for the life of the process; a window draws them.
+        WorldEnvironment = new AcDream.App.World.WorldEnvironmentController(
+            Runtime.EnvironmentOwner,
+            options.ForcedDayGroupIndex,
+            Console.WriteLine,
+            options.PinnedWorldDayFraction);
         // The live session is the host's too: it connects, routes commands and
         // runs the login steps whether or not a window is open; a window lends
         // it what only a window can do while it is attached.
@@ -149,6 +165,40 @@ internal sealed class GraphicalSessionHost : IDisposable
 
     /// <summary>The live session: connection, command routing, login steps.</summary>
     internal GraphicalLiveSession LiveSession { get; }
+
+    /// <summary>
+    /// What the character tells the server about its own movement, and the
+    /// diagnostic that watches it.
+    /// </summary>
+    internal AcDream.App.Input.MovementTruthDiagnosticController MovementTruth { get; }
+
+    internal AcDream.Runtime.Gameplay.LocalPlayerOutboundController LocalPlayerOutbound { get; }
+
+    /// <summary>The sky and the world clock, set up once from the game files.</summary>
+    internal AcDream.App.World.WorldEnvironmentController WorldEnvironment { get; }
+
+    /// <summary>
+    /// The drives that carry the character and every other creature into the
+    /// world, once the session has game files. Whichever route holds the
+    /// world connection drives these.
+    /// </summary>
+    internal GraphicalSessionDrives? Drives => _drives;
+
+    /// <summary>
+    /// The session's drives, built over <paramref name="collision"/> the first
+    /// time the session has game files to build them from.
+    /// </summary>
+    internal GraphicalSessionDrives EnsureDrives(
+        AcDream.Content.IPreparedCollisionSource collision)
+    {
+        ArgumentNullException.ThrowIfNull(collision);
+        return _drives ??= new GraphicalSessionDrives(
+            Runtime,
+            collision,
+            LocalPlayerOutbound,
+            () => LiveSession.Host.CurrentSession,
+            landblock => Collision.IsCollisionPublished(landblock));
+    }
 
     /// <summary>
     /// The session's collision around the character, kept whether or not a
@@ -208,6 +258,14 @@ internal sealed class GraphicalSessionHost : IDisposable
         Console.WriteLine(
             $"chargen: loaded {chargen.HeritagesById.Count} heritage(s) from portal.dat");
         _collisionContentLease = Collision.BindContent(content.CreateCollisionContent());
+        DatReaderWriter.DBObjs.Region region;
+        lock (content.DatLock)
+        {
+            region = content.Dats.Get<DatReaderWriter.DBObjs.Region>(0x13000000u)
+                ?? throw new InvalidDataException("Region dat id 0x13000000 missing");
+            WorldEnvironment.Initialize(region, content.Dats);
+        }
+        EnsureDrives(content.PreparedCollision);
     }
 
     /// <summary>
@@ -221,7 +279,8 @@ internal sealed class GraphicalSessionHost : IDisposable
             _content?.CreateCollisionContent(),
             "windowless graphical",
             Console.WriteLine,
-            collision: () => Collision.Neighborhood);
+            collision: () => Collision.Neighborhood,
+            drives: _drives?.Windowless);
 
     /// <summary>The session's frame while no window presents it.</summary>
     internal IGraphicalSessionFrame WindowlessFrame =>

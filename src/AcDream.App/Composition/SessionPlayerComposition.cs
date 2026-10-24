@@ -84,7 +84,8 @@ internal sealed record SessionPlayerDependencies(
     TransferableResourceSlot<PortalTunnelPresentation> PortalTunnelFallback,
     Action<string> Log,
     AcDream.App.Hosting.GraphicalLiveSession LiveSession,
-    AcDream.App.Hosting.GraphicalSessionCollision Collision)
+    AcDream.App.Hosting.GraphicalSessionCollision Collision,
+    Func<IPreparedCollisionSource, AcDream.App.Hosting.GraphicalSessionDrives> SessionDrives)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -564,87 +565,72 @@ internal sealed class SessionPlayerCompositionPhase
         // keeps the answer from being zero in the moment before a newly
         // arrived creature's shape has been published.
         live.LiveEntities.Physics.BindSetupCollisionSource(firstEntryCollision);
+        // The drives that carry the character and every other creature into
+        // the world are the session's, kept across windows; this window tells
+        // them what only a drawn world knows while it is attached.
+        AcDream.App.Hosting.GraphicalSessionDrives drives =
+            d.SessionDrives(firstEntryCollision);
         uint firstEntryCylinderLocalId = 0u;
         float firstEntryCylinderRadius = 0f;
         float firstEntryCylinderHeight = 0f;
-        var firstEntryDrive = new RuntimeFirstEntryDriveController(
-            d.EntityObjects,
-            d.Runtime.Clock,
-            firstEntryCollision,
-            () => PlayerMovementConstructionOptions.From(
-                d.Runtime.CharacterOwner.MovementSkills.Snapshot),
-            record =>
+        RuntimeLocalPlayerPhysicsActivationPreparation PrepareLocalActivation(
+            RuntimeEntityRecord record)
+        {
+            float radius = DefaultPlayerBody.Radius;
+            float height = DefaultPlayerBody.Height;
+            uint localId = record.Key?.LocalEntityId ?? 0u;
+            if (localId != 0u && localId == firstEntryCylinderLocalId)
             {
-                float radius = DefaultPlayerBody.Radius;
-                float height = DefaultPlayerBody.Height;
-                uint localId = record.Key?.LocalEntityId ?? 0u;
-                if (localId != 0u && localId == firstEntryCylinderLocalId)
-                {
-                    radius = firstEntryCylinderRadius;
-                    height = firstEntryCylinderHeight;
-                }
-                else if (live.LiveEntities.TryGetWorldEntity(
+                radius = firstEntryCylinderRadius;
+                height = firstEntryCylinderHeight;
+            }
+            else if (live.LiveEntities.TryGetWorldEntity(
+                    record.ServerGuid,
+                    out WorldEntity? playerEntity)
+                && playerEntity is not null)
+            {
+                (float setupRadius, float setupHeight) =
+                    d.MotionBindings.GetSetupCylinder(
                         record.ServerGuid,
-                        out WorldEntity? playerEntity)
-                    && playerEntity is not null)
+                        playerEntity);
+                if (setupRadius >= 0.05f)
                 {
-                    (float setupRadius, float setupHeight) =
-                        d.MotionBindings.GetSetupCylinder(
-                            record.ServerGuid,
-                            playerEntity);
-                    if (setupRadius >= 0.05f)
+                    radius = setupRadius;
+                    height = setupHeight;
+                    if (localId != 0u)
                     {
-                        radius = setupRadius;
-                        height = setupHeight;
-                        if (localId != 0u)
-                        {
-                            firstEntryCylinderLocalId = localId;
-                            firstEntryCylinderRadius = radius;
-                            firstEntryCylinderHeight = height;
-                        }
+                        firstEntryCylinderLocalId = localId;
+                        firstEntryCylinderRadius = radius;
+                        firstEntryCylinderHeight = height;
                     }
                 }
-                bool hasAuthoredShadow = record.Key is { } key
-                    && d.PhysicsEngine.ShadowObjects.HasLogicalOwner(
-                        key.LocalEntityId);
-                return new RuntimeLocalPlayerPhysicsActivationPreparation(
-                    radius,
-                    height,
-                    hasAuthoredShadow
-                        ? RuntimeLocalPlayerShadowDisposition
-                            .RegisteredAuthoredPayload
-                        : RuntimeLocalPlayerShadowDisposition.ProvenShapeless);
-            });
-        var acceptedPositionDrive = new RuntimeAcceptedPositionDriveController(
-            d.EntityObjects,
-            d.Runtime.Clock,
-            firstEntryCollision,
-            d.PlayerOutbound,
-            () => d.Runtime.Generation,
-            () => d.PlayerIdentity.ServerGuid,
-            () => d.PlayerController.Controller,
-            () => d.Character.UsePositionFromServer,
-            () => liveSessionSource.CurrentSession,
-            () => d.PlayerController,
-            isPortalAuthorityCurrent: portal => live.WorldTransit
-                .CanPlacePortalDestination(
-                    portal.RevealGeneration,
-                    portal.TeleportSequence,
-                    portal.Projection.DestinationCell));
-        // Arming another creature's body from the server's word about it is one
-        // implementation for every client, and it owns the drive that carries
-        // out an accepted re-placement, so a body the server moved lands in
-        // the same place here as it does without a window. This client hands
-        // it the short list of things only a drawn world can answer.
-        var remoteArming = RuntimeRemoteArming.Create(
-            d.EntityObjects,
-            d.Runtime.Clock,
-            firstEntryCollision,
-            new GraphicalRemotePlacementServiceWindow(
-                live.WorldState,
-                streaming.IsLandblockPresentationReady,
-                d.Collision.IsCollisionPublished),
-            d.MotionBindings.HostFacts);
+            }
+            bool hasAuthoredShadow = record.Key is { } key
+                && d.PhysicsEngine.ShadowObjects.HasLogicalOwner(
+                    key.LocalEntityId);
+            return new RuntimeLocalPlayerPhysicsActivationPreparation(
+                radius,
+                height,
+                hasAuthoredShadow
+                    ? RuntimeLocalPlayerShadowDisposition
+                        .RegisteredAuthoredPayload
+                    : RuntimeLocalPlayerShadowDisposition.ProvenShapeless);
+        }
+        bindings.Adopt(
+            "session drive presentation",
+            drives.Present(new AcDream.App.Hosting.GraphicalSessionDrivePresentation(
+                PrepareLocalActivation,
+                // A body the server moved is re-placed here only where this
+                // window draws and the session's collision is published.
+                new GraphicalRemotePlacementServiceWindow(
+                    live.WorldState,
+                    streaming.IsLandblockPresentationReady,
+                    d.Collision.IsCollisionPublished),
+                d.MotionBindings.HostFacts)));
+        RuntimeFirstEntryDriveController firstEntryDrive = drives.FirstEntry;
+        RuntimeAcceptedPositionDriveController acceptedPositionDrive =
+            drives.AcceptedPosition;
+        RuntimeRemoteArming remoteArming = drives.RemoteArming;
         d.MotionBindings.BindArming(remoteArming);
         RuntimeRemotePlacementDriveController remotePlacementDrive =
             remoteArming.PlacementDrive;

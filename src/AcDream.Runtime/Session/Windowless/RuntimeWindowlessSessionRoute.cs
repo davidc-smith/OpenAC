@@ -9,6 +9,17 @@ using AcDream.Runtime.World;
 namespace AcDream.Runtime.Session.Windowless;
 
 /// <summary>
+/// The drives a client keeps for the life of its session, when it keeps them
+/// itself: the same instances then serve this route and any other route that
+/// holds the connection in turn (a window's), so work in flight is handed
+/// from one to the next.
+/// </summary>
+internal sealed record RuntimeWindowlessSessionDrives(
+    RuntimeFirstEntryDriveController FirstEntry,
+    RuntimeAcceptedPositionDriveController AcceptedPosition,
+    RuntimeRemoteArming RemoteArming);
+
+/// <summary>
 /// How a session with nothing drawn takes hold of a world connection: the
 /// route every client without a window builds, one implementation. It keeps
 /// the drives that carry the character and every other creature into the
@@ -32,6 +43,7 @@ internal sealed class RuntimeWindowlessSessionRoute : IDisposable
     private RuntimeFirstEntryDriveController? _firstEntryDrive;
     private RuntimeAcceptedPositionDriveController? _acceptedPositionDrive;
     private RuntimeRemoteArming? _remoteArming;
+    private RuntimeRemotePlacementDriveController? _sharedRemotePlacement;
     private RuntimeRemoteBodyDrive? _remoteBodies;
     private RuntimeWindowlessWorldProjection? _worldProjection;
     private RuntimeLiveEntitySessionController? _entities;
@@ -53,13 +65,18 @@ internal sealed class RuntimeWindowlessSessionRoute : IDisposable
     /// <param name="hostKind">How this client names itself in diagnostics.</param>
     /// <param name="diagnostic">Where the route reports.</param>
     /// <param name="placementSinkOverride">A placement sink for tests.</param>
+    /// <param name="drives">
+    /// The drives the client keeps for the life of its session; with none,
+    /// this route builds its own the first time it has game files.
+    /// </param>
     internal RuntimeWindowlessSessionRoute(
         GameRuntime runtime,
         IRuntimeCollisionContent? content,
         string hostKind,
         Action<string> diagnostic,
         Func<IRuntimeCollisionNeighborhood>? collision = null,
-        IRuntimePlacementProjectionSink? placementSinkOverride = null)
+        IRuntimePlacementProjectionSink? placementSinkOverride = null,
+        RuntimeWindowlessSessionDrives? drives = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         ArgumentException.ThrowIfNullOrWhiteSpace(hostKind);
@@ -68,6 +85,13 @@ internal sealed class RuntimeWindowlessSessionRoute : IDisposable
         _diagnostic = diagnostic ?? throw new ArgumentNullException(nameof(diagnostic));
         _collision = collision;
         _placementSinkOverride = placementSinkOverride;
+        if (drives is not null)
+        {
+            _firstEntryDrive = drives.FirstEntry;
+            _acceptedPositionDrive = drives.AcceptedPosition;
+            _remoteArming = drives.RemoteArming;
+            _sharedRemotePlacement = drives.RemoteArming.PlacementDrive;
+        }
     }
 
     /// <summary>The connection the current route was built for.</summary>
@@ -262,7 +286,8 @@ internal sealed class RuntimeWindowlessSessionRoute : IDisposable
                 noteLoginCompleteSent?.Invoke();
                 session.SendHouseQuery();
             },
-            _acceptedPositionDrive);
+            _acceptedPositionDrive,
+            _sharedRemotePlacement);
         _eventRoute = eventRoute;
         return eventRoute;
     }

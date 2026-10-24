@@ -12,6 +12,7 @@ internal sealed class RuntimeWindowlessEventRoute : ILiveSessionEventRouting
     private readonly IRuntimePlacementProjectionSink _placements;
     private readonly RuntimeFirstEntryDriveController? _firstEntry;
     private readonly RuntimeAcceptedPositionDriveController? _acceptedPositionDrive;
+    private readonly RuntimeRemotePlacementDriveController? _remotePlacementDrive;
     private readonly Action<RuntimeEntityRecord>? _localPlayerCompleted;
     private RuntimePlacementProjectionSubscription? _subscription;
     private RuntimeGenerationToken _attachedGeneration;
@@ -25,7 +26,8 @@ internal sealed class RuntimeWindowlessEventRoute : ILiveSessionEventRouting
         IRuntimePlacementProjectionSink placements,
         RuntimeFirstEntryDriveController? firstEntry = null,
         Action<RuntimeEntityRecord>? localPlayerCompleted = null,
-        RuntimeAcceptedPositionDriveController? acceptedPositionDrive = null)
+        RuntimeAcceptedPositionDriveController? acceptedPositionDrive = null,
+        RuntimeRemotePlacementDriveController? remotePlacementDrive = null)
     {
         _events = events ?? throw new ArgumentNullException(nameof(events));
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -34,6 +36,7 @@ internal sealed class RuntimeWindowlessEventRoute : ILiveSessionEventRouting
         _firstEntry = firstEntry;
         _localPlayerCompleted = localPlayerCompleted;
         _acceptedPositionDrive = acceptedPositionDrive;
+        _remotePlacementDrive = remotePlacementDrive;
     }
 
     public void Attach()
@@ -46,6 +49,7 @@ internal sealed class RuntimeWindowlessEventRoute : ILiveSessionEventRouting
         _attachedGeneration = _runtime.Generation;
         _firstEntry?.AttachRoute(this, _localPlayerCompleted);
         _acceptedPositionDrive?.AttachRoute(this);
+        _remotePlacementDrive?.AttachRoute(this);
         _events.Attach();
         _subscription = new RuntimePlacementProjectionSubscription(
             _runtime,
@@ -74,6 +78,7 @@ internal sealed class RuntimeWindowlessEventRoute : ILiveSessionEventRouting
         Interlocked.Exchange(ref _subscription, null)?.Dispose();
         _firstEntry?.DetachRoute(this);
         _acceptedPositionDrive?.DetachRoute(this);
+        _remotePlacementDrive?.DetachRoute(this);
         if (!_eventsDisposed)
         {
             _events.Dispose();
