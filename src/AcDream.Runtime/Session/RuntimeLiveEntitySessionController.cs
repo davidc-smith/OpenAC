@@ -98,6 +98,7 @@ public sealed class RuntimeLiveEntitySessionController
         OnParentUpdated,
         OnTeleportStarted,
         OnAppearanceUpdated,
+        OnDescriptionRefreshed,
         // Effect and sound playback are presentation: the no-window host parses
         // these packets and discards them, exactly as it does F754/F755.
         _ => { },
@@ -107,14 +108,18 @@ public sealed class RuntimeLiveEntitySessionController
     private RuntimeEntityObjectLifetime Entities =>
         _runtime.EntityObjects;
 
-    private void OnSpawned(WorldSession.EntitySpawn spawn)
+    private void OnSpawned(WorldSession.EntitySpawn spawn) =>
+        Spawn(spawn, replaceExisting: false);
+
+    private void Spawn(WorldSession.EntitySpawn spawn, bool replaceExisting)
     {
         RuntimeEntityRegistrationResult registration = _worldProjection is null
-            ? Entities.RegisterEntity(spawn)
+            ? Entities.RegisterEntity(spawn, replaceExisting: replaceExisting)
             : Entities.RegisterEntityWithInitialResidence(
                 spawn,
                 isLocalPlayer: spawn.Guid
-                    == _runtime.PlayerIdentity.ServerGuid);
+                    == _runtime.PlayerIdentity.ServerGuid,
+                replaceExisting: replaceExisting);
         if (registration.Canonical is not { } canonical)
             return;
 
@@ -123,8 +128,10 @@ public sealed class RuntimeLiveEntitySessionController
             canonical,
             integrationVersion,
             canonical.Snapshot,
-            replaceGeneration:
-                registration.Inbound.Disposition
+            // A re-sent description keeps the item record the object table
+            // already refreshed from it.
+            replaceGeneration: !replaceExisting
+                && registration.Inbound.Disposition
                     is CreateObjectTimestampDisposition.NewGeneration);
         if (applied)
         {
@@ -444,6 +451,15 @@ public sealed class RuntimeLiveEntitySessionController
             update,
             acknowledgeProjection: null,
             out _);
+
+    // A re-sent description of an object already held deletes it and
+    // creates it again from the full new description; one not held is left
+    // to the object table.
+    private void OnDescriptionRefreshed(WorldSession.EntitySpawn update)
+    {
+        if (Entities.IsKnown(update.Guid))
+            Spawn(update, replaceExisting: true);
+    }
 
     private (long Generation,
         RuntimeTeleportDestination Destination,

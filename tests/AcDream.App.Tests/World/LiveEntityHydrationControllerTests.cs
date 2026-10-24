@@ -695,6 +695,118 @@ public sealed class LiveEntityHydrationControllerTests
     }
 
     [Fact]
+    public void DescriptionRefresh_RecreatesTheObjectWithItsNewPhysicsState()
+    {
+        // A house hook hidden with NoDraw is given an item: the server sends
+        // the hook's whole description again with the item's setup and the
+        // NoDraw bit cleared. The hook is created again from it.
+        using var fixture = new Fixture(originKnown: true);
+        WorldSession.EntitySpawn hook = Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000001u,
+            PhysicsStateFlags.NoDraw | PhysicsStateFlags.Ethereal);
+        fixture.Controller.OnCreate(hook);
+        LiveEntityRecord first = fixture.Record;
+        Assert.True((first.FinalPhysicsState & PhysicsStateFlags.NoDraw) != 0);
+
+        Assert.True(fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.Ethereal)));
+
+        LiveEntityRecord second = fixture.Record;
+        Assert.NotSame(first, second);
+        Assert.Equal(0x02000002u, second.Snapshot.SetupTableId);
+        Assert.Equal(PhysicsStateFlags.None, second.FinalPhysicsState & PhysicsStateFlags.NoDraw);
+        Assert.True((second.FinalPhysicsState & PhysicsStateFlags.Ethereal) != 0);
+        Assert.NotNull(second.WorldEntity);
+        Assert.Equal(2, fixture.Resources.RegisterCount);
+        Assert.Equal(1, fixture.Resources.UnregisterCount);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_FromAnotherGeneration_IsTaken()
+    {
+        using var fixture = new Fixture(originKnown: true);
+        fixture.Controller.OnCreate(Spawn(Generation: 2, PositionSequence: 1));
+
+        Assert.True(fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.ReportCollisions)));
+
+        Assert.Equal((ushort)1, fixture.Record.Generation);
+        Assert.Equal(0x02000002u, fixture.Record.Snapshot.SetupTableId);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_Repeated_RecreatesEachTime()
+    {
+        using var fixture = new Fixture(originKnown: true);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+
+        fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.ReportCollisions));
+        fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000003u,
+            PhysicsStateFlags.ReportCollisions));
+
+        Assert.Equal(0x02000003u, fixture.Record.Snapshot.SetupTableId);
+        Assert.Equal(3, fixture.Resources.RegisterCount);
+        Assert.Equal(2, fixture.Resources.UnregisterCount);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_ForAnObjectWaitingToEnterTheWorld_TakesTheNewDescription()
+    {
+        using var fixture = new Fixture(originKnown: false);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+        Assert.False(fixture.Runtime.TryGetRecord(Guid, out _));
+
+        Assert.True(fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.ReportCollisions)));
+        Assert.Equal(0x02000002u, fixture.Canonical.Snapshot.SetupTableId);
+
+        fixture.Origin.IsKnownValue = true;
+        fixture.Controller.OnLandblockLoaded(Cell);
+
+        Assert.Equal(0x02000002u, fixture.Record.Snapshot.SetupTableId);
+        Assert.NotNull(fixture.Record.WorldEntity);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_ForAnUnknownObject_IsLeftToTheObjectTable()
+    {
+        using var fixture = new Fixture(originKnown: true);
+
+        Assert.False(fixture.Controller.OnDescriptionRefresh(
+            Spawn(Generation: 1, PositionSequence: 1)));
+
+        Assert.False(fixture.Runtime.TryGetCanonical(Guid, out _));
+        Assert.Equal(0, fixture.Resources.RegisterCount);
+    }
+
+    private static WorldSession.EntitySpawn Redescribed(
+        WorldSession.EntitySpawn spawn,
+        uint setupId,
+        PhysicsStateFlags state) =>
+        spawn with
+        {
+            SetupTableId = setupId,
+            PhysicsState = (uint)state,
+            Physics = spawn.Physics!.Value with
+            {
+                SetupTableId = setupId,
+                RawState = (uint)state,
+            },
+        };
+
+    [Fact]
     public void UnknownDelete_ForgetsOnlyPendingOwnerState()
     {
         using var fixture = new Fixture(originKnown: true);

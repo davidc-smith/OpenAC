@@ -142,8 +142,11 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
             InitialCreateResidences,
             Physics,
             Events,
-            (spawn, isLocalPlayer) =>
-                RegisterEntityWithInitialResidence(spawn, isLocalPlayer),
+            (spawn, isLocalPlayer, replaceExisting) =>
+                RegisterEntityWithInitialResidence(
+                    spawn,
+                    isLocalPlayer,
+                    replaceExisting: replaceExisting),
             (canonical, version, spawn, replaceGeneration) =>
                 ApplyAcceptedSpawn(canonical, version, spawn, replaceGeneration));
         LocalPlayerFirstEntry = new RuntimeLocalPlayerFirstEntryState(
@@ -198,8 +201,11 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
             InitialCreateResidences,
             Physics,
             Events,
-            (spawn, isLocalPlayer) =>
-                RegisterEntityWithInitialResidence(spawn, isLocalPlayer),
+            (spawn, isLocalPlayer, replaceExisting) =>
+                RegisterEntityWithInitialResidence(
+                    spawn,
+                    isLocalPlayer,
+                    replaceExisting: replaceExisting),
             (canonical, version, spawn, replaceGeneration) =>
                 ApplyAcceptedSpawn(canonical, version, spawn, replaceGeneration));
         LocalPlayerFirstEntry = new RuntimeLocalPlayerFirstEntryState(
@@ -254,8 +260,11 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
             InitialCreateResidences,
             Physics,
             Events,
-            (spawn, isLocalPlayer) =>
-                RegisterEntityWithInitialResidence(spawn, isLocalPlayer),
+            (spawn, isLocalPlayer, replaceExisting) =>
+                RegisterEntityWithInitialResidence(
+                    spawn,
+                    isLocalPlayer,
+                    replaceExisting: replaceExisting),
             (canonical, version, spawn, replaceGeneration) =>
                 ApplyAcceptedSpawn(canonical, version, spawn, replaceGeneration));
         LocalPlayerFirstEntry = new RuntimeLocalPlayerFirstEntryState(
@@ -453,28 +462,47 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
 
     public RuntimeEntityRegistrationResult RegisterEntity(
         WorldSession.EntitySpawn incoming,
-        Func<RuntimeEntityRecord, Exception?>? retirePriorProjection = null) =>
+        Func<RuntimeEntityRecord, Exception?>? retirePriorProjection = null,
+        bool replaceExisting = false) =>
         RegisterEntityCore(
             incoming,
             beginInitialResidence: false,
             isLocalPlayer: false,
-            retirePriorProjection);
+            retirePriorProjection,
+            replaceExisting);
 
+    /// <param name="replaceExisting">
+    /// The description was re-sent (0xF7DB): an object already held is
+    /// deleted and created again from it, as a new generation, whatever
+    /// instance it carries. That brings in its setup, physics state, parent
+    /// and position, and an object still waiting to enter the world takes it
+    /// too.
+    /// </param>
     internal RuntimeEntityRegistrationResult RegisterEntityWithInitialResidence(
         WorldSession.EntitySpawn incoming,
         bool isLocalPlayer,
-        Func<RuntimeEntityRecord, Exception?>? retirePriorProjection = null) =>
+        Func<RuntimeEntityRecord, Exception?>? retirePriorProjection = null,
+        bool replaceExisting = false) =>
         RegisterEntityCore(
             incoming,
             beginInitialResidence: true,
             isLocalPlayer,
-            retirePriorProjection);
+            retirePriorProjection,
+            replaceExisting);
+
+    /// <summary>True while an object with this id is held.</summary>
+    public bool IsKnown(uint guid)
+    {
+        EnsureNotDisposed();
+        return Entities.IsKnown(guid);
+    }
 
     private RuntimeEntityRegistrationResult RegisterEntityCore(
         WorldSession.EntitySpawn incoming,
         bool beginInitialResidence,
         bool isLocalPlayer,
-        Func<RuntimeEntityRecord, Exception?>? retirePriorProjection)
+        Func<RuntimeEntityRecord, Exception?>? retirePriorProjection,
+        bool replaceExisting)
     {
         EnsureNotDisposed();
         if (beginInitialResidence && isLocalPlayer)
@@ -505,7 +533,8 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
         {
             Entities.ParentAttachments.EnqueueDeferredCreate(
                 incoming,
-                isLocalPlayer);
+                isLocalPlayer,
+                replaceExisting);
             return new RuntimeEntityRegistrationResult(
                 SupersededCreateResult(),
                 Canonical: null,
@@ -514,7 +543,7 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
                 DeferredForParent: true);
         }
         CreateObjectTimestampDisposition preview =
-            Entities.PreviewCreateDisposition(incoming);
+            Entities.PreviewCreateDisposition(incoming, replaceExisting);
         bool requiresFreshResidenceAdmission = preview is
             CreateObjectTimestampDisposition.InitialGeneration
             or CreateObjectTimestampDisposition.NewGeneration;
@@ -563,7 +592,7 @@ public sealed class RuntimeEntityObjectLifetime : IDisposable
 
         InboundCreateResult result = admitIntoPendingResidence
             ? Entities.AcceptCreateDeferredSameGeneration(incoming)
-            : Entities.AcceptCreate(incoming);
+            : Entities.AcceptCreate(incoming, replaceExisting);
         if (result.Disposition
             is CreateObjectTimestampDisposition.StaleGeneration)
         {

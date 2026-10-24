@@ -82,6 +82,32 @@ public sealed class PhysicsTimestampGate
         return CreateObjectTimestampDisposition.ExistingGeneration;
     }
 
+    /// <summary>
+    /// A re-sent description (0xF7DB) replaces the object outright: every
+    /// counter is taken from it, whatever its instance, and an object already
+    /// seeded is a new generation of itself.
+    /// </summary>
+    public CreateObjectTimestampDisposition SeedForReplacement(
+        ushort position,
+        ushort movement,
+        ushort state,
+        ushort vector,
+        ushort teleport,
+        ushort serverControlledMove,
+        ushort forcePosition,
+        ushort objDesc,
+        ushort instance)
+    {
+        CreateObjectTimestampDisposition disposition = _seeded
+            ? CreateObjectTimestampDisposition.NewGeneration
+            : CreateObjectTimestampDisposition.InitialGeneration;
+        Span<ushort> incoming =
+        [position, movement, state, vector, teleport, serverControlledMove, forcePosition, objDesc, instance];
+        incoming.CopyTo(_timestamps);
+        _seeded = true;
+        return disposition;
+    }
+
     public CreateObjectTimestampDisposition PreviewCreateObject(
         ushort instance)
     {

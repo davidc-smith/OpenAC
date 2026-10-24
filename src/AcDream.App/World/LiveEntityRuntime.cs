@@ -424,7 +424,8 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
 
     public LiveEntityRegistrationResult RegisterLiveEntity(
         WorldSession.EntitySpawn incoming,
-        bool isLocalPlayer = false)
+        bool isLocalPlayer = false,
+        bool replaceExisting = false)
     {
         if (_isClearing || _sessionClearPendingFinalization || _isRegisteringResources)
         {
@@ -438,7 +439,8 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
             _entityObjects.RegisterEntityWithInitialResidence(
                 incoming,
                 isLocalPlayer,
-                RetirePriorProjection);
+                RetirePriorProjection,
+                replaceExisting);
         RuntimeEntityRecord? canonical = registration.Canonical;
         LiveEntityRecord? projection = canonical is null
             ? null
