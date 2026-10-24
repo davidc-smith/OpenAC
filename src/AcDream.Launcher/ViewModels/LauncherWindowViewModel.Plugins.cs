@@ -245,8 +245,9 @@ public sealed partial class LauncherWindowViewModel
     private LauncherAccountSnapshot? FindAccountSnapshot((string Server, string Account) key) =>
         _orchestrator.GetSnapshot().Servers
             .FirstOrDefault(server => string.Equals(server.Name, key.Server, StringComparison.Ordinal))
-            ?.Accounts.FirstOrDefault(account =>
-                string.Equals(account.AccountName, key.Account, StringComparison.Ordinal));
+            ?.Accounts is { } accounts
+                ? AccountNames.Find(accounts, account => account.AccountName, key.Account)
+                : null;
 
     /// <summary>The account's "Edit plugins": one list for every character on it.</summary>
     private void OpenAccountPlugins(LauncherAccountGroupViewModel group)
@@ -272,9 +273,10 @@ public sealed partial class LauncherWindowViewModel
     {
         if (row.CharacterName is null) return;
         SetRowOptionsAccount(null);
-        SelectedNode = Servers.FirstOrDefault(server => server.ServerName == row.ServerName)?.Children
-            .FirstOrDefault(account => account.AccountName == row.AccountName)?.Children
-            .FirstOrDefault(character => character.CharacterName == row.CharacterName);
+        LauncherTreeNodeViewModel? server = Servers.FirstOrDefault(candidate => candidate.ServerName == row.ServerName);
+        SelectedNode = server is null ? null
+            : AccountNames.Find(server.Children, account => account.AccountName, row.AccountName)?.Children
+                .FirstOrDefault(character => character.CharacterName == row.CharacterName);
         if (SelectedNode is null) return;
         // Reselecting the already-open character leaves SetSelectedNode a no-op, so the draft is
         // rebuilt here to show the saved state on every open.

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using AcDream.Core.CharGen;
@@ -367,6 +368,7 @@ public sealed class LiveSessionController
     private int _operationDepth;
     private bool _inWorld;
     private bool _connectionLost;
+    private string? _noCharacterToEnter;
     private bool _disposeRequested;
     private bool _disposed;
     private ulong _generation;
@@ -427,6 +429,36 @@ public sealed class LiveSessionController
     public bool ConnectionLost
     {
         get { lock (_gate) return _connectionLost; }
+    }
+
+    /// <summary>
+    /// Why the last start ended at character selection without entering: no
+    /// character on the account matches the one asked for (for example
+    /// <c>no available character matches Id(1342177291)</c>). Null otherwise;
+    /// cleared by the next start. Set whether the start finished at once or
+    /// over later ticks, so a host can end the session either way.
+    /// </summary>
+    public string? NoCharacterToEnter
+    {
+        get { lock (_gate) return _noCharacterToEnter; }
+    }
+
+    /// <summary>
+    /// How a session says that no character matches <paramref name="selector"/>,
+    /// in the one wording the clients share (the selector written as
+    /// <c>FirstAvailable</c>, <c>Index(n)</c>, <c>Id(n)</c> or <c>Name("...")</c>).
+    /// </summary>
+    public static string DescribeNoCharacterToEnter(LiveSessionCharacterSelector? selector)
+    {
+        string wanted = selector switch
+        {
+            null => "FirstAvailable",
+            { ActiveIndex: int index } => $"Index({index.ToString(CultureInfo.InvariantCulture)})",
+            { CharacterId: uint id } => $"Id({id.ToString(CultureInfo.InvariantCulture)})",
+            { CharacterName: { } name } => $"Name(\"{name}\")",
+            _ => "FirstAvailable",
+        };
+        return $"no available character matches {wanted}";
     }
 
     public ulong SessionGeneration
@@ -784,6 +816,7 @@ public sealed class LiveSessionController
         CharacterCreationState.Reset(activeGeneration);
         _connection.Reset();
         _connectionLost = false;
+        _noCharacterToEnter = null;
         _createsSinceCharacterList = 0;
         try
         {
@@ -934,6 +967,7 @@ public sealed class LiveSessionController
                 out CharacterList.Selection selected))
         {
             Console.WriteLine("live: no available characters on account; disconnecting");
+            _noCharacterToEnter = DescribeNoCharacterToEnter(options.Character);
             StopCore();
             return new LiveSessionStartResult(LiveSessionStartStatus.NoCharacters);
         }

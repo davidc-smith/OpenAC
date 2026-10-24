@@ -295,6 +295,10 @@ internal static class RuntimeAutomationBindings
             surface.BindSubmit(submitChatText);
             bound.Add("BindSubmit");
         }
+        else
+        {
+            surface.BindSubmit(null);
+        }
         if (capabilities.SessionCommands is { } sessionCommands)
         {
             surface.BindSessionCommands(sessionCommands);
@@ -304,6 +308,10 @@ internal static class RuntimeAutomationBindings
         {
             surface.BindNavigationWalk(navigationWalk);
             bound.Add(nameof(surface.BindNavigationWalk));
+        }
+        else
+        {
+            surface.UnbindNavigationWalk();
         }
         // The client's own navigation verbs are built once, here, on the one
         // command registry both hosts hand plugins. A host that can draw lends
@@ -364,6 +372,12 @@ internal static class RuntimeAutomationBindings
         {
             surface.BindDialogs(answerConfirmation);
             bound.Add(nameof(surface.BindDialogs));
+        }
+        else
+        {
+            // A host that answered before (a window now closed) must not be
+            // asked again.
+            surface.UnbindDialogs();
         }
         // Using an object the character does not own walks to it first, and
         // that walk-then-use route is a runtime owner, so both clients give a
@@ -472,11 +486,16 @@ internal static class RuntimeAutomationBindings
         // the same files. Read the first time a plugin opens the
         // character's contracts and not again, so a session that never
         // asks never pays for it.
-        runtime.ContractsOwner.BindCatalog(() =>
+        // The same files whoever lends them again (a window that opens on a
+        // session already playing): the first source stands.
+        if (!runtime.ContractsOwner.HasCatalog)
         {
-            lock (datLock)
-                return AcDream.Content.ContractTableReader.Load(dats);
-        });
+            runtime.ContractsOwner.BindCatalog(() =>
+            {
+                lock (datLock)
+                    return AcDream.Content.ContractTableReader.Load(dats);
+            });
+        }
 
         // Palette colours are read the moment a plugin asks for an object's
         // palettes, from whatever thread it asks on, so the catalogue takes

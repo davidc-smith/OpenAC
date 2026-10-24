@@ -82,7 +82,7 @@ internal sealed class PluginDialogHost : IDisposable
         _confirms.Add(entry);
         if (ReferenceEquals(HeadFor(owner), entry) && !TryShow(entry))
         {
-            // Never shown, never queued: the plugin hears false, not an answer.
+            // Never shown, never queued: the plugin gets null, not an answer.
             entry.Done = true;
             _confirms.Remove(entry);
             return null;

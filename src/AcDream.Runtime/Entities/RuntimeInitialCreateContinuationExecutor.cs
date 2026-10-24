@@ -165,7 +165,7 @@ internal sealed class RuntimeInitialCreateContinuationExecutor
     private readonly RuntimeInitialCreateResidenceState _residences;
     private readonly RuntimePhysicsState _physics;
     private readonly RuntimeEntityObjectEventStream _events;
-    private readonly Func<WorldSession.EntitySpawn, bool, RuntimeEntityRegistrationResult>
+    private readonly Func<WorldSession.EntitySpawn, bool, bool, RuntimeEntityRegistrationResult>
         _registerDeferredChild;
     private readonly Func<RuntimeEntityRecord, ulong, WorldSession.EntitySpawn, bool, bool>
         _applyAcceptedSpawn;
@@ -185,7 +185,7 @@ internal sealed class RuntimeInitialCreateContinuationExecutor
         RuntimeInitialCreateResidenceState residences,
         RuntimePhysicsState physics,
         RuntimeEntityObjectEventStream events,
-        Func<WorldSession.EntitySpawn, bool, RuntimeEntityRegistrationResult>
+        Func<WorldSession.EntitySpawn, bool, bool, RuntimeEntityRegistrationResult>
             registerDeferredChild,
         Func<RuntimeEntityRecord, ulong, WorldSession.EntitySpawn, bool, bool>
             applyAcceptedSpawn)
@@ -707,7 +707,10 @@ internal sealed class RuntimeInitialCreateContinuationExecutor
             try
             {
                 RuntimeEntityRegistrationResult result =
-                    _registerDeferredChild(deferred.Spawn, deferred.IsLocalPlayer);
+                    _registerDeferredChild(
+                        deferred.Spawn,
+                        deferred.IsLocalPlayer,
+                        deferred.ReplaceExisting);
                 outcome = result.Canonical is not null
                     ? RuntimeDeferredChildReplayOutcome.Registered
                     : result.DeferredForParent

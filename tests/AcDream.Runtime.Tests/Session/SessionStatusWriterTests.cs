@@ -141,6 +141,35 @@ public sealed class SessionStatusWriterTests
             lines[1], "v", "e", "t", "sessionId", "code", "reason", "name");
     }
 
+    /// <summary>
+    /// The game window on the session, in the words the launcher reads and
+    /// the Rust client writes: windowOpened, windowClosed with its reason,
+    /// windowFailed with what went wrong.
+    /// </summary>
+    [Fact]
+    public void WindowEvents_WriteThePinnedShape()
+    {
+        using TemporaryFile file = TemporaryFile.Create();
+        var writer = new SessionStatusWriter(file.Path);
+
+        writer.WindowOpened("s1");
+        writer.WindowClosed("s1", "closedByUser");
+        writer.WindowFailed("s1", "no GPU");
+
+        string[] lines = ReadSharing(file.Path);
+        Assert.Equal(3, lines.Length);
+        Assert.Equal("windowOpened", Parse(lines[0]).GetProperty("e").GetString());
+        AssertExactProperties(lines[0], "v", "e", "t", "sessionId");
+        JsonElement closed = Parse(lines[1]);
+        Assert.Equal("windowClosed", closed.GetProperty("e").GetString());
+        Assert.Equal("closedByUser", closed.GetProperty("reason").GetString());
+        AssertExactProperties(lines[1], "v", "e", "t", "sessionId", "reason");
+        JsonElement failed = Parse(lines[2]);
+        Assert.Equal("windowFailed", failed.GetProperty("e").GetString());
+        Assert.Equal("no GPU", failed.GetProperty("error").GetString());
+        AssertExactProperties(lines[2], "v", "e", "t", "sessionId", "error");
+    }
+
     [Fact]
     public void BlankPathIsTreatedAsAbsent()
     {

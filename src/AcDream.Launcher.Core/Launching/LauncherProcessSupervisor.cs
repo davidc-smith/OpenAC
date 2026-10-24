@@ -53,6 +53,7 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
     private bool _disposed;
     private bool _inputOpen;
     private bool _processStarted;
+    private string? _stopLine;
 
     public LauncherProcessSupervisor(ILauncherChildProcessFactory? factory = null)
     {
@@ -110,6 +111,7 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
             process = _factory.Create(spec);
             process.Exited += OnProcessExited;
             _process = process;
+            _stopLine = spec.StopLine;
         }
 
         SetState(LauncherSessionState.Starting);
@@ -215,10 +217,11 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
         StopProcess(process, timeout);
     }
 
-    private static void StopProcess(
+    private void StopProcess(
         ILauncherChildProcess process,
         TimeSpan timeout)
     {
+        TryWriteStopLine(process);
         process.TryRequestGracefulStop();
         process.CloseMainWindow();
         if (!process.WaitForExit(timeout) && !process.HasExited)
@@ -228,6 +231,30 @@ public sealed class LauncherProcessSupervisor : ILauncherProcessSupervisor
             {
                 throw new InvalidOperationException(
                     "The launcher child could not be observed terminal after it was killed.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Asks a child that logs off on a console line to do so, when its input is still open.
+    /// Written even while disposing: the line is how such a child ends gracefully.
+    /// </summary>
+    private void TryWriteStopLine(ILauncherChildProcess process)
+    {
+        lock (_gate)
+        {
+            if (_stopLine is not { } line || !_inputOpen || process.HasExited)
+                return;
+            try
+            {
+                process.StandardInput.Write(line);
+                process.StandardInput.Write('\n');
+                process.StandardInput.Flush();
+            }
+            catch (Exception error) when (error is IOException or ObjectDisposedException)
+            {
+                // The process went away between the check and the write.
+                _inputOpen = false;
             }
         }
     }

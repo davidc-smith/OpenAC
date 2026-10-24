@@ -94,16 +94,38 @@ public sealed class LauncherExecutableSet
         return LauncherCapability.Available;
     }
 
+    /// <summary>
+    /// Whether a play row in <paramref name="mode"/> can start: every row runs the graphical
+    /// client, except a headless row without <paramref name="windowSupport"/> (no display),
+    /// which runs the windowless host.
+    /// </summary>
+    public LauncherCapability GetPlayAvailability(LaunchMode mode, bool windowSupport = true) =>
+        GetAvailability(PlayHost(mode, windowSupport));
+
+    /// <summary>
+    /// How a play row starts its session. Every row starts the graphical client with its
+    /// console on and its input left open: the launcher's console window types lines to it,
+    /// and the row switches the running session between graphical and headless with
+    /// <c>/window &lt;id&gt;</c> and <c>/close</c>. A headless row adds <c>--no-window</c>, so
+    /// no window opens until it is asked for. Stop asks the client to log off with
+    /// <c>/quit</c> on that console (the graphical client has no console of its own for a
+    /// console break to reach), then closes its window. Where no display exists
+    /// (<paramref name="windowSupport"/> false) a headless row runs the windowless host with
+    /// its console instead.
+    /// </summary>
     public LauncherProcessSpec CreatePlaySpec(
         LaunchMode mode,
         string configFilePath,
-        string? stderrLogPath = null)
+        string? stderrLogPath = null,
+        bool windowSupport = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configFilePath);
-        ExecutablePaths paths = RequireAvailable(mode);
+        LaunchMode host = PlayHost(mode, windowSupport);
+        ExecutablePaths paths = RequireAvailable(host);
 
-        return mode == LaunchMode.Headless
-            ? new LauncherProcessSpec(
+        if (host == LaunchMode.Headless)
+        {
+            return new LauncherProcessSpec(
                 paths.HeadlessHostPath,
                 // A session with no window is talked to through its console:
                 // what it says goes to the session log, and the launcher's
@@ -111,14 +133,31 @@ public sealed class LauncherExecutableSet
                 ["run", "--config", configFilePath, "--console"],
                 paths.WorkingDirectory,
                 StderrLogPath: stderrLogPath,
-                KeepStandardInputOpen: true)
-            : new LauncherProcessSpec(
-                paths.GraphicalHostPath,
-                ["--session-config", configFilePath],
-                paths.WorkingDirectory,
-                SupportsConsoleGracefulStop: false,
-                StderrLogPath: stderrLogPath);
+                KeepStandardInputOpen: true);
+        }
+
+        string[] arguments = mode == LaunchMode.Headless
+            ? ["--session-config", configFilePath, "--console", "--no-window"]
+            : ["--session-config", configFilePath, "--console"];
+        return new LauncherProcessSpec(
+            paths.GraphicalHostPath,
+            arguments,
+            paths.WorkingDirectory,
+            SupportsConsoleGracefulStop: false,
+            StderrLogPath: stderrLogPath,
+            KeepStandardInputOpen: true)
+        {
+            StopLine = GraphicalClientStopLine,
+        };
     }
+
+    /// <summary>The console line that logs the graphical client off and ends it.</summary>
+    public const string GraphicalClientStopLine = "/quit";
+
+    /// <summary>Which host a play row runs: the graphical client, or the windowless host for
+    /// a headless row where no window can open.</summary>
+    private static LaunchMode PlayHost(LaunchMode mode, bool windowSupport) =>
+        mode == LaunchMode.Headless && !windowSupport ? LaunchMode.Headless : LaunchMode.Gui;
 
     public LauncherProcessSpec CreateProbeSpec(
         string configFilePath,

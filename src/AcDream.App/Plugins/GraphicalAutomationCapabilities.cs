@@ -32,6 +32,27 @@ internal sealed record GraphicalAutomationParts
 
     public MagicCatalog? MagicCatalog { get; init; }
     public AcDream.App.Runtime.CurrentGameRuntimeAdapter? SessionCommands { get; init; }
+
+    /// <summary>
+    /// The session's commands when no window is attached: the same command
+    /// adapter the client without a window uses.
+    /// </summary>
+    public AcDream.Runtime.IGameRuntimeCommands? SessionCommandsWithoutWindow { get; init; }
+
+    /// <summary>How a chat line a plugin submits is sent with no window.</summary>
+    public Func<string, bool>? SubmitChatTextWithoutWindow { get; init; }
+
+    /// <summary>
+    /// How a plugin answers the server's confirmation with no window to show
+    /// it in: the one every client without a window keeps.
+    /// </summary>
+    public Func<uint, bool, bool>? AnswerConfirmationWithoutWindow { get; init; }
+
+    /// <summary>
+    /// How a plugin logs the character off with no window: the log off every
+    /// client without a window runs.
+    /// </summary>
+    public RuntimeAutomationLogoutCommands? LogoutWithoutWindow { get; init; }
     public AcDream.Runtime.Navigation.NavigationWalkController? NavigationWalk { get; init; }
     public AcDream.App.Streaming.LocalPlayerTeleportController? Teleport { get; init; }
     public AcDream.App.UI.RetailUiRuntime? RetainedUi { get; init; }
@@ -103,7 +124,9 @@ internal static partial class GraphicalAutomationCapabilities
         GameRuntime runtime = parts.Runtime;
         return new RuntimeAutomationHostCapabilities
         {
-            HostName = "windowed",
+            HostName = session is null && parts.SessionCommandsWithoutWindow is not null
+                ? "windowed (no window)"
+                : "windowed",
             Declared = Declared,
             Conditional = Conditional,
             Warn = parts.Warn,
@@ -128,19 +151,29 @@ internal static partial class GraphicalAutomationCapabilities
                         "The windowed host named the installed data files "
                         + "for plugins without the lock it reads them under.")),
             MagicCatalog = parts.MagicCatalog,
-            SubmitChatText = session is null ? null : session.SubmitChatText,
-            SessionCommands = session,
+            SubmitChatText = session is null
+                ? parts.SubmitChatTextWithoutWindow
+                : session.SubmitChatText,
+            SessionCommands = (AcDream.Runtime.IGameRuntimeCommands?)session
+                ?? parts.SessionCommandsWithoutWindow,
             NavigationWalk = parts.NavigationWalk,
-            Logout = new RuntimeAutomationLogoutCommands(
-                () => teleport?.TryRequestLogout() == true,
-                () => teleport is not null
-                    && runtime.Session.IsInWorld
-                    && !runtime.TransitOwner.IsLogoutActive
-                    && !runtime.TransitOwner.IsTeleportActive
-                    && !runtime.TransitOwner.HasPendingTeleportStart),
-            AnswerConfirmation = retainedUi is null
-                ? null
-                : retainedUi.TryAnswerConfirmation,
+            // A window logs off through its own portal-space presentation;
+            // with none, the log off runs on the session's own tick.
+            Logout = teleport is null && parts.LogoutWithoutWindow is { } logoutWithoutWindow
+                ? logoutWithoutWindow
+                : new RuntimeAutomationLogoutCommands(
+                    () => teleport?.TryRequestLogout() == true,
+                    () => teleport is not null
+                        && runtime.Session.IsInWorld
+                        && !runtime.TransitOwner.IsLogoutActive
+                        && !runtime.TransitOwner.IsTeleportActive
+                        && !runtime.TransitOwner.HasPendingTeleportStart),
+            // A window answers in its own dialog; with none, the question
+            // the server is waiting on is answered as the windowless client
+            // answers it.
+            AnswerConfirmation = retainedUi is not null
+                ? retainedUi.TryAnswerConfirmation
+                : parts.AnswerConfirmationWithoutWindow,
         };
     }
 

@@ -240,13 +240,12 @@ public sealed class ExternalContainerController : IItemListDragHandler, IRetaine
             item.ObjectId,
             _selection.SelectedObjectId ?? 0u,
             fullStack);
-        // Reordering inside the container keeps the hovered slot; an item
-        // arriving from the inventory goes to the top, the way the game does it.
-        int placement = item.ContainerId != _openContainer
-            ? 0
-            : targetCell.ItemId != 0u
-                ? Math.Max(0, targetCell.SlotIndex)
-                : _objects.GetContents(_openContainer).Count;
+        // Lands left of the hovered item, whether it is reordered inside the
+        // container or arrives from the inventory.
+        int? requested = ContentsDropPlacement(
+            item.ObjectId, targetCell, wholeStack: amount >= fullStack);
+        if (requested is not int placement)
+            return;                                          // the item is already there
 
         InventoryRequestKind kind = amount < fullStack
             ? InventoryRequestKind.SplitToContainer
@@ -668,6 +667,24 @@ public sealed class ExternalContainerController : IItemListDragHandler, IRetaine
             itemId,
             _openContainer,
             playerId: 0u);
+    }
+
+    /// <summary>
+    /// The placement a drop on a cell of the open container's item list asks
+    /// for, or null when the drop leaves the item where it is.
+    /// </summary>
+    private int? ContentsDropPlacement(uint itemId, UiItemSlot targetCell, bool wholeStack)
+    {
+        int count = 0, source = -1;
+        foreach (uint guid in _objects.GetContents(_openContainer))
+        {
+            if (IsContainer(_objects.Get(guid)))
+                continue;
+            if (guid == itemId) source = count;
+            count++;
+        }
+        int dropIndex = targetCell.ItemId != 0u ? targetCell.SlotIndex : int.MaxValue;   // an empty cell is past the last item
+        return ItemListDropPlacement.Resolve(dropIndex, count, source, wholeStack);
     }
 
     private static bool IsContainer(ClientObject? item)

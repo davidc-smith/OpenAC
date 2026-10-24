@@ -21,6 +21,12 @@ public abstract class UiElement
     /// <summary>Human-readable name for debugging / FindByName.</summary>
     public string? Name { get; set; }
 
+    /// <summary>
+    /// Built as one of a <c>&lt;repeat&gt;</c>'s copies, so its name is on
+    /// every row and lookups by name pass over it.
+    /// </summary>
+    internal bool IsRepeatRow { get; set; }
+
     public bool AuthoredInvisible { get; internal set; }
 
     public bool AuthoredTooltipEnabled { get; internal set; }

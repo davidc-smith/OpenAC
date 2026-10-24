@@ -32,13 +32,12 @@ public sealed class LandblockConcretePresentationPipelineTests
             commitEnvCells: _ => calls.Add("envcell"));
         fixture.Scenery.Observe(_ =>
         {
-            Assert.Equal(1, fixture.Physics.Diagnostics.CompleteCount);
+            Assert.Equal(1, fixture.Static.Diagnostics.BeginCount);
             Assert.False(fixture.State.IsLoaded(LandblockId));
             calls.Add("scenery");
         });
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner,
@@ -53,8 +52,9 @@ public sealed class LandblockConcretePresentationPipelineTests
             calls);
         Assert.True(fixture.State.IsNearTier(LandblockId));
         Assert.Equal(1, fixture.Render.Diagnostics.BeginCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.BeginCount);
         Assert.Equal(1, fixture.Static.Diagnostics.CompleteCount);
+        // What is drawn publishes no collision: the session host does.
+        Assert.Equal(0, fixture.Engine.LandblockCount);
     }
 
     [Fact]
@@ -67,7 +67,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         fixture.Scenery.Observe(_ => calls.Add("scenery"));
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner,
@@ -119,8 +118,6 @@ public sealed class LandblockConcretePresentationPipelineTests
             ["terrain", "envcell", "scenery", "scenery", "pin", "live-recovery"],
             calls);
         Assert.Equal(1, fixture.Render.Diagnostics.BeginCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.BeginCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.CompleteCount);
         Assert.Equal(1, fixture.Static.Diagnostics.CompleteCount);
     }
 
@@ -143,7 +140,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         fixture.Scenery.Observe(_ => calls.Add("scenery"));
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner);
@@ -154,8 +150,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.False(fixture.State.IsLoaded(LandblockId));
         Assert.True(pipeline.HasPendingPublication(result));
         Assert.Equal(1, fixture.Render.Diagnostics.BeginCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.BeginCount);
-        Assert.Equal(0, fixture.Physics.Diagnostics.CompleteCount);
         Assert.Equal(0, fixture.Static.Diagnostics.BeginCount);
 
         pipeline.ResumePublication(result);
@@ -165,8 +159,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.Equal(1, calls.Count(call => call == "scenery"));
         Assert.Equal(1, calls.Count(call => call == "pin"));
         Assert.Equal(1, fixture.Render.Diagnostics.BeginCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.BeginCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.CompleteCount);
         Assert.Equal(1, fixture.Static.Diagnostics.CompleteCount);
         Assert.False(pipeline.HasPendingPublication(result));
         Assert.True(fixture.State.IsLoaded(LandblockId));
@@ -181,7 +173,6 @@ public sealed class LandblockConcretePresentationPipelineTests
             commitEnvCells: _ => calls.Add("envcell"));
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner,
@@ -213,7 +204,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.True(advance.Completed);
         Assert.False(pipeline.HasPendingPublication(result));
         Assert.True(fixture.State.IsNearTier(LandblockId));
-        Assert.Equal(1, fixture.Physics.Diagnostics.CompleteCount);
         Assert.Equal(1, fixture.Static.Diagnostics.CompleteCount);
     }
 
@@ -224,7 +214,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         ConcreteFixture fixture = Fixture(calls);
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner);
@@ -238,7 +227,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.False(fixture.State.IsLoaded(LandblockId));
         Assert.Equal(0, fixture.Engine.LandblockCount);
         Assert.Equal(0, fixture.Render.Diagnostics.BeginCount);
-        Assert.Equal(0, fixture.Physics.Diagnostics.BeginCount);
         Assert.Equal(0, fixture.Static.Diagnostics.BeginCount);
         Assert.True(pipeline.HasPendingPublication(result));
         Assert.Equal(1, pipeline.PendingPublicationCount);
@@ -251,14 +239,12 @@ public sealed class LandblockConcretePresentationPipelineTests
         ConcreteFixture fixture = Fixture(calls);
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner);
         WorldEntity first = Entity(0x80A9B401u);
         pipeline.PublishLoaded(Result(Build(first)));
         long renderBegins = fixture.Render.Diagnostics.BeginCount;
-        long physicsBegins = fixture.Physics.Diagnostics.BeginCount;
         long staticBegins = fixture.Static.Diagnostics.BeginCount;
         calls.Clear();
         LandblockStreamResult.Loaded changed = Result(Build(
@@ -269,7 +255,6 @@ public sealed class LandblockConcretePresentationPipelineTests
 
         Assert.Empty(calls);
         Assert.Equal(renderBegins, fixture.Render.Diagnostics.BeginCount);
-        Assert.Equal(physicsBegins, fixture.Physics.Diagnostics.BeginCount);
         Assert.Equal(staticBegins, fixture.Static.Diagnostics.BeginCount);
         Assert.True(pipeline.HasPendingPublication(changed));
     }
@@ -282,7 +267,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.Throws<ArgumentNullException>(() =>
             new LandblockPresentationPipeline(
                 fixture.Render,
-                fixture.Physics,
                 fixture.Static,
                 fixture.State,
                 retirementOwner: null!));
@@ -294,14 +278,12 @@ public sealed class LandblockConcretePresentationPipelineTests
             fixture.State);
         var foreignOwner = new LandblockPresentationRetirementOwner(
             foreignRender,
-            fixture.Physics,
             fixture.Static,
             fixture.Lighting,
             fixture.Translucency);
         Assert.Throws<ArgumentException>(() =>
             new LandblockPresentationPipeline(
                 fixture.Render,
-                fixture.Physics,
                 fixture.Static,
                 fixture.State,
                 foreignOwner));
@@ -309,7 +291,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.Throws<ArgumentException>(() =>
             new LandblockPresentationRetirementOwner(
                 fixture.Render,
-                fixture.Physics,
                 fixture.Static,
                 new LightingHookSink(
                     new LightManager(),
@@ -318,7 +299,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.Throws<ArgumentException>(() =>
             new LandblockPresentationRetirementOwner(
                 fixture.Render,
-                fixture.Physics,
                 fixture.Static,
                 fixture.Lighting,
                 new TranslucencyFadeManager()));
@@ -326,7 +306,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.Throws<ArgumentException>(() =>
             new LandblockPresentationPipeline(
                 fixture.Render,
-                fixture.Physics,
                 fixture.Static,
                 new GpuWorldState(),
                 fixture.RetirementOwner));
@@ -338,7 +317,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         ConcreteFixture fixture = Fixture(new List<string>());
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner);
@@ -360,7 +338,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         ConcreteFixture fixture = Fixture(new List<string>());
         var pipeline = new LandblockPresentationPipeline(
             fixture.Render,
-            fixture.Physics,
             fixture.Static,
             fixture.State,
             fixture.RetirementOwner);
@@ -419,8 +396,7 @@ public sealed class LandblockConcretePresentationPipelineTests
             0u,
             out _));
         Assert.Empty(fixture.World.SceneryObjects);
-        Assert.Equal(1, fixture.Physics.Diagnostics.FullRemovalCount);
-        Assert.Equal(0, fixture.Physics.Diagnostics.DemotionCount);
+        Assert.Equal(0, fixture.Engine.LandblockCount);
         Assert.Equal(1, fixture.Render.Diagnostics.TerrainRemovalCount);
         Assert.Equal(1, fixture.Render.Diagnostics.CellVisibilityRemovalCount);
         Assert.Equal(1, fixture.Render.Diagnostics.BuildingRegistryRemovalCount);
@@ -476,8 +452,7 @@ public sealed class LandblockConcretePresentationPipelineTests
             0u,
             out _));
         Assert.Empty(fixture.World.SceneryObjects);
-        Assert.Equal(0, fixture.Physics.Diagnostics.FullRemovalCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.DemotionCount);
+        Assert.Equal(0, fixture.Engine.LandblockCount);
         Assert.Equal(0, fixture.Render.Diagnostics.TerrainRemovalCount);
         Assert.Equal(1, fixture.Render.Diagnostics.CellVisibilityRemovalCount);
         Assert.Equal(1, fixture.Render.Diagnostics.BuildingRegistryRemovalCount);
@@ -507,7 +482,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.Equal(0, pipeline.PendingRetirementCount);
         Assert.Equal(2, terrainAttempts);
         Assert.Equal(1, fixture.Render.Diagnostics.TerrainRemovalCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.FullRemovalCount);
         Assert.Equal(1, fixture.Render.Diagnostics.EnvCellRemovalCount);
 
         pipeline.AdvanceRetirements();
@@ -515,7 +489,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         Assert.Equal(0, pipeline.PendingRetirementCount);
         Assert.Equal(2, terrainAttempts);
         Assert.Equal(1, fixture.Render.Diagnostics.TerrainRemovalCount);
-        Assert.Equal(1, fixture.Physics.Diagnostics.FullRemovalCount);
         Assert.Equal(1, fixture.Render.Diagnostics.EnvCellRemovalCount);
     }
 
@@ -737,7 +710,6 @@ public sealed class LandblockConcretePresentationPipelineTests
     private static LandblockPresentationPipeline Pipeline(
         ConcreteFixture fixture) => new(
         fixture.Render,
-        fixture.Physics,
         fixture.Static,
         fixture.State,
         fixture.RetirementOwner);
@@ -772,7 +744,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         var entityObjects =
             new AcDream.Runtime.Entities.RuntimeEntityObjectLifetime(
                 new PhysicsDataCache());
-        PhysicsDataCache cache = entityObjects.Physics.DataCache;
         PhysicsEngine engine = entityObjects.Physics.Engine;
         var render = new LandblockRenderPublisher(
             (_, _, _) => calls.Add("terrain"),
@@ -781,9 +752,6 @@ public sealed class LandblockConcretePresentationPipelineTests
             state,
             commitEnvCells: commitEnvCells,
             removeEnvCells: removeEnvCells ?? (_ => calls.Add("envcell-remove")));
-        var physics = new LandblockPhysicsPublisher(
-            entityObjects.Physics,
-            new float[256]);
         var lights = new LightManager();
         var lighting = new LightingHookSink(
             lights,
@@ -798,7 +766,6 @@ public sealed class LandblockConcretePresentationPipelineTests
             scenery);
         var retirementOwner = new LandblockPresentationRetirementOwner(
             render,
-            physics,
             staticPresentation,
             lighting,
             translucency);
@@ -806,7 +773,6 @@ public sealed class LandblockConcretePresentationPipelineTests
             state,
             engine,
             render,
-            physics,
             staticPresentation,
             events,
             retirementOwner,
@@ -879,7 +845,6 @@ public sealed class LandblockConcretePresentationPipelineTests
         GpuWorldState State,
         PhysicsEngine Engine,
         LandblockRenderPublisher Render,
-        LandblockPhysicsPublisher Physics,
         LandblockStaticPresentationPublisher Static,
         WorldEvents Events,
         LandblockPresentationRetirementOwner RetirementOwner,

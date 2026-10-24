@@ -39,7 +39,7 @@ public interface IRuntimeHousePurchaseView
     IReadOnlyList<uint> GetStaged(HousePurchaseTab tab);
 
     /// <summary>How much of payment line <paramref name="lineIndex"/> the
-    /// tab's staged items cover: stack sizes, or a trade note's value.</summary>
+    /// tab's staged items have paid: never more than the line asks for.</summary>
     int GetStagedAmount(HousePurchaseTab tab, int lineIndex);
 }
 
@@ -49,18 +49,36 @@ public interface IRuntimeHousePurchaseView
 /// window sends the staged guids with BuyHouse or RentHouse, and the server
 /// takes only what is still owed.
 /// </summary>
+/// <remarks>
+/// Each tab keeps a running paid amount per payment line. It starts at zero
+/// with every profile (the server's paid amounts are shown, never counted),
+/// grows as items are staged and shrinks as they are taken off. Staging a
+/// stack counts no more than the line still owes; a stack of trade notes
+/// counts only the whole notes that fit. Taking an item off subtracts its
+/// whole stack, never going below zero.
+/// </remarks>
 public sealed class RuntimeHousePurchaseState
 {
     /// <summary>The pyreal class. Trade notes pay towards it too.</summary>
     public const uint PyrealWcid = 273u;
 
+    private static readonly IReadOnlyDictionary<uint, int> NoDenominations =
+        new Dictionary<uint, int>();
+
     private readonly object _gate = new();
     private readonly ClientObjectTable _objects;
     private readonly Func<uint> _playerGuid;
-    private readonly List<uint> _buy = [];
-    private readonly List<uint> _rent = [];
+    private readonly List<StagedItem> _buy = [];
+    private readonly List<StagedItem> _rent = [];
+    private int[] _buyPaid = [];
+    private int[] _rentPaid = [];
+    private IReadOnlyDictionary<uint, int> _noteDenominations = NoDenominations;
     private GameEvents.HouseProfile? _profile;
     private long _revision;
+
+    /// <summary>A staged item, with the class and stack size it had when
+    /// staged, for taking its payment off after the item is gone.</summary>
+    private readonly record struct StagedItem(uint Guid, uint Wcid, int Count);
 
     public RuntimeHousePurchaseState(ClientObjectTable objects, Func<uint> playerGuid)
     {
@@ -71,26 +89,29 @@ public sealed class RuntimeHousePurchaseState
 
     public IRuntimeHousePurchaseView View { get; }
 
+    /// <summary>Installs the trade-note classes from the portal data, each
+    /// with its value in pyreals. Only these classes pay as trade notes.</summary>
+    public void InstallTradeNoteDenominations(IReadOnlyDictionary<uint, int> denominations)
+    {
+        ArgumentNullException.ThrowIfNull(denominations);
+        lock (_gate)
+            _noteDenominations = denominations;
+    }
+
+    /// <summary>Every profile, the same house's included, empties both
+    /// strips: staging starts again from nothing, whatever the server says
+    /// is already paid.</summary>
     public void ApplyProfile(GameEvents.HouseProfile profile)
     {
         lock (_gate)
         {
-            bool sameHouse = _profile is { } current
-                && current.SlumlordGuid == profile.SlumlordGuid;
-            _profile = profile with
-            {
-                Buy = (profile.Buy ?? []).ToArray(),
-                Rent = (profile.Rent ?? []).ToArray(),
-            };
-            if (sameHouse)
-            {
-                RevalidateLocked();
-            }
-            else
-            {
-                _buy.Clear();
-                _rent.Clear();
-            }
+            GameEvents.HousePayment[] buy = (profile.Buy ?? []).ToArray();
+            GameEvents.HousePayment[] rent = (profile.Rent ?? []).ToArray();
+            _profile = profile with { Buy = buy, Rent = rent };
+            _buy.Clear();
+            _rent.Clear();
+            _buyPaid = new int[buy.Length];
+            _rentPaid = new int[rent.Length];
             _revision++;
         }
     }
@@ -103,6 +124,9 @@ public sealed class RuntimeHousePurchaseState
         {
             if (_profile is not { } profile)
                 return HouseStageResult.NotOpen;
+            // An item not carried is refused first, whatever the tab.
+            if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)
+                return HouseStageResult.NotInInventory;
             if (tab == HousePurchaseTab.Buy && profile.OwnerGuid != 0u)
                 return HouseStageResult.AlreadyOwned;
             // Nobody pays maintenance on a house nobody owns.
@@ -110,8 +134,6 @@ public sealed class RuntimeHousePurchaseState
                 return HouseStageResult.NotOwned;
             if (tab == HousePurchaseTab.Rent && profile.MaintenanceFree)
                 return HouseStageResult.MaintenanceFree;
-            if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)
-                return HouseStageResult.NotInInventory;
 
             if ((item.Type & ItemType.Container) != 0)
             {
@@ -131,23 +153,36 @@ public sealed class RuntimeHousePurchaseState
         if (!IsInInventory(itemGuid) || _objects.Get(itemGuid) is not { } item)
             return HouseStageResult.NotInInventory;
 
-        List<uint> staged = Staged(tab);
-        if (staged.Contains(itemGuid))
+        List<StagedItem> staged = Staged(tab);
+        if (staged.Exists(entry => entry.Guid == itemGuid))
             return HouseStageResult.AlreadyStaged;
 
         IReadOnlyList<GameEvents.HousePayment> lines = Lines(profile, tab);
-        int line = LineIndex(lines, item);
+        int line = LineIndex(lines, item.WeenieClassId);
         if (line < 0)
             return HouseStageResult.NotRequired;
-        int owed = lines[line].Num - lines[line].Paid - StagedAmountLocked(tab, line);
+        int[] paid = Paid(tab);
+        int owed = lines[line].Num - paid[line];
         if (owed <= 0)
             return HouseStageResult.AlreadyCovered;
-        // A stack may run over (the server takes only what it needs), but
-        // a note can't be split, so it must fit in what is still owed.
-        if (IsTradeNote(item) && item.Value > owed)
-            return HouseStageResult.NoteTooLarge;
 
-        staged.Add(itemGuid);
+        int count = PaymentCount(item);
+        if (TradeNoteValue(item.WeenieClassId) is { } note)
+        {
+            // A note can't be split: as many whole notes as fit, at least one.
+            int notes = note > 0 && owed >= note ? Math.Min(owed / note, count) : 0;
+            if (notes <= 0)
+                return HouseStageResult.NoteTooLarge;
+            paid[line] += notes * note;
+        }
+        else
+        {
+            // A stack may run over (the server takes only what it needs),
+            // but it counts no more than is owed.
+            paid[line] += Math.Min(count, owed);
+        }
+
+        staged.Add(new StagedItem(itemGuid, item.WeenieClassId, count));
         _revision++;
         return HouseStageResult.Staged;
     }
@@ -156,8 +191,11 @@ public sealed class RuntimeHousePurchaseState
     {
         lock (_gate)
         {
-            if (Staged(tab).Remove(itemGuid))
-                _revision++;
+            int index = Staged(tab).FindIndex(entry => entry.Guid == itemGuid);
+            if (index < 0)
+                return;
+            RemoveLocked(tab, index);
+            _revision++;
         }
     }
 
@@ -166,16 +204,17 @@ public sealed class RuntimeHousePurchaseState
     {
         lock (_gate)
         {
-            List<uint> staged = Staged(tab);
+            List<StagedItem> staged = Staged(tab);
             if (staged.Count == 0)
                 return;
             staged.Clear();
+            Array.Clear(Paid(tab));
             _revision++;
         }
     }
 
     /// <summary>Drops staged items that are no longer in the player's
-    /// inventory. True when anything was dropped.</summary>
+    /// inventory, taking their payment off. True when anything was dropped.</summary>
     public bool Revalidate()
     {
         lock (_gate)
@@ -196,15 +235,48 @@ public sealed class RuntimeHousePurchaseState
             _profile = null;
             _buy.Clear();
             _rent.Clear();
+            _buyPaid = [];
+            _rentPaid = [];
             _revision++;
         }
     }
 
     private bool RevalidateLocked()
     {
-        int removed = _buy.RemoveAll(guid => !IsInInventory(guid))
-            + _rent.RemoveAll(guid => !IsInInventory(guid));
-        return removed > 0;
+        bool removed = false;
+        foreach (HousePurchaseTab tab in new[] { HousePurchaseTab.Buy, HousePurchaseTab.Rent })
+        {
+            List<StagedItem> staged = Staged(tab);
+            for (int i = staged.Count - 1; i >= 0; i--)
+            {
+                if (IsInInventory(staged[i].Guid))
+                    continue;
+                RemoveLocked(tab, i);
+                removed = true;
+            }
+        }
+        return removed;
+    }
+
+    // Takes an item off the strip, and its whole stack off its line's paid
+    // amount, never below zero.
+    private void RemoveLocked(HousePurchaseTab tab, int index)
+    {
+        List<StagedItem> staged = Staged(tab);
+        StagedItem entry = staged[index];
+        staged.RemoveAt(index);
+        if (_profile is not { } profile)
+            return;
+
+        int line = LineIndex(Lines(profile, tab), entry.Wcid);
+        if (line < 0)
+            return;
+        int count = _objects.Get(entry.Guid) is { } item ? PaymentCount(item) : entry.Count;
+        int amount = TradeNoteValue(entry.Wcid) is { } note ? count * note : count;
+        if (amount <= 0)
+            return;
+        int[] paid = Paid(tab);
+        paid[line] = amount > paid[line] ? 0 : paid[line] - amount;
     }
 
     private bool IsInInventory(uint itemGuid)
@@ -215,49 +287,35 @@ public sealed class RuntimeHousePurchaseState
             && _objects.IsOwnedByObject(itemGuid, player);
     }
 
-    private List<uint> Staged(HousePurchaseTab tab) =>
+    private List<StagedItem> Staged(HousePurchaseTab tab) =>
         tab == HousePurchaseTab.Buy ? _buy : _rent;
+
+    private int[] Paid(HousePurchaseTab tab) =>
+        tab == HousePurchaseTab.Buy ? _buyPaid : _rentPaid;
 
     private static IReadOnlyList<GameEvents.HousePayment> Lines(
         GameEvents.HouseProfile profile, HousePurchaseTab tab) =>
         tab == HousePurchaseTab.Buy ? profile.Buy : profile.Rent;
 
-    private static bool IsTradeNote(ClientObject item) =>
-        (item.Type & ItemType.PromissoryNote) != 0;
+    /// <summary>A trade note's value in pyreals, or null for any other class.</summary>
+    private int? TradeNoteValue(uint wcid) =>
+        _noteDenominations.TryGetValue(wcid, out int value) ? value : null;
 
-    private static int Amount(ClientObject item) =>
-        IsTradeNote(item) ? item.Value : item.StackSize;
+    // How many of an item one staging offers: its stack size, at least one.
+    private static int PaymentCount(ClientObject item) =>
+        item.StackSize != 0 ? item.StackSize : 1;
 
-    private static int LineIndex(
-        IReadOnlyList<GameEvents.HousePayment> lines, ClientObject item)
+    // The first line the class pays: a trade note pays the pyreal line,
+    // anything else the line asking for its own class.
+    private int LineIndex(IReadOnlyList<GameEvents.HousePayment> lines, uint wcid)
     {
+        bool isNote = TradeNoteValue(wcid) is not null;
         for (int i = 0; i < lines.Count; i++)
         {
-            if (lines[i].WeenieID == item.WeenieClassId
-                || (IsTradeNote(item) && lines[i].WeenieID == PyrealWcid))
-            {
+            if ((isNote && lines[i].WeenieID == PyrealWcid) || lines[i].WeenieID == wcid)
                 return i;
-            }
         }
         return -1;
-    }
-
-    private int StagedAmountLocked(HousePurchaseTab tab, int lineIndex)
-    {
-        if (_profile is not { } profile)
-            return 0;
-        IReadOnlyList<GameEvents.HousePayment> lines = Lines(profile, tab);
-        int total = 0;
-        foreach (uint guid in Staged(tab))
-        {
-            if (IsInInventory(guid)
-                && _objects.Get(guid) is { } item
-                && LineIndex(lines, item) == lineIndex)
-            {
-                total += Amount(item);
-            }
-        }
-        return total;
     }
 
     private sealed class PurchaseView(RuntimeHousePurchaseState owner)
@@ -278,13 +336,21 @@ public sealed class RuntimeHousePurchaseState
         public IReadOnlyList<uint> GetStaged(HousePurchaseTab tab)
         {
             lock (owner._gate)
-                return owner.Staged(tab).Where(owner.IsInInventory).ToArray();
+            {
+                return owner.Staged(tab)
+                    .Select(entry => entry.Guid)
+                    .Where(owner.IsInInventory)
+                    .ToArray();
+            }
         }
 
         public int GetStagedAmount(HousePurchaseTab tab, int lineIndex)
         {
             lock (owner._gate)
-                return owner.StagedAmountLocked(tab, lineIndex);
+            {
+                int[] paid = owner.Paid(tab);
+                return lineIndex >= 0 && lineIndex < paid.Length ? paid[lineIndex] : 0;
+            }
         }
     }
 }

@@ -502,6 +502,76 @@ public sealed class RuntimeRemotePlacementDriveControllerTests
     }
 
     [Fact]
+    public void HandOver_KeepsTrackedEntriesForTheRouteThatReplacesTheOld()
+    {
+        using var lifetime = new RuntimeEntityObjectLifetime(FlatEngine());
+        RuntimeEntityRecord record = CreateRemoteRecord(
+            lifetime, 0x7000300Bu, setupTableId: 0x02000001u);
+        AttachBody(lifetime, record, SourceCell);
+        CommitLandblockCollision(lifetime, DestinationLandblock);
+        var window = new FakeServiceWindow();
+        window.Allow(DestinationLandblock);
+        RuntimeRemotePlacementDriveController drive = CreateDrive(lifetime, window);
+        var windowless = new object();
+        var windowRoute = new object();
+        drive.AttachRoute(windowless);
+        Assert.Equal(
+            RuntimeRemotePlacementExecutionStatus.Contention,
+            drive.TryExecuteAcceptedRemotePosition(
+                record,
+                MakeRoute(
+                    record,
+                    RuntimeAuthoritativePositionDisposition.SetPosition,
+                    DestinationCell)));
+        Assert.Equal(1, drive.PendingCount);
+
+        drive.BeginRouteHandOver();
+        drive.DetachRoute(windowless);
+        drive.AttachRoute(windowRoute);
+        drive.EndRouteHandOver();
+
+        Assert.Equal(1, drive.PendingCount);
+        Assert.Equal(
+            1, lifetime.Physics.CaptureOwnership().SetPositionOperationCount);
+
+        // Spent: a plain detach abandons and the ledger converges as before.
+        drive.DetachRoute(windowRoute);
+        Assert.Equal(0, drive.PendingCount);
+        Assert.Equal(
+            0, lifetime.Physics.CaptureOwnership().SetPositionOperationCount);
+    }
+
+    [Fact]
+    public void HandOver_NobodyTookIsAbandonedWhenItEnds()
+    {
+        using var lifetime = new RuntimeEntityObjectLifetime(FlatEngine());
+        RuntimeEntityRecord record = CreateRemoteRecord(
+            lifetime, 0x7000300Cu, setupTableId: 0x02000001u);
+        AttachBody(lifetime, record, SourceCell);
+        CommitLandblockCollision(lifetime, DestinationLandblock);
+        var window = new FakeServiceWindow();
+        window.Allow(DestinationLandblock);
+        RuntimeRemotePlacementDriveController drive = CreateDrive(lifetime, window);
+        var route = new object();
+        drive.AttachRoute(route);
+        _ = drive.TryExecuteAcceptedRemotePosition(
+            record,
+            MakeRoute(
+                record,
+                RuntimeAuthoritativePositionDisposition.SetPosition,
+                DestinationCell));
+        Assert.Equal(1, drive.PendingCount);
+
+        drive.BeginRouteHandOver();
+        drive.DetachRoute(route);
+        drive.EndRouteHandOver();
+
+        Assert.Equal(0, drive.PendingCount);
+        Assert.Equal(
+            0, lifetime.Physics.CaptureOwnership().SetPositionOperationCount);
+    }
+
+    [Fact]
     public void LedgerConverges_AfterDetachRouteCancelsAnUnacknowledgedCommit()
     {
         using var lifetime = new RuntimeEntityObjectLifetime(FlatEngine());

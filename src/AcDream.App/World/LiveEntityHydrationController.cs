@@ -146,6 +146,16 @@ internal interface ILiveEntityWorldOriginCoordinator
 {
     bool IsKnown { get; }
     LiveEntityOriginInitialization TryInitialize(WorldSession.EntitySpawn spawn);
+
+    /// <summary>
+    /// A window opening on a session that already plays: the world frame is
+    /// the one the session measures in, and drawing starts around the cell
+    /// the character stands in now. No reveal begins; the character is
+    /// already in the world.
+    /// </summary>
+    LiveEntityOriginInitialization TryInitializeForPlayingSession(
+        uint frameCenterLandblockId,
+        uint playerCellId);
 }
 
 internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoadedSink
@@ -206,14 +216,18 @@ internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoaded
 
     internal event Action<uint>? AppearanceApplied;
 
-    public void OnCreate(WorldSession.EntitySpawn spawn)
+    public void OnCreate(WorldSession.EntitySpawn spawn) =>
+        CreateCore(spawn, replaceExisting: false);
+
+    private void CreateCore(WorldSession.EntitySpawn spawn, bool replaceExisting)
     {
         lock (_datLock)
         {
             LiveEntityRegistrationResult registration =
                 _runtime.RegisterLiveEntity(
                     spawn,
-                    isLocalPlayer: spawn.Guid == _identity.ServerGuid);
+                    isLocalPlayer: spawn.Guid == _identity.ServerGuid,
+                    replaceExisting: replaceExisting);
             InboundCreateResult result = registration.Inbound;
             if (result.Disposition is
                 AcDream.Core.Physics.CreateObjectTimestampDisposition.StaleGeneration)
@@ -236,7 +250,10 @@ internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoaded
                         canonical,
                         createIntegrationVersion,
                         spawn,
-                        replaceGeneration: result.Disposition is
+                        // A re-sent description keeps the item record the
+                        // object table already refreshed from it.
+                        replaceGeneration: !replaceExisting
+                            && result.Disposition is
                                 AcDream.Core.Physics.CreateObjectTimestampDisposition.NewGeneration)
                     && _runtime.IsCurrentCreateIntegration(
                         canonical,
@@ -357,30 +374,21 @@ AppearanceSynchronization:
         }
     }
 
+    /// <summary>
+    /// A re-sent description (0xF7DB) of an object already held deletes it
+    /// and creates it again from the full new description: its setup,
+    /// physics state, parent and position. An object still waiting to enter
+    /// the world is replaced the same way. One not held is left to the object
+    /// table.
+    /// </summary>
     public bool OnDescriptionRefresh(WorldSession.EntitySpawn update)
     {
         lock (_datLock)
         {
-            if (!_runtime.TryApplyDescriptionRefresh(update, out _))
+            if (!_entityObjects.IsKnown(update.Guid))
                 return false;
-
-            if (!_runtime.TryGetRecord(
-                    update.Guid,
-                    out LiveEntityRecord record))
-            {
-                return _runtime.TryGetCanonical(
-                        update.Guid,
-                        out RuntimeEntityRecord canonical)
-                    && ProjectExact(
-                        canonical,
-                        canonical.Snapshot,
-                        LiveProjectionPurpose.SpatialRecovery,
-                        canonical.CreateIntegrationVersion);
-            }
-
-            return SynchronizeAppearance(
-                record,
-                record.ObjDescAuthorityVersion);
+            CreateCore(update, replaceExisting: true);
+            return true;
         }
     }
 
@@ -493,9 +501,16 @@ AppearanceSynchronization:
                 else if (record?.WorldEntity is not null
                     && record.InitialHydrationCompleted)
                 {
-                    _runtime.RebucketLiveEntity(
-                        record.ServerGuid,
-                        record.ProjectionCellId);
+                    // A placement into this landblock that waited for it to
+                    // be drawn shows the entity where the runtime put it.
+                    // Committing the cell here as well would make that
+                    // placement stale, and it would never be shown.
+                    if (!_runtime.IsAwaitingRuntimePlacement(record))
+                    {
+                        _runtime.RebucketLiveEntity(
+                            record.ServerGuid,
+                            record.ProjectionCellId);
+                    }
                 }
                 else if (ProjectExact(
                     candidate,
@@ -674,6 +689,27 @@ AppearanceSynchronization:
             || _runtime.TryCompleteCreateProjectionSynchronization(
                 candidate.Record,
                 candidate.CreateIntegrationVersion));
+    }
+
+    /// <summary>
+    /// A window opening on a session that already plays: the world is drawn
+    /// in the frame the session measures in, around the character, and
+    /// everything the session already knows is drawn as its landblock is.
+    /// </summary>
+    public void PresentPlayingWorld(uint frameCenterLandblockId, uint playerCellId)
+    {
+        lock (_datLock)
+        {
+            LiveEntityOriginInitialization initialization =
+                _origin.TryInitializeForPlayingSession(
+                    frameCenterLandblockId,
+                    playerCellId);
+            if (!initialization.IsKnown)
+                return;
+
+            for (int i = 0; i < initialization.AlreadyLoadedLandblocks.Count; i++)
+                OnLandblockLoaded(initialization.AlreadyLoadedLandblocks[i]);
+        }
     }
 
     public void ResetSessionState() => _materializer.ResetSessionState();

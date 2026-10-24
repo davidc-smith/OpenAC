@@ -41,6 +41,7 @@ public sealed class MainWindowViewTests
         ("UpdateCloseButton", typeof(Button)),
         ("OwnServerNameTextBox", typeof(TextBox)),
         ("MigrationNoticeCloseButton", typeof(Button)),
+        ("ClosePromptCancelButton", typeof(Button)),
     ];
 
     [AvaloniaFact]

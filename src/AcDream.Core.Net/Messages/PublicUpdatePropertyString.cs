@@ -6,8 +6,9 @@ namespace AcDream.Core.Net.Messages;
 
 /// <summary>
 /// 0x02D6 — one PropertyString changed on a visible object. Layout after the
-/// opcode: sequence byte, property, guid, pad to 4 (measured from the opcode),
-/// then a String16L. Note the property comes before the guid here.
+/// opcode: sequence byte, guid, property, pad to 4 (measured from the opcode),
+/// then a String16L. The guid comes first, as the protocol defines it; a
+/// server that writes the property first is not understood.
 /// </summary>
 public static class PublicUpdatePropertyString
 {
@@ -20,8 +21,8 @@ public static class PublicUpdatePropertyString
         if (body.Length < 4 + 1 + 4 + 4) return null;
         if (BinaryPrimitives.ReadUInt32LittleEndian(body) != Opcode) return null;
         int pos = 5;
-        uint prop = BinaryPrimitives.ReadUInt32LittleEndian(body[pos..]); pos += 4;
         uint guid = BinaryPrimitives.ReadUInt32LittleEndian(body[pos..]); pos += 4;
+        uint prop = BinaryPrimitives.ReadUInt32LittleEndian(body[pos..]); pos += 4;
         pos = (pos + 3) & ~3;
         string? value = UpdatePropertyStringReader.Read(body, pos);
         return value is null ? null : new Parsed(guid, prop, value);

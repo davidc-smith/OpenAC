@@ -189,10 +189,13 @@ internal sealed class DatLiveEntityProjectionMaterializer
             idleFrame = idleCycle.Animation.PartFrames[startIndex];
         }
         // An object with no motion cycle rests in the placement the server
-        // named, so an item on a wall hook hangs instead of lying flat.
-        idleFrame ??= SetupPartTransforms.ResolvePlacementFrame(
+        // named, so an item on a wall hook hangs instead of lying flat. Its
+        // collision is built in the same placement.
+        idleFrame ??= SetupPartTransforms.ResolveObjectPose(
             setup,
-            canonicalSpawn.PlacementId);
+            SetupPartTransforms.ObjectPlacementId(
+                canonicalSpawn.PlacementId,
+                hasMovementData: canonicalSpawn.Physics?.Movement is { RawData.Length: > 0 }));
 
         List<MeshRef> flattened = [.. SetupMesh.Flatten(setup, idleFrame)];
         IReadOnlyList<CreateObject.AnimPartChange> animPartChanges =

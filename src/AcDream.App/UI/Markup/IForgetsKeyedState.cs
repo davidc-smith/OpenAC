@@ -9,7 +9,9 @@ internal interface IForgetsKeyedState
 {
     /// <summary>
     /// Removes every value whose control name is <c>name#path</c> for one of
-    /// <paramref name="paths"/>, or <c>name#path/...</c> for a repeat nested in it.
+    /// <paramref name="names"/> (the names in one repeat's template) and one
+    /// of <paramref name="paths"/>, or <c>name#path/...</c> for a repeat
+    /// nested in it. Another repeat's names with the same keys stay.
     /// </summary>
-    void ForgetKeyed(IReadOnlySet<string> paths);
+    void ForgetKeyed(HashSet<string> names, HashSet<string> paths);
 }

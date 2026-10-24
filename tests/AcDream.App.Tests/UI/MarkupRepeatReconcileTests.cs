@@ -54,10 +54,12 @@ public sealed class MarkupRepeatReconcileTests
         public string? Get(string control, string kind) => Values.GetValueOrDefault((control, kind));
         public void Set(string control, string kind, string value) => Values[(control, kind)] = value;
         public void Remove(string control, string kind) => Values.Remove((control, kind));
-        public void ForgetKeyed(IReadOnlySet<string> paths)
+        public void ForgetKeyed(HashSet<string> names, HashSet<string> paths)
         {
             ForgetCalls++;
-            foreach (var key in Values.Keys.Where(k => KeyedControlState.IsUnder(k.Item1, paths)).ToList())
+            var nameLookup = names.GetAlternateLookup<ReadOnlySpan<char>>();
+            var pathLookup = paths.GetAlternateLookup<ReadOnlySpan<char>>();
+            foreach (var key in Values.Keys.Where(k => KeyedControlState.IsUnder(k.Item1, nameLookup, pathLookup)).ToList())
                 Values.Remove(key);
         }
     }
@@ -562,6 +564,41 @@ public sealed class MarkupRepeatReconcileTests
         m.Frame();
 
         Assert.Equal([("inner#o/i", "expanded")], state.Values.Keys);
+    }
+
+    [Fact]
+    public void A_removed_key_leaves_another_repeats_state_under_the_same_key()
+    {
+        var state = new FakeState();
+        state.Values[("x#5", "expanded")] = "true";
+        state.Values[("y#5", "expanded")] = "true";
+        var binding = new Binding { Rows = Rows("5"), Sections = [new Section { Id = "5" }] };
+        var m = Mount("<repeat items=\"{Rows}\" key=\"{Id}\"><expander name=\"x\" open=\"false\" h=\"60\" text=\"{Label}\"/></repeat>"
+            + "<repeat items=\"{Sections}\" key=\"{Id}\"><expander name=\"y\" open=\"false\" h=\"60\" text=\"{Title}\"/></repeat>",
+            binding, state: state);
+
+        binding.Rows = [];
+        m.Frame();
+
+        Assert.Equal([("y#5", "expanded")], state.Values.Keys);
+    }
+
+    [Fact]
+    public void A_key_with_a_slash_is_not_read_as_a_nested_path()
+    {
+        const string body = "<repeat items=\"{Rows}\" key=\"{Id}\">"
+            + "<expander name=\"section\" open=\"false\" h=\"60\" text=\"{Label}\"/></repeat>";
+        var state = new FakeState();
+        var binding = new Binding { Rows = Rows("a", "a/b") };
+        var m = Mount(body, binding, state: state);
+        Assert.IsType<UiMarkupExpander>(m.Copies[0]).Toggle();
+        Assert.IsType<UiMarkupExpander>(m.Copies[1]).Toggle();
+        Assert.Contains(("section#a%2Fb", "expanded"), state.Values.Keys);
+
+        binding.Rows = Rows("a/b");
+        m.Frame();
+
+        Assert.Equal([("section#a%2Fb", "expanded")], state.Values.Keys);
     }
 
     [Fact]

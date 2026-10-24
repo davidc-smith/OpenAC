@@ -83,10 +83,9 @@ internal sealed record SessionPlayerDependencies(
     CombatFeedbackSlot CombatFeedback,
     TransferableResourceSlot<PortalTunnelPresentation> PortalTunnelFallback,
     Action<string> Log,
-    Func<string, bool>? TryHandlePluginCommand,
-    Func<string, AcDream.Plugin.Abstractions.PluginChatInputDecision>? InterceptChatInput,
-    SessionStatusWriter StatusWriter,
-    string? ChatLogDirectory = null)
+    AcDream.App.Hosting.GraphicalLiveSession LiveSession,
+    AcDream.App.Hosting.GraphicalSessionCollision Collision,
+    Func<IPreparedCollisionSource, AcDream.App.Hosting.GraphicalSessionDrives> SessionDrives)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -276,7 +275,6 @@ internal sealed class SessionPlayerCompositionPhase
                 "prepared-collision catalog.");
         var landblockBuildFactory = new LandblockBuildFactory(
             content.Dats,
-            preparedCollisions,
             d.DatLock,
             world.TerrainBuild.HeightTable,
             d.Options.DumpSceneryZ);
@@ -333,9 +331,26 @@ internal sealed class SessionPlayerCompositionPhase
         Fault(SessionPlayerCompositionPoint.StreamingCreated);
 
         bindings = new SessionPlayerRuntimeBindings();
-        var liveSessionCommands = new LiveSessionCommandSurface(
-            d.TryHandlePluginCommand,
-            d.InterceptChatInput);
+        // The session's collision is built by the session host from the same
+        // files, not from the landblocks this window streams to draw.
+        // When the session host opened the game files it has bound them
+        // already; a window only lends its own files to a session that has
+        // none.
+        if (!d.Collision.HasContent)
+        {
+            bindings.Adopt(
+                "session collision content",
+                d.Collision.BindContent(
+                    new AcDream.App.Hosting.GraphicalCollisionContent(
+                        content.Dats,
+                        d.DatLock,
+                        preparedCollisions,
+                        System.Collections.Immutable.ImmutableArray.Create(
+                            world.TerrainBuild.HeightTable))));
+        }
+        // The command surface is the session host's, built before any
+        // window; this window routes through it while it is attached.
+        LiveSessionCommandSurface liveSessionCommands = d.LiveSession.Commands;
         var settingsTargets = new RuntimeSettingsTargets(
             d.Settings.DisplayWindowTarget ?? new SilkRuntimeDisplayWindowTarget(d.Window),
             live.DrawDispatcher,
@@ -402,8 +417,10 @@ internal sealed class SessionPlayerCompositionPhase
                     streaming.NearRadius,
                     streaming.FarRadius)),
             streaming.IsRenderNeighborhoodResident,
-            d.PhysicsEngine.IsSpawnCellReady,
-            d.PhysicsEngine.IsNeighborhoodTerrainResident,
+            // Collision readiness is the session's neighborhood, the same
+            // question the windowless client asks, indoors and out.
+            d.Collision.IsReady,
+            (destinationCell, _) => d.Collision.IsReady(destinationCell),
             () => revealDispatcher?.CompositeTexturesReady ?? true,
             (destinationCell, radius) =>
             {
@@ -533,9 +550,13 @@ internal sealed class SessionPlayerCompositionPhase
         // Dismissing an object the client still believes in is decided by the
         // runtime; this client has a drawn world to take down as well, so it
         // lends the route it already runs for an authoritative delete.
-        d.Runtime.GhostDismissalOwner.BindAuthoritativeDelete(deletion.Delete);
-        live.LiveEntities.Physics.BindObjectTableHostResolver(
-            guid => d.MotionBindings.ResolvePhysicsHost(guid));
+        bindings.Adopt(
+            "ghost dismissal delete route",
+            d.Runtime.GhostDismissalOwner.BindAuthoritativeDeleteOwned(deletion.Delete));
+        bindings.Adopt(
+            "object table host resolver",
+            live.LiveEntities.Physics.BindObjectTableHostResolverOwned(
+                guid => d.MotionBindings.ResolvePhysicsHost(guid)));
         IPreparedCollisionSource firstEntryCollision =
             content.PreparedAssets as IPreparedCollisionSource
             ?? throw new NotSupportedException(
@@ -548,86 +569,72 @@ internal sealed class SessionPlayerCompositionPhase
         // keeps the answer from being zero in the moment before a newly
         // arrived creature's shape has been published.
         live.LiveEntities.Physics.BindSetupCollisionSource(firstEntryCollision);
+        // The drives that carry the character and every other creature into
+        // the world are the session's, kept across windows; this window tells
+        // them what only a drawn world knows while it is attached.
+        AcDream.App.Hosting.GraphicalSessionDrives drives =
+            d.SessionDrives(firstEntryCollision);
         uint firstEntryCylinderLocalId = 0u;
         float firstEntryCylinderRadius = 0f;
         float firstEntryCylinderHeight = 0f;
-        var firstEntryDrive = new RuntimeFirstEntryDriveController(
-            d.EntityObjects,
-            d.Runtime.Clock,
-            firstEntryCollision,
-            () => PlayerMovementConstructionOptions.From(
-                d.Runtime.CharacterOwner.MovementSkills.Snapshot),
-            record =>
+        RuntimeLocalPlayerPhysicsActivationPreparation PrepareLocalActivation(
+            RuntimeEntityRecord record)
+        {
+            float radius = DefaultPlayerBody.Radius;
+            float height = DefaultPlayerBody.Height;
+            uint localId = record.Key?.LocalEntityId ?? 0u;
+            if (localId != 0u && localId == firstEntryCylinderLocalId)
             {
-                float radius = DefaultPlayerBody.Radius;
-                float height = DefaultPlayerBody.Height;
-                uint localId = record.Key?.LocalEntityId ?? 0u;
-                if (localId != 0u && localId == firstEntryCylinderLocalId)
-                {
-                    radius = firstEntryCylinderRadius;
-                    height = firstEntryCylinderHeight;
-                }
-                else if (live.LiveEntities.TryGetWorldEntity(
+                radius = firstEntryCylinderRadius;
+                height = firstEntryCylinderHeight;
+            }
+            else if (live.LiveEntities.TryGetWorldEntity(
+                    record.ServerGuid,
+                    out WorldEntity? playerEntity)
+                && playerEntity is not null)
+            {
+                (float setupRadius, float setupHeight) =
+                    d.MotionBindings.GetSetupCylinder(
                         record.ServerGuid,
-                        out WorldEntity? playerEntity)
-                    && playerEntity is not null)
+                        playerEntity);
+                if (setupRadius >= 0.05f)
                 {
-                    (float setupRadius, float setupHeight) =
-                        d.MotionBindings.GetSetupCylinder(
-                            record.ServerGuid,
-                            playerEntity);
-                    if (setupRadius >= 0.05f)
+                    radius = setupRadius;
+                    height = setupHeight;
+                    if (localId != 0u)
                     {
-                        radius = setupRadius;
-                        height = setupHeight;
-                        if (localId != 0u)
-                        {
-                            firstEntryCylinderLocalId = localId;
-                            firstEntryCylinderRadius = radius;
-                            firstEntryCylinderHeight = height;
-                        }
+                        firstEntryCylinderLocalId = localId;
+                        firstEntryCylinderRadius = radius;
+                        firstEntryCylinderHeight = height;
                     }
                 }
-                bool hasAuthoredShadow = record.Key is { } key
-                    && d.PhysicsEngine.ShadowObjects.HasLogicalOwner(
-                        key.LocalEntityId);
-                return new RuntimeLocalPlayerPhysicsActivationPreparation(
-                    radius,
-                    height,
-                    hasAuthoredShadow
-                        ? RuntimeLocalPlayerShadowDisposition
-                            .RegisteredAuthoredPayload
-                        : RuntimeLocalPlayerShadowDisposition.ProvenShapeless);
-            });
-        var acceptedPositionDrive = new RuntimeAcceptedPositionDriveController(
-            d.EntityObjects,
-            d.Runtime.Clock,
-            firstEntryCollision,
-            d.PlayerOutbound,
-            () => d.Runtime.Generation,
-            () => d.PlayerIdentity.ServerGuid,
-            () => d.PlayerController.Controller,
-            () => d.Character.UsePositionFromServer,
-            () => liveSessionSource.CurrentSession,
-            () => d.PlayerController,
-            isPortalAuthorityCurrent: portal => live.WorldTransit
-                .CanPlacePortalDestination(
-                    portal.RevealGeneration,
-                    portal.TeleportSequence,
-                    portal.Projection.DestinationCell));
-        // Arming another creature's body from the server's word about it is one
-        // implementation for every client, and it owns the drive that carries
-        // out an accepted re-placement, so a body the server moved lands in
-        // the same place here as it does without a window. This client hands
-        // it the short list of things only a drawn world can answer.
-        var remoteArming = RuntimeRemoteArming.Create(
-            d.EntityObjects,
-            d.Runtime.Clock,
-            firstEntryCollision,
-            new GraphicalRemotePlacementServiceWindow(
-                live.WorldState,
-                streaming.IsLandblockPresentationReady),
-            d.MotionBindings.HostFacts);
+            }
+            bool hasAuthoredShadow = record.Key is { } key
+                && d.PhysicsEngine.ShadowObjects.HasLogicalOwner(
+                    key.LocalEntityId);
+            return new RuntimeLocalPlayerPhysicsActivationPreparation(
+                radius,
+                height,
+                hasAuthoredShadow
+                    ? RuntimeLocalPlayerShadowDisposition
+                        .RegisteredAuthoredPayload
+                    : RuntimeLocalPlayerShadowDisposition.ProvenShapeless);
+        }
+        bindings.Adopt(
+            "session drive presentation",
+            drives.Present(new AcDream.App.Hosting.GraphicalSessionDrivePresentation(
+                PrepareLocalActivation,
+                // A body the server moved is re-placed here only where this
+                // window draws and the session's collision is published.
+                new GraphicalRemotePlacementServiceWindow(
+                    live.WorldState,
+                    streaming.IsLandblockPresentationReady,
+                    d.Collision.IsCollisionPublished),
+                d.MotionBindings.HostFacts)));
+        RuntimeFirstEntryDriveController firstEntryDrive = drives.FirstEntry;
+        RuntimeAcceptedPositionDriveController acceptedPositionDrive =
+            drives.AcceptedPosition;
+        RuntimeRemoteArming remoteArming = drives.RemoteArming;
         d.MotionBindings.BindArming(remoteArming);
         RuntimeRemotePlacementDriveController remotePlacementDrive =
             remoteArming.PlacementDrive;
@@ -861,10 +868,12 @@ internal sealed class SessionPlayerCompositionPhase
         // one cycle advance, with the poses of its parts built along the way,
         // and the hooks that advance reached. A client with nothing to draw
         // hands over neither and covers exactly the same ground.
-        d.Runtime.LocalPlayerMotion.BindPresentation(
+        bindings.Adopt(
+            "local player motion presentation",
+            d.Runtime.LocalPlayerMotion.BindPresentationOwned(
             new AcDream.Runtime.Gameplay.RuntimeLocalPlayerMotionPresentation(
                 localPlayerAnimation.AdvanceRoot,
-                localPlayerAnimation.CaptureHooks));
+                localPlayerAnimation.CaptureHooks)));
         var localPlayerShadow = live.LocalPlayerShadowSynchronizer;
         var localPlayerProjection = new LocalPlayerProjectionController(
             new LiveLocalPlayerProjectionRuntime(
@@ -1091,25 +1100,15 @@ internal sealed class SessionPlayerCompositionPhase
                 firstEntryDrive,
                 acceptedPositionDrive,
                 remotePlacementDrive),
-            liveSessionCommands,
             d.Log,
-            d.StatusWriter,
-            d.Options.SessionId ?? "app",
-            d.Options.LoginCommands,
-            d.Options.LoginCommandDelayMs,
-            chatLogDirectory: d.ChatLogDirectory,
             noteOptionsSeeded: () => optionsSeeder?.NoteOptionsSeeded());
-        LiveSessionHost sessionHost = sessionRuntimeFactory.Create(
-            liveSession,
-            new LiveSessionConnectOptions(
-                d.Options.LiveMode,
-                d.Options.LiveHost,
-                d.Options.LivePort,
-                d.Options.LiveUser ?? string.Empty,
-                d.Options.LivePass ?? string.Empty,
-                d.Options.LiveCharacterSelector,
-                AwaitCharacterSelection:
-                    d.Options.LiveCharacterSelector is null));
+        // The live session is the session host's; this window lends it what
+        // it draws until the window's session bindings are disposed, which
+        // the shutdown manifest does after the session has stopped.
+        bindings.Adopt(
+            "live-session presentation",
+            d.LiveSession.AttachPresentation(sessionRuntimeFactory.Create()));
+        LiveSessionHost sessionHost = d.LiveSession.Host;
         Fault(SessionPlayerCompositionPoint.SessionHostCreated);
 
         Action<string>? debugToast = null;

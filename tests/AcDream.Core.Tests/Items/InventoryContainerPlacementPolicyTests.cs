@@ -102,11 +102,27 @@ public sealed class InventoryContainerPlacementPolicyTests
             InventoryContainerPlacementPolicy.Evaluate(objects, 3u, 2u, Player));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0u)]
+    public void HookOfAnUnownedHouseRefusesEvenAFittingItem(uint? houseOwnerId)
+    {
+        ClientObjectTable objects = HookedHouse(WallHook, houseOwnerId: houseOwnerId);
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = 3u, Name = "Long Sword", Type = ItemType.MeleeWeapon, HookType = WallHook,
+        });
+
+        Assert.Equal(
+            InventoryContainerPlacementRejection.HookHouseNotOwned,
+            InventoryContainerPlacementPolicy.Evaluate(objects, 3u, 2u, Player));
+    }
+
     [Fact]
     public void WrongHookTypeMessage()
     {
         Assert.Equal(
-            "That item is of the wrong type to be placed on this hook.",
+            "That item cannot be placed on the hook.",
             InventoryContainerPlacementPolicy.ComposeClientLocal(
                 InventoryContainerPlacementRejection.WrongHookType,
                 new ClientObject { ObjectId = 3u, Name = "Coat" },
@@ -114,9 +130,24 @@ public sealed class InventoryContainerPlacementPolicyTests
                 Player));
     }
 
+    [Fact]
+    public void UnownedHookMessageAddsTheOwnershipSentence()
+    {
+        Assert.Equal(
+            "That item cannot be placed on the hook. You must own the house to manipulate the hook.",
+            InventoryContainerPlacementPolicy.ComposeClientLocal(
+                InventoryContainerPlacementRejection.HookHouseNotOwned,
+                new ClientObject { ObjectId = 3u, Name = "Long Sword" },
+                new ClientObject { ObjectId = 2u, Name = "Wall Hook" },
+                Player));
+    }
+
+    private const uint HouseOwner = 0x50000002u;
+
     private static ClientObjectTable HookedHouse(
         uint hookType,
-        uint hookItemTypes = 0xFFFFFFFFu)
+        uint hookItemTypes = 0xFFFFFFFFu,
+        uint? houseOwnerId = HouseOwner)
     {
         var objects = new ClientObjectTable();
         objects.AddOrUpdate(new ClientObject
@@ -126,6 +157,7 @@ public sealed class InventoryContainerPlacementPolicyTests
             ItemsCapacity = 1,
             HookType = hookType,
             HookItemTypes = hookItemTypes,
+            HouseOwnerId = houseOwnerId,
         });
         return objects;
     }

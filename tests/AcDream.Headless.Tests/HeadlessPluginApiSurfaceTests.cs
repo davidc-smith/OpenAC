@@ -605,7 +605,7 @@ public sealed class HeadlessPluginApiSurfaceTests
     public void LogoutIsUnavailableWithoutAnInWorldSessionAndNeverCallsTheRoute()
     {
         using GameRuntime runtime = NewRuntime();
-        var logout = new AcDream.Headless.Hosting.HeadlessLogoutAutomation(runtime);
+        var logout = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout(runtime);
         using var host = new HeadlessPluginHost(
             runtime,
             new InertLogger(),

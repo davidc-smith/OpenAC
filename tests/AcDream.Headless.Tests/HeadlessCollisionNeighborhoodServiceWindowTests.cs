@@ -10,6 +10,7 @@ using AcDream.Headless.Hosting;
 using AcDream.Runtime;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Session;
+using AcDream.Runtime.World;
 
 namespace AcDream.Headless.Tests;
 
@@ -28,11 +29,11 @@ public sealed class HeadlessCollisionNeighborhoodServiceWindowTests
         var operations = new FixtureGameplayOperations();
         using var runtime = new GameRuntime(new GameRuntimeDependencies(
             operations, operations, operations, operations));
-        var neighborhood = new HeadlessCollisionNeighborhood(runtime, lease);
+        var neighborhood = new RuntimeCollisionNeighborhood(runtime, lease);
 
         const uint cell = 0xA9B40001u;
         Assert.True(
-            ((IHeadlessCollisionNeighborhood)neighborhood)
+            ((IRuntimeCollisionNeighborhood)neighborhood)
                 .IsWithinServiceWindow(cell));
         Assert.False(
             ((IRuntimeRemotePlacementServiceWindow)neighborhood)
@@ -52,7 +53,7 @@ public sealed class HeadlessCollisionNeighborhoodServiceWindowTests
         var operations = new FixtureGameplayOperations();
         using var runtime = new GameRuntime(new GameRuntimeDependencies(
             operations, operations, operations, operations));
-        var neighborhood = new HeadlessCollisionNeighborhood(runtime, lease);
+        var neighborhood = new RuntimeCollisionNeighborhood(runtime, lease);
 
         const uint neighborLandblock = 0xA9B5FFFFu;
         const uint neighborCell = 0xA9B50001u;
@@ -82,9 +83,9 @@ public sealed class HeadlessCollisionNeighborhoodServiceWindowTests
             for (uint y = 0x29; y <= 0x2B; y++)
                 resident.Add((x << 24) | (y << 16) | 0xFFFFu);
         }
-        var plan = new Queue<HeadlessCollisionNeighborhood.PublicationSpec>();
+        var plan = new Queue<RuntimeCollisionNeighborhood.PublicationSpec>();
 
-        HeadlessCollisionNeighborhood.BuildPublicationPlan(
+        RuntimeCollisionNeighborhood.BuildPublicationPlan(
             0x282BFFFFu,
             frame,
             resident,
@@ -98,23 +99,23 @@ public sealed class HeadlessCollisionNeighborhoodServiceWindowTests
             ],
             plan.Select(spec => (spec.LandblockId, spec.Origin)));
         Assert.False(
-            HeadlessCollisionNeighborhood.IsInWindow(0x282BFFFFu, 0x2829FFFFu));
+            RuntimeCollisionNeighborhood.IsInWindow(0x282BFFFFu, 0x2829FFFFu));
         Assert.True(
-            HeadlessCollisionNeighborhood.IsInWindow(0x282BFFFFu, 0x292AFFFFu));
+            RuntimeCollisionNeighborhood.IsInWindow(0x282BFFFFu, 0x292AFFFFu));
     }
 
     [Fact]
     public void AFreshFramePublishesTheCentreFirstAtTheWorldsZero()
     {
-        var plan = new Queue<HeadlessCollisionNeighborhood.PublicationSpec>();
+        var plan = new Queue<RuntimeCollisionNeighborhood.PublicationSpec>();
 
-        HeadlessCollisionNeighborhood.BuildPublicationPlan(
+        RuntimeCollisionNeighborhood.BuildPublicationPlan(
             0x282AFFFFu,
             0x282AFFFFu,
             new HashSet<uint>(),
             plan);
 
-        HeadlessCollisionNeighborhood.PublicationSpec first = plan.Dequeue();
+        RuntimeCollisionNeighborhood.PublicationSpec first = plan.Dequeue();
         Assert.Equal(0x282AFFFFu, first.LandblockId);
         Assert.Equal(System.Numerics.Vector3.Zero, first.Origin);
         Assert.True(first.Required);
@@ -123,14 +124,14 @@ public sealed class HeadlessCollisionNeighborhoodServiceWindowTests
     }
 
     private static void SeedResident(
-        HeadlessCollisionNeighborhood neighborhood,
+        RuntimeCollisionNeighborhood neighborhood,
         uint landblockId)
     {
-        FieldInfo field = typeof(HeadlessCollisionNeighborhood).GetField(
+        FieldInfo field = typeof(RuntimeCollisionNeighborhood).GetField(
             "_resident",
             BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new MissingFieldException(
-                nameof(HeadlessCollisionNeighborhood), "_resident");
+                nameof(RuntimeCollisionNeighborhood), "_resident");
         var resident = (HashSet<uint>)field.GetValue(neighborhood)!;
         resident.Add(landblockId);
     }

@@ -163,7 +163,7 @@ public sealed class LifestoneArrivalPlacementInstalledDatTests
         private readonly BoundedTestDatCollection _dat;
         private readonly PakPreparedAssetSource _prepared;
         private readonly IDatReaderWriter _bounded;
-        private readonly LandblockBuild _build;
+        private readonly LoadedLandblock _landblock;
         private readonly LandblockCollisionBuild _collisions;
         private readonly TerrainSurface _terrain;
         private readonly Setup _lifestone;
@@ -187,12 +187,11 @@ public sealed class LifestoneArrivalPlacementInstalledDatTests
             Mover = Assert.IsType<FlatSetupCollision>(mover.Data);
 
             float[] heights = Assert.IsType<Region>(_bounded.Get<Region>(0x13000000u)).LandDefs.LandHeightTable;
-            var factory = new LandblockBuildFactory(_bounded, _prepared, new object(), heights);
-            _build = Assert.IsType<LandblockBuild>(factory.Build(new LandblockBuildRequest(
-                0xA9B4FFFFu, LandblockStreamJobKind.LoadNear, Generation: 1,
-                new LandblockBuildOrigin(0xA9, 0xB4))));
-            _collisions = Assert.IsType<LandblockCollisionBuild>(_build.Collisions);
-            _terrain = LandblockPhysicsContentBuilder.BuildTerrainSurface(_build.Landblock, heights);
+            // The landblock's collision as the session host builds it.
+            Assert.True(LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
+                _bounded, _prepared, heights, 0xA9B4FFFFu, Vector3.Zero,
+                out _landblock, out _collisions));
+            _terrain = LandblockPhysicsContentBuilder.BuildTerrainSurface(_landblock, heights);
 
             // The lifestone weenie: its setup's part collision at the instance pose,
             // with the weenie's authored physics state (Gravity | IgnoreCollisions).
@@ -234,14 +233,14 @@ public sealed class LifestoneArrivalPlacementInstalledDatTests
             var surfaces = new List<CellSurface>();
             var portals = new List<PortalPlane>();
             LandblockPhysicsContentBuilder.PublishPreparedCells(
-                world.Cache, _build.Landblock, _collisions, Vector3.Zero, surfaces, portals);
+                world.Cache, _landblock, _collisions, Vector3.Zero, surfaces, portals);
             LandblockPhysicsContentBuilder.CacheBuildings(
-                world.Cache, _build.Landblock, _terrain, Vector3.Zero);
+                world.Cache, _landblock, _terrain, Vector3.Zero);
             LandblockPhysicsContentBuilder.CachePreparedObjects(world.Cache, _collisions);
             world.Engine.AddLandblock(
-                _build.LandblockId, _terrain, surfaces, portals, 0f, 0f);
+                _landblock.LandblockId, _terrain, surfaces, portals, 0f, 0f);
             _ = LandblockPhysicsContentBuilder.PublishStaticCollision(
-                world.Engine, world.Cache, _build.Landblock, _collisions, Vector3.Zero);
+                world.Engine, world.Cache, _landblock, _collisions, Vector3.Zero);
         }
 
         public void RegisterLifestone(ArrivalWorld world) =>
@@ -249,7 +248,7 @@ public sealed class LifestoneArrivalPlacementInstalledDatTests
                 LifestoneEntityId, LifestonePosition, Heading, _lifestoneShapes,
                 state: 0x410u,
                 flags: EntityCollisionFlags.HasWeenie,
-                0f, 0f, _build.LandblockId,
+                0f, 0f, _landblock.LandblockId,
                 seedCellId: ArrivalCell,
                 isStatic: false);
 

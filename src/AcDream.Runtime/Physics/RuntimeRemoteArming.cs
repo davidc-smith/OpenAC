@@ -278,7 +278,29 @@ internal sealed class RuntimeRemoteArming
         remote.Motion.InterruptCurrentMovement =
             () => remote.Movement.CancelMoveTo(WeenieError.ActionCancelled);
 
-        var configuredHost = new EntityPhysicsHost(
+        host = Physics.InstallOrRebindPhysicsHost(
+            hostRecord,
+            ConfigureHost(serverGuid, remote, drawn),
+            drawn.IsCurrent);
+        remote.MarkFullPhysicsHostBound();
+
+        remote.Movement.MakeMoveToManager();
+        remote.Motion.UnstickFromObject = host.PositionManager.UnStick;
+        return remote.Sink;
+    }
+
+    /// <summary>
+    /// The answers a body's physics host gives: where the arming host has the
+    /// body (or the body itself), how it moves, and what it chases.
+    /// </summary>
+    private EntityPhysicsHost ConfigureHost(
+        uint serverGuid,
+        RemoteMotion remote,
+        RuntimeRemoteArmingDrawnBody drawn)
+    {
+        RuntimeEntityRecord hostRecord = drawn.Record;
+        PhysicsBody body = remote.Body;
+        return new EntityPhysicsHost(
             serverGuid,
             getPosition: () => new Position(
                 hostRecord.FullCellId,
@@ -294,15 +316,37 @@ internal sealed class RuntimeRemoteArming
             handleUpdateTarget: info => remote.Movement.HandleUpdateTarget(info),
             interruptCurrentMovement: () => remote.Movement.CancelMoveTo(
                 WeenieError.ActionCancelled));
-        host = Physics.InstallOrRebindPhysicsHost(
-            hostRecord,
-            configuredHost,
-            drawn.IsCurrent);
-        remote.MarkFullPhysicsHostBound();
+    }
 
-        remote.Movement.MakeMoveToManager();
-        remote.Motion.UnstickFromObject = host.PositionManager.UnStick;
-        return remote.Sink;
+    /// <summary>
+    /// The host that drew the bodies is going away while the session plays
+    /// on: every body lets go of what that host bound to its own drawing --
+    /// the sink its cycles were announced to and the animation callbacks of
+    /// the drawn sequencer -- and its physics host answers from the session's
+    /// own record and body from here on. The host itself is kept and rebound,
+    /// so anything already holding it keeps working; the next host to arm
+    /// the body (a window, or the session's own frame) binds its drawing
+    /// afresh. Call it once the arming's facts no longer come from the host
+    /// that went.
+    /// </summary>
+    internal void ReleasePresentation()
+    {
+        foreach (RuntimeEntityRecord record in _entityObjects.Entities.ActiveRecords.ToArray())
+        {
+            if (record.RemoteMotion is not RemoteMotion remote)
+                continue;
+            remote.Sink = null;
+            remote.Motion.DefaultSink = null;
+            remote.Motion.RemoveLinkAnimations = null;
+            remote.Motion.InitializeMotionTables = null;
+            remote.Motion.CheckForCompletedMotions = null;
+            if (remote.Host is { } host
+                && _facts.DrawnBody(record.ServerGuid) is { } drawn
+                && ReferenceEquals(drawn.Record.RemoteMotion, remote))
+            {
+                host.RebindFrom(ConfigureHost(record.ServerGuid, remote, drawn));
+            }
+        }
     }
 
     /// <summary>

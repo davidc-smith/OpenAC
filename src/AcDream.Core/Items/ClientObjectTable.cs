@@ -778,16 +778,15 @@ public sealed class ClientObjectTable
 
     /// <summary>
     /// Applies one string property the server changed on an object we already
-    /// hold. The name also lives in the typed field every caption reads, so a
-    /// rename (PropertyString.Name) is mirrored there; the bag keeps the rest.
+    /// hold. The value goes into the property bag only: the shown name
+    /// (<see cref="ClientObject.Name"/>) changes only when the object is
+    /// created or updated, even when this is PropertyString.Name.
     /// </summary>
     public bool UpdateStringProperty(uint itemId, uint propertyId, string value)
     {
         if (!_objects.TryGetValue(itemId, out var item)) return false;
         ServerShowedObject(item);
         item.Properties.Strings[propertyId] = value;
-        if (propertyId == (uint)Properties.PropertyString.Name)
-            item.Name = value;
         ObjectUpdated?.Invoke(item);
         return true;
     }

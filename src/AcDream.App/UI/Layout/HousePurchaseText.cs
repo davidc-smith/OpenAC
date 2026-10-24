@@ -17,8 +17,10 @@ internal static class HousePurchaseText
     public const string OthersMaintenanceConfirmation =
         "You are paying maintenance on someone else's house. Are you sure you wish to continue?";
 
+    /// <summary>"Owner: name", or "Owner: None" when the profile names
+    /// nobody, whatever its owner id.</summary>
     public static string OwnerLine(GameEvents.HouseProfile profile) =>
-        "Owner: " + (profile.OwnerGuid == 0u ? "None" : profile.OwnerName);
+        "Owner: " + (string.IsNullOrEmpty(profile.OwnerName) ? "None" : profile.OwnerName);
 
     /// <summary>The tab's requirements on one line: "N Name, N Name" to buy,
     /// "paid/num Name, ..." for maintenance.</summary>

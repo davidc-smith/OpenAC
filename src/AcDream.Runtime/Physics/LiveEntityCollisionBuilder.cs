@@ -1,5 +1,6 @@
 using System.Numerics;
 using AcDream.Core.Items;
+using AcDream.Core.Meshing;
 using AcDream.Core.Net;
 using AcDream.Core.Physics;
 using AcDream.Core.World;
@@ -110,13 +111,18 @@ internal sealed class LiveEntityCollisionBuilder
         IReadOnlyList<Frame>? defaultPose = _defaultPose.Resolve(
             spawn.MotionTableId ?? 0u,
             setup.Parts.Count);
+        // The parts collide in the same placement they are drawn in.
+        uint placementId = SetupPartTransforms.ObjectPlacementId(
+            spawn.PlacementId,
+            hasMovementData: spawn.Physics?.Movement is { RawData.Length: > 0 });
         IReadOnlyList<ShadowShape> shapes = ShadowShapeBuilder.FromSetup(
             setup,
             scale,
             _hasPhysicsBsp,
             partPoseOverride: defaultPose,
             effectivePartGfxObjIds: effectivePartGfxObjIds,
-            physicsBspBounds: _physicsBspBounds);
+            physicsBspBounds: _physicsBspBounds,
+            placementId: placementId);
 
         IReadOnlyList<ShadowShape> renderParts = ShadowShapeBuilder.FromSetupRenderParts(
             setup,
@@ -124,7 +130,8 @@ internal sealed class LiveEntityCollisionBuilder
             effectivePartGfxObjIds,
             defaultPose,
             _getGfxObj,
-            _getVisualBounds);
+            _getVisualBounds,
+            placementId);
 
         if (shapes.Count == 0 && renderParts.Count == 0 && !retainEmptyPayload)
             return null;

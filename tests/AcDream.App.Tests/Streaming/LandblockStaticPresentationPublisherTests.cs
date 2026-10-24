@@ -19,7 +19,6 @@ public sealed class LandblockStaticPresentationPublisherTests
     private const uint LandblockId = 0xA9B4FFFFu;
     private const uint AdjacentLandblockId = 0xAAB4FFFFu;
     private const uint SetupId = 0x02000042u;
-    private static readonly float[] HeightTable = new float[256];
 
     [Fact]
     public void Reapply_ReplacesLightsAndRefreshesTheSceneryList()
@@ -119,21 +118,21 @@ public sealed class LandblockStaticPresentationPublisherTests
     {
         var fixture = Fixture();
         WorldEntity first = Entity(0x80A9B401u, Vector3.Zero);
-        LandblockPhysicsPublication duplicatePhysics = PhysicsPrefix(
+        LandblockBuild duplicate = RenderPrefix(
             fixture,
             Build(LandblockId, [first, Entity(first.Id, Vector3.One)]));
 
         Assert.Throws<InvalidOperationException>(() =>
-            fixture.Publisher.PreparePublication(duplicatePhysics));
+            fixture.Publisher.PreparePublication(duplicate));
         Assert.Empty(fixture.World.SceneryObjects);
         Assert.Equal(0, fixture.Lights.RegisteredCount);
 
         Publish(fixture, Build(LandblockId, [first]));
-        LandblockPhysicsPublication adjacentPhysics = PhysicsPrefix(
+        LandblockBuild adjacent = RenderPrefix(
             fixture,
             Build(AdjacentLandblockId, [Entity(first.Id, new Vector3(192f, 0f, 0f))]));
         Assert.Throws<InvalidOperationException>(() =>
-            fixture.Publisher.PreparePublication(adjacentPhysics));
+            fixture.Publisher.PreparePublication(adjacent));
         Assert.Single(fixture.World.SceneryObjects);
     }
 
@@ -180,11 +179,11 @@ public sealed class LandblockStaticPresentationPublisherTests
     {
         var first = Fixture();
         var second = Fixture();
-        LandblockPhysicsPublication physics = PhysicsPrefix(
+        LandblockBuild build = RenderPrefix(
             first,
             Build(LandblockId, [Entity(1u, Vector3.Zero)]));
         LandblockStaticPresentationPublication receipt =
-            first.Publisher.PreparePublication(physics);
+            first.Publisher.PreparePublication(build);
 
         Assert.Throws<ArgumentException>(() =>
             second.Publisher.BeginPublication(receipt));
@@ -193,20 +192,16 @@ public sealed class LandblockStaticPresentationPublisherTests
 
     private static void Publish(FixtureState fixture, LandblockBuild build)
     {
-        LandblockPhysicsPublication physics = PhysicsPrefix(fixture, build);
+        LandblockBuild rendered = RenderPrefix(fixture, build);
         fixture.Render.CompletePublication(fixture.LastRender!);
         LandblockStaticPresentationPublication presentation =
-            fixture.Publisher.PreparePublication(physics);
+            fixture.Publisher.PreparePublication(rendered);
         fixture.Publisher.BeginPublication(presentation);
-        fixture.Physics.CompletePublication(
-            physics,
-            entity => fixture.Publisher.PrepareEntityBeforeCollision(
-                presentation,
-                entity));
+        fixture.Publisher.PrepareLighting(presentation);
         fixture.Publisher.CompletePublication(presentation);
     }
 
-    private static LandblockPhysicsPublication PhysicsPrefix(
+    private static LandblockBuild RenderPrefix(
         FixtureState fixture,
         LandblockBuild build)
     {
@@ -214,28 +209,17 @@ public sealed class LandblockStaticPresentationPublisherTests
             build,
             EmptyMesh());
         fixture.LastRender = render;
-        LandblockPhysicsPublication physics =
-            fixture.Physics.PreparePublication(render);
-        fixture.Physics.BeginPublication(physics);
-        return physics;
+        return build;
     }
 
     private static FixtureState Fixture()
     {
-        var entityObjects =
-            new AcDream.Runtime.Entities.RuntimeEntityObjectLifetime(
-                new PhysicsDataCache());
-        PhysicsDataCache cache = entityObjects.Physics.DataCache;
-        PhysicsEngine engine = entityObjects.Physics.Engine;
         var gpuState = new GpuWorldState();
         var render = new LandblockRenderPublisher(
             static (_, _, _) => { },
             static _ => { },
             new CellVisibility(),
             gpuState);
-        var physics = new LandblockPhysicsPublisher(
-            entityObjects.Physics,
-            HeightTable);
         var lights = new LightManager();
         var lighting = new LightingHookSink(lights, new NullPoseSource());
         var translucency = new TranslucencyFadeManager();
@@ -243,7 +227,6 @@ public sealed class LandblockStaticPresentationPublisherTests
         var events = new WorldEvents();
         return new FixtureState(
             render,
-            physics,
             new LandblockStaticPresentationPublisher(
                 lighting,
                 translucency,
@@ -363,7 +346,6 @@ public sealed class LandblockStaticPresentationPublisherTests
 
     private sealed record FixtureState(
         LandblockRenderPublisher Render,
-        LandblockPhysicsPublisher Physics,
         LandblockStaticPresentationPublisher Publisher,
         LightManager Lights,
         LightingHookSink Lighting,

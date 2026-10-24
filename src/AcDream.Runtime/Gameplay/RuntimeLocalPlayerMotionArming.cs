@@ -75,6 +75,22 @@ internal sealed class RuntimeLocalPlayerMotionArming
         _presentation = presentation;
 
     /// <summary>
+    /// Binds the presentation for as long as the returned lease is held;
+    /// giving it back leaves the character's motion with nothing drawn, as a
+    /// client without a window has it.
+    /// </summary>
+    internal IDisposable BindPresentationOwned(
+        RuntimeLocalPlayerMotionPresentation presentation)
+    {
+        BindPresentation(presentation);
+        return new RuntimeBindingLease(() =>
+        {
+            if (_presentation.Equals(presentation))
+                _presentation = default;
+        });
+    }
+
+    /// <summary>
     /// Forgets what is bound, so that the next step binds again from the
     /// beginning. A host says this when the character has just taken hold of
     /// its own body, which is the moment its outstanding motions are cleared.

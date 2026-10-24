@@ -190,11 +190,13 @@ public sealed class SessionPlayerCompositionTests
     [Fact]
     public void GraphicalCompositionPausesOnlyWhenCharacterSelectorIsAbsent()
     {
-        MethodInfo complete = RequiredMethod(
-            typeof(SessionPlayerCompositionPhase),
-            "CompleteSessionPlayer");
+        // The live session, and the connect options it starts with, belong to
+        // the session host, built before any window.
+        ConstructorInfo liveSession = Assert.Single(
+            typeof(AcDream.App.Hosting.GraphicalLiveSession).GetConstructors(
+                BindingFlags.Instance | BindingFlags.NonPublic));
         IReadOnlyList<CompiledCall> sessionCalls =
-            CompiledCallGraph.Read(complete);
+            CompiledCallGraph.Read(liveSession);
         Assert.Contains(
             sessionCalls,
             call => call.Target.DeclaringType == typeof(RuntimeOptions)

@@ -179,6 +179,40 @@ public sealed class CharacterControllerTests
         Assert.DoesNotContain(other, report);
     }
 
+    // Issue #255: each specialization gem property shows its own skill's line.
+    [Theory]
+    [InlineData(PropertyInt.AugmentationSpecializeSalvaging, "Salvaging")]
+    [InlineData(PropertyInt.AugmentationSpecializeItemTinkering, "ItemTinkering")]
+    [InlineData(PropertyInt.AugmentationSpecializeArmorTinkering, "ArmorTinkering")]
+    [InlineData(PropertyInt.AugmentationSpecializeMagicItemTinkering, "MagicItemTinkering")]
+    [InlineData(PropertyInt.AugmentationSpecializeWeaponTinkering, "WeaponTinkering")]
+    [InlineData(PropertyInt.AugmentationSpecializeGearcraft, "Gearcraft")]
+    public void Report_SpecializationAugmentationUsesMatchingSkillLine(
+        PropertyInt property, string skill)
+    {
+        string[] skills =
+        [
+            "Salvaging", "ItemTinkering", "ArmorTinkering",
+            "MagicItemTinkering", "WeaponTinkering", "Gearcraft",
+        ];
+        var sheet = new CharacterSheet
+        {
+            CharacterInfoProperties = new Dictionary<uint, int> { [(uint)property] = 1 },
+        };
+        CharacterInfoStrings strings = CharacterInfoStrings.English with
+        {
+            AugmentationText = skills.ToDictionary(
+                name => "ID_CharacterInfo_Augmentation_Spec_" + name,
+                name => new[] { "<" + name + ">\n" }),
+        };
+
+        string report = CharacterController.BuildReport(sheet, strings);
+
+        Assert.Contains("<" + skill + ">", report);
+        foreach (string other in skills.Where(name => name != skill))
+            Assert.DoesNotContain("<" + other + ">", report);
+    }
+
     [Fact]
     public void Report_DoesNotAppendUnusedValueAfterSingleFragmentAugmentation()
     {

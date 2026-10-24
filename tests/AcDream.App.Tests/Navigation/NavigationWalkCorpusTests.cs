@@ -75,16 +75,7 @@ public sealed class NavigationWalkCorpusTests
     public NavigationWalkCorpusTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
-    public void TheCorpusIsWalkedAsRecorded() => WalkTheCorpus(asHeadless: false);
-
-    /// <summary>
-    /// The same walks over the collision the headless host loads, which must walk exactly as
-    /// the client's do. This never records the corpus again.
-    /// </summary>
-    [Fact]
-    public void TheCorpusIsWalkedAsRecordedOverTheCollisionTheHeadlessHostLoads() => WalkTheCorpus(asHeadless: true);
-
-    private void WalkTheCorpus(bool asHeadless)
+    public void TheCorpusIsWalkedAsRecorded()
     {
         string? datDirectory = InstalledDatTestPath.Resolve();
         if (datDirectory is null)
@@ -102,7 +93,7 @@ public sealed class NavigationWalkCorpusTests
             if (landblocks != publishedFor)
             {
                 world = null;
-                world = PublishedLandblock.Load(datDirectory, walk.Landblocks, [], asHeadless);
+                world = PublishedLandblock.Load(datDirectory, walk.Landblocks, []);
                 publishedFor = landblocks;
             }
             WalkResult cutting = Walk(walk, world!, cutCorners: true);
@@ -115,7 +106,7 @@ public sealed class NavigationWalkCorpusTests
                 throughWalls.Add(walk.Name);
         }
 
-        CompareWithRecord(lines, mayRecord: !asHeadless);
+        CompareWithRecord(lines, mayRecord: true);
         Assert.True(throughWalls.Count == 0, $"The character passed through a wall walking: {string.Join("; ", throughWalls)}");
     }
 

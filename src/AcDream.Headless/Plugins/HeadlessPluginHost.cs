@@ -51,7 +51,7 @@ internal sealed class HeadlessPluginHost
         PluginSessionSettings? sessionSettings = null,
         Func<string, bool>? submitChatText = null,
         MagicCatalog? magicCatalog = null,
-        HeadlessLogoutAutomation? logout = null,
+        AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout? logout = null,
         Func<uint, bool, bool>? answerConfirmation = null,
         Func<bool>? requestGracefulStop = null,
         AcDream.Content.IDatReaderWriter? content = null,

@@ -55,6 +55,16 @@ public sealed class RuntimeContractState : IDisposable
     /// Reads the table. Called at most once, the first time something asks
     /// for the contracts, so a session that never asks never pays for it.
     /// </param>
+    /// <summary>Whether the authored words about contracts have a source.</summary>
+    internal bool HasCatalog
+    {
+        get
+        {
+            lock (_gate)
+                return _catalog is not null;
+        }
+    }
+
     public void BindCatalog(Func<ContractCatalog?> catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);

@@ -29,8 +29,28 @@ public sealed partial class MainWindow : Window
         _statusTimer.Tick += OnStatusTimerTick;
         DataContextChanged += OnDataContextChanged;
         Opened += OnOpened;
+        Closing += OnClosing;
         Closed += OnClosed;
     }
+
+    /// <summary>
+    /// The player closing the window while clients the launcher started still
+    /// run is asked first; the confirmation's Close closes it again.
+    /// </summary>
+    private void OnClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (e.CloseReason != WindowCloseReason.WindowClosing
+            || e.IsProgrammatic
+            || DataContext is not LauncherWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        if (!viewModel.RequestClose())
+            e.Cancel = true;
+    }
+
+    private void OnCloseConfirmed() => Close();
 
     private void OnOpened(object? sender, EventArgs e) => _statusTimer.Start();
 
@@ -41,6 +61,7 @@ public sealed partial class MainWindow : Window
         DataContextChanged -= OnDataContextChanged;
         ObserveViewModel(null);
         Opened -= OnOpened;
+        Closing -= OnClosing;
         Closed -= OnClosed;
     }
 
@@ -68,6 +89,7 @@ public sealed partial class MainWindow : Window
         {
             _observedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _observedViewModel.ConsoleRequested -= OnConsoleRequested;
+            _observedViewModel.CloseConfirmed -= OnCloseConfirmed;
         }
 
         _observedViewModel = viewModel;
@@ -75,6 +97,7 @@ public sealed partial class MainWindow : Window
         {
             _observedViewModel.PropertyChanged += OnViewModelPropertyChanged;
             _observedViewModel.ConsoleRequested += OnConsoleRequested;
+            _observedViewModel.CloseConfirmed += OnCloseConfirmed;
             _observedViewModel.InstallFolder?.AttachShell(new InstallFolderShell(this));
             _observedViewModel.TextEditor.UseClipboard(new ProfileEditorClipboard(this));
         }
@@ -147,6 +170,10 @@ public sealed partial class MainWindow : Window
         else if (viewModel.AddServerDialog.IsOpen)
         {
             OwnServerNameTextBox.Focus();
+        }
+        else if (viewModel.IsClosePromptOpen)
+        {
+            ClosePromptCancelButton.Focus();
         }
         else if (viewModel.HasProfileMigrationNotice)
         {

@@ -74,6 +74,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
     private readonly ShortcutStore? _shortcuts;
     private readonly UiShortcutDigitGraphics? _shortcutDigits;
     private readonly CombatState? _combat;
+    private readonly Action? _showWindow;
     private bool _disposed;
 
     private readonly record struct PendingListPlacement(
@@ -110,7 +111,8 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         ShortcutStore? shortcuts,
         UiShortcutDigitGraphics? shortcutDigits,
         CombatState? combat,
-        Func<ClientObject, string> resolveAppropriateName)
+        Func<ClientObject, string> resolveAppropriateName,
+        Action? showWindow)
     {
         ArgumentNullException.ThrowIfNull(resolveAppropriateName);
         _objects    = objects;
@@ -118,6 +120,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         _shortcuts  = shortcuts;
         _shortcutDigits = shortcutDigits;
         _combat     = combat;
+        _showWindow = showWindow;
         _playerGuid = playerGuid;
         _iconIds    = iconIds;
         _dragIconIds = dragIconIds;
@@ -231,6 +234,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             _itemInteraction.PendingBackpackPlacementRequested += OnPendingBackpackPlacementRequested;
             _itemInteraction.PendingBackpackPlacementCancelled += OnPendingBackpackPlacementCancelled;
             _itemInteraction.PendingBackpackPlacementResolved += OnPendingBackpackPlacementResolved;
+            _itemInteraction.PolicyActionRequested += OnPolicyActionRequested;
         }
 
         Populate();
@@ -282,7 +286,10 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         Spellbook? burdenSpellbook = null,
         ShortcutStore? shortcuts = null,
         UiShortcutDigitGraphics? shortcutDigits = null,
-        CombatState? combat = null)
+        CombatState? combat = null,
+        /// <summary>Shows the inventory window; a pack the character carries
+        /// that is used from anywhere opens in it.</summary>
+        Action? showWindow = null)
         => new InventoryController(layout, objects, playerGuid, iconIds, dragIconIds, strength, selection,
                                    ownerName, datFont,
                                    contentsEmptySprite, sideBagEmptySprite, mainPackEmptySprite,
@@ -291,7 +298,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
                                    notifyMergeAttempt, itemInteraction,
                                    onClose, stackSplitQuantity, burdenSpellbook,
                                    shortcuts, shortcutDigits, combat,
-                                   resolveAppropriateName);
+                                   resolveAppropriateName, showWindow);
 
     private void OnObjectChanged(ClientObject o)
     {
@@ -585,6 +592,30 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
                 count++;
         }
         return count;
+    }
+
+    /// <summary>
+    /// The placement a drop on a cell of one of the pack's own lists asks
+    /// for: the loose-item grid (<paramref name="bags"/> false) or the pack
+    /// column (true). Null when the drop leaves the item where it is.
+    /// </summary>
+    private int? ListDropPlacement(
+        uint containerId, uint itemId, bool bags, UiItemSlot targetCell, bool wholeStack)
+    {
+        int count = 0, source = -1;
+        foreach (uint guid in _objects.GetContents(containerId))
+        {
+            if (_objects.Get(guid) is not { } listed
+                || listed.CurrentlyEquippedLocation != EquipMask.None
+                || IsBag(listed) != bags)
+            {
+                continue;
+            }
+            if (guid == itemId) source = count;
+            count++;
+        }
+        int dropIndex = targetCell.ItemId != 0u ? targetCell.SlotIndex : int.MaxValue;   // an empty cell is past the last item
+        return ItemListDropPlacement.Resolve(dropIndex, count, source, wholeStack);
     }
 
     private int CountLooseContents(uint containerId)
@@ -969,17 +1000,19 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
 
         ClientObject? dragged = _objects.Get(item);
         bool sourceIsBag = dragged is not null && IsBag(dragged);
-        uint container; int placement;
+        uint fullStack = (uint)Math.Max(dragged?.StackSize ?? 1, 1);
+        uint splitSize = dragged is null
+            ? fullStack
+            : _stackSplitQuantity?.GetObjectSplitSize(
+                item, _selection.SelectedObjectId ?? 0u, fullStack) ?? fullStack;
+        bool wholeStack = splitSize >= fullStack;
+        uint container; int? requested;
         if (targetList == _contentsGrid)
         {
             container = EffectiveOpen();
-            // Reordering inside the list keeps the hovered slot; anything that
-            // arrives from elsewhere goes to the top, the way the game does it.
-            placement = dragged?.ContainerId != container
-                ? 0
-                : targetCell.ItemId != 0
-                    ? targetCell.SlotIndex
-                    : CountLooseContents(container);                                          // first empty = append after visible loose items
+            // Lands left of the hovered item, wherever it came from: this
+            // pack, another pack, the paperdoll or the ground.
+            requested = ListDropPlacement(container, item, bags: false, targetCell, wholeStack);
         }
         else if (targetList == _containerList || targetList == _topContainer)
         {
@@ -987,16 +1020,16 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             {
                 container = _playerGuid();
                 if (container == 0u) return;
-                placement = dragged?.ContainerId != container
+                requested = targetList != _containerList
                     ? 0
-                    : Math.Max(0, targetCell.SlotIndex);
+                    : ListDropPlacement(container, item, bags: true, targetCell, wholeStack);
             }
             else
             {
                 if (targetCell.ItemId == 0 || targetCell.ItemId == item) return;
                 container = targetCell.ItemId;                                                  // the bag / main pack
                 if (IsContainerFull(container)) return;                                         // red already shown
-                placement = 0;                                                                  // a drop on a pack goes to its top
+                requested = 0;                                                                  // a drop on a pack goes to its top
             }
         }
         else return;
@@ -1006,17 +1039,15 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             // The named pack was full; the pack that has room takes the item
             // at its top, like any arrival from elsewhere.
             container = fallthrough;
-            placement = 0;
+            requested = 0;
         }
 
+        if (requested is not int placement) return;                                            // the item is already there
         if (container == item) return;                                                         // never into itself
 
-        if (_objects.Get(item) is { } source)
+        if (dragged is not null)
         {
-            uint fullStack = (uint)Math.Max(source.StackSize, 1);
-            uint splitSize = _stackSplitQuantity?.GetObjectSplitSize(
-                item, _selection.SelectedObjectId ?? 0u, fullStack) ?? fullStack;
-            if (splitSize < fullStack)
+            if (!wholeStack)
             {
                 if (_itemInteraction is not null)
                 {
@@ -1215,6 +1246,35 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
         Populate();
     }
 
+    private void OnPolicyActionRequested(ItemPolicyAction action)
+    {
+        if (action.Kind == ItemPolicyActionKind.OpenContainedContainer)
+            OpenContainedContainer(action.ObjectId);
+    }
+
+    /// <summary>
+    /// A pack the character carries was used from anywhere (a hotbar
+    /// shortcut, a double-click): the window shows and opens on it, the main
+    /// pack when it is the character. Nothing goes to the server from here;
+    /// a side pack's use request went out with the use itself.
+    /// </summary>
+    public void OpenContainedContainer(uint guid)
+    {
+        if (_disposed || guid == 0 || _objects.Get(guid) is not { } item)
+            return;
+        uint player = _playerGuid();
+        bool owned = guid == player || _objects.IsOwnedByObject(guid, player);
+        if (!owned || !IsBag(item))
+            return;
+
+        _showWindow?.Invoke();
+        if (guid == EffectiveOpen()) { ApplyIndicators(); return; }
+
+        _contentsGrid?.Scroll.SetScrollY(0);
+        _openContainer = guid;
+        Populate();
+    }
+
     private void ApplyIndicators()
     {
         SetIndicators(_contentsGrid);
@@ -1348,6 +1408,7 @@ public sealed class InventoryController : IItemListDragHandler, IRetainedPanelCo
             _itemInteraction.PendingBackpackPlacementRequested -= OnPendingBackpackPlacementRequested;
             _itemInteraction.PendingBackpackPlacementCancelled -= OnPendingBackpackPlacementCancelled;
             _itemInteraction.PendingBackpackPlacementResolved -= OnPendingBackpackPlacementResolved;
+            _itemInteraction.PolicyActionRequested -= OnPolicyActionRequested;
         }
     }
 }

@@ -13,6 +13,7 @@ public enum InventoryContainerPlacementRejection
     ItemCapacityFull,
     ContainerCapacityFull,
     WrongHookType,
+    HookHouseNotOwned,
 }
 
 public static class InventoryContainerPlacementPolicy
@@ -43,8 +44,15 @@ public static class InventoryContainerPlacementPolicy
             return InventoryContainerPlacementRejection.DestinationBeingTraded;
         if (itemId == destinationId || IsContainedBy(objects, destinationId, itemId))
             return InventoryContainerPlacementRejection.RecursiveContainment;
-        if (destination is { IsHook: true } && !FitsHook(item, destination))
-            return InventoryContainerPlacementRejection.WrongHookType;
+        if (destination is { IsHook: true })
+        {
+            // Only the owner of the house may use its hooks; a hook of a
+            // house nobody owns takes nothing.
+            if (destination.HouseOwnerId is null or 0u)
+                return InventoryContainerPlacementRejection.HookHouseNotOwned;
+            if (!FitsHook(item, destination))
+                return InventoryContainerPlacementRejection.WrongHookType;
+        }
 
         bool alreadyDirectlyContained = item.ContainerId == destinationId;
         if (IsContainer(item))
@@ -105,10 +113,14 @@ public static class InventoryContainerPlacementPolicy
                     ? $"{destinationName} can carry no more containers!"
                     : $"The {destinationName} can fit no more containers!",
             InventoryContainerPlacementRejection.WrongHookType =>
-                "That item is of the wrong type to be placed on this hook.",
+                CannotPlaceOnHook,
+            InventoryContainerPlacementRejection.HookHouseNotOwned =>
+                CannotPlaceOnHook + " You must own the house to manipulate the hook.",
             _ => null,
         };
     }
+
+    private const string CannotPlaceOnHook = "That item cannot be placed on the hook.";
 
     /// <summary>
     /// The container-type field an object carries: 0 an ordinary item, 1 a

@@ -118,8 +118,11 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     private string _endpoint = "";
     private string _status = "Ready";
     private string? _activeSessionId;
-    private bool _activeIsHeadless;
+    // The running play session's window, while it can be switched (not while starting or
+    // stopping); null otherwise.
+    private LauncherSessionWindow? _activeWindow;
     private Action<string, string>? _openConsole;
+    private Func<string, bool, bool>? _switchWindow;
     private bool? _isServerOnline;
     private string _serverStatusText = "Not checked";
     private double? _latencyMilliseconds;
@@ -212,6 +215,10 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     /// <summary>How the row opens a session's console: the session's id and a title for the window.</summary>
     internal void UseConsole(Action<string, string> open) => _openConsole = open;
 
+    /// <summary>How the row switches its running session's window: the session's id and
+    /// whether to open it; false when the switch could not be sent.</summary>
+    internal void UseWindowSwitch(Func<string, bool, bool> switchWindow) => _switchWindow = switchWindow;
+
     internal void UseSelectionStore(Action<LauncherAccountServerRowViewModel> save) => _selectionChanged = save;
     internal void UseCheckedSelectionStore(bool isChecked, Action save)
     {
@@ -272,8 +279,47 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
     public bool IsActive => _activeSessionId is not null;
 
     /// <summary>A session with no window is talked to through its console; one with a window has the game itself.</summary>
-    public bool CanOpenConsole => IsActive && _activeIsHeadless && _openConsole is not null;
+    public bool CanOpenConsole => IsActive && _activeWindow is { ShowsWindow: false } && _openConsole is not null;
     public bool CanEditSelection => !IsActive && _canInteract();
+
+    /// <summary>
+    /// What the launch-mode box shows: while a play session runs, whether it has a window (the
+    /// asked-for state while a switch is pending); otherwise the saved choice. Picking a mode
+    /// on a running row switches its session between graphical and headless without a restart
+    /// (the client's console is told <c>/window &lt;id&gt;</c> or <c>/close</c>) and saves the
+    /// pick for the next launch; a switch that cannot be sent leaves the box and the saved
+    /// choice as they were.
+    /// </summary>
+    public string DisplayedLaunchMode
+    {
+        get => _activeWindow is { } window ? (window.ShowsWindow ? "Graphical" : "Headless") : SelectedLaunchMode;
+        set
+        {
+            if (value is null) return;
+            if (!IsActive)
+            {
+                SelectedLaunchMode = value;
+                return;
+            }
+
+            if (CanSwitchWindow && _canInteract() && value != DisplayedLaunchMode
+                && _activeSessionId is { } id && _switchWindow is { } switchWindow
+                && switchWindow(id, value == "Graphical"))
+            {
+                SelectedLaunchMode = value;
+            }
+
+            // The box shows the session's window, not the pick, until the client answers.
+            OnPropertyChanged();
+            NotifyState();
+        }
+    }
+
+    /// <summary>Whether the launch-mode box may switch the running session.</summary>
+    public bool CanSwitchWindow => _activeWindow is { IsSwitchable: true, SwitchingTo: null };
+
+    /// <summary>The launch-mode box is enabled: an idle row's choice, or a running row's switch.</summary>
+    public bool CanChangeLaunchMode => CanEditSelection || (CanSwitchWindow && _canInteract());
     public bool CanPlay => DisabledReason.Length == 0;
     public string DisabledReason => _disabledReason(this) ?? "";
     public AsyncRelayCommand PlayCommand { get; }
@@ -317,7 +363,12 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
         }
         finally { _applyingSavedSelection = false; }
         _activeSessionId = session?.IsProcessOrStartActive == true ? session.SessionId : null;
-        _activeIsHeadless = session?.IsProcessOrStartActive == true && session.LaunchMode == LaunchMode.Headless;
+        // Only a play session whose process runs (not one starting or stopping) has a window
+        // to switch, or a console to open.
+        _activeWindow = session is { IsProcessOrStartActive: true, Kind: LauncherActivityKind.Play, StartupInFlight: false, IsActive: true }
+            && session.State != LauncherActivityState.Stopping
+            ? session.ReportedWindow
+            : null;
         ActiveCharacterName = session?.IsProcessOrStartActive == true ? session.CharacterName : null;
         Status = session?.Error ?? session?.Status ?? account.ActivityStatus;
         LaunchError = session?.Error;
@@ -330,6 +381,9 @@ public sealed class LauncherAccountServerRowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanOpenConsole));
         OnPropertyChanged(nameof(DisplayedCharacter));
         OnPropertyChanged(nameof(CanEditSelection));
+        OnPropertyChanged(nameof(DisplayedLaunchMode));
+        OnPropertyChanged(nameof(CanSwitchWindow));
+        OnPropertyChanged(nameof(CanChangeLaunchMode));
         OnPropertyChanged(nameof(CanPlay));
         OnPropertyChanged(nameof(DisabledReason));
         PlayCommand.NotifyCanExecuteChanged();

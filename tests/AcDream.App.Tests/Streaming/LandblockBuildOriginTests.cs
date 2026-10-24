@@ -281,7 +281,6 @@ public sealed class LandblockBuildOriginTests
         Assert.DoesNotContain(
             windowFields,
             field => field.FieldType == typeof(LandblockRenderPublisher)
-                || field.FieldType == typeof(LandblockPhysicsPublisher)
                 || field.FieldType == typeof(LandblockStaticPresentationPublisher));
 
         IReadOnlyList<CompiledCall> windowCalls =
@@ -299,10 +298,6 @@ public sealed class LandblockBuildOriginTests
             composeCalls,
             typeof(LandblockRenderPublisher),
             ".ctor");
-        int physicsPublisher = RequiredCallIndex(
-            composeCalls,
-            typeof(LandblockPhysicsPublisher),
-            ".ctor");
         int staticPublisher = RequiredCallIndex(
             composeCalls,
             typeof(LandblockStaticPresentationPublisher),
@@ -311,8 +306,7 @@ public sealed class LandblockBuildOriginTests
             composeCalls,
             typeof(LandblockPresentationPipeline),
             ".ctor");
-        Assert.True(renderPublisher < physicsPublisher);
-        Assert.True(physicsPublisher < staticPublisher);
+        Assert.True(renderPublisher < staticPublisher);
         Assert.True(staticPublisher < pipeline);
 
     }
