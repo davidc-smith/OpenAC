@@ -20,8 +20,10 @@ namespace AcDream.App.Tests.Hosting;
 /// new landblock. The one step that is not cut is the commit that makes a
 /// finished landblock live at once; its cost is reported. Measured on real
 /// game files: a large dungeon and a town.
+/// It runs alone: other tests running beside it would be measured too.
 /// </summary>
 [Trait("Lane", "Timing")]
+[Collection(ThreadSchedulingCollection.Name)]
 public sealed class GraphicalSessionCollisionTimingTests : IDisposable
 {
     /// <summary>The most one step of collision work may take on the update thread.</summary>
