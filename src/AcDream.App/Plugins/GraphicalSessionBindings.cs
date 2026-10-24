@@ -108,6 +108,19 @@ internal sealed record GraphicalSessionPresentation
     public PaperdollFramePresenter? Paperdoll { get; init; }
 
     public WorldAudioSessionGate? WorldAudio { get; init; }
+
+    /// <summary>
+    /// The window's half of the server saying what the character options are
+    /// (given the second options word), replayed when the window opens on a
+    /// session whose options were said before it.
+    /// </summary>
+    public Action<uint>? ApplyCharacterOptions { get; init; }
+
+    /// <summary>
+    /// Draws the world of a session that already plays: the world frame's
+    /// centre landblock and the cell the character stands in.
+    /// </summary>
+    public Action<uint, uint>? PresentPlayingWorld { get; init; }
 }
 
 /// <summary>
@@ -189,23 +202,15 @@ internal static partial class GraphicalAutomationCapabilities
                     window()?.Settings.SetActiveCharacter(name),
                 RestoreLayout: () =>
                 {
-                    if (window() is not { } attached)
-                        return;
-                    RetailUiRuntime? retainedUi = attached.RetainedUi;
-                    attached.Settings.SetGameplayDisplay(true);
-                    retainedUi?.RestoreLayout();
-                    retainedUi?.InventoryPanelController?.Populate();
-                    attached.Paperdoll?.MarkDirty();
-                    retainedUi?.RedeclareSocialPanelAfterWorldEntry();
+                    if (window() is { } attached)
+                        RestoreLayout(attached);
                 },
                 SyncToolbar: () =>
                     window()?.RetainedUi?.SyncToolbarWindowButtons(),
                 LoadCharacterSettings: name =>
                 {
-                    if (window() is not { } attached)
-                        return;
-                    attached.Settings.LoadCharacterContext(name);
-                    attached.RetainedUi?.LoadJournal(name);
+                    if (window() is { } attached)
+                        LoadCharacterSettings(attached, name);
                 },
                 ArmPlayerModeAutoEntry: () =>
                     window()?.PlayerModeAutoEntry.Arm(),
@@ -245,6 +250,82 @@ internal static partial class GraphicalAutomationCapabilities
             ConditionalSessionHostBindings,
             parts.Warn);
         return bindings;
+    }
+
+    /// <summary>
+    /// The window's half of the server saying what the character options
+    /// are: the chat settings and the UI lock follow them, open panels re-read
+    /// them, and the options a session document declared are compared against
+    /// them.
+    /// </summary>
+    internal static void ApplyServerCharacterOptions(
+        RuntimeSettingsController settings,
+        AcDream.Runtime.Gameplay.RuntimeCharacterOptionsState options,
+        uint options2,
+        Action noteOptionsSeeded)
+    {
+        settings.SyncChatFromServerOptions(options2);
+        settings.SetUiLocked(options.GetOptionBit(
+            AcDream.Core.Net.Messages.CharacterOptionId.LockUI));
+        // Open option-bearing panels re-read the live bits at every seed,
+        // which happens on login and again on a reconnect.
+        settings.NotifyServerOptionsSeeded();
+        noteOptionsSeeded();
+    }
+
+    private static void RestoreLayout(GraphicalSessionPresentation window)
+    {
+        RetailUiRuntime? retainedUi = window.RetainedUi;
+        window.Settings.SetGameplayDisplay(true);
+        retainedUi?.RestoreLayout();
+        retainedUi?.InventoryPanelController?.Populate();
+        window.Paperdoll?.MarkDirty();
+        retainedUi?.RedeclareSocialPanelAfterWorldEntry();
+    }
+
+    private static void LoadCharacterSettings(
+        GraphicalSessionPresentation window,
+        string name)
+    {
+        window.Settings.LoadCharacterContext(name);
+        window.RetainedUi?.LoadJournal(name);
+    }
+
+    /// <summary>
+    /// What a window opening on a session that already plays is given, in
+    /// the order a window present from the start was given it: the
+    /// character's identity where the window shows it, its entry into the
+    /// world (sound, the character's settings and layout, the toolbar, the
+    /// camera following the character once it is drawn), the character
+    /// options the server has said, then the world around the character.
+    /// The session's own half of each step happened when the session took
+    /// it; only the window's half is run here.
+    /// </summary>
+    internal static void PresentPlayingSession(
+        GraphicalSessionPresentation window,
+        LiveSessionCharacterSelection? entered,
+        AcDream.Runtime.Gameplay.RuntimeCharacterOptionsState options,
+        uint frameCenterLandblockId,
+        uint playerCellId)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(options);
+        if (entered is not { } character)
+            return;
+
+        uint id = character.CharacterId;
+        string name = character.CharacterName;
+        window.Vitals?.SetLocalPlayerGuid(id);
+        window.WorldState.MarkPersistent(id);
+        window.WorldAudio?.ResumeForWorldEntry();
+        window.Settings.SetActiveCharacter(name);
+        RestoreLayout(window);
+        window.RetainedUi?.SyncToolbarWindowButtons();
+        LoadCharacterSettings(window, name);
+        window.PlayerModeAutoEntry.Arm();
+        if (options.HasServerSeed)
+            window.ApplyCharacterOptions?.Invoke(options.Options2);
+        window.PresentPlayingWorld?.Invoke(frameCenterLandblockId, playerCellId);
     }
 
     /// <summary>
@@ -380,15 +461,11 @@ internal static partial class GraphicalAutomationCapabilities
             ClientTime: () => parts.ClientTime(),
             OnMovementStatsUpdated: () => movementStats.Apply("stats"),
             OnCharacterOptionsChanged: (_, options2) =>
-            {
-                settings.SyncChatFromServerOptions(options2);
-                settings.SetUiLocked(character.Options.GetOptionBit(
-                    AcDream.Core.Net.Messages.CharacterOptionId.LockUI));
-                // Open option-bearing panels re-read the live bits at every
-                // seed, which happens on login and again on a reconnect.
-                settings.NotifyServerOptionsSeeded();
-                parts.NoteOptionsSeeded();
-            });
+                ApplyServerCharacterOptions(
+                    settings,
+                    character.Options,
+                    options2,
+                    parts.NoteOptionsSeeded));
         LiveSessionBindingDeclarations.ReportDeclaredButUnfilled(
             "windowed",
             "character-session binding",

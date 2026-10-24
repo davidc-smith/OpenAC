@@ -59,6 +59,7 @@ public sealed class RuntimeAcceptedPositionDriveController
     private Pending? _pending;
     private AcceptedForceObservation? _newestForce;
     private object? _routeOwner;
+    private bool _handOverOpen;
 
     internal RuntimeAcceptedPositionDriveController(
         RuntimeEntityObjectLifetime entityObjects,
@@ -113,6 +114,25 @@ public sealed class RuntimeAcceptedPositionDriveController
         return true;
     }
 
+    /// <summary>
+    /// Opens a hand-over: the route that lets go next keeps its work for the
+    /// route that attaches after it, instead of abandoning it. Used when a
+    /// window opens or closes on a session that keeps playing; a session
+    /// reset never hands over.
+    /// </summary>
+    internal void BeginRouteHandOver() => _handOverOpen = true;
+
+    /// <summary>
+    /// Closes the hand-over. Work no route took is abandoned, as a plain
+    /// detach would have.
+    /// </summary>
+    internal void EndRouteHandOver()
+    {
+        _handOverOpen = false;
+        if (_routeOwner is null)
+            AbandonPending();
+    }
+
     internal void AttachRoute(object route)
     {
         ArgumentNullException.ThrowIfNull(route);
@@ -137,6 +157,8 @@ public sealed class RuntimeAcceptedPositionDriveController
         if (!ReferenceEquals(_routeOwner, route))
             return;
         _routeOwner = null;
+        if (_handOverOpen)
+            return;
         AbandonPending();
     }
 

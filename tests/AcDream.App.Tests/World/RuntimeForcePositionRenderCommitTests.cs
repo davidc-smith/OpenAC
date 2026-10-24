@@ -398,6 +398,10 @@ public sealed class RuntimeForcePositionRenderCommitTests
 
         public LiveEntityOriginInitialization TryInitialize(
             WorldSession.EntitySpawn spawn) => new(true, []);
+
+        public LiveEntityOriginInitialization TryInitializeForPlayingSession(
+            uint frameCenterLandblockId,
+            uint playerCellId) => new(true, []);
     }
 
     private sealed class NoopNetworkSink : ILiveEntityNetworkUpdateSink

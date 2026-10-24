@@ -32,6 +32,15 @@ internal sealed record GraphicalAutomationParts
 
     public MagicCatalog? MagicCatalog { get; init; }
     public AcDream.App.Runtime.CurrentGameRuntimeAdapter? SessionCommands { get; init; }
+
+    /// <summary>
+    /// The session's commands when no window is attached: the same command
+    /// adapter the client without a window uses.
+    /// </summary>
+    public AcDream.Runtime.IGameRuntimeCommands? SessionCommandsWithoutWindow { get; init; }
+
+    /// <summary>How a chat line a plugin submits is sent with no window.</summary>
+    public Func<string, bool>? SubmitChatTextWithoutWindow { get; init; }
     public AcDream.Runtime.Navigation.NavigationWalkController? NavigationWalk { get; init; }
     public AcDream.App.Streaming.LocalPlayerTeleportController? Teleport { get; init; }
     public AcDream.App.UI.RetailUiRuntime? RetainedUi { get; init; }
@@ -83,6 +92,20 @@ internal static partial class GraphicalAutomationCapabilities
                 "the spell catalog comes from the installed data files",
         };
 
+
+    /// <summary>
+    /// What a plugin goes without while no window is attached, and why: a
+    /// confirmation is answered in a window, and the navigation walk is
+    /// steered from one.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> ConditionalWithoutWindow { get; } =
+        new Dictionary<string, string>(Conditional, StringComparer.Ordinal)
+        {
+            [nameof(RuntimeAutomationHostCapabilities.AnswerConfirmation)] =
+                "no window is attached to answer a confirmation",
+            [nameof(RuntimeAutomationHostCapabilities.NavigationWalk)] =
+                "no window is attached to steer a walk",
+        };
     /// <summary>
     /// Builds the record this host really hands the binding pass. The window
     /// only names its parts; every decision about what a missing part costs a
@@ -103,9 +126,13 @@ internal static partial class GraphicalAutomationCapabilities
         GameRuntime runtime = parts.Runtime;
         return new RuntimeAutomationHostCapabilities
         {
-            HostName = "windowed",
+            HostName = session is null && parts.SessionCommandsWithoutWindow is not null
+                ? "windowed (no window)"
+                : "windowed",
             Declared = Declared,
-            Conditional = Conditional,
+            Conditional = session is null && parts.SessionCommandsWithoutWindow is not null
+                ? ConditionalWithoutWindow
+                : Conditional,
             Warn = parts.Warn,
             PluginEvents = parts.Events,
             NavigationGrid = parts.NavigationGrid,
@@ -128,8 +155,11 @@ internal static partial class GraphicalAutomationCapabilities
                         "The windowed host named the installed data files "
                         + "for plugins without the lock it reads them under.")),
             MagicCatalog = parts.MagicCatalog,
-            SubmitChatText = session is null ? null : session.SubmitChatText,
-            SessionCommands = session,
+            SubmitChatText = session is null
+                ? parts.SubmitChatTextWithoutWindow
+                : session.SubmitChatText,
+            SessionCommands = (AcDream.Runtime.IGameRuntimeCommands?)session
+                ?? parts.SessionCommandsWithoutWindow,
             NavigationWalk = parts.NavigationWalk,
             Logout = new RuntimeAutomationLogoutCommands(
                 () => teleport?.TryRequestLogout() == true,

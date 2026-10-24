@@ -43,7 +43,6 @@ internal sealed record WorldRenderResult(
     WorldRenderFoundation Foundation);
 
 internal sealed record WorldRenderDependencies(
-    WorldEnvironmentController Environment,
     IGameRenderResourceLifetime RenderResources,
     IGpuResourceRetirementQueue ResourceRetirement,
     ResidencyBudgetOptions ResidencyBudgets,
@@ -74,10 +73,6 @@ internal interface IGameWindowWorldRenderPublication
 internal interface IWorldRenderCompositionFactory
 {
     WorldRegionData LoadRegion(IDatReaderWriter dats);
-    void InitializeEnvironment(
-        WorldEnvironmentController environment,
-        Region region,
-        IDatReaderWriter dats);
     TerrainAtlas AcquireBackendNeutralTerrainAtlas(
         IGameRenderResourceLifetime lifetime,
         AcDream.App.Rendering.Gpu.IGpuDevice device,
@@ -153,17 +148,6 @@ internal sealed class RetailWorldRenderCompositionFactory
                 "Region.LandDefs.LandHeightTable missing or truncated");
         }
         return new WorldRegionData(region, heightTable);
-    }
-
-    public void InitializeEnvironment(
-        WorldEnvironmentController environment,
-        Region region,
-        IDatReaderWriter dats)
-    {
-        ArgumentNullException.ThrowIfNull(environment);
-        ArgumentNullException.ThrowIfNull(region);
-        ArgumentNullException.ThrowIfNull(dats);
-        environment.Initialize(region, dats);
     }
 
     public TerrainAtlas AcquireBackendNeutralTerrainAtlas(
@@ -367,7 +351,6 @@ internal sealed class RetailWorldRenderCompositionFactory
 internal enum WorldRenderCompositionPoint
 {
     RegionLoaded,
-    EnvironmentInitialized,
     TerrainAtlasAcquired,
     SceneLightingPublished,
     DebugLinesPublished,
@@ -424,11 +407,6 @@ internal sealed class WorldRenderCompositionPhase
 
             WorldRegionData region = _factory.LoadRegion(content.Dats);
             Fault(WorldRenderCompositionPoint.RegionLoaded);
-            _factory.InitializeEnvironment(
-                _dependencies.Environment,
-                region.Region,
-                content.Dats);
-            Fault(WorldRenderCompositionPoint.EnvironmentInitialized);
 
             TerrainAtlas terrainAtlas = _factory.AcquireBackendNeutralTerrainAtlas(
                 _dependencies.RenderResources,

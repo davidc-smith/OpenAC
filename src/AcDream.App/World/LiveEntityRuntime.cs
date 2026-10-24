@@ -50,6 +50,15 @@ public interface ILiveEntityResourceLifecycle
 internal interface ILiveEntityRuntimeComponentLifecycle
 {
     void TearDown(LiveEntityRecord record);
+
+    /// <summary>
+    /// Lets go of what only the drawing of an entity holds, when the window
+    /// goes away while the session plays on: the entity's body, collision
+    /// and motion stay as the session has them.
+    /// </summary>
+    void ReleasePresentation(LiveEntityRecord record) =>
+        throw new NotSupportedException(
+            "This lifecycle cannot let go of a drawing while the session keeps the entity.");
 }
 
 internal sealed class NullLiveEntityRuntimeComponentLifecycle :
@@ -58,15 +67,20 @@ internal sealed class NullLiveEntityRuntimeComponentLifecycle :
     public static NullLiveEntityRuntimeComponentLifecycle Instance { get; } = new();
     private NullLiveEntityRuntimeComponentLifecycle() { }
     public void TearDown(LiveEntityRecord record) { }
+    public void ReleasePresentation(LiveEntityRecord record) { }
 }
 
 internal sealed class DelegateLiveEntityRuntimeComponentLifecycle(
-    Action<LiveEntityRecord> tearDown) : ILiveEntityRuntimeComponentLifecycle
+    Action<LiveEntityRecord> tearDown,
+    Action<LiveEntityRecord>? releasePresentation = null) : ILiveEntityRuntimeComponentLifecycle
 {
     private readonly Action<LiveEntityRecord> _tearDown =
         tearDown ?? throw new ArgumentNullException(nameof(tearDown));
 
     public void TearDown(LiveEntityRecord record) => _tearDown(record);
+
+    public void ReleasePresentation(LiveEntityRecord record) =>
+        (releasePresentation ?? (_ => { }))(record);
 }
 
 internal sealed class DeferredLiveEntityRuntimeComponentLifecycle :
@@ -102,6 +116,14 @@ internal sealed class DeferredLiveEntityRuntimeComponentLifecycle :
             ?? throw new InvalidOperationException(
                 "The live-entity runtime component lifecycle has not been bound.");
         lifecycle.TearDown(record);
+    }
+
+    public void ReleasePresentation(LiveEntityRecord record)
+    {
+        ILiveEntityRuntimeComponentLifecycle lifecycle = Volatile.Read(ref _inner)
+            ?? throw new InvalidOperationException(
+                "The live-entity runtime component lifecycle has not been bound.");
+        lifecycle.ReleasePresentation(record);
     }
 
     private sealed class Binding : IDisposable
@@ -2602,6 +2624,75 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
         _sessionClearPendingFinalization = false;
     }
 
+    /// <summary>
+    /// The window is going away while the session plays on: every drawn
+    /// projection is let go of, and only what the drawing held goes with it.
+    /// The session's records, bodies, collision and selection stay exactly
+    /// as the session has them, for the next window to draw again.
+    /// </summary>
+    public void ReleaseProjectionsKeepingSession()
+    {
+        if (_isClearing || _isRegisteringResources)
+        {
+            throw new InvalidOperationException(
+                _isClearing
+                    ? "Live entity projection teardown is already in progress."
+                    : "Live entity projection teardown cannot begin inside atomic resource registration.");
+        }
+
+        _isClearing = true;
+        List<Exception>? failures = null;
+        try
+        {
+            foreach (LiveEntityRecord record in _projections.ActiveRecords.ToArray())
+            {
+                if (!_projections.RemoveActive(record))
+                {
+                    throw new InvalidOperationException(
+                        $"Exact App projection for 0x{record.ServerGuid:X8}/{record.Generation} could not be let go of.");
+                }
+                _projections.RetainTeardown(record);
+            }
+
+            foreach (LiveEntityRecord record in _projections.TeardownRecords.ToArray())
+            {
+                if (record.TeardownInProgress)
+                    continue;
+                try
+                {
+                    TearDownRecord(
+                        record,
+                        completeCanonical: false,
+                        keepSessionBody: true);
+                    _projections.ReleaseTeardown(record);
+                }
+                catch (Exception error)
+                {
+                    (failures ??= new List<Exception>()).Add(error);
+                }
+            }
+
+            if (failures is null)
+            {
+                _spatialAnimations.Clear();
+                _physics.ClearSpatialWorksets();
+                _projections.ClearConverged();
+                _spatial.ClearLiveEntityLifetimeState();
+            }
+        }
+        finally
+        {
+            _isClearing = false;
+        }
+
+        if (failures is not null)
+        {
+            throw new AggregateException(
+                "Live entity projections could not all be let go of.",
+                failures);
+        }
+    }
+
     public void Clear()
     {
         if (_isClearing || _isRegisteringResources)
@@ -3067,7 +3158,8 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
 
     private void TearDownRecord(
         LiveEntityRecord record,
-        bool completeCanonical = true)
+        bool completeCanonical = true,
+        bool keepSessionBody = false)
     {
         if (record.TeardownInProgress)
             throw new InvalidOperationException(
@@ -3092,12 +3184,19 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
         try
         {
             RemoveSpatialRuntimeIndexes(record);
-            _physics.ClearProjectile(record.Canonical);
+            if (!keepSessionBody)
+                _physics.ClearProjectile(record.Canonical);
 
             if (!record.RuntimeComponentsTeardownCompleted)
             {
                 record.RuntimeComponentsTeardownCompleted =
-                    TryCleanup(() => _runtimeComponentLifecycle.TearDown(record));
+                    TryCleanup(() =>
+                    {
+                        if (keepSessionBody)
+                            _runtimeComponentLifecycle.ReleasePresentation(record);
+                        else
+                            _runtimeComponentLifecycle.TearDown(record);
+                    });
             }
 
             if (record.WorldEntity is { } entity)

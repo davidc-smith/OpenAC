@@ -90,6 +90,31 @@ public sealed class GraphicalLiveSessionTests : IDisposable
                 SessionId = "s1",
             });
 
+    [Theory]
+    [InlineData(RuntimeCharacterSelectionLifecycle.Inactive, false, false, false, null)]
+    [InlineData(RuntimeCharacterSelectionLifecycle.AwaitingSelection, false, false, false, null)]
+    [InlineData(RuntimeCharacterSelectionLifecycle.InWorld, true, false, false, null)]
+    [InlineData(RuntimeCharacterSelectionLifecycle.Connecting, false, false, false, "connecting")]
+    [InlineData(RuntimeCharacterSelectionLifecycle.EnteringWorld, false, false, false, "entering the world")]
+    [InlineData(RuntimeCharacterSelectionLifecycle.InWorld, false, false, false, "entering the world")]
+    [InlineData(RuntimeCharacterSelectionLifecycle.InWorld, true, true, false, "in a portal")]
+    [InlineData(RuntimeCharacterSelectionLifecycle.InWorld, true, false, true, "logging out")]
+    public void A_window_opens_on_the_session_only_between_its_steps(
+        RuntimeCharacterSelectionLifecycle lifecycle,
+        bool loginCompleteSent,
+        bool inPortal,
+        bool loggingOut,
+        string? expected)
+    {
+        Assert.Equal(
+            expected,
+            GraphicalLiveSession.WhyAWindowCannotOpen(
+                lifecycle,
+                loginCompleteSent,
+                inPortal,
+                loggingOut));
+    }
+
     [Fact]
     public void The_live_session_and_its_command_surface_exist_before_any_window()
     {

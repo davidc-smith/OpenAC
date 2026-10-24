@@ -150,6 +150,14 @@ internal sealed class LiveSessionRuntimeFactory
             RetainedUi = _ui.RetailUi,
             Paperdoll = _ui.Paperdoll,
             WorldAudio = _world.WorldAudio,
+            ApplyCharacterOptions = options2 =>
+                AcDream.App.Plugins.GraphicalAutomationCapabilities
+                    .ApplyServerCharacterOptions(
+                        _interaction.Settings,
+                        _domain.Character.Options,
+                        options2,
+                        _noteOptionsSeeded),
+            PresentPlayingWorld = _world.Hydration.PresentPlayingWorld,
         };
     }
 

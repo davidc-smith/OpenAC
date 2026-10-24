@@ -194,6 +194,41 @@ public sealed class SessionStatusWriter : IDisposable
             error,
         });
 
+    /// <summary>A game window opened on the session.</summary>
+    public void WindowOpened(string sessionId) =>
+        Write(new
+        {
+            v = VocabularyVersion,
+            e = "windowOpened",
+            t = Now(),
+            sessionId,
+        });
+
+    /// <summary>
+    /// The session's game window closed: <c>requested</c>, <c>closedByUser</c>,
+    /// <c>renderFailed</c> or <c>shutdown</c>.
+    /// </summary>
+    public void WindowClosed(string sessionId, string reason) =>
+        Write(new
+        {
+            v = VocabularyVersion,
+            e = "windowClosed",
+            t = Now(),
+            sessionId,
+            reason,
+        });
+
+    /// <summary>A game window could not be opened on the session.</summary>
+    public void WindowFailed(string sessionId, string error) =>
+        Write(new
+        {
+            v = VocabularyVersion,
+            e = "windowFailed",
+            t = Now(),
+            sessionId,
+            error,
+        });
+
     public void Disconnected(string sessionId, string reason)
     {
         if (!IsEnabled)

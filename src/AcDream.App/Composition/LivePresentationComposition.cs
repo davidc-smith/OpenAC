@@ -434,7 +434,9 @@ internal sealed class LivePresentationCompositionPhase
             var liveRuntimeLease = scope.Own(
                 "canonical live-entity runtime",
                 liveEntities,
-                static runtime => runtime.Clear());
+                // A window that fails to build lets go of only what it drew:
+                // the session it opened on plays on.
+                static runtime => runtime.ReleaseProjectionsKeepingSession());
             LiveRenderProjectionJournal? liveRenderProjections =
                 renderSceneShadow?.BindLiveRuntime(
                     liveEntities,

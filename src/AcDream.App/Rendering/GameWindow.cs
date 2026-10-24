@@ -488,6 +488,7 @@ public sealed class GameWindow :
         AcDream.App.Input.AppHotkeyRegistry? hotkeyRegistry = null)
     {
         _host = host ?? throw new System.ArgumentNullException(nameof(host));
+        _joinedPlayingSession = host.HasSessionStarted;
         AcDream.App.RuntimeOptions options = host.Options;
         _options = options;
         AcDream.Core.Rendering.RenderingDiagnostics.DumpWalkTranscriptEnabled =
@@ -513,11 +514,9 @@ public sealed class GameWindow :
         _datLock = host.Content?.DatLock ?? new object();
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
             _runtime);
-        _worldEnvironment = new AcDream.App.World.WorldEnvironmentController(
-            _runtime.EnvironmentOwner,
-            options.ForcedDayGroupIndex,
-            Console.WriteLine,
-            options.PinnedWorldDayFraction);
+        // The sky and the world clock are the session's, set up once from
+        // the game files; every window draws the same ones.
+        _worldEnvironment = host.WorldEnvironment;
         var alphaScratchBudgets =
             AcDream.App.Rendering.Residency.AlphaScratchBudgetProfile.Create(
                 _options.ResidencyBudgets.AlphaScratchBytes);
@@ -569,13 +568,10 @@ public sealed class GameWindow :
                     movement, cellId, update),
             (host, targetGuid) =>
                 _liveEntityMotionBindings.StickToObjectFromWire(host, targetGuid));
-        _movementTruthDiagnostics =
-            new AcDream.App.Input.MovementTruthDiagnosticController(
-                options.DumpMoveTruth,
-                _playerControllerSlot,
-                _localPlayerIdentity);
-        _localPlayerOutbound = new LocalPlayerOutboundController(
-            _movementTruthDiagnostics);
+        // What the character tells the server about its own movement is the
+        // session's, sent with or without a window.
+        _movementTruthDiagnostics = host.MovementTruth;
+        _localPlayerOutbound = host.LocalPlayerOutbound;
     }
 
     public void Run()
@@ -1262,7 +1258,6 @@ public sealed class GameWindow :
                 const uint initialCenterLandblockId = 0xA9B4FFFFu;
                 WorldRenderResult worldRender = new WorldRenderCompositionPhase(
                     new WorldRenderDependencies(
-                        _worldEnvironment,
                         _renderResourceLifetime,
                         _gpuDevice!.Retirement,
                         _options.ResidencyBudgets,
@@ -1455,7 +1450,8 @@ public sealed class GameWindow :
                     _portalTunnelFallback,
                     Console.WriteLine,
                     _host.LiveSession,
-                    _host.Collision),
+                    _host.Collision,
+                    _host.EnsureDrives),
                 this).Compose(
                     hostInputCamera,
                     contentEffectsAudio,
@@ -1518,10 +1514,12 @@ public sealed class GameWindow :
                         sessionPlayer),
             frameRoots => new SessionStartCompositionPhase(
                 new SessionStartDependencies(
-                    Console.WriteLine))
+                    Console.WriteLine,
+                    JoinPlayingSession))
                 .Start(frameRoots));
 
         ApplyPluginAutomationBindings();
+        _host.NoteWindowOpened();
     }
 
     private void OnUpdate(double dt)
@@ -1561,14 +1559,14 @@ public sealed class GameWindow :
             return;
         }
         Vector2D<int> size = _window!.Size;
-        if (_vulkanGraphics is { } vulkan && !vulkan.PrepareFrame())
-        {
-            _renderLoopArmed = false;
-            return;
-        }
         AcDream.App.Rendering.RenderFrameOutcome outcome;
         try
         {
+            if (_vulkanGraphics is { } vulkan && !vulkan.PrepareFrame())
+            {
+                _renderLoopArmed = false;
+                return;
+            }
             _frameGraphs.Render(
                 new AcDream.App.Rendering.RenderFrameInput(
                     deltaSeconds,
@@ -1583,6 +1581,19 @@ public sealed class GameWindow :
             _renderLoopArmed = false;
             return;
         }
+        catch (Exception error)
+            when (AcDream.App.Rendering.Gpu.Vk.VulkanRenderFailurePolicy.IsFatal(error))
+        {
+            // The GPU device was lost (or ran out of memory, or the surface
+            // went): only the window ends. It closes as a requested close
+            // does, handing the session back to play on without it, and the
+            // session host decides what follows.
+            _renderLoopArmed = false;
+            _renderFailure ??= error;
+            Console.Error.WriteLine($"window: drawing failed, closing the window: {error.Message}");
+            CloseKeepingSession();
+            return;
+        }
 
         if (!outcome.SkippedZeroArea)
             _vulkanGraphics?.NoteFrameClosed();
@@ -1591,6 +1602,42 @@ public sealed class GameWindow :
 
 
 
+
+
+    private Exception? _renderFailure;
+
+    /// <summary>
+    /// Why drawing failed for good (a lost GPU device), when that is how the
+    /// window ended; null otherwise.
+    /// </summary>
+    internal Exception? RenderFailure => _renderFailure;
+    private bool _closeKeepingSession;
+    private bool _joinedPlayingSession;
+
+    /// <summary>
+    /// Closes the window and lets the session play on without it. Called on
+    /// the update thread; the window goes once its loop has returned.
+    /// </summary>
+    internal void CloseKeepingSession()
+    {
+        _closeKeepingSession = true;
+        _window?.Close();
+    }
+
+    /// <summary>Closes the window and logs the character off, as the player's close does.</summary>
+    internal void CloseEndingSession() => _window?.Close();
+
+    /// <summary>Whether this window was built over a session already playing.</summary>
+    internal bool JoinedPlayingSession => _joinedPlayingSession;
+
+    /// <summary>Whether this window closed so that the session plays on.</summary>
+    internal bool ClosedKeepingSession => _closeKeepingSession;
+
+    private bool JoinPlayingSession()
+    {
+        _ = _host.JoinPlayingSession();
+        return _joinedPlayingSession;
+    }
     private void OnFramebufferResize(Silk.NET.Maths.Vector2D<int> newSize)
         => _framebufferResize.Resize(newSize);
 
@@ -1608,8 +1655,18 @@ public sealed class GameWindow :
         {
             PersistKeyBindingsAtShutdown();
             _audioMixerCommand?.Dispose();
-            _host.ReportSessionStopping();
-            _lifetime.PublishShutdownRoots(CaptureShutdownRoots());
+            // A window closed so the session plays on (asked for, or one that
+            // failed while opening on a session already playing) hands the
+            // session back first and lets go of only what it built; any
+            // other close ends the session, as it always has.
+            bool keepSession = _closeKeepingSession
+                || (_runFailure is not null && _joinedPlayingSession);
+            if (keepSession)
+                _host.LetGoOfWindow();
+            else
+                _host.ReportSessionStopping();
+            _lifetime.PublishShutdownRoots(
+                CaptureShutdownRoots() with { KeepSession = keepSession });
         }
 
         GameWindowLifetimeReport report = releaseNativeWindow

@@ -217,6 +217,38 @@ public sealed class RuntimeCollisionNeighborhoodTests
     }
 
     /// <summary>
+    /// The game files are closed when the process ends. A landblock still
+    /// being read in the background then reads closed files; stopping the
+    /// background work waits for the read in hand and starts no other.
+    /// </summary>
+    [Fact]
+    public async Task StoppingTheBackgroundWorkWaitsForTheLoadInHandAndStartsNoOther()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var hold = new ManualResetEventSlim(false);
+        var content = new FlatContent { Hold = hold };
+        var neighborhood = new RuntimeCollisionNeighborhood(
+            runtime,
+            content,
+            new RuntimeCollisionPacing { LoadInBackground = true });
+        runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+        neighborhood.CenterOn(Arrival);
+        neighborhood.Pump();
+        Assert.True(SpinWait.SpinUntil(
+            () => Volatile.Read(ref content.LoadsInFlight) == 1,
+            TimeSpan.FromSeconds(5)));
+
+        Task stopping = Task.Run(neighborhood.StopBackgroundWork);
+
+        Assert.NotSame(stopping, await Task.WhenAny(stopping, Task.Delay(200)));
+        hold.Set();
+        Assert.Same(stopping, await Task.WhenAny(stopping, Task.Delay(5000)));
+        Assert.Equal(0, Volatile.Read(ref content.LoadsInFlight));
+        Thread.Sleep(50);
+        Assert.Single(content.LoadThreads);
+    }
+
+    /// <summary>
     /// Another creature is carried by local physics between the server's
     /// updates only while it is within 96 meters of the player (and stands in
     /// a cell the client holds). 96 meters is half a landblock, so the
@@ -720,6 +752,12 @@ public sealed class RuntimeCollisionNeighborhoodTests
         /// <summary>The thread each landblock was loaded on.</summary>
         public System.Collections.Concurrent.ConcurrentBag<int> LoadThreads { get; } = [];
 
+        /// <summary>When set, each load waits for it before reading.</summary>
+        public ManualResetEventSlim? Hold { get; init; }
+
+        /// <summary>Loads begun and not yet returned.</summary>
+        public int LoadsInFlight;
+
         public bool TryLoadCollisionLandblock(
             uint landblockId,
             Vector3 origin,
@@ -727,6 +765,9 @@ public sealed class RuntimeCollisionNeighborhoodTests
             out LandblockCollisionBuild collisions)
         {
             LoadThreads.Add(System.Environment.CurrentManagedThreadId);
+            Interlocked.Increment(ref LoadsInFlight);
+            Hold?.Wait();
+            Interlocked.Decrement(ref LoadsInFlight);
             landblock = new LoadedLandblock(
                 landblockId,
                 new LandBlock

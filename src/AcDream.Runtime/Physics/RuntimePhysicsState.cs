@@ -1299,6 +1299,22 @@ public sealed class RuntimePhysicsState : IDisposable
         _objectTableHostResolver = resolver;
     }
 
+    /// <summary>
+    /// Binds the resolver for as long as the returned lease is held; giving it
+    /// back restores resolution with none.
+    /// </summary>
+    internal IDisposable BindObjectTableHostResolverOwned(
+        Func<uint, AcDream.Core.Physics.Motion.IPhysicsObjHost?> resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        BindObjectTableHostResolver(resolver);
+        return new RuntimeBindingLease(() =>
+        {
+            if (ReferenceEquals(_objectTableHostResolver, resolver))
+                _objectTableHostResolver = null;
+        });
+    }
+
     private AcDream.Content.IPreparedCollisionSource? _setupCollisionSource;
 
     /// <summary>

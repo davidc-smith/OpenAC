@@ -509,6 +509,8 @@ internal sealed class RuntimeCollisionNeighborhood
     private readonly RuntimeCollisionPacing _pacing;
     private readonly Dictionary<PublicationSpec, Task<LoadedCollisionContent?>> _loads = [];
     private CancellationTokenSource? _loadsSuperseded;
+    private readonly List<Task> _workers = [];
+    private bool _backgroundStopped;
     private readonly HashSet<uint> _resident = [];
     private readonly Queue<uint> _retirementQueue = [];
     private readonly Queue<PublicationSpec> _publicationQueue = [];
@@ -970,9 +972,33 @@ internal sealed class RuntimeCollisionNeighborhood
     /// in the background. A plan that replaces this one stops the loads it
     /// no longer wants; their results are never read.
     /// </summary>
+    /// <summary>
+    /// Stops loading in the background, before the game files are closed:
+    /// no further load starts, and this returns once the loads in hand have
+    /// returned. Their results are never read. Loading is done on the
+    /// caller's thread from then on.
+    /// </summary>
+    internal void StopBackgroundWork()
+    {
+        _backgroundStopped = true;
+        _loadsSuperseded?.Cancel();
+        Task[] running = [.. _workers, .. _loads.Values];
+        _workers.Clear();
+        _loads.Clear();
+        // Waits for completion only: a load that failed is no longer wanted,
+        // and its failure is not this caller's.
+        Task.WhenAll(running)
+            .ContinueWith(
+                static _ => { },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default)
+            .Wait();
+    }
+
     private void StartBackgroundLoads()
     {
-        if (!_pacing.LoadInBackground)
+        if (!_pacing.LoadInBackground || _backgroundStopped)
             return;
         _loadsSuperseded?.Cancel();
         var superseded = new CancellationTokenSource();
@@ -1001,7 +1027,8 @@ internal sealed class RuntimeCollisionNeighborhood
         if (batch.Count == 0)
             return;
         CancellationToken token = superseded.Token;
-        _ = Task.Run(() =>
+        _workers.RemoveAll(static worker => worker.IsCompleted);
+        _workers.Add(Task.Run(() =>
         {
             foreach ((PublicationSpec spec, TaskCompletionSource<LoadedCollisionContent?> result) in batch)
             {
@@ -1019,7 +1046,7 @@ internal sealed class RuntimeCollisionNeighborhood
                     result.TrySetException(error);
                 }
             }
-        });
+        }));
     }
 
     /// <summary>
@@ -1031,7 +1058,7 @@ internal sealed class RuntimeCollisionNeighborhood
         PublicationSpec spec,
         out LoadedCollisionContent? loaded)
     {
-        if (!_pacing.LoadInBackground)
+        if (!_pacing.LoadInBackground || _backgroundStopped)
         {
             loaded = Load(spec);
             return true;

@@ -1825,6 +1825,44 @@ public sealed class LiveEntityRuntimeTests
         Assert.Equal(0, resources.UnregisterCount);
     }
 
+    /// <summary>
+    /// The window closes while the session plays on: what it drew goes, and
+    /// only that. The session keeps the entity, and the body's teardown (the
+    /// part a session clear runs) is not run; only the drawing's own release.
+    /// A second window can draw the entity again from the session's record.
+    /// </summary>
+    [Fact]
+    public void ReleasingProjectionsKeepsTheSessionsEntitiesForTheNextWindow()
+    {
+        var spatial = new GpuWorldState();
+        spatial.AddLandblock(EmptyLandblock(0x0101FFFFu));
+        var resources = new RecordingResources();
+        int bodyTearDowns = 0;
+        int drawingReleases = 0;
+        var runtime = LiveEntityRuntimeFixture.Create(
+            spatial,
+            resources,
+            new DelegateLiveEntityRuntimeComponentLifecycle(
+                _ => bodyTearDowns++,
+                _ => drawingReleases++));
+        WorldSession.EntitySpawn spawn = Spawn(0x7000000Au, 1, 1, 0x01010001u);
+        runtime.RegisterLiveEntity(spawn);
+        runtime.MaterializeLiveEntity(
+            spawn.Guid,
+            spawn.Position!.Value.LandblockId,
+            id => Entity(id, spawn.Guid));
+
+        runtime.ReleaseProjectionsKeepingSession();
+
+        Assert.Equal(1, runtime.Count);
+        Assert.True(runtime.TryGetCanonical(spawn.Guid, out _));
+        Assert.Equal(0, runtime.MaterializedCount);
+        Assert.Empty(spatial.Entities);
+        Assert.Equal(1, resources.UnregisterCount);
+        Assert.Equal(0, bodyTearDowns);
+        Assert.Equal(1, drawingReleases);
+    }
+
     [Fact]
     public void SessionClear_IsSymmetricAndIdempotent()
     {

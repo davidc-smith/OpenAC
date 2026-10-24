@@ -146,6 +146,16 @@ internal interface ILiveEntityWorldOriginCoordinator
 {
     bool IsKnown { get; }
     LiveEntityOriginInitialization TryInitialize(WorldSession.EntitySpawn spawn);
+
+    /// <summary>
+    /// A window opening on a session that already plays: the world frame is
+    /// the one the session measures in, and drawing starts around the cell
+    /// the character stands in now. No reveal begins; the character is
+    /// already in the world.
+    /// </summary>
+    LiveEntityOriginInitialization TryInitializeForPlayingSession(
+        uint frameCenterLandblockId,
+        uint playerCellId);
 }
 
 internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoadedSink
@@ -679,6 +689,27 @@ AppearanceSynchronization:
             || _runtime.TryCompleteCreateProjectionSynchronization(
                 candidate.Record,
                 candidate.CreateIntegrationVersion));
+    }
+
+    /// <summary>
+    /// A window opening on a session that already plays: the world is drawn
+    /// in the frame the session measures in, around the character, and
+    /// everything the session already knows is drawn as its landblock is.
+    /// </summary>
+    public void PresentPlayingWorld(uint frameCenterLandblockId, uint playerCellId)
+    {
+        lock (_datLock)
+        {
+            LiveEntityOriginInitialization initialization =
+                _origin.TryInitializeForPlayingSession(
+                    frameCenterLandblockId,
+                    playerCellId);
+            if (!initialization.IsKnown)
+                return;
+
+            for (int i = 0; i < initialization.AlreadyLoadedLandblocks.Count; i++)
+                OnLandblockLoaded(initialization.AlreadyLoadedLandblocks[i]);
+        }
     }
 
     public void ResetSessionState() => _materializer.ResetSessionState();
