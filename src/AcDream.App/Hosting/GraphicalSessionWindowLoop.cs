@@ -26,6 +26,9 @@ internal enum GraphicalSessionEnd
     /// <summary>The shutdown did not complete.</summary>
     Incomplete,
 
+    /// <summary>The connection went (or never came) with no window to show it.</summary>
+    ConnectionLost,
+
     /// <summary>The window present from the start failed.</summary>
     Crashed,
 }
@@ -132,6 +135,11 @@ internal sealed class GraphicalSessionWindowLoop
 
                 TimeSpan now = clock.Elapsed;
                 _host.Tick((now - last).TotalSeconds, _host.WindowlessFrame);
+                if (_host.ConnectionEnded)
+                {
+                    _machine.Step(WindowAttachInput.ShutdownRequested);
+                    return _host.EndSessionWithoutWindow(connectionEnded: true);
+                }
                 last = now;
                 TimeSpan wait = FramePeriod - (clock.Elapsed - now);
                 if (wait > TimeSpan.Zero)

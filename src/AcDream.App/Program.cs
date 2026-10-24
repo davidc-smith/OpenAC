@@ -54,6 +54,19 @@ if (sessionConfigFlagPath is null && sessionConfigFlagPresent)
 }
 string[] positionalArgs =
     SessionConfigArgumentParsing.WithoutFlagAndValue(args, "--session-config");
+// The launcher's start: --console reads typed lines and prints chat;
+// --no-window starts the session with no window, opened later by /window.
+SessionConfigArgumentParsing.ConsoleFlags? consoleFlags =
+    SessionConfigArgumentParsing.ExtractConsoleFlags(
+        positionalArgs,
+        sessionConfigFlagPresent,
+        out positionalArgs,
+        out string? consoleUsageError);
+if (consoleFlags is not { } launch)
+{
+    Log.Error("{Usage}", consoleUsageError);
+    return 2;
+}
 
 var datDirArg = positionalArgs.FirstOrDefault();
 var envDatDir = Environment.GetEnvironmentVariable("ACDREAM_DAT_DIR");
@@ -76,7 +89,7 @@ if (sessionConfigFlagPath is not null)
             or SessionConfigurationException)
     {
         Log.Error("--session-config invalid: {Error}", error.Message);
-        return 2;
+        return 3;
     }
 
     string? resolvedDatDir =
@@ -88,7 +101,7 @@ if (sessionConfigFlagPath is not null)
         Log.Error(
             "usage: AcDream.App <dat-directory>  (or set ACDREAM_DAT_DIR, "
             + "or supply process.content.datDirectory in --session-config)");
-        return 2;
+        return 3;
     }
 
     AppCredentialSecret? secret = null;
@@ -112,7 +125,7 @@ if (sessionConfigFlagPath is not null)
     catch (AppCredentialException error)
     {
         Log.Error("--session-config credential unavailable: {Error}", error.Message);
-        return 2;
+        return 4;
     }
     // A settings map written into the document is refused here in the same
     // words a settings file is refused below, rather than ending the client
@@ -120,7 +133,7 @@ if (sessionConfigFlagPath is not null)
     catch (AcDream.Runtime.Plugins.PluginSessionSettingsException error)
     {
         Log.Error("--session-config plugin settings invalid: {Error}", error.Message);
-        return 2;
+        return 3;
     }
     finally
     {
@@ -163,7 +176,7 @@ try
 catch (AcDream.Runtime.Plugins.PluginSessionSettingsException error)
 {
     Log.Error("ACDREAM_PLUGIN_SETTINGS_FILE invalid: {Error}", error.Message);
-    return 2;
+    return sessionConfigFlagPath is null ? 2 : 3;
 }
 
 if (runtimeOptions.DevTools)
@@ -273,21 +286,38 @@ GraphicalPluginSession pluginSession = GraphicalPluginSession.Create(
     renderPackRegistry);
 sessionHost.StartPluginHosting(pluginSession);
 
+// With the console (the launcher's start) typed lines are read once the
+// credential line has been, and chat prints on standard error.
+using GraphicalSessionConsole? console = launch.Console
+    ? new GraphicalSessionConsole(sessionHost, Console.In, Console.Error)
+    : null;
+// Ctrl+C and Ctrl+Break log the character off, then the process exits.
+Console.CancelKeyPress += (_, cancel) =>
+{
+    cancel.Cancel = true;
+    sessionHost.WindowLoop?.RequestShutdown();
+};
+GraphicalSessionEnd end;
 try
 {
     try
     {
-        sessionHost.Run(session => new GameWindow(
-            session,
-            uiRegistry,
-            graphicalPlatform,
-            renderPackRegistry,
-            hotkeyRegistry));
+        console?.Start();
+        end = sessionHost.Run(
+            session => new GameWindow(
+                session,
+                uiRegistry,
+                graphicalPlatform,
+                renderPackRegistry,
+                hotkeyRegistry),
+            windowAtStart: !launch.NoWindow,
+            events: console?.WindowEvents,
+            console: launch.Console);
     }
     catch (NotSupportedException error)
     {
         Log.Error("{GraphicalStartupFailure}", error.Message);
-        return 4;
+        return 6;
     }
 }
 finally
@@ -295,7 +325,13 @@ finally
     Log.CloseAndFlush();
 }
 
-return 0;
+// 0 graceful, 5 the connection went, 6 the client could not finish.
+return end switch
+{
+    GraphicalSessionEnd.Graceful => 0,
+    GraphicalSessionEnd.ConnectionLost => 5,
+    _ => 6,
+};
 
 static string? NullIfEmpty(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value;

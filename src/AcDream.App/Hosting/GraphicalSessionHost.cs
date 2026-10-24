@@ -41,6 +41,7 @@ internal sealed class GraphicalSessionHost : IDisposable
     private GraphicalWindowlessSessionFrame? _windowlessFrame;
     private GraphicalSessionDrives? _drives;
     private bool _sessionStarted;
+    private bool _startFailed;
     private DirectGameRuntimeCommandAdapter? _commandsWithoutWindow;
     private GraphicalSessionWindowLoop? _windowLoop;
     private bool _disposed;
@@ -334,11 +335,25 @@ internal sealed class GraphicalSessionHost : IDisposable
         if (_sessionStarted)
             throw new InvalidOperationException("The session has already started.");
         _sessionStarted = true;
+        RuntimeSessionStartResult result =
+            CommandsWithoutWindow.Session.Start(Runtime.Generation);
+        _startFailed = result.Status is RuntimeSessionStartStatus.Failed
+            or RuntimeSessionStartStatus.MissingCredentials
+            or RuntimeSessionStartStatus.NoCharacters;
         AcDream.App.Composition.SessionStartCompositionPhase.Report(
-            new DirectGameRuntimeCommandAdapter(Runtime, LiveSession.Host)
-                .Session.Start(Runtime.Generation),
+            result,
             Console.WriteLine);
     }
+
+    /// <summary>
+    /// Whether the session's connection is gone with no window to show it: a
+    /// start that could not connect, or a server that went silent. The
+    /// session then ends with the connection's exit code.
+    /// </summary>
+    internal bool ConnectionEnded =>
+        _startFailed
+        || LiveSession.Host.ConnectionLost
+        || LiveSession.Host.Connection.Snapshot.Status is RuntimeConnectionStatus.Failed;
 
     /// <summary>Whether the session has started, with or without a window.</summary>
     internal bool HasSessionStarted => _sessionStarted;
@@ -504,9 +519,12 @@ internal sealed class GraphicalSessionHost : IDisposable
     /// the order a window's shutdown does it: the session stops, then the
     /// plugins, what plugins see of the world, and the runtime.
     /// </summary>
-    internal GraphicalSessionEnd EndSessionWithoutWindow()
+    internal GraphicalSessionEnd EndSessionWithoutWindow(bool connectionEnded = false)
     {
-        ReportSessionStopping();
+        if (connectionEnded)
+            StatusWriter.Disconnected(SessionId, "connection-lost");
+        else
+            ReportSessionStopping();
         var failures = new List<Exception>();
         void Step(string name, Action step)
         {
@@ -526,13 +544,18 @@ internal sealed class GraphicalSessionHost : IDisposable
         Step("plugin world objects", PluginWorldEntities.Dispose);
         Step("graphical runtime host lease", RuntimeHostLease.Dispose);
         Step("game runtime", Runtime.Dispose);
-        GraphicalSessionEnd end = failures.Count == 0
-            ? GraphicalSessionEnd.Graceful
-            : GraphicalSessionEnd.Incomplete;
-        StatusWriter.Exited(
-            SessionId,
-            end is GraphicalSessionEnd.Graceful ? 0 : 1,
-            end is GraphicalSessionEnd.Graceful ? "graceful" : "shutdown-incomplete");
+        GraphicalSessionEnd end = connectionEnded
+            ? GraphicalSessionEnd.ConnectionLost
+            : failures.Count == 0
+                ? GraphicalSessionEnd.Graceful
+                : GraphicalSessionEnd.Incomplete;
+        (int code, string reason) = end switch
+        {
+            GraphicalSessionEnd.Graceful => (0, "graceful"),
+            GraphicalSessionEnd.ConnectionLost => (5, "connection"),
+            _ => (1, "shutdown-incomplete"),
+        };
+        StatusWriter.Exited(SessionId, code, reason);
         return end;
     }
 

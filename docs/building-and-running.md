@@ -230,6 +230,28 @@ graphical session is driven by the player). The one field the graphical
 client refuses is `"mode": "probe"`, because a probe never selects a
 character and there is no windowed session to show.
 
+The launcher starts every play session with the console:
+
+```bash
+AcDream.App --session-config <file> --console              # a Graphical row
+AcDream.App --session-config <file> --console --no-window  # a Headless row
+```
+
+With `--console` the client reads typed lines from standard input (after the
+password line, when the document's credential provider is `standardInput`)
+and prints chat on standard error. `/window` (or `/window <session id>`)
+opens a game window on the running session, `/close` closes it and the
+session plays on, `/quit` logs the character off and exits; every other line
+is sent as the chat box would send it. `--no-window` starts the session with
+no window, so it needs `--console`. The player closing the window logs the
+character off and ends the client, as it always has; a window the console
+closed, or one whose GPU device was lost, leaves the session playing (without
+the console it logs off). Ctrl+C and Ctrl+Break log off and exit. The
+document's `statusFile` also gets `windowOpened`, `windowClosed` (`reason`:
+`requested`, `closedByUser`, `renderFailed`, `shutdown`) and `windowFailed`
+(`error`). Exit codes: 0 graceful, 2 usage, 3 configuration, 4 credential,
+5 connection, 6 runtime.
+
 Where a document and a startup option say the same thing, the document wins:
 its `pluginTags` outranks `ACDREAM_PLUGIN_TAGS`, and its `pluginSettings`
 outranks `ACDREAM_PLUGIN_SETTINGS_FILE`, which is left unread. A field the
