@@ -1616,7 +1616,6 @@ public sealed class RuntimeItemInteraction : IDisposable
 
     private bool ExecuteUseActions(System.Collections.Generic.IReadOnlyList<ItemPolicyAction> actions)
     {
-        uint openedOrUsed = 0;
         bool acted = false;
         bool busyOwnedByUseReservation = false;
         foreach (var action in actions)
@@ -1633,31 +1632,37 @@ public sealed class RuntimeItemInteraction : IDisposable
                         acted |= _autoWield.TryWield(item);
                     break;
                 case ItemPolicyActionKind.OpenContainedContainer:
+                    // A pack the character carries opens in the inventory
+                    // window, and that asks nothing of the server: the use
+                    // request a useable pack needs is its own SendUse action.
+                    // The main pack is the character itself, which is not
+                    // useable; asking the server to use it takes a busy count
+                    // that some servers never release.
+                    _auxiliaryAction?.Invoke(action);
+                    PolicyActionRequested?.Invoke(action);
+                    acted = true;
+                    break;
                 case ItemPolicyActionKind.SendUse:
-                    if (openedOrUsed != action.ObjectId)
+                    if (_requestUse is not null)
                     {
-                        if (_requestUse is not null)
+                        ItemUseRequestReservation reservation =
+                            BeginUseRequestReservation();
+                        try
                         {
-                            ItemUseRequestReservation reservation =
-                                BeginUseRequestReservation();
-                            try
-                            {
-                                _requestUse(action.ObjectId, reservation);
-                            }
-                            catch
-                            {
-                                reservation.CancelBeforeDispatch();
-                                throw;
-                            }
-                            busyOwnedByUseReservation = true;
+                            _requestUse(action.ObjectId, reservation);
                         }
-                        else
+                        catch
                         {
-                            _sendUse?.Invoke(action.ObjectId);
+                            reservation.CancelBeforeDispatch();
+                            throw;
                         }
-                        openedOrUsed = action.ObjectId;
-                        acted |= _requestUse is not null || _sendUse is not null;
+                        busyOwnedByUseReservation = true;
                     }
+                    else
+                    {
+                        _sendUse?.Invoke(action.ObjectId);
+                    }
+                    acted |= _requestUse is not null || _sendUse is not null;
                     break;
                 case ItemPolicyActionKind.SendUseWithTarget:
                     acted |= _runtimeTransactions.TryDispatchTargetedUse(

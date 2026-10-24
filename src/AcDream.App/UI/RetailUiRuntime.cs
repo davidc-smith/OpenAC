@@ -254,6 +254,12 @@ public sealed record WorldTooltipRuntimeBindings(
     Func<uint, string?> ResolveName,
     Func<bool> Enabled);
 
+/// <summary>What a drag started on the world needs: the object at a screen
+/// point (the player included) and whether the player is out of combat.</summary>
+public sealed record WorldDragRuntimeBindings(
+    Func<float, float, uint?> ObjectAt,
+    Func<bool> OutOfCombat);
+
 public sealed record ConfirmationRuntimeBindings(
     Action<uint, uint, bool> SendResponse);
 
@@ -346,7 +352,8 @@ public sealed record RetailUiRuntimeBindings(
     Func<uint, AcDream.App.Interaction.WorldLabelAnchor?>? WorldLabelAnchor = null,
     PluginCanvasHostServices? PluginCanvases = null,
     Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null,
-    Func<bool>? IsPortalViewVisible = null);
+    Func<bool>? IsPortalViewVisible = null,
+    WorldDragRuntimeBindings? WorldDrag = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -1163,6 +1170,20 @@ public sealed class RetailUiRuntime : IDisposable
 
     public bool TryAnswerConfirmation(uint contextId, bool accept) =>
         _gameplayConfirmationController?.TryAnswer(contextId, accept) == true;
+
+    /// <summary>
+    /// Shows a question the session kept while no window was open. Plugins
+    /// were told when the server asked, so they are not told again.
+    /// </summary>
+    public bool ShowHandedOverConfirmation(GameEvents.CharacterConfirmationRequest request) =>
+        _gameplayConfirmationController?.HandleRequest(request) == true;
+
+    /// <summary>
+    /// The open question, taken out of its dialog without an answer, for the
+    /// session to keep when this window closes; null when none is open.
+    /// </summary>
+    public GameEvents.CharacterConfirmationRequest? TakeOpenConfirmation() =>
+        _gameplayConfirmationController?.TakeOpen();
 
     public bool HandleConfirmationDone(GameEvents.CharacterConfirmationDone done)
         => _gameplayConfirmationController?.HandleDone(done) == true;
@@ -4551,7 +4572,12 @@ public sealed class RetailUiRuntime : IDisposable
             b.Spellbook,
             _bindings.Toolbar.Shortcuts,
             LoadShortcutDigitGraphics(),
-            _bindings.Toolbar.Combat);
+            _bindings.Toolbar.Combat,
+            showWindow: () =>
+            {
+                if (!_panelUi.IsPanelVisible(RetailPanelCatalog.Inventory))
+                    _panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
+            });
         InventoryPanelController = inventory;
         PaperdollController paperdoll = PaperdollController.Bind(
             layout, b.Objects, b.PlayerGuid, b.ResolveIcon, b.Selection, b.ItemInteraction,
@@ -4562,6 +4588,16 @@ public sealed class RetailUiRuntime : IDisposable
         Host.WindowManager.AttachController(
             WindowNames.Inventory,
             new RetainedPanelControllerGroup(inventory, paperdoll));
+
+        if (_bindings.WorldDrag is { } worldDrag)
+        {
+            Host.Root.WorldDragRequested = (x, y) => WorldDrag.Build(
+                worldDrag.ObjectAt(x, y) ?? 0u,
+                b.PlayerGuid(),
+                worldDrag.OutOfCombat(),
+                b.ResolveIcon,
+                b.ResolveDragIcon);
+        }
 
         PaperdollViewportWidget = layout.FindElement(0x100001D5u) as UiViewport;
         InventoryFrame = (UiNineSlicePanel)handle.OuterFrame;
@@ -4755,7 +4791,12 @@ public sealed class RetailUiRuntime : IDisposable
                 },
                 _bindings.Options.DisplaySystemMessage,
                 ResolveAppropriateItemName,
-                emptySlot));
+                emptySlot,
+                ExamineItem: id =>
+                {
+                    inventory.Selection.Select(id, SelectionChangeSource.Inventory);
+                    inventory.ItemInteraction.ExamineSelectedOrEnterMode(id);
+                }));
         if (controller is null)
         {
             Console.WriteLine("[UI] salvage window controls are unavailable.");
@@ -4991,7 +5032,7 @@ public sealed class RetailUiRuntime : IDisposable
         Console.WriteLine("[UI] retail house purchase window from LayoutDesc 0x2100000E.");
     }
 
-    private void ConfirmHousePayment(string question, Action onYes)
+    private void ConfirmHousePayment(string question, Action<bool> answer)
     {
         if (EnsureDialogFactory() is not { } dialogs)
         {
@@ -4999,10 +5040,7 @@ public sealed class RetailUiRuntime : IDisposable
             return;
         }
         dialogs.MakeDialog(RetailDialogData.Confirmation(question), result =>
-        {
-            if (result.GetBoolean(RetailDialogProperty.ConfirmationResult))
-                onYes();
-        });
+            answer(result.GetBoolean(RetailDialogProperty.ConfirmationResult)));
     }
 
     private void ConfigureCharacterManagement()
@@ -5505,6 +5543,7 @@ public sealed class RetailUiRuntime : IDisposable
                 // showing one. Both hand the plugins' handles back to the
                 // registry for the next interface to mount again.
                 _bindings.Plugins?.UnbindCanvasHost();
+                _bindings.Plugins?.UnbindPanelHost();
                 // Every markup canvas left the table through its teardown just now.
                 _markupCanvases = null;
                 _pluginCanvasSurface?.Dispose();

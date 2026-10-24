@@ -18,9 +18,10 @@ namespace AcDream.Runtime.Chat;
 /// </param>
 /// <param name="Spans">
 /// The line split at its tags (a speaker's tell tag and any other tag the
-/// line holds; on a plugin's own line, its coordinate tags and the coordinate
-/// pairs it writes), or null when it has none. The tags themselves are not in
-/// the text. The spans always rejoin to <paramref name="Text"/>.
+/// line holds, the coordinate pairs it shows unless it is combat text, and on
+/// a plugin's own line its coordinate tags), or null when it has none. The
+/// tags themselves are not in the text. The spans always rejoin to
+/// <paramref name="Text"/>.
 /// </param>
 public readonly record struct RuntimeChatLine(
     long Sequence,
@@ -144,8 +145,12 @@ public sealed class RuntimeChatFeed : IDisposable
             // combat line among them, is read for tags the same way: a tag is
             // hidden, and the speaker's name in its tell tag is a link that
             // starts a tell. A coordinate tag in the words is shown as plain
-            // text, never as a link a click would hand to plugins.
+            // text and its hidden value goes nowhere. A coordinate pair the
+            // line shows is a link to exactly that pair, except in combat
+            // text, so a click reports what the reader sees.
             spans = ChatTagMarkup.ParseLine(markup);
+            if (entry.Kind != ChatKind.Combat)
+                spans = ChatCoordinateLinks.LinkShown(spans) ?? spans;
             if (!spans.Any(static span => span.Tag is not null))
             {
                 markup = string.Concat(spans.Select(static span => span.Text));

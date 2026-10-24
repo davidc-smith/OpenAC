@@ -1958,7 +1958,7 @@ public sealed class GameEventWiringTests
     }
 
     [Fact]
-    public void AGuestListReply_PrintsTheListInGreen()
+    public void AGuestListReply_PrintsTheListInGreenAsOneText()
     {
         var lines = new List<(string Text, RetailLogTextType Type)>();
         var dispatcher = new GameEventDispatcher();
@@ -1967,7 +1967,7 @@ public sealed class GameEventWiringTests
             onInterfaceText: (text, type) => lines.Add((text, type)));
 
         byte[] wire = new AceWireWriter()
-            .Write(0x10000002u).Write(0u).Write(0u)
+            .Write(0x10000002u).Write(0x3u).Write(0x50000001u)
             .Write((ushort)1).Write((ushort)64)
             .Write(0x50000002u).Write(1u).WriteString16L("Alice")
             .Write(0)
@@ -1978,8 +1978,8 @@ public sealed class GameEventWiringTests
         Assert.Equal(
             new[]
             {
-                ("Guests:", RetailLogTextType.Default),
-                (" Alice *", RetailLogTextType.Default),
+                ("Guests:\n  Alice *\nAllegiance Permissions: guest access\n[ open house ]\n",
+                    RetailLogTextType.Default),
             },
             lines);
     }

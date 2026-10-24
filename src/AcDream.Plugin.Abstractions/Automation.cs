@@ -932,13 +932,16 @@ public interface IPluginChat
 
     /// <summary>
     /// Raised when the player clicks a coordinate link in the main chat
-    /// window. Only a line a plugin posted (<see cref="PostSystemMessage"/>,
-    /// <see cref="PostMessage"/>) carries one: its
-    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;caption&lt;\COORD&gt;</c> tags, and
-    /// every coordinate pair <see cref="PluginChatCoordinateParser"/> reads in
-    /// its plain text ("meet at 42.1N 33.5E"). What players say, tell and post
-    /// on channels, and the server's own lines, are shown as they arrived and
-    /// hold no coordinate link, even when they hold tag text. Clicking a
+    /// window. Every coordinate pair <see cref="PluginChatCoordinateParser"/>
+    /// reads in the text a line shows ("meet at 42.1N 33.5E", "Your corpse is
+    /// located at (42.1N, 33.5E).") is a link, in every line but combat text:
+    /// what players say, tell and post on channels, the server's own lines and
+    /// a plugin's. Its coordinate is the pair as shown. A line a plugin posted
+    /// (<see cref="PostSystemMessage"/>, <see cref="PostMessage"/>) also
+    /// carries its
+    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;caption&lt;\COORD&gt;</c> tags as
+    /// links; in any other line such a tag is not a link, its caption is shown
+    /// as plain text, and its hidden value is never reported. Clicking a
     /// player's name starts a tell instead and raises nothing.
     /// </summary>
     event Action<PluginChatLinkClicked> LinkClicked

@@ -917,7 +917,7 @@ public sealed class GameRuntime
         {
             uint player = PlayerIdentity.ServerGuid;
             uint sought =
-                MovementOwner.Controller?.Movement.MoveTo?.TopLevelObjectId
+                MovementOwner.Controller?.ActiveMoveTo?.TopLevelObjectId
                 ?? 0u;
             if (sought == 0u
                 || sought == player

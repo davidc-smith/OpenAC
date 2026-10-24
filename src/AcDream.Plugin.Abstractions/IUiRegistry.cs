@@ -207,10 +207,12 @@ public interface IUiRegistry
     /// The dialog's handle once it is queued. Disposing it withdraws a
     /// question that has gone stale: a dialog still showing or queued closes
     /// and <paramref name="onResult"/> gets the last button, as if the player
-    /// had pressed Escape; once the dialog is answered it does nothing. Null
-    /// on a host that draws nothing (which is what the default implementation
-    /// does), before the interface is up, and when the dialog could not be
-    /// put on screen; then <paramref name="onResult"/> is never called.
+    /// had pressed Escape; once the dialog is answered it does nothing.
+    /// Dispose it on the thread that calls the plugin's tick, since disposing
+    /// changes the interface directly. Null on a host that draws nothing
+    /// (which is what the default implementation does), before the interface
+    /// is up, and when the dialog could not be put on screen; then
+    /// <paramref name="onResult"/> is never called.
     /// </returns>
     /// <exception cref="ArgumentException">
     /// On a host that draws: the dialog has no buttons, more than four, or a

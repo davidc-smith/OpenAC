@@ -61,11 +61,15 @@ public sealed class LauncherHeadlessCommandLineContractTests : IDisposable
         Assert.Equal(ConfigPath, parsed.ConfigurationPath);
     }
 
+    /// <summary>
+    /// A headless row runs the windowless host only where no window can open (no display);
+    /// elsewhere it starts the graphical client with no window.
+    /// </summary>
     [Fact]
-    public void HeadlessPlayArgumentsParseAsAHeadlessRunCommand()
+    public void HeadlessPlayArgumentsWithoutWindowSupportParseAsAHeadlessRunCommand()
     {
         LauncherProcessSpec spec = ExecutableSet()
-            .CreatePlaySpec(LaunchMode.Headless, ConfigPath);
+            .CreatePlaySpec(LaunchMode.Headless, ConfigPath, windowSupport: false);
 
         HeadlessCommandLine parsed = HeadlessCommandLine.Parse(spec.Arguments);
 
@@ -76,11 +80,16 @@ public sealed class LauncherHeadlessCommandLineContractTests : IDisposable
     [Theory]
     [InlineData(LaunchMode.Gui)]
     [InlineData(LaunchMode.GuiSelect)]
+    [InlineData(LaunchMode.Headless)]
     public void GraphicalArgumentsAreNotAHeadlessCommandLine(LaunchMode mode)
     {
         LauncherProcessSpec spec = ExecutableSet().CreatePlaySpec(mode, ConfigPath);
 
-        Assert.Equal(["--session-config", ConfigPath], spec.Arguments);
+        Assert.Equal(
+            mode == LaunchMode.Headless
+                ? ["--session-config", ConfigPath, "--console", "--no-window"]
+                : ["--session-config", ConfigPath, "--console"],
+            spec.Arguments);
         Assert.Throws<HeadlessCommandLineException>(
             () => HeadlessCommandLine.Parse(spec.Arguments));
     }

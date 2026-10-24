@@ -42,6 +42,7 @@ public sealed class MainWindowViewTests
         ("NavDataDialog", typeof(Border)),
         ("OwnServerNameTextBox", typeof(TextBox)),
         ("MigrationNoticeCloseButton", typeof(Button)),
+        ("ClosePromptCancelButton", typeof(Button)),
     ];
 
     [AvaloniaFact]

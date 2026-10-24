@@ -65,48 +65,67 @@ public sealed class GameWindowCrashStatusTests
         foreach (string getter in new[] { "get__playerController", "get_CellPosition", "get_State", "get_Capabilities", "get_Width", "get_Height", "get_SampleCount" })
             Assert.Single(calls, call => call.Target.Name == getter);
         Assert.DoesNotContain(calls, call => call.Target.Name == "get_Position" || call.Target.Name == "get_Device");
-        Assert.DoesNotContain(CompiledCallGraph.Read(RequiredMethod("ReportExited")), call =>
+        Assert.DoesNotContain(CompiledCallGraph.Read(HostMethod("ReportExited")), call =>
             call.Target.DeclaringType == typeof(LocalCrashReportWriter));
     }
 
     [Fact]
     public void ReportExited_ChecksRunFailureBeforeEitherGracefulOrShutdownIncompletePaths()
     {
-        MethodInfo reportExited = RequiredMethod("ReportExited");
+        // The process's last status line is the session host's. It is told
+        // whether the window's run failed, and asks that first; then whether
+        // the login found no character to enter (the window closed for it);
+        // only then how the window shut down.
+        MethodInfo reportExited = HostMethod("ReportExited");
         IReadOnlyList<CompiledCall> calls = CompiledCallGraph.Read(reportExited);
-        CompiledFieldReference failureRead = Assert.Single(
-            CompiledCallGraph.ReadFieldReferences(reportExited),
-            field => field.Field.Name == "_runFailure"
-                && field.OpCode == OpCodes.Ldfld);
         CompiledCall[] exited = calls
             .Where(call => call.Target.DeclaringType == typeof(SessionStatusWriter)
                 && call.Target.Name == nameof(SessionStatusWriter.Exited))
             .ToArray();
-        Assert.Equal(3, exited.Length);
+        Assert.Equal(4, exited.Length);
         CompiledCall status = Assert.Single(
             calls,
             call => call.Target.DeclaringType == typeof(GameWindowLifetimeReport)
                 && call.Target.Name == "get_Status");
-
-        Assert.True(failureRead.Offset < exited[0].Offset);
-        Assert.True(exited[0].Offset < status.Offset);
-        Assert.True(status.Offset < exited[1].Offset);
-        Assert.True(exited[1].Offset < exited[2].Offset);
+        Assert.True(exited[0].Offset < exited[1].Offset);
+        Assert.True(exited[1].Offset < status.Offset);
+        Assert.True(status.Offset < exited[2].Offset);
+        Assert.True(exited[2].Offset < exited[3].Offset);
         Assert.Equal(
-            ["app", "crashed", "graceful", "shutdown-incomplete"],
+            ["report", "crashed", "graceful", "shutdown-incomplete"],
             CompiledCallGraph.ReadStringLiterals(reportExited));
 
-        MethodInfo completeShutdown = RequiredMethod("CompleteShutdown");
-        Assert.Equal(
-            2,
-            CompiledCallGraph.Read(completeShutdown).Count(call =>
-                call.Target.DeclaringType == typeof(GameWindow)
-                && call.Target.Name == "ReportExited"));
-        Assert.Equal(
-            exited.Length,
-            CompiledCallGraph.ReadDeclared(typeof(GameWindow)).Count(call =>
-                call.Target.DeclaringType == typeof(SessionStatusWriter)
-                && call.Target.Name == nameof(SessionStatusWriter.Exited)));
+        // The session's loop hands over what the window latched, after the
+        // window's own shutdown has run: a failed window present from the
+        // start is reported crashed, any other end from how it closed.
+        MethodInfo run = typeof(AcDream.App.Hosting.GraphicalSessionWindowLoop)
+            .GetMethod("RunWindow", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingMethodException("GraphicalSessionWindowLoop", "RunWindow");
+        IReadOnlyList<CompiledCall> runCalls = CompiledCallGraph.Read(run);
+        CompiledCall dispose = Assert.Single(
+            runCalls,
+            call => call.Target.DeclaringType == typeof(GameWindow)
+                && call.Target.Name == nameof(GameWindow.Dispose));
+        CompiledCall runFailed = Assert.Single(
+            runCalls,
+            call => call.Target.DeclaringType == typeof(GameWindow)
+                && call.Target.Name == "get_RunFailed");
+        CompiledCall[] reports = runCalls
+            .Where(call => call.Target.Name == "ReportExited")
+            .ToArray();
+        Assert.Equal(2, reports.Length);
+        Assert.All(reports, report => Assert.True(dispose.Offset < report.Offset));
+        Assert.True(runFailed.Offset < reports[1].Offset);
+        Assert.Contains(
+            CompiledCallGraph.ReadFieldReferences(RequiredMethod("get_RunFailed")),
+            field => field.Field.Name == "_runFailure"
+                && field.OpCode == OpCodes.Ldfld);
+
+        // The window writes no terminal line of its own.
+        Assert.DoesNotContain(
+            CompiledCallGraph.ReadDeclared(typeof(GameWindow)),
+            call => call.Target.DeclaringType == typeof(SessionStatusWriter)
+                && call.Target.Name == nameof(SessionStatusWriter.Exited));
     }
 
     [Fact]
@@ -126,6 +145,13 @@ public sealed class GameWindowCrashStatusTests
             reference => reference.Field == field
                 && reference.OpCode == OpCodes.Stfld);
     }
+
+    private static MethodInfo HostMethod(string name) =>
+        typeof(AcDream.App.Hosting.GraphicalSessionHost).GetMethod(
+            name,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+        ?? throw new MissingMethodException(
+            typeof(AcDream.App.Hosting.GraphicalSessionHost).FullName, name);
 
     private static MethodInfo RequiredMethod(string name) =>
         typeof(GameWindow).GetMethod(

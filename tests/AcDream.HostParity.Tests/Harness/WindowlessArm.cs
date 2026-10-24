@@ -4,6 +4,7 @@ using AcDream.Runtime.Chat;
 using AcDream.Headless.Plugins;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
+using AcDream.Runtime.Session.Windowless;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Session;
 
@@ -232,8 +233,8 @@ internal sealed class WindowlessArm : ParityArm
     protected override RuntimeLocalPlayerFrameController
         CreateFrameController() =>
         Runtime.CreateLocalPlayerFrameController(
-            new HeadlessLocalPlayerFrameHost(Runtime, Session),
-            new HeadlessMovementInputSource(Runtime.MovementOwner));
+            new RuntimeWindowlessLocalPlayerFrameHost(Runtime, Session),
+            new RuntimeWindowlessMovementInputSource(Runtime.MovementOwner));
 
     protected override void DisposeHost() => _host.Dispose();
 

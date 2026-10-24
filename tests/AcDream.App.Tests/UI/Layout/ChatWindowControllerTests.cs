@@ -743,7 +743,7 @@ public class ChatWindowControllerTests
     }
 
     [Fact]
-    public void ClickingACoordinateOrCoordinateTagAPlayerTypedRaisesNothing()
+    public void ClickingAPlayersOrTheServersCoordinateRaisesThePairItShows()
     {
         var log = new ChatLog();
         var (rootInfo, layout, vm) = BuildTestTree(log);
@@ -764,9 +764,36 @@ public class ChatWindowControllerTests
         int typed = lines[0].Text.IndexOf("42.1N", StringComparison.Ordinal);
         int server = lines[1].Text.IndexOf("42.1N", StringComparison.Ordinal);
 
-        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, typed + 3)));
-        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(1, server + 3)));
+        // The typed tag's hidden 0N, 0E is never reported; the caption is a
+        // pair, and a click reports exactly that pair.
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(0, typed + 3)));
+        Assert.True(ctrl.TryHandleTagClick(new UiText.Pos(1, server + 3)));
 
+        Assert.Equal(2, clicked.Count);
+        Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(33.5, 42.1), clicked[0].Coordinate);
+        Assert.Equal("42.1N, 33.5E", clicked[0].DisplayText);
+        Assert.Equal(new AcDream.Plugin.Abstractions.PluginChatCoordinate(-33.5, 42.1), clicked[1].Coordinate);
+        Assert.Equal("42.1N, 33.5W", clicked[1].DisplayText);
+    }
+
+    [Fact]
+    public void ClickingACombatLinesCoordinateRaisesNothing()
+    {
+        var log = new ChatLog();
+        var (rootInfo, layout, vm) = BuildTestTree(log);
+        var filters = new ChatWindowState();
+        filters.SetFilter(ChatWindowState.MainWindowId, ulong.MaxValue);
+        var ctrl = ChatWindowController.Bind(
+            rootInfo, layout, vm, () => new CaptureBus(), filters, null, null,
+            NoTex, new RuntimeChatEntryOwner())!;
+        var clicked = new List<AcDream.Plugin.Abstractions.PluginChatLinkClicked>();
+        ctrl.ChatLinkClicked = clicked.Add;
+
+        log.OnCombatLine("You hit 3N 4E for 9 points.", (uint)RetailLogTextType.CombatSelf);
+        UiText.Line line = Assert.Single(ctrl.Transcript.LinesProvider());
+        int column = line.Text.IndexOf("3N", StringComparison.Ordinal);
+
+        Assert.False(ctrl.TryHandleTagClick(new UiText.Pos(0, column + 1)));
         Assert.Empty(clicked);
     }
 

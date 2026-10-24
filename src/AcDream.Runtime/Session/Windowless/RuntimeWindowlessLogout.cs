@@ -1,19 +1,23 @@
 using AcDream.Core.Items;
-using AcDream.Runtime;
 using AcDream.Runtime.World;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal enum HeadlessLogoutOutcome
+internal enum RuntimeWindowlessLogoutOutcome
 {
     None,
     Completed,
     TimedOut,
 }
 
-// Sequences a plugin-requested logoff headless: no portal-tunnel presentation to route through, so
-// it drives Begin/Complete on the session's own tick instead of LocalPlayerTeleportController.
-internal sealed class HeadlessLogoutAutomation
+/// <summary>
+/// A plugin-requested log off with no window: there is no portal-tunnel
+/// presentation to route it through, so it begins the log off at once and
+/// completes it on the session's own tick once the server confirms it,
+/// returning the character to character selection. Every client without a
+/// window uses it.
+/// </summary>
+internal sealed class RuntimeWindowlessLogout
 {
     // Above the longest server logoff hold, so a real confirmation lands first.
     internal static readonly TimeSpan DefaultConfirmationDeadline =
@@ -28,7 +32,7 @@ internal sealed class HeadlessLogoutAutomation
     private bool _completed;
     private long _deadlineTimestamp;
 
-    internal HeadlessLogoutAutomation(
+    internal RuntimeWindowlessLogout(
         GameRuntime runtime,
         TimeProvider? timeProvider = null,
         TimeSpan? confirmationDeadline = null,
@@ -65,8 +69,11 @@ internal sealed class HeadlessLogoutAutomation
             {
                 return false;
             }
+            // A log off after an earlier one completed (the character entered
+            // the world again) is a new one.
             _began = false;
-            _deadlineTimestamp = HeadlessMonotonicTime.Add(
+            _completed = false;
+            _deadlineTimestamp = AddClamped(
                 _timeProvider,
                 _timeProvider.GetTimestamp(),
                 _confirmationDeadline);
@@ -97,12 +104,12 @@ internal sealed class HeadlessLogoutAutomation
         }
     }
 
-    internal HeadlessLogoutOutcome Tick()
+    internal RuntimeWindowlessLogoutOutcome Tick()
     {
         lock (_gate)
         {
             if (_completed || !_runtime.TransitOwner.IsLogoutActive)
-                return HeadlessLogoutOutcome.None;
+                return RuntimeWindowlessLogoutOutcome.None;
             if (!_began)
                 TryBeginLocked();
             if (_began
@@ -116,14 +123,29 @@ internal sealed class HeadlessLogoutAutomation
             {
                 _runtime.TransitOwner.CompleteLogout();
                 _completed = true;
-                return HeadlessLogoutOutcome.Completed;
+                return RuntimeWindowlessLogoutOutcome.Completed;
             }
             if (_timeProvider.GetTimestamp() < _deadlineTimestamp)
-                return HeadlessLogoutOutcome.None;
+                return RuntimeWindowlessLogoutOutcome.None;
 
             _completed = true;
             _runtime.TransitOwner.CancelLogoutRequest();
-            return HeadlessLogoutOutcome.TimedOut;
+            return RuntimeWindowlessLogoutOutcome.TimedOut;
         }
+    }
+
+    // A deadline past the end of the clock never comes, rather than wrapping.
+    private static long AddClamped(
+        TimeProvider timeProvider,
+        long timestamp,
+        TimeSpan duration)
+    {
+        double ticks = duration.TotalSeconds * timeProvider.TimestampFrequency;
+        if (!double.IsFinite(ticks) || ticks > long.MaxValue)
+            return long.MaxValue;
+        long delta = Math.Max(1L, checked((long)Math.Ceiling(ticks)));
+        return timestamp > long.MaxValue - delta
+            ? long.MaxValue
+            : timestamp + delta;
     }
 }

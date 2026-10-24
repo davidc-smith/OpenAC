@@ -268,6 +268,15 @@ public sealed class UiRoot : UiElement
     /// </summary>
     public Func<object, Vector2, bool>? DragReleaseInterceptor { get; set; }
 
+    /// <summary>Asked when a left press on the world (over no UI element) moves
+    /// past the drag distance: what the press point lifts, if anything. The
+    /// point is the press, not where the pointer is now, so the lift is the
+    /// object that was under the pointer when the button went down.</summary>
+    public Func<int /*x*/, int /*y*/, WorldDragStart?>? WorldDragRequested { get; set; }
+
+    /// <summary>A left press on the world that may still become a drag.</summary>
+    private bool _worldDragCandidate;
+
     /// <summary>Raised after a registered top-level window finishes moving.</summary>
     public event Action<string, UiElement>? WindowMoved;
 
@@ -544,8 +553,33 @@ public sealed class UiRoot : UiElement
             return;
         }
 
+        if (_worldDragCandidate
+            && LeftButtonDown
+            && (Math.Abs(x - _pressX) > DragDistanceThreshold
+                || Math.Abs(y - _pressY) > DragDistanceThreshold))
+        {
+            _worldDragCandidate = false;
+            if (WorldDragRequested?.Invoke(_pressX, _pressY) is { } start)
+            {
+                BeginWorldDrag(start);
+                UpdateDragHover(x, y);
+                return;
+            }
+        }
+
         UpdateHover(x, y);
         WorldMouseMoveFallThrough?.Invoke(x, y);
+    }
+
+    /// <summary>A drag lifted off the world has no element to start from, so the
+    /// root holds it: it captures the pointer and is the drag source, and the
+    /// release lands on whatever is under the pointer as any drag does.</summary>
+    private void BeginWorldDrag(WorldDragStart start)
+    {
+        DragSource = this;
+        DragPayload = start.Payload;
+        _dragGhost = start.Ghost;
+        SetCapture(this);
     }
 
     private UiElement? _activePopup;
@@ -728,6 +762,7 @@ public sealed class UiRoot : UiElement
         if (target is null)
         {
             if (btn == UiMouseButton.Left) SetKeyboardFocus(null);
+            _worldDragCandidate = btn == UiMouseButton.Left;
             WorldMouseFallThrough?.Invoke(btn, x, y, flags);
             return;
         }
@@ -826,6 +861,8 @@ public sealed class UiRoot : UiElement
         (x, y) = MapWindowToCanvas(x, y);
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: false);
+        if (btn == UiMouseButton.Left)
+            _worldDragCandidate = false;
         if (_swallowedReleases.Remove(btn))
             return;
 

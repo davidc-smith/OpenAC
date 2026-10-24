@@ -1714,10 +1714,13 @@ public sealed class RuntimeInitialCreateContinuationExecutorTests
         System.Reflection.FieldInfo field = executorType.GetField(
             "_registerDeferredChild",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-        var original = (Func<WorldSession.EntitySpawn, bool, RuntimeEntityRegistrationResult>)
+        var original = (Func<WorldSession.EntitySpawn, bool, bool, RuntimeEntityRegistrationResult>)
             field.GetValue(lifetime.InitialCreateExecution)!;
-        Func<WorldSession.EntitySpawn, bool, RuntimeEntityRegistrationResult> wrapped =
-            (spawn, isLocalPlayer) => wrapper(original, spawn, isLocalPlayer);
+        Func<WorldSession.EntitySpawn, bool, bool, RuntimeEntityRegistrationResult> wrapped =
+            (spawn, isLocalPlayer, replaceExisting) => wrapper(
+                (s, local) => original(s, local, replaceExisting),
+                spawn,
+                isLocalPlayer);
         field.SetValue(lifetime.InitialCreateExecution, wrapped);
     }
 

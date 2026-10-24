@@ -102,14 +102,14 @@
       "acdream-plugincheck": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Launcher.Core": "[0.1.26, )"
+          "AcDream.Launcher.Core": "[0.1.27, )"
         }
       },
       "acdream.launcher.core": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Platform": "[0.1.26, )",
-          "AcDream.Rynth.NavData": "[0.1.26, )"
+          "AcDream.Platform": "[0.1.27, )",
+          "AcDream.Rynth.NavData": "[0.1.27, )"
         }
       },
       "acdream.platform": {

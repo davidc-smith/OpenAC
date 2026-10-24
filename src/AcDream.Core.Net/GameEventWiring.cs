@@ -688,13 +688,11 @@ public static class GameEventWiring
             var p = GameEvents.ParseUpdateHar(e.Payload.Span);
             if (p is null) return;
 
-            foreach (string line in HouseGuestListText.Lines(p.Value))
-            {
-                if (onInterfaceText is not null)
-                    onInterfaceText(line, RetailLogTextType.Default);
-                else
-                    chat.OnSystemMessage(line, chatType: (uint)RetailLogTextType.Default);
-            }
+            string text = HouseGuestListText.Compose(p.Value);
+            if (onInterfaceText is not null)
+                onInterfaceText(text, RetailLogTextType.Default);
+            else
+                chat.OnSystemMessage(text, chatType: (uint)RetailLogTextType.Default);
         });
 
         registrar.Register(GameEventType.HouseUpdateRestrictions, e =>

@@ -3,15 +3,18 @@ using AcDream.Core.Net.Messages;
 
 namespace AcDream.Core.Net.Tests.Messages;
 
-/// <summary>Public/private string property updates (0x02D6 / 0x02D5), as ACE sends them.</summary>
+/// <summary>
+/// Public/private string property updates (0x02D6 / 0x02D5). The public
+/// message carries the object id before the property.
+/// </summary>
 public sealed class UpdatePropertyStringTests
 {
     private static byte[] Text(string s) =>
         new byte[] { (byte)s.Length, 0 }.Concat(Encoding.GetEncoding(1252).GetBytes(s)).ToArray();
 
-    // opcode, seq, property=1, guid=0x5000002A, 3 pad, len 18, text (2+18=20, no pad)
+    // opcode, seq, guid=0x5000002A, property=1, 3 pad, len 18, text (2+18=20, no pad)
     private static byte[] PublicSample() => new byte[]
-        { 0xD6, 0x02, 0, 0,  7,  1, 0, 0, 0,  0x2A, 0, 0, 0x50,  0, 0, 0 }
+        { 0xD6, 0x02, 0, 0,  7,  0x2A, 0, 0, 0x50,  1, 0, 0, 0,  0, 0, 0 }
         .Concat(Text("RabidDee's Cottage")).ToArray();
 
     // opcode, seq, property=1, 3 pad, len 18, text
@@ -20,7 +23,7 @@ public sealed class UpdatePropertyStringTests
         .Concat(Text("RabidDee's Cottage")).ToArray();
 
     [Fact]
-    public void Public_ParsesPropertyGuidAndName()
+    public void Public_ParsesGuidPropertyAndName()
     {
         var p = PublicUpdatePropertyString.TryParse(PublicSample());
         Assert.NotNull(p);
@@ -41,8 +44,11 @@ public sealed class UpdatePropertyStringTests
     [Fact]
     public void Public_EmptyString_Parses()
     {
-        byte[] b = new byte[] { 0xD6, 2, 0, 0, 7, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-        Assert.Equal("", PublicUpdatePropertyString.TryParse(b)!.Value.Value);
+        byte[] b = new byte[] { 0xD6, 2, 0, 0, 7, 0x2A, 0, 0, 0x50, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        var p = PublicUpdatePropertyString.TryParse(b)!.Value;
+        Assert.Equal(0x5000002Au, p.Guid);
+        Assert.Equal(5u, p.Property);
+        Assert.Equal("", p.Value);
     }
 
     [Fact]

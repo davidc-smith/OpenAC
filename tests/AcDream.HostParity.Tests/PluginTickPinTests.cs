@@ -29,7 +29,7 @@ public sealed class PluginTickPinTests
     /// <summary>Where each client feeds the clock, by file.</summary>
     private static readonly string[] HostTickSteps =
     [
-        "src/AcDream.App/Rendering/GameWindow.cs",
+        "src/AcDream.App/Hosting/GraphicalSessionHost.cs",
         "src/AcDream.Headless/Hosting/HeadlessSessionHost.cs",
     ];
 

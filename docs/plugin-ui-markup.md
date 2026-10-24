@@ -1255,15 +1255,19 @@ container as the outer ones, after their section's label.
 A `name` (or `id`) inside a template is remembered per item. The client
 stores it as `name#k1/k2`: the name, then the key of each enclosing repeat,
 outermost first (`Convert.ToString` of the key, culture-invariant). Keys are
-joined with `/`, so keys that themselves contain `/` can collide; use keys
-without `/`. Each item keeps its own expander, split or list state, and it
-follows the item when the list is reordered.
+joined with `/`; a `/` or `%` inside a key is stored as `%2F` or `%25`, so
+any key text is safe. Each item keeps its own expander, split or list state,
+and it follows the item when the list is reordered. Two repeats in one
+window whose templates use the same name and whose items share a key share
+that remembered value, so give each template its own names.
 
 When an item's key leaves the list, the client forgets what that item's
 controls remembered (and what the copies of repeats nested in it
 remembered), so short-lived keys such as item or monster ids don't pile up
-in the settings file. An item that comes back starts from its markup
-defaults. Closing the window forgets nothing.
+in the settings file. Only the names in that repeat's template are
+forgotten: another repeat keyed by the same ids keeps its state. An item
+that comes back starts from its markup defaults. Closing the window forgets
+nothing.
 
 The by-name calls on `IUiRegistry` (`ControlExists`, `SetControlLabel`,
 `SetControlVisible`) don't reach inside a `<repeat>`: a template name is on

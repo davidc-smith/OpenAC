@@ -3,15 +3,16 @@ using AcDream.Runtime.Entities;
 using AcDream.Runtime.Physics;
 using AcDream.Runtime.Session;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal sealed class HeadlessSessionEventRoute : ILiveSessionEventRouting
+internal sealed class RuntimeWindowlessEventRoute : ILiveSessionEventRouting
 {
     private readonly ILiveSessionEventRouting _events;
     private readonly GameRuntime _runtime;
     private readonly IRuntimePlacementProjectionSink _placements;
     private readonly RuntimeFirstEntryDriveController? _firstEntry;
     private readonly RuntimeAcceptedPositionDriveController? _acceptedPositionDrive;
+    private readonly RuntimeRemotePlacementDriveController? _remotePlacementDrive;
     private readonly Action<RuntimeEntityRecord>? _localPlayerCompleted;
     private RuntimePlacementProjectionSubscription? _subscription;
     private RuntimeGenerationToken _attachedGeneration;
@@ -19,13 +20,14 @@ internal sealed class HeadlessSessionEventRoute : ILiveSessionEventRouting
     private bool _eventsDisposed;
     private bool _disposed;
 
-    internal HeadlessSessionEventRoute(
+    internal RuntimeWindowlessEventRoute(
         ILiveSessionEventRouting events,
         GameRuntime runtime,
         IRuntimePlacementProjectionSink placements,
         RuntimeFirstEntryDriveController? firstEntry = null,
         Action<RuntimeEntityRecord>? localPlayerCompleted = null,
-        RuntimeAcceptedPositionDriveController? acceptedPositionDrive = null)
+        RuntimeAcceptedPositionDriveController? acceptedPositionDrive = null,
+        RuntimeRemotePlacementDriveController? remotePlacementDrive = null)
     {
         _events = events ?? throw new ArgumentNullException(nameof(events));
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -34,6 +36,7 @@ internal sealed class HeadlessSessionEventRoute : ILiveSessionEventRouting
         _firstEntry = firstEntry;
         _localPlayerCompleted = localPlayerCompleted;
         _acceptedPositionDrive = acceptedPositionDrive;
+        _remotePlacementDrive = remotePlacementDrive;
     }
 
     public void Attach()
@@ -46,6 +49,7 @@ internal sealed class HeadlessSessionEventRoute : ILiveSessionEventRouting
         _attachedGeneration = _runtime.Generation;
         _firstEntry?.AttachRoute(this, _localPlayerCompleted);
         _acceptedPositionDrive?.AttachRoute(this);
+        _remotePlacementDrive?.AttachRoute(this);
         _events.Attach();
         _subscription = new RuntimePlacementProjectionSubscription(
             _runtime,
@@ -74,6 +78,7 @@ internal sealed class HeadlessSessionEventRoute : ILiveSessionEventRouting
         Interlocked.Exchange(ref _subscription, null)?.Dispose();
         _firstEntry?.DetachRoute(this);
         _acceptedPositionDrive?.DetachRoute(this);
+        _remotePlacementDrive?.DetachRoute(this);
         if (!_eventsDisposed)
         {
             _events.Dispose();

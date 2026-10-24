@@ -650,6 +650,26 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
             registration.Unmount(forget: false);
     }
 
+    /// <summary>
+    /// The interface the panels were mounted in is going away while the
+    /// session and its plugins play on: every panel is queued to be mounted
+    /// again by the next interface, keeping the plugins' bindings. The old
+    /// interface takes its elements down with it.
+    /// </summary>
+    internal void UnbindPanelHost()
+    {
+        lock (_gate)
+        {
+            foreach (Registration registration in _registrations.Values)
+            {
+                registration.Drained = false;
+                registration.Root = null;
+                registration.Element = null;
+                registration.WindowCleanup = null;
+            }
+        }
+    }
+
     public bool ToggleClientWindow(PluginClientWindow window)
     {
         Func<PluginClientWindow, bool>? toggle;
@@ -1102,17 +1122,9 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
     {
         if (root.Name?.Equals(name, StringComparison.Ordinal) == true)
             return root;
-        HashSet<UiElement>? rows = null;
         foreach (UiElement child in root.Children)
         {
-            if (child is UiMarkupRepeat repeat)
-            {
-                rows ??= new HashSet<UiElement>(ReferenceEqualityComparer.Instance);
-                foreach (UiMarkupRepeat.Copy copy in repeat.Copies)
-                    rows.UnionWith(repeat.Span(copy));
-                continue;
-            }
-            if (rows?.Contains(child) == true)
+            if (child is UiMarkupRepeat || child.IsRepeatRow)
                 continue;
             UiElement? found = FindByName(child, name);
             if (found is not null)

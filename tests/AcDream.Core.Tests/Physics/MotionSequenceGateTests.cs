@@ -20,6 +20,30 @@ public class PhysicsTimestampGateTests
     }
 
     [Fact]
+    public void Replacement_TakesEveryCounterWhateverItsInstance()
+    {
+        var gate = new PhysicsTimestampGate();
+        Assert.Equal(
+            CreateObjectTimestampDisposition.InitialGeneration,
+            gate.SeedForReplacement(1, 1, 1, 1, 1, 1, 1, 1, 5));
+
+        // Same instance and an older one both replace the object outright.
+        Assert.Equal(
+            CreateObjectTimestampDisposition.NewGeneration,
+            gate.SeedForReplacement(9, 9, 9, 9, 9, 9, 9, 9, 5));
+        Assert.Equal(
+            CreateObjectTimestampDisposition.NewGeneration,
+            gate.SeedForReplacement(2, 3, 4, 5, 6, 7, 8, 1, 4));
+
+        Assert.Equal((ushort)2, gate.PositionTimestamp);
+        Assert.Equal((ushort)3, gate.MovementTimestamp);
+        Assert.Equal((ushort)4, gate.StateTimestamp);
+        Assert.Equal((ushort)1, gate.ObjDescTimestamp);
+        Assert.Equal((ushort)4, gate.InstanceTimestamp);
+        Assert.True(gate.TryAcceptStateEvent(instance: 4, state: 5));
+    }
+
+    [Fact]
     public void EventBeforeCreateObjectSeed_IsRejected()
     {
         var gate = new PhysicsTimestampGate();

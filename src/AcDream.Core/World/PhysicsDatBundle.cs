@@ -17,11 +17,4 @@ public sealed record PhysicsDatBundle(
         new Dictionary<uint, DatEnvironment>(),
         new Dictionary<uint, Setup>(),
         new Dictionary<uint, GfxObj>());
-
-    public PhysicsDatBundle WithoutCollisionGraphs() => new(
-        Info,
-        EnvCells,
-        Empty.Environments,
-        Setups,
-        Empty.GfxObjs);
 }

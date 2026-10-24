@@ -30,8 +30,11 @@ public sealed class LiveSocialSessionBindingsWiringTests
         string repositoryRoot = FindRepositoryRoot();
         string appSource = File.ReadAllText(Path.Combine(
             repositoryRoot, "src", "AcDream.App", "Net", "LiveSessionRuntimeFactory.cs"));
+        // Every client without a window, the headless one included, builds
+        // its route through the one windowless session route.
         string headlessSource = File.ReadAllText(Path.Combine(
-            repositoryRoot, "src", "AcDream.Headless", "Hosting", "HeadlessSessionHost.cs"));
+            repositoryRoot, "src", "AcDream.Runtime", "Session", "Windowless",
+            "RuntimeWindowlessSessionRoute.cs"));
 
         ParameterInfo[] parameters = typeof(LiveSocialSessionBindings)
             .GetConstructors()
@@ -46,7 +49,7 @@ public sealed class LiveSocialSessionBindingsWiringTests
         foreach ((string hostName, string source) in new[]
         {
             ("AcDream.App", appSource),
-            ("AcDream.Headless", headlessSource),
+            ("the windowless session route", headlessSource),
         })
         {
             string call = ExtractBalancedCall(source, "new LiveSocialSessionBindings(");

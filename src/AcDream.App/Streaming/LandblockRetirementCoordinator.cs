@@ -300,7 +300,6 @@ public sealed class LandblockRetirementCoordinator
         | LandblockRetirementStage.EntityTranslucency
         | LandblockRetirementStage.PluginProjection
         | LandblockRetirementStage.Terrain
-        | LandblockRetirementStage.Physics
         | LandblockRetirementStage.CellVisibility
         | LandblockRetirementStage.BuildingRegistry
         | LandblockRetirementStage.EnvironmentCells;

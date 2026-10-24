@@ -342,6 +342,11 @@ internal sealed class SelectionInteractionController
     public uint? PickAtCursor(bool includeSelf)
         => _query.PickAtCursor(includeSelf);
 
+    /// <summary>The object at a screen point, the player included when
+    /// <paramref name="includeSelf"/> is set.</summary>
+    public uint? PickAt(float mouseX, float mouseY, bool includeSelf)
+        => _query.PickAt(mouseX, mouseY, includeSelf);
+
     public void PlaceDraggedItem(ItemDragPayload payload, float mouseX, float mouseY)
     {
         ArgumentNullException.ThrowIfNull(payload);

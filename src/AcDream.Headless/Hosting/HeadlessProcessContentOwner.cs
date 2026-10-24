@@ -28,7 +28,9 @@ internal sealed record HeadlessOpenedProcessContent(
     IDatReaderWriter Dats,
     IPreparedAssetSource Prepared,
     MagicCatalog Magic,
-    ImmutableArray<float> HeightTable);
+    ImmutableArray<float> HeightTable,
+    // The trade-note classes and their values; left out, none.
+    IReadOnlyDictionary<uint, int>? TradeNotes = null);
 
 internal sealed class ProductionHeadlessProcessContentFactory
     : IHeadlessProcessContentFactory
@@ -94,6 +96,8 @@ internal sealed class ProductionHeadlessProcessContentFactory
                 }
             }
             MagicCatalog magic = MagicCatalog.Load(dats);
+            IReadOnlyDictionary<uint, int> tradeNotes =
+                AcDream.Content.TradeNoteDenominations.Load(dats);
             Region region = dats.Get<Region>(0x13000000u)
                 ?? throw new InvalidOperationException(
                     "Region dat id 0x13000000 is missing.");
@@ -111,7 +115,8 @@ internal sealed class ProductionHeadlessProcessContentFactory
                 dats,
                 prepared,
                 magic,
-                heightTable);
+                heightTable,
+                tradeNotes);
         }
         catch
         {
@@ -133,6 +138,7 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
     private readonly object _gate = new();
     private readonly MagicCatalog _magic;
     private readonly ImmutableArray<float> _heightTable;
+    private readonly IReadOnlyDictionary<uint, int> _tradeNotes;
     private IDatReaderWriter? _dats;
     private IPreparedAssetSource? _prepared;
     private SharedPreparedCollisionCache? _collision;
@@ -186,6 +192,7 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
         _prepared = prepared!;
         _magic = magic!;
         _heightTable = heightTable;
+        _tradeNotes = opened.TradeNotes ?? AcDream.Content.TradeNoteDenominations.Empty;
         _collision = new SharedPreparedCollisionCache(
             (IPreparedCollisionSource)prepared!);
     }
@@ -219,7 +226,8 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
                 _prepared!,
                 _collision!,
                 _magic,
-                _heightTable);
+                _heightTable,
+                _tradeNotes);
         }
     }
 
@@ -283,7 +291,8 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
         _disposed = true;
     }
 
-    internal sealed class HeadlessProcessContentLease : IDisposable
+    internal sealed class HeadlessProcessContentLease
+        : IDisposable, AcDream.Runtime.World.IRuntimeCollisionContent
     {
         private HeadlessProcessContentOwner? _owner;
         private readonly IDatReaderWriter _dats;
@@ -292,6 +301,7 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
         private readonly IPreparedCollisionSource _collision;
         private readonly MagicCatalog _magic;
         private readonly ImmutableArray<float> _heightTable;
+        private readonly IReadOnlyDictionary<uint, int> _tradeNotes;
 
         internal HeadlessProcessContentLease(
             HeadlessProcessContentOwner owner,
@@ -301,7 +311,8 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
             IPreparedAssetSource prepared,
             IPreparedCollisionSource collision,
             MagicCatalog magic,
-            ImmutableArray<float> heightTable)
+            ImmutableArray<float> heightTable,
+            IReadOnlyDictionary<uint, int> tradeNotes)
         {
             _owner = owner;
             SessionId = sessionId;
@@ -311,6 +322,7 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
             _collision = collision;
             _magic = magic;
             _heightTable = heightTable;
+            _tradeNotes = tradeNotes;
         }
 
         internal string SessionId { get; }
@@ -361,6 +373,17 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
             }
         }
 
+        /// <summary>The trade-note classes and their values in pyreals,
+        /// read once for the process.</summary>
+        internal IReadOnlyDictionary<uint, int> TradeNotes
+        {
+            get
+            {
+                ObjectDisposedException.ThrowIf(_owner is null, this);
+                return _tradeNotes;
+            }
+        }
+
         internal ImmutableArray<float> HeightTable
         {
             get
@@ -369,6 +392,20 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
                 return _heightTable;
             }
         }
+
+        IDatReaderWriter AcDream.Runtime.World.IRuntimeCollisionContent.Dats =>
+            Dats;
+
+        object AcDream.Runtime.World.IRuntimeCollisionContent.DatLock =>
+            DatLock;
+
+        IPreparedCollisionSource
+            AcDream.Runtime.World.IRuntimeCollisionContent.PreparedCollision =>
+            PreparedCollision;
+
+        ImmutableArray<float>
+            AcDream.Runtime.World.IRuntimeCollisionContent.HeightTable =>
+            HeightTable;
 
         public void Dispose()
         {

@@ -1299,6 +1299,22 @@ public sealed class RuntimePhysicsState : IDisposable
         _objectTableHostResolver = resolver;
     }
 
+    /// <summary>
+    /// Binds the resolver for as long as the returned lease is held; giving it
+    /// back restores resolution with none.
+    /// </summary>
+    internal IDisposable BindObjectTableHostResolverOwned(
+        Func<uint, AcDream.Core.Physics.Motion.IPhysicsObjHost?> resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        BindObjectTableHostResolver(resolver);
+        return new RuntimeBindingLease(() =>
+        {
+            if (ReferenceEquals(_objectTableHostResolver, resolver))
+                _objectTableHostResolver = null;
+        });
+    }
+
     private AcDream.Content.IPreparedCollisionSource? _setupCollisionSource;
 
     /// <summary>
@@ -1527,11 +1543,24 @@ public sealed class RuntimePhysicsState : IDisposable
             return null;
         }
 
-        Position lastKnown = position;
+        EntityPhysicsHost host = ConfigureObjectTableHost(record, position);
+        InstallPhysicsHost(record, host);
+        return host;
+    }
+
+    /// <summary>
+    /// The answers the smallest body gives: where the entity is (its last
+    /// known place when it has none now) and how it is moving, off the record
+    /// alone.
+    /// </summary>
+    private EntityPhysicsHost ConfigureObjectTableHost(
+        RuntimeEntityRecord record,
+        Position lastKnown)
+    {
         double Now() =>
             _gameClock?.SimulationTimeSeconds ?? UtcNowSeconds;
-        var host = new EntityPhysicsHost(
-            serverGuid,
+        return new EntityPhysicsHost(
+            record.ServerGuid,
             getPosition: () =>
                 TryGetObjectTablePosition(record, out Position current)
                     ? lastKnown = current
@@ -1547,8 +1576,29 @@ public sealed class RuntimePhysicsState : IDisposable
             getObjectA: ResolveObjectTableHost,
             handleUpdateTarget: static _ => { },
             interruptCurrentMovement: static () => { });
-        InstallPhysicsHost(record, host);
-        return host;
+    }
+
+    /// <summary>
+    /// A host that drew this entity and gave it the smallest body is going
+    /// away while the session plays on: the body keeps its host (anything
+    /// holding it keeps working) but answers from here on from the record
+    /// alone, as the smallest body this owner makes itself does. A body
+    /// whose host has since become a full one is left alone.
+    /// </summary>
+    internal void RebindToObjectTableHost(RuntimeEntityRecord record)
+    {
+        EnsureNotDisposed();
+        ArgumentNullException.ThrowIfNull(record);
+        if (record.PhysicsHost is not EntityPhysicsHost host
+            || (record.RemoteMotion is RemoteMotion remote
+                && ReferenceEquals(remote.Host, host)))
+        {
+            return;
+        }
+        Position lastKnown = TryGetObjectTablePosition(record, out Position position)
+            ? position
+            : host.Position;
+        host.RebindFrom(ConfigureObjectTableHost(record, lastKnown));
     }
 
     /// <summary>

@@ -957,6 +957,53 @@ public sealed class RuntimeLiveEntitySessionControllerTests
     }
 
     [Fact]
+    public void FirstEntryDriveHandsItsPendingEntriesToTheRouteThatReplacesIt()
+    {
+        using StartedRuntime started = StartRuntime();
+        GameRuntime runtime = started.Runtime;
+        RuntimeFirstEntryDriveController drive = CreateDrive(runtime);
+        var windowless = new object();
+        var window = new object();
+        drive.AttachRoute(windowless);
+        _ = runtime.EntityObjects.RegisterEntityWithInitialResidence(
+            Spawn(0x70000005u, incarnation: 1),
+            isLocalPlayer: false);
+        Assert.Equal(1, drive.PendingCount);
+
+        // A window opens on the playing session: the creature still waiting
+        // to be placed is for the window's route to finish.
+        drive.BeginRouteHandOver();
+        drive.DetachRoute(windowless);
+        Assert.Equal(1, drive.PendingCount);
+        drive.AttachRoute(window);
+        drive.EndRouteHandOver();
+        Assert.Equal(1, drive.PendingCount);
+
+        // The hand-over is spent: a plain detach abandons as before.
+        drive.DetachRoute(window);
+        Assert.Equal(0, drive.PendingCount);
+    }
+
+    [Fact]
+    public void FirstEntryDriveAbandonsAHandOverNoRouteTook()
+    {
+        using StartedRuntime started = StartRuntime();
+        GameRuntime runtime = started.Runtime;
+        RuntimeFirstEntryDriveController drive = CreateDrive(runtime);
+        var route = new object();
+        drive.AttachRoute(route);
+        _ = runtime.EntityObjects.RegisterEntityWithInitialResidence(
+            Spawn(0x70000006u, incarnation: 1),
+            isLocalPlayer: false);
+
+        drive.BeginRouteHandOver();
+        drive.DetachRoute(route);
+        drive.EndRouteHandOver();
+
+        Assert.Equal(0, drive.PendingCount);
+    }
+
+    [Fact]
     public void FirstEntryDriveSignalsLocalCompletionOnceAfterCanonicalPlacement()
     {
         using StartedRuntime started = StartRuntime();

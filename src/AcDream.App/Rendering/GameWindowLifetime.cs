@@ -140,7 +140,16 @@ internal sealed record GameWindowShutdownRoots(
     FrameShutdownRoots Frame,
     LiveShutdownRoots Live,
     RenderShutdownRoots Render,
-    PlatformShutdownRoots Platform);
+    PlatformShutdownRoots Platform)
+{
+    /// <summary>
+    /// The window goes away while the session plays on: every stage that
+    /// ends the session (stopping it, the plugins, the session's entities
+    /// and the runtime itself) leaves it as it is, and only what the window
+    /// built is let go of.
+    /// </summary>
+    public bool KeepSession { get; init; }
+}
 
 internal sealed class GameWindowLifetime
 {
@@ -367,6 +376,7 @@ internal static class GameWindowShutdownManifest
         LiveShutdownRoots live = roots.Live;
         RenderShutdownRoots render = roots.Render;
         PlatformShutdownRoots platform = roots.Platform;
+        bool keepSession = roots.KeepSession;
 
         return new ResourceShutdownTransaction(
             new ResourceShutdownStage("host and session barriers",
@@ -381,7 +391,9 @@ internal static class GameWindowShutdownManifest
                 Hard("mouse source", () => ingress.MouseSource?.Deactivate()),
                 Hard("keyboard source", () => ingress.KeyboardSource?.Deactivate()),
                 Hard("retained UI input", ingress.RetailUi.QuiesceInput),
-                Hard("game runtime session", ingress.Runtime.StopSession),
+                Hard(
+                    "game runtime session",
+                    keepSession ? KeepSessionRunning : ingress.Runtime.StopSession),
             ]),
             new ResourceShutdownStage("physical ingress cleanup",
             [
@@ -396,7 +408,11 @@ internal static class GameWindowShutdownManifest
             ]),
             new ResourceShutdownStage("plugin host",
             [
-                Hard("plugins", () => ingress.Plugins?.Dispose()),
+                Hard("plugins", () =>
+                {
+                    if (!keepSession)
+                        ingress.Plugins?.Dispose();
+                }),
             ]),
             new ResourceShutdownStage("frame borrowers",
             [
@@ -416,7 +432,13 @@ internal static class GameWindowShutdownManifest
             ]),
             new ResourceShutdownStage("live entities",
             [
-                Hard("live entity runtime", () => live.LiveEntities?.Clear()),
+                Hard("live entity runtime", () =>
+                {
+                    if (keepSession)
+                        live.LiveEntities?.ReleaseProjectionsKeepingSession();
+                    else
+                        live.LiveEntities?.Clear();
+                }),
                 Hard(
                     "shadow render scene",
                     () => live.RenderSceneShadow?.Dispose()),
@@ -474,9 +496,15 @@ internal static class GameWindowShutdownManifest
             [
                 Hard(
                     "plugin world objects",
-                    live.PluginWorldEntities.Dispose),
-                Hard("graphical runtime host lease", live.RuntimeHostLease.Dispose),
-                Hard("game runtime", () => DisposeGameRuntime(live.Runtime)),
+                    keepSession ? KeepSessionRunning : live.PluginWorldEntities.Dispose),
+                Hard(
+                    "graphical runtime host lease",
+                    keepSession ? KeepSessionRunning : live.RuntimeHostLease.Dispose),
+                Hard("game runtime", () =>
+                {
+                    if (!keepSession)
+                        DisposeGameRuntime(live.Runtime);
+                }),
             ]),
             new ResourceShutdownStage("shared texture owners",
             [
@@ -531,6 +559,11 @@ internal static class GameWindowShutdownManifest
 
     private static ResourceShutdownOperation Soft(string name, Action action) =>
         new(name, action, ResourceShutdownOperationPolicy.ReportAndContinue);
+
+    /// <summary>A stage that ends the session, when the window closes while it plays on.</summary>
+    private static void KeepSessionRunning()
+    {
+    }
 
     private static void DisposeGameRuntime(GameRuntime runtime)
     {

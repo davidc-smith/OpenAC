@@ -8,7 +8,7 @@ using AcDream.Platform;
 
 namespace AcDream.Launcher.Core.Tests.Orchestration;
 
-public sealed class LauncherOrchestratorTests : IDisposable
+public sealed partial class LauncherOrchestratorTests : IDisposable
 {
     private const string Password = "launcher-only-secret";
     private readonly string _root;
@@ -262,7 +262,7 @@ public sealed class LauncherOrchestratorTests : IDisposable
         FakeSupervisor supervisor = Assert.Single(supervisors.Created);
         Assert.Equal("gui-host", supervisor.Spec!.ExecutablePath);
         Assert.Equal(
-            ["--session-config", config.LastComposed!.ConfigFilePath],
+            ["--session-config", config.LastComposed!.ConfigFilePath, "--console"],
             supervisor.Spec.Arguments);
         // The child is told the launcher's own install folder rather than
         // left to guess it. Mutation: dropping the environment from the spec
@@ -464,6 +464,29 @@ public sealed class LauncherOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ASecondSpellingOfARunningAccountIsTheSameAccount()
+    {
+        using LauncherOrchestrator orchestrator = CreateOrchestrator(secondSpelling: "TestAccount");
+        await orchestrator.LaunchAsync("Local ACE", "testaccount", "+Acdream", LaunchMode.Headless);
+
+        foreach (string spelling in new[] { "TestAccount", "TESTACCOUNT" })
+        {
+            Assert.False(orchestrator.GetAccountLaunchCapability("Local ACE", spelling, LaunchMode.Headless).IsAvailable);
+            Assert.False(orchestrator.GetProbeCapability("Local ACE", spelling).IsAvailable);
+        }
+        Assert.All(orchestrator.GetAccountLaunchCapabilities(LaunchMode.Headless).Values,
+            capability => Assert.False(capability.IsAvailable));
+        Assert.All(orchestrator.GetSnapshot().Servers.Single().Accounts,
+            account => Assert.True(account.HasRunningActivity));
+        var refused = await Assert.ThrowsAsync<LauncherOperationException>(() =>
+            orchestrator.LaunchAsync("Local ACE", "TestAccount", "+Horan", LaunchMode.Headless));
+        Assert.Contains("already running for this account", refused.Message);
+        Assert.Throws<LauncherOperationException>(() =>
+            orchestrator.RemoveAccount("Local ACE", "TestAccount"));
+        Assert.Single(orchestrator.GetSnapshot().Sessions);
+    }
+
+    [Fact]
     public async Task ConcurrentPlayReservationsAllowExactlyOneActivityPerAccount()
     {
         using LauncherOrchestrator orchestrator = CreateOrchestrator();
@@ -646,9 +669,12 @@ public sealed class LauncherOrchestratorTests : IDisposable
 
         Assert.False(gui.IsAvailable);
         Assert.Contains("missing-gui", gui.Reason, StringComparison.Ordinal);
+        // A headless row starts the graphical client with no window; the character
+        // refresh still runs the windowless host.
         Assert.False(headless.IsAvailable);
-        Assert.Contains("missing-headless", headless.Reason, StringComparison.Ordinal);
+        Assert.Contains("missing-gui", headless.Reason, StringComparison.Ordinal);
         Assert.False(probe.IsAvailable);
+        Assert.Contains("missing-headless", probe.Reason, StringComparison.Ordinal);
         await Assert.ThrowsAsync<LauncherOperationException>(() =>
             orchestrator.LaunchAsync(
                 "Local ACE",
@@ -886,7 +912,9 @@ public sealed class LauncherOrchestratorTests : IDisposable
         ILauncherProcessSupervisorFactory? supervisorFactory = null,
         IStatusEventSourceFactory? statusSourceFactory = null,
         LauncherExecutableSet? executables = null,
-        UpdateSessionBarrier? updateSessionBarrier = null)
+        UpdateSessionBarrier? updateSessionBarrier = null,
+        string? secondSpelling = null,
+        TimeProvider? timeProvider = null)
     {
         string profilePath = Path.Combine(
             _paths.ConfigDirectory,
@@ -906,6 +934,16 @@ public sealed class LauncherOrchestratorTests : IDisposable
                 ["ExamplePlugin"]);
             store.SetAccountLoginCommands("Local ACE", "testaccount", ["/vt start"]);
         }
+        if (secondSpelling is not null)
+        {
+            // A file saved before account names were compared without case can hold both.
+            store.Document.Servers[0].Accounts.Add(new AccountProfile
+            {
+                Account = secondSpelling,
+                Password = Password,
+                Characters = [new CharacterProfile { Name = "+Horan", Id = "0x5000000B" }],
+            });
+        }
         store.Save();
 
         int nextSession = 0;
@@ -923,7 +961,8 @@ public sealed class LauncherOrchestratorTests : IDisposable
             supervisorFactory ?? new FakeSupervisorFactory(),
             statusSourceFactory ?? new QueueStatusSourceFactory(),
             () => $"s{Interlocked.Increment(ref nextSession)}",
-            updateSessionBarrier: updateSessionBarrier);
+            updateSessionBarrier: updateSessionBarrier,
+            timeProvider: timeProvider);
         orchestrator.LoadProfiles();
         return orchestrator;
     }
@@ -1064,6 +1103,12 @@ public sealed class LauncherOrchestratorTests : IDisposable
 
         public string? PasswordWrittenToStdin { get; private set; }
 
+        /// <summary>Console lines sent to the child.</summary>
+        public List<string> Lines { get; } = [];
+
+        /// <summary>The child takes no console input.</summary>
+        public bool RefusesLines { get; set; }
+
         public int StopCallCount { get; private set; }
 
         public event EventHandler<LauncherSessionState>? StateChanged;
@@ -1095,6 +1140,14 @@ public sealed class LauncherOrchestratorTests : IDisposable
             State = LauncherSessionState.Exited;
             ExitCode = code;
             StateChanged?.Invoke(this, State);
+        }
+
+        public bool TrySendLine(string line)
+        {
+            if (RefusesLines || State != LauncherSessionState.Running)
+                return false;
+            Lines.Add(line);
+            return true;
         }
 
         public void Dispose()

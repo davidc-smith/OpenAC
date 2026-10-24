@@ -50,7 +50,8 @@ public sealed class ParentAttachmentState
 
     internal void EnqueueDeferredCreate(
         WorldSession.EntitySpawn spawn,
-        bool isLocalPlayer)
+        bool isLocalPlayer,
+        bool replaceExisting = false)
     {
         uint parentGuid = spawn.ParentGuid
             ?? spawn.Physics?.Parent?.Guid
@@ -77,7 +78,8 @@ public sealed class ParentAttachmentState
         queue.Enqueue(new DeferredParentCreate(
             admissionId,
             RuntimeInitialCreateAdmissionFreezer.Freeze(spawn),
-            isLocalPlayer));
+            isLocalPlayer,
+            replaceExisting));
         _nextDeferredCreateAdmissionId = admissionId;
     }
 
@@ -928,7 +930,8 @@ public sealed class ParentAttachmentState
 internal readonly record struct DeferredParentCreate(
     ulong AdmissionId,
     WorldSession.EntitySpawn Spawn,
-    bool IsLocalPlayer)
+    bool IsLocalPlayer,
+    bool ReplaceExisting = false)
 {
     internal bool IsValid => AdmissionId != 0UL
         && Spawn.Guid != 0u;

@@ -176,25 +176,23 @@ public sealed class CathedralExteriorWallCollisionInstalledDatTests
             Mover = Assert.IsType<FlatSetupCollision>(mover.Data);
             Assert.Equal(2, Mover.Spheres.Length);
             float[] heights = Assert.IsType<Region>(bounded.Get<Region>(0x13000000u)).LandDefs.LandHeightTable;
-            var factory = new LandblockBuildFactory(bounded, _prepared, new object(), heights);
-            LandblockBuild build = Assert.IsType<LandblockBuild>(factory.Build(new LandblockBuildRequest(
-                0xF418FFFFu, LandblockStreamJobKind.LoadNear, Generation: 1,
-                new LandblockBuildOrigin(0xF4, 0x18))));
-            Assert.NotNull(build.EnvCells);
-            LandblockCollisionBuild collisions = Assert.IsType<LandblockCollisionBuild>(build.Collisions);
+            // The landblock's collision as the session host builds it.
+            Assert.True(LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
+                bounded, _prepared, heights, 0xF418FFFFu, Vector3.Zero,
+                out LoadedLandblock landblock, out LandblockCollisionBuild collisions));
             Assert.NotEmpty(collisions.CellStructures);
             Cache = PhysicsDataCache.CreateProduction();
             Engine = new PhysicsEngine { DataCache = Cache };
-            TerrainSurface terrain = LandblockPhysicsContentBuilder.BuildTerrainSurface(build.Landblock, heights);
+            TerrainSurface terrain = LandblockPhysicsContentBuilder.BuildTerrainSurface(landblock, heights);
             var surfaces = new List<CellSurface>();
             var portals = new List<PortalPlane>();
-            LandblockPhysicsContentBuilder.PublishPreparedCells(Cache, build.Landblock, collisions,
+            LandblockPhysicsContentBuilder.PublishPreparedCells(Cache, landblock, collisions,
                 Vector3.Zero, surfaces, portals);
-            LandblockPhysicsContentBuilder.CacheBuildings(Cache, build.Landblock, terrain, Vector3.Zero);
+            LandblockPhysicsContentBuilder.CacheBuildings(Cache, landblock, terrain, Vector3.Zero);
             LandblockPhysicsContentBuilder.CachePreparedObjects(Cache, collisions);
-            Engine.AddLandblock(build.LandblockId, terrain, surfaces, portals, 0f, 0f);
+            Engine.AddLandblock(landblock.LandblockId, terrain, surfaces, portals, 0f, 0f);
             _ = LandblockPhysicsContentBuilder.PublishStaticCollision(Engine, Cache,
-                build.Landblock, collisions, Vector3.Zero);
+                landblock, collisions, Vector3.Zero);
         }
 
         public void Dispose()

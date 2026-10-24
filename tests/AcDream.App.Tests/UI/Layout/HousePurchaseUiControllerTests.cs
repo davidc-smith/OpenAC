@@ -33,7 +33,9 @@ public sealed class HousePurchaseUiControllerTests
         public List<string> Reports { get; } = [];
         public List<string> Sent { get; } = [];
         public List<string> Questions { get; } = [];
-        public Action? Yes;
+        public Action<bool>? Answer;
+        public Action? Yes => Answer is { } answer ? () => answer(true) : null;
+        public Action? No => Answer is { } answer ? () => answer(false) : null;
 
         public Harness()
         {
@@ -73,7 +75,7 @@ public sealed class HousePurchaseUiControllerTests
                 SetWindowVisible: v => Visible = v,
                 Report: Reports.Add,
                 PlayerGuid: () => Player,
-                Confirm: (question, yes) => { Questions.Add(question); Yes = yes; },
+                Confirm: (question, answer) => { Questions.Add(question); Answer = answer; },
                 ResolveAppropriateName: ItemTooltipCaptionNames.Resolve))!;
         }
 
@@ -92,10 +94,10 @@ public sealed class HousePurchaseUiControllerTests
             Controller.Tick();
         }
 
-        public void Drop(UiItemList list, uint id)
+        public void Drop(UiItemList list, uint id, ItemDragSource source = ItemDragSource.Inventory)
         {
             var cell = new UiItemSlot();
-            Controller.HandleDropRelease(list, cell, new ItemDragPayload(id, ItemDragSource.Inventory, 0, cell));
+            Controller.HandleDropRelease(list, cell, new ItemDragPayload(id, source, 0, cell));
             Controller.Tick();
         }
 
@@ -200,6 +202,37 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
+    public void ANo_ClosesTheWindow_AndEmptiesTheStrips()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 50_000);
+        h.Item(2, 273u, stack: 10);
+        h.Open();
+        h.Drop(h.BuyList, 1);
+        h.BuyButton.OnClick!();
+
+        h.No!();
+        h.Controller.Tick();
+
+        Assert.Empty(h.Sent);
+        Assert.False(h.State.View.Snapshot.IsOpen);
+        Assert.False(h.Visible);
+        Assert.Empty(h.State.View.GetStaged(HousePurchaseTab.Buy));
+
+        // Maintenance on someone else's house: a no closes it too.
+        h.Open(owner: 0x50000042u);
+        h.Drop(h.RentList, 2);
+        h.RentButton.OnClick!();
+
+        h.No!();
+        h.Controller.Tick();
+
+        Assert.Empty(h.Sent);
+        Assert.False(h.Visible);
+        Assert.Empty(h.State.View.GetStaged(HousePurchaseTab.Rent));
+    }
+
+    [Fact]
     public void AYesAfterTheWindowClosed_SendsNothing()
     {
         using var h = new Harness();
@@ -230,6 +263,23 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
+    public void Buy_CountsOnlyTheStagedItems_NotWhatTheServerSaysIsPaid()
+    {
+        using var h = new Harness();
+        h.Item(1, 273u, stack: 10_000);
+        h.State.ApplyProfile(new GameEvents.HouseProfile(
+            Slumlord, 1u, 0u, 1u, -1, -1, -1, -1, false, 1u, "",
+            [new(50_000, 40_000, 273u, "Pyreal", "Pyreals")],
+            [new(5_000, 0, 273u, "Pyreal", "Pyreals")]));
+        h.Controller.Tick();
+
+        h.Drop(h.BuyList, 1);
+
+        Assert.Equal(1, Harness.Staged(h.BuyList));
+        Assert.False(h.BuyButton.Enabled);
+    }
+
+    [Fact]
     public void Drop_Refused_OnlyAnItemNotCarriedIsReported()
     {
         using var h = new Harness();
@@ -243,6 +293,46 @@ public sealed class HousePurchaseUiControllerTests
         h.Drop(h.BuyList, 2);
         Assert.Equal(["You can only trade items you are carrying"], h.Reports);
         Assert.Equal(0, Harness.Staged(h.BuyList));
+    }
+
+    [Fact]
+    public void Drop_FromTheGround_ACorpseOrAChest_IsReportedAsNotCarried()
+    {
+        using var h = new Harness();
+        const uint chest = 0x70000500u;
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = chest, Type = ItemType.Container });
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 2, WeenieClassId = 273u, StackSize = 10 });
+        h.Objects.MoveItem(2, chest, 0);
+        h.Open();
+
+        h.Drop(h.BuyList, 2, ItemDragSource.Ground);
+
+        Assert.Equal(["You can only trade items you are carrying"], h.Reports);
+        Assert.Equal(0, Harness.Staged(h.BuyList));
+    }
+
+    [Fact]
+    public void Drop_NotCarried_IsReportedEvenWhenTheTabTakesNothing()
+    {
+        using var h = new Harness();
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 2, WeenieClassId = 273u, StackSize = 10 });
+        h.Open(owner: Player);
+
+        h.Drop(h.BuyList, 2, ItemDragSource.Ground);
+
+        Assert.Equal(["You can only trade items you are carrying"], h.Reports);
+    }
+
+    [Fact]
+    public void Drop_AShortcut_IsIgnored()
+    {
+        using var h = new Harness();
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 2, WeenieClassId = 273u, StackSize = 10 });
+        h.Open();
+
+        h.Drop(h.BuyList, 2, ItemDragSource.ShortcutBar);
+
+        Assert.Empty(h.Reports);
     }
 
     [Fact]
@@ -307,7 +397,7 @@ public sealed class HousePurchaseUiControllerTests
     }
 
     [Fact]
-    public void AStagedStackGrowing_EnablesBuy()
+    public void AStagedStackGrowing_PaysNoMoreThanWhenItWasStaged()
     {
         using var h = new Harness();
         h.Item(1, 273u, stack: 10);
@@ -319,7 +409,8 @@ public sealed class HousePurchaseUiControllerTests
         h.Objects.NotifyObjectUpdated(1);
         h.Controller.Tick();
 
-        Assert.True(h.BuyButton.Enabled);
+        Assert.Equal(1, Harness.Staged(h.BuyList));
+        Assert.False(h.BuyButton.Enabled);
     }
 
     [Fact]

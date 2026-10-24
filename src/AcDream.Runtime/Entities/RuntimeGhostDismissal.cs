@@ -43,6 +43,20 @@ public sealed class RuntimeGhostDismissal
     }
 
     /// <summary>
+    /// Binds the route for as long as the returned lease is held; giving it
+    /// back restores dismissal with no such route.
+    /// </summary>
+    internal IDisposable BindAuthoritativeDeleteOwned(Func<DeleteObject.Parsed, bool> route)
+    {
+        BindAuthoritativeDelete(route);
+        return new RuntimeBindingLease(() =>
+        {
+            if (ReferenceEquals(_authoritativeDelete, route))
+                _authoritativeDelete = null;
+        });
+    }
+
+    /// <summary>
     /// Drops the named object. Answers whether the client has stopped
     /// believing in it, which is the only thing a caller can act on.
     /// </summary>

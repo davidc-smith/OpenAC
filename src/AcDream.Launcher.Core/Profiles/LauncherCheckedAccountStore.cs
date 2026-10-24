@@ -12,7 +12,16 @@ public sealed class LauncherCheckedAccountStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
     };
-    private HashSet<LauncherCheckedAccount> _checked = [];
+
+    /// <summary>A checked row is its server, compared exactly, and its account: a selection saved
+    /// as "fefe" checks the row for "Fefe".</summary>
+    private static readonly IEqualityComparer<LauncherCheckedAccount> SameAccount =
+        EqualityComparer<LauncherCheckedAccount>.Create(
+            (left, right) => left is null || right is null
+                ? ReferenceEquals(left, right)
+                : AccountNames.KeyComparer.Equals((left.Server, left.Account), (right.Server, right.Account)),
+            row => AccountNames.KeyComparer.GetHashCode((row.Server, row.Account)));
+    private HashSet<LauncherCheckedAccount> _checked = new(SameAccount);
 
     public LauncherCheckedAccountStore(string filePath)
     {
@@ -39,12 +48,12 @@ public sealed class LauncherCheckedAccountStore
         {
             throw new InvalidDataException("Each checked account needs a server and account name.");
         }
-        _checked = [.. rows];
+        _checked = new(rows, SameAccount);
     }
 
     public void Save(IEnumerable<LauncherCheckedAccount> rows)
     {
-        HashSet<LauncherCheckedAccount> selected = [.. rows];
+        HashSet<LauncherCheckedAccount> selected = new(rows, SameAccount);
         string directory = Path.GetDirectoryName(FilePath)!;
         Directory.CreateDirectory(directory);
         string temporary = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -63,5 +72,5 @@ public sealed class LauncherCheckedAccountStore
     }
 }
 
-/// <summary>The exact account and server identifying one checked launch row.</summary>
+/// <summary>The account and server identifying one checked launch row, as saved.</summary>
 public sealed record LauncherCheckedAccount(string Server, string Account);

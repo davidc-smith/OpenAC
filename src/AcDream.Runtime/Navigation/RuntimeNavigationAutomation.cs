@@ -84,6 +84,17 @@ internal sealed partial class RuntimeNavigationAutomation : INavigationAutomatio
             _walk = walk;
     }
 
+    /// <summary>
+    /// Forgets the walk, when the host that lent it goes away while the
+    /// session plays on; walking then answers unavailable until one is bound
+    /// again.
+    /// </summary>
+    public void UnbindWalk()
+    {
+        lock (_gate)
+            _walk = null;
+    }
+
     /// <summary>Forgets the runtime, so every member answers unavailable until one is bound again.</summary>
     public void UnbindRuntime()
     {

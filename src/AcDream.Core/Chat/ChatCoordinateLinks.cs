@@ -4,11 +4,12 @@ using AcDream.Plugin.Abstractions;
 namespace AcDream.Core.Chat;
 
 /// <summary>
-/// Turns the coordinate pairs written in a plugin's chat line ("meet at
-/// 42.1N 33.5E") into the same <c>COORD:World</c> links the line's own markup
-/// makes, so a click on one reaches plugins as
-/// <see cref="PluginChatLinkKind.Coordinate"/>. Only a plugin's own line is
-/// linked; what players and the server write is shown as it arrived.
+/// Turns the coordinate pairs a chat line shows ("meet at 42.1N 33.5E") into
+/// the same <c>COORD:World</c> links a plugin's markup makes, so a click on
+/// one reaches plugins as <see cref="PluginChatLinkKind.Coordinate"/>. Every
+/// line but combat text is linked: a plugin's own line, and what players and
+/// the server write. A link's target is the pair as shown, never a value
+/// hidden in a tag.
 /// </summary>
 public static class ChatCoordinateLinks
 {
@@ -59,6 +60,32 @@ public static class ChatCoordinateLinks
                 result.Add(span with { Text = span.Text[runStart..] });
         }
         return result;
+    }
+
+    /// <summary>
+    /// Links the coordinate pairs in the text a line shows. Plain body spans
+    /// that stand side by side (a hidden tag between them) are read as one
+    /// text first, so a pair is found exactly where the reader sees one, and
+    /// each link's target is built from the shown pair alone. Tagged spans and
+    /// the timestamp are kept as they are.
+    /// </summary>
+    /// <returns>The new spans, which rejoin to the same text; null when the
+    /// shown text holds no pair.</returns>
+    public static IReadOnlyList<ChatTextSpan>? LinkShown(IReadOnlyList<ChatTextSpan> spans)
+    {
+        ArgumentNullException.ThrowIfNull(spans);
+        var joined = new List<ChatTextSpan>(spans.Count);
+        foreach (ChatTextSpan span in spans)
+        {
+            if (IsPlainBody(span) && joined.Count > 0 && IsPlainBody(joined[^1]))
+                joined[^1] = joined[^1] with { Text = joined[^1].Text + span.Text };
+            else
+                joined.Add(span);
+        }
+        return Link(joined);
+
+        static bool IsPlainBody(ChatTextSpan span) =>
+            span.Tag is null && span.Role == ChatSpanRole.Body;
     }
 
     /// <summary>The link a coordinate is carried by, in the chat markup's own form.</summary>

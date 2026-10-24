@@ -144,7 +144,6 @@ public sealed class InvisibleLedgeCollisionInstalledDatTests
 
             var factory = new LandblockBuildFactory(
                 bounded,
-                _collision,
                 new object(),
                 heights);
             LandblockBuild build = Assert.IsType<LandblockBuild>(factory.Build(
@@ -153,32 +152,39 @@ public sealed class InvisibleLedgeCollisionInstalledDatTests
                     LandblockStreamJobKind.LoadNear,
                     Generation: 1,
                     new LandblockBuildOrigin(LandblockX, LandblockY))));
-            LandblockCollisionBuild collisions =
-                Assert.IsType<LandblockCollisionBuild>(build.Collisions);
             Entities = build.Landblock.Entities;
+            // Its collision as the session host builds it.
+            Assert.True(LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
+                bounded,
+                _collision,
+                heights,
+                LandblockId,
+                Vector3.Zero,
+                out LoadedLandblock landblock,
+                out LandblockCollisionBuild collisions));
 
             Cache = PhysicsDataCache.CreateProduction();
             Engine = new PhysicsEngine { DataCache = Cache };
             TerrainSurface terrain = LandblockPhysicsContentBuilder.BuildTerrainSurface(
-                build.Landblock,
+                landblock,
                 heights);
             var cellSurfaces = new List<CellSurface>();
             var portalPlanes = new List<PortalPlane>();
             LandblockPhysicsContentBuilder.PublishPreparedCells(
                 Cache,
-                build.Landblock,
+                landblock,
                 collisions,
                 Vector3.Zero,
                 cellSurfaces,
                 portalPlanes);
             LandblockPhysicsContentBuilder.CacheBuildings(
                 Cache,
-                build.Landblock,
+                landblock,
                 terrain,
                 Vector3.Zero);
             LandblockPhysicsContentBuilder.CachePreparedObjects(Cache, collisions);
             Engine.AddLandblock(
-                build.LandblockId,
+                landblock.LandblockId,
                 terrain,
                 cellSurfaces,
                 portalPlanes,
@@ -187,7 +193,7 @@ public sealed class InvisibleLedgeCollisionInstalledDatTests
             _ = LandblockPhysicsContentBuilder.PublishStaticCollision(
                 Engine,
                 Cache,
-                build.Landblock,
+                landblock,
                 collisions,
                 Vector3.Zero);
         }

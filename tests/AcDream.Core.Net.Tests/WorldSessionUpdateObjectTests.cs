@@ -167,7 +167,7 @@ public sealed class WorldSessionUpdateObjectTests
     }
 
     [Fact]
-    public void PublicStringUpdate_RenamesTheObjectAndRepublishes()
+    public void PublicStringUpdate_StoresTheNameButKeepsTheShownName()
     {
         using var session = CreateSession();
         var table = new ClientObjectTable();
@@ -181,13 +181,15 @@ public sealed class WorldSessionUpdateObjectTests
             session,
             BuildPacket(BuildString(0x02D6u, ItemGuid, 1u, "RabidDee's Cottage")));
 
+        // The value lands in the property table only; the shown name changes
+        // only when the object is created or updated again.
         Assert.Equal(ItemGuid, Assert.Single(republished));
-        Assert.Equal("RabidDee's Cottage", table.Get(ItemGuid)!.Name);
+        Assert.Equal("Crystal", table.Get(ItemGuid)!.Name);
         Assert.Equal("RabidDee's Cottage", table.Get(ItemGuid)!.Properties.Strings[1u]);
     }
 
     [Fact]
-    public void PrivateStringUpdate_RenamesThePlayer()
+    public void PrivateStringUpdate_StoresTheNameButKeepsThePlayersShownName()
     {
         using var session = CreateSession();
         var table = new ClientObjectTable();
@@ -199,7 +201,8 @@ public sealed class WorldSessionUpdateObjectTests
             session,
             BuildPacket(BuildString(0x02D5u, null, 1u, "Renamed")));
 
-        Assert.Equal("Renamed", table.Get(0x50000001u)!.Name);
+        Assert.Equal("Player", table.Get(0x50000001u)!.Name);
+        Assert.Equal("Renamed", table.Get(0x50000001u)!.Properties.Strings[1u]);
     }
 
     [Fact]
@@ -222,8 +225,8 @@ public sealed class WorldSessionUpdateObjectTests
         var b = new List<byte>();
         WriteU32(b, opcode);
         b.Add(1);
-        WriteU32(b, property);
         if (guid is uint g) WriteU32(b, g);
+        WriteU32(b, property);
         while (b.Count % 4 != 0) b.Add(0);
         byte[] t = Encoding.GetEncoding(1252).GetBytes(text);
         b.Add((byte)t.Length); b.Add((byte)(t.Length >> 8));

@@ -1052,6 +1052,32 @@ public sealed class LiveSessionControllerTests
         Assert.False(controller.IsInWorld);
         Assert.Null(controller.CurrentSession);
         Assert.Equal(1, operations.DisposeCounts[operations.Sessions[0]]);
+        Assert.Equal(
+            "no available character matches Id(1342177281)",
+            controller.NoCharacterToEnter);
+
+        // The next start forgets it.
+        Assert.Equal(
+            LiveSessionStartStatus.Connected,
+            controller.Start(LiveOptions(), host).Status);
+        Assert.Null(controller.NoCharacterToEnter);
+    }
+
+    [Theory]
+    [InlineData(null, null, null, "no available character matches FirstAvailable")]
+    [InlineData(2, null, null, "no available character matches Index(2)")]
+    [InlineData(null, 1342177291u, null, "no available character matches Id(1342177291)")]
+    [InlineData(null, null, "+Horan", "no available character matches Name(\"+Horan\")")]
+    public void NoCharacterToEnter_IsSaidAsEveryClientSaysIt(
+        int? index,
+        uint? id,
+        string? name,
+        string expected)
+    {
+        LiveSessionCharacterSelector? selector = index is null && id is null && name is null
+            ? null
+            : new LiveSessionCharacterSelector(index, id, name);
+        Assert.Equal(expected, LiveSessionController.DescribeNoCharacterToEnter(selector));
     }
 
     [Fact]

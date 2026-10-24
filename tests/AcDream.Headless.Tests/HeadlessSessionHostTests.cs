@@ -10,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using AcDream.Content;
 using AcDream.Content.CharGen;
+using AcDream.Core.Items;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Core.Physics;
@@ -20,6 +21,7 @@ using AcDream.Headless.Hosting;
 using AcDream.Headless.Platform;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
+using AcDream.Runtime.Session.Windowless;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Physics;
@@ -67,6 +69,54 @@ public sealed class HeadlessSessionHostTests
         Assert.Equal(
             ChargenFixtureContentFactory.HeritageId,
             creation.View.Snapshot.HeritageId);
+    }
+
+    [Fact]
+    public void ContentLease_InstallsTheTradeNoteMapIntoTheSlumlordState()
+    {
+        using var owner = new HeadlessProcessContentOwner(
+            ContentDescriptor(),
+            _ => { },
+            new TradeNoteFixtureContentFactory());
+        HeadlessProcessContentOwner.HeadlessProcessContentLease lease =
+            owner.AcquireLease("trade-note-fixture");
+        using var credential = new HeadlessCredentialSecret("fixture", "password");
+        using var diagnosticsOutput = new StringWriter();
+        using var host = new HeadlessSessionHost(
+            Descriptor(),
+            credential,
+            new HeadlessDiagnosticWriter(diagnosticsOutput),
+            new FixtureSessionOperations(),
+            contentLease: lease);
+
+        const uint player = 0x50000001u;
+        const uint note = 0x70000001u;
+        host.Runtime.PlayerIdentity.ServerGuid = player;
+        ClientObjectTable objects = host.Runtime.EntityObjects.Objects;
+        objects.AddOrUpdate(new ClientObject { ObjectId = player, Type = ItemType.Creature });
+        objects.AddOrUpdate(new ClientObject { ObjectId = note, WeenieClassId = 2623u, StackSize = 1 });
+        objects.MoveItem(note, player, 0);
+        RuntimeHousePurchaseState purchase = host.Runtime.HousePurchaseOwner;
+        purchase.ApplyProfile(new GameEvents.HouseProfile(
+            0x70000100u, 1u, 0u, 1u, -1, -1, -1, -1, false, 1u, "",
+            [new(5_000, 0, RuntimeHousePurchaseState.PyrealWcid, "Pyreal", "Pyreals")],
+            []));
+
+        Assert.Equal(HouseStageResult.Staged, purchase.Stage(HousePurchaseTab.Buy, note));
+        Assert.Equal(1_000, purchase.View.GetStagedAmount(HousePurchaseTab.Buy, 0));
+    }
+
+    private sealed class TradeNoteFixtureContentFactory : IHeadlessProcessContentFactory
+    {
+        public HeadlessOpenedProcessContent Open(
+            HeadlessContentDescriptor descriptor,
+            Action<string> diagnostic) =>
+            new(
+                new FixtureChargenDatReaderWriter(),
+                DispatchProxy.Create<ITestPreparedSource, TestResourceProxy>(),
+                MagicCatalog.Empty,
+                ImmutableArray.CreateRange(new float[256]),
+                new Dictionary<uint, int> { [2623u] = 1_000 });
     }
 
     [Fact]
@@ -216,22 +266,18 @@ public sealed class HeadlessSessionHostTests
         // different client answered it, the request timed out) without our
         // own RespondToConfirmation call ever running. Before this fix,
         // OnConfirmationDone was wired to null, so a completed confirmation
-        // left the stale request sitting in _pendingConfirmation forever.
+        // left the stale request pending forever.
         using var host = new HeadlessSessionHost(
             Descriptor(),
             new HeadlessCredentialSecret("fixture", "password"),
             new HeadlessDiagnosticWriter(new StringWriter()),
             new FixtureSessionOperations());
 
-        FieldInfo pendingField = typeof(HeadlessSessionHost)
-            .GetField(
-                "_pendingConfirmation",
-                BindingFlags.NonPublic | BindingFlags.Instance)!;
         var request = new GameEvents.CharacterConfirmationRequest(
             5u,
             77u,
             "continue?");
-        pendingField.SetValue(host, request);
+        host.Confirmations.Request(request);
         Assert.Equal(request, host.PendingConfirmation);
 
         // A done for a different, already-superseded context id must not
@@ -265,12 +311,8 @@ public sealed class HeadlessSessionHostTests
 
         WorldSession session = operations.Sessions[^1];
 
-        FieldInfo pendingField = typeof(HeadlessSessionHost)
-            .GetField(
-                "_pendingConfirmation",
-                BindingFlags.NonPublic | BindingFlags.Instance)!;
         var request = new GameEvents.CharacterConfirmationRequest(5u, 77u, "continue?");
-        pendingField.SetValue(host, request);
+        host.Confirmations.Request(request);
         Assert.Equal(request, host.PendingConfirmation);
 
         session.GameEvents.Dispatch(
@@ -840,7 +882,7 @@ public sealed class HeadlessSessionHostTests
             host.Tick(0.015d);
             Assert.False(host.IsPolicyComplete);
 
-            time.Advance(HeadlessLogoutAutomation.DefaultConfirmationDeadline
+            time.Advance(AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout.DefaultConfirmationDeadline
                 + TimeSpan.FromSeconds(1));
             host.Tick(0.015d);
 
@@ -1601,7 +1643,7 @@ public sealed class HeadlessSessionHostTests
             ?? throw new InvalidOperationException(
                 "HeadlessSessionHost constructed no event route.");
         var localPlayerCompleted =
-            (Action<RuntimeEntityRecord>?)typeof(HeadlessSessionEventRoute)
+            (Action<RuntimeEntityRecord>?)typeof(RuntimeWindowlessEventRoute)
                 .GetField(
                     "_localPlayerCompleted",
                     BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -1804,7 +1846,7 @@ public sealed class HeadlessSessionHostTests
             RuntimeSetPositionStatus.CommittedHostAcknowledgementPending,
             outcome.Status);
 
-        // The production HeadlessSessionEventRoute's subscription attached
+        // The production RuntimeWindowlessEventRoute's subscription attached
         // during host.Start() already observed this Place synchronously —
         // the fake sink is still declining, so it must remain unacknowledged.
         Assert.Equal(1, sink.CallCount);
@@ -1871,7 +1913,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -1931,7 +1973,7 @@ public sealed class HeadlessSessionHostTests
         var collision = new FixtureCollisionNeighborhood();
         RuntimeAcceptedPositionDriveController acceptedPositionDrive =
             CreateAcceptedPositionDrive(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -2026,7 +2068,7 @@ public sealed class HeadlessSessionHostTests
         var collision = new FixtureCollisionNeighborhood();
         RuntimeAcceptedPositionDriveController acceptedPositionDrive =
             CreateAcceptedPositionDrive(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -2172,7 +2214,7 @@ public sealed class HeadlessSessionHostTests
         var collision = new FixtureCollisionNeighborhood();
         RuntimeAcceptedPositionDriveController acceptedPositionDrive =
             CreateAcceptedPositionDrive(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -2304,7 +2346,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -2394,7 +2436,7 @@ public sealed class HeadlessSessionHostTests
         AcDream.Runtime.Session.RuntimeFirstEntryDriveController firstEntry =
             CreateFirstEntryDrive(runtime);
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -2485,7 +2527,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var directProjection = new HeadlessSessionWorldProjection(
+        var directProjection = new RuntimeWindowlessWorldProjection(
             runtime,
             new FixtureCollisionNeighborhood(),
             firstEntry);
@@ -2503,7 +2545,7 @@ public sealed class HeadlessSessionHostTests
             new Vector3(600f, 601f, 602f),
             Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1.2f));
 
-        var receiptSink = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var receiptSink = new RuntimeWindowlessPlacementSink(runtime);
         Assert.True(receiptSink.TryApply(in receipt));
 
         Assert.Equal(positionBefore, controller.Position);
@@ -2534,7 +2576,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var projection = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var projection = new RuntimeWindowlessPlacementSink(runtime);
         RuntimePlacementProjectionSnapshot place = Placement(
             runtime,
             record,
@@ -2586,7 +2628,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var sink = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var sink = new RuntimeWindowlessPlacementSink(runtime);
         RuntimePlacementProjectionSnapshot completion = Placement(
             runtime,
             record,
@@ -2627,8 +2669,8 @@ public sealed class HeadlessSessionHostTests
         var inner = new FixtureEventRoute(
             onDispose: () => subscriberCountDuringDetach =
                 runtime.EntityObjects.Events.PlacementSubscriberCount);
-        var placements = new HeadlessRuntimePlacementProjectionSink(runtime);
-        var route = new HeadlessSessionEventRoute(
+        var placements = new RuntimeWindowlessPlacementSink(runtime);
+        var route = new RuntimeWindowlessEventRoute(
             inner,
             runtime,
             placements);
@@ -2666,9 +2708,9 @@ public sealed class HeadlessSessionHostTests
             new HeadlessDiagnosticWriter(TextWriter.Null),
             operations);
         GameRuntime runtime = host.Runtime;
-        var placements = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var placements = new RuntimeWindowlessPlacementSink(runtime);
 
-        var first = new HeadlessSessionEventRoute(
+        var first = new RuntimeWindowlessEventRoute(
             new FixtureEventRoute(),
             runtime,
             placements);
@@ -2681,7 +2723,7 @@ public sealed class HeadlessSessionHostTests
             0,
             runtime.EntityObjects.Events.PlacementSubscriberCount);
 
-        var replacement = new HeadlessSessionEventRoute(
+        var replacement = new RuntimeWindowlessEventRoute(
             new FixtureEventRoute(),
             runtime,
             placements);
@@ -2712,10 +2754,10 @@ public sealed class HeadlessSessionHostTests
         {
             DisposeFailuresRemaining = 1,
         };
-        var route = new HeadlessSessionEventRoute(
+        var route = new RuntimeWindowlessEventRoute(
             inner,
             runtime,
-            new HeadlessRuntimePlacementProjectionSink(runtime));
+            new RuntimeWindowlessPlacementSink(runtime));
         route.Attach();
 
         Assert.Throws<IOException>(route.Dispose);
@@ -2768,8 +2810,8 @@ public sealed class HeadlessSessionHostTests
         using var lifetime = new RuntimeEntityObjectLifetime();
         RuntimePhysicsState physics = lifetime.Physics;
         const uint landblockId = 0xA9B4FFFFu;
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 physics,
                 landblockId,
                 afterAdmission: null,
@@ -2779,7 +2821,7 @@ public sealed class HeadlessSessionHostTests
                         prepared,
                         CollisionAssets(landblockId, 10f)));
 
-        HeadlessCollisionGenerationAdvance advance;
+        RuntimeCollisionGenerationAdvance advance;
         do
         {
             advance = transaction.Advance();
@@ -2837,8 +2879,8 @@ public sealed class HeadlessSessionHostTests
             position);
         Assert.True(physics.SetPosition.AcknowledgeProjection(seeded));
 
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 physics,
                 landblockId,
                 afterAdmission: null,
@@ -2847,7 +2889,7 @@ public sealed class HeadlessSessionHostTests
                         admission,
                         prepared,
                         CollisionAssets(landblockId, 20f)));
-        HeadlessCollisionGenerationAdvance advance;
+        RuntimeCollisionGenerationAdvance advance;
         do
         {
             advance = transaction.Advance();
@@ -2964,7 +3006,7 @@ public sealed class HeadlessSessionHostTests
             runtime.EntityObjects.Physics,
             neighborLandblockId);
         collision.OpenHeldAdmission();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3037,10 +3079,10 @@ public sealed class HeadlessSessionHostTests
         // Driven by hand because the fixture session has no socket to send the
         // movement event on.
         var frame = new RuntimeLocalPlayerFrameController(
-            new HeadlessLocalPlayerFrameHost(
+            new RuntimeWindowlessLocalPlayerFrameHost(
                 runtime,
                 CreateInertLiveSessionHost()),
-            new HeadlessMovementInputSource(runtime.MovementOwner));
+            new RuntimeWindowlessMovementInputSource(runtime.MovementOwner));
 
         Assert.True(host.Commands.Movement.TurnToHeading(
             runtime.Generation,
@@ -3088,7 +3130,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
 
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             new GateControllableCollisionNeighborhood
             {
@@ -3149,7 +3191,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
 
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             new GateControllableCollisionNeighborhood
             {
@@ -3171,10 +3213,10 @@ public sealed class HeadlessSessionHostTests
         Assert.True(controller.IsRuntimePublished);
         Assert.False(runtime.MovementOwner.Snapshot.IsAirborne);
         var frame = new RuntimeLocalPlayerFrameController(
-            new HeadlessLocalPlayerFrameHost(
+            new RuntimeWindowlessLocalPlayerFrameHost(
                 runtime,
                 CreateInertLiveSessionHost()),
-            new HeadlessMovementInputSource(runtime.MovementOwner));
+            new RuntimeWindowlessMovementInputSource(runtime.MovementOwner));
 
         Assert.True(host.Commands.Movement.SetIntent(
             runtime.Generation,
@@ -3231,7 +3273,7 @@ public sealed class HeadlessSessionHostTests
         {
             QuiescentOverride = false,
         };
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3291,7 +3333,7 @@ public sealed class HeadlessSessionHostTests
 
         var collision = new PublishOnCenterCollisionNeighborhood(
             runtime.EntityObjects.Physics);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3319,7 +3361,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     private sealed class PublishOnCenterCollisionNeighborhood(
-        RuntimePhysicsState physics) : IHeadlessCollisionNeighborhood
+        RuntimePhysicsState physics) : IRuntimeCollisionNeighborhood
     {
         private const uint PublishedLandblockId = 0xA9B4FFFFu;
 
@@ -3381,7 +3423,7 @@ public sealed class HeadlessSessionHostTests
             replaceGeneration: false));
 
         var collision = new CollisionGenerationCommittingNeighborhood(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3424,7 +3466,7 @@ public sealed class HeadlessSessionHostTests
             replaceGeneration: false));
 
         var collision = new CollisionGenerationCommittingNeighborhood(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3440,7 +3482,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     internal sealed class CollisionGenerationCommittingNeighborhood(
-        GameRuntime runtime) : IHeadlessCollisionNeighborhood
+        GameRuntime runtime) : IRuntimeCollisionNeighborhood
     {
         public void CenterOn(uint fullCellId) =>
             CommitSyntheticCollisionGeneration(
@@ -3464,8 +3506,8 @@ public sealed class HeadlessSessionHostTests
         GameRuntime runtime,
         uint landblockId)
     {
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 runtime.EntityObjects.Physics,
                 landblockId,
                 afterAdmission: null,
@@ -3484,7 +3526,7 @@ public sealed class HeadlessSessionHostTests
                             WorldOffsetY: 0f,
                             CurrentCellId: landblockId));
                 });
-        HeadlessCollisionGenerationAdvance advance;
+        RuntimeCollisionGenerationAdvance advance;
         do
         {
             advance = transaction.Advance();
@@ -3511,7 +3553,7 @@ public sealed class HeadlessSessionHostTests
         Assert.True(runtime.Session.IsInWorld);
 
         var inertSession = CreateInertLiveSessionHost();
-        var frameHost = new HeadlessLocalPlayerFrameHost(runtime, inertSession);
+        var frameHost = new RuntimeWindowlessLocalPlayerFrameHost(runtime, inertSession);
 
         PlayerMovementController candidate =
             PlayerMovementController.CreatePublicationCandidate(
@@ -3537,7 +3579,7 @@ public sealed class HeadlessSessionHostTests
         using var movement = new RuntimeLocalPlayerMovementState();
         var command = new MovementInput(TurnLeft: true);
         movement.SetCommandInput(command);
-        var source = new HeadlessMovementInputSource(movement);
+        var source = new RuntimeWindowlessMovementInputSource(movement);
 
         MovementInput captured = source.Capture();
 
@@ -3716,15 +3758,15 @@ public sealed class HeadlessSessionHostTests
         Action<RuntimeCollisionAdmission,
             PreparedLandblockCollisionGeneration> stage)
     {
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 physics,
                 landblockId,
                 afterAdmission,
                 stage);
         while (true)
         {
-            HeadlessCollisionGenerationAdvance advance = transaction.Advance();
+            RuntimeCollisionGenerationAdvance advance = transaction.Advance();
             if (advance.Completed)
                 return;
             Assert.True(advance.Progressed);
@@ -3874,7 +3916,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -4072,7 +4114,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -4177,7 +4219,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -4293,7 +4335,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             new FixtureCollisionNeighborhood(),
             firstEntry);
@@ -4659,7 +4701,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     private sealed class FixtureCollisionNeighborhood
-        : IHeadlessCollisionNeighborhood
+        : IRuntimeCollisionNeighborhood
     {
         public int CenterCount { get; private set; }
         public uint LastCell { get; private set; }
@@ -4697,7 +4739,7 @@ public sealed class HeadlessSessionHostTests
 
     private sealed class NeighborAdmissionHeldOpenCollisionNeighborhood(
         RuntimePhysicsState physics,
-        uint heldLandblockId) : IHeadlessCollisionNeighborhood
+        uint heldLandblockId) : IRuntimeCollisionNeighborhood
     {
         private RuntimeCollisionAdmission? _admission;
         private PreparedLandblockCollisionGeneration? _prepared;
@@ -4740,7 +4782,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     private sealed class GateControllableCollisionNeighborhood
-        : IHeadlessCollisionNeighborhood
+        : IRuntimeCollisionNeighborhood
     {
         private uint _lastCell;
 

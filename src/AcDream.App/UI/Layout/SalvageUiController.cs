@@ -24,7 +24,11 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
         /// included. Required: without it a cell would quietly caption the
         /// plain name and disagree with the selection caption.</summary>
         Func<ClientObject, string> ResolveAppropriateName,
-        uint EmptySlotSprite = 0u);
+        uint EmptySlotSprite = 0u,
+        /// <summary>Selects and examines an item, the shared right-click
+        /// path of every physical item cell. Null leaves right-click
+        /// inert.</summary>
+        Action<uint>? ExamineItem = null);
 
     private readonly Bindings _bindings;
     private readonly UiItemList _list;
@@ -61,7 +65,9 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
             scrollbar.Model = _list.Scroll;
             scrollbar.Horizontal = true;
         }
-        _list.ExamineItemRequested = RemoveItem;
+        // Right-click examines a staged item like any other item cell;
+        // double-click or dragging it out takes it off the list.
+        _list.ExamineItemRequested = bindings.ExamineItem;
         _salvageButton.SuppressSelfToggle = true;
         _salvageButton.OnClick = () => Salvage();
         if (_closeButton is not null) _closeButton.OnClick = Close;
@@ -224,6 +230,8 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
                 slot.SetItem(item.ObjectId, _bindings.ResolveIcon(
                     item.Type, item.IconId, item.IconUnderlayId, item.IconOverlayId, item.Effects));
                 slot.SetStructure(item.Structure, item.MaxStructure);
+                uint stagedId = item.ObjectId;
+                slot.DoubleClicked = () => RemoveItem(stagedId);
                 _list.AddItem(slot);
             }
         }

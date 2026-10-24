@@ -105,27 +105,112 @@ public sealed class GameWindowHostBoundaryTests
     }
 
     [Fact]
-    public void WorldEnvironment_IsOwnedAndGameWindowOnlyComposesItsTypedEdges()
+    public void SessionHost_StopsBackgroundCollisionLoadsBeforeClosingTheGameFiles()
     {
-        AssertField(typeof(GameWindow), "_worldEnvironment", typeof(WorldEnvironmentController));
-
-        MethodBase worldDelegate = OnLoadMethodConstructing(
-            typeof(WorldRenderCompositionPhase));
-        Assert.Contains(
-            CompiledCallGraph.ReadFieldReferences(worldDelegate),
-            reference => reference.Field.Name == "_worldEnvironment");
-
-        MethodInfo compose = RequiredMethod(typeof(WorldRenderCompositionPhase), "Compose");
         AssertCallOrder(
-            compose,
-            (typeof(IWorldRenderCompositionFactory),
-                nameof(IWorldRenderCompositionFactory.LoadRegion)),
-            (typeof(IWorldRenderCompositionFactory),
-                nameof(IWorldRenderCompositionFactory.InitializeEnvironment)));
+            RequiredMethod(typeof(AcDream.App.Hosting.GraphicalSessionHost), "Dispose"),
+            (typeof(AcDream.Runtime.World.RuntimeCollisionNeighborhood),
+                nameof(AcDream.Runtime.World.RuntimeCollisionNeighborhood.StopBackgroundWork)),
+            (typeof(AcDream.App.Hosting.GraphicalSessionContent),
+                nameof(AcDream.App.Hosting.GraphicalSessionContent.Dispose)));
+    }
+
+    [Fact]
+    public void WindowLendsTheRuntimeOnlyWhatItTakesBackWhenItCloses()
+    {
+        // The runtime outlives the window: every route the window lends it
+        // is a lease the window's bindings give back.
+        string[] unowned =
+        [
+            nameof(AcDream.Runtime.Entities.RuntimeGhostDismissal.BindAuthoritativeDelete),
+            nameof(AcDream.Runtime.Physics.RuntimePhysicsState.BindObjectTableHostResolver),
+            "BindPresentation",
+        ];
+        IEnumerable<MethodBase> composition = typeof(SessionPlayerCompositionPhase)
+            .Assembly.GetTypes()
+            .Where(type => type == typeof(SessionPlayerCompositionPhase)
+                || type.DeclaringType == typeof(SessionPlayerCompositionPhase))
+            .SelectMany(type => type.GetMethods(Declared | BindingFlags.Static)
+                .Cast<MethodBase>());
+        foreach (MethodBase method in composition)
+        {
+            if (method.GetMethodBody() is null)
+                continue;
+            Assert.DoesNotContain(
+                CompiledCallGraph.Read(method),
+                call => call.Target.DeclaringType?.Namespace?.StartsWith(
+                        "AcDream.Runtime", StringComparison.Ordinal) == true
+                    && unowned.Contains(call.Target.Name));
+        }
+    }
+
+    [Fact]
+    public void ALostGpuEndsOnlyTheWindow()
+    {
+        // A drawing failure the window cannot recover from (a lost device)
+        // closes the window as a requested close does, handing the session
+        // back; it does not unwind the session's loop.
+        IReadOnlyList<CompiledCall> calls =
+            CompiledCallGraph.Read(RequiredMethod(typeof(GameWindow), "OnRender"));
+        Assert.Contains(
+            calls,
+            call => call.Target.DeclaringType
+                    == typeof(AcDream.App.Rendering.Gpu.Vk.VulkanRenderFailurePolicy)
+                && call.Target.Name == "IsFatal");
+        Assert.Contains(
+            calls,
+            call => call.Target.DeclaringType == typeof(GameWindow)
+                && call.Target.Name == nameof(GameWindow.CloseKeepingSession));
+    }
+
+    [Fact]
+    public void SessionDrives_AreTheSessionHostsAndTheWindowBuildsNone()
+    {
+        // A second set of drives would note every creature's first entry a
+        // second time and keep it forever; and work a window's drives held
+        // would be lost when the window closes.
+        IEnumerable<MethodBase> composition = typeof(SessionPlayerCompositionPhase)
+            .Assembly.GetTypes()
+            .Where(type => type == typeof(SessionPlayerCompositionPhase)
+                || type.DeclaringType == typeof(SessionPlayerCompositionPhase))
+            .SelectMany(type => type.GetMethods(Declared | BindingFlags.Static)
+                .Cast<MethodBase>()
+                .Concat(type.GetConstructors(Declared)));
+        foreach (MethodBase method in composition)
+        {
+            Assert.False(
+                Constructs(method, typeof(AcDream.Runtime.Session.RuntimeFirstEntryDriveController)),
+                method.Name);
+            Assert.False(
+                Constructs(method, typeof(AcDream.Runtime.Session.RuntimeAcceptedPositionDriveController)),
+                method.Name);
+            Assert.DoesNotContain(
+                method.GetMethodBody() is null ? [] : CompiledCallGraph.Read(method),
+                call => call.Target.DeclaringType == typeof(AcDream.Runtime.Physics.RuntimeRemoteArming)
+                    && call.Target.Name == "Create");
+        }
+    }
+
+    [Fact]
+    public void WorldEnvironment_IsTheSessionsAndSetUpOnceWhenTheSessionTakesItsFiles()
+    {
+        // The window borrows the session's environment; it neither builds
+        // nor initializes one, so a second window finds it set up.
+        AssertField(typeof(GameWindow), "_worldEnvironment", typeof(WorldEnvironmentController));
+        Assert.DoesNotContain(
+            CompiledCallGraph.ReadMethodReferences(
+                FindConstructorConstructing(
+                    typeof(GameWindow),
+                    typeof(AcDream.App.Update.UpdateFrameClock))),
+            call => call.Target.DeclaringType == typeof(WorldEnvironmentController)
+                && call.Target.IsConstructor);
+        Assert.DoesNotContain(
+            CompiledCallGraph.Read(RequiredMethod(typeof(WorldRenderCompositionPhase), "Compose")),
+            call => call.Target.DeclaringType == typeof(WorldEnvironmentController));
         Assert.Contains(
             CompiledCallGraph.Read(RequiredMethod(
-                typeof(RetailWorldRenderCompositionFactory),
-                nameof(RetailWorldRenderCompositionFactory.InitializeEnvironment))),
+                typeof(AcDream.App.Hosting.GraphicalSessionHost),
+                nameof(AcDream.App.Hosting.GraphicalSessionHost.UseContent))),
             call => call.Target.DeclaringType == typeof(WorldEnvironmentController)
                 && call.Target.Name == nameof(WorldEnvironmentController.Initialize));
 
@@ -297,7 +382,14 @@ public sealed class GameWindowHostBoundaryTests
     public void UpdateRenderFocusAndCloseRemainNarrowHostEdges()
     {
         MethodInfo update = RequiredMethod(typeof(GameWindow), "OnUpdate");
-        AssertSingleCall(update, typeof(GameFrameGraphSlot), nameof(GameFrameGraphSlot.Tick));
+        AssertSingleCall(
+            update,
+            typeof(AcDream.App.Hosting.GraphicalSessionHost),
+            nameof(AcDream.App.Hosting.GraphicalSessionHost.Tick));
+        AssertSingleCall(
+            RequiredMethod(typeof(GameWindow), "TickSessionFrame"),
+            typeof(GameFrameGraphSlot),
+            nameof(GameFrameGraphSlot.Tick));
 
         MethodInfo render = RequiredMethod(typeof(GameWindow), "OnRender");
         AssertSilkWindowCallBefore(render, "get_Size", typeof(RenderFrameInput), ".ctor");
@@ -383,7 +475,10 @@ public sealed class GameWindowHostBoundaryTests
             CompiledCallGraph.ReadFieldReferences(
                 RequiredMethod(typeof(GameWindow), "CaptureShutdownRoots"));
         Assert.Contains(captureFields, field => field.Field.Name == "_uiHost");
-        Assert.Contains(captureFields, field => field.Field.Name == "_pluginSession");
+        Assert.Contains(
+            CompiledCallGraph.Read(RequiredMethod(typeof(GameWindow), "CaptureShutdownRoots")),
+            call => call.Target.DeclaringType == typeof(AcDream.App.Hosting.GraphicalSessionHost)
+                && call.Target.Name == "get_PluginSession");
 
         MethodBase entry = typeof(GameWindow).Assembly.GetTypes()
             .Where(type => type.Name == "Program")
@@ -393,11 +488,16 @@ public sealed class GameWindowHostBoundaryTests
                 && call.Target.Name == nameof(GraphicalPluginSession.Create)));
         AssertCallOrder(
             entry,
+            (typeof(AcDream.App.Hosting.GraphicalSessionHost), ".ctor"),
             (typeof(GraphicalPluginSession), nameof(GraphicalPluginSession.Create)),
-            (typeof(GameWindow), nameof(GameWindow.StartPluginHosting)),
-            (typeof(GameWindow), nameof(GameWindow.Run)));
+            (typeof(AcDream.App.Hosting.GraphicalSessionHost),
+                nameof(AcDream.App.Hosting.GraphicalSessionHost.StartPluginHosting)),
+            (typeof(AcDream.App.Hosting.GraphicalSessionHost),
+                nameof(AcDream.App.Hosting.GraphicalSessionHost.Run)));
 
-        MethodInfo attach = RequiredMethod(typeof(GameWindow), nameof(GameWindow.StartPluginHosting));
+        MethodInfo attach = RequiredMethod(
+            typeof(AcDream.App.Hosting.GraphicalSessionHost),
+            nameof(AcDream.App.Hosting.GraphicalSessionHost.StartPluginHosting));
         CompiledFieldReference store = Assert.Single(
             CompiledCallGraph.ReadFieldReferences(attach),
             reference => reference.Field.Name == "_pluginSession"

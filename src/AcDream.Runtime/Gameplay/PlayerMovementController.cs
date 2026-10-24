@@ -424,6 +424,15 @@ public sealed class PlayerMovementController
         }
     }
 
+    /// <summary>
+    /// The walk the character is on, read without changing anything: null
+    /// when there is none, and while the body is not live in the world
+    /// (given to the runtime but not yet placed, or retired), which walks
+    /// nowhere.
+    /// </summary>
+    public AcDream.Core.Physics.Motion.MoveToManager? ActiveMoveTo =>
+        CanExecuteLiveMovement ? _movementManager.MoveTo : null;
+
     public AcDream.Core.Physics.Motion.MoveToManager? MoveTo
     {
         get => Movement.MoveTo;

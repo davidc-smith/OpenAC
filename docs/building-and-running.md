@@ -236,6 +236,42 @@ client refuses is `"mode": "probe"`, because a probe never selects a
 character and there is no windowed session to show. OpenAC Gateway accepts no
 `rynth` or `rynthPump` keys in the session document (they belong to OpenAC Gateway Rynth).
 
+The launcher starts every play session with the console:
+
+```bash
+AcDream.App --session-config <file> --console              # a Graphical row
+AcDream.App --session-config <file> --console --no-window  # a Headless row
+```
+
+With `--console` the client reads typed lines from standard input (after the
+password line, when the document's credential provider is `standardInput`)
+and prints chat on standard error. `/window` (or `/window <session id>`)
+opens a game window on the running session, `/close` closes it and the
+session plays on, `/quit` logs the character off and exits; every other line
+is sent as the chat box would send it. `--no-window` starts the session with
+no window, so it needs `--console`. The player closing the window logs the
+character off and ends the client, as it always has; a window the console
+closed, or one whose GPU device was lost, leaves the session playing (without
+the console it logs off). Ctrl+C and Ctrl+Break log off and exit. The
+document's `statusFile` also gets `windowOpened`, `windowClosed` (`reason`:
+`requested`, `closedByUser`, `renderFailed`, `shutdown`) and `windowFailed`
+(`error`). A server silent for too long while no window is open ends the
+stay (`disconnected` with `connection-lost`; plugins hear the log off) and
+the client logs in again every 30 s, entering the document's character as at
+the start, until an attempt gets back in; each failed attempt says so on
+standard error. A login, the first or a later one, with or without a window,
+that finds no such character on the account ends the session with exit 5:
+standard error gets `[<session id>] ended: no available character matches Id(1342177291)`
+(or `Name("...")`, `Index(n)`), and the status file closes with
+`disconnected` and `exited` (code 5) giving that text as `reason`.
+While it waits, `/quit` ends it and `/window` waits for the next login. With
+no window the client also walks (`/nav`, plugin walks), lets plugins answer
+the server's confirmations, logs the character off when a plugin asks (back
+to character selection, as with a window), and sets the document's
+`characterOptions`, as
+the headless client does. Exit codes: 0 graceful, 2 usage, 3 configuration,
+4 credential, 5 connection, 6 runtime.
+
 Where a document and a startup option say the same thing, the document wins:
 its `pluginTags` outranks `ACDREAM_PLUGIN_TAGS`, its `rynth` outranks
 `ACDREAM_RYNTH`, and its `pluginSettings`

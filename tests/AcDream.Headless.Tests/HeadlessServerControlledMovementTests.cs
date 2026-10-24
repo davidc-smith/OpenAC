@@ -10,6 +10,7 @@ using AcDream.Headless.Credentials;
 using AcDream.Headless.Diagnostics;
 using AcDream.Headless.Hosting;
 using AcDream.Runtime;
+using AcDream.Runtime.Session.Windowless;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Physics;
@@ -242,7 +243,7 @@ public sealed class HeadlessServerControlledMovementTests
             RuntimeEntityRecord player = Register(
                 Spawn(Player, PlayerStart),
                 isLocalPlayer: true);
-            var projection = new HeadlessSessionWorldProjection(
+            var projection = new RuntimeWindowlessWorldProjection(
                 Runtime,
                 new HeadlessSessionHostTests
                     .CollisionGenerationCommittingNeighborhood(Runtime),
@@ -265,8 +266,8 @@ public sealed class HeadlessServerControlledMovementTests
             _inertSession = HeadlessSessionHostTests
                 .CreateInertLiveSessionHost();
             _frame = Runtime.CreateLocalPlayerFrameController(
-                new HeadlessLocalPlayerFrameHost(Runtime, _inertSession),
-                new HeadlessMovementInputSource(Runtime.MovementOwner));
+                new RuntimeWindowlessLocalPlayerFrameHost(Runtime, _inertSession),
+                new RuntimeWindowlessMovementInputSource(Runtime.MovementOwner));
             _remoteBodies = new RuntimeRemoteBodyDrive(
                 Runtime.EntityObjects,
                 () => Runtime.PlayerIdentity.ServerGuid,

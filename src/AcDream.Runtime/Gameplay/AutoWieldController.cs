@@ -266,6 +266,28 @@ public sealed class AutoWieldController : IDisposable
         if (player == 0)
             return false;
 
+        // The server fills exactly the pack it is asked for, so the pack is
+        // chosen here: the main pack when it has room, else the first side
+        // pack with room. With no room anywhere nothing is sent and the
+        // blocker stays where it is.
+        string blockerName = blockingItem.GetAppropriateName();
+        uint destination = InventoryPlacementSearch.ChooseContainer(
+            _objects,
+            blockingItem.ObjectId,
+            rootId: player,
+            targetId: 0u,
+            playerId: player,
+            out InventoryContainerPlacementRejection noRoom);
+        if (destination == 0u)
+        {
+            if (InventoryContainerPlacementPolicy.ComposeClientLocal(
+                    noRoom, blockingItem, _objects.Get(player), player) is { } fullNotice)
+                _systemMessage?.Invoke(fullNotice);
+            _systemMessage?.Invoke(
+                $"Moving {blockerName} to your backpack - cannot unwield the {blockerName}");
+            return false;
+        }
+
         _pendingSwitch = new PendingSwitch(
             requestedItemId,
             blockingItem.ObjectId,
@@ -273,12 +295,11 @@ public sealed class AutoWieldController : IDisposable
             combatModeAfterWield,
             secondaryIntent);
 
-        _systemMessage?.Invoke(
-            $"Moving {blockingItem.GetAppropriateName()} to your backpack");
+        _systemMessage?.Invoke($"Moving {blockerName} to your backpack");
         bool dispatched = DispatchInventoryRequest(
             InventoryRequestKind.PutInContainer,
             blockingItem.ObjectId,
-            () => _sendPutItemInContainer(blockingItem.ObjectId, player, 0));
+            () => _sendPutItemInContainer(blockingItem.ObjectId, destination, 0));
         if (!dispatched)
             _pendingSwitch = null;
         return dispatched;
@@ -316,11 +337,19 @@ public sealed class AutoWieldController : IDisposable
         if (_pendingSwitch is not { } pending
             || pending.BlockingItemId == 0
             || move.ItemId != pending.BlockingItemId
-            || move.Current.ContainerId != _playerGuid()
             || move.Current.EquipLocation != EquipMask.None)
             return;
 
+        // The blocker has moved, so the switch is over either way. The wield
+        // follows only when it landed in the main pack; one that went to a
+        // side pack (the main pack was full) leaves the wield to the next
+        // attempt.
         _pendingSwitch = null;
+        if (move.Current.ContainerId != _playerGuid())
+        {
+            _combatTransitionObservedDuringSwitch = false;
+            return;
+        }
         if (_objects.Get(pending.RequestedItemId) is { } requested)
         {
             if (pending.SecondaryIntent)

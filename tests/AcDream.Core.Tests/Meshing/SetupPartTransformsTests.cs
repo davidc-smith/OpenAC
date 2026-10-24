@@ -94,15 +94,44 @@ public class SetupPartTransformsTests
     }
 
     [Fact]
-    public void ResolvePlacementFrame_PrefersResting_WhenServerSendsNoPlacement()
+    public void ResolvePlacementFrame_UsesNoFrame_WhenSetupHasNeitherPlacementNorDefault()
     {
         Setup setup = HookedItemSetup();
+        setup.PlacementFrames.Remove(Placement.Default);
 
         AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
             setup,
-            placementId: null);
+            (uint)Placement.RightHandCombat);
 
-        Assert.Same(setup.PlacementFrames[Placement.Resting], frame);
+        Assert.Null(frame);
+    }
+
+    [Fact]
+    public void ResolveObjectPose_WithNoFrame_LeavesEveryPartAtTheOrigin()
+    {
+        Setup setup = HookedItemSetup();
+        setup.PlacementFrames.Remove(Placement.Default);
+
+        AnimationFrame pose = SetupPartTransforms.ResolveObjectPose(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Empty(pose.Frames);
+        Assert.Equal(Matrix4x4.Identity, Assert.Single(SetupPartTransforms.Compute(setup, pose)));
+    }
+
+    [Theory]
+    [InlineData(null, false, (uint)Placement.Default)]
+    [InlineData((uint)Placement.Hook, false, (uint)Placement.Hook)]
+    [InlineData(null, true, (uint)Placement.Resting)]
+    public void ObjectPlacementId_FollowsWhatTheServerSent(
+        uint? placementId,
+        bool hasMovementData,
+        uint expected)
+    {
+        Assert.Equal(
+            expected,
+            SetupPartTransforms.ObjectPlacementId(placementId, hasMovementData));
     }
 
     private static Setup HookedItemSetup() => new()
