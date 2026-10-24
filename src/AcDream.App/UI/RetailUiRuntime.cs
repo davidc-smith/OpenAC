@@ -5345,6 +5345,7 @@ public sealed class RetailUiRuntime : IDisposable
                 // showing one. Both hand the plugins' handles back to the
                 // registry for the next interface to mount again.
                 _bindings.Plugins?.UnbindCanvasHost();
+                _bindings.Plugins?.UnbindPanelHost();
                 _pluginCanvasSurface?.Dispose();
                 _pluginCanvasSurface = null;
                 // Before the texture cache can go: every plugin's own images

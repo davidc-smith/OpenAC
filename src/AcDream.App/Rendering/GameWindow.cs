@@ -488,6 +488,7 @@ public sealed class GameWindow :
         AcDream.App.Input.AppHotkeyRegistry? hotkeyRegistry = null)
     {
         _host = host ?? throw new System.ArgumentNullException(nameof(host));
+        _joinedPlayingSession = host.HasSessionStarted;
         AcDream.App.RuntimeOptions options = host.Options;
         _options = options;
         AcDream.Core.Rendering.RenderingDiagnostics.DumpWalkTranscriptEnabled =
@@ -1514,10 +1515,11 @@ public sealed class GameWindow :
             frameRoots => new SessionStartCompositionPhase(
                 new SessionStartDependencies(
                     Console.WriteLine,
-                    _host.JoinPlayingSession))
+                    JoinPlayingSession))
                 .Start(frameRoots));
 
         ApplyPluginAutomationBindings();
+        _host.NoteWindowOpened();
     }
 
     private void OnUpdate(double dt)
@@ -1587,6 +1589,34 @@ public sealed class GameWindow :
 
 
 
+
+    private bool _closeKeepingSession;
+    private bool _joinedPlayingSession;
+
+    /// <summary>
+    /// Closes the window and lets the session play on without it. Called on
+    /// the update thread; the window goes once its loop has returned.
+    /// </summary>
+    internal void CloseKeepingSession()
+    {
+        _closeKeepingSession = true;
+        _window?.Close();
+    }
+
+    /// <summary>Closes the window and logs the character off, as the player's close does.</summary>
+    internal void CloseEndingSession() => _window?.Close();
+
+    /// <summary>Whether this window was built over a session already playing.</summary>
+    internal bool JoinedPlayingSession => _joinedPlayingSession;
+
+    /// <summary>Whether this window closed so that the session plays on.</summary>
+    internal bool ClosedKeepingSession => _closeKeepingSession;
+
+    private bool JoinPlayingSession()
+    {
+        _ = _host.JoinPlayingSession();
+        return _joinedPlayingSession;
+    }
     private void OnFramebufferResize(Silk.NET.Maths.Vector2D<int> newSize)
         => _framebufferResize.Resize(newSize);
 
@@ -1604,8 +1634,18 @@ public sealed class GameWindow :
         {
             PersistKeyBindingsAtShutdown();
             _audioMixerCommand?.Dispose();
-            _host.ReportSessionStopping();
-            _lifetime.PublishShutdownRoots(CaptureShutdownRoots());
+            // A window closed so the session plays on (asked for, or one that
+            // failed while opening on a session already playing) hands the
+            // session back first and lets go of only what it built; any
+            // other close ends the session, as it always has.
+            bool keepSession = _closeKeepingSession
+                || (_runFailure is not null && _joinedPlayingSession);
+            if (keepSession)
+                _host.LetGoOfWindow();
+            else
+                _host.ReportSessionStopping();
+            _lifetime.PublishShutdownRoots(
+                CaptureShutdownRoots() with { KeepSession = keepSession });
         }
 
         GameWindowLifetimeReport report = releaseNativeWindow

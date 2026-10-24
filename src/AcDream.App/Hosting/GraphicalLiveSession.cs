@@ -214,6 +214,26 @@ internal sealed class GraphicalLiveSession
         return null;
     }
 
+
+    /// <summary>
+    /// The attached window is going away while the session plays on: the
+    /// session stops asking it anything, and the connection is taken over by
+    /// the route every client without a window builds, with the drives' work
+    /// in flight handed across. The window's own leases, given back later,
+    /// find nothing left to release.
+    /// </summary>
+    internal void HandConnectionBackFromWindow(GraphicalSessionDrives? drives)
+    {
+        if (_presentation is null)
+            return;
+        _presentation = null;
+        drives?.ForgetPresentation();
+        void Replace() => _ = Host.ReplaceEventRoute();
+        if (drives is null)
+            Replace();
+        else
+            drives.HandOver(Replace);
+    }
     private void Detach(GraphicalSessionPresentation presentation)
     {
         if (ReferenceEquals(_presentation, presentation))

@@ -284,8 +284,13 @@ internal sealed class RuntimeAutomationSurface
         ArgumentNullException.ThrowIfNull(runtime);
         lock (_gate)
         {
-            if (_disposed || _navigationCommands is not null)
+            if (_disposed)
                 return;
+            // A host that lends the verbs what it draws may change while the
+            // session plays (a window opens or closes): the verbs are built
+            // again over what the host lends now.
+            _navigationCommands?.Dispose();
+            _navigationCommands = null;
             _navigationCommands =
                 new AcDream.Runtime.Navigation.NavigationChatCommands(
                     _navigation,
@@ -2878,6 +2883,19 @@ internal sealed class RuntimeAutomationSurface
         lock (_gate)
             _answerConfirmation = answer;
     }
+
+    /// <summary>
+    /// Forgets how a confirmation is answered, when the host that answered
+    /// it goes away while the session plays on.
+    /// </summary>
+    internal void UnbindDialogs()
+    {
+        lock (_gate)
+            _answerConfirmation = null;
+    }
+
+    /// <summary>Forgets the navigation walk the host lent.</summary>
+    internal void UnbindNavigationWalk() => _navigation.UnbindWalk();
 
     /// <summary>Called by the host whenever it shows a confirmation dialog.</summary>
     public void RaiseConfirmationRequested(PluginConfirmation confirmation) =>

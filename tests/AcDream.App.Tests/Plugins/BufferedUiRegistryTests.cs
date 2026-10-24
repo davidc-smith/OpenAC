@@ -42,6 +42,29 @@ public class BufferedUiRegistryTests
     }
 
     [Fact]
+    public void A_closed_interface_leaves_every_panel_for_the_next_window()
+    {
+        var registry = new BufferedUiRegistry();
+        registry.AddMarkupPanel("a.xml", new object());
+        var pending = Assert.Single(registry.Drain());
+        var root = new UiRoot();
+        var element = new UiPanel();
+        root.AddChild(element);
+        registry.CompleteMount(pending, root, element);
+        bool windowRemoved = false;
+        registry.CompleteWindowMount(pending, () => windowRemoved = true);
+        Assert.False(registry.HasUndrained);
+
+        // The window closes while the session and its plugins play on: the
+        // panel goes with the interface, and is mounted again by the next.
+        registry.UnbindPanelHost();
+
+        Assert.False(windowRemoved);
+        Assert.True(registry.HasUndrained);
+        Assert.Equal("a.xml", Assert.Single(registry.Drain()).MarkupPath);
+    }
+
+    [Fact]
     public void ScopedRegistrationTokenRemovesAnAlreadyMountedElement()
     {
         var registry = new BufferedUiRegistry();

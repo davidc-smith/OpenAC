@@ -116,6 +116,35 @@ public sealed class GameWindowHostBoundaryTests
     }
 
     [Fact]
+    public void WindowLendsTheRuntimeOnlyWhatItTakesBackWhenItCloses()
+    {
+        // The runtime outlives the window: every route the window lends it
+        // is a lease the window's bindings give back.
+        string[] unowned =
+        [
+            nameof(AcDream.Runtime.Entities.RuntimeGhostDismissal.BindAuthoritativeDelete),
+            nameof(AcDream.Runtime.Physics.RuntimePhysicsState.BindObjectTableHostResolver),
+            "BindPresentation",
+        ];
+        IEnumerable<MethodBase> composition = typeof(SessionPlayerCompositionPhase)
+            .Assembly.GetTypes()
+            .Where(type => type == typeof(SessionPlayerCompositionPhase)
+                || type.DeclaringType == typeof(SessionPlayerCompositionPhase))
+            .SelectMany(type => type.GetMethods(Declared | BindingFlags.Static)
+                .Cast<MethodBase>());
+        foreach (MethodBase method in composition)
+        {
+            if (method.GetMethodBody() is null)
+                continue;
+            Assert.DoesNotContain(
+                CompiledCallGraph.Read(method),
+                call => call.Target.DeclaringType?.Namespace?.StartsWith(
+                        "AcDream.Runtime", StringComparison.Ordinal) == true
+                    && unowned.Contains(call.Target.Name));
+        }
+    }
+
+    [Fact]
     public void SessionDrives_AreTheSessionHostsAndTheWindowBuildsNone()
     {
         // A second set of drives would note every creature's first entry a

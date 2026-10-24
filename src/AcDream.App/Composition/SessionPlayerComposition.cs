@@ -550,9 +550,13 @@ internal sealed class SessionPlayerCompositionPhase
         // Dismissing an object the client still believes in is decided by the
         // runtime; this client has a drawn world to take down as well, so it
         // lends the route it already runs for an authoritative delete.
-        d.Runtime.GhostDismissalOwner.BindAuthoritativeDelete(deletion.Delete);
-        live.LiveEntities.Physics.BindObjectTableHostResolver(
-            guid => d.MotionBindings.ResolvePhysicsHost(guid));
+        bindings.Adopt(
+            "ghost dismissal delete route",
+            d.Runtime.GhostDismissalOwner.BindAuthoritativeDeleteOwned(deletion.Delete));
+        bindings.Adopt(
+            "object table host resolver",
+            live.LiveEntities.Physics.BindObjectTableHostResolverOwned(
+                guid => d.MotionBindings.ResolvePhysicsHost(guid)));
         IPreparedCollisionSource firstEntryCollision =
             content.PreparedAssets as IPreparedCollisionSource
             ?? throw new NotSupportedException(
@@ -864,10 +868,12 @@ internal sealed class SessionPlayerCompositionPhase
         // one cycle advance, with the poses of its parts built along the way,
         // and the hooks that advance reached. A client with nothing to draw
         // hands over neither and covers exactly the same ground.
-        d.Runtime.LocalPlayerMotion.BindPresentation(
+        bindings.Adopt(
+            "local player motion presentation",
+            d.Runtime.LocalPlayerMotion.BindPresentationOwned(
             new AcDream.Runtime.Gameplay.RuntimeLocalPlayerMotionPresentation(
                 localPlayerAnimation.AdvanceRoot,
-                localPlayerAnimation.CaptureHooks));
+                localPlayerAnimation.CaptureHooks)));
         var localPlayerShadow = live.LocalPlayerShadowSynchronizer;
         var localPlayerProjection = new LocalPlayerProjectionController(
             new LiveLocalPlayerProjectionRuntime(

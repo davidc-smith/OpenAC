@@ -41,6 +41,8 @@ internal sealed class GraphicalSessionHost : IDisposable
     private GraphicalWindowlessSessionFrame? _windowlessFrame;
     private GraphicalSessionDrives? _drives;
     private bool _sessionStarted;
+    private DirectGameRuntimeCommandAdapter? _commandsWithoutWindow;
+    private GraphicalSessionWindowLoop? _windowLoop;
     private bool _disposed;
 
     internal GraphicalSessionHost(
@@ -338,6 +340,9 @@ internal sealed class GraphicalSessionHost : IDisposable
             Console.WriteLine);
     }
 
+    /// <summary>Whether the session has started, with or without a window.</summary>
+    internal bool HasSessionStarted => _sessionStarted;
+
     /// <summary>
     /// Called by a window once it is built. A window opened at the start of
     /// the process starts the session itself, as it always has (false). A
@@ -356,6 +361,72 @@ internal sealed class GraphicalSessionHost : IDisposable
         if (LiveSession.TakeOverPlayingConnection(_drives))
             _windowlessRoute?.ReleaseConnection();
         return true;
+    }
+
+    /// <summary>
+    /// The session's commands with no window: the command adapter the
+    /// client without a window uses, over this session's live session.
+    /// </summary>
+    internal DirectGameRuntimeCommandAdapter CommandsWithoutWindow =>
+        _commandsWithoutWindow ??= new DirectGameRuntimeCommandAdapter(
+            Runtime,
+            LiveSession.Host);
+
+    /// <summary>
+    /// Sends a chat line as the chat box would, with no window: the console's
+    /// lines and a plugin's submitted text take this route.
+    /// </summary>
+    internal bool SubmitChatText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || LiveSession.Host.CurrentSession is null)
+            return false;
+        AcDream.Runtime.Chat.SubmitOutcome outcome = AcDream.Runtime.Chat.ChatCommandRouter.Submit(
+            text,
+            new AcDream.Runtime.Chat.RuntimeChatCommandFeedback(Runtime.CommunicationOwner),
+            LiveSession.Commands,
+            AcDream.Runtime.Chat.ChatChannelKind.Say);
+        return outcome is not (AcDream.Runtime.Chat.SubmitOutcome.Empty
+            or AcDream.Runtime.Chat.SubmitOutcome.UnknownCommand
+            or AcDream.Runtime.Chat.SubmitOutcome.Dropped);
+    }
+
+    /// <summary>
+    /// Lends the plugin surface what the session can do with no window: at a
+    /// start without one, and again when a window closes while the session
+    /// plays on, so nothing a plugin calls reaches the window that went.
+    /// A window lends its own when it attaches.
+    /// </summary>
+    internal void ApplyAutomationWithoutWindow()
+    {
+        if (Automation is not { } automation)
+            return;
+        AcDream.Runtime.Plugins.RuntimeAutomationBindings.Apply(
+            automation,
+            Runtime,
+            GraphicalAutomationCapabilities.Build(
+                new GraphicalAutomationParts
+                {
+                    Runtime = Runtime,
+                    Warn = Console.Error.WriteLine,
+                    Content = _content?.Dats,
+                    DatLock = _content?.DatLock,
+                    MagicCatalog = _content?.Magic,
+                    Events = WorldEvents,
+                    SessionCommandsWithoutWindow = CommandsWithoutWindow,
+                    SubmitChatTextWithoutWindow = SubmitChatText,
+                }));
+    }
+
+    /// <summary>
+    /// Called by a window that closes while the session plays on, before it
+    /// lets go of anything: the connection goes back to the route of a
+    /// session with no window, and plugins are given what the session can do
+    /// without one.
+    /// </summary>
+    internal void LetGoOfWindow()
+    {
+        LiveSession.HandConnectionBackFromWindow(_drives);
+        ApplyAutomationWithoutWindow();
     }
     /// <summary>The window presenting the session, if one is open.</summary>
     internal GameWindow? Window => _window;
@@ -382,6 +453,8 @@ internal sealed class GraphicalSessionHost : IDisposable
     {
         ArgumentNullException.ThrowIfNull(frame);
         MainThreadDispatch.Drain();
+        if (_window is not null)
+            _windowLoop?.DrainWhileAttached();
         Collision.Tick();
         frame.TickSessionFrame(new UpdateFrameInput(hostDeltaSeconds));
         _pluginTick.Feed(hostDeltaSeconds);
@@ -398,44 +471,96 @@ internal sealed class GraphicalSessionHost : IDisposable
     }
 
     /// <summary>
-    /// Runs the session with a window open from the start until the window
-    /// closes, which ends the session. The process's last status line is
-    /// written from how the window's shutdown went.
+    /// Runs the session until it ends: with a window from the start (the
+    /// client as it always was), or with none until one is asked for. The
+    /// process's last status line is written from how the session ended.
     /// </summary>
-    internal void Run(Func<GraphicalSessionHost, GameWindow> openWindow)
+    internal GraphicalSessionEnd Run(
+        Func<GraphicalSessionHost, GameWindow> openWindow,
+        bool windowAtStart = true,
+        GraphicalWindowEvents? events = null)
     {
         ArgumentNullException.ThrowIfNull(openWindow);
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_window is not null)
-            throw new InvalidOperationException("A window is already open on this session.");
-
-        GameWindow window = openWindow(this);
-        _window = window;
-        try
-        {
-            window.Run();
-        }
-        finally
-        {
-            window.Dispose();
-            _window = null;
-            ReportExited(window.LifetimeReport, window.RunFailed);
-        }
+        if (_windowLoop is not null)
+            throw new InvalidOperationException("The session is already running.");
+        return new GraphicalSessionWindowLoop(this, openWindow, events).Run(windowAtStart);
     }
 
-    internal void ReportExited(GameWindowLifetimeReport report, bool crashed)
+    /// <summary>The loop running the session, while it runs.</summary>
+    internal GraphicalSessionWindowLoop? WindowLoop => _windowLoop;
+
+    internal void UseWindowLoop(GraphicalSessionWindowLoop? loop) => _windowLoop = loop;
+
+    internal void UseWindow(GameWindow? window) => _window = window;
+
+    /// <summary>Called by a window once it is built and presents the session.</summary>
+    internal void NoteWindowOpened() => _windowLoop?.NoteWindowOpened();
+
+    /// <summary>
+    /// Logs the character off and shuts the session down with no window, in
+    /// the order a window's shutdown does it: the session stops, then the
+    /// plugins, what plugins see of the world, and the runtime.
+    /// </summary>
+    internal GraphicalSessionEnd EndSessionWithoutWindow()
+    {
+        ReportSessionStopping();
+        var failures = new List<Exception>();
+        void Step(string name, Action step)
+        {
+            try
+            {
+                step();
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine($"[shutdown] '{name}': {error}");
+                failures.Add(error);
+            }
+        }
+
+        Step("game runtime session", Runtime.StopSession);
+        Step("plugins", () => _pluginSession?.Dispose());
+        Step("plugin world objects", PluginWorldEntities.Dispose);
+        Step("graphical runtime host lease", RuntimeHostLease.Dispose);
+        Step("game runtime", Runtime.Dispose);
+        GraphicalSessionEnd end = failures.Count == 0
+            ? GraphicalSessionEnd.Graceful
+            : GraphicalSessionEnd.Incomplete;
+        StatusWriter.Exited(
+            SessionId,
+            end is GraphicalSessionEnd.Graceful ? 0 : 1,
+            end is GraphicalSessionEnd.Graceful ? "graceful" : "shutdown-incomplete");
+        return end;
+    }
+
+    /// <summary>Says what went wrong letting go of a window the session outlived.</summary>
+    internal static void ReportWindowLifetime(GameWindowLifetimeReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        if (report.Status == GameWindowLifetimeStatus.Complete)
+            return;
+        Console.Error.WriteLine(
+            $"[window] closing did not complete: status={report.Status}, "
+            + $"blocked={report.BlockedStage ?? "none"}");
+    }
+
+    internal GraphicalSessionEnd ReportExited(GameWindowLifetimeReport report, bool crashed)
     {
         ArgumentNullException.ThrowIfNull(report);
         if (crashed)
         {
             StatusWriter.Exited(SessionId, 1, "crashed");
-            return;
+            return GraphicalSessionEnd.Crashed;
         }
 
         if (report.Status == GameWindowLifetimeStatus.Complete)
+        {
             StatusWriter.Exited(SessionId, 0, "graceful");
-        else
-            StatusWriter.Exited(SessionId, 1, "shutdown-incomplete");
+            return GraphicalSessionEnd.Graceful;
+        }
+        StatusWriter.Exited(SessionId, 1, "shutdown-incomplete");
+        return GraphicalSessionEnd.Incomplete;
     }
 
     public void Dispose()

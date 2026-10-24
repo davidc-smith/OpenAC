@@ -175,6 +175,12 @@ internal sealed class GraphicalSessionDrives
         }
     }
 
+
+    /// <summary>
+    /// Stops asking the attached window anything, at once: it is going away
+    /// while the session plays on. Its lease, given back later, is a no-op.
+    /// </summary>
+    internal void ForgetPresentation() => _presentation = null;
     private void Release(GraphicalSessionDrivePresentation presentation)
     {
         if (ReferenceEquals(_presentation, presentation))
