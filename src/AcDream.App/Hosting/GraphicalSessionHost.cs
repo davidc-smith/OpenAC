@@ -136,7 +136,8 @@ internal sealed class GraphicalSessionHost : IDisposable
             CreateEventsWithoutWindow,
             () => _windowlessRoute?.EndPortalRevealForSessionReset(),
             chatLogDirectory,
-            _time);
+            _time,
+            session => CommandsWithoutWindow.CreateRoute(session));
         Confirmations = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations(
             () => LiveSession.Host.CurrentSession);
         // The session's walks, planned over its own collision and walked
@@ -346,6 +347,15 @@ internal sealed class GraphicalSessionHost : IDisposable
         // A question asked on an earlier connection, or before a window took
         // the session over and answered in its own dialog, is not this one's.
         Confirmations.Forget();
+        // The character options the session document declared are put on
+        // the character once the server has said what they are and login
+        // complete is out, as every client does; a route built again over
+        // the same connection (a window closed) finds them seeded already.
+        var seeder = new AcDream.Runtime.Gameplay.RuntimeCharacterOptionsSeeder(
+            _options.DeclaredCharacterOptions,
+            Runtime,
+            CommandsWithoutWindow.Character);
+        OptionsSeeder = seeder;
         return WindowlessRoute.Create(
             session,
             GraphicalAutomationCapabilities.BuildWindowlessCharacterSessionBindings(
@@ -358,8 +368,16 @@ internal sealed class GraphicalSessionHost : IDisposable
                 Automation is { } automation
                     ? automation.RaiseConfirmationRequested
                     : null,
-                Console.WriteLine));
+                seeder.NoteOptionsSeeded,
+                Console.WriteLine),
+            seeder.NoteLoginCompleteSent);
     }
+
+    /// <summary>
+    /// What seeds the declared character options on the connection the
+    /// session plays with no window, once one has been taken.
+    /// </summary>
+    internal AcDream.Runtime.Gameplay.RuntimeCharacterOptionsSeeder? OptionsSeeder { get; private set; }
 
 
     /// <summary>

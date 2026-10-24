@@ -394,7 +394,8 @@ internal static partial class GraphicalAutomationCapabilities
     /// attached: nothing is shown, so a confirmation the server asks for is
     /// kept to be answered and told to plugins, as on every client without a
     /// window, and the options the server seeds have no panel or chat box to
-    /// follow them.
+    /// follow them; they are only compared with the options a session
+    /// document declared.
     /// </summary>
     internal static LiveCharacterSessionBindings BuildWindowlessCharacterSessionBindings(
         RuntimeCharacterState character,
@@ -404,9 +405,11 @@ internal static partial class GraphicalAutomationCapabilities
         Func<double> clientTime,
         AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations confirmations,
         Action<AcDream.Plugin.Abstractions.PluginConfirmation>? confirmationRequested,
+        Action noteOptionsSeeded,
         Action<string>? warn)
     {
         ArgumentNullException.ThrowIfNull(confirmations);
+        ArgumentNullException.ThrowIfNull(noteOptionsSeeded);
         ArgumentNullException.ThrowIfNull(character);
         ArgumentNullException.ThrowIfNull(combat);
         ArgumentNullException.ThrowIfNull(movementStats);
@@ -431,7 +434,7 @@ internal static partial class GraphicalAutomationCapabilities
             OnConfirmationDone: confirmations.Done,
             ClientTime: () => clientTime(),
             OnMovementStatsUpdated: () => movementStats.Apply("stats"),
-            OnCharacterOptionsChanged: static (_, _) => { });
+            OnCharacterOptionsChanged: (_, _) => noteOptionsSeeded());
         LiveSessionBindingDeclarations.ReportDeclaredButUnfilled(
             "windowed (no window)",
             "character-session binding",
