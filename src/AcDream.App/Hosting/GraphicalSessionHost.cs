@@ -536,7 +536,8 @@ internal sealed class GraphicalSessionHost : IDisposable
     /// hold of the connection the session plays on, the route that held it
     /// lets go, and the window is given what it missed.
     /// </summary>
-    internal bool JoinPlayingSession()
+    internal bool JoinPlayingSession(
+        Func<AcDream.Core.Net.Messages.GameEvents.CharacterConfirmationRequest, bool>? showConfirmation = null)
     {
         if (!_sessionStarted)
         {
@@ -547,10 +548,28 @@ internal sealed class GraphicalSessionHost : IDisposable
         if (LiveSession.TakeOverPlayingConnection(_drives))
         {
             _windowlessRoute?.ReleaseConnection();
-            // The window answers in its own dialog from here on.
-            Confirmations.Forget();
+            HandConfirmationToWindow(showConfirmation ?? (static _ => false));
         }
         return true;
+    }
+
+    /// <summary>
+    /// A window took the session over: the question the session kept with no
+    /// window is shown in the window's dialog, which answers it from here on;
+    /// the session forgets it, so only one of them can answer.
+    /// </summary>
+    internal void HandConfirmationToWindow(
+        Func<AcDream.Core.Net.Messages.GameEvents.CharacterConfirmationRequest, bool> show)
+    {
+        ArgumentNullException.ThrowIfNull(show);
+        AcDream.Core.Net.Messages.GameEvents.CharacterConfirmationRequest? pending =
+            Confirmations.Pending;
+        Confirmations.Forget();
+        if (pending is { } question && !show(question))
+        {
+            Console.Error.WriteLine(
+                $"live: the window could not show the open question (context {question.ContextId})");
+        }
     }
 
     /// <summary>
@@ -618,9 +637,18 @@ internal sealed class GraphicalSessionHost : IDisposable
     /// session with no window, and plugins are given what the session can do
     /// without one.
     /// </summary>
-    internal void LetGoOfWindow()
+    /// <param name="openConfirmation">
+    /// The question the window's dialog had open, taken out of it unanswered:
+    /// the session keeps it, and plugins answer it with no window.
+    /// </param>
+    internal void LetGoOfWindow(
+        AcDream.Core.Net.Messages.GameEvents.CharacterConfirmationRequest? openConfirmation = null)
     {
         LiveSession.HandConnectionBackFromWindow(_drives);
+        // After the route of a session with no window is built (it starts
+        // with nothing to answer).
+        if (openConfirmation is { } question)
+            Confirmations.Request(question);
         Navigation.ForgetPresentation();
         ApplyAutomationWithoutWindow();
     }

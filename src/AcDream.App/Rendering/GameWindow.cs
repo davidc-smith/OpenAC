@@ -1636,7 +1636,8 @@ public sealed class GameWindow :
 
     private bool JoinPlayingSession()
     {
-        _ = _host.JoinPlayingSession();
+        _ = _host.JoinPlayingSession(
+            request => _retailUiRuntime?.ShowHandedOverConfirmation(request) == true);
         return _joinedPlayingSession;
     }
     private void OnFramebufferResize(Silk.NET.Maths.Vector2D<int> newSize)
@@ -1663,7 +1664,7 @@ public sealed class GameWindow :
             bool keepSession = _closeKeepingSession
                 || (_runFailure is not null && _joinedPlayingSession);
             if (keepSession)
-                _host.LetGoOfWindow();
+                _host.LetGoOfWindow(_retailUiRuntime?.TakeOpenConfirmation());
             else
                 _host.ReportSessionStopping();
             _lifetime.PublishShutdownRoots(

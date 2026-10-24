@@ -144,6 +144,70 @@ public sealed class WindowlessSessionGapsTests
     }
 
     /// <summary>
+    /// A window closing (<c>/close</c>) while its confirmation dialog is open
+    /// hands the question to the session: plugins can still answer it, and
+    /// the server hears exactly one answer. Rust keeps the open question in
+    /// the session (<c>Communication::server_confirmation</c>); a window only
+    /// shows it.
+    /// </summary>
+    [Fact]
+    public void A_question_open_in_a_closing_window_is_answered_once_with_no_window()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.EnterWorld();
+        var sent = new List<byte[]>();
+        WorldSession connection = session.Connections.Sessions[^1];
+        connection.GameActionCapture = sent.Add;
+        IDialogAutomation dialogs = ((IAutomationSurface)session.Automation).Dialogs;
+        var open = new GameEvents.CharacterConfirmationRequest(5u, 77u, "continue?");
+
+        session.Host.LetGoOfWindow(openConfirmation: open);
+
+        Assert.Equal(open, session.Host.Confirmations.Pending);
+        Assert.Empty(sent);
+        Assert.True(dialogs.Answer(77u, true));
+        Assert.False(dialogs.Answer(77u, true));
+        byte[] response = Assert.Single(sent);
+        Assert.Equal(77u, BinaryPrimitives.ReadUInt32LittleEndian(response.AsSpan(16)));
+    }
+
+    /// <summary>
+    /// A window opening (<c>/window</c>) on a session with an unanswered
+    /// question shows it in its dialog, without telling plugins a second
+    /// time; from then on the window answers it, so the session has nothing
+    /// left to answer and sends nothing.
+    /// </summary>
+    [Fact]
+    public void A_question_waiting_with_no_window_is_shown_in_the_window_that_opens()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.EnterWorld();
+        var told = new List<PluginConfirmation>();
+        session.Events.ConfirmationRequested += told.Add;
+        var sent = new List<byte[]>();
+        WorldSession connection = session.Connections.Sessions[^1];
+        connection.GameActionCapture = sent.Add;
+        connection.GameEvents.Dispatch(
+            GameEventEnvelope.TryParse(ConfirmationRequest(5u, 77u, "continue?"))!.Value);
+        var shown = new List<GameEvents.CharacterConfirmationRequest>();
+
+        session.Host.HandConfirmationToWindow(request =>
+        {
+            shown.Add(request);
+            return true;
+        });
+
+        GameEvents.CharacterConfirmationRequest question = Assert.Single(shown);
+        Assert.Equal(77u, question.ContextId);
+        Assert.Equal(5u, question.Type);
+        Assert.Equal("continue?", question.Message);
+        Assert.Null(session.Host.Confirmations.Pending);
+        Assert.Single(told);
+        Assert.False(session.Host.Confirmations.TryAnswer(77u, true));
+        Assert.Empty(sent);
+    }
+
+    /// <summary>
     /// The server settling a question on its own leaves nothing to answer.
     /// Port of
     /// <c>HeadlessSessionHostTests.AConfirmationDoneOnTheWireClearsThePendingConfirmationThroughProductionRouting</c>.
