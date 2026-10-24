@@ -113,6 +113,23 @@ namespace AcDream.App.Rendering.Wb
 
         internal WorldTextureDetail TextureDetail => _textureDetail;
 
+        /// <summary>
+        /// Builds the mip chains of a prepared mesh's textures on the
+        /// preparation worker, so the drawing thread only uploads them. A
+        /// texture reduced for a lower detail setting is reduced on the
+        /// drawing thread and has its chain made there, as before.
+        /// </summary>
+        private void PrepareTextureMipChains(ObjectMeshData data)
+        {
+            if (_textureDetail.Environment == AcDream.Core.Textures.ImageScale.Full)
+                _mipChains.Prepare(data);
+        }
+
+        private byte[][]? FindPreparedMipChain(byte[] level0) =>
+            _textureDetail.Environment == AcDream.Core.Textures.ImageScale.Full
+                ? _mipChains.Find(level0)
+                : null;
+
         private WorldTextureDetail.ReducedTexture ReduceForUpload(
             (int Width, int Height, TextureFormat Format) format,
             TextureBatchData batch)
@@ -137,6 +154,7 @@ namespace AcDream.App.Rendering.Wb
 
 
         public bool IsDisposed { get; private set; }
+        private readonly WorldTextureMipChains _mipChains = new();
         private readonly object _disposeGate = new();
         private bool _disposeCompleted;
         private bool _disposeRunning;
@@ -1028,6 +1046,7 @@ namespace AcDream.App.Rendering.Wb
                         }
                         else if (data != null)
                         {
+                            PrepareTextureMipChains(data);
                             _cpuMeshCache.Store(data);
                         }
                         if (!completionCanceled && data != null && _ownership.IsOwned(id))
@@ -1698,7 +1717,13 @@ namespace AcDream.App.Rendering.Wb
 
                     selected.PlannedKeys.Add(batch.Key);
                     selected.AvailableSlots--;
-                    if (!selected.Touched)
+                    if (FindPreparedMipChain(batch.TextureData) is { } chain)
+                    {
+                        // Built ahead: the frame pays only its upload.
+                        mipmapBytes = checked(
+                            mipmapBytes + WorldTextureMipChains.Bytes(chain));
+                    }
+                    else if (!selected.Touched)
                     {
                         bool mipAlreadyBudgeted = selected.Existing is not null
                             && mipmapsAlreadyBudgeted.Contains(selected.Existing);
@@ -1890,7 +1915,8 @@ namespace AcDream.App.Rendering.Wb
                         try
                         {
                             textureIndex = atlasManager.AddTexture(batch.Key, upload.Data,
-                                upload.PixelFormat, upload.PixelType);
+                                upload.PixelFormat, upload.PixelType,
+                                FindPreparedMipChain(upload.Data));
                         }
                         catch
                         {
