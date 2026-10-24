@@ -22,18 +22,50 @@ internal interface IRuntimeCollisionContent
     IPreparedCollisionSource PreparedCollision { get; }
 
     ImmutableArray<float> HeightTable { get; }
+
+    /// <summary>
+    /// One landblock's collision content, placed at <paramref name="origin"/>
+    /// in the world's frame. The files are read under <see cref="DatLock"/>:
+    /// a plugin may be reading the same files from its own thread.
+    /// False when the game data has no such landblock.
+    /// </summary>
+    bool TryLoadCollisionLandblock(
+        uint landblockId,
+        Vector3 origin,
+        out LoadedLandblock landblock,
+        out LandblockCollisionBuild collisions)
+    {
+        lock (DatLock)
+        {
+            return LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
+                Dats,
+                PreparedCollision,
+                HeightTable.AsSpan(),
+                landblockId,
+                origin,
+                out landblock,
+                out collisions);
+        }
+    }
 }
 
 internal interface IRuntimeCollisionNeighborhood
 {
+    /// <summary>
+    /// Centres the published collision on an arrival the server decided
+    /// (login, portals, forced moves). The collision is measured in the
+    /// runtime's frame: when that frame has moved (a portal into another
+    /// landblock, a new session) everything is withdrawn and published
+    /// afresh; otherwise the window only moves within the same frame.
+    /// </summary>
     void CenterOn(uint fullCellId);
 
     /// <summary>
     /// Keeps the published collision around the local player while it walks:
     /// the window of landblocks moves with the player, the frame the world is
-    /// measured in stays where it was. <see cref="CenterOn"/> starts a new
-    /// frame and is for arrivals the server decides (login, portals, forced
-    /// moves); walking into the next landblock is not one of those.
+    /// measured in stays where it was. <see cref="CenterOn"/> is for
+    /// arrivals the server decides (login, portals, forced moves); walking
+    /// into the next landblock is not one of those.
     /// </summary>
     void Follow(uint fullCellId);
 
@@ -214,6 +246,9 @@ internal sealed class RuntimeCollisionNeighborhood
     private bool _slideRequired;
     private bool _publicationPlanBuilt;
     private uint _frameLandblock;
+    private RuntimeGenerationToken _frameGeneration;
+    private uint _requestedFrameLandblock;
+    private RuntimeGenerationToken _requestedFrameGeneration;
     private uint _requestedCenterLandblock;
     private uint _requestedFullCell;
     private uint _centerLandblock;
@@ -237,11 +272,36 @@ internal sealed class RuntimeCollisionNeighborhood
                 nameof(fullCellId),
                 "A collision neighborhood requires a real destination cell.");
         }
-        if (_requestedCenterLandblock != center)
+        // The collision is measured in the frame the runtime measures every
+        // position in. A new frame (the character arrived somewhere through
+        // a portal, or a new session began) withdraws everything and
+        // publishes afresh; another place in the same frame only moves the
+        // window, as a walk does.
+        uint frame = DesiredFrame(center);
+        RuntimeGenerationToken generation = _runtime.Generation;
+        bool frameMoved = _resetRequired
+            ? _requestedFrameLandblock != frame
+                || _requestedFrameGeneration != generation
+            : _frameLandblock != frame
+                || _frameGeneration != generation;
+        if (frameMoved)
         {
+            _requestedFrameLandblock = frame;
+            _requestedFrameGeneration = generation;
             _requestedCenterLandblock = center;
             _requestedFullCell = fullCellId;
             _resetRequired = true;
+            _publicationPlanBuilt = false;
+            _publicationQueue.Clear();
+            _pendingPublicationCancellation =
+                _pendingPublication is not null;
+        }
+        else if (_requestedCenterLandblock != center)
+        {
+            _requestedCenterLandblock = center;
+            _requestedFullCell = fullCellId;
+            if (!_resetRequired)
+                _slideRequired = true;
             _publicationPlanBuilt = false;
             _publicationQueue.Clear();
             _pendingPublicationCancellation =
@@ -358,23 +418,11 @@ internal sealed class RuntimeCollisionNeighborhood
         uint currentCellId,
         bool required)
     {
-        // The files are read under the process's lock: a plugin may be
-        // reading the same files from its own thread while this host loads.
-        bool loaded;
-        LoadedLandblock landblock;
-        LandblockCollisionBuild collisions;
-        lock (_content.DatLock)
-        {
-            loaded = LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
-                _content.Dats,
-                _content.PreparedCollision,
-                _content.HeightTable.AsSpan(),
+        if (!_content.TryLoadCollisionLandblock(
                 landblockId,
                 origin,
-                out landblock,
-                out collisions);
-        }
-        if (!loaded)
+                out LoadedLandblock landblock,
+                out LandblockCollisionBuild collisions))
         {
             if (required)
             {
@@ -457,7 +505,8 @@ internal sealed class RuntimeCollisionNeighborhood
             foreach (uint landblock in _resident)
                 _retirementQueue.Enqueue(landblock);
             _centerLandblock = 0u;
-            _frameLandblock = _requestedCenterLandblock;
+            _frameLandblock = _requestedFrameLandblock;
+            _frameGeneration = _requestedFrameGeneration;
             _resetRequired = false;
             _slideRequired = false;
         }
@@ -585,6 +634,24 @@ internal sealed class RuntimeCollisionNeighborhood
         int dy = Math.Abs(
             (int)((landblock >> 16) & 0xFFu) - (int)((center >> 16) & 0xFFu));
         return dx <= 1 && dy <= 1;
+    }
+
+    /// <summary>
+    /// The landblock whose corner is the world's zero for the collision
+    /// published now; 0 before anything is.
+    /// </summary>
+    internal uint FrameLandblock => _frameLandblock;
+
+    /// <summary>
+    /// The runtime's frame. Before the runtime has one (no character placed
+    /// yet) the requested centre is the frame: it is the landblock the
+    /// runtime adopts when the character is created there.
+    /// </summary>
+    private uint DesiredFrame(uint center)
+    {
+        uint runtimeFrame =
+            _runtime.EntityObjects.Physics.WorldFrameCenterLandblockId;
+        return runtimeFrame != 0u ? runtimeFrame : center;
     }
 
     private static uint CanonicalLandblock(uint fullCellId) =>
