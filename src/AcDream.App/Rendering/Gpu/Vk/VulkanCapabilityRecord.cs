@@ -657,6 +657,44 @@ internal static class VulkanCapabilityReportWriter
         File.Move(temporaryPath, fullPath, overwrite: true);
     }
 
+    /// <summary>
+    /// Writes the report the capability gate leaves behind. A device that
+    /// fails the gate has its report on disk before this returns, because the
+    /// error raised next names the file. A device that passes has it written
+    /// on a worker while the window keeps opening: serializing it for the
+    /// first time costs tens of milliseconds. A report that cannot be written
+    /// is logged; the report is a diagnostic and never stops the client.
+    /// </summary>
+    /// <returns>The write, complete once the file is on disk or the failure logged.</returns>
+    internal static Task WriteForGate(
+        string path,
+        VulkanCapabilityRecord capabilities,
+        Action<string> log,
+        Func<Action, Task>? runInBackground = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(capabilities);
+        ArgumentNullException.ThrowIfNull(log);
+        if (!capabilities.IsSupported)
+        {
+            Write(path, capabilities);
+            return Task.CompletedTask;
+        }
+
+        runInBackground ??= static work => Task.Run(work);
+        return runInBackground(() =>
+        {
+            try
+            {
+                Write(path, capabilities);
+            }
+            catch (Exception failure)
+            {
+                log($"vulkan: the capability report '{path}' could not be written: {failure.Message}");
+            }
+        });
+    }
+
     /// <summary>Exposed so the report's shape can be asserted without touching the file system.</summary>
     internal static string Serialize(VulkanCapabilityRecord capabilities)
     {
