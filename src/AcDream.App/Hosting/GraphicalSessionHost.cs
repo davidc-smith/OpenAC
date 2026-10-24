@@ -478,13 +478,15 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal GraphicalSessionEnd Run(
         Func<GraphicalSessionHost, GameWindow> openWindow,
         bool windowAtStart = true,
-        GraphicalWindowEvents? events = null)
+        GraphicalWindowEvents? events = null,
+        bool console = false)
     {
         ArgumentNullException.ThrowIfNull(openWindow);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_windowLoop is not null)
             throw new InvalidOperationException("The session is already running.");
-        return new GraphicalSessionWindowLoop(this, openWindow, events).Run(windowAtStart);
+        return new GraphicalSessionWindowLoop(this, openWindow, events, console)
+            .Run(windowAtStart);
     }
 
     /// <summary>The loop running the session, while it runs.</summary>

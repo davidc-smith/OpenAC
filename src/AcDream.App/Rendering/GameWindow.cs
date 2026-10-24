@@ -1559,14 +1559,14 @@ public sealed class GameWindow :
             return;
         }
         Vector2D<int> size = _window!.Size;
-        if (_vulkanGraphics is { } vulkan && !vulkan.PrepareFrame())
-        {
-            _renderLoopArmed = false;
-            return;
-        }
         AcDream.App.Rendering.RenderFrameOutcome outcome;
         try
         {
+            if (_vulkanGraphics is { } vulkan && !vulkan.PrepareFrame())
+            {
+                _renderLoopArmed = false;
+                return;
+            }
             _frameGraphs.Render(
                 new AcDream.App.Rendering.RenderFrameInput(
                     deltaSeconds,
@@ -1581,6 +1581,19 @@ public sealed class GameWindow :
             _renderLoopArmed = false;
             return;
         }
+        catch (Exception error)
+            when (AcDream.App.Rendering.Gpu.Vk.VulkanRenderFailurePolicy.IsFatal(error))
+        {
+            // The GPU device was lost (or ran out of memory, or the surface
+            // went): only the window ends. It closes as a requested close
+            // does, handing the session back to play on without it, and the
+            // session host decides what follows.
+            _renderLoopArmed = false;
+            _renderFailure ??= error;
+            Console.Error.WriteLine($"window: drawing failed, closing the window: {error.Message}");
+            CloseKeepingSession();
+            return;
+        }
 
         if (!outcome.SkippedZeroArea)
             _vulkanGraphics?.NoteFrameClosed();
@@ -1590,6 +1603,14 @@ public sealed class GameWindow :
 
 
 
+
+    private Exception? _renderFailure;
+
+    /// <summary>
+    /// Why drawing failed for good (a lost GPU device), when that is how the
+    /// window ended; null otherwise.
+    /// </summary>
+    internal Exception? RenderFailure => _renderFailure;
     private bool _closeKeepingSession;
     private bool _joinedPlayingSession;
 

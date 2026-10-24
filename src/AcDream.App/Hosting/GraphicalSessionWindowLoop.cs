@@ -59,15 +59,18 @@ internal sealed class GraphicalSessionWindowLoop
     private GameWindow? _window;
     private bool _closeIssued;
     private WindowDetachReason _closeReason;
+    private readonly bool _console;
 
     internal GraphicalSessionWindowLoop(
         GraphicalSessionHost host,
         Func<GraphicalSessionHost, GameWindow> openWindow,
-        GraphicalWindowEvents? events = null)
+        GraphicalWindowEvents? events = null,
+        bool console = false)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _openWindow = openWindow ?? throw new ArgumentNullException(nameof(openWindow));
         _events = events ?? new GraphicalWindowEvents();
+        _console = console;
     }
 
     internal WindowAttachState State => _machine.State;
@@ -196,6 +199,21 @@ internal sealed class GraphicalSessionWindowLoop
         }
     }
 
+
+    /// <summary>
+    /// Whether a window's end logs the character off and ends the client.
+    /// The player closing the window always does, with the console on or
+    /// off. Without the console the window is the session's only interface,
+    /// so a window that failed to draw or never opened does too; with it, a
+    /// window the console closed or could not open leaves the session playing.
+    /// </summary>
+    internal static bool LogsOff(
+        WindowDetachReason? closed,
+        bool attachFailed,
+        bool console) =>
+        closed is WindowDetachReason.ClosedByUser
+        || (!console
+            && (attachFailed || closed is WindowDetachReason.RenderFailed));
     /// <summary>Called by the window once it is built and presenting the session.</summary>
     internal void NoteWindowOpened() => _events.Opened();
 
@@ -215,7 +233,10 @@ internal sealed class GraphicalSessionWindowLoop
         {
             _machine.Step(WindowAttachInput.AttachFailed);
             _events.Failed(error.Message);
-            return null;
+            if (!LogsOff(closed: null, attachFailed: true, _console))
+                return null;
+            _machine.Step(WindowAttachInput.ShutdownRequested);
+            return _host.EndSessionWithoutWindow();
         }
 
         _window = window;
@@ -251,7 +272,23 @@ internal sealed class GraphicalSessionWindowLoop
             _machine.Step(WindowAttachInput.AttachFailed);
             _events.Failed(failure.Message);
             GraphicalSessionHost.ReportWindowLifetime(window.LifetimeReport);
-            return null;
+            if (!LogsOff(closed: null, attachFailed: true, _console))
+                return null;
+            _machine.Step(WindowAttachInput.ShutdownRequested);
+            return _host.EndSessionWithoutWindow();
+        }
+
+        if (window.RenderFailure is not null)
+        {
+            // Drawing failed for good: the window closed and handed the
+            // session back. With a console the session plays on; without one
+            // the window was its only interface, and the character logs off.
+            _machine.Step(WindowAttachInput.RenderFailed);
+            _events.Closed(WindowDetachReason.RenderFailed);
+            if (!LogsOff(WindowDetachReason.RenderFailed, attachFailed: false, _console))
+                return null;
+            _machine.Step(WindowAttachInput.ShutdownRequested);
+            return _host.EndSessionWithoutWindow();
         }
 
         if (window.ClosedKeepingSession)

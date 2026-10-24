@@ -145,6 +145,25 @@ public sealed class GameWindowHostBoundaryTests
     }
 
     [Fact]
+    public void ALostGpuEndsOnlyTheWindow()
+    {
+        // A drawing failure the window cannot recover from (a lost device)
+        // closes the window as a requested close does, handing the session
+        // back; it does not unwind the session's loop.
+        IReadOnlyList<CompiledCall> calls =
+            CompiledCallGraph.Read(RequiredMethod(typeof(GameWindow), "OnRender"));
+        Assert.Contains(
+            calls,
+            call => call.Target.DeclaringType
+                    == typeof(AcDream.App.Rendering.Gpu.Vk.VulkanRenderFailurePolicy)
+                && call.Target.Name == "IsFatal");
+        Assert.Contains(
+            calls,
+            call => call.Target.DeclaringType == typeof(GameWindow)
+                && call.Target.Name == nameof(GameWindow.CloseKeepingSession));
+    }
+
+    [Fact]
     public void SessionDrives_AreTheSessionHostsAndTheWindowBuildsNone()
     {
         // A second set of drives would note every creature's first entry a
