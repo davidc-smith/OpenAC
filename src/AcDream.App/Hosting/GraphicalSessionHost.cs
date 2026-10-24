@@ -5,6 +5,7 @@ using AcDream.Core.Plugins;
 using AcDream.Runtime;
 using AcDream.Runtime.Plugins;
 using AcDream.Runtime.Session;
+using AcDream.Runtime.Session.Windowless;
 
 namespace AcDream.App.Hosting;
 
@@ -34,6 +35,10 @@ internal sealed class GraphicalSessionHost : IDisposable
     private readonly RuntimePluginTickClock _pluginTick;
     private GraphicalPluginSession? _pluginSession;
     private GameWindow? _window;
+    private GraphicalSessionContent? _content;
+    private IDisposable? _collisionContentLease;
+    private RuntimeWindowlessSessionRoute? _windowlessRoute;
+    private GraphicalWindowlessSessionFrame? _windowlessFrame;
     private bool _disposed;
 
     internal GraphicalSessionHost(
@@ -103,6 +108,8 @@ internal sealed class GraphicalSessionHost : IDisposable
             automation is null ? null : automation.TryHandlePluginCommand,
             automation is null ? null : automation.InterceptChatInput,
             Console.WriteLine,
+            CreateEventsWithoutWindow,
+            () => _windowlessRoute?.EndPortalRevealForSessionReset(),
             chatLogDirectory);
     }
 
@@ -166,6 +173,93 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal PluginWorldLineStore WorldLines { get; } = new();
 
     internal GraphicalPluginSession? PluginSession => _pluginSession;
+
+    /// <summary>
+    /// The game files the session is played from, once opened. A window
+    /// borrows them.
+    /// </summary>
+    internal GraphicalSessionContent? Content => _content;
+
+    /// <summary>
+    /// Takes the game files the session is played from, for the life of the
+    /// process: installs what the session reads from them (spell tables,
+    /// character creation choices, trade notes) and builds the session's
+    /// collision from them, with or without a window.
+    /// </summary>
+    internal void UseContent(GraphicalSessionContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_content is not null)
+            throw new InvalidOperationException("The session's game files are already open.");
+
+        _content = content;
+        Runtime.CharacterOwner.InstallSpellMetadata(content.Magic.SpellTable);
+        Console.WriteLine(
+            $"spells: loaded {content.Magic.SpellTable.Count} entries from portal.dat");
+        AcDream.Core.CharGen.ChargenOptions chargen;
+        lock (content.DatLock)
+        {
+            chargen = AcDream.Content.CharGen.ChargenTableReader.Load(content.Dats);
+            Runtime.HousePurchaseOwner.InstallTradeNoteDenominations(
+                AcDream.Content.TradeNoteDenominations.Load(content.Dats));
+        }
+        Runtime.Session.CharacterCreationState.InstallOptions(chargen);
+        Console.WriteLine(
+            $"chargen: loaded {chargen.HeritagesById.Count} heritage(s) from portal.dat");
+        _collisionContentLease = Collision.BindContent(content.CreateCollisionContent());
+    }
+
+    /// <summary>
+    /// The route that takes hold of a world connection while no window is
+    /// attached: the one every client without a window builds, over this
+    /// session's own collision.
+    /// </summary>
+    internal RuntimeWindowlessSessionRoute WindowlessRoute =>
+        _windowlessRoute ??= new RuntimeWindowlessSessionRoute(
+            Runtime,
+            _content?.CreateCollisionContent(),
+            "windowless graphical",
+            Console.WriteLine,
+            collision: () => Collision.Neighborhood);
+
+    /// <summary>The session's frame while no window presents it.</summary>
+    internal IGraphicalSessionFrame WindowlessFrame =>
+        _windowlessFrame ??= new GraphicalWindowlessSessionFrame(
+            Runtime,
+            LiveSession.Host,
+            WindowlessRoute);
+
+    private ILiveSessionEventRouting CreateEventsWithoutWindow(
+        AcDream.Core.Net.WorldSession session)
+    {
+        AcDream.Content.Skills.LiveSkillCreditResolver skills;
+        if (_content is { } content)
+        {
+            lock (content.DatLock)
+            {
+                skills = new AcDream.Content.Skills.LiveSkillCreditResolver(
+                    content.Dats.Get<DatReaderWriter.DBObjs.SkillTable>(0x0E000004u));
+            }
+        }
+        else
+        {
+            skills = new AcDream.Content.Skills.LiveSkillCreditResolver(null);
+        }
+
+        return WindowlessRoute.Create(
+            session,
+            GraphicalAutomationCapabilities.BuildWindowlessCharacterSessionBindings(
+                Runtime.CharacterOwner,
+                Runtime.ActionOwner.Combat,
+                Runtime.MovementStats,
+                skills.Resolve,
+                () => Runtime.EffectClock.NowSeconds,
+                Automation is { } automation
+                    ? automation.RaiseConfirmationRequested
+                    : null,
+                Console.WriteLine));
+    }
 
     /// <summary>The window presenting the session, if one is open.</summary>
     internal GameWindow? Window => _window;
@@ -256,5 +350,9 @@ internal sealed class GraphicalSessionHost : IDisposable
         // After the terminal status line, release the status file so it can
         // be read, moved or deleted freely.
         StatusWriter.Dispose();
+        _windowlessRoute?.Dispose();
+        _collisionContentLease?.Dispose();
+        // The game files outlive every window that borrowed them.
+        _content?.Dispose();
     }
 }

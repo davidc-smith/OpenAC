@@ -153,6 +153,42 @@ public sealed class RuntimeCollisionNeighborhoodTests
     }
 
     [Fact]
+    public void ADestinationIsReadyOnceItsOwnLandblockIsPublishedBeforeTheRingAroundIt()
+    {
+        // A landblock of the ring can wait on the arrival itself: the
+        // character's old body, still in that landblock until it is placed
+        // at the destination, holds that landblock's commit until its
+        // placement is acknowledged. So the arrival cannot wait for the whole
+        // ring; it waits for its own landblock, published in the frame the
+        // runtime measures in.
+        using GameRuntime runtime = NewRuntime();
+        int checksThisFrame = 0;
+        var neighborhood = new RuntimeCollisionNeighborhood(
+            runtime,
+            new FlatContent(),
+            new RuntimeCollisionPacing
+            {
+                IsFrameSpent = () => ++checksThisFrame > 2,
+            });
+        runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+        neighborhood.CenterOn(Arrival);
+        for (int calls = 0;
+             runtime.EntityObjects.Physics.Engine.LandblockCount < 1 && calls < 10_000;
+             calls++)
+        {
+            checksThisFrame = 0;
+            neighborhood.Pump();
+        }
+
+        // No more work this frame: the ring around the arrival is unfinished.
+        checksThisFrame = int.MaxValue / 2;
+        Assert.Equal(1, runtime.EntityObjects.Physics.Engine.LandblockCount);
+        Assert.False(neighborhood.IsQuiescent);
+        Assert.True(neighborhood.IsReady(Arrival));
+        Assert.False(neighborhood.IsReady(East));
+    }
+
+    [Fact]
     public void ABackgroundNeighborhoodLoadsLandblocksOffTheCallersThread()
     {
         using GameRuntime runtime = NewRuntime();

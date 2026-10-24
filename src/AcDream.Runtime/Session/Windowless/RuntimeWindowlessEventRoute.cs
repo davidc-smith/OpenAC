@@ -3,9 +3,9 @@ using AcDream.Runtime.Entities;
 using AcDream.Runtime.Physics;
 using AcDream.Runtime.Session;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal sealed class HeadlessSessionEventRoute : ILiveSessionEventRouting
+internal sealed class RuntimeWindowlessEventRoute : ILiveSessionEventRouting
 {
     private readonly ILiveSessionEventRouting _events;
     private readonly GameRuntime _runtime;
@@ -19,7 +19,7 @@ internal sealed class HeadlessSessionEventRoute : ILiveSessionEventRouting
     private bool _eventsDisposed;
     private bool _disposed;
 
-    internal HeadlessSessionEventRoute(
+    internal RuntimeWindowlessEventRoute(
         ILiveSessionEventRouting events,
         GameRuntime runtime,
         IRuntimePlacementProjectionSink placements,

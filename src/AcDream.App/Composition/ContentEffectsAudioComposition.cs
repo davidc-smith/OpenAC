@@ -70,6 +70,13 @@ internal sealed record ContentEffectsAudioDependencies(
     /// <summary>How the mixer allocates its voices, from the client settings.</summary>
     public AudioMixerOptions MixerOptions { get; init; } = AudioMixerOptions.Default;
 
+    /// <summary>
+    /// The game files the session host opened for the process. A window
+    /// borrows them: it neither opens nor closes them, and what the session
+    /// installs from them was installed when they were opened.
+    /// </summary>
+    public AcDream.App.Hosting.GraphicalSessionContent? SessionContent { get; init; }
+
     public RuntimeCharacterState Character => Runtime.CharacterOwner;
 
     public LiveSessionController Session => Runtime.Session;
@@ -402,43 +409,61 @@ internal sealed class ContentEffectsAudioCompositionPhase :
         var mainScope = new CompositionAcquisitionScope();
         try
         {
-            IDatReaderWriter dats = mainScope.Acquire(
-                "DAT collection",
-                () => _factory.OpenDatCollection(_dependencies.DatDirectory),
-                static value => value.Dispose()).Publish(
-                    _publication.PublishDatCollection);
-            Fault(ContentEffectsAudioCompositionPoint.DatCollectionPublished);
+            IDatReaderWriter dats;
+            IPreparedAssetSource preparedAssets;
+            MagicCatalog magic;
+            if (_dependencies.SessionContent is { } borrowed)
+            {
+                dats = borrowed.Dats;
+                _publication.PublishDatCollection(dats);
+                Fault(ContentEffectsAudioCompositionPoint.DatCollectionPublished);
+                preparedAssets = borrowed.PreparedAssets;
+                _publication.PublishPreparedAssetSource(preparedAssets);
+                Fault(ContentEffectsAudioCompositionPoint.PreparedAssetSourcePublished);
+                magic = borrowed.Magic;
+                _publication.PublishMagicCatalog(magic);
+                Fault(ContentEffectsAudioCompositionPoint.MagicCatalogPublished);
+            }
+            else
+            {
+                dats = mainScope.Acquire(
+                    "DAT collection",
+                    () => _factory.OpenDatCollection(_dependencies.DatDirectory),
+                    static value => value.Dispose()).Publish(
+                        _publication.PublishDatCollection);
+                Fault(ContentEffectsAudioCompositionPoint.DatCollectionPublished);
 
-            IPreparedAssetSource preparedAssets = mainScope.Acquire(
-                "prepared asset source",
-                () => _factory.OpenPreparedAssetSource(
-                    _dependencies.PreparedAssetPath,
-                    _dependencies.PreparedAssetOverlayPath,
-                    _dependencies.PreparedAssetBaseRecipeVersion,
-                    _dependencies.PreparedAssetEffectiveRecipeVersion,
-                    dats,
-                    _dependencies.Error),
-                static value => value.Dispose()).Publish(
-                    _publication.PublishPreparedAssetSource);
-            Fault(ContentEffectsAudioCompositionPoint.PreparedAssetSourcePublished);
-            _dependencies.Log(
-                $"prepared assets: opened '{_dependencies.PreparedAssetPath}'");
+                preparedAssets = mainScope.Acquire(
+                    "prepared asset source",
+                    () => _factory.OpenPreparedAssetSource(
+                        _dependencies.PreparedAssetPath,
+                        _dependencies.PreparedAssetOverlayPath,
+                        _dependencies.PreparedAssetBaseRecipeVersion,
+                        _dependencies.PreparedAssetEffectiveRecipeVersion,
+                        dats,
+                        _dependencies.Error),
+                    static value => value.Dispose()).Publish(
+                        _publication.PublishPreparedAssetSource);
+                Fault(ContentEffectsAudioCompositionPoint.PreparedAssetSourcePublished);
+                _dependencies.Log(
+                    $"prepared assets: opened '{_dependencies.PreparedAssetPath}'");
 
-            MagicCatalog magic = _factory.LoadMagicCatalog(dats);
-            _publication.PublishMagicCatalog(magic);
-            Fault(ContentEffectsAudioCompositionPoint.MagicCatalogPublished);
-            _factory.InstallSpellMetadata(_dependencies.Character, magic);
-            _dependencies.Log(
-                $"spells: loaded {_factory.GetSpellCount(magic)} entries from portal.dat");
-            Fault(ContentEffectsAudioCompositionPoint.SpellMetadataInstalled);
+                magic = _factory.LoadMagicCatalog(dats);
+                _publication.PublishMagicCatalog(magic);
+                Fault(ContentEffectsAudioCompositionPoint.MagicCatalogPublished);
+                _factory.InstallSpellMetadata(_dependencies.Character, magic);
+                _dependencies.Log(
+                    $"spells: loaded {_factory.GetSpellCount(magic)} entries from portal.dat");
+                Fault(ContentEffectsAudioCompositionPoint.SpellMetadataInstalled);
 
-            ChargenOptions chargen = _factory.LoadChargenOptions(dats);
-            _factory.InstallChargenOptions(_dependencies.Session, chargen);
-            _dependencies.Log(
-                $"chargen: loaded {chargen.HeritagesById.Count} heritage(s) from portal.dat");
-            Fault(ContentEffectsAudioCompositionPoint.ChargenOptionsInstalled);
+                ChargenOptions chargen = _factory.LoadChargenOptions(dats);
+                _factory.InstallChargenOptions(_dependencies.Session, chargen);
+                _dependencies.Log(
+                    $"chargen: loaded {chargen.HeritagesById.Count} heritage(s) from portal.dat");
+                Fault(ContentEffectsAudioCompositionPoint.ChargenOptionsInstalled);
 
-            _factory.InstallTradeNoteDenominations(_dependencies.Runtime, dats);
+                _factory.InstallTradeNoteDenominations(_dependencies.Runtime, dats);
+            }
 
             IAnimationLoader animations = _factory.CreateAnimationLoader(
                 dats,

@@ -525,6 +525,12 @@ internal sealed class RuntimeCollisionNeighborhood
     private uint _requestedFullCell;
     private uint _centerLandblock;
 
+    /// <summary>
+    /// What was published in the previous frame is still being withdrawn: a
+    /// landblock resident now may be one measured from the old frame.
+    /// </summary>
+    private bool _retiringOldFrame;
+
     internal RuntimeCollisionNeighborhood(
         GameRuntime runtime,
         IRuntimeCollisionContent content,
@@ -653,7 +659,14 @@ internal sealed class RuntimeCollisionNeighborhood
             _requestedFullCell = fullCellId;
             AdvanceWork();
         }
-        if (_centerLandblock != center
+        // The destination's own landblock, published in the frame the
+        // runtime measures in, is what an arrival needs. The rest of the ring
+        // may still be publishing, and a landblock commits only once the
+        // placements in it are acknowledged -- the arrival's own placement
+        // among them, so the arrival cannot wait for the whole ring.
+        if (_requestedCenterLandblock != center
+            || _resetRequired
+            || _retiringOldFrame
             || !_resident.Contains(center)
             || !_runtime.EntityObjects.Physics.Engine
                 .IsLandblockTerrainResident(center))
@@ -748,6 +761,7 @@ internal sealed class RuntimeCollisionNeighborhood
             foreach (uint landblock in _resident)
                 _retirementQueue.Enqueue(landblock);
             _centerLandblock = 0u;
+            _retiringOldFrame = _retirementQueue.Count != 0;
             _frameLandblock = _requestedFrameLandblock;
             _frameGeneration = _requestedFrameGeneration;
             _resetRequired = false;
@@ -776,6 +790,7 @@ internal sealed class RuntimeCollisionNeighborhood
             _retirementQueue.Dequeue();
             _resident.Remove(retiring);
         }
+        _retiringOldFrame = false;
 
         // Released: nothing is asked for until the next arrival.
         if (_requestedCenterLandblock == 0u)

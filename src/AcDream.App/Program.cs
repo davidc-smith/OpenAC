@@ -212,6 +212,34 @@ using var sessionHost = new GraphicalSessionHost(
     worldEvents,
     automation,
     applicationPaths.LogsDirectory);
+// The game files are the session's, opened once for the process: the
+// session plays from them with or without a window, and a window borrows
+// them.
+if (!runtimeOptions.VulkanCapabilityProbe)
+{
+    GraphicalSessionContent content;
+    try
+    {
+        content = GraphicalSessionContent.Open(
+            runtimeOptions,
+            line => Log.Warning("{Line}", line));
+    }
+    catch (Exception error)
+        when (error is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or InvalidOperationException
+            or NotSupportedException)
+    {
+        Log.Error("the game files could not be opened: {Error}", error.Message);
+        Log.CloseAndFlush();
+        return 3;
+    }
+    Log.Information(
+        "prepared assets: opened '{Path}'",
+        runtimeOptions.PreparedAssetPath);
+    sessionHost.UseContent(content);
+}
 var host = new AppPluginHost(
     new SerilogAdapter(Log.Logger),
     worldGameState,

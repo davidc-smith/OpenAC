@@ -38,6 +38,15 @@ internal sealed record GraphicalSessionHostParts
     /// </summary>
     public required Action<RuntimeGenerationToken> ResetWithoutWindow { get; init; }
 
+    /// <summary>
+    /// How the session takes hold of an opened world connection when no
+    /// window is attached: the route every client without a window builds.
+    /// </summary>
+    public required Func<WorldSession, ILiveSessionEventRouting> CreateEventsWithoutWindow
+    {
+        get; init;
+    }
+
     /// <summary>The window presenting the session right now, if any.</summary>
     public required Func<GraphicalSessionPresentation?> Presentation { get; init; }
 
@@ -155,11 +164,9 @@ internal static partial class GraphicalAutomationCapabilities
         Func<GraphicalSessionPresentation?> window = parts.Presentation;
         var bindings = new LiveSessionHostBindings(
             Routing: new(
-                session => (window()
-                    ?? throw new InvalidOperationException(
-                        "No window is attached to take hold of this "
-                        + "session's world events."))
-                    .CreateEvents(session),
+                session => window() is { } attached
+                    ? attached.CreateEvents(session)
+                    : parts.CreateEventsWithoutWindow(session),
                 parts.CreateCommands),
             Reset: generation =>
             {
@@ -299,6 +306,52 @@ internal static partial class GraphicalAutomationCapabilities
             else
                 needsAWindow();
         }
+    }
+
+    /// <summary>
+    /// The character bindings of the session's route while no window is
+    /// attached: nothing is shown, so a confirmation the server asks for goes
+    /// to plugins alone, as on every client without a window, and the
+    /// options the server seeds have no panel or chat box to follow them.
+    /// </summary>
+    internal static LiveCharacterSessionBindings BuildWindowlessCharacterSessionBindings(
+        RuntimeCharacterState character,
+        CombatState combat,
+        AcDream.Runtime.Gameplay.RuntimeMovementStatsApplier movementStats,
+        Func<uint, uint, IReadOnlyDictionary<uint, uint>, uint> resolveSkillFormulaBonus,
+        Func<double> clientTime,
+        Action<AcDream.Plugin.Abstractions.PluginConfirmation>? confirmationRequested,
+        Action<string>? warn)
+    {
+        ArgumentNullException.ThrowIfNull(character);
+        ArgumentNullException.ThrowIfNull(combat);
+        ArgumentNullException.ThrowIfNull(movementStats);
+        ArgumentNullException.ThrowIfNull(resolveSkillFormulaBonus);
+        ArgumentNullException.ThrowIfNull(clientTime);
+        var bindings = new LiveCharacterSessionBindings(
+            combat,
+            character,
+            ResolveSkillFormulaBonus: (skill, raw, credits) =>
+                resolveSkillFormulaBonus(skill, raw, credits),
+            OnSkillsUpdated: (_, _) => movementStats.Apply("skills"),
+            OnConfirmationRequest: request =>
+                confirmationRequested?.Invoke(
+                    new AcDream.Plugin.Abstractions.PluginConfirmation(
+                        request.ContextId,
+                        (int)request.Type,
+                        request.Message)),
+            OnConfirmationDone: static _ => { },
+            ClientTime: () => clientTime(),
+            OnMovementStatsUpdated: () => movementStats.Apply("stats"),
+            OnCharacterOptionsChanged: static (_, _) => { });
+        LiveSessionBindingDeclarations.ReportDeclaredButUnfilled(
+            "windowed (no window)",
+            "character-session binding",
+            bindings,
+            DeclaredCharacterSessionBindings,
+            ConditionalCharacterSessionBindings,
+            warn);
+        return bindings;
     }
 
     /// <summary>

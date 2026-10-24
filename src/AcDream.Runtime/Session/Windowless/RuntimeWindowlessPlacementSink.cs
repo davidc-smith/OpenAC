@@ -3,14 +3,14 @@ using AcDream.Runtime.Entities;
 using AcDream.Runtime.Physics;
 using AcDream.Runtime.World;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal sealed class HeadlessRuntimePlacementProjectionSink
+internal sealed class RuntimeWindowlessPlacementSink
     : IRuntimePlacementProjectionSink
 {
     private readonly GameRuntime _runtime;
 
-    internal HeadlessRuntimePlacementProjectionSink(GameRuntime runtime)
+    internal RuntimeWindowlessPlacementSink(GameRuntime runtime)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
     }

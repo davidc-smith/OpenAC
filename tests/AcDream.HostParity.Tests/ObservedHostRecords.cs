@@ -178,6 +178,7 @@ internal static class ObservedHostRecords
             {
                 CreateCommands = NoCommandRoute,
                 ResetWithoutWindow = NoteGeneration,
+                CreateEventsWithoutWindow = _ => throw new NotSupportedException(),
                 Presentation = () => WindowedPresentation,
                 Identity = Part<AcDream.App.Input.LocalPlayerIdentityState>(),
                 Communication = Part<AcDream.Runtime.Gameplay

@@ -10,9 +10,9 @@ using AcDream.Runtime.Physics;
 using AcDream.Runtime.Session;
 using AcDream.Runtime.World;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal sealed class HeadlessSessionWorldProjection
+internal sealed class RuntimeWindowlessWorldProjection
     : IRuntimeDirectWorldProjection
 {
     private readonly GameRuntime _runtime;
@@ -27,9 +27,9 @@ internal sealed class HeadlessSessionWorldProjection
     private int _nonQuiescentPumpCount;
     private bool _reportedNonQuiescentStall;
 
-    internal HeadlessSessionWorldProjection(
+    internal RuntimeWindowlessWorldProjection(
         GameRuntime runtime,
-        HeadlessProcessContentOwner.HeadlessProcessContentLease content,
+        IRuntimeCollisionContent content,
         RuntimeFirstEntryDriveController? firstEntry = null,
         RuntimeAcceptedPositionDriveController? acceptedPositionDrive = null,
         Action<string>? onNonQuiescentStall = null)
@@ -42,7 +42,7 @@ internal sealed class HeadlessSessionWorldProjection
     {
     }
 
-    internal HeadlessSessionWorldProjection(
+    internal RuntimeWindowlessWorldProjection(
         GameRuntime runtime,
         IRuntimeCollisionNeighborhood collision,
         RuntimeFirstEntryDriveController? firstEntry = null,
@@ -239,7 +239,7 @@ internal sealed class HeadlessSessionWorldProjection
         if (_acceptedPositionDrive is null)
         {
             throw new InvalidOperationException(
-                "Headless portal placement requires a wired "
+                "Windowless portal placement requires a wired "
                 + "RuntimeAcceptedPositionDriveController - a composition "
                 + "regression must not silently disable placement (A3).");
         }
@@ -308,7 +308,7 @@ internal sealed class HeadlessSessionWorldProjection
                     if (_notApplicableRetryCount > NotApplicableRetryBudget)
                     {
                         throw new InvalidOperationException(
-                            "Headless portal placement stayed NotApplicable "
+                            "Windowless portal placement stayed NotApplicable "
                             + $"for {_notApplicableRetryCount} consecutive "
                             + "attempts (no canonical body, or an active "
                             + "initial-Create residence still owns the "
@@ -318,7 +318,7 @@ internal sealed class HeadlessSessionWorldProjection
                     break;
                 default:
                     throw new InvalidOperationException(
-                        $"Headless portal placement refused with "
+                        $"Windowless portal placement refused with "
                         + $"status={status} even though the destination's "
                         + "collision neighborhood reported ready - the "
                         + "reveal itself is stale, not recoverable by "
