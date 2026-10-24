@@ -21,6 +21,7 @@ using AcDream.Headless.Hosting;
 using AcDream.Headless.Platform;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
+using AcDream.Runtime.Session.Windowless;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Physics;
@@ -1650,7 +1651,7 @@ public sealed class HeadlessSessionHostTests
             ?? throw new InvalidOperationException(
                 "HeadlessSessionHost constructed no event route.");
         var localPlayerCompleted =
-            (Action<RuntimeEntityRecord>?)typeof(HeadlessSessionEventRoute)
+            (Action<RuntimeEntityRecord>?)typeof(RuntimeWindowlessEventRoute)
                 .GetField(
                     "_localPlayerCompleted",
                     BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -1853,7 +1854,7 @@ public sealed class HeadlessSessionHostTests
             RuntimeSetPositionStatus.CommittedHostAcknowledgementPending,
             outcome.Status);
 
-        // The production HeadlessSessionEventRoute's subscription attached
+        // The production RuntimeWindowlessEventRoute's subscription attached
         // during host.Start() already observed this Place synchronously —
         // the fake sink is still declining, so it must remain unacknowledged.
         Assert.Equal(1, sink.CallCount);
@@ -1920,7 +1921,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -1980,7 +1981,7 @@ public sealed class HeadlessSessionHostTests
         var collision = new FixtureCollisionNeighborhood();
         RuntimeAcceptedPositionDriveController acceptedPositionDrive =
             CreateAcceptedPositionDrive(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -2075,7 +2076,7 @@ public sealed class HeadlessSessionHostTests
         var collision = new FixtureCollisionNeighborhood();
         RuntimeAcceptedPositionDriveController acceptedPositionDrive =
             CreateAcceptedPositionDrive(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -2221,7 +2222,7 @@ public sealed class HeadlessSessionHostTests
         var collision = new FixtureCollisionNeighborhood();
         RuntimeAcceptedPositionDriveController acceptedPositionDrive =
             CreateAcceptedPositionDrive(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry,
@@ -2353,7 +2354,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -2443,7 +2444,7 @@ public sealed class HeadlessSessionHostTests
         AcDream.Runtime.Session.RuntimeFirstEntryDriveController firstEntry =
             CreateFirstEntryDrive(runtime);
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -2534,7 +2535,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var directProjection = new HeadlessSessionWorldProjection(
+        var directProjection = new RuntimeWindowlessWorldProjection(
             runtime,
             new FixtureCollisionNeighborhood(),
             firstEntry);
@@ -2552,7 +2553,7 @@ public sealed class HeadlessSessionHostTests
             new Vector3(600f, 601f, 602f),
             Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1.2f));
 
-        var receiptSink = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var receiptSink = new RuntimeWindowlessPlacementSink(runtime);
         Assert.True(receiptSink.TryApply(in receipt));
 
         Assert.Equal(positionBefore, controller.Position);
@@ -2583,7 +2584,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var projection = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var projection = new RuntimeWindowlessPlacementSink(runtime);
         RuntimePlacementProjectionSnapshot place = Placement(
             runtime,
             record,
@@ -2635,7 +2636,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var sink = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var sink = new RuntimeWindowlessPlacementSink(runtime);
         RuntimePlacementProjectionSnapshot completion = Placement(
             runtime,
             record,
@@ -2676,8 +2677,8 @@ public sealed class HeadlessSessionHostTests
         var inner = new FixtureEventRoute(
             onDispose: () => subscriberCountDuringDetach =
                 runtime.EntityObjects.Events.PlacementSubscriberCount);
-        var placements = new HeadlessRuntimePlacementProjectionSink(runtime);
-        var route = new HeadlessSessionEventRoute(
+        var placements = new RuntimeWindowlessPlacementSink(runtime);
+        var route = new RuntimeWindowlessEventRoute(
             inner,
             runtime,
             placements);
@@ -2715,9 +2716,9 @@ public sealed class HeadlessSessionHostTests
             new HeadlessDiagnosticWriter(TextWriter.Null),
             operations);
         GameRuntime runtime = host.Runtime;
-        var placements = new HeadlessRuntimePlacementProjectionSink(runtime);
+        var placements = new RuntimeWindowlessPlacementSink(runtime);
 
-        var first = new HeadlessSessionEventRoute(
+        var first = new RuntimeWindowlessEventRoute(
             new FixtureEventRoute(),
             runtime,
             placements);
@@ -2730,7 +2731,7 @@ public sealed class HeadlessSessionHostTests
             0,
             runtime.EntityObjects.Events.PlacementSubscriberCount);
 
-        var replacement = new HeadlessSessionEventRoute(
+        var replacement = new RuntimeWindowlessEventRoute(
             new FixtureEventRoute(),
             runtime,
             placements);
@@ -2761,10 +2762,10 @@ public sealed class HeadlessSessionHostTests
         {
             DisposeFailuresRemaining = 1,
         };
-        var route = new HeadlessSessionEventRoute(
+        var route = new RuntimeWindowlessEventRoute(
             inner,
             runtime,
-            new HeadlessRuntimePlacementProjectionSink(runtime));
+            new RuntimeWindowlessPlacementSink(runtime));
         route.Attach();
 
         Assert.Throws<IOException>(route.Dispose);
@@ -3013,7 +3014,7 @@ public sealed class HeadlessSessionHostTests
             runtime.EntityObjects.Physics,
             neighborLandblockId);
         collision.OpenHeldAdmission();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3086,10 +3087,10 @@ public sealed class HeadlessSessionHostTests
         // Driven by hand because the fixture session has no socket to send the
         // movement event on.
         var frame = new RuntimeLocalPlayerFrameController(
-            new HeadlessLocalPlayerFrameHost(
+            new RuntimeWindowlessLocalPlayerFrameHost(
                 runtime,
                 CreateInertLiveSessionHost()),
-            new HeadlessMovementInputSource(runtime.MovementOwner));
+            new RuntimeWindowlessMovementInputSource(runtime.MovementOwner));
 
         Assert.True(host.Commands.Movement.TurnToHeading(
             runtime.Generation,
@@ -3137,7 +3138,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
 
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             new GateControllableCollisionNeighborhood
             {
@@ -3198,7 +3199,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
 
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             new GateControllableCollisionNeighborhood
             {
@@ -3220,10 +3221,10 @@ public sealed class HeadlessSessionHostTests
         Assert.True(controller.IsRuntimePublished);
         Assert.False(runtime.MovementOwner.Snapshot.IsAirborne);
         var frame = new RuntimeLocalPlayerFrameController(
-            new HeadlessLocalPlayerFrameHost(
+            new RuntimeWindowlessLocalPlayerFrameHost(
                 runtime,
                 CreateInertLiveSessionHost()),
-            new HeadlessMovementInputSource(runtime.MovementOwner));
+            new RuntimeWindowlessMovementInputSource(runtime.MovementOwner));
 
         Assert.True(host.Commands.Movement.SetIntent(
             runtime.Generation,
@@ -3280,7 +3281,7 @@ public sealed class HeadlessSessionHostTests
         {
             QuiescentOverride = false,
         };
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3340,7 +3341,7 @@ public sealed class HeadlessSessionHostTests
 
         var collision = new PublishOnCenterCollisionNeighborhood(
             runtime.EntityObjects.Physics);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3430,7 +3431,7 @@ public sealed class HeadlessSessionHostTests
             replaceGeneration: false));
 
         var collision = new CollisionGenerationCommittingNeighborhood(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3473,7 +3474,7 @@ public sealed class HeadlessSessionHostTests
             replaceGeneration: false));
 
         var collision = new CollisionGenerationCommittingNeighborhood(runtime);
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -3560,7 +3561,7 @@ public sealed class HeadlessSessionHostTests
         Assert.True(runtime.Session.IsInWorld);
 
         var inertSession = CreateInertLiveSessionHost();
-        var frameHost = new HeadlessLocalPlayerFrameHost(runtime, inertSession);
+        var frameHost = new RuntimeWindowlessLocalPlayerFrameHost(runtime, inertSession);
 
         PlayerMovementController candidate =
             PlayerMovementController.CreatePublicationCandidate(
@@ -3586,7 +3587,7 @@ public sealed class HeadlessSessionHostTests
         using var movement = new RuntimeLocalPlayerMovementState();
         var command = new MovementInput(TurnLeft: true);
         movement.SetCommandInput(command);
-        var source = new HeadlessMovementInputSource(movement);
+        var source = new RuntimeWindowlessMovementInputSource(movement);
 
         MovementInput captured = source.Capture();
 
@@ -3923,7 +3924,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -4121,7 +4122,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -4226,7 +4227,7 @@ public sealed class HeadlessSessionHostTests
             record.Snapshot,
             replaceGeneration: false));
         var collision = new FixtureCollisionNeighborhood();
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             collision,
             firstEntry);
@@ -4342,7 +4343,7 @@ public sealed class HeadlessSessionHostTests
             record.CreateIntegrationVersion,
             record.Snapshot,
             replaceGeneration: false));
-        var projection = new HeadlessSessionWorldProjection(
+        var projection = new RuntimeWindowlessWorldProjection(
             runtime,
             new FixtureCollisionNeighborhood(),
             firstEntry);

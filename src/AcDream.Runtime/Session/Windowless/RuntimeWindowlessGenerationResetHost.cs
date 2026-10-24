@@ -1,9 +1,9 @@
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal sealed class HeadlessGenerationResetHost
+internal sealed class RuntimeWindowlessGenerationResetHost
     : IRuntimeGenerationResetHost
 {
     public void RetireEntityProjection(RuntimeEntityRecord entity)

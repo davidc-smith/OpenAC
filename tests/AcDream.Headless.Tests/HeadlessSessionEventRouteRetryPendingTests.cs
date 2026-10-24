@@ -10,6 +10,7 @@ using AcDream.Core.Physics;
 using AcDream.Core.Spells;
 using AcDream.Headless.Hosting;
 using AcDream.Runtime;
+using AcDream.Runtime.Session.Windowless;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Physics;
@@ -17,7 +18,7 @@ using AcDream.Runtime.Session;
 
 namespace AcDream.Headless.Tests;
 
-public sealed class HeadlessSessionEventRouteRetryPendingTests
+public sealed class RuntimeWindowlessEventRouteRetryPendingTests
 {
     private const uint PlayerGuid = 0x50000001u;
     private const uint Landblock = 0xC1000000u;
@@ -58,7 +59,7 @@ public sealed class HeadlessSessionEventRouteRetryPendingTests
 
         var sink = new DecliningThenAcceptingSink();
         var events = new NoOpEventRoute();
-        var route = new HeadlessSessionEventRoute(events, runtime, sink);
+        var route = new RuntimeWindowlessEventRoute(events, runtime, sink);
 
         route.Attach();
         Assert.Equal(1, sink.CallCount);
@@ -111,7 +112,7 @@ public sealed class HeadlessSessionEventRouteRetryPendingTests
 
         var sink = new DecliningThenAcceptingSink();
         var events = new NoOpEventRoute();
-        var route = new HeadlessSessionEventRoute(events, runtime, sink);
+        var route = new RuntimeWindowlessEventRoute(events, runtime, sink);
         route.Attach();
         Assert.Equal(1, sink.CallCount);
 

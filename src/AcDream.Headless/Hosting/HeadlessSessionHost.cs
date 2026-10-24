@@ -17,6 +17,7 @@ using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Navigation;
 using AcDream.Runtime.Physics;
 using AcDream.Runtime.Session;
+using AcDream.Runtime.Session.Windowless;
 
 namespace AcDream.Headless.Hosting;
 
@@ -160,7 +161,7 @@ internal sealed class HeadlessSessionHost : IDisposable
 
     private readonly TimeSpan _lostConnectionRetryInterval;
     private readonly TimeProvider _timeProvider;
-    private readonly HeadlessGenerationResetHost _resetHost = new();
+    private readonly RuntimeWindowlessGenerationResetHost _resetHost = new();
     private readonly IDisposable _hostLease;
     private readonly IHeadlessBotPolicy _policy;
     private readonly IDisposable _policySubscription;
@@ -180,23 +181,13 @@ internal sealed class HeadlessSessionHost : IDisposable
 
     private readonly HeadlessProcessContentOwner.HeadlessProcessContentLease?
         _contentLease;
-    private readonly IRuntimePlacementProjectionSink? _placementSinkOverride;
-    private RuntimeFirstEntryDriveController? _firstEntryDrive;
-    private RuntimeAcceptedPositionDriveController? _acceptedPositionDrive;
-    private AcDream.Runtime.Physics.RuntimeRemoteArming? _remoteArming;
-
     /// <summary>
-    /// What carries every other creature's body forward between the server's
-    /// updates. Absent when this session holds no lease on the installed data
-    /// files: with no animation content there is nothing to carry a body by,
-    /// and its bodies stand where the server put them.
+    /// How this session takes hold of a world connection with nothing drawn:
+    /// the route every client without a window builds.
     /// </summary>
-    private AcDream.Runtime.Physics.RuntimeRemoteBodyDrive? _remoteBodies;
+    private readonly RuntimeWindowlessSessionRoute _windowless;
     private AcDream.Core.Net.WorldSession? _currentSession;
-    private HeadlessSessionWorldProjection? _worldProjection;
-    private RuntimeLiveEntitySessionController? _entities;
-    private RuntimeEntityLivenessController? _liveness;
-    private HeadlessSessionEventRoute? _eventRoute;
+    private RuntimeWindowlessEventRoute? _eventRoute;
     private GameEvents.CharacterConfirmationRequest? _pendingConfirmation;
     private int _disposeStage;
     private long _reconnectDeadline;
@@ -236,7 +227,6 @@ internal sealed class HeadlessSessionHost : IDisposable
         _diagnostics = diagnostics
             ?? throw new ArgumentNullException(nameof(diagnostics));
         _declaredCharacterOptions = ParseDeclaredCharacterOptions(descriptor);
-        _placementSinkOverride = placementSinkOverride;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _reconnectQuiescence = reconnectQuiescence
             ?? (sessionOperations is null
@@ -412,7 +402,7 @@ internal sealed class HeadlessSessionHost : IDisposable
                                 // The windowed client ends its portal reveal
                                 // before the world transit resets; so does
                                 // this one.
-                                _entities?.EndPortalRevealForSessionReset();
+                                _windowless?.EndPortalRevealForSessionReset();
                                 runtime.ResetGeneration(generation, _resetHost);
                             },
                             Identity = runtime.PlayerIdentity,
@@ -450,12 +440,21 @@ internal sealed class HeadlessSessionHost : IDisposable
             _statusWriter = statusWriter;
             _localPlayerFrame =
                 runtime.CreateLocalPlayerFrameController(
-                    new HeadlessLocalPlayerFrameHost(
+                    new RuntimeWindowlessLocalPlayerFrameHost(
                         runtime,
                         liveSession),
-                    new HeadlessMovementInputSource(
+                    new RuntimeWindowlessMovementInputSource(
                         runtime.MovementOwner));
             _contentLease = contentLease;
+            _windowless = new RuntimeWindowlessSessionRoute(
+                runtime,
+                contentLease,
+                "headless",
+                message => diagnostics.Message(
+                    descriptor.Id,
+                    message,
+                    runtime.Generation.Value),
+                placementSinkOverride: placementSinkOverride);
             _navigationWalk = navigationWalk;
             bridge.Bind(this);
 
@@ -611,7 +610,7 @@ internal sealed class HeadlessSessionHost : IDisposable
         // after the character's own step and before anything the server has
         // said this frame is read, so every body spends the same elapsed time
         // on both clients.
-        _remoteBodies?.Tick(checked((float)deltaSeconds));
+        _windowless.AdvanceRemoteBodies(checked((float)deltaSeconds));
         Runtime.FinishRemoteBodyPass();
         _liveSession.Tick();
         if (_liveSession.ConnectionLost)
@@ -619,10 +618,7 @@ internal sealed class HeadlessSessionHost : IDisposable
             BeginLostConnectionRecovery();
             return;
         }
-        _worldProjection?.PumpFirstEntry();
-        _entities?.PumpPortalCompletion();
-        _eventRoute?.RetryPending();
-        _liveness?.Tick(Runtime.Clock.SimulationTimeSeconds);
+        _windowless.PumpAfterNetwork();
         _localPlayerFrame.RunPostNetworkCommandPhase();
         Runtime.ActionOwner.CombatAttack.Tick();
         _policy.Tick(Runtime, Commands);
@@ -646,6 +642,7 @@ internal sealed class HeadlessSessionHost : IDisposable
         RuntimeTeardownAcknowledgement result =
             Commands.Session.Stop(Runtime.Generation);
         _currentSession = null;
+        _windowless.ForgetSession();
         if (_hasConnected)
         {
             _hasConnected = false;
@@ -1103,174 +1100,12 @@ internal sealed class HeadlessSessionHost : IDisposable
             _declaredCharacterOptions,
             Runtime,
             Commands.Character);
-        IRuntimeDirectWorldProjection? worldProjection = null;
-        if (_contentLease is { } content)
-        {
-            // Without a window there is no richer body maker, so the shared
-            // physics owner is told where authored cylinders come from: a walk
-            // ordered at a creature has to know how wide that creature is, or
-            // it measures to the line through its middle and can never finish.
-            Runtime.EntityObjects.Physics.BindSetupCollisionSource(
-                content.PreparedCollision);
-            // Animation content comes off the same lease, for the same reason:
-            // a body that is to move itself between the server's updates needs
-            // the table that names its cycles and the frames those cycles
-            // play. A session with no lease has no content and no bodies, and
-            // binds nothing.
-            // Both readers take the process's lock on the files: a plugin may
-            // be reading the same files from its own thread at the same time.
-            Runtime.EntityObjects.Physics.BindMotionContentSource(
-                new RuntimeDatMotionContentSource(
-                    content.Dats,
-                    new RetailAnimationLoader(content.Dats, content.DatLock),
-                    content.DatLock));
-            _firstEntryDrive ??= new RuntimeFirstEntryDriveController(
-                Runtime.EntityObjects,
-                Runtime.Clock,
-                content.PreparedCollision,
-                () => PlayerMovementConstructionOptions.From(
-                    Runtime.CharacterOwner.MovementSkills.Snapshot),
-                static _ => new RuntimeLocalPlayerPhysicsActivationPreparation(
-                    Radius: DefaultPlayerBody.Radius,
-                    Height: DefaultPlayerBody.Height,
-                    RuntimeLocalPlayerShadowDisposition.ProvenShapeless));
-            PhysicsDiagnostics.LocalTeleportHostKind = "headless";
-            _acceptedPositionDrive ??= new RuntimeAcceptedPositionDriveController(
-                Runtime.EntityObjects,
-                Runtime.Clock,
-                content.PreparedCollision,
-                new LocalPlayerOutboundController((_, _, _, _, _, _) => { }),
-                () => Runtime.Generation,
-                () => Runtime.PlayerIdentity.ServerGuid,
-                () => Runtime.MovementOwner.Controller,
-                () => Runtime.CharacterOwner.UsePositionFromServer,
-                () => _currentSession,
-                () => Runtime.MovementOwner,
-                isPortalAuthorityCurrent: portal => Runtime.TransitOwner
-                    .CanPlacePortalDestination(
-                        portal.RevealGeneration,
-                        portal.TeleportSequence,
-                        portal.Projection.DestinationCell));
-            var projection = new HeadlessSessionWorldProjection(
-                Runtime,
-                content,
-                _firstEntryDrive,
-                _acceptedPositionDrive,
-                onNonQuiescentStall: message => _diagnostics.Message(
-                    _descriptor.Id,
-                    message,
-                    Runtime.Generation.Value));
-            _worldProjection = projection;
-            worldProjection = projection;
-            // Arming another creature's body is the runtime's, and this client
-            // arms the same bodies the same way; it simply draws none of
-            // them, so the arming answers its own questions off the record.
-            _remoteArming ??= AcDream.Runtime.Physics.RuntimeRemoteArming.Create(
-                Runtime.EntityObjects,
-                Runtime.Clock,
-                content.PreparedCollision,
-                projection.RemotePlacementServiceWindow);
-            // Carrying those bodies forward is the runtime's too. This client
-            // says when, and hands over the two things only a client knows:
-            // which body is the character's, and where the character is.
-            _remoteBodies ??= new AcDream.Runtime.Physics
-                .RuntimeRemoteBodyDrive(
-                    Runtime.EntityObjects,
-                    () => Runtime.PlayerIdentity.ServerGuid,
-                    () => Runtime.MovementOwner.Controller?.Position);
-        }
-        var entities = new RuntimeLiveEntitySessionController(
-            Runtime,
+        ILiveSessionEventRouting route = _windowless.Create(
             session,
-            message => _diagnostics.Message(
-                _descriptor.Id,
-                message,
-                Runtime.Generation.Value),
-            worldProjection,
-            _acceptedPositionDrive,
-            // OP7: the first two of three production LoginComplete send
-            // sites — see RuntimeLiveEntitySessionController's own doc.
-            onLoginCompleteSent: () => _optionsSeeder?.NoteLoginCompleteSent());
-        if (_remoteArming is { } remoteArming)
-            entities.BindRemoteArming(remoteArming);
-        _entities = entities;
-        // The 25-second out-of-visibility destruction runs here too: the
-        // server forgets an object on that schedule without a message and
-        // only announces a destroyed object to players still knowing it, so
-        // a bot that never expired anything would keep every corpse it saw.
-        _liveness?.Dispose();
-        _liveness = new RuntimeEntityLivenessController(
-            Runtime.EntityObjects,
-            Runtime.PlayerIdentity,
-            new RuntimeCanonicalEntityExpirySink(Runtime.EntityObjects),
-            new RuntimePhysicsCurrentCellSource(Runtime.EntityObjects),
-            Runtime.InventoryOwner.ExternalContainers,
-            Runtime.TradeOwner,
-            Runtime.InventoryOwner.Vendor);
-        var route = new LiveSessionEventRouter(
-            session,
-            entities.CreateSink(),
-            new LiveEnvironmentSessionSink(
-                change =>
-                    _ = Runtime.EnvironmentOwner
-                        .ApplyAdminEnvirons(change),
-                Runtime.EnvironmentOwner.SynchronizeFromServer),
-            new LiveInventorySessionBindings(
-                Runtime.InventoryOwner.Objects,
-                () => Runtime.PlayerIdentity.ServerGuid,
-                Runtime.InventoryOwner.Shortcuts.Load,
-                error =>
-                {
-                    bool castReceipt = Runtime.InventoryOwner.Transactions.ItemBusyCount == 0;
-                    Runtime.InventoryOwner.ExternalContainers
-                        .ApplyUseDone(error);
-                    if (castReceipt)
-                        Runtime.ActionOwner.SpellCast.CompleteUse(error);
-                    Runtime.ActionOwner.Transactions.CompleteUse(error);
-                },
-                Runtime.InventoryOwner.ItemMana,
-                Runtime.InventoryOwner.ExternalContainers,
-                appraisal =>
-                    Runtime.ActionOwner.Transactions
-                        .AcceptAppraisalResponse(appraisal.Guid),
-                Vendor: Runtime.InventoryOwner.Vendor,
-                Book: Runtime.BookOwner,
-                PlayerName: () =>
-                    Runtime.InventoryOwner.Objects
-                        .Get(Runtime.PlayerIdentity.ServerGuid)?.Name
-                    ?? string.Empty),
             CreateCharacterBindings(),
-            new LiveSocialSessionBindings(
-                Runtime.CommunicationOwner.Chat,
-                Runtime.CommunicationOwner.TurbineChat,
-                Runtime.CommunicationOwner.Friends,
-                Runtime.CommunicationOwner.Squelch,
-                (text, type) => Runtime.CommunicationOwner.AddText(text, type),
-                Trade: Runtime.TradeOwner,
-                Fellowship: Runtime.FellowshipOwner,
-                Allegiance: Runtime.AllegianceOwner,
-                House: Runtime.HouseOwner,
-                HousePurchase: Runtime.HousePurchaseOwner,
-                Contracts: Runtime.ContractsOwner,
-                PlayerGuid: () => Runtime.PlayerIdentity.ServerGuid,
-                OnLocalPlayerDeath:
-                    Runtime.CommunicationOwner.ReportLocalPlayerDeath),
-            actions: Runtime.ActionOwner);
-        var eventRoute = new HeadlessSessionEventRoute(
-            route,
-            Runtime,
-            _placementSinkOverride
-                ?? new HeadlessRuntimePlacementProjectionSink(Runtime),
-            _firstEntryDrive,
-            _ =>
-            {
-                session.SendLoginComplete();
-                _optionsSeeder?.NoteLoginCompleteSent();
-                session.SendHouseQuery();
-            },
-            _acceptedPositionDrive);
-        _eventRoute = eventRoute;
-        return eventRoute;
+            () => _optionsSeeder?.NoteLoginCompleteSent());
+        _eventRoute = _windowless.EventRoute;
+        return route;
     }
 
     private static Dictionary<CharacterOptionId, bool> ParseDeclaredCharacterOptions(

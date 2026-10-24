@@ -3,9 +3,9 @@ using AcDream.Runtime;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Session;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal sealed class HeadlessMovementInputSource(
+internal sealed class RuntimeWindowlessMovementInputSource(
     RuntimeLocalPlayerMovementState movement)
     : IRuntimeMovementInputSource
 {
@@ -22,14 +22,14 @@ internal sealed class HeadlessMovementInputSource(
     }
 }
 
-internal sealed class HeadlessLocalPlayerFrameHost
+internal sealed class RuntimeWindowlessLocalPlayerFrameHost
     : IRuntimeLocalPlayerFrameHost
 {
     private readonly GameRuntime _runtime;
     private readonly LiveSessionHost _session;
     private readonly LocalPlayerOutboundController _outbound;
 
-    internal HeadlessLocalPlayerFrameHost(
+    internal RuntimeWindowlessLocalPlayerFrameHost(
         GameRuntime runtime,
         LiveSessionHost session)
     {
