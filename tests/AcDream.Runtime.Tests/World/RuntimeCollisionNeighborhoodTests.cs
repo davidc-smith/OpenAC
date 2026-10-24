@@ -285,6 +285,181 @@ public sealed class RuntimeCollisionNeighborhoodTests
         AssertRangeHeld(neighborhood, walked, ActivityRange);
     }
 
+    /// <summary>
+    /// A portal into the neighbouring landblock moves the frame every
+    /// position is measured in, and every landblock is withdrawn and
+    /// published again in the new frame. A creature standing in one of them
+    /// is set aside while its landblock is withdrawn and put back once it is
+    /// published again: it must come back where it stood, in its own
+    /// landblock, not 192 meters away where its old measurement lands in the
+    /// new frame.
+    /// </summary>
+    [Fact]
+    public void ACreatureSetAsideByARecallIntoTheNeighbourComesBackWhereItStood()
+    {
+        const uint Creature = 0x7A0000C1u;
+        var standing = new Vector3(20f, 30f, 0f);
+        uint creatureCell = CellAt(new Vector2(192f + standing.X, standing.Y));
+        Assert.Equal(0x292A0002u, creatureCell);
+        using GameRuntime runtime = NewRuntime();
+        RuntimePhysicsState physics = runtime.EntityObjects.Physics;
+        var neighborhood = new RuntimeCollisionNeighborhood(runtime, new FlatContent());
+        physics.ObserveLocalPlayerCreate(Arrival);
+        neighborhood.CenterOn(Arrival);
+        Drive(neighborhood, Arrival);
+
+        // The creature stands in the landblock east of the arrival, 192 m
+        // east of the frame's corner.
+        RuntimeEntityRecord creature = runtime.EntityObjects
+            .RegisterEntity(RuntimeEntityTestSpawns.Spawn(
+                Creature, creatureCell, standing.X, standing.Y, PhysicsStateFlags.Gravity, standing.Z))
+            .Canonical!;
+        runtime.EntityObjects.Entities.SetFinalPhysicsState(creature, PhysicsStateFlags.Gravity);
+        var body = new PhysicsBody
+        {
+            Position = standing + new Vector3(192f, 0f, 0f),
+            Orientation = Quaternion.Identity,
+            LastUpdateTime = 1d,
+            State = PhysicsStateFlags.Gravity,
+            TransientState = TransientStateFlags.Active,
+        };
+        body.SnapToCell(creatureCell, body.Position, standing);
+        runtime.EntityObjects.Entities.SetPhysicsBody(creature, body);
+        creature.ObjectClock.Activate();
+        RuntimeSetPositionOutcome placed = physics.SetPosition.Apply(
+            creature,
+            creature.PositionAuthorityVersion,
+            new RuntimeSetPositionCommand(
+                new PhysicsSetPositionRequest(
+                    standing + new Vector3(192f, 0f, 0f),
+                    Quaternion.Identity,
+                    creatureCell,
+                    standing,
+                    ImmutableArray<FlatCollisionSphere>.Empty,
+                    Scale: 1f,
+                    StepUpHeight: 0.4f,
+                    StepDownHeight: 0.4f,
+                    Flags: PhysicsSetPositionFlags.Placement
+                        | PhysicsSetPositionFlags.Slide),
+                RuntimeSetPositionOperationKind.RemoteAuthoritative,
+                GameTime: 10d,
+                ExpectedVelocityAuthorityVersion: 0UL,
+                ShadowWorldOffsetX: 192f,
+                ShadowWorldOffsetY: 0f));
+        Assert.Equal(PhysicsResidenceDisposition.Committed, placed.Residence);
+        AcknowledgeEveryProjection(runtime);
+        Assert.Equal(creatureCell, creature.FullCellId);
+        Assert.True(physics.IsSpatialRoot(creature));
+
+        // The recall: the server puts the character in that landblock, and
+        // the runtime measures from it from now on.
+        physics.ObserveLocalWorldFrame(0x292A0010u, teleportAdvanced: true);
+        neighborhood.CenterOn(0x292A0010u);
+        for (int pump = 0;
+             pump < 1_000
+                 && !(neighborhood.IsReady(0x292A0010u)
+                     && neighborhood.IsQuiescent
+                     && runtime.Placements.PendingCount == 0);
+             pump++)
+        {
+            AcknowledgeEveryProjection(runtime);
+            neighborhood.Pump();
+        }
+        Assert.True(neighborhood.IsQuiescent, "The ring never finished publishing.");
+
+        Assert.Equal(creatureCell, creature.FullCellId);
+        Assert.Equal(standing, creature.PhysicsBody!.Position);
+    }
+
+    /// <summary>
+    /// A creature the server places in a landblock the client holds no
+    /// collision for waits until that landblock is published. A portal may
+    /// move the frame while it waits; when it is put down it must stand
+    /// where the server put it, measured in the new frame.
+    /// </summary>
+    [Fact]
+    public void ACreatureWaitingForItsLandblockAcrossARecallIsPutDownWhereTheServerPutIt()
+    {
+        const uint Creature = 0x7A0000C2u;
+        var standing = new Vector3(20f, 30f, 0f);
+        // Two landblocks east of the arrival: outside the ring around it.
+        uint creatureCell = CellAt(new Vector2(384f + standing.X, standing.Y));
+        Assert.Equal(0x2A2A0002u, creatureCell);
+        using GameRuntime runtime = NewRuntime();
+        RuntimePhysicsState physics = runtime.EntityObjects.Physics;
+        var neighborhood = new RuntimeCollisionNeighborhood(runtime, new FlatContent());
+        physics.ObserveLocalPlayerCreate(Arrival);
+        neighborhood.CenterOn(Arrival);
+        Drive(neighborhood, Arrival);
+
+        RuntimeEntityRecord creature = runtime.EntityObjects
+            .RegisterEntity(RuntimeEntityTestSpawns.Spawn(
+                Creature, creatureCell, standing.X, standing.Y, PhysicsStateFlags.Gravity, standing.Z))
+            .Canonical!;
+        runtime.EntityObjects.Entities.SetFinalPhysicsState(creature, PhysicsStateFlags.Gravity);
+        var body = new PhysicsBody
+        {
+            Orientation = Quaternion.Identity,
+            LastUpdateTime = 1d,
+            State = PhysicsStateFlags.Gravity,
+        };
+        runtime.EntityObjects.Entities.SetPhysicsBody(creature, body);
+        RuntimeSetPositionOutcome waiting = physics.SetPosition.Apply(
+            creature,
+            creature.PositionAuthorityVersion,
+            new RuntimeSetPositionCommand(
+                new PhysicsSetPositionRequest(
+                    standing + new Vector3(384f, 0f, 0f),
+                    Quaternion.Identity,
+                    creatureCell,
+                    standing,
+                    ImmutableArray<FlatCollisionSphere>.Empty,
+                    Scale: 1f,
+                    StepUpHeight: 0.4f,
+                    StepDownHeight: 0.4f,
+                    Flags: PhysicsSetPositionFlags.Placement
+                        | PhysicsSetPositionFlags.Slide),
+                RuntimeSetPositionOperationKind.RemoteAuthoritative,
+                GameTime: 10d,
+                ExpectedVelocityAuthorityVersion: 0UL,
+                ShadowWorldOffsetX: 384f,
+                ShadowWorldOffsetY: 0f));
+        Assert.Equal(RuntimeSetPositionStatus.DeferredCell, waiting.Status);
+        AcknowledgeEveryProjection(runtime);
+
+        // The recall into the landblock east of the arrival: the creature's
+        // landblock is in the new ring.
+        physics.ObserveLocalWorldFrame(0x292A0010u, teleportAdvanced: true);
+        neighborhood.CenterOn(0x292A0010u);
+        for (int pump = 0;
+             pump < 1_000
+                 && !(neighborhood.IsReady(0x292A0010u)
+                     && neighborhood.IsQuiescent
+                     && runtime.Placements.PendingCount == 0);
+             pump++)
+        {
+            AcknowledgeEveryProjection(runtime);
+            neighborhood.Pump();
+        }
+        Assert.True(neighborhood.IsQuiescent, "The ring never finished publishing.");
+
+        Assert.Equal(creatureCell, creature.FullCellId);
+        Assert.Equal(standing + new Vector3(192f, 0f, 0f), creature.PhysicsBody!.Position);
+    }
+
+    private static void AcknowledgeEveryProjection(GameRuntime runtime)
+    {
+        RuntimeSetPositionState setPosition =
+            runtime.EntityObjects.Physics.SetPosition;
+        while (setPosition.TryPeekProjection(
+                   out RuntimePlacementProjectionSnapshot pending))
+        {
+            Assert.True(
+                setPosition.AcknowledgeProjection(pending.Token),
+                $"Projection {pending.Kind} 0x{pending.Token.ExactCellId:X8} was not acknowledged.");
+        }
+    }
+
     /// <summary>The column east of the arrival's neighbors is in, the one west of it is out.</summary>
     private static bool HasSlidEast(GameRuntime runtime)
     {
