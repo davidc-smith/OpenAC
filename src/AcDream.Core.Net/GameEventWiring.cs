@@ -679,6 +679,18 @@ public static class GameEventWiring
             });
         }
 
+        registrar.Register(GameEventType.UpdateHAR, e =>
+        {
+            var p = GameEvents.ParseUpdateHar(e.Payload.Span);
+            if (p is null) return;
+
+            string text = HouseGuestListText.Compose(p.Value);
+            if (onInterfaceText is not null)
+                onInterfaceText(text, RetailLogTextType.Default);
+            else
+                chat.OnSystemMessage(text, chatType: (uint)RetailLogTextType.Default);
+        });
+
         registrar.Register(GameEventType.HouseUpdateRestrictions, e =>
         {
             var p = GameEvents.ParseHouseUpdateRestrictions(e.Payload.Span);
