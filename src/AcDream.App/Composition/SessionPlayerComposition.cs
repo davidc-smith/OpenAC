@@ -329,6 +329,11 @@ internal sealed class SessionPlayerCompositionPhase
             d.WorldOrigin);
         streaming.MaxCompletionsPerFrame =
             d.Settings.ResolvedQuality.MaxCompletionsPerFrame;
+        // One frame budget: the render thread's mesh, texture and composite
+        // uploads take their per-frame limits from the budget streaming runs
+        // under, widened with it while a reveal withholds the world.
+        foundation.MeshAdapter?.BindUploadAllowance(streaming);
+        foundation.TextureCache.BindUploadAllowance(streaming);
         Fault(SessionPlayerCompositionPoint.StreamingCreated);
 
         bindings = new SessionPlayerRuntimeBindings();

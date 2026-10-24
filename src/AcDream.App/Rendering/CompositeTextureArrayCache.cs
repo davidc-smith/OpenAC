@@ -1,4 +1,5 @@
 using AcDream.App.Rendering.Gpu;
+using AcDream.App.Streaming;
 using AcDream.Core.Textures;
 using AcDream.Core.World;
 
@@ -235,8 +236,9 @@ internal sealed class CompositeTextureArrayCache : IDisposable
     internal const long DefaultPhysicalBudgetBytes = 128L * 1024 * 1024;
     internal const long TargetArrayBytes = 4L * 1024 * 1024;
     internal const int MaximumLayersPerArray = 64;
+    // Per-frame limits at the ordinary frame budget; a widened frame budget
+    // (a reveal withholding the world) widens both by the same factor.
     internal const int DefaultMaximumUploadsPerFrame = 16;
-    internal const int DestinationRevealMaximumUploadsPerFrame = 64;
     internal const long DefaultMaximumUploadBytesPerFrame = 8L * 1024 * 1024;
     internal const int MaximumLogicalEvictionsPerFrame = 16;
     internal const int MaximumAtlasCreationsPerFrame = 1;
@@ -258,7 +260,8 @@ internal sealed class CompositeTextureArrayCache : IDisposable
     private long _frameUploadBytes;
     private int _frameAtlasCreationCount;
     private bool _uploadBudgetBlocked;
-    private bool _destinationRevealUploadPriority;
+    private int _frameMaximumUploads;
+    private long _frameMaximumUploadBytes;
     private int _pendingAtlasWidth;
     private int _pendingAtlasHeight;
     private long _pendingAtlasAllocationBytes;
@@ -315,6 +318,8 @@ internal sealed class CompositeTextureArrayCache : IDisposable
         _physicalBudgetBytes = physicalBudgetBytes;
         _maximumUploadsPerFrame = maximumUploadsPerFrame;
         _maximumUploadBytesPerFrame = maximumUploadBytesPerFrame;
+        _frameMaximumUploads = maximumUploadsPerFrame;
+        _frameMaximumUploadBytes = maximumUploadBytesPerFrame;
         _maximumArrayLayers = Math.Max(
             1,
             Math.Min(backend.MaximumArrayLayers, MaximumLayersPerArray));
@@ -336,15 +341,8 @@ internal sealed class CompositeTextureArrayCache : IDisposable
     internal long FrameUploadBytes => _frameUploadBytes;
     internal bool CanStartUpload =>
         !_uploadBudgetBlocked
-        && _frameUploadCount < CurrentMaximumUploadsPerFrame
-        && (_frameUploadCount == 0 || _frameUploadBytes < _maximumUploadBytesPerFrame);
-
-    private int CurrentMaximumUploadsPerFrame =>
-        _destinationRevealUploadPriority
-            ? Math.Max(
-                _maximumUploadsPerFrame,
-                DestinationRevealMaximumUploadsPerFrame)
-            : _maximumUploadsPerFrame;
+        && _frameUploadCount < _frameMaximumUploads
+        && (_frameUploadCount == 0 || _frameUploadBytes < _frameMaximumUploadBytes);
 
     internal Residency.ResidencyDomainSnapshot CaptureResidency()
     {
@@ -392,11 +390,11 @@ internal sealed class CompositeTextureArrayCache : IDisposable
     internal bool CanUpload(long bytes)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bytes);
-        if (_frameUploadCount >= CurrentMaximumUploadsPerFrame)
+        if (_frameUploadCount >= _frameMaximumUploads)
             return false;
 
         return _frameUploadCount == 0
-            || bytes <= _maximumUploadBytesPerFrame - _frameUploadBytes;
+            || bytes <= _frameMaximumUploadBytes - _frameUploadBytes;
     }
 
     internal bool CanPrepareUpload(int width, int height)
@@ -429,12 +427,18 @@ internal sealed class CompositeTextureArrayCache : IDisposable
         return false;
     }
 
-    public void BeginFrame(bool destinationRevealUploadPriority = false)
+    /// <summary>Starts a frame's upload accounting under the frame budget's
+    /// upload allowance (its widening widens both per-frame limits).</summary>
+    public void BeginFrame(FrameUploadAllowance? allowance = null)
     {
         ThrowIfUnavailable();
         _retirementLedger.RetryPendingPublications();
-        _destinationRevealUploadPriority =
-            destinationRevealUploadPriority;
+        _frameMaximumUploads = allowance is { } widened
+            ? widened.ScaleCount(_maximumUploadsPerFrame)
+            : _maximumUploadsPerFrame;
+        _frameMaximumUploadBytes = allowance is { } widenedBytes
+            ? widenedBytes.ScaleBytes(_maximumUploadBytesPerFrame)
+            : _maximumUploadBytesPerFrame;
         _frameUploadCount = 0;
         _frameUploadBytes = 0;
         _frameAtlasCreationCount = 0;

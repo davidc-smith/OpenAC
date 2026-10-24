@@ -3,6 +3,7 @@ using AcDream.Core.Textures;
 using AcDream.Core.World;
 using AcDream.Content;
 using AcDream.App.Rendering.Gpu;
+using AcDream.App.Streaming;
 using DatReaderWriter;
 using DatReaderWriter.DBObjs;
 using System.Linq;
@@ -50,6 +51,8 @@ public sealed class TextureCache
 
     private readonly CompositeTextureArrayCache? _compositeTextures;
     private bool _destinationRevealUploadPriority;
+    private IFrameUploadAllowanceSource _uploadAllowance =
+        ProfileFrameUploadAllowanceSource.Default;
 
     private readonly StandaloneBindlessTextureCache? _particleTextures;
     private readonly Dictionary<(uint surfaceId, uint origTexOverride), bool> _paletteIndexedByTexture = new();
@@ -72,6 +75,12 @@ public sealed class TextureCache
 
     internal void SetDestinationRevealUploadPriority(bool enabled) =>
         _destinationRevealUploadPriority = enabled;
+
+    /// <summary>Takes the composite uploads' per-frame widening from the
+    /// frame budget streaming runs under.</summary>
+    internal void BindUploadAllowance(IFrameUploadAllowanceSource allowance) =>
+        _uploadAllowance = allowance
+            ?? throw new ArgumentNullException(nameof(allowance));
 
     private readonly Dictionary<uint, (int Width, int Height, string Format)> _uploadMetadata = new();
 
@@ -557,7 +566,10 @@ public sealed class TextureCache
     public void TickParticleTextureCache() => _particleTextures?.Tick();
 
     public void BeginCompositeTextureFrame() =>
-        _compositeTextures?.BeginFrame(_destinationRevealUploadPriority);
+        _compositeTextures?.BeginFrame(
+            _destinationRevealUploadPriority
+                ? _uploadAllowance.Reveal
+                : _uploadAllowance.Ordinary);
 
     internal static ulong HashPaletteOverride(PaletteOverride p)
     {

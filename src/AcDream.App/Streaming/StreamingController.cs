@@ -9,7 +9,8 @@ namespace AcDream.App.Streaming;
 
 public sealed class StreamingController
     : IStreamingFrameBackend,
-      IWorldRevealStreamingScheduler
+      IWorldRevealStreamingScheduler,
+      IFrameUploadAllowanceSource
 {
     private readonly record struct DestinationReservation(
         long RevealGeneration,
@@ -101,6 +102,18 @@ public sealed class StreamingController
             _workBudget = profile.ToBudget();
         }
     }
+
+    /// <summary>The widened budget a destination reservation runs at, while
+    /// a reveal withholds the world.</summary>
+    internal StreamingWorkBudget RevealWorkBudget =>
+        _workBudget.WidenForDestinationHold(
+            _configuredWorkBudgetOptions.HoldDestinationCeilingMilliseconds);
+
+    FrameUploadAllowance IFrameUploadAllowanceSource.Ordinary =>
+        FrameUploadAllowance.Of(_workBudget, _workBudget);
+
+    FrameUploadAllowance IFrameUploadAllowanceSource.Reveal =>
+        FrameUploadAllowance.Of(RevealWorkBudget, _workBudget);
 
     internal long ActiveRevealGeneration =>
         _destinationReservation?.RevealGeneration ?? 0L;
@@ -573,11 +586,7 @@ public sealed class StreamingController
         // allocations. Restarting it is the reset a new one gets.
         StreamingWorkMeter meter = _workMeter;
         meter.Restart(
-            destinationHold
-                ? _workBudget.WidenForDestinationHold(
-                    _configuredWorkBudgetOptions
-                        .HoldDestinationCeilingMilliseconds)
-                : _workBudget,
+            destinationHold ? RevealWorkBudget : _workBudget,
             destinationReservationActive: destinationHold);
         _activeWorkMeter = meter;
         try
