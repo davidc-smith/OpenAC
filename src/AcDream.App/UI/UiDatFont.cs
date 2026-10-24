@@ -14,15 +14,39 @@ public sealed class UiDatFont
     public const uint DefaultFontId = 0x40000000u;
 
     /// <summary>Foreground (glyph pixels) GL texture handle + atlas pixel size.</summary>
-    public uint ForegroundTexture { get; }
-    public int ForegroundWidth { get; }
-    public int ForegroundHeight { get; }
+    public uint ForegroundTexture => Atlases.Foreground.Texture;
+    public int ForegroundWidth => Atlases.Foreground.Width;
+    public int ForegroundHeight => Atlases.Foreground.Height;
 
     /// <summary>Background (outline/shadow) GL texture handle + atlas pixel size.
     /// 0 when the font has no background atlas (then the outline pass is skipped).</summary>
-    public uint BackgroundTexture { get; }
-    public int BackgroundWidth { get; }
-    public int BackgroundHeight { get; }
+    public uint BackgroundTexture => Atlases.Background.Texture;
+    public int BackgroundWidth => Atlases.Background.Width;
+    public int BackgroundHeight => Atlases.Background.Height;
+
+    /// <summary>One uploaded glyph atlas: its texture handle and pixel size.</summary>
+    internal readonly record struct Atlas(uint Texture, int Width, int Height);
+
+    private Func<(Atlas Foreground, Atlas Background)>? _uploadAtlases;
+    private (Atlas Foreground, Atlas Background) _atlases;
+
+    /// <summary>
+    /// The glyph atlases, uploaded the first time text in this font is
+    /// drawn: a font that is only measured, or never shown, costs no
+    /// texture.
+    /// </summary>
+    private (Atlas Foreground, Atlas Background) Atlases
+    {
+        get
+        {
+            if (_uploadAtlases is { } upload)
+            {
+                _atlases = upload();
+                _uploadAtlases = null;
+            }
+            return _atlases;
+        }
+    }
 
     public float LineHeight { get; }
 
@@ -40,9 +64,27 @@ public sealed class UiDatFont
         float lineHeight, float baselineOffset,
         Dictionary<char, FontCharDesc> glyphs,
         int borderX = 0, int borderY = 0, char? fallbackCharacter = null)
+        : this(lineHeight, baselineOffset, glyphs, borderX, borderY, fallbackCharacter)
     {
-        ForegroundTexture = fgTex; ForegroundWidth = fgW; ForegroundHeight = fgH;
-        BackgroundTexture = bgTex; BackgroundWidth = bgW; BackgroundHeight = bgH;
+        _atlases = (new Atlas(fgTex, fgW, fgH), new Atlas(bgTex, bgW, bgH));
+    }
+
+    /// <summary>A font whose atlases <paramref name="uploadAtlases"/> uploads on first draw.</summary>
+    internal UiDatFont(
+        Func<(Atlas Foreground, Atlas Background)> uploadAtlases,
+        float lineHeight, float baselineOffset,
+        Dictionary<char, FontCharDesc> glyphs,
+        int borderX = 0, int borderY = 0)
+        : this(lineHeight, baselineOffset, glyphs, borderX, borderY, fallbackCharacter: null)
+    {
+        _uploadAtlases = uploadAtlases ?? throw new ArgumentNullException(nameof(uploadAtlases));
+    }
+
+    private UiDatFont(
+        float lineHeight, float baselineOffset,
+        Dictionary<char, FontCharDesc> glyphs,
+        int borderX, int borderY, char? fallbackCharacter)
+    {
         LineHeight = lineHeight;
         BaselineOffset = baselineOffset;
         _glyphs = glyphs;
@@ -57,7 +99,16 @@ public sealed class UiDatFont
         => _glyphs.TryGetValue(c, out glyph!) || (!char.IsControl(c)
             && _fallbackCharacter is { } fallback && _glyphs.TryGetValue(fallback, out glyph!));
 
-    public static UiDatFont? Load(IDatReaderWriter dats, TextureCache cache, uint fontId = DefaultFontId)
+    /// <summary>
+    /// Reads font <paramref name="fontId"/>'s metrics now; its atlases are
+    /// read and uploaded on first draw, under <paramref name="datLock"/>
+    /// when one is given (the caller holds it for this read).
+    /// </summary>
+    public static UiDatFont? Load(
+        IDatReaderWriter dats,
+        TextureCache cache,
+        uint fontId = DefaultFontId,
+        object? datLock = null)
     {
         ArgumentNullException.ThrowIfNull(dats);
         ArgumentNullException.ThrowIfNull(cache);
@@ -69,19 +120,30 @@ public sealed class UiDatFont
         if (font.ForegroundSurfaceDataId == 0)
             return null;
 
-        uint fgTex = cache.GetOrUploadRenderSurface(font.ForegroundSurfaceDataId, out int fgW, out int fgH, nearest: true);
-
-        uint bgTex = 0; int bgW = 0, bgH = 0;
-        if (font.BackgroundSurfaceDataId != 0)
-            bgTex = cache.GetOrUploadRenderSurface(font.BackgroundSurfaceDataId, out bgW, out bgH, nearest: true);
+        uint foregroundId = font.ForegroundSurfaceDataId;
+        uint backgroundId = font.BackgroundSurfaceDataId;
+        (Atlas, Atlas) UploadAtlases()
+        {
+            if (datLock is null)
+                return Upload();
+            lock (datLock)
+                return Upload();
+        }
+        (Atlas, Atlas) Upload()
+        {
+            uint fgTex = cache.GetOrUploadRenderSurface(foregroundId, out int fgW, out int fgH, nearest: true);
+            uint bgTex = 0; int bgW = 0, bgH = 0;
+            if (backgroundId != 0)
+                bgTex = cache.GetOrUploadRenderSurface(backgroundId, out bgW, out bgH, nearest: true);
+            return (new Atlas(fgTex, fgW, fgH), new Atlas(bgTex, bgW, bgH));
+        }
 
         var glyphs = new Dictionary<char, FontCharDesc>(font.CharDescs.Count);
         foreach (var cd in font.CharDescs)
             glyphs[(char)cd.Unicode] = cd;
 
         return new UiDatFont(
-            fgTex, fgW, fgH,
-            bgTex, bgW, bgH,
+            UploadAtlases,
             lineHeight: font.MaxCharHeight,
             baselineOffset: font.BaselineOffset,
             glyphs,
