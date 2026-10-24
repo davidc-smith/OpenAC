@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using AcDream.App.Rendering;
 
@@ -7,7 +8,17 @@ public sealed class UiTextureElement : UiElement
 {
     public UiTextureElement() => ClickThrough = true;
 
-    public uint Texture { get; set; }
+    private DeferredTexture _texture;
+
+    /// <summary>The texture; one given by <see cref="TextureSource"/> is made when first needed.</summary>
+    public uint Texture
+    {
+        get => _texture.Get();
+        set => _texture.Set(value);
+    }
+
+    /// <summary>Makes the texture the first time it is drawn or read.</summary>
+    public Func<uint>? TextureSource { init => _texture.Defer(value); }
     public Vector4 Tint { get; set; } = Vector4.One;
 
     protected override void OnDraw(UiRenderContext ctx)

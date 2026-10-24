@@ -7,7 +7,20 @@ namespace AcDream.App.UI;
 public sealed class UiCatalogSlot : UiItemSlot
 {
     public uint EntryId { get; set; }
-    public uint CatalogIconTexture { get; set; }
+    private DeferredTexture _catalogIcon;
+
+    /// <summary>The icon; one given by <see cref="CatalogIconSource"/> is made when first needed.</summary>
+    public uint CatalogIconTexture
+    {
+        get => _catalogIcon.Get();
+        set => _catalogIcon.Set(value);
+    }
+
+    /// <summary>
+    /// Makes the icon the first time it is drawn, dragged or read, so a list
+    /// that is never shown never composes its icons.
+    /// </summary>
+    public Func<uint>? CatalogIconSource { init => _catalogIcon.Defer(value); }
     public uint CatalogOverlayTexture { get; set; }
     public string Label { get; set; } = string.Empty;
     public string? Detail { get; set; }
