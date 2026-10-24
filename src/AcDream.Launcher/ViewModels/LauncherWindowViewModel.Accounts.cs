@@ -199,6 +199,7 @@ public sealed partial class LauncherWindowViewModel
                             _checkedAccountsLoaded && _checkedAccountStore?.Contains(server.Name, account.AccountName) == true,
                             SaveCheckedAccounts);
                         row.UseConsole(OpenSessionConsole);
+                        row.UseWindowSwitch(SwitchSessionWindow);
                         group.Rows.Insert(Math.Min(rowIndex, group.Rows.Count), row);
                     }
                     else if (group.Rows.IndexOf(row) != rowIndex && rowIndex < group.Rows.Count)
@@ -219,8 +220,65 @@ public sealed partial class LauncherWindowViewModel
             foreach (LauncherAccountGroupViewModel group in Accounts.Where(group => !retained.Contains(group)).ToArray())
                 Accounts.Remove(group);
             RefreshProfileFilters(snapshot);
+            ReportWindowSwitches(snapshot);
         }
         finally { _refreshingAccountRows = false; }
+    }
+
+    // Window switches sent from a row, by session, with the state asked for, until the client
+    // answers; a switch that did not happen goes to the status line.
+    private readonly Dictionary<string, bool> _windowSwitches = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A running row's mode box: switches its session between graphical and headless without
+    /// a restart. False, with the reason on the status line, when the switch was not sent.
+    /// </summary>
+    private bool SwitchSessionWindow(string sessionId, bool open)
+    {
+        try
+        {
+            _orchestrator.SetSessionWindow(sessionId, open);
+        }
+        catch (Exception ex)
+        {
+            LastError = SafeDisplayError(ex, secret: null);
+            RefreshFromCore();
+            return false;
+        }
+
+        _windowSwitches[sessionId] = open;
+        LastError = null;
+        RefreshFromCore();
+        return true;
+    }
+
+    /// <summary>
+    /// Puts on the status line why a switch a row asked for did not happen, once its client
+    /// has answered or the switch was given up.
+    /// </summary>
+    private void ReportWindowSwitches(LauncherStateSnapshot snapshot)
+    {
+        string? failure = null;
+        foreach ((string sessionId, bool open) in _windowSwitches.ToArray())
+        {
+            LauncherSessionSnapshot? session = snapshot.Sessions.FirstOrDefault(
+                candidate => candidate.SessionId == sessionId);
+            if (session is not { IsProcessOrStartActive: true })
+            {
+                _windowSwitches.Remove(sessionId);
+                continue;
+            }
+
+            LauncherSessionWindow window = session.ReportedWindow;
+            if (window.SwitchingTo is not null)
+                continue;
+            if (window.IsOpen != open)
+                failure = window.Error ?? "The client did not switch the session's window.";
+            _windowSwitches.Remove(sessionId);
+        }
+
+        if (failure is not null)
+            LastError = failure;
     }
 
     /// <summary>Rebuilds the chips from the accounts' tags, keeping the chosen one while it exists.</summary>

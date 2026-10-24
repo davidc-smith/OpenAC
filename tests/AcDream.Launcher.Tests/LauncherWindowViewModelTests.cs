@@ -1257,6 +1257,40 @@ public sealed partial class LauncherWindowViewModelTests
             return StopHandler?.Invoke(cancellationToken) ?? Task.CompletedTask;
         }
 
+        /// <summary>Window switches asked for: session, open.</summary>
+        public List<(string SessionId, bool Open)> WindowSwitches { get; } = [];
+
+        /// <summary>Refuses the next window switch with this message.</summary>
+        public string? WindowSwitchRefusal { get; set; }
+
+        public void SetSessionWindow(string sessionId, bool open)
+        {
+            WindowSwitches.Add((sessionId, open));
+            if (WindowSwitchRefusal is { } refusal)
+            {
+                WindowSwitchRefusal = null;
+                throw new LauncherOperationException(refusal);
+            }
+
+            UpdateSession(sessionId, session => session with
+            {
+                Window = session.ReportedWindow with { SwitchingTo = open },
+            });
+        }
+
+        /// <summary>Changes the session with this id, wherever the fake keeps it.</summary>
+        public void UpdateSession(string sessionId, Func<LauncherSessionSnapshot, LauncherSessionSnapshot> change)
+        {
+            if (SessionsOverride is { } sessions)
+            {
+                SessionsOverride = [.. sessions.Select(session => session.SessionId == sessionId ? change(session) : session)];
+            }
+            else if (Session.SessionId == sessionId)
+            {
+                Session = change(Session);
+            }
+        }
+
         public void PollStatus()
         {
         }
