@@ -327,7 +327,9 @@ public readonly record struct ChatEntry(
 
     /// <summary>
     /// Whether <see cref="Text"/> may carry a plugin's link markup (such as
-    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;…</c>). Only a line a plugin wrote does.
+    /// <c>&lt;COORD:World:42.1N, 33.5E&gt;…</c>). Only a line a plugin wrote does;
+    /// a coordinate pair written in plain text is a link in any line but
+    /// combat text, whatever this says.
     /// </summary>
     public bool AllowsMarkup { get; init; }
 

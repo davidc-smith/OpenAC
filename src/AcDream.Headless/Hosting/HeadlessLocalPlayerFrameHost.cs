@@ -97,8 +97,7 @@ internal sealed class HeadlessLocalPlayerFrameHost
 
     public void Project(
         PlayerMovementController controller,
-        MovementResult movement,
-        bool hidden)
+        MovementResult movement)
     {
     }
 

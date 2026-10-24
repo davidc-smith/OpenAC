@@ -91,6 +91,36 @@ public sealed class ChatCoordinateLinksTests
         Assert.Equal("COORD", spans[2].Tag!.Value.Type);
     }
 
+    [Fact]
+    public void LinkShownReadsNeighbouringPlainSpansAsOneText()
+    {
+        // A hidden tag between two plain spans leaves them side by side; the
+        // reader sees one text, and the pair is found in that text.
+        var tell = new ChatTextTag("Tell", "IIDString", "1:Bob");
+        IReadOnlyList<ChatTextSpan> spans = ChatCoordinateLinks.LinkShown(new[]
+        {
+            new ChatTextSpan("Bob", tell),
+            new ChatTextSpan(" says, \"at ", null),
+            new ChatTextSpan("42.1N", null),
+            new ChatTextSpan(" 33.5E\"", null),
+        })!;
+
+        Assert.Equal(new[] { "Bob", " says, \"at ", "42.1N 33.5E", "\"" }, spans.Select(s => s.Text));
+        Assert.Equal(tell, spans[0].Tag);
+        Assert.True(spans[2].Tag!.Value.TryGetCoordinate(out double eastWest, out double northSouth));
+        Assert.Equal((33.5, 42.1), (eastWest, northSouth));
+    }
+
+    [Fact]
+    public void LinkShownFindsNoPairThatTheShownTextGluesToAWord()
+    {
+        Assert.Null(ChatCoordinateLinks.LinkShown(new[]
+        {
+            new ChatTextSpan("x", null),
+            new ChatTextSpan("42.1N 33.5E", null),
+        }));
+    }
+
     [Theory]
     [InlineData("42.1N 33.5E")]
     [InlineData("42.1n, 33.5e")]

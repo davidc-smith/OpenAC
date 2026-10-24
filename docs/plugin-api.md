@@ -124,7 +124,7 @@ writes in one of the client's own text classes, so a plugin's own output can
 use the colour the class carries. `Submit(text)` still runs the full chat
 pipeline, commands included.
 
-A line a plugin posts may carry a coordinate link. The tag's caption is shown
+A line a plugin posts may carry a coordinate tag. The tag's caption is shown
 in the link colour, and clicking it raises `LinkClicked`:
 
 ```csharp
@@ -139,17 +139,20 @@ written.
 ### Chat links
 
 `LinkClicked` is raised when the player clicks a coordinate link in the main
-chat window. Only a line a plugin posted carries one: its `COORD` tags, and
-every coordinate pair `PluginChatCoordinateParser` reads in its plain text
-("meet at 42.1N 33.5E"). A pair is a number and a compass letter twice,
-neither inside a longer word, so "10n 20east" is not one.
+chat window. Every coordinate pair `PluginChatCoordinateParser` reads in the
+text a line shows is a link, in every line except combat text: what players
+say, tell and post on channels ("meet at 42.1N 33.5E"), the server's own
+lines ("Your corpse is located at (42.1N, 33.5E).") and a plugin's. A pair is
+a number and a compass letter twice, neither inside a longer word, so
+"10n 20east" is not one. The click reports the pair exactly as shown.
 
-What players say, tell and post on channels, and the server's own lines
-("Your corpse is located at (42.1N, 33.5E).") are shown exactly as they
-arrived and hold no coordinate link, even when a player types a `COORD` tag.
-A plugin that wants the coordinates in those lines reads them from `Received`
-with `PluginChatCoordinateParser`. `PluginChatCoordinateLinkRouter` hands the
-coordinates of a clicked link to a callback:
+A line a plugin posted also carries its `COORD` tags as links. In any other
+line a `COORD` tag is not a link: a player who types
+`<COORD:World:0N, 0E>42.1N 33.5E<\COORD>` gets its caption shown as plain
+text, and the hidden `0N, 0E` is never reported. When the caption is itself a
+pair, as here, that shown pair is a link like any other, to 42.1N 33.5E.
+`PluginChatCoordinateLinkRouter` hands the coordinates of a clicked link to a
+callback:
 
 ```csharp
 var router = new PluginChatCoordinateLinkRouter(
@@ -1259,9 +1262,9 @@ While anything in the interface has keyboard focus (the chat bar, a text
 field, a control reached with Tab), a hotkey fires only if Ctrl or Alt is
 part of the chord; otherwise every letter typed would also be a candidate
 hotkey press. Clicking a button does not give it keyboard focus. While a
-modal dialog is open, or a key rebind is being captured
-(`InputDispatcher.BeginCapture`), no hotkey fires at all, Ctrl and Alt
-chords included.
+modal dialog is open, a key rebind is being captured
+(`InputDispatcher.BeginCapture`), or a markup `<hotkey>` box is recording,
+no hotkey fires at all, Ctrl and Alt chords included.
 
 Plugin hotkeys are a raw keyboard subscription, not a route through
 InputDispatcher's action/scope engine (a dynamic per-plugin action space
@@ -1292,6 +1295,41 @@ design sketch put overrides in `keybinds.json` itself; this was changed
 so a corrupt or hand-edited plugin override file can never touch the
 client's own binding schema). There is no in-client rebind UI yet; a
 plugin (or a future Settings panel) calls `Rebind` directly.
+
+A markup `<hotkey>` box lets the player pick the chord. Bind its `value` to
+the registration's chord as text and rebind from its `onchange`:
+
+```csharp
+public string QuickHealKey => _quickHeal.EffectiveChord.ToHotkeyText();
+
+public Action<string> SetQuickHealKey => text =>
+{
+    if (text.Length == 0)
+        _quickHeal.Rebind(default); // the player cleared the box: unbind
+    else if (PluginKeyChord.TryParseHotkeyText(text, out PluginKeyChord chord))
+        _quickHeal.Rebind(chord);
+};
+```
+
+```xml
+<hotkey x="8" y="8" w="140" h="20" value="{QuickHealKey}" onchange="{SetQuickHealKey}"/>
+```
+
+`PluginKeyChord.TryParseHotkeyText` reads the box's text (modifiers in any order,
+then the key by its `PluginKey` name, such as `Numpad5`) and `ToHotkeyText()`
+writes it back. The box records only keys `PluginKey` has, so its text always
+reads; `TryParseHotkeyText` returns false for an empty string (the player
+cleared the box) and for text that names no `PluginKey`, such as a hand-written
+`F13`.
+Rebinding to the default chord (no key) unbinds the hotkey: the override is
+stored, `IsBound` is false, and the box reads back as `None`. A chord
+that collides with a client binding or another plugin's bound hotkey is still
+stored as the override, so `EffectiveChord` (and the box) shows it, but the
+registration is left unbound: `IsBound` is false and the old chord stops
+firing too. It binds later if the other plugin's hotkey is disposed or
+rebound; a client binding the player frees is only noticed when the
+hotkeys are next resolved (next session). Check `IsBound` after rebinding
+if the plugin should tell the player.
 
 ## Host window
 
@@ -1468,6 +1506,97 @@ plugin loaded early hears the saved theme arrive through `ThemeChanged`.
 
 Without a window, and on a host that predates themes, `Theme` answers
 `PluginUiThemeInfo.Classic` and `ThemeChanged` is never raised.
+
+## Dialogs
+
+```csharp
+IDisposable? question = host.Ui.Confirm(
+    new PluginDialog(
+        "Delete profile",
+        $"Delete the profile \"{name}\"? This cannot be undone.",
+        Buttons: ["Delete", "Keep"],
+        OwnerView: "main"),
+    index =>
+    {
+        if (index == 0)
+            DeleteProfile(name);
+    });
+
+host.Ui.ShowModal("profile-editor", ownerView: "main");
+```
+
+Dialogs are **window-modal**: a dialog blocks only its owner window. The
+owner draws dimmed, and a click on it does nothing but flash the dialog and
+bring it to the front. Presses, scrolls and drops on the owner are refused and
+nothing inside it can take the keyboard focus. Every other window, chat,
+movement and the game's hotkeys work as usual, even while a dialog has the
+keyboard focus. There is no way for a plugin to block the whole screen.
+
+`Confirm` shows a message box and calls back with the index of the button
+the player picked.
+
+- `Buttons` lists one to four captions, left to right; null means OK and
+  Cancel. No buttons, more than four, or a blank caption throws
+  `ArgumentException`.
+- Enter picks the first button. Escape, the box's close button, the owner
+  window closing and your plugin unloading all answer with the **last**
+  button, so make the last one the safe choice.
+- `OwnerView` is the id or title of one of your own windows. The box is
+  centred on that window, follows it if it moves, and blocks it. Without one,
+  or with a window that doesn't exist or is hidden at the time, the box is
+  centred on the screen and blocks nothing.
+- The callback runs exactly once per dialog, on the thread that calls your
+  tick, after the box has gone. Call `Confirm` from that thread too.
+- `Confirm` returns the dialog's handle. Dispose it to withdraw a question
+  that has gone stale (the thing it asks about has gone, say): a box still
+  showing closes, one still queued never shows, and the callback gets the
+  last button as if the player had pressed Escape. Once the dialog is
+  answered, disposing the handle does nothing. Dispose it on the thread that
+  calls your tick: disposing changes the interface straight away.
+- Several dialogs for the same window wait their turn and show one at a
+  time. Dialogs for different windows show together. Dialogs without a window
+  share one queue.
+- The box takes the keyboard focus when it opens if nothing has it or the
+  focus was in the owner window. Focus anywhere else, such as chat the
+  player is typing in, stays where it is, so a box can't catch keys meant
+  for something else; a click on the blocked owner hands the box the focus.
+  While it has the focus, Enter, keypad Enter and Escape are the box's: they
+  answer it and do nothing else (Enter does not open chat, Escape does not
+  reach the game). Every
+  other key goes to the game as usual, so the player can keep moving, and
+  game and plugin hotkeys keep working. Holding the answering key down does
+  not answer the next dialog in the queue; it has to be pressed again.
+- When a box that took the keyboard focus closes, it gives the focus back
+  to whatever had it before, unless the player has moved the focus
+  somewhere else in the meantime.
+- It looks like the client's own confirmation box, unless the owner window
+  uses `theme="plugin"` and the player has picked a plugin theme. Then it is
+  drawn in the theme's colours, with a close button in its title bar. The
+  client's box has no title bar, so it shows the title as a gold first line.
+  The drawn box widens to fit its buttons and its title. The client's box
+  keeps its own width except for three or four buttons that would not fit in
+  it, when it widens to fit them. Either way the message wraps to the box's
+  width.
+
+`ShowModal` shows one of your windows, as `ShowPanel` does, and blocks
+`ownerView` until that window is hidden again, by `HidePanel` or its close
+button, or is removed. Showing a window that your own markup keeps hidden
+ends the block at once. The block also ends if the owner window is removed;
+an owner that is merely hidden stays blocked, and is still blocked when it
+is shown again. Without an owner, with an owner that doesn't exist, with the
+window itself as the owner, or with an owner that the window is already
+blocked by (directly, or through other modal windows), it is just
+`ShowPanel`. It returns `false`, and shows nothing, if you have no such
+window.
+
+On a host without a window, and before the interface is up, `Confirm`
+returns `null`, `ShowModal` returns `false`, and the callback is never
+called. `Confirm` also returns `null`, without calling back, in the rare
+case that the box cannot be put on screen.
+
+The `samples/AcDream.Plugins.ControlsDemo` plugin's Dialogs window shows
+message boxes with two, three and four buttons, one without an owner, two
+queued for one window, and a modal editor opened with `ShowModal`.
 
 ## Canvases
 

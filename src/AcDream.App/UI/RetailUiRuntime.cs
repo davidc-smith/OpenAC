@@ -6,6 +6,7 @@ using AcDream.App.Net;
 using AcDream.App.Rendering;
 using AcDream.App.Spells;
 using AcDream.App.UI.Layout;
+using AcDream.App.UI.Markup;
 using AcDream.App.UI.Testing;
 using AcDream.Core.Chat;
 using AcDream.Core.Combat;
@@ -178,7 +179,8 @@ public sealed record SocialRuntimeBindings(
     Func<uint, RuntimeCommandResult> AllegianceBreak,
     Func<uint, RuntimeCommandResult> AllegianceKick,
     Func<bool, RuntimeCommandResult> AllegianceSetUpdateSubscription,
-    AcDream.Runtime.Gameplay.IRuntimeTradeView? Trade = null);
+    AcDream.Runtime.Gameplay.IRuntimeTradeView? Trade = null,
+    AcDream.Runtime.Gameplay.RuntimeHousePurchaseState? HousePurchase = null);
 
 public sealed record MapHouseRuntimeBindings(
     Func<AcDream.Core.World.DerethDateTime.Calendar> CurrentCalendar,
@@ -249,6 +251,12 @@ public sealed record WorldTooltipRuntimeBindings(
     Func<uint?> HoverGuidAtCursor,
     Func<uint, string?> ResolveName,
     Func<bool> Enabled);
+
+/// <summary>What a drag started on the world needs: the object at a screen
+/// point (the player included) and whether the player is out of combat.</summary>
+public sealed record WorldDragRuntimeBindings(
+    Func<float, float, uint?> ObjectAt,
+    Func<bool> OutOfCombat);
 
 public sealed record ConfirmationRuntimeBindings(
     Action<uint, uint, bool> SendResponse);
@@ -340,7 +348,8 @@ public sealed record RetailUiRuntimeBindings(
     BookRuntimeBindings? Book = null,
     Func<IReadOnlyList<PluginWorldLabel>>? WorldLabels = null,
     Func<uint, AcDream.App.Interaction.WorldLabelAnchor?>? WorldLabelAnchor = null,
-    PluginCanvasHostServices? PluginCanvases = null);
+    PluginCanvasHostServices? PluginCanvases = null,
+    WorldDragRuntimeBindings? WorldDrag = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -406,7 +415,13 @@ public sealed class RetailUiRuntime : IDisposable
     private CharacterCreationUiMountCoordinator? _characterCreationMount;
     private PluginSidePanel? _pluginSidePanel;
     private PluginUiThemeSettings? _pluginThemes;
+    /// <summary>What plugin windows' markup controls remember per character; saved with the layout.</summary>
+    private MarkupControlStateStore? _controlState;
     private IDisposable? _pluginThemeFollow;
+    /// <summary>Plugins' Confirm boxes and modal windows.</summary>
+    private PluginDialogHost? _pluginDialogs;
+    /// <summary>A fresh retail confirmation layout for a plugin's Confirm box; null until the dialog catalog resolves.</summary>
+    private Func<ImportedLayout?>? _pluginDialogLayout;
     private UiNineSlicePanel? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
     private bool _pluginsMounted;
@@ -499,6 +514,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountVendor();
         MountSecureTrade();
         MountSalvage();
+        MountHousePurchase();
         MountItemCooldowns();
         if (bindings.Connection is { } connection)
         {
@@ -530,6 +546,7 @@ public sealed class RetailUiRuntime : IDisposable
                     WindowNames.SideVitals,
                     WindowNames.SecureTrade,
                     WindowNames.Salvage,
+                    WindowNames.HousePurchase,
                     WindowNames.PluginShelf,
                 ]);
             _persistence.ResetToDefaults();
@@ -742,6 +759,7 @@ public sealed class RetailUiRuntime : IDisposable
         _chatWindowController?.UpdateUnreadIndicator();
         JumpPowerbarController?.Tick();
         SecureTradeController?.Tick();
+        HousePurchaseController?.Tick();
         SelectedObjectController?.Tick(deltaSeconds);
         ExternalContainerController?.Tick();
         SocialPanelController?.Tick();
@@ -756,6 +774,7 @@ public sealed class RetailUiRuntime : IDisposable
         _characterCreationMount?.Tick();
         CharacterCreationController?.Tick();
         DialogFactory?.Tick();
+        _pluginDialogs?.Tick();
         // Windows a plugin registered after the UI came up (a server-fed panel
         // arrives once the character is in the world). Same path as the first
         // mount; each registration is drained once.
@@ -766,6 +785,9 @@ public sealed class RetailUiRuntime : IDisposable
         Host.Tick(deltaSeconds);
         TooltipPresenter?.Tick();
         _automation?.Tick(deltaSeconds);
+        // Save writes only when a control changed something, so this persists
+        // each choice on the frame after it is made.
+        _controlState?.Save();
     }
 
     private System.Numerics.Vector2 _lastScreenSize;
@@ -1174,6 +1196,7 @@ public sealed class RetailUiRuntime : IDisposable
     public void SaveLayout()
     {
         _persistence?.SaveAll();
+        _controlState?.Save();
         SaveChatWindowFilters();
     }
 
@@ -3793,6 +3816,8 @@ public sealed class RetailUiRuntime : IDisposable
         }
 
         DialogFactory = new RetailDialogFactory(Host.Root, CreateLayout);
+        // Plugins' Confirm boxes borrow the confirmation layout's art.
+        _pluginDialogLayout = () => CreateLayout(RetailDialogType.Confirmation);
         var confirmationStrings = new DatStringResolver(_bindings.Assets.Dats);
         string? ComposeConfirmation(uint type, string bareName)
         {
@@ -4076,12 +4101,38 @@ public sealed class RetailUiRuntime : IDisposable
             // Canvases paint their own pixels, so plugins are told the theme
             // the player saved and every one they pick after it.
             _pluginThemeFollow = _bindings.Plugins.FollowTheme(_pluginThemes);
+            _pluginDialogs = new PluginDialogHost(
+                Host.Root,
+                () => _pluginDialogLayout?.Invoke(),
+                _bindings.Assets.DefaultFont);
+            _bindings.Plugins.BindPluginDialogs(_pluginDialogs);
         }
+
+        _controlState ??= new MarkupControlStateStore(
+            _bindings.Persistence?.Store,
+            _bindings.Persistence?.CharacterKey ?? (() => "default"));
 
         IMarkupIconResolver iconResolver = new RetailMarkupIconResolver(
             _bindings.Assets.Dats,
             _bindings.Assets.Icons,
             _bindings.Toolbar.Objects);
+
+        // Hotkey boxes show keys by the game's own names. The table reads go
+        // through the dat lock like every other plugin-thread dat read.
+        Layout.RetailKeyNames keyNames;
+        lock (_bindings.Assets.DatLock)
+        {
+            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
+            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
+        }
+        Func<KeyChord, string> describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
+        {
+            lock (_bindings.Assets.DatLock)
+                return keyNames.Describe(key);
+        });
+
+        // Colour pickers upload their gradients while open and give them back on close.
+        var markupTextures = new RetailMarkupTextureService(_bindings.Assets.TextureCache);
 
         foreach (var panel in _bindings.Plugins.Drain())
         {
@@ -4089,13 +4140,21 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 string xml = panel.MarkupContent
                     ?? File.ReadAllText(panel.MarkupPath);
-                UiNineSlicePanel element = MarkupDocument.Build(
+                MarkupWindow window = MarkupDocument.BuildWindow(
                     xml,
                     panel.Binding,
                     _bindings.Assets.ResolveSprite,
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
-                    iconResolver, _pluginThemes);
+                    iconResolver, _pluginThemes,
+                    fallbackTitle: panel.Descriptor.Title,
+                    controlState: _controlState.ForWindow(panel.WindowName),
+                    describeKey: describeKey,
+                    textures: markupTextures,
+                    sharedControlState: _controlState.Shared);
+                UiNineSlicePanel element = window.Frame;
+                foreach (string warning in window.Warnings)
+                    Console.WriteLine($"[UI] plugin UI panel '{panel.MarkupPath}': {warning}");
 
                 if (Host.WindowManager.TryGet(panel.WindowName, out _))
                 {
@@ -4116,14 +4175,7 @@ public sealed class RetailUiRuntime : IDisposable
                 // later registration/sidepanel failure then rolls the mounted
                 // subtree back through FailMount instead of leaking it.
                 _bindings.Plugins.CompleteMount(panel, Host.Root, element);
-                int authoredGeometryRevision = RetailWindowManager.ComputeAuthoredGeometryRevision(
-                    element.Width, element.Height, element.MinWidth, element.MinHeight, element.Resizable);
-                RetailWindowHandle handle = Host.WindowManager.Register(
-                    panel.WindowName,
-                    element,
-                    element,
-                    visibility,
-                    authoredGeometryRevision: authoredGeometryRevision);
+                RetailWindowHandle handle = window.Register(Host.WindowManager, panel.WindowName, visibility);
                 _bindings.Plugins.CompleteWindowMount(
                     panel,
                     () => Host.WindowManager.Unregister(panel.WindowName));
@@ -4333,7 +4385,12 @@ public sealed class RetailUiRuntime : IDisposable
             b.Spellbook,
             _bindings.Toolbar.Shortcuts,
             LoadShortcutDigitGraphics(),
-            _bindings.Toolbar.Combat);
+            _bindings.Toolbar.Combat,
+            showWindow: () =>
+            {
+                if (!_panelUi.IsPanelVisible(RetailPanelCatalog.Inventory))
+                    _panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
+            });
         InventoryPanelController = inventory;
         PaperdollController paperdoll = PaperdollController.Bind(
             layout, b.Objects, b.PlayerGuid, b.ResolveIcon, b.Selection, b.ItemInteraction,
@@ -4344,6 +4401,16 @@ public sealed class RetailUiRuntime : IDisposable
         Host.WindowManager.AttachController(
             WindowNames.Inventory,
             new RetainedPanelControllerGroup(inventory, paperdoll));
+
+        if (_bindings.WorldDrag is { } worldDrag)
+        {
+            Host.Root.WorldDragRequested = (x, y) => WorldDrag.Build(
+                worldDrag.ObjectAt(x, y) ?? 0u,
+                b.PlayerGuid(),
+                worldDrag.OutOfCombat(),
+                b.ResolveIcon,
+                b.ResolveDragIcon);
+        }
 
         PaperdollViewportWidget = layout.FindElement(0x100001D5u) as UiViewport;
         InventoryFrame = (UiNineSlicePanel)handle.OuterFrame;
@@ -4537,7 +4604,12 @@ public sealed class RetailUiRuntime : IDisposable
                 },
                 _bindings.Options.DisplaySystemMessage,
                 ResolveAppropriateItemName,
-                emptySlot));
+                emptySlot,
+                ExamineItem: id =>
+                {
+                    inventory.Selection.Select(id, SelectionChangeSource.Inventory);
+                    inventory.ItemInteraction.ExamineSelectedOrEnterMode(id);
+                }));
         if (controller is null)
         {
             Console.WriteLine("[UI] salvage window controls are unavailable.");
@@ -4680,6 +4752,108 @@ public sealed class RetailUiRuntime : IDisposable
             controller.RequestSecureTrade;
         Console.WriteLine(
             "[UI] retail secure trade panel mounted from LayoutDesc 0x2100000D.");
+    }
+
+    public Layout.HousePurchaseUiController? HousePurchaseController { get; private set; }
+
+    private void MountHousePurchase()
+    {
+        if (_bindings.Social.HousePurchase is not { } purchase)
+        {
+            Console.WriteLine("[UI] house purchase: no runtime house purchase state bound.");
+            return;
+        }
+
+        ImportedLayout? layout;
+        uint emptySlotSprite;
+        lock (_bindings.Assets.DatLock)
+        {
+            layout = LayoutImporter.Import(
+                _bindings.Assets.Dats,
+                Layout.HousePurchaseUiController.LayoutId,
+                Layout.HousePurchaseUiController.RootId,
+                _bindings.Assets.ResolveSprite,
+                _bindings.Assets.DefaultFont,
+                _bindings.Assets.ResolveFont);
+            emptySlotSprite = ItemListCellTemplate.ResolveEmptySprite(
+                _bindings.Assets.Dats,
+                Layout.HousePurchaseUiController.LayoutId,
+                Layout.HousePurchaseUiController.BuyItemsListId);
+        }
+        if (layout is null)
+        {
+            Console.WriteLine(
+                "[UI] house purchase: LayoutDesc 0x2100000E root 0x1000008C not found.");
+            return;
+        }
+
+        Layout.HousePurchaseUiController? controller =
+            Layout.HousePurchaseUiController.Bind(
+                layout,
+                new Layout.HousePurchaseUiController.Bindings(
+                    Purchase: purchase.View,
+                    Objects: _bindings.Inventory.Objects,
+                    Stage: purchase.Stage,
+                    Unstage: purchase.Unstage,
+                    ClearStaged: purchase.ClearStaged,
+                    Revalidate: () => purchase.Revalidate(),
+                    Close: purchase.Close,
+                    BuyHouse: (slumlord, items) => _bindings.Options.CommandBus().Publish(
+                        new BuyHouseRuntimeCmd(slumlord, items)),
+                    RentHouse: (slumlord, items) => _bindings.Options.CommandBus().Publish(
+                        new RentHouseRuntimeCmd(slumlord, items)),
+                    ResolveIcon: _bindings.Inventory.ResolveIcon,
+                    SetWindowVisible: visible =>
+                    {
+                        if (visible) Host.ShowWindow(WindowNames.HousePurchase);
+                        else Host.HideWindow(WindowNames.HousePurchase);
+                    },
+                    Report: _bindings.Options.DisplaySystemMessage,
+                    PlayerGuid: _bindings.Social.LocalPlayerGuid,
+                    Confirm: ConfirmHousePayment,
+                    ResolveAppropriateName: ResolveAppropriateItemName,
+                    EmptySlotSprite: emptySlotSprite));
+        if (controller is null)
+        {
+            Console.WriteLine("[UI] house purchase: required authored item lists are missing.");
+            return;
+        }
+
+        UiElement root = layout.Root;
+        RetailWindowFrame.Mount(
+            Host.Root,
+            root,
+            _bindings.Assets.ResolveSprite,
+            new RetailWindowFrame.Options
+            {
+                WindowName = WindowNames.HousePurchase,
+                Chrome = RetailWindowChrome.NineSlice,
+                Left = MathF.Max(0f, (Host.Root.Width - root.Width) * 0.5f),
+                Top = MathF.Max(0f, (Host.Root.Height - root.Height) * 0.5f),
+                ContentWidth = root.Width,
+                ContentHeight = root.Height,
+                MinWidth = root.Width,
+                MinHeight = root.Height,
+                Visible = false,
+                ResizeX = false,
+                ResizeY = false,
+                ConstrainResizeToParent = true,
+            });
+
+        HousePurchaseController = controller;
+        Host.WindowManager.AttachController(WindowNames.HousePurchase, controller);
+        Console.WriteLine("[UI] retail house purchase window from LayoutDesc 0x2100000E.");
+    }
+
+    private void ConfirmHousePayment(string question, Action<bool> answer)
+    {
+        if (EnsureDialogFactory() is not { } dialogs)
+        {
+            Console.WriteLine("[UI] house purchase: no dialog factory to confirm the payment.");
+            return;
+        }
+        dialogs.MakeDialog(RetailDialogData.Confirmation(question), result =>
+            answer(result.GetBoolean(RetailDialogProperty.ConfirmationResult)));
     }
 
     private void ConfigureCharacterManagement()
@@ -5141,7 +5315,11 @@ public sealed class RetailUiRuntime : IDisposable
 
         _shutdown ??= CreateShutdownTransaction(
             () => _automation?.Dispose(),
-            () => _persistence?.Dispose(),
+            () =>
+            {
+                _controlState?.Save(ignoreBackoff: true);
+                _persistence?.Dispose();
+            },
             () =>
             {
                 _characterSheetSubscription?.Dispose();
@@ -5158,6 +5336,9 @@ public sealed class RetailUiRuntime : IDisposable
                 if (SalvageController is { } salvage)
                     _bindings.Inventory.ItemInteraction.PolicyActionRequested -= salvage.HandlePolicyAction;
                 _bindings.Plugins?.UnbindClientWindowControl();
+                // Open plugin dialogs are answered with their last button.
+                _pluginDialogs?.Dispose();
+                _pluginDialogs = null;
                 _pluginThemeFollow?.Dispose();
                 _pluginThemeFollow = null;
                 // Canvases come down before their images: a canvas may be

@@ -43,6 +43,24 @@ public sealed class LauncherControlTests
     }
 
     [Fact]
+    public async Task StartFindsTheSavedAccountWhateverTheCaseOfItsName()
+    {
+        var (owner, spy) = CreateOwner();
+        var handler = new LauncherControlHandler(owner);
+        Assert.True((await handler.HandleAsync(new("start", "world", "ACCOUNT"), TestContext.Current.CancellationToken)).Ok);
+        Assert.Equal("account", Assert.Single(spy.Launches)[1]);
+
+        // A file saved before names were compared without case can hold two spellings: a name
+        // spelled neither way starts the first, and never throws for the pair.
+        spy.Accounts = [spy.Account, spy.Account with { AccountName = "Account" }];
+        Assert.True((await handler.HandleAsync(new("start", "world", "ACCOUNT"), TestContext.Current.CancellationToken)).Ok);
+        Assert.Equal("account", spy.Launches[1][1]);
+        Assert.True((await handler.HandleAsync(new("start", "world", "Account"), TestContext.Current.CancellationToken)).Ok);
+        Assert.Equal("Account", spy.Launches[2][1]);
+        Assert.False((await handler.HandleAsync(new("start", "WORLD", "account"), TestContext.Current.CancellationToken)).Ok);
+    }
+
+    [Fact]
     public async Task StopRequestsQuitWithoutForceStopAndStatusOmitsCommands()
     {
         var (owner, spy) = CreateOwner();
@@ -150,6 +168,7 @@ public sealed class LauncherControlTests
         internal List<(string Session, string Line)> ConsoleLines { get; } = [];
         internal LauncherAccountSnapshot Account { get; set; } = new("world", "account", [], false, "idle",
             "Saved character", LaunchMode.Headless, AccountLoginCommands: ["secret-command"]);
+        internal LauncherAccountSnapshot[]? Accounts { get; set; }
         internal LauncherSessionSnapshot Session { get; set; } = new("session", LauncherActivityKind.Play,
             "world", "account", "Saved character", LaunchMode.Headless, LauncherActivityState.InWorld,
             "", null, null, DateTimeOffset.UtcNow);
@@ -160,7 +179,7 @@ public sealed class LauncherControlTests
             {
                 case "PollStatus": return null;
                 case "GetSnapshot": return new LauncherStateSnapshot(
-                    [new("world", "localhost", 9000, [Account])], [Session],
+                    [new("world", "localhost", 9000, Accounts ?? [Account])], [Session],
                     new(true, false, true, true, "Windows", null), true, "ready");
                 case "LaunchAsync": Launches.Add(args!); return Task.FromResult(Session);
                 case "TrySendConsoleLine": ConsoleLines.Add(((string)args![0]!, (string)args[1]!)); return true;

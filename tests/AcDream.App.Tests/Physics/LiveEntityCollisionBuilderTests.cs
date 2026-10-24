@@ -7,6 +7,7 @@ using AcDream.Core.Physics;
 using AcDream.Core.World;
 using AcDream.Runtime.Physics;
 using DatReaderWriter.DBObjs;
+using Placement = DatReaderWriter.Enums.Placement;
 using DatReaderWriter.Types;
 
 namespace AcDream.App.Tests.Physics;
@@ -504,6 +505,85 @@ public sealed class LiveEntityCollisionBuilderTests
             other.Generation,
             other.WorldEntity!,
             other.FinalPhysicsState,
+            Vector3.Zero));
+    }
+
+    [Fact]
+    public void Build_CollidesInThePlacementTheServerNamed()
+    {
+        // A hooked item is drawn in its Hook placement; its collision must
+        // use the same part frames, not the setup's Resting frame.
+        const uint part = 0x0100AD01u;
+        Setup setup = PlacedItemSetup(part);
+        WorldSession.EntitySpawn spawn = Spawn(scale: 1f) with
+        {
+            PlacementId = (uint)Placement.Hook,
+        };
+
+        ShadowShape shape = Assert.Single(BuildPlaced(setup, part, spawn).Shapes);
+
+        Assert.Equal(HookOrientation, shape.LocalRotation);
+        Assert.Equal(Vector3.Zero, shape.LocalPosition);
+    }
+
+    [Fact]
+    public void Build_WithoutAPlacementOrMotion_CollidesInDefault()
+    {
+        // No placement and no motion data from the server means Default,
+        // the same frame the object is drawn in.
+        const uint part = 0x0100AD02u;
+        Setup setup = PlacedItemSetup(part);
+
+        LiveEntityCollisionRegistration registration =
+            BuildPlaced(setup, part, Spawn(scale: 1f));
+
+        ShadowShape shape = Assert.Single(registration.Shapes);
+        Assert.Equal(Quaternion.Identity, shape.LocalRotation);
+        Assert.Equal(Vector3.Zero, shape.LocalPosition);
+    }
+
+    private static readonly Quaternion HookOrientation =
+        Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 2f);
+
+    private static Setup PlacedItemSetup(uint part)
+    {
+        var setup = new Setup();
+        setup.Parts.Add(part);
+        setup.PlacementFrames[Placement.Default] = new AnimationFrame(1)
+        {
+            Frames = { new Frame { Origin = Vector3.Zero, Orientation = Quaternion.Identity } },
+        };
+        setup.PlacementFrames[Placement.Resting] = new AnimationFrame(1)
+        {
+            Frames = { new Frame { Origin = new Vector3(0f, 0f, 1f), Orientation = Quaternion.Identity } },
+        };
+        setup.PlacementFrames[Placement.Hook] = new AnimationFrame(1)
+        {
+            Frames = { new Frame { Origin = Vector3.Zero, Orientation = HookOrientation } },
+        };
+        return setup;
+    }
+
+    private static LiveEntityCollisionRegistration BuildPlaced(
+        Setup setup,
+        uint part,
+        WorldSession.EntitySpawn spawn)
+    {
+        var record = LiveEntityTestFixture.CreateExactProjectionRecord(spawn);
+        WorldEntity entity = Entity();
+        record.WorldEntity = entity;
+        var builder = new LiveEntityCollisionBuilder(
+            id => id == part ? Bsp(1f) : null,
+            PoseResolver());
+        return Assert.IsType<LiveEntityCollisionRegistration>(builder.Build(
+            entity,
+            setup,
+            [part],
+            spawn,
+            record.ServerGuid,
+            record.Generation,
+            record.WorldEntity!,
+            record.FinalPhysicsState,
             Vector3.Zero));
     }
 

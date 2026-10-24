@@ -158,12 +158,13 @@ public sealed partial class LauncherWindowViewModel
             int index = 0;
             var grouped = snapshot.Servers
                 .SelectMany(server => server.Accounts.Select(account => (server, account)))
-                .GroupBy(pair => pair.account.AccountName, StringComparer.Ordinal);
+                .GroupBy(pair => pair.account.AccountName, AccountNames.Comparer);
             foreach (var entries in grouped)
             {
                 LauncherServerSnapshot firstServer = entries.First().server;
+                // A group is reused only under the same spelling, so a renamed one shows its new name.
                 LauncherAccountGroupViewModel? group = Accounts.FirstOrDefault(item =>
-                    item.AccountName == entries.Key);
+                    string.Equals(item.AccountName, entries.Key, StringComparison.Ordinal));
                 if (group is null)
                 {
                     group = new LauncherAccountGroupViewModel(
@@ -181,8 +182,10 @@ public sealed partial class LauncherWindowViewModel
                 int rowIndex = 0;
                 foreach ((LauncherServerSnapshot server, LauncherAccountSnapshot account) in entries)
                 {
+                    // One row per saved entry: a file may hold two spellings of one account on a server.
                     LauncherAccountServerRowViewModel? row = group.Rows.FirstOrDefault(item =>
-                        item.ServerName == server.Name);
+                        item.ServerName == server.Name
+                        && string.Equals(item.AccountName, account.AccountName, StringComparison.Ordinal));
                     if (row is null)
                     {
                         row = new LauncherAccountServerRowViewModel(account.AccountName, server.Name,
@@ -206,7 +209,7 @@ public sealed partial class LauncherWindowViewModel
                     rowIndex++;
                     retainedRows.Add(row);
                     row.Update(server, account, snapshot.Sessions.OrderByDescending(session => session.CreatedAt).FirstOrDefault(session =>
-                        session.ServerName == server.Name && session.AccountName == account.AccountName));
+                        session.ServerName == server.Name && AccountNames.Same(session.AccountName, account.AccountName)));
                 }
                 foreach (LauncherAccountServerRowViewModel row in group.Rows.Where(row => !retainedRows.Contains(row)).ToArray())
                     group.Rows.Remove(row);
@@ -285,7 +288,7 @@ public sealed partial class LauncherWindowViewModel
         }
     }
 
-    private readonly HashSet<(string Server, string Account)> _startingRows = new();
+    private readonly HashSet<(string Server, string Account)> _startingRows = new(AccountNames.KeyComparer);
     private readonly HashSet<CancellationTokenSource> _rowLaunches = new();
     private bool CanStartRows => CanInteract;
 
@@ -304,10 +307,10 @@ public sealed partial class LauncherWindowViewModel
         if (row.SelectedLaunchMode is not ("Graphical" or "Headless")) return "Choose Graphical or Headless.";
         LauncherStateSnapshot? current = fresh ? _orchestrator.GetSnapshot() : _snapshot;
         LauncherAccountSnapshot? account = current?.Servers.FirstOrDefault(server => server.Name == row.ServerName)
-            ?.Accounts.FirstOrDefault(account => account.AccountName == row.AccountName);
+            ?.Accounts is { } accounts ? AccountNames.Find(accounts, account => account.AccountName, row.AccountName) : null;
         if (account is null) return "This account is no longer configured on this server.";
         if (account.HasRunningActivity || current!.Sessions.Any(session => session.IsProcessOrStartActive
-            && session.ServerName == row.ServerName && session.AccountName == row.AccountName)) return "This account already has an active session on this server.";
+            && session.ServerName == row.ServerName && AccountNames.Same(session.AccountName, row.AccountName))) return "This account already has an active session on this server.";
         if (characterName is { } name && !account.Characters.Any(character => character.Name == name)) return "Choose a current character.";
         LauncherCapability capability = fresh
             ? _orchestrator.GetAccountLaunchCapability(row.ServerName, row.AccountName, mode)

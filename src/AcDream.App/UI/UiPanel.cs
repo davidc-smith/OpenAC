@@ -61,6 +61,20 @@ public class UiLabel : UiElement
 
     public bool Outline { get; set; } = true;
 
+    /// <summary>
+    /// Set for a label inside a flex container: its size comes from the
+    /// layout (<see cref="MarkupContentSize"/>), so it no longer sizes itself
+    /// to its text when drawn, its line is centred in the height it is given,
+    /// and text wider than that box is cut short with "...".
+    /// </summary>
+    internal bool SizedByLayout { get; set; }
+
+    private string? _shownFor;
+    private float _shownWidth = float.NaN;
+    private UiDatFont? _shownFont;
+    private string _shown = string.Empty;
+    private Func<string, float>? _fitMeasure;
+
     public UiLabel() { ClickThrough = true; }
 
     protected override bool ClipsChildren => false;
@@ -69,17 +83,42 @@ public class UiLabel : UiElement
     {
         string text = TextSource?.Invoke() ?? Text;
         Vector4 textColor = TextColorSource?.Invoke() ?? TextColor;
-        float w = DatFont is { } df
-            ? df.MeasureWidth(text)
-            : (ctx.DefaultFont?.MeasureWidth(text) ?? text.Length * 7f);
         float h = DatFont?.LineHeight
             ?? ctx.DefaultFont?.LineHeight ?? 14f;
-        if (w != Width) Width = w;
-        if (h != Height) Height = h;
-        if (DatFont is { } dat)
-            ctx.DrawStringDat(dat, text, 0, 0, textColor, Outline);
+        float y = 0f;
+        if (SizedByLayout)
+        {
+            y = MathF.Floor((Height - h) / 2f + 0.5f);
+            text = Fitted(text);
+        }
         else
-            ctx.DrawString(text, 0, 0, textColor);
+        {
+            float w = DatFont is { } df
+                ? df.MeasureWidth(text)
+                : (ctx.DefaultFont?.MeasureWidth(text) ?? text.Length * 7f);
+            if (w != Width) Width = w;
+            if (h != Height) Height = h;
+        }
+        if (DatFont is { } dat)
+            ctx.DrawStringDat(dat, text, 0, y, textColor, Outline);
+        else
+            ctx.DrawString(text, 0, y, textColor);
+    }
+
+    /// <summary><paramref name="text"/> shortened to the label's width. Cached per text, width and font.</summary>
+    internal string Fitted(string text)
+    {
+        UiDatFont? font = DatFont;
+        if (!string.Equals(_shownFor, text, StringComparison.Ordinal) || _shownWidth != Width || !ReferenceEquals(_shownFont, font))
+        {
+            // Measured as the layout measures, so a label given its text's width keeps it all.
+            _fitMeasure ??= s => MathF.Ceiling(MarkupContentSize.TextWidth(DatFont, s));
+            _shown = PluginWindowChrome.Ellipsize(text, _fitMeasure, Width);
+            _shownFor = text;
+            _shownWidth = Width;
+            _shownFont = font;
+        }
+        return _shown;
     }
 }
 

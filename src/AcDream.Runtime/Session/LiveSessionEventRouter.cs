@@ -23,6 +23,7 @@ public sealed record LiveEntitySessionSink(
     Action<ParentEvent.Parsed> ParentUpdated,
     Action<uint> TeleportStarted,
     Action<ObjDescEvent.Parsed> AppearanceUpdated,
+    Action<WorldSession.EntitySpawn> DescriptionRefreshed,
     Action<PlayPhysicsScript> PlayPhysicsScript,
     Action<PlayPhysicsScriptType> PlayPhysicsScriptType,
     Action<SoundEvent> SoundEvent);
@@ -66,7 +67,8 @@ public sealed record LiveSocialSessionBindings(
     RuntimeHouseState? House = null,
     RuntimeContractState? Contracts = null,
     Func<uint>? PlayerGuid = null,
-    Action<string>? OnLocalPlayerDeath = null);
+    Action<string>? OnLocalPlayerDeath = null,
+    RuntimeHousePurchaseState? HousePurchase = null);
 
 public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
 {
@@ -220,6 +222,10 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
             Subscribe(h => session.ParentUpdated += h, h => session.ParentUpdated -= h, entities.ParentUpdated);
             Subscribe(h => session.TeleportStarted += h, h => session.TeleportStarted -= h, entities.TeleportStarted);
             Subscribe(h => session.AppearanceUpdated += h, h => session.AppearanceUpdated -= h, entities.AppearanceUpdated);
+            Subscribe(
+                h => session.EntityDescriptionRefreshed += h,
+                h => session.EntityDescriptionRefreshed -= h,
+                entities.DescriptionRefreshed);
             Subscribe(
                 h => session.PlayPhysicsScriptReceived += h,
                 h => session.PlayPhysicsScriptReceived -= h,
@@ -377,6 +383,9 @@ public sealed class LiveSessionEventRouter : ILiveSessionEventRouting
                     : null,
                 onHouseUpdateRentPayment: social.House is { } houseRentPayment
                     ? rent => houseRentPayment.ApplyRentPayment(rent, inventory.PlayerGuid())
+                    : null,
+                onHouseProfile: social.HousePurchase is { } housePurchase
+                    ? housePurchase.ApplyProfile
                     : null,
                 onContractTable: social.Contracts is { } contractTable
                     ? contractTable.ApplyTable

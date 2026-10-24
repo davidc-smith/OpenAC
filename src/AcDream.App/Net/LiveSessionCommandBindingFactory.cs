@@ -141,7 +141,9 @@ internal static class LiveSessionCommandBindingFactory
                         .Properties.GetInt(GenderProperty) == 1),
             ExecuteMotion: motion =>
                 _ = runtime.MovementOwner.ExecuteMotion(motion),
-            SendSoulEmote: session.SendSoulEmote);
+            SendSoulEmote: session.SendSoulEmote,
+            BuyHouse: session.SendBuyHouse,
+            RentHouse: session.SendRentHouse);
     }
 
     /// <summary>Which of the two sets of pose text a character is given.</summary>

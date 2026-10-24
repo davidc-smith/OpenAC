@@ -19,6 +19,11 @@ internal sealed class FakeMouseSource : IMouseSource
     public bool WantCaptureMouse { get; set; }
     public bool WantCaptureKeyboard { get; set; }
 
+    /// <summary>Keys claimed one by one, as a focused dialog claims its answer keys.</summary>
+    public HashSet<Key> ClaimedKeys { get; } = new();
+
+    public bool ClaimsKey(Key key) => WantCaptureKeyboard || ClaimedKeys.Contains(key);
+
     public void EmitMouseDown(MouseButton button, ModifierMask mods)
     {
         _held.Add(button);

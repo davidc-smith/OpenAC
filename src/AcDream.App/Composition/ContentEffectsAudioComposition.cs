@@ -111,6 +111,7 @@ internal interface IContentEffectsAudioCompositionFactory
     int GetSpellCount(MagicCatalog catalog);
     ChargenOptions LoadChargenOptions(IDatReaderWriter dats);
     void InstallChargenOptions(LiveSessionController session, ChargenOptions options);
+    void InstallTradeNoteDenominations(GameRuntime runtime, IDatReaderWriter dats);
     IAnimationLoader CreateAnimationLoader(
         IDatReaderWriter dats,
         long maximumEstimatedBytes,
@@ -231,6 +232,10 @@ internal sealed class RetailContentEffectsAudioCompositionFactory
 
     public void InstallChargenOptions(LiveSessionController session, ChargenOptions options) =>
         session.CharacterCreationState.InstallOptions(options);
+
+    public void InstallTradeNoteDenominations(GameRuntime runtime, IDatReaderWriter dats) =>
+        runtime.HousePurchaseOwner.InstallTradeNoteDenominations(
+            AcDream.Content.TradeNoteDenominations.Load(dats));
 
     public IAnimationLoader CreateAnimationLoader(
         IDatReaderWriter dats,
@@ -432,6 +437,8 @@ internal sealed class ContentEffectsAudioCompositionPhase :
             _dependencies.Log(
                 $"chargen: loaded {chargen.HeritagesById.Count} heritage(s) from portal.dat");
             Fault(ContentEffectsAudioCompositionPoint.ChargenOptionsInstalled);
+
+            _factory.InstallTradeNoteDenominations(_dependencies.Runtime, dats);
 
             IAnimationLoader animations = _factory.CreateAnimationLoader(
                 dats,

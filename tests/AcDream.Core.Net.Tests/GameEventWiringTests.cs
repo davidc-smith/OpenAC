@@ -1919,6 +1919,55 @@ public sealed class GameEventWiringTests
         Assert.Empty(rentPayment);
     }
 
+    [Fact]
+    public void WireAll_HouseProfile_ReachesItsCallback()
+    {
+        var dispatcher = new GameEventDispatcher();
+        GameEvents.HouseProfile? profile = null;
+        GameEventWiring.WireAll(
+            dispatcher, new ClientObjectTable(), new CombatState(), new Spellbook(), new ChatLog(),
+            onHouseProfile: p => profile = p);
+
+        byte[] wire = new AceWireWriter()
+            .Write(0x70000100u).Write(0x12340001u).Write(0u).Write(1u)
+            .Write(-1).Write(-1).Write(-1).Write(-1)
+            .Write(0u).Write(1u).WriteString16L("")
+            .Write(0).Write(0)
+            .ToArray();
+        dispatcher.Dispatch(GameEventEnvelope.TryParse(
+            WrapEnvelope(GameEventType.HouseProfile, wire))!.Value);
+
+        Assert.Equal(0x70000100u, profile!.Value.SlumlordGuid);
+        Assert.Equal(0, dispatcher.GetUnhandledCount(GameEventType.HouseProfile));
+    }
+
+    [Fact]
+    public void AGuestListReply_PrintsTheListInGreenAsOneText()
+    {
+        var lines = new List<(string Text, RetailLogTextType Type)>();
+        var dispatcher = new GameEventDispatcher();
+        GameEventWiring.WireAll(
+            dispatcher, new ClientObjectTable(), new CombatState(), new Spellbook(), new ChatLog(),
+            onInterfaceText: (text, type) => lines.Add((text, type)));
+
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u).Write(0x3u).Write(0x50000001u)
+            .Write((ushort)1).Write((ushort)64)
+            .Write(0x50000002u).Write(1u).WriteString16L("Alice")
+            .Write(0)
+            .ToArray();
+        dispatcher.Dispatch(GameEventEnvelope.TryParse(
+            WrapEnvelope(GameEventType.UpdateHAR, wire))!.Value);
+
+        Assert.Equal(
+            new[]
+            {
+                ("Guests:\n  Alice *\nAllegiance Permissions: guest access\n[ open house ]\n",
+                    RetailLogTextType.Default),
+            },
+            lines);
+    }
+
     // OpenAC #44: the client is the only thing that says an enchantment ran
     // out, so the plain removal announces it; a dispel does not, since the
     // dispel's own text arrives as ordinary chat.

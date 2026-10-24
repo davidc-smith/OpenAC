@@ -113,6 +113,51 @@ public sealed class LauncherProfileTextTests
     }
 
     [Fact]
+    public void AnAccountRetypedInAnotherCaseIsTheSameAccountUnderTheNewSpelling()
+    {
+        LauncherProfileDocument document = Sample();
+        AccountProfile original = document.Servers[0].Accounts[0];
+        const string text = "#Coldeve\nName=NOTAN3,Password=secret\nName=notan,Password=other\n";
+
+        Assert.Empty(LauncherProfileText.DescribeAccountRemovals(document, text));
+        LauncherProfileText.Apply(document, LauncherTextEditorKind.Accounts, text);
+
+        Assert.Equal(["NOTAN3", "notan"], document.Servers[0].Accounts.Select(account => account.Account));
+        Assert.Same(original, document.Servers[0].Accounts[0]);
+        Assert.Equal("Festivus", Assert.Single(original.Characters).Name);
+    }
+
+    [Fact]
+    public void TwoSavedSpellingsOfOneAccountRoundTripButATextCannotAddAThird()
+    {
+        LauncherProfileDocument document = Sample();
+        document.Servers[1].Accounts.Add(new() { Account = "TestAccount", Password = "upper", LoginCommands = ["/upper"] });
+        string before = Json(document);
+
+        foreach (LauncherTextEditorKind kind in new[] { LauncherTextEditorKind.Accounts, LauncherTextEditorKind.LogonCommands })
+            LauncherProfileText.Apply(document, kind, LauncherProfileText.Read(document, kind));
+
+        Assert.Equal(before, Json(document));
+        var exception = Assert.Throws<LauncherProfileException>(() => LauncherProfileText.Apply(document,
+            LauncherTextEditorKind.Accounts,
+            "#sawato\nName=testaccount\nName=TestAccount\nName=TESTACCOUNT\n"));
+        Assert.Contains("Line 4: account 'TESTACCOUNT' appears more than once on this server.",
+            exception.Message.Split(Environment.NewLine));
+        Assert.Equal(before, Json(document));
+    }
+
+    [Fact]
+    public void LogonCommandsFindAnAccountNamedInAnotherCase()
+    {
+        LauncherProfileDocument document = Sample();
+
+        LauncherProfileText.Apply(document, LauncherTextEditorKind.LogonCommands, "#Coldeve\n##NOTAN\n/vt start\n");
+
+        Assert.Equal(["/vt start"], document.Servers[0].Accounts[1].LoginCommands);
+        Assert.Empty(document.Servers[0].Accounts[0].LoginCommands);
+    }
+
+    [Fact]
     public void AnAccountWithoutPasswordHasAnEmptyOne()
     {
         LauncherProfileDocument document = Sample();
@@ -128,6 +173,8 @@ public sealed class LauncherProfileTextTests
     [InlineData("Name=a,Password=b", "Line 1: put a #Server line above the accounts on that server.")]
     [InlineData("#Nowhere\nName=a,Password=b", "Line 1: there is no server named 'Nowhere'. Add it with Add server first.")]
     [InlineData("#Coldeve\nName=a\nName=a", "Line 3: account 'a' appears more than once on this server.")]
+    [InlineData("#Coldeve\nName=a\nName=A", "Line 3: account 'A' appears more than once on this server.")]
+    [InlineData("#Coldeve\nName=notan\nName=NOTAN", "Line 3: account 'NOTAN' appears more than once on this server.")]
     [InlineData("#Coldeve\nPassword=b", "Line 2: each account needs Name=.")]
     [InlineData("#Coldeve\nName=a,Colour=red", "Line 2: 'Colour' is not Name, Password or Profiles, or appears twice.")]
     [InlineData("#Coldeve\nName=a,Password=\"open", "Line 2: A quoted value is missing its closing double quote.")]

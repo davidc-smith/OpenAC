@@ -206,14 +206,18 @@ internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoaded
 
     internal event Action<uint>? AppearanceApplied;
 
-    public void OnCreate(WorldSession.EntitySpawn spawn)
+    public void OnCreate(WorldSession.EntitySpawn spawn) =>
+        CreateCore(spawn, replaceExisting: false);
+
+    private void CreateCore(WorldSession.EntitySpawn spawn, bool replaceExisting)
     {
         lock (_datLock)
         {
             LiveEntityRegistrationResult registration =
                 _runtime.RegisterLiveEntity(
                     spawn,
-                    isLocalPlayer: spawn.Guid == _identity.ServerGuid);
+                    isLocalPlayer: spawn.Guid == _identity.ServerGuid,
+                    replaceExisting: replaceExisting);
             InboundCreateResult result = registration.Inbound;
             if (result.Disposition is
                 AcDream.Core.Physics.CreateObjectTimestampDisposition.StaleGeneration)
@@ -236,7 +240,10 @@ internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoaded
                         canonical,
                         createIntegrationVersion,
                         spawn,
-                        replaceGeneration: result.Disposition is
+                        // A re-sent description keeps the item record the
+                        // object table already refreshed from it.
+                        replaceGeneration: !replaceExisting
+                            && result.Disposition is
                                 AcDream.Core.Physics.CreateObjectTimestampDisposition.NewGeneration)
                     && _runtime.IsCurrentCreateIntegration(
                         canonical,
@@ -354,6 +361,24 @@ AppearanceSynchronization:
             return SynchronizeAppearance(
                 record,
                 record.ObjDescAuthorityVersion);
+        }
+    }
+
+    /// <summary>
+    /// A re-sent description (0xF7DB) of an object already held deletes it
+    /// and creates it again from the full new description: its setup,
+    /// physics state, parent and position. An object still waiting to enter
+    /// the world is replaced the same way. One not held is left to the object
+    /// table.
+    /// </summary>
+    public bool OnDescriptionRefresh(WorldSession.EntitySpawn update)
+    {
+        lock (_datLock)
+        {
+            if (!_entityObjects.IsKnown(update.Guid))
+                return false;
+            CreateCore(update, replaceExisting: true);
+            return true;
         }
     }
 

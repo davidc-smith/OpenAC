@@ -70,6 +70,99 @@ public class SetupPartTransformsTests
     }
 
     [Fact]
+    public void ResolvePlacementFrame_UsesServerPlacement_WhenSetupHasIt()
+    {
+        Setup setup = HookedItemSetup();
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.Hook);
+
+        Assert.Same(setup.PlacementFrames[Placement.Hook], frame);
+    }
+
+    [Fact]
+    public void ResolvePlacementFrame_FallsBackToDefault_WhenServerPlacementMissing()
+    {
+        Setup setup = HookedItemSetup();
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Same(setup.PlacementFrames[Placement.Default], frame);
+    }
+
+    [Fact]
+    public void ResolvePlacementFrame_UsesNoFrame_WhenSetupHasNeitherPlacementNorDefault()
+    {
+        Setup setup = HookedItemSetup();
+        setup.PlacementFrames.Remove(Placement.Default);
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Null(frame);
+    }
+
+    [Fact]
+    public void ResolveObjectPose_WithNoFrame_LeavesEveryPartAtTheOrigin()
+    {
+        Setup setup = HookedItemSetup();
+        setup.PlacementFrames.Remove(Placement.Default);
+
+        AnimationFrame pose = SetupPartTransforms.ResolveObjectPose(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Empty(pose.Frames);
+        Assert.Equal(Matrix4x4.Identity, Assert.Single(SetupPartTransforms.Compute(setup, pose)));
+    }
+
+    [Theory]
+    [InlineData(null, false, (uint)Placement.Default)]
+    [InlineData((uint)Placement.Hook, false, (uint)Placement.Hook)]
+    [InlineData(null, true, (uint)Placement.Resting)]
+    public void ObjectPlacementId_FollowsWhatTheServerSent(
+        uint? placementId,
+        bool hasMovementData,
+        uint expected)
+    {
+        Assert.Equal(
+            expected,
+            SetupPartTransforms.ObjectPlacementId(placementId, hasMovementData));
+    }
+
+    private static Setup HookedItemSetup() => new()
+    {
+        Parts = { 0x01000100u },
+        DefaultScale = { Vector3.One },
+        PlacementFrames =
+        {
+            [Placement.Default] = new AnimationFrame(1)
+            {
+                Frames = { new Frame { Origin = Vector3.Zero, Orientation = Quaternion.Identity } },
+            },
+            [Placement.Resting] = new AnimationFrame(1)
+            {
+                Frames = { new Frame { Origin = new Vector3(0, 0, 1f), Orientation = Quaternion.Identity } },
+            },
+            [Placement.Hook] = new AnimationFrame(1)
+            {
+                Frames =
+                {
+                    new Frame
+                    {
+                        Origin = Vector3.Zero,
+                        Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 2f),
+                    },
+                },
+            },
+        },
+    };
+
+    [Fact]
     public void Compute_ReturnsEmpty_WhenNoPlacementFrames()
     {
         var setup = new Setup

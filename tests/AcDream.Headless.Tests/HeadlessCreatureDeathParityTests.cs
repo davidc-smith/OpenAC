@@ -137,6 +137,7 @@ public sealed class HeadlessCreatureDeathParityTests
         ParentUpdated: _ => { },
         TeleportStarted: _ => { },
         AppearanceUpdated: _ => { },
+        DescriptionRefreshed: _ => { },
         PlayPhysicsScript: _ => { },
         PlayPhysicsScriptType: _ => { },
         SoundEvent: _ => { });

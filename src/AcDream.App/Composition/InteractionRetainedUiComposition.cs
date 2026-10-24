@@ -925,7 +925,8 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     AllegianceKick: guid => late.GameRuntime.AllegianceKick(guid),
                     AllegianceSetUpdateSubscription: on =>
                         late.GameRuntime.AllegianceSetUpdateSubscription(on),
-                    Trade: d.Runtime.Trade),
+                    Trade: d.Runtime.Trade,
+                    HousePurchase: d.Runtime.HousePurchaseOwner),
                 MapHouse: new MapHouseRuntimeBindings(
                     CurrentCalendar: d.CurrentCalendar,
                     PlayerCellId: () => d.PlayerController.Controller?.CellId ?? 0u,
@@ -1058,6 +1059,9 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                         || d.Character.LocalPlayer.Properties.GetBool(
                             (uint)AcDream.Core.Properties.PropertyBool.IsPsr)),
                 IsGameplayDisplay: () => d.Settings.IsGameplayDisplay,
+                WorldDrag: new WorldDragRuntimeBindings(
+                    (x, y) => late.Selection.PickAt(x, y, includeSelf: true),
+                    () => d.Actions.Combat.CurrentMode == CombatMode.NonCombat),
                 PluginCanvases: new PluginCanvasHostServices(
                     d.GpuDevice,
                     d.GpuFrameSource,

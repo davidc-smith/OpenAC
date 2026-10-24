@@ -61,7 +61,9 @@ internal sealed record LiveSessionCommandBindings(
     Func<string, RetailChatPose?> ResolvePose,
     Action<uint> ExecuteMotion,
     Action<string> SendSoulEmote,
-    Action<string>? Log = null);
+    Action<string>? Log = null,
+    Action<uint, IReadOnlyList<uint>>? BuyHouse = null,
+    Action<uint, IReadOnlyList<uint>>? RentHouse = null);
 
 internal readonly record struct AddShortcutRuntimeCmd(ShortcutEntry Entry);
 internal readonly record struct RemoveShortcutRuntimeCmd(uint Index);
@@ -99,6 +101,12 @@ internal readonly record struct AcceptTradeRuntimeCmd(
     bool PartnerAccepted);
 internal readonly record struct DeclineTradeRuntimeCmd;
 internal readonly record struct ResetTradeRuntimeCmd;
+internal readonly record struct BuyHouseRuntimeCmd(
+    uint SlumlordGuid,
+    IReadOnlyList<uint> ItemGuids);
+internal readonly record struct RentHouseRuntimeCmd(
+    uint SlumlordGuid,
+    IReadOnlyList<uint> ItemGuids);
 internal readonly record struct ClearFriendsRuntimeCmd;
 internal readonly record struct RequestLegacyFriendsRuntimeCmd;
 internal readonly record struct ModifyCharacterSquelchRuntimeCmd(
@@ -234,6 +242,12 @@ internal sealed class LiveSessionCommandRouter : ILiveSessionCommandRouting
             _ => SendIfActive(bindings.DeclineTrade));
         commands.Register<ResetTradeRuntimeCmd>(
             _ => SendIfActive(bindings.ResetTrade));
+        commands.Register<BuyHouseRuntimeCmd>(
+            command => SendIfActive(() =>
+                bindings.BuyHouse?.Invoke(command.SlumlordGuid, command.ItemGuids)));
+        commands.Register<RentHouseRuntimeCmd>(
+            command => SendIfActive(() =>
+                bindings.RentHouse?.Invoke(command.SlumlordGuid, command.ItemGuids)));
         commands.Register<RemoveFriendRuntimeCmd>(
             command => SendIfActive(() =>
                 bindings.RemoveFriend(command.CharacterId)));

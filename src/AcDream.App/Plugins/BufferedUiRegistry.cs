@@ -62,6 +62,20 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
     private Func<string, bool>? _showWindow;
     private Func<string, bool>? _hideWindow;
 
+    // Plugins' dialogs, drawn by the UI runtime's host. Bound with the
+    // window control and unbound with it.
+    private PluginDialogHost? _dialogs;
+
+    /// <summary>The most buttons a plugin's dialog may have.</summary>
+    internal const int MaximumDialogButtons = 4;
+
+    internal void BindPluginDialogs(PluginDialogHost dialogs)
+    {
+        ArgumentNullException.ThrowIfNull(dialogs);
+        lock (_gate)
+            _dialogs = dialogs;
+    }
+
     internal void BindPluginWindowControl(
         Func<string, bool> show,
         Func<string, bool> hide)
@@ -109,6 +123,7 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
             _isClientWindowVisible = null;
             _showWindow = null;
             _hideWindow = null;
+            _dialogs = null;
         }
     }
 
@@ -523,6 +538,12 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
         bool visible) => SetControlVisible(
             new PluginUiOwner("unscoped", "Plugin"), viewName, controlName, visible);
 
+    public IDisposable? Confirm(PluginDialog dialog, Action<int> onResult) =>
+        Confirm(new PluginUiOwner("unscoped", "Plugin"), dialog, onResult);
+
+    public bool ShowModal(string viewName, string? ownerView = null) =>
+        ShowModal(new PluginUiOwner("unscoped", "Plugin"), viewName, ownerView);
+
     public IPluginImages Images =>
         ImagesFor(new PluginUiOwner("unscoped", "Plugin"));
 
@@ -724,6 +745,59 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
     public bool HidePanel(PluginUiOwner owner, string viewName) =>
         ControlPanel(owner, viewName, show: false);
 
+    public IDisposable? Confirm(PluginUiOwner owner, PluginDialog dialog, Action<int> onResult)
+    {
+        ArgumentNullException.ThrowIfNull(dialog);
+        ArgumentNullException.ThrowIfNull(onResult);
+        ArgumentNullException.ThrowIfNull(dialog.Title);
+        ArgumentNullException.ThrowIfNull(dialog.Message);
+        IReadOnlyList<string> buttons = dialog.EffectiveButtons;
+        if (buttons.Count is < 1 or > MaximumDialogButtons)
+        {
+            throw new ArgumentException(
+                $"A dialog has 1 to {MaximumDialogButtons} buttons, not {buttons.Count}.", nameof(dialog));
+        }
+        if (buttons.Any(string.IsNullOrWhiteSpace))
+            throw new ArgumentException("Every dialog button needs a caption.", nameof(dialog));
+
+        PluginDialogHost? dialogs;
+        UiElement? ownerWindow = null;
+        lock (_gate)
+        {
+            dialogs = _dialogs;
+            if (dialog.OwnerView is { } ownerView
+                && FindRegistrationLocked(owner, ownerView) is { WindowCleanup: not null, Element: { } element })
+                ownerWindow = element;
+        }
+        return dialogs?.Confirm(dialog.Title, dialog.Message, [.. buttons], ownerWindow, onResult);
+    }
+
+    public bool ShowModal(PluginUiOwner owner, string viewName, string? ownerView = null)
+    {
+        PluginDialogHost? dialogs;
+        Func<string, bool>? show;
+        string? windowName = null;
+        UiElement? panel = null;
+        UiElement? ownerWindow = null;
+        lock (_gate)
+        {
+            dialogs = _dialogs;
+            show = _showWindow;
+            if (FindRegistrationLocked(owner, viewName) is { WindowCleanup: not null, Element: { } element } mounted)
+            {
+                windowName = WindowNameFor(mounted.Owner, mounted.Descriptor);
+                panel = element;
+            }
+            if (ownerView is not null
+                && FindRegistrationLocked(owner, ownerView) is { WindowCleanup: not null, Element: { } ownerElement })
+                ownerWindow = ownerElement;
+        }
+        if (dialogs is null || show is null || windowName is null || panel is null || !show(windowName))
+            return false;
+        dialogs.ShowModal(panel, ownerWindow);
+        return true;
+    }
+
     /// <summary>
     /// Shows or hides one plugin's own mounted window through the window
     /// manager, which tells the window's visibility controller exactly as
@@ -772,6 +846,14 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 toggle.TextSource = null;
                 toggle.Text = label;
                 return true;
+            case UiMarkupCheckbox checkbox:
+                checkbox.TextSource = null;
+                checkbox.Text = label;
+                return true;
+            case UiMarkupExpander expander:
+                expander.Header.TextSource = null;
+                expander.Header.Text = label;
+                return true;
             case UiLabel text:
                 text.TextSource = null;
                 text.Text = label;
@@ -815,12 +897,16 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
                 || registration.Descriptor.Title.Equals(
                     viewName, StringComparison.Ordinal)));
 
+    // A name inside a <repeat> template is on every row, so it names no one
+    // control: the rows (a marker's copies, its siblings) are not searched.
     private static UiElement? FindByName(UiElement root, string name)
     {
         if (root.Name?.Equals(name, StringComparison.Ordinal) == true)
             return root;
         foreach (UiElement child in root.Children)
         {
+            if (child is UiMarkupRepeat || child.IsRepeatRow)
+                continue;
             UiElement? found = FindByName(child, name);
             if (found is not null)
                 return found;

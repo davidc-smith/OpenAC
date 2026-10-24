@@ -16,7 +16,8 @@ public static class ShadowShapeBuilder
         Func<uint, bool> hasPhysicsBsp,
         IReadOnlyList<Frame>? partPoseOverride = null,
         IReadOnlyList<uint>? effectivePartGfxObjIds = null,
-        Func<uint, ShadowPartGeometry?>? physicsBspBounds = null)
+        Func<uint, ShadowPartGeometry?>? physicsBspBounds = null,
+        uint? placementId = null)
     {
         if (setup is null) throw new ArgumentNullException(nameof(setup));
         if (hasPhysicsBsp is null) throw new ArgumentNullException(nameof(hasPhysicsBsp));
@@ -64,7 +65,7 @@ public static class ShadowShapeBuilder
             }
         }
 
-        AnimationFrame? placementFrame = ResolvePlacementFrame(setup);
+        AnimationFrame? placementFrame = ResolvePlacementFrame(setup, placementId);
         for (int i = 0; i < setup.Parts.Count; i++)
         {
             uint gfxId = EffectivePartGfxObjId(setup, effectivePartGfxObjIds, i);
@@ -222,14 +223,15 @@ public static class ShadowShapeBuilder
         IReadOnlyList<uint>? effectivePartGfxObjIds,
         IReadOnlyList<Frame>? partPoseOverride,
         Func<uint, GfxObjPhysics?> getGfxObj,
-        Func<uint, GfxObjVisualBounds?> getVisualBounds)
+        Func<uint, GfxObjVisualBounds?> getVisualBounds,
+        uint? placementId = null)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(getGfxObj);
         ArgumentNullException.ThrowIfNull(getVisualBounds);
 
         var parts = new List<ShadowShape>(setup.Parts.Count);
-        AnimationFrame? placementFrame = ResolvePlacementFrame(setup);
+        AnimationFrame? placementFrame = ResolvePlacementFrame(setup, placementId);
         for (int i = 0; i < setup.Parts.Count; i++)
         {
             uint gfxId = EffectivePartGfxObjId(setup, effectivePartGfxObjIds, i);
@@ -293,8 +295,17 @@ public static class ShadowShapeBuilder
             ? effectivePartGfxObjIds[index]
             : (uint)setup.Parts[index];
 
-    private static AnimationFrame? ResolvePlacementFrame(Setup setup)
+    /// <summary>
+    /// The frame the parts rest in. A server object's parts collide in the
+    /// placement it is drawn in (<paramref name="placementId"/>, resolved as
+    /// <see cref="AcDream.Core.Meshing.SetupPartTransforms.ResolvePlacementFrame"/>
+    /// does). Without one, the setup's Resting frame is used, then Default,
+    /// then the first frame it lists.
+    /// </summary>
+    private static AnimationFrame? ResolvePlacementFrame(Setup setup, uint? placementId)
     {
+        if (placementId is { } id)
+            return AcDream.Core.Meshing.SetupPartTransforms.ResolvePlacementFrame(setup, id);
         if (setup.PlacementFrames.TryGetValue(Placement.Resting, out var resting)) return resting;
         if (setup.PlacementFrames.TryGetValue(Placement.Default, out var def))     return def;
         foreach (var kvp in setup.PlacementFrames) return kvp.Value;

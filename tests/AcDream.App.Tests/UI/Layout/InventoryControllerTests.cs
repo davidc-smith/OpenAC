@@ -70,7 +70,8 @@ public class InventoryControllerTests
         ShortcutStore? shortcuts = null,
         UiShortcutDigitGraphics? shortcutDigits = null,
         CombatState? combat = null,
-        Func<ItemType, uint, uint, uint, uint, uint>? iconIds = null)
+        Func<ItemType, uint, uint, uint, uint, uint>? iconIds = null,
+        Action? showWindow = null)
         => InventoryController.Bind(layout, objects, () => Player,
             iconIds: iconIds ?? ((_, _, _, _, _) => 0u),
             strength: strengthProvider ?? (() => strength), datFont: null,
@@ -90,7 +91,8 @@ public class InventoryControllerTests
             shortcuts: shortcuts,
             shortcutDigits: shortcutDigits,
             combat: combat,
-            resolveAppropriateName: ItemTooltipCaptionNames.Resolve);
+            resolveAppropriateName: ItemTooltipCaptionNames.Resolve,
+            showWindow: showWindow);
 
     // ── #35: a rend or imbue re-sends the whole item description; the cell has
     //        to pick up the new underlay without a relog.
@@ -724,6 +726,63 @@ public class InventoryControllerTests
         Assert.Equal(102, grid.GetNumUIItems());
     }
 
+    // Using the main pack from anywhere (a hotbar shortcut made by
+    // dragging the character) shows the inventory on the main pack and asks
+    // the server for nothing; a carried side pack opens the same way after
+    // its one use request.
+    [Fact]
+    public void UsingTheMainPack_showsTheInventoryOnTheMainPack_withoutAUse()
+    {
+        var (layout, grid, containers, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        objects.AddOrUpdate(new ClientObject
+        {
+            ObjectId = Player,
+            Type = ItemType.Creature,
+            PublicWeenieBitfield = (uint)(PublicWeenieFlags.Player | PublicWeenieFlags.Stuck),
+            ItemsCapacity = 102,
+            ContainersCapacity = 7,
+            Useability = ItemUseability.No,
+        });
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedBag(objects, 0xC, slot: 1);
+        SeedContained(objects, 0xB1, 0xC, slot: 0);
+        var uses = new List<uint>();
+        long now = 1_000;
+        var transactions = new AcDream.Runtime.Gameplay.RuntimeInteractionTransactionState(
+            new InventoryTransactionState(objects));
+        using var interaction = new RuntimeItemInteraction(
+            objects,
+            transactions,
+            new InteractionState(),
+            playerGuid: () => Player,
+            sendUse: uses.Add,
+            sendUseWithTarget: null,
+            sendWield: null,
+            sendDrop: null,
+            nowMs: () => now);
+        int shown = 0;
+        InventoryController ctrl = Bind(
+            layout, objects, itemInteraction: interaction, showWindow: () => shown++);
+
+        Assert.True(interaction.ActivateItem(0xCu));           // a side pack, from the hotbar
+        Assert.Equal(new[] { 0xCu }, uses);
+        Assert.Equal(0xCu, ctrl.CurrentOpenContainerId);
+        Assert.Equal(0xB1u, grid.GetItem(0)!.ItemId);
+        Assert.Equal(1, shown);
+        Assert.True(containers.GetItem(0)!.IsOpenContainer);
+
+        transactions.CompleteUse(0u);                          // the pack's use is done
+        now += 1_000;
+        Assert.True(interaction.ActivateItem(Player));         // the main pack, from the hotbar
+
+        Assert.Equal(new[] { 0xCu }, uses);                    // nothing more went out
+        Assert.Equal(Player, ctrl.CurrentOpenContainerId);
+        Assert.Equal(0xAu, grid.GetItem(0)!.ItemId);
+        Assert.Equal(2, shown);
+        Assert.Equal(0, interaction.BusyCount);
+    }
+
     [Fact]
     public void SwitchBetweenTwoBags_opensEach_withoutExternalCloseWire()
     {
@@ -1146,7 +1205,7 @@ public class InventoryControllerTests
         Workmanship: null);
 
     [Fact]
-    public void Drop_fromElsewhereOntoOccupiedGridCell_goesToTheTop()
+    public void Drop_fromElsewhereOntoOccupiedGridCell_landsLeftOfIt()
     {
         var (layout, grid, _, _, _, _, _, _) = BuildLayout();
         var objects = new ClientObjectTable();
@@ -1159,7 +1218,7 @@ public class InventoryControllerTests
         var bCell = grid.GetItem(1)!;                          // ItemId == 0xB, SlotIndex 1
         ((IItemListDragHandler)ctrl).HandleDropRelease(grid, bCell, Payload(0xFFFFu));
 
-        Assert.Contains((0xFFFFu, Player, 0), puts);
+        Assert.Contains((0xFFFFu, Player, 1), puts);
         Assert.Equal(0u, objects.Get(0xFFFFu)!.ContainerId);
     }
 
@@ -1183,15 +1242,15 @@ public class InventoryControllerTests
 
         ctrl.HandleDropRelease(grid, grid.GetItem(1)!, payload);
 
-        Assert.Equal(new[] { (loot, Player, 0) }, puts);
+        Assert.Equal(new[] { (loot, Player, 1) }, puts);           // left of B, the cell it was dropped on
         Assert.Equal(chest, objects.Get(loot)!.ContainerId);
-        Assert.Equal(loot, grid.GetItem(0)!.ItemId);
-        Assert.True(grid.GetItem(0)!.WaitingVisual);
-        Assert.True(grid.GetItem(0)!.Selected);
-        Assert.Equal(0xAu, grid.GetItem(1)!.ItemId);
+        Assert.Equal(0xAu, grid.GetItem(0)!.ItemId);
+        Assert.Equal(loot, grid.GetItem(1)!.ItemId);
+        Assert.True(grid.GetItem(1)!.WaitingVisual);
+        Assert.True(grid.GetItem(1)!.Selected);
         Assert.Equal(0xBu, grid.GetItem(2)!.ItemId);
 
-        objects.ApplyConfirmedServerMove(loot, Player, 0u, newSlot: 0);
+        objects.ApplyConfirmedServerMove(loot, Player, 0u, newSlot: 1);
 
         UiItemSlot confirmed = Enumerable.Range(0, grid.GetNumUIItems())
             .Select(i => grid.GetItem(i)!)
@@ -1750,7 +1809,7 @@ public class InventoryControllerTests
         var payload = new ItemDragPayload(loot, ItemDragSource.Ground, 0, source);
 
         ctrl.HandleDropRelease(grid, grid.GetItem(1)!, payload);
-        Assert.Equal(loot, grid.GetItem(0)!.ItemId);
+        Assert.Equal(loot, grid.GetItem(1)!.ItemId);                  // the empty cell past A appends
 
         objects.RejectMove(loot, weenieError: 0x29u);
 
@@ -1761,7 +1820,7 @@ public class InventoryControllerTests
     }
 
     [Fact]
-    public void Drop_fromElsewhereOntoEmptyGridCell_goesToTheTop()
+    public void Drop_fromElsewhereOntoEmptyGridCell_appends()
     {
         var (layout, grid, _, _, _, _, _, _) = BuildLayout();
         var objects = new ClientObjectTable();
@@ -1773,7 +1832,7 @@ public class InventoryControllerTests
         var emptyCell = grid.GetItem(5)!;
         ((IItemListDragHandler)ctrl).HandleDropRelease(grid, emptyCell, Payload(0xFFFFu));
 
-        Assert.Contains((0xFFFFu, Player, 0), puts);
+        Assert.Contains((0xFFFFu, Player, 1), puts);
     }
 
     [Fact]
@@ -1830,7 +1889,7 @@ public class InventoryControllerTests
         ctrl.HandleDropRelease(grid, grid.GetItem(4)!, Payload(0xAu));
 
         Assert.Empty(splits);
-        Assert.Equal(new[] { (0xAu, Player, 2) }, puts);
+        Assert.Equal(new[] { (0xAu, Player, 1) }, puts);           // A B -> B A: its old slot closes up
     }
 
     [Fact]
@@ -1917,10 +1976,95 @@ public class InventoryControllerTests
         var merges = new List<(uint source, uint target, uint amount)>();
         var ctrl = Bind(layout, objects, puts: puts, merges: merges);
 
-        ctrl.HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xAu));
+        ctrl.HandleDropRelease(grid, grid.GetItem(0)!, Payload(0xBu));
 
         Assert.Empty(merges);
-        Assert.Contains((0xAu, Player, 1), puts);
+        Assert.Contains((0xBu, Player, 0), puts);
+    }
+
+    // #249: a reorder inside the pack lands to the left of the item it was
+    // dropped on. The server takes the item out of its old slot first, so
+    // an item moving later asks for one slot less than the hovered cell.
+    [Fact]
+    public void Reorder_laterInThePack_landsLeftOfTheItemDroppedOn()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        SeedContained(objects, 0xC, Player, slot: 2);
+        SeedContained(objects, 0xD, Player, slot: 3);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(grid, grid.GetItem(3)!, Payload(0xAu));
+
+        Assert.Equal(new[] { (0xAu, Player, 2) }, puts);       // A B C D -> B C A D
+    }
+
+    [Fact]
+    public void Reorder_earlierInThePack_takesTheSlotOfTheItemDroppedOn()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        SeedContained(objects, 0xC, Player, slot: 2);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xCu));
+
+        Assert.Equal(new[] { (0xCu, Player, 1) }, puts);       // A B C -> A C B
+    }
+
+    [Fact]
+    public void Reorder_ontoItselfOrItsRightNeighbour_sendsNothing()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = (IItemListDragHandler)Bind(layout, objects, puts: puts);
+
+        ctrl.HandleDropRelease(grid, grid.GetItem(0)!, Payload(0xAu));
+        ctrl.HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xAu));
+
+        Assert.Empty(puts);                                    // A is already left of B
+    }
+
+    [Fact]
+    public void Reorder_ontoTheEmptyCellsPastTheLastItem_appends()
+    {
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xA, Player, slot: 0);
+        SeedContained(objects, 0xB, Player, slot: 1);
+        SeedContained(objects, 0xC, Player, slot: 2);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(grid, grid.GetItem(5)!, Payload(0xAu));
+
+        Assert.Equal(new[] { (0xAu, Player, 2) }, puts);       // A B C -> B C A
+    }
+
+    [Fact]
+    public void Reorder_sidePackLaterInTheColumn_landsAboveThePackDroppedOn()
+    {
+        var (layout, _, containers, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedBag(objects, 0xC1, slot: 0);
+        SeedBag(objects, 0xC2, slot: 1);
+        SeedBag(objects, 0xC3, slot: 2);
+        var puts = new List<(uint, uint, int)>();
+        var ctrl = Bind(layout, objects, puts: puts);
+
+        ((IItemListDragHandler)ctrl).HandleDropRelease(
+            containers, containers.GetItem(2)!, Payload(0xC1u));
+
+        Assert.Equal(new[] { (0xC1u, Player, 1) }, puts);      // C1 C2 C3 -> C2 C1 C3
     }
 
     [Fact]
@@ -2135,10 +2279,10 @@ public class InventoryControllerTests
             controller.OnDragOver(containers, emptyPackSlot, payload));
         controller.HandleDropRelease(containers, emptyPackSlot, payload);
 
-        Assert.Equal(new[] { (droppedPack, Player, 0) }, puts);
+        Assert.Equal(new[] { (droppedPack, Player, 2) }, puts);       // after the two packs
         Assert.True(interaction.TryGetPendingBackpackPlacement(droppedPack, out var pending));
         Assert.Equal(Player, pending.ContainerId);
-        Assert.Equal(0, pending.Placement);
+        Assert.Equal(2, pending.Placement);
     }
 
     [Fact]
@@ -2616,11 +2760,60 @@ public class InventoryControllerTests
         Assert.Equal(-1, grid.GetItem(0)!.ShortcutNum);
     }
 
-    // ── OpenAC #34: a move between containers lands at the top; only a
-    //    reorder inside the same list keeps the hovered slot.
+    // ── OpenAC #34: a drop on a pack's icon lands at that pack's top.
+    // ── OpenAC #250: a drop on a cell of the grid lands left of the item
+    //    under it, wherever the item came from.
 
     [Fact]
-    public void SidePackItem_droppedOnTheMainGrid_goesToTheTop()
+    public void EquippedItem_droppedOnAGridItem_landsLeftOfIt()
+    {
+        const uint shield = 0xE0u;
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xAu, Player, slot: 0);
+        SeedContained(objects, 0xBu, Player, slot: 1);
+        SeedContained(objects, 0xCu, Player, slot: 2);
+        objects.AddOrUpdate(new ClientObject { ObjectId = shield, Type = ItemType.Armor });
+        Assert.True(objects.ApplyServerMove(
+            shield,
+            newContainerId: 0u,
+            newWielderId: Player,
+            newEquipLocation: EquipMask.Shield));
+        var puts = new List<(uint item, uint container, int placement)>();
+        using var ctrl = Bind(layout, objects, puts: puts);
+        var source = new UiItemSlot { SourceKind = ItemDragSource.Equipment };
+        source.SetItem(shield, 0u);
+
+        ctrl.HandleDropRelease(
+            grid, grid.GetItem(2)!, new ItemDragPayload(shield, ItemDragSource.Equipment, 0, source));
+
+        Assert.Equal(new[] { (shield, Player, 2) }, puts);     // A B C -> A B shield C
+    }
+
+    [Fact]
+    public void EquippedItem_droppedOnAnEmptyCell_appends()
+    {
+        const uint shield = 0xE0u;
+        var (layout, grid, _, _, _, _, _, _) = BuildLayout();
+        var objects = new ClientObjectTable();
+        SeedContained(objects, 0xAu, Player, slot: 0);
+        SeedContained(objects, 0xBu, Player, slot: 1);
+        objects.AddOrUpdate(new ClientObject { ObjectId = shield, Type = ItemType.Armor });
+        objects.ApplyServerMove(shield, newContainerId: 0u, newWielderId: Player,
+            newEquipLocation: EquipMask.Shield);
+        var puts = new List<(uint item, uint container, int placement)>();
+        using var ctrl = Bind(layout, objects, puts: puts);
+        var source = new UiItemSlot { SourceKind = ItemDragSource.Equipment };
+        source.SetItem(shield, 0u);
+
+        ctrl.HandleDropRelease(
+            grid, grid.GetItem(7)!, new ItemDragPayload(shield, ItemDragSource.Equipment, 0, source));
+
+        Assert.Equal(new[] { (shield, Player, 2) }, puts);
+    }
+
+    [Fact]
+    public void SidePackItem_droppedOnTheMainGrid_landsLeftOfTheItemDroppedOn()
     {
         var (layout, grid, _, _, _, _, _, _) = BuildLayout();
         var objects = new ClientObjectTable();
@@ -2633,7 +2826,7 @@ public class InventoryControllerTests
 
         ctrl.HandleDropRelease(grid, grid.GetItem(1)!, Payload(0xC1u));
 
-        Assert.Equal(new[] { (0xC1u, Player, 0) }, puts);
+        Assert.Equal(new[] { (0xC1u, Player, 1) }, puts);           // A B -> A C1 B
     }
 
     [Fact]

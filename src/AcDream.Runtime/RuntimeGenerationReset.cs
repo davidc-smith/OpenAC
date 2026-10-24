@@ -91,6 +91,7 @@ public sealed class RuntimeGenerationReset
     private readonly RuntimeContractState _contracts;
     private readonly RuntimeJournalState _journal;
     private readonly RuntimeHouseState _house;
+    private readonly RuntimeHousePurchaseState _housePurchase;
     private readonly RuntimeBookState _book;
     private ResetState? _state;
     private RuntimeGenerationToken _lastCompletedGeneration;
@@ -111,6 +112,7 @@ public sealed class RuntimeGenerationReset
         RuntimeAllegianceState allegiance,
         RuntimeTradeState trade,
         RuntimeHouseState house,
+        RuntimeHousePurchaseState housePurchase,
         RuntimeContractState contracts,
         RuntimeJournalState journal,
         RuntimeBookState book)
@@ -135,6 +137,7 @@ public sealed class RuntimeGenerationReset
             ?? throw new ArgumentNullException(nameof(allegiance));
         _trade = trade ?? throw new ArgumentNullException(nameof(trade));
         _house = house ?? throw new ArgumentNullException(nameof(house));
+        _housePurchase = housePurchase ?? throw new ArgumentNullException(nameof(housePurchase));
         _contracts = contracts
             ?? throw new ArgumentNullException(nameof(contracts));
         _journal = journal ?? throw new ArgumentNullException(nameof(journal));
@@ -309,7 +312,11 @@ public sealed class RuntimeGenerationReset
                     Advance(state, _trade.Clear);
                     break;
                 case RuntimeGenerationResetStage.House:
-                    Advance(state, _house.ResetSession);
+                    Advance(state, () =>
+                    {
+                        _house.ResetSession();
+                        _housePurchase.Close();
+                    });
                     break;
                 case RuntimeGenerationResetStage.Contracts:
                     Advance(state, _contracts.ResetSession);

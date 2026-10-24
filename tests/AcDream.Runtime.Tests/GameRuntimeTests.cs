@@ -392,8 +392,7 @@ public sealed class GameRuntimeTests
 
         public void Project(
             PlayerMovementController controller,
-            MovementResult movement,
-            bool hidden)
+            MovementResult movement)
         {
         }
 

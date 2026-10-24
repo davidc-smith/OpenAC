@@ -42,7 +42,7 @@ public sealed class LiveSessionEventRouterTests : IDisposable
             new LiveEntitySessionSink(
                 _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { },
                 _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { },
-                _ => { }),
+                _ => { }, _ => { }),
             new LiveEnvironmentSessionSink(_ => { }, _ => { }),
             NewInventoryBindings(),
             NewCharacterBindings(),
@@ -133,7 +133,7 @@ public sealed class LiveSessionEventRouterTests : IDisposable
             new LiveEntitySessionSink(
                 _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { },
                 _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { },
-                _ => { }),
+                _ => { }, _ => { }),
             new LiveEnvironmentSessionSink(_ => { }, _ => { }),
             NewInventoryBindings(),
             NewCharacterBindings(),
@@ -993,6 +993,34 @@ public sealed class LiveSessionEventRouterTests : IDisposable
         router.Dispose();
     }
 
+    [Fact]
+    public void DescriptionRefresh_ReachesTheEntitySink()
+    {
+        using var session = NewSession();
+        var refreshed = new List<uint>();
+        var router = new LiveSessionEventRouter(
+            session,
+            NoOpEntitySink() with { DescriptionRefreshed = spawn => refreshed.Add(spawn.Guid) },
+            new LiveEnvironmentSessionSink(_ => { }, _ => { }),
+            NewInventoryBindings(),
+            NewCharacterBindings(),
+            NewSocialBindings(),
+            NewActions());
+        router.Attach();
+
+        EventDelegate<Action<WorldSession.EntitySpawn>>(
+            session, nameof(session.EntityDescriptionRefreshed))(
+            new WorldSession.EntitySpawn(
+                0x70000020u, null, 0x02000001u,
+                Array.Empty<CreateObject.AnimPartChange>(),
+                Array.Empty<CreateObject.TextureChange>(),
+                Array.Empty<CreateObject.SubPaletteSwap>(),
+                null, null, null, null, null, null));
+
+        Assert.Equal([0x70000020u], refreshed);
+        router.Dispose();
+    }
+
     private static LiveEntitySessionSink NoOpEntitySink() => new(
         Spawned: _ => { },
         Deleted: _ => { },
@@ -1004,6 +1032,7 @@ public sealed class LiveSessionEventRouterTests : IDisposable
         ParentUpdated: _ => { },
         TeleportStarted: _ => { },
         AppearanceUpdated: _ => { },
+        DescriptionRefreshed: _ => { },
         PlayPhysicsScript: _ => { },
         PlayPhysicsScriptType: _ => { },
         SoundEvent: _ => { });
@@ -1112,6 +1141,7 @@ public sealed class LiveSessionEventRouterTests : IDisposable
                 ParentUpdated: _ => { },
                 TeleportStarted: _ => counters.Teleport++,
                 AppearanceUpdated: _ => { },
+                DescriptionRefreshed: _ => { },
                 PlayPhysicsScript: _ => { },
                 PlayPhysicsScriptType: _ => { },
                 SoundEvent: _ => { }),
@@ -1273,6 +1303,8 @@ public sealed class LiveSessionEventRouterTests : IDisposable
         foreach (string eventName in directEvents)
             Assert.Equal(multiplier, HandlerCount(session, eventName));
 
+        // The object table and the entity sink both take a re-sent description.
+        Assert.Equal(multiplier * 2, HandlerCount(session, nameof(session.EntityDescriptionRefreshed)));
         Assert.Equal(multiplier, HandlerCount(session, nameof(session.ObjectIntPropertyUpdated)));
         Assert.Equal(multiplier * 2, HandlerCount(session, nameof(session.PlayerIntPropertyUpdated)));
         Assert.Equal(multiplier, HandlerCount(session, nameof(session.PlayerInt64PropertyUpdated)));
