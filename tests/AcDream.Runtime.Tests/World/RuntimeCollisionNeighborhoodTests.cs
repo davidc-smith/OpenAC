@@ -176,6 +176,118 @@ public sealed class RuntimeCollisionNeighborhoodTests
         Assert.True(neighborhood.IsReady(Arrival));
     }
 
+    /// <summary>
+    /// Another creature is carried by local physics between the server's
+    /// updates only while it is within 96 meters of the player (and stands in
+    /// a cell the client holds). 96 meters is half a landblock, so the
+    /// whole of that circle lies inside the 3x3 landblocks around the
+    /// player's own, and it stays inside them while the window follows a
+    /// walk into the next landblock: the landblocks given up are never the
+    /// ones the circle reaches.
+    /// </summary>
+    [Fact]
+    public void TheNeighborhoodHoldsEveryCellWithinTheRemoteActivityRangeWhileItFollows()
+    {
+        const float ActivityRange =
+            AcDream.Core.Physics.RetailObjectActivityGate.MaxPhysicsDistance;
+        using GameRuntime runtime = NewRuntime();
+        bool spent = false;
+        var neighborhood = new RuntimeCollisionNeighborhood(
+            runtime,
+            new FlatContent(),
+            new RuntimeCollisionPacing
+            {
+                IsFrameSpent = () =>
+                {
+                    if (spent)
+                        return true;
+                    spent = true;
+                    return false;
+                },
+            });
+        runtime.EntityObjects.Physics.ObserveLocalPlayerCreate(Arrival);
+        neighborhood.CenterOn(Arrival);
+        for (int call = 0; call < 10_000 && !neighborhood.IsReady(Arrival); call++)
+        {
+            spent = false;
+            neighborhood.Pump();
+        }
+        while (!neighborhood.IsQuiescent)
+        {
+            spent = false;
+            neighborhood.Pump();
+        }
+
+        // Corners and edges of the arrival's landblock, in the frame's meters.
+        foreach (Vector2 player in new Vector2[]
+        {
+            new(1f, 1f), new(191f, 1f), new(1f, 191f), new(191f, 191f),
+            new(96f, 96f), new(96f, 1f), new(1f, 96f),
+        })
+        {
+            AssertRangeHeld(neighborhood, player, ActivityRange);
+        }
+
+        // Walk east over the edge: every step of the window's slide still
+        // holds the circle around where the player now stands.
+        var walked = new Vector2(193f, 2f);
+        neighborhood.Follow(CellAt(walked));
+        for (int call = 0; call < 10_000; call++)
+        {
+            AssertRangeHeld(neighborhood, walked, ActivityRange);
+            if (neighborhood.IsQuiescent && HasSlidEast(runtime))
+                break;
+            spent = false;
+            neighborhood.Pump();
+        }
+        Assert.True(HasSlidEast(runtime), "The window never followed the walk.");
+        Assert.Equal(9, runtime.EntityObjects.Physics.Engine.LandblockCount);
+        AssertRangeHeld(neighborhood, walked, ActivityRange);
+    }
+
+    /// <summary>The column east of the arrival's neighbors is in, the one west of it is out.</summary>
+    private static bool HasSlidEast(GameRuntime runtime)
+    {
+        var engine = runtime.EntityObjects.Physics.Engine;
+        for (uint y = 0x29u; y <= 0x2Bu; y++)
+        {
+            if (!engine.IsLandblockTerrainResident((0x2Au << 24) | (y << 16) | 0xFFFFu)
+                || engine.IsLandblockTerrainResident((0x27u << 24) | (y << 16) | 0xFFFFu))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void AssertRangeHeld(
+        RuntimeCollisionNeighborhood neighborhood,
+        Vector2 player,
+        float range)
+    {
+        for (int degrees = 0; degrees < 360; degrees += 15)
+        {
+            float radians = degrees * MathF.PI / 180f;
+            Vector2 at = player + range * new Vector2(MathF.Cos(radians), MathF.Sin(radians));
+            uint cell = CellAt(at);
+            Assert.True(
+                neighborhood.IsCollisionPublished(cell),
+                $"Cell 0x{cell:X8}, {range} m from the player at {player}, has no collision.");
+        }
+    }
+
+    /// <summary>The outdoor cell at a point measured from the arrival landblock's corner.</summary>
+    private static uint CellAt(Vector2 at)
+    {
+        int blockX = (int)MathF.Floor(at.X / 192f);
+        int blockY = (int)MathF.Floor(at.Y / 192f);
+        uint x = (uint)((int)((Arrival >> 24) & 0xFFu) + blockX);
+        uint y = (uint)((int)((Arrival >> 16) & 0xFFu) + blockY);
+        int cellX = (int)((at.X - (blockX * 192f)) / 24f);
+        int cellY = (int)((at.Y - (blockY * 192f)) / 24f);
+        return (x << 24) | (y << 16) | (uint)((cellX * 8) + cellY + 1);
+    }
+
     private static void Drive(
         RuntimeCollisionNeighborhood neighborhood,
         uint cell)
