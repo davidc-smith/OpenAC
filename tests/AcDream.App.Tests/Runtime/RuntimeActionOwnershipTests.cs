@@ -22,20 +22,32 @@ public sealed class RuntimeActionOwnershipTests
             "Rendering",
             "GameWindow.cs");
         string program = ReadAppSource(root, "Program.cs");
+        string sessionHost = ReadAppSource(
+            root,
+            "Hosting",
+            "GraphicalSessionHost.cs");
 
         Assert.Contains(
             "private readonly GameRuntime _runtime;",
             gameWindow,
             StringComparison.Ordinal);
-        // The window still constructs the one runtime; it now names its
-        // dependencies through the host's own builder, so the census can
-        // read what it really supplies.
+        // The session host constructs the one runtime, naming its
+        // dependencies through the graphical builder so the census can read
+        // what it really supplies; the window borrows it.
         Assert.Contains(
-            "_runtime = new GameRuntime(",
-            gameWindow,
+            "Runtime = new GameRuntime(",
+            sessionHost,
             StringComparison.Ordinal);
         Assert.Contains(
             ".BuildRuntimeDependencies(",
+            sessionHost,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_runtime = host.Runtime;",
+            gameWindow,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "new GameRuntime(",
             gameWindow,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -47,7 +59,7 @@ public sealed class RuntimeActionOwnershipTests
             gameWindow,
             StringComparison.Ordinal);
         Assert.Contains(
-            "window.Selection,",
+            "sessionHost.Runtime.ActionOwner.Selection,",
             program,
             StringComparison.Ordinal);
 

@@ -476,7 +476,7 @@ public sealed class UpdateFrameOrchestratorTests
             typeof(GameWindow).GetFields(BindingFlags.Instance | BindingFlags.NonPublic),
             field => field.Name == "_streamingFrame");
 
-        MethodInfo onUpdate = RequiredMethod(typeof(GameWindow), "OnUpdate");
+        MethodInfo onUpdate = RequiredMethod(typeof(GameWindow), "TickSessionFrame");
         Assert.Single(
             CompiledCallGraph.Read(onUpdate),
             call => call.Target.DeclaringType == typeof(GameFrameGraphSlot)
@@ -753,7 +753,7 @@ public sealed class UpdateFrameOrchestratorTests
                 field => typeof(Delegate).IsAssignableFrom(field.FieldType));
         }
 
-        MethodInfo onUpdate = RequiredMethod(typeof(GameWindow), "OnUpdate");
+        MethodInfo onUpdate = RequiredMethod(typeof(GameWindow), "TickSessionFrame");
         Assert.Single(
             CompiledCallGraph.Read(onUpdate),
             call => call.Target.DeclaringType == typeof(GameFrameGraphSlot)
@@ -784,11 +784,14 @@ public sealed class UpdateFrameOrchestratorTests
     [Fact]
     public void GameWindow_OnUpdateOwnsOnlyProfilingAndOneOrchestratorTick()
     {
-        MethodInfo update = RequiredMethod(typeof(GameWindow), "OnUpdate");
+        // The update is the session host's; the window profiles it and
+        // lends its frame graph as the session frame.
         AssertCallOrder(
-            update,
+            RequiredMethod(typeof(GameWindow), "OnUpdate"),
             (typeof(AcDream.App.Diagnostics.FrameProfiler), "BeginStage"),
-            (typeof(GameFrameGraphSlot), nameof(GameFrameGraphSlot.Tick)));
+            (typeof(AcDream.App.Hosting.GraphicalSessionHost),
+                nameof(AcDream.App.Hosting.GraphicalSessionHost.Tick)));
+        MethodInfo update = RequiredMethod(typeof(GameWindow), "TickSessionFrame");
         Assert.Single(
             CompiledCallGraph.Read(update),
             call => call.Target.DeclaringType == typeof(GameFrameGraphSlot)

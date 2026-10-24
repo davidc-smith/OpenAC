@@ -297,7 +297,14 @@ public sealed class GameWindowHostBoundaryTests
     public void UpdateRenderFocusAndCloseRemainNarrowHostEdges()
     {
         MethodInfo update = RequiredMethod(typeof(GameWindow), "OnUpdate");
-        AssertSingleCall(update, typeof(GameFrameGraphSlot), nameof(GameFrameGraphSlot.Tick));
+        AssertSingleCall(
+            update,
+            typeof(AcDream.App.Hosting.GraphicalSessionHost),
+            nameof(AcDream.App.Hosting.GraphicalSessionHost.Tick));
+        AssertSingleCall(
+            RequiredMethod(typeof(GameWindow), "TickSessionFrame"),
+            typeof(GameFrameGraphSlot),
+            nameof(GameFrameGraphSlot.Tick));
 
         MethodInfo render = RequiredMethod(typeof(GameWindow), "OnRender");
         AssertSilkWindowCallBefore(render, "get_Size", typeof(RenderFrameInput), ".ctor");
@@ -383,7 +390,10 @@ public sealed class GameWindowHostBoundaryTests
             CompiledCallGraph.ReadFieldReferences(
                 RequiredMethod(typeof(GameWindow), "CaptureShutdownRoots"));
         Assert.Contains(captureFields, field => field.Field.Name == "_uiHost");
-        Assert.Contains(captureFields, field => field.Field.Name == "_pluginSession");
+        Assert.Contains(
+            CompiledCallGraph.Read(RequiredMethod(typeof(GameWindow), "CaptureShutdownRoots")),
+            call => call.Target.DeclaringType == typeof(AcDream.App.Hosting.GraphicalSessionHost)
+                && call.Target.Name == "get_PluginSession");
 
         MethodBase entry = typeof(GameWindow).Assembly.GetTypes()
             .Where(type => type.Name == "Program")
@@ -393,11 +403,16 @@ public sealed class GameWindowHostBoundaryTests
                 && call.Target.Name == nameof(GraphicalPluginSession.Create)));
         AssertCallOrder(
             entry,
+            (typeof(AcDream.App.Hosting.GraphicalSessionHost), ".ctor"),
             (typeof(GraphicalPluginSession), nameof(GraphicalPluginSession.Create)),
-            (typeof(GameWindow), nameof(GameWindow.StartPluginHosting)),
-            (typeof(GameWindow), nameof(GameWindow.Run)));
+            (typeof(AcDream.App.Hosting.GraphicalSessionHost),
+                nameof(AcDream.App.Hosting.GraphicalSessionHost.StartPluginHosting)),
+            (typeof(AcDream.App.Hosting.GraphicalSessionHost),
+                nameof(AcDream.App.Hosting.GraphicalSessionHost.Run)));
 
-        MethodInfo attach = RequiredMethod(typeof(GameWindow), nameof(GameWindow.StartPluginHosting));
+        MethodInfo attach = RequiredMethod(
+            typeof(AcDream.App.Hosting.GraphicalSessionHost),
+            nameof(AcDream.App.Hosting.GraphicalSessionHost.StartPluginHosting));
         CompiledFieldReference store = Assert.Single(
             CompiledCallGraph.ReadFieldReferences(attach),
             reference => reference.Field.Name == "_pluginSession"

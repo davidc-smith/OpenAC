@@ -11,7 +11,11 @@ choose **Play selected** to start all eligible selections. Each row starts a
 separate supervised session. A failed launch is reported without preventing
 the other selected rows from starting. Already active accounts cannot start
 again on the same server. **Cancel** stops pending starts; use the row's
-**Stop** action to close an active session gracefully.
+**Stop** action to close an active session gracefully. Closing the launcher
+logs off and closes every client it started; while any of them still runs, it
+first asks "Closing the launcher will log off and close N running client(s)."
+with **Close** and **Cancel** (Escape cancels). With none running it closes at
+once.
 
 **Profiles** tag accounts on individual servers, such as `Main`, `Bots` or
 `Mules`. Each account card lists its configured servers. The chips above the

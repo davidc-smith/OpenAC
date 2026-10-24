@@ -23,7 +23,12 @@ public sealed class RuntimeCharacterOwnershipTests
         FieldInfo runtime = typeof(GameWindow).GetField("_runtime", Declared)
             ?? throw new MissingFieldException(typeof(GameWindow).FullName, "_runtime");
         Assert.Equal(typeof(GameRuntime), runtime.FieldType);
+        // The session host builds the one runtime; the window borrows it.
         Assert.Single(
+            CompiledCallGraph.ReadDeclared(typeof(AcDream.App.Hosting.GraphicalSessionHost)),
+            call => call.Target.DeclaringType == typeof(GameRuntime)
+                && call.Target.IsConstructor);
+        Assert.DoesNotContain(
             CompiledCallGraph.ReadDeclared(typeof(GameWindow)),
             call => call.Target.DeclaringType == typeof(GameRuntime)
                 && call.Target.IsConstructor);

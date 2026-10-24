@@ -934,6 +934,20 @@
         </Grid>
       </Border>
     </Border>
+    <Border Grid.RowSpan="5" ZIndex="46" Background="#E010171C" IsVisible="{Binding IsClosePromptOpen}"
+            KeyboardNavigation.TabNavigation="Cycle" KeyDown="OnModalKeyDown" AutomationProperties.Name="Close the launcher dialog">
+      <Border Classes="card" Margin="24" MaxWidth="520" VerticalAlignment="Center">
+        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="12">
+          <TextBlock Text="{x:Static vm:LauncherWindowViewModel.ClosePromptTitle}" FontFamily="Georgia,serif" FontSize="22" Foreground="#DBB573" />
+          <TextBlock Grid.Row="1" Text="{Binding ClosePromptMessage}" TextWrapping="Wrap" FontSize="13" />
+          <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+            <Button Content="Close" MinWidth="96" Command="{Binding ConfirmCloseCommand}" />
+            <Button x:Name="ClosePromptCancelButton" Content="Cancel" Classes="primary ready" MinWidth="96"
+                    Command="{Binding CancelCloseCommand}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Border>
     <Border Grid.RowSpan="5" ZIndex="40" Background="#E010171C" IsVisible="{Binding IsSessionLogOpen}"
             KeyboardNavigation.TabNavigation="Cycle" KeyDown="OnModalKeyDown" AutomationProperties.Name="Session log dialog">
       <Border Classes="card" Margin="24" MaxWidth="960">
