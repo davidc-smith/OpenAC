@@ -1177,8 +1177,22 @@ public sealed class GameWindow :
         return new VulkanGameWindowGraphics(vulkan);
     }
 
+    private Task<TerrainAtlas.DecodedSources>? _terrainSourceDecode;
+
+    private Task<TerrainAtlas.DecodedSources>? TakeTerrainSourceDecode()
+    {
+        Task<TerrainAtlas.DecodedSources>? decode = _terrainSourceDecode;
+        _terrainSourceDecode = null;
+        return decode;
+    }
+
     private void OnLoad()
     {
+
+        // The terrain atlas's layers decode on a worker while the window
+        // and the GPU are set up; the world phase picks them up.
+        if (_host.Content is { } sessionFiles)
+            _terrainSourceDecode = TerrainAtlas.BeginDecodeSources(sessionFiles.Dats, sessionFiles.DatLock);
 
         GameWindowPlatformResult<GameWindowGraphics, IInputContext> platform = AcquirePlatform();
 
@@ -1269,6 +1283,7 @@ public sealed class GameWindow :
                     {
                         TextureDetail = AcDream.App.Rendering.Wb.WorldTextureDetail.FromDisplay(
                             _runtimeSettings.Startup.Display),
+                        TerrainSources = TakeTerrainSourceDecode(),
                     },
                     this).Compose(platformResult, contentEffectsAudio, settingsDevTools);
                 Console.WriteLine(

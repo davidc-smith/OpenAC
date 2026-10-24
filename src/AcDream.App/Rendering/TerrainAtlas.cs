@@ -110,7 +110,7 @@ public sealed class TerrainAtlas : IDisposable
         ApplyAnisotropic(RetailMaxAnisotropy);
     }
 
-    private readonly record struct TerrainLayerDecode(
+    internal readonly record struct TerrainLayerDecode(
         Dictionary<uint, DecodedTexture> DecodedByType,
         Dictionary<uint, uint> TilingByType,
         int MaxWidth,
@@ -118,7 +118,8 @@ public sealed class TerrainAtlas : IDisposable
 
     private static TerrainLayerDecode DecodeTerrainLayers(
         IDatReaderWriter dats,
-        IReadOnlyList<DatReaderWriter.Types.TMTerrainDesc> terrainDesc)
+        IReadOnlyList<DatReaderWriter.Types.TMTerrainDesc> terrainDesc,
+        object? datLock)
     {
         var decodedByType = new Dictionary<uint, DecodedTexture>();
         var tilingByType = new Dictionary<uint, uint>();
@@ -132,7 +133,7 @@ public sealed class TerrainAtlas : IDisposable
             tilingByType[typeKey] = tmtd.TerrainTex.TexTiling;
 
             var surfaceTextureId = (uint)tmtd.TerrainTex.TextureId;
-            var st = dats.Get<SurfaceTexture>(surfaceTextureId);
+            var st = Read(datLock, () => dats.Get<SurfaceTexture>(surfaceTextureId));
             if (st is null || st.Textures.Count == 0)
             {
                 Console.WriteLine($"WARN: TerrainType {tmtd.TerrainType} SurfaceTexture 0x{surfaceTextureId:X8} missing");
@@ -140,7 +141,7 @@ public sealed class TerrainAtlas : IDisposable
                 continue;
             }
 
-            var rs = dats.Get<RenderSurface>((uint)st.Textures[0]);
+            var rs = Read(datLock, () => dats.Get<RenderSurface>((uint)st.Textures[0]));
             if (rs is null)
             {
                 decodedByType[typeKey] = DecodedTexture.Magenta;
@@ -148,7 +149,7 @@ public sealed class TerrainAtlas : IDisposable
             }
 
             Palette? palette = rs.DefaultPaletteId != 0
-                ? dats.Get<Palette>(rs.DefaultPaletteId)
+                ? Read(datLock, () => dats.Get<Palette>(rs.DefaultPaletteId))
                 : null;
 
             var decoded = SurfaceDecoder.DecodeRenderSurface(rs, palette);
@@ -160,7 +161,7 @@ public sealed class TerrainAtlas : IDisposable
         return new TerrainLayerDecode(decodedByType, tilingByType, maxW, maxH);
     }
 
-    private sealed record AlphaLayerDecode(
+    internal sealed record AlphaLayerDecode(
         List<DecodedTexture> Decoded,
         List<byte> CornerLayers,
         List<byte> SideLayers,
@@ -173,7 +174,8 @@ public sealed class TerrainAtlas : IDisposable
 
     private static AlphaLayerDecode DecodeAlphaLayers(
         IDatReaderWriter dats,
-        DatReaderWriter.Types.TexMerge texMerge)
+        DatReaderWriter.Types.TexMerge texMerge,
+        object? datLock)
     {
         var decoded = new List<DecodedTexture>();
         var cornerLayers = new List<byte>();
@@ -185,7 +187,7 @@ public sealed class TerrainAtlas : IDisposable
 
         foreach (var entry in texMerge.CornerTerrainMaps)
         {
-            if (TryDecodeAlphaMap(dats, (uint)entry.TextureId, out var dtex))
+            if (TryDecodeAlphaMap(dats, (uint)entry.TextureId, datLock, out var dtex))
             {
                 cornerLayers.Add((byte)decoded.Count);
                 cornerTCodes.Add(entry.TCode);
@@ -198,7 +200,7 @@ public sealed class TerrainAtlas : IDisposable
         }
         foreach (var entry in texMerge.SideTerrainMaps)
         {
-            if (TryDecodeAlphaMap(dats, (uint)entry.TextureId, out var dtex))
+            if (TryDecodeAlphaMap(dats, (uint)entry.TextureId, datLock, out var dtex))
             {
                 sideLayers.Add((byte)decoded.Count);
                 sideTCodes.Add(entry.TCode);
@@ -211,7 +213,7 @@ public sealed class TerrainAtlas : IDisposable
         }
         foreach (var entry in texMerge.RoadMaps)
         {
-            if (TryDecodeAlphaMap(dats, (uint)entry.TextureId, out var dtex))
+            if (TryDecodeAlphaMap(dats, (uint)entry.TextureId, datLock, out var dtex))
             {
                 roadLayers.Add((byte)decoded.Count);
                 roadRCodes.Add(entry.RCode);
@@ -242,24 +244,75 @@ public sealed class TerrainAtlas : IDisposable
             decodedMaxH);
     }
 
+    /// <summary>
+    /// The atlas's source layers, read from the game files and decoded to
+    /// pixels: everything the atlas needs before the GPU is involved.
+    /// </summary>
+    internal sealed record DecodedSources(
+        IDatReaderWriter Dats,
+        IReadOnlyList<DatReaderWriter.Types.TMTerrainDesc>? TerrainDesc,
+        TerrainLayerDecode? Terrain,
+        AlphaLayerDecode Alpha);
+
+    /// <summary>
+    /// Starts reading and decoding the atlas's source layers on a worker
+    /// thread, taking <paramref name="datLock"/> for each read, so the work
+    /// overlaps window and GPU setup on the main thread.
+    /// </summary>
+    internal static Task<DecodedSources> BeginDecodeSources(IDatReaderWriter dats, object datLock)
+    {
+        ArgumentNullException.ThrowIfNull(dats);
+        ArgumentNullException.ThrowIfNull(datLock);
+        return Task.Run(() => DecodeSources(dats, datLock));
+    }
+
+    /// <summary>Reads and decodes the atlas's source layers, under <paramref name="datLock"/> when one is given.</summary>
+    internal static DecodedSources DecodeSources(IDatReaderWriter dats, object? datLock)
+    {
+        ArgumentNullException.ThrowIfNull(dats);
+        var region = Read(datLock, () => dats.Get<Region>(0x13000000u))
+            ?? throw new InvalidOperationException("Region dat id 0x13000000 missing");
+        var texMerge = region.TerrainInfo?.LandSurfaces?.TexMerge;
+        var terrainDesc = texMerge?.TerrainDesc;
+        TerrainLayerDecode? terrain = terrainDesc is null || terrainDesc.Count == 0
+            ? null
+            : DecodeTerrainLayers(dats, terrainDesc, datLock);
+        AlphaLayerDecode alpha = texMerge is null
+            ? new AlphaLayerDecode([], [], [], [], [], [], [], 1, 1)
+            : DecodeAlphaLayers(dats, texMerge, datLock);
+        return new DecodedSources(dats, terrainDesc, terrain, alpha);
+    }
+
+    private static T Read<T>(object? datLock, Func<T> read)
+    {
+        if (datLock is null)
+            return read();
+        lock (datLock)
+            return read();
+    }
+
+    /// <param name="sources">
+    /// The source layers decoded ahead of time from <paramref name="dats"/>;
+    /// when absent, or read from other files, they are decoded here.
+    /// </param>
     internal static TerrainAtlas BuildBackendNeutral(
         IGpuDevice device,
         IDatReaderWriter dats,
-        Wb.WorldTextureDetail? textureDetail = null)
+        Wb.WorldTextureDetail? textureDetail = null,
+        DecodedSources? sources = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(dats);
         textureDetail ??= Wb.WorldTextureDetail.Full;
 
-        var region = dats.Get<Region>(0x13000000u)
-            ?? throw new InvalidOperationException("Region dat id 0x13000000 missing");
-        var texMerge = region.TerrainInfo?.LandSurfaces?.TexMerge;
-        var terrainDesc = texMerge?.TerrainDesc;
+        if (sources is null || !ReferenceEquals(sources.Dats, dats))
+            sources = DecodeSources(dats, datLock: null);
+        var terrainDesc = sources.TerrainDesc;
 
         Dictionary<uint, DecodedTexture> decodedByType;
         Dictionary<uint, uint> tilingByType;
         int maxW, maxH;
-        if (terrainDesc is null || terrainDesc.Count == 0)
+        if (sources.Terrain is not { } decode)
         {
             Console.WriteLine("WARN: TerrainDesc missing, using single white fallback layer");
             decodedByType = new Dictionary<uint, DecodedTexture> { [0u] = WhitePixel() };
@@ -269,7 +322,6 @@ public sealed class TerrainAtlas : IDisposable
         }
         else
         {
-            TerrainLayerDecode decode = DecodeTerrainLayers(dats, terrainDesc);
             decodedByType = decode.DecodedByType;
             tilingByType = decode.TilingByType;
             // The landscape texture-detail choice: every layer is resampled to
@@ -279,9 +331,7 @@ public sealed class TerrainAtlas : IDisposable
             maxH = textureDetail.LandscapeSize(decode.MaxHeight);
         }
 
-        AlphaLayerDecode alpha = texMerge is null
-            ? new AlphaLayerDecode([], [], [], [], [], [], [], 1, 1)
-            : DecodeAlphaLayers(dats, texMerge);
+        AlphaLayerDecode alpha = sources.Alpha;
         List<DecodedTexture> alphaDecoded = alpha.Decoded;
         int alphaLayerCount = Math.Max(1, alphaDecoded.Count);
         int alphaW = alphaDecoded.Count == 0 ? 1 : alpha.MaxWidth;
@@ -521,15 +571,19 @@ public sealed class TerrainAtlas : IDisposable
         rhi.TerrainSlot = rhi.Device.ReplaceTextureSlot(rhi.TerrainSlot, rhi.Terrain, sampler);
     }
 
-    private static bool TryDecodeAlphaMap(IDatReaderWriter dats, uint surfaceTextureId, out DecodedTexture decoded)
+    private static bool TryDecodeAlphaMap(
+        IDatReaderWriter dats,
+        uint surfaceTextureId,
+        object? datLock,
+        out DecodedTexture decoded)
     {
         decoded = DecodedTexture.Magenta;
 
-        var st = dats.Get<SurfaceTexture>(surfaceTextureId);
+        var st = Read(datLock, () => dats.Get<SurfaceTexture>(surfaceTextureId));
         if (st is null || st.Textures.Count == 0)
             return false;
 
-        var rs = dats.Get<RenderSurface>((uint)st.Textures[0]);
+        var rs = Read(datLock, () => dats.Get<RenderSurface>((uint)st.Textures[0]));
         if (rs is null)
             return false;
 
