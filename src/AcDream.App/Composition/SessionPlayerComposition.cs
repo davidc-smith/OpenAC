@@ -274,7 +274,6 @@ internal sealed class SessionPlayerCompositionPhase
                 "prepared-collision catalog.");
         var landblockBuildFactory = new LandblockBuildFactory(
             content.Dats,
-            preparedCollisions,
             d.DatLock,
             world.TerrainBuild.HeightTable,
             d.Options.DumpSceneryZ);

@@ -371,6 +371,53 @@ public static class LandblockPhysicsContentBuilder
         return entities;
     }
 
+    /// <summary>
+    /// What drawing a landblock reads from its game data beside the meshes:
+    /// the landblock's building list and the setups its buildings and objects
+    /// are made from (their lights). The cells, environments and part shapes
+    /// collision needs are not read; collision is built by
+    /// <see cref="TryLoadCollisionLandblock"/>.
+    /// </summary>
+    public static PhysicsDatBundle BuildPresentationDatBundle(
+        IDatReaderWriter dats,
+        uint landblockId,
+        IReadOnlyList<WorldEntity> entities)
+    {
+        ArgumentNullException.ThrowIfNull(dats);
+        ArgumentNullException.ThrowIfNull(entities);
+
+        var setups = new Dictionary<uint, Setup>();
+        LandBlockInfo? info = dats.Get<LandBlockInfo>(
+            (landblockId & 0xFFFF0000u) | 0xFFFEu);
+        if (info is not null)
+        {
+            foreach (var building in info.Buildings)
+                AddSetup(dats, setups, building.ModelId);
+        }
+        foreach (WorldEntity entity in entities)
+            AddSetup(dats, setups, entity.SourceGfxObjOrSetupId);
+
+        return new PhysicsDatBundle(
+            info,
+            PhysicsDatBundle.Empty.EnvCells,
+            PhysicsDatBundle.Empty.Environments,
+            setups,
+            PhysicsDatBundle.Empty.GfxObjs);
+
+        static void AddSetup(
+            IDatReaderWriter dats,
+            Dictionary<uint, Setup> setups,
+            uint setupId)
+        {
+            if ((setupId & 0xFF000000u) == 0x02000000u
+                && !setups.ContainsKey(setupId)
+                && dats.Get<Setup>(setupId) is { } setup)
+            {
+                setups[setupId] = setup;
+            }
+        }
+    }
+
     public static PhysicsDatBundle BuildDatBundle(
         IDatReaderWriter dats,
         uint landblockId,

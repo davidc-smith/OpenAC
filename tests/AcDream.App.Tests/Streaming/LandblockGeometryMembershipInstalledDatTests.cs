@@ -148,7 +148,6 @@ public sealed partial class LandblockGeometryMembershipInstalledDatTests
         using var meshSource = new DatPreparedAssetSource(bounded, NullLogger.Instance);
         var factory = new LandblockBuildFactory(
             bounded,
-            collisionSource,
             new object(),
             heights);
         var request = new LandblockBuildRequest(
@@ -159,32 +158,40 @@ public sealed partial class LandblockGeometryMembershipInstalledDatTests
 
         LandblockBuild build = Assert.IsType<LandblockBuild>(factory.Build(request));
         EnvCellLandblockBuild envBuild = Assert.IsType<EnvCellLandblockBuild>(build.EnvCells);
-        LandblockCollisionBuild collisions = Assert.IsType<LandblockCollisionBuild>(build.Collisions);
         Assert.Equal(Vector3.Zero, PublicationOrigin(build.Origin));
 
         var cache = PhysicsDataCache.CreateProduction();
         var engine = new PhysicsEngine { DataCache = cache };
         Vector3 origin = PublicationOrigin(build.Origin);
+        // The landblock's collision as the session host builds it.
+        Assert.True(LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
+            bounded,
+            collisionSource,
+            heights,
+            LandblockId,
+            origin,
+            out LoadedLandblock collisionLandblock,
+            out LandblockCollisionBuild collisions));
         TerrainSurface terrain = LandblockPhysicsContentBuilder.BuildTerrainSurface(
-            build.Landblock,
+            collisionLandblock,
             heights);
         var cellSurfaces = new List<CellSurface>();
         var portalPlanes = new List<PortalPlane>();
         LandblockPhysicsContentBuilder.PublishPreparedCells(
             cache,
-            build.Landblock,
+            collisionLandblock,
             collisions,
             origin,
             cellSurfaces,
             portalPlanes);
         LandblockPhysicsContentBuilder.CacheBuildings(
             cache,
-            build.Landblock,
+            collisionLandblock,
             terrain,
             origin);
         LandblockPhysicsContentBuilder.CachePreparedObjects(cache, collisions);
         engine.AddLandblock(
-            build.LandblockId,
+            collisionLandblock.LandblockId,
             terrain,
             cellSurfaces,
             portalPlanes,
@@ -193,7 +200,7 @@ public sealed partial class LandblockGeometryMembershipInstalledDatTests
         _ = LandblockPhysicsContentBuilder.PublishStaticCollision(
             engine,
             cache,
-            build.Landblock,
+            collisionLandblock,
             collisions,
             origin);
 

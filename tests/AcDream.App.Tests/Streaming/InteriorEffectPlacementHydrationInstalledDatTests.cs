@@ -124,7 +124,6 @@ public sealed class InteriorEffectPlacementHydrationInstalledDatTests
                 .LandDefs.LandHeightTable;
             var factory = new LandblockBuildFactory(
                 adapter,
-                new EmptyCollisionSource(),
                 new object(),
                 heights);
             LandblockBuild build = Assert.IsType<LandblockBuild>(factory.Build(
@@ -163,57 +162,5 @@ public sealed class InteriorEffectPlacementHydrationInstalledDatTests
         }
 
         public void Dispose() => Dats.Dispose();
-    }
-
-    /// <summary>
-    /// Satisfies the near-tier collision closure with empty prepared assets:
-    /// these pins are about which placements survive hydration, not about
-    /// collision content.
-    /// </summary>
-    private sealed class EmptyCollisionSource : IPreparedCollisionSource
-    {
-        private static readonly FlatPhysicsBsp EmptyPhysics = new(
-            -1,
-            ImmutableArray<FlatPhysicsBspNode>.Empty,
-            ImmutableArray<int>.Empty,
-            FlatPolygonTable.Empty);
-
-        public PreparedAssetPresence ProbeCollision(PakAssetType type, uint sourceFileId)
-            => PreparedAssetPresence.Available;
-
-        public PreparedCollisionReadResult<FlatGfxObjCollisionAsset> ReadGfxObjCollision(
-            uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<FlatGfxObjCollisionAsset>.Loaded(
-                new FlatGfxObjCollisionAsset(EmptyPhysics, null, null));
-
-        public PreparedCollisionReadResult<FlatSetupCollision> ReadSetupCollision(
-            uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<FlatSetupCollision>.Loaded(
-                new FlatSetupCollision(
-                    ImmutableArray<FlatCollisionCylinder>.Empty,
-                    ImmutableArray<FlatCollisionSphere>.Empty,
-                    0f, 0f, 0f, 0f));
-
-        public PreparedCollisionReadResult<FlatCellStructureCollisionAsset> ReadCellStructureCollision(
-            uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<FlatCellStructureCollisionAsset>.Loaded(
-                new FlatCellStructureCollisionAsset(
-                    EmptyPhysics,
-                    new FlatCellContainmentBsp(-1, ImmutableArray<FlatCellBspNode>.Empty),
-                    FlatPolygonTable.Empty));
-
-        public PreparedCollisionReadResult<FlatEnvCellTopology> ReadEnvCellTopology(
-            uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<FlatEnvCellTopology>.Loaded(
-                new FlatEnvCellTopology(
-                    ImmutableArray<FlatEnvCellPortal>.Empty,
-                    ImmutableArray<uint>.Empty,
-                    seenOutside: false));
-
-        public PreparedCollisionSourceStats CollisionStats => default;
-
-        public void Dispose()
-        {
-        }
     }
 }
