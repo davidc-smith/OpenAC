@@ -11,6 +11,21 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
 {
     private static readonly TimeSpan ServerSessionHold = TimeSpan.FromMinutes(3);
 
+    /// <summary>How long a running session's client has to report a switched window before
+    /// the switch is given up (opening one loads the GPU and the world around the player).</summary>
+    public static readonly TimeSpan WindowSwitchTimeout = TimeSpan.FromSeconds(30);
+
+    private const string WindowSwitchNotRunning =
+        "Only a running play session can switch between graphical and headless.";
+    private const string WindowSwitchBusy =
+        "This session is already switching; wait for it to finish.";
+    private const string WindowSwitchNotSent =
+        "Could not switch the session: its client takes no console input.";
+    private const string WindowSwitchUnanswered =
+        "The client did not report the window switch in time; the session keeps its current mode.";
+    private const string WindowSwitchNoWindowSupport =
+        "This session runs without window support (no display was found), so it cannot open a window.";
+
     private const string FirstRunRequired =
         "Client content is not configured. Complete the first-run setup before launching.";
 
@@ -25,6 +40,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
     private readonly Func<string> _sessionIdFactory;
     private readonly UpdateSessionBarrier _updateSessionBarrier;
     private readonly List<ManagedActivity> _activities = [];
+    private readonly TimeProvider _time;
 
     private LauncherInstallRecord? _installRecord;
     private string _installationStatus;
@@ -43,8 +59,10 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         IStatusEventSourceFactory? statusSourceFactory = null,
         Func<string>? sessionIdFactory = null,
         string? installationStatus = null,
-        UpdateSessionBarrier? updateSessionBarrier = null)
+        UpdateSessionBarrier? updateSessionBarrier = null,
+        TimeProvider? timeProvider = null)
     {
+        _time = timeProvider ?? TimeProvider.System;
         _profileStore = profileStore ?? throw new ArgumentNullException(nameof(profileStore));
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _executables = executables ?? throw new ArgumentNullException(nameof(executables));
@@ -118,7 +136,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
             return platformCapability;
         }
 
-        LauncherCapability executableCapability = _executables.GetAvailability(mode);
+        LauncherCapability executableCapability = _executables.GetPlayAvailability(mode, _platform.HasDisplay);
         if (!executableCapability.IsAvailable)
         {
             return executableCapability;
@@ -523,7 +541,14 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 account.Account,
                 string.IsNullOrWhiteSpace(characterName) ? null : character.Name,
                 mode,
-                "Preparing session configuration…");
+                "Preparing session configuration…")
+            {
+                // A graphical launch opens its window at once; the client says so, or that
+                // it could not. A headless row on the windowless host cannot open one.
+                Window = new LauncherSessionWindow(
+                    IsOpen: mode != LaunchMode.Headless,
+                    IsSwitchable: mode != LaunchMode.Headless || _platform.HasDisplay),
+            };
             _activities.Add(activity);
 
             request = new StartRequest(
@@ -579,7 +604,10 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 account.Account,
                 characterName: null,
                 launchMode: null,
-                "Preparing character refresh…");
+                "Preparing character refresh…")
+            {
+                Window = new LauncherSessionWindow(IsSwitchable: false),
+            };
             _activities.Add(activity);
 
             request = new StartRequest(
@@ -615,6 +643,89 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         }
 
         return supervisor?.TrySendLine(line) == true;
+    }
+
+    /// <summary>
+    /// Switches a running play session between graphical and headless without restarting
+    /// it: <paramref name="open"/> sends the client's console <c>/window &lt;session id&gt;</c>,
+    /// otherwise <c>/close</c>. The session's window follows what the client then reports in
+    /// its status file; a switch it does not answer within <see cref="WindowSwitchTimeout"/>
+    /// is given up. Nothing is sent when the window is already as asked.
+    /// </summary>
+    public void SetSessionWindow(string sessionId, bool open)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ILauncherProcessSupervisor? supervisor;
+        lock (_gate)
+        {
+            ThrowIfDisposed();
+            ManagedActivity activity = _activities.FirstOrDefault(
+                    candidate => candidate.SessionId == sessionId)
+                ?? throw new LauncherOperationException($"No launcher session '{sessionId}'.");
+            bool switchable = activity.Kind == LauncherActivityKind.Play
+                && !activity.IsTerminal
+                && activity.State != LauncherActivityState.Stopping
+                && activity.Supervisor?.HasLiveProcess == true;
+            if (!switchable)
+                throw new LauncherOperationException(WindowSwitchNotRunning);
+            if (!activity.Window.IsSwitchable)
+                throw new LauncherOperationException(WindowSwitchNoWindowSupport);
+            if (activity.Window.SwitchingTo is not null)
+                throw new LauncherOperationException(WindowSwitchBusy);
+            if (activity.Window.IsOpen == open)
+                return;
+            supervisor = activity.Supervisor;
+        }
+
+        string line = open ? $"/window {sessionId}" : "/close";
+        bool sent = supervisor?.TrySendLine(line) == true;
+        DateTimeOffset now = _time.GetUtcNow();
+        lock (_gate)
+        {
+            ManagedActivity activity = _activities.FirstOrDefault(
+                    candidate => candidate.SessionId == sessionId)
+                ?? throw new LauncherOperationException(WindowSwitchNotRunning);
+            if (sent)
+            {
+                activity.Window = activity.Window with { SwitchingTo = open, Error = null };
+                activity.WindowSwitchSentAt = now;
+            }
+            else
+            {
+                activity.Window = activity.Window with { Error = WindowSwitchNotSent };
+            }
+        }
+
+        RaiseStateChanged();
+        if (!sent)
+            throw new LauncherOperationException(WindowSwitchNotSent);
+    }
+
+    /// <summary>Gives up the window switches their clients did not answer in time; true when
+    /// one was given up.</summary>
+    private bool ExpireWindowSwitches()
+    {
+        DateTimeOffset now = _time.GetUtcNow();
+        bool expired = false;
+        lock (_gate)
+        {
+            foreach (ManagedActivity activity in _activities)
+            {
+                if (activity.WindowSwitchSentAt is not { } sentAt)
+                    continue;
+                if (!activity.IsTerminal && now - sentAt < WindowSwitchTimeout)
+                    continue;
+                activity.Window = activity.Window with
+                {
+                    SwitchingTo = null,
+                    Error = activity.IsTerminal ? activity.Window.Error : WindowSwitchUnanswered,
+                };
+                activity.WindowSwitchSentAt = null;
+                expired = true;
+            }
+        }
+
+        return expired;
     }
 
     public string? GetSessionLogPath(string sessionId)
@@ -737,6 +848,7 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
             }
         }
 
+        changed |= ExpireWindowSwitches();
         if (changed)
         {
             RaiseStateChanged();
@@ -884,7 +996,8 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 : _executables.CreatePlaySpec(
                     request.Activity.LaunchMode!.Value,
                     composed.ConfigFilePath,
-                    composed.StderrLogPath))
+                    composed.StderrLogPath,
+                    windowSupport: _platform.HasDisplay))
                 with
                 {
                     Environment = LauncherChildEnvironment.For(_paths),
@@ -1108,6 +1221,36 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                     activity.HostTerminalStatus =
                         $"Exited: {exited.Reason} (code {exited.Code}).";
                     activity.Status = activity.HostTerminalStatus;
+                    break;
+                case WindowOpenedStatusEvent:
+                    activity.Window = activity.Window with
+                    {
+                        IsOpen = true,
+                        SwitchingTo = activity.Window.SwitchingTo == true ? null : activity.Window.SwitchingTo,
+                    };
+                    if (activity.Window.SwitchingTo is null)
+                        activity.WindowSwitchSentAt = null;
+                    break;
+                case WindowClosedStatusEvent:
+                    // The session plays on without its window (a requested close, a lost
+                    // GPU); a player closing the window logs off, which the client reports
+                    // with its exit.
+                    activity.Window = activity.Window with
+                    {
+                        IsOpen = false,
+                        SwitchingTo = activity.Window.SwitchingTo == false ? null : activity.Window.SwitchingTo,
+                    };
+                    if (activity.Window.SwitchingTo is null)
+                        activity.WindowSwitchSentAt = null;
+                    break;
+                case WindowFailedStatusEvent failed:
+                    activity.Window = activity.Window with
+                    {
+                        IsOpen = false,
+                        SwitchingTo = null,
+                        Error = $"The game window could not open: {failed.Error}",
+                    };
+                    activity.WindowSwitchSentAt = null;
                     break;
                 case MalformedStatusEvent malformed:
                     activity.Error = $"Malformed host status event: {malformed.Error}";
@@ -1550,6 +1693,12 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
         public ManualResetEventSlim StartCompleted { get; } = new(false);
         public bool StartupInFlight { get; set; } = true;
 
+        /// <summary>The game window as the client reports it, and a pending switch.</summary>
+        public LauncherSessionWindow Window { get; set; } = new();
+
+        /// <summary>When the pending window switch was sent.</summary>
+        public DateTimeOffset? WindowSwitchSentAt { get; set; }
+
         public object StatusReadGate { get; } = new();
 
         public bool IsActive => !IsTerminal || StartupInFlight || Supervisor?.HasLiveProcess == true;
@@ -1576,7 +1725,8 @@ public sealed class LauncherOrchestrator : ILauncherOrchestrator
                 ExitedGracefully,
                 PluginNotice,
                 Supervisor?.HasLiveProcess == true,
-                StartupInFlight);
+                StartupInFlight,
+                Window);
     }
 
     private sealed class StartRequest(

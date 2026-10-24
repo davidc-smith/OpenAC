@@ -269,7 +269,7 @@
                                 </StackPanel>
                               </StackPanel>
                               <ComboBox Grid.Column="2" ItemsSource="{Binding CharacterChoices}" SelectedItem="{Binding DisplayedCharacter, Mode=TwoWay}" HorizontalAlignment="Stretch" VerticalAlignment="Center" IsEnabled="{Binding CanEditSelection}" AutomationProperties.Name="Character" />
-                              <ComboBox Grid.Column="3" ItemsSource="{Binding LaunchModes}" SelectedItem="{Binding SelectedLaunchMode, Mode=TwoWay}" HorizontalAlignment="Stretch" VerticalAlignment="Center" IsEnabled="{Binding CanEditSelection}" AutomationProperties.Name="Launch mode" />
+                              <ComboBox Grid.Column="3" ItemsSource="{Binding LaunchModes}" SelectedItem="{Binding DisplayedLaunchMode, Mode=TwoWay}" HorizontalAlignment="Stretch" VerticalAlignment="Center" IsEnabled="{Binding CanChangeLaunchMode}" AutomationProperties.Name="Launch mode" />
                               <TextBlock Grid.Column="4" Text="{Binding Status}" VerticalAlignment="Center" Margin="0,2,0,0" Classes="muted" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Status}" />
                               <Button Grid.Column="5" Content="Play" Classes="primary" Classes.ready="{Binding CanPlay}" Command="{Binding PlayCommand}" IsVisible="{Binding !IsActive}" VerticalAlignment="Center" HorizontalAlignment="Stretch" ToolTip.Tip="{Binding DisabledReason}" />
                               <Button Grid.Column="5" Content="Stop" Command="{Binding StopCommand}" IsVisible="{Binding IsActive}" VerticalAlignment="Center" HorizontalAlignment="Stretch" />

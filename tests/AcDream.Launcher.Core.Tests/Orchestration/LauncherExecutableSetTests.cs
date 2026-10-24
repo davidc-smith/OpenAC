@@ -84,20 +84,63 @@ public sealed class LauncherExecutableSetTests : IDisposable
         Assert.False(
             set.CreatePlaySpec(LaunchMode.GuiSelect, "session.json")
                 .SupportsConsoleGracefulStop);
-        Assert.True(
-            set.CreatePlaySpec(LaunchMode.Headless, "session.json")
-                .SupportsConsoleGracefulStop);
         Assert.True(set.CreateProbeSpec("session.json").SupportsConsoleGracefulStop);
 
-        // A windowless session is started with its console on and its input
-        // left open, so the launcher's console window can talk to it. A probe
-        // and a windowed session are not.
-        var headlessSpec = set.CreatePlaySpec(LaunchMode.Headless, "session.json");
-        Assert.Contains("--console", headlessSpec.Arguments);
-        Assert.True(headlessSpec.KeepStandardInputOpen);
+        // Ported from the Rust launcher's
+        // from_directory_resolves_the_published_co_deployment_layout
+        // (crates/ac-launcher-core/tests/orchestration.rs). Every play row
+        // starts the graphical client with its console on and its input left
+        // open, so the launcher's console window can talk to it and its row can
+        // close the window and open it again; a headless row starts it with no
+        // window. Stop asks it to log off on that console: the graphical client
+        // has no console of its own for a console break to reach. A probe runs
+        // the windowless host without a console.
+        foreach (LaunchMode mode in new[] { LaunchMode.Gui, LaunchMode.GuiSelect, LaunchMode.Headless })
+        {
+            var spec = set.CreatePlaySpec(mode, "session.json");
+            Assert.Equal(graphical, spec.ExecutablePath);
+            Assert.Equal(
+                mode == LaunchMode.Headless
+                    ? ["--session-config", "session.json", "--console", "--no-window"]
+                    : ["--session-config", "session.json", "--console"],
+                spec.Arguments);
+            Assert.True(spec.KeepStandardInputOpen);
+            Assert.Equal("/quit", spec.StopLine);
+            Assert.False(spec.SupportsConsoleGracefulStop);
+        }
+        Assert.True(set.GetPlayAvailability(LaunchMode.Headless).IsAvailable);
         Assert.DoesNotContain("--console", set.CreateProbeSpec("session.json").Arguments);
         Assert.False(set.CreateProbeSpec("session.json").KeepStandardInputOpen);
-        Assert.False(set.CreatePlaySpec(LaunchMode.Gui, "session.json").KeepStandardInputOpen);
+        Assert.Null(set.CreateProbeSpec("session.json").StopLine);
+    }
+
+    /// <summary>
+    /// Where no display exists (Linux with neither X11 nor Wayland) a headless row runs
+    /// the windowless host with its console, as before; it needs only that host.
+    /// </summary>
+    [Fact]
+    public void WithoutWindowSupportAHeadlessRowRunsTheWindowlessHost()
+    {
+        bool graphicalExists = false;
+        var set = new LauncherExecutableSet(
+            "gui-host",
+            "headless-host",
+            fileExists: path => path != "gui-host" || graphicalExists,
+            hasUnixExecutePermission: _ => true);
+
+        Assert.True(set.GetPlayAvailability(LaunchMode.Headless, windowSupport: false).IsAvailable);
+        // With window support the headless row needs the graphical client.
+        Assert.False(set.GetPlayAvailability(LaunchMode.Headless).IsAvailable);
+
+        var spec = set.CreatePlaySpec(LaunchMode.Headless, "session.json", windowSupport: false);
+        Assert.Equal("headless-host", spec.ExecutablePath);
+        Assert.Equal(["run", "--config", "session.json", "--console"], spec.Arguments);
+        Assert.True(spec.KeepStandardInputOpen);
+        Assert.True(spec.SupportsConsoleGracefulStop);
+        Assert.Null(spec.StopLine);
+
+        graphicalExists = true;
+        Assert.Equal("gui-host", set.CreatePlaySpec(LaunchMode.Headless, "session.json").ExecutablePath);
     }
 
     [Fact]

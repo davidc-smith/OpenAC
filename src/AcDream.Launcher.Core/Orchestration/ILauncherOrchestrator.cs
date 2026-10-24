@@ -139,6 +139,16 @@ public interface ILauncherOrchestrator : IDisposable
     bool TrySendConsoleLine(string sessionId, string line) => false;
 
     /// <summary>
+    /// Switches a running play session between graphical (<paramref name="open"/>) and
+    /// headless without restarting it: its client's console is told <c>/window &lt;id&gt;</c>
+    /// or <c>/close</c>, and the session's window follows what the client then reports.
+    /// Throws <see cref="LauncherOperationException"/> when the switch cannot be sent.
+    /// </summary>
+    void SetSessionWindow(string sessionId, bool open) =>
+        throw new LauncherOperationException(
+            "This launcher cannot switch a running session between graphical and headless.");
+
+    /// <summary>
     /// The file a session's console output is written to, or null when the
     /// session is unknown or writes none.
     /// </summary>

@@ -24,4 +24,21 @@ public sealed class LauncherPlatformCapabilitiesTests
         Assert.True(capabilities.ForLaunchMode(LaunchMode.GuiSelect).IsAvailable);
         Assert.True(capabilities.ForLaunchMode(LaunchMode.Headless).IsAvailable);
     }
+
+    /// <summary>
+    /// Linux without a display keeps headless rows on the windowless host; Windows and
+    /// macOS always have one.
+    /// </summary>
+    [Fact]
+    public void LinuxWithoutADisplayHasNoWindowSupport()
+    {
+        Assert.False(LauncherPlatformCapabilities.ForOperatingSystem(
+            isWindows: false, isLinux: true, isMacOS: false, hasDisplay: false).HasDisplay);
+        Assert.True(LauncherPlatformCapabilities.ForOperatingSystem(
+            isWindows: false, isLinux: true, isMacOS: false, hasDisplay: true).HasDisplay);
+        Assert.True(LauncherPlatformCapabilities.ForOperatingSystem(
+            isWindows: true, isLinux: false, isMacOS: false, hasDisplay: false).HasDisplay);
+        Assert.True(LauncherPlatformCapabilities.ForOperatingSystem(
+            isWindows: false, isLinux: false, isMacOS: true, hasDisplay: false).HasDisplay);
+    }
 }

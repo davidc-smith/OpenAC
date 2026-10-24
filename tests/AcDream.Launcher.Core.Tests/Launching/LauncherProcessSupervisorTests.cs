@@ -75,6 +75,45 @@ public sealed class LauncherProcessSupervisorTests
         Assert.Equal("pw\n/vt start\n", fake.StandardInputText);
     }
 
+    /// <summary>
+    /// A child that logs off on a console line is told so first when stopped, then the
+    /// usual graceful requests follow; a child without an open console is not written to.
+    /// </summary>
+    [Fact]
+    public void StopWritesTheStopLineBeforeTheOtherRequests()
+    {
+        var factory = new FakeChildProcessFactory(exitsWithinStopTimeout: true);
+        using var supervisor = new LauncherProcessSupervisor(factory);
+        supervisor.Start(Spec() with { KeepStandardInputOpen = true, StopLine = "/quit" }, "pw");
+
+        supervisor.Stop(TimeSpan.FromMilliseconds(50));
+
+        FakeChildProcess fake = factory.LastCreated!;
+        Assert.Equal("pw\n/quit\n", fake.StandardInputText);
+        // Written before the graceful stop request.
+        Assert.Equal("pw\n/quit\n", fake.InputAtGracefulStop);
+        Assert.Equal(["gracefulStop", "closeMainWindow"], fake.CallOrder);
+
+        var closedFactory = new FakeChildProcessFactory(exitsWithinStopTimeout: true);
+        using var closed = new LauncherProcessSupervisor(closedFactory);
+        closed.Start(Spec() with { StopLine = "/quit" }, "pw");
+        closed.Stop(TimeSpan.FromMilliseconds(50));
+        Assert.Equal("pw\n", closedFactory.LastCreated!.StandardInputText);
+    }
+
+    /// <summary>Disposing a supervisor whose child still runs stops it the same way.</summary>
+    [Fact]
+    public void DisposeWritesTheStopLineToARunningChild()
+    {
+        var factory = new FakeChildProcessFactory(exitsWithinStopTimeout: true);
+        var supervisor = new LauncherProcessSupervisor(factory);
+        supervisor.Start(Spec() with { KeepStandardInputOpen = true, StopLine = "/quit" }, "pw");
+
+        supervisor.Dispose();
+
+        Assert.Equal("pw\n/quit\n", factory.LastCreated!.StandardInputText);
+    }
+
     [Fact]
     public void ASessionWithoutAConsoleTakesNoLines()
     {
@@ -1144,9 +1183,12 @@ public sealed class LauncherProcessSupervisorTests
             Exited?.Invoke(this, EventArgs.Empty);
         }
 
+        public string? InputAtGracefulStop { get; private set; }
+
         public bool TryRequestGracefulStop()
         {
             TryRequestGracefulStopCallCount++;
+            InputAtGracefulStop = _standardInput.ToString();
             CallOrder.Add("gracefulStop");
             return false;
         }

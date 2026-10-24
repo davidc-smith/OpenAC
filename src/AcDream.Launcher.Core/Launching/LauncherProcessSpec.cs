@@ -15,4 +15,10 @@ public sealed record LauncherProcessSpec(
     /// replacing any the launcher inherited under the same name.
     /// </summary>
     public IReadOnlyDictionary<string, string>? Environment { get; init; }
+
+    /// <summary>
+    /// The console line that asks the child to log off and exit, written to its
+    /// open input before the other stop requests; null for a child without one.
+    /// </summary>
+    public string? StopLine { get; init; }
 }
