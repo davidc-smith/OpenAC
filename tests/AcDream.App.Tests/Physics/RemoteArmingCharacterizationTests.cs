@@ -198,6 +198,71 @@ public sealed class RemoteArmingCharacterizationTests
         Assert.Null(remote.Host);
     }
 
+    /// <summary>
+    /// A window that closes while the session plays on leaves nothing of
+    /// itself on a body it armed: the body's physics host is kept (anything
+    /// holding it keeps working) but no longer asks the window where the body
+    /// is, and the cycle sink and animation callbacks bound to the window's
+    /// drawn sequencer are let go of, for the next host to bind its own.
+    /// </summary>
+    [Fact]
+    public void AClosedWindowLeavesNoHookOnABodyItArmed()
+    {
+        var world = new ArmingWorld();
+        RemoteMotion remote =
+            world.Live.GetOrCreateRemoteMotionRuntime(MoverGuid);
+        remote.Body.Position = new Vector3(1f, 2f, 3f);
+        var drawn = new Vector3(70f, 71f, 8f);
+        world.DrawnPositionOf(MoverGuid, drawn);
+        world.Motion.EnsureRemoteMotionBindings(remote, ae: null, MoverGuid);
+        EntityPhysicsHost host = remote.Host!;
+        // What a window binds from its drawn sequencer when it arms a body.
+        var windowSink = (MotionTableDispatchSink)
+            System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(
+                typeof(MotionTableDispatchSink));
+        remote.Sink = windowSink;
+        remote.Motion.DefaultSink = windowSink;
+        remote.Motion.RemoveLinkAnimations = static () => { };
+        remote.Motion.InitializeMotionTables = static () => { };
+        remote.Motion.CheckForCompletedMotions = static () => { };
+        Assert.Equal(drawn, host.Position.Frame.Origin);
+
+        world.WindowAttached = false;
+        world.Arming.ReleasePresentation();
+
+        Assert.Same(host, remote.Host);
+        Assert.Equal(new Vector3(1f, 2f, 3f), host.Position.Frame.Origin);
+        Assert.Null(remote.Sink);
+        Assert.Null(remote.Motion.DefaultSink);
+        Assert.Null(remote.Motion.RemoveLinkAnimations);
+        Assert.Null(remote.Motion.InitializeMotionTables);
+        Assert.Null(remote.Motion.CheckForCompletedMotions);
+    }
+
+    /// <summary>
+    /// A window that gave a creature the smallest body (to answer where it
+    /// is when something follows it) leaves that body answering from the
+    /// session once the window has gone: it still finds another creature,
+    /// where the window's answer would find nothing.
+    /// </summary>
+    [Fact]
+    public void AClosedWindowLeavesNoHookOnASmallestBodyItGave()
+    {
+        var world = new ArmingWorld();
+        EntityPhysicsHost host = world.MinimalHostFor(TargetGuid);
+        Assert.NotNull(host.GetObjectA(MoverGuid));
+
+        // The window lends its resolver for as long as it is attached.
+        world.Physics.BindObjectTableHostResolver(null);
+        world.Live.ReleaseProjectionsKeepingSession();
+
+        Assert.True(world.Physics.TryGetPhysicsHost(
+            TargetGuid,
+            out AcDream.Core.Physics.Motion.IPhysicsObjHost kept));
+        Assert.Same(host, kept);
+        Assert.NotNull(host.GetObjectA(MoverGuid));
+    }
+
     private sealed class ArmingWorld
     {
         private readonly GpuWorldState _spatial = new();
@@ -225,10 +290,29 @@ public sealed class RemoteArmingCharacterizationTests
             // richer body maker, so the shared owner resolves through it.
             lifetime.Physics.BindObjectTableHostResolver(
                 Motion.ResolvePhysicsHost);
-            Motion.BindArming(
-                LiveEntityRuntimeFixture.CreateArming(
-                    lifetime, Motion.HostFacts));
+            // The arming is the session's: it asks the window while one is
+            // attached and the records once it has gone, as the session's
+            // drives do.
+            RuntimeRemoteArmingHostFacts window = Motion.HostFacts;
+            RuntimeRemoteArmingHostFacts records =
+                RuntimeRemoteArmingHostFacts.FromRecords(lifetime);
+            RuntimeRemoteArmingHostFacts Facts() =>
+                WindowAttached ? window : records;
+            Arming = LiveEntityRuntimeFixture.CreateArming(
+                lifetime,
+                new RuntimeRemoteArmingHostFacts(
+                    DrawnBody: guid => Facts().DrawnBody(guid),
+                    WireOriginToWorld: (cell, x, y, z) =>
+                        Facts().WireOriginToWorld(cell, x, y, z),
+                    InteractionTargetPosition: guid =>
+                        Facts().InteractionTargetPosition(guid)));
+            Motion.BindArming(Arming);
         }
+
+        /// <summary>Whether the window that draws the bodies is still attached.</summary>
+        internal bool WindowAttached { get; set; } = true;
+
+        internal RuntimeRemoteArming Arming { get; }
 
         internal LiveEntityRuntime Live { get; }
 

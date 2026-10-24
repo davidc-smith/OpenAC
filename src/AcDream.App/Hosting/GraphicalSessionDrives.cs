@@ -178,9 +178,16 @@ internal sealed class GraphicalSessionDrives
 
     /// <summary>
     /// Stops asking the attached window anything, at once: it is going away
-    /// while the session plays on. Its lease, given back later, is a no-op.
+    /// while the session plays on. Every body the window armed lets go of
+    /// what the window bound to its drawing, so nothing on the session's
+    /// bodies points at the window that went. Its lease, given back later,
+    /// is a no-op.
     /// </summary>
-    internal void ForgetPresentation() => _presentation = null;
+    internal void ForgetPresentation()
+    {
+        _presentation = null;
+        RemoteArming.ReleasePresentation();
+    }
     private void Release(GraphicalSessionDrivePresentation presentation)
     {
         if (ReferenceEquals(_presentation, presentation))
