@@ -95,16 +95,13 @@ internal static partial class GraphicalAutomationCapabilities
 
     /// <summary>
     /// What a plugin goes without while no window is attached, and why: a
-    /// confirmation is answered in a window, and the navigation walk is
-    /// steered from one.
+    /// confirmation is answered in a window.
     /// </summary>
     internal static IReadOnlyDictionary<string, string> ConditionalWithoutWindow { get; } =
         new Dictionary<string, string>(Conditional, StringComparer.Ordinal)
         {
             [nameof(RuntimeAutomationHostCapabilities.AnswerConfirmation)] =
                 "no window is attached to answer a confirmation",
-            [nameof(RuntimeAutomationHostCapabilities.NavigationWalk)] =
-                "no window is attached to steer a walk",
         };
     /// <summary>
     /// Builds the record this host really hands the binding pass. The window

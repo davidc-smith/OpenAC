@@ -33,6 +33,7 @@ internal sealed class GraphicalSessionHost : IDisposable
 {
     private readonly RuntimeOptions _options;
     private readonly RuntimePluginTickClock _pluginTick;
+    private readonly TimeProvider _time;
     private GraphicalPluginSession? _pluginSession;
     private GameWindow? _window;
     private GraphicalSessionContent? _content;
@@ -51,9 +52,12 @@ internal sealed class GraphicalSessionHost : IDisposable
         WorldGameState worldGameState,
         WorldEvents worldEvents,
         RuntimeAutomationSurface? automation = null,
-        string? chatLogDirectory = null)
+        string? chatLogDirectory = null,
+        ILiveSessionOperations? sessionOperations = null,
+        TimeProvider? timeProvider = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _time = timeProvider ?? TimeProvider.System;
         WorldGameState = worldGameState
             ?? throw new ArgumentNullException(nameof(worldGameState));
         WorldEvents = worldEvents
@@ -67,7 +71,8 @@ internal sealed class GraphicalSessionHost : IDisposable
                 CombatModeOperations,
                 SpellCastOperations,
                 timeSyncDiagnostic:
-                    options.DumpSky ? Console.WriteLine : null));
+                    options.DumpSky ? Console.WriteLine : null,
+                sessionOperations));
         RuntimeHostLease = Runtime.AcquireHostLease("graphical session host");
         automation?.Bind(Runtime, Runtime.CharacterOwner, Runtime.ActionOwner.SpellCast);
         // Settings the runtime reads off the character's own options, which
@@ -130,7 +135,20 @@ internal sealed class GraphicalSessionHost : IDisposable
             Console.WriteLine,
             CreateEventsWithoutWindow,
             () => _windowlessRoute?.EndPortalRevealForSessionReset(),
-            chatLogDirectory);
+            chatLogDirectory,
+            _time);
+        // The session's walks, planned over its own collision and walked
+        // whether or not a window is open.
+        Navigation = new GraphicalSessionNavigation(
+            Runtime,
+            objectId => CommandsWithoutWindow.TryUseObject(objectId),
+            objectId => CommandsWithoutWindow.TryAppraiseQuietly(objectId),
+            cellId => _content is { } files
+                && AcDream.Runtime.Navigation.SealedDungeonCells.IsSealedDungeon(
+                    files.Dats,
+                    files.DatLock,
+                    cellId),
+            Console.WriteLine);
     }
 
     internal RuntimeOptions Options => _options;
@@ -177,6 +195,12 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal AcDream.App.Input.MovementTruthDiagnosticController MovementTruth { get; }
 
     internal AcDream.Runtime.Gameplay.LocalPlayerOutboundController LocalPlayerOutbound { get; }
+
+    /// <summary>
+    /// The session's walks: kept across windows, stepped by whatever presents
+    /// the session.
+    /// </summary>
+    internal GraphicalSessionNavigation Navigation { get; }
 
     /// <summary>The sky and the world clock, set up once from the game files.</summary>
     internal AcDream.App.World.WorldEnvironmentController WorldEnvironment { get; }
@@ -291,7 +315,8 @@ internal sealed class GraphicalSessionHost : IDisposable
         _windowlessFrame ??= new GraphicalWindowlessSessionFrame(
             Runtime,
             LiveSession.Host,
-            WindowlessRoute);
+            WindowlessRoute,
+            Navigation.Walk);
 
     private ILiveSessionEventRouting CreateEventsWithoutWindow(
         AcDream.Core.Net.WorldSession session)
@@ -429,6 +454,7 @@ internal sealed class GraphicalSessionHost : IDisposable
                     Events = WorldEvents,
                     SessionCommandsWithoutWindow = CommandsWithoutWindow,
                     SubmitChatTextWithoutWindow = SubmitChatText,
+                    NavigationWalk = Navigation.Walk,
                 }));
     }
 
@@ -441,6 +467,7 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal void LetGoOfWindow()
     {
         LiveSession.HandConnectionBackFromWindow(_drives);
+        Navigation.ForgetPresentation();
         ApplyAutomationWithoutWindow();
     }
     /// <summary>The window presenting the session, if one is open.</summary>
