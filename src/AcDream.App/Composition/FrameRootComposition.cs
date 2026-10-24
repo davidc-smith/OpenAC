@@ -58,7 +58,8 @@ internal sealed record FrameRootDependencies(
     Action<string> Log,
     AcDream.App.Rendering.Packs.DeferredRenderPackDiagnosticsSource?
         RenderPackDiagnostics = null,
-    AcDream.App.Plugins.PluginWorldLineStore? WorldLines = null)
+    AcDream.App.Plugins.PluginWorldLineStore? WorldLines = null,
+    AcDream.App.Hosting.GraphicalSessionNavigation? Navigation = null)
 {
     public RuntimeLocalPlayerMovementState PlayerController =>
         Runtime.MovementOwner;
@@ -344,17 +345,19 @@ internal sealed class FrameRootCompositionPhase
                 d.Runtime.CharacterOwner.Options.GetOptionBit(
                     CharacterOptionId.DisableMostWeatherEffects),
         };
-        var navigationWalk = new NavigationWalkController(
-            d.PhysicsEngine,
-            new RuntimeNavigationWalkBody(d.PlayerController, d.Runtime.Portal),
-            new RuntimeNavigationGoalSource(d.PhysicsEngine, d.Runtime, d.PlayerController),
-            d.WorldSceneDebugState.ReportNavigation,
-            new RuntimeNavigationDoors(
-                d.PhysicsEngine,
-                d.Runtime,
+        // The walks are the session's, kept across windows; while this
+        // window is attached it opens doors the way a click would and shows
+        // what a walk says.
+        AcDream.App.Hosting.GraphicalSessionNavigation navigation = d.Navigation
+            ?? throw new InvalidOperationException(
+                "The window's frame roots need the session's walks.");
+        NavigationWalkController navigationWalk = navigation.Walk;
+        bindings.Adopt(
+            "session navigation presentation",
+            navigation.Present(new AcDream.App.Hosting.GraphicalSessionNavigationPresentation(
                 guid => interaction.LateBindings.Selection.SendUse(guid),
-                interaction.ItemInteraction.TryAppraiseForAutomation),
-            cellId => session.SealedDungeonCells?.IsSealedDungeon(cellId) == true);
+                interaction.ItemInteraction.TryAppraiseForAutomation,
+                d.WorldSceneDebugState.ReportNavigation)));
         IWorldSceneFramePhase? worldSceneRenderer = null;
         CurrentRenderSceneOracle? currentRenderSceneOracle = null;
         RenderSceneShadowComparisonController? renderSceneShadowComparison = null;

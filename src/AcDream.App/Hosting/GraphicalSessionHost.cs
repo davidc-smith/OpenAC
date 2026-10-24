@@ -33,6 +33,7 @@ internal sealed class GraphicalSessionHost : IDisposable
 {
     private readonly RuntimeOptions _options;
     private readonly RuntimePluginTickClock _pluginTick;
+    private readonly TimeProvider _time;
     private GraphicalPluginSession? _pluginSession;
     private GameWindow? _window;
     private GraphicalSessionContent? _content;
@@ -42,6 +43,9 @@ internal sealed class GraphicalSessionHost : IDisposable
     private GraphicalSessionDrives? _drives;
     private bool _sessionStarted;
     private bool _startFailed;
+    private bool _recovering;
+    private bool _reloginUnderWay;
+    private long _reloginScheduledAt;
     private DirectGameRuntimeCommandAdapter? _commandsWithoutWindow;
     private GraphicalSessionWindowLoop? _windowLoop;
     private bool _disposed;
@@ -51,9 +55,12 @@ internal sealed class GraphicalSessionHost : IDisposable
         WorldGameState worldGameState,
         WorldEvents worldEvents,
         RuntimeAutomationSurface? automation = null,
-        string? chatLogDirectory = null)
+        string? chatLogDirectory = null,
+        ILiveSessionOperations? sessionOperations = null,
+        TimeProvider? timeProvider = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _time = timeProvider ?? TimeProvider.System;
         WorldGameState = worldGameState
             ?? throw new ArgumentNullException(nameof(worldGameState));
         WorldEvents = worldEvents
@@ -67,7 +74,8 @@ internal sealed class GraphicalSessionHost : IDisposable
                 CombatModeOperations,
                 SpellCastOperations,
                 timeSyncDiagnostic:
-                    options.DumpSky ? Console.WriteLine : null));
+                    options.DumpSky ? Console.WriteLine : null,
+                sessionOperations));
         RuntimeHostLease = Runtime.AcquireHostLease("graphical session host");
         automation?.Bind(Runtime, Runtime.CharacterOwner, Runtime.ActionOwner.SpellCast);
         // Settings the runtime reads off the character's own options, which
@@ -130,7 +138,23 @@ internal sealed class GraphicalSessionHost : IDisposable
             Console.WriteLine,
             CreateEventsWithoutWindow,
             () => _windowlessRoute?.EndPortalRevealForSessionReset(),
-            chatLogDirectory);
+            chatLogDirectory,
+            _time,
+            session => CommandsWithoutWindow.CreateRoute(session));
+        Confirmations = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations(
+            () => LiveSession.Host.CurrentSession);
+        // The session's walks, planned over its own collision and walked
+        // whether or not a window is open.
+        Navigation = new GraphicalSessionNavigation(
+            Runtime,
+            objectId => CommandsWithoutWindow.TryUseObject(objectId),
+            objectId => CommandsWithoutWindow.TryAppraiseQuietly(objectId),
+            cellId => _content is { } files
+                && AcDream.Runtime.Navigation.SealedDungeonCells.IsSealedDungeon(
+                    files.Dats,
+                    files.DatLock,
+                    cellId),
+            Console.WriteLine);
     }
 
     internal RuntimeOptions Options => _options;
@@ -177,6 +201,18 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal AcDream.App.Input.MovementTruthDiagnosticController MovementTruth { get; }
 
     internal AcDream.Runtime.Gameplay.LocalPlayerOutboundController LocalPlayerOutbound { get; }
+
+    /// <summary>
+    /// The confirmation the server is waiting on while no window shows it,
+    /// answered by plugins as on every client without a window.
+    /// </summary>
+    internal AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations Confirmations { get; }
+
+    /// <summary>
+    /// The session's walks: kept across windows, stepped by whatever presents
+    /// the session.
+    /// </summary>
+    internal GraphicalSessionNavigation Navigation { get; }
 
     /// <summary>The sky and the world clock, set up once from the game files.</summary>
     internal AcDream.App.World.WorldEnvironmentController WorldEnvironment { get; }
@@ -291,7 +327,8 @@ internal sealed class GraphicalSessionHost : IDisposable
         _windowlessFrame ??= new GraphicalWindowlessSessionFrame(
             Runtime,
             LiveSession.Host,
-            WindowlessRoute);
+            WindowlessRoute,
+            Navigation.Walk);
 
     private ILiveSessionEventRouting CreateEventsWithoutWindow(
         AcDream.Core.Net.WorldSession session)
@@ -310,6 +347,18 @@ internal sealed class GraphicalSessionHost : IDisposable
             skills = new AcDream.Content.Skills.LiveSkillCreditResolver(null);
         }
 
+        // A question asked on an earlier connection, or before a window took
+        // the session over and answered in its own dialog, is not this one's.
+        Confirmations.Forget();
+        // The character options the session document declared are put on
+        // the character once the server has said what they are and login
+        // complete is out, as every client does; a route built again over
+        // the same connection (a window closed) finds them seeded already.
+        var seeder = new AcDream.Runtime.Gameplay.RuntimeCharacterOptionsSeeder(
+            _options.DeclaredCharacterOptions,
+            Runtime,
+            CommandsWithoutWindow.Character);
+        OptionsSeeder = seeder;
         return WindowlessRoute.Create(
             session,
             GraphicalAutomationCapabilities.BuildWindowlessCharacterSessionBindings(
@@ -318,11 +367,20 @@ internal sealed class GraphicalSessionHost : IDisposable
                 Runtime.MovementStats,
                 skills.Resolve,
                 () => Runtime.EffectClock.NowSeconds,
+                Confirmations,
                 Automation is { } automation
                     ? automation.RaiseConfirmationRequested
                     : null,
-                Console.WriteLine));
+                seeder.NoteOptionsSeeded,
+                Console.WriteLine),
+            seeder.NoteLoginCompleteSent);
     }
+
+    /// <summary>
+    /// What seeds the declared character options on the connection the
+    /// session plays with no window, once one has been taken.
+    /// </summary>
+    internal AcDream.Runtime.Gameplay.RuntimeCharacterOptionsSeeder? OptionsSeeder { get; private set; }
 
 
     /// <summary>
@@ -346,14 +404,118 @@ internal sealed class GraphicalSessionHost : IDisposable
     }
 
     /// <summary>
-    /// Whether the session's connection is gone with no window to show it: a
-    /// start that could not connect, or a server that went silent. The
-    /// session then ends with the connection's exit code.
+    /// How long a session that lost its server with no window attached waits
+    /// before each attempt to log in again: 30 s, as every client without a
+    /// window waits.
     /// </summary>
-    internal bool ConnectionEnded =>
-        _startFailed
-        || LiveSession.Host.ConnectionLost
-        || LiveSession.Host.Connection.Snapshot.Status is RuntimeConnectionStatus.Failed;
+    internal static TimeSpan LostConnectionRetryInterval { get; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// True from the moment the server is found gone with no window attached
+    /// until a login gets back into the world.
+    /// </summary>
+    internal bool IsRecoveringLostConnection => _recovering;
+
+    /// <summary>
+    /// The session's connection, stepped after each update while no window is
+    /// attached. A server that falls silent ends the stay (plugins hear the
+    /// log off) and the session logs in again every
+    /// <see cref="LostConnectionRetryInterval"/>, entering its character as
+    /// at the start, until an attempt gets back in; each failure says so and
+    /// waits another interval. True when the connection is gone for good and
+    /// the session ends with the connection's exit code: a start that never
+    /// got in, a connection that failed or that the server ended, or an
+    /// attempt to log in again that finds no character to enter.
+    /// </summary>
+    internal bool StepConnectionWithoutWindow()
+    {
+        if (_startFailed)
+            return true;
+        long now = _time.GetTimestamp();
+        if (!_recovering)
+        {
+            if (LiveSession.Host.ConnectionLost)
+            {
+                BeginLostConnectionRecovery(now);
+                return false;
+            }
+            return LiveSession.Host.Connection.Snapshot.Status
+                is RuntimeConnectionStatus.Failed;
+        }
+
+        if (_reloginUnderWay)
+        {
+            if (Runtime.Session.IsInWorld)
+            {
+                _recovering = false;
+                _reloginUnderWay = false;
+                return false;
+            }
+            RuntimeConnectionSnapshot connection = LiveSession.Host.Connection.Snapshot;
+            if (LiveSession.Host.ConnectionLost
+                || connection.Status is RuntimeConnectionStatus.Failed)
+            {
+                ReloginFailed(now, connection.Error ?? "the server stopped answering");
+                return false;
+            }
+            if (LiveSession.Host.CurrentSession is null)
+            {
+                // Connected, then let go without failing or entering: the
+                // account has no such character, which no later attempt
+                // changes.
+                Console.Error.WriteLine(
+                    "live: logging in again found no character to enter; the session ends");
+                return true;
+            }
+            return false;
+        }
+
+        if (_time.GetElapsedTime(_reloginScheduledAt, now) < LostConnectionRetryInterval)
+            return false;
+        _reloginUnderWay = true;
+        RuntimeSessionStartResult result =
+            CommandsWithoutWindow.Session.Start(Runtime.Generation);
+        switch (result.Status)
+        {
+            case RuntimeSessionStartStatus.Failed:
+                ReloginFailed(
+                    now,
+                    result.Error?.Message ?? "the connection could not be opened");
+                return false;
+            case RuntimeSessionStartStatus.NoCharacters:
+            case RuntimeSessionStartStatus.MissingCredentials:
+                Console.Error.WriteLine(
+                    $"live: logging in again ended ({result.Status}); the session ends");
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void BeginLostConnectionRecovery(long now)
+    {
+        // The end is recorded like any other; the next login opens another.
+        StatusWriter.Disconnected(SessionId, "connection-lost");
+        RuntimeTeardownAcknowledgement stopped =
+            CommandsWithoutWindow.Session.Stop(Runtime.Generation);
+        if (!stopped.IsComplete && stopped.Error is { } error)
+            Console.Error.WriteLine($"live: the lost session did not stop cleanly: {error.Message}");
+        _recovering = true;
+        _reloginUnderWay = false;
+        _reloginScheduledAt = now;
+        Console.Error.WriteLine(
+            "live: the connection to the server was lost; logging in again in "
+            + $"{LostConnectionRetryInterval.TotalSeconds:0} s");
+    }
+
+    private void ReloginFailed(long now, string error)
+    {
+        _reloginUnderWay = false;
+        _reloginScheduledAt = now;
+        Console.Error.WriteLine(
+            $"live: logging in again failed: {error}; next attempt in "
+            + $"{LostConnectionRetryInterval.TotalSeconds:0} s");
+    }
 
     /// <summary>Whether the session has started, with or without a window.</summary>
     internal bool HasSessionStarted => _sessionStarted;
@@ -374,7 +536,11 @@ internal sealed class GraphicalSessionHost : IDisposable
         }
 
         if (LiveSession.TakeOverPlayingConnection(_drives))
+        {
             _windowlessRoute?.ReleaseConnection();
+            // The window answers in its own dialog from here on.
+            Confirmations.Forget();
+        }
         return true;
     }
 
@@ -429,6 +595,8 @@ internal sealed class GraphicalSessionHost : IDisposable
                     Events = WorldEvents,
                     SessionCommandsWithoutWindow = CommandsWithoutWindow,
                     SubmitChatTextWithoutWindow = SubmitChatText,
+                    NavigationWalk = Navigation.Walk,
+                    AnswerConfirmationWithoutWindow = Confirmations.TryAnswer,
                 }));
     }
 
@@ -441,6 +609,7 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal void LetGoOfWindow()
     {
         LiveSession.HandConnectionBackFromWindow(_drives);
+        Navigation.ForgetPresentation();
         ApplyAutomationWithoutWindow();
     }
     /// <summary>The window presenting the session, if one is open.</summary>
@@ -522,9 +691,15 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal GraphicalSessionEnd EndSessionWithoutWindow(bool connectionEnded = false)
     {
         if (connectionEnded)
-            StatusWriter.Disconnected(SessionId, "connection-lost");
+        {
+            // A session logging in again already said its connection went.
+            if (!_recovering)
+                StatusWriter.Disconnected(SessionId, "connection-lost");
+        }
         else
+        {
             ReportSessionStopping();
+        }
         var failures = new List<Exception>();
         void Step(string name, Action step)
         {

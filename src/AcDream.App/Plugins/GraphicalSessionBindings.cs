@@ -391,9 +391,11 @@ internal static partial class GraphicalAutomationCapabilities
 
     /// <summary>
     /// The character bindings of the session's route while no window is
-    /// attached: nothing is shown, so a confirmation the server asks for goes
-    /// to plugins alone, as on every client without a window, and the
-    /// options the server seeds have no panel or chat box to follow them.
+    /// attached: nothing is shown, so a confirmation the server asks for is
+    /// kept to be answered and told to plugins, as on every client without a
+    /// window, and the options the server seeds have no panel or chat box to
+    /// follow them; they are only compared with the options a session
+    /// document declared.
     /// </summary>
     internal static LiveCharacterSessionBindings BuildWindowlessCharacterSessionBindings(
         RuntimeCharacterState character,
@@ -401,9 +403,13 @@ internal static partial class GraphicalAutomationCapabilities
         AcDream.Runtime.Gameplay.RuntimeMovementStatsApplier movementStats,
         Func<uint, uint, IReadOnlyDictionary<uint, uint>, uint> resolveSkillFormulaBonus,
         Func<double> clientTime,
+        AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations confirmations,
         Action<AcDream.Plugin.Abstractions.PluginConfirmation>? confirmationRequested,
+        Action noteOptionsSeeded,
         Action<string>? warn)
     {
+        ArgumentNullException.ThrowIfNull(confirmations);
+        ArgumentNullException.ThrowIfNull(noteOptionsSeeded);
         ArgumentNullException.ThrowIfNull(character);
         ArgumentNullException.ThrowIfNull(combat);
         ArgumentNullException.ThrowIfNull(movementStats);
@@ -416,15 +422,19 @@ internal static partial class GraphicalAutomationCapabilities
                 resolveSkillFormulaBonus(skill, raw, credits),
             OnSkillsUpdated: (_, _) => movementStats.Apply("skills"),
             OnConfirmationRequest: request =>
+            {
+                // Kept first, so a plugin that answers as it is told finds it.
+                confirmations.Request(request);
                 confirmationRequested?.Invoke(
                     new AcDream.Plugin.Abstractions.PluginConfirmation(
                         request.ContextId,
                         (int)request.Type,
-                        request.Message)),
-            OnConfirmationDone: static _ => { },
+                        request.Message));
+            },
+            OnConfirmationDone: confirmations.Done,
             ClientTime: () => clientTime(),
             OnMovementStatsUpdated: () => movementStats.Apply("stats"),
-            OnCharacterOptionsChanged: static (_, _) => { });
+            OnCharacterOptionsChanged: (_, _) => noteOptionsSeeded());
         LiveSessionBindingDeclarations.ReportDeclaredButUnfilled(
             "windowed (no window)",
             "character-session binding",

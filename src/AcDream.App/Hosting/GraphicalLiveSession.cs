@@ -49,7 +49,8 @@ internal sealed class GraphicalLiveSession
         Func<WorldSession, ILiveSessionEventRouting> createEventsWithoutWindow,
         Action? beforeResetWithoutWindow = null,
         string? chatLogDirectory = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        Func<WorldSession, ILiveSessionCommandRouting>? createSessionCommands = null)
     {
         ArgumentNullException.ThrowIfNull(createEventsWithoutWindow);
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
@@ -85,9 +86,18 @@ internal sealed class GraphicalLiveSession
             GraphicalAutomationCapabilities.BuildSessionHostBindings(
                 new GraphicalSessionHostParts
                 {
-                    CreateCommands = session => Commands.Attach(
-                        new LiveSessionCommandRouter(
-                            CreateCommandBindings(session))),
+                    CreateCommands = session =>
+                    {
+                        ILiveSessionCommandRouting chat = Commands.Attach(
+                            new LiveSessionCommandRouter(
+                                CreateCommandBindings(session)));
+                        // The session's own commands (what plugins and the
+                        // session's walks send with no window) follow the
+                        // same connection.
+                        return createSessionCommands is null
+                            ? chat
+                            : new JointCommandRoute(createSessionCommands(session), chat);
+                    },
                     ResetWithoutWindow = generation =>
                     {
                         // A portal reveal ends before the world transit
@@ -274,6 +284,41 @@ internal sealed class GraphicalLiveSession
             writer.Attach(_runtime.CommunicationOwner.Chat);
 
         return new ChatLogResult(opened, closed, resolved, closedName);
+    }
+
+    /// <summary>
+    /// Two command routes over one connection, active together: the first
+    /// activates first and is let go of last.
+    /// </summary>
+    private sealed class JointCommandRoute(
+        ILiveSessionCommandRouting first,
+        ILiveSessionCommandRouting second) : ILiveSessionCommandRouting
+    {
+        public void Activate()
+        {
+            first.Activate();
+            try
+            {
+                second.Activate();
+            }
+            catch
+            {
+                first.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                second.Dispose();
+            }
+            finally
+            {
+                first.Dispose();
+            }
+        }
     }
 
     private sealed class PresentationLease(

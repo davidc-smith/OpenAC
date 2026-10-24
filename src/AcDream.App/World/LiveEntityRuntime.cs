@@ -324,6 +324,12 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
     private readonly RuntimeEntityObjectLifetime _entityObjects;
     private readonly RuntimeEntityDirectory _directory;
     private readonly RuntimePhysicsState _physics;
+
+    /// <summary>
+    /// The session's entities this drawing gave the smallest body, whose
+    /// answers it made from what it draws.
+    /// </summary>
+    private readonly HashSet<RuntimeEntityRecord> _drawnPhysicsHosts = [];
     private readonly LiveEntityProjectionStore _projections;
     private readonly Dictionary<RuntimeEntityKey, ILiveEntityAnimationRuntime> _spatialAnimations = new();
     private readonly List<RuntimeEntityRecord> _spatialRootCanonicalScratch = new();
@@ -1837,6 +1843,7 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
             expectedRecord.Canonical,
             host,
             ProjectionIsCurrent);
+        _drawnPhysicsHosts.Add(expectedRecord.Canonical);
     }
 
     public bool TryGetPhysicsHost(
@@ -2644,6 +2651,16 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
         List<Exception>? failures = null;
         try
         {
+            // A body this drawing gave the smallest body keeps it, answering
+            // from the session's record from here on: nothing on the
+            // session's entities points at the drawing that goes.
+            foreach (RuntimeEntityRecord canonical in _drawnPhysicsHosts)
+            {
+                if (_entityObjects.Entities.IsCurrent(canonical))
+                    _physics.RebindToObjectTableHost(canonical);
+            }
+            _drawnPhysicsHosts.Clear();
+
             foreach (LiveEntityRecord record in _projections.ActiveRecords.ToArray())
             {
                 if (!_projections.RemoveActive(record))
@@ -2705,6 +2722,7 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
 
         _isClearing = true;
         _sessionClearPendingFinalization = true;
+        _drawnPhysicsHosts.Clear();
         IReadOnlyList<RuntimeEntityRecord> retiredCanonicals =
             _entityObjects.BeginSessionClear();
         List<Exception>? failures = null;
@@ -3226,6 +3244,7 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
             {
                 _entityObjects.CompleteProjectionRetirement(
                     record.Canonical);
+                _drawnPhysicsHosts.Remove(record.Canonical);
             }
 
             record.AnimationRuntime = null;

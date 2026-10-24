@@ -1502,7 +1502,8 @@ public sealed class GameWindow :
                         _frameGraphs,
                         Console.WriteLine,
                         _renderPackDiagnostics,
-                        WorldLines),
+                        WorldLines,
+                        _host.Navigation),
                     this).Compose(
                         platformResult,
                         hostInputCamera,
