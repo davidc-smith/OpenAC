@@ -1,6 +1,7 @@
 using AcDream.App;
 using AcDream.App.Configuration;
 using AcDream.App.Credentials;
+using AcDream.App.Hosting;
 using AcDream.App.Plugins;
 using AcDream.App.Platform;
 using AcDream.App.Rendering;
@@ -203,20 +204,18 @@ using var automation = AcDream.Runtime.Plugins.RuntimeAutomationBindings
 var lootClassifiers = new AcDream.Core.Plugins.PluginLootClassifierRegistry();
 var hotkeyRegistry = new AcDream.App.Input.AppHotkeyRegistry(
     Path.Combine(applicationPaths.ConfigDirectory, "plugin-hotkeys.json"));
-using var window = new GameWindow(
+// The session is the host's for the life of the process; a window is built
+// over it and borrows what it owns.
+using var sessionHost = new GraphicalSessionHost(
     runtimeOptions,
     worldGameState,
     worldEvents,
-    uiRegistry,
-    graphicalPlatform,
-    automation,
-    renderPackRegistry,
-    hotkeyRegistry);
+    automation);
 var host = new AppPluginHost(
     new SerilogAdapter(Log.Logger),
     worldGameState,
     worldEvents,
-    window.Selection,
+    sessionHost.Runtime.ActionOwner.Selection,
     uiRegistry,
     automation,
     new AcDream.Core.Plugins.FilePluginStorage(
@@ -227,29 +226,34 @@ var host = new AppPluginHost(
         runtimeOptions.VtankProfileDirectoryOverride
             ?? applicationPaths.VtankProfilesDirectory),
     new AcDream.App.Plugins.WindowPluginClipboard(
-        () => window.ClipboardKeyboard,
-        () => window.ClipboardDispatch),
+        () => sessionHost.Window?.ClipboardKeyboard,
+        () => sessionHost.MainThreadDispatch),
     hotkeyRegistry,
     new AcDream.App.Plugins.WindowPluginHostWindow(
-        () => window.PluginWindowHandle,
-        () => window.PluginWindowIsMinimized,
-        () => window.ClipboardDispatch),
-    window.WorldLines,
+        () => sessionHost.Window?.PluginWindowHandle,
+        () => sessionHost.Window?.PluginWindowIsMinimized ?? false,
+        () => sessionHost.MainThreadDispatch),
+    sessionHost.WorldLines,
     pluginSessionSettings);
 GraphicalPluginSession pluginSession = GraphicalPluginSession.Create(
     applicationPaths,
     runtimeOptions.Plugins,
     runtimeOptions.SessionId ?? "app",
     host,
-    window.StatusWriter,
+    sessionHost.StatusWriter,
     renderPackRegistry);
-window.StartPluginHosting(pluginSession);
+sessionHost.StartPluginHosting(pluginSession);
 
 try
 {
     try
     {
-        window.Run();
+        sessionHost.Run(session => new GameWindow(
+            session,
+            uiRegistry,
+            graphicalPlatform,
+            renderPackRegistry,
+            hotkeyRegistry));
     }
     catch (NotSupportedException error)
     {
