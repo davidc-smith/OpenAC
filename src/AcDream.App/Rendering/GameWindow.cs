@@ -633,7 +633,7 @@ public sealed class GameWindow :
         _windowCallbacks.Attach();
         try
         {
-            _window.Run();
+            NativeWindowLoop.Run(_window);
             _nativeRunReturned = true;
             CompleteShutdown(releaseNativeWindow: false);
         }
