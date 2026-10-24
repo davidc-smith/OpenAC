@@ -12,6 +12,11 @@ internal sealed class PreparedSetupResolver
     private readonly Func<uint, Setup?> _loadSetup;
     private readonly Action<string> _diagnostic;
     private readonly ConcurrentDictionary<uint, byte> _diagnosed = new();
+    // Every static object of a landblock resolves its Setup when the
+    // landblock is shown, mostly a few shared Setups, and each read waits for
+    // the content reader the streaming workers are using. The content does not
+    // change, so each id is resolved once: to its Setup, or to none.
+    private readonly ConcurrentDictionary<uint, Setup?> _resolved = new();
 
     public PreparedSetupResolver(
         IPreparedAssetSource preparedAssets,
@@ -27,6 +32,18 @@ internal sealed class PreparedSetupResolver
     }
 
     public bool TryResolve(
+        uint sourceId,
+        [NotNullWhen(true)] out Setup? setup)
+    {
+        if (_resolved.TryGetValue(sourceId, out setup))
+            return setup is not null;
+
+        bool resolved = TryResolveUncached(sourceId, out setup);
+        _resolved.TryAdd(sourceId, setup);
+        return resolved;
+    }
+
+    private bool TryResolveUncached(
         uint sourceId,
         [NotNullWhen(true)] out Setup? setup)
     {
