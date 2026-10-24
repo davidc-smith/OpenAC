@@ -166,6 +166,12 @@ Task<GraphicalSessionContent>? contentOpening = runtimeOptions.VulkanCapabilityP
     : Task.Run(() => GraphicalSessionContent.Open(
         runtimeOptions,
         line => Log.Warning("{Line}", line)));
+// The Vulkan instance is created on a worker while the rest of the start
+// runs; the window takes it when it sets up Vulkan.
+using AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup? vulkanInstanceWarmup =
+    runtimeOptions.VulkanCapabilityProbe || launch.NoWindow
+        ? null
+        : AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup.Start(runtimeOptions.DevTools);
 // The startup settings each plugin was given. A session-config document that
 // names them is the more specific instruction and outranks the launch option
 // pointing at a file. A named file that cannot be read is a startup fault and
@@ -315,7 +321,8 @@ try
                 uiRegistry,
                 graphicalPlatform,
                 renderPackRegistry,
-                hotkeyRegistry),
+                hotkeyRegistry,
+                vulkanInstanceWarmup),
             windowAtStart: !launch.NoWindow,
             events: console?.WindowEvents,
             console: launch.Console);

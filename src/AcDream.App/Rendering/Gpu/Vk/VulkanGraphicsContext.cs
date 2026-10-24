@@ -63,7 +63,8 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         FramePacingPolicy pacing,
         int requestedSampleCount,
         GpuMemoryProfile? memoryProfile = null,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        VulkanInstanceWarmup? instanceWarmup = null)
     {
         var context = new VulkanGraphicsContext(
             window,
@@ -73,7 +74,7 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
             log ?? Console.WriteLine);
         try
         {
-            context.CreateInstanceAndSurface();
+            context.CreateInstanceAndSurface(instanceWarmup);
             context.SelectDeviceAndGate();
             context.CreateDevice(requestedSampleCount, memoryProfile ?? GpuMemoryProfile.Default);
             return context;
@@ -128,9 +129,8 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
     /// <summary>Arms recreation, used when the acquire itself reported out-of-date.</summary>
     internal void RequestRecreate() => _recreateAtFrameBoundary = true;
 
-    private void CreateInstanceAndSurface()
+    private void CreateInstanceAndSurface(VulkanInstanceWarmup? instanceWarmup)
     {
-        _vk = GraphicalVulkanLoader.CreateApi();
         if (_window.VkSurface is null)
         {
             throw new NotSupportedException(
@@ -143,10 +143,22 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         for (uint i = 0; i < requiredCount; i++)
             required.Add(VulkanInterop.ReadString(requiredNames[i]));
 
-        VulkanInstanceFactory.Created instance = VulkanInstanceFactory.Create(
-            _vk,
-            required,
-            enableOptionalExtensions: _options.DevTools);
+        // The instance made on a worker during the start, when it fits this
+        // window; otherwise this window's own.
+        VulkanInstanceFactory.Created instance;
+        if (instanceWarmup?.TryTake(required, _options.DevTools) is { } warm)
+        {
+            _vk = warm.Api;
+            instance = warm.Instance;
+        }
+        else
+        {
+            _vk = GraphicalVulkanLoader.CreateApi();
+            instance = VulkanInstanceFactory.Create(
+                _vk,
+                required,
+                enableOptionalExtensions: _options.DevTools);
+        }
         _instance = instance.Instance;
         _instanceExtensions = instance.EnabledExtensions;
 
