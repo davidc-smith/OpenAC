@@ -171,7 +171,8 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         || IsSettingsOpen
         || HasProfileMigrationNotice
         || Plugins.InstallDialog.IsOpen
-        || Plugins.IsRemoveDialogOpen;
+        || Plugins.IsRemoveDialogOpen
+        || IsClosePromptOpen;
 
     public bool HasCancelableOperation => (_operationCancellation is not null && IsBusy) || _rowLaunches.Count > 0;
 
@@ -538,6 +539,12 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
 
     public void CloseActiveModal()
     {
+        if (IsClosePromptOpen)
+        {
+            CancelCloseCommand.Execute(null);
+            return;
+        }
+
         CloseDesktopDialogs();
         ProfileMigrationNotice = null;
         if (TextEditor.IsOpen)
