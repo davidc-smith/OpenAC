@@ -159,7 +159,7 @@ public sealed class DatCollectionAdapter : IDatReaderWriter {
     }
 }
 
-public sealed class DatDatabaseWrapper : IDatDatabase {
+public sealed partial class DatDatabaseWrapper : IDatDatabase {
     private readonly DatDatabase _db;
     private readonly BoundedDatObjectCache _cache = new();
     private readonly object _databaseLock = new();
@@ -191,7 +191,7 @@ public sealed class DatDatabaseWrapper : IDatDatabase {
                 return true;
             }
 
-            if (_db.TryGet<T>(fileId, out value)) {
+            if (TryReadObject(fileId, out value)) {
                 value = _cache.GetOrAdd(fileId, value);
                 return true;
             }
