@@ -149,6 +149,30 @@ public sealed class StatusEventParserTests
         Assert.Equal("graceful", exited.Reason);
     }
 
+    // Ported from the Rust launcher: crates/ac-launcher-core/tests/status.rs
+    // parses_the_window_events. The client reports its game window so a
+    // running row shows its real mode.
+    [Fact]
+    public void ParsesTheWindowEvents()
+    {
+        var opened = StatusEventParser.Parse(
+            """{"v":1,"e":"windowOpened","t":"2026-10-16T12:00:00Z","sessionId":"s1"}""");
+        Assert.Equal("s1", Assert.IsType<WindowOpenedStatusEvent>(opened).SessionId);
+
+        var closed = Assert.IsType<WindowClosedStatusEvent>(StatusEventParser.Parse(
+            """{"v":1,"e":"windowClosed","t":"2026-10-16T12:00:01Z","sessionId":"s1","reason":"requested"}"""));
+        Assert.Equal("requested", closed.Reason);
+
+        var failed = Assert.IsType<WindowFailedStatusEvent>(StatusEventParser.Parse(
+            """{"v":1,"e":"windowFailed","t":"2026-10-16T12:00:02Z","sessionId":"s1","error":"no GPU"}"""));
+        Assert.Equal("no GPU", failed.Error);
+
+        Assert.IsType<MalformedStatusEvent>(StatusEventParser.Parse(
+            """{"v":1,"e":"windowClosed","t":"2026-10-16T12:00:01Z","sessionId":"s1"}"""));
+        Assert.IsType<MalformedStatusEvent>(StatusEventParser.Parse(
+            """{"v":1,"e":"windowFailed","t":"2026-10-16T12:00:02Z","sessionId":"s1"}"""));
+    }
+
     [Fact]
     public void UnknownEValueSurfacesAsUnknownEventRatherThanThrowing()
     {

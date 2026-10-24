@@ -8,7 +8,7 @@ using AcDream.Platform;
 
 namespace AcDream.Launcher.Core.Tests.Orchestration;
 
-public sealed class LauncherOrchestratorTests : IDisposable
+public sealed partial class LauncherOrchestratorTests : IDisposable
 {
     private const string Password = "launcher-only-secret";
     private readonly string _root;
@@ -262,7 +262,7 @@ public sealed class LauncherOrchestratorTests : IDisposable
         FakeSupervisor supervisor = Assert.Single(supervisors.Created);
         Assert.Equal("gui-host", supervisor.Spec!.ExecutablePath);
         Assert.Equal(
-            ["--session-config", config.LastComposed!.ConfigFilePath],
+            ["--session-config", config.LastComposed!.ConfigFilePath, "--console"],
             supervisor.Spec.Arguments);
         // The child is told the launcher's own install folder rather than
         // left to guess it. Mutation: dropping the environment from the spec
@@ -669,9 +669,12 @@ public sealed class LauncherOrchestratorTests : IDisposable
 
         Assert.False(gui.IsAvailable);
         Assert.Contains("missing-gui", gui.Reason, StringComparison.Ordinal);
+        // A headless row starts the graphical client with no window; the character
+        // refresh still runs the windowless host.
         Assert.False(headless.IsAvailable);
-        Assert.Contains("missing-headless", headless.Reason, StringComparison.Ordinal);
+        Assert.Contains("missing-gui", headless.Reason, StringComparison.Ordinal);
         Assert.False(probe.IsAvailable);
+        Assert.Contains("missing-headless", probe.Reason, StringComparison.Ordinal);
         await Assert.ThrowsAsync<LauncherOperationException>(() =>
             orchestrator.LaunchAsync(
                 "Local ACE",
@@ -910,7 +913,8 @@ public sealed class LauncherOrchestratorTests : IDisposable
         IStatusEventSourceFactory? statusSourceFactory = null,
         LauncherExecutableSet? executables = null,
         UpdateSessionBarrier? updateSessionBarrier = null,
-        string? secondSpelling = null)
+        string? secondSpelling = null,
+        TimeProvider? timeProvider = null)
     {
         string profilePath = Path.Combine(
             _paths.ConfigDirectory,
@@ -957,7 +961,8 @@ public sealed class LauncherOrchestratorTests : IDisposable
             supervisorFactory ?? new FakeSupervisorFactory(),
             statusSourceFactory ?? new QueueStatusSourceFactory(),
             () => $"s{Interlocked.Increment(ref nextSession)}",
-            updateSessionBarrier: updateSessionBarrier);
+            updateSessionBarrier: updateSessionBarrier,
+            timeProvider: timeProvider);
         orchestrator.LoadProfiles();
         return orchestrator;
     }
@@ -1098,6 +1103,12 @@ public sealed class LauncherOrchestratorTests : IDisposable
 
         public string? PasswordWrittenToStdin { get; private set; }
 
+        /// <summary>Console lines sent to the child.</summary>
+        public List<string> Lines { get; } = [];
+
+        /// <summary>The child takes no console input.</summary>
+        public bool RefusesLines { get; set; }
+
         public int StopCallCount { get; private set; }
 
         public event EventHandler<LauncherSessionState>? StateChanged;
@@ -1129,6 +1140,14 @@ public sealed class LauncherOrchestratorTests : IDisposable
             State = LauncherSessionState.Exited;
             ExitCode = code;
             StateChanged?.Invoke(this, State);
+        }
+
+        public bool TrySendLine(string line)
+        {
+            if (RefusesLines || State != LauncherSessionState.Running)
+                return false;
+            Lines.Add(line);
+            return true;
         }
 
         public void Dispose()

@@ -86,6 +86,20 @@ public static class StatusEventParser
                         ParseDisconnected(root, v, e, t, sessionId),
                     "exited" =>
                         ParseExited(root, v, e, t, sessionId),
+                    "windowOpened" =>
+                        new WindowOpenedStatusEvent { V = v, E = e, T = t, SessionId = sessionId },
+                    "windowClosed" =>
+                        new WindowClosedStatusEvent
+                        {
+                            V = v, E = e, T = t, SessionId = sessionId,
+                            Reason = RequireString(root, "reason"),
+                        },
+                    "windowFailed" =>
+                        new WindowFailedStatusEvent
+                        {
+                            V = v, E = e, T = t, SessionId = sessionId,
+                            Error = RequireString(root, "error"),
+                        },
                     _ => throw new InvalidOperationException("known event dispatch is incomplete."),
                 };
             }
@@ -113,7 +127,10 @@ public static class StatusEventParser
             "characterCreated" or
             "creationFailed" or
             "disconnected" or
-            "exited";
+            "exited" or
+            "windowOpened" or
+            "windowClosed" or
+            "windowFailed";
 
     private static bool TryGetEventName(
         JsonElement root,
