@@ -15,27 +15,31 @@ using AcDream.UI.Abstractions.Panels.Vitals;
 namespace AcDream.App.Plugins;
 
 /// <summary>
-/// The parts the windowed host's live-session bindings are built from. Each is
-/// a leaf the session composition already owns, named here so the record the
-/// session host is really given can be built -- and inspected -- without
-/// opening a window.
+/// The parts the windowed host's live-session bindings are built from. The
+/// session host owns these for the life of the process, before any window;
+/// what only a window can do is reached through <see cref="Presentation"/>,
+/// asked again at every call, so a binding reaches the window attached when
+/// it runs and a session with no window is answered without one. Named here
+/// so the record the session host is really given can be built -- and
+/// inspected -- without opening a window.
 /// </summary>
 internal sealed record GraphicalSessionHostParts
 {
-    /// <summary>How this host takes hold of an opened world connection.</summary>
-    public required Func<WorldSession, ILiveSessionEventRouting> CreateEvents
-    {
-        get; init;
-    }
-
-    /// <summary>The outbound half of the same.</summary>
+    /// <summary>The outbound half of an opened world connection.</summary>
     public required Func<WorldSession, ILiveSessionCommandRouting> CreateCommands
     {
         get; init;
     }
 
-    /// <summary>Puts every owner back to its starting state for a new generation.</summary>
-    public required Action<RuntimeGenerationToken> Reset { get; init; }
+    /// <summary>
+    /// Puts the runtime back to its starting state for a new generation when
+    /// no window is attached: nothing is drawn, so nothing drawn is taken
+    /// down.
+    /// </summary>
+    public required Action<RuntimeGenerationToken> ResetWithoutWindow { get; init; }
+
+    /// <summary>The window presenting the session right now, if any.</summary>
+    public required Func<GraphicalSessionPresentation?> Presentation { get; init; }
 
     public required LocalPlayerIdentityState Identity { get; init; }
 
@@ -43,25 +47,9 @@ internal sealed record GraphicalSessionHostParts
 
     public required CombatState Combat { get; init; }
 
-    public required RuntimeSettingsController Settings { get; init; }
-
-    public required PlayerModeAutoEntry PlayerModeAutoEntry { get; init; }
-
-    public required GpuWorldState WorldState { get; init; }
-
-    public required DeferredLocalPlayerTeleportNetworkSink Teleport { get; init; }
-
     public required SessionStatusWriter StatusWriter { get; init; }
 
     public required string SessionId { get; init; }
-
-    public VitalsVM? Vitals { get; init; }
-
-    public RetailUiRuntime? RetainedUi { get; init; }
-
-    public PaperdollFramePresenter? Paperdoll { get; init; }
-
-    public WorldAudioSessionGate? WorldAudio { get; init; }
 
     public LoginCommandSequence? LoginCommands { get; init; }
 
@@ -71,6 +59,46 @@ internal sealed record GraphicalSessionHostParts
     /// binding that arrived empty.
     /// </summary>
     public Action<string>? Warn { get; init; }
+}
+
+/// <summary>
+/// What a window lends the live session while it is attached: how it takes
+/// hold of an opened world connection's events, how it puts what it draws
+/// back to the start of a generation, the client commands that need
+/// something to look at, and the owners the session's login steps reach.
+/// </summary>
+internal sealed record GraphicalSessionPresentation
+{
+    /// <summary>How this window takes hold of an opened world connection.</summary>
+    public required Func<WorldSession, ILiveSessionEventRouting> CreateEvents
+    {
+        get; init;
+    }
+
+    /// <summary>
+    /// Puts every owner, the runtime's and the window's, back to its starting
+    /// state for a new generation, in the window's order.
+    /// </summary>
+    public required Action<RuntimeGenerationToken> Reset { get; init; }
+
+    /// <summary>The client commands this window carries out.</summary>
+    public required RuntimeClientCommandHostBindings ClientCommands { get; init; }
+
+    public required RuntimeSettingsController Settings { get; init; }
+
+    public required PlayerModeAutoEntry PlayerModeAutoEntry { get; init; }
+
+    public required GpuWorldState WorldState { get; init; }
+
+    public required DeferredLocalPlayerTeleportNetworkSink Teleport { get; init; }
+
+    public VitalsVM? Vitals { get; init; }
+
+    public RetailUiRuntime? RetainedUi { get; init; }
+
+    public PaperdollFramePresenter? Paperdoll { get; init; }
+
+    public WorldAudioSessionGate? WorldAudio { get; init; }
 }
 
 /// <summary>
@@ -120,45 +148,62 @@ internal static partial class GraphicalAutomationCapabilities
         GraphicalSessionHostParts parts)
     {
         ArgumentNullException.ThrowIfNull(parts);
-        RetailUiRuntime? retainedUi = parts.RetainedUi;
-        PaperdollFramePresenter? paperdoll = parts.Paperdoll;
-        VitalsVM? vitals = parts.Vitals;
-        WorldAudioSessionGate? worldAudio = parts.WorldAudio;
-        RuntimeSettingsController settings = parts.Settings;
         SessionStatusWriter status = parts.StatusWriter;
         string sessionId = parts.SessionId;
         LocalPlayerIdentityState identity = parts.Identity;
         RuntimeCommunicationState communication = parts.Communication;
+        Func<GraphicalSessionPresentation?> window = parts.Presentation;
         var bindings = new LiveSessionHostBindings(
-            Routing: new(parts.CreateEvents, parts.CreateCommands),
-            Reset: parts.Reset,
+            Routing: new(
+                session => (window()
+                    ?? throw new InvalidOperationException(
+                        "No window is attached to take hold of this "
+                        + "session's world events."))
+                    .CreateEvents(session),
+                parts.CreateCommands),
+            Reset: generation =>
+            {
+                if (window() is { } attached)
+                    attached.Reset(generation);
+                else
+                    parts.ResetWithoutWindow(generation);
+            },
             Selection: new(
                 SetPlayerIdentity: id => identity.ServerGuid = id,
-                SetVitalsIdentity: id => vitals?.SetLocalPlayerGuid(id),
+                SetVitalsIdentity: id => window()?.Vitals?.SetLocalPlayerGuid(id),
                 SetChatIdentity: id =>
                     communication.Chat.SetLocalPlayerGuid(id),
-                MarkPersistent: id => parts.WorldState.MarkPersistent(id),
+                MarkPersistent: id => window()?.WorldState.MarkPersistent(id),
                 SetVanishProbeIdentity: id => EntityVanishProbe.PlayerGuid = id,
                 ClearCombat: () => parts.Combat.Clear(),
-                ArmLoginTunnel: () => parts.Teleport.ArmLoginTunnel()),
+                ArmLoginTunnel: () => window()?.Teleport.ArmLoginTunnel()),
             EnteredWorld: new(
-                SetActiveCharacter: name => settings.SetActiveCharacter(name),
+                SetActiveCharacter: name =>
+                    window()?.Settings.SetActiveCharacter(name),
                 RestoreLayout: () =>
                 {
-                    settings.SetGameplayDisplay(true);
+                    if (window() is not { } attached)
+                        return;
+                    RetailUiRuntime? retainedUi = attached.RetainedUi;
+                    attached.Settings.SetGameplayDisplay(true);
                     retainedUi?.RestoreLayout();
                     retainedUi?.InventoryPanelController?.Populate();
-                    paperdoll?.MarkDirty();
+                    attached.Paperdoll?.MarkDirty();
                     retainedUi?.RedeclareSocialPanelAfterWorldEntry();
                 },
-                SyncToolbar: () => retainedUi?.SyncToolbarWindowButtons(),
+                SyncToolbar: () =>
+                    window()?.RetainedUi?.SyncToolbarWindowButtons(),
                 LoadCharacterSettings: name =>
                 {
-                    settings.LoadCharacterContext(name);
-                    retainedUi?.LoadJournal(name);
+                    if (window() is not { } attached)
+                        return;
+                    attached.Settings.LoadCharacterContext(name);
+                    attached.RetainedUi?.LoadJournal(name);
                 },
-                ArmPlayerModeAutoEntry: () => parts.PlayerModeAutoEntry.Arm(),
-                ResumeWorldAudio: () => worldAudio?.ResumeForWorldEntry()),
+                ArmPlayerModeAutoEntry: () =>
+                    window()?.PlayerModeAutoEntry.Arm(),
+                ResumeWorldAudio: () =>
+                    window()?.WorldAudio?.ResumeForWorldEntry()),
             Connecting: (host, port, user) =>
                 communication.Chat.OnSystemMessage(
                     $"connecting to {host}:{port} as {user}",
@@ -193,6 +238,67 @@ internal static partial class GraphicalAutomationCapabilities
             ConditionalSessionHostBindings,
             parts.Warn);
         return bindings;
+    }
+
+    /// <summary>
+    /// The client-command hooks a world connection's command route is built
+    /// with. Each asks for the hooks of the window attached when the command
+    /// runs, so a route opened before a window, or kept across one, reaches
+    /// the window that is there; with none, a command that needs one says so
+    /// in the words the windowless client uses.
+    /// </summary>
+    internal static RuntimeClientCommandHostBindings ResolveClientCommandsPerCall(
+        Func<RuntimeClientCommandHostBindings?> current,
+        Action needsAWindow)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(needsAWindow);
+        return new RuntimeClientCommandHostBindings
+        {
+            ToggleFrameRate = () => Run(current()?.ToggleFrameRate),
+            // The lock is a character option either way; only showing it
+            // needs a window, so with none there is nothing more to do.
+            SetUiLocked = locked => current()?.SetUiLocked?.Invoke(locked),
+            // With no window the question is not asked and the continuation
+            // does not run: a command that needs consent must not act
+            // without it.
+            ShowConfirmation = (message, completed) =>
+            {
+                if (current()?.ShowConfirmation is { } ask)
+                    ask(message, completed);
+                else
+                    needsAWindow();
+            },
+            SaveUi = name => RunWith(current()?.SaveUi, name),
+            LoadUi = name => RunWith(current()?.LoadUi, name),
+            SaveAutoUi = () => Run(current()?.SaveAutoUi),
+            LoadAutoUi = () => Run(current()?.LoadAutoUi),
+            FillComponentBuyList = (category, maximumPrice) =>
+            {
+                if (current()?.FillComponentBuyList is { } fill)
+                    fill(category, maximumPrice);
+                else
+                    needsAWindow();
+            },
+            SetLandscapeRadius = radius => RunWith(current()?.SetLandscapeRadius, radius),
+            SetFieldOfView = degrees => RunWith(current()?.SetFieldOfView, degrees),
+        };
+
+        void Run(Action? hook)
+        {
+            if (hook is not null)
+                hook();
+            else
+                needsAWindow();
+        }
+
+        void RunWith<T>(Action<T>? hook, T value)
+        {
+            if (hook is not null)
+                hook(value);
+            else
+                needsAWindow();
+        }
     }
 
     /// <summary>

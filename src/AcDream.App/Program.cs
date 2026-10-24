@@ -210,7 +210,8 @@ using var sessionHost = new GraphicalSessionHost(
     runtimeOptions,
     worldGameState,
     worldEvents,
-    automation);
+    automation,
+    applicationPaths.LogsDirectory);
 var host = new AppPluginHost(
     new SerilogAdapter(Log.Logger),
     worldGameState,

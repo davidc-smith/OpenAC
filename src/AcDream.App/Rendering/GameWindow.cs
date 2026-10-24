@@ -502,8 +502,7 @@ public sealed class GameWindow :
         // The runtime is the session host's; the window presents it.
         _runtime = host.Runtime;
         _runtimeHostLease = host.RuntimeHostLease;
-        _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
-            _runtime.PlayerIdentity);
+        _localPlayerIdentity = host.PlayerIdentity;
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
             _runtime);
         _worldEnvironment = new AcDream.App.World.WorldEnvironmentController(
@@ -1446,14 +1445,7 @@ public sealed class GameWindow :
                     _combatFeedback,
                     _portalTunnelFallback,
                     Console.WriteLine,
-                    _automation is null
-                        ? null
-                        : _automation.TryHandlePluginCommand,
-                    _automation is null
-                        ? null
-                        : _automation.InterceptChatInput,
-                    _statusWriter,
-                    ChatLogDirectory: _applicationPaths.LogsDirectory),
+                    _host.LiveSession),
                 this).Compose(
                     hostInputCamera,
                     contentEffectsAudio,

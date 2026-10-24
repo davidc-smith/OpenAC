@@ -83,10 +83,7 @@ internal sealed record SessionPlayerDependencies(
     CombatFeedbackSlot CombatFeedback,
     TransferableResourceSlot<PortalTunnelPresentation> PortalTunnelFallback,
     Action<string> Log,
-    Func<string, bool>? TryHandlePluginCommand,
-    Func<string, AcDream.Plugin.Abstractions.PluginChatInputDecision>? InterceptChatInput,
-    SessionStatusWriter StatusWriter,
-    string? ChatLogDirectory = null)
+    AcDream.App.Hosting.GraphicalLiveSession LiveSession)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -333,9 +330,9 @@ internal sealed class SessionPlayerCompositionPhase
         Fault(SessionPlayerCompositionPoint.StreamingCreated);
 
         bindings = new SessionPlayerRuntimeBindings();
-        var liveSessionCommands = new LiveSessionCommandSurface(
-            d.TryHandlePluginCommand,
-            d.InterceptChatInput);
+        // The command surface is the session host's, built before any
+        // window; this window routes through it while it is attached.
+        LiveSessionCommandSurface liveSessionCommands = d.LiveSession.Commands;
         var settingsTargets = new RuntimeSettingsTargets(
             d.Settings.DisplayWindowTarget ?? new SilkRuntimeDisplayWindowTarget(d.Window),
             live.DrawDispatcher,
@@ -1091,25 +1088,15 @@ internal sealed class SessionPlayerCompositionPhase
                 firstEntryDrive,
                 acceptedPositionDrive,
                 remotePlacementDrive),
-            liveSessionCommands,
             d.Log,
-            d.StatusWriter,
-            d.Options.SessionId ?? "app",
-            d.Options.LoginCommands,
-            d.Options.LoginCommandDelayMs,
-            chatLogDirectory: d.ChatLogDirectory,
             noteOptionsSeeded: () => optionsSeeder?.NoteOptionsSeeded());
-        LiveSessionHost sessionHost = sessionRuntimeFactory.Create(
-            liveSession,
-            new LiveSessionConnectOptions(
-                d.Options.LiveMode,
-                d.Options.LiveHost,
-                d.Options.LivePort,
-                d.Options.LiveUser ?? string.Empty,
-                d.Options.LivePass ?? string.Empty,
-                d.Options.LiveCharacterSelector,
-                AwaitCharacterSelection:
-                    d.Options.LiveCharacterSelector is null));
+        // The live session is the session host's; this window lends it what
+        // it draws until the window's session bindings are disposed, which
+        // the shutdown manifest does after the session has stopped.
+        bindings.Adopt(
+            "live-session presentation",
+            d.LiveSession.AttachPresentation(sessionRuntimeFactory.Create()));
+        LiveSessionHost sessionHost = d.LiveSession.Host;
         Fault(SessionPlayerCompositionPoint.SessionHostCreated);
 
         Action<string>? debugToast = null;
