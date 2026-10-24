@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using Microsoft.Win32.SafeHandles;
 
 namespace AcDream.Content.Pak;
 
@@ -153,36 +154,58 @@ public sealed class PakReader : IDisposable {
         if (judged && verdict == 0) return PakObjectReadStatus.Corrupt;
 
         PakTocEntry entry = ReadToc(index);
-        uint storedLength = entry.StoredLength;
-        bytes = new byte[checked((int)storedLength)];
-        _accessor.ReadArray((long)entry.Offset, bytes, 0, checked((int)storedLength));
+        // The stored bytes are checked and decompressed straight from the
+        // mapped file: copying them out first doubled every read's garbage.
+        using StoredBlob stored = new(_accessor, entry);
 
         if (!judged) {
-            uint actualCrc = Crc32.Compute(bytes);
+            uint actualCrc = Crc32.Compute(stored.Span);
             if (actualCrc != entry.Crc32) {
                 _entryVerdictByTocIndex[index] = 0;
                 LogCorruptionOnce(index, $"crc mismatch (expected 0x{entry.Crc32:X8}, got 0x{actualCrc:X8})");
-                bytes = null;
                 return PakObjectReadStatus.Corrupt;
             }
             _entryVerdictByTocIndex[index] = 1;
         }
 
-        if (entry.IsCompressed) {
-            try {
-                bytes = PakBlobCodec.Decode(bytes);
-            }
-            catch (Exception ex) when (ex is InvalidDataException or OverflowException) {
-                _entryVerdictByTocIndex[index] = 0;
-                LogCorruptionOnce(
-                    index,
-                    $"decompression failed despite matching CRC: {ex.Message}");
-                bytes = null;
-                return PakObjectReadStatus.Corrupt;
-            }
+        if (!entry.IsCompressed) {
+            bytes = stored.Span.ToArray();
+            return PakObjectReadStatus.Loaded;
+        }
+
+        try {
+            bytes = PakBlobCodec.Decode(stored.Span);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or OverflowException) {
+            _entryVerdictByTocIndex[index] = 0;
+            LogCorruptionOnce(
+                index,
+                $"decompression failed despite matching CRC: {ex.Message}");
+            bytes = null;
+            return PakObjectReadStatus.Corrupt;
         }
 
         return PakObjectReadStatus.Loaded;
+    }
+
+    /// <summary>
+    /// One entry's stored bytes, read in place from the mapped file. The view
+    /// is held (a reference on its handle) until disposed, so closing the
+    /// reader cannot unmap the bytes under a read in progress.
+    /// </summary>
+    private readonly unsafe ref struct StoredBlob {
+        private readonly SafeMemoryMappedViewHandle _view;
+        public readonly ReadOnlySpan<byte> Span;
+
+        public StoredBlob(MemoryMappedViewAccessor accessor, in PakTocEntry entry) {
+            int length = checked((int)entry.StoredLength);
+            _view = accessor.SafeMemoryMappedViewHandle;
+            byte* start = null;
+            _view.AcquirePointer(ref start);
+            Span = new ReadOnlySpan<byte>(start + accessor.PointerOffset + (long)entry.Offset, length);
+        }
+
+        public void Dispose() => _view.ReleasePointer();
     }
 
     private byte[] ResolveTexturePayload(ulong key) {
@@ -267,10 +290,9 @@ public sealed class PakReader : IDisposable {
         if (_entryVerdictByTocIndex.TryGetValue(tocIndex, out var cached)) return cached;
 
         PakTocEntry entry = ReadToc(tocIndex);
-        uint storedLength = entry.StoredLength;
-        var bytes = new byte[checked((int)storedLength)];
-        _accessor.ReadArray((long)entry.Offset, bytes, 0, checked((int)storedLength));
-        uint actualCrc = Crc32.Compute(bytes);
+        uint actualCrc;
+        using (StoredBlob stored = new(_accessor, entry))
+            actualCrc = Crc32.Compute(stored.Span);
         bool ok = actualCrc == entry.Crc32;
 
         _entryVerdictByTocIndex[tocIndex] = ok ? 1 : 0;

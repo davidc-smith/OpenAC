@@ -2,6 +2,7 @@ using DatReaderWriter;
 using DatReaderWriter.Enums;
 using DatReaderWriter.Lib.IO;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
@@ -94,7 +95,7 @@ public sealed class DatCollectionAdapter : IDatReaderWriter {
         void CheckDb(DatDatabaseWrapper wrapper) {
             var rawDb = wrapper.RawDatabase;
             if (rawDb.Tree.TryGetFile(id, out _)) {
-                var type = rawDb.TypeFromId(id);
+                var type = wrapper.TypeFromId(id);
                 if (type != DBObjType.Unknown)
                     results.Add(new IDatReaderWriter.IdResolution(wrapper, type));
             }
@@ -140,7 +141,7 @@ public sealed class DatCollectionAdapter : IDatReaderWriter {
         out DBObjType type) {
         DatDatabase raw = database.RawDatabase;
         if (raw.Tree.TryGetFile(id, out _)) {
-            type = raw.TypeFromId(id);
+            type = database.TypeFromId(id);
             if (type != DBObjType.Unknown)
                 return true;
         }
@@ -171,6 +172,14 @@ public sealed class DatDatabaseWrapper : IDatDatabase {
     }
 
     internal DatDatabase RawDatabase => _db;
+
+    // The library works an id's type out with LINQ over its attribute tables
+    // on every call; the answer for an id never changes, so it is kept.
+    private readonly ConcurrentDictionary<uint, DBObjType> _typeById = new();
+
+    /// <summary>The object type stored under <paramref name="id"/> in this file.</summary>
+    internal DBObjType TypeFromId(uint id) =>
+        _typeById.GetOrAdd(id, static (key, db) => db.TypeFromId(key), _db);
 
     public DatDatabase Db => _db;
     public int Iteration => _db.Iteration?.CurrentIteration ?? 0;
