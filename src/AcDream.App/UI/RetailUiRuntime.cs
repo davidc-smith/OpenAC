@@ -2970,6 +2970,15 @@ public sealed class RetailUiRuntime : IDisposable
             }
         }
 
+        // Every row of the list is built from the same template; it is read once.
+        var templates = new LayoutTemplateInfoCache((templateLayoutId, templateElementId) =>
+        {
+            lock (_bindings.Assets.DatLock)
+            {
+                return LayoutImporter.ImportInfos(
+                    _bindings.Assets.Dats, templateLayoutId, templateElementId);
+            }
+        });
         Layout.KeyboardConfigController? controller = Layout.KeyboardConfigController.Bind(
             layout,
             snapshot,
@@ -2977,8 +2986,7 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 lock (_bindings.Assets.DatLock)
                 {
-                    ElementInfo? templateInfo = LayoutImporter.ImportInfos(
-                        _bindings.Assets.Dats, templateLayoutId, templateElementId);
+                    ElementInfo? templateInfo = templates.Get(templateLayoutId, templateElementId);
                     return templateInfo is null
                         ? null
                         : LayoutImporter.Build(
@@ -3132,8 +3140,7 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 lock (_bindings.Assets.DatLock)
                 {
-                    ElementInfo? templateInfo = LayoutImporter.ImportInfos(
-                        _bindings.Assets.Dats, templateLayoutId, templateElementId);
+                    ElementInfo? templateInfo = templates.Get(templateLayoutId, templateElementId);
                     return templateInfo is null || templateInfo.FontDid == 0u
                         ? null
                         : _bindings.Assets.ResolveFont(templateInfo.FontDid);
