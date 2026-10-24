@@ -1175,9 +1175,6 @@ internal sealed class LivePresentationCompositionPhase
             },
             removeEnvCells: landblockId => envCells?.RemoveLandblock(landblockId),
             envCellPublisher: envCells);
-        var landblockPhysicsPublisher = new LandblockPhysicsPublisher(
-            d.EntityObjects.Physics,
-            world.TerrainBuild.HeightTable);
         var landblockStaticPublisher =
             new LandblockStaticPresentationPublisher(
                 content.LightingSink,
@@ -1186,14 +1183,12 @@ internal sealed class LivePresentationCompositionPhase
         var landblockRetirementOwner =
             new LandblockPresentationRetirementOwner(
                 landblockRenderPublisher,
-                landblockPhysicsPublisher,
                 landblockStaticPublisher,
                 content.LightingSink,
                 d.TranslucencyFades);
         var landblockLoaded = new DeferredLiveEntityLandblockLoadedSink();
         var landblockPipeline = new LandblockPresentationPipeline(
             landblockRenderPublisher,
-            landblockPhysicsPublisher,
             landblockStaticPublisher,
             worldState,
             landblockRetirementOwner,

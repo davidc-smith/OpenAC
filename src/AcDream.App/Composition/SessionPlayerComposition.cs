@@ -83,7 +83,8 @@ internal sealed record SessionPlayerDependencies(
     CombatFeedbackSlot CombatFeedback,
     TransferableResourceSlot<PortalTunnelPresentation> PortalTunnelFallback,
     Action<string> Log,
-    AcDream.App.Hosting.GraphicalLiveSession LiveSession)
+    AcDream.App.Hosting.GraphicalLiveSession LiveSession,
+    AcDream.App.Hosting.GraphicalSessionCollision Collision)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -273,7 +274,6 @@ internal sealed class SessionPlayerCompositionPhase
                 "prepared-collision catalog.");
         var landblockBuildFactory = new LandblockBuildFactory(
             content.Dats,
-            preparedCollisions,
             d.DatLock,
             world.TerrainBuild.HeightTable,
             d.Options.DumpSceneryZ);
@@ -330,6 +330,17 @@ internal sealed class SessionPlayerCompositionPhase
         Fault(SessionPlayerCompositionPoint.StreamingCreated);
 
         bindings = new SessionPlayerRuntimeBindings();
+        // The session's collision is built by the session host from the same
+        // files, not from the landblocks this window streams to draw.
+        bindings.Adopt(
+            "session collision content",
+            d.Collision.BindContent(
+                new AcDream.App.Hosting.GraphicalCollisionContent(
+                    content.Dats,
+                    d.DatLock,
+                    preparedCollisions,
+                    System.Collections.Immutable.ImmutableArray.Create(
+                        world.TerrainBuild.HeightTable))));
         // The command surface is the session host's, built before any
         // window; this window routes through it while it is attached.
         LiveSessionCommandSurface liveSessionCommands = d.LiveSession.Commands;
@@ -399,8 +410,10 @@ internal sealed class SessionPlayerCompositionPhase
                     streaming.NearRadius,
                     streaming.FarRadius)),
             streaming.IsRenderNeighborhoodResident,
-            d.PhysicsEngine.IsSpawnCellReady,
-            d.PhysicsEngine.IsNeighborhoodTerrainResident,
+            // Collision readiness is the session's neighborhood, the same
+            // question the windowless client asks, indoors and out.
+            d.Collision.IsReady,
+            (destinationCell, _) => d.Collision.IsReady(destinationCell),
             () => revealDispatcher?.CompositeTexturesReady ?? true,
             (destinationCell, radius) =>
             {
@@ -623,7 +636,8 @@ internal sealed class SessionPlayerCompositionPhase
             firstEntryCollision,
             new GraphicalRemotePlacementServiceWindow(
                 live.WorldState,
-                streaming.IsLandblockPresentationReady),
+                streaming.IsLandblockPresentationReady,
+                d.Collision.IsCollisionPublished),
             d.MotionBindings.HostFacts);
         d.MotionBindings.BindArming(remoteArming);
         RuntimeRemotePlacementDriveController remotePlacementDrive =

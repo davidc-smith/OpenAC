@@ -462,7 +462,7 @@ public sealed class GameWindow :
     private LiveSessionHost? _liveSessionHost;
     private AcDream.Core.Net.WorldSession? LiveSession =>
         _liveSessionHost?.CurrentSession;
-    private readonly AcDream.App.World.LiveWorldOriginState _liveWorldOrigin = new();
+    private readonly AcDream.App.World.LiveWorldOriginState _liveWorldOrigin;
     private int _liveCenterX => _liveWorldOrigin.CenterX;
     private int _liveCenterY => _liveWorldOrigin.CenterY;
     private static readonly IReadOnlyDictionary<uint, AcDream.Core.Net.WorldSession.EntitySpawn> EmptyLiveSpawnMap =
@@ -503,6 +503,8 @@ public sealed class GameWindow :
         _runtime = host.Runtime;
         _runtimeHostLease = host.RuntimeHostLease;
         _localPlayerIdentity = host.PlayerIdentity;
+        // The world frame a window draws from is the session's.
+        _liveWorldOrigin = host.WorldOrigin;
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
             _runtime);
         _worldEnvironment = new AcDream.App.World.WorldEnvironmentController(
@@ -1445,7 +1447,8 @@ public sealed class GameWindow :
                     _combatFeedback,
                     _portalTunnelFallback,
                     Console.WriteLine,
-                    _host.LiveSession),
+                    _host.LiveSession,
+                    _host.Collision),
                 this).Compose(
                     hostInputCamera,
                     contentEffectsAudio,

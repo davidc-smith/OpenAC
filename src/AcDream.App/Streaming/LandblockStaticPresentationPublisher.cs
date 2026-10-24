@@ -15,7 +15,7 @@ public sealed class LandblockStaticPresentationPublication
 
     internal LandblockStaticPresentationPublication(
         object owner,
-        LandblockPhysicsPublication physicsPublication,
+        LandblockBuild build,
         Dictionary<uint, WorldEntity> entities,
         Dictionary<uint, WorldEntitySnapshot> snapshots,
         IReadOnlyDictionary<uint, uint> priorActive,
@@ -23,18 +23,18 @@ public sealed class LandblockStaticPresentationPublication
         uint[] orderedPreviouslyActiveIds)
     {
         Owner = owner;
-        PhysicsPublication = physicsPublication;
+        Build = build;
         _entities = entities;
         _snapshots = snapshots;
         PriorActive = priorActive;
         PreviouslyActiveIds = previouslyActiveIds;
         _orderedPreviouslyActiveIds = orderedPreviouslyActiveIds;
         _replacementActive = new Dictionary<uint, uint>(
-            physicsPublication.Build.Landblock.Entities.Count);
+            build.Landblock.Entities.Count);
     }
 
     internal object Owner { get; }
-    internal LandblockPhysicsPublication PhysicsPublication { get; }
+    internal LandblockBuild Build { get; }
     /// <summary>The source id of each static this landblock published last
     /// time, the only thing a republication reads back from it.</summary>
     internal IReadOnlyDictionary<uint, uint> PriorActive { get; }
@@ -51,11 +51,13 @@ public sealed class LandblockStaticPresentationPublication
     internal int PreparationCursor { get; set; }
     internal bool PreparationCommitted { get; set; }
     internal int PriorCleanupCursor { get; set; }
+    internal int LightingCursor { get; set; }
+    internal bool LightingCommitted { get; set; }
     internal int PluginCursor { get; set; }
     internal bool BeginCommitted { get; set; }
     internal bool CompletionCommitted { get; set; }
 
-    public uint LandblockId => PhysicsPublication.LandblockId;
+    public uint LandblockId => Build.Landblock.LandblockId;
     public IReadOnlyDictionary<uint, WorldEntity> Entities => _entities;
     public IReadOnlyDictionary<uint, WorldEntitySnapshot> Snapshots => _snapshots;
 }
@@ -119,10 +121,10 @@ public sealed class LandblockStaticPresentationPublisher
         && ReferenceEquals(_translucency, translucency);
 
     public LandblockStaticPresentationPublication PreparePublication(
-        LandblockPhysicsPublication physicsPublication)
+        LandblockBuild build)
     {
         LandblockStaticPresentationPublication publication =
-            CreatePublication(physicsPublication);
+            CreatePublication(build);
         while (!AdvancePreparationOne(publication))
         {
         }
@@ -130,11 +132,11 @@ public sealed class LandblockStaticPresentationPublisher
     }
 
     internal LandblockStaticPresentationPublication CreatePublication(
-        LandblockPhysicsPublication physicsPublication)
+        LandblockBuild build)
     {
-        ArgumentNullException.ThrowIfNull(physicsPublication);
+        ArgumentNullException.ThrowIfNull(build);
 
-        uint canonical = Canonicalize(physicsPublication.LandblockId);
+        uint canonical = Canonicalize(build.Landblock.LandblockId);
         _activeByLandblock.TryGetValue(
             canonical,
             out Dictionary<uint, uint>? active);
@@ -146,7 +148,7 @@ public sealed class LandblockStaticPresentationPublisher
         uint[] orderedPrevious = previous.Order().ToArray();
         return new LandblockStaticPresentationPublication(
             _receiptOwner,
-            physicsPublication,
+            build,
             entities,
             snapshots,
             active ?? new Dictionary<uint, uint>(),
@@ -162,7 +164,7 @@ public sealed class LandblockStaticPresentationPublisher
             return true;
 
         IReadOnlyList<WorldEntity> source =
-            publication.PhysicsPublication.Build.Landblock.Entities;
+            publication.Build.Landblock.Entities;
         uint canonical = Canonicalize(publication.LandblockId);
         if (publication.PreparationCursor < source.Count)
         {
@@ -250,7 +252,44 @@ public sealed class LandblockStaticPresentationPublisher
         return true;
     }
 
-    public void PrepareEntityBeforeCollision(
+    /// <summary>
+    /// Registers the lights of every DAT static in the landblock, one entity
+    /// per call, after the begin step cleared what the landblock showed
+    /// before. True once every entity is done.
+    /// </summary>
+    internal bool AdvanceLightingOne(
+        LandblockStaticPresentationPublication publication)
+    {
+        ValidateReceipt(publication);
+        if (!publication.BeginCommitted)
+            throw new InvalidOperationException(
+                "Static presentation cannot light an entity before begin commits.");
+        if (publication.LightingCommitted)
+            return true;
+
+        IReadOnlyList<WorldEntity> entities = publication.Build.Landblock.Entities;
+        if (publication.LightingCursor < entities.Count)
+        {
+            PrepareEntityLighting(
+                publication,
+                entities[publication.LightingCursor]);
+            publication.LightingCursor++;
+            return false;
+        }
+
+        publication.LightingCommitted = true;
+        return true;
+    }
+
+    public void PrepareLighting(
+        LandblockStaticPresentationPublication publication)
+    {
+        while (!AdvanceLightingOne(publication))
+        {
+        }
+    }
+
+    public void PrepareEntityLighting(
         LandblockStaticPresentationPublication publication,
         WorldEntity entity)
     {
@@ -273,7 +312,7 @@ public sealed class LandblockStaticPresentationPublisher
         if (!retained)
             _translucency.ClearEntity(entity.Id);
 
-        PhysicsDatBundle datBundle = publication.PhysicsPublication.Build.Landblock.PhysicsDats
+        PhysicsDatBundle datBundle = publication.Build.Landblock.PhysicsDats
             ?? PhysicsDatBundle.Empty;
         uint sourceId = entity.SourceGfxObjOrSetupId;
         if ((sourceId & 0xFF000000u) == 0x02000000u
@@ -296,10 +335,10 @@ public sealed class LandblockStaticPresentationPublisher
     {
         ValidateReceipt(publication);
         if (!publication.BeginCommitted
-            || !publication.PhysicsPublication.CompletionCommitted)
+            || !publication.LightingCommitted)
         {
             throw new InvalidOperationException(
-                "Static presentation requires completed physics publication.");
+                "Static presentation completes after its lighting is prepared.");
         }
         while (!AdvanceCompleteOne(publication))
         {
@@ -311,10 +350,10 @@ public sealed class LandblockStaticPresentationPublisher
     {
         ValidateReceipt(publication);
         if (!publication.BeginCommitted
-            || !publication.PhysicsPublication.CompletionCommitted)
+            || !publication.LightingCommitted)
         {
             throw new InvalidOperationException(
-                "Static presentation requires completed physics publication.");
+                "Static presentation completes after its lighting is prepared.");
         }
         if (publication.CompletionCommitted)
             return true;

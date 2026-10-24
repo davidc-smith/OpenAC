@@ -35,16 +35,14 @@ internal sealed record PublishedLandblock(
         Load(datDirectory, [landblockId], cellsToLocate);
 
     /// <summary>
-    /// Publishes landblocks into one physics world the way the client streams
-    /// them, placed around the first, whose south-west corner is the origin. With
-    /// <paramref name="asHeadless"/>, the landblocks' objects and collision are loaded
-    /// the way the headless host loads them instead, with no renderer's streaming.
+    /// Publishes landblocks into one physics world the way the session's
+    /// collision builds them, placed around the first, whose south-west corner
+    /// is the origin.
     /// </summary>
     public static PublishedLandblock Load(
         string datDirectory,
         IReadOnlyList<uint> landblockIds,
-        IReadOnlyList<uint> cellsToLocate,
-        bool asHeadless = false)
+        IReadOnlyList<uint> cellsToLocate)
     {
         var clock = Stopwatch.StartNew();
         using var dats = new BoundedTestDatCollection(datDirectory);
@@ -54,7 +52,6 @@ internal sealed record PublishedLandblock(
         DatSetup human = Assert.IsType<DatSetup>(bounded.Get<DatSetup>(HumanSetup));
 
         using var collisionSource = new InstalledDatCollisionSource(bounded);
-        var factory = new LandblockBuildFactory(bounded, collisionSource, new object(), heights);
         var cache = PhysicsDataCache.CreateProduction();
         var engine = new PhysicsEngine { DataCache = cache };
         int baseX = (int)((landblockIds[0] >> 24) & 0xFFu);
@@ -66,30 +63,14 @@ internal sealed record PublishedLandblock(
             int blockY = (int)((landblockId >> 16) & 0xFFu);
             var origin = new Vector3((blockX - baseX) * 192f, (blockY - baseY) * 192f, 0f);
             offsets[landblockId & 0xFFFF0000u] = origin;
-            LoadedLandblock landblock;
-            LandblockCollisionBuild collisions;
-            if (asHeadless)
-            {
-                Assert.True(LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
-                    bounded,
-                    collisionSource,
-                    heights,
-                    landblockId,
-                    origin,
-                    out landblock,
-                    out collisions));
-            }
-            else
-            {
-                var request = new LandblockBuildRequest(
-                    landblockId,
-                    LandblockStreamJobKind.LoadNear,
-                    Generation: 1,
-                    new LandblockBuildOrigin(baseX, baseY));
-                LandblockBuild build = Assert.IsType<LandblockBuild>(factory.Build(request));
-                landblock = build.Landblock;
-                collisions = Assert.IsType<LandblockCollisionBuild>(build.Collisions);
-            }
+            Assert.True(LandblockPhysicsContentBuilder.TryLoadCollisionLandblock(
+                bounded,
+                collisionSource,
+                heights,
+                landblockId,
+                origin,
+                out LoadedLandblock landblock,
+                out LandblockCollisionBuild collisions));
 
             TerrainSurface terrain = LandblockPhysicsContentBuilder.BuildTerrainSurface(landblock, heights);
             var cellSurfaces = new List<CellSurface>();

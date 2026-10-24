@@ -137,7 +137,6 @@ internal sealed class TerrainDrawDiagnosticsController
     internal static string FormatFrame(FramePipelineDiagnosticFacts facts)
     {
         LandblockRenderPublisherDiagnostics render = facts.Presentation.Render;
-        LandblockPhysicsPublisherDiagnostics physics = facts.Presentation.Physics;
         LandblockStaticPresentationDiagnostics statics = facts.Presentation.Statics;
         double ticksToMicros = 1_000_000.0 / Stopwatch.Frequency;
         double uploadMedian = facts.UploadTiming.MedianHundredthsMicroseconds / 100.0;
@@ -147,9 +146,6 @@ internal sealed class TerrainDrawDiagnosticsController
             + $"render_total_us=[terrain={render.TerrainPublishTicks * ticksToMicros:F1} "
             + $"begin={render.BeginPublishTicks * ticksToMicros:F1} "
             + $"complete={render.CompletePublishTicks * ticksToMicros:F1}] "
-            + $"physics_total_us=[base={physics.BasePublishTicks * ticksToMicros:F1} "
-            + $"gfx={physics.GfxCacheTicks * ticksToMicros:F1} "
-            + $"complete={physics.CompletePublishTicks * ticksToMicros:F1}] "
             + $"static={statics.BeginCount}/{statics.CompleteCount}"
             + $"(active={statics.ActiveEntityCount})  "
             + $"entUpl_us={uploadMedian:F1}m/{uploadP95:F1}p95  "

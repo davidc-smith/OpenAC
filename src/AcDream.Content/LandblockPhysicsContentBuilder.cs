@@ -371,6 +371,53 @@ public static class LandblockPhysicsContentBuilder
         return entities;
     }
 
+    /// <summary>
+    /// What drawing a landblock reads from its game data beside the meshes:
+    /// the landblock's building list and the setups its buildings and objects
+    /// are made from (their lights). The cells, environments and part shapes
+    /// collision needs are not read; collision is built by
+    /// <see cref="TryLoadCollisionLandblock"/>.
+    /// </summary>
+    public static PhysicsDatBundle BuildPresentationDatBundle(
+        IDatReaderWriter dats,
+        uint landblockId,
+        IReadOnlyList<WorldEntity> entities)
+    {
+        ArgumentNullException.ThrowIfNull(dats);
+        ArgumentNullException.ThrowIfNull(entities);
+
+        var setups = new Dictionary<uint, Setup>();
+        LandBlockInfo? info = dats.Get<LandBlockInfo>(
+            (landblockId & 0xFFFF0000u) | 0xFFFEu);
+        if (info is not null)
+        {
+            foreach (var building in info.Buildings)
+                AddSetup(dats, setups, building.ModelId);
+        }
+        foreach (WorldEntity entity in entities)
+            AddSetup(dats, setups, entity.SourceGfxObjOrSetupId);
+
+        return new PhysicsDatBundle(
+            info,
+            PhysicsDatBundle.Empty.EnvCells,
+            PhysicsDatBundle.Empty.Environments,
+            setups,
+            PhysicsDatBundle.Empty.GfxObjs);
+
+        static void AddSetup(
+            IDatReaderWriter dats,
+            Dictionary<uint, Setup> setups,
+            uint setupId)
+        {
+            if ((setupId & 0xFF000000u) == 0x02000000u
+                && !setups.ContainsKey(setupId)
+                && dats.Get<Setup>(setupId) is { } setup)
+            {
+                setups[setupId] = setup;
+            }
+        }
+    }
+
     public static PhysicsDatBundle BuildDatBundle(
         IDatReaderWriter dats,
         uint landblockId,
@@ -560,6 +607,42 @@ public static class LandblockPhysicsContentBuilder
         ICollection<CellSurface> cellSurfaces,
         ICollection<PortalPlane> portalPlanes)
     {
+        uint count = CellCount(landblock);
+        for (uint offset = 0; offset < count; offset++)
+        {
+            PublishPreparedCell(
+                cache,
+                landblock,
+                collisions,
+                origin,
+                offset,
+                cellSurfaces,
+                portalPlanes);
+        }
+    }
+
+    /// <summary>How many interior cells the landblock's game data lists.</summary>
+    public static uint CellCount(LoadedLandblock landblock)
+    {
+        ArgumentNullException.ThrowIfNull(landblock);
+        return landblock.PhysicsDats?.Info?.NumCells ?? 0u;
+    }
+
+    /// <summary>
+    /// One interior cell, the <paramref name="offset"/>th the landblock lists:
+    /// its structure into the cache, its portals and floor into the lists the
+    /// landblock's collision is made from. A cell with no prepared collision
+    /// adds nothing.
+    /// </summary>
+    public static void PublishPreparedCell(
+        PhysicsDataCache cache,
+        LoadedLandblock landblock,
+        LandblockCollisionBuild collisions,
+        Vector3 origin,
+        uint offset,
+        ICollection<CellSurface> cellSurfaces,
+        ICollection<PortalPlane> portalPlanes)
+    {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(landblock);
         ArgumentNullException.ThrowIfNull(collisions);
@@ -568,79 +651,75 @@ public static class LandblockPhysicsContentBuilder
 
         PhysicsDatBundle dats =
             landblock.PhysicsDats ?? PhysicsDatBundle.Empty;
-        uint count = dats.Info?.NumCells ?? 0u;
-        for (uint offset = 0; offset < count; offset++)
+        uint envCellId =
+            (landblock.LandblockId & 0xFFFF0000u)
+            | (0x0100u + offset);
+        if (!dats.EnvCells.TryGetValue(
+                envCellId,
+                out EnvCell? envCell)
+            || !collisions.CellStructures.TryGetValue(
+                envCellId,
+                out FlatCellStructureCollisionAsset? structure)
+            || !collisions.EnvCells.TryGetValue(
+                envCellId,
+                out FlatEnvCellTopology? topology))
         {
-            uint envCellId =
-                (landblock.LandblockId & 0xFFFF0000u)
-                | (0x0100u + offset);
-            if (!dats.EnvCells.TryGetValue(
-                    envCellId,
-                    out EnvCell? envCell)
-                || !collisions.CellStructures.TryGetValue(
-                    envCellId,
-                    out FlatCellStructureCollisionAsset? structure)
-                || !collisions.EnvCells.TryGetValue(
-                    envCellId,
-                    out FlatEnvCellTopology? topology))
+            return;
+        }
+
+        Quaternion rotation = envCell.Position.Orientation;
+        Vector3 cellOriginWorld =
+            envCell.Position.Origin + origin;
+        Matrix4x4 transform =
+            Matrix4x4.CreateFromQuaternion(rotation)
+            * Matrix4x4.CreateTranslation(cellOriginWorld);
+        cache.CacheCellStruct(
+            envCellId,
+            envCell,
+            transform,
+            structure,
+            topology);
+
+        FlatPolygonTable portalPolygons =
+            structure.PortalPolygons;
+        for (int portalIndex = 0;
+            portalIndex < topology.Portals.Length;
+            portalIndex++)
+        {
+            FlatEnvCellPortal portal =
+                topology.Portals[portalIndex];
+            if ((uint)portal.PolygonIndex
+                >= (uint)portalPolygons.Polygons.Length)
             {
                 continue;
             }
+            FlatCollisionPolygon polygon =
+                portalPolygons.Polygons[portal.PolygonIndex];
+            if (polygon.VertexRange.Count < 3)
+                continue;
 
-            Quaternion rotation = envCell.Position.Orientation;
-            Vector3 cellOriginWorld =
-                envCell.Position.Origin + origin;
-            Matrix4x4 transform =
-                Matrix4x4.CreateFromQuaternion(rotation)
-                * Matrix4x4.CreateTranslation(cellOriginWorld);
-            cache.CacheCellStruct(
-                envCellId,
-                envCell,
-                transform,
-                structure,
-                topology);
-
-            FlatPolygonTable portalPolygons =
-                structure.PortalPolygons;
-            for (int portalIndex = 0;
-                portalIndex < topology.Portals.Length;
-                portalIndex++)
+            var vertices =
+                new Vector3[polygon.VertexRange.Count];
+            for (int index = 0; index < vertices.Length; index++)
             {
-                FlatEnvCellPortal portal =
-                    topology.Portals[portalIndex];
-                if ((uint)portal.PolygonIndex
-                    >= (uint)portalPolygons.Polygons.Length)
-                {
-                    continue;
-                }
-                FlatCollisionPolygon polygon =
-                    portalPolygons.Polygons[portal.PolygonIndex];
-                if (polygon.VertexRange.Count < 3)
-                    continue;
-
-                var vertices =
-                    new Vector3[polygon.VertexRange.Count];
-                for (int index = 0; index < vertices.Length; index++)
-                {
-                    Vector3 local = portalPolygons.Vertices[
-                        polygon.VertexRange.Start + index];
-                    vertices[index] =
-                        Vector3.Transform(local, rotation)
-                        + cellOriginWorld;
-                }
-                portalPlanes.Add(PortalPlane.FromVertices(
-                    vertices.AsSpan(),
-                    portal.OtherCellId,
-                    envCellId & 0xFFFFu,
-                    portal.Flags));
+                Vector3 local = portalPolygons.Vertices[
+                    polygon.VertexRange.Start + index];
+                vertices[index] =
+                    Vector3.Transform(local, rotation)
+                    + cellOriginWorld;
             }
-
-            cellSurfaces.Add(new CellSurface(
-                envCellId,
-                structure.PhysicsBsp.PolygonTable,
-                rotation,
-                cellOriginWorld));
+            portalPlanes.Add(PortalPlane.FromVertices(
+                vertices.AsSpan(),
+                portal.OtherCellId,
+                envCellId & 0xFFFFu,
+                portal.Flags));
         }
+
+        cellSurfaces.Add(new CellSurface(
+            envCellId,
+            structure.PhysicsBsp.PolygonTable,
+            rotation,
+            cellOriginWorld));
     }
 
     public static void CacheBuildings(
@@ -648,6 +727,26 @@ public static class LandblockPhysicsContentBuilder
         LoadedLandblock landblock,
         TerrainSurface terrain,
         Vector3 origin)
+    {
+        int count = BuildingCount(landblock);
+        for (int index = 0; index < count; index++)
+            CacheBuilding(cache, landblock, terrain, origin, index);
+    }
+
+    /// <summary>How many buildings the landblock's game data lists.</summary>
+    public static int BuildingCount(LoadedLandblock landblock)
+    {
+        ArgumentNullException.ThrowIfNull(landblock);
+        return landblock.PhysicsDats?.Info?.Buildings.Count ?? 0;
+    }
+
+    /// <summary>The <paramref name="index"/>th building the landblock lists, into the cache.</summary>
+    public static void CacheBuilding(
+        PhysicsDataCache cache,
+        LoadedLandblock landblock,
+        TerrainSurface terrain,
+        Vector3 origin,
+        int index)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(landblock);
@@ -658,44 +757,42 @@ public static class LandblockPhysicsContentBuilder
             return;
 
         uint prefix = landblock.LandblockId & 0xFFFF0000u;
-        foreach (BuildingInfo building in info.Buildings)
+        BuildingInfo building = info.Buildings[index];
+        var portals =
+            new List<BldPortalInfo>(building.Portals.Count);
+        foreach (var portal in building.Portals)
         {
-            var portals =
-                new List<BldPortalInfo>(building.Portals.Count);
-            foreach (var portal in building.Portals)
-            {
-                portals.Add(new BldPortalInfo(
-                    prefix | (uint)portal.OtherCellId,
-                    unchecked((short)portal.OtherPortalId),
-                    (ushort)portal.Flags));
-            }
-
-            Vector3 buildingOrigin = building.Frame.Origin + origin;
-            Matrix4x4 transform =
-                Matrix4x4.CreateFromQuaternion(
-                    building.Frame.Orientation)
-                * Matrix4x4.CreateTranslation(buildingOrigin);
-            uint landcellId = prefix
-                | terrain.ComputeOutdoorCellId(
-                    building.Frame.Origin.X,
-                    building.Frame.Origin.Y);
-            uint shellPartZero = building.ModelId;
-            if ((shellPartZero & 0xFF000000u) == 0x02000000u)
-            {
-                dats.Setups.TryGetValue(
-                    building.ModelId,
-                    out Setup? setup);
-                shellPartZero =
-                    setup is not null && setup.Parts.Count > 0
-                        ? setup.Parts[0]
-                        : 0u;
-            }
-            cache.CacheBuilding(
-                landcellId,
-                portals,
-                transform,
-                shellPartZero);
+            portals.Add(new BldPortalInfo(
+                prefix | (uint)portal.OtherCellId,
+                unchecked((short)portal.OtherPortalId),
+                (ushort)portal.Flags));
         }
+
+        Vector3 buildingOrigin = building.Frame.Origin + origin;
+        Matrix4x4 transform =
+            Matrix4x4.CreateFromQuaternion(
+                building.Frame.Orientation)
+            * Matrix4x4.CreateTranslation(buildingOrigin);
+        uint landcellId = prefix
+            | terrain.ComputeOutdoorCellId(
+                building.Frame.Origin.X,
+                building.Frame.Origin.Y);
+        uint shellPartZero = building.ModelId;
+        if ((shellPartZero & 0xFF000000u) == 0x02000000u)
+        {
+            dats.Setups.TryGetValue(
+                building.ModelId,
+                out Setup? setup);
+            shellPartZero =
+                setup is not null && setup.Parts.Count > 0
+                    ? setup.Parts[0]
+                    : 0u;
+        }
+        cache.CacheBuilding(
+            landcellId,
+            portals,
+            transform,
+            shellPartZero);
     }
 
     public static void CachePreparedObjects(
@@ -716,6 +813,22 @@ public static class LandblockPhysicsContentBuilder
         }
     }
 
+    /// <summary>What publishing one static object's collision came to.</summary>
+    public enum StaticCollisionKind
+    {
+        /// <summary>A building's shell: its collision is the building's cells.</summary>
+        BuildingShell,
+
+        /// <summary>Collision from its parts' own shapes.</summary>
+        Bsp,
+
+        /// <summary>Collision from its setup's cylinders or spheres.</summary>
+        Setup,
+
+        /// <summary>Drawn, with nothing to collide with.</summary>
+        NoCollision,
+    }
+
     public static StaticCollisionPublication PublishStaticCollision(
         PhysicsEngine engine,
         PhysicsDataCache cache,
@@ -733,108 +846,66 @@ public static class LandblockPhysicsContentBuilder
         int noCollision = 0;
         foreach (WorldEntity entity in landblock.Entities)
         {
-            if (entity.IsBuildingShell)
-                continue;
-
-            IReadOnlyList<ShadowShape> bspShapes =
-                ShadowShapeBuilder.FromLandblockBspParts(
-                    entity.MeshRefs,
-                    entity.IsBuildingShell,
-                    cache.GetGfxObj);
-
-            IReadOnlyList<ShadowShape> partArray =
-                ShadowShapeBuilder.FromStaticRenderParts(
-                    entity.MeshRefs,
-                    cache.GetGfxObj,
-                    cache.GetVisualBounds,
-                    out _);
-
-            if (bspShapes.Count > 0)
+            switch (PublishStaticEntity(engine, cache, landblock, origin, entity))
             {
-                engine.ShadowObjects.RegisterMultiPart(
-                    entity.Id,
-                    entity.Position,
-                    entity.Rotation,
-                    bspShapes,
-                    0u,
-                    EntityCollisionFlags.None,
-                    worldOffsetX: origin.X,
-                    worldOffsetY: origin.Y,
-                    landblockId: landblock.LandblockId,
-                    seedCellId: entity.ParentCellId ?? 0u,
-                    isStatic: true,
-                    partArray: partArray);
-                bspOwners++;
-                continue;
+                case StaticCollisionKind.Bsp:
+                    bspOwners++;
+                    break;
+                case StaticCollisionKind.Setup:
+                    setupOwners++;
+                    break;
+                case StaticCollisionKind.NoCollision:
+                    noCollision++;
+                    break;
             }
+        }
 
-            FlatSetupCollision? setup =
-                cache.GetFlatSetup(
-                    entity.SourceGfxObjOrSetupId);
-            if (setup is null)
-            {
-                RegisterRenderOnlyStatic(
-                    engine, entity, partArray, landblock, origin);
-                noCollision++;
-                continue;
-            }
+        RefloodStaticOwners(engine, landblock.LandblockId);
+        return new StaticCollisionPublication(
+            bspOwners,
+            setupOwners,
+            noCollision);
+    }
 
-            float scale = entity.Scale > 0f ? entity.Scale : 1f;
-            var setupShapes = new List<ShadowShape>();
-            for (int index = 0;
-                index < setup.Cylinders.Length;
-                index++)
-            {
-                FlatCollisionCylinder cylinder =
-                    setup.Cylinders[index];
-                float radius = cylinder.Radius * scale;
-                float height = (cylinder.Height > 0f
-                    ? cylinder.Height
-                    : cylinder.Radius * 4f) * scale;
-                if (radius <= 0f)
-                    continue;
-                setupShapes.Add(ShadowShape.Cylinder(
-                    entity.SourceGfxObjOrSetupId,
-                    cylinder.Origin * scale,
-                    Quaternion.Identity,
-                    scale,
-                    radius,
-                    height));
-            }
+    /// <summary>
+    /// One static object's collision, registered with the engine's shadow
+    /// objects in the landblock. The prepared objects must be in the cache.
+    /// </summary>
+    public static StaticCollisionKind PublishStaticEntity(
+        PhysicsEngine engine,
+        PhysicsDataCache cache,
+        LoadedLandblock landblock,
+        Vector3 origin,
+        WorldEntity entity)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        ArgumentNullException.ThrowIfNull(cache);
+        ArgumentNullException.ThrowIfNull(landblock);
+        ArgumentNullException.ThrowIfNull(entity);
 
-            if (setup.Cylinders.Length == 0)
-            {
-                for (int index = 0;
-                    index < setup.Spheres.Length;
-                    index++)
-                {
-                    FlatCollisionSphere sphere = setup.Spheres[index];
-                    if (sphere.Radius <= 0f)
-                        continue;
-                    float radius = sphere.Radius * scale;
-                    Vector3 localOffset = sphere.Origin * scale;
-                    setupShapes.Add(
-                    ShadowShape.Sphere(
-                        entity.SourceGfxObjOrSetupId,
-                        localOffset,
-                        Quaternion.Identity,
-                        scale,
-                        radius));
-                }
-            }
+        if (entity.IsBuildingShell)
+            return StaticCollisionKind.BuildingShell;
 
-            if (setupShapes.Count == 0)
-            {
-                RegisterRenderOnlyStatic(
-                    engine, entity, partArray, landblock, origin);
-                noCollision++;
-                continue;
-            }
+        IReadOnlyList<ShadowShape> bspShapes =
+            ShadowShapeBuilder.FromLandblockBspParts(
+                entity.MeshRefs,
+                entity.IsBuildingShell,
+                cache.GetGfxObj);
+
+        IReadOnlyList<ShadowShape> partArray =
+            ShadowShapeBuilder.FromStaticRenderParts(
+                entity.MeshRefs,
+                cache.GetGfxObj,
+                cache.GetVisualBounds,
+                out _);
+
+        if (bspShapes.Count > 0)
+        {
             engine.ShadowObjects.RegisterMultiPart(
                 entity.Id,
                 entity.Position,
                 entity.Rotation,
-                setupShapes,
+                bspShapes,
                 0u,
                 EntityCollisionFlags.None,
                 worldOffsetX: origin.X,
@@ -843,22 +914,101 @@ public static class LandblockPhysicsContentBuilder
                 seedCellId: entity.ParentCellId ?? 0u,
                 isStatic: true,
                 partArray: partArray);
-            setupOwners++;
+            return StaticCollisionKind.Bsp;
         }
 
+        FlatSetupCollision? setup =
+            cache.GetFlatSetup(
+                entity.SourceGfxObjOrSetupId);
+        if (setup is null)
+        {
+            RegisterRenderOnlyStatic(
+                engine, entity, partArray, landblock, origin);
+            return StaticCollisionKind.NoCollision;
+        }
+
+        float scale = entity.Scale > 0f ? entity.Scale : 1f;
+        var setupShapes = new List<ShadowShape>();
+        for (int index = 0;
+            index < setup.Cylinders.Length;
+            index++)
+        {
+            FlatCollisionCylinder cylinder =
+                setup.Cylinders[index];
+            float radius = cylinder.Radius * scale;
+            float height = (cylinder.Height > 0f
+                ? cylinder.Height
+                : cylinder.Radius * 4f) * scale;
+            if (radius <= 0f)
+                continue;
+            setupShapes.Add(ShadowShape.Cylinder(
+                entity.SourceGfxObjOrSetupId,
+                cylinder.Origin * scale,
+                Quaternion.Identity,
+                scale,
+                radius,
+                height));
+        }
+
+        if (setup.Cylinders.Length == 0)
+        {
+            for (int index = 0;
+                index < setup.Spheres.Length;
+                index++)
+            {
+                FlatCollisionSphere sphere = setup.Spheres[index];
+                if (sphere.Radius <= 0f)
+                    continue;
+                float radius = sphere.Radius * scale;
+                Vector3 localOffset = sphere.Origin * scale;
+                setupShapes.Add(
+                ShadowShape.Sphere(
+                    entity.SourceGfxObjOrSetupId,
+                    localOffset,
+                    Quaternion.Identity,
+                    scale,
+                    radius));
+            }
+        }
+
+        if (setupShapes.Count == 0)
+        {
+            RegisterRenderOnlyStatic(
+                engine, entity, partArray, landblock, origin);
+            return StaticCollisionKind.NoCollision;
+        }
+        engine.ShadowObjects.RegisterMultiPart(
+            entity.Id,
+            entity.Position,
+            entity.Rotation,
+            setupShapes,
+            0u,
+            EntityCollisionFlags.None,
+            worldOffsetX: origin.X,
+            worldOffsetY: origin.Y,
+            landblockId: landblock.LandblockId,
+            seedCellId: entity.ParentCellId ?? 0u,
+            isStatic: true,
+            partArray: partArray);
+        return StaticCollisionKind.Setup;
+    }
+
+    /// <summary>
+    /// Re-files every owner the landblock's statics overlap into the cells
+    /// they reach, once all of them are registered.
+    /// </summary>
+    public static void RefloodStaticOwners(PhysicsEngine engine, uint landblockId)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
         uint[] reflood =
             engine.ShadowObjects.CaptureRefloodOwnersForLandblock(
-                landblock.LandblockId);
+                landblockId);
         foreach (uint ownerId in reflood)
         {
             engine.ShadowObjects.RefloodOwnerForLandblock(
                 ownerId,
-                landblock.LandblockId);
+                landblockId);
         }
-        return new StaticCollisionPublication(
-            bspOwners,
-            setupOwners,
-            noCollision);
     }
 
     private static void RegisterRenderOnlyStatic(

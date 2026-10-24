@@ -7,20 +7,17 @@ namespace AcDream.App.Streaming;
 public sealed class LandblockPresentationRetirementOwner
 {
     private readonly LandblockRenderPublisher _render;
-    private readonly LandblockPhysicsPublisher _physics;
     private readonly LandblockStaticPresentationPublisher _staticPresentation;
     private readonly LightingHookSink _lighting;
     private readonly TranslucencyFadeManager _translucency;
 
     public LandblockPresentationRetirementOwner(
         LandblockRenderPublisher render,
-        LandblockPhysicsPublisher physics,
         LandblockStaticPresentationPublisher staticPresentation,
         LightingHookSink lighting,
         TranslucencyFadeManager translucency)
     {
         _render = render ?? throw new ArgumentNullException(nameof(render));
-        _physics = physics ?? throw new ArgumentNullException(nameof(physics));
         _staticPresentation = staticPresentation
             ?? throw new ArgumentNullException(nameof(staticPresentation));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
@@ -37,10 +34,8 @@ public sealed class LandblockPresentationRetirementOwner
 
     internal bool Matches(
         LandblockRenderPublisher render,
-        LandblockPhysicsPublisher physics,
         LandblockStaticPresentationPublisher staticPresentation) =>
         ReferenceEquals(_render, render)
-        && ReferenceEquals(_physics, physics)
         && ReferenceEquals(_staticPresentation, staticPresentation)
         && _staticPresentation.MatchesResources(_lighting, _translucency);
 
@@ -61,14 +56,6 @@ public sealed class LandblockPresentationRetirementOwner
             static entity => entity.ServerGuid == 0,
             _staticPresentation.RemovePluginProjection);
 
-        if (!ticket.RunOnce(
-            LandblockRetirementStage.Physics,
-            () => ticket.Kind == LandblockRetirementKind.Full
-                ? _physics.AdvanceRemoval(ticket.LandblockId)
-                : _physics.AdvanceDemotion(ticket.LandblockId)))
-        {
-            return;
-        }
         if (ticket.Kind == LandblockRetirementKind.Full)
         {
             ticket.RunOnce(
@@ -111,12 +98,6 @@ public sealed class LandblockPresentationRetirementOwner
                 ticket.RunOnceStep(
                     LandblockRetirementStage.Terrain,
                     () => _render.RemoveTerrain(ticket.LandblockId)),
-            LandblockRetirementStage.Physics =>
-                ticket.RunOnceStep(
-                    LandblockRetirementStage.Physics,
-                    () => ticket.Kind == LandblockRetirementKind.Full
-                        ? _physics.AdvanceRemoval(ticket.LandblockId)
-                        : _physics.AdvanceDemotion(ticket.LandblockId)),
             LandblockRetirementStage.CellVisibility =>
                 ticket.RunOnceStep(
                     LandblockRetirementStage.CellVisibility,

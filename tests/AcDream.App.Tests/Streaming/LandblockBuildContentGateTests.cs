@@ -36,7 +36,6 @@ public sealed class LandblockBuildContentGateTests
         var content = new GateAssertingContent(gate);
         var factory = new LandblockBuildFactory(
             content,
-            NullPreparedCollisions.Instance,
             gate,
             HeightTable);
 
@@ -110,17 +109,12 @@ public sealed class LandblockBuildContentGateTests
             "1",
             SysEnvironment.GetEnvironmentVariable("ACDREAM_RUN_INSTALLED_DAT_TESTS"));
         string? directory = SysEnvironment.GetEnvironmentVariable("ACDREAM_DAT_DIR");
-        string? package = SysEnvironment.GetEnvironmentVariable("ACDREAM_PAK_PATH");
         Assert.True(
             Directory.Exists(directory),
             "An explicit installed ACDREAM_DAT_DIR is required.");
-        Assert.True(
-            File.Exists(package),
-            "An explicit validated ACDREAM_PAK_PATH is required.");
 
         using var dats = new BoundedTestDatCollection(directory!);
         var content = (IDatReaderWriter)dats;
-        using var prepared = new AcDream.Content.PakPreparedAssetSource(package!, content);
         float[] heights = Assert.IsType<Region>(content.Get<Region>(0x13000000u))
             .LandDefs.LandHeightTable;
         var request = new LandblockBuildRequest(
@@ -130,7 +124,7 @@ public sealed class LandblockBuildContentGateTests
             new LandblockBuildOrigin(0xF4, 0x18));
 
         var perReadGate = new object();
-        var perRead = new LandblockBuildFactory(content, prepared, perReadGate, heights);
+        var perRead = new LandblockBuildFactory(content, perReadGate, heights);
         LandblockBuild first = Assert.IsType<LandblockBuild>(perRead.Build(request));
 
         // Monitor is re-entrant, so holding the gate around the whole call is
@@ -139,7 +133,6 @@ public sealed class LandblockBuildContentGateTests
         var wholeBuildGate = new object();
         var wholeBuild = new LandblockBuildFactory(
             content,
-            prepared,
             wholeBuildGate,
             heights);
         LandblockBuild second;
@@ -174,12 +167,8 @@ public sealed class LandblockBuildContentGateTests
             text.Append(ci, $"\n walkbuildings={cells.WalkBuildings.Length} walkz={cells.WalkMaxZ:R}/{cells.WalkMinZ:R}");
         }
 
-        if (build.Collisions is { } collisions)
-        {
-            text.Append(ci, $"\n gfx={string.Join(",", collisions.GfxObjIds.Select(id => id.ToString("X8", ci)))}");
-            text.Append(ci, $"\n setups={string.Join(",", collisions.SetupIds.Select(id => id.ToString("X8", ci)))}");
-            text.Append(ci, $"\n cellstructs={string.Join(",", collisions.EnvCellIds.Select(id => id.ToString("X8", ci)))}");
-        }
+        if (build.Landblock.PhysicsDats is { } dats)
+            text.Append(ci, $"\n setups={string.Join(",", dats.Setups.Keys.Order().Select(id => id.ToString("X8", ci)))}");
 
         return text.ToString();
     }
@@ -190,37 +179,6 @@ public sealed class LandblockBuildContentGateTests
         for (int i = 0; i < table.Length; i++)
             table[i] = i * 2f;
         return table;
-    }
-
-    private sealed class NullPreparedCollisions : IPreparedCollisionSource
-    {
-        public static readonly NullPreparedCollisions Instance = new();
-
-        public PreparedAssetPresence ProbeCollision(
-            AcDream.Content.Pak.PakAssetType type,
-            uint sourceFileId) => PreparedAssetPresence.Missing;
-
-        public PreparedCollisionReadResult<AcDream.Core.Physics.FlatGfxObjCollisionAsset>
-            ReadGfxObjCollision(uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<AcDream.Core.Physics.FlatGfxObjCollisionAsset>.Missing;
-
-        public PreparedCollisionReadResult<AcDream.Core.Physics.FlatSetupCollision>
-            ReadSetupCollision(uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<AcDream.Core.Physics.FlatSetupCollision>.Missing;
-
-        public PreparedCollisionReadResult<AcDream.Core.Physics.FlatCellStructureCollisionAsset>
-            ReadCellStructureCollision(uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<AcDream.Core.Physics.FlatCellStructureCollisionAsset>.Missing;
-
-        public PreparedCollisionReadResult<AcDream.Core.Physics.FlatEnvCellTopology>
-            ReadEnvCellTopology(uint sourceFileId, CancellationToken cancellationToken = default)
-            => PreparedCollisionReadResult<AcDream.Core.Physics.FlatEnvCellTopology>.Missing;
-
-        public PreparedCollisionSourceStats CollisionStats => default;
-
-        public void Dispose()
-        {
-        }
     }
 
     /// <summary>

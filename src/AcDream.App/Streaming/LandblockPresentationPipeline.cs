@@ -7,7 +7,6 @@ namespace AcDream.App.Streaming;
 
 public readonly record struct LandblockPresentationDiagnostics(
     LandblockRenderPublisherDiagnostics Render,
-    LandblockPhysicsPublisherDiagnostics Physics,
     LandblockStaticPresentationDiagnostics Statics);
 
 internal readonly record struct LandblockPublicationAdvance(
@@ -34,7 +33,6 @@ public sealed class LandblockPresentationPipeline
         public LandblockStreamTier Tier;
         public bool PresentationCommitted;
         public LandblockRenderPublication? RenderPublication;
-        public LandblockPhysicsPublication? PhysicsPublication;
         public LandblockStaticPresentationPublication? StaticPublication;
         public bool SpatialCommitted;
         public GpuLandblockSpatialPublication? SpatialPublication;
@@ -50,7 +48,6 @@ public sealed class LandblockPresentationPipeline
     private readonly LandblockRenderPublisher? _renderPublisher;
 
     internal LandblockRenderPublisher? RenderPublisher => _renderPublisher;
-    private readonly LandblockPhysicsPublisher? _physicsPublisher;
     private readonly LandblockStaticPresentationPublisher? _staticPublisher;
     private readonly GpuWorldState _state;
     private readonly Action<uint>? _onLandblockLoaded;
@@ -94,7 +91,6 @@ public sealed class LandblockPresentationPipeline
 
     public LandblockPresentationPipeline(
         LandblockRenderPublisher renderPublisher,
-        LandblockPhysicsPublisher physicsPublisher,
         LandblockStaticPresentationPublisher staticPublisher,
         GpuWorldState state,
         LandblockPresentationRetirementOwner retirementOwner,
@@ -102,7 +98,6 @@ public sealed class LandblockPresentationPipeline
         Action<EnvCellLandblockBuild>? ensureEnvCellMeshes = null)
         : this(
             renderPublisher,
-            physicsPublisher,
             staticPublisher,
             state,
             retirementOwner,
@@ -114,7 +109,6 @@ public sealed class LandblockPresentationPipeline
 
     internal LandblockPresentationPipeline(
         LandblockRenderPublisher renderPublisher,
-        LandblockPhysicsPublisher physicsPublisher,
         LandblockStaticPresentationPublisher staticPublisher,
         GpuWorldState state,
         LandblockPresentationRetirementOwner retirementOwner,
@@ -124,8 +118,6 @@ public sealed class LandblockPresentationPipeline
     {
         _renderPublisher = renderPublisher
             ?? throw new ArgumentNullException(nameof(renderPublisher));
-        _physicsPublisher = physicsPublisher
-            ?? throw new ArgumentNullException(nameof(physicsPublisher));
         _staticPublisher = staticPublisher
             ?? throw new ArgumentNullException(nameof(staticPublisher));
         _state = state ?? throw new ArgumentNullException(nameof(state));
@@ -138,7 +130,6 @@ public sealed class LandblockPresentationPipeline
         ArgumentNullException.ThrowIfNull(retirementOwner);
         if (!retirementOwner.Matches(
                 _renderPublisher,
-                _physicsPublisher,
                 _staticPublisher))
         {
             throw new ArgumentException(
@@ -171,7 +162,6 @@ public sealed class LandblockPresentationPipeline
 
     public LandblockPresentationDiagnostics Diagnostics => new(
         _renderPublisher?.Diagnostics ?? default,
-        _physicsPublisher?.Diagnostics ?? default,
         _staticPublisher?.Diagnostics ?? default);
 
     public int PendingRetirementCount => _retirements.PendingCount;
@@ -213,25 +203,10 @@ public sealed class LandblockPresentationPipeline
     {
         if (_publications.Count == 0)
             return true;
-        LandblockStreamResult[] pending = [.. _publications.Keys];
-        bool completed = true;
-        for (int index = 0; index < pending.Length; index++)
-        {
-            LandblockStreamResult result = pending[index];
-            if (!_publications.TryGetValue(
-                    result,
-                    out PublicationTransaction? transaction))
-            {
-                continue;
-            }
-            bool cancelled = transaction.PhysicsPublication is not { } physics
-                || physics.TryCancel();
-            if (cancelled)
-                _publications.Remove(result);
-            else
-                completed = false;
-        }
-        return completed && _publications.Count == 0;
+        // A pending transaction holds no collision (the session host publishes
+        // it), so there is nothing to wait for: they are dropped.
+        _publications.Clear();
+        return true;
     }
 
     public void ResumePublication(LandblockStreamResult result)
@@ -275,9 +250,7 @@ public sealed class LandblockPresentationPipeline
         if (_retirements.UsesBudgetedSteps)
         {
             _retirements.Advance();
-            if (_retirements.IsPending(landblockId)
-                && (_physicsPublisher?.CanContinueMutationSynchronously()
-                    ?? true))
+            if (_retirements.IsPending(landblockId))
                 _retirements.Advance();
         }
     }
@@ -288,9 +261,7 @@ public sealed class LandblockPresentationPipeline
         if (_retirements.UsesBudgetedSteps)
         {
             _retirements.Advance();
-            if (_retirements.IsPending(landblockId)
-                && (_physicsPublisher?.CanContinueMutationSynchronously()
-                    ?? true))
+            if (_retirements.IsPending(landblockId))
                 _retirements.Advance();
         }
     }
@@ -602,7 +573,6 @@ public sealed class LandblockPresentationPipeline
         if (!transaction.PresentationCommitted)
         {
             if (_renderPublisher is not null
-                && _physicsPublisher is not null
                 && _staticPublisher is not null)
             {
                 while (transaction.RenderPublication is null)
@@ -618,35 +588,6 @@ public sealed class LandblockPresentationPipeline
                         return new LandblockPublicationAdvance(false, progressed);
                     }
                 }
-                while (transaction.PhysicsPublication is null)
-                {
-                    if (!TryRun(
-                            default,
-                            "publication-prepare-physics",
-                            () => transaction.PhysicsPublication =
-                                _physicsPublisher.CreatePublication(
-                                    transaction.RenderPublication)))
-                    {
-                        return new LandblockPublicationAdvance(false, progressed);
-                    }
-                }
-                while (!transaction.PhysicsPublication.PreparationCommitted)
-                {
-                    int entityOperations =
-                        transaction.PhysicsPublication.PreparationCursor
-                        < transaction.Build.Landblock.Entities.Count
-                            ? 1
-                            : 0;
-                    if (!TryRun(
-                            new StreamingWorkCost(
-                                EntityOperations: entityOperations),
-                            "publication-index-physics",
-                            () => _physicsPublisher.AdvancePreparationOne(
-                                transaction.PhysicsPublication)))
-                    {
-                        return new LandblockPublicationAdvance(false, progressed);
-                    }
-                }
                 while (transaction.StaticPublication is null)
                 {
                     if (!TryRun(
@@ -654,7 +595,7 @@ public sealed class LandblockPresentationPipeline
                             "publication-prepare-statics",
                             () => transaction.StaticPublication =
                                 _staticPublisher.CreatePublication(
-                                    transaction.PhysicsPublication)))
+                                    transaction.RenderPublication.Build)))
                     {
                         return new LandblockPublicationAdvance(false, progressed);
                     }
@@ -694,28 +635,6 @@ public sealed class LandblockPresentationPipeline
                             "publication-render-prefix",
                             () => _renderPublisher.AdvanceBeginOne(
                                 transaction.RenderPublication)))
-                    {
-                        return new LandblockPublicationAdvance(false, progressed);
-                    }
-                }
-                while (!transaction.PhysicsPublication.BeginCommitted)
-                {
-                    int entityOperations =
-                        transaction.PhysicsPublication.TerrainSurface is not null
-                        && transaction.PhysicsPublication.Build.Landblock.PhysicsDats?
-                            .Info is { } info
-                        && transaction.PhysicsPublication.CellCursor < info.NumCells
-                            ? 1
-                            : transaction.PhysicsPublication.BuildingCursor
-                                < transaction.PhysicsPublication.Buildings.Length
-                                ? 1
-                                : 0;
-                    if (!TryRun(
-                            new StreamingWorkCost(
-                                EntityOperations: entityOperations),
-                            "publication-physics-prefix",
-                            () => _physicsPublisher.AdvanceBeginOne(
-                                transaction.PhysicsPublication)))
                     {
                         return new LandblockPublicationAdvance(false, progressed);
                     }
@@ -768,71 +687,23 @@ public sealed class LandblockPresentationPipeline
                         return new LandblockPublicationAdvance(false, progressed);
                     }
                 }
-                while (!transaction.PhysicsPublication.CompletionCommitted)
+                // No collision is published here: the session host builds it
+                // around the character whether or not anything is drawn.
+                while (!transaction.StaticPublication.LightingCommitted)
                 {
-                    if (transaction.PhysicsPublication.EngineMutationCommitted
-                        && transaction.PhysicsPublication.RuntimeMutationPending
-                        && !transaction.SpatialPresentationCommitted
-                        && !TryRun(
-                            default,
-                            "publication-spatial-commit",
-                            () => CommitSpatialPresentation(transaction)))
-                    {
-                        return new LandblockPublicationAdvance(false, progressed);
-                    }
                     int entityOperations =
-                        transaction.PhysicsPublication.GfxCursor
-                            < transaction.PhysicsPublication.GfxObjectIds.Length
+                        transaction.StaticPublication.LightingCursor
+                        < transaction.Build.Landblock.Entities.Count
                             ? 1
-                            : transaction.PhysicsPublication.PriorStaticCursor
-                                < transaction.PhysicsPublication
-                                    .PriorStaticOwnerIds.Length
-                                ? 1
-                                : transaction.PhysicsPublication.StaticCursor
-                                    < transaction.Build.Landblock.Entities.Count
-                                    ? 1
-                                    : transaction.PhysicsPublication
-                                            .RefloodOwnerIds is null
-                                    || transaction.PhysicsPublication
-                                        .RefloodCursor
-                                        < transaction.PhysicsPublication
-                                            .RefloodOwnerIds.Count
-                                    || !transaction.PhysicsPublication
-                                        .SealCommitted
-                                        ? 1
-                                        : 0;
+                            : 0;
                     if (!TryRun(
                             new StreamingWorkCost(
                                 EntityOperations: entityOperations),
-                            "publication-physics-statics",
-                            () => _physicsPublisher.AdvanceCompleteOne(
-                                transaction.PhysicsPublication,
-                                entity =>
-                                    _staticPublisher
-                                        .PrepareEntityBeforeCollision(
-                                            transaction.StaticPublication,
-                                            entity))))
+                            "publication-static-lighting",
+                            () => _staticPublisher.AdvanceLightingOne(
+                                transaction.StaticPublication)))
                     {
                         return new LandblockPublicationAdvance(false, progressed);
-                    }
-                    if (transaction.PhysicsPublication.RuntimeMutationPending)
-                    {
-                        if (transaction.PhysicsPublication.EngineMutationCommitted
-                            && !transaction.SpatialPresentationCommitted
-                            && !TryRun(
-                                default,
-                                "publication-spatial-commit",
-                                () => CommitSpatialPresentation(transaction)))
-                        {
-                            return new LandblockPublicationAdvance(false, progressed);
-                        }
-                        if (!_physicsPublisher
-                                .CanContinueMutationSynchronously())
-                        {
-                            return new LandblockPublicationAdvance(
-                                false,
-                                progressed);
-                        }
                     }
                 }
                 while (!transaction.StaticPublication.CompletionCommitted)

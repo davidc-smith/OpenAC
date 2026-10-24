@@ -88,6 +88,9 @@ internal sealed class GraphicalSessionHost : IDisposable
         WorldEvents.BindWorldEntities(PluginWorldEntities);
         PlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
             Runtime.PlayerIdentity);
+        // Collision is the session's, built here with no window: the same
+        // neighborhood around the character the windowless client keeps.
+        Collision = new GraphicalSessionCollision(Runtime);
         // The live session is the host's too: it connects, routes commands and
         // runs the login steps whether or not a window is open; a window lends
         // it what only a window can do while it is attached.
@@ -141,6 +144,19 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal GraphicalLiveSession LiveSession { get; }
 
     /// <summary>
+    /// The session's collision around the character, kept whether or not a
+    /// window is open.
+    /// </summary>
+    internal GraphicalSessionCollision Collision { get; }
+
+    /// <summary>
+    /// The landblock whose corner a window draws the world from. It is the
+    /// session's, kept across windows, and agrees with the frame the runtime
+    /// and the collision measure in.
+    /// </summary>
+    internal AcDream.App.World.LiveWorldOriginState WorldOrigin { get; } = new();
+
+    /// <summary>
     /// Marshals plugin work that must run on the update thread (clipboard,
     /// window state) onto it. Built on the thread that runs the host.
     /// </summary>
@@ -169,12 +185,14 @@ internal sealed class GraphicalSessionHost : IDisposable
 
     /// <summary>
     /// One update of the session: plugin work queued for this thread, the
-    /// frame of what presents the session, then the plugin tick.
+    /// collision around the character, the frame of what presents the
+    /// session, then the plugin tick.
     /// </summary>
     internal void Tick(double hostDeltaSeconds, IGraphicalSessionFrame frame)
     {
         ArgumentNullException.ThrowIfNull(frame);
         MainThreadDispatch.Drain();
+        Collision.Tick();
         frame.TickSessionFrame(new UpdateFrameInput(hostDeltaSeconds));
         _pluginTick.Feed(hostDeltaSeconds);
     }
