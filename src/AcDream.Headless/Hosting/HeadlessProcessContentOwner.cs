@@ -291,7 +291,8 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
         _disposed = true;
     }
 
-    internal sealed class HeadlessProcessContentLease : IDisposable
+    internal sealed class HeadlessProcessContentLease
+        : IDisposable, AcDream.Runtime.World.IRuntimeCollisionContent
     {
         private HeadlessProcessContentOwner? _owner;
         private readonly IDatReaderWriter _dats;
@@ -391,6 +392,20 @@ internal sealed class HeadlessProcessContentOwner : IDisposable
                 return _heightTable;
             }
         }
+
+        IDatReaderWriter AcDream.Runtime.World.IRuntimeCollisionContent.Dats =>
+            Dats;
+
+        object AcDream.Runtime.World.IRuntimeCollisionContent.DatLock =>
+            DatLock;
+
+        IPreparedCollisionSource
+            AcDream.Runtime.World.IRuntimeCollisionContent.PreparedCollision =>
+            PreparedCollision;
+
+        ImmutableArray<float>
+            AcDream.Runtime.World.IRuntimeCollisionContent.HeightTable =>
+            HeightTable;
 
         public void Dispose()
         {

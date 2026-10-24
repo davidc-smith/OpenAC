@@ -2817,8 +2817,8 @@ public sealed class HeadlessSessionHostTests
         using var lifetime = new RuntimeEntityObjectLifetime();
         RuntimePhysicsState physics = lifetime.Physics;
         const uint landblockId = 0xA9B4FFFFu;
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 physics,
                 landblockId,
                 afterAdmission: null,
@@ -2828,7 +2828,7 @@ public sealed class HeadlessSessionHostTests
                         prepared,
                         CollisionAssets(landblockId, 10f)));
 
-        HeadlessCollisionGenerationAdvance advance;
+        RuntimeCollisionGenerationAdvance advance;
         do
         {
             advance = transaction.Advance();
@@ -2886,8 +2886,8 @@ public sealed class HeadlessSessionHostTests
             position);
         Assert.True(physics.SetPosition.AcknowledgeProjection(seeded));
 
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 physics,
                 landblockId,
                 afterAdmission: null,
@@ -2896,7 +2896,7 @@ public sealed class HeadlessSessionHostTests
                         admission,
                         prepared,
                         CollisionAssets(landblockId, 20f)));
-        HeadlessCollisionGenerationAdvance advance;
+        RuntimeCollisionGenerationAdvance advance;
         do
         {
             advance = transaction.Advance();
@@ -3368,7 +3368,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     private sealed class PublishOnCenterCollisionNeighborhood(
-        RuntimePhysicsState physics) : IHeadlessCollisionNeighborhood
+        RuntimePhysicsState physics) : IRuntimeCollisionNeighborhood
     {
         private const uint PublishedLandblockId = 0xA9B4FFFFu;
 
@@ -3489,7 +3489,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     internal sealed class CollisionGenerationCommittingNeighborhood(
-        GameRuntime runtime) : IHeadlessCollisionNeighborhood
+        GameRuntime runtime) : IRuntimeCollisionNeighborhood
     {
         public void CenterOn(uint fullCellId) =>
             CommitSyntheticCollisionGeneration(
@@ -3513,8 +3513,8 @@ public sealed class HeadlessSessionHostTests
         GameRuntime runtime,
         uint landblockId)
     {
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 runtime.EntityObjects.Physics,
                 landblockId,
                 afterAdmission: null,
@@ -3533,7 +3533,7 @@ public sealed class HeadlessSessionHostTests
                             WorldOffsetY: 0f,
                             CurrentCellId: landblockId));
                 });
-        HeadlessCollisionGenerationAdvance advance;
+        RuntimeCollisionGenerationAdvance advance;
         do
         {
             advance = transaction.Advance();
@@ -3765,15 +3765,15 @@ public sealed class HeadlessSessionHostTests
         Action<RuntimeCollisionAdmission,
             PreparedLandblockCollisionGeneration> stage)
     {
-        HeadlessCollisionGenerationTransaction transaction =
-            HeadlessCollisionGenerationTransaction.Begin(
+        RuntimeCollisionGenerationTransaction transaction =
+            RuntimeCollisionGenerationTransaction.Begin(
                 physics,
                 landblockId,
                 afterAdmission,
                 stage);
         while (true)
         {
-            HeadlessCollisionGenerationAdvance advance = transaction.Advance();
+            RuntimeCollisionGenerationAdvance advance = transaction.Advance();
             if (advance.Completed)
                 return;
             Assert.True(advance.Progressed);
@@ -4708,7 +4708,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     private sealed class FixtureCollisionNeighborhood
-        : IHeadlessCollisionNeighborhood
+        : IRuntimeCollisionNeighborhood
     {
         public int CenterCount { get; private set; }
         public uint LastCell { get; private set; }
@@ -4746,7 +4746,7 @@ public sealed class HeadlessSessionHostTests
 
     private sealed class NeighborAdmissionHeldOpenCollisionNeighborhood(
         RuntimePhysicsState physics,
-        uint heldLandblockId) : IHeadlessCollisionNeighborhood
+        uint heldLandblockId) : IRuntimeCollisionNeighborhood
     {
         private RuntimeCollisionAdmission? _admission;
         private PreparedLandblockCollisionGeneration? _prepared;
@@ -4789,7 +4789,7 @@ public sealed class HeadlessSessionHostTests
     }
 
     private sealed class GateControllableCollisionNeighborhood
-        : IHeadlessCollisionNeighborhood
+        : IRuntimeCollisionNeighborhood
     {
         private uint _lastCell;
 
