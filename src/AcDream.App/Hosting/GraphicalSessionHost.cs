@@ -137,6 +137,8 @@ internal sealed class GraphicalSessionHost : IDisposable
             () => _windowlessRoute?.EndPortalRevealForSessionReset(),
             chatLogDirectory,
             _time);
+        Confirmations = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations(
+            () => LiveSession.Host.CurrentSession);
         // The session's walks, planned over its own collision and walked
         // whether or not a window is open.
         Navigation = new GraphicalSessionNavigation(
@@ -195,6 +197,12 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal AcDream.App.Input.MovementTruthDiagnosticController MovementTruth { get; }
 
     internal AcDream.Runtime.Gameplay.LocalPlayerOutboundController LocalPlayerOutbound { get; }
+
+    /// <summary>
+    /// The confirmation the server is waiting on while no window shows it,
+    /// answered by plugins as on every client without a window.
+    /// </summary>
+    internal AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations Confirmations { get; }
 
     /// <summary>
     /// The session's walks: kept across windows, stepped by whatever presents
@@ -335,6 +343,9 @@ internal sealed class GraphicalSessionHost : IDisposable
             skills = new AcDream.Content.Skills.LiveSkillCreditResolver(null);
         }
 
+        // A question asked on an earlier connection, or before a window took
+        // the session over and answered in its own dialog, is not this one's.
+        Confirmations.Forget();
         return WindowlessRoute.Create(
             session,
             GraphicalAutomationCapabilities.BuildWindowlessCharacterSessionBindings(
@@ -343,6 +354,7 @@ internal sealed class GraphicalSessionHost : IDisposable
                 Runtime.MovementStats,
                 skills.Resolve,
                 () => Runtime.EffectClock.NowSeconds,
+                Confirmations,
                 Automation is { } automation
                     ? automation.RaiseConfirmationRequested
                     : null,
@@ -399,7 +411,11 @@ internal sealed class GraphicalSessionHost : IDisposable
         }
 
         if (LiveSession.TakeOverPlayingConnection(_drives))
+        {
             _windowlessRoute?.ReleaseConnection();
+            // The window answers in its own dialog from here on.
+            Confirmations.Forget();
+        }
         return true;
     }
 
@@ -455,6 +471,7 @@ internal sealed class GraphicalSessionHost : IDisposable
                     SessionCommandsWithoutWindow = CommandsWithoutWindow,
                     SubmitChatTextWithoutWindow = SubmitChatText,
                     NavigationWalk = Navigation.Walk,
+                    AnswerConfirmationWithoutWindow = Confirmations.TryAnswer,
                 }));
     }
 

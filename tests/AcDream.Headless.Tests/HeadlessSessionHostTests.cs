@@ -266,22 +266,18 @@ public sealed class HeadlessSessionHostTests
         // different client answered it, the request timed out) without our
         // own RespondToConfirmation call ever running. Before this fix,
         // OnConfirmationDone was wired to null, so a completed confirmation
-        // left the stale request sitting in _pendingConfirmation forever.
+        // left the stale request pending forever.
         using var host = new HeadlessSessionHost(
             Descriptor(),
             new HeadlessCredentialSecret("fixture", "password"),
             new HeadlessDiagnosticWriter(new StringWriter()),
             new FixtureSessionOperations());
 
-        FieldInfo pendingField = typeof(HeadlessSessionHost)
-            .GetField(
-                "_pendingConfirmation",
-                BindingFlags.NonPublic | BindingFlags.Instance)!;
         var request = new GameEvents.CharacterConfirmationRequest(
             5u,
             77u,
             "continue?");
-        pendingField.SetValue(host, request);
+        host.Confirmations.Request(request);
         Assert.Equal(request, host.PendingConfirmation);
 
         // A done for a different, already-superseded context id must not
@@ -315,12 +311,8 @@ public sealed class HeadlessSessionHostTests
 
         WorldSession session = operations.Sessions[^1];
 
-        FieldInfo pendingField = typeof(HeadlessSessionHost)
-            .GetField(
-                "_pendingConfirmation",
-                BindingFlags.NonPublic | BindingFlags.Instance)!;
         var request = new GameEvents.CharacterConfirmationRequest(5u, 77u, "continue?");
-        pendingField.SetValue(host, request);
+        host.Confirmations.Request(request);
         Assert.Equal(request, host.PendingConfirmation);
 
         session.GameEvents.Dispatch(

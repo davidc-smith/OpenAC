@@ -188,7 +188,8 @@ internal sealed class HeadlessSessionHost : IDisposable
     private readonly RuntimeWindowlessSessionRoute _windowless;
     private AcDream.Core.Net.WorldSession? _currentSession;
     private RuntimeWindowlessEventRoute? _eventRoute;
-    private GameEvents.CharacterConfirmationRequest? _pendingConfirmation;
+    /// <summary>The confirmation the server is waiting on, shown nowhere.</summary>
+    private readonly RuntimeWindowlessConfirmations _confirmations;
     private int _disposeStage;
     private long _reconnectDeadline;
     private bool _reconnectPending;
@@ -237,6 +238,7 @@ internal sealed class HeadlessSessionHost : IDisposable
             throw new ArgumentOutOfRangeException(
                 nameof(reconnectQuiescence));
         }
+        _confirmations = new RuntimeWindowlessConfirmations(() => _currentSession);
         _lostConnectionRetryInterval = lostConnectionRetryInterval
             ?? DefaultLostConnectionRetryInterval;
         if (_lostConnectionRetryInterval <= TimeSpan.Zero)
@@ -322,16 +324,8 @@ internal sealed class HeadlessSessionHost : IDisposable
                     or SubmitOutcome.UnknownCommand
                     or SubmitOutcome.Dropped);
             }
-            bool AnswerConfirmation(uint contextId, bool accept)
-            {
-                if (_pendingConfirmation is not { } pending
-                    || pending.ContextId != contextId)
-                {
-                    return false;
-                }
-                RespondToConfirmation(accept);
-                return true;
-            }
+            bool AnswerConfirmation(uint contextId, bool accept) =>
+                _confirmations.TryAnswer(contextId, accept);
             NavigationWalkController? navigationWalk = null;
             if (contentLease is { } navigationContent)
             {
@@ -466,7 +460,7 @@ internal sealed class HeadlessSessionHost : IDisposable
                     : HeadlessBotPolicyFactory.Create(
                         descriptor.Policy!,
                         runtime,
-                        () => _pendingConfirmation,
+                        () => _confirmations.Pending,
                         RespondToConfirmation,
                         gateCoordinator));
             policySubscription = runtime.Subscribe(policy);
@@ -526,38 +520,23 @@ internal sealed class HeadlessSessionHost : IDisposable
             "The headless session has no pending reconnect.");
 
     internal GameEvents.CharacterConfirmationRequest? PendingConfirmation =>
-        _pendingConfirmation;
+        _confirmations.Pending;
 
-    internal void RespondToConfirmation(bool accepted)
-    {
-        if (_pendingConfirmation is not { } request)
-        {
-            throw new InvalidOperationException(
-                "No confirmation request is pending.");
-        }
-        _currentSession?.SendConfirmationResponse(
-            request.Type,
-            request.ContextId,
-            accepted);
-        _pendingConfirmation = null;
-    }
+    /// <summary>The confirmation the server is waiting on, and how it is answered.</summary>
+    internal RuntimeWindowlessConfirmations Confirmations => _confirmations;
+
+    internal void RespondToConfirmation(bool accepted) =>
+        _confirmations.Respond(accepted);
 
     // The server can resolve or cancel a confirmation on its own (a
     // different client answered it, the underlying request timed out, and
-    // so on) without a matching RespondToConfirmation call. Clear the
-    // pending confirmation whenever that context id completes so a stale
-    // request does not keep answering "yes" to a dialog that already
-    // closed. Guarded by context id so a newer request that arrived after
-    // this one completed is left alone.
+    // so on) without a matching RespondToConfirmation call. The pending
+    // confirmation for that context id is cleared so a stale request does
+    // not keep answering "yes" to a dialog that already closed; a newer
+    // request that arrived after this one completed is left alone.
     internal void HandleConfirmationDone(
-        GameEvents.CharacterConfirmationDone done)
-    {
-        if (_pendingConfirmation is { } pending
-            && pending.ContextId == done.ContextId)
-        {
-            _pendingConfirmation = null;
-        }
-    }
+        GameEvents.CharacterConfirmationDone done) =>
+        _confirmations.Done(done);
 
     /// <summary>The chat entry every front end of this session types into.</summary>
     internal RuntimeChatEntryOwner ChatEntry =>
@@ -1074,7 +1053,7 @@ internal sealed class HeadlessSessionHost : IDisposable
                     ClientTime = () => Runtime.EffectClock.NowSeconds,
                     OnConfirmationRequest = request =>
                     {
-                        _pendingConfirmation = request;
+                        _confirmations.Request(request);
                         _pluginSession.Host.RaiseConfirmationRequested(
                             new PluginConfirmation(
                                 request.ContextId,
@@ -1095,7 +1074,7 @@ internal sealed class HeadlessSessionHost : IDisposable
         AcDream.Core.Net.WorldSession session)
     {
         _currentSession = session;
-        _pendingConfirmation = null;
+        _confirmations.Forget();
         _optionsSeeder = new RuntimeCharacterOptionsSeeder(
             _declaredCharacterOptions,
             Runtime,

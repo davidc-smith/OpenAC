@@ -41,6 +41,12 @@ internal sealed record GraphicalAutomationParts
 
     /// <summary>How a chat line a plugin submits is sent with no window.</summary>
     public Func<string, bool>? SubmitChatTextWithoutWindow { get; init; }
+
+    /// <summary>
+    /// How a plugin answers the server's confirmation with no window to show
+    /// it in: the one every client without a window keeps.
+    /// </summary>
+    public Func<uint, bool, bool>? AnswerConfirmationWithoutWindow { get; init; }
     public AcDream.Runtime.Navigation.NavigationWalkController? NavigationWalk { get; init; }
     public AcDream.App.Streaming.LocalPlayerTeleportController? Teleport { get; init; }
     public AcDream.App.UI.RetailUiRuntime? RetainedUi { get; init; }
@@ -92,17 +98,6 @@ internal static partial class GraphicalAutomationCapabilities
                 "the spell catalog comes from the installed data files",
         };
 
-
-    /// <summary>
-    /// What a plugin goes without while no window is attached, and why: a
-    /// confirmation is answered in a window.
-    /// </summary>
-    internal static IReadOnlyDictionary<string, string> ConditionalWithoutWindow { get; } =
-        new Dictionary<string, string>(Conditional, StringComparer.Ordinal)
-        {
-            [nameof(RuntimeAutomationHostCapabilities.AnswerConfirmation)] =
-                "no window is attached to answer a confirmation",
-        };
     /// <summary>
     /// Builds the record this host really hands the binding pass. The window
     /// only names its parts; every decision about what a missing part costs a
@@ -127,9 +122,7 @@ internal static partial class GraphicalAutomationCapabilities
                 ? "windowed (no window)"
                 : "windowed",
             Declared = Declared,
-            Conditional = session is null && parts.SessionCommandsWithoutWindow is not null
-                ? ConditionalWithoutWindow
-                : Conditional,
+            Conditional = Conditional,
             Warn = parts.Warn,
             PluginEvents = parts.Events,
             NavigationGrid = parts.NavigationGrid,
@@ -165,9 +158,12 @@ internal static partial class GraphicalAutomationCapabilities
                     && !runtime.TransitOwner.IsLogoutActive
                     && !runtime.TransitOwner.IsTeleportActive
                     && !runtime.TransitOwner.HasPendingTeleportStart),
-            AnswerConfirmation = retainedUi is null
-                ? null
-                : retainedUi.TryAnswerConfirmation,
+            // A window answers in its own dialog; with none, the question
+            // the server is waiting on is answered as the windowless client
+            // answers it.
+            AnswerConfirmation = retainedUi is not null
+                ? retainedUi.TryAnswerConfirmation
+                : parts.AnswerConfirmationWithoutWindow,
         };
     }
 
