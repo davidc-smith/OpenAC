@@ -61,6 +61,7 @@ internal sealed class GraphicalSessionWindowLoop
     private readonly SemaphoreSlim _wake = new(0);
     private GameWindow? _window;
     private bool _closeIssued;
+    private bool _noCharacterShutdownRequested;
     private WindowDetachReason _closeReason;
     private readonly bool _console;
 
@@ -182,6 +183,13 @@ internal sealed class GraphicalSessionWindowLoop
     {
         if (_window is not { } window)
             return;
+        if (!_closeIssued && !_noCharacterShutdownRequested && _host.NoCharacterToEnter is not null)
+        {
+            // The login found no character to enter: the session is over,
+            // with a window as without one.
+            _noCharacterShutdownRequested = true;
+            _requests.Enqueue(WindowAttachInput.ShutdownRequested);
+        }
         while (!_closeIssued && _requests.TryPeek(out WindowAttachInput input))
         {
             if (input is WindowAttachInput.DetachRequested

@@ -253,7 +253,11 @@ document's `statusFile` also gets `windowOpened`, `windowClosed` (`reason`:
 stay (`disconnected` with `connection-lost`; plugins hear the log off) and
 the client logs in again every 30 s, entering the document's character as at
 the start, until an attempt gets back in; each failed attempt says so on
-standard error. An account without that character ends the session (exit 5).
+standard error. A login, the first or a later one, with or without a window,
+that finds no such character on the account ends the session with exit 5:
+standard error gets `[<session id>] ended: no available character matches Id(1342177291)`
+(or `Name("...")`, `Index(n)`), and the status file closes with
+`disconnected` and `exited` (code 5) giving that text as `reason`.
 While it waits, `/quit` ends it and `/window` waits for the next login. With
 no window the client also walks (`/nav`, plugin walks), lets plugins answer
 the server's confirmations, and sets the document's `characterOptions`, as

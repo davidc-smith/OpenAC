@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using AcDream.App.Hosting;
+using AcDream.App.Rendering;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Plugin.Abstractions;
@@ -272,15 +273,85 @@ public sealed class WindowlessSessionGapsTests
         Assert.Equal(2, session.Connections.Sessions.Count);
         Assert.Equal(GraphicalSessionEnd.ConnectionLost, session.End(connectionEnded: true));
         // The loss is said once, when it happens; the attempt that found no
-        // character had connected, and the exit closes that connection.
-        string[] lines = session.StatusLines();
-        Assert.Equal(
-            ["connection-lost", "process-exit"],
-            lines.Where(line => line.Contains("\"e\":\"disconnected\"", StringComparison.Ordinal))
-                .Select(line => System.Text.Json.JsonDocument.Parse(line)
-                    .RootElement.GetProperty("reason").GetString()!)
-                .ToArray());
-        Assert.Contains("\"code\":5", lines[^1], StringComparison.Ordinal);
+        // character closes its connection with why, as Rust's status file
+        // does.
+        Assert.Equal(["connection-lost", NoWindowlessCharacter], DisconnectedReasons(session));
+        AssertExited(session, 5, NoWindowlessCharacter);
+    }
+
+    /// <summary>The end Rust's session reports when no character matches the document's.</summary>
+    private const string NoWindowlessCharacter =
+        "no available character matches Name(\"+Windowless\")";
+
+    /// <summary>
+    /// A first start that connects to an account without the document's
+    /// character ends the session with the connection's exit code, saying
+    /// why in Rust's words; before, it waited forever. Port of Rust
+    /// <c>runner_relogin_tests.rs</c>
+    /// <c>a_failed_attempt_waits_another_interval_and_a_missing_character_ends_the_recovery</c>
+    /// (its end, for the first login) and of the headless client's exit 5.
+    /// </summary>
+    [Fact]
+    public void A_first_start_on_an_account_without_the_character_ends_the_session()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.Connections.Roster.Clear();
+        session.Connections.Roster.Add(
+            new CharacterList.Character(0x50000002u, "+Someone", 0u));
+        session.Host.ApplyAutomationWithoutWindow();
+        session.Host.StartSession();
+        bool ended = false;
+        for (int frame = 0; frame < 20 && !ended; frame++)
+            ended = session.Update();
+
+        Assert.True(ended, "the session ended");
+        Assert.Equal(NoWindowlessCharacter, session.Host.NoCharacterToEnter);
+        Assert.Single(session.Connections.Sessions);
+        Assert.Equal(GraphicalSessionEnd.ConnectionLost, session.End(connectionEnded: true));
+        Assert.Equal([NoWindowlessCharacter], DisconnectedReasons(session));
+        AssertExited(session, 5, NoWindowlessCharacter);
+    }
+
+    /// <summary>
+    /// The same start with a window: the window closes (the loop asks for it
+    /// when <see cref="GraphicalSessionHost.NoCharacterToEnter"/> is set) and
+    /// its end reports the connection's exit code, not a graceful one.
+    /// </summary>
+    [Fact]
+    public void A_window_whose_start_finds_no_character_ends_with_the_connection_exit_code()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.Connections.Roster.Clear();
+        session.Host.ApplyAutomationWithoutWindow();
+        session.Host.StartSession();
+        for (int frame = 0; frame < 20 && session.Host.NoCharacterToEnter is null; frame++)
+            session.Tick();
+        const string why = "no available character matches Name(\"+Windowless\")";
+        Assert.Equal(why, session.Host.NoCharacterToEnter);
+
+        GraphicalSessionEnd end = session.Host.ReportExited(
+            new GameWindowLifetimeReport(GameWindowLifetimeStatus.Complete, null, [], null),
+            crashed: false);
+
+        Assert.Equal(GraphicalSessionEnd.ConnectionLost, end);
+        Assert.Equal([why], DisconnectedReasons(session));
+        AssertExited(session, 5, why);
+    }
+
+    private static string[] DisconnectedReasons(WindowlessSessionFixture session) =>
+        [.. session.StatusLines()
+            .Where(line => line.Contains("\"e\":\"disconnected\"", StringComparison.Ordinal))
+            .Select(line => System.Text.Json.JsonDocument.Parse(line)
+                .RootElement.GetProperty("reason").GetString()!)];
+
+    private static void AssertExited(WindowlessSessionFixture session, int code, string reason)
+    {
+        System.Text.Json.JsonElement exited = System.Text.Json.JsonDocument
+            .Parse(session.StatusLines()[^1])
+            .RootElement;
+        Assert.Equal("exited", exited.GetProperty("e").GetString());
+        Assert.Equal(code, exited.GetProperty("code").GetInt32());
+        Assert.Equal(reason, exited.GetProperty("reason").GetString());
     }
 
     private static byte[] PlayerDescription(uint options1, uint options2)

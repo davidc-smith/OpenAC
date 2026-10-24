@@ -417,6 +417,14 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal bool IsRecoveringLostConnection => _recovering;
 
     /// <summary>
+    /// Why the session's last login found no character to enter (the account
+    /// has none matching the document's), or null. Set, the session is over
+    /// with the connection's exit code, with or without a window: no later
+    /// login would find it either.
+    /// </summary>
+    internal string? NoCharacterToEnter => LiveSession.Host.NoCharacterToEnter;
+
+    /// <summary>
     /// The session's connection, stepped after each update while no window is
     /// attached. A server that falls silent ends the stay (plugins hear the
     /// log off) and the session logs in again every
@@ -424,12 +432,12 @@ internal sealed class GraphicalSessionHost : IDisposable
     /// at the start, until an attempt gets back in; each failure says so and
     /// waits another interval. True when the connection is gone for good and
     /// the session ends with the connection's exit code: a start that never
-    /// got in, a connection that failed or that the server ended, or an
-    /// attempt to log in again that finds no character to enter.
+    /// got in, a connection that failed or that the server ended, or a login
+    /// (the first or a later one) that finds no character to enter.
     /// </summary>
     internal bool StepConnectionWithoutWindow()
     {
-        if (_startFailed)
+        if (_startFailed || NoCharacterToEnter is not null)
             return true;
         long now = _time.GetTimestamp();
         if (!_recovering)
@@ -458,15 +466,6 @@ internal sealed class GraphicalSessionHost : IDisposable
                 ReloginFailed(now, connection.Error ?? "the server stopped answering");
                 return false;
             }
-            if (LiveSession.Host.CurrentSession is null)
-            {
-                // Connected, then let go without failing or entering: the
-                // account has no such character, which no later attempt
-                // changes.
-                Console.Error.WriteLine(
-                    "live: logging in again found no character to enter; the session ends");
-                return true;
-            }
             return false;
         }
 
@@ -483,6 +482,7 @@ internal sealed class GraphicalSessionHost : IDisposable
                     result.Error?.Message ?? "the connection could not be opened");
                 return false;
             case RuntimeSessionStartStatus.NoCharacters:
+                return true;
             case RuntimeSessionStartStatus.MissingCredentials:
                 Console.Error.WriteLine(
                     $"live: logging in again ended ({result.Status}); the session ends");
@@ -690,7 +690,12 @@ internal sealed class GraphicalSessionHost : IDisposable
     /// </summary>
     internal GraphicalSessionEnd EndSessionWithoutWindow(bool connectionEnded = false)
     {
-        if (connectionEnded)
+        string? noCharacter = connectionEnded ? NoCharacterToEnter : null;
+        if (noCharacter is not null)
+        {
+            ReportNoCharacterToEnter(noCharacter);
+        }
+        else if (connectionEnded)
         {
             // A session logging in again already said its connection went.
             if (!_recovering)
@@ -727,11 +732,21 @@ internal sealed class GraphicalSessionHost : IDisposable
         (int code, string reason) = end switch
         {
             GraphicalSessionEnd.Graceful => (0, "graceful"),
-            GraphicalSessionEnd.ConnectionLost => (5, "connection"),
+            GraphicalSessionEnd.ConnectionLost => (5, noCharacter ?? "connection"),
             _ => (1, "shutdown-incomplete"),
         };
         StatusWriter.Exited(SessionId, code, reason);
         return end;
+    }
+
+    /// <summary>
+    /// Says that the session ends because its login found no character to
+    /// enter: the notice, and the connection closed with why.
+    /// </summary>
+    private void ReportNoCharacterToEnter(string why)
+    {
+        Console.Error.WriteLine($"[{SessionId}] ended: {why}");
+        StatusWriter.Disconnected(SessionId, why);
     }
 
     /// <summary>Says what went wrong letting go of a window the session outlived.</summary>
@@ -752,6 +767,15 @@ internal sealed class GraphicalSessionHost : IDisposable
         {
             StatusWriter.Exited(SessionId, 1, "crashed");
             return GraphicalSessionEnd.Crashed;
+        }
+
+        if (NoCharacterToEnter is { } noCharacter)
+        {
+            // The window closed because the login found no character: the
+            // session ends as it does with no window.
+            ReportNoCharacterToEnter(noCharacter);
+            StatusWriter.Exited(SessionId, 5, noCharacter);
+            return GraphicalSessionEnd.ConnectionLost;
         }
 
         if (report.Status == GameWindowLifetimeStatus.Complete)
