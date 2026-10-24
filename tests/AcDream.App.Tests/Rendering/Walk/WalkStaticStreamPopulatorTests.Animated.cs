@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using AcDream.App.Rendering.Scene;
 using AcDream.App.Rendering.Walk;
 using AcDream.App.Rendering.Wb;
@@ -31,40 +30,10 @@ public sealed partial class WalkStaticStreamPopulatorTests
         var views = new RetainedViews();
         var stream = new OrderedDrawStream();
         var alpha = new List<WbDrawDispatcher.WalkClassifiedBatch>();
-        for (int warmup = 0; warmup < 16; warmup++)
-            _ = MeasureChangingRetainedReplayAllocations(
-                fx.Dispatcher, cache, world, views, stream, alpha, ref moving, 0, 256);
-        int reads = world.Reads;
-        int classified = cache.EntityClassificationCount;
-        long allocated = MeasureChangingRetainedReplayAllocations(
-            fx.Dispatcher, cache, world, views, stream, alpha, ref moving, 256, 256);
-
-        Assert.Equal(0, allocated);
-        Assert.Equal(reads, world.Reads);
-        Assert.Equal(1, cache.RebuildCount);
-        Assert.Equal(256, cache.EntityClassificationCount - classified);
-        Assert.Equal(new[] { 3u, 3u, 12u }, stream.Keys.Select(key => key.FirstIndex));
-        Assert.Equal(new[] { 1f, 2f, 511f }, stream.Transforms.Select(transform => transform.M41));
-        Assert.Equal(projectionClass == RenderProjectionClass.LiveDynamicRoot ? WalkDrawStage.Dynamic : WalkDrawStage.OutdoorStatic,
-            stream.Stages[2]);
-    }
-
-    // Keep setup, disposal and assertion work outside the measured method's optimization boundary.
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static long MeasureChangingRetainedReplayAllocations(
-        WbDrawDispatcher dispatcher,
-        FarLandscapeDrawCache cache,
-        RetainedWorld world,
-        RetainedViews views,
-        OrderedDrawStream stream,
-        List<WbDrawDispatcher.WalkClassifiedBatch> alpha,
-        ref RenderProjectionRecord moving,
-        int firstFrame,
-        int iterations)
-    {
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int frame = firstFrame; frame < firstFrame + iterations; frame++)
+        int frame = 0;
+        void Frame()
         {
+            frame++;
             moving = moving with
             {
                 PreviousTransform = new PreviousRenderTransform(moving.Transform.LocalToWorld),
@@ -74,12 +43,30 @@ public sealed partial class WalkStaticStreamPopulatorTests
             world.Current[9] = moving;
             stream.Reset();
             alpha.Clear();
-            dispatcher.BeginWalkPartFrame();
+            fx.Dispatcher.BeginWalkPartFrame();
             cache.BeginFrame();
             cache.TryAppend(RetainedBlock, 4, 0, stream, views, 0, Vector3.Zero, alpha);
-            dispatcher.EndWalkPartFrame();
+            fx.Dispatcher.EndWalkPartFrame();
         }
-        return GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Frame();
+        int reads = world.Reads;
+        int classified = cache.EntityClassificationCount;
+        int firstFrame = frame;
+        // The smallest of several windows: a per-frame allocation shows in
+        // every window, while the runtime's one-time work while the process
+        // warms up (it lands on this thread at an arbitrary call) shows in one.
+        long allocated = ZeroAllocationProbe.MeasureWarmed(
+            Frame, batchSize: 256, warmupBatches: 16, samples: 4);
+
+        Assert.Equal(0, allocated);
+        Assert.Equal(reads, world.Reads);
+        Assert.Equal(1, cache.RebuildCount);
+        Assert.Equal(frame - firstFrame, cache.EntityClassificationCount - classified);
+        Assert.Equal(new[] { 3u, 3u, 12u }, stream.Keys.Select(key => key.FirstIndex));
+        Assert.Equal(new[] { 1f, 2f, frame }, stream.Transforms.Select(transform => transform.M41));
+        Assert.Equal(projectionClass == RenderProjectionClass.LiveDynamicRoot ? WalkDrawStage.Dynamic : WalkDrawStage.OutdoorStatic,
+            stream.Stages[2]);
     }
 
     [Fact]
