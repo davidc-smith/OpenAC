@@ -69,13 +69,19 @@ public sealed class GraphicalLiveSessionTests : IDisposable
 
     private static LiveSessionHostBindings Bindings(
         Func<GraphicalSessionPresentation?> window,
-        List<string> noted) =>
+        List<string> noted,
+        ILiveSessionEventRouting? windowlessRoute = null) =>
         GraphicalAutomationCapabilities.BuildSessionHostBindings(
             new GraphicalSessionHostParts
             {
                 CreateCommands = _ => throw new NotSupportedException(),
                 ResetWithoutWindow = generation =>
                     noted.Add($"runtime reset {generation.Value}"),
+                CreateEventsWithoutWindow = _ =>
+                {
+                    noted.Add("windowless route");
+                    return windowlessRoute ?? new NoRoute();
+                },
                 Presentation = window,
                 Identity = new AcDream.App.Input.LocalPlayerIdentityState(),
                 Communication = Part<AcDream.Runtime.Gameplay.RuntimeCommunicationState>(),
@@ -121,21 +127,40 @@ public sealed class GraphicalLiveSessionTests : IDisposable
     }
 
     [Fact]
-    public void A_world_connection_is_taken_hold_of_by_the_attached_window_and_refused_without_one()
+    public void A_world_connection_is_taken_hold_of_by_the_attached_window_or_without_one_by_the_windowless_route()
     {
         var noted = new List<string>();
         GraphicalSessionPresentation? attached = null;
-        LiveSessionHostBindings bindings = Bindings(() => attached, noted);
+        var windowless = new NoRoute();
+        LiveSessionHostBindings bindings = Bindings(() => attached, noted, windowless);
         WorldSession session = Part<WorldSession>();
 
-        InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
-            () => bindings.Routing.CreateEvents(session));
-        Assert.Contains("No window", refused.Message);
+        // With no window the session still enters the world: the route every
+        // client without a window builds takes hold of the connection.
+        Assert.Same(windowless, bindings.Routing.CreateEvents(session));
 
         var route = new NoRoute();
         attached = Window(noted, route);
         Assert.Same(route, bindings.Routing.CreateEvents(session));
-        Assert.Equal(["window route"], noted);
+        Assert.Equal(["windowless route", "window route"], noted);
+    }
+
+    [Fact]
+    public void The_session_host_builds_the_windowless_route_and_frame_over_its_own_collision()
+    {
+        using GraphicalSessionHost host = NewHost();
+
+        // Built on first use and kept: one route and one frame for the
+        // process, whichever connection or window comes and goes.
+        Assert.Same(host.WindowlessRoute, host.WindowlessRoute);
+        Assert.Same(host.WindowlessFrame, host.WindowlessFrame);
+        Assert.Null(host.WindowlessRoute.CurrentSession);
+
+        // The frame runs with nothing drawn and no connection: an update of
+        // a session waiting to connect.
+        host.Tick(0.015, host.WindowlessFrame);
+        Assert.Null(host.Window);
+        Assert.False(host.Runtime.Session.IsInWorld);
     }
 
     [Fact]

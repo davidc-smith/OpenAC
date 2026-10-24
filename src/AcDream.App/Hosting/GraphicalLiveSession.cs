@@ -23,15 +23,16 @@ namespace AcDream.App.Hosting;
 /// commands that need something to look at, the login steps that restore its
 /// layout -- is lent by the attached window and reached at the moment it is
 /// needed. With no window, a reset puts the runtime alone back to its start,
-/// a command that needs a window says so, and a world connection cannot be
-/// taken hold of (the windowless event route is a later step).
+/// a command that needs a window says so, and a world connection is taken
+/// hold of by the route every client without a window builds.
 /// </summary>
 internal sealed class GraphicalLiveSession
 {
     private readonly GameRuntime _runtime;
     private readonly Action<string> _log;
     private readonly string? _chatLogDirectory;
-    private readonly NoProjectionResetHost _resetWithoutWindow = new();
+    private readonly AcDream.Runtime.Session.Windowless
+        .RuntimeWindowlessGenerationResetHost _resetWithoutWindow = new();
     private GraphicalSessionPresentation? _presentation;
     private ChatSessionLog? _chatSessionLog;
     private ChatTranscriptLogWriter? _chatLogWriter;
@@ -45,9 +46,12 @@ internal sealed class GraphicalLiveSession
         Func<string, bool>? tryHandlePluginCommand,
         Func<string, PluginChatInputDecision>? interceptChatInput,
         Action<string> log,
+        Func<WorldSession, ILiveSessionEventRouting> createEventsWithoutWindow,
+        Action? beforeResetWithoutWindow = null,
         string? chatLogDirectory = null,
         TimeProvider? timeProvider = null)
     {
+        ArgumentNullException.ThrowIfNull(createEventsWithoutWindow);
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(options);
@@ -85,7 +89,13 @@ internal sealed class GraphicalLiveSession
                         new LiveSessionCommandRouter(
                             CreateCommandBindings(session))),
                     ResetWithoutWindow = generation =>
-                        _runtime.ResetGeneration(generation, _resetWithoutWindow),
+                    {
+                        // A portal reveal ends before the world transit
+                        // resets, as it does with a window.
+                        beforeResetWithoutWindow?.Invoke();
+                        _runtime.ResetGeneration(generation, _resetWithoutWindow);
+                    },
+                    CreateEventsWithoutWindow = createEventsWithoutWindow,
                     Presentation = () => _presentation,
                     Identity = identity,
                     Communication = runtime.CommunicationOwner,
@@ -190,24 +200,6 @@ internal sealed class GraphicalLiveSession
         {
             _owner?.Detach(presentation);
             _owner = null;
-        }
-    }
-
-    /// <summary>
-    /// A new generation with nothing drawn: no entity has a drawn projection
-    /// to retire or a render boundary to drain.
-    /// </summary>
-    private sealed class NoProjectionResetHost : IRuntimeGenerationResetHost
-    {
-        public void RetireEntityProjection(RuntimeEntityRecord entity) =>
-            ArgumentNullException.ThrowIfNull(entity);
-
-        public void DrainEntityProjectionBoundary()
-        {
-        }
-
-        public void CompleteEntityProjectionRetirement()
-        {
         }
     }
 }

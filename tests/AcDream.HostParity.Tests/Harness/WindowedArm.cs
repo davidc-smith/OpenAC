@@ -310,6 +310,7 @@ internal sealed class WindowedArm : ParityArm
             {
                 CreateCommands = routing.CreateCommands,
                 ResetWithoutWindow = reset,
+                CreateEventsWithoutWindow = routing.CreateEvents,
                 Presentation = () => presentation,
                 Identity = new AcDream.App.Input.LocalPlayerIdentityState(
                     Runtime.PlayerIdentity),

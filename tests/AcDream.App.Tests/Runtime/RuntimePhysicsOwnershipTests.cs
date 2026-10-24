@@ -8,10 +8,14 @@ public sealed class RuntimePhysicsOwnershipTests
     public void ProductionHostsUseSharedPlacementSubscriptionWithoutDirectChannel()
     {
         string root = FindRepositoryRoot();
-        foreach (string relative in new[]
+        // The headless client takes hold of a connection through the
+        // windowless session route, which the graphical client's session
+        // host binds too while no window is attached.
+        foreach ((string relative, bool subscribes) in new[]
                  {
-                     Path.Combine("src", "AcDream.App"),
-                     Path.Combine("src", "AcDream.Headless"),
+                     (Path.Combine("src", "AcDream.App"), true),
+                     (Path.Combine("src", "AcDream.Headless"), false),
+                     (Path.Combine("src", "AcDream.Runtime", "Session", "Windowless"), true),
                  })
         {
             string[] sources = Directory.EnumerateFiles(
@@ -30,6 +34,8 @@ public sealed class RuntimePhysicsOwnershipTests
                 source => source.Contains(
                     "RuntimePlacementProjectionChannel",
                     StringComparison.Ordinal));
+            if (!subscribes)
+                continue;
             Assert.Contains(
                 sources,
                 source => source.Contains(

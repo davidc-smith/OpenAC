@@ -218,7 +218,12 @@ public sealed class GameWindow :
 
     private readonly CellVisibility _cellVisibility = new();
 
-    private readonly object _datLock = new();
+    /// <summary>
+    /// The lock every reader of the game files takes. The files are the
+    /// session host's when it opened them, shared with the session's own
+    /// readers, so the lock is theirs too.
+    /// </summary>
+    private readonly object _datLock;
 
     private float[]? _heightTable;
     private AcDream.Core.Terrain.TerrainBlendingContext? _blendCtx;
@@ -505,6 +510,7 @@ public sealed class GameWindow :
         _localPlayerIdentity = host.PlayerIdentity;
         // The world frame a window draws from is the session's.
         _liveWorldOrigin = host.WorldOrigin;
+        _datLock = host.Content?.DatLock ?? new object();
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
             _runtime);
         _worldEnvironment = new AcDream.App.World.WorldEnvironmentController(
@@ -1234,6 +1240,7 @@ public sealed class GameWindow :
                     Console.Error.WriteLine)
                 {
                     MixerOptions = _runtimeSettings.AudioMixer,
+                    SessionContent = _host.Content,
                 },
                 this).Compose(platformResult, hostInputCamera),
             (platformResult, hostInputCamera, contentEffectsAudio) =>
@@ -1727,8 +1734,10 @@ public sealed class GameWindow :
             _renderResourceLifetime,
             _constructionCleanup),
         new PlatformShutdownRoots(
-            _dats,
-            _preparedAssets,
+            // Game files the session host opened are borrowed, not closed
+            // with the window.
+            _host.Content is null ? _dats : null,
+            _host.Content is null ? _preparedAssets : null,
             _input,
             _graphics));
     private void OnFocusChanged(bool focused)

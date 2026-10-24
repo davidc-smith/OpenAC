@@ -332,15 +332,21 @@ internal sealed class SessionPlayerCompositionPhase
         bindings = new SessionPlayerRuntimeBindings();
         // The session's collision is built by the session host from the same
         // files, not from the landblocks this window streams to draw.
-        bindings.Adopt(
-            "session collision content",
-            d.Collision.BindContent(
-                new AcDream.App.Hosting.GraphicalCollisionContent(
-                    content.Dats,
-                    d.DatLock,
-                    preparedCollisions,
-                    System.Collections.Immutable.ImmutableArray.Create(
-                        world.TerrainBuild.HeightTable))));
+        // When the session host opened the game files it has bound them
+        // already; a window only lends its own files to a session that has
+        // none.
+        if (!d.Collision.HasContent)
+        {
+            bindings.Adopt(
+                "session collision content",
+                d.Collision.BindContent(
+                    new AcDream.App.Hosting.GraphicalCollisionContent(
+                        content.Dats,
+                        d.DatLock,
+                        preparedCollisions,
+                        System.Collections.Immutable.ImmutableArray.Create(
+                            world.TerrainBuild.HeightTable))));
+        }
         // The command surface is the session host's, built before any
         // window; this window routes through it while it is attached.
         LiveSessionCommandSurface liveSessionCommands = d.LiveSession.Commands;
