@@ -632,17 +632,17 @@ internal static class VulkanCapabilityGuard
     }
 }
 
+/// <summary>
+/// The report's serializer, generated at build time: building it by
+/// reflection at run time was most of the cost of writing the report at
+/// every start.
+/// </summary>
+[JsonSourceGenerationOptions(WriteIndented = true, UseStringEnumConverter = true)]
+[JsonSerializable(typeof(VulkanCapabilityRecord))]
+internal sealed partial class VulkanCapabilityReportJsonContext : JsonSerializerContext;
+
 internal static class VulkanCapabilityReportWriter
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        WriteIndented = true,
-        Converters =
-        {
-            new JsonStringEnumConverter(),
-        },
-    };
-
     internal static void Write(string path, VulkanCapabilityRecord capabilities)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -661,6 +661,8 @@ internal static class VulkanCapabilityReportWriter
     internal static string Serialize(VulkanCapabilityRecord capabilities)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
-        return JsonSerializer.Serialize(capabilities, Options);
+        return JsonSerializer.Serialize(
+            capabilities,
+            VulkanCapabilityReportJsonContext.Default.VulkanCapabilityRecord);
     }
 }

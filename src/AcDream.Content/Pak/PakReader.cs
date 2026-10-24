@@ -3,6 +3,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.MemoryMappedFiles;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace AcDream.Content.Pak;
 
@@ -58,14 +60,41 @@ public sealed class PakReader : IDisposable {
 
         _tocOffset = (long)Header.TocOffset;
         _tocCount = checked((int)Header.TocCount);
-        for (int i = 0; i < _tocCount; i++) {
-            PakTocEntry entry = ReadToc(i);
-            bool invalid = !IsEntryRangeValid(entry);
-            if (invalid) {
-                _entryVerdictByTocIndex[i] = 0;
-                LogCorruptionOnce(i, $"TOC entry out of bounds (offset={entry.Offset}, storedLength={entry.StoredLength}, " +
-                    $"file={_fileLength}, toc@{Header.TocOffset})");
+        CheckTocRanges();
+    }
+
+    /// <summary>
+    /// Marks every TOC record whose blob lies outside the file as bad. The
+    /// records are read straight from the mapped pages in one pass: one
+    /// accessor call per record made this most of opening a full bake.
+    /// </summary>
+    private unsafe void CheckTocRanges() {
+        if (_tocCount == 0)
+            return;
+
+        SafeMemoryMappedViewHandle view = _accessor.SafeMemoryMappedViewHandle;
+        byte* start = null;
+        view.AcquirePointer(ref start);
+        try {
+            var records = new ReadOnlySpan<byte>(
+                start + _accessor.PointerOffset + _tocOffset,
+                checked(_tocCount * PakTocEntry.Size));
+            ReadOnlySpan<PakTocEntry> entries = BitConverter.IsLittleEndian
+                ? MemoryMarshal.Cast<byte, PakTocEntry>(records)
+                : default;
+            for (int i = 0; i < _tocCount; i++) {
+                PakTocEntry entry = BitConverter.IsLittleEndian
+                    ? entries[i]
+                    : PakTocEntry.ReadFrom(records.Slice(i * PakTocEntry.Size, PakTocEntry.Size));
+                if (!IsEntryRangeValid(entry)) {
+                    _entryVerdictByTocIndex[i] = 0;
+                    LogCorruptionOnce(i, $"TOC entry out of bounds (offset={entry.Offset}, storedLength={entry.StoredLength}, " +
+                        $"file={_fileLength}, toc@{Header.TocOffset})");
+                }
             }
+        }
+        finally {
+            view.ReleasePointer();
         }
     }
 
