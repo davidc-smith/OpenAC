@@ -961,6 +961,18 @@ public sealed class LiveEntityRuntime : ILiveEntityRadarSource
             LiveEntityMaterializationResidence.LegacyImmediate;
     }
 
+    /// <summary>
+    /// Whether the runtime has placed this entity and is waiting for the
+    /// presentation to show that placement.
+    /// </summary>
+    internal bool IsAwaitingRuntimePlacement(LiveEntityRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        return record.Canonical.Key is { } key
+            && _entityObjects.Physics.SetPosition
+                .IsPlacementAwaitingPresentation(key);
+    }
+
     internal bool TryApplyRuntimePlacementProjection(
         in RuntimePlacementProjectionSnapshot projection)
     {

@@ -127,6 +127,89 @@ public sealed class LiveEntityHydrationControllerTests
         Assert.Equal(1, fixture.Ready.PublishCount);
     }
 
+    /// <summary>
+    /// The session's collision can be published before the window draws
+    /// the landblock: a creature placed there then waits for the window,
+    /// which shows the placement once the landblock is drawn. The landblock
+    /// arriving must leave the creature's cell to that waiting placement.
+    /// Committing the cell itself made the placement stale; the window then
+    /// refused it for good, and every placement queued behind it (and the
+    /// collision waiting on them) waited forever.
+    /// </summary>
+    [Fact]
+    public void LoadedCallback_LeavesTheCellToAPlacementWaitingForThatLandblock()
+    {
+        const uint North = 0x01020001u;
+        using var fixture = new Fixture(originKnown: true);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+        LiveEntityRecord record = fixture.Record;
+        WorldEntity entity = record.WorldEntity!;
+        RuntimeEntityRecord canonical = record.Canonical;
+        Assert.Equal(0, fixture.EntityObjects.Placements.PendingCount);
+
+        // The session publishes the collision of the landblock north of the
+        // creature's; the window has not drawn it yet.
+        var physics = fixture.EntityObjects.Physics;
+        physics.SetPosition.BeginCollisionGeneration(North & 0xFFFF0000u, 1UL);
+        physics.Engine.AddLandblock(
+            North & 0xFFFF0000u,
+            new AcDream.Core.Physics.TerrainSurface(new byte[81], new float[256]),
+            Array.Empty<AcDream.Core.Physics.CellSurface>(),
+            Array.Empty<AcDream.Core.Physics.PortalPlane>(),
+            worldOffsetX: 0f,
+            worldOffsetY: 192f);
+        physics.SetPosition.CommitCollisionGeneration(North & 0xFFFF0000u, 1UL, ready: true);
+        if (canonical.PhysicsBody is null)
+        {
+            var body = new PhysicsBody
+            {
+                Position = new Vector3(10f, 10f, 5f),
+                Orientation = Quaternion.Identity,
+                LastUpdateTime = 1d,
+                State = PhysicsStateFlags.ReportCollisions,
+            };
+            body.SnapToCell(Cell, body.Position, body.Position);
+            fixture.EntityObjects.Entities.SetPhysicsBody(canonical, body);
+        }
+
+        // The creature is put down in that landblock: the window waits for it.
+        var local = new Vector3(10f, 10f, 0f);
+        _ = physics.SetPosition.Apply(
+            canonical,
+            canonical.PositionAuthorityVersion,
+            new AcDream.Runtime.Physics.RuntimeSetPositionCommand(
+                new AcDream.Core.Physics.PhysicsSetPositionRequest(
+                    local + new Vector3(0f, 192f, 0f),
+                    Quaternion.Identity,
+                    North,
+                    local,
+                    System.Collections.Immutable.ImmutableArray<
+                        AcDream.Core.Physics.FlatCollisionSphere>.Empty,
+                    Scale: 1f,
+                    StepUpHeight: 0.4f,
+                    StepDownHeight: 0.4f,
+                    Flags: AcDream.Core.Physics.PhysicsSetPositionFlags.Placement
+                        | AcDream.Core.Physics.PhysicsSetPositionFlags.Slide),
+                AcDream.Runtime.Physics.RuntimeSetPositionOperationKind.RemoteAuthoritative,
+                GameTime: 10d,
+                ExpectedVelocityAuthorityVersion: 0UL,
+                ShadowWorldOffsetX: 0f,
+                ShadowWorldOffsetY: 192f));
+        Assert.Equal(North, canonical.FullCellId);
+        Assert.Equal(1, fixture.EntityObjects.Placements.PendingCount);
+
+        // The window draws the landblock, then shows what waited for it.
+        fixture.Spatial.AddLandblock(new LoadedLandblock(
+            North | 0xFFFFu,
+            new DatReaderWriter.DBObjs.LandBlock(),
+            Array.Empty<WorldEntity>()));
+        fixture.Controller.OnLandblockLoaded(North);
+        fixture.RetryPlacements();
+
+        Assert.Equal(0, fixture.EntityObjects.Placements.PendingCount);
+        Assert.Equal(North, entity.ParentCellId);
+    }
+
     [Theory]
     [InlineData(0x50000123u, (ushort)7)]
     [InlineData(0x70000099u, (ushort)0)]
@@ -2349,6 +2432,7 @@ public sealed class LiveEntityHydrationControllerTests
                 0x0101FFFFu,
                 new DatReaderWriter.DBObjs.LandBlock(),
                 Array.Empty<WorldEntity>()));
+            Spatial = spatial;
             Runtime = new LiveEntityRuntime(
                 spatial,
                 Resources,
@@ -2405,6 +2489,12 @@ public sealed class LiveEntityHydrationControllerTests
         public AcDream.Runtime.Session.RuntimeFirstEntryDriveController FirstEntry { get; }
         private readonly AcDream.Runtime.Physics
             .RuntimePlacementProjectionSubscription _placements;
+
+        /// <summary>The landblocks the window draws.</summary>
+        public GpuWorldState Spatial { get; }
+
+        /// <summary>Offers the placements still waiting to the window again, as each frame does.</summary>
+        public void RetryPlacements() => _placements.RetryPending();
 
         private sealed class FixturePlacementSink(LiveEntityRuntime runtime)
             : AcDream.Runtime.Physics.IRuntimePlacementProjectionSink

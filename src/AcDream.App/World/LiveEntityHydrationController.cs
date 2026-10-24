@@ -491,9 +491,16 @@ AppearanceSynchronization:
                 else if (record?.WorldEntity is not null
                     && record.InitialHydrationCompleted)
                 {
-                    _runtime.RebucketLiveEntity(
-                        record.ServerGuid,
-                        record.ProjectionCellId);
+                    // A placement into this landblock that waited for it to
+                    // be drawn shows the entity where the runtime put it.
+                    // Committing the cell here as well would make that
+                    // placement stale, and it would never be shown.
+                    if (!_runtime.IsAwaitingRuntimePlacement(record))
+                    {
+                        _runtime.RebucketLiveEntity(
+                            record.ServerGuid,
+                            record.ProjectionCellId);
+                    }
                 }
                 else if (ProjectExact(
                     candidate,
