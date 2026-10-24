@@ -1125,6 +1125,20 @@ public sealed class RetailUiRuntime : IDisposable
     public bool TryAnswerConfirmation(uint contextId, bool accept) =>
         _gameplayConfirmationController?.TryAnswer(contextId, accept) == true;
 
+    /// <summary>
+    /// Shows a question the session kept while no window was open. Plugins
+    /// were told when the server asked, so they are not told again.
+    /// </summary>
+    public bool ShowHandedOverConfirmation(GameEvents.CharacterConfirmationRequest request) =>
+        _gameplayConfirmationController?.HandleRequest(request) == true;
+
+    /// <summary>
+    /// The open question, taken out of its dialog without an answer, for the
+    /// session to keep when this window closes; null when none is open.
+    /// </summary>
+    public GameEvents.CharacterConfirmationRequest? TakeOpenConfirmation() =>
+        _gameplayConfirmationController?.TakeOpen();
+
     public bool HandleConfirmationDone(GameEvents.CharacterConfirmationDone done)
         => _gameplayConfirmationController?.HandleDone(done) == true;
 

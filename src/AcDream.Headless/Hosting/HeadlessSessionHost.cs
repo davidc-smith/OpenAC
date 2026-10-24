@@ -171,7 +171,7 @@ internal sealed class HeadlessSessionHost : IDisposable
     /// rather than once per turn of this one's own schedule.
     /// </summary>
     private readonly AcDream.Runtime.Plugins.RuntimePluginTickClock _pluginTick;
-    private readonly HeadlessLogoutAutomation _logout;
+    private readonly AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout _logout;
     private readonly LiveChatCommandSurface _chatCommandSurface;
     private readonly LiveSessionHost _liveSession;
     private readonly RuntimeLocalPlayerFrameController _localPlayerFrame;
@@ -279,7 +279,7 @@ internal sealed class HeadlessSessionHost : IDisposable
                 runtime,
                 contentLease?.MagicCatalog,
                 () => _accountName);
-            var logout = new HeadlessLogoutAutomation(
+            var logout = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout(
                 runtime,
                 _timeProvider,
                 isConfirmed: logoutConfirmedOverride);
@@ -605,10 +605,10 @@ internal sealed class HeadlessSessionHost : IDisposable
         ConsolePump?.Invoke();
         switch (_logout.Tick())
         {
-            case HeadlessLogoutOutcome.Completed:
+            case AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogoutOutcome.Completed:
                 _loggedOut = true;
                 break;
-            case HeadlessLogoutOutcome.TimedOut:
+            case AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogoutOutcome.TimedOut:
                 Quarantine(new TimeoutException(
                     "A plugin-requested logout was never confirmed by the server."));
                 break;

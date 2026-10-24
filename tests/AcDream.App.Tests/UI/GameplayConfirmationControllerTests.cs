@@ -305,4 +305,57 @@ public sealed class GameplayConfirmationControllerTests
         Assert.Equal([(2u, 42u, true)], responses);
     }
 
+    /// <summary>
+    /// A window closing while the session plays on hands its open question
+    /// to the session instead of answering it: taking it closes the dialog
+    /// and sends nothing, then or when the dialogs are torn down.
+    /// </summary>
+    [Fact]
+    public void TakingTheOpenQuestionClosesItsDialogWithoutAnswering()
+    {
+        var root = new UiRoot { Width = 800f, Height = 600f };
+        var factory = new RetailDialogFactory(root, _ =>
+            FixtureLoader.LoadConfirmationDialog());
+        var responses = new List<(uint Type, uint Context, bool Accepted)>();
+        using var controller = new GameplayConfirmationController(
+            factory,
+            (type, context, accepted) => responses.Add((type, context, accepted)));
+        var request = new GameEvents.CharacterConfirmationRequest(7u, 99u, "Proceed?");
+        Assert.True(controller.HandleRequest(request));
+
+        Assert.Equal(request, controller.TakeOpen());
+
+        Assert.Equal(0u, controller.ActiveDialogContext);
+        Assert.False(factory.IsOpen);
+        factory.Reset();
+        controller.ResetSession();
+        Assert.Empty(responses);
+        Assert.Null(controller.TakeOpen());
+        Assert.False(controller.TryAnswer(99u, true));
+        Assert.Empty(responses);
+    }
+
+    /// <summary>
+    /// A question handed over from the session shows as the server's own
+    /// did, and its answer goes out once.
+    /// </summary>
+    [Fact]
+    public void AHandedOverQuestionIsAnsweredOnce()
+    {
+        var root = new UiRoot { Width = 800f, Height = 600f };
+        var factory = new RetailDialogFactory(root, _ =>
+            FixtureLoader.LoadConfirmationDialog());
+        var responses = new List<(uint Type, uint Context, bool Accepted)>();
+        using var controller = new GameplayConfirmationController(
+            factory,
+            (type, context, accepted) => responses.Add((type, context, accepted)));
+        var request = new GameEvents.CharacterConfirmationRequest(5u, 77u, "Proceed?");
+        Assert.True(controller.HandleRequest(request));
+        Assert.Equal(request, controller.TakeOpen());
+
+        Assert.True(controller.HandleRequest(request));
+        Assert.True(controller.TryAnswer(77u, true));
+        Assert.False(controller.TryAnswer(77u, true));
+        Assert.Equal([(5u, 77u, true)], responses);
+    }
 }

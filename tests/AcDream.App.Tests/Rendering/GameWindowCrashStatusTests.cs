@@ -73,21 +73,24 @@ public sealed class GameWindowCrashStatusTests
     public void ReportExited_ChecksRunFailureBeforeEitherGracefulOrShutdownIncompletePaths()
     {
         // The process's last status line is the session host's. It is told
-        // whether the window's run failed, and asks that first.
+        // whether the window's run failed, and asks that first; then whether
+        // the login found no character to enter (the window closed for it);
+        // only then how the window shut down.
         MethodInfo reportExited = HostMethod("ReportExited");
         IReadOnlyList<CompiledCall> calls = CompiledCallGraph.Read(reportExited);
         CompiledCall[] exited = calls
             .Where(call => call.Target.DeclaringType == typeof(SessionStatusWriter)
                 && call.Target.Name == nameof(SessionStatusWriter.Exited))
             .ToArray();
-        Assert.Equal(3, exited.Length);
+        Assert.Equal(4, exited.Length);
         CompiledCall status = Assert.Single(
             calls,
             call => call.Target.DeclaringType == typeof(GameWindowLifetimeReport)
                 && call.Target.Name == "get_Status");
-        Assert.True(exited[0].Offset < status.Offset);
-        Assert.True(status.Offset < exited[1].Offset);
-        Assert.True(exited[1].Offset < exited[2].Offset);
+        Assert.True(exited[0].Offset < exited[1].Offset);
+        Assert.True(exited[1].Offset < status.Offset);
+        Assert.True(status.Offset < exited[2].Offset);
+        Assert.True(exited[2].Offset < exited[3].Offset);
         Assert.Equal(
             ["report", "crashed", "graceful", "shutdown-incomplete"],
             CompiledCallGraph.ReadStringLiterals(reportExited));

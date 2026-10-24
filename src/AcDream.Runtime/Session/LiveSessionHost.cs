@@ -147,6 +147,12 @@ public sealed class LiveSessionHost
     /// <summary>True when the last session ended because the server went silent.</summary>
     public bool ConnectionLost => _controller.ConnectionLost;
 
+    /// <summary>
+    /// Why the last start found no character to enter (see
+    /// <see cref="LiveSessionController.NoCharacterToEnter"/>); null otherwise.
+    /// </summary>
+    public string? NoCharacterToEnter => _controller.NoCharacterToEnter;
+
     public LiveSessionStartResult Start(LiveSessionConnectOptions options) =>
         _controller.Start(options, _lifecycle);
 

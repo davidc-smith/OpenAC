@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using AcDream.App.Rendering.Scene;
 using AcDream.App.Rendering.Selection;
 using AcDream.App.Rendering.Walk;
@@ -402,38 +401,28 @@ public sealed partial class WalkStaticStreamPopulatorTests
         var views = new RetainedViews();
         var stream = new OrderedDrawStream();
         var alpha = new List<WbDrawDispatcher.WalkClassifiedBatch>();
-        for (int warmup = 0; warmup < 16; warmup++)
-            _ = MeasureRetainedReplayAllocations(fx.Dispatcher, cache, views, stream, alpha, 256);
+        void Frame()
+        {
+            stream.Reset();
+            alpha.Clear();
+            fx.Dispatcher.BeginWalkPartFrame();
+            cache.BeginFrame();
+            cache.TryAppend(RetainedBlock, 4, 0, stream, views, 0, Vector3.Zero, alpha);
+            fx.Dispatcher.EndWalkPartFrame();
+        }
+
+        Frame();
         int reads = world.Reads;
-        long allocated = MeasureRetainedReplayAllocations(fx.Dispatcher, cache, views, stream, alpha, 256);
+        // The smallest of several windows: a per-frame allocation shows in
+        // every window, while the runtime's one-time work while the process
+        // warms up (it lands on this thread at an arbitrary call) shows in one.
+        long allocated = ZeroAllocationProbe.MeasureWarmed(
+            Frame, batchSize: 256, warmupBatches: 16, samples: 4);
         Assert.Equal(0, allocated);
         Assert.Equal(reads, world.Reads);
         Assert.Equal(1, cache.RebuildCount);
         Assert.Equal(transparent ? 0 : 3, stream.Count);
         Assert.Equal(transparent ? 3 : 0, alpha.Count);
-    }
-
-    // Keep setup, disposal and assertion work outside the measured method's optimization boundary.
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static long MeasureRetainedReplayAllocations(
-        WbDrawDispatcher dispatcher,
-        FarLandscapeDrawCache cache,
-        RetainedViews views,
-        OrderedDrawStream stream,
-        List<WbDrawDispatcher.WalkClassifiedBatch> alpha,
-        int iterations)
-    {
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < iterations; i++)
-        {
-            stream.Reset();
-            alpha.Clear();
-            dispatcher.BeginWalkPartFrame();
-            cache.BeginFrame();
-            cache.TryAppend(RetainedBlock, 4, 0, stream, views, 0, Vector3.Zero, alpha);
-            dispatcher.EndWalkPartFrame();
-        }
-        return GC.GetAllocatedBytesForCurrentThread() - before;
     }
 
     [Fact]

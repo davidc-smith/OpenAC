@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using AcDream.App.Hosting;
+using AcDream.App.Rendering;
 using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Plugin.Abstractions;
@@ -85,6 +86,125 @@ public sealed class WindowlessSessionGapsTests
         Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian(response.AsSpan(20)));
         Assert.False(dialogs.Answer(77u, true));
         Assert.Single(sent);
+    }
+
+    /// <summary>
+    /// A plugin's logout with no window logs the character off: one log-off
+    /// request goes to the server, no second one while it is under way, and
+    /// once the server confirms it the character is back at character
+    /// selection, as with a window (and in the Rust client); the connection
+    /// stays. Port of
+    /// <c>HeadlessSessionHostTests.PluginDrivenLogoutRoutesThroughTheHostsOwnStopAndClearsTheSession</c>
+    /// and <c>RequestLogoutSendsOneLogoffAndCanRequestLogoutGoesFalseWhilePending</c>.
+    /// </summary>
+    [Fact]
+    public void A_plugin_logout_with_no_window_logs_the_character_off()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.EnterWorld();
+        ILoginAutomation login = ((IAutomationSurface)session.Automation).Login;
+
+        Assert.True(login.CanRequestLogout);
+        Assert.True(login.Logout());
+
+        Assert.Equal(1, session.Connections.LogOffRequests);
+        Assert.True(session.Host.Runtime.TransitOwner.IsLogoutActive);
+        Assert.False(login.CanRequestLogout);
+        Assert.False(login.RequestLogout());
+        Assert.Equal(1, session.Connections.LogOffRequests);
+
+        // Nothing happens until the server confirms it.
+        Assert.False(session.Update());
+        Assert.True(session.Host.Runtime.Session.IsInWorld);
+
+        session.Connections.Sessions[^1].ConfirmCharacterLogOffForTesting();
+        Assert.False(session.Update());
+
+        Assert.Equal(1, session.Connections.ReturnsToCharacterSelection);
+        Assert.False(session.Host.Runtime.Session.IsInWorld);
+        Assert.False(session.Host.Runtime.TransitOwner.IsLogoutActive);
+        Assert.NotNull(session.Host.LiveSession.Host.CurrentSession);
+        Assert.False(login.CanRequestLogout);
+
+        // Back in the world on a new login (as after a lost server), a second
+        // log off runs to its end as the first did.
+        var commands = session.Host.CommandsWithoutWindow.Session;
+        commands.Stop(session.Host.Runtime.Generation);
+        commands.Start(session.Host.Runtime.Generation);
+        for (int frame = 0; frame < 20 && !session.Host.Runtime.Session.IsInWorld; frame++)
+            Assert.False(session.Update());
+        Assert.True(session.Host.Runtime.Session.IsInWorld);
+        Assert.True(login.RequestLogout());
+        session.Connections.Sessions[^1].ConfirmCharacterLogOffForTesting();
+        Assert.False(session.Update());
+
+        Assert.Equal(2, session.Connections.ReturnsToCharacterSelection);
+        Assert.False(session.Host.Runtime.Session.IsInWorld);
+        Assert.False(session.Host.Runtime.TransitOwner.IsLogoutActive);
+    }
+
+    /// <summary>
+    /// A window closing (<c>/close</c>) while its confirmation dialog is open
+    /// hands the question to the session: plugins can still answer it, and
+    /// the server hears exactly one answer. Rust keeps the open question in
+    /// the session (<c>Communication::server_confirmation</c>); a window only
+    /// shows it.
+    /// </summary>
+    [Fact]
+    public void A_question_open_in_a_closing_window_is_answered_once_with_no_window()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.EnterWorld();
+        var sent = new List<byte[]>();
+        WorldSession connection = session.Connections.Sessions[^1];
+        connection.GameActionCapture = sent.Add;
+        IDialogAutomation dialogs = ((IAutomationSurface)session.Automation).Dialogs;
+        var open = new GameEvents.CharacterConfirmationRequest(5u, 77u, "continue?");
+
+        session.Host.LetGoOfWindow(openConfirmation: open);
+
+        Assert.Equal(open, session.Host.Confirmations.Pending);
+        Assert.Empty(sent);
+        Assert.True(dialogs.Answer(77u, true));
+        Assert.False(dialogs.Answer(77u, true));
+        byte[] response = Assert.Single(sent);
+        Assert.Equal(77u, BinaryPrimitives.ReadUInt32LittleEndian(response.AsSpan(16)));
+    }
+
+    /// <summary>
+    /// A window opening (<c>/window</c>) on a session with an unanswered
+    /// question shows it in its dialog, without telling plugins a second
+    /// time; from then on the window answers it, so the session has nothing
+    /// left to answer and sends nothing.
+    /// </summary>
+    [Fact]
+    public void A_question_waiting_with_no_window_is_shown_in_the_window_that_opens()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.EnterWorld();
+        var told = new List<PluginConfirmation>();
+        session.Events.ConfirmationRequested += told.Add;
+        var sent = new List<byte[]>();
+        WorldSession connection = session.Connections.Sessions[^1];
+        connection.GameActionCapture = sent.Add;
+        connection.GameEvents.Dispatch(
+            GameEventEnvelope.TryParse(ConfirmationRequest(5u, 77u, "continue?"))!.Value);
+        var shown = new List<GameEvents.CharacterConfirmationRequest>();
+
+        session.Host.HandConfirmationToWindow(request =>
+        {
+            shown.Add(request);
+            return true;
+        });
+
+        GameEvents.CharacterConfirmationRequest question = Assert.Single(shown);
+        Assert.Equal(77u, question.ContextId);
+        Assert.Equal(5u, question.Type);
+        Assert.Equal("continue?", question.Message);
+        Assert.Null(session.Host.Confirmations.Pending);
+        Assert.Single(told);
+        Assert.False(session.Host.Confirmations.TryAnswer(77u, true));
+        Assert.Empty(sent);
     }
 
     /// <summary>
@@ -272,15 +392,85 @@ public sealed class WindowlessSessionGapsTests
         Assert.Equal(2, session.Connections.Sessions.Count);
         Assert.Equal(GraphicalSessionEnd.ConnectionLost, session.End(connectionEnded: true));
         // The loss is said once, when it happens; the attempt that found no
-        // character had connected, and the exit closes that connection.
-        string[] lines = session.StatusLines();
-        Assert.Equal(
-            ["connection-lost", "process-exit"],
-            lines.Where(line => line.Contains("\"e\":\"disconnected\"", StringComparison.Ordinal))
-                .Select(line => System.Text.Json.JsonDocument.Parse(line)
-                    .RootElement.GetProperty("reason").GetString()!)
-                .ToArray());
-        Assert.Contains("\"code\":5", lines[^1], StringComparison.Ordinal);
+        // character closes its connection with why, as Rust's status file
+        // does.
+        Assert.Equal(["connection-lost", NoWindowlessCharacter], DisconnectedReasons(session));
+        AssertExited(session, 5, NoWindowlessCharacter);
+    }
+
+    /// <summary>The end Rust's session reports when no character matches the document's.</summary>
+    private const string NoWindowlessCharacter =
+        "no available character matches Name(\"+Windowless\")";
+
+    /// <summary>
+    /// A first start that connects to an account without the document's
+    /// character ends the session with the connection's exit code, saying
+    /// why in Rust's words; before, it waited forever. Port of Rust
+    /// <c>runner_relogin_tests.rs</c>
+    /// <c>a_failed_attempt_waits_another_interval_and_a_missing_character_ends_the_recovery</c>
+    /// (its end, for the first login) and of the headless client's exit 5.
+    /// </summary>
+    [Fact]
+    public void A_first_start_on_an_account_without_the_character_ends_the_session()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.Connections.Roster.Clear();
+        session.Connections.Roster.Add(
+            new CharacterList.Character(0x50000002u, "+Someone", 0u));
+        session.Host.ApplyAutomationWithoutWindow();
+        session.Host.StartSession();
+        bool ended = false;
+        for (int frame = 0; frame < 20 && !ended; frame++)
+            ended = session.Update();
+
+        Assert.True(ended, "the session ended");
+        Assert.Equal(NoWindowlessCharacter, session.Host.NoCharacterToEnter);
+        Assert.Single(session.Connections.Sessions);
+        Assert.Equal(GraphicalSessionEnd.ConnectionLost, session.End(connectionEnded: true));
+        Assert.Equal([NoWindowlessCharacter], DisconnectedReasons(session));
+        AssertExited(session, 5, NoWindowlessCharacter);
+    }
+
+    /// <summary>
+    /// The same start with a window: the window closes (the loop asks for it
+    /// when <see cref="GraphicalSessionHost.NoCharacterToEnter"/> is set) and
+    /// its end reports the connection's exit code, not a graceful one.
+    /// </summary>
+    [Fact]
+    public void A_window_whose_start_finds_no_character_ends_with_the_connection_exit_code()
+    {
+        using var session = new WindowlessSessionFixture();
+        session.Connections.Roster.Clear();
+        session.Host.ApplyAutomationWithoutWindow();
+        session.Host.StartSession();
+        for (int frame = 0; frame < 20 && session.Host.NoCharacterToEnter is null; frame++)
+            session.Tick();
+        const string why = "no available character matches Name(\"+Windowless\")";
+        Assert.Equal(why, session.Host.NoCharacterToEnter);
+
+        GraphicalSessionEnd end = session.Host.ReportExited(
+            new GameWindowLifetimeReport(GameWindowLifetimeStatus.Complete, null, [], null),
+            crashed: false);
+
+        Assert.Equal(GraphicalSessionEnd.ConnectionLost, end);
+        Assert.Equal([why], DisconnectedReasons(session));
+        AssertExited(session, 5, why);
+    }
+
+    private static string[] DisconnectedReasons(WindowlessSessionFixture session) =>
+        [.. session.StatusLines()
+            .Where(line => line.Contains("\"e\":\"disconnected\"", StringComparison.Ordinal))
+            .Select(line => System.Text.Json.JsonDocument.Parse(line)
+                .RootElement.GetProperty("reason").GetString()!)];
+
+    private static void AssertExited(WindowlessSessionFixture session, int code, string reason)
+    {
+        System.Text.Json.JsonElement exited = System.Text.Json.JsonDocument
+            .Parse(session.StatusLines()[^1])
+            .RootElement;
+        Assert.Equal("exited", exited.GetProperty("e").GetString());
+        Assert.Equal(code, exited.GetProperty("code").GetInt32());
+        Assert.Equal(reason, exited.GetProperty("reason").GetString());
     }
 
     private static byte[] PlayerDescription(uint options1, uint options2)

@@ -47,6 +47,12 @@ internal sealed record GraphicalAutomationParts
     /// it in: the one every client without a window keeps.
     /// </summary>
     public Func<uint, bool, bool>? AnswerConfirmationWithoutWindow { get; init; }
+
+    /// <summary>
+    /// How a plugin logs the character off with no window: the log off every
+    /// client without a window runs.
+    /// </summary>
+    public RuntimeAutomationLogoutCommands? LogoutWithoutWindow { get; init; }
     public AcDream.Runtime.Navigation.NavigationWalkController? NavigationWalk { get; init; }
     public AcDream.App.Streaming.LocalPlayerTeleportController? Teleport { get; init; }
     public AcDream.App.UI.RetailUiRuntime? RetainedUi { get; init; }
@@ -151,13 +157,17 @@ internal static partial class GraphicalAutomationCapabilities
             SessionCommands = (AcDream.Runtime.IGameRuntimeCommands?)session
                 ?? parts.SessionCommandsWithoutWindow,
             NavigationWalk = parts.NavigationWalk,
-            Logout = new RuntimeAutomationLogoutCommands(
-                () => teleport?.TryRequestLogout() == true,
-                () => teleport is not null
-                    && runtime.Session.IsInWorld
-                    && !runtime.TransitOwner.IsLogoutActive
-                    && !runtime.TransitOwner.IsTeleportActive
-                    && !runtime.TransitOwner.HasPendingTeleportStart),
+            // A window logs off through its own portal-space presentation;
+            // with none, the log off runs on the session's own tick.
+            Logout = teleport is null && parts.LogoutWithoutWindow is { } logoutWithoutWindow
+                ? logoutWithoutWindow
+                : new RuntimeAutomationLogoutCommands(
+                    () => teleport?.TryRequestLogout() == true,
+                    () => teleport is not null
+                        && runtime.Session.IsInWorld
+                        && !runtime.TransitOwner.IsLogoutActive
+                        && !runtime.TransitOwner.IsTeleportActive
+                        && !runtime.TransitOwner.HasPendingTeleportStart),
             // A window answers in its own dialog; with none, the question
             // the server is waiting on is answered as the windowless client
             // answers it.
