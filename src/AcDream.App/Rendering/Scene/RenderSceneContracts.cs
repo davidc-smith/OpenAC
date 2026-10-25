@@ -505,6 +505,15 @@ internal interface IRenderSceneQuerySource
     /// or unregisters, so per-frame shell lookups can keep their last copy.</summary>
     ulong GetBuildingShellRevision(RenderSceneGeneration generation);
 
+    /// <summary>How many outdoor statics are building shells.</summary>
+    int GetOutdoorBuildingShellCount(RenderSceneGeneration generation);
+
+    /// <summary>Copies the outdoor statics that are building shells, in the
+    /// outdoor-static index's order, without reading the other statics.</summary>
+    int CopyOutdoorBuildingShellsTo(
+        RenderSceneGeneration generation,
+        Span<RenderProjectionRecord> destination);
+
     /// <summary>Advances whenever any record belonging to a landblock is
     /// written, so a consumer holding many records from one landblock can ask
     /// once instead of asking every record. A write whose record names no
@@ -583,6 +592,13 @@ internal readonly struct RenderSceneQuery
 
     public ulong BuildingShellRevision =>
         Source.GetBuildingShellRevision(Generation);
+
+    public int OutdoorBuildingShellCount =>
+        Source.GetOutdoorBuildingShellCount(Generation);
+
+    public int CopyOutdoorBuildingShellsTo(
+        Span<RenderProjectionRecord> destination) =>
+        Source.CopyOutdoorBuildingShellsTo(Generation, destination);
 
     public ulong GetLandblockWriteRevision(uint landblockId) =>
         Source.GetLandblockWriteRevision(Generation, landblockId);
