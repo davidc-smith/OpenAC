@@ -57,6 +57,13 @@ public sealed class TextureCache
     private readonly StandaloneBindlessTextureCache? _particleTextures;
     private readonly Dictionary<(uint surfaceId, uint origTexOverride), bool> _paletteIndexedByTexture = new();
 
+    // Every texture this cache decodes is uploaded before the next is
+    // decoded, so the decoded image (and a recoloured palette) is a working
+    // copy: it is decoded into an array kept per size instead of a new one.
+    internal const long DecodeBufferBudgetBytes = 16L * 1024 * 1024;
+    private readonly ReusedPixelBuffers _decodePixels = new(DecodeBufferBudgetBytes);
+    private readonly Palette _composedPalette = new();
+
     internal int OwnedBindlessTextureCount => _compositeTextures?.ActiveResourceCount ?? 0;
     internal int TextureOwnerCount => _compositeTextures?.OwnerCount ?? 0;
     internal int CachedCompositeTextureCount => _compositeTextures?.CachedEntryCount ?? 0;
@@ -204,7 +211,8 @@ public sealed class TextureCache
             Palette? palette = rs.DefaultPaletteId != 0
                 ? _dats.Get<Palette>(rs.DefaultPaletteId)
                 : null;
-            decoded = SurfaceDecoder.DecodeRenderSurface(rs, palette);
+            decoded = SurfaceDecoder.DecodeRenderSurface(
+                rs, palette, isClipMap: false, isAdditive: false, _decodePixels);
         }
         else
         {
@@ -727,7 +735,7 @@ public sealed class TextureCache
         bool isAdditive = surface.Type.HasFlag(SurfaceType.Additive);
 
         DecodedTexture decoded =
-            SurfaceDecoder.DecodeRenderSurface(rs, effectivePalette, isClipMap, isAdditive);
+            SurfaceDecoder.DecodeRenderSurface(rs, effectivePalette, isClipMap, isAdditive, _decodePixels);
 
         if (bakeAuthoredTranslucency
             && surface.Translucency > 0.0f
@@ -743,14 +751,29 @@ public sealed class TextureCache
         => ComposeModifiedPalette(
             basePalette,
             paletteOverride.SubPalettes,
-            id => _dats.Get<Palette>(id));
+            _resolvePalette ??= id => _dats.Get<Palette>(id),
+            _composedPalette);
+
+    private Func<uint, Palette?>? _resolvePalette;
 
     internal static Palette ComposeModifiedPalette(
         Palette basePalette,
         IReadOnlyList<PaletteOverride.SubPaletteRange> subPalettes,
         Func<uint, Palette?> resolvePalette)
+        => ComposeModifiedPalette(basePalette, subPalettes, resolvePalette, new Palette());
+
+    /// <summary>
+    /// Composes into <paramref name="modified"/>, whose colours are replaced:
+    /// a caller that decodes with the palette before composing the next can
+    /// keep one.
+    /// </summary>
+    internal static Palette ComposeModifiedPalette(
+        Palette basePalette,
+        IReadOnlyList<PaletteOverride.SubPaletteRange> subPalettes,
+        Func<uint, Palette?> resolvePalette,
+        Palette modified)
     {
-        var modified = new Palette();
+        modified.Colors.Clear();
         modified.Colors.AddRange(basePalette.Colors);
 
         foreach (PaletteOverride.SubPaletteRange sub in subPalettes)
