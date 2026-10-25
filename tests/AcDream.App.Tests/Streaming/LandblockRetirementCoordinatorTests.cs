@@ -725,6 +725,46 @@ public sealed class LandblockRetirementCoordinatorTests
     }
 
     [Fact]
+    public void OriginRecenterAdoption_AWidenedBudgetRetiresNoMoreThanAnOrdinaryFramesProjections()
+    {
+        uint[] landblockIds = [0x4654FFFFu, 0x4655FFFFu, 0x4656FFFFu];
+        int perLandblock =
+            LandblockRetirementCoordinator.StaticProjectionOperationsPerFrame * 3 / 8;
+        var state = new GpuWorldState();
+        var retired = new List<uint>();
+        LandblockRetirementCoordinator coordinator =
+            LandblockRetirementCoordinator.CreateBudgeted(
+                state,
+                ticket => AdvancePresentationStep(ticket),
+                ticket => CompletePresentation(ticket),
+                retirement => retired.Add(retirement.LandblockId));
+        Assert.Null(coordinator.AdoptDetachedFull(landblockIds
+            .Select(id => new GpuLandblockRetirement(
+                id,
+                LandblockRetirementKind.Full,
+                Enumerable.Range(1, perLandblock)
+                    .Select(i => Entity((uint)i))
+                    .ToArray()))
+            .ToArray()));
+
+        // A reveal widens the frame far past an ordinary frame, but the
+        // scene removals of retired projections are not metered here: each
+        // frame still retires only what fits an ordinary frame (two of the
+        // three landblocks' worth of operations do not).
+        for (int frame = 0; frame < landblockIds.Length; frame++)
+        {
+            var meter = new StreamingWorkMeter(
+                Budget(maxEntityOperations: 1_000_000));
+            coordinator.Advance(meter);
+            coordinator.AdvanceStaticProjectionRetirements(meter);
+            meter.FinishFrame();
+
+            Assert.Equal(landblockIds.Take(frame + 1), retired);
+        }
+        Assert.Equal(0, coordinator.PendingStaticProjectionRetirements);
+    }
+
+    [Fact]
     public void OriginRecenterAdoption_OrdinaryAdvanceRetiresProjectionsBeforeTheTicketsOtherStages()
     {
         const uint landblockId = 0x4653FFFFu;

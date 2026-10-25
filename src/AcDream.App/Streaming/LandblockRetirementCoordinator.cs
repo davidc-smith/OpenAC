@@ -900,10 +900,29 @@ public sealed class LandblockRetirementCoordinator
         // Retiring a landblock's static projections is, per entity, one
         // unregistration here and one scene removal when the frame's journal
         // drains: two entity operations each.
+        int projectionOperations = Math.Max(1, ticket.Entities.Count * 2);
+        if (stage == LandblockRetirementStage.StaticProjections)
+        {
+            // The scene removals run when the frame's journal drains, outside
+            // this meter, so a reveal's widened budget must not widen them:
+            // a frame retires at most an ordinary frame's entity operations
+            // of projections (always one landblock's).
+            if (meter.FrameSerial != _projectionFrameSerial)
+            {
+                _projectionFrameSerial = meter.FrameSerial;
+                _projectionOperationsThisFrame = 0;
+            }
+            if (_projectionOperationsThisFrame != 0
+                && _projectionOperationsThisFrame + projectionOperations
+                    > StaticProjectionOperationsPerFrame)
+            {
+                return BudgetedAdvanceResult.Yielded;
+            }
+        }
         StreamingWorkCost cost = new(
             EntityOperations:
                 stage == LandblockRetirementStage.StaticProjections
-                    ? Math.Max(1, ticket.Entities.Count * 2)
+                    ? projectionOperations
                     : 1,
             GlRetireOperations:
                 stage is LandblockRetirementStage.MeshReferences
@@ -924,10 +943,20 @@ public sealed class LandblockRetirementCoordinator
         }
 
         meter.Complete();
+        if (stage == LandblockRetirementStage.StaticProjections)
+            _projectionOperationsThisFrame += projectionOperations;
         if (result == LandblockRetirementOperationResult.Pending)
             return BudgetedAdvanceResult.Yielded;
         return BudgetedAdvanceResult.Progressed;
     }
+
+    /// <summary>The most static-projection entity operations one frame
+    /// retires: an ordinary frame's entity budget.</summary>
+    internal static readonly int StaticProjectionOperationsPerFrame =
+        StreamingWorkBudgetOptions.Default.MaxEntityOperations;
+
+    private long _projectionFrameSerial;
+    private int _projectionOperationsThisFrame;
 
     private void EnqueueBudgetedTicket(LandblockRetirementTicket ticket)
     {
