@@ -1149,7 +1149,7 @@ public sealed class GameWindow :
             GameWindowPlatformAcquisition.Acquire(
                 CreateGraphics,
                 static graphics => graphics.Dispose(),
-                () => _window!.CreateInput(),
+                () => GlfwKeyboardMouseInputContext.Create(_window!),
                 static input => input.Dispose(),
                 this);
         if (_graphics is null || _input is null)
