@@ -42,6 +42,7 @@ internal sealed class DatLiveEntityProjectionMaterializer
     private readonly IPhysicsScriptTimeSource _gameTime;
     private readonly RuntimeWorldTransitState _transit;
     private readonly RuntimeMotionStateBuilder _motionStates;
+    private readonly LiveGfxObjFacts _parts;
 
     public DatLiveEntityProjectionMaterializer(
         RuntimeOptions options,
@@ -92,6 +93,12 @@ internal sealed class DatLiveEntityProjectionMaterializer
         _motionStates = _runtime.Physics.MotionStates
             ?? throw new InvalidOperationException(
                 "Binding a motion content source must yield a motion state builder.");
+        _parts = new LiveGfxObjFacts(
+            id => _dats.Get<GfxObj>(id),
+            id => _dats.Get<GfxObjDegradeInfo>(id),
+            id => _dats.Get<Surface>(id),
+            _collisionAssets.IsGfxObjCached,
+            _collisionAssets.CacheGfxObj);
     }
 
     private RuntimeMotionStateBuilder MotionStates => _motionStates;
@@ -249,22 +256,21 @@ internal sealed class DatLiveEntityProjectionMaterializer
             indexedPartTransforms[partIndex] = partIndex < rigidPartTransforms.Count
                 ? rigidPartTransforms[partIndex]
                 : Matrix4x4.Identity;
-            GfxObj? gfx = _dats.Get<GfxObj>(part.GfxObjId);
-            bool drawable = gfx is not null;
+            bool drawable = _parts.TryGetPart(
+                part.GfxObjId,
+                out (Vector3 Min, Vector3 Max)? partBounds);
             indexedPartAvailable[partIndex] = drawable;
             animatedPartTemplate[partIndex] = new LiveAnimationPartTemplate(
                 part.GfxObjId,
                 overrides,
                 drawable);
-            if (gfx is null)
+            if (!drawable)
             {
                 continue;
             }
 
-            _collisionAssets.CacheGfxObj(part.GfxObjId, gfx);
-
-            if (GfxObjBounds.Get(gfx) is { } partBounds)
-                bounds.Add(transform, partBounds);
+            if (partBounds is { } drawnBounds)
+                bounds.Add(transform, drawnBounds);
             meshRefs.Add(new MeshRef(part.GfxObjId, transform)
             {
                 SurfaceOverrides = overrides,
@@ -366,18 +372,9 @@ internal sealed class DatLiveEntityProjectionMaterializer
 
     private uint ResolveCollisionPart(uint baseId)
     {
-        if (!GfxObjDegradeResolver.TryResolveCloseGfxObj(
-                _dats,
-                baseId,
-                out uint slotZeroId,
-                out GfxObj? slotZeroGfx))
-        {
-            return baseId;
-        }
-
-        if (slotZeroGfx is not null)
-            _collisionAssets.CacheGfxObj(slotZeroId, slotZeroGfx);
-        return slotZeroId;
+        return _parts.TryResolveClose(baseId, out uint slotZeroId)
+            ? slotZeroId
+            : baseId;
     }
 
     private void ApplyRetailCloseDegrades(List<MeshRef> parts)
@@ -385,11 +382,7 @@ internal sealed class DatLiveEntityProjectionMaterializer
         for (int partIndex = 0; partIndex < parts.Count; partIndex++)
         {
             MeshRef part = parts[partIndex];
-            if (!GfxObjDegradeResolver.TryResolveCloseGfxObj(
-                    _dats,
-                    part.GfxObjId,
-                    out uint resolvedId,
-                    out _)
+            if (!_parts.TryResolveClose(part.GfxObjId, out uint resolvedId)
                 || resolvedId == part.GfxObjId)
             {
                 continue;
@@ -423,21 +416,18 @@ internal sealed class DatLiveEntityProjectionMaterializer
             if (!oldToNewByPart.TryGetValue(partIndex, out var oldToNew))
                 continue;
 
-            GfxObj? gfx = _dats.Get<GfxObj>(parts[partIndex].GfxObjId);
-            if (gfx is null)
+            uint partId = parts[partIndex].GfxObjId;
+            if (!_parts.TryGetPart(partId, out _))
             {
                 continue;
             }
-            _collisionAssets.CacheGfxObj(parts[partIndex].GfxObjId, gfx);
 
             Dictionary<uint, uint>? resolved = null;
-            foreach (var surfaceQid in gfx.Surfaces)
+            foreach (uint surfaceId in _parts.Surfaces(partId))
             {
-                uint surfaceId = (uint)surfaceQid;
-                Surface? surface = _dats.Get<Surface>(surfaceId);
-                if (surface is null)
-                    continue;
-                uint originalTexture = (uint)surface.OrigTextureId;
+                // Zero when the surface is missing, as for a surface with no
+                // original texture: neither is replaced.
+                uint originalTexture = _parts.OriginalTexture(surfaceId);
                 if (originalTexture == 0
                     || !oldToNew.TryGetValue(originalTexture, out uint newTexture))
                 {

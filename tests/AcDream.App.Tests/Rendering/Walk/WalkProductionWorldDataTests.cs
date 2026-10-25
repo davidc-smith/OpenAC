@@ -551,6 +551,41 @@ public sealed class WalkProductionWorldDataTests
     }
 
     [Fact]
+    public void BeginFrame_FindsBuildingShellsWithoutCopyingEveryOutdoorStatic()
+    {
+        const uint cellId = 0x8A020010u;
+        const int ordinaryCount = 5000;
+        var shadows = new ShadowObjectRegistry();
+        RenderSceneGeneration generation = RenderSceneGeneration.FromRaw(1);
+        using var scene = new ArchRenderScene(generation);
+        var deltas = new List<RenderProjectionDelta>();
+        ulong sequence = 1;
+        for (uint i = 0; i < ordinaryCount; i++)
+        {
+            deltas.Add(RenderProjectionDelta.Register(
+                generation,
+                sequence++,
+                OutdoorRecord(0x48A10000u + i, cellId, shell: false)));
+        }
+        RenderProjectionRecord first = OutdoorRecord(0x48A02031u, cellId, shell: true);
+        RenderProjectionRecord second = OutdoorRecord(0x48A02032u, cellId, shell: true);
+        deltas.Add(RenderProjectionDelta.Register(generation, sequence++, first));
+        deltas.Add(RenderProjectionDelta.Register(generation, sequence++, second));
+        scene.Apply(deltas.ToArray());
+        var building = new WalkBuilding { PositionCellId = cellId, Portals = [] };
+        var worldData = new WalkProductionWorldData(new WalkBuildingRegistry(), shadows);
+
+        worldData.BeginFrame(scene.OpenQuery(), 0x8A020000u, renderCenterLbX: 0x8A, renderCenterLbY: 0x02);
+
+        Assert.Equal(
+            [first.Id, second.Id],
+            worldData.GetBuildingShellStatics(building).Records.Select(record => record.Id));
+        Assert.True(
+            worldData.ShellScratchCapacity < ordinaryCount,
+            $"the shell rebuild held {worldData.ShellScratchCapacity} records for 2 shells");
+    }
+
+    [Fact]
     public void RetailCellArrayRevision_AdvancesOnRegistrationAndDeregistration()
     {
         var shadows = new ShadowObjectRegistry();

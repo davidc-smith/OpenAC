@@ -40,6 +40,25 @@ public sealed class LiveCollisionAssetPublisherTests
     }
 
     [Fact]
+    public void AGfxObjIsCachedOnceItsPreparedViewIsHeld()
+    {
+        const uint GfxId = 0x0100_0045u;
+        var source = new RecordingSource();
+        var production = new LiveCollisionAssetPublisher(
+            PhysicsDataCache.CreateProduction(),
+            source);
+        Assert.False(production.IsGfxObjCached(GfxId));
+        production.CacheGfxObj(GfxId, PhysicsGfx());
+        Assert.True(production.IsGfxObjCached(GfxId));
+
+        // A cache that also keeps parsed graphs never reports a GfxObj held,
+        // so every caller still offers it the parsed object.
+        var graphs = new LiveCollisionAssetPublisher(new PhysicsDataCache(), source);
+        graphs.CacheGfxObj(GfxId, PhysicsGfx());
+        Assert.False(graphs.IsGfxObjCached(GfxId));
+    }
+
+    [Fact]
     public void VisualOnlyGfx_RemembersPreparedEmptyAssetWithoutGraphRecord()
     {
         const uint GfxId = 0x0100_0043u;

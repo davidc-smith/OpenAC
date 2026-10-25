@@ -887,7 +887,8 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 token,
                 ready ? generation : 0UL,
                 ready,
-                releaseUnavailable: !ready);
+                releaseUnavailable: !ready,
+                stopWhenSpent: _physics.CollisionWorkFrameSpent);
         }
 
         if (current.PendingRestorePlacements.Count != 0
@@ -3801,7 +3802,8 @@ internal sealed class RuntimeSetPositionState : IDisposable
         in RuntimeCollisionPrefixQuiescenceToken token,
         ulong successorGeneration,
         bool ready,
-        bool releaseUnavailable = false)
+        bool releaseUnavailable = false,
+        Func<bool>? stopWhenSpent = null)
     {
         var snapshot =
             new List<(RuntimeEntityKey Key, RuntimeEntityPlacementToken Token)>(
@@ -3849,6 +3851,11 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 && operation.WithdrawalAcknowledged)
             {
                 RetryDeferred(operation);
+                // A placement handed back is the costly part (it is placed
+                // and projected). The rest stay held and are handed back,
+                // in the same order, by the next call of the release.
+                if (stopWhenSpent?.Invoke() == true)
+                    return;
             }
         }
     }

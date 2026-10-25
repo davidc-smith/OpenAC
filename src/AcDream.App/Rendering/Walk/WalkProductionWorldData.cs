@@ -69,6 +69,9 @@ internal sealed class WalkProductionWorldData : IWalkFrameWorldData
     /// scene; they persist across frames until a shell record changes.</summary>
     internal int BuildingShellRebuildCount { get; private set; }
 
+    /// <summary>Records the shell rebuild's scratch array holds.</summary>
+    internal int ShellScratchCapacity => _sweepScratch.Length;
+
     internal void BeginFrame(
         RenderSceneQuery scene,
         uint tupleLandblockId,
@@ -91,8 +94,8 @@ internal sealed class WalkProductionWorldData : IWalkFrameWorldData
 
         // Building shells only change when a shell record registers, moves,
         // or unregisters; the scene's shell revision says when. Every other
-        // frame keeps the last buckets instead of copying the whole outdoor
-        // static index to find a handful of shells.
+        // frame keeps the last buckets, and a rebuild copies only the shells,
+        // never the whole outdoor static index.
         ulong shellRevision = _scene.BuildingShellRevision;
         if (_shellBucketsBuilt
             && _shellBucketGeneration == _scene.Generation
@@ -108,9 +111,9 @@ internal sealed class WalkProductionWorldData : IWalkFrameWorldData
         _shellBucketRevision = shellRevision;
         BuildingShellRebuildCount++;
 
-        int required = _scene.IndexCounts.For(RenderSceneIndex.OutdoorStatic);
-        ScratchArrays.EnsureRefillCapacity(ref _sweepScratch, required, minimum: 1024);
-        int count = _scene.CopyIndexTo(RenderSceneIndex.OutdoorStatic, _sweepScratch);
+        int required = _scene.OutdoorBuildingShellCount;
+        ScratchArrays.EnsureRefillCapacity(ref _sweepScratch, required, minimum: 64);
+        int count = _scene.CopyOutdoorBuildingShellsTo(_sweepScratch);
         for (int i = 0; i < count; i++)
         {
             ref readonly RenderProjectionRecord record = ref _sweepScratch[i];
