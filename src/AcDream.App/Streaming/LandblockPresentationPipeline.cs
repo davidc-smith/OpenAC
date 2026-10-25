@@ -36,6 +36,9 @@ public sealed class LandblockPresentationPipeline
         public LandblockStaticPresentationPublication? StaticPublication;
         public bool SpatialCommitted;
         public GpuLandblockSpatialPublication? SpatialPublication;
+        public bool MeshesActivated;
+        public bool ProjectionsCommitted;
+        public int ScriptCursor;
         public bool SpatialPresentationCommitted;
         public bool EnvCellReplayCommitted;
         public bool LiveRecoveryCommitted;
@@ -203,6 +206,10 @@ public sealed class LandblockPresentationPipeline
     {
         if (_publications.Count == 0)
             return true;
+        // A landblock already in the world finishes its activation first, so
+        // whatever retires it later finds it whole.
+        foreach (PublicationTransaction transaction in _publications.Values)
+            CompleteCommittedActivation(transaction);
         // A pending transaction holds no collision (the session host publishes
         // it), so there is nothing to wait for: they are dropped.
         _publications.Clear();
@@ -238,6 +245,15 @@ public sealed class LandblockPresentationPipeline
     {
         _retirements.Advance(meter);
     }
+
+    /// <summary>
+    /// Takes, within the meter, the static render projections of an origin
+    /// recenter's detached landblocks out of the render scene. True once
+    /// none is left.
+    /// </summary>
+    internal bool AdvanceDetachedProjectionRetirements(
+        StreamingWorkMeter meter) =>
+        _retirements.AdvanceStaticProjectionRetirements(meter);
 
     internal void AdvancePriorityRetirement(
         uint landblockId,
@@ -511,6 +527,186 @@ public sealed class LandblockPresentationPipeline
         return created;
     }
 
+    private enum PublicationStep : byte
+    {
+        PrepareRender,
+        PrepareStatics,
+        ValidateStatics,
+        RenderPrefix,
+        RenderSuffix,
+        StaticCleanup,
+        StaticLighting,
+        PluginProjection,
+        LegacyPresentation,
+        SpatialCommit,
+        ActivateScript,
+        EnvCellReplay,
+        LiveRecovery,
+    }
+
+    private static string StageName(PublicationStep step) => step switch
+    {
+        PublicationStep.PrepareRender => "publication-prepare-render",
+        PublicationStep.PrepareStatics => "publication-prepare-statics",
+        PublicationStep.ValidateStatics => "publication-validate-statics",
+        PublicationStep.RenderPrefix => "publication-render-prefix",
+        PublicationStep.RenderSuffix => "publication-render-suffix",
+        PublicationStep.StaticCleanup => "publication-static-cleanup",
+        PublicationStep.StaticLighting => "publication-static-lighting",
+        PublicationStep.PluginProjection => "publication-plugin-projection",
+        PublicationStep.LegacyPresentation => "publication-legacy-presentation",
+        PublicationStep.SpatialCommit => "publication-spatial-commit",
+        PublicationStep.ActivateScript => "publication-activate-scripts",
+        PublicationStep.EnvCellReplay => "publication-envcell-replay",
+        PublicationStep.LiveRecovery => "publication-live-recovery",
+        _ => throw new ArgumentOutOfRangeException(nameof(step), step, null),
+    };
+
+    /// <summary>One publication step; a method, not a delegate per step, so
+    /// the steps that run once per entity make no garbage.</summary>
+    private void RunStep(
+        LandblockStreamResult result,
+        PublicationTransaction transaction,
+        PublicationStep step)
+    {
+        switch (step)
+        {
+            case PublicationStep.PrepareRender:
+                transaction.RenderPublication = _renderPublisher!.PreparePublication(
+                    transaction.Build,
+                    transaction.MeshData);
+                break;
+            case PublicationStep.PrepareStatics:
+                transaction.StaticPublication = _staticPublisher!.CreatePublication(
+                    transaction.RenderPublication!.Build);
+                break;
+            case PublicationStep.ValidateStatics:
+                _staticPublisher!.AdvancePreparationOne(transaction.StaticPublication!);
+                break;
+            case PublicationStep.RenderPrefix:
+                _renderPublisher!.AdvanceBeginOne(transaction.RenderPublication!);
+                break;
+            case PublicationStep.RenderSuffix:
+                _renderPublisher!.AdvanceCompleteOne(transaction.RenderPublication!);
+                break;
+            case PublicationStep.StaticCleanup:
+                _staticPublisher!.AdvanceBeginOne(transaction.StaticPublication!);
+                break;
+            case PublicationStep.StaticLighting:
+                _staticPublisher!.AdvanceLightingOne(transaction.StaticPublication!);
+                break;
+            case PublicationStep.PluginProjection:
+                _staticPublisher!.AdvanceCompleteOne(transaction.StaticPublication!);
+                break;
+            case PublicationStep.LegacyPresentation:
+                try
+                {
+                    (_publishBeforeSpatialCommit
+                        ?? throw new InvalidOperationException(
+                            "The presentation pipeline has no publication owners."))(
+                        transaction.Build,
+                        transaction.MeshData);
+                }
+                catch (Exception error)
+                {
+                    if (error is StreamingMutationException
+                        {
+                            MutationCommitted: true,
+                        })
+                    {
+                        _publications.Remove(result);
+                    }
+                    throw;
+                }
+                break;
+            case PublicationStep.SpatialCommit:
+                CommitSpatialPresentation(transaction);
+                break;
+            case PublicationStep.ActivateScript:
+                ActivateNextStaticScript(transaction);
+                break;
+            case PublicationStep.EnvCellReplay:
+                if (transaction.Kind != PublicationKind.Far
+                    && transaction.Build.EnvCells is
+                        {
+                            Shells.Length: > 0,
+                        } envCells)
+                {
+                    _ensureEnvCellMeshes?.Invoke(envCells);
+                }
+                transaction.EnvCellReplayCommitted = true;
+                break;
+            case PublicationStep.LiveRecovery:
+                _onLandblockLoaded?.Invoke(transaction.LandblockId);
+                transaction.LiveRecoveryCommitted = true;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(step), step, null);
+        }
+    }
+
+    private void RunTimed(
+        LandblockStreamResult result,
+        PublicationTransaction transaction,
+        PublicationStep step)
+    {
+        if (transaction.Timing is not { } timing)
+        {
+            RunStep(result, transaction, step);
+            return;
+        }
+
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            RunStep(result, transaction, step);
+        }
+        finally
+        {
+            timing.Add(
+                StageName(step),
+                System.Diagnostics.Stopwatch.GetTimestamp() - start);
+        }
+    }
+
+    /// <summary>Runs one step when the meter admits it (always, without a
+    /// meter). False when the step yielded to the next frame.</summary>
+    private bool TryRun(
+        LandblockStreamResult result,
+        PublicationTransaction transaction,
+        StreamingWorkMeter? meter,
+        bool ensureProgress,
+        ref bool progressed,
+        StreamingWorkCost cost,
+        PublicationStep step)
+    {
+        if (meter is null)
+        {
+            RunTimed(result, transaction, step);
+            progressed = true;
+            return true;
+        }
+
+        StreamingWorkAdmission admission = meter.TryReserve(
+            cost,
+            StageName(step),
+            ensureProgress && !progressed);
+        if (admission == StreamingWorkAdmission.Yielded)
+            return false;
+        try
+        {
+            RunTimed(result, transaction, step);
+            meter.Complete();
+            progressed = true;
+            return true;
+        }
+        catch
+        {
+            meter.Fail();
+            throw;
+        }
+    }
+
     private LandblockPublicationAdvance Advance(
         LandblockStreamResult result,
         PublicationTransaction transaction,
@@ -518,57 +714,7 @@ public sealed class LandblockPresentationPipeline
         bool ensureProgress)
     {
         bool progressed = false;
-        void RunTimed(string stage, Action operation)
-        {
-            if (transaction.Timing is not { } timing)
-            {
-                operation();
-                return;
-            }
-
-            long start = System.Diagnostics.Stopwatch.GetTimestamp();
-            try
-            {
-                operation();
-            }
-            finally
-            {
-                timing.Add(
-                    stage,
-                    System.Diagnostics.Stopwatch.GetTimestamp() - start);
-            }
-        }
-        bool TryRun(
-            StreamingWorkCost cost,
-            string stage,
-            Action operation)
-        {
-            if (meter is null)
-            {
-                RunTimed(stage, operation);
-                progressed = true;
-                return true;
-            }
-
-            StreamingWorkAdmission admission = meter.TryReserve(
-                cost,
-                stage,
-                ensureProgress && !progressed);
-            if (admission == StreamingWorkAdmission.Yielded)
-                return false;
-            try
-            {
-                RunTimed(stage, operation);
-                meter.Complete();
-                progressed = true;
-                return true;
-            }
-            catch
-            {
-                meter.Fail();
-                throw;
-            }
-        }
+        LandblockPublicationAdvance Yield() => new(false, progressed);
 
         if (!transaction.PresentationCommitted)
         {
@@ -577,27 +723,20 @@ public sealed class LandblockPresentationPipeline
             {
                 while (transaction.RenderPublication is null)
                 {
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             new StreamingWorkCost(EntityOperations: 1),
-                            "publication-prepare-render",
-                            () => transaction.RenderPublication =
-                                _renderPublisher.PreparePublication(
-                                    transaction.Build,
-                                    transaction.MeshData)))
+                            PublicationStep.PrepareRender))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
                 while (transaction.StaticPublication is null)
                 {
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             default,
-                            "publication-prepare-statics",
-                            () => transaction.StaticPublication =
-                                _staticPublisher.CreatePublication(
-                                    transaction.RenderPublication.Build)))
+                            PublicationStep.PrepareStatics))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
                 while (!transaction.StaticPublication.PreparationCommitted)
@@ -607,14 +746,12 @@ public sealed class LandblockPresentationPipeline
                         < transaction.Build.Landblock.Entities.Count
                             ? 1
                             : 0;
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             new StreamingWorkCost(
                                 EntityOperations: entityOperations),
-                            "publication-validate-statics",
-                            () => _staticPublisher.AdvancePreparationOne(
-                                transaction.StaticPublication)))
+                            PublicationStep.ValidateStatics))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
 
@@ -630,13 +767,11 @@ public sealed class LandblockPresentationPipeline
                                     EntityOperations:
                                         transaction.Cost.VisibilityCells)
                                 : default;
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             cost,
-                            "publication-render-prefix",
-                            () => _renderPublisher.AdvanceBeginOne(
-                                transaction.RenderPublication)))
+                            PublicationStep.RenderPrefix))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
 
@@ -658,14 +793,12 @@ public sealed class LandblockPresentationPipeline
                                     .EnvCellPublication is null
                                     ? transaction.Cost.EnvCellShells
                                 : 0;
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             new StreamingWorkCost(
                                 EntityOperations: entityOperations),
-                            "publication-render-suffix",
-                            () => _renderPublisher.AdvanceCompleteOne(
-                                transaction.RenderPublication)))
+                            PublicationStep.RenderSuffix))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
 
@@ -677,14 +810,12 @@ public sealed class LandblockPresentationPipeline
                             .OrderedPreviouslyActiveIds.Count
                             ? 1
                             : 0;
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             new StreamingWorkCost(
                                 EntityOperations: entityOperations),
-                            "publication-static-cleanup",
-                            () => _staticPublisher.AdvanceBeginOne(
-                                transaction.StaticPublication)))
+                            PublicationStep.StaticCleanup))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
                 // No collision is published here: the session host builds it
@@ -696,14 +827,12 @@ public sealed class LandblockPresentationPipeline
                         < transaction.Build.Landblock.Entities.Count
                             ? 1
                             : 0;
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             new StreamingWorkCost(
                                 EntityOperations: entityOperations),
-                            "publication-static-lighting",
-                            () => _staticPublisher.AdvanceLightingOne(
-                                transaction.StaticPublication)))
+                            PublicationStep.StaticLighting))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
                 while (!transaction.StaticPublication.CompletionCommitted)
@@ -713,14 +842,12 @@ public sealed class LandblockPresentationPipeline
                         < transaction.StaticPublication.OrderedSnapshots.Count
                             ? 1
                             : 0;
-                    if (!TryRun(
+                    if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                             new StreamingWorkCost(
                                 EntityOperations: entityOperations),
-                            "publication-plugin-projection",
-                            () => _staticPublisher.AdvanceCompleteOne(
-                                transaction.StaticPublication)))
+                            PublicationStep.PluginProjection))
                     {
-                        return new LandblockPublicationAdvance(false, progressed);
+                        return Yield();
                     }
                 }
             }
@@ -729,34 +856,11 @@ public sealed class LandblockPresentationPipeline
                 StreamingWorkCost legacyCost = new(
                     EntityOperations: transaction.Cost.Entities,
                     GpuUploadBytes: transaction.Cost.TerrainPayloadBytes);
-                bool ran = TryRun(
-                    legacyCost,
-                    "publication-legacy-presentation",
-                    () =>
-                    {
-                        try
-                        {
-                            (_publishBeforeSpatialCommit
-                                ?? throw new InvalidOperationException(
-                                    "The presentation pipeline has no publication owners."))(
-                                transaction.Build,
-                                transaction.MeshData);
-                        }
-                        catch (Exception error)
-                        {
-                            if (error is StreamingMutationException
-                                {
-                                    MutationCommitted: true,
-                                })
-                            {
-                                _publications.Remove(result);
-                            }
-                            throw;
-                        }
-                    });
-                if (!ran)
+                if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
+                        legacyCost,
+                        PublicationStep.LegacyPresentation))
                 {
-                    return new LandblockPublicationAdvance(false, progressed);
+                    return Yield();
                 }
             }
             transaction.PresentationCommitted = true;
@@ -764,50 +868,45 @@ public sealed class LandblockPresentationPipeline
 
         if (!transaction.SpatialPresentationCommitted)
         {
-            if (!TryRun(
+            if (!transaction.ProjectionsCommitted
+                && !TryRun(result, transaction, meter, ensureProgress, ref progressed,
                     default,
-                    "publication-spatial-commit",
-                    () => CommitSpatialPresentation(transaction)))
+                    PublicationStep.SpatialCommit))
             {
-                return new LandblockPublicationAdvance(false, progressed);
+                return Yield();
+            }
+            // Each dat static's default script starts in a step of its own:
+            // a few landblocks start hundreds, more than a frame's share.
+            while (!transaction.SpatialPresentationCommitted)
+            {
+                if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
+                        new StreamingWorkCost(
+                            EntityOperations: HasStaticScriptsLeft(transaction) ? 1 : 0),
+                        PublicationStep.ActivateScript))
+                {
+                    return Yield();
+                }
             }
         }
 
         if (!transaction.EnvCellReplayCommitted)
         {
-            if (!TryRun(
+            if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                     new StreamingWorkCost(
                         EntityOperations: transaction.Cost.EnvCellShells),
-                    "publication-envcell-replay",
-                    () =>
-                    {
-                        if (transaction.Kind != PublicationKind.Far
-                            && transaction.Build.EnvCells is
-                                {
-                                    Shells.Length: > 0,
-                                } envCells)
-                        {
-                            _ensureEnvCellMeshes?.Invoke(envCells);
-                        }
-                        transaction.EnvCellReplayCommitted = true;
-                    }))
+                    PublicationStep.EnvCellReplay))
             {
-                return new LandblockPublicationAdvance(false, progressed);
+                return Yield();
             }
         }
 
         if (!transaction.LiveRecoveryCommitted)
         {
-            if (!TryRun(
+            if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
                     default,
-                    "publication-live-recovery",
-                    () =>
-                    {
-                        _onLandblockLoaded?.Invoke(transaction.LandblockId);
-                        transaction.LiveRecoveryCommitted = true;
-                    }))
+                    PublicationStep.LiveRecovery))
             {
-                return new LandblockPublicationAdvance(false, progressed);
+                return Yield();
             }
         }
 
@@ -822,6 +921,12 @@ public sealed class LandblockPresentationPipeline
         return new LandblockPublicationAdvance(true, progressed);
     }
 
+    /// <summary>
+    /// The landblock enters the world in one step: its spatial state, its
+    /// meshes' references and its static render projections, so what is
+    /// drawn of it and its live objects appear in the same frame. Only the
+    /// statics' default scripts follow, one per step.
+    /// </summary>
     private void CommitSpatialPresentation(PublicationTransaction transaction)
     {
         using GpuWorldState.MutationBatch mutation = _state.BeginMutationBatch();
@@ -854,16 +959,55 @@ public sealed class LandblockPresentationPipeline
             transaction.SpatialCommitted = true;
         }
 
-        _state.ActivateLandblockPresentation(
+        GpuLandblockSpatialPublication publication =
             transaction.SpatialPublication
             ?? throw new InvalidOperationException(
-                "A committed spatial publication has no activation receipt."));
-        if (transaction.SpatialPublication.RequiresActivation)
+                "A committed spatial publication has no activation receipt.");
+        if (!transaction.MeshesActivated)
+        {
+            _state.ActivateLandblockMeshes(publication);
+            transaction.MeshesActivated = true;
+        }
+        if (publication.RequiresActivation)
         {
             _staticProjectionSink?.Reconcile(
                 transaction.Build,
-                transaction.SpatialPublication);
+                publication);
         }
-        transaction.SpatialPresentationCommitted = true;
+        transaction.ProjectionsCommitted = true;
+        if (!HasStaticScriptsLeft(transaction))
+            transaction.SpatialPresentationCommitted = true;
+    }
+
+    private static bool HasStaticScriptsLeft(PublicationTransaction transaction) =>
+        transaction.SpatialPublication is { RequiresActivation: true } publication
+        && transaction.ScriptCursor < publication.StaticEntities.Count;
+
+    private void ActivateNextStaticScript(PublicationTransaction transaction)
+    {
+        if (HasStaticScriptsLeft(transaction))
+        {
+            _state.ActivateStaticEntityScript(
+                transaction.SpatialPublication!,
+                transaction.ScriptCursor);
+            transaction.ScriptCursor++;
+        }
+        if (!HasStaticScriptsLeft(transaction))
+            transaction.SpatialPresentationCommitted = true;
+    }
+
+    /// <summary>
+    /// A landblock whose spatial state is committed is activated in full
+    /// before its publication is let go: nothing leaves it in the world with
+    /// its statics' scripts half started.
+    /// </summary>
+    private void CompleteCommittedActivation(PublicationTransaction transaction)
+    {
+        if (!transaction.SpatialCommitted || transaction.SpatialPresentationCommitted)
+            return;
+        if (!transaction.ProjectionsCommitted)
+            CommitSpatialPresentation(transaction);
+        while (!transaction.SpatialPresentationCommitted)
+            ActivateNextStaticScript(transaction);
     }
 }
