@@ -429,6 +429,9 @@ public sealed class RetailUiRuntime : IDisposable
     private Layout.CharacterTitlesController? _characterTitlesController;
     private ResourceShutdownTransaction? _shutdown;
     private bool _disposed;
+    // The main panel frame's element tree, read once: the shared panel frame
+    // and the character window's size limits both come from it.
+    private ElementInfo? _mainPanelFrameInfo;
 
     internal bool IsDisposalComplete => _disposed;
 
@@ -476,10 +479,10 @@ public sealed class RetailUiRuntime : IDisposable
         RetailUiRuntimeBindings bindings = _bindings;
         lock (_bindings.Assets.DatLock)
         {
-            ElementInfo? mainPanelFrame = LayoutImporter.ImportInfos(
+            _mainPanelFrameInfo = LayoutImporter.ImportInfos(
                 _bindings.Assets.Dats, 0x2100006Eu, 0x100005FEu);
-            if (mainPanelFrame is not null)
-                _panelUi.ConfigureMainPanelFrame(mainPanelFrame);
+            if (_mainPanelFrameInfo is not null)
+                _panelUi.ConfigureMainPanelFrame(_mainPanelFrameInfo);
         }
         MountFpsDisplay();
         MountVividTargetIndicator();
@@ -2675,6 +2678,12 @@ public sealed class RetailUiRuntime : IDisposable
 
         OptionsPanelController = controller;
 
+        // The three option pages build every row of a list from the same few
+        // templates; each template is read once. Every read happens inside
+        // one of the dat locks below.
+        var templates = new LayoutTemplateInfoCache((templateLayoutId, templateElementId) =>
+            LayoutImporter.ImportInfos(_bindings.Assets.Dats, templateLayoutId, templateElementId));
+
         lock (_bindings.Assets.DatLock)
         {
             var strings = new DatStringResolver(_bindings.Assets.Dats);
@@ -2683,8 +2692,7 @@ public sealed class RetailUiRuntime : IDisposable
                 controller.CharacterPage,
                 templateResolver: (templateLayoutId, templateElementId) =>
                 {
-                    ElementInfo? info = LayoutImporter.ImportInfos(
-                        _bindings.Assets.Dats, templateLayoutId, templateElementId);
+                    ElementInfo? info = templates.Get(templateLayoutId, templateElementId);
                     return info is null
                         ? null
                         : LayoutImporter.Build(
@@ -2733,8 +2741,7 @@ public sealed class RetailUiRuntime : IDisposable
                 controller.ChatPage,
                 templateResolver: (templateLayoutId, templateElementId) =>
                 {
-                    ElementInfo? info = LayoutImporter.ImportInfos(
-                        _bindings.Assets.Dats, templateLayoutId, templateElementId);
+                    ElementInfo? info = templates.Get(templateLayoutId, templateElementId);
                     return info is null
                         ? null
                         : LayoutImporter.Build(
@@ -2775,8 +2782,7 @@ public sealed class RetailUiRuntime : IDisposable
                 controller.ConfigPage,
                 templateResolver: (templateLayoutId, templateElementId) =>
                 {
-                    ElementInfo? info = LayoutImporter.ImportInfos(
-                        _bindings.Assets.Dats, templateLayoutId, templateElementId);
+                    ElementInfo? info = templates.Get(templateLayoutId, templateElementId);
                     return info is null
                         ? null
                         : LayoutImporter.Build(
@@ -2970,6 +2976,15 @@ public sealed class RetailUiRuntime : IDisposable
             }
         }
 
+        // Every row of the list is built from the same template; it is read once.
+        var templates = new LayoutTemplateInfoCache((templateLayoutId, templateElementId) =>
+        {
+            lock (_bindings.Assets.DatLock)
+            {
+                return LayoutImporter.ImportInfos(
+                    _bindings.Assets.Dats, templateLayoutId, templateElementId);
+            }
+        });
         Layout.KeyboardConfigController? controller = Layout.KeyboardConfigController.Bind(
             layout,
             snapshot,
@@ -2977,8 +2992,7 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 lock (_bindings.Assets.DatLock)
                 {
-                    ElementInfo? templateInfo = LayoutImporter.ImportInfos(
-                        _bindings.Assets.Dats, templateLayoutId, templateElementId);
+                    ElementInfo? templateInfo = templates.Get(templateLayoutId, templateElementId);
                     return templateInfo is null
                         ? null
                         : LayoutImporter.Build(
@@ -3132,8 +3146,7 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 lock (_bindings.Assets.DatLock)
                 {
-                    ElementInfo? templateInfo = LayoutImporter.ImportInfos(
-                        _bindings.Assets.Dats, templateLayoutId, templateElementId);
+                    ElementInfo? templateInfo = templates.Get(templateLayoutId, templateElementId);
                     return templateInfo is null || templateInfo.FontDid == 0u
                         ? null
                         : _bindings.Assets.ResolveFont(templateInfo.FontDid);
@@ -4048,10 +4061,7 @@ public sealed class RetailUiRuntime : IDisposable
             TitleTemplateResolver,
             _bindings.Character.SendSetTitle);
 
-        ElementInfo? hostConstraint;
-        lock (_bindings.Assets.DatLock)
-            hostConstraint = LayoutImporter.ImportInfos(
-                _bindings.Assets.Dats, 0x2100006Eu, 0x100005FEu);
+        ElementInfo? hostConstraint = _mainPanelFrameInfo;
 
         RetailWindowHandle handle = RetailWindowFrame.Mount(
             Host.Root,

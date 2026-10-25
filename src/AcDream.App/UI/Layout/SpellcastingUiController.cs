@@ -369,7 +369,7 @@ public sealed class SpellcastingUiController : IRetainedPanelController
                     slot = new UiCatalogSlot
                     {
                         EntryId = id,
-                        CatalogIconTexture = metadata is null ? 0u : _resolveSpellIcon(id),
+                        CatalogIconSource = metadata is null ? null : () => _resolveSpellIcon(id),
                         Label = metadata?.Name ?? $"Spell {id}",
                         SpriteResolve = list.SpriteResolve,
                         CatalogDragPayload = new SpellFavoriteDragPayload(tab, position, id),

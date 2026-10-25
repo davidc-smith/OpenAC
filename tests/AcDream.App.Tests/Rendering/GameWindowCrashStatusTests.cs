@@ -4,7 +4,6 @@ using AcDream.App.Diagnostics;
 using AcDream.App.Rendering;
 using AcDream.App.Tests.Architecture;
 using AcDream.Runtime.Session;
-using Silk.NET.Windowing;
 
 namespace AcDream.App.Tests.Rendering;
 
@@ -17,8 +16,8 @@ public sealed class GameWindowCrashStatusTests
         IReadOnlyList<CompiledCall> calls = CompiledCallGraph.Read(run);
         CompiledCall frameLoop = Assert.Single(
             calls,
-            call => call.Target.Name == nameof(IWindow.Run)
-                && call.Target.DeclaringType?.Namespace == "Silk.NET.Windowing");
+            call => call.Target.Name == nameof(NativeWindowLoop.Run)
+                && call.Target.DeclaringType == typeof(NativeWindowLoop));
         CompiledCall retain = Assert.Single(
             calls,
             call => call.Target.DeclaringType

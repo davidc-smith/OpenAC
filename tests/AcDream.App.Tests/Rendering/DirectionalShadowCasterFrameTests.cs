@@ -844,6 +844,14 @@ public sealed class DirectionalShadowCasterFrameTests
 
         public ulong GetBuildingShellRevision(RenderSceneGeneration generation) => 1;
 
+        public int GetOutdoorBuildingShellCount(RenderSceneGeneration generation) =>
+            throw new NotSupportedException();
+
+        public int CopyOutdoorBuildingShellsTo(
+            RenderSceneGeneration generation,
+            Span<RenderProjectionRecord> destination) =>
+            throw new NotSupportedException();
+
         public ulong GetLandblockWriteRevision(
             RenderSceneGeneration generation, uint landblockId) => 0;
 

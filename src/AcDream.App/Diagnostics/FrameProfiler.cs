@@ -47,7 +47,6 @@ internal readonly record struct FrameHistoryRecord(
 public sealed class FrameProfiler : IDisposable
 {
     private const int WindowCapacity = 2048;              // ~12 s at 165 fps
-    private const int HistoryInitialCapacity = 131072;
     private const long ReportIntervalTicks = 5 * TimeSpan.TicksPerSecond;
     private static readonly int StageCount = Enum.GetValues<FrameStage>().Length;
 
@@ -57,7 +56,7 @@ public sealed class FrameProfiler : IDisposable
     private readonly FrameStatsBuffer[] _stageUs;
     private readonly long[] _stageAccumTicks;
     private readonly long[] _lastStageUs;
-    private readonly List<FrameHistoryRecord>? _history;
+    private readonly FrameHistoryLog? _history;
     private readonly long _profilerStartTimestamp;
     private readonly DateTime _profilerStartUtc;
     private int _currentFrameIndex = -1;
@@ -85,7 +84,7 @@ public sealed class FrameProfiler : IDisposable
         _profilerStartTimestamp = Stopwatch.GetTimestamp();
         _profilerStartUtc = DateTime.UtcNow;
         if (RenderingDiagnostics.FrameHistoryPath is not null)
-            _history = new List<FrameHistoryRecord>(HistoryInitialCapacity);
+            _history = new FrameHistoryLog();
     }
 
     public void FrameBoundary()
@@ -183,8 +182,8 @@ public sealed class FrameProfiler : IDisposable
         _gpuUs.Push(elapsedUs);
         if (_history is not null && (uint)frameIndex < (uint)_history.Count)
         {
-            FrameHistoryRecord row = _history[frameIndex];
-            _history[frameIndex] = row with { GpuUs = elapsedUs };
+            ref FrameHistoryRecord row = ref _history[frameIndex];
+            row = row with { GpuUs = elapsedUs };
         }
     }
 
@@ -264,7 +263,7 @@ public sealed class FrameProfiler : IDisposable
             try
             {
                 using var writer = new StreamWriter(path, append: false);
-                WriteHistoryCsv(_history, writer, _profilerStartUtc);
+                WriteHistoryCsv(_history.Rows(), writer, _profilerStartUtc);
                 Console.WriteLine($"[frame-prof] wrote {_history.Count} history record(s) to '{path}'");
             }
             catch (Exception ex)

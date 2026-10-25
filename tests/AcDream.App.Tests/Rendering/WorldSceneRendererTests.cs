@@ -130,6 +130,43 @@ public sealed class WorldSceneRendererTests
     }
 
     [Fact]
+    public void PlacedArrival_IsDrawnUnderThePortalTunnel()
+    {
+        var rig = new Rig(
+            portalVisible: true,
+            waitingForLogin: false,
+            clipRoot: null,
+            worldBehindPortal: true);
+
+        WorldRenderFrameOutcome result = rig.Renderer.Render(default);
+
+        Assert.True(result.NormalWorldDrawn);
+        Assert.Contains("frame:build", rig.Calls);
+        Assert.Contains("flat:terrain", rig.Calls);
+    }
+
+    [Fact]
+    public void PlacedArrival_UnderThePortal_PreparesTheSkyAndTheEnhancedWorld()
+    {
+        var sky = new Rig(
+            portalVisible: true,
+            waitingForLogin: false,
+            clipRoot: null,
+            worldBehindPortal: true);
+        sky.Renderer.PrepareResources(default);
+        Assert.Contains("sky:prepare", sky.Calls);
+
+        var enhanced = new Rig(
+            portalVisible: true,
+            waitingForLogin: false,
+            clipRoot: null,
+            worldBehindPortal: true);
+        PreparedWorldSceneFrame prepared = enhanced.Renderer.PrepareEnhanced(default);
+        Assert.True(prepared.ShouldRender);
+        enhanced.Renderer.CancelPreparedEnhanced(in prepared);
+    }
+
+    [Fact]
     public void QuiescedGeneration_PublishesEmptySelectionFrameAndSkipsEveryWorldOwner()
     {
         var transit = new RuntimeWorldTransitState();
@@ -638,7 +675,8 @@ public sealed class WorldSceneRendererTests
             LoadedCell? clipRoot,
             bool? playerSeenOutside = null,
             EnvironOverride environOverride = EnvironOverride.None,
-            IWorldGenerationAvailability? availability = null)
+            IWorldGenerationAvailability? availability = null,
+            bool worldBehindPortal = false)
         {
             Calls = [];
             DayGroup = new DayGroupData { Name = "sentinel-day-group" };
@@ -663,7 +701,10 @@ public sealed class WorldSceneRendererTests
                     100f,
                     FogMode.Linear,
                     0f,
-                    environOverride));
+                    environOverride))
+            {
+                WorldDrawnBehindPortal = worldBehindPortal,
+            };
             var foundation = new FoundationSource(Foundation);
             var login = new LoginSource(waitingForLogin);
             var sky = new SkySource(DayGroup, DayFraction);

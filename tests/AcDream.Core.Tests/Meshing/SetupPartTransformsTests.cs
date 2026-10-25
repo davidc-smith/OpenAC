@@ -9,6 +9,44 @@ namespace AcDream.Core.Tests.Meshing;
 public class SetupPartTransformsTests
 {
     [Fact]
+    public void ComputeInto_WritesWhatComputeReturns_IncludingPartsPastTheFrames()
+    {
+        var setup = new Setup
+        {
+            Parts = { 0x01000100u, 0x01000101u, 0x01000102u },
+            DefaultScale = { Vector3.One, Vector3.One, Vector3.One },
+            PlacementFrames =
+            {
+                [Placement.Default] = new AnimationFrame(2)
+                {
+                    Frames =
+                    {
+                        new Frame
+                        {
+                            Origin = new Vector3(1f, 2f, 3f),
+                            Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.5f),
+                        },
+                        new Frame { Origin = new Vector3(0, 0, 1f), Orientation = Quaternion.Identity },
+                    },
+                },
+            },
+        };
+
+        IReadOnlyList<Matrix4x4> expected = SetupPartTransforms.Compute(setup, objectScale: 1.5f);
+        var written = new Matrix4x4[4];
+        int count = SetupPartTransforms.ComputeInto(setup, written, objectScale: 1.5f);
+
+        Assert.Equal(3, count);
+        Assert.Equal(expected, written.Take(count));
+        Assert.Equal(Matrix4x4.Identity, written[2]);
+
+        Assert.Equal(0, SetupPartTransforms.ComputeInto(
+            new Setup { Parts = { 0x01000100u } },
+            written));
+        Assert.Empty(SetupPartTransforms.Compute(new Setup { Parts = { 0x01000100u } }));
+    }
+
+    [Fact]
     public void Compute_PrefersRestingPlacement_OverDefault()
     {
         var setup = new Setup

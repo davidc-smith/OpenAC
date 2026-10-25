@@ -836,6 +836,8 @@ internal sealed class RuntimeCollisionNeighborhood
             }
 
             RuntimeCollisionGenerationAdvance advance;
+            RuntimePhysicsState physics = _runtime.EntityObjects.Physics;
+            physics.CollisionWorkFrameSpent = _pacing.IsFrameSpent;
             try
             {
                 advance = _pendingPublication.Advance();
@@ -848,6 +850,10 @@ internal sealed class RuntimeCollisionNeighborhood
                 // to go.
                 _pendingPublication = null;
                 throw;
+            }
+            finally
+            {
+                physics.CollisionWorkFrameSpent = null;
             }
             if (advance.Completed)
             {

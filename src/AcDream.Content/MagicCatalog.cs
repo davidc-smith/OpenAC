@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using AcDream.Core.Items;
 using AcDream.Core.Spells;
 using DatReaderWriter;
@@ -21,25 +20,31 @@ public sealed record SpellComponentDescriptor(
     public string Word { get; init; } = string.Empty;
 }
 
+/// <summary>
+/// The spell and spell-component tables, read once from the game files.
+/// The lookups are plain read-only dictionaries: the catalog is built at
+/// every start, and building frozen (read-optimized) tables cost more there
+/// than the occasional lookup ever saves.
+/// </summary>
 public sealed class MagicCatalog
 {
     private const uint SpellTableDid = 0x0E00000Eu;
     private const uint SpellComponentTableDid = 0x0E00000Fu;
     private const uint ComponentIdMapDid = 0x27000002u;
 
-    private readonly FrozenDictionary<uint, SpellFormulaDefinition>
+    private readonly IReadOnlyDictionary<uint, SpellFormulaDefinition>
         _formulaDefinitions;
-    private readonly FrozenDictionary<uint, uint> _wcidByScid;
-    private readonly FrozenDictionary<uint, uint> _magicPackWcidBySchool;
-    private readonly FrozenDictionary<uint, int> _spellLevels;
+    private readonly IReadOnlyDictionary<uint, uint> _wcidByScid;
+    private readonly IReadOnlyDictionary<uint, uint> _magicPackWcidBySchool;
+    private readonly IReadOnlyDictionary<uint, int> _spellLevels;
 
     private MagicCatalog(
         CoreSpellTable spellTable,
-        FrozenDictionary<uint, SpellComponentDescriptor> components,
-        FrozenDictionary<uint, SpellFormulaDefinition> formulaDefinitions,
-        FrozenDictionary<uint, uint> wcidByScid,
-        FrozenDictionary<uint, uint> magicPackWcidBySchool,
-        FrozenDictionary<uint, int> spellLevels)
+        IReadOnlyDictionary<uint, SpellComponentDescriptor> components,
+        IReadOnlyDictionary<uint, SpellFormulaDefinition> formulaDefinitions,
+        IReadOnlyDictionary<uint, uint> wcidByScid,
+        IReadOnlyDictionary<uint, uint> magicPackWcidBySchool,
+        IReadOnlyDictionary<uint, int> spellLevels)
     {
         SpellTable = spellTable;
         Components = components;
@@ -51,11 +56,11 @@ public sealed class MagicCatalog
 
     public static MagicCatalog Empty { get; } = new(
         CoreSpellTable.Empty,
-        EmptyFrozen<SpellComponentDescriptor>(),
-        EmptyFrozen<SpellFormulaDefinition>(),
-        EmptyFrozen<uint>(),
-        EmptyFrozen<uint>(),
-        EmptyFrozen<int>());
+        new Dictionary<uint, SpellComponentDescriptor>(),
+        new Dictionary<uint, SpellFormulaDefinition>(),
+        new Dictionary<uint, uint>(),
+        new Dictionary<uint, uint>(),
+        new Dictionary<uint, int>());
 
     public CoreSpellTable SpellTable { get; }
     public IReadOnlyDictionary<uint, SpellComponentDescriptor> Components
@@ -183,13 +188,10 @@ public sealed class MagicCatalog
 
         return new MagicCatalog(
             CoreSpellTable.Create(metadata),
-            components.ToFrozenDictionary(),
-            formulaDefinitions.ToFrozenDictionary(),
-            wcidByScid.ToFrozenDictionary(),
-            magicPackWcidBySchool.ToFrozenDictionary(),
-            spellLevels.ToFrozenDictionary());
+            components,
+            formulaDefinitions,
+            wcidByScid,
+            magicPackWcidBySchool,
+            spellLevels);
     }
-
-    private static FrozenDictionary<uint, TValue> EmptyFrozen<TValue>() =>
-        new Dictionary<uint, TValue>().ToFrozenDictionary();
 }

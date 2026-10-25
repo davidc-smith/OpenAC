@@ -261,6 +261,14 @@ public sealed class StreamingWorkMeter
         Restart(budget, destinationReservationActive);
     }
 
+    private static long s_lastFrameSerial;
+
+    /// <summary>
+    /// Which frame the meter is metering: a value no other restart of any
+    /// meter shares, for work that keeps its own per-frame count.
+    /// </summary>
+    internal long FrameSerial { get; private set; }
+
     /// <summary>
     /// Points the meter at a new frame's budget and forgets the last
     /// frame's accounting, so one meter can serve every streaming tick
@@ -273,6 +281,7 @@ public sealed class StreamingWorkMeter
         bool destinationReservationActive)
     {
         budget.Validate();
+        FrameSerial = Interlocked.Increment(ref s_lastFrameSerial);
         _budget = budget;
         _destinationReservationActive = destinationReservationActive;
         _start = _timestamp();

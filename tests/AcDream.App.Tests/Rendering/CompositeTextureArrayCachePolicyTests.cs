@@ -1,3 +1,4 @@
+using AcDream.App.Streaming;
 using AcDream.App.Rendering;
 using AcDream.Core.Textures;
 using AcDream.Core.World;
@@ -301,7 +302,7 @@ public sealed class CompositeTextureArrayCachePolicyTests
     }
 
     [Fact]
-    public void DestinationReveal_RaisesOnlyItemCountAndRestoresNormalProfile()
+    public void WidenedFrameBudget_WidensCountAndBytesAndRestoresNormalProfile()
     {
         var backend = new FakeBackend(maximumLayers: 64);
         using var cache = new CompositeTextureArrayCache(
@@ -312,15 +313,39 @@ public sealed class CompositeTextureArrayCachePolicyTests
             maximumUploadsPerFrame: 2,
             maximumUploadBytesPerFrame: long.MaxValue);
 
-        cache.BeginFrame(destinationRevealUploadPriority: true);
+        cache.BeginFrame(new FrameUploadAllowance(32L << 20, Scale: 2.0));
         Assert.True(cache.TryAddAndAcquire(1, Key(1), Texture(1, 1), out _));
         Assert.True(cache.TryAddAndAcquire(1, Key(2), Texture(1, 1), out _));
         Assert.True(cache.TryAddAndAcquire(1, Key(3), Texture(1, 1), out _));
+        Assert.True(cache.TryAddAndAcquire(1, Key(7), Texture(1, 1), out _));
+        Assert.False(cache.TryAddAndAcquire(1, Key(8), Texture(1, 1), out _));
 
-        cache.BeginFrame();
+        cache.BeginFrame(new FrameUploadAllowance(8L << 20, Scale: 1.0));
         Assert.True(cache.TryAddAndAcquire(1, Key(4), Texture(1, 1), out _));
         Assert.True(cache.TryAddAndAcquire(1, Key(5), Texture(1, 1), out _));
         Assert.False(cache.TryAddAndAcquire(1, Key(6), Texture(1, 1), out _));
+    }
+
+    [Fact]
+    public void WidenedFrameBudget_WidensTheUploadBytes()
+    {
+        var backend = new FakeBackend(maximumLayers: 8);
+        using var cache = new CompositeTextureArrayCache(
+            backend,
+            new DeferredRetirementQueue(),
+            unownedBudgetBytes: long.MaxValue,
+            physicalBudgetBytes: long.MaxValue,
+            maximumUploadsPerFrame: 8,
+            maximumUploadBytesPerFrame: 64);
+
+        cache.BeginFrame(new FrameUploadAllowance(0, Scale: 2.0));
+        Assert.True(cache.TryAddAndAcquire(1, Key(1), Texture(4, 4), out _));
+        Assert.True(cache.TryAddAndAcquire(1, Key(2), Texture(4, 4), out _));
+        Assert.False(cache.CanUpload(1));
+
+        cache.BeginFrame();
+        Assert.True(cache.TryAddAndAcquire(1, Key(3), Texture(4, 4), out _));
+        Assert.False(cache.CanUpload(1));
     }
 
     [Fact]

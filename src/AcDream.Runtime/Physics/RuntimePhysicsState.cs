@@ -495,6 +495,15 @@ public sealed class RuntimePhysicsState : IDisposable
     public PhysicsDataCache DataCache { get; }
     internal RuntimeCollisionReportingState CollisionReports { get; }
     internal RuntimeSetPositionState SetPosition { get; }
+
+    /// <summary>
+    /// Asked while a committed collision generation hands its waiting
+    /// placements back; true stops the hand-back after the placement in hand,
+    /// and the next call carries on where it stopped. Set by a host that
+    /// keeps a frame budget for its collision work, for the length of that
+    /// work; null hands every placement back at once.
+    /// </summary>
+    internal Func<bool>? CollisionWorkFrameSpent { get; set; }
     public int SpatialRootCount => _spatialRoots.Count;
     public int SpatialRemoteCount => _spatialRemotes.Count;
     public int SpatialProjectileCount => _spatialProjectiles.Count;

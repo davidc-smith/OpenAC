@@ -18,6 +18,9 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
     private readonly GraphicalHostPlatformServices _platform;
     private readonly FramePacingPolicy _pacing;
     private readonly Action<string> _log;
+    // The capability report's write, on a worker; waited for on dispose so a
+    // run that ends at once (the capability probe) still leaves it on disk.
+    private Task _capabilityReportWrite = Task.CompletedTask;
 
     private Silk.NET.Vulkan.Vk? _vk;
     private Instance _instance;
@@ -60,7 +63,8 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         FramePacingPolicy pacing,
         int requestedSampleCount,
         GpuMemoryProfile? memoryProfile = null,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        VulkanInstanceWarmup? instanceWarmup = null)
     {
         var context = new VulkanGraphicsContext(
             window,
@@ -70,7 +74,7 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
             log ?? Console.WriteLine);
         try
         {
-            context.CreateInstanceAndSurface();
+            context.CreateInstanceAndSurface(instanceWarmup);
             context.SelectDeviceAndGate();
             context.CreateDevice(requestedSampleCount, memoryProfile ?? GpuMemoryProfile.Default);
             return context;
@@ -125,9 +129,8 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
     /// <summary>Arms recreation, used when the acquire itself reported out-of-date.</summary>
     internal void RequestRecreate() => _recreateAtFrameBoundary = true;
 
-    private void CreateInstanceAndSurface()
+    private void CreateInstanceAndSurface(VulkanInstanceWarmup? instanceWarmup)
     {
-        _vk = GraphicalVulkanLoader.CreateApi();
         if (_window.VkSurface is null)
         {
             throw new NotSupportedException(
@@ -140,10 +143,22 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         for (uint i = 0; i < requiredCount; i++)
             required.Add(VulkanInterop.ReadString(requiredNames[i]));
 
-        VulkanInstanceFactory.Created instance = VulkanInstanceFactory.Create(
-            _vk,
-            required,
-            enableOptionalExtensions: _options.DevTools);
+        // The instance made on a worker during the start, when it fits this
+        // window; otherwise this window's own.
+        VulkanInstanceFactory.Created instance;
+        if (instanceWarmup?.TryTake(required, _options.DevTools) is { } warm)
+        {
+            _vk = warm.Api;
+            instance = warm.Instance;
+        }
+        else
+        {
+            _vk = GraphicalVulkanLoader.CreateApi();
+            instance = VulkanInstanceFactory.Create(
+                _vk,
+                required,
+                enableOptionalExtensions: _options.DevTools);
+        }
         _instance = instance.Instance;
         _instanceExtensions = instance.EnabledExtensions;
 
@@ -299,7 +314,7 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         string reportPath = Path.Combine(
             _platform.Paths.DiagnosticsDirectory,
             VulkanCapabilityGuard.ReportFileName);
-        VulkanCapabilityReportWriter.Write(reportPath, record);
+        _capabilityReportWrite = VulkanCapabilityReportWriter.WriteForGate(reportPath, record, _log);
         VulkanCapabilityGuard.ThrowIfUnsupported(record, reportPath);
 
         _log(
@@ -422,6 +437,9 @@ internal sealed unsafe class VulkanGraphicsContext : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+
+        // Never faults: a failed write is logged by the writer.
+        _capabilityReportWrite.Wait();
 
         Silk.NET.Vulkan.Vk? vk = _vk;
         if (vk is not null && _device.Handle != 0)

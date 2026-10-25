@@ -19,7 +19,15 @@ internal interface IWorldTextureArray : IDisposable
 
     bool IsPhysicalRetirementComplete { get; }
 
-    void UpdateLayer(int layer, byte[] data, UploadPixelFormat? uploadPixelFormat, UploadPixelType? uploadPixelType);
+    /// <summary>Stages level 0 of a layer, with the rest of its mip chain
+    /// when that was built ahead (levels 1 and down); a layer without one
+    /// has its chain made when it is uploaded.</summary>
+    void UpdateLayer(
+        int layer,
+        byte[] data,
+        UploadPixelFormat? uploadPixelFormat,
+        UploadPixelType? uploadPixelType,
+        byte[][]? mipChain = null);
 
     long ProcessDirtyUpdates();
 
@@ -74,7 +82,7 @@ internal sealed class RhiWorldTextureArray : IWorldTextureArray
     private GpuTextureSlot _clampSlot = GpuTextureSlot.Unassigned;
     private bool _disposed;
 
-    private readonly record struct PendingLayer(int Layer, byte[] Data);
+    private readonly record struct PendingLayer(int Layer, byte[] Data, byte[][]? MipChain);
 
     internal RhiWorldTextureArray(
         IGpuDevice device,
@@ -150,7 +158,12 @@ internal sealed class RhiWorldTextureArray : IWorldTextureArray
     /// <inheritdoc/>
     public bool IsPhysicalRetirementComplete => _disposed;
 
-    public void UpdateLayer(int layer, byte[] data, UploadPixelFormat? uploadPixelFormat, UploadPixelType? uploadPixelType)
+    public void UpdateLayer(
+        int layer,
+        byte[] data,
+        UploadPixelFormat? uploadPixelFormat,
+        UploadPixelType? uploadPixelType,
+        byte[][]? mipChain = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(data);
@@ -167,7 +180,12 @@ internal sealed class RhiWorldTextureArray : IWorldTextureArray
         lock (_gate)
         {
             int existing = _pending.FindLastIndex(p => p.Layer == layer);
-            var update = new PendingLayer(layer, data);
+            var update = new PendingLayer(
+                layer,
+                data,
+                mipChain is not null && mipChain.Length == _mipLevelCount - 1
+                    ? mipChain
+                    : null);
             if (existing >= 0)
                 _pending[existing] = update;
             else
@@ -188,13 +206,27 @@ internal sealed class RhiWorldTextureArray : IWorldTextureArray
 
         long generated = 0;
         bool compressed = BlockCompressionCodec.IsBlockCompressed(_format);
+        bool deviceChain = false;
         foreach (PendingLayer layer in flush)
         {
             _texture.Upload(0, layer.Layer, layer.Data);
             if (_mipLevelCount <= 1)
                 continue;
-            if (!compressed)
+            if (layer.MipChain is { } chain)
+            {
+                // Built ahead on a preparation worker: only uploaded here.
+                for (int i = 0; i < chain.Length; i++)
+                {
+                    _texture.Upload(i + 1, layer.Layer, chain[i]);
+                    generated = checked(generated + chain[i].Length);
+                }
                 continue;
+            }
+            if (!compressed)
+            {
+                deviceChain = true;
+                continue;
+            }
 
             foreach (BlockCompressionMipChain.Level level in
                 BlockCompressionMipChain.BuildCompressed(
@@ -209,7 +241,7 @@ internal sealed class RhiWorldTextureArray : IWorldTextureArray
             }
         }
 
-        if (!compressed && _mipLevelCount > 1)
+        if (deviceChain)
         {
             _texture.GenerateMipChain();
             generated = checked(generated + MipChainBytes());
@@ -266,7 +298,7 @@ internal sealed class RhiWorldTextureArray : IWorldTextureArray
     internal static int MipLevelsFor(int width, int height) =>
         (int)Math.Floor(Math.Log2(Math.Max(1, Math.Max(width, height)))) + 1;
 
-    private static GpuTextureFormat MapFormat(TextureFormat format) =>
+    internal static GpuTextureFormat MapFormat(TextureFormat format) =>
         format switch
         {
             TextureFormat.RGBA8 => GpuTextureFormat.Rgba8Unorm,

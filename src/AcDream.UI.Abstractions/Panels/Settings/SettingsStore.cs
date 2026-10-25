@@ -254,7 +254,7 @@ public sealed class SettingsStore
         if (!File.Exists(_path)) return "Classic";
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(_path));
+            using var doc = JsonDocument.Parse(ReadSettingsText());
             return doc.RootElement.TryGetProperty("pluginUi", out var section)
                 && section.ValueKind == JsonValueKind.Object
                 ? ReadString(section, "theme", "Classic") : "Classic";
@@ -303,7 +303,7 @@ public sealed class SettingsStore
         if (!File.Exists(_path)) return CharacterSettings.Default;
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             var toon = root?["character"]?[toonKey] as JsonObject;
             if (toon is null) return CharacterSettings.Default;
 
@@ -350,7 +350,7 @@ public sealed class SettingsStore
         if (!File.Exists(_path)) return null;
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             var node = root?["windowPositions"]?[toonKey]?[windowName] as JsonObject;
             if (node is null) return null;
             float? x = node["x"]?.GetValue<float>();
@@ -398,7 +398,7 @@ public sealed class SettingsStore
         if (!File.Exists(_path)) return true;
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             if (root?["markupControls"] is not JsonObject characters
                 || characters[toonKey] is not JsonObject windows)
             {
@@ -462,7 +462,7 @@ public sealed class SettingsStore
 
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             JsonObject? node = root?["windowLayouts"]?[toonKey]?[resolutionKey]?[windowName] as JsonObject;
             if (node is null
                 && root?["windowLayouts"]?[toonKey] is JsonObject resolutions
@@ -513,14 +513,61 @@ public sealed class SettingsStore
         string windowName,
         UiWindowLayout fallback)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(windowName);
+        return LoadWindowPlacements(toonKey, resolutionKey, [new(windowName, fallback)])
+            .TryGetValue(windowName, out UiWindowPlacement placement)
+            ? placement
+            : null;
+    }
+
+    /// <summary>
+    /// <see cref="LoadWindowPlacement"/> for several windows with one read of
+    /// the file: each window name maps to its fallback, and the result holds
+    /// only the windows that have something saved.
+    /// </summary>
+    public IReadOnlyDictionary<string, UiWindowPlacement> LoadWindowPlacements(
+        string toonKey,
+        string resolutionKey,
+        IReadOnlyList<KeyValuePair<string, UiWindowLayout>> windows)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(resolutionKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(windowName);
-        if (!TryParseResolution(resolutionKey, out int requestedWidth, out int requestedHeight)
-            || !File.Exists(_path)) return null;
+        ArgumentNullException.ThrowIfNull(windows);
+        foreach (var window in windows)
+            ArgumentException.ThrowIfNullOrWhiteSpace(window.Key, nameof(windows));
+        var found = new Dictionary<string, UiWindowPlacement>(StringComparer.Ordinal);
+        if (windows.Count == 0
+            || !TryParseResolution(resolutionKey, out int requestedWidth, out int requestedHeight)
+            || !File.Exists(_path)) return found;
+        JsonObject? root;
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load window placement from {_path}: {ex.Message}");
+            return found;
+        }
+        foreach ((string windowName, UiWindowLayout fallback) in windows)
+        {
+            if (ReadWindowPlacement(root, toonKey, requestedWidth, requestedHeight, windowName, fallback)
+                is { } placement)
+                found[windowName] = placement;
+        }
+        return found;
+    }
+
+    private UiWindowPlacement? ReadWindowPlacement(
+        JsonObject? root,
+        string toonKey,
+        int requestedWidth,
+        int requestedHeight,
+        string windowName,
+        UiWindowLayout fallback)
+    {
+        try
+        {
             var placements = (root?["windowPlacements"] as JsonObject)?[toonKey] as JsonObject;
             if (placements?[windowName] is JsonObject latest
                 && ReadNodeInt(latest, "screenWidth", 0) is > 0 and var width
@@ -567,12 +614,36 @@ public sealed class SettingsStore
     }
 
     public void SaveWindowPlacement(string toonKey, string windowName, UiWindowPlacement placement)
+        => SaveWindowPlacements(toonKey, [new(windowName, placement)]);
+
+    /// <summary>
+    /// <see cref="SaveWindowPlacement"/> for several windows with one read and
+    /// one write of the file. Every entry is checked before anything is
+    /// written; an empty list writes nothing.
+    /// </summary>
+    public void SaveWindowPlacements(
+        string toonKey,
+        IReadOnlyList<KeyValuePair<string, UiWindowPlacement>> placements)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(windowName);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenWidth);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenHeight);
+        ArgumentNullException.ThrowIfNull(placements);
+        foreach ((string windowName, UiWindowPlacement placement) in placements)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(windowName, nameof(placements));
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenWidth, nameof(placements));
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenHeight, nameof(placements));
+        }
+        if (placements.Count == 0) return;
         JsonObject root = LoadMutableRoot();
+        foreach ((string windowName, UiWindowPlacement placement) in placements)
+            PutWindowPlacement(root, toonKey, windowName, placement);
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
+    private static void PutWindowPlacement(
+        JsonObject root, string toonKey, string windowName, UiWindowPlacement placement)
+    {
         JsonObject toon = GetOrCreateObject(GetOrCreateObject(root, "windowPlacements"), toonKey);
         toon[windowName] = new JsonObject
         {
@@ -584,8 +655,6 @@ public sealed class SettingsStore
         JsonObject resolution = GetOrCreateObject(
             GetOrCreateObject(GetOrCreateObject(root, "windowLayouts"), toonKey), resolutionKey);
         resolution[windowName] = SerializeWindowLayout(placement.Layout);
-        root["version"] = CurrentSchemaVersion;
-        WriteMutableRoot(root);
     }
 
     private static UiWindowLayout DeserializeWindowLayout(JsonObject node, UiWindowLayout fallback) => new(
@@ -638,7 +707,7 @@ public sealed class SettingsStore
 
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             JsonObject? node = root?["namedWindowLayouts"]?[profileName]?[windowName] as JsonObject;
             return node is null
                 ? null
@@ -679,6 +748,18 @@ public sealed class SettingsStore
         ["authoredGeometryRevision"] = layout.AuthoredGeometryRevision,
     };
 
+    /// <summary>How many times this store has read the whole settings file as text (tests pin batching on it).</summary>
+    internal int FileReads { get; private set; }
+
+    /// <summary>How many times this store has written the settings file (tests pin batching on it).</summary>
+    internal int FileWrites { get; private set; }
+
+    private string ReadSettingsText()
+    {
+        FileReads++;
+        return File.ReadAllText(_path);
+    }
+
     private JsonObject LoadMutableRoot()
     {
         var dir = Path.GetDirectoryName(_path);
@@ -687,7 +768,7 @@ public sealed class SettingsStore
         // A file that cannot be read fails the save: starting from an empty
         // root would write away every section this save does not own. One
         // that reads but does not parse loads as defaults, so it starts over.
-        string text = File.ReadAllText(_path);
+        string text = ReadSettingsText();
         JsonObject root;
         try { root = JsonNode.Parse(text) as JsonObject ?? new JsonObject(); }
         catch { return new JsonObject(); }
@@ -720,6 +801,7 @@ public sealed class SettingsStore
     /// </summary>
     private void WriteSettingsFile(string text)
     {
+        FileWrites++;
         string directory = Path.GetDirectoryName(Path.GetFullPath(_path))!;
         string temporary = Path.Combine(directory, $".{Path.GetFileName(_path)}.{Guid.NewGuid():N}.tmp");
         try
@@ -905,7 +987,7 @@ public sealed class SettingsStore
         {
             // As LoadMutableRoot: a read error fails the save, a file that
             // does not parse is started over.
-            string text = File.ReadAllText(_path);
+            string text = ReadSettingsText();
             try
             {
                 using var doc = JsonDocument.Parse(text);

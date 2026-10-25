@@ -224,7 +224,8 @@ public sealed class WorldRenderCompositionTests
             IGameRenderResourceLifetime lifetime,
             IGpuDevice device,
             IDatReaderWriter dats,
-            WorldTextureDetail textureDetail) =>
+            WorldTextureDetail textureDetail,
+            Task<TerrainAtlas.DecodedSources>? sources = null) =>
             lifetime.AcquireTerrainAtlas(() => Atlas);
 
         public void ExerciseBackendNeutralWorldTextures(

@@ -53,7 +53,11 @@ internal sealed class VulkanRenderFrameClearPhase : IRenderFrameClearPhase
         var foundation = new RenderFrameFoundation(
             portalViewportVisible,
             sky,
-            atmosphere);
+            atmosphere)
+        {
+            WorldDrawnBehindPortal = portalViewportVisible
+                && _portal.IsWorldPlacedBehindPortal,
+        };
         _clear.ClearColor = clear;
         _clear.Foundation = foundation;
         return foundation;

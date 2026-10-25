@@ -58,9 +58,17 @@ internal sealed class GraphicalSessionContent : IDisposable
         var factory = new RetailContentEffectsAudioCompositionFactory();
         IDatReaderWriter? dats = null;
         IPreparedAssetSource? prepared = null;
+        Task<(MagicCatalog Magic, float[] Heights)>? tables = null;
         try
         {
             dats = factory.OpenDatCollection(options.DatDir);
+            // The spell tables and the land's height table are read from the
+            // game files on a worker while the prepared assets open here.
+            // Opening the prepared assets reads only the game files'
+            // iteration numbers, which are fixed once the files are open, so
+            // the worker is the files' only reader until it is joined below.
+            IDatReaderWriter openDats = dats;
+            tables = Task.Run(() => ReadTables(factory, openDats));
             prepared = factory.OpenPreparedAssetSource(
                 options.PreparedAssetPath,
                 options.PreparedAssetOverlayPath,
@@ -68,16 +76,7 @@ internal sealed class GraphicalSessionContent : IDisposable
                 options.PreparedAssetEffectiveRecipeVersion,
                 dats,
                 diagnostic);
-            MagicCatalog magic = factory.LoadMagicCatalog(dats);
-            Region region = dats.Get<Region>(0x13000000u)
-                ?? throw new InvalidOperationException(
-                    "Region dat id 0x13000000 is missing.");
-            float[]? heights = region.LandDefs.LandHeightTable;
-            if (heights is null || heights.Length < 256)
-            {
-                throw new InvalidOperationException(
-                    "Region.LandDefs.LandHeightTable is missing or truncated.");
-            }
+            (MagicCatalog magic, float[] heights) = tables.GetAwaiter().GetResult();
             return new GraphicalSessionContent(
                 dats,
                 prepared,
@@ -86,6 +85,16 @@ internal sealed class GraphicalSessionContent : IDisposable
         }
         catch
         {
+            // The worker reads the files: it is finished before they close.
+            try
+            {
+                tables?.Wait();
+            }
+            catch (AggregateException)
+            {
+                // When its failure is what stopped the open, it is the one
+                // rethrown below.
+            }
             try
             {
                 prepared?.Dispose();
@@ -96,6 +105,23 @@ internal sealed class GraphicalSessionContent : IDisposable
             }
             throw;
         }
+    }
+
+    private static (MagicCatalog Magic, float[] Heights) ReadTables(
+        RetailContentEffectsAudioCompositionFactory factory,
+        IDatReaderWriter dats)
+    {
+        MagicCatalog magic = factory.LoadMagicCatalog(dats);
+        Region region = dats.Get<Region>(0x13000000u)
+            ?? throw new InvalidOperationException(
+                "Region dat id 0x13000000 is missing.");
+        float[]? heights = region.LandDefs.LandHeightTable;
+        if (heights is null || heights.Length < 256)
+        {
+            throw new InvalidOperationException(
+                "Region.LandDefs.LandHeightTable is missing or truncated.");
+        }
+        return (magic, heights);
     }
 
     /// <summary>What the session's collision is built from.</summary>

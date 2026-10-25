@@ -110,6 +110,7 @@ function Invoke-Publish {
         [Parameter(Mandatory)][string]$OutputDirectory,
         [switch]$SingleFile,
         [switch]$ReadyToRun,
+        [switch]$Composite,
         [string]$Fingerprint
     )
 
@@ -132,6 +133,14 @@ function Invoke-Publish {
     # have no frames to miss. Cross-RID is fine -- the self-contained restore
     # already pulls the target runtime pack and the compiler runs on the host.
     if ($ReadyToRun) { $arguments += '-p:PublishReadyToRun=true' }
+    # Composite: the runtime's own libraries and the program's are compiled
+    # together into one native image, so calls between them need no
+    # startup-time binding and code inlines across them. It is the windowed
+    # client's: it starts noticeably sooner for about 45 MB more on disk. A
+    # folder holds one composite image, since the shared runtime libraries
+    # become parts of it, so the program published into the folder last owns
+    # it (see the client publish below).
+    if ($Composite) { $arguments += '-p:PublishReadyToRunComposite=true' }
 
     & dotnet @arguments | Out-Null
     if ($LASTEXITCODE) { throw "publish failed: $Project ($Rid)" }
@@ -284,9 +293,14 @@ foreach ($rid in $Rids) {
     $clientDirectory = Join-Path $Staging "client-$rid"
     $launcherDirectory = Join-Path $Staging "launcher-$rid"
 
-    Write-Host "[$rid] publishing client (App + Headless)..." -ForegroundColor Yellow
-    Invoke-Publish 'src/AcDream.App/AcDream.App.csproj' $rid $clientDirectory -ReadyToRun
+    Write-Host "[$rid] publishing client (Headless + App)..." -ForegroundColor Yellow
+    # The two hosts share one folder and one copy of the runtime. The
+    # windowed client is the one whose startup a player waits on, so it is
+    # published last, as the composite image the shared libraries become
+    # parts of; the headless host keeps its own ahead-of-time code and runs
+    # on those same shared libraries.
     Invoke-Publish 'src/AcDream.Headless/AcDream.Headless.csproj' $rid $clientDirectory -ReadyToRun
+    Invoke-Publish 'src/AcDream.App/AcDream.App.csproj' $rid $clientDirectory -ReadyToRun -Composite
 
     Write-Host "[$rid] publishing launcher (+ co-deployed bake)..." -ForegroundColor Yellow
     Invoke-Publish 'src/AcDream.Launcher/AcDream.Launcher.csproj' $rid $launcherDirectory -Fingerprint $LauncherFingerprint

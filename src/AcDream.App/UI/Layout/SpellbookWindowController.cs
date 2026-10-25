@@ -283,7 +283,7 @@ public sealed class SpellbookWindowController : IRetainedPanelController
                 var slot = new UiCatalogSlot
                 {
                     EntryId = spellId,
-                    CatalogIconTexture = _resolveSpellIcon(spellId),
+                    CatalogIconSource = () => _resolveSpellIcon(spellId),
                     Label = metadata.Name,
                     ShowLabel = true,
                     BackgroundSprite = _rowStyle.BackgroundSprite,
