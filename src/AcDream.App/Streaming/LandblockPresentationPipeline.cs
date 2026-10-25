@@ -36,6 +36,9 @@ public sealed class LandblockPresentationPipeline
         public LandblockStaticPresentationPublication? StaticPublication;
         public bool SpatialCommitted;
         public GpuLandblockSpatialPublication? SpatialPublication;
+        public bool MeshesActivated;
+        public bool ProjectionsCommitted;
+        public int ScriptCursor;
         public bool SpatialPresentationCommitted;
         public bool EnvCellReplayCommitted;
         public bool LiveRecoveryCommitted;
@@ -203,6 +206,10 @@ public sealed class LandblockPresentationPipeline
     {
         if (_publications.Count == 0)
             return true;
+        // A landblock already in the world finishes its activation first, so
+        // whatever retires it later finds it whole.
+        foreach (PublicationTransaction transaction in _publications.Values)
+            CompleteCommittedActivation(transaction);
         // A pending transaction holds no collision (the session host publishes
         // it), so there is nothing to wait for: they are dropped.
         _publications.Clear();
@@ -532,6 +539,7 @@ public sealed class LandblockPresentationPipeline
         PluginProjection,
         LegacyPresentation,
         SpatialCommit,
+        ActivateScript,
         EnvCellReplay,
         LiveRecovery,
     }
@@ -548,6 +556,7 @@ public sealed class LandblockPresentationPipeline
         PublicationStep.PluginProjection => "publication-plugin-projection",
         PublicationStep.LegacyPresentation => "publication-legacy-presentation",
         PublicationStep.SpatialCommit => "publication-spatial-commit",
+        PublicationStep.ActivateScript => "publication-activate-scripts",
         PublicationStep.EnvCellReplay => "publication-envcell-replay",
         PublicationStep.LiveRecovery => "publication-live-recovery",
         _ => throw new ArgumentOutOfRangeException(nameof(step), step, null),
@@ -612,6 +621,9 @@ public sealed class LandblockPresentationPipeline
                 break;
             case PublicationStep.SpatialCommit:
                 CommitSpatialPresentation(transaction);
+                break;
+            case PublicationStep.ActivateScript:
+                ActivateNextStaticScript(transaction);
                 break;
             case PublicationStep.EnvCellReplay:
                 if (transaction.Kind != PublicationKind.Far
@@ -856,11 +868,24 @@ public sealed class LandblockPresentationPipeline
 
         if (!transaction.SpatialPresentationCommitted)
         {
-            if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
+            if (!transaction.ProjectionsCommitted
+                && !TryRun(result, transaction, meter, ensureProgress, ref progressed,
                     default,
                     PublicationStep.SpatialCommit))
             {
                 return Yield();
+            }
+            // Each dat static's default script starts in a step of its own:
+            // a few landblocks start hundreds, more than a frame's share.
+            while (!transaction.SpatialPresentationCommitted)
+            {
+                if (!TryRun(result, transaction, meter, ensureProgress, ref progressed,
+                        new StreamingWorkCost(
+                            EntityOperations: HasStaticScriptsLeft(transaction) ? 1 : 0),
+                        PublicationStep.ActivateScript))
+                {
+                    return Yield();
+                }
             }
         }
 
@@ -896,6 +921,12 @@ public sealed class LandblockPresentationPipeline
         return new LandblockPublicationAdvance(true, progressed);
     }
 
+    /// <summary>
+    /// The landblock enters the world in one step: its spatial state, its
+    /// meshes' references and its static render projections, so what is
+    /// drawn of it and its live objects appear in the same frame. Only the
+    /// statics' default scripts follow, one per step.
+    /// </summary>
     private void CommitSpatialPresentation(PublicationTransaction transaction)
     {
         using GpuWorldState.MutationBatch mutation = _state.BeginMutationBatch();
@@ -928,16 +959,55 @@ public sealed class LandblockPresentationPipeline
             transaction.SpatialCommitted = true;
         }
 
-        _state.ActivateLandblockPresentation(
+        GpuLandblockSpatialPublication publication =
             transaction.SpatialPublication
             ?? throw new InvalidOperationException(
-                "A committed spatial publication has no activation receipt."));
-        if (transaction.SpatialPublication.RequiresActivation)
+                "A committed spatial publication has no activation receipt.");
+        if (!transaction.MeshesActivated)
+        {
+            _state.ActivateLandblockMeshes(publication);
+            transaction.MeshesActivated = true;
+        }
+        if (publication.RequiresActivation)
         {
             _staticProjectionSink?.Reconcile(
                 transaction.Build,
-                transaction.SpatialPublication);
+                publication);
         }
-        transaction.SpatialPresentationCommitted = true;
+        transaction.ProjectionsCommitted = true;
+        if (!HasStaticScriptsLeft(transaction))
+            transaction.SpatialPresentationCommitted = true;
+    }
+
+    private static bool HasStaticScriptsLeft(PublicationTransaction transaction) =>
+        transaction.SpatialPublication is { RequiresActivation: true } publication
+        && transaction.ScriptCursor < publication.StaticEntities.Count;
+
+    private void ActivateNextStaticScript(PublicationTransaction transaction)
+    {
+        if (HasStaticScriptsLeft(transaction))
+        {
+            _state.ActivateStaticEntityScript(
+                transaction.SpatialPublication!,
+                transaction.ScriptCursor);
+            transaction.ScriptCursor++;
+        }
+        if (!HasStaticScriptsLeft(transaction))
+            transaction.SpatialPresentationCommitted = true;
+    }
+
+    /// <summary>
+    /// A landblock whose spatial state is committed is activated in full
+    /// before its publication is let go: nothing leaves it in the world with
+    /// its statics' scripts half started.
+    /// </summary>
+    private void CompleteCommittedActivation(PublicationTransaction transaction)
+    {
+        if (!transaction.SpatialCommitted || transaction.SpatialPresentationCommitted)
+            return;
+        if (!transaction.ProjectionsCommitted)
+            CommitSpatialPresentation(transaction);
+        while (!transaction.SpatialPresentationCommitted)
+            ActivateNextStaticScript(transaction);
     }
 }

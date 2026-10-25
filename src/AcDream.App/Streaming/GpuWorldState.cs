@@ -930,30 +930,59 @@ public sealed class GpuWorldState : ILiveEntitySpatialQuery
     internal void ActivateLandblockPresentation(
         GpuLandblockSpatialPublication publication)
     {
+        ActivateLandblockMeshes(publication);
+        if (!publication.RequiresActivation)
+            return;
+        for (int i = 0; i < publication.StaticEntities.Count; i++)
+            ActivateStaticEntityScript(publication, i);
+    }
+
+    /// <summary>
+    /// The first part of a committed landblock's activation: its meshes'
+    /// references are taken.
+    /// </summary>
+    internal void ActivateLandblockMeshes(
+        GpuLandblockSpatialPublication publication)
+    {
         ArgumentNullException.ThrowIfNull(publication);
         if (!publication.RequiresActivation)
             return;
-        if (!_loaded.TryGetValue(publication.LandblockId, out LoadedLandblock? current)
-            || !ReferenceEquals(current, publication.Landblock))
-        {
-            throw new InvalidOperationException(
-                $"Landblock 0x{publication.LandblockId:X8} changed before presentation activation.");
-        }
+        EnsureStillCommitted(publication);
 
         _wbSpawnAdapter?.OnLandblockLoaded(
             publication.Landblock,
             publication.AdditionalRenderIds,
             publication.AdditionalOrdinaryRenderIds,
             publication.ReplacesMeshRegistration);
+    }
+
+    /// <summary>
+    /// The rest of the activation, one dat static at a time: its default
+    /// script starts.
+    /// </summary>
+    internal void ActivateStaticEntityScript(
+        GpuLandblockSpatialPublication publication,
+        int staticIndex)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        if (!publication.RequiresActivation)
+            return;
+        EnsureStillCommitted(publication);
 
         // C.1.5b: fire DefaultScript for dat-hydrated entities only.
         // EntityScriptActivator owns a retryable per-static acquisition ledger,
         // so replaying this activation suffix after a later owner failure does
         // not replay already-started defaults.
-        if (_entityScriptActivator is not null)
+        _entityScriptActivator?.OnCreate(publication.StaticEntities[staticIndex]);
+    }
+
+    private void EnsureStillCommitted(GpuLandblockSpatialPublication publication)
+    {
+        if (!_loaded.TryGetValue(publication.LandblockId, out LoadedLandblock? current)
+            || !ReferenceEquals(current, publication.Landblock))
         {
-            for (int i = 0; i < publication.StaticEntities.Count; i++)
-                _entityScriptActivator.OnCreate(publication.StaticEntities[i]);
+            throw new InvalidOperationException(
+                $"Landblock 0x{publication.LandblockId:X8} changed before presentation activation.");
         }
     }
 
