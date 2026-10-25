@@ -30,6 +30,10 @@ internal sealed class LiveCollisionAssetPublisher
         _cache.CacheGfxObj(id, gfxObj, prepared);
     }
 
+    /// <summary>Whether <see cref="CacheGfxObj"/> would change nothing for
+    /// this object.</summary>
+    public bool IsGfxObjCached(uint id) => _cache.IsPreparedGfxObjCached(id);
+
     public void CacheSetup(uint id, Setup setup)
     {
         ArgumentNullException.ThrowIfNull(setup);
