@@ -24,17 +24,17 @@ public sealed class FrameUploadAllowanceTests
     [Fact]
     public void RevealMeshLimits_WidenEveryDimensionWithTheFrameBudget()
     {
-        // The default budget is 2 ms; a reveal widens it to the 8 ms hold
-        // ceiling, four times, and every upload limit with it.
+        // The default budget is 2 ms; a reveal widens it to the 4 ms hold
+        // ceiling, twice, and every upload limit with it.
         MeshUploadBudgetLimits limits = WbMeshAdapter.LimitsFor(
             ProfileFrameUploadAllowanceSource.Default.Reveal);
 
-        Assert.Equal(32, limits.MaximumObjects);
-        Assert.Equal(32 * MiB, limits.MaximumSourceBytes);
-        Assert.Equal(32 * MiB, limits.MaximumArrayAllocationBytes);
-        Assert.Equal(32 * MiB, limits.MaximumMipmapBytes);
-        Assert.Equal(32 * MiB, limits.MaximumBufferUploadBytes);
-        Assert.Equal(4, limits.MaximumNewArrays);
+        Assert.Equal(16, limits.MaximumObjects);
+        Assert.Equal(16 * MiB, limits.MaximumSourceBytes);
+        Assert.Equal(16 * MiB, limits.MaximumArrayAllocationBytes);
+        Assert.Equal(16 * MiB, limits.MaximumMipmapBytes);
+        Assert.Equal(16 * MiB, limits.MaximumBufferUploadBytes);
+        Assert.Equal(2, limits.MaximumNewArrays);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class FrameUploadAllowanceTests
         IFrameUploadAllowanceSource source = streaming;
 
         Assert.Equal(new FrameUploadAllowance(8 * MiB, 1.0), source.Ordinary);
-        Assert.Equal(new FrameUploadAllowance(32 * MiB, 4.0), source.Reveal);
+        Assert.Equal(new FrameUploadAllowance(16 * MiB, 2.0), source.Reveal);
         Assert.Equal(
             streaming.RevealWorkBudget.MaxGpuUploadBytes,
             source.Reveal.GpuUploadBytes);
@@ -69,15 +69,16 @@ public sealed class FrameUploadAllowanceTests
     [Fact]
     public void StreamingController_QualityScaledBudgetScalesTheUploads()
     {
-        // Eight completions a frame is twice the default profile's work.
+        // Eight completions a frame is twice the default profile's work: a
+        // 4 ms frame, already the hold ceiling, so a reveal widens nothing.
         StreamingController streaming = Controller();
         streaming.MaxCompletionsPerFrame = 8;
         IFrameUploadAllowanceSource source = streaming;
 
         Assert.Equal(16 * MiB, source.Ordinary.GpuUploadBytes);
         Assert.Equal(1.0, source.Ordinary.Scale);
-        Assert.Equal(32 * MiB, source.Reveal.GpuUploadBytes);
-        Assert.Equal(2.0, source.Reveal.Scale);
+        Assert.Equal(16 * MiB, source.Reveal.GpuUploadBytes);
+        Assert.Equal(1.0, source.Reveal.Scale);
     }
 
     [Fact]
