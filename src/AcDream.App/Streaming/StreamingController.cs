@@ -26,6 +26,7 @@ public sealed class StreamingController
         public bool PendingPublicationsCleared;
         public bool RegionCleared;
         public bool SpatialGenerationDetached;
+        public bool DetachedProjectionsRetired;
         public bool PreparationCommitted;
         public (int X, int Y, bool IsSealedDungeon)? Destination;
         public bool DestinationConfigured;
@@ -1268,6 +1269,18 @@ public sealed class StreamingController
                     meter.Fail();
                     throw;
                 }
+            }
+            if (!transaction.DetachedProjectionsRetired)
+            {
+                // The old window's static projections leave the render scene
+                // over as many frames as the budget needs, all before the
+                // origin moves: nothing of the old window is drawn at the new
+                // origin, and no destination publication can meet them.
+                using StreamingWorkMeter.LaneScope lane =
+                    meter.EnterLane(StreamingWorkLane.Destination);
+                if (!_presentation.AdvanceDetachedProjectionRetirements(meter))
+                    return false;
+                transaction.DetachedProjectionsRetired = true;
             }
 
             transaction.PreparationCommitted = true;

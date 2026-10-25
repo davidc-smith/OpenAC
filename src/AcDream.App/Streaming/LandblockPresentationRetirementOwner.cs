@@ -10,6 +10,13 @@ public sealed class LandblockPresentationRetirementOwner
     private readonly LandblockStaticPresentationPublisher _staticPresentation;
     private readonly LightingHookSink _lighting;
     private readonly TranslucencyFadeManager _translucency;
+    // The budgeted steps run once per entity; delegates made once, not per
+    // step.
+    private readonly Action<WorldEntity> _removeLighting;
+    private readonly Action<WorldEntity> _removeTranslucency;
+    private readonly Action<WorldEntity> _removePluginProjection;
+    private static readonly Func<WorldEntity, bool> IsStatic =
+        static entity => entity.ServerGuid == 0;
 
     public LandblockPresentationRetirementOwner(
         LandblockRenderPublisher render,
@@ -23,6 +30,9 @@ public sealed class LandblockPresentationRetirementOwner
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         _translucency = translucency
             ?? throw new ArgumentNullException(nameof(translucency));
+        _removeLighting = _staticPresentation.RemoveLighting;
+        _removeTranslucency = _staticPresentation.RemoveTranslucency;
+        _removePluginProjection = _staticPresentation.RemovePluginProjection;
         if (!_staticPresentation.MatchesResources(_lighting, _translucency))
         {
             throw new ArgumentException(
@@ -82,18 +92,18 @@ public sealed class LandblockPresentationRetirementOwner
             LandblockRetirementStage.EntityLighting =>
                 ticket.RunEntityStep(
                     LandblockRetirementStage.EntityLighting,
-                    static entity => entity.ServerGuid == 0,
-                    _staticPresentation.RemoveLighting),
+                    IsStatic,
+                    _removeLighting),
             LandblockRetirementStage.EntityTranslucency =>
                 ticket.RunEntityStep(
                     LandblockRetirementStage.EntityTranslucency,
-                    static entity => entity.ServerGuid == 0,
-                    _staticPresentation.RemoveTranslucency),
+                    IsStatic,
+                    _removeTranslucency),
             LandblockRetirementStage.PluginProjection =>
                 ticket.RunEntityStep(
                     LandblockRetirementStage.PluginProjection,
-                    static entity => entity.ServerGuid == 0,
-                    _staticPresentation.RemovePluginProjection),
+                    IsStatic,
+                    _removePluginProjection),
             LandblockRetirementStage.Terrain =>
                 ticket.RunOnceStep(
                     LandblockRetirementStage.Terrain,
