@@ -81,9 +81,17 @@ internal sealed class SilkRuntimeDisplayWindowTarget : IRuntimeDisplayWindowTarg
         : this(
             new SilkWindowSizeSurface(window),
             new GlfwDisplayModeSwitcher(window),
-            spec => (Rendering.DisplayModeCatalog.Resolutions
-                     ?? DisplaySettings.AvailableResolutions).Contains(spec))
+            spec => IsOfferedMode(window, spec))
     {
+    }
+
+    // A fullscreen pick asks the display again when the start-up query
+    // failed, so the monitor's own mode list is used once it answers.
+    private static bool IsOfferedMode(IWindow window, string spec)
+    {
+        Rendering.DisplayModeCatalog.EnsureInstalled(window);
+        return (Rendering.DisplayModeCatalog.Resolutions
+                ?? DisplaySettings.AvailableResolutions).Contains(spec);
     }
 
     internal SilkRuntimeDisplayWindowTarget(
