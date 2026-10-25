@@ -20,6 +20,7 @@ internal static class MarkupExpander
             Width = MarkupDocument.F(el, "w"),
             Height = height,
             OpenByDefault = Open(el),
+            Framed = Border(el),
             Changed = MarkupBindings.BindBoolAction(
                 (string?)el.Attribute("onchange"), binding, "expander onchange"),
         };
@@ -56,6 +57,13 @@ internal static class MarkupExpander
         }
         return expander;
     }
+
+    private static bool Border(XElement el) => (string?)el.Attribute("border") switch
+    {
+        null or "true" => true,
+        "false" => false,
+        var other => throw new FormatException($"<expander border=\"{other}\"> must be true or false"),
+    };
 
     private static bool Open(XElement el) => (string?)el.Attribute("open") switch
     {

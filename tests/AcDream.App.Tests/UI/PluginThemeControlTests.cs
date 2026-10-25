@@ -410,6 +410,28 @@ public sealed class PluginThemeControlTests
     }
 
     [Fact]
+    public void AThemedExpanderIsFramedInTheBorderColour()
+    {
+        var (_, panel) = Themed("<expander x=\"8\" y=\"8\" w=\"200\" h=\"100\" text=\"Advanced\"/>");
+        var expander = Assert.IsType<UiMarkupExpander>(panel.Children[0]);
+        var v = DrawElement(expander);
+        Assert.True(ThemeDrawCapture.HasColor(v, P.Border));
+        Assert.False(ThemeDrawCapture.HasColor(v, UiMarkupExpander.ClassicFrame));
+        var edge = v.Where(p => p.Color.W > 0.05f && MathF.Abs(p.Color.X - P.Border.X) < 0.004f
+            && MathF.Abs(p.Color.Y - P.Border.Y) < 0.004f && MathF.Abs(p.Color.Z - P.Border.Z) < 0.004f).ToList();
+        float top = expander.ScreenPosition.Y;
+        Assert.True(edge.Max(p => p.Position.Y) > top + 90f);   // reaches down around the content
+    }
+
+    [Fact]
+    public void AThemedExpanderWithBorderFalseHasNoFrame()
+    {
+        var (_, panel) = Themed("<expander x=\"8\" y=\"8\" w=\"200\" h=\"100\" text=\"Advanced\" border=\"false\"/>");
+        var expander = Assert.IsType<UiMarkupExpander>(panel.Children[0]);
+        Assert.False(ThemeDrawCapture.HasColor(DrawElement(expander), P.Border));
+    }
+
+    [Fact]
     public void AThemedSplitBarIsASlimGripPill()
     {
         var (_, panel) = Themed(

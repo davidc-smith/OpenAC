@@ -441,6 +441,51 @@ public sealed class MarkupExpanderTests : IDisposable
         Assert.Null(state.Get("adv", "expanded"));
     }
 
+    private static (float X, float Y, float W, float H) FrameBounds(UiElement panel)
+    {
+        var quads = MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(panel, 800f, 600f), UiMarkupExpander.ClassicFrame);
+        Assert.NotEmpty(quads);
+        float minX = quads.Min(q => q.X), minY = quads.Min(q => q.Y);
+        return (minX, minY, quads.Max(q => q.X + q.W) - minX, quads.Max(q => q.Y + q.H) - minY);
+    }
+
+    [Fact]
+    public void Expander_IsFramedAroundHeaderAndContent()
+    {
+        var (_, panel, _) = Mount("", new Binding());
+        Assert.Equal((8f, 8f, 200f, 100f), FrameBounds(panel));
+        // The header band, and a divider between it and the content.
+        var band = MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(panel, 800f, 600f), UiMarkupExpander.ClassicBand);
+        Assert.Contains((8f, 8f, 200f, UiMarkupExpander.HeaderHeight), band);
+        var frame = MarkupDrawProbe.QuadBounds(MarkupDrawProbe.Draw(panel, 800f, 600f), UiMarkupExpander.ClassicFrame);
+        Assert.Contains(frame, q => q.Y == 8f + UiMarkupExpander.HeaderHeight - 1f && q.H == 1f && q.W > 100f);
+    }
+
+    [Fact]
+    public void Expander_FoldedFrameIsJustTheHeader()
+    {
+        var (root, panel, _) = Mount("", new Binding());
+        ClickHeader(root);
+        Assert.Equal((8f, 8f, 200f, UiMarkupExpander.HeaderHeight), FrameBounds(panel));
+    }
+
+    [Fact]
+    public void Expander_BorderFalseDrawsNoFrame()
+    {
+        var (_, panel, expander) = Mount("border=\"false\"", new Binding());
+        Assert.False(expander.Framed);
+        var renderer = MarkupDrawProbe.Draw(panel, 800f, 600f);
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupExpander.ClassicFrame));
+        Assert.Equal(0, MarkupDrawProbe.CountQuads(renderer, UiMarkupExpander.ClassicBand));
+    }
+
+    [Fact]
+    public void Expander_BorderOtherThanTrueOrFalseFailsTheBuild()
+    {
+        var ex = Assert.Throws<FormatException>(() => Mount("border=\"yes\"", new Binding()));
+        Assert.Contains("border", ex.Message);
+    }
+
     [Fact]
     public void Expander_ArrowFollowsTheLaidOutState()
     {
