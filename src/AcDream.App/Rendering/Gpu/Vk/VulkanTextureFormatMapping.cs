@@ -11,6 +11,7 @@ internal static class VulkanTextureFormatMapping
     {
         GpuTextureFormat.Rgba8Unorm => Format.R8G8B8A8Unorm,
         GpuTextureFormat.R8Unorm => Format.R8Unorm,
+        GpuTextureFormat.Bgra8Unorm => Format.B8G8R8A8Unorm,
         GpuTextureFormat.Bc1Unorm => Format.BC1RgbaUnormBlock,
         GpuTextureFormat.Bc2Unorm => Format.BC2UnormBlock,
         GpuTextureFormat.Bc3Unorm => Format.BC3UnormBlock,
@@ -18,6 +19,17 @@ internal static class VulkanTextureFormatMapping
         GpuTextureFormat.Rgba16FloatRenderTarget => Format.R16G16B16A16Sfloat,
         GpuTextureFormat.Depth24Stencil8 => Format.D24UnormS8Uint,
         _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown texture format."),
+    };
+
+    /// <summary>The image-view channel mapping that presents a swizzle.</summary>
+    internal static ComponentMapping ComponentsOf(GpuTextureSwizzle swizzle) => swizzle switch
+    {
+        GpuTextureSwizzle.Identity => default,
+        GpuTextureSwizzle.CoverageAsAlpha => new ComponentMapping(
+            ComponentSwizzle.One, ComponentSwizzle.One, ComponentSwizzle.One, ComponentSwizzle.R),
+        GpuTextureSwizzle.Replicate => new ComponentMapping(
+            ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R, ComponentSwizzle.R),
+        _ => throw new ArgumentOutOfRangeException(nameof(swizzle), swizzle, "Unknown texture swizzle."),
     };
 
     internal static bool IsDepthStencil(GpuTextureFormat format) =>
@@ -31,7 +43,7 @@ internal static class VulkanTextureFormatMapping
     /// <summary>Bytes one texel occupies. Only meaningful for uncompressed formats.</summary>
     internal static int BytesPerTexel(GpuTextureFormat format) => format switch
     {
-        GpuTextureFormat.Rgba8Unorm or GpuTextureFormat.Rgba8UnormRenderTarget => 4,
+        GpuTextureFormat.Rgba8Unorm or GpuTextureFormat.Rgba8UnormRenderTarget or GpuTextureFormat.Bgra8Unorm => 4,
         GpuTextureFormat.Rgba16FloatRenderTarget => 8,
         GpuTextureFormat.R8Unorm => 1,
         GpuTextureFormat.Depth24Stencil8 => 4,

@@ -208,6 +208,24 @@ public sealed class TextureCache
         if (_dats.Portal.TryGet<RenderSurface>(renderSurfaceId, out var rs)
             || _dats.HighRes.TryGet<RenderSurface>(renderSurfaceId, out rs))
         {
+            if (IsUploadableCoverage(rs))
+            {
+                // A one-byte alpha image (the font atlases): uploaded as it is
+                // stored and shown as white with that alpha, which is what
+                // decoding it to four channels produced.
+                GpuUiTextureEntry coverage = UploadUiTexture(
+                    rs.SourceData.AsSpan(0, rs.Width * rs.Height),
+                    rs.Width,
+                    rs.Height,
+                    GpuTextureFormat.R8Unorm,
+                    GpuTextureSwizzle.CoverageAsAlpha,
+                    nearest,
+                    $"ui-rendersurface-0x{renderSurfaceId:X8}");
+                _renderSurfaceGpuTextures[cacheKey] = coverage;
+                width = rs.Width; height = rs.Height;
+                return UiTextureTableHandle.FromSlot(coverage.Slot);
+            }
+
             Palette? palette = rs.DefaultPaletteId != 0
                 ? _dats.Get<Palette>(rs.DefaultPaletteId)
                 : null;
@@ -293,21 +311,48 @@ public sealed class TextureCache
         }
     }
 
-    private GpuUiTextureEntry UploadUiTexture(DecodedTexture decoded, bool nearest, string debugName)
+    /// <summary>A one-byte alpha image a four-channel decode would only
+    /// have widened to white with that alpha.</summary>
+    internal static bool IsUploadableCoverage(RenderSurface rs) =>
+        rs.Format is PixelFormatId.PFID_A8 or PixelFormatId.PFID_CUSTOM_LSCAPE_ALPHA
+        && rs.Width > 0
+        && rs.Height > 0
+        && rs.SourceData is not null
+        && rs.SourceData.Length >= rs.Width * rs.Height;
+
+    private GpuUiTextureEntry UploadUiTexture(DecodedTexture decoded, bool nearest, string debugName) =>
+        UploadUiTexture(
+            decoded.Rgba8,
+            decoded.Width,
+            decoded.Height,
+            GpuTextureFormat.Rgba8Unorm,
+            GpuTextureSwizzle.Identity,
+            nearest,
+            debugName);
+
+    private GpuUiTextureEntry UploadUiTexture(
+        ReadOnlySpan<byte> pixels,
+        int width,
+        int height,
+        GpuTextureFormat format,
+        GpuTextureSwizzle swizzle,
+        bool nearest,
+        string debugName)
     {
         IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(
             debugName,
             GpuTextureKind.Texture2D,
-            GpuTextureFormat.Rgba8Unorm,
-            Width: decoded.Width,
-            Height: decoded.Height,
+            format,
+            Width: width,
+            Height: height,
             LayerCount: 1,
-            MipLevelCount: 1));
+            MipLevelCount: 1,
+            swizzle));
         try
         {
-            texture.Upload(0, 0, decoded.Rgba8);
+            texture.Upload(0, 0, pixels);
             uint glName = UploadAccountingName(texture);
-            TrackUploadedTexture(glName, decoded.Width, decoded.Height);
+            TrackUploadedTexture(glName, width, height, format == GpuTextureFormat.R8Unorm ? 1 : 4);
 
             IGpuSampler sampler = _device.CreateSampler(nearest ? UiNearestRepeat : GpuSamplerDescription.WorldRepeat);
             GpuTextureSlot slot = _device.RegisterTexture(texture, sampler);
@@ -316,7 +361,7 @@ public sealed class TextureCache
             {
                 _nearestUiTextureSources[handle] = texture;
             }
-            return new GpuUiTextureEntry(texture, slot, glName, decoded.Width, decoded.Height);
+            return new GpuUiTextureEntry(texture, slot, glName, width, height);
         }
         catch
         {
@@ -642,7 +687,7 @@ public sealed class TextureCache
         {
             if (!seen.Add(name)) return;
             if (!_uploadMetadata.TryGetValue(name, out var meta)) return;
-            int bytes = meta.Width * meta.Height * 4;
+            int bytes = meta.Width * meta.Height * (meta.Format == "R8_COVERAGE" ? 1 : 4);
             totalBytes += bytes;
             sb.AppendLine($"0x{surfaceId:X8}, {meta.Width}, {meta.Height}, {meta.Format}, {bytes}");
 
@@ -796,6 +841,25 @@ public sealed class TextureCache
         return modified;
     }
 
+    /// <summary>
+    /// Uploads a one-byte-per-pixel coverage image (a baked font) that draws
+    /// as white with the coverage as alpha, kept for the life of the cache.
+    /// </summary>
+    internal uint UploadCoverage8(byte[] coverage, int width, int height, bool nearest = false)
+    {
+        ArgumentNullException.ThrowIfNull(coverage);
+        GpuUiTextureEntry entry = UploadUiTexture(
+            coverage.AsSpan(0, checked(width * height)),
+            width,
+            height,
+            GpuTextureFormat.R8Unorm,
+            GpuTextureSwizzle.CoverageAsAlpha,
+            nearest,
+            "ui-adhoc-coverage8");
+        _adhocGpuTextures.Add(entry);
+        return UiTextureTableHandle.FromSlot(entry.Slot);
+    }
+
     public uint UploadRgba8(byte[] rgba, int width, int height, bool nearest = false)
     {
         GpuUiTextureEntry entry = UploadUiTexture(
@@ -845,10 +909,10 @@ public sealed class TextureCache
         return true;
     }
 
-    private void TrackUploadedTexture(uint name, int width, int height)
+    private void TrackUploadedTexture(uint name, int width, int height, int bytesPerTexel = 4)
     {
-        _uploadMetadata[name] = (width, height, "RGBA8_DECODED");
-        long bytes = checked((long)width * height * 4L);
+        _uploadMetadata[name] = (width, height, bytesPerTexel == 1 ? "R8_COVERAGE" : "RGBA8_DECODED");
+        long bytes = checked((long)width * height * bytesPerTexel);
         Wb.GpuMemoryTracker.TrackResourceAllocation(Wb.GpuResourceType.Texture);
         Wb.GpuMemoryTracker.TrackAllocation(bytes, Wb.GpuResourceType.Texture);
     }
@@ -857,7 +921,7 @@ public sealed class TextureCache
     {
         if (_uploadMetadata.Remove(name, out var metadata))
         {
-            long bytes = checked((long)metadata.Width * metadata.Height * 4L);
+            long bytes = checked((long)metadata.Width * metadata.Height * (metadata.Format == "R8_COVERAGE" ? 1L : 4L));
             Wb.GpuMemoryTracker.TrackDeallocation(bytes, Wb.GpuResourceType.Texture);
             Wb.GpuMemoryTracker.TrackResourceDeallocation(Wb.GpuResourceType.Texture);
         }

@@ -110,8 +110,16 @@ public sealed class TerrainAtlas : IDisposable
         ApplyAnisotropic(RetailMaxAnisotropy);
     }
 
+    /// <summary>
+    /// One source layer as it is uploaded: a terrain layer is four bytes per
+    /// texel in blue, green, red, alpha order (the game files' own order for
+    /// 32-bit colour, so those images are uploaded as stored); an alpha map
+    /// is one byte per texel, the blend weight.
+    /// </summary>
+    internal sealed record LayerTexels(byte[] Texels, int Width, int Height);
+
     internal readonly record struct TerrainLayerDecode(
-        Dictionary<uint, DecodedTexture> DecodedByType,
+        Dictionary<uint, LayerTexels> DecodedByType,
         Dictionary<uint, uint> TilingByType,
         int MaxWidth,
         int MaxHeight);
@@ -121,7 +129,7 @@ public sealed class TerrainAtlas : IDisposable
         IReadOnlyList<DatReaderWriter.Types.TMTerrainDesc> terrainDesc,
         object? datLock)
     {
-        var decodedByType = new Dictionary<uint, DecodedTexture>();
+        var decodedByType = new Dictionary<uint, LayerTexels>();
         var tilingByType = new Dictionary<uint, uint>();
         int maxW = 1, maxH = 1;
         foreach (var tmtd in terrainDesc)
@@ -137,22 +145,31 @@ public sealed class TerrainAtlas : IDisposable
             if (st is null || st.Textures.Count == 0)
             {
                 Console.WriteLine($"WARN: TerrainType {tmtd.TerrainType} SurfaceTexture 0x{surfaceTextureId:X8} missing");
-                decodedByType[typeKey] = DecodedTexture.Magenta;
+                decodedByType[typeKey] = Bgra(DecodedTexture.Magenta);
                 continue;
             }
 
             var rs = Read(datLock, () => dats.Get<RenderSurface>((uint)st.Textures[0]));
             if (rs is null)
             {
-                decodedByType[typeKey] = DecodedTexture.Magenta;
+                decodedByType[typeKey] = Bgra(DecodedTexture.Magenta);
                 continue;
             }
 
-            Palette? palette = rs.DefaultPaletteId != 0
-                ? Read(datLock, () => dats.Get<Palette>(rs.DefaultPaletteId))
-                : null;
-
-            var decoded = SurfaceDecoder.DecodeRenderSurface(rs, palette);
+            LayerTexels decoded;
+            if (IsStoredBgra(rs))
+            {
+                // Already blue, green, red, alpha: uploaded as stored, with
+                // no decoded copy.
+                decoded = new LayerTexels(Exactly(rs.SourceData, rs.Width * rs.Height * 4), rs.Width, rs.Height);
+            }
+            else
+            {
+                Palette? palette = rs.DefaultPaletteId != 0
+                    ? Read(datLock, () => dats.Get<Palette>(rs.DefaultPaletteId))
+                    : null;
+                decoded = Bgra(SurfaceDecoder.DecodeRenderSurface(rs, palette));
+            }
             decodedByType[typeKey] = decoded;
             if (decoded.Width > maxW) maxW = decoded.Width;
             if (decoded.Height > maxH) maxH = decoded.Height;
@@ -162,7 +179,7 @@ public sealed class TerrainAtlas : IDisposable
     }
 
     internal sealed record AlphaLayerDecode(
-        List<DecodedTexture> Decoded,
+        List<LayerTexels> Decoded,
         List<byte> CornerLayers,
         List<byte> SideLayers,
         List<byte> RoadLayers,
@@ -177,7 +194,7 @@ public sealed class TerrainAtlas : IDisposable
         DatReaderWriter.Types.TexMerge texMerge,
         object? datLock)
     {
-        var decoded = new List<DecodedTexture>();
+        var decoded = new List<LayerTexels>();
         var cornerLayers = new List<byte>();
         var sideLayers = new List<byte>();
         var roadLayers = new List<byte>();
@@ -309,13 +326,13 @@ public sealed class TerrainAtlas : IDisposable
             sources = DecodeSources(dats, datLock: null);
         var terrainDesc = sources.TerrainDesc;
 
-        Dictionary<uint, DecodedTexture> decodedByType;
+        Dictionary<uint, LayerTexels> decodedByType;
         Dictionary<uint, uint> tilingByType;
         int maxW, maxH;
         if (sources.Terrain is not { } decode)
         {
             Console.WriteLine("WARN: TerrainDesc missing, using single white fallback layer");
-            decodedByType = new Dictionary<uint, DecodedTexture> { [0u] = WhitePixel() };
+            decodedByType = new Dictionary<uint, LayerTexels> { [0u] = new LayerTexels([0xFF, 0xFF, 0xFF, 0xFF], 1, 1) };
             tilingByType = [];
             maxW = 1;
             maxH = 1;
@@ -332,7 +349,7 @@ public sealed class TerrainAtlas : IDisposable
         }
 
         AlphaLayerDecode alpha = sources.Alpha;
-        List<DecodedTexture> alphaDecoded = alpha.Decoded;
+        List<LayerTexels> alphaDecoded = alpha.Decoded;
         int alphaLayerCount = Math.Max(1, alphaDecoded.Count);
         int alphaW = alphaDecoded.Count == 0 ? 1 : alpha.MaxWidth;
         int alphaH = alphaDecoded.Count == 0 ? 1 : alpha.MaxHeight;
@@ -349,7 +366,7 @@ public sealed class TerrainAtlas : IDisposable
             terrainTexture = device.CreateTexture(new GpuTextureDescription(
                 "terrain-atlas",
                 GpuTextureKind.Texture2DArray,
-                GpuTextureFormat.Rgba8Unorm,
+                GpuTextureFormat.Bgra8Unorm,
                 maxW,
                 maxH,
                 layerCount,
@@ -359,7 +376,7 @@ public sealed class TerrainAtlas : IDisposable
             int layerIdx = 0;
             foreach (var kvp in decodedByType)
             {
-                byte[] buffer = ResampleRgba8(kvp.Value, maxW, maxH);
+                byte[] buffer = Resample(kvp.Value, maxW, maxH);
                 terrainTexture.Upload(0, layerIdx, buffer);
                 map[kvp.Key] = (uint)layerIdx;
                 layerIdx++;
@@ -376,20 +393,21 @@ public sealed class TerrainAtlas : IDisposable
             alphaTexture = device.CreateTexture(new GpuTextureDescription(
                 "terrain-alpha-atlas",
                 GpuTextureKind.Texture2DArray,
-                GpuTextureFormat.Rgba8Unorm,
+                GpuTextureFormat.R8Unorm,
                 alphaW,
                 alphaH,
                 alphaLayerCount,
-                MipLevelCount: 1));
+                MipLevelCount: 1,
+                GpuTextureSwizzle.Replicate));
             if (alphaDecoded.Count == 0)
             {
                 Console.WriteLine("WARN: no alpha maps loaded; alpha atlas will be a 1x1 white fallback");
-                alphaTexture.Upload(0, 0, [0xFF, 0xFF, 0xFF, 0xFF]);
+                alphaTexture.Upload(0, 0, [0xFF]);
             }
             else
             {
                 for (int i = 0; i < alphaDecoded.Count; i++)
-                    alphaTexture.Upload(0, i, ResizeRgba8Nearest(alphaDecoded[i], alphaW, alphaH));
+                    alphaTexture.Upload(0, i, ResizeNearest(alphaDecoded[i], bytesPerTexel: 1, alphaW, alphaH));
             }
 
             IGpuSampler alphaSampler = device.CreateSampler(GpuSamplerDescription.WorldClamp with
@@ -550,8 +568,6 @@ public sealed class TerrainAtlas : IDisposable
         resource.Texture.Dispose();
     }
 
-    private static DecodedTexture WhitePixel() =>
-        new([0xFF, 0xFF, 0xFF, 0xFF], 1, 1);
 
     private void ApplyAnisotropic(float level)
     {
@@ -575,9 +591,9 @@ public sealed class TerrainAtlas : IDisposable
         IDatReaderWriter dats,
         uint surfaceTextureId,
         object? datLock,
-        out DecodedTexture decoded)
+        out LayerTexels decoded)
     {
-        decoded = DecodedTexture.Magenta;
+        decoded = null!;
 
         var st = Read(datLock, () => dats.Get<SurfaceTexture>(surfaceTextureId));
         if (st is null || st.Textures.Count == 0)
@@ -588,45 +604,83 @@ public sealed class TerrainAtlas : IDisposable
             return false;
 
         // Alpha maps ship as PFID_CUSTOM_LSCAPE_ALPHA (AC's landscape-alpha
-        // format) or the more generic PFID_A8; terrain blending alpha masks
-        // MUST use isAdditive=true so R=G=B=A=val — the terrain fragment shader
-        // reads .r for the blend weight. Palette is not used.
+        // format) or the more generic PFID_A8: one byte, the blend weight,
+        // which the alpha array (one byte per texel) presents in every
+        // channel. The terrain shader reads the weight from alpha, so any
+        // other format contributes its decoded alpha. Palette is not used.
+        if (TextureCache.IsUploadableCoverage(rs))
+        {
+            decoded = new LayerTexels(Exactly(rs.SourceData, rs.Width * rs.Height), rs.Width, rs.Height);
+            return true;
+        }
+
         var d = SurfaceDecoder.DecodeRenderSurface(rs, palette: null, isClipMap: false, isAdditive: true);
         if (ReferenceEquals(d, DecodedTexture.Magenta))
             return false;
 
-        decoded = d;
+        var weights = new byte[d.Width * d.Height];
+        for (int i = 0; i < weights.Length; i++)
+            weights[i] = d.Rgba8[(i * 4) + 3];
+        decoded = new LayerTexels(weights, d.Width, d.Height);
         return true;
     }
 
-    /// <summary>Box-averages a layer that shrinks; nearest-neighbour for one that grows or matches.</summary>
-    private static byte[] ResampleRgba8(DecodedTexture src, int dstW, int dstH)
+    /// <summary>A 32-bit colour image whose stored bytes are already the
+    /// blue, green, red, alpha texels the terrain array takes.</summary>
+    private static bool IsStoredBgra(RenderSurface rs) =>
+        rs.Format == DatPixelFormat.PFID_A8R8G8B8
+        && rs.Width > 0
+        && rs.Height > 0
+        && rs.SourceData is not null
+        && rs.SourceData.Length >= rs.Width * rs.Height * 4;
+
+    /// <summary>A decoded red, green, blue, alpha image in the array's
+    /// blue, green, red, alpha order.</summary>
+    internal static LayerTexels Bgra(DecodedTexture decoded)
+    {
+        byte[] rgba = decoded.Rgba8;
+        var bgra = new byte[decoded.Width * decoded.Height * 4];
+        for (int i = 0; i < bgra.Length; i += 4)
+        {
+            bgra[i] = rgba[i + 2];
+            bgra[i + 1] = rgba[i + 1];
+            bgra[i + 2] = rgba[i];
+            bgra[i + 3] = rgba[i + 3];
+        }
+        return new LayerTexels(bgra, decoded.Width, decoded.Height);
+    }
+
+    /// <summary>The stored bytes when they are exactly the image, else the
+    /// image's leading bytes.</summary>
+    private static byte[] Exactly(byte[] stored, int length) =>
+        stored.Length == length ? stored : stored[..length];
+
+    /// <summary>Box-averages a four-byte layer that shrinks; nearest-neighbour for one that grows or matches.</summary>
+    private static byte[] Resample(LayerTexels src, int dstW, int dstH)
     {
         bool growsOnASide = dstW > src.Width || dstH > src.Height;
         bool shrinksOnASide = dstW < src.Width || dstH < src.Height;
         if (!growsOnASide && shrinksOnASide)
-            return TexturePixels.DownsampleBox(src.Rgba8, src.Width, src.Height, 4, dstW, dstH);
-        return ResizeRgba8Nearest(src, dstW, dstH);
+            return TexturePixels.DownsampleBox(src.Texels, src.Width, src.Height, 4, dstW, dstH);
+        return ResizeNearest(src, bytesPerTexel: 4, dstW, dstH);
     }
 
-    private static byte[] ResizeRgba8Nearest(DecodedTexture src, int dstW, int dstH)
+    private static byte[] ResizeNearest(LayerTexels src, int bytesPerTexel, int dstW, int dstH)
     {
         if (src.Width == dstW && src.Height == dstH)
-            return src.Rgba8;
+            return src.Texels;
 
-        var dst = new byte[dstW * dstH * 4];
+        var dst = new byte[dstW * dstH * bytesPerTexel];
         for (int y = 0; y < dstH; y++)
         {
             int srcY = y * src.Height / dstH;
             for (int x = 0; x < dstW; x++)
             {
                 int srcX = x * src.Width / dstW;
-                int si = (srcY * src.Width + srcX) * 4;
-                int di = (y * dstW + x) * 4;
-                dst[di + 0] = src.Rgba8[si + 0];
-                dst[di + 1] = src.Rgba8[si + 1];
-                dst[di + 2] = src.Rgba8[si + 2];
-                dst[di + 3] = src.Rgba8[si + 3];
+                int si = (srcY * src.Width + srcX) * bytesPerTexel;
+                int di = (y * dstW + x) * bytesPerTexel;
+                for (int b = 0; b < bytesPerTexel; b++)
+                    dst[di + b] = src.Texels[si + b];
             }
         }
         return dst;

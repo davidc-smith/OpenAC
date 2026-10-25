@@ -56,6 +56,27 @@ internal enum GpuTextureFormat
     Rgba16FloatRenderTarget,
 
     Depth24Stencil8,
+
+    /// <summary>Four 8-bit channels stored blue, green, red, alpha: the game
+    /// files' 32-bit colour images, uploaded as they are stored.</summary>
+    Bgra8Unorm,
+}
+
+/// <summary>
+/// What a sampled single-channel texture shows the shader in each channel,
+/// so a one-byte-per-pixel image samples exactly as the four-channel image
+/// it stands for.
+/// </summary>
+internal enum GpuTextureSwizzle
+{
+    /// <summary>Each channel as stored.</summary>
+    Identity,
+
+    /// <summary>A coverage mask: white, with the stored value as alpha.</summary>
+    CoverageAsAlpha,
+
+    /// <summary>The stored value in all four channels.</summary>
+    Replicate,
 }
 
 /// <summary>Texture shape. acdream uses 2D for UI art and 2D arrays for every world material.</summary>
