@@ -261,13 +261,6 @@ public sealed class StreamingWorkMeter
         Restart(budget, destinationReservationActive);
     }
 
-    /// <summary>
-    /// Points the meter at a new frame's budget and forgets the last
-    /// frame's accounting, so one meter can serve every streaming tick
-    /// instead of one being allocated per tick. A newly constructed meter
-    /// goes through this same reset, which is what makes a restarted meter
-    /// report what a fresh one would.
-    /// </summary>
     private static long s_lastFrameSerial;
 
     /// <summary>
@@ -276,6 +269,13 @@ public sealed class StreamingWorkMeter
     /// </summary>
     internal long FrameSerial { get; private set; }
 
+    /// <summary>
+    /// Points the meter at a new frame's budget and forgets the last
+    /// frame's accounting, so one meter can serve every streaming tick
+    /// instead of one being allocated per tick. A newly constructed meter
+    /// goes through this same reset, which is what makes a restarted meter
+    /// report what a fresh one would.
+    /// </summary>
     internal void Restart(
         StreamingWorkBudget budget,
         bool destinationReservationActive)
