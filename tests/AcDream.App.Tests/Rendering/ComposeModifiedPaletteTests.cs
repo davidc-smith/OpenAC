@@ -141,4 +141,25 @@ public sealed class ComposeModifiedPaletteTests
         for (int i = 0; i < PaletteSize; i++)
             AssertEntry(composed, i, channel: 0x10, sourceIndex: i);
     }
+
+    [Fact]
+    public void ComposingIntoAKeptPaletteReplacesItsColours()
+    {
+        Palette kept = Ramp(0x40);
+        kept.Colors.Add(new ColorARGB { Alpha = 0xFF, Red = 0x99 });
+        Palette basePalette = Ramp(0x10);
+        Palette sub = Ramp(0x20);
+        var ranges = new[] { new PaletteOverride.SubPaletteRange(1, Offset: 1, Length: 1) };
+
+        Palette composed = TextureCache.ComposeModifiedPalette(basePalette, ranges, _ => sub, kept);
+
+        Assert.Same(kept, composed);
+        Assert.Equal(PaletteSize, composed.Colors.Count);
+        for (int i = 0; i < 8; i++)
+            AssertEntry(composed, i, channel: 0x10, sourceIndex: i);
+        for (int i = 8; i < 16; i++)
+            AssertEntry(composed, i, channel: 0x20, sourceIndex: i);
+        for (int i = 16; i < PaletteSize; i++)
+            AssertEntry(composed, i, channel: 0x10, sourceIndex: i);
+    }
 }

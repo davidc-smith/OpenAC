@@ -12,7 +12,8 @@ public sealed class BundledUiFontTests
     {
         var atlas = BundledUiFont.Bake(size);
         var font = atlas.CreateFont(1);
-        Assert.Contains(atlas.Pixels.Where((_, i) => i % 4 == 3), a => a > 0 && a < 255);
+        Assert.Equal(atlas.Width * atlas.Height, atlas.Coverage.Length);
+        Assert.Contains(atlas.Coverage, a => a > 0 && a < 255);
         foreach (char c in "BuffProfile_Banes åäö Ω Ж —")
         {
             Assert.True(atlas.Glyphs.ContainsKey(c));

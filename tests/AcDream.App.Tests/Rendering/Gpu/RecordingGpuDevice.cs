@@ -271,7 +271,8 @@ internal sealed class RecordingGpuDevice : IGpuDevice, IGpuPipelineFormatVariant
             description.Width,
             description.Height,
             description.LayerCount,
-            description.MipLevelCount);
+            description.MipLevelCount,
+            description.Swizzle);
         _createdTextures.Add(texture);
         return texture;
     }
@@ -795,9 +796,16 @@ internal sealed class RecordingGpuTexture(
     int width,
     int height,
     int layerCount,
-    int mipLevelCount) : IGpuTexture
+    int mipLevelCount,
+    GpuTextureSwizzle swizzle = GpuTextureSwizzle.Identity) : IGpuTexture
 {
     private readonly List<(int MipLevel, int Layer, int ByteCount)> _uploads = [];
+    private readonly List<byte[]> _uploadedBytes = [];
+
+    public GpuTextureSwizzle Swizzle { get; } = swizzle;
+
+    /// <summary>A copy of each upload's bytes, in upload order.</summary>
+    public IReadOnlyList<byte[]> UploadedBytes => _uploadedBytes;
 
     public string Name { get; } = name;
 
@@ -819,8 +827,11 @@ internal sealed class RecordingGpuTexture(
 
     public IReadOnlyList<(int MipLevel, int Layer, int ByteCount)> Uploads => _uploads;
 
-    public void Upload(int mipLevel, int layer, ReadOnlySpan<byte> data) =>
+    public void Upload(int mipLevel, int layer, ReadOnlySpan<byte> data)
+    {
         _uploads.Add((mipLevel, layer, data.Length));
+        _uploadedBytes.Add(data.ToArray());
+    }
 
     public void GenerateMipChain() => MipChainGenerated = true;
 
