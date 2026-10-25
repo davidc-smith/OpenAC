@@ -47,6 +47,48 @@ public static class SetupPartTransforms
         float objectScale = 1.0f)
     {
         ArgumentNullException.ThrowIfNull(setup);
+        if (ResolveComputeSource(setup, motionFrameOverride) is null)
+            return Array.Empty<Matrix4x4>();
+        var result = new Matrix4x4[setup.Parts.Count];
+        ComputeInto(setup, result, motionFrameOverride, objectScale);
+        return result;
+    }
+
+    /// <summary>
+    /// <see cref="Compute"/> written into the caller's span (one entry per
+    /// part, so at least the setup's part count long). Returns how many
+    /// entries were written: the part count, or 0 when the setup has no
+    /// frame to pose it in.
+    /// </summary>
+    public static int ComputeInto(
+        Setup setup,
+        System.Span<Matrix4x4> destination,
+        AnimationFrame? motionFrameOverride = null,
+        float objectScale = 1.0f)
+    {
+        ArgumentNullException.ThrowIfNull(setup);
+        AnimationFrame? source = ResolveComputeSource(setup, motionFrameOverride);
+        if (source is null)
+            return 0;
+
+        int partCount = setup.Parts.Count;
+        if (destination.Length < partCount)
+            throw new ArgumentException("The destination is shorter than the part count.", nameof(destination));
+        for (int i = 0; i < partCount; i++)
+        {
+            destination[i] = i < source.Frames.Count
+                ? Matrix4x4.CreateFromQuaternion(source.Frames[i].Orientation)
+                    * Matrix4x4.CreateTranslation(source.Frames[i].Origin * objectScale)
+                : Matrix4x4.CreateFromQuaternion(Quaternion.Identity)
+                    * Matrix4x4.CreateTranslation(Vector3.Zero * objectScale);
+        }
+        return partCount;
+    }
+
+    private static AnimationFrame? ResolveComputeSource(
+        Setup setup,
+        AnimationFrame? motionFrameOverride)
+    {
         AnimationFrame? source = motionFrameOverride;
         if (source is null && setup.PlacementFrames.TryGetValue(Placement.Resting, out var resting))
         {
@@ -65,19 +107,6 @@ public static class SetupPartTransforms
             }
         }
 
-        if (source is null)
-            return Array.Empty<Matrix4x4>();
-
-        int partCount = setup.Parts.Count;
-        var result = new Matrix4x4[partCount];
-        for (int i = 0; i < partCount; i++)
-        {
-            Frame frame = i < source.Frames.Count
-                ? source.Frames[i]
-                : new Frame { Origin = Vector3.Zero, Orientation = Quaternion.Identity };
-            result[i] = Matrix4x4.CreateFromQuaternion(frame.Orientation)
-                      * Matrix4x4.CreateTranslation(frame.Origin * objectScale);
-        }
-        return result;
+        return source;
     }
 }
