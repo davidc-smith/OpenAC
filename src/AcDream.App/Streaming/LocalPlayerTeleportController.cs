@@ -373,6 +373,10 @@ internal sealed class LocalPlayerTeleportSession : ILocalPlayerTeleportSession
 internal interface ILocalPlayerTeleportPresentation : IDisposable
 {
     bool IsPortalViewportVisible { get; }
+
+    /// <summary>The arrival has been placed (the tunnel is past its
+    /// placement edge) and the tunnel still covers the screen.</summary>
+    bool IsWorldPlacedBehindTunnel { get; }
     int CurrentTunnelFrame { get; }
     void Begin(Matrix4x4 projection);
 
@@ -402,6 +406,11 @@ internal sealed class LocalPlayerTeleportPresentation
         _tunnel = tunnel ?? throw new ArgumentNullException(nameof(tunnel));
 
     public bool IsPortalViewportVisible => _tunnel.IsVisible;
+
+    public bool IsWorldPlacedBehindTunnel =>
+        _tunnel.IsVisible
+        && _animation.State is TeleportAnimState.TunnelContinue
+            or TeleportAnimState.TunnelFadeOut;
     public int CurrentTunnelFrame => _tunnel.CurrentAnimationFrame;
 
     public void Begin(Matrix4x4 projection)
@@ -541,6 +550,11 @@ internal sealed class LocalPlayerTeleportController
 
     public bool IsActive => _transit.IsTeleportActive;
     public bool IsPortalViewportVisible => _presentation.IsPortalViewportVisible;
+
+    /// <summary>The arrival is placed and the tunnel still covers it, so the
+    /// world can be drawn under the tunnel.</summary>
+    public bool IsWorldPlacedBehindPortal =>
+        _presentation.IsWorldPlacedBehindTunnel;
 
     public uint ActiveDestinationCell
     {

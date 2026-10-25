@@ -186,7 +186,7 @@ internal sealed class WorldSceneRenderer : IPreparedWorldSceneFramePhase
     {
         _ = input;
         if (!_availability.IsWorldAvailable
-            || _foundation.Foundation.PortalViewportVisible
+            || _foundation.Foundation.WorldHidden
             || !_presentation.DrawWorld)
             return;
         _passes.PrepareSky(_sky.ActiveDayGroup);
@@ -212,7 +212,7 @@ internal sealed class WorldSceneRenderer : IPreparedWorldSceneFramePhase
             }
 
             RenderFrameFoundation foundation = _foundation.Foundation;
-            if (foundation.PortalViewportVisible || !_presentation.DrawWorld)
+            if (foundation.WorldHidden || !_presentation.DrawWorld)
             {
                 _selection?.CompleteFrame();
                 selectionFrameStarted = false;
@@ -367,7 +367,7 @@ internal sealed class WorldSceneRenderer : IPreparedWorldSceneFramePhase
 
         RenderFrameFoundation foundation = _foundation.Foundation;
         if (!_availability.IsWorldAvailable
-            || foundation.PortalViewportVisible
+            || foundation.WorldHidden
             || !_presentation.DrawWorld)
             return new PreparedWorldSceneFrame(false, foundation, default, -1);
 

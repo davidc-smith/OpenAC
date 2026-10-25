@@ -158,7 +158,10 @@ internal interface IWorldFrameVisibilityPreparation
 {
     RetailLandscapeVisibilityFrame CaptureCompletedLandscapeVisibility();
 
-    void Begin(in WorldCameraFrame camera, bool waitingForLogin);
+    void Begin(
+        in WorldCameraFrame camera,
+        bool waitingForLogin,
+        bool coveredByPortal);
 
     void PublishViewProjection(in WorldCameraFrame camera);
 }
@@ -263,7 +266,10 @@ internal sealed class WorldRenderFrameBuilder : IWorldRenderFrameBuilder
         if (waitingForLogin)
             priorLandscapeVisibility = RetailLandscapeVisibilityFrame.None;
         WorldCameraFrame camera = _camera.Resolve();
-        _visibility.Begin(in camera, waitingForLogin);
+        _visibility.Begin(
+            in camera,
+            waitingForLogin,
+            foundation.PortalViewportVisible);
         _settings.Apply(in camera);
         WorldRootFrame roots = _roots.Resolve(in camera);
         _environment.Prepare(in camera, in roots, in foundation, activeDayGroup);
@@ -437,7 +443,10 @@ internal sealed class RuntimeWorldFrameVisibilityPreparation
     public RetailLandscapeVisibilityFrame CaptureCompletedLandscapeVisibility() =>
         _particles.CaptureCompletedLandscapeVisibility();
 
-    public void Begin(in WorldCameraFrame camera, bool waitingForLogin)
+    public void Begin(
+        in WorldCameraFrame camera,
+        bool waitingForLogin,
+        bool coveredByPortal)
     {
         _selection?.SetViewFrustum(camera.Frustum);
         _particles.BeginFrame(camera.Position);
@@ -445,7 +454,9 @@ internal sealed class RuntimeWorldFrameVisibilityPreparation
             return;
 
         _particles.UseWorldView();
-        _reveal?.ObserveWorldViewportVisible();
+        // A world drawn under the portal tunnel is not yet seen.
+        if (!coveredByPortal)
+            _reveal?.ObserveWorldViewportVisible();
     }
 
     public void PublishViewProjection(in WorldCameraFrame camera) =>
