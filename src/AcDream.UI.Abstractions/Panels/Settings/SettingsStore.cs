@@ -21,6 +21,9 @@ public readonly record struct PluginCanvasPosition(string Anchor, double X, doub
 /// <summary>One remembered markup control value: which window, which named control, which kind of state.</summary>
 public readonly record struct MarkupControlKey(string Window, string Control, string Kind);
 
+/// <summary>A character's Spell Deck rows (id, tab) and whether it is attached to the Command Deck.</summary>
+public sealed record StoredSpellDeck(bool Attached, IReadOnlyList<(int Id, int Tab)> Rows);
+
 public sealed class SettingsStore
 {
     private const int CurrentSchemaVersion = 4;
@@ -301,7 +304,8 @@ public sealed class SettingsStore
                 TooltipEnable:       ReadBool (misc, "tooltipEnable",       d.TooltipEnable),
                 TooltipDelaySeconds: ReadFloat(misc, "tooltipDelaySeconds", d.TooltipDelaySeconds),
                 ExtendedLevels:      ReadBool (misc, "extendedLevels",      d.ExtendedLevels),
-                ModernHud:           ReadBool (misc, "modernHud",           d.ModernHud));
+                ModernHud:           ReadBool (misc, "modernHud",           d.ModernHud),
+                SpellDeckClickCasts: ReadBool (misc, "spellDeckClickCasts", d.SpellDeckClickCasts));
         }
         catch (Exception ex)
         {
@@ -356,6 +360,42 @@ public sealed class SettingsStore
 
         JsonObject characterMap = GetOrCreateObject(root, "character");
         characterMap[toonKey] = toonObj;
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
+    public StoredSpellDeck? LoadSpellDeck(string toonKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        if (!File.Exists(_path)) return null;
+        try
+        {
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+            if (root?["spellDeck"]?[toonKey] is not JsonObject deck) return null;
+            var rows = new List<(int, int)>();
+            if (deck["rows"] is JsonArray array)
+                foreach (JsonNode? node in array)
+                    if (node is JsonObject row
+                        && row["id"]?.GetValue<int>() is int id
+                        && row["tab"]?.GetValue<int>() is int tab)
+                        rows.Add((id, tab));
+            return new StoredSpellDeck(deck["attached"]?.GetValue<bool>() ?? true, rows);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load spell deck from {_path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    public void SaveSpellDeck(string toonKey, StoredSpellDeck deck)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentNullException.ThrowIfNull(deck);
+        JsonObject root = LoadMutableRoot();
+        var rows = new JsonArray();
+        foreach ((int id, int tab) in deck.Rows) rows.Add(new JsonObject { ["id"] = id, ["tab"] = tab });
+        GetOrCreateObject(root, "spellDeck")[toonKey] = new JsonObject { ["attached"] = deck.Attached, ["rows"] = rows };
         root["version"] = CurrentSchemaVersion;
         WriteMutableRoot(root);
     }
@@ -1004,6 +1044,7 @@ public sealed class SettingsStore
         {
             ["extendedLevels"]      = m.ExtendedLevels,
             ["modernHud"]           = m.ModernHud,
+            ["spellDeckClickCasts"] = m.SpellDeckClickCasts,
             ["tooltipDelaySeconds"] = m.TooltipDelaySeconds,
             ["tooltipEnable"]       = m.TooltipEnable,
         };

@@ -8,11 +8,15 @@ namespace AcDream.UI.Abstractions.Panels.Settings;
 /// <param name="ModernHud">
 /// Replace the retail vitals, combat and jump windows with the Command Deck.
 /// </param>
+/// <param name="SpellDeckClickCasts">
+/// The Spell Deck casts on a single click instead of outlining; double-click casts either way when off.
+/// </param>
 public sealed record MiscSettings(
     bool TooltipEnable,
     float TooltipDelaySeconds,
     bool ExtendedLevels = false,
-    bool ModernHud = false)
+    bool ModernHud = false,
+    bool SpellDeckClickCasts = false)
 {
     public static MiscSettings Default { get; } = new(
         TooltipEnable: true,
