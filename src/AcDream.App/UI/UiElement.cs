@@ -254,6 +254,24 @@ public abstract class UiElement
     /// </summary>
     internal virtual void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY) { }
 
+    /// <summary>
+    /// The edges a resize may start from, given the edges the pointer is on
+    /// (border or authored grip, already filtered by <see cref="ResizeX"/>,
+    /// <see cref="ResizeY"/> and <see cref="ResizableEdges"/>). A window that
+    /// only resizes from some corners returns <see cref="ResizeEdges.None"/>
+    /// for the rest. Most windows allow them all.
+    /// </summary>
+    internal virtual ResizeEdges FilterResizeEdges(ResizeEdges hit) => hit;
+
+    /// <summary>
+    /// Called on each pointer move while this window is being resized, with
+    /// the dragged edges and the size the drag would give it (already within
+    /// Min/Max and the parent). A window with its own size rules changes
+    /// <paramref name="width"/> and <paramref name="height"/>; the edges not
+    /// being dragged stay where they are. Most windows leave them alone.
+    /// </summary>
+    internal virtual void ConstrainResize(ResizeEdges edges, ref float width, ref float height) { }
+
     public bool ConstrainResizeToParent { get; set; }
 
     public bool Resizable { get; set; }
