@@ -124,6 +124,9 @@ public static class ConfigOptionsPageController
 
         /// <summary>The Extended Levels row's switch; the row is left out without it.</summary>
         public ExtendedLevelsBindings? ExtendedLevels { get; init; }
+
+        /// <summary>The Modern HUD row's switch; the row is left out without it.</summary>
+        public ModernHudBindings? ModernHud { get; init; }
     }
 
     /// <summary>
@@ -132,6 +135,9 @@ public static class ConfigOptionsPageController
     /// character sheet changes as the box is ticked.
     /// </summary>
     public sealed record ExtendedLevelsBindings(Func<bool> Load, Action<bool> Save);
+
+    /// <summary>The Modern HUD switch: Load reads the stored choice, Save stores it.</summary>
+    public sealed record ModernHudBindings(Func<bool> Load, Action<bool> Save);
 
     /// <summary>
     /// How the mixer rows read and change the mixer settings: the same
@@ -1357,6 +1363,28 @@ public static class ConfigOptionsPageController
                     + "them, so the experience meter and the experience to the "
                     + "next level keep counting. Leave off on other servers: "
                     + "past 275 they show nothing to earn.");
+        }
+
+        // Modern HUD: the Command Deck in place of the retail vitals, combat
+        // and jump windows. Not a retail option, so explicit text.
+        if (bindings.ModernHud is { } modernHud)
+        {
+            BuildExplicitToggleRow(
+                listBox,
+                "Modern HUD",
+                MiscSettings.Default.ModernHud,
+                page,
+                read: modernHud.Load,
+                apply: value =>
+                {
+                    modernHud.Save(value);
+                    return true;
+                },
+                isCurrent: static () => true,
+                tooltip:
+                    "Show the Command Deck in place of the retail vitals, "
+                    + "combat and jump bars. The retail spell bar is not "
+                    + "shown while this is on.");
         }
 
         chat = bindings.LoadChat();
