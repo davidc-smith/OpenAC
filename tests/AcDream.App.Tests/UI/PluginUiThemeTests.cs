@@ -122,6 +122,34 @@ public sealed class PluginUiThemeTests
         Assert.False(PluginUiPalette.ClassicDock.IsLight);
     }
 
+    [Theory]
+    [InlineData("theme=\"plugin\"", PluginUiTheme.Parchment, true)]
+    [InlineData("theme=\"plugin\"", PluginUiTheme.Moss, false)]
+    [InlineData("theme=\"plugin\"", PluginUiTheme.Classic, false)]
+    [InlineData("", PluginUiTheme.Parchment, false)]
+    public void ALightColourIsUsedUnderALightThemeInAThemedWindow(string theme, PluginUiTheme selected, bool light)
+    {
+        var settings = new PluginUiThemeSettings();
+        var panel = MarkupDocument.Build($$"""
+            <panel x="0" y="0" w="250" h="200" {{theme}}>
+              <label x="0" y="0" text="Status" color="#FF112233|light:#FF445566" />
+              <group x="0" y="20" w="50" h="50" border="#FF778899|light:#FFAABBCC" />
+            </panel>
+            """, new Binding(), _ => (0u, 0, 0), themes: settings);
+        var root = new UiRoot(); root.AddChild(panel);
+        var label = (UiLabel)panel.Children[0];
+        var group = (UiPanel)panel.Children[1];
+        Assert.Equal(Rgba(0xFF112233u), label.TextColor);
+
+        settings.Theme = selected; root.Tick(0.016, 10);
+
+        Assert.Equal(Rgba(light ? 0xFF445566u : 0xFF112233u), label.TextColorSource!());
+        Assert.Equal(Rgba(light ? 0xFFAABBCCu : 0xFF778899u), group.BorderColorSource!());
+    }
+
+    private static Vector4 Rgba(uint argb) =>
+        new((argb >> 16 & 255) / 255f, (argb >> 8 & 255) / 255f, (argb & 255) / 255f, (argb >> 24) / 255f);
+
     [Fact]
     public void ANewThemePersistsByName()
     {

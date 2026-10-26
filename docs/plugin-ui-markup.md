@@ -175,6 +175,25 @@ colour, use a token with its original Classic fallback, for example
 Tokens are `text`, `muted`, `field`, `border`, `accent`, and `background`;
 the fallback uses `#AARRGGBB`.
 
+A semantic colour picked for dark windows (a pale green "ready", a pastel
+heading) can fade on a light theme such as Parchment. Give it a second
+colour for light themes after `|light:`:
+
+```xml
+<label text="Ready" color="#FFB6F0AE|light:#FF2E7D32"/>
+<group border="#FF9CC2FF|light:#FF2F5FA8" padding="6"/>
+```
+
+The first colour is drawn under Classic and every dark theme, and the
+second under a light one; switching theme switches the colour. It works on
+every literal colour attribute (`color`, `background`, `border` and the
+controls' own colour attributes), and only in a `theme="plugin"` window; any
+other window draws the first colour. A bound colour (`color="{Status}"`)
+has no `|light:` form: the plugin reads `host.Ui.Theme.IsLight` and returns
+the colour that suits (see "Plugin theme" in the plugin API guide). A host
+older than contract `0.1.27-fork.2` cannot read the pair and draws it white,
+so a plugin using `|light:` should require that contract.
+
 The `samples/AcDream.Plugins.ThemeGallery` plugin shows every control in one
 opted-in window; switch themes from the dock's gear to compare them.
 
