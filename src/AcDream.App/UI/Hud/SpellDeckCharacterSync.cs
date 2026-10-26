@@ -49,9 +49,9 @@ internal sealed class SpellDeckCharacterSync
         string key = _characterKey();
         if (key == LoadedCharacter) return;
         LoadedCharacter = key;
-        _controller.Load(string.IsNullOrWhiteSpace(key)
-            ? SpellDeckSettings.Default
-            : SpellDeckSettings.Load(_store, key));
+        _controller.Load(RetailWindowLayoutPersistence.CanPersist(key)
+            ? SpellDeckSettings.Load(_store, key)
+            : SpellDeckSettings.Default);
         _loadedAtRestore = _restoreCount();
         AwaitingRestore = RetailWindowLayoutPersistence.CanPersist(key) && _loadedAtRestore is not null;
         if (!AwaitingRestore) _dock.AfterRestore();
@@ -82,10 +82,11 @@ internal sealed class SpellDeckCharacterSync
         _dock.AfterRestore();
     }
 
-    /// <summary>Saves under the loaded character, never one whose settings have not been loaded.</summary>
+    /// <summary>Saves under the loaded character, never one whose settings have not been loaded,
+    /// and never under a key the layout does not persist either (blank or "default").</summary>
     public void Save(SpellDeckSettings settings)
     {
-        if (LoadedCharacter is { } key && !string.IsNullOrWhiteSpace(key))
+        if (LoadedCharacter is { } key && RetailWindowLayoutPersistence.CanPersist(key))
             settings.Save(_store, key);
     }
 }

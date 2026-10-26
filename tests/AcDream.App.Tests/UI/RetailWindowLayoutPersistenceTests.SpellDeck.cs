@@ -235,4 +235,18 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         SpellDeckGeometry g = SpellDeckGeometry.Create(1f, 1f, 3);
         AssertSpellDeckAt(rig, new UiWindowLayout(700f, 600f - g.Height, g.Width, g.Height, false, false, false), "Bob", 1f, 3);
     }
+
+    [Fact]
+    public void SpellDeck_SettingsAreNotSavedUnderTheDefaultKey()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        Assert.Equal("default", rig.Sync.LoadedCharacter);
+
+        rig.Controller.AddRowBelow(rig.Controller.Rows[0].Id);
+        rig.Dock.Detach();
+        rig.Frames(2);
+
+        Assert.Null(rig.Store.LoadSpellDeck("default"));
+    }
 }
