@@ -77,6 +77,19 @@ internal sealed class GraphicalSessionHost : IDisposable
                     options.DumpSky ? Console.WriteLine : null,
                 sessionOperations));
         RuntimeHostLease = Runtime.AcquireHostLease("graphical session host");
+        // The session attacks, picks targets, changes stance and casts on its
+        // own, as every client without a window does; a window's operations
+        // take over while it is attached and hand back when it closes.
+        SessionGameplay.Bind(
+            Runtime,
+            catalog: null,
+            () => LiveSession?.Host.CurrentSession?.Characters?.AccountName
+                ?? _options.LiveUser
+                ?? string.Empty);
+        CombatAttackOperations.UseSessionOperations(SessionGameplay);
+        CombatTargetOperations.UseSessionOperations(SessionGameplay);
+        CombatModeOperations.UseSessionOperations(SessionGameplay);
+        SpellCastOperations.UseSessionOperations(SessionGameplay);
         automation?.Bind(Runtime, Runtime.CharacterOwner, Runtime.ActionOwner.SpellCast);
         // Settings the runtime reads off the character's own options, which
         // hold whether or not anything is drawn.
@@ -140,7 +153,9 @@ internal sealed class GraphicalSessionHost : IDisposable
             () => _windowlessRoute?.EndPortalRevealForSessionReset(),
             chatLogDirectory,
             _time,
-            session => CommandsWithoutWindow.CreateRoute(session));
+            session => new GraphicalLiveSession.JointCommandRoute(
+                CommandsWithoutWindow.CreateRoute(session),
+                SessionGameplay.CreateRoute(session)));
         Confirmations = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessConfirmations(
             () => LiveSession.Host.CurrentSession);
         WindowlessLogout = new AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout(
@@ -182,6 +197,15 @@ internal sealed class GraphicalSessionHost : IDisposable
 
     internal AcDream.App.Spells.RuntimeSpellCastOperationsSlot SpellCastOperations { get; } =
         new();
+
+    /// <summary>
+    /// The session's own attack, combat-target, combat-mode and spell-cast
+    /// operations: what the four slots above answer with while no window's
+    /// operations are bound in them. The same ones the windowless client
+    /// plays through.
+    /// </summary>
+    internal AcDream.Runtime.Session.Windowless.RuntimeWindowlessGameplayOperations
+        SessionGameplay { get; } = new();
 
     internal WorldGameState WorldGameState { get; }
 
@@ -280,6 +304,20 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal GraphicalSessionContent? Content => _content;
 
     /// <summary>
+    /// The spell tables from the game files: the spells the character's
+    /// spellbook can name, and the formulas the session's own casts check
+    /// components against. Part of <see cref="UseContent"/>.
+    /// </summary>
+    internal void UseMagic(AcDream.Content.MagicCatalog magic)
+    {
+        ArgumentNullException.ThrowIfNull(magic);
+        Runtime.CharacterOwner.InstallSpellMetadata(magic.SpellTable);
+        SessionGameplay.UseMagicCatalog(magic);
+        Console.WriteLine(
+            $"spells: loaded {magic.SpellTable.Count} entries from portal.dat");
+    }
+
+    /// <summary>
     /// Takes the game files the session is played from, for the life of the
     /// process: installs what the session reads from them (spell tables,
     /// character creation choices, trade notes) and builds the session's
@@ -293,9 +331,7 @@ internal sealed class GraphicalSessionHost : IDisposable
             throw new InvalidOperationException("The session's game files are already open.");
 
         _content = content;
-        Runtime.CharacterOwner.InstallSpellMetadata(content.Magic.SpellTable);
-        Console.WriteLine(
-            $"spells: loaded {content.Magic.SpellTable.Count} entries from portal.dat");
+        UseMagic(content.Magic);
         AcDream.Core.CharGen.ChargenOptions chargen;
         lock (content.DatLock)
         {

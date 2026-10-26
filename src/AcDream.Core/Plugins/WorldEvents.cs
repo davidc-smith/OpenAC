@@ -21,6 +21,7 @@ public sealed class WorldEvents : IPluginEventSink
     private Action<uint>? _containerClosed;
     private Action<PluginConfirmation>? _confirmationRequested;
     private Action<PluginActivationCompletion>? _activationCompleted;
+    private Action<string>? _statusTextReceived;
 
     /// <summary>
     /// Raises plugin events with nowhere to name a handler that threw.
@@ -267,6 +268,23 @@ public sealed class WorldEvents : IPluginEventSink
         }
     }
 
+    public event Action<string> StatusTextReceived
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_lock)
+                _statusTextReceived += value;
+        }
+        remove
+        {
+            if (value is null)
+                return;
+            lock (_lock)
+                _statusTextReceived -= value;
+        }
+    }
+
     public void FireLoginComplete()
     {
         Action? handlers;
@@ -405,6 +423,21 @@ public sealed class WorldEvents : IPluginEventSink
         {
             try { ((Action<PluginActivationCompletion>)handler)(completion); }
             catch (Exception error) { Report("activation-completed", error); }
+        }
+    }
+
+    public void FireStatusTextReceived(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        Action<string>? handlers;
+        lock (_lock)
+            handlers = _statusTextReceived;
+        if (handlers is null)
+            return;
+        foreach (Delegate handler in handlers.GetInvocationList())
+        {
+            try { ((Action<string>)handler)(text); }
+            catch (Exception error) { Report("status-text", error); }
         }
     }
 

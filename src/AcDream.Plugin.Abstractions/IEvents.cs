@@ -148,4 +148,25 @@ public interface IEvents
         add { }
         remove { }
     }
+
+    /// <summary>
+    /// Raised with the text of every short status notice the client puts on
+    /// the status line over the world rather than into the chat transcript:
+    /// a refusal the server sends as a passing notice (such as a container
+    /// already in use by someone else) and a refusal or notice the client
+    /// words itself (such as "You're too busy!"). These notices never enter
+    /// the transcript, so they never reach
+    /// <see cref="IPluginChat.CaptureMessages"/> or
+    /// <see cref="IPluginChat.Received"/>. It is raised before the chat filters decide whether the notice is
+    /// shown, so a plugin hears it even when a filter hides it from the
+    /// player. Raised on the same thread as <see cref="Tick"/>, in the order
+    /// the notices arrive. Handler exceptions are swallowed per handler, like
+    /// every other event here. A host with no status line leaves this event
+    /// inert.
+    /// </summary>
+    event Action<string> StatusTextReceived
+    {
+        add { }
+        remove { }
+    }
 }

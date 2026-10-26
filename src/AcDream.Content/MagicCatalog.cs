@@ -38,7 +38,7 @@ public sealed class MagicCatalog
     private readonly IReadOnlyDictionary<uint, uint> _magicPackWcidBySchool;
     private readonly IReadOnlyDictionary<uint, int> _spellLevels;
 
-    private MagicCatalog(
+    internal MagicCatalog(
         CoreSpellTable spellTable,
         IReadOnlyDictionary<uint, SpellComponentDescriptor> components,
         IReadOnlyDictionary<uint, SpellFormulaDefinition> formulaDefinitions,
