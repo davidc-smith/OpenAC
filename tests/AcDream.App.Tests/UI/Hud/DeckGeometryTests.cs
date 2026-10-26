@@ -250,6 +250,22 @@ public sealed class DeckGeometryTests
     }
 
     [Theory]
+    [InlineData(0.23f, 0.25f)]
+    [InlineData(0.29f, 0.25f)]
+    [InlineData(0.30f, 0.30f)]
+    [InlineData(0.47f, 0.50f)]
+    [InlineData(0.54f, 0.50f)]
+    [InlineData(0.71f, 0.75f)]
+    [InlineData(0.79f, 0.75f)]
+    [InlineData(0.20f, 0.20f)]
+    [InlineData(0.02f, 0.02f)]
+    [InlineData(0.98f, 0.98f)]
+    [InlineData(0f, 0f)]
+    [InlineData(1f, 1f)]
+    public void SnapPowerLocksOntoQuarterMarks(float power, float expected) =>
+        Assert.Equal(expected, DeckGeometry.SnapPower(power), 3);
+
+    [Theory]
     [MemberData(nameof(Sizes))]
     public void PowerAtMapsTheTrack(float scale, float stretch)
     {

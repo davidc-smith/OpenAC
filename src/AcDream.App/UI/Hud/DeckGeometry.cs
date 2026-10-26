@@ -180,6 +180,16 @@ public sealed record DeckGeometry
     public float PowerAt(float x) =>
         Math.Clamp((x - PowerTrack.X) / PowerTrack.W, 0f, 1f);
 
+    /// <summary>How close to a quarter mark a dragged power locks onto it.</summary>
+    public const float PowerSnap = 0.04f;
+
+    /// <summary>A power locked onto 25%, 50% or 75% when within <see cref="PowerSnap"/>; else unchanged.</summary>
+    public static float SnapPower(float power)
+    {
+        float mark = MathF.Round(power * 4f) / 4f;
+        return mark is > 0f and < 1f && MathF.Abs(power - mark) <= PowerSnap + 1e-4f ? mark : power;
+    }
+
     public DeckZone ZoneAt(CommandDeckView view, float x, float y)
     {
         if (InCircle(Orb, x, y)) return DeckZone.Orb;

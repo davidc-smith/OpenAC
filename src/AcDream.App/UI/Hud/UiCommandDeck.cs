@@ -270,7 +270,7 @@ internal sealed partial class UiCommandDeck : UiElement
                 SetHover(_geometry.ZoneAt(_view, e.Data1, e.Data2));
                 if (_draggingPower)
                 {
-                    _actions.SetDesiredPower(_geometry.PowerAt(e.Data1));
+                    _actions.SetDesiredPower(DeckGeometry.SnapPower(_geometry.PowerAt(e.Data1)));
                     return true;
                 }
                 return _hover != DeckZone.None;
@@ -316,7 +316,7 @@ internal sealed partial class UiCommandDeck : UiElement
                 return true;
             case DeckZone.PowerTrack:
                 _draggingPower = true;
-                _actions.SetDesiredPower(_geometry.PowerAt(x));
+                _actions.SetDesiredPower(DeckGeometry.SnapPower(_geometry.PowerAt(x)));
                 return true;
             case DeckZone.High:
             case DeckZone.Medium:

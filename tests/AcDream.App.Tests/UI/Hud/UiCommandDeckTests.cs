@@ -80,6 +80,19 @@ public sealed class UiCommandDeckTests
     }
 
     [Fact]
+    public void PowerTrackPressAndDragSnapToQuarterMarks()
+    {
+        var (deck, actions, _) = Make(CombatMode.Melee);
+        DeckRect t = DeckGeometry.Default.PowerTrack;
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseDown, Data1: (int)MathF.Round(t.X + t.W * 0.52f), Data2: (int)(t.Y + 2)));
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseMove, Data1: (int)MathF.Round(t.X + t.W * 0.60f), Data2: (int)(t.Y + 2)));
+        Up(deck, t.X + t.W * 0.60f, t.Y + 2);
+
+        Assert.Equal("power 0.50", actions.Calls[0]);
+        Assert.Equal("power 0.60", actions.Calls[1]);
+    }
+
+    [Fact]
     public void ScaledControlsAreHitAtTheirScaledRects()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
