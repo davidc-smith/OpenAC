@@ -153,12 +153,20 @@ public sealed class UiCommandDeckTests
     }
 
     [Fact]
-    public void EmptyFrameDoesNotHitTest()
+    public void OnlyTheCornersOutsideFrameAndOrbFallThrough()
     {
         var (deck, _, _) = Make(CombatMode.Melee);
         DeckRect f = CommandDeckLayout.Frame;
-        Assert.False(deck.HitTestLocal(f.X + f.W - 4, f.Y + 4));
+        Assert.False(deck.HitTestLocal(2, 4));
+
+        // The frame body hits (so the window can be dragged by it) but is not a control.
+        Assert.True(deck.HitTestLocal(f.X + f.W - 4, f.Y + 4));
+        Assert.False(deck.HandlesClick);
+        Assert.False(deck.CapturesPointerDrag);
+
         Assert.True(deck.HitTestLocal(CommandDeckLayout.Orb.X + 46, CommandDeckLayout.Orb.Y + 46));
+        Assert.True(deck.HandlesClick);
+        Assert.True(deck.CapturesPointerDrag);
     }
 
     [Fact]

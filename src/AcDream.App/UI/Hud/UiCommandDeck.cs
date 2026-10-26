@@ -8,8 +8,10 @@ namespace AcDream.App.UI.Hud;
 /// <summary>
 /// The Command Deck: one fixed-size element that draws a
 /// <see cref="CommandDeckView"/> and turns pointer input into
-/// <see cref="ICommandDeckActions"/>. Areas with no control do not hit-test,
-/// so the window can be dragged by them.
+/// <see cref="ICommandDeckActions"/>. The frame, orb and studs hit-test, but
+/// only the controls capture the pointer: a press on the bars, the jump strip
+/// or the frame body drags the window. The transparent corners around the
+/// orb and frame fall through to the world.
 /// </summary>
 internal sealed partial class UiCommandDeck : UiElement
 {
@@ -31,6 +33,8 @@ internal sealed partial class UiCommandDeck : UiElement
     private AttackHeight? _held;
     private bool _draggingPower;
     private DeckZone _hover;
+    /// <summary>The zone under the last hit test; decides click and drag ownership.</summary>
+    private DeckZone _hitZone;
 
     public UiCommandDeck(
         Func<CommandDeckInput> input,
@@ -49,11 +53,10 @@ internal sealed partial class UiCommandDeck : UiElement
         MinWidth = MaxWidth = Width;
         MinHeight = MaxHeight = Height;
         Resizable = false;
-        CapturesPointerDrag = true;
         RuntimeTooltipTextSource = () => _hover == DeckZone.None ? null : TooltipFor(_hover, _view);
     }
 
-    public override bool HandlesClick => true;
+    public override bool HandlesClick => IsControl(_hitZone);
     public override bool ReceivesHoverMouseMove => true;
 
     internal CommandDeckView View => _view;
@@ -70,8 +73,25 @@ internal sealed partial class UiCommandDeck : UiElement
 
     internal bool HitTestLocal(float x, float y) => OnHitTest(x, y);
 
-    protected override bool OnHitTest(float localX, float localY) =>
-        CommandDeckLayout.ZoneAt(_view, localX, localY) != DeckZone.None;
+    protected override bool OnHitTest(float localX, float localY)
+    {
+        _hitZone = CommandDeckLayout.ZoneAt(_view, localX, localY);
+        CapturesPointerDrag = IsControl(_hitZone);
+        return _hitZone != DeckZone.None
+            || CommandDeckLayout.Frame.Contains(localX, localY)
+            || CommandDeckLayout.InOrb(localX, localY);
+    }
+
+    /// <summary>Zones that act on a press; every other part of the deck drags the window.</summary>
+    internal static bool IsControl(DeckZone zone) => zone switch
+    {
+        DeckZone.Orb
+            or DeckZone.StudRepeat or DeckZone.StudAutoTarget or DeckZone.StudKeepInView
+            or DeckZone.PowerTrack or DeckZone.High or DeckZone.Medium or DeckZone.Low
+            or DeckZone.Recast => true,
+        >= DeckZone.Recall0 and <= DeckZone.Recall4 => true,
+        _ => false,
+    };
 
     /// <summary>Ends an attack started from the deck, once.</summary>
     public void ReleaseHeldAttack()
@@ -107,6 +127,8 @@ internal sealed partial class UiCommandDeck : UiElement
                 _draggingPower = false;
                 ReleaseHeldAttack();
                 return true;
+            case UiEventType.Click:
+                return IsControl(_hitZone);
             case UiEventType.HoverLeave:
                 _hover = DeckZone.None;
                 return true;
@@ -162,10 +184,8 @@ internal sealed partial class UiCommandDeck : UiElement
             case >= DeckZone.Recall0 and <= DeckZone.Recall4:
                 _actions.Recall(Recalls[zone - DeckZone.Recall0]);
                 return true;
-            case DeckZone.None:
-                return false;
             default:
-                return true;   // bars and jump: tooltip only
+                return false;   // bars, jump and frame: the window drag has the press
         }
     }
 

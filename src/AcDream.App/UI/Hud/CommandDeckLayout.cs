@@ -107,6 +107,9 @@ public static class CommandDeckLayout
         return DeckZone.None;
     }
 
+    /// <summary>Whether a point is on the orb's circle.</summary>
+    public static bool InOrb(float x, float y) => InCircle(Orb, x, y);
+
     private static bool InCircle(DeckRect r, float x, float y)
     {
         float cx = r.X + r.W / 2f, cy = r.Y + r.H / 2f, radius = r.W / 2f;
