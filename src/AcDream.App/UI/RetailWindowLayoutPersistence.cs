@@ -14,6 +14,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
     private readonly List<RetailWindowHandle> _attached = new();
     private readonly Dictionary<string, UiWindowLayout> _defaults = new(StringComparer.Ordinal);
     private readonly Dictionary<string, UiWindowPlacement> _placements = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Func<bool>> _captureGates = new(StringComparer.Ordinal);
     private string? _restoredCharacter;
     private bool _restoring;
     private bool _disposed;
@@ -46,6 +47,29 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
             Attach(handle);
     }
 
+    /// <summary>While <paramref name="open"/> returns false, the window's moves and resizes
+    /// are not recorded or saved, and restores, resets and reflows leave it where it is
+    /// (its owner places it). The recorded placement is kept and still saved.</summary>
+    public void SetCaptureGate(string windowName, Func<bool> open)
+    {
+        ArgumentNullException.ThrowIfNull(windowName);
+        _captureGates[windowName] = open ?? throw new ArgumentNullException(nameof(open));
+    }
+
+    private bool Capturing(RetailWindowHandle handle) =>
+        !_captureGates.TryGetValue(handle.Name, out Func<bool>? open) || open();
+
+    /// <summary>Moves a window to its recorded placement (for a gated window being let go).</summary>
+    public void ApplyStoredPlacement(string windowName)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        RetailWindowHandle? handle = _attached.Find(h => h.Name == windowName);
+        if (handle is null || !_placements.TryGetValue(windowName, out UiWindowPlacement placement)) return;
+        _restoring = true;
+        try { ApplyPlacement(handle, placement, ValidScreenSize(), restoreVisibility: false); }
+        finally { _restoring = false; }
+    }
+
     private void OnWindowRegistered(RetailWindowHandle handle) => Attach(handle);
 
     private void OnWindowUnregistered(RetailWindowHandle handle) => Detach(handle);
@@ -73,7 +97,8 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
                     screen.Width, screen.Height, _defaults);
                 var placement = new UiWindowPlacement(layout, screen.Width, screen.Height);
                 _placements[handle.Name] = placement;
-                ApplyPlacement(handle, placement, screen, restoreVisibility: false);
+                if (Capturing(handle))
+                    ApplyPlacement(handle, placement, screen, restoreVisibility: false);
             }
         }
         finally { _restoring = false; }
@@ -89,6 +114,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         {
             foreach (var handle in _attached)
             {
+                if (!Capturing(handle)) continue;
                 var placement = WithCurrentState(handle, _placements[handle.Name]);
                 ApplyPlacement(handle, placement, screen, restoreVisibility: false);
             }
@@ -160,8 +186,9 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
             Layout = MigrateAuthoredGeometry(placement.Layout, AuthoredGeometry(handle, fallback)),
         };
         _placements[handle.Name] = placement;
-        ApplyPlacement(handle, placement, screen,
-            restoreVisibility && !_stateManagedVisibilityWindows.Contains(handle.Name));
+        if (Capturing(handle))
+            ApplyPlacement(handle, placement, screen,
+                restoreVisibility && !_stateManagedVisibilityWindows.Contains(handle.Name));
         placement = WithCurrentState(handle, placement);
         _placements[handle.Name] = placement;
         return placement;
@@ -176,6 +203,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         {
             foreach (RetailWindowHandle handle in _attached.ToArray())
             {
+                if (!Capturing(handle)) continue;
                 float maxX = MathF.Max(0f, screen.Width - handle.Width);
                 float maxY = MathF.Max(0f, screen.Height - handle.Height);
                 float x = Math.Clamp(handle.Left, 0f, maxX);
@@ -213,7 +241,8 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         ArgumentNullException.ThrowIfNull(profileName);
         if (!_gameplayActive) return;
         foreach (RetailWindowHandle handle in _attached.ToArray())
-            _store?.SaveNamedWindowLayout(profileName, handle.Name, Capture(handle));
+            _store?.SaveNamedWindowLayout(profileName, handle.Name,
+                Capturing(handle) ? Capture(handle) : WithCurrentState(handle, _placements[handle.Name]).Layout);
     }
 
     public void RestoreNamed(string profileName)
@@ -235,6 +264,11 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
                 layout = MigrateAuthoredGeometry(
                     layout,
                     AuthoredGeometry(handle, fallback));
+                if (!Capturing(handle))
+                {
+                    _placements[handle.Name] = new UiWindowPlacement(layout, screen.Width, screen.Height);
+                    continue;
+                }
                 Apply(
                     handle,
                     layout,
@@ -291,7 +325,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
 
     private void OnGeometryChanged(RetailWindowHandle handle)
     {
-        if (!_gameplayActive || _restoring || _disposed) return;
+        if (!_gameplayActive || _restoring || _disposed || !Capturing(handle)) return;
         var screen = ValidScreenSize();
         _placements[handle.Name] = new UiWindowPlacement(Capture(handle), screen.Width, screen.Height);
         OnChanged(handle);
