@@ -72,6 +72,17 @@ With Modern HUD off, nothing changes.
 - **Detached:** a normal movable, lockable window. It resizes like the
   deck: the right edge stretches the width, the right corners scale it,
   and the left, top and bottom edges do not resize.
+- **Staying on screen while attached:** the Spell Deck and the deck are
+  treated as one block, which must stay fully on screen.
+  - Moving the deck is limited so the Spell Deck above it stays on screen.
+  - "Add row below" is disabled when the extra row would push the block
+    off the top of the screen. Scaling up from a corner stops at the
+    largest scale that still fits.
+  - On restore or after a resolution change, if the block does not fit,
+    the deck moves down just enough to fit. If it still does not fit with
+    the deck at the bottom of the screen, the scale is lowered in steps
+    until it does.
+  - A detached Spell Deck stays on screen like any other window.
 - **Slots per row** = how many fit in the width at the current stretch.
   Scale changes size, not count. At stretch 1 a row always holds at least
   12 slots, so hotkeys 1–= always land on a visible slot.
@@ -81,6 +92,12 @@ With Modern HUD off, nothing changes.
   - While attached, this minimum becomes the **Command Deck's** minimum
     width too. That holds even while the Spell Deck is hidden (peace,
     melee, missile), so it never comes back too narrow.
+  - The minimum is enforced whenever it changes, not only during a resize.
+    Adding a favourite (from here, the retail bar or the server), changing
+    a row's tab or adding a row can raise it. When it rises above the
+    current stretch, the window (the deck when attached) widens at once,
+    keeping its left edge, and moves left if needed to stay on screen. The
+    new size is saved.
   - A tab larger than the widest stretch makes the minimum the maximum
     stretch. The extra spells are not shown (see "Oversized tabs").
 - **Oversized tabs:** retail characters may have tabs holding more spells
@@ -101,15 +118,53 @@ With Modern HUD off, nothing changes.
 
 ## Casting and the outline
 
-- **Outline:** the last slot the player clicked, cast or moved the outline
-  to. It starts on row 1's first slot. If that slot empties or its row is
-  removed, the outline moves to row 1's first filled slot; if there is
-  none, nothing is outlined.
-- **Click modes**, from the right-click menu (one setting for all
-  characters):
-  - **Default: "Double-click casts".** A click outlines the slot. A
-    double-click, CAST, or End casts it.
-  - **"Click casts".** A click outlines the slot and casts it at once.
+### Outline
+
+The outline is one of:
+
+```text
+None | Item | Slot(rowId, tab, spellId)
+```
+
+`rowId` is a stable id given to each row when it is created and saved with
+the rows, so it survives other rows being added or removed. Because the
+spell id is part of the outline, two rows showing the same tab are told
+apart by `rowId`, and the outline follows its spell when the tab is
+reordered.
+
+**Repair** gives a new outline: row 1's first filled slot; otherwise the
+item spell, if there is one; otherwise `None`. Repair runs whenever the
+outline is `None` and something becomes available (for example, favourites
+arriving after login), and whenever the rules below say so.
+
+| Event | Outline becomes |
+|---|---|
+| Click, double-click or hotkey cast on a slot | That `Slot` |
+| Click on the item slot, `CastItemSpell` | `Item` |
+| The outlined spell is reordered in its tab | Same `Slot` (it follows the spell) |
+| The outlined spell is dragged to another row | `Slot` in the destination row |
+| The outlined spell leaves its tab, or no longer fits in the row's visible slots (any source, including the server) | Repair |
+| The outlined row's tab is changed | That row's first filled slot, or repair if it has none |
+| The outlined row is removed | Repair |
+| The item spell disappears (item unwielded) while `Item` is outlined | Repair |
+| Next / Prev from a `Slot` | The next / previous filled slot in that row, wrapping. In row 1 the item slot (if present) sits before slot 1 in the cycle. |
+| Next / Prev from `Item` | Row 1's first / last filled slot (stays `Item` if row 1 is empty) |
+| Next / First from `None` | Row 1's first filled slot, else `Item`, else `None` |
+| Prev / Last from `None` | Row 1's last filled slot, else `Item`, else `None` |
+| First / Last from `Item` or a `Slot` | The first / last filled slot of that row (row 1 for `Item`) |
+| Row 1's tab changed by Insert / PgUp | As "the outlined row's tab is changed" when row 1 holds the outline; otherwise unchanged |
+
+### Click modes
+
+Chosen from the right-click menu; one setting for all characters. The UI
+raises `Click` on both clicks of a double-click and then `DoubleClick`, so
+the two modes handle them separately:
+
+- **Default, "Double-click casts":** `Click` only outlines. `DoubleClick`
+  casts once. CAST and End also cast.
+- **"Click casts":** `Click` outlines and casts. `DoubleClick` does
+  nothing, so a double-click casts twice (one per click), never three
+  times.
 - **What casting does:** the same call the retail bar makes when it casts
   a favourite (`RuntimeSpellCastState` with the current selection as
   target). The existing cast checks give the errors for missing
@@ -142,6 +197,11 @@ With Modern HUD on, `RetailUiRuntime.HandleInputAction` offers the action
 to the Spell Deck first. The hidden retail `SpellcastingUiController` is not
 asked. With Modern HUD off, routing is unchanged.
 
+**Fallback:** if the Spell Deck failed to mount, Modern HUD still turns on
+(the deck works without it), but spell actions keep going to the hidden
+retail `SpellcastingUiController`, as today, and one diagnostic line is
+logged. The new row actions and `CastItemSpell` then do nothing.
+
 | Action | Spell Deck behaviour | Default key (MagicCombat scope) |
 |---|---|---|
 | `UseSpellSlot_1…12` (existing) | Cast row 1, slot n | 1–9 (unchanged); 10–12 unbound |
@@ -161,11 +221,22 @@ asked. With Modern HUD off, routing is unchanged.
   bindings).
 - **Ctrl+0 is not a default:** it is already `CreateShortcut`. Row 3
   slot 10 is unbound by default, like slots 10–12 of every row.
-- **Slot labels** come from the current `KeyBindings` (first chord bound
-  to the slot's action): `4`, `⇧4`, `^4`, `⌥4`, or nothing. Rebinding
-  updates the labels.
-- All new actions appear in the keybinding UI with readable names
-  ("Spell bar row 2, slot 4", "Cast item spell").
+- **Slot labels** come from the first chord bound to the slot's action:
+  `4`, `⇧4`, `^4`, `⌥4`, or nothing. `InputDispatcher.SetBindings`
+  replaces the bindings without an event, so the Spell Deck reads the
+  dispatcher's current `Bindings` every time it builds its view, never a
+  stored copy. Rebinding a key or loading another keymap updates the labels
+  on the next frame.
+- **Keybinding page:** that page builds its rows only from the retail DAT
+  action map, so new enum values alone do not show up there. A new
+  `ClientActionCatalog` lists the client-only actions (every
+  `UseSpellRow{r}Slot{n}` and `CastItemSpell`), each with a stable
+  identity in a client-only range that cannot collide with retail ids, its
+  scope (MagicCombat), display name ("Spell bar row 2, slot 4", "Cast item
+  spell") and group ("Spell bar", after the retail combat rows).
+  `KeyboardConfigController` merges these rows into the combat page. They
+  rebind, save, load and take part in conflict detection the same way as
+  retail rows.
 
 ## Editing favourites
 
@@ -181,14 +252,28 @@ uses. The local `Spellbook` updates as it does today.
   the row holding the outline, or row 1 if nothing is outlined. It is
   added at the end.
 - **Reorder / move:** drag a slot to another slot. In the same tab it is a
-  reorder. In another tab it is removed from the old tab and inserted into
-  the new one. Dropping on a row that shows the same tab is a reorder.
+  reorder. In another tab it is a move. Dropping on a row that shows the
+  same tab is a reorder.
 - **Remove:** drag a slot off the Spell Deck, or right-click → "Remove from
   row". This removes the spell from that tab.
-- **Full row:** a drop that would put a spell past the row's last visible
-  slot is refused. The drag shows "not allowed", and on release a chat line
-  says `That spell bar row is full.` A move within the same tab is never
-  refused.
+- **Drag transaction.** Nothing changes until a drop is accepted. (The
+  retail bar removes the favourite when the drag *starts*. The Spell Deck
+  must not copy that.)
+
+  | Drag ends | Server calls |
+  |---|---|
+  | Accepted drop, same tab | One `SetFavorite(tab, newPosition, spell)` |
+  | Accepted drop, other tab | `SetFavorite(destTab, position, spell)` first, then `RemoveFavorite(sourceTab, spell)` |
+  | Drop on empty space outside every window | `RemoveFavorite(sourceTab, spell)` |
+  | Refused drop, drop on another window, cancelled drag (Esc, focus lost), drag from a locked window | None |
+
+  A drag remembers whether a drop accepted it; ending a drag never removes
+  anything by itself.
+- **Capacity:** checked against the tab's count *after* the operation. A
+  spell already in the destination tab is a reorder and is always allowed,
+  even in a full row. A spell new to the tab is refused when the tab
+  already fills the row's visible slots. The drag shows "not allowed", and
+  on release a chat line says `That spell bar row is full.`
 - **Locked window:** while the Spell Deck is locked (the existing window
   lock), slots cannot be dragged. Clicks and hotkeys still work.
 
@@ -196,8 +281,9 @@ uses. The local `Spellbook` updates as it does today.
 
 - **Source:** the wielded item's spell, found by the same logic the retail
   bar uses today for its endowment slot. That logic moves out of
-  `SpellcastingUiController` into a shared `ItemSpellSource`, and both use
-  it, so the retail bar's behaviour does not change.
+  `SpellcastingUiController` into a shared `ItemSpellSource`
+  (`src/AcDream.App/Spells/`, not the HUD folder, since both use it), so
+  the retail bar's behaviour does not change.
 - **Cast:** through the existing activate-item path the retail bar uses.
   Follows the click mode. `CastItemSpell`, End (when outlined) and CAST
   also cast it.
@@ -218,27 +304,42 @@ context menu.
 | What | Where | Scope |
 |---|---|---|
 | Position, width, height (detached) | Existing window-layout persistence (`RetailWindowLayoutPersistence`), window name `spell-deck` | Per character, per resolution (as other windows) |
-| Row count, each row's tab, attached flag | New `SpellDeckSettings` section in the settings store, under the same character key window layouts use | Per character |
+| Rows (stable id + tab each, in order), attached flag | New `SpellDeckSettings` section in the settings store, under the same character key window layouts use | Per character |
 | Click mode | `MiscSettings.SpellDeckClickCasts` (bool, default `false`) | All characters |
 
-While attached, the saved detached position is kept, so detaching puts the
-window back where it was last detached. The first detach puts it just
-above the deck's top-left corner.
+- **Detached placement is not overwritten while attached.**
+  `RetailWindowLayoutPersistence` gains a per-window capture gate
+  (`Func<bool>`). For `spell-deck` the gate is closed while attached, so
+  moves and resizes made by the dock are neither saved nor applied from
+  the saved placement. Detaching puts the window back where it was last
+  detached, after any number of attaches, deck moves and relogs. The first
+  detach (no saved placement) puts it just above the deck's top-left
+  corner.
+- **Restore order:** `SpellDeckSettings` (rows) first, then the
+  placement. The width and height stored for a detached Spell Deck are
+  derived values. On restore, scale = saved height ÷ the base height for
+  the restored row count, snapped to a 5% step and clamped. Stretch =
+  saved width ÷ (base width × scale), clamped to [minimum, 2]. The
+  normalised size is applied and saved back. Changing the row count
+  changes the height at the current scale. It never changes the scale.
+- While attached, size comes from the deck and nothing is saved for
+  `spell-deck`.
 
 ## Components
 
-All new files go in `src/AcDream.App/UI/Hud/`.
+New files go in `src/AcDream.App/UI/Hud/` unless a different folder is given.
 
 | Unit | Responsibility |
 |---|---|
 | `SpellDeckGeometry` | Pure. Scale, stretch, row count → window size, gutter, tab chip and slot rectangles, slots per row, minimum stretch for a set of row fills, hit-testing (`SpellDeckZone`: item, tab chip, slot (row, index), empty). |
 | `SpellDeckModel` | Pure. Input: rows (tab each), each tab's favourites, item spell, outline, cast state, key labels, geometry. Output: a `SpellDeckView` (per slot: spell id, icon, label, outlined, casting; item slot). Rules: drop allowed?, minimum stretch, tab for a new row, outline navigation, outline repair when slots empty. |
-| `SpellDeckSettings` | Row count + row tabs + attached flag; load/save per character; validates (1–10 rows, tabs 0–7). |
+| `SpellDeckSettings` | Rows (stable id + tab each, in order) + attached flag; load/save per character; validates (1–10 rows, tabs 0–7, unique ids). |
 | `UiSpellDeck` | `UiElement`. Draws the view in deck style (frame, `DeckFonts`, spell icons through the same icon resolver as the retail bar). Input: click / double-click / drag / right-click → `ISpellDeckActions`. Detached resize uses `SpellDeckGeometry`. |
 | `ISpellDeckActions` | `CastSpell(spellId)`, `CastItemSpell()`, `SetFavorite(tab, position, spellId)`, `RemoveFavorite(tab, spellId)`, `ExamineSpell(spellId)`, `ShowMessage(text)`. Implemented in `RetailUiRuntime` over the same bindings `SpellcastingUiController` uses. |
 | `SpellDeckInput` | Hotkey handling: maps the actions in the Hotkeys table to model operations and `ISpellDeckActions` calls. |
-| `ItemSpellSource` | Wielded-item spell lookup (item id, spell id, or none), shared with `SpellcastingUiController`. |
-| `SpellDeckDock` | Attachment. While attached, each layout pass places the Spell Deck on the deck and copies the deck's scale and stretch. Gives the deck's resize its minimum stretch. Handles detach / attach. |
+| `ItemSpellSource` (`src/AcDream.App/Spells/`) | Wielded-item spell lookup (item id, spell id, or none), shared with `SpellcastingUiController`. |
+| `SpellDeckDock` | Attachment. While attached, each layout pass places the Spell Deck on the deck and copies the deck's scale and stretch. Gives the deck its minimum stretch and widens it at once when the minimum rises. Keeps the combined block on screen (deck move limits, Add-row availability, corner-scale limit, restore fitting). Holds the persistence capture gate closed while attached. Handles detach / attach. |
+| `ClientActionCatalog` (`src/AcDream.UI.Abstractions/Input/`) | Client-only actions for the keybinding page: identity, scope, display name, group. |
 
 ## Changes to existing code
 
@@ -247,8 +348,11 @@ All new files go in `src/AcDream.App/UI/Hud/`.
 | `DeckGeometry` / `UiCommandDeck` resize | Accept an external minimum stretch (`Func<float>`), applied while resizing and when restoring a saved size. |
 | `CommandDeckModel` / `CommandDeckInput` | CASTING text order above; `OutlinedSpellName` input; `RecastEnabled` → `CastEnabled`. |
 | `ICommandDeckActions` | `Recast()` → `CastOutlined()`. |
-| `ModernHudSwitch` | Shows `spell-deck` only while on and in magic combat (and in the world); hides it otherwise. |
-| `RetailUiRuntime` | Mounts the Spell Deck and dock; routes spell actions to it first with Modern HUD on; routes the spellbook's add-to-favourites to it with Modern HUD on. |
+| `ModernHudSwitch` | Shows `spell-deck` only while on and in magic combat (and in the world); hides it otherwise. Knows whether the Spell Deck mounted, for the hotkey fallback. |
+| `RetailUiRuntime` | Mounts the Spell Deck and dock; routes spell actions to it first with Modern HUD on (falling back to the retail controller if it did not mount); routes the spellbook's add-to-favourites to it with Modern HUD on. |
+| `RetailWindowLayoutPersistence` | Per-window capture gate (`Func<bool>`), default open. |
+| `KeyboardConfigController` | Merges `ClientActionCatalog` rows into the combat page. |
+| `UiCommandDeck` move | Accepts a move limit from the dock (keep the attached Spell Deck on screen). |
 | `SpellcastingUiController` | Uses `ItemSpellSource`; no behaviour change. |
 | `InputAction`, `KeyBindings`, `RetailActionIdentityTable`, keybinding UI names | New actions and defaults (Hotkeys table). New enum values go at the end, so saved bindings keep their numbers. |
 | `MiscSettings`, `SettingsStore` | `SpellDeckClickCasts`; `SpellDeckSettings` section. |
@@ -261,21 +365,37 @@ All new files go in `src/AcDream.App/UI/Hud/`.
   item slot centred for every row count; hit-testing at scale 0.75 and 1.5;
   minimum stretch from row fills, including clamping to max stretch.
 - **`SpellDeckModel`:** slots show the first N of each tab; oversized tab
-  shows only N; key labels from bindings (plain, Shift, Ctrl, none); outline
-  navigation (wrap, item slot before row 1, first / last, skip empty item
-  socket); outline repair; drop rules (insert, move in tab, move across
-  tabs, same tab on two rows, full row refused, reorder in a full row
+  shows only N; key labels from the live bindings (plain, Shift, Ctrl,
+  none; changed after `SetBindings`); every row of the outline table,
+  including duplicated tabs on two rows and `None` / `Item` starts; drop
+  rules (insert, move in tab, move across tabs, same tab on two rows, full
+  row refused for a new spell, reorder of an existing spell in a full row
   allowed); tab for a new row; blue glow only for a known pending spell.
-- **Click modes:** click outlines / double-click casts (default); click
-  casts (option); hotkeys always cast.
+- **Drag transaction:** accepted same-tab drop = one `SetFavorite`;
+  accepted cross-tab drop = `SetFavorite` then `RemoveFavorite`; no calls
+  for a refused full-row drop, a drop on another window, a cancelled drag,
+  or a locked window; drop outside every window = one `RemoveFavorite`.
+- **Click modes (exact call counts):** default: one physical click casts 0
+  times, a double-click casts once; "Click casts": one click casts once, a
+  double-click casts twice; hotkeys always cast once.
 - **Hotkey routing:** with Modern HUD on, spell actions reach the Spell
-  Deck and not `SpellcastingUiController`; with it off, the reverse; a key
+  Deck and not `SpellcastingUiController`; with it off, the reverse; with
+  the Spell Deck not mounted, they go to `SpellcastingUiController`; a key
   for a hidden row or empty slot is handled and does nothing.
+- **Keybinding page:** every `ClientActionCatalog` action is listed, can be
+  rebound, is saved and restored, and takes part in conflict detection.
 - **Dock:** attached follows the deck's scale and stretch; the deck cannot
   shrink below the Spell Deck's minimum, also while the Spell Deck is
-  hidden; detach restores the last detached position; attach snaps back.
-- **`SpellDeckSettings`:** round-trip; invalid row counts and tabs are
-  clamped; defaults for a new character.
+  hidden; a rising minimum (new favourite, tab change, added row) widens
+  the deck at once, also while hidden; detach restores the last detached
+  position after repeated attach / deck move / relog cycles; attach snaps
+  back; Add row disabled when the block would leave the screen; deck move
+  and corner scale limited by the block; restore on a smaller resolution
+  moves the deck down, then lowers the scale.
+- **`SpellDeckSettings`:** round-trip including row ids; invalid row counts
+  and tabs are clamped; defaults for a new character; restore order and
+  size normalisation (scale from height ÷ row base height, stretch from
+  width) with the normalised size saved back.
 - **Command Deck:** CASTING text order; CAST disabled while casting or with
   nothing outlined; CAST casts the item spell when that is outlined.
 - **`ItemSpellSource`:** the retail bar's existing endowment tests still
