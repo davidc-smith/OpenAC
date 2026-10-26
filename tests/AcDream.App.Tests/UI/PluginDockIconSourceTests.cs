@@ -213,6 +213,39 @@ public sealed class PluginDockIconSourceTests : IDisposable
     }
 
     [Fact]
+    public void AWindowPngTakesItsLightAndDarkVersionsAlongWhenThereAreAny()
+    {
+        Write("icons/combat.png", PngTestData.Valid());
+        Write("icons/combat.light.png", PngTestData.Valid());
+
+        PluginDockIcons icons = Resolve("icons/combat.png");
+
+        Assert.Equal(900u, icons.WindowImage!.Texture);
+        Assert.Equal(901u, icons.WindowImageLight!.Texture);
+        Assert.Null(icons.WindowImageDark);
+        Assert.Empty(_reports);
+    }
+
+    [Theory]
+    [InlineData(PluginUiTheme.Parchment, 901u)]
+    [InlineData(PluginUiTheme.Moss, 902u)]
+    [InlineData(PluginUiTheme.Classic, 902u)]
+    public void TheDockDrawsTheVersionForTheTheme(PluginUiTheme theme, uint drawn)
+    {
+        Write("icons/combat.png", PngTestData.Valid());
+        Write("icons/combat.light.png", PngTestData.Valid());
+        Write("icons/combat.dark.png", PngTestData.Valid());
+        PluginDockIcons icons = Resolve("icons/combat.png");
+        (_, PluginSidePanel.PluginShelfButton button) =
+            Mount(icons, visible: true, new PluginUiThemeSettings { Theme = theme });
+
+        TextRenderer renderer = Draw(button);
+
+        Assert.Single(renderer.DebugSpriteSegmentVerts, seg => seg.Texture == drawn);
+        Assert.DoesNotContain(renderer.DebugSpriteSegmentVerts, seg => seg.Texture is >= 900u and <= 902u && seg.Texture != drawn);
+    }
+
+    [Fact]
     public void AWindowPngGivenBackWithItsCacheFallsThroughToTheInitials()
     {
         Write("icons/combat.png", PngTestData.Valid());

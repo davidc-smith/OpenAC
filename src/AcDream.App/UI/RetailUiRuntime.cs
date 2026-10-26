@@ -4236,13 +4236,16 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 string xml = panel.MarkupContent
                     ?? File.ReadAllText(panel.MarkupPath);
+                // Light and dark image files follow the theme only in a window drawn in it.
+                UiPluginMarkupPanel? themedFrame = null;
                 MarkupWindow window = MarkupDocument.BuildWindow(
                     xml,
                     panel.Binding,
                     _bindings.Assets.ResolveSprite,
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
-                    new PluginMarkupIconResolver(iconResolver, _pluginFileIcons, panel.Owner.Id, panel.PluginDirectory),
+                    new PluginMarkupIconResolver(iconResolver, _pluginFileIcons, panel.Owner.Id, panel.PluginDirectory,
+                        () => themedFrame?.Palette?.IsLight == true),
                     _pluginThemes,
                     fallbackTitle: panel.Descriptor.Title,
                     controlState: _controlState.ForWindow(panel.WindowName),
@@ -4250,6 +4253,7 @@ public sealed class RetailUiRuntime : IDisposable
                     textures: markupTextures,
                     sharedControlState: _controlState.Shared);
                 UiNineSlicePanel element = window.Frame;
+                themedFrame = element as UiPluginMarkupPanel;
                 foreach (string warning in window.Warnings)
                     Console.WriteLine($"[UI] plugin UI panel '{panel.MarkupPath}': {warning}");
 

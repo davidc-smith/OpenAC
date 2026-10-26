@@ -74,6 +74,11 @@ the icons when the interface is torn down, and loads a file again if it has
 changed on disk. A host that predates PNG dock icons takes only `.svg`
 here; it logs a `.png` and falls back to the next icon.
 
+Like a file icon (see "Light and dark images"), a dock PNG may have a
+`.light` and a `.dark` version beside it, `icons/combat.light.png` and
+`icons/combat.dark.png`, each under the same rules. The dock draws the one
+for its theme when it is there, and the named file otherwise.
+
 ## SVG icons
 
 An SVG icon stays sharp at every display scale and takes the dock's state
@@ -1388,6 +1393,27 @@ per file:
 ```
 [UI] plugin image 'acme.hello/icons/sword.png' ignored: is wider or taller than 512 pixels
 ```
+
+### Light and dark images
+
+Art drawn for a dark window can be lost on a light one (the Parchment
+theme) and the other way round. A file icon can come in a light and a dark
+version, saved beside the file the markup names, with `.light` or `.dark`
+before the extension:
+
+```
+icons/sword.png          the file markup names, drawn when no version fits
+icons/sword.light.png    drawn under a light theme
+icons/sword.dark.png     drawn under every other theme, Classic included
+```
+
+Markup does not change: `file="icons/sword.png"` picks the version itself,
+and switching theme switches the picture. Either version may be left out,
+and a plugin that ships neither draws as before; a missing version is not
+reported. Only a window with `theme="plugin"` follows the theme; any other
+window always draws the dark version, as Classic does. Each version follows
+the rules above and counts toward the 256 images. Which themes are light:
+`IUiRegistry.Theme.IsLight` in `docs/plugin-api.md`.
 
 ## Columns
 

@@ -6,12 +6,16 @@ namespace AcDream.App.UI;
 /// <summary>
 /// The icons one dock button may draw, best first: the window's own PNG, an SVG (the window's
 /// own or the plugin's <c>icon.svg</c>), then the plugin's <c>icon.png</c>. The button falls
-/// back to <c>IconSurfaceId</c> and the monogram itself.
+/// back to <c>IconSurfaceId</c> and the monogram itself. The window's PNG may come with a
+/// light and a dark version (<see cref="PluginImageVariants"/>), drawn under a light or a dark
+/// theme in its place.
 /// </summary>
 internal readonly record struct PluginDockIcons(
     PluginFileIconCache.Entry? WindowImage,
     PluginSvgIconCache.PluginSvgIconEntry? Svg,
-    (uint Texture, int Width, int Height)? PluginImage);
+    (uint Texture, int Width, int Height)? PluginImage,
+    PluginFileIconCache.Entry? WindowImageLight = null,
+    PluginFileIconCache.Entry? WindowImageDark = null);
 
 /// <summary>
 /// Picks a dock button's icons from a window's descriptor and its plugin's folder, in order:
@@ -40,7 +44,9 @@ internal sealed class PluginDockIconSource(
             if (iconFile.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
             {
                 if (windowImages.Acquire(pluginId, pluginDirectory, iconFile) is { } image)
-                    return new PluginDockIcons(image, null, plugin);
+                    return new PluginDockIcons(image, null, plugin,
+                        Variant(pluginId, pluginDirectory, iconFile, PluginImageVariants.Light),
+                        Variant(pluginId, pluginDirectory, iconFile, PluginImageVariants.Dark));
             }
             else if (iconFile.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
             {
@@ -60,6 +66,11 @@ internal sealed class PluginDockIconSource(
                 : null;
         return new PluginDockIcons(null, shared, plugin);
     }
+
+    private PluginFileIconCache.Entry? Variant(string pluginId, string pluginDirectory, string iconFile, string variant) =>
+        PluginImageVariants.PathFor(iconFile, variant) is { } path && PluginImageVariants.Exists(pluginDirectory, path)
+            ? windowImages.Acquire(pluginId, pluginDirectory, path)
+            : null;
 
     private PluginSvgIconCache.PluginSvgIconEntry? AcquireSvg(string pluginId, string pluginDirectory, string relative)
     {
