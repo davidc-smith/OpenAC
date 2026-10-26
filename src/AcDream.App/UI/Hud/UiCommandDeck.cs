@@ -126,6 +126,19 @@ internal sealed partial class UiCommandDeck : UiElement
             float roomHeight = (edges & ResizeEdges.Top) != 0 ? Top + Height : parent.Height - Top;
             _geometry = _geometry.FitWithin(parent.Width - Left, roomHeight);
         }
+        // An attached Spell Deck sits on the deck's top and the two must stay
+        // on screen together, so a corner scale stops at the largest step
+        // that leaves room above for it.
+        if (corner && AboveHeightAtScale is { } above)
+        {
+            float bottom = Top + Height;
+            bool topDrag = (edges & ResizeEdges.Top) != 0;
+            while (_geometry.Scale > DeckGeometry.MinScale + 1e-4f
+                   && (topDrag ? bottom - _geometry.Height : Top) - above(_geometry.Scale) < -1e-3f)
+            {
+                _geometry = DeckGeometry.Create(_geometry.Scale - DeckGeometry.ScaleStep, _geometry.Stretch, MinStretchNow);
+            }
+        }
         width = _geometry.Width;
         height = _geometry.Height;
     }
@@ -135,6 +148,10 @@ internal sealed partial class UiCommandDeck : UiElement
 
     /// <summary>The highest the deck's top may go (room for the attached Spell Deck above it); null = no limit.</summary>
     internal Func<float>? TopLimit { get; set; }
+
+    /// <summary>The height of what sits on the deck's top (the attached Spell Deck) at a
+    /// candidate scale; a corner scale stops where it still fits. Null = nothing above.</summary>
+    internal Func<float, float>? AboveHeightAtScale { get; set; }
 
     private float MinStretchNow => MinStretch?.Invoke() ?? DeckGeometry.MinStretch;
 

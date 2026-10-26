@@ -11,7 +11,10 @@ public interface ISpellDeckDockHost
     float DeckTop { get; set; }
     /// <summary>Sizes the deck to <paramref name="geometry"/>, keeping its left edge (and saving it).</summary>
     void SetDeckGeometry(DeckGeometry geometry);
-    void SetDeckLimits(Func<float>? minStretch, Func<float>? topLimit);
+    /// <summary>The deck's limits while the Spell Deck is attached (all null when detached):
+    /// its narrowest stretch, the highest its top may go, and the Spell Deck's height at a
+    /// candidate scale (a corner scale stops where the block still fits).</summary>
+    void SetDeckLimits(Func<float>? minStretch, Func<float>? topLimit, Func<float, float>? aboveHeightAtScale);
     /// <summary>Widens the deck to its minimum stretch when narrower (through the window, so it is saved). True when it widened.</summary>
     bool EnforceDeckMinStretch();
 
@@ -42,6 +45,7 @@ public sealed class SpellDeckDock
     private readonly SpellDeckController _controller;
     private readonly Func<float> _minStretch;
     private readonly Func<float> _topLimit;
+    private readonly Func<float, float> _aboveHeightAtScale;
     private bool? _mode;
 
     public SpellDeckDock(ISpellDeckDockHost host, SpellDeckController controller)
@@ -50,6 +54,7 @@ public sealed class SpellDeckDock
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
         _minStretch = MinStretch;
         _topLimit = SpellHeight;
+        _aboveHeightAtScale = scale => SpellDeckGeometry.Create(scale, 1f, RowCount).Height;
     }
 
     private int RowCount => _controller.Rows.Count;
@@ -69,14 +74,14 @@ public sealed class SpellDeckDock
         SyncMode();
         if (_controller.Attached)
         {
-            _host.SetDeckLimits(_minStretch, _topLimit);
+            _host.SetDeckLimits(_minStretch, _topLimit, _aboveHeightAtScale);
             _host.EnforceDeckMinStretch();
             SpellDeckGeometry g = AttachedGeometry(_host.DeckGeometry, RowCount);
             Place(_host.DeckLeft, _host.DeckTop - g.Height, g);
         }
         else
         {
-            _host.SetDeckLimits(null, null);
+            _host.SetDeckLimits(null, null, null);
             SpellDeckGeometry current = _host.SpellDeckGeometry;
             SpellDeckGeometry g = current.WithRows(RowCount);
             g = g.WithStretch(Math.Max(g.Stretch, MinStretch()));
@@ -164,7 +169,7 @@ public sealed class SpellDeckDock
             _host.SetSpellDeckCaptureOpen(false);
             return;
         }
-        _host.SetDeckLimits(null, null);
+        _host.SetDeckLimits(null, null, null);
         _host.SetSpellDeckCaptureOpen(true);
         _host.ApplyStoredSpellDeckPlacement();
         SpellDeckGeometry g = SpellDeckGeometry.FromSize(_host.SpellDeckWidth, _host.SpellDeckHeight, RowCount);

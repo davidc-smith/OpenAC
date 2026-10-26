@@ -23,10 +23,12 @@ public sealed class SpellDeckDockTests
         public float DeckLeft { get; set; } = 100f;
         public float DeckTop { get; set; } = 700f;
         public Func<float>? MinStretch, TopLimit;
+        public Func<float, float>? AboveHeightAtScale;
         public int EnforceCalls;
 
         public void SetDeckGeometry(DeckGeometry geometry) => DeckGeometry = geometry;
-        public void SetDeckLimits(Func<float>? minStretch, Func<float>? topLimit) { MinStretch = minStretch; TopLimit = topLimit; }
+        public void SetDeckLimits(Func<float>? minStretch, Func<float>? topLimit, Func<float, float>? aboveHeightAtScale) =>
+            (MinStretch, TopLimit, AboveHeightAtScale) = (minStretch, topLimit, aboveHeightAtScale);
         public bool EnforceDeckMinStretch()
         {
             EnforceCalls++;
@@ -111,6 +113,8 @@ public sealed class SpellDeckDockTests
         Assert.Equal(SpellDeckGeometry.StretchFor(20), host.MinStretch!(), 4);
         Assert.Equal(host.SpellDeckGeometry.Height, host.TopLimit!(), 4);
         Assert.Equal(SpellDeckGeometry.BaseHeight(3) * host.DeckGeometry.Scale, host.TopLimit!(), 4);
+        Assert.NotNull(host.AboveHeightAtScale);
+        Assert.Equal(SpellDeckGeometry.BaseHeight(3) * 1.3f, host.AboveHeightAtScale!(1.3f), 3);
     }
 
     [Fact]
@@ -204,6 +208,7 @@ public sealed class SpellDeckDockTests
         Assert.Equal(1, host.StoredApplied);
         Assert.Null(host.MinStretch);
         Assert.Null(host.TopLimit);
+        Assert.Null(host.AboveHeightAtScale);
         Assert.Equal((300f, 200f), (host.SpellDeckLeft, host.SpellDeckTop));
         Assert.Equal(SpellDeckGeometry.FromSize(588f, SpellDeckGeometry.BaseHeight(3) * 1.2f, 3), host.SpellDeckGeometry);
         Assert.Equal(1.2f, host.SpellDeckGeometry.Scale, 3);

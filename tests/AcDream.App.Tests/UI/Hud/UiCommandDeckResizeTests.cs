@@ -160,6 +160,46 @@ public sealed class UiCommandDeckResizeTests
     }
 
     [Fact]
+    public void BottomRightCorner_StopsAtTheLargestScaleWhereTheBlockAboveFits()
+    {
+        // An attached Spell Deck 160 points tall per unit of scale sits on the deck's top (200).
+        var (root, deck) = Mount();
+        deck.AboveHeightAtScale = scale => 160f * scale;
+        root.OnMouseDown(UiMouseButton.Left, X(418), Y(148));
+        root.OnMouseMove(X(418), Y(148) + 75);                // proposed 1.5: 240 above, no room
+        root.OnMouseUp(UiMouseButton.Left, X(418), Y(148) + 75);
+
+        Assert.Equal(1.25f, deck.Geometry.Scale, 3);           // 200 - 160 * 1.25 = 0
+        Assert.Equal((DeckLeft, DeckTop), (deck.Left, deck.Top));
+    }
+
+    [Fact]
+    public void TopRightCorner_StopsAtTheLargestScaleWhereTheBlockAboveFits()
+    {
+        var (root, deck) = Mount();
+        deck.AboveHeightAtScale = scale => 160f * scale;
+        root.OnMouseDown(UiMouseButton.Left, X(418), Y(1));
+        root.OnMouseMove(X(418), Y(1) - 75);                  // proposed 1.5
+        root.OnMouseUp(UiMouseButton.Left, X(418), Y(1) - 75);
+
+        // 1.15: top 177.5 < 184 above; 1.1: top 185 >= 176.
+        Assert.Equal(1.1f, deck.Geometry.Scale, 3);
+        Assert.Equal(DeckTop + 150f, deck.Top + deck.Height, 1);
+        Assert.True(deck.Top - 160f * deck.Geometry.Scale >= -1e-3f);
+    }
+
+    [Fact]
+    public void CornerScale_WithoutABlockAbove_IsNotLimited()
+    {
+        var (root, deck) = Mount();
+        deck.AboveHeightAtScale = null;
+        root.OnMouseDown(UiMouseButton.Left, X(418), Y(148));
+        root.OnMouseMove(X(418), Y(148) + 75);
+        root.OnMouseUp(UiMouseButton.Left, X(418), Y(148) + 75);
+        Assert.Equal(1.5f, deck.Geometry.Scale, 3);
+    }
+
+    [Fact]
     public void CornerLocksOntoOneHundredPercent()
     {
         var (root, deck) = Mount();

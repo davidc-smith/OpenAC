@@ -41,10 +41,11 @@ internal sealed class SpellDeckWindowDockHost(
         Notify(frame, before);
     }
 
-    public void SetDeckLimits(Func<float>? minStretch, Func<float>? topLimit)
+    public void SetDeckLimits(Func<float>? minStretch, Func<float>? topLimit, Func<float, float>? aboveHeightAtScale)
     {
         deck.MinStretch = minStretch;
         deck.TopLimit = topLimit;
+        deck.AboveHeightAtScale = aboveHeightAtScale;
     }
 
     public bool EnforceDeckMinStretch()
