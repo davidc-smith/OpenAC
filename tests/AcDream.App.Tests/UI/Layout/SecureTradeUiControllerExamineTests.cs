@@ -36,6 +36,8 @@ public sealed class SecureTradeUiControllerExamineTests
 
         public IReadOnlyList<uint> GetItems(RuntimeTradeSide side)
             => side == RuntimeTradeSide.Self ? Self : Other;
+
+        public RuntimeTradeCounters Counters => default;
     }
 
     private sealed record Harness(
