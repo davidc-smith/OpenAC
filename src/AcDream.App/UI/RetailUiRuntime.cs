@@ -91,6 +91,13 @@ public sealed record MagicRuntimeBindings(
 
 public sealed record JumpPowerbarRuntimeBindings(Func<JumpChargeSnapshot> Snapshot);
 
+/// <summary>The Modern HUD Command Deck: whether the setting is on, and the
+/// two actions it needs beyond the combat, magic and option bindings.</summary>
+public sealed record CommandDeckRuntimeBindings(
+    Func<bool> Enabled,
+    Action ToggleCombat,
+    Action<AcDream.Runtime.RuntimePortalCommand> Recall);
+
 public sealed record FpsRuntimeBindings(
     Func<double> FramesPerSecond,
     Func<double> DegradeMultiplier,
@@ -156,7 +163,8 @@ public sealed record OptionsRuntimeBindings(
         LoadRenderPackChoices = null,
     Func<long>? LoadRenderPackCatalogRevision = null,
     Func<string?>? LoadRenderPackFailureNotice = null,
-    Layout.ConfigOptionsPageController.ExtendedLevelsBindings? ExtendedLevels = null);
+    Layout.ConfigOptionsPageController.ExtendedLevelsBindings? ExtendedLevels = null,
+    Layout.ConfigOptionsPageController.ModernHudBindings? ModernHud = null);
 
 public sealed record SocialRuntimeBindings(
     Func<AcDream.Runtime.RuntimeFellowshipSnapshot> FellowshipSnapshot,
@@ -353,7 +361,8 @@ public sealed record RetailUiRuntimeBindings(
     PluginCanvasHostServices? PluginCanvases = null,
     Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null,
     Func<bool>? IsPortalViewVisible = null,
-    WorldDragRuntimeBindings? WorldDrag = null);
+    WorldDragRuntimeBindings? WorldDrag = null,
+    CommandDeckRuntimeBindings? CommandDeck = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -421,6 +430,9 @@ public sealed class RetailUiRuntime : IDisposable
     private Layout.UiOverlayHost OverlayHost =>
         _overlayHost ??= Layout.UiOverlayHost.Mount(Host.Root);
     private Layout.VitalsSideBySideController? _vitalsSideBySide;
+    private Hud.ModernHudSwitch? _hudSwitch;
+    private Hud.UiCommandDeck? _commandDeck;
+    private Hud.EmbeddedSvgSpriteCache? _hudIcons;
     private CharacterManagementUiMountCoordinator? _characterManagementMount;
     private ConnectionUiMountCoordinator? _connectionMount;
     private CreditsUiController? _creditsController;
@@ -509,6 +521,20 @@ public sealed class RetailUiRuntime : IDisposable
         MountProjectileDebugOverlay();
         MountWorldIconOverlay();
         MountWorldLabelOverlay();
+        // Before the retail vitals, combat and jump windows mount: their
+        // controllers' show calls go through the switch's gate.
+        _hudSwitch = new Hud.ModernHudSwitch(
+            show: Host.ShowWindow,
+            hide: Host.HideWindow,
+            deckMounted: () => _commandDeck is not null,
+            gameplayActive: () => _bindings.IsGameplayDisplay?.Invoke() ?? true,
+            resyncRetail: () =>
+            {
+                CombatUiController?.SyncVisibility();
+                JumpPowerbarController?.SyncVisibility();
+                _vitalsSideBySide?.SyncVisibility();
+            },
+            onDeckHidden: () => _commandDeck?.OnHidden());
         MountVitals();
         MountRadar();
         MountChat();
@@ -524,6 +550,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountKeyboardConfig();
         MountIndicators();
         MountJumpPowerbar();
+        MountCommandDeck();
         MountDialogFactory();
         MountTooltipPresenter();
         MountSocialPanel();
@@ -572,6 +599,7 @@ public sealed class RetailUiRuntime : IDisposable
                     WindowNames.Salvage,
                     WindowNames.HousePurchase,
                     WindowNames.PluginShelf,
+                    WindowNames.CommandDeck,
                 ]);
             _persistence.ResetToDefaults();
             _persistence.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
@@ -584,6 +612,10 @@ public sealed class RetailUiRuntime : IDisposable
                     return (viewport.X, viewport.Y);
                 });
         }
+
+        // After the layout reset, so a saved Modern HUD never lets the
+        // retail windows flash up before the first gameplay frame.
+        _hudSwitch.Apply(_bindings.CommandDeck?.Enabled() ?? false);
 
         if (bindings.Probe.Enabled)
         {
@@ -775,6 +807,8 @@ public sealed class RetailUiRuntime : IDisposable
     {
         _bindings.SynchronizeDisplayPhase?.Invoke();
         _persistence?.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
+        _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
+        _hudSwitch?.Tick();
         Layout.UiMediaClock.Advance(deltaSeconds);
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
@@ -1620,11 +1654,12 @@ public sealed class RetailUiRuntime : IDisposable
                 ContentClickThrough = false,
             });
         _vitalsSideBySide = new Layout.VitalsSideBySideController(
-            Host.Root,
-            () => _bindings.Options.CurrentCharacterOption(
+            show: _hudSwitch!.GatedShow,
+            hide: Host.HideWindow,
+            sideBySideVitals: () => _bindings.Options.CurrentCharacterOption(
                 (uint)CharacterOptionId.SideBySideVitals),
-            WindowNames.Vitals,
-            WindowNames.SideVitals);
+            stackedWindow: WindowNames.Vitals,
+            sideWindow: WindowNames.SideVitals);
         Console.WriteLine("[UI] side-by-side vitals window from LayoutDesc importer (0x21000075).");
     }
 
@@ -1990,11 +2025,7 @@ public sealed class RetailUiRuntime : IDisposable
                 SetOption: (id, value) => _bindings.Options.CommandBus().Publish(
                     new SetSingleCharacterOptionRuntimeCmd((uint)id, value))),
             labels,
-            visible =>
-            {
-                if (visible) Host.ShowWindow(WindowNames.Combat);
-                else Host.HideWindow(WindowNames.Combat);
-            });
+            _hudSwitch!.GateVisibility(WindowNames.Combat));
         if (controller is null)
         {
             Console.WriteLine("[UI] combat: required controls missing in LayoutDesc 0x21000073.");
@@ -2892,6 +2923,7 @@ public sealed class RetailUiRuntime : IDisposable
                         : null,
                     ApplyChatFont = ApplyChatFont,
                     ExtendedLevels = _bindings.Options.ExtendedLevels,
+                    ModernHud = _bindings.Options.ModernHud,
                 },
                 resolveSprite: _bindings.Assets.ResolveSprite,
                 datFont: _bindings.Assets.DefaultFont,
@@ -3318,11 +3350,7 @@ public sealed class RetailUiRuntime : IDisposable
         JumpPowerbarController? controller = Layout.JumpPowerbarController.Bind(
             layout,
             _bindings.JumpPowerbar.Snapshot,
-            visible =>
-            {
-                if (visible) Host.ShowWindow(WindowNames.JumpPowerbar);
-                else Host.HideWindow(WindowNames.JumpPowerbar);
-            });
+            _hudSwitch!.GateVisibility(WindowNames.JumpPowerbar));
         if (controller is null)
         {
             Console.WriteLine("[UI] jump powerbar: required JumpMode meter missing in LayoutDesc 0x21000072.");
@@ -3351,6 +3379,95 @@ public sealed class RetailUiRuntime : IDisposable
             });
         controller.SyncVisibility();
         Console.WriteLine("[UI] retail jump bar from gmFloatyPowerBarUI LayoutDesc 0x21000072.");
+    }
+
+    private void MountCommandDeck()
+    {
+        if (_bindings.CommandDeck is not { } deckBindings) return;
+
+        var actions = new CommandDeckActions(_bindings, deckBindings);
+        _hudIcons = new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
+        var model = new Hud.CommandDeckModel();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        _commandDeck = new Hud.UiCommandDeck(
+            ReadCommandDeckInput,
+            model,
+            actions,
+            _hudIcons,
+            () => clock.Elapsed.TotalSeconds,
+            Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
+
+        RetailWindowFrame.Mount(
+            Host.Root,
+            _commandDeck,
+            _bindings.Assets.ResolveSprite,
+            new RetailWindowFrame.Options
+            {
+                WindowName = WindowNames.CommandDeck,
+                Chrome = RetailWindowChrome.Imported,
+                Left = Math.Max(0f, (Host.Root.Width - Hud.CommandDeckLayout.Width) * 0.5f),
+                Top = Math.Max(0f, Host.Root.Height - Hud.CommandDeckLayout.Height - 20f),
+                Resizable = false,
+                ResizeX = false,
+                ResizeY = false,
+                Visible = false,
+                ContentClickThrough = false,
+            });
+        Console.WriteLine("[UI] Command Deck mounted (Modern HUD).");
+    }
+
+    private Hud.CommandDeckInput ReadCommandDeckInput()
+    {
+        VitalsVM vm = _bindings.Vitals.ViewModel;
+        RuntimeCombatAttackState attacks = _bindings.Combat.Attacks;
+        RuntimeSpellCastState casting = _bindings.Magic.Casting;
+        return new Hud.CommandDeckInput(
+            Health: new(vm.HealthPercent, vm.HealthCurrent, vm.HealthMax),
+            Stamina: new(vm.StaminaPercent, vm.StaminaCurrent, vm.StaminaMax),
+            Mana: new(vm.ManaPercent, vm.ManaCurrent, vm.ManaMax),
+            Mode: _bindings.Combat.State.CurrentMode,
+            DesiredPower: attacks.DesiredPower,
+            PowerBarLevel: attacks.PowerBarLevel,
+            RequestedHeight: attacks.RequestedHeight,
+            HasPendingCast: casting.HasPendingCast,
+            PendingSpellName: SpellName(casting.PendingSpellId),
+            LastSpellName: SpellName(casting.LastRequestedSpellId),
+            Jump: _bindings.JumpPowerbar.Snapshot(),
+            RepeatAttacks: _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.AutoRepeatAttack),
+            AutoTarget: _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.AutoTarget),
+            KeepInView: _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.ViewCombatTarget),
+            SessionKey: _bindings.Magic.PlayerGuid());
+    }
+
+    private string? SpellName(uint? spellId) =>
+        spellId is uint id
+            ? _bindings.Magic.Spellbook.TryGetMetadata(id, out var meta) && !string.IsNullOrEmpty(meta.Name)
+                ? meta.Name
+                : $"Spell {id}"
+            : null;
+
+    /// <summary>The deck's actions, over the same bindings the retail combat
+    /// and spell windows use.</summary>
+    private sealed class CommandDeckActions(
+        RetailUiRuntimeBindings bindings,
+        CommandDeckRuntimeBindings deck) : Hud.ICommandDeckActions
+    {
+        public void ToggleCombat() => deck.ToggleCombat();
+        public void PressAttack(AttackHeight height) => bindings.Combat.Attacks.PressAttack(height);
+        public void ReleaseAttack() => bindings.Combat.Attacks.ReleaseAttack();
+        public void SetDesiredPower(float power) => bindings.Combat.Attacks.SetDesiredPower(power);
+        public void SetOption(CharacterOptionId option, bool value) =>
+            bindings.Options.CommandBus().Publish(new SetSingleCharacterOptionRuntimeCmd((uint)option, value));
+        public void Recall(AcDream.Runtime.RuntimePortalCommand command) => deck.Recall(command);
+        public void Recast()
+        {
+            RuntimeSpellCastState casting = bindings.Magic.Casting;
+            if (casting.HasPendingCast || casting.LastRequestedSpellId is not uint spell) return;
+            if (casting.LastRequestedTargetId is uint target && target != 0)
+                casting.Cast(spell, target);
+            else
+                casting.Cast(spell);
+        }
     }
 
     /// <summary>The experience a fellow needs to go from their level to the next.</summary>
@@ -5542,6 +5659,9 @@ public sealed class RetailUiRuntime : IDisposable
                 _pluginFileIcons = null;
                 _pluginDockImages?.Dispose();
                 _pluginDockImages = null;
+                _commandDeck?.Detach();
+                _hudIcons?.Dispose();
+                _hudIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;
                 WindowLockPresentation.Dispose();
                 WindowOpacity.Dispose();

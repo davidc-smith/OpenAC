@@ -255,6 +255,9 @@ internal sealed class DeferredGameRuntimeStateCommands
             commands.CharacterCreation.RandomizeClothing(generation));
 
 
+    public RuntimeCommandResult Recall(RuntimePortalCommand command) =>
+        Invoke((commands, generation) => commands.Portal.Execute(generation, command));
+
     public RuntimeCommandResult FellowshipCreate(string fellowshipName, bool shareXp) =>
         Invoke((commands, generation) => commands.Fellowship.Create(
             generation, fellowshipName, shareXp));
