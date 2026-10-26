@@ -338,6 +338,50 @@ public sealed class RuntimeSpellCastStateTests
         Assert.Equal(99u, operations.LastCompatibilityTarget);
     }
 
+    [Fact]
+    public void HasPendingCast_TracksOutstandingReceipts()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: true, targetMask: 0);
+        RuntimeSpellCastState state = Create(book, new FakeOperations { LocalPlayerId = 42u });
+
+        Assert.False(state.HasPendingCast);
+        Assert.Equal(CastRequestResult.Sent, state.Cast(1));
+        Assert.True(state.HasPendingCast);
+        Assert.True(state.CompleteUse(0u));
+        Assert.False(state.HasPendingCast);
+    }
+
+    [Fact]
+    public void HasPendingCast_StaysTrueForOverlappingDifferentSpells()
+    {
+        Spellbook book = MakeBook(
+            flags: 0, untargeted: true, targetMask: 0,
+            includeSecondSpell: true);
+        RuntimeSpellCastState state = Create(book, new FakeOperations { LocalPlayerId = 42u });
+
+        Assert.Equal(CastRequestResult.Sent, state.Cast(1));
+        Assert.Equal(CastRequestResult.Sent, state.Cast(2));
+        Assert.Null(state.PendingSpellId);
+        Assert.True(state.HasPendingCast);
+
+        state.CompleteUse(0u);
+        Assert.True(state.HasPendingCast);
+        state.CompleteUse(0u);
+        Assert.False(state.HasPendingCast);
+    }
+
+    [Fact]
+    public void HasPendingCast_ClearedByReset()
+    {
+        Spellbook book = MakeBook(flags: 0, untargeted: true, targetMask: 0);
+        RuntimeSpellCastState state = Create(book, new FakeOperations { LocalPlayerId = 42u });
+        state.Cast(1);
+
+        state.Reset();
+
+        Assert.False(state.HasPendingCast);
+    }
+
     private static RuntimeSpellCastState Create(
         Spellbook book,
         FakeOperations operations,

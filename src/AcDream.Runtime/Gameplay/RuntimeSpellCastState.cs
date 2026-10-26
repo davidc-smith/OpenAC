@@ -51,6 +51,11 @@ public sealed class RuntimeSpellCastState
     public uint? LastRequestedTargetId { get; private set; }
     public uint? PendingSpellId { get; private set; }
     public uint? PendingTargetId { get; private set; }
+
+    /// <summary>Whether any cast is still waiting for its server receipt. Unlike
+    /// <see cref="PendingSpellId"/>, which is cleared when overlapping casts differ,
+    /// this stays true until every receipt has come back.</summary>
+    public bool HasPendingCast => _outstandingCastReceipts > 0;
     public RuntimeSpellCastCompletion LastCompletion { get; private set; }
     public event Action? StateChanged;
 
