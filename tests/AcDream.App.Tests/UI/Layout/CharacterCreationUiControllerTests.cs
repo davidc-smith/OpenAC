@@ -744,47 +744,44 @@ public sealed class CharacterCreationUiControllerTests
     }
 
     [Fact]
-    public void AppearanceSpin_IncrementZoneClick_CyclesStyleForwardFromUnset()
+    public void AppearanceSpin_IncrementArrowClick_CyclesStyleForwardFromUnset()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(150, 10);
+        SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: true).OnClick!();
 
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(0u, environment.Runtime.LastAppearanceIndex);
     }
 
     [Fact]
-    public void AppearanceSpin_DecrementZoneClick_FromUnset_WrapsToLastStyle()
+    public void AppearanceSpin_DecrementArrowClick_FromUnset_WrapsToLastStyle()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(100, 10);
+        SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: false).OnClick!();
 
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(2u, environment.Runtime.LastAppearanceIndex);
     }
 
     [Fact]
-    public void AppearanceSpin_SelectZoneClick_SelectsPartWithoutChangingIndex()
+    public void AppearanceSpin_BodyClick_SelectsPartWithoutChangingIndex()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        // Establish a real Hair index first (increment zone, x=150).
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(150, 10);
+        // Establish a real Hair index first.
+        SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: true).OnClick!();
         Assert.Equal(0u, environment.Runtime.LastAppearanceIndex);
         int callsAfterCycle = environment.Runtime.AppearanceIndexCallCount;
 
-        // x=180 is inside [174,200) — past the increment arrow's own zone,
-        // still inside the 200px-wide spin — the spin's own BODY, not
-        // either arrow.
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(180, 10);
+        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClick!();
 
         Assert.Equal(callsAfterCycle, environment.Runtime.AppearanceIndexCallCount);
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
@@ -792,13 +789,13 @@ public sealed class CharacterCreationUiControllerTests
     }
 
     [Fact]
-    public void AppearanceSpin_SelectZoneClick_FromUnset_NormalizesToLastStyle()
+    public void AppearanceSpin_BodyClick_FromUnset_NormalizesToLastStyle()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(180, 10);
+        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClick!();
 
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(2u, environment.Runtime.LastAppearanceIndex);
@@ -813,11 +810,11 @@ public sealed class CharacterCreationUiControllerTests
         environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
         environment.Button(CharacterCreationAppearancePage.ClothesButtonId).OnClick!();
 
-        environment.Button(CharacterCreationAppearancePage.HeadgearSpinId).OnClickAt!(150, 10); // increment
+        SpinArrow(environment, CharacterCreationAppearancePage.HeadgearSpinId, increment: true).OnClick!();
         Assert.Equal(ChargenAppearanceSlot.HeadgearStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(0u, environment.Runtime.LastAppearanceIndex);
 
-        environment.Button(CharacterCreationAppearancePage.HeadgearSpinId).OnClickAt!(100, 10); // decrement
+        SpinArrow(environment, CharacterCreationAppearancePage.HeadgearSpinId, increment: false).OnClick!();
         Assert.Equal(RuntimeCharacterCreationAppearance.Unset, environment.Runtime.LastAppearanceIndex);
     }
 
@@ -847,11 +844,48 @@ public sealed class CharacterCreationUiControllerTests
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.SkinSpinId).OnClickAt!(100, 10);
-        environment.Button(CharacterCreationAppearancePage.SkinSpinId).OnClickAt!(150, 10);
+        environment.Button(CharacterCreationAppearancePage.SkinSpinId).OnClick!();
 
         Assert.Equal(0, environment.Runtime.AppearanceIndexCallCount);
     }
+
+    [Fact]
+    public void AppearanceSpinArrows_AreTheirOwnButtons_SkinsAlwaysGhosted()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        SelectAluvianMale(environment);
+
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: false).Enabled);
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: true).Enabled);
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.SkinSpinId, increment: false).Enabled);
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.SkinSpinId, increment: true).Enabled);
+    }
+
+    [Fact]
+    public void AppearanceEyesArrows_GhostedForOlthoi_EnabledAgainForAluvian()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        environment.Runtime.SelectHeritageDirect(OlthoiId);
+        environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
+
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: false).Enabled);
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: true).Enabled);
+
+        environment.Runtime.SelectHeritageDirect(AluvianId);
+        BumpRevisionAndTick(environment);
+
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: false).Enabled);
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: true).Enabled);
+    }
+
+    private static UiButton SpinArrow(EnvironmentHarness environment, uint spinId, bool increment) =>
+        Assert.IsType<UiButton>(UiElement.FindDescendant(
+            environment.Button(spinId),
+            increment
+                ? CharacterCreationAppearancePage.IncrementArrowId
+                : CharacterCreationAppearancePage.DecrementArrowId));
 
     [Fact]
     public void OlthoiHeritage_HidesClothesButtonAndNoseMouthSpins()
@@ -945,7 +979,7 @@ public sealed class CharacterCreationUiControllerTests
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
-        environment.Button(CharacterCreationAppearancePage.NoseSpinId).OnClickAt!(10, 10);
+        environment.Button(CharacterCreationAppearancePage.NoseSpinId).OnClick!();
 
         environment.ShadeScroll().ScalarChanged!(0.5f);
 

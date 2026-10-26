@@ -844,9 +844,17 @@ public static class DatWidgetFactory
     private static ElementInfo? FindStatefulFaceChild(ElementInfo info)
         => FindStatefulFaceChildren(info).FirstOrDefault();
 
+    /// <summary>
+    /// A button's child that is itself a button (a spin's arrows) is a control
+    /// of its own, with its own states, rollover and hit area. It is built
+    /// under the button and never drawn as part of the button's face.
+    /// </summary>
+    internal static bool IsChildButton(ElementInfo child) => child.Type == 1u;
+
     private static ElementInfo[] FindStatefulFaceChildren(ElementInfo info)
         => info.Children.Where(child =>
-            child.StateMedia.Count != 0
+            !IsChildButton(child)
+            && child.StateMedia.Count != 0
             && child.StateMedia.Keys.Any(childState =>
                 info.States.Values.Any(parentState =>
                     string.Equals(parentState.Name, childState, StringComparison.Ordinal))))

@@ -68,9 +68,10 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         0x1000031Du, 0x1000031Eu, 0x1000031Fu, 0x10000320u,
     ];
 
-    private const float DecrementZoneStart = 80f;
-    private const float IncrementZoneStart = 127f;
-    private const float IncrementZoneEnd = 174f;
+    /// <summary>A spin's step-back arrow, the same id under every spin.</summary>
+    internal const uint DecrementArrowId = 0x1000030Au;
+    /// <summary>A spin's step-forward arrow.</summary>
+    internal const uint IncrementArrowId = 0x1000030Bu;
 
     private readonly CharacterCreationRuntimeBindings _bindings;
     private readonly UiButton? _femaleButton;
@@ -93,7 +94,7 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
 
     private Choice _currentChoice = Choice.Face;
     private Part _currentPart = Part.Hair;
-    private bool _eyesArrowsDisabled;
+    private readonly List<(Part Part, UiButton Arrow)> _spinArrows = [];
     private bool _disposed;
 
     internal IChargenPreviewControl? PreviewControl { get; set; }
@@ -213,7 +214,7 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
             noseSpin.Visible = !clothesHidden;
         if (_spins.TryGetValue(Part.Mouth, out UiButton? mouthSpin))
             mouthSpin.Visible = !clothesHidden;
-        _eyesArrowsDisabled = clothesHidden;
+        SetArrowsEnabled(Part.Eyes, !clothesHidden);
         if (clothesHidden)
         {
             _currentChoice = Choice.Face;
@@ -268,22 +269,35 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         if (spin is null)
             return;
         _spins[part] = spin;
+        spin.OnClick = () => SelectPart(part);
 
+        // The arrows are buttons of their own inside the spin. Skin has no
+        // styles to step through, so its arrows stay ghosted.
+        UiButton? decrement = Find<UiButton>(spin, DecrementArrowId);
+        UiButton? increment = Find<UiButton>(spin, IncrementArrowId);
+        if (decrement is not null)
+            _spinArrows.Add((part, decrement));
+        if (increment is not null)
+            _spinArrows.Add((part, increment));
         if (part == Part.Skin)
         {
-            spin.OnClickAt = (_, _) => SelectPart(Part.Skin);
+            SetArrowsEnabled(part, false);
             return;
         }
+        if (decrement is not null)
+            decrement.OnClick = () => CycleStyle(part, -1);
+        if (increment is not null)
+            increment.OnClick = () => CycleStyle(part, +1);
+    }
 
-        spin.OnClickAt = (x, _) =>
+    private void SetArrowsEnabled(Part part, bool enabled)
+    {
+        foreach ((Part arrowPart, UiButton arrow) in _spinArrows)
         {
-            if (x >= DecrementZoneStart && x < IncrementZoneStart)
-                CycleStyle(part, -1);
-            else if (x >= IncrementZoneStart && x < IncrementZoneEnd)
-                CycleStyle(part, +1);
-            else
-                SelectPart(part);
-        };
+            if (arrowPart != part)
+                continue;
+            arrow.TrySetRetailState(enabled ? UiButtonStateMachine.Normal : UiButtonStateMachine.Ghosted);
+        }
     }
 
     private void SelectPart(Part part)
@@ -338,11 +352,6 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
     {
         if (_disposed)
             return;
-        if (part == Part.Eyes && _eyesArrowsDisabled)
-        {
-            SelectPart(part);
-            return;
-        }
 
         IRuntimeCharacterCreationView? view = _bindings.View();
         if (view is null)
@@ -804,8 +813,11 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         if (_faceButton is not null) _faceButton.OnClick = null;
         if (_clothesButton is not null) _clothesButton.OnClick = null;
         foreach (UiButton spin in _spins.Values)
-            spin.OnClickAt = null;
+            spin.OnClick = null;
         _spins.Clear();
+        foreach ((_, UiButton arrow) in _spinArrows)
+            arrow.OnClick = null;
+        _spinArrows.Clear();
         foreach (UiButton? swatch in _swatches)
         {
             if (swatch is not null)

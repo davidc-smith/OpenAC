@@ -437,6 +437,47 @@ public sealed class CharacterCreationLiveDatTests
     }
 
     [InstalledDatFact]
+    public void AppearanceSpins_ArrowsAreTheirOwnButtons_ThatRollOverAndKeepTheirArtWhenTheSpinHighlights()
+    {
+        using var dats = new DatCollection(DatDirectory, DatAccessType.Read);
+        uint layoutId = RetailDataIdResolver.Resolve(
+            dats, CharacterCreationUiController.RootEnum, 5u);
+        ImportedLayout screen = BuildSelected(
+            dats, layoutId, CharacterCreationUiController.RootElementId);
+
+        UiElement appearanceRoot = Assert.IsAssignableFrom<UiElement>(
+            screen.FindElement(CharacterCreationUiController.AppearancePageElementId));
+        UiButton hairSpin = AssertButton(appearanceRoot, CharacterCreationAppearancePage.HairSpinId);
+
+        Assert.Equal(0, hairSpin.FaceSegmentCount);
+        UiButton decrement = Assert.IsType<UiButton>(
+            UiElement.FindDescendant(hairSpin, CharacterCreationAppearancePage.DecrementArrowId));
+        UiButton increment = Assert.IsType<UiButton>(
+            UiElement.FindDescendant(hairSpin, CharacterCreationAppearancePage.IncrementArrowId));
+        Assert.Equal((80f, 127f), (decrement.Left, increment.Left));
+
+        // The current part's spin highlights before its first frame; its
+        // arrows keep their own Normal art.
+        Assert.True(hairSpin.TrySetRetailState(UiButtonStateMachine.Highlight));
+        Assert.Equal("Normal", decrement.ActiveState);
+        Assert.Equal("Normal", increment.ActiveState);
+
+        Assert.True(increment.RolloverEnabled);
+        var hover = new UiEvent(increment.EventId, increment, UiEventType.HoverEnter);
+        increment.OnEvent(in hover);
+        Assert.Equal("Normal_rollover", increment.ActiveState);
+
+        // Only the spin itself carries the hint; the arrows carry none.
+        Assert.True(hairSpin.AuthoredTooltipEnabled);
+        Assert.False(increment.AuthoredTooltipEnabled);
+        Assert.False(decrement.AuthoredTooltipEnabled);
+
+        Assert.True(decrement.TrySetRetailState(UiButtonStateMachine.Ghosted));
+        Assert.Equal("Ghosted", decrement.ActiveState);
+        Assert.False(decrement.Enabled);
+    }
+
+    [InstalledDatFact]
     public void RequiredChargenStringsResolve()
     {
         using var dats = new DatCollection(DatDirectory, DatAccessType.Read);
