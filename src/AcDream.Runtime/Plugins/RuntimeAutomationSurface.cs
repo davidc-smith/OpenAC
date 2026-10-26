@@ -1073,6 +1073,7 @@ internal sealed class RuntimeAutomationSurface
             _wasInWorld =
                 runtime.Lifecycle.State == RuntimeLifecycleState.InWorld;
             runtime.CommunicationOwner.LocalPlayerDied += OnLocalPlayerDied;
+            runtime.CommunicationOwner.StatusTextReceived += OnStatusTextReceived;
             _externalContainerChanged = OnExternalContainerChanged;
             runtime.InventoryOwner.ExternalContainers.Changed +=
                 _externalContainerChanged;
@@ -1354,7 +1355,10 @@ internal sealed class RuntimeAutomationSurface
                 OnUseCompleted;
         }
         if (_communication is not null)
+        {
             _communication.LocalPlayerDied -= OnLocalPlayerDied;
+            _communication.StatusTextReceived -= OnStatusTextReceived;
+        }
         _communicationSubscription?.Dispose();
         _communicationSubscription = null;
         _chatFilterInstallation?.Dispose();
@@ -2802,6 +2806,9 @@ internal sealed class RuntimeAutomationSurface
 
     private void OnLocalPlayerDied(string deathMessage) =>
         _events?.FireLocalPlayerDied(deathMessage);
+
+    private void OnStatusTextReceived(string text) =>
+        _events?.FireStatusTextReceived(text);
 
     private void OnExternalContainerChanged(ExternalContainerTransition transition)
     {
