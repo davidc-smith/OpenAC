@@ -65,6 +65,8 @@
           CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\..\assets\hud\*.svg"
+                      LogicalName="AcDream.Hud.%(Filename).svg" />
     <EmbeddedResource Include="..\..\assets\fonts\NotoSans\NotoSans-Regular.ttf"
                       LogicalName="AcDream.App.Fonts.NotoSans-Regular.ttf" />
     <EmbeddedResource Include="..\..\assets\fonts\NotoSans\NotoSans-SemiBold.ttf"
