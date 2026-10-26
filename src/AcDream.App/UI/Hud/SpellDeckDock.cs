@@ -19,6 +19,8 @@ public interface ISpellDeckDockHost
     bool EnforceDeckMinStretch();
 
     // Spell Deck window
+    /// <summary>Places and sizes the window and reports it to the layout even when it did not
+    /// change, so a detached placement is recorded (and saved).</summary>
     void PlaceSpellDeck(float left, float top, SpellDeckGeometry geometry);
     SpellDeckGeometry SpellDeckGeometry { get; }
     float SpellDeckLeft { get; }
@@ -37,7 +39,7 @@ public interface ISpellDeckDockHost
 /// grow upwards; the deck takes the Spell Deck's fullest row as its minimum
 /// width and keeps room above it for the Spell Deck. Detached, the Spell Deck
 /// is its own window, back where it was last detached (its placement is not
-/// recorded while attached).
+/// recorded while attached); the first detach puts it just above the deck.
 /// </summary>
 public sealed class SpellDeckDock
 {
@@ -171,10 +173,19 @@ public sealed class SpellDeckDock
         }
         _host.SetDeckLimits(null, null, null);
         _host.SetSpellDeckCaptureOpen(true);
+        if (_controller.DetachedRows is null)
+        {
+            // Never placed detached (nothing stored to go back to): just above the
+            // deck as it is now, at the size it had attached. This placement is saved.
+            SpellDeckGeometry first = _host.SpellDeckGeometry.WithRows(RowCount);
+            first = first.WithStretch(Math.Max(first.Stretch, MinStretch()));
+            Place(_host.DeckLeft, _host.DeckTop - first.Height, first, force: true);
+            return;
+        }
         _host.ApplyStoredSpellDeckPlacement();
         // The stored height is that of the rows it was saved with; rows added or
         // removed since (while attached) change the height, never the scale.
-        int storedRows = _controller.DetachedRows ?? RowCount;
+        int storedRows = _controller.DetachedRows.Value;
         SpellDeckGeometry g = SpellDeckGeometry.FromSize(_host.SpellDeckWidth, _host.SpellDeckHeight, storedRows)
             .WithRows(RowCount);
         g = g.WithStretch(Math.Max(g.Stretch, MinStretch()));

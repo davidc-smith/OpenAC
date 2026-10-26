@@ -66,7 +66,10 @@ internal sealed class SpellDeckWindowDockHost(
         spell.ApplyGeometry(geometry);
         frame.Left = left;
         frame.Top = top;
-        Notify(frame, before);
+        // Reported even when nothing moved: the dock places only on a change or
+        // to (re)set the detached placement, which the layout must then record
+        // (a first detach lands exactly where the attached deck already was).
+        Notify(frame, before, always: true);
     }
 
     public SpellDeckGeometry SpellDeckGeometry => spell.Geometry;
@@ -93,10 +96,10 @@ internal sealed class SpellDeckWindowDockHost(
         (frame.Left, frame.Top, frame.Width, frame.Height);
 
     /// <summary>Tells the window manager (and so the layout) that a window moved or resized in place.</summary>
-    private void Notify(UiElement frame, (float Left, float Top, float Width, float Height) before)
+    private void Notify(UiElement frame, (float Left, float Top, float Width, float Height) before, bool always = false)
     {
-        bool moved = frame.Left != before.Left || frame.Top != before.Top;
         bool resized = frame.Width != before.Width || frame.Height != before.Height;
+        bool moved = frame.Left != before.Left || frame.Top != before.Top || (always && !resized);
         if (!moved && !resized) return;
         frame.ResetAnchorCapture();
         if (moved) root.NotifyWindowMoved(frame);

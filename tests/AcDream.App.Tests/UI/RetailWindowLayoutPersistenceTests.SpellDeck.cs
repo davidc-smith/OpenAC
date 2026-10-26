@@ -98,7 +98,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         SettingsStore store, string key, float left, float top, float scale, int rows)
     {
         store.SaveSpellDeck(key, new StoredSpellDeck(false,
-            Enumerable.Range(1, rows).Select(i => (i, (i - 1) % 8)).ToArray()));
+            Enumerable.Range(1, rows).Select(i => (i, (i - 1) % 8)).ToArray(), DetachedRows: rows));
         SpellDeckGeometry g = SpellDeckGeometry.Create(scale, 1f, rows);
         var layout = new UiWindowLayout(left, top, g.Width, g.Height, false, false, false);
         store.SaveWindowLayout(key, "1600x900", WindowNames.SpellDeck, layout);
@@ -216,5 +216,23 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         Assert.False(rig.Sync.AwaitingRestore);
         Assert.False(rig.Controller.Attached);
         AssertSpellDeckAt(rig, bob, "Bob", 1.2f, 5);
+    }
+
+    [Fact]
+    public void SpellDeck_FirstDetach_GoesAboveTheDeckWhereItIsNow_AndIsSaved()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+        Assert.True(rig.Controller.Attached);
+        Assert.True(rig.Root.WindowManager.TryGet(WindowNames.CommandDeck, out RetailWindowHandle deck));
+        deck.MoveTo(700f, 600f);
+        rig.Frames(2);
+
+        rig.Dock.Detach();
+        rig.Frames(2);
+
+        SpellDeckGeometry g = SpellDeckGeometry.Create(1f, 1f, 3);
+        AssertSpellDeckAt(rig, new UiWindowLayout(700f, 600f - g.Height, g.Width, g.Height, false, false, false), "Bob", 1f, 3);
     }
 }

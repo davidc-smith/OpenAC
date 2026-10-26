@@ -198,7 +198,7 @@ public sealed class SpellDeckDockTests
     [Fact]
     public void SpellDeckDock_DetachAndAttach_GateLimitsAndTheSameDetachedSpot()
     {
-        var (dock, host, c, tabs) = Make();
+        var (dock, host, c, tabs) = Make(detachedRows: 3);
         dock.Tick();
         host.Stored = (300f, 200f, 588f, SpellDeckGeometry.BaseHeight(3) * 1.2f);   // scale 1.2, stretch 588/504
 
@@ -283,5 +283,43 @@ public sealed class SpellDeckDockTests
         Assert.Equal(4, c.DetachedRows);
         Assert.Equal(1.2f, host.SpellDeckGeometry.Scale, 3);
         Assert.Equal(SpellDeckGeometry.BaseHeight(4) * 1.2f, host.Stored.Height, 2);
+    }
+
+    [Fact]
+    public void SpellDeckDock_FirstDetach_GoesJustAboveTheDeckWhereItIsNow()
+    {
+        // Never detached: nothing stored to go back to.
+        var (dock, host, c, _) = Make();
+        host.DeckGeometry = DeckGeometry.Create(1.2f, 1.25f);
+        host.DeckLeft = 250f;
+        host.DeckTop = 500f;
+        dock.Tick();
+        SpellDeckGeometry attached = host.SpellDeckGeometry;
+
+        dock.Detach();
+
+        Assert.Equal(0, host.StoredApplied);
+        Assert.Equal(attached, host.SpellDeckGeometry);
+        Assert.Equal((250f, 500f - attached.Height), (host.SpellDeckLeft, host.SpellDeckTop));
+        Assert.Equal((250f, 500f - attached.Height), (host.Stored.Left, host.Stored.Top));   // and saved
+        Assert.Equal(3, c.DetachedRows);
+
+        // From now on it goes back to that spot.
+        dock.Attach();
+        host.DeckLeft = 400f;
+        dock.Tick();
+        dock.Detach();
+        Assert.Equal(1, host.StoredApplied);
+        Assert.Equal((250f, 500f - attached.Height), (host.SpellDeckLeft, host.SpellDeckTop));
+    }
+
+    [Fact]
+    public void SpellDeckDock_FirstDetach_StaysOnScreen()
+    {
+        var (dock, host, _, _) = Make();
+        host.DeckTop = 40f;   // the block is off the top until the detach
+        dock.Tick();
+        dock.Detach();
+        Assert.Equal(0f, host.SpellDeckTop);
     }
 }
