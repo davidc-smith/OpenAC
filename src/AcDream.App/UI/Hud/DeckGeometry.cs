@@ -66,12 +66,15 @@ public sealed record DeckGeometry
     }
 
     /// <summary>The geometry for a window size: the scale from the height, the
-    /// stretch from the width. A width too narrow for that scale lowers the
-    /// scale to the largest step that fits.</summary>
+    /// stretch from the width. It never grows past the size: a scale that
+    /// rounds up past the height, or a width too narrow for the scale, lowers
+    /// the scale to the largest step that fits.</summary>
     public static DeckGeometry FromSize(float width, float height)
     {
         if (!float.IsFinite(width) || !float.IsFinite(height)) return Default;
         float scale = SnapScale(height / BaseHeight);
+        if (BaseHeight * scale > height + 0.5f)
+            scale = StepDown(height / BaseHeight);
         if (BaseWidth * scale > width + 0.5f)
             scale = StepDown(width / BaseWidth);
         return Create(scale, width / (BaseWidth * scale));

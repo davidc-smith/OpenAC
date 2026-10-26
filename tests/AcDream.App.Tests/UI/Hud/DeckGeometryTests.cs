@@ -149,6 +149,25 @@ public sealed class DeckGeometryTests
         Assert.Equal(stretch, g.Stretch, 3);
     }
 
+    [Theory]
+    [InlineData(1000f, 200f, 1.3f)]      // 1.33 rounds to 1.35, which is too tall
+    [InlineData(1000f, 155f, 1f)]        // 1.03 rounds to 1.05, which is too tall
+    [InlineData(1000f, 187.4f, 1.25f)]   // 1.249: float noise, not a step down
+    [InlineData(1000f, 152f, 1f)]        // locks onto 1
+    [InlineData(419.6f, 150f, 1f)]       // a hair narrow: still 1
+    public void FromSize_NeverGrowsPastTheSize(float width, float height, float scale)
+    {
+        DeckGeometry g = DeckGeometry.FromSize(width, height);
+        Assert.Equal(scale, g.Scale, 3);
+        Assert.True(g.Height <= height + 0.5f, $"height {g.Height} > {height}");
+        Assert.True(g.Width <= width + 0.5f, $"width {g.Width} > {width}");
+        Assert.Equal(Math.Clamp(width / (420f * scale), 1f, 2f), g.Stretch, 3);
+    }
+
+    [Fact]
+    public void FromSize_OfTheDefaultSizeIsTheDefault() =>
+        Assert.Equal(DeckGeometry.Default, DeckGeometry.FromSize(420f, 150f));
+
     [Fact]
     public void WithWidth_KeepsTheScale()
     {

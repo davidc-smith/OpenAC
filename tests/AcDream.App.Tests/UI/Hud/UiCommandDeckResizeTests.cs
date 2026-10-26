@@ -331,7 +331,7 @@ public sealed class UiCommandDeckResizeTests
     [Theory]
     [InlineData(630f, 187.5f, 1.25f, 1.2f)]
     [InlineData(420f, 150f, 1f, 1f)]
-    [InlineData(5000f, 140f, 0.95f, 2f)]
+    [InlineData(5000f, 140f, 0.9f, 2f)]    // 0.93 would round up past 140
     public void AnySizeIsCorrectedToItsGeometryOnRefresh(float width, float height, float scale, float stretch)
     {
         var (_, deck) = Mount();
