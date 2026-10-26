@@ -26,7 +26,7 @@ namespace AcDream.HostParity.Tests;
 /// </summary>
 internal sealed class WindowlessArm : ParityArm
 {
-    private readonly HeadlessGameplayOperations _gameplay;
+    private readonly RuntimeWindowlessGameplayOperations _gameplay;
     private readonly HeadlessPluginHost _host;
 
     /// <summary>
@@ -47,11 +47,11 @@ internal sealed class WindowlessArm : ParityArm
     private DirectGameRuntimeCommandAdapter _commands = null!;
 
     internal WindowlessArm()
-        : this(new HeadlessGameplayOperations())
+        : this(new RuntimeWindowlessGameplayOperations())
     {
     }
 
-    private WindowlessArm(HeadlessGameplayOperations gameplay)
+    private WindowlessArm(RuntimeWindowlessGameplayOperations gameplay)
         : base(
             ParityHost.Windowless,
             operations =>
