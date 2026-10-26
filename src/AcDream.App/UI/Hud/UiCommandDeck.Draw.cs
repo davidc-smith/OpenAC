@@ -1,13 +1,11 @@
 using System.Numerics;
 using AcDream.Core.Combat;
+using static AcDream.App.UI.Hud.DeckChrome;
 
 namespace AcDream.App.UI.Hud;
 
 internal sealed partial class UiCommandDeck
 {
-    private static Vector4 Rgb(int hex, float a = 1f) =>
-        new(((hex >> 16) & 0xFF) / 255f, ((hex >> 8) & 0xFF) / 255f, (hex & 0xFF) / 255f, a);
-
     private static readonly string[] HeightLetters = ["H", "M", "L"];
     private static readonly AttackHeight[] HeightValues = [AttackHeight.High, AttackHeight.Medium, AttackHeight.Low];
     private static readonly string[] RecallIcons =
@@ -15,33 +13,12 @@ internal sealed partial class UiCommandDeck
         HudIcons.RecallLifestone, HudIcons.RecallMarketplace, HudIcons.RecallHouse,
         HudIcons.RecallMansion, HudIcons.RecallAllegiance,
     ];
-    private static readonly Vector4 FrameTop = Rgb(0x2B2A31);
-    private static readonly Vector4 FrameBottom = Rgb(0x17161B);
-    private static readonly Vector4 FrameEdge = Rgb(0x0B0A0D);
-    private static readonly Vector4 Bronze = Rgb(0x6B5A3A, 0.7f);
-    private static readonly Vector4 Track = Rgb(0x0C0B0F);
-    private static readonly Vector4 TrailInk = Rgb(0xF3E2C0, 0.45f);
-    private static readonly Vector4 TextInk = Rgb(0xFFFFFF);
-    private static readonly Vector4 LabelInk = Rgb(0xC9BFA6);
-    private static readonly Vector4 StudOff = Rgb(0x34323B);
-    private static readonly Vector4 StudOffInk = Rgb(0xA8A3B5);
-    private static readonly Vector4 StudOn = Rgb(0xD14A5C);
-    private static readonly Vector4 CombatGlow = Rgb(0xC2233A, 0.55f);
-    private static readonly Vector4 PeaceGlow = Rgb(0x78C8A0, 0.35f);
-    private static readonly (Vector4 Top, Vector4 Bottom) HealthInk = (Rgb(0xFF6B7D), Rgb(0x7D0F1C));
-    private static readonly (Vector4 Top, Vector4 Bottom) StaminaInk = (Rgb(0xFFE27A), Rgb(0x8A6C10));
-    private static readonly (Vector4 Top, Vector4 Bottom) ManaInk = (Rgb(0x8FB0FF), Rgb(0x1A3590));
-    private static readonly Vector4 PowerInk = Rgb(0xFFF6D8);
-    private static readonly Vector4 Handle = Rgb(0xE2C27A);
-    private static readonly Vector4 JumpInk = Rgb(0x7FD6A8);
-    private static readonly Vector4 CastLit = Rgb(0xCFE0FF);
-    private static readonly Vector4 GripInk = Rgb(0xE2C27A, 0.55f);
 
     /// <summary>A length in base points at the deck's scale.</summary>
     private float P(float points) => points * _geometry.Scale;
 
     /// <summary>A line weight at the deck's scale, in whole points, never under one.</summary>
-    private float Line(float points) => MathF.Max(1f, MathF.Round(points * _geometry.Scale));
+    private float Line(float points) => DeckChrome.Line(points, _geometry.Scale);
 
     /// <summary>A faint bronze stroke on the right edge, or an L at the right
     /// corner, while that grip is hovered or being dragged.</summary>
@@ -90,13 +67,7 @@ internal sealed partial class UiCommandDeck
         if (v.ShowStuds) DrawStuds(ctx, v);
     }
 
-    private void DrawFrame(UiRenderContext ctx)
-    {
-        DeckRect f = _geometry.Frame;
-        ctx.FillRoundedRect(f.X - P(2), f.Y - P(2), f.W + P(4), f.H + P(4), P(10), FrameEdge);
-        ctx.FillVerticalGradient(f.X, f.Y, f.W, f.H, new CanvasCornerRadii(P(8), P(8), P(8), P(8)), FrameTop, FrameBottom);
-        ctx.StrokeRoundedRect(f.X + P(3), f.Y + P(3), f.W - P(6), f.H - P(6), P(5), Bronze, Line(1));
-    }
+    private void DrawFrame(UiRenderContext ctx) => DeckChrome.DrawFrame(ctx, _geometry.Frame, _geometry.Scale);
 
     private void DrawBar(UiRenderContext ctx, DeckRect r, string label, DeckVitalView vital,
         (Vector4 Top, Vector4 Bottom) ink, float pulse)
@@ -206,10 +177,7 @@ internal sealed partial class UiCommandDeck
 
     private void DrawStud(UiRenderContext ctx, DeckRect r, bool on, string? icon, string? letter, bool dim = false)
     {
-        ctx.FillRoundedRect(r.X - P(1), r.Y - P(1), r.W + P(2), r.H + P(2), P(6), FrameEdge);
-        ctx.FillRoundedRect(r.X, r.Y, r.W, r.H, P(5), on ? StudOn : StudOff);
-        Vector4 ink = on ? TextInk : StudOffInk;
-        if (dim) ink = ink with { W = 0.4f };
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, _geometry.Scale, on, dim);
         if (icon is not null)
             DrawIcon(ctx, icon, r.X + (r.W - P(14)) / 2, r.Y + (r.H - P(14)) / 2, P(14), ink);
         else if (letter is not null)
