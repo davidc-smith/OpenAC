@@ -517,7 +517,11 @@ internal sealed class FrameRootCompositionPhase
                 d.RenderRange,
                 worldSceneDiagnostics,
                 displayPolicy,
-                displayPolicy,
+                session.OfflineReveal is { } offlineReveal
+                    ? new WithheldWorldPresentationPolicy(
+                        displayPolicy,
+                        offlineReveal)
+                    : displayPolicy,
                 live.WorldAvailability,
                 atmosphericInputs);
             PluginGroundShapeRenderer? groundShapes = null;

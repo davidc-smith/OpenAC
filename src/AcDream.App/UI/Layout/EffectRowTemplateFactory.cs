@@ -54,6 +54,17 @@ public sealed class EffectRowTemplateFactory
         uint iconTexture,
         string name,
         string remaining)
+        => Create(spellId, iconTexture == 0u ? null : () => iconTexture, name, remaining);
+
+    /// <summary>
+    /// A row whose icon is made the first time it is drawn or read, so rows
+    /// of a window that is never shown never compose their icons.
+    /// </summary>
+    public EffectRow Create(
+        uint spellId,
+        Func<uint>? iconSource,
+        string name,
+        string remaining)
     {
         ImportedLayout content = LayoutImporter.Build(
             _template,
@@ -72,7 +83,7 @@ public sealed class EffectRowTemplateFactory
             Height = iconHost.Height,
             Anchors = AnchorEdges.Left | AnchorEdges.Top
                 | AnchorEdges.Right | AnchorEdges.Bottom,
-            Texture = iconTexture,
+            TextureSource = iconSource,
         });
         label.LinesProvider = () => [new UiText.Line(name, label.DefaultColor)];
 

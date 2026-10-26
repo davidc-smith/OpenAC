@@ -39,12 +39,14 @@ public sealed class GameWindowHostBoundaryTests
                 nameof(DisplayFramePacingController.BindSurface)),
             (typeof(WindowCallbackTargets), ".ctor"),
             (typeof(SilkWindowCallbackBinding), nameof(SilkWindowCallbackBinding.Create)),
-            (typeof(SilkWindowCallbackBinding), nameof(SilkWindowCallbackBinding.Attach)));
-        AssertSilkWindowCallAfter(
-            run,
-            nameof(IWindow.Run),
-            typeof(SilkWindowCallbackBinding),
-            nameof(SilkWindowCallbackBinding.Attach));
+            (typeof(SilkWindowCallbackBinding), nameof(SilkWindowCallbackBinding.Attach)),
+            (typeof(NativeWindowLoop), nameof(NativeWindowLoop.Run)));
+        // Silk's own loop destroys the native window as it returns, before
+        // the lifetime has released what was made from it.
+        Assert.DoesNotContain(
+            CompiledCallGraph.Read(run),
+            call => call.Target.DeclaringType?.Namespace == "Silk.NET.Windowing"
+                && call.Target.Name == nameof(IWindow.Run));
 
         IReadOnlyList<CompiledCall> references =
             CompiledCallGraph.ReadMethodReferences(run);
@@ -618,13 +620,9 @@ public sealed class GameWindowHostBoundaryTests
 
         AssertCallOrder(
             RequiredMethod(typeof(GameWindow), nameof(GameWindow.Run)),
+            (typeof(NativeWindowLoop), nameof(NativeWindowLoop.Run)),
             (typeof(ResourceConstructionCleanupLedger),
                 nameof(ResourceConstructionCleanupLedger.RetainFrom)));
-        AssertSilkWindowCallBefore(
-            RequiredMethod(typeof(GameWindow), nameof(GameWindow.Run)),
-            nameof(IWindow.Run),
-            typeof(ResourceConstructionCleanupLedger),
-            nameof(ResourceConstructionCleanupLedger.RetainFrom));
         Assert.Contains(
             CompiledCallGraph.ReadFieldReferences(
                 RequiredMethod(typeof(GameWindow), "CaptureShutdownRoots")),
@@ -718,22 +716,6 @@ public sealed class GameWindowHostBoundaryTests
         CompiledCall call = Assert.Single(calls);
         Assert.True(MatchesType(call.Target.DeclaringType, type));
         Assert.Equal(name, call.Target.Name);
-    }
-
-    private static void AssertSilkWindowCallAfter(
-        MethodBase owner,
-        string silkMethod,
-        Type predecessorType,
-        string predecessorMethod)
-    {
-        IReadOnlyList<CompiledCall> calls = CompiledCallGraph.Read(owner);
-        CompiledCall predecessor = Assert.Single(calls, call =>
-            call.Target.DeclaringType == predecessorType
-            && call.Target.Name == predecessorMethod);
-        CompiledCall silk = Assert.Single(calls, call =>
-            call.Target.DeclaringType?.Namespace == "Silk.NET.Windowing"
-            && call.Target.Name == silkMethod);
-        Assert.True(predecessor.Offset < silk.Offset);
     }
 
     private static void AssertSilkWindowCallBefore(

@@ -30,6 +30,20 @@ public static class SurfaceDecoder
         => DecodeRenderSurface(rs, palette: null, isClipMap: false, isAdditive: false);
 
     public static DecodedTexture DecodeRenderSurface(RenderSurface rs, Palette? palette, bool isClipMap = false, bool isAdditive = false)
+        => DecodeRenderSurface(rs, palette, isClipMap, isAdditive, pixels: null);
+
+    /// <summary>
+    /// Decodes into an array from <paramref name="pixels"/> when given, so a
+    /// caller that uploads each texture before decoding the next does not
+    /// allocate an image per texture. The result's pixels then belong to the
+    /// buffers: finish with them before the next decode.
+    /// </summary>
+    public static DecodedTexture DecodeRenderSurface(
+        RenderSurface rs,
+        Palette? palette,
+        bool isClipMap,
+        bool isAdditive,
+        ReusedPixelBuffers? pixels)
     {
         if (rs.SourceData is null)
             return LogMagentaOnce(rs, "null SourceData");
@@ -53,19 +67,19 @@ public static class SurfaceDecoder
         {
             return rs.Format switch
             {
-                PixelFormat.PFID_R8G8B8 => DecodeR8G8B8(rs),
-                PixelFormat.PFID_A8R8G8B8 => DecodeA8R8G8B8(rs),
-                PixelFormat.PFID_X8R8G8B8 => DecodeX8R8G8B8(rs),
-                PixelFormat.PFID_DXT1 => DecodeBc(rs, CompressionFormat.Bc1, isClipMap),
-                PixelFormat.PFID_DXT3 => DecodeBc(rs, CompressionFormat.Bc2, isClipMap),
-                PixelFormat.PFID_DXT5 => DecodeBc(rs, CompressionFormat.Bc3, isClipMap),
-                PixelFormat.PFID_A8 or PixelFormat.PFID_CUSTOM_LSCAPE_ALPHA => DecodeA8(rs, isAdditive),
-                PixelFormat.PFID_P8 when palette is not null => DecodeP8(rs, palette, isClipMap),
+                PixelFormat.PFID_R8G8B8 => DecodeR8G8B8(rs, pixels),
+                PixelFormat.PFID_A8R8G8B8 => DecodeA8R8G8B8(rs, pixels),
+                PixelFormat.PFID_X8R8G8B8 => DecodeX8R8G8B8(rs, pixels),
+                PixelFormat.PFID_DXT1 => DecodeBc(rs, CompressionFormat.Bc1, isClipMap, pixels),
+                PixelFormat.PFID_DXT3 => DecodeBc(rs, CompressionFormat.Bc2, isClipMap, pixels),
+                PixelFormat.PFID_DXT5 => DecodeBc(rs, CompressionFormat.Bc3, isClipMap, pixels),
+                PixelFormat.PFID_A8 or PixelFormat.PFID_CUSTOM_LSCAPE_ALPHA => DecodeA8(rs, isAdditive, pixels),
+                PixelFormat.PFID_P8 when palette is not null => DecodeP8(rs, palette, isClipMap, pixels),
                 PixelFormat.PFID_P8 => LogMagentaOnce(rs, "PFID_P8 with no palette"),
-                PixelFormat.PFID_INDEX16 when palette is not null => DecodeIndex16(rs, palette, isClipMap),
+                PixelFormat.PFID_INDEX16 when palette is not null => DecodeIndex16(rs, palette, isClipMap, pixels),
                 PixelFormat.PFID_INDEX16 => LogMagentaOnce(rs, "PFID_INDEX16 with no palette"),
-                PixelFormat.PFID_R5G6B5 => DecodeR5G6B5(rs),
-                PixelFormat.PFID_A4R4G4B4 => DecodeA4R4G4B4(rs),
+                PixelFormat.PFID_R5G6B5 => DecodeR5G6B5(rs, pixels),
+                PixelFormat.PFID_A4R4G4B4 => DecodeA4R4G4B4(rs, pixels),
                 _ => LogMagentaOnce(rs, $"unsupported PixelFormat {rs.Format}"),
             };
         }
@@ -74,6 +88,9 @@ public static class SurfaceDecoder
             return LogMagentaOnce(rs, $"decode threw: {ex.Message}");
         }
     }
+
+    private static byte[] Pixels(ReusedPixelBuffers? pixels, int length) =>
+        pixels?.Get(length) ?? new byte[length];
 
     private static DecodedTexture DecodeCustomRawJpeg(RenderSurface rs)
     {
@@ -84,13 +101,13 @@ public static class SurfaceDecoder
         return new DecodedTexture(image.Data, image.Width, image.Height);
     }
 
-    private static DecodedTexture DecodeIndex16(RenderSurface rs, Palette palette, bool isClipMap)
+    private static DecodedTexture DecodeIndex16(RenderSurface rs, Palette palette, bool isClipMap, ReusedPixelBuffers? pixels)
     {
         int expectedBytes = rs.Width * rs.Height * 2;
         if (rs.SourceData.Length < expectedBytes || palette.Colors.Count == 0)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[rs.Width * rs.Height * 4];
+        byte[] rgba = Pixels(pixels, rs.Width * rs.Height * 4);
         TextureHelpers.FillIndex16(rs.SourceData, palette, rgba.AsSpan(), rs.Width, rs.Height, isClipMap);
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
@@ -122,13 +139,13 @@ public static class SurfaceDecoder
     /// additive entity textures — the shader reads .r for the blend weight). When false:
     /// R=G=B=255, A=val (WB FillA8 semantics for non-additive entity textures).
     /// </summary>
-    private static DecodedTexture DecodeA8(RenderSurface rs, bool isAdditive)
+    private static DecodedTexture DecodeA8(RenderSurface rs, bool isAdditive, ReusedPixelBuffers? pixels)
     {
         int expected = rs.Width * rs.Height;
         if (rs.SourceData.Length < expected)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[expected * 4];
+        byte[] rgba = Pixels(pixels, expected * 4);
         if (isAdditive)
             TextureHelpers.FillA8Additive(rs.SourceData, rgba.AsSpan(), rs.Width, rs.Height);
         else
@@ -136,46 +153,46 @@ public static class SurfaceDecoder
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
 
-    private static DecodedTexture DecodeA8R8G8B8(RenderSurface rs)
+    private static DecodedTexture DecodeA8R8G8B8(RenderSurface rs, ReusedPixelBuffers? pixels)
     {
         int expected = rs.Width * rs.Height * 4;
         if (rs.SourceData.Length < expected)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[expected];
+        byte[] rgba = Pixels(pixels, expected);
         TextureHelpers.FillA8R8G8B8(rs.SourceData, rgba.AsSpan(), rs.Width, rs.Height);
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
 
-    private static DecodedTexture DecodeP8(RenderSurface rs, Palette palette, bool isClipMap)
+    private static DecodedTexture DecodeP8(RenderSurface rs, Palette palette, bool isClipMap, ReusedPixelBuffers? pixels)
     {
         int expectedBytes = rs.Width * rs.Height;
         if (rs.SourceData.Length < expectedBytes || palette.Colors.Count == 0)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[rs.Width * rs.Height * 4];
+        byte[] rgba = Pixels(pixels, rs.Width * rs.Height * 4);
         TextureHelpers.FillP8(rs.SourceData, palette, rgba.AsSpan(), rs.Width, rs.Height, isClipMap);
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
 
-    private static DecodedTexture DecodeR8G8B8(RenderSurface rs)
+    private static DecodedTexture DecodeR8G8B8(RenderSurface rs, ReusedPixelBuffers? pixels)
     {
         int expectedBytes = rs.Width * rs.Height * 3;
         if (rs.SourceData.Length < expectedBytes)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[rs.Width * rs.Height * 4];
+        byte[] rgba = Pixels(pixels, rs.Width * rs.Height * 4);
         TextureHelpers.FillR8G8B8(rs.SourceData, rgba.AsSpan(), rs.Width, rs.Height);
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
 
-    private static DecodedTexture DecodeX8R8G8B8(RenderSurface rs)
+    private static DecodedTexture DecodeX8R8G8B8(RenderSurface rs, ReusedPixelBuffers? pixels)
     {
         int expectedBytes = rs.Width * rs.Height * 4;
         if (rs.SourceData.Length < expectedBytes)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[expectedBytes];
+        byte[] rgba = Pixels(pixels, expectedBytes);
         for (int i = 0; i < rs.Width * rs.Height; i++)
         {
             int s = i * 4;
@@ -188,39 +205,39 @@ public static class SurfaceDecoder
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
 
-    private static DecodedTexture DecodeR5G6B5(RenderSurface rs)
+    private static DecodedTexture DecodeR5G6B5(RenderSurface rs, ReusedPixelBuffers? pixels)
     {
         int expectedBytes = rs.Width * rs.Height * 2;
         if (rs.SourceData.Length < expectedBytes)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[rs.Width * rs.Height * 4];
+        byte[] rgba = Pixels(pixels, rs.Width * rs.Height * 4);
         TextureHelpers.FillR5G6B5(rs.SourceData, rgba.AsSpan(), rs.Width, rs.Height);
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
 
-    private static DecodedTexture DecodeA4R4G4B4(RenderSurface rs)
+    private static DecodedTexture DecodeA4R4G4B4(RenderSurface rs, ReusedPixelBuffers? pixels)
     {
         int expectedBytes = rs.Width * rs.Height * 2;
         if (rs.SourceData.Length < expectedBytes)
             return DecodedTexture.Magenta;
 
-        var rgba = new byte[rs.Width * rs.Height * 4];
+        byte[] rgba = Pixels(pixels, rs.Width * rs.Height * 4);
         TextureHelpers.FillA4R4G4B4(rs.SourceData, rgba.AsSpan(), rs.Width, rs.Height);
         return new DecodedTexture(rgba, rs.Width, rs.Height);
     }
 
-    private static DecodedTexture DecodeBc(RenderSurface rs, CompressionFormat format, bool isClipMap)
+    private static DecodedTexture DecodeBc(RenderSurface rs, CompressionFormat format, bool isClipMap, ReusedPixelBuffers? pixels)
     {
-        var pixels = BcDecoder.DecodeRaw(rs.SourceData, rs.Width, rs.Height, format);
-        var rgba = new byte[rs.Width * rs.Height * 4];
-        for (int i = 0; i < pixels.Length; i++)
+        var texels = BcDecoder.DecodeRaw(rs.SourceData, rs.Width, rs.Height, format);
+        byte[] rgba = Pixels(pixels, rs.Width * rs.Height * 4);
+        for (int i = 0; i < texels.Length; i++)
         {
             int s = i * 4;
-            rgba[s + 0] = pixels[i].r;
-            rgba[s + 1] = pixels[i].g;
-            rgba[s + 2] = pixels[i].b;
-            rgba[s + 3] = pixels[i].a;
+            rgba[s + 0] = texels[i].r;
+            rgba[s + 1] = texels[i].g;
+            rgba[s + 2] = texels[i].b;
+            rgba[s + 3] = texels[i].a;
             if (isClipMap && rgba[s + 0] == 0 && rgba[s + 1] == 0 && rgba[s + 2] == 0)
                 rgba[s + 3] = 0;
         }

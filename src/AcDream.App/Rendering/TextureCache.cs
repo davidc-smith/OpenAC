@@ -3,6 +3,7 @@ using AcDream.Core.Textures;
 using AcDream.Core.World;
 using AcDream.Content;
 using AcDream.App.Rendering.Gpu;
+using AcDream.App.Streaming;
 using DatReaderWriter;
 using DatReaderWriter.DBObjs;
 using System.Linq;
@@ -50,9 +51,18 @@ public sealed class TextureCache
 
     private readonly CompositeTextureArrayCache? _compositeTextures;
     private bool _destinationRevealUploadPriority;
+    private IFrameUploadAllowanceSource _uploadAllowance =
+        ProfileFrameUploadAllowanceSource.Default;
 
     private readonly StandaloneBindlessTextureCache? _particleTextures;
     private readonly Dictionary<(uint surfaceId, uint origTexOverride), bool> _paletteIndexedByTexture = new();
+
+    // Every texture this cache decodes is uploaded before the next is
+    // decoded, so the decoded image (and a recoloured palette) is a working
+    // copy: it is decoded into an array kept per size instead of a new one.
+    internal const long DecodeBufferBudgetBytes = 16L * 1024 * 1024;
+    private readonly ReusedPixelBuffers _decodePixels = new(DecodeBufferBudgetBytes);
+    private readonly Palette _composedPalette = new();
 
     internal int OwnedBindlessTextureCount => _compositeTextures?.ActiveResourceCount ?? 0;
     internal int TextureOwnerCount => _compositeTextures?.OwnerCount ?? 0;
@@ -72,6 +82,12 @@ public sealed class TextureCache
 
     internal void SetDestinationRevealUploadPriority(bool enabled) =>
         _destinationRevealUploadPriority = enabled;
+
+    /// <summary>Takes the composite uploads' per-frame widening from the
+    /// frame budget streaming runs under.</summary>
+    internal void BindUploadAllowance(IFrameUploadAllowanceSource allowance) =>
+        _uploadAllowance = allowance
+            ?? throw new ArgumentNullException(nameof(allowance));
 
     private readonly Dictionary<uint, (int Width, int Height, string Format)> _uploadMetadata = new();
 
@@ -192,10 +208,29 @@ public sealed class TextureCache
         if (_dats.Portal.TryGet<RenderSurface>(renderSurfaceId, out var rs)
             || _dats.HighRes.TryGet<RenderSurface>(renderSurfaceId, out rs))
         {
+            if (IsUploadableCoverage(rs))
+            {
+                // A one-byte alpha image (the font atlases): uploaded as it is
+                // stored and shown as white with that alpha, which is what
+                // decoding it to four channels produced.
+                GpuUiTextureEntry coverage = UploadUiTexture(
+                    rs.SourceData.AsSpan(0, rs.Width * rs.Height),
+                    rs.Width,
+                    rs.Height,
+                    GpuTextureFormat.R8Unorm,
+                    GpuTextureSwizzle.CoverageAsAlpha,
+                    nearest,
+                    $"ui-rendersurface-0x{renderSurfaceId:X8}");
+                _renderSurfaceGpuTextures[cacheKey] = coverage;
+                width = rs.Width; height = rs.Height;
+                return UiTextureTableHandle.FromSlot(coverage.Slot);
+            }
+
             Palette? palette = rs.DefaultPaletteId != 0
                 ? _dats.Get<Palette>(rs.DefaultPaletteId)
                 : null;
-            decoded = SurfaceDecoder.DecodeRenderSurface(rs, palette);
+            decoded = SurfaceDecoder.DecodeRenderSurface(
+                rs, palette, isClipMap: false, isAdditive: false, _decodePixels);
         }
         else
         {
@@ -276,23 +311,54 @@ public sealed class TextureCache
         }
     }
 
+    /// <summary>A one-byte alpha image a four-channel decode would only
+    /// have widened to white with that alpha.</summary>
+    internal static bool IsUploadableCoverage(RenderSurface rs) =>
+        rs.Format is PixelFormatId.PFID_A8 or PixelFormatId.PFID_CUSTOM_LSCAPE_ALPHA
+        && rs.Width > 0
+        && rs.Height > 0
+        && rs.SourceData is not null
+        && rs.SourceData.Length >= rs.Width * rs.Height;
+
     private GpuUiTextureEntry UploadUiTexture(
         DecodedTexture decoded, bool nearest, string debugName, bool clamp = false,
+        IReadOnlyList<DecodedTexture>? mipLevels = null) =>
+        UploadUiTexture(
+            decoded.Rgba8,
+            decoded.Width,
+            decoded.Height,
+            GpuTextureFormat.Rgba8Unorm,
+            GpuTextureSwizzle.Identity,
+            nearest,
+            debugName,
+            clamp,
+            mipLevels);
+
+    private GpuUiTextureEntry UploadUiTexture(
+        ReadOnlySpan<byte> pixels,
+        int width,
+        int height,
+        GpuTextureFormat format,
+        GpuTextureSwizzle swizzle,
+        bool nearest,
+        string debugName,
+        bool clamp = false,
         IReadOnlyList<DecodedTexture>? mipLevels = null)
     {
         IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(
             debugName,
             GpuTextureKind.Texture2D,
-            GpuTextureFormat.Rgba8Unorm,
-            Width: decoded.Width,
-            Height: decoded.Height,
+            format,
+            Width: width,
+            Height: height,
             LayerCount: 1,
-            MipLevelCount: mipLevels?.Count ?? 1));
+            MipLevelCount: mipLevels?.Count ?? 1,
+            swizzle));
         try
         {
             if (mipLevels is null)
             {
-                texture.Upload(0, 0, decoded.Rgba8);
+                texture.Upload(0, 0, pixels);
             }
             else
             {
@@ -300,7 +366,8 @@ public sealed class TextureCache
                     texture.Upload(level, 0, mipLevels[level].Rgba8);
             }
             uint glName = UploadAccountingName(texture);
-            TrackUploadedTexture(glName, decoded.Width, decoded.Height);
+            TrackUploadedTexture(glName, width, height,
+                format == GpuTextureFormat.R8Unorm ? CoverageUploadFormat : DecodedUploadFormat);
 
             IGpuSampler sampler = _device.CreateSampler(
                 nearest ? UiNearestRepeat
@@ -312,7 +379,7 @@ public sealed class TextureCache
             {
                 _nearestUiTextureSources[handle] = texture;
             }
-            return new GpuUiTextureEntry(texture, slot, glName, decoded.Width, decoded.Height);
+            return new GpuUiTextureEntry(texture, slot, glName, width, height);
         }
         catch
         {
@@ -577,7 +644,10 @@ public sealed class TextureCache
     public void TickParticleTextureCache() => _particleTextures?.Tick();
 
     public void BeginCompositeTextureFrame() =>
-        _compositeTextures?.BeginFrame(_destinationRevealUploadPriority);
+        _compositeTextures?.BeginFrame(
+            _destinationRevealUploadPriority
+                ? _uploadAllowance.Reveal
+                : _uploadAllowance.Ordinary);
 
     internal static ulong HashPaletteOverride(PaletteOverride p)
     {
@@ -735,7 +805,7 @@ public sealed class TextureCache
         bool isAdditive = surface.Type.HasFlag(SurfaceType.Additive);
 
         DecodedTexture decoded =
-            SurfaceDecoder.DecodeRenderSurface(rs, effectivePalette, isClipMap, isAdditive);
+            SurfaceDecoder.DecodeRenderSurface(rs, effectivePalette, isClipMap, isAdditive, _decodePixels);
 
         if (bakeAuthoredTranslucency
             && surface.Translucency > 0.0f
@@ -751,14 +821,29 @@ public sealed class TextureCache
         => ComposeModifiedPalette(
             basePalette,
             paletteOverride.SubPalettes,
-            id => _dats.Get<Palette>(id));
+            _resolvePalette ??= id => _dats.Get<Palette>(id),
+            _composedPalette);
+
+    private Func<uint, Palette?>? _resolvePalette;
 
     internal static Palette ComposeModifiedPalette(
         Palette basePalette,
         IReadOnlyList<PaletteOverride.SubPaletteRange> subPalettes,
         Func<uint, Palette?> resolvePalette)
+        => ComposeModifiedPalette(basePalette, subPalettes, resolvePalette, new Palette());
+
+    /// <summary>
+    /// Composes into <paramref name="modified"/>, whose colours are replaced:
+    /// a caller that decodes with the palette before composing the next can
+    /// keep one.
+    /// </summary>
+    internal static Palette ComposeModifiedPalette(
+        Palette basePalette,
+        IReadOnlyList<PaletteOverride.SubPaletteRange> subPalettes,
+        Func<uint, Palette?> resolvePalette,
+        Palette modified)
     {
-        var modified = new Palette();
+        modified.Colors.Clear();
         modified.Colors.AddRange(basePalette.Colors);
 
         foreach (PaletteOverride.SubPaletteRange sub in subPalettes)
@@ -779,6 +864,25 @@ public sealed class TextureCache
         }
 
         return modified;
+    }
+
+    /// <summary>
+    /// Uploads a one-byte-per-pixel coverage image (a baked font) that draws
+    /// as white with the coverage as alpha, kept for the life of the cache.
+    /// </summary>
+    internal uint UploadCoverage8(byte[] coverage, int width, int height, bool nearest = false)
+    {
+        ArgumentNullException.ThrowIfNull(coverage);
+        GpuUiTextureEntry entry = UploadUiTexture(
+            coverage.AsSpan(0, checked(width * height)),
+            width,
+            height,
+            GpuTextureFormat.R8Unorm,
+            GpuTextureSwizzle.CoverageAsAlpha,
+            nearest,
+            "ui-adhoc-coverage8");
+        _adhocGpuTextures.Add(entry);
+        return UiTextureTableHandle.FromSlot(entry.Slot);
     }
 
     public uint UploadRgba8(byte[] rgba, int width, int height, bool nearest = false)

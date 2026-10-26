@@ -149,7 +149,14 @@ ahead-of-time compiled as well as self-contained: the code a player reaches
 for the first time -- the first object torn down, the first portal, the first
 spell -- is already native machine code instead of being compiled inside the
 frame that needs it, which is what a first-minute hitch is made of. It costs
-about 13 MB of download and a minute of publish time. The launcher and the
+about 13 MB of download and a minute of publish time. The graphical client is
+also compiled as one composite image together with the runtime's own
+libraries (`AcDream.App.r2r.dll`), which takes about a quarter of a second off
+its startup to the first frame and makes the client folder about 45 MB
+larger. A folder holds one composite image, because the shared runtime
+libraries become parts of it, so `publish-bin.ps1` publishes the headless
+host first and the graphical client last; the headless host keeps its own
+ahead-of-time code and runs on the same shared libraries. The launcher and the
 bake tool beside it stay just-in-time: they start once, have no frames to
 miss, and compiling them ahead of time added about 32 MB to the download for
 no measurable gain. The compiler runs on the build host and targets the

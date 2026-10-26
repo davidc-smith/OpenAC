@@ -183,6 +183,80 @@ public sealed class RuntimeCommunicationStateTests
         Assert.Equal("You can't jump while in the air", state.SpewBox.Snapshot()[0].Text);
     }
 
+    [Fact]
+    public void AddText_ClientLocal_RaisesStatusTextReceived_InArrivalOrder()
+    {
+        using var state = new RuntimeCommunicationState();
+        var heard = new List<string>();
+        state.StatusTextReceived += heard.Add;
+
+        state.AddText("  You're too busy!  ", RetailLogTextType.ClientLocal);
+        state.AddText("A chat line.", RetailLogTextType.Default);
+        state.AddText(
+            "The Corpse of Drudge is already in use by Bob!",
+            RetailLogTextType.ClientLocal);
+        // A repeat of the notice just before it is folded on the status line
+        // but still heard: a listener is told every notice that arrived.
+        state.AddText(
+            "The Corpse of Drudge is already in use by Bob!",
+            RetailLogTextType.ClientLocal);
+
+        Assert.Equal(
+            [
+                "You're too busy!",
+                "The Corpse of Drudge is already in use by Bob!",
+                "The Corpse of Drudge is already in use by Bob!",
+            ],
+            heard);
+    }
+
+    [Fact]
+    public void AddText_ClientLocal_SuppressedByFilter_IsStillHeard()
+    {
+        using var state = new RuntimeCommunicationState();
+        var heard = new List<string>();
+        state.StatusTextReceived += heard.Add;
+        using IDisposable filter = state.Chat.Filters.Register(
+            static candidate => candidate.Kind == AcDream.Plugin.Abstractions
+                .PluginChatMessage.StatusTextKind);
+
+        state.AddText("Out of Range!", RetailLogTextType.ClientLocal);
+
+        Assert.Equal(["Out of Range!"], heard);
+        // The filter still decides what the player sees.
+        state.SpewBox.Tick(0d);
+        Assert.Equal(0, state.SpewBox.Count);
+    }
+
+    [Fact]
+    public void AddPluginText_ClientLocal_HeardAsPlainText()
+    {
+        using var state = new RuntimeCommunicationState();
+        var heard = new List<string>();
+        state.StatusTextReceived += heard.Add;
+
+        state.AddPluginText(
+            @"Go to <COORD:World:42.1N, 33.5E>the bridge<\COORD>",
+            RetailLogTextType.ClientLocal);
+
+        Assert.Equal(["Go to the bridge"], heard);
+    }
+
+    [Theory]
+    [InlineData(RetailLogTextType.Default)]
+    [InlineData(RetailLogTextType.Magic)]
+    [InlineData(RetailLogTextType.System)]
+    public void AddText_NonClientLocalTypes_NeverRaiseStatusTextReceived(RetailLogTextType type)
+    {
+        using var state = new RuntimeCommunicationState();
+        var heard = new List<string>();
+        state.StatusTextReceived += heard.Add;
+
+        state.AddText("Your spell fizzled.", type);
+
+        Assert.Empty(heard);
+    }
+
     [Theory]
     [InlineData(RetailLogTextType.Default)]
     [InlineData(RetailLogTextType.Magic)]

@@ -302,6 +302,8 @@ public sealed class InteractionUiRuntimeSourcesTests
     {
         public bool IsPortalViewportVisible { get; set; }
 
+        public bool IsWorldPlacedBehindPortal => false;
+
         public uint ActiveDestinationCell => 0u;
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using AcDream.UI.Abstractions.Panels.Settings;
 
@@ -73,6 +74,64 @@ public sealed class WindowPlacementStoreTests : IDisposable
         var store = new SettingsStore(_path);
         Assert.Null(store.LoadWindowPlacement("alice", "bad", "chat", Fallback));
         Assert.Throws<ArgumentOutOfRangeException>(() => store.SaveWindowPlacement("alice", "chat", new(Fallback, 0, 1080)));
+        Assert.False(File.Exists(_path));
+    }
+
+    [Fact]
+    public void BatchSaveWritesTheSameFileAsOneSavePerWindow()
+    {
+        var placements = new KeyValuePair<string, UiWindowPlacement>[]
+        {
+            new("chat", new(Fallback with { X = 1 }, 1920, 1080)),
+            new("radar", new(Fallback with { X = 2, Visible = false }, 1280, 720)),
+            new("combat", new(Fallback with { Y = 3, Collapsed = true }, 1920, 1080)),
+        };
+        string single = _path + ".single";
+        try
+        {
+            File.WriteAllText(_path, """{"display":{"vsync":true},"version":4}""");
+            File.Copy(_path, single);
+            var one = new SettingsStore(single);
+            foreach (var (name, placement) in placements)
+                one.SaveWindowPlacement("alice", name, placement);
+
+            var batch = new SettingsStore(_path);
+            batch.SaveWindowPlacements("alice", placements);
+
+            Assert.Equal(File.ReadAllText(single), File.ReadAllText(_path));
+            Assert.Equal((1, 1), (batch.FileReads, batch.FileWrites));
+        }
+        finally { File.Delete(single); }
+    }
+
+    [Fact]
+    public void BatchLoadMatchesOneLoadPerWindowWithOneRead()
+    {
+        var store = new SettingsStore(_path);
+        store.SaveWindowPlacement("alice", "chat", new(Fallback with { X = 5 }, 2560, 1440));
+        store.SaveWindowLayout("alice", "1280x720", "radar", Fallback with { X = 90 });
+        store.SaveWindowPosition("alice", "combat", new(75, 95));
+        var windows = new KeyValuePair<string, UiWindowLayout>[]
+        {
+            new("chat", Fallback), new("radar", Fallback), new("combat", Fallback), new("vitals", Fallback),
+        };
+
+        var fresh = new SettingsStore(_path);
+        IReadOnlyDictionary<string, UiWindowPlacement> loaded = fresh.LoadWindowPlacements("alice", "1920x1080", windows);
+
+        Assert.Equal(1, fresh.FileReads);
+        Assert.Equal(3, loaded.Count);
+        foreach (var (name, fallback) in windows)
+            Assert.Equal(store.LoadWindowPlacement("alice", "1920x1080", name, fallback),
+                loaded.TryGetValue(name, out var p) ? p : null);
+    }
+
+    [Fact]
+    public void InvalidBatchSaveWritesNothing()
+    {
+        var store = new SettingsStore(_path);
+        Assert.Throws<ArgumentOutOfRangeException>(() => store.SaveWindowPlacements("alice",
+            [new("chat", new(Fallback, 1920, 1080)), new("radar", new(Fallback, 1920, 0))]));
         Assert.False(File.Exists(_path));
     }
 }

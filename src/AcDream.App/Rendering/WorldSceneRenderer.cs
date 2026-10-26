@@ -51,6 +51,30 @@ internal interface IWorldScenePresentationPolicy
     bool DrawWorld { get; }
 }
 
+/// <summary>A reveal that keeps the world off the screen while its area loads.</summary>
+internal interface IWorldViewportWithholdSource
+{
+    bool IsWithholdingWorld { get; }
+}
+
+/// <summary>The world is drawn when the inner policy draws it and no reveal
+/// is withholding it.</summary>
+internal sealed class WithheldWorldPresentationPolicy : IWorldScenePresentationPolicy
+{
+    private readonly IWorldScenePresentationPolicy _inner;
+    private readonly IWorldViewportWithholdSource _withhold;
+
+    public WithheldWorldPresentationPolicy(
+        IWorldScenePresentationPolicy inner,
+        IWorldViewportWithholdSource withhold)
+    {
+        _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        _withhold = withhold ?? throw new ArgumentNullException(nameof(withhold));
+    }
+
+    public bool DrawWorld => !_withhold.IsWithholdingWorld && _inner.DrawWorld;
+}
+
 internal sealed class DefaultBuildingDetailPolicy
     : IWorldSceneBuildingDetailPolicy, IWorldScenePresentationPolicy
 {
@@ -162,7 +186,7 @@ internal sealed class WorldSceneRenderer : IPreparedWorldSceneFramePhase
     {
         _ = input;
         if (!_availability.IsWorldAvailable
-            || _foundation.Foundation.PortalViewportVisible
+            || _foundation.Foundation.WorldHidden
             || !_presentation.DrawWorld)
             return;
         _passes.PrepareSky(_sky.ActiveDayGroup);
@@ -188,7 +212,7 @@ internal sealed class WorldSceneRenderer : IPreparedWorldSceneFramePhase
             }
 
             RenderFrameFoundation foundation = _foundation.Foundation;
-            if (foundation.PortalViewportVisible || !_presentation.DrawWorld)
+            if (foundation.WorldHidden || !_presentation.DrawWorld)
             {
                 _selection?.CompleteFrame();
                 selectionFrameStarted = false;
@@ -343,7 +367,7 @@ internal sealed class WorldSceneRenderer : IPreparedWorldSceneFramePhase
 
         RenderFrameFoundation foundation = _foundation.Foundation;
         if (!_availability.IsWorldAvailable
-            || foundation.PortalViewportVisible
+            || foundation.WorldHidden
             || !_presentation.DrawWorld)
             return new PreparedWorldSceneFrame(false, foundation, default, -1);
 

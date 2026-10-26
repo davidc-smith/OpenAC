@@ -373,6 +373,10 @@ internal sealed class LocalPlayerTeleportSession : ILocalPlayerTeleportSession
 internal interface ILocalPlayerTeleportPresentation : IDisposable
 {
     bool IsPortalViewportVisible { get; }
+
+    /// <summary>The arrival has been placed (the tunnel is past its
+    /// placement edge) and the tunnel still covers the screen.</summary>
+    bool IsWorldPlacedBehindTunnel { get; }
     int CurrentTunnelFrame { get; }
     void Begin(Matrix4x4 projection);
 
@@ -391,29 +395,59 @@ internal interface ILocalPlayerTeleportPresentation : IDisposable
     void DrawPortalViewport(int width, int height, Matrix4x4 projection);
 }
 
+/// <summary>
+/// When the placed arrival may be drawn under the portal tunnel: from the
+/// frame after the one that placed it. The placing frame already carries the
+/// arrival's own update work (the character set down, its objects' scene
+/// changes), so the world's first draw behind the tunnel waits one frame and
+/// the two costs fall in different frames.
+/// </summary>
+internal sealed class ArrivalDrawBehindTunnelGate
+{
+    private int _placedFrames;
+
+    /// <summary>The world is drawn under the tunnel this frame.</summary>
+    public bool IsOpen => _placedFrames >= 2;
+
+    /// <summary>The tunnel's state after this frame's tick.</summary>
+    public void Observe(TeleportAnimState state) =>
+        _placedFrames = state is TeleportAnimState.TunnelContinue
+            or TeleportAnimState.TunnelFadeOut
+            ? Math.Min(_placedFrames + 1, 2)
+            : 0;
+
+    public void Reset() => _placedFrames = 0;
+}
+
 internal sealed class LocalPlayerTeleportPresentation
     : ILocalPlayerTeleportPresentation
 {
     private readonly TeleportAnimSequencer _animation = new();
     private readonly TeleportViewPlaneController _viewPlane = new();
     private readonly PortalTunnelPresentation _tunnel;
+    private readonly ArrivalDrawBehindTunnelGate _arrivalDraw = new();
 
     public LocalPlayerTeleportPresentation(PortalTunnelPresentation tunnel) =>
         _tunnel = tunnel ?? throw new ArgumentNullException(nameof(tunnel));
 
     public bool IsPortalViewportVisible => _tunnel.IsVisible;
+
+    public bool IsWorldPlacedBehindTunnel =>
+        _tunnel.IsVisible && _arrivalDraw.IsOpen;
     public int CurrentTunnelFrame => _tunnel.CurrentAnimationFrame;
 
     public void Begin(Matrix4x4 projection)
     {
         _viewPlane.Begin(projection);
         _animation.Begin(TeleportEntryKind.Portal);
+        _arrivalDraw.Reset();
     }
 
     public void BeginLogout(Matrix4x4 projection)
     {
         _viewPlane.Begin(projection);
         _animation.Begin(TeleportEntryKind.Logout);
+        _arrivalDraw.Reset();
     }
 
     public (TeleportAnimSnapshot Snapshot, IReadOnlyList<TeleportAnimEvent> Events)
@@ -424,6 +458,7 @@ internal sealed class LocalPlayerTeleportPresentation
             worldReady,
             CurrentTunnelFrame,
             holdInTunnel: StreamingDiagnostics.TunnelFreezeFrame.HasValue);
+        _arrivalDraw.Observe(snapshot.State);
 
         if (!snapshot.ShowTunnel && _tunnel.IsVisible)
             _tunnel.Exit();
@@ -448,6 +483,7 @@ internal sealed class LocalPlayerTeleportPresentation
     public void Reset()
     {
         _animation.Reset();
+        _arrivalDraw.Reset();
         _viewPlane.Reset();
         _tunnel.Exit();
     }
@@ -541,6 +577,11 @@ internal sealed class LocalPlayerTeleportController
 
     public bool IsActive => _transit.IsTeleportActive;
     public bool IsPortalViewportVisible => _presentation.IsPortalViewportVisible;
+
+    /// <summary>The arrival is placed and the tunnel still covers it, so the
+    /// world can be drawn under the tunnel.</summary>
+    public bool IsWorldPlacedBehindPortal =>
+        _presentation.IsWorldPlacedBehindTunnel;
 
     public uint ActiveDestinationCell
     {

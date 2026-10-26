@@ -96,6 +96,9 @@ public sealed class GameWindow :
     private SilkWindowCallbackBinding? _windowCallbacks;
     private GameWindowGraphics? _graphics;
     private AcDream.App.Rendering.Gpu.Vk.VulkanGraphicsContext? _vulkanGraphics;
+    // The Vulkan instance made on a worker during the start; the first
+    // window to set up Vulkan takes it.
+    private readonly AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup? _vulkanInstanceWarmup;
     private FramePacingPolicy _startupPacing;
     private AcDream.UI.Abstractions.Settings.QualitySettings _startupQuality =
         AcDream.UI.Abstractions.Settings.QualitySettings.From(
@@ -492,9 +495,11 @@ public sealed class GameWindow :
         AcDream.App.Plugins.BufferedUiRegistry? uiRegistry,
         GraphicalHostPlatformServices platformServices,
         AcDream.App.Plugins.BufferedRenderPackRegistry? renderPackRegistry = null,
-        AcDream.App.Input.AppHotkeyRegistry? hotkeyRegistry = null)
+        AcDream.App.Input.AppHotkeyRegistry? hotkeyRegistry = null,
+        AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup? vulkanInstanceWarmup = null)
     {
         _host = host ?? throw new System.ArgumentNullException(nameof(host));
+        _vulkanInstanceWarmup = vulkanInstanceWarmup;
         _joinedPlayingSession = host.HasSessionStarted;
         AcDream.App.RuntimeOptions options = host.Options;
         _options = options;
@@ -659,7 +664,7 @@ public sealed class GameWindow :
         _windowCallbacks.Attach();
         try
         {
-            _window.Run();
+            NativeWindowLoop.Run(_window);
             _nativeRunReturned = true;
             CompleteShutdown(releaseNativeWindow: false);
         }
@@ -1174,7 +1179,7 @@ public sealed class GameWindow :
             GameWindowPlatformAcquisition.Acquire(
                 CreateGraphics,
                 static graphics => graphics.Dispose(),
-                () => AttachKeyGate(_window!.CreateInput()),
+                () => AttachKeyGate(GlfwKeyboardMouseInputContext.Create(_window!)),
                 input =>
                 {
                     Interlocked.Exchange(ref _keyGate, null)?.Dispose();
@@ -1222,13 +1227,28 @@ public sealed class GameWindow :
                 _startupPacing,
                 _startupQuality.MsaaSamples,
                 _startupMemoryProfile,
-                Console.WriteLine);
+                Console.WriteLine,
+                _vulkanInstanceWarmup);
         _vulkanGraphics = vulkan;
         return new VulkanGameWindowGraphics(vulkan);
     }
 
+    private Task<TerrainAtlas.DecodedSources>? _terrainSourceDecode;
+
+    private Task<TerrainAtlas.DecodedSources>? TakeTerrainSourceDecode()
+    {
+        Task<TerrainAtlas.DecodedSources>? decode = _terrainSourceDecode;
+        _terrainSourceDecode = null;
+        return decode;
+    }
+
     private void OnLoad()
     {
+
+        // The terrain atlas's layers decode on a worker while the window
+        // and the GPU are set up; the world phase picks them up.
+        if (_host.Content is { } sessionFiles)
+            _terrainSourceDecode = TerrainAtlas.BeginDecodeSources(sessionFiles.Dats, sessionFiles.DatLock);
 
         GameWindowPlatformResult<GameWindowGraphics, IInputContext> platform = AcquirePlatform();
 
@@ -1319,6 +1339,7 @@ public sealed class GameWindow :
                     {
                         TextureDetail = AcDream.App.Rendering.Wb.WorldTextureDetail.FromDisplay(
                             _runtimeSettings.Startup.Display),
+                        TerrainSources = TakeTerrainSourceDecode(),
                     },
                     this).Compose(platformResult, contentEffectsAudio, settingsDevTools);
                 Console.WriteLine(

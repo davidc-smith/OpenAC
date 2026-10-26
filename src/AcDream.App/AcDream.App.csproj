@@ -9,6 +9,13 @@
     <RootNamespace>AcDream.App</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>..\..\assets\icons\acdream-client.ico</ApplicationIcon>
+    <!-- The windowed client collects garbage with the server collector: its
+         collections run on several threads, so a pause the player sees as a
+         stutter is a fraction as long. Measured at login and while loading
+         the world: total pause 224 -> 80 ms live, longest 45 -> 17 ms, for
+         about 4% more CPU and the same working set (it sizes its heaps to the
+         load). Headless keeps the workstation collector, tuned for memory. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AcDream.Core.Tests" />

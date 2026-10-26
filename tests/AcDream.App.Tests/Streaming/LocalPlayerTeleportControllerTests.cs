@@ -1566,6 +1566,25 @@ public sealed class LocalPlayerTeleportControllerTests
 
 
     [Fact]
+    public void PlacedArrival_IsReportedBehindThePortal_OnlyOnceTheLoginWaitEnds()
+    {
+        var harness = new Harness(worldReady: false);
+        var login = new StubLoginState { IsWaitingForLogin = true };
+        var source = new LocalPlayerTeleportRenderStateSource(
+            harness.Controller, login);
+
+        harness.Presentation.IsWorldPlacedBehindTunnel = true;
+        Assert.True(harness.Controller.IsWorldPlacedBehindPortal);
+        Assert.False(source.IsWorldPlacedBehindPortal);
+
+        login.IsWaitingForLogin = false;
+        Assert.True(source.IsWorldPlacedBehindPortal);
+
+        harness.Presentation.IsWorldPlacedBehindTunnel = false;
+        Assert.False(source.IsWorldPlacedBehindPortal);
+    }
+
+    [Fact]
     public void ArmLoginTunnel_ShowsTunnelAndPlaysCueSynchronously()
     {
         var order = new List<string>();
@@ -1999,6 +2018,7 @@ public sealed class LocalPlayerTeleportControllerTests
         public FakePresentation(List<string> order) => _order = order;
 
         public bool IsPortalViewportVisible { get; private set; }
+        public bool IsWorldPlacedBehindTunnel { get; set; }
         public int CurrentTunnelFrame => 72;
         public Matrix4x4? BeginProjection;
         public bool EmitPlaceWhenReady;

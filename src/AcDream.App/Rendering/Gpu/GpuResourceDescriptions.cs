@@ -13,7 +13,8 @@ internal readonly record struct GpuTextureDescription(
     int Width,
     int Height,
     int LayerCount,
-    int MipLevelCount);
+    int MipLevelCount,
+    GpuTextureSwizzle Swizzle = GpuTextureSwizzle.Identity);
 
 internal readonly record struct GpuSamplerDescription(
     GpuFilter MinFilter,

@@ -49,11 +49,13 @@ public static class BundledUiFont
     }
 
     private static UiDatFont Upload(TextureCache textures, Atlas atlas) =>
-        atlas.CreateFont(textures.UploadRgba8(atlas.Pixels, atlas.Width, atlas.Height, nearest: true));
+        atlas.CreateFont(textures.UploadCoverage8(atlas.Coverage, atlas.Width, atlas.Height, nearest: true));
 
     private const float MaximumPixelHeight = 32f;
 
-    internal sealed record Atlas(byte[] Pixels, int Width, int Height, float LineHeight,
+    /// <summary>The baked glyphs: <see cref="Coverage"/> holds one byte of
+    /// glyph coverage per pixel, drawn as white with that alpha.</summary>
+    internal sealed record Atlas(byte[] Coverage, int Width, int Height, float LineHeight,
         float Ascent, Dictionary<char, FontCharDesc> Glyphs)
     {
         internal UiDatFont CreateFont(uint texture) => new(texture, Width, Height,
@@ -87,22 +89,18 @@ public static class BundledUiFont
         int ascent, descent, gap;
         StbTrueType.stbtt_GetFontVMetrics(info, &ascent, &descent, &gap);
         float baseline = MathF.Round(ascent * scale);
-        byte[] rgba = new byte[AtlasSize * AtlasSize * Ranges.Length * 4];
+        byte[] atlas = new byte[AtlasSize * AtlasSize * Ranges.Length];
+        var coverage = new byte[AtlasSize * AtlasSize];
         var glyphs = new Dictionary<char, FontCharDesc>();
         for (int range = 0; range < Ranges.Length; range++)
         {
             var (first, count) = Ranges[range];
             var baked = new StbTrueType.stbtt_bakedchar[count];
-            var coverage = new byte[AtlasSize * AtlasSize];
+            Array.Clear(coverage);
             if (!StbTrueType.stbtt_BakeFontBitmap(fontBytes, 0, pixelHeight,
                 coverage, AtlasSize, AtlasSize, first, count, baked))
                 throw new InvalidOperationException("Bundled font atlas does not fit the requested size.");
-            for (int i = 0; i < coverage.Length; i++)
-            {
-                int target = (range * coverage.Length + i) * 4;
-                rgba[target] = rgba[target + 1] = rgba[target + 2] = 255;
-                rgba[target + 3] = coverage[i];
-            }
+            coverage.CopyTo(atlas, range * coverage.Length);
             for (int i = 0; i < count; i++)
             {
                 int codepoint = first + i;
@@ -121,7 +119,7 @@ public static class BundledUiFont
                 };
             }
         }
-        return new Atlas(rgba, AtlasSize, AtlasSize * Ranges.Length,
+        return new Atlas(atlas, AtlasSize, AtlasSize * Ranges.Length,
             MathF.Ceiling((ascent - descent + gap) * scale), baseline, glyphs);
     }
 }

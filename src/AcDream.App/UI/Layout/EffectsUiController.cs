@@ -147,9 +147,10 @@ public sealed class EffectsUiController : IRetainedPanelController
             {
                 _spellbook.TryGetMetadata(enchantment.SpellId, out SpellMetadata? metadata);
                 uint identity = enchantment.Identity;
+                uint spellId = enchantment.SpellId;
                 EffectRowTemplateFactory.EffectRow row = _templates.Create(
                     enchantment.SpellId,
-                    metadata is null ? 0u : _resolveSpellIcon(enchantment.SpellId),
+                    metadata is null ? null : () => _resolveSpellIcon(spellId),
                     metadata?.Name ?? $"Spell {enchantment.SpellId}",
                     showDuration ? FormatRemaining(enchantment, _serverTime()) : string.Empty);
                 row.Slot.Clicked = () => Select(enchantment.SpellId);

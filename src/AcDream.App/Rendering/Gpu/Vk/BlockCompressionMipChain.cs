@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace AcDream.App.Rendering.Gpu.Vk;
 
 internal static class BlockCompressionMipChain
@@ -17,8 +19,20 @@ internal static class BlockCompressionMipChain
         if (mipLevelCount == 1)
             return [];
 
-        byte[] rgba = BlockCompressionCodec.DecodeLevel(format, level0, width, height);
-        return BuildFromRgba(format, rgba, width, height, mipLevelCount);
+        // The decoded level 0 and the filtered levels are working images,
+        // dropped once each level is encoded again: they are rented, so a
+        // chain allocates only the levels it returns.
+        int rgbaBytes = checked(width * height * 4);
+        byte[] rgba = ArrayPool<byte>.Shared.Rent(rgbaBytes);
+        try
+        {
+            BlockCompressionCodec.DecodeLevel(format, level0, width, height, rgba.AsSpan(0, rgbaBytes));
+            return BuildFromRgba(format, rgba.AsSpan(0, rgbaBytes), width, height, mipLevelCount);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rgba);
+        }
     }
 
     internal static IReadOnlyList<Level> BuildFromRgba(
@@ -29,20 +43,56 @@ internal static class BlockCompressionMipChain
         int mipLevelCount)
     {
         var levels = new List<Level>(Math.Max(0, mipLevelCount - 1));
-        byte[] current = rgba.ToArray();
+        if (mipLevelCount <= 1)
+            return levels;
+
+        // Level 1 is filtered straight from the caller's level 0; no copy of
+        // it is made.
+        ReadOnlySpan<byte> current = rgba;
         int currentWidth = width;
         int currentHeight = height;
 
-        for (int level = 1; level < mipLevelCount; level++)
+        if (!BlockCompressionCodec.IsBlockCompressed(format))
         {
-            (byte[] next, int nextWidth, int nextHeight) = Downsample(current, currentWidth, currentHeight);
-            byte[] encoded = BlockCompressionCodec.IsBlockCompressed(format)
-                ? BlockCompressionCodec.EncodeLevel(format, next, nextWidth, nextHeight)
-                : next;
-            levels.Add(new Level(level, nextWidth, nextHeight, encoded));
-            current = next;
-            currentWidth = nextWidth;
-            currentHeight = nextHeight;
+            // An uncompressed level is itself the level returned.
+            for (int level = 1; level < mipLevelCount; level++)
+            {
+                (byte[] next, int nextWidth, int nextHeight) = Downsample(current, currentWidth, currentHeight);
+                levels.Add(new Level(level, nextWidth, nextHeight, next));
+                current = next;
+                currentWidth = nextWidth;
+                currentHeight = nextHeight;
+            }
+            return levels;
+        }
+
+        // A compressed level is encoded from a filtered working image. Two
+        // rented images take turns: one is filtered into the other.
+        int firstBytes = checked(Math.Max(1, width / 2) * Math.Max(1, height / 2) * 4);
+        byte[] scratchA = ArrayPool<byte>.Shared.Rent(firstBytes);
+        byte[] scratchB = ArrayPool<byte>.Shared.Rent(firstBytes);
+        try
+        {
+            byte[] target = scratchA;
+            for (int level = 1; level < mipLevelCount; level++)
+            {
+                (int nextWidth, int nextHeight) = Downsample(current, currentWidth, currentHeight, target);
+                ReadOnlySpan<byte> next = target.AsSpan(0, nextWidth * nextHeight * 4);
+                levels.Add(new Level(
+                    level,
+                    nextWidth,
+                    nextHeight,
+                    BlockCompressionCodec.EncodeLevel(format, next, nextWidth, nextHeight)));
+                current = next;
+                currentWidth = nextWidth;
+                currentHeight = nextHeight;
+                target = ReferenceEquals(target, scratchA) ? scratchB : scratchA;
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(scratchB);
+            ArrayPool<byte>.Shared.Return(scratchA);
         }
 
         return levels;
@@ -55,9 +105,31 @@ internal static class BlockCompressionMipChain
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        var output = new byte[Math.Max(1, width / 2) * Math.Max(1, height / 2) * 4];
+        (int nextWidth, int nextHeight) = Downsample(rgba, width, height, output);
+        return (output, nextWidth, nextHeight);
+    }
+
+    /// <summary>
+    /// The 2 x 2 box filter of a level into <paramref name="output"/>, which
+    /// must hold the next level; every texel of the next level is written.
+    /// </summary>
+    internal static (int Width, int Height) Downsample(
+        ReadOnlySpan<byte> rgba,
+        int width,
+        int height,
+        Span<byte> output)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
         int nextWidth = Math.Max(1, width / 2);
         int nextHeight = Math.Max(1, height / 2);
-        var output = new byte[nextWidth * nextHeight * 4];
+        if (output.Length < nextWidth * nextHeight * 4)
+        {
+            throw new ArgumentException(
+                $"A {nextWidth}x{nextHeight} RGBA8 level needs {nextWidth * nextHeight * 4} bytes.",
+                nameof(output));
+        }
 
         for (int y = 0; y < nextHeight; y++)
         {
@@ -82,6 +154,6 @@ internal static class BlockCompressionMipChain
             }
         }
 
-        return (output, nextWidth, nextHeight);
+        return (nextWidth, nextHeight);
     }
 }

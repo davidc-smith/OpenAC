@@ -290,7 +290,7 @@ internal sealed class GraphicalLiveSession
     /// Two command routes over one connection, active together: the first
     /// activates first and is let go of last.
     /// </summary>
-    private sealed class JointCommandRoute(
+    internal sealed class JointCommandRoute(
         ILiveSessionCommandRouting first,
         ILiveSessionCommandRouting second) : ILiveSessionCommandRouting
     {

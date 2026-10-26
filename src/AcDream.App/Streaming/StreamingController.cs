@@ -9,7 +9,8 @@ namespace AcDream.App.Streaming;
 
 public sealed class StreamingController
     : IStreamingFrameBackend,
-      IWorldRevealStreamingScheduler
+      IWorldRevealStreamingScheduler,
+      IFrameUploadAllowanceSource
 {
     private readonly record struct DestinationReservation(
         long RevealGeneration,
@@ -25,6 +26,7 @@ public sealed class StreamingController
         public bool PendingPublicationsCleared;
         public bool RegionCleared;
         public bool SpatialGenerationDetached;
+        public bool DetachedProjectionsRetired;
         public bool PreparationCommitted;
         public (int X, int Y, bool IsSealedDungeon)? Destination;
         public bool DestinationConfigured;
@@ -101,6 +103,18 @@ public sealed class StreamingController
             _workBudget = profile.ToBudget();
         }
     }
+
+    /// <summary>The widened budget a destination reservation runs at, while
+    /// a reveal withholds the world.</summary>
+    internal StreamingWorkBudget RevealWorkBudget =>
+        _workBudget.WidenForDestinationHold(
+            _configuredWorkBudgetOptions.HoldDestinationCeilingMilliseconds);
+
+    FrameUploadAllowance IFrameUploadAllowanceSource.Ordinary =>
+        FrameUploadAllowance.Of(_workBudget, _workBudget);
+
+    FrameUploadAllowance IFrameUploadAllowanceSource.Reveal =>
+        FrameUploadAllowance.Of(RevealWorkBudget, _workBudget);
 
     internal long ActiveRevealGeneration =>
         _destinationReservation?.RevealGeneration ?? 0L;
@@ -573,11 +587,7 @@ public sealed class StreamingController
         // allocations. Restarting it is the reset a new one gets.
         StreamingWorkMeter meter = _workMeter;
         meter.Restart(
-            destinationHold
-                ? _workBudget.WidenForDestinationHold(
-                    _configuredWorkBudgetOptions
-                        .HoldDestinationCeilingMilliseconds)
-                : _workBudget,
+            destinationHold ? RevealWorkBudget : _workBudget,
             destinationReservationActive: destinationHold);
         _activeWorkMeter = meter;
         try
@@ -1259,6 +1269,18 @@ public sealed class StreamingController
                     meter.Fail();
                     throw;
                 }
+            }
+            if (!transaction.DetachedProjectionsRetired)
+            {
+                // The old window's static projections leave the render scene
+                // over as many frames as the budget needs, all before the
+                // origin moves: nothing of the old window is drawn at the new
+                // origin, and no destination publication can meet them.
+                using StreamingWorkMeter.LaneScope lane =
+                    meter.EnterLane(StreamingWorkLane.Destination);
+                if (!_presentation.AdvanceDetachedProjectionRetirements(meter))
+                    return false;
+                transaction.DetachedProjectionsRetired = true;
             }
 
             transaction.PreparationCommitted = true;

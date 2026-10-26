@@ -750,14 +750,16 @@ public sealed partial class WbDrawDispatcher : IDisposable, Walk.IWalkShellResid
         in RenderInstanceCandidate entity) =>
         entity.CacheLandblockId;
 
-    private static void BuildCurrentCandidateTuples(
+    internal static void BuildCurrentCandidateTuples(
         List<(WorldEntity Entity, int MeshRefIndex, uint LandblockId)> source,
         HashSet<uint>? animatedEntityIds,
         List<RenderInstanceTuple> destination)
     {
         destination.Clear();
-        if (destination.Capacity < source.Count)
-            destination.Capacity = source.Count;
+        // Grows by doubling: sized exactly, a list that grows by a few
+        // entities a frame (walking into new landblocks) reallocated its
+        // large array every frame.
+        destination.EnsureCapacity(source.Count);
 
         int index = 0;
         while (index < source.Count)
