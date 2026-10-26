@@ -1,4 +1,6 @@
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using AcDream.Plugin.Abstractions;
 using AcDream.App.UI.Markup;
 
 namespace AcDream.App.UI;
@@ -9,10 +11,15 @@ namespace AcDream.App.UI;
 /// lost (those stretched between top and bottom grow instead), and come back
 /// when it expands. Each moved element re-records its
 /// anchor baseline, so the per-frame anchor pass keeps the new layout.
+/// Unless <see cref="Framed"/> is off, it is drawn as a group box: a border
+/// round the header and content, with a tinted header band.
 /// </summary>
 public sealed class UiMarkupExpander : UiElement
 {
     public const float HeaderHeight = 18f;
+
+    public static readonly Vector4 ClassicFrame = new(0.46f, 0.41f, 0.28f, 1f);
+    public static readonly Vector4 ClassicBand = new(0f, 0f, 0f, 0.30f);
 
     public UiMarkupExpanderHeader Header { get; }
 
@@ -29,6 +36,11 @@ public sealed class UiMarkupExpander : UiElement
     public bool OpenByDefault { get; set; } = true;
 
     internal RememberedValue? Remembered { get; set; }
+
+    /// <summary>The markup's <c>border</c>: draws the group-box frame and header band.</summary>
+    public bool Framed { get; set; } = true;
+
+    public PluginUiPalette? ThemePalette { get; set; }
 
     public bool IsRemembered => Remembered?.IsActive == true;
 
@@ -76,6 +88,48 @@ public sealed class UiMarkupExpander : UiElement
         };
         AddChild(Header);
         AddChild(Content);
+    }
+
+    // While folded the box is just the header (a flex-placed expander keeps its height).
+    private float FrameHeight => _laidOutExpanded ? Height : MathF.Min(Height, HeaderHeight);
+
+    private Vector4 Fade(Vector4 color) =>
+        Enabled ? color : color with { W = color.W * UiMarkupToggle.DisabledAlpha };
+
+    protected override void OnDraw(UiRenderContext ctx)
+    {
+        if (!Framed || Width <= 0f)
+            return;
+        float h = FrameHeight;
+        if (ThemePalette is { } p)
+        {
+            float r = PluginUiStyle.ControlRadius;
+            var radii = h > HeaderHeight
+                ? new CanvasCornerRadii(r, r, 0f, 0f)
+                : new CanvasCornerRadii(r, r, r, r);
+            ctx.FillVerticalGradient(0f, 0f, Width, MathF.Min(h, HeaderHeight), radii,
+                Fade(PluginUiStyle.Mix(p.Background, p.Text, 0.08f)),
+                Fade(PluginUiStyle.Mix(p.Background, p.Text, 0.04f)));
+        }
+        else
+        {
+            ctx.DrawFill(0f, 0f, Width, MathF.Min(h, HeaderHeight), Fade(ClassicBand));
+        }
+    }
+
+    // The border goes over the children, so content placed at the edge cannot hide it.
+    protected override void OnDrawAfterChildren(UiRenderContext ctx)
+    {
+        if (!Framed || Width <= 0f)
+            return;
+        float h = FrameHeight;
+        Vector4 edge = Fade(ThemePalette?.Border ?? ClassicFrame);
+        if (ThemePalette is not null)
+            PluginUiStyle.Surface(ctx, 0f, 0f, Width, h, PluginUiStyle.ControlRadius, Vector4.Zero, edge);
+        else
+            ctx.DrawRectOutline(0f, 0f, Width, h, edge);
+        if (h > HeaderHeight)
+            ctx.DrawFill(1f, HeaderHeight - 1f, Width - 2f, 1f, edge);
     }
 
     /// <summary>Sizes the header and content to the expander's authored box.</summary>

@@ -120,7 +120,7 @@ internal static class PluginMarkupTheme
                 break;
             case UiMarkupExpander expander:
                 var expanderText = expander.Header.TextColor;
-                panel.AddThemeAction(p => { expander.Header.ThemePalette = p;
+                panel.AddThemeAction(p => { expander.Header.ThemePalette = p; expander.ThemePalette = p;
                     if (Default("color")) expander.Header.TextColor = p?.Text ?? expanderText; });
                 break;
             case UiMarkupSplit split:
