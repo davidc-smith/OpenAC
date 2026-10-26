@@ -478,7 +478,11 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
     private static string ResolutionKey((int Width, int Height) screen)
         => $"{screen.Width}x{screen.Height}";
 
-    private static bool CanPersist(string key)
+    /// <summary>The character whose layout was last restored; null before the first restore.</summary>
+    public string? RestoredCharacter => _restoredCharacter;
+
+    /// <summary>Whether a character key has its own saved layout (not blank, not "default").</summary>
+    internal static bool CanPersist(string key)
         => !string.IsNullOrWhiteSpace(key)
            && !string.Equals(key, "default", StringComparison.OrdinalIgnoreCase);
 

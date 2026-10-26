@@ -2,6 +2,7 @@ using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 using AcDream.App.UI.Layout;
 using AcDream.UI.Abstractions.Input;
+using Silk.NET.Input;
 
 namespace AcDream.App.Tests.UI.Hud;
 
@@ -118,5 +119,37 @@ public sealed class ModernHudWiringTests
         Assert.True(SpellActionRouter.IsClientOnly(SpellBarActions.ForSlot(1, 0)));
         Assert.True(SpellActionRouter.IsClientOnly(SpellBarActions.ForSlot(9, 11)));
         Assert.True(SpellActionRouter.IsClientOnly(InputAction.CastItemSpell));
+    }
+
+    private static readonly KeyChord Ctrl1 = new(Key.Number1, ModifierMask.Ctrl);
+
+    private static KeyBindings Ctrl1Bindings()
+    {
+        var b = new KeyBindings();
+        b.Add(new(Ctrl1, InputAction.UseSpellRow3Slot1, Scope: InputScope.MagicCombat));
+        b.Add(new(Ctrl1, InputAction.UseQuickSlot_1));
+        return b;
+    }
+
+    [Fact]
+    public void GameActionOnSameKey_FindsTheGameActionOnTheFiringKey()
+    {
+        Assert.Equal(InputAction.UseQuickSlot_1,
+            SpellActionRouter.GameActionOnSameKey(Ctrl1Bindings(), Ctrl1, InputAction.UseSpellRow3Slot1));
+    }
+
+    [Fact]
+    public void GameActionOnSameKey_NullForAnotherKeyOrNoKey()
+    {
+        KeyBindings b = Ctrl1Bindings();
+        b.Add(new(new KeyChord(Key.Number2, ModifierMask.Ctrl), InputAction.UseQuickSlot_2));
+        // A stale key not bound to the action that fired.
+        Assert.Null(SpellActionRouter.GameActionOnSameKey(
+            b, new KeyChord(Key.Number2, ModifierMask.Ctrl), InputAction.UseSpellRow3Slot1));
+        Assert.Null(SpellActionRouter.GameActionOnSameKey(b, null, InputAction.UseSpellRow3Slot1));
+        // The firing key with no Game-scope binding.
+        var only = new KeyBindings();
+        only.Add(new(Ctrl1, InputAction.UseSpellRow3Slot1, Scope: InputScope.MagicCombat));
+        Assert.Null(SpellActionRouter.GameActionOnSameKey(only, Ctrl1, InputAction.UseSpellRow3Slot1));
     }
 }

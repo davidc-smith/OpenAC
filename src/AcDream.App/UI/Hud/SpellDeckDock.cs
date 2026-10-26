@@ -128,6 +128,16 @@ public sealed class SpellDeckDock
         Tick();
     }
 
+    /// <summary>After a layout restore (or a character load with nothing to restore):
+    /// applies the attachment from scratch, as if it had just changed. A detached
+    /// Spell Deck takes its restored placement, normalised to its rows, and saves
+    /// it back; the restore may have resized the window without its geometry.</summary>
+    public void AfterRestore()
+    {
+        _mode = null;
+        FitToScreen();
+    }
+
     public void Detach()
     {
         _controller.SetAttached(false);

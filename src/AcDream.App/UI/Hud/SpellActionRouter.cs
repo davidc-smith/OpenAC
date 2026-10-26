@@ -34,6 +34,20 @@ public static class SpellActionRouter
         return true;
     }
 
+    /// <summary>
+    /// The Game-scope action bound to <paramref name="chord"/> (the key that
+    /// fired <paramref name="action"/>), or null. The chord must be bound to
+    /// <paramref name="action"/>, so an automation press never reuses a stale key.
+    /// </summary>
+    public static InputAction? GameActionOnSameKey(KeyBindings bindings, KeyChord? chord, InputAction action)
+    {
+        if (chord is not { } key) return null;
+        bool fromThisKey = false;
+        foreach (Binding binding in bindings.All)
+            if (binding.Chord == key && binding.Action == action) { fromThisKey = true; break; }
+        return fromThisKey ? bindings.Find(key, ActivationType.Press, InputScope.Game)?.Action : null;
+    }
+
     /// <summary>The actions only the Spell Deck knows: spell bar rows 2-10 and the item spell.</summary>
     public static bool IsClientOnly(InputAction action) =>
         action == InputAction.CastItemSpell
