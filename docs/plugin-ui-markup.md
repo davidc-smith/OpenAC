@@ -338,7 +338,7 @@ Unknown or miscased element names throw at build time.
 | `color` | A colour swatch that opens a picker | `x y w h value onchange alpha` |
 | `radio` | One choice of several, as round buttons or a segmented bar | `x y w h items selected onchange orientation style color` |
 | `separator` | A 1 px dividing line | `x y w h color` |
-| `expander` | A header that folds away the content below it | `name x y w h text expanded onchange open color` |
+| `expander` | A header that folds away the content below it | `name x y w h text expanded onchange open color border` |
 | `split` | Two panes with a bar between them the player drags | `name x y w h orientation position onchange at min max` |
 | `contextmenu` | Right-click menu for the element it is inside | `items enabled onselect onopen` |
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
@@ -713,8 +713,14 @@ top is above the expander's bottom, stay put.
 - A `tooltip` on an `<expander>` shows on its header.
 - `color` sets the header caption's colour; without it the caption uses the
   theme's text colour under `theme="plugin"`.
-- `open` other than `true` or `false`, and an `h` under 18, fail the build of
-  the window.
+- It is framed like a group box: a 1 px border round the header and content,
+  a tinted header band and a line under the header (the theme's border colour
+  under `theme="plugin"`, with rounded corners). Folded, the frame is just the
+  header. The border is drawn over the content, so leave a few pixels of
+  margin (`x="4"`, `y="4"`) for children. `border="false"` turns the frame
+  and band off.
+- `open` or `border` other than `true` or `false`, and an `h` under 18, fail
+  the build of the window.
 - Elements below the expander that are anchored to both top and bottom
   (stretched) grow into the freed space instead of moving, and shrink back when
   it opens; their bottom margin stays as authored.

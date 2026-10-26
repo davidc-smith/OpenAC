@@ -15,7 +15,7 @@
                 onchange="{SetAdvancedOpen}" anchor="left top right">
         <label x="4" y="6" text="Scan (m)" />
         <number x="90" y="4" w="70" h="20" value="{Scan}" min="1" max="200" onchange="{SetScan}" />
-        <expander name="more" x="0" y="30" w="239" h="56" text="More" open="false" anchor="left top right">
+        <expander name="more" x="4" y="30" w="231" h="54" text="More" open="false" anchor="left top right">
           <checkbox x="4" y="4" w="200" h="16" text="Verbose log" checked="{Verbose}" onchange="{SetVerbose}" />
         </expander>
       </expander>
