@@ -8,6 +8,24 @@ internal sealed class RuntimeSpellCastOperationsSlot
     : IRuntimeSpellCastOperations
 {
     private IRuntimeSpellCastOperations? _owner;
+    private IRuntimeSpellCastOperations? _session;
+
+    /// <summary>
+    /// The session's own operations, answered whenever nothing else is
+    /// bound: a session with no window attached plays through these. A
+    /// window's operations, bound while it is attached, take precedence;
+    /// when the window lets go, the session's operations answer again.
+    /// </summary>
+    public void UseSessionOperations(IRuntimeSpellCastOperations session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (_session is not null && !ReferenceEquals(_session, session))
+            throw new InvalidOperationException(
+                "The session's own operations are already in use.");
+        _session = session;
+    }
+
+    private IRuntimeSpellCastOperations? Current => _owner ?? _session;
 
     public IDisposable BindOwned(IRuntimeSpellCastOperations owner)
     {
@@ -25,26 +43,26 @@ internal sealed class RuntimeSpellCastOperationsSlot
             _owner = null;
     }
 
-    public uint LocalPlayerId => _owner?.LocalPlayerId ?? 0u;
-    public bool CanSend => _owner?.CanSend == true;
+    public uint LocalPlayerId => Current?.LocalPlayerId ?? 0u;
+    public bool CanSend => Current?.CanSend == true;
 
     public bool HasRequiredComponents(uint spellId) =>
-        _owner?.HasRequiredComponents(spellId) == true;
+        Current?.HasRequiredComponents(spellId) == true;
 
     public bool IsTargetCompatible(
         uint targetId,
         SpellMetadata spell,
         bool showMessage) =>
-        _owner?.IsTargetCompatible(targetId, spell, showMessage) == true;
+        Current?.IsTargetCompatible(targetId, spell, showMessage) == true;
 
-    public void StopCompletely() => _owner?.StopCompletely();
+    public void StopCompletely() => Current?.StopCompletely();
     public void SendUntargeted(uint spellId) =>
-        _owner?.SendUntargeted(spellId);
+        Current?.SendUntargeted(spellId);
     public void SendTargeted(uint targetId, uint spellId) =>
-        _owner?.SendTargeted(targetId, spellId);
+        Current?.SendTargeted(targetId, spellId);
     public void DisplayMessage(string message) =>
-        _owner?.DisplayMessage(message);
-    public void IncrementBusy() => _owner?.IncrementBusy();
+        Current?.DisplayMessage(message);
+    public void IncrementBusy() => Current?.IncrementBusy();
 
     private sealed class Binding : IDisposable
     {

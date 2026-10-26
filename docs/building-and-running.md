@@ -259,7 +259,10 @@ standard error gets `[<session id>] ended: no available character matches Id(134
 (or `Name("...")`, `Index(n)`), and the status file closes with
 `disconnected` and `exited` (code 5) giving that text as `reason`.
 While it waits, `/quit` ends it and `/window` waits for the next login. With
-no window the client also walks (`/nav`, plugin walks), lets plugins answer
+no window the client also walks (`/nav`, plugin walks), fights (combat mode,
+attacks, target selection and spell casts, through the same operations the
+headless client uses; a window opened later takes them over and hands them
+back when it closes), lets plugins answer
 the server's confirmations, logs the character off when a plugin asks (back
 to character selection, as with a window), and sets the document's
 `characterOptions`, as
