@@ -154,6 +154,17 @@ public sealed class UiRoot : UiElement
         }
     }
 
+    /// <summary>The resize edges that apply to <paramref name="window"/> now:
+    /// the dragged edges while it is being resized, else the edges under the
+    /// pointer while it hovers that window's grip. Windows use it to light
+    /// their own grips.</summary>
+    internal ResizeEdges ResizeEdgesFor(UiElement window)
+    {
+        if (_resizeTarget is not null)
+            return ReferenceEquals(_resizeTarget, window) ? _resizeEdges : ResizeEdges.None;
+        return ReferenceEquals(FindWindow(Pick(MouseX, MouseY)), window) ? HoverResizeEdges : ResizeEdges.None;
+    }
+
     private static ResizeEdges EffectiveGripEdges(UiElement? target, UiElement? window)
     {
         if (window is null || target is not UiResizeGrip grip)
@@ -163,7 +174,7 @@ public sealed class UiRoot : UiElement
         if (!window.ResizeX) edges &= ~(ResizeEdges.Left | ResizeEdges.Right);
         if (!window.ResizeY) edges &= ~(ResizeEdges.Top | ResizeEdges.Bottom);
         edges &= window.ResizableEdges;
-        return edges;
+        return window.FilterResizeEdges(edges);
     }
 
     public bool HoverWindowMove
@@ -511,8 +522,13 @@ public sealed class UiRoot : UiElement
                 _resizeTarget.MinWidth, _resizeTarget.MinHeight,
                 MathF.Max(_resizeTarget.MinWidth, maxWidth),
                 MathF.Max(_resizeTarget.MinHeight, maxHeight));
+            float cw = nw, ch = nh;
+            _resizeTarget.ConstrainResize(_resizeEdges, ref cw, ref ch);
+            // Keep the edges that are not being dragged where they were.
+            if ((_resizeEdges & ResizeEdges.Left) != 0) nx = _resizeStartX + _resizeStartW - cw;
+            if ((_resizeEdges & ResizeEdges.Top) != 0) ny = _resizeStartY + _resizeStartH - ch;
             _resizeTarget.Left = nx; _resizeTarget.Top = ny;
-            _resizeTarget.Width = nw; _resizeTarget.Height = nh;
+            _resizeTarget.Width = cw; _resizeTarget.Height = ch;
             _resizeTarget.ResetAnchorCapture();
             return;
         }
@@ -1539,7 +1555,7 @@ public sealed class UiRoot : UiElement
         if (!corner) e &= w.ResizableEdges;
         if (!w.ResizeX) e &= ~(ResizeEdges.Left | ResizeEdges.Right);
         if (!w.ResizeY) e &= ~(ResizeEdges.Top | ResizeEdges.Bottom);
-        return e;
+        return e == ResizeEdges.None ? e : w.FilterResizeEdges(e);
     }
 
     public static (float x, float y, float w, float h) ResizeRect(
