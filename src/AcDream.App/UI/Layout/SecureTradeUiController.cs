@@ -40,7 +40,11 @@ public sealed class SecureTradeUiController : IRetainedPanelController
         Func<ClientObject, string> ResolveAppropriateName,
         uint SelfEmptySlotSprite = 0u,
         uint PartnerEmptySlotSprite = 0u,
-        Func<int, string>? FormatTotalItems = null);
+        Func<int, string>? FormatTotalItems = null,
+        /// <summary>Selects and examines an item, the shared right-click
+        /// path of every physical item cell. Null leaves right-click
+        /// inert.</summary>
+        Action<uint>? ExamineItem = null);
 
     private readonly Bindings _bindings;
     private readonly UiText? _partnerName;
@@ -100,6 +104,11 @@ public sealed class SecureTradeUiController : IRetainedPanelController
 
         ConfigureGrid(_selfList, bindings.SelfEmptySlotSprite);
         ConfigureGrid(_partnerList, bindings.PartnerEmptySlotSprite);
+
+        // Right-click examines an item on either side like any other item
+        // cell; the partner's items are examinable too.
+        if (_selfList is not null) _selfList.ExamineItemRequested = bindings.ExamineItem;
+        if (_partnerList is not null) _partnerList.ExamineItemRequested = bindings.ExamineItem;
 
         _bindings.SetWindowVisible(false);
     }
@@ -247,6 +256,8 @@ public sealed class SecureTradeUiController : IRetainedPanelController
         if (_disposed) return;
         _disposed = true;
         if (_tradeButton is not null) _tradeButton.OnClick = null;
+        if (_selfList is not null) _selfList.ExamineItemRequested = null;
+        if (_partnerList is not null) _partnerList.ExamineItemRequested = null;
     }
 
     private sealed class SelfGridDropHandler(SecureTradeUiController owner)

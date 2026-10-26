@@ -4919,7 +4919,14 @@ public sealed class RetailUiRuntime : IDisposable
                                 }) ?? count.ToString();
                         }
                     },
-                    ResolveAppropriateName: ResolveAppropriateItemName));
+                    ResolveAppropriateName: ResolveAppropriateItemName,
+                    ExamineItem: id =>
+                    {
+                        _bindings.Inventory.Selection.Select(
+                            id, SelectionChangeSource.Inventory);
+                        _bindings.Inventory.ItemInteraction
+                            .ExamineSelectedOrEnterMode(id);
+                    }));
         if (controller is null)
         {
             Console.WriteLine("[UI] secure trade: required authored grids are missing.");
