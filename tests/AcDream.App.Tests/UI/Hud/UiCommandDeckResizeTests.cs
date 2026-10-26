@@ -305,6 +305,8 @@ public sealed class UiCommandDeckResizeTests
     [InlineData(1f, 149f)]    // bottom-left corner
     [InlineData(250f, 1f)]    // top edge
     [InlineData(250f, 149f)]  // bottom edge
+    [InlineData(250f, 4f)]    // top edge, over the frame
+    [InlineData(3f, 46f)]     // left edge, over stud 0
     public void OtherEdgesDoNotResize(float localX, float localY)
     {
         var (root, deck) = Mount();
@@ -312,9 +314,19 @@ public sealed class UiCommandDeckResizeTests
         Assert.Equal(ResizeEdges.None, root.HoverResizeEdges);
 
         root.OnMouseDown(UiMouseButton.Left, X(localX), Y(localY));
+        Assert.Equal(ResizeEdges.None, root.ActiveResizeEdges);
         root.OnMouseMove(X(localX) - 40, Y(localY) - 40);
         root.OnMouseUp(UiMouseButton.Left, X(localX) - 40, Y(localY) - 40);
         Assert.Equal((420f, 150f), (deck.Width, deck.Height));
+    }
+
+    [Theory]
+    [InlineData(250f, 4f)]
+    [InlineData(3f, 46f)]
+    public void OtherEdgePointsOverTheDeckHitIt(float localX, float localY)
+    {
+        var (_, deck) = Mount();
+        Assert.True(deck.HitTestLocal(localX, localY));
     }
 
     [Theory]

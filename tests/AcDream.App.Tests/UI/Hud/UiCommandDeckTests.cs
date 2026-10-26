@@ -80,6 +80,29 @@ public sealed class UiCommandDeckTests
     }
 
     [Fact]
+    public void ScaledControlsAreHitAtTheirScaledRects()
+    {
+        var (deck, actions, _) = Make(CombatMode.Melee);
+        DeckGeometry g = DeckGeometry.Create(1.5f, 2f);
+        deck.ApplyGeometry(g);
+        deck.Refresh();
+        Assert.Same(g, deck.Geometry);
+
+        for (int i = 0; i < 3; i++)
+        {
+            DeckRect r = g.HeightButton(i);
+            Down(deck, r);
+            Up(deck, r.X + r.W / 2, r.Y + r.H / 2);
+        }
+        Down(deck, g.PowerTrack);
+        Up(deck, g.PowerTrack.X + g.PowerTrack.W / 2, g.PowerTrack.Y + g.PowerTrack.H / 2);
+
+        Assert.Equal(
+            ["press High", "release", "press Medium", "release", "press Low", "release", "power 0.50"],
+            actions.Calls);
+    }
+
+    [Fact]
     public void AttackReleasedOnMouseUpInside()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
