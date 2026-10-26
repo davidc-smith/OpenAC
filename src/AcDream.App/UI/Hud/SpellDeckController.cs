@@ -164,9 +164,10 @@ public sealed class SpellDeckController
         SpellDeckRow dest = _rows[row];
         SpellDeckDropPlan plan = SpellDeckModel.PlanDrop(source, dest.Tab, slot, _favorites, _capacity());
         if (!plan.Accepted) { _actions.ShowMessage(FullRowMessage); return; }
-        bool wasOutlined = Outline.Kind == SpellDeckOutlineKind.Slot && Outline.SpellId == source.SpellId;
+        bool wasOutlined = Outline.Kind == SpellDeckOutlineKind.Slot && !source.IsFromSpellbook
+            && Outline.Tab == source.Tab && Outline.SpellId == source.SpellId;
         Send(plan);
-        if (wasOutlined || plan.Kind == SpellDeckDropKind.Move)
+        if (wasOutlined)
             Outline = SpellDeckOutline.ForSlot(dest.Id, dest.Tab, source.SpellId);
         Tick();
     }
@@ -213,7 +214,9 @@ public sealed class SpellDeckController
     public void AddRowBelow(int rowId)
     {
         if (!CanAddRow()) return;
-        int at = Math.Max(0, Context.IndexOfRow(rowId)) + 1;
+        int found = Context.IndexOfRow(rowId);
+        if (found < 0) return;
+        int at = found + 1;
         _rows.Insert(Math.Min(at, _rows.Count), new SpellDeckRow(_nextRowId++, SpellDeckModel.TabForNewRow(_rows)));
         Changed();
     }

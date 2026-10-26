@@ -81,6 +81,7 @@ public sealed class SpellDeckControllerTests
     public void Drop_CrossRow_SetsThenRemoves_AndOutlinesTheDestination()
     {
         var (c, g, _) = Make();
+        c.Click(0, 0);   // outline spell 10
         c.Drop(new SpellDeckDragSource(0, 10u), row: 1, slot: 0);
         Assert.Equal(["set 1 0 10", "remove 0 10"], g.Calls);
         Assert.Equal(SpellDeckOutline.ForSlot(2, 1, 10u), c.Outline);
@@ -115,7 +116,7 @@ public sealed class SpellDeckControllerTests
         Assert.Single(c.Rows);
         c.SetRowTab(c.Rows[0].Id, 5);
         Assert.Equal(5, c.Rows[0].Tab);
-        Assert.True(saved.Count >= 5);
+        Assert.Equal(5, saved.Count);
     }
 
     [Fact]
@@ -142,5 +143,75 @@ public sealed class SpellDeckControllerTests
         g.Calls.Clear();
         c.AddFavoriteFromSpellbook(77u);
         Assert.Equal(["set 1 1 77"], g.Calls);
+    }
+
+    [Fact]
+    public void Drop_CrossRow_OfANonOutlinedSpell_LeavesTheOutline()
+    {
+        var (c, g, _) = Make();
+        c.Click(0, 1);   // outline spell 11
+        c.Drop(new SpellDeckDragSource(0, 10u), row: 1, slot: 0);
+        Assert.Equal(["set 1 0 10", "remove 0 10"], g.Calls);
+        Assert.Equal(SpellDeckOutline.ForSlot(1, 0, 11u), c.Outline);
+    }
+
+    [Fact]
+    public void AddRowBelow_IsRefused_WhenNotAllowed_AndAtTenRows()
+    {
+        var g = new Game();
+        bool allow = false;
+        var saved = new List<SpellDeckSettings>();
+        var blocked = new SpellDeckController(g, tab => g.Tabs[tab], () => null, () => 12,
+            SpellDeckSettings.Default, saved.Add, () => false, () => allow);
+        blocked.AddRowBelow(blocked.Rows[0].Id);
+        Assert.Equal(3, blocked.Rows.Count);
+        Assert.Empty(saved);
+
+        var (c, _, _) = Make();
+        for (int i = 0; i < 12; i++) c.AddRowBelow(c.Rows[0].Id);
+        Assert.Equal(10, c.Rows.Count);
+        c.AddRowBelow(9999);   // unknown row: nothing
+        Assert.Equal(10, c.Rows.Count);
+    }
+
+    [Fact]
+    public void SpellbookAdd_FullRowMessage_AndAlreadyPresentOnlyOutlines()
+    {
+        var (c, g, _) = Make();
+        for (uint s = 30; s < 41; s++) g.Tabs[1].Add(s);
+        c.Handle(InputAction.UseSpellRow2Slot1);   // outline row 2 (tab 1)
+        g.Calls.Clear();
+        c.AddFavoriteFromSpellbook(99u);
+        Assert.Equal(["msg That spell bar row is full."], g.Calls);
+
+        g.Calls.Clear();
+        c.Click(0, 0);                              // outline row 1
+        c.AddFavoriteFromSpellbook(12u);            // already in tab 0
+        Assert.Empty(g.Calls);
+        Assert.Equal(SpellDeckOutline.ForSlot(1, 0, 12u), c.Outline);
+    }
+
+    [Fact]
+    public void NextSpell_ThenCastCurrent_CastsTheNextSpell()
+    {
+        var (c, g, _) = Make();
+        c.Click(0, 0);
+        c.Handle(InputAction.CombatNextSpell);
+        c.Handle(InputAction.CombatCastCurrentSpell);
+        Assert.Equal(["cast 11"], g.Calls);
+    }
+
+    [Fact]
+    public void DoubleClickItem_CastsOnlyInDefaultMode()
+    {
+        var (c, g, _) = Make(clickCasts: false);
+        g.Item = new ItemSpell(0x7000u, 55u);
+        c.DoubleClickItem();
+        Assert.Equal(["item 28672"], g.Calls);
+
+        var (c2, g2, _) = Make(clickCasts: true);
+        g2.Item = new ItemSpell(0x7000u, 55u);
+        c2.DoubleClickItem();
+        Assert.Empty(g2.Calls);
     }
 }

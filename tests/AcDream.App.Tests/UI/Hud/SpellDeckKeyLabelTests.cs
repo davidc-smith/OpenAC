@@ -20,4 +20,14 @@ public sealed class SpellDeckKeyLabelTests
         Assert.Equal("⌥F5", SpellDeckKeyLabel.For(b, InputAction.CastItemSpell));
         Assert.Equal("", SpellDeckKeyLabel.For(b, InputAction.UseSpellRow4Slot1));
     }
+
+    [Fact]
+    public void Labels_CtrlDigit_AndEqual()
+    {
+        var b = new KeyBindings();
+        b.Add(new(new KeyChord(Key.Number4, ModifierMask.Ctrl), InputAction.UseSpellRow2Slot4, Scope: InputScope.MagicCombat));
+        b.Add(new(new KeyChord(Key.Equal, ModifierMask.None), InputAction.UseSpellSlot_12, Scope: InputScope.MagicCombat));
+        Assert.Equal("^4", SpellDeckKeyLabel.For(b, InputAction.UseSpellRow2Slot4));
+        Assert.Equal("=", SpellDeckKeyLabel.For(b, InputAction.UseSpellSlot_12));
+    }
 }
