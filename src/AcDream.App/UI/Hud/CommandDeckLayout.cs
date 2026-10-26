@@ -44,8 +44,8 @@ public static class CommandDeckLayout
     public static DeckRect PowerTrack { get; } = new(RowValueLeft, 98f, 118f, 10f);
     public static DeckRect HeightButton(int index) => new(326f + index * 28f, 92f, 26f, 22f);
 
-    public static DeckRect CastingText { get; } = new(RowValueLeft, 92f, 128f, 22f);
-    public static DeckRect Recast { get; } = new(334f, 92f, 74f, 22f);
+    public static DeckRect Recast { get; } = new(ContentRight - 26f, 92f, 26f, 22f);
+    public static DeckRect CastingText { get; } = new(RowValueLeft, 92f, Recast.X - 6f - RowValueLeft, 22f);
 
     public static DeckRect RecallStud(int index) => new(RowValueLeft + index * 30f, 92f, 26f, 22f);
 

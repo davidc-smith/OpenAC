@@ -80,14 +80,14 @@ internal sealed partial class UiCommandDeck
             if (pulse > 0f)
                 ctx.FillRoundedRect(r.X, r.Y, r.W * vital.Fill, r.H, 3f, new Vector4(1f, 1f, 1f, pulse * 0.4f));
         }
-        DrawText(ctx, label, r.X + 8, r.Y + 4, LabelInk, small: true);
-        DrawTextRight(ctx, vital.Text, r.X + r.W - 8, r.Y + 3, TextInk);
+        DrawText(ctx, label, r.X + 8, r, LabelInk, small: true);
+        DrawTextRight(ctx, vital.Text, r.X + r.W - 8, r, TextInk);
     }
 
     private void DrawPowerRow(UiRenderContext ctx, CommandDeckView v)
     {
         DeckRect label = CommandDeckLayout.RowLabel;
-        DrawText(ctx, v.PowerLabel, label.X, label.Y + 6, LabelInk, small: true);
+        DrawText(ctx, v.PowerLabel, label.X, label, LabelInk, small: true);
 
         DeckRect t = CommandDeckLayout.PowerTrack;
         ctx.FillRoundedRect(t.X, t.Y, t.W, t.H, 5f, Track);
@@ -105,24 +105,23 @@ internal sealed partial class UiCommandDeck
     private void DrawCastingRow(UiRenderContext ctx, CommandDeckView v)
     {
         DeckRect label = CommandDeckLayout.RowLabel;
-        DrawText(ctx, "CASTING", label.X, label.Y + 6, LabelInk, small: true);
+        DrawText(ctx, "CASTING", label.X, label, LabelInk, small: true);
         DeckRect text = CommandDeckLayout.CastingText;
-        DrawText(ctx, FitCastingText(v.CastingText, t => MeasureText(ctx, t)), text.X, text.Y + 4,
-            v.CastingLit ? CastLit : StudOffInk);
+        DrawText(ctx, FitCastingText(v.CastingText, t => Face(small: true).Measure(ctx, t)), text.X, text,
+            v.CastingLit ? CastLit : StudOffInk, small: true);
         DeckRect recast = CommandDeckLayout.Recast;
-        DrawStud(ctx, recast, on: false, icon: HudIcons.Recast, letter: "RECAST", dim: !v.RecastEnabled);
+        DrawStud(ctx, recast, on: false, icon: HudIcons.Recast, letter: null, dim: !v.RecastEnabled);
     }
 
     /// <summary>The spell name, shortened with "..." so it stops short of the RECAST button;
     /// the button's tooltip carries the full name.</summary>
     internal static string FitCastingText(string text, Func<string, float> measure) =>
-        PluginWindowChrome.Ellipsize(text, measure,
-            CommandDeckLayout.Recast.X - CommandDeckLayout.CastingText.X - 6f);
+        PluginWindowChrome.Ellipsize(text, measure, CommandDeckLayout.CastingText.W);
 
     private void DrawRecallRow(UiRenderContext ctx)
     {
         DeckRect label = CommandDeckLayout.RowLabel;
-        DrawText(ctx, "RECALL", label.X, label.Y + 6, LabelInk, small: true);
+        DrawText(ctx, "RECALL", label.X, label, LabelInk, small: true);
         for (int i = 0; i < 5; i++)
             DrawStud(ctx, CommandDeckLayout.RecallStud(i), on: false, icon: RecallIcons[i], letter: null);
     }
@@ -130,7 +129,7 @@ internal sealed partial class UiCommandDeck
     private void DrawJump(UiRenderContext ctx, CommandDeckView v)
     {
         DeckRect label = CommandDeckLayout.JumpLabel;
-        DrawText(ctx, "JUMP", label.X, label.Y, v.JumpCharging ? JumpInk : LabelInk with { W = 0.5f }, small: true);
+        DrawText(ctx, "JUMP", label.X, label, v.JumpCharging ? JumpInk : LabelInk with { W = 0.5f }, small: true);
         DeckRect t = CommandDeckLayout.JumpTrack;
         ctx.FillRoundedRect(t.X, t.Y, t.W, t.H, 3f, Track);
         if (v.JumpFill > 0f)
@@ -163,7 +162,7 @@ internal sealed partial class UiCommandDeck
             DeckOrbMode.Magic => "MAGIC",
             _ => "PEACE",
         };
-        DrawTextCentered(ctx, label, o.X + o.W / 2, o.Y + o.H / 2 + 14, LabelInk, small: true);
+        DrawTextCentered(ctx, label, o.X + o.W / 2, new DeckRect(o.X, o.Y + o.H / 2 + 12, o.W, 16), LabelInk, small: true);
     }
 
     private void DrawStuds(UiRenderContext ctx, CommandDeckView v)
@@ -179,17 +178,10 @@ internal sealed partial class UiCommandDeck
         ctx.FillRoundedRect(r.X, r.Y, r.W, r.H, 5f, on ? StudOn : StudOff);
         Vector4 ink = on ? TextInk : StudOffInk;
         if (dim) ink = ink with { W = 0.4f };
-        float x = r.X + 4;
         if (icon is not null)
-        {
-            DrawIcon(ctx, icon, r.X + (letter is null ? (r.W - 14) / 2 : 6), r.Y + (r.H - 14) / 2, 14f, ink);
-            x = r.X + 24;
-        }
-        if (letter is not null)
-        {
-            if (icon is null) DrawTextCentered(ctx, letter, r.X + r.W / 2, r.Y + 5, ink, small: true);
-            else DrawText(ctx, letter, x, r.Y + 6, ink, small: true);
-        }
+            DrawIcon(ctx, icon, r.X + (r.W - 14) / 2, r.Y + (r.H - 14) / 2, 14f, ink);
+        else if (letter is not null)
+            DrawTextCentered(ctx, letter, r.X + r.W / 2, r, ink, small: true);
     }
 
     private void DrawIcon(UiRenderContext ctx, string name, float x, float y, float size, Vector4 ink)
@@ -200,15 +192,18 @@ internal sealed partial class UiCommandDeck
         if (texture != 0) ctx.DrawCoverageIcon(texture, x, y, pixels, ink);
     }
 
-    private static void DrawText(UiRenderContext ctx, string text, float x, float y, Vector4 ink, bool small = false) =>
-        ctx.DrawString(text, x, y, ink);
+    private DeckFace Face(bool small) => new(_fonts is null ? null : small ? _fonts.Small : _fonts.Text);
 
-    private static void DrawTextRight(UiRenderContext ctx, string text, float right, float y, Vector4 ink) =>
-        ctx.DrawString(text, right - MeasureText(ctx, text), y, ink);
+    /// <summary>Text from <paramref name="x"/>, centred on <paramref name="band"/>'s height.</summary>
+    private void DrawText(UiRenderContext ctx, string text, float x, DeckRect band, Vector4 ink, bool small = false)
+    {
+        DeckFace face = Face(small);
+        face.Draw(ctx, text, x, band.Y + (band.H - face.LineHeight(ctx)) / 2f, ink);
+    }
 
-    private static void DrawTextCentered(UiRenderContext ctx, string text, float centre, float y, Vector4 ink, bool small = false) =>
-        ctx.DrawString(text, centre - MeasureText(ctx, text) / 2f, y, ink);
+    private void DrawTextRight(UiRenderContext ctx, string text, float right, DeckRect band, Vector4 ink) =>
+        DrawText(ctx, text, right - Face(small: false).Measure(ctx, text), band, ink);
 
-    private static float MeasureText(UiRenderContext ctx, string text) =>
-        ctx.DefaultFont?.MeasureWidth(text) ?? 0f;
+    private void DrawTextCentered(UiRenderContext ctx, string text, float centre, DeckRect band, Vector4 ink, bool small = false) =>
+        DrawText(ctx, text, centre - Face(small).Measure(ctx, text) / 2f, band, ink, small);
 }

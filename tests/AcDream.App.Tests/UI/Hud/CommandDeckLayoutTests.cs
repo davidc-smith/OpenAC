@@ -72,4 +72,13 @@ public sealed class CommandDeckLayoutTests
         Assert.Equal(1f, CommandDeckLayout.PowerAt(t.X + t.W + 10));
         Assert.Equal(0.5f, CommandDeckLayout.PowerAt(t.X + t.W / 2f), 3);
     }
+
+    [Fact]
+    public void RecastIsAnIconButtonAndTheCastingLineEndsBeforeIt()
+    {
+        DeckRect recast = CommandDeckLayout.Recast, text = CommandDeckLayout.CastingText;
+        Assert.Equal(CommandDeckLayout.RecallStud(0).W, recast.W);
+        Assert.True(text.X + text.W < recast.X);
+        Assert.True(text.W >= 170f);
+    }
 }

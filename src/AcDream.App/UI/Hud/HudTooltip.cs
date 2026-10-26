@@ -106,13 +106,17 @@ internal static class HudTooltip
     /// <summary>Draws the tooltip pointing at <paramref name="anchor"/> (local coordinates).</summary>
     internal static void Draw(
         UiRenderContext ctx, HudTooltipContent c, HudTooltipStyle s, DeckRect anchor,
-        Vector2 screenPosition, float? screenWidth, HudTooltipLayoutCache? cache = null)
+        Vector2 screenPosition, float? screenWidth, HudTooltipLayoutCache? cache = null,
+        DeckFonts? fonts = null)
     {
-        Func<string, float> measure = text => ctx.DefaultFont?.MeasureWidth(text) ?? 0f;
-        float lh = ctx.DefaultFont?.LineHeight ?? 14f;
+        var bodyFace = new DeckFace(fonts?.Text);
+        // The title is measured in the body face: the bold face is barely wider.
+        var titleFace = new DeckFace(fonts?.Bold);
+        Func<string, float> measure = text => bodyFace.Measure(ctx, text);
+        float lh = bodyFace.LineHeight(ctx);
         var (w, h, lines) = cache is null
             ? Measure(c, s, measure, lh)
-            : cache.Get(c, s, ctx.DefaultFont, measure, lh);
+            : cache.Get(c, s, (object?)bodyFace.Font ?? ctx.DefaultFont, measure, lh);
         var (x, y, below) = Place(anchor, w, h, screenPosition.X, screenPosition.Y, screenWidth);
         bool card = s == HudTooltipStyle.Card;
         float radius = card ? CardRadius : CompactRadius;
@@ -135,7 +139,7 @@ internal static class HudTooltip
             Diamond(ctx, px, py, PointerSize, body);
             ctx.FillVerticalGradient(x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), CardTop, CardBottom);
             ctx.StrokeRoundedRect(x + 2f, y + 2f, w - 4f, h - 4f, radius - 2f, Hairline, 1f);
-            DrawCardText(ctx, c, lines, x, y, w, lh, measure);
+            DrawCardText(ctx, c, lines, x, y, w, lh, measure, bodyFace, titleFace);
         }
         else
         {
@@ -143,26 +147,26 @@ internal static class HudTooltip
             ctx.FillRoundedRect(x, y, w, h, radius, PillFill);
             ctx.StrokeRoundedRect(x + 0.5f, y + 0.5f, w - 1f, h - 1f, radius, edge, 1f);
             float tx = x + CompactPadX, ty = y + CompactPadY;
-            ctx.DrawString(c.Title, tx, ty, TitleInk);
+            bodyFace.Draw(ctx, c.Title, tx, ty, TitleInk);
             if (c.State is not null)
-                ctx.DrawString(c.State, tx + measure(c.Title) + CompactStateGap, ty, StateInk);
+                bodyFace.Draw(ctx, c.State, tx + measure(c.Title) + CompactStateGap, ty, StateInk);
         }
     }
 
     private static void DrawCardText(
         UiRenderContext ctx, HudTooltipContent c, IReadOnlyList<string> lines,
-        float x, float y, float w, float lh, Func<string, float> measure)
+        float x, float y, float w, float lh, Func<string, float> measure, DeckFace body, DeckFace title)
     {
         float tx = x + CardPadX, ty = y + CardPadY;
+        title.Draw(ctx, c.Title, tx, ty, TitleInk);
         // DefaultFont has no bold face: a second pass half a point over thickens the title.
-        ctx.DrawString(c.Title, tx, ty, TitleInk);
-        ctx.DrawString(c.Title, tx + 0.5f, ty, TitleInk);
+        if (title.Font is null) title.Draw(ctx, c.Title, tx + 0.5f, ty, TitleInk);
         if (c.State is not null)
         {
             float bw = measure(c.State) + 2 * BadgePadX;
             float bx = x + w - CardPadX - bw;
             ctx.FillRoundedRect(bx, ty - 1f, bw, lh + 2f, (lh + 2f) / 2f, BadgeFill);
-            ctx.DrawString(c.State, bx + BadgePadX, ty, StateInk);
+            body.Draw(ctx, c.State, bx + BadgePadX, ty, StateInk);
         }
         ty += lh;
         if (lines.Count > 0)
@@ -170,12 +174,12 @@ internal static class HudTooltip
             ty += CardRowGap;
             foreach (string line in lines)
             {
-                ctx.DrawString(line, tx, ty, DetailInk);
+                body.Draw(ctx, line, tx, ty, DetailInk);
                 ty += lh;
             }
         }
         if (c.Hint is not null)
-            ctx.DrawString(c.Hint, tx, ty + CardRowGap, HintInk);
+            body.Draw(ctx, c.Hint, tx, ty + CardRowGap, HintInk);
     }
 
     /// <summary>A <paramref name="size"/>-point square rotated 45° about (cx, cy).</summary>

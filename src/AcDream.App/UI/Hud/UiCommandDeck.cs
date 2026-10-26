@@ -30,6 +30,7 @@ internal sealed partial class UiCommandDeck : UiElement
     private readonly ICommandDeckActions _actions;
     private readonly EmbeddedSvgSpriteCache? _icons;
     private readonly Func<double> _clock;
+    private readonly DeckFonts? _fonts;
     private CommandDeckView _view = CommandDeckView.Empty;
     private AttackHeight? _held;
     private bool _draggingPower;
@@ -46,13 +47,15 @@ internal sealed partial class UiCommandDeck : UiElement
         CommandDeckModel model,
         ICommandDeckActions actions,
         EmbeddedSvgSpriteCache? icons,
-        Func<double> clock)
+        Func<double> clock,
+        DeckFonts? fonts = null)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _actions = actions ?? throw new ArgumentNullException(nameof(actions));
         _icons = icons;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _fonts = fonts;
         Width = CommandDeckLayout.Width;
         Height = CommandDeckLayout.Height;
         MinWidth = MaxWidth = Width;
@@ -103,7 +106,7 @@ internal sealed partial class UiCommandDeck : UiElement
         try
         {
             HudTooltip.Draw(ctx, tip, TooltipStyle, CommandDeckLayout.RectFor(_hover),
-                ScreenPosition, FindRoot()?.Width, _tooltipLayout);
+                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
         }
         finally { ctx.PopAlpha(); }
     }

@@ -3384,7 +3384,8 @@ public sealed class RetailUiRuntime : IDisposable
             model,
             actions,
             _hudIcons,
-            () => clock.Elapsed.TotalSeconds);
+            () => clock.Elapsed.TotalSeconds,
+            Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
 
         RetailWindowFrame.Mount(
             Host.Root,
