@@ -107,10 +107,17 @@ internal sealed partial class UiCommandDeck
         DeckRect label = CommandDeckLayout.RowLabel;
         DrawText(ctx, "CASTING", label.X, label.Y + 6, LabelInk, small: true);
         DeckRect text = CommandDeckLayout.CastingText;
-        DrawText(ctx, v.CastingText, text.X, text.Y + 4, v.CastingLit ? CastLit : StudOffInk);
+        DrawText(ctx, FitCastingText(v.CastingText, t => MeasureText(ctx, t)), text.X, text.Y + 4,
+            v.CastingLit ? CastLit : StudOffInk);
         DeckRect recast = CommandDeckLayout.Recast;
         DrawStud(ctx, recast, on: false, icon: HudIcons.Recast, letter: "RECAST", dim: !v.RecastEnabled);
     }
+
+    /// <summary>The spell name, shortened with "..." so it stops short of the RECAST button;
+    /// the button's tooltip carries the full name.</summary>
+    internal static string FitCastingText(string text, Func<string, float> measure) =>
+        PluginWindowChrome.Ellipsize(text, measure,
+            CommandDeckLayout.Recast.X - CommandDeckLayout.CastingText.X - 6f);
 
     private void DrawRecallRow(UiRenderContext ctx)
     {

@@ -103,7 +103,7 @@ whose position is saved.
 | Mode | Contents |
 |---|---|
 | Melee / Missile | Label `POWER` (`ACCURACY` for missile). A track whose gold **handle** is the desired power (`RuntimeCombatAttackState.DesiredPower`; drag or mouse wheel calls `SetDesiredPower`, wheel steps by `DesiredPowerStep`). The glow fill is `PowerBarLevel` (live charge). Then **H / M / L** press-and-hold attack buttons: press = `PressAttack(height)`, release = `ReleaseAttack()`. `RequestedHeight` is lit. |
-| Magic | Label `CASTING`. Text, in order of precedence: a cast in progress (`HasPendingCast`, new, see below) with a known `PendingSpellId` → that spell's name, lit; a cast in progress with no single known spell (overlapping casts, where `PendingSpellId` is cleared) → `Casting…`, lit; otherwise `LastRequestedSpellId` dimmed; otherwise `No spell cast yet`. Names from `MagicCatalog`. A **RECAST** button calls `RuntimeSpellCastState.Cast(lastSpell, lastTarget)` (or the untargeted overload when there was no target). Disabled while `HasPendingCast` or when there is no last spell. Component/target errors come from the existing cast gate. No windup bar. |
+| Magic | Label `CASTING`. Text, in order of precedence: a cast in progress (`HasPendingCast`, new, see below) with a known `PendingSpellId` → that spell's name, lit; a cast in progress with no single known spell (overlapping casts, where `PendingSpellId` is cleared) → `Casting…`, lit; otherwise `LastRequestedSpellId` dimmed; otherwise `No spell cast yet`. Names from `MagicCatalog`, shortened with `...` so they stop before the button (the RECAST tooltip carries the full name). A **RECAST** button calls `RuntimeSpellCastState.Cast(lastSpell, lastTarget)` (or the untargeted overload when there was no target). Disabled while `HasPendingCast` or when there is no last spell. Component/target errors come from the existing cast gate. No windup bar. |
 | Peace | Label `RECALL`. Five studs with tooltips: Lifestone, Marketplace, House, Mansion, Allegiance hometown, each sending the matching `RuntimePortalCommand`. Always enabled: the client cannot reliably tell house/mansion/allegiance ownership, and the server replies with the retail error text when a recall does not apply. |
 
 ### Attack button release contract
@@ -123,8 +123,8 @@ an attack charging. The deck:
 Repeat attacks, auto-target, keep target in view. Each shows and sets its
 `CharacterOptionId` (`AutoRepeatAttack`, `AutoTarget`, `ViewCombatTarget`)
 through the same bindings `CombatUiController` uses. Lit = on. Tooltips.
-Shown only in combat; in peace the space stays empty (the layout does not
-move).
+Shown only in melee and missile; in peace and magic the space stays empty
+(the layout does not move).
 
 ### Jump strip
 

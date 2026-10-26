@@ -31,7 +31,7 @@ public sealed class CommandDeckModelTests
     [Theory]
     [InlineData(CombatMode.Melee, DeckContextRow.Power, true)]
     [InlineData(CombatMode.Missile, DeckContextRow.Power, true)]
-    [InlineData(CombatMode.Magic, DeckContextRow.Casting, true)]
+    [InlineData(CombatMode.Magic, DeckContextRow.Casting, false)]
     [InlineData(CombatMode.NonCombat, DeckContextRow.Recall, false)]
     [InlineData(CombatMode.Undef, DeckContextRow.Recall, false)]
     public void RowAndStudsFollowTheMode(CombatMode mode, DeckContextRow row, bool studs)

@@ -111,7 +111,7 @@ public sealed class CommandDeckModel
             CastingText: castingText,
             CastingLit: castingLit,
             RecastEnabled: !input.HasPendingCast && input.LastSpellName is not null,
-            ShowStuds: orb != DeckOrbMode.Peace,
+            ShowStuds: row == DeckContextRow.Power,
             RepeatAttacks: input.RepeatAttacks,
             AutoTarget: input.AutoTarget,
             KeepInView: input.KeepInView,

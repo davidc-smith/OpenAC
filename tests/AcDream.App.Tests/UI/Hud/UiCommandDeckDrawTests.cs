@@ -107,4 +107,17 @@ public sealed class UiCommandDeckDrawTests
         Assert.NotEmpty(first);
         Assert.Equal(first, second);
     }
+
+    [Fact]
+    public void LongCastingTextIsShortenedToStopBeforeRecast()
+    {
+        static float Measure(string text) => text.Length * 8f;
+        float room = CommandDeckLayout.Recast.X - CommandDeckLayout.CastingText.X - 6f;
+
+        string fitted = UiCommandDeck.FitCastingText("Incantation of Coordination", Measure);
+
+        Assert.EndsWith("...", fitted);
+        Assert.True(Measure(fitted) <= room);
+        Assert.Equal("Flame Bolt", UiCommandDeck.FitCastingText("Flame Bolt", Measure));
+    }
 }
