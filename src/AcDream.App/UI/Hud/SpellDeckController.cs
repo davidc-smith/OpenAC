@@ -184,14 +184,24 @@ public sealed class SpellDeckController
         Tick();
     }
 
-    public void RemoveFromRow(int row, int slot)
+    /// <summary>Removes <paramref name="spellId"/> from <paramref name="tab"/>, only while the
+    /// row <paramref name="rowId"/> still shows that tab and that spell.</summary>
+    public void RemoveFromRow(int rowId, int tab, uint spellId)
     {
-        if (SlotSpell(row, slot) is { } hit) DropOutside(new SpellDeckDragSource(hit.Tab, hit.SpellId));
+        if (RowShows(rowId, tab, spellId)) DropOutside(new SpellDeckDragSource(tab, spellId));
     }
 
-    public void Examine(int row, int slot)
+    /// <summary>Examines <paramref name="spellId"/>, only while the row <paramref name="rowId"/>
+    /// still shows that tab and that spell.</summary>
+    public void Examine(int rowId, int tab, uint spellId)
     {
-        if (SlotSpell(row, slot) is { } hit) _actions.ExamineSpell(hit.SpellId);
+        if (RowShows(rowId, tab, spellId)) _actions.ExamineSpell(spellId);
+    }
+
+    private bool RowShows(int rowId, int tab, uint spellId)
+    {
+        int at = Context.IndexOfRow(rowId);
+        return at >= 0 && _rows[at].Tab == tab && Visible(tab).Contains(spellId);
     }
 
     private void Send(SpellDeckDropPlan plan)

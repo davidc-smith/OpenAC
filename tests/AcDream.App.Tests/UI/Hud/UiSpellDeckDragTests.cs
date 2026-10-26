@@ -388,6 +388,37 @@ public sealed class UiSpellDeckDragTests
     }
 
     [Fact]
+    public void SlotItemsActOnTheSpellTheMenuOpenedOn_NotTheSlot()
+    {
+        // Opened on spell 11; another spell is put in front, so 11 moves to slot 2.
+        Rig r = Make();
+        MenuAt(r, r.Deck.Geometry.Slot(0, 1));
+        r.Game.Tabs[0].Insert(0, 99u);
+        r.Deck.SelectMenuItem(1);   // Remove from row
+        Assert.Equal(["remove 0 11"], r.Game.Calls);
+        r.Deck.SelectMenuItem(0);   // Examine spell
+        Assert.Equal(["remove 0 11", "examine 11"], r.Game.Calls);
+    }
+
+    [Fact]
+    public void SlotItemsDoNothingWhenTheSpellLeftTheRow()
+    {
+        // Opened on spell 11; 11 is removed elsewhere, so 12 takes its slot.
+        Rig r = Make();
+        MenuAt(r, r.Deck.Geometry.Slot(0, 1));
+        r.Game.Tabs[0].Remove(11u);
+        r.Deck.SelectMenuItem(1);
+        r.Deck.SelectMenuItem(0);
+        Assert.Empty(r.Game.Calls);
+
+        // The row now shows another tab.
+        MenuAt(r, r.Deck.Geometry.Slot(0, 1));   // spell 12
+        r.Controller.SetRowTab(r.Controller.Rows[0].Id, 2);
+        r.Deck.SelectMenuItem(1);
+        Assert.Empty(r.Game.Calls);
+    }
+
+    [Fact]
     public void ADisabledItemDoesNothing()
     {
         Rig r = Make();

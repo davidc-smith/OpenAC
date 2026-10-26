@@ -461,11 +461,13 @@ internal sealed partial class UiSpellDeck : UiElement
 
         int rowIndex = hit.Row;
         SpellDeckRow row = _controller.Rows[rowIndex];
-        if (hit.Zone == SpellDeckZone.Slot && SlotSpell(rowIndex, hit.Slot) is not null)
+        if (hit.Zone == SpellDeckZone.Slot && SlotSpell(rowIndex, hit.Slot) is uint spellId)
         {
-            int slot = hit.Slot;
-            Add("Examine spell", true, () => _controller.Examine(rowIndex, slot));
-            Add("Remove from row", true, () => _controller.RemoveFromRow(rowIndex, slot));
+            // The spell, not the slot: the favourites can change while the menu is
+            // open, and the item then acts on that spell only if the row still shows it.
+            int rowId = row.Id, tab = row.Tab;
+            Add("Examine spell", true, () => _controller.Examine(rowId, tab, spellId));
+            Add("Remove from row", true, () => _controller.RemoveFromRow(rowId, tab, spellId));
             Separator();
         }
         Add("Add row below", _controller.CanAddRow(), () => _controller.AddRowBelow(row.Id));
