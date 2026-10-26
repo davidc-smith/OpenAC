@@ -107,27 +107,54 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         var screen = ValidScreenSize();
         _restoredCharacter = character;
 
+        // The settings file holds every section, so it is read once for all
+        // the windows and written once after them, not once per window.
+        RetailWindowHandle[] handles = _attached.ToArray();
+        var fallbacks = new KeyValuePair<string, UiWindowLayout>[handles.Length];
+        for (int i = 0; i < handles.Length; i++)
+            fallbacks[i] = new(handles[i].Name, DefaultLayout(handles[i], screen));
+        IReadOnlyDictionary<string, UiWindowPlacement>? saved =
+            _store?.LoadWindowPlacements(character, ResolutionKey(screen), fallbacks);
+        var restored = new List<KeyValuePair<string, UiWindowPlacement>>(handles.Length);
+
         _restoring = true;
         try
         {
-            foreach (RetailWindowHandle handle in _attached.ToArray())
+            for (int i = 0; i < handles.Length; i++)
             {
-                RestoreHandle(handle, character, screen, saveBack, restoreVisibility);
+                UiWindowPlacement? placement = saved is not null
+                    && saved.TryGetValue(handles[i].Name, out UiWindowPlacement found) ? found : null;
+                restored.Add(new(handles[i].Name,
+                    RestoreHandle(handles[i], fallbacks[i].Value, placement, screen, restoreVisibility)));
             }
         }
         finally
         {
             _restoring = false;
         }
+        if (saveBack)
+            _store?.SaveWindowPlacements(character, restored);
     }
+
+    private UiWindowLayout DefaultLayout(RetailWindowHandle handle, (int Width, int Height) screen)
+        => WindowPlacementGeometry.Default(handle.Name, _defaults[handle.Name],
+            screen.Width, screen.Height, _defaults);
 
     private void RestoreHandle(RetailWindowHandle handle, string character,
         (int Width, int Height) screen, bool saveBack, bool restoreVisibility)
     {
-        UiWindowLayout fallback = WindowPlacementGeometry.Default(handle.Name, _defaults[handle.Name],
-            screen.Width, screen.Height, _defaults);
-        var placement = _store?.LoadWindowPlacement(character, ResolutionKey(screen), handle.Name, fallback)
-            ?? new UiWindowPlacement(fallback, screen.Width, screen.Height);
+        UiWindowLayout fallback = DefaultLayout(handle, screen);
+        var placement = RestoreHandle(handle, fallback,
+            _store?.LoadWindowPlacement(character, ResolutionKey(screen), handle.Name, fallback),
+            screen, restoreVisibility);
+        if (saveBack)
+            _store?.SaveWindowPlacement(character, handle.Name, placement);
+    }
+
+    private UiWindowPlacement RestoreHandle(RetailWindowHandle handle, UiWindowLayout fallback,
+        UiWindowPlacement? saved, (int Width, int Height) screen, bool restoreVisibility)
+    {
+        var placement = saved ?? new UiWindowPlacement(fallback, screen.Width, screen.Height);
         placement = placement with
         {
             Layout = MigrateAuthoredGeometry(placement.Layout, AuthoredGeometry(handle, fallback)),
@@ -137,8 +164,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
             restoreVisibility && !_stateManagedVisibilityWindows.Contains(handle.Name));
         placement = WithCurrentState(handle, placement);
         _placements[handle.Name] = placement;
-        if (saveBack)
-            _store?.SaveWindowPlacement(character, handle.Name, placement);
+        return placement;
     }
 
     public void ClampAllToScreen()
@@ -170,8 +196,15 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         if (!_gameplayActive) return;
         string character = _characterKey();
         if (!CanPersist(character)) return;
-        foreach (RetailWindowHandle handle in _attached.ToArray())
-            SavePlacement(character, handle);
+        RetailWindowHandle[] handles = _attached.ToArray();
+        var placements = new KeyValuePair<string, UiWindowPlacement>[handles.Length];
+        for (int i = 0; i < handles.Length; i++)
+        {
+            var placement = WithCurrentState(handles[i], _placements[handles[i].Name]);
+            _placements[handles[i].Name] = placement;
+            placements[i] = new(handles[i].Name, placement);
+        }
+        _store?.SaveWindowPlacements(character, placements);
     }
 
     public void SaveNamed(string profileName)

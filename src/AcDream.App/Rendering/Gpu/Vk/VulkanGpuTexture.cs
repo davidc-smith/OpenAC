@@ -45,6 +45,15 @@ internal sealed unsafe class VulkanGpuTexture : IGpuTexture
                 nameof(sampleable));
         }
 
+        if (description.Swizzle != GpuTextureSwizzle.Identity
+            && (description.Format != GpuTextureFormat.R8Unorm || renderTarget))
+        {
+            throw new ArgumentException(
+                $"'{description.Name}' asks for the {description.Swizzle} swizzle, which only a sampled "
+                + "single-channel (R8Unorm) texture presents.",
+                nameof(description));
+        }
+
         Name = description.Name;
         Kind = description.Kind;
         Format = description.Format;
@@ -109,6 +118,7 @@ internal sealed unsafe class VulkanGpuTexture : IGpuTexture
                     ? VulkanTextureFormatMapping.ViewTypeOf(description.Kind)
                     : VulkanTextureFormatMapping.SampledViewTypeOf(description.Kind),
                 Format = VkFormat,
+                Components = VulkanTextureFormatMapping.ComponentsOf(description.Swizzle),
                 SubresourceRange = new ImageSubresourceRange
                 {
                     AspectMask = Aspect,

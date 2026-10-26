@@ -13,6 +13,18 @@ internal readonly record struct RenderFrameFoundation(
     SkyKeyframe Sky,
     AtmosphereSnapshot Atmosphere)
 {
+    /// <summary>
+    /// The arrival has been placed while the portal tunnel still covers the
+    /// screen. The world is drawn under the tunnel on these frames so that its
+    /// first draw - every cell walked, texture decoded and model uploaded for
+    /// the first time - is paid behind the tunnel instead of on the first frame
+    /// the player sees; the tunnel's own pass then covers it.
+    /// </summary>
+    public bool WorldDrawnBehindPortal { get; init; }
+
+    /// <summary>The world pass is skipped this frame.</summary>
+    public bool WorldHidden => PortalViewportVisible && !WorldDrawnBehindPortal;
+
     public bool EnvironOverrideActive =>
         Atmosphere.Override != EnvironOverride.None;
 }
@@ -119,6 +131,9 @@ internal interface IRenderFramePortalStateSource
 {
     bool IsPortalViewportVisible { get; }
 
+    /// <summary>The arrival is placed and the tunnel still covers it.</summary>
+    bool IsWorldPlacedBehindPortal { get; }
+
     uint ActiveDestinationCell { get; }
 }
 
@@ -138,6 +153,9 @@ internal sealed class LocalPlayerTeleportRenderStateSource
 
     public bool IsPortalViewportVisible =>
         _teleport.IsPortalViewportVisible || _login.IsWaitingForLogin;
+
+    public bool IsWorldPlacedBehindPortal =>
+        !_login.IsWaitingForLogin && _teleport.IsWorldPlacedBehindPortal;
 
     public uint ActiveDestinationCell => _teleport.ActiveDestinationCell;
 }

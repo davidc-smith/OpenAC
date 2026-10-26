@@ -254,7 +254,7 @@ internal sealed class HeadlessSessionHost : IDisposable
         HeadlessPluginSession? pluginSession = null;
         try
         {
-            var gameplay = new HeadlessGameplayOperations();
+            var gameplay = new RuntimeWindowlessGameplayOperations();
             var runtime = new GameRuntime(
                 AcDream.Headless.Plugins.HeadlessAutomationCapabilities
                     .BuildRuntimeDependencies(

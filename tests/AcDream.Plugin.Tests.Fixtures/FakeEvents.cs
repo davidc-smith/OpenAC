@@ -23,6 +23,7 @@ public sealed class FakeEvents : IEvents
     private Action<uint>? _containerOpened;
     private Action<uint>? _containerClosed;
     private Action<PluginConfirmation>? _confirmationRequested;
+    private Action<string>? _statusTextReceived;
     private readonly EventMulticaster<WorldEntitySnapshot> _entitySpawned = new();
 
     /// <summary>
@@ -181,6 +182,21 @@ public sealed class FakeEvents : IEvents
         {
             if (value is null) return;
             lock (_gate) _confirmationRequested -= value;
+        }
+    }
+
+    /// <inheritdoc/>
+    public event Action<string> StatusTextReceived
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_gate) _statusTextReceived += value;
+        }
+        remove
+        {
+            if (value is null) return;
+            lock (_gate) _statusTextReceived -= value;
         }
     }
 
@@ -346,6 +362,25 @@ public sealed class FakeEvents : IEvents
                 foreach (Delegate handler in handlers.GetInvocationList())
                 {
                     try { ((Action<PluginConfirmation>)handler)(confirmation); }
+                    catch { }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fires <see cref="StatusTextReceived"/> for every listener.
+    /// </summary>
+    public void RaiseStatusTextReceived(string text)
+    {
+        lock (_gate)
+        {
+            Action<string>? handlers = _statusTextReceived;
+            if (handlers is not null)
+            {
+                foreach (Delegate handler in handlers.GetInvocationList())
+                {
+                    try { ((Action<string>)handler)(text); }
                     catch { }
                 }
             }

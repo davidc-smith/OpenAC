@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using AcDream.Launcher.Core;
 using AcDream.Launcher.Core.Plugins;
 using AcDream.Launcher.Core.Updates;
@@ -347,19 +348,18 @@ public sealed class DirectInstallCheckTests : IDisposable
         }
     }
 
+    // Made in-process, not by the mkfifo program: a child process started
+    // here keeps every lock file other tests hold open until it runs its
+    // program, and their installs are refused as busy meanwhile.
     private static void RunMkfifo(string path)
     {
-        using Process process = Process.Start(new ProcessStartInfo("mkfifo")
-        {
-            ArgumentList = { path },
-            UseShellExecute = false,
-            RedirectStandardError = true,
-        }) ?? throw new InvalidOperationException("Could not start mkfifo.");
-        process.WaitForExit();
-        if (process.ExitCode != 0)
+        if (MakeFifo(path, 0b110_100_100) != 0)
         {
             throw new InvalidOperationException(
-                "Could not create a FIFO: " + process.StandardError.ReadToEnd());
+                "Could not create a FIFO: errno " + Marshal.GetLastPInvokeError());
         }
     }
+
+    [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)]
+    private static extern int MakeFifo(string path, uint mode);
 }

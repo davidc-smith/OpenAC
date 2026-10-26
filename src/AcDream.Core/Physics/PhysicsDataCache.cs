@@ -214,6 +214,17 @@ public sealed class PhysicsDataCache
         CachePreparedGfxObj(gfxObjId, prepared);
     }
 
+    /// <summary>
+    /// Whether caching this GfxObj again would change nothing: the client
+    /// requires prepared collision and the object's prepared asset, visual
+    /// bounds and physics entry are all held here already.
+    /// </summary>
+    public bool IsPreparedGfxObjCached(uint gfxObjId) =>
+        _requirePreparedCollision
+        && _flatGfxObj.TryGetValue(gfxObjId, out FlatGfxObjCollisionAsset? prepared)
+        && (prepared.VisualBounds is null || _visualBounds.ContainsKey(gfxObjId))
+        && (prepared.PhysicsBsp.RootIndex < 0 || _gfxObj.ContainsKey(gfxObjId));
+
     private void CachePreparedGfxObj(
         uint gfxObjId,
         FlatGfxObjCollisionAsset prepared)

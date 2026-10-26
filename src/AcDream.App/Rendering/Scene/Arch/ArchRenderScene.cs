@@ -15,6 +15,11 @@ internal sealed class ArchRenderScene : IRenderScene, IRenderSceneQuerySource
     private readonly int _ownerThreadId;
     private readonly Dictionary<RenderProjectionId, SceneEntry> _entries = [];
     private readonly HashSet<RenderProjectionId> _outdoorStatics = [];
+
+    // The outdoor statics that are building shells: a handful against the
+    // tens of thousands of outdoor statics, so finding the shells never has
+    // to read every outdoor static.
+    private readonly HashSet<RenderProjectionId> _outdoorBuildingShells = [];
     private readonly HashSet<RenderProjectionId> _indoorCellStatics = [];
     private readonly HashSet<RenderProjectionId> _dynamics = [];
     private readonly HashSet<RenderProjectionId> _outdoorDynamics = [];
@@ -321,6 +326,44 @@ internal sealed class ArchRenderScene : IRenderScene, IRenderSceneQuerySource
     {
         EnsureQueryGeneration(generation);
         return _indexRevision;
+    }
+
+    int IRenderSceneQuerySource.GetOutdoorBuildingShellCount(
+        RenderSceneGeneration generation)
+    {
+        EnsureQueryGeneration(generation);
+        return _outdoorBuildingShells.Count;
+    }
+
+    int IRenderSceneQuerySource.CopyOutdoorBuildingShellsTo(
+        RenderSceneGeneration generation,
+        Span<RenderProjectionRecord> destination)
+    {
+        EnsureQueryGeneration(generation);
+        if (destination.Length < _outdoorBuildingShells.Count)
+        {
+            throw new ArgumentException(
+                $"Destination holds {destination.Length} records; {_outdoorBuildingShells.Count} required.",
+                nameof(destination));
+        }
+
+        // In the outdoor-static index's own order, so the shells come out in
+        // the order a copy of that whole index lists them.
+        int count = 0;
+        if (_outdoorBuildingShells.Count == 0)
+            return count;
+        foreach (RenderProjectionId id in _outdoorStatics)
+        {
+            if (!_outdoorBuildingShells.Contains(id))
+                continue;
+            if (!_entries.TryGetValue(id, out SceneEntry entry))
+            {
+                throw new InvalidOperationException(
+                    $"Render index retained missing {id}.");
+            }
+            destination[count++] = ReadRecord(in entry);
+        }
+        return count;
     }
 
     ulong IRenderSceneQuerySource.GetBuildingShellRevision(
@@ -878,6 +921,15 @@ internal sealed class ArchRenderScene : IRenderScene, IRenderSceneQuerySource
             if (!DirectionalShadowTopologyEquals(in prior, in current))
                 AdvanceDirectionalShadowTopologyRevision();
             SynchronizeDirtyIndex(in current);
+            if (current.EntityPayload.IsBuildingShell
+                && _outdoorStatics.Contains(current.Id))
+            {
+                _outdoorBuildingShells.Add(current.Id);
+            }
+            else
+            {
+                _outdoorBuildingShells.Remove(current.Id);
+            }
             return;
         }
 
@@ -897,9 +949,15 @@ internal sealed class ArchRenderScene : IRenderScene, IRenderSceneQuerySource
         if (staticProjection)
         {
             if (indoor)
+            {
                 _indoorCellStatics.Add(record.Id);
+            }
             else
+            {
                 _outdoorStatics.Add(record.Id);
+                if (record.EntityPayload.IsBuildingShell)
+                    _outdoorBuildingShells.Add(record.Id);
+            }
         }
         else
         {
@@ -927,6 +985,7 @@ internal sealed class ArchRenderScene : IRenderScene, IRenderSceneQuerySource
     private void RemoveFromIndices(in RenderProjectionRecord record)
     {
         _outdoorStatics.Remove(record.Id);
+        _outdoorBuildingShells.Remove(record.Id);
         _indoorCellStatics.Remove(record.Id);
         _dynamics.Remove(record.Id);
         _outdoorDynamics.Remove(record.Id);
@@ -1362,6 +1421,7 @@ internal sealed class ArchRenderScene : IRenderScene, IRenderSceneQuerySource
     {
         long slots =
             _outdoorStatics.EnsureCapacity(0)
+            + _outdoorBuildingShells.EnsureCapacity(0)
             + _indoorCellStatics.EnsureCapacity(0)
             + _dynamics.EnsureCapacity(0)
             + _outdoorDynamics.EnsureCapacity(0)
@@ -1377,6 +1437,7 @@ internal sealed class ArchRenderScene : IRenderScene, IRenderSceneQuerySource
     private void ClearIndices()
     {
         _outdoorStatics.Clear();
+        _outdoorBuildingShells.Clear();
         _indoorCellStatics.Clear();
         _dynamics.Clear();
         _outdoorDynamics.Clear();

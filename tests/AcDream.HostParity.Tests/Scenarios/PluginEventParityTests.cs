@@ -250,6 +250,51 @@ public sealed class PluginEventParityTests
                 deaths);
         });
 
+    /// <summary>
+    /// A passing notice from the server -- a corpse someone else already has
+    /// open, say -- goes to the status line and never into the transcript, so
+    /// this event is the only way a plugin hears it. It is heard in arrival
+    /// order, and heard even when a chat filter hides it from the player: the
+    /// filter decides what is shown, not what a plugin is told.
+    /// </summary>
+    [Fact]
+    public void AStatusNoticeFromTheServerTellsAPluginOnBothClients() =>
+        ParityScenario.Run(static (arm, transcript) =>
+        {
+            var heard = new List<string>();
+            var filtered = new List<string>();
+            arm.Host.Events.StatusTextReceived += heard.Add;
+            using IDisposable filter = arm.Host.Automation.Chat.RegisterFilter(
+                candidate =>
+                {
+                    if (candidate.Kind != PluginChatMessage.StatusTextKind)
+                        return false;
+                    filtered.Add(candidate.Text);
+                    return true;
+                });
+
+            transcript.Step("the server refuses twice, and a filter hides both");
+            arm.Server.TransientString(
+                "The Corpse of Drudge Slinker is already in use by Bob!");
+            arm.Server.TransientString("You're too busy!");
+            arm.Advance();
+
+            transcript.Record("heard", string.Join("|", heard));
+            transcript.Record("filtered", string.Join("|", filtered));
+            Assert.Equal(
+                [
+                    "The Corpse of Drudge Slinker is already in use by Bob!",
+                    "You're too busy!",
+                ],
+                heard);
+            // The filter really ran on both, so they were hidden and still heard.
+            Assert.Equal(heard, filtered);
+            // And neither became a transcript line a chat reader could poll.
+            Assert.DoesNotContain(
+                arm.Host.Automation.Chat.CaptureMessages(0UL),
+                line => line.Text == "You're too busy!");
+        });
+
     [Fact]
     public void BeingAskedSomethingTellsAPluginOnBothClients() =>
         ParityScenario.Run(static (arm, transcript) =>

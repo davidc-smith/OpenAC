@@ -54,6 +54,12 @@ internal sealed record WorldRenderDependencies(
 {
     /// <summary>The texture-detail choice the world starts with; full detail unless the host says otherwise.</summary>
     public WorldTextureDetail TextureDetail { get; init; } = WorldTextureDetail.Full;
+
+    /// <summary>
+    /// The terrain atlas's source layers, being decoded while the window and
+    /// the GPU were set up; null decodes them when the atlas is built.
+    /// </summary>
+    public Task<TerrainAtlas.DecodedSources>? TerrainSources { get; init; }
 }
 
 internal interface IGameWindowWorldRenderPublication
@@ -77,7 +83,8 @@ internal interface IWorldRenderCompositionFactory
         IGameRenderResourceLifetime lifetime,
         AcDream.App.Rendering.Gpu.IGpuDevice device,
         IDatReaderWriter dats,
-        WorldTextureDetail textureDetail);
+        WorldTextureDetail textureDetail,
+        Task<TerrainAtlas.DecodedSources>? sources = null);
 
     void ExerciseBackendNeutralWorldTextures(
         AcDream.App.Rendering.Gpu.IGpuDevice device,
@@ -154,11 +161,17 @@ internal sealed class RetailWorldRenderCompositionFactory
         IGameRenderResourceLifetime lifetime,
         AcDream.App.Rendering.Gpu.IGpuDevice device,
         IDatReaderWriter dats,
-        WorldTextureDetail textureDetail)
+        WorldTextureDetail textureDetail,
+        Task<TerrainAtlas.DecodedSources>? sources = null)
     {
         ArgumentNullException.ThrowIfNull(lifetime);
         return lifetime.AcquireTerrainAtlas(
-            () => TerrainAtlas.BuildBackendNeutral(device, dats, textureDetail));
+            () => TerrainAtlas.BuildBackendNeutral(
+                device,
+                dats,
+                textureDetail,
+                // A decode that failed rethrows its own error here.
+                sources?.GetAwaiter().GetResult()));
     }
 
     public void ExerciseBackendNeutralWorldTextures(
@@ -412,7 +425,8 @@ internal sealed class WorldRenderCompositionPhase
                 _dependencies.RenderResources,
                 _dependencies.GpuDevice,
                 content.Dats,
-                _dependencies.TextureDetail);
+                _dependencies.TextureDetail,
+                _dependencies.TerrainSources);
             _factory.SetTerrainAnisotropic(
                 terrainAtlas,
                 settings.ResolvedQuality.AnisotropicLevel);

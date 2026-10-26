@@ -127,6 +127,29 @@ into the transcript, such as "You're too busy!" — pass through the same
 filters with `Kind == PluginChatMessage.StatusTextKind` (100). Check the
 kind if a filter should treat them differently from transcript lines.
 
+Because a status notice never enters the transcript, `CaptureMessages` and
+`Received` never see one. To read them, subscribe to
+`Events.StatusTextReceived`:
+
+```csharp
+host.Events.StatusTextReceived += text =>
+{
+    // e.g. "The Corpse of Drudge Slinker is already in use by Bob!"
+};
+```
+
+- It carries every notice on its way to the status line: a refusal the
+  server sends as a passing notice, and a refusal or notice the client words
+  itself (such as "You're too busy!").
+- It is raised before the filters run, so a plugin hears a notice even when
+  a filter hides it from the player.
+- It is raised on the tick thread, in the order the notices arrive, on both
+  the graphical and the windowless client. The text is the notice as shown,
+  trimmed of leading and trailing spaces.
+- It is newer than contract `0.1.27`. A host whose contract predates it
+  loads the plugin (it checks only MAJOR.MINOR.PATCH), but subscribing fails
+  with `MissingMethodException`.
+
 ### Writing lines
 
 `PostSystemMessage(text)` is unchanged. `PostMessage(text, logTextType)`

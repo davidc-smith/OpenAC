@@ -42,6 +42,38 @@ public sealed class PreparedSetupResolverTests
         Assert.Same(expected, actual);
     }
 
+    [Theory]
+    [InlineData(PreparedAssetPresence.Available, true)]
+    [InlineData(PreparedAssetPresence.Available, false)]
+    [InlineData(PreparedAssetPresence.Missing, false)]
+    public void RepeatedResolutionReadsTheContentOnce(
+        PreparedAssetPresence presence,
+        bool datRecordExists)
+    {
+        // Every static object of a landblock asks for its Setup when the
+        // landblock is shown, and most of them share a handful of Setups.
+        // The content does not change, so each Setup is read once.
+        var source = new PresenceSource(presence);
+        int loads = 0;
+        var expected = new Setup();
+        var resolver = new PreparedSetupResolver(
+            source,
+            _ =>
+            {
+                loads++;
+                return datRecordExists ? expected : null;
+            },
+            _ => { });
+
+        bool first = resolver.TryResolve(0x0200_0001u, out Setup? firstSetup);
+        bool second = resolver.TryResolve(0x0200_0001u, out Setup? secondSetup);
+
+        Assert.Equal(first, second);
+        Assert.Same(firstSetup, secondSetup);
+        Assert.Equal(1, source.Probes);
+        Assert.Equal(presence == PreparedAssetPresence.Available ? 1 : 0, loads);
+    }
+
     [Fact]
     public void CorruptPreparedEntryFailsLoudlyWithoutDatGuess()
     {
@@ -104,11 +136,14 @@ public sealed class PreparedSetupResolverTests
         public PreparedAssetSourceStats Stats => default;
         public CacheStats DecodedTextureCacheStats => default;
 
+        public int Probes { get; private set; }
+
         public PreparedAssetPresence Probe(
             PakAssetType type,
             uint sourceFileId)
         {
             Assert.Equal(PakAssetType.SetupMesh, type);
+            Probes++;
             return presence;
         }
 

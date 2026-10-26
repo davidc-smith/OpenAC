@@ -312,6 +312,114 @@ public sealed class LandblockConcretePresentationPipelineTests
     }
 
     [Fact]
+    public void RecenterCancelBetweenSpatialCommitAndScripts_FinishesActivationThenRetiresEverything()
+    {
+        ConcreteFixture fixture = Fixture(new List<string>());
+        var pipeline = Pipeline(fixture);
+        WorldEntity[] statics =
+        [
+            Entity(0x80A9B401u),
+            Entity(0x80A9B402u),
+            Entity(0x80A9B403u),
+        ];
+        LandblockStreamResult.Loaded result = Result(Build(statics));
+        LandblockStreamCostEstimate estimate =
+            LandblockStreamResultCost.Estimate(result);
+        var oneEntityPerFrame = new StreamingWorkBudget(
+            TimeSpan.FromSeconds(1),
+            maxCompletionAdmissions: 64,
+            maxAdoptedCpuBytes: 1_000_000,
+            maxEntityOperations: 1,
+            maxGpuUploadBytes: 1_000_000,
+            maxGlRetireOperations: 64,
+            destinationReserveFraction: 0.75f);
+
+        // Publish frame by frame until the landblock is in the world but
+        // its statics' scripts are not all started.
+        for (int frame = 0; frame < 64 && !fixture.State.IsLoaded(LandblockId); frame++)
+        {
+            var meter = new StreamingWorkMeter(oneEntityPerFrame);
+            _ = frame == 0
+                ? pipeline.PublishLoaded(result, estimate, meter, ensureProgress: false)
+                : pipeline.ResumePublication(result, meter, ensureProgress: false);
+            meter.FinishFrame();
+        }
+        Assert.True(fixture.State.IsLoaded(LandblockId));
+        Assert.True(pipeline.HasPendingPublication(result));
+        Assert.True(fixture.Runner.ActiveOwnerCount < statics.Length);
+
+        // A recenter cancels what is pending: the committed landblock is not
+        // left half activated.
+        Assert.True(pipeline.CancelPendingPublications());
+
+        Assert.False(pipeline.HasPendingPublication(result));
+        Assert.Equal(statics.Length, fixture.Runner.ActiveOwnerCount);
+        Assert.All(statics, entity =>
+            Assert.True(fixture.Poses.TryGetRootPose(entity.Id, out _)));
+
+        // ...and the recenter's retirement then finds it whole and takes
+        // all of it away.
+        Assert.Null(pipeline.DetachAllForOriginRecenter().ObserverFailure);
+        Assert.False(fixture.State.IsLoaded(LandblockId));
+        for (int frame = 0; frame < 256 && pipeline.PendingRetirementCount != 0; frame++)
+        {
+            var meter = new StreamingWorkMeter(oneEntityPerFrame);
+            pipeline.AdvanceDetachedProjectionRetirements(meter);
+            pipeline.AdvanceRetirements(meter);
+            meter.FinishFrame();
+        }
+        Assert.Equal(0, pipeline.PendingRetirementCount);
+        Assert.Equal(0, fixture.Runner.ActiveOwnerCount);
+        Assert.All(statics, entity =>
+            Assert.False(fixture.Poses.TryGetRootPose(entity.Id, out _)));
+    }
+
+    [Fact]
+    public void MeteredLoaded_StaticScriptsStartOnePerStepAfterTheLandblockIsInTheWorld()
+    {
+        ConcreteFixture fixture = Fixture(new List<string>());
+        var pipeline = Pipeline(fixture);
+        WorldEntity[] statics =
+        [
+            Entity(0x80A9B401u),
+            Entity(0x80A9B402u),
+            Entity(0x80A9B403u),
+        ];
+        LandblockStreamResult.Loaded result = Result(Build(statics));
+        LandblockStreamCostEstimate estimate =
+            LandblockStreamResultCost.Estimate(result);
+        var oneEntityPerFrame = new StreamingWorkBudget(
+            TimeSpan.FromSeconds(1),
+            maxCompletionAdmissions: 64,
+            maxAdoptedCpuBytes: 1_000_000,
+            maxEntityOperations: 1,
+            maxGpuUploadBytes: 1_000_000,
+            maxGlRetireOperations: 64,
+            destinationReserveFraction: 0.75f);
+
+        var startedPerFrame = new List<int>();
+        LandblockPublicationAdvance advance = default;
+        for (int frame = 0; frame < 64 && !advance.Completed; frame++)
+        {
+            var meter = new StreamingWorkMeter(oneEntityPerFrame);
+            advance = frame == 0
+                ? pipeline.PublishLoaded(result, estimate, meter, ensureProgress: false)
+                : pipeline.ResumePublication(result, meter, ensureProgress: false);
+            meter.FinishFrame();
+            if (fixture.State.IsLoaded(LandblockId))
+                startedPerFrame.Add(fixture.Runner.ActiveOwnerCount);
+        }
+
+        Assert.True(advance.Completed);
+        // One script more per frame once the landblock is in the world, never
+        // all of them in the frame that committed it.
+        Assert.Equal(statics.Length, startedPerFrame[^1]);
+        Assert.True(startedPerFrame[0] < statics.Length);
+        for (int i = 1; i < startedPerFrame.Count; i++)
+            Assert.True(startedPerFrame[i] - startedPerFrame[i - 1] <= 1);
+    }
+
+    [Fact]
     public void SameIdReapply_RealActivatorRebindsWithoutDefaultReplay()
     {
         ConcreteFixture fixture = Fixture(new List<string>());

@@ -1357,6 +1357,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         private readonly List<Action<uint>> _containerClosedRegistrations = [];
         private readonly List<Action<PluginConfirmation>> _confirmationRequestedRegistrations = [];
         private readonly List<Action<PluginActivationCompletion>> _activationCompletedRegistrations = [];
+        private readonly List<Action<string>> _statusTextReceivedRegistrations = [];
         private bool _disposed;
 
         public event Action<double> Tick
@@ -1863,6 +1864,44 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
 
+        public event Action<string> StatusTextReceived
+        {
+            add
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                try
+                {
+                    inner.StatusTextReceived += value;
+                }
+                catch
+                {
+                    try { inner.StatusTextReceived -= value; }
+                    catch { }
+                    throw;
+                }
+                lock (_gate)
+                {
+                    if (!_disposed)
+                    {
+                        _statusTextReceivedRegistrations.Add(value);
+                        return;
+                    }
+                }
+
+                try { inner.StatusTextReceived -= value; }
+                catch { }
+                throw new ObjectDisposedException(nameof(ScopedEvents));
+            }
+            remove
+            {
+                if (value is null)
+                    return;
+                inner.StatusTextReceived -= value;
+                lock (_gate)
+                    _statusTextReceivedRegistrations.Remove(value);
+            }
+        }
+
         public void Dispose()
         {
             Action<WorldEntitySnapshot>[] registrations;
@@ -1878,6 +1917,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             Action<uint>[] containerClosedRegistrations;
             Action<PluginConfirmation>[] confirmationRequestedRegistrations;
             Action<PluginActivationCompletion>[] activationCompletedRegistrations;
+            Action<string>[] statusTextReceivedRegistrations;
             lock (_gate)
             {
                 if (_disposed)
@@ -1913,6 +1953,9 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 confirmationRequestedRegistrations =
                     _confirmationRequestedRegistrations.ToArray();
                 _confirmationRequestedRegistrations.Clear();
+                statusTextReceivedRegistrations =
+                    _statusTextReceivedRegistrations.ToArray();
+                _statusTextReceivedRegistrations.Clear();
             }
 
             for (int index = registrations.Length - 1; index >= 0; index--)
@@ -1993,6 +2036,12 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 {
                     inner.ConfirmationRequested -= confirmationRequestedRegistrations[index];
                 }
+                catch { }
+            }
+
+            for (int index = statusTextReceivedRegistrations.Length - 1; index >= 0; index--)
+            {
+                try { inner.StatusTextReceived -= statusTextReceivedRegistrations[index]; }
                 catch { }
             }
         }

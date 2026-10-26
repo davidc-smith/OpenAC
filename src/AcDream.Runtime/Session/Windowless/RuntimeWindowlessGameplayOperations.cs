@@ -4,20 +4,26 @@ using AcDream.Core.Net;
 using AcDream.Core.Net.Messages;
 using AcDream.Core.Spells;
 using AcDream.Content;
-using AcDream.Runtime;
 using AcDream.Runtime.Gameplay;
-using AcDream.Runtime.Session;
 
-namespace AcDream.Headless.Hosting;
+namespace AcDream.Runtime.Session.Windowless;
 
-internal sealed class HeadlessGameplayOperations
+/// <summary>
+/// What a session with no window does when it attacks, picks a combat
+/// target, changes its combat mode or casts a spell: the one implementation
+/// every client without a window uses, the windowless client for its whole
+/// life and the graphical client while no window is attached. It sends on
+/// the world connection whose command route is active, and only while the
+/// character is in the world; what a window would show goes to chat.
+/// </summary>
+internal sealed class RuntimeWindowlessGameplayOperations
     : IRuntimeCombatAttackOperations,
       IRuntimeCombatTargetOperations,
       IRuntimeCombatModeOperations,
       IRuntimeSpellCastOperations
 {
     private sealed class SessionRoute(
-        HeadlessGameplayOperations owner,
+        RuntimeWindowlessGameplayOperations owner,
         WorldSession session)
         : ILiveSessionCommandRouting
     {
@@ -41,6 +47,7 @@ internal sealed class HeadlessGameplayOperations
     private readonly object _gate = new();
     private GameRuntime? _runtime;
     private SpellComponentRequirementService? _componentRequirements;
+    private Func<string>? _accountName;
     private WorldSession? _session;
     private SessionRoute? _route;
 
@@ -54,17 +61,35 @@ internal sealed class HeadlessGameplayOperations
         if (_runtime is not null)
         {
             throw new InvalidOperationException(
-                "Headless gameplay operations are already bound.");
+                "Windowless gameplay operations are already bound.");
         }
 
         _runtime = runtime;
-        _componentRequirements = catalog?.CreateRequirementService(
-            runtime.InventoryOwner.Objects,
-            () => runtime.PlayerIdentity.ServerGuid,
-            accountName);
+        _accountName = accountName;
+        if (catalog is not null)
+            UseMagicCatalog(catalog);
     }
 
+    /// <summary>
+    /// The spell tables a cast's components are checked against, for a
+    /// session whose game files open after it was built. Until then a cast
+    /// is checked against the character's own "components required" flag.
+    /// </summary>
+    internal void UseMagicCatalog(MagicCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        GameRuntime runtime = RequireRuntime();
+        if (_componentRequirements is not null)
+        {
+            throw new InvalidOperationException(
+                "Windowless gameplay operations already have their spell tables.");
+        }
 
+        _componentRequirements = catalog.CreateRequirementService(
+            runtime.InventoryOwner.Objects,
+            () => runtime.PlayerIdentity.ServerGuid,
+            _accountName!);
+    }
 
     internal ILiveSessionCommandRouting CreateRoute(
         WorldSession session)
@@ -227,7 +252,7 @@ internal sealed class HeadlessGameplayOperations
     private GameRuntime RequireRuntime() =>
         _runtime
         ?? throw new InvalidOperationException(
-            "Headless gameplay operations are not bound.");
+            "Windowless gameplay operations are not bound.");
 
     private bool TryGetSession(out WorldSession? session)
     {
@@ -249,7 +274,7 @@ internal sealed class HeadlessGameplayOperations
             if (_route is not null)
             {
                 throw new InvalidOperationException(
-                    "Headless gameplay operations already have an active session.");
+                    "Windowless gameplay operations already have an active session.");
             }
             _session = session;
             _route = route;

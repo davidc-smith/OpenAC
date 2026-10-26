@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using AcDream.Content;
 using AcDream.App.Rendering.Residency;
+using AcDream.App.Streaming;
 using AcDream.Core.Rendering;
 using DatReaderWriter;
 using Microsoft.Extensions.Logging;
@@ -13,13 +14,11 @@ public sealed class WbMeshAdapter
     : IDisposable,
       IWbMeshAdapter
 {
+    // Per-frame counts at the ordinary frame budget; a widened budget (a
+    // reveal withholding the world) widens them by the same factor. The
+    // per-frame byte limits are the frame budget's GPU upload bytes.
     internal const int MaximumUploadsPerFrame = 8;
-    internal const int DestinationRevealMaximumUploadsPerFrame = 64;
-    internal const long MaximumUploadBytesPerFrame = 8L * 1024 * 1024;
-    internal const long MaximumArrayAllocationBytesPerFrame = 8L * 1024 * 1024;
-    internal const long MaximumMipmapBytesPerFrame = 8L * 1024 * 1024;
     internal const int MaximumNewArraysPerFrame = 1;
-    internal const long MaximumBufferUploadBytesPerFrame = 8L * 1024 * 1024;
     internal const long MaximumBufferAllocationBytesPerFrame =
         GlobalMeshBuffer.MaximumVertexBufferBytes;
     internal const long MaximumBufferCopyBytesPerFrame = 32L * 1024 * 1024;
@@ -37,10 +36,9 @@ public sealed class WbMeshAdapter
     private readonly AcDream.App.Rendering.IGpuResourceRetirementQueue? _resourceRetirement;
     private readonly Func<uint, bool> _runtimeHiddenMarker;
     private readonly IPreparedAssetSource? _ownedPreparedAssets;
-    private readonly MeshUploadFrameBudget _ordinaryUploadBudget =
-        CreateUploadBudget(MaximumUploadsPerFrame);
-    private readonly MeshUploadFrameBudget _destinationRevealUploadBudget =
-        CreateUploadBudget(DestinationRevealMaximumUploadsPerFrame);
+    private IFrameUploadAllowanceSource _uploadAllowance =
+        ProfileFrameUploadAllowanceSource.Default;
+    private MeshUploadFrameBudget? _uploadBudget;
     private readonly HashSet<TextureAtlasManager> _mipmapsBudgeted = new();
     private bool _destinationRevealUploadPriority;
 
@@ -76,23 +74,49 @@ public sealed class WbMeshAdapter
     internal void SetDestinationRevealUploadPriority(bool enabled) =>
         _destinationRevealUploadPriority = enabled;
 
-    private static MeshUploadFrameBudget CreateUploadBudget(
-        int maximumObjects) =>
-        new(new MeshUploadBudgetLimits(
-            maximumObjects,
-            MaximumUploadBytesPerFrame,
-            MaximumArrayAllocationBytesPerFrame,
-            MaximumMipmapBytesPerFrame,
-            MaximumNewArraysPerFrame,
-            MaximumBufferUploadBytesPerFrame,
+    /// <summary>
+    /// Takes the per-frame upload limits from the frame budget that streaming
+    /// runs under (the streaming controller's), ordinary or widened for a
+    /// reveal, instead of the default profile's.
+    /// </summary>
+    internal void BindUploadAllowance(IFrameUploadAllowanceSource allowance) =>
+        _uploadAllowance = allowance
+            ?? throw new ArgumentNullException(nameof(allowance));
+
+    /// <summary>The frame's mesh and texture upload limits under
+    /// <paramref name="allowance"/>.</summary>
+    internal static MeshUploadBudgetLimits LimitsFor(
+        FrameUploadAllowance allowance)
+    {
+        long bytes = allowance.GpuUploadBytes;
+        int newArrays = allowance.ScaleCount(MaximumNewArraysPerFrame);
+        return new MeshUploadBudgetLimits(
+            allowance.ScaleCount(MaximumUploadsPerFrame),
+            bytes,
+            bytes,
+            bytes,
+            newArrays,
+            bytes,
             MaximumBufferAllocationBytesPerFrame,
             MaximumBufferCopyBytesPerFrame,
             MaximumNewBuffersPerFrame,
-            MaximumSingleUploadBytes,
-            MaximumSingleArrayAllocationBytes,
-            MaximumSingleMipmapBytes,
-            MaximumSingleNewArrays,
-            MaximumSingleBufferUploadBytes));
+            Math.Max(MaximumSingleUploadBytes, bytes),
+            Math.Max(MaximumSingleArrayAllocationBytes, bytes),
+            Math.Max(MaximumSingleMipmapBytes, bytes),
+            Math.Max(MaximumSingleNewArrays, newArrays),
+            Math.Max(MaximumSingleBufferUploadBytes, bytes));
+    }
+
+    private MeshUploadFrameBudget FrameUploadBudget()
+    {
+        MeshUploadBudgetLimits limits = LimitsFor(
+            _destinationRevealUploadPriority
+                ? _uploadAllowance.Reveal
+                : _uploadAllowance.Ordinary);
+        if (_uploadBudget is null || _uploadBudget.Limits != limits)
+            _uploadBudget = new MeshUploadFrameBudget(limits);
+        return _uploadBudget;
+    }
 
     internal WbMeshAdapter(
         AcDream.App.Rendering.Gpu.IGpuDevice gpuDevice,
@@ -351,14 +375,8 @@ public sealed class WbMeshAdapter
         ObjectMeshManager meshManager = _meshManager!;
         _graphicsDevice!.ProcessQueue();
         List<MeshUploadQueueItem>? requeue = null;
-        MeshUploadFrameBudget uploadBudget =
-            _destinationRevealUploadPriority
-                ? _destinationRevealUploadBudget
-                : _ordinaryUploadBudget;
-        int maximumUploads =
-            _destinationRevealUploadPriority
-                ? DestinationRevealMaximumUploadsPerFrame
-                : MaximumUploadsPerFrame;
+        MeshUploadFrameBudget uploadBudget = FrameUploadBudget();
+        int maximumUploads = uploadBudget.Limits.MaximumObjects;
         uploadBudget.Reset();
         _mipmapsBudgeted.Clear();
         int staleDiscardCount = 0;
