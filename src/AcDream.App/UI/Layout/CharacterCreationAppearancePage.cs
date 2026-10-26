@@ -93,11 +93,30 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
     private readonly UiDatElement? _gradCircle;
 
     private Choice _currentChoice = Choice.Face;
+    private bool _zoomedIn;
+    private IChargenPreviewControl? _previewControl;
     private Part _currentPart = Part.Hair;
     private readonly List<(Part Part, UiButton Arrow)> _spinArrows = [];
     private bool _disposed;
 
-    internal IChargenPreviewControl? PreviewControl { get; set; }
+    /// <summary>
+    /// The 3-D preview. Attaching one hands it the page's current zoom, so
+    /// a preview attached after the page opened starts framed the same way.
+    /// </summary>
+    internal IChargenPreviewControl? PreviewControl
+    {
+        get => _previewControl;
+        set
+        {
+            _previewControl = value;
+            if (value is null)
+                return;
+            if (_zoomedIn)
+                value.ZoomIn();
+            else
+                value.ZoomOut();
+        }
+    }
 
     internal IChargenPalSetSource? PalSetSource { get; set; }
     internal IChargenClothingTableSource? ClothingTableSource { get; set; }
@@ -169,20 +188,10 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
             _rotateCounterClockwise.OnClick = () => PreviewControl?.RotateCounterClockwise();
         _zoomIn = Find<UiButton>(pageRoot, ZoomInId);
         if (_zoomIn is not null)
-            _zoomIn.OnClick = () =>
-            {
-                PreviewControl?.ZoomIn();
-                _zoomIn.TrySetRetailState(UiButtonStateMachine.Highlight);
-                _zoomOut?.TrySetRetailState(UiButtonStateMachine.Normal);
-            };
+            _zoomIn.OnClick = ZoomIn;
         _zoomOut = Find<UiButton>(pageRoot, ZoomOutId);
         if (_zoomOut is not null)
-            _zoomOut.OnClick = () =>
-            {
-                PreviewControl?.ZoomOut();
-                _zoomOut.TrySetRetailState(UiButtonStateMachine.Highlight);
-                _zoomIn?.TrySetRetailState(UiButtonStateMachine.Normal);
-            };
+            _zoomOut.OnClick = ZoomOut;
 
         _helpText = Find<UiText>(pageRoot, HelpTextId);
         if (_helpText is not null)
@@ -192,7 +201,9 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
                 helpScroll.Model = _helpText.Scroll;
         }
 
+        // The page opens on the face choice, which frames the figure close up.
         ApplyChoiceVisibility();
+        ZoomIn();
     }
 
     internal void Refresh(
@@ -217,8 +228,11 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         SetArrowsEnabled(Part.Eyes, !clothesHidden);
         if (clothesHidden)
         {
+            bool wasClothes = _currentChoice == Choice.Clothes;
             _currentChoice = Choice.Face;
             _currentPart = Part.Hair;
+            if (wasClothes)
+                ZoomIn();
         }
         ApplyChoiceVisibility();
 
@@ -247,7 +261,37 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         _currentChoice = choice;
         _currentPart = choice == Choice.Face ? Part.Hair : Part.Headgear;
         ApplyChoiceVisibility();
+        // The face choice frames the figure close up, the clothes choice
+        // pulls back to show it whole.
+        if (choice == Choice.Face)
+            ZoomIn();
+        else
+            ZoomOut();
         RefreshColorAndShadeControlsFromLatestSnapshot();
+    }
+
+    private void ZoomIn()
+    {
+        if (_disposed)
+            return;
+        _zoomIn?.TrySetRetailState(UiButtonStateMachine.Highlight);
+        if (_zoomedIn)
+            return;
+        _zoomedIn = true;
+        _zoomOut?.TrySetRetailState(UiButtonStateMachine.Normal);
+        _previewControl?.ZoomIn();
+    }
+
+    private void ZoomOut()
+    {
+        if (_disposed)
+            return;
+        _zoomOut?.TrySetRetailState(UiButtonStateMachine.Highlight);
+        if (!_zoomedIn)
+            return;
+        _zoomedIn = false;
+        _zoomIn?.TrySetRetailState(UiButtonStateMachine.Normal);
+        _previewControl?.ZoomOut();
     }
 
     private void ApplyChoiceVisibility()

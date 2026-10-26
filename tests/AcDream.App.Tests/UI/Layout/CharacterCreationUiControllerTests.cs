@@ -1073,7 +1073,7 @@ public sealed class CharacterCreationUiControllerTests
         UiButton zoomIn = environment.Button(CharacterCreationAppearancePage.ZoomInId);
         UiButton zoomOut = environment.Button(CharacterCreationAppearancePage.ZoomOutId);
 
-        Assert.Equal("Normal", zoomIn.ActiveState);
+        Assert.Equal("Highlight", zoomIn.ActiveState);
         Assert.Equal("Normal", zoomOut.ActiveState);
 
         zoomIn.OnClick!();
@@ -1087,6 +1087,45 @@ public sealed class CharacterCreationUiControllerTests
         zoomOut.OnClick!();
         Assert.Equal("Normal", zoomIn.ActiveState);
         Assert.Equal("Highlight", zoomOut.ActiveState);
+    }
+
+    [Fact]
+    public void AppearancePage_OpensOnTheFaceChoiceZoomedIn_SoZoomOutWorksAtOnce()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+
+        UiButton zoomIn = environment.Button(CharacterCreationAppearancePage.ZoomInId);
+        UiButton zoomOut = environment.Button(CharacterCreationAppearancePage.ZoomOutId);
+        Assert.Equal("Highlight", zoomIn.ActiveState);
+        Assert.Equal("Normal", zoomOut.ActiveState);
+        Assert.Equal(1, preview.ZoomInCalls);
+
+        zoomOut.OnClick!();
+
+        Assert.Equal(1, preview.ZoomOutCalls);
+        Assert.Equal("Normal", zoomIn.ActiveState);
+        Assert.Equal("Highlight", zoomOut.ActiveState);
+    }
+
+    [Fact]
+    public void AppearanceChoice_ClothesZoomsOut_FaceZoomsBackIn()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+        SelectAluvianMale(environment);
+
+        environment.Button(CharacterCreationAppearancePage.ClothesButtonId).OnClick!();
+        Assert.Equal(1, preview.ZoomOutCalls);
+        Assert.Equal("Highlight", environment.Button(CharacterCreationAppearancePage.ZoomOutId).ActiveState);
+
+        environment.Button(CharacterCreationAppearancePage.FaceButtonId).OnClick!();
+        Assert.Equal(2, preview.ZoomInCalls);
+        Assert.Equal("Highlight", environment.Button(CharacterCreationAppearancePage.ZoomInId).ActiveState);
     }
 
     private static void SelectAluvianMale(EnvironmentHarness environment)
