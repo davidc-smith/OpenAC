@@ -879,7 +879,7 @@ public sealed class RetailUiRuntime : IDisposable
             if (gameplay)
             {
                 _persistence?.ReflowToScreen();
-                _spellDeckSync?.AfterRestore();
+                _spellDeckSync?.AfterReflow();
             }
             _lastScreenSize = screenSize;
         }

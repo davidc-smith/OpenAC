@@ -61,7 +61,15 @@ internal sealed class SpellDeckCharacterSync
         if (!AwaitingRestore) _dock.Tick();
     }
 
-    /// <summary>After any layout restore, reflow or named-layout load.</summary>
+    /// <summary>After a resolution change (the layout reflowed to the new screen): fits
+    /// the block on screen. Unlike <see cref="AfterRestore"/> it does not re-apply the
+    /// detached placement, which would save the reflow's projection over it.</summary>
+    public void AfterReflow()
+    {
+        if (!AwaitingRestore) _dock.FitToScreen();
+    }
+
+    /// <summary>After any layout restore or named-layout load.</summary>
     public void AfterRestore()
     {
         LoadIfChanged();

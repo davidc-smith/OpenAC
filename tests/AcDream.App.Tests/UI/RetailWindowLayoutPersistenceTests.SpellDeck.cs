@@ -30,6 +30,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public readonly SpellDeckCharacterSync Sync;
         public readonly SpellDeckDock Dock;
         public string Key = "default";
+        public (int Width, int Height) Screen = (1600, 900);
 
         public SpellDeckRig(string path)
         {
@@ -46,7 +47,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
                 Root, Spell, _ => (0u, 0, 0), UiSpellDeck.MountOptions(DeckLeft, 40f) with { Visible = true });
             Assert.True(Root.WindowManager.TryGet(WindowNames.CommandDeck, out RetailWindowHandle deckHandle));
             Persistence = new RetailWindowLayoutPersistence(
-                Root.WindowManager, Store, () => Key, () => (1600, 900),
+                Root.WindowManager, Store, () => Key, () => Screen,
                 [WindowNames.CommandDeck, WindowNames.SpellDeck]);
             Persistence.SetCaptureGate(WindowNames.SpellDeck, () => !Controller.Attached);
             Persistence.ResetToDefaults();
@@ -77,6 +78,17 @@ public sealed partial class RetailWindowLayoutPersistenceTests
             Persistence.RestoreAll();
             Sync.AfterRestore();
             Frames(3);
+        }
+
+        /// <summary>A resolution change in <c>RetailUiRuntime.Draw</c>: reflow, then the Spell Deck.</summary>
+        public void Reflow(int width, int height)
+        {
+            Screen = (width, height);
+            Root.Width = width;
+            Root.Height = height;
+            Persistence.ReflowToScreen();
+            Sync.AfterReflow();
+            Frames(2);
         }
 
         public void Dispose() => Persistence.Dispose();
@@ -164,5 +176,21 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         SpellDeckGeometry g = SpellDeckGeometry.Create(1.2f, 1f, 5);
         AssertSpellDeckAt(rig, new UiWindowLayout(300f, 100f, g.Width, g.Height, false, false, false), "Bob", 1.2f, 5);
         Assert.Equal(5, SpellDeckSettings.Load(rig.Store, "Bob").DetachedRows);
+    }
+
+    [Fact]
+    public void SpellDeck_ReflowToASmallerScreenAndBack_LeavesTheDetachedPlacement()
+    {
+        var store = new SettingsStore(PathName);
+        UiWindowLayout bob = StoreDetachedSpellDeck(store, "Bob", 1000f, 700f, 1.2f, 5);
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+        AssertSpellDeckAt(rig, bob, "Bob", 1.2f, 5);
+
+        rig.Reflow(1000, 170);   // too short for the deck: the window shrinks
+        rig.Reflow(1600, 900);
+
+        AssertSpellDeckAt(rig, bob, "Bob", 1.2f, 5);
     }
 }
