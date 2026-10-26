@@ -137,6 +137,30 @@ public sealed class ChargenPreviewControllerTests
     }
 
     [InstalledDatFact]
+    public void ZoomIn_BeforeTheFirstCompose_IsKept_SoZoomOutWorksRightAfter()
+    {
+        if (!TryOpen(out DatCollection? dats, out DatCollectionAdapter? adapter))
+            Assert.Fail("Lane=InstalledDat requires an installed retail DAT directory; see docs/release-gate.md.");
+        using (dats)
+        using (adapter)
+        {
+            (ChargenOptions options, ChargenAppearanceCatalog catalog) = LoadFixture(adapter!);
+            var controller = new ChargenPreviewController(
+                new FakeChargenRenderer(), new ChargenPreviewCamera(), new FakeChargenView(),
+                adapter!, new RetailAnimationLoader(adapter!), catalog, catalog, new object());
+
+            // The appearance page opens zoomed in before the figure exists.
+            controller.ZoomIn();
+            Assert.True(controller.Rebuild(
+                options, AluvianId, 1, DefaultSelection(options, AluvianId, 1)));
+            Assert.True(controller.IsZoomedIn);
+
+            controller.ZoomOut();
+            Assert.False(controller.IsZoomedIn);
+        }
+    }
+
+    [InstalledDatFact]
     public void Rebuild_ThenRender_SeedsTheEntityHeadingToTheRetailDefault180Degrees()
     {
         if (!TryOpen(out DatCollection? dats, out DatCollectionAdapter? adapter))

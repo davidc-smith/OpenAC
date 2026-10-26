@@ -609,6 +609,7 @@ internal sealed class CharacterCreationUiController : IDisposable
             case Page.Appearance:
                 _appearancePageRoot.Visible = true;
                 _appearanceTab.Selected = true;
+                _appearancePage.OnPageUpdate();
                 break;
             case Page.Town:
                 _townPageRoot.Visible = true;

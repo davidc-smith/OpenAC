@@ -437,6 +437,75 @@ public sealed class CharacterCreationLiveDatTests
     }
 
     [InstalledDatFact]
+    public void AppearanceSpins_ArrowsAreTheirOwnButtons_ThatRollOverAndKeepTheirArtWhenTheSpinHighlights()
+    {
+        using var dats = new DatCollection(DatDirectory, DatAccessType.Read);
+        uint layoutId = RetailDataIdResolver.Resolve(
+            dats, CharacterCreationUiController.RootEnum, 5u);
+        ImportedLayout screen = BuildSelected(
+            dats, layoutId, CharacterCreationUiController.RootElementId);
+
+        UiElement appearanceRoot = Assert.IsAssignableFrom<UiElement>(
+            screen.FindElement(CharacterCreationUiController.AppearancePageElementId));
+        UiButton hairSpin = AssertButton(appearanceRoot, CharacterCreationAppearancePage.HairSpinId);
+
+        Assert.Equal(0, hairSpin.FaceSegmentCount);
+        UiButton decrement = Assert.IsType<UiButton>(
+            UiElement.FindDescendant(hairSpin, CharacterCreationAppearancePage.DecrementArrowId));
+        UiButton increment = Assert.IsType<UiButton>(
+            UiElement.FindDescendant(hairSpin, CharacterCreationAppearancePage.IncrementArrowId));
+        Assert.Equal((80f, 127f), (decrement.Left, increment.Left));
+
+        // The current part's spin highlights before its first frame; its
+        // arrows keep their own Normal art.
+        Assert.True(hairSpin.TrySetRetailState(UiButtonStateMachine.Highlight));
+        Assert.Equal("Normal", decrement.ActiveState);
+        Assert.Equal("Normal", increment.ActiveState);
+
+        Assert.True(increment.RolloverEnabled);
+        var hover = new UiEvent(increment.EventId, increment, UiEventType.HoverEnter);
+        increment.OnEvent(in hover);
+        Assert.Equal("Normal_rollover", increment.ActiveState);
+
+        // Only the spin itself carries the hint; the arrows carry none.
+        Assert.True(hairSpin.AuthoredTooltipEnabled);
+        Assert.False(increment.AuthoredTooltipEnabled);
+        Assert.False(decrement.AuthoredTooltipEnabled);
+
+        Assert.True(decrement.TrySetRetailState(UiButtonStateMachine.Ghosted));
+        Assert.Equal("Ghosted", decrement.ActiveState);
+        Assert.False(decrement.Enabled);
+    }
+
+    [InstalledDatFact]
+    public void ProfessionAttributeLock_AndItsSlider_ShowTheAuthoredLockedArt()
+    {
+        const uint unlocked = 0x10000018u;
+        const uint locked = 0x10000019u;
+        using var dats = new DatCollection(DatDirectory, DatAccessType.Read);
+        uint layoutId = RetailDataIdResolver.Resolve(
+            dats, CharacterCreationUiController.RootEnum, 5u);
+        ImportedLayout screen = BuildSelected(
+            dats, layoutId, CharacterCreationUiController.RootElementId);
+
+        UiElement strength = Assert.IsAssignableFrom<UiElement>(screen.FindElement(0x100003E6u));
+        UiButton lockButton = Assert.IsType<UiButton>(UiElement.FindDescendant(strength, 0x100002ECu));
+        UiScrollbar slider = Assert.IsType<UiScrollbar>(UiElement.FindDescendant(strength, 0x100002EEu));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(0x06004D39u, slider.TrackSprite);
+
+        Assert.True(lockButton.TrySetRetailState(locked));
+        Assert.True(slider.TrySetTrackState(locked));
+        Assert.Equal("Locked", lockButton.ActiveState);
+        Assert.Equal(0x06004D3Au, slider.TrackSprite);
+
+        Assert.True(lockButton.TrySetRetailState(unlocked));
+        Assert.True(slider.TrySetTrackState(unlocked));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(0x06004D39u, slider.TrackSprite);
+    }
+
+    [InstalledDatFact]
     public void RequiredChargenStringsResolve()
     {
         using var dats = new DatCollection(DatDirectory, DatAccessType.Read);
