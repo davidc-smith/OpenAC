@@ -28,6 +28,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public readonly SpellDeckController Controller;
         public readonly RetailWindowLayoutPersistence Persistence;
         public readonly SpellDeckCharacterSync Sync;
+        public readonly SpellDeckDock Dock;
         public string Key = "default";
 
         public SpellDeckRig(string path)
@@ -53,6 +54,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
                 new SpellDeckWindowDockHost(Root, () => Persistence, deck, deckHandle, Spell, spellHandle), Controller);
             sync = new SpellDeckCharacterSync(Controller, dock, Store, () => Key, () => Persistence.RestoredCharacter);
             Sync = sync;
+            Dock = dock;
         }
 
         /// <summary>The runtime's frame.</summary>
@@ -140,5 +142,27 @@ public sealed partial class RetailWindowLayoutPersistenceTests
 
         rig.EnterWorld("Bob");
         AssertSpellDeckAt(rig, bob, "Bob", 1.2f, 5);
+    }
+
+    [Fact]
+    public void SpellDeck_RowsAddedWhileAttached_DetachAfterRelogKeepsTheStoredScale()
+    {
+        // Bob's placement was saved detached with 3 rows at 1.2; since then he
+        // attached, added 2 rows and logged out.
+        var store = new SettingsStore(PathName);
+        StoreDetachedSpellDeck(store, "Bob", 300f, 100f, 1.2f, 3);
+        store.SaveSpellDeck("Bob", new StoredSpellDeck(true,
+            Enumerable.Range(1, 5).Select(i => (i, i - 1)).ToArray(), DetachedRows: 3));
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+        Assert.True(rig.Controller.Attached);
+
+        rig.Dock.Detach();
+        rig.Frames(2);
+
+        SpellDeckGeometry g = SpellDeckGeometry.Create(1.2f, 1f, 5);
+        AssertSpellDeckAt(rig, new UiWindowLayout(300f, 100f, g.Width, g.Height, false, false, false), "Bob", 1.2f, 5);
+        Assert.Equal(5, SpellDeckSettings.Load(rig.Store, "Bob").DetachedRows);
     }
 }

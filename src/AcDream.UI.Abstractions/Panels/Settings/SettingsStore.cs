@@ -21,8 +21,9 @@ public readonly record struct PluginCanvasPosition(string Anchor, double X, doub
 /// <summary>One remembered markup control value: which window, which named control, which kind of state.</summary>
 public readonly record struct MarkupControlKey(string Window, string Control, string Kind);
 
-/// <summary>A character's Spell Deck rows (id, tab) and whether it is attached to the Command Deck.</summary>
-public sealed record StoredSpellDeck(bool Attached, IReadOnlyList<(int Id, int Tab)> Rows);
+/// <summary>A character's Spell Deck rows (id, tab), whether it is attached to the Command Deck,
+/// and the row count its stored detached placement was saved with (null when not recorded).</summary>
+public sealed record StoredSpellDeck(bool Attached, IReadOnlyList<(int Id, int Tab)> Rows, int? DetachedRows = null);
 
 public sealed class SettingsStore
 {
@@ -379,7 +380,8 @@ public sealed class SettingsStore
                         && row["id"]?.GetValue<int>() is int id
                         && row["tab"]?.GetValue<int>() is int tab)
                         rows.Add((id, tab));
-            return new StoredSpellDeck(deck["attached"]?.GetValue<bool>() ?? true, rows);
+            int? detachedRows = deck["detachedRows"] is JsonValue value && value.TryGetValue(out int n) ? n : null;
+            return new StoredSpellDeck(deck["attached"]?.GetValue<bool>() ?? true, rows, detachedRows);
         }
         catch (Exception ex)
         {
@@ -395,7 +397,9 @@ public sealed class SettingsStore
         JsonObject root = LoadMutableRoot();
         var rows = new JsonArray();
         foreach ((int id, int tab) in deck.Rows) rows.Add(new JsonObject { ["id"] = id, ["tab"] = tab });
-        GetOrCreateObject(root, "spellDeck")[toonKey] = new JsonObject { ["attached"] = deck.Attached, ["rows"] = rows };
+        var entry = new JsonObject { ["attached"] = deck.Attached, ["rows"] = rows };
+        if (deck.DetachedRows is int detachedRows) entry["detachedRows"] = detachedRows;
+        GetOrCreateObject(root, "spellDeck")[toonKey] = entry;
         root["version"] = CurrentSchemaVersion;
         WriteMutableRoot(root);
     }

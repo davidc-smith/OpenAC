@@ -26,4 +26,21 @@ public sealed class SettingsStoreSpellDeckTests
         }
         finally { File.Delete(path); }
     }
+
+    [Fact]
+    public void SpellDeck_DetachedRows_RoundTrips_AndIsNullWhenMissing()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"s-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new SettingsStore(path);
+            store.SaveSpellDeck("toon", new StoredSpellDeck(true, [(1, 0), (2, 1)], DetachedRows: 5));
+            Assert.Equal(5, new SettingsStore(path).LoadSpellDeck("toon")!.DetachedRows);
+
+            // An older file has no detachedRows.
+            store.SaveSpellDeck("old", new StoredSpellDeck(true, [(1, 0)]));
+            Assert.Null(new SettingsStore(path).LoadSpellDeck("old")!.DetachedRows);
+        }
+        finally { File.Delete(path); }
+    }
 }

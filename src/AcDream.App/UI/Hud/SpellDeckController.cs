@@ -22,6 +22,7 @@ public sealed class SpellDeckController
     private readonly Func<bool> _canAddRow;
     private readonly List<SpellDeckRow> _rows;
     private bool _attached;
+    private int? _detachedRows;
     private int _nextRowId;
 
     public SpellDeckController(
@@ -44,12 +45,16 @@ public sealed class SpellDeckController
         SpellDeckSettings s = settings.Normalize();
         _rows = [.. s.Rows];
         _attached = s.Attached;
+        _detachedRows = s.DetachedRows;
         _nextRowId = s.NextRowId;
     }
 
     public IReadOnlyList<SpellDeckRow> Rows => _rows;
     public SpellDeckOutline Outline { get; private set; }
     public bool Attached => _attached;
+
+    /// <summary>The row count the stored detached placement goes with; null when not recorded.</summary>
+    public int? DetachedRows => _detachedRows;
     public bool ClickCasts => _clickCasts();
     public ItemSpell? ItemSpell => _itemSpell();
 
@@ -58,7 +63,7 @@ public sealed class SpellDeckController
     {
         SpellDeckSettings s = settings.Normalize();
         _rows.Clear(); _rows.AddRange(s.Rows);
-        _attached = s.Attached; _nextRowId = s.NextRowId;
+        _attached = s.Attached; _detachedRows = s.DetachedRows; _nextRowId = s.NextRowId;
         Outline = SpellDeckOutline.None;
         Tick();
     }
@@ -244,9 +249,17 @@ public sealed class SpellDeckController
         Changed();
     }
 
+    /// <summary>Records the row count of the detached placement just placed or saved.</summary>
+    public void SetDetachedRows(int rows)
+    {
+        if (_detachedRows == rows) return;
+        _detachedRows = rows;
+        _save(new SpellDeckSettings([.. _rows], _attached, _detachedRows));
+    }
+
     private void Changed()
     {
         Tick();
-        _save(new SpellDeckSettings([.. _rows], _attached));
+        _save(new SpellDeckSettings([.. _rows], _attached, _detachedRows));
     }
 }

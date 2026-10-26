@@ -65,13 +65,15 @@ public sealed class SpellDeckDockTests
         public void SetSpellDeckResizable(bool resizable) => Resizable = resizable;
     }
 
-    private static (SpellDeckDock Dock, Host Host, SpellDeckController C, List<uint>[] Tabs) Make(bool attached = true)
+    private static (SpellDeckDock Dock, Host Host, SpellDeckController C, List<uint>[] Tabs) Make(
+        bool attached = true, int? detachedRows = null, List<SpellDeckSettings>? saved = null)
     {
         var tabs = Enumerable.Range(0, 8).Select(_ => new List<uint>()).ToArray();
         var host = new Host();
         SpellDeckDock? dock = null;
         var c = new SpellDeckController(new Actions(), tab => tabs[tab], () => null, () => 12,
-            SpellDeckSettings.Default with { Attached = attached }, _ => { }, () => false,
+            SpellDeckSettings.Default with { Attached = attached, DetachedRows = detachedRows },
+            s => saved?.Add(s), () => false,
             () => dock!.CanAddRow());
         dock = new SpellDeckDock(host, c);
         return (dock, host, c, tabs);
@@ -244,5 +246,42 @@ public sealed class SpellDeckDockTests
             Assert.Equal(detachedSpot.Width, host.Stored.Width, 2);
             Assert.Equal(detachedSpot.Height, host.Stored.Height, 2);
         }
+    }
+
+    [Fact]
+    public void SpellDeckDock_RowsAddedWhileAttached_DetachKeepsTheStoredScale()
+    {
+        // The stored detached placement was saved with 3 rows at scale 1.2.
+        var saved = new List<SpellDeckSettings>();
+        var (dock, host, c, _) = Make(detachedRows: 3, saved: saved);
+        host.Stored = (300f, 200f, 588f, SpellDeckGeometry.BaseHeight(3) * 1.2f);
+        dock.Tick();
+        c.AddRowBelow(c.Rows[0].Id);
+        c.AddRowBelow(c.Rows[0].Id);
+        dock.Tick();
+        Assert.Equal(5, c.Rows.Count);
+        Assert.Equal(3, c.DetachedRows);   // attached moves are not the detached placement
+
+        dock.Detach();
+
+        Assert.Equal(1.2f, host.SpellDeckGeometry.Scale, 3);
+        Assert.Equal(5, host.SpellDeckGeometry.Rows);
+        Assert.Equal(SpellDeckGeometry.BaseHeight(5) * 1.2f, host.SpellDeckHeight, 2);
+        Assert.Equal(SpellDeckGeometry.BaseHeight(5) * 1.2f, host.Stored.Height, 2);
+        Assert.Equal(5, c.DetachedRows);   // the stored placement now goes with 5 rows
+        Assert.Equal(5, saved[^1].DetachedRows);
+    }
+
+    [Fact]
+    public void SpellDeckDock_Detached_RowChangesFollowIntoDetachedRows()
+    {
+        var (dock, host, c, _) = Make(attached: false, detachedRows: 3);
+        host.Stored = (300f, 200f, 588f, SpellDeckGeometry.BaseHeight(3) * 1.2f);
+        dock.AfterRestore();
+        c.AddRowBelow(c.Rows[0].Id);
+        dock.Tick();
+        Assert.Equal(4, c.DetachedRows);
+        Assert.Equal(1.2f, host.SpellDeckGeometry.Scale, 3);
+        Assert.Equal(SpellDeckGeometry.BaseHeight(4) * 1.2f, host.Stored.Height, 2);
     }
 }

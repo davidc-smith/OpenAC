@@ -172,7 +172,11 @@ public sealed class SpellDeckDock
         _host.SetDeckLimits(null, null, null);
         _host.SetSpellDeckCaptureOpen(true);
         _host.ApplyStoredSpellDeckPlacement();
-        SpellDeckGeometry g = SpellDeckGeometry.FromSize(_host.SpellDeckWidth, _host.SpellDeckHeight, RowCount);
+        // The stored height is that of the rows it was saved with; rows added or
+        // removed since (while attached) change the height, never the scale.
+        int storedRows = _controller.DetachedRows ?? RowCount;
+        SpellDeckGeometry g = SpellDeckGeometry.FromSize(_host.SpellDeckWidth, _host.SpellDeckHeight, storedRows)
+            .WithRows(RowCount);
         g = g.WithStretch(Math.Max(g.Stretch, MinStretch()));
         Place(_host.SpellDeckLeft, _host.SpellDeckTop, g, force: true);
     }
@@ -180,13 +184,16 @@ public sealed class SpellDeckDock
     /// <summary>Places the Spell Deck on screen, only when something changed (a detached move is saved).</summary>
     private void Place(float left, float top, SpellDeckGeometry g, bool force = false)
     {
-        if (!_controller.Attached)
+        bool detached = !_controller.Attached;
+        if (detached)
         {
             var screen = _host.Screen;
             left = Math.Max(screen.Left, Math.Min(left, screen.Left + screen.Width - g.Width));
             top = Math.Max(screen.Top, Math.Min(top, screen.Top + screen.Height - g.Height));
         }
-        if (!force && left == _host.SpellDeckLeft && top == _host.SpellDeckTop && g == _host.SpellDeckGeometry) return;
-        _host.PlaceSpellDeck(left, top, g);
+        if (force || left != _host.SpellDeckLeft || top != _host.SpellDeckTop || g != _host.SpellDeckGeometry)
+            _host.PlaceSpellDeck(left, top, g);
+        // A detached placement is saved with the window; its row count goes with it.
+        if (detached) _controller.SetDetachedRows(g.Rows);
     }
 }
