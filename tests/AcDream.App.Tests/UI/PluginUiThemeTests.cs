@@ -77,6 +77,55 @@ public sealed class PluginUiThemeTests
         Assert.Equal("ExactVariableName description", field.BoundText!());
     }
 
+    [Theory]
+    [InlineData(PluginUiTheme.LavenderDusk, "Lavender Dusk", 0x17141Fu, 0xBBA0FFu, 0x512F4Au)]
+    [InlineData(PluginUiTheme.Ember, "Ember", 0x151A21u, 0xFF9447u, 0x1E3B44u)]
+    [InlineData(PluginUiTheme.Bloodmoon, "Bloodmoon", 0x1C1617u, 0xFF6B6Bu, 0x4D2327u)]
+    [InlineData(PluginUiTheme.Glacier, "Glacier", 0x11161Cu, 0x5ED6E8u, 0x1F3554u)]
+    [InlineData(PluginUiTheme.Parchment, "Parchment", 0xEDE7DCu, 0xB4471Fu, 0xDDCFB6u)]
+    public void NewThemesHaveTheirNameAndColours(PluginUiTheme theme, string name, uint background, uint accent, uint selected)
+    {
+        var settings = new PluginUiThemeSettings { Theme = theme };
+        var palette = settings.Palette!;
+        Assert.Equal(Rgb(background), palette.Background);
+        Assert.Equal(Rgb(accent), palette.Accent);
+        Assert.Equal(Rgb(selected), palette.Selected);
+        Assert.Same(palette, settings.DockPalette);
+        Assert.Equal(name, settings.ThemeInfo.DisplayName);
+        Assert.Equal(theme.ToString(), settings.ThemeInfo.Kind.ToString());
+    }
+
+    [Fact]
+    public void EveryThemeButClassicHasItsOwnPaletteAndAMatchingKind()
+    {
+        var themes = Enum.GetValues<PluginUiTheme>();
+        Assert.Equal(themes.Length, PluginUiThemeSettings.ThemeNames.Count);
+        Assert.Equal(
+            themes.Select(t => t.ToString()),
+            Enum.GetValues<AcDream.Plugin.Abstractions.PluginUiThemeKind>().Select(k => k.ToString()));
+        var palettes = themes.Where(t => t != PluginUiTheme.Classic)
+            .Select(t => new PluginUiThemeSettings { Theme = t }.Palette).ToList();
+        Assert.All(palettes, Assert.NotNull);
+        Assert.Equal(palettes.Count, palettes.Distinct().Count());
+    }
+
+    [Fact]
+    public void ANewThemePersistsByName()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"plugin-theme-{Guid.NewGuid()}.json");
+        try
+        {
+            var store = new SettingsStore(path);
+            new PluginUiThemeSettings(store).Theme = PluginUiTheme.Parchment;
+            Assert.Equal("Parchment", store.LoadPluginUi().Theme);
+            Assert.Equal(PluginUiTheme.Parchment, new PluginUiThemeSettings(store).Theme);
+        }
+        finally { File.Delete(path); }
+    }
+
+    private static Vector4 Rgb(uint rgb) =>
+        new((rgb >> 16 & 255) / 255f, (rgb >> 8 & 255) / 255f, (rgb & 255) / 255f, 1f);
+
     [Fact]
     public void ThemePersistsWithoutReplacingOtherSettings()
     {

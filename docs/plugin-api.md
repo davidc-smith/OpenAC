@@ -1783,6 +1783,14 @@ window and control corner radii, the title band's height, and a switch's
 track and knob. They are constants, so a plugin takes the values of the
 contract it was built against.
 
+The themes are Classic, `Moss`, `Brass`, `LavenderDusk`, `Ember`,
+`Bloodmoon`, `Glacier` and `Parchment`. `Parchment` is the one light theme:
+its `Background` is pale and its `Text` dark, so a canvas that draws its own
+colours over a themed face should take them from the palette rather than
+assume a dark window. The last five need contract `0.1.27-fork.2`; a plugin
+built against an older contract can still meet them on a newer host, so a
+`switch` on `Kind` wants a default case, and the palette is the safer guide.
+
 `ThemeChanged` is raised on the tick thread, once for each change, with the
 new theme; reading `Theme` inside the handler gives the same value. A
 handler that throws is logged and does not stop the next plugin from
