@@ -3391,18 +3391,9 @@ public sealed class RetailUiRuntime : IDisposable
             Host.Root,
             _commandDeck,
             _bindings.Assets.ResolveSprite,
-            new RetailWindowFrame.Options
-            {
-                WindowName = WindowNames.CommandDeck,
-                Chrome = RetailWindowChrome.Imported,
-                Left = Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f),
-                Top = Math.Max(0f, Host.Root.Height - Hud.DeckGeometry.Default.Height - 20f),
-                Resizable = false,
-                ResizeX = false,
-                ResizeY = false,
-                Visible = false,
-                ContentClickThrough = false,
-            });
+            Hud.UiCommandDeck.MountOptions(
+                Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f),
+                Math.Max(0f, Host.Root.Height - Hud.DeckGeometry.Default.Height - 20f)));
         Console.WriteLine("[UI] Command Deck mounted (Modern HUD).");
     }
 

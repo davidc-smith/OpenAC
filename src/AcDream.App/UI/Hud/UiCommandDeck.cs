@@ -1,4 +1,5 @@
 using System.Globalization;
+using AcDream.App.UI.Layout;
 using AcDream.Core.Combat;
 using AcDream.Core.Net.Messages;
 using AcDream.Runtime;
@@ -59,9 +60,68 @@ internal sealed partial class UiCommandDeck : UiElement
         _fonts = fonts;
         Width = _geometry.Width;
         Height = _geometry.Height;
-        MinWidth = MaxWidth = Width;
-        MinHeight = MaxHeight = Height;
-        Resizable = false;
+        MinWidth = MinWindowWidth;
+        MaxWidth = MaxWindowWidth;
+        MinHeight = MinWindowHeight;
+        MaxHeight = MaxWindowHeight;
+        Resizable = true;
+        ResizableEdges = ResizeEdges.Right;
+    }
+
+    // The window's full size range. Scale and stretch together are enforced
+    // by ConstrainResize and SyncGeometry, not by these.
+    private const float MinWindowWidth = DeckGeometry.BaseWidth * DeckGeometry.MinStretch * DeckGeometry.MinScale;
+    private const float MaxWindowWidth = DeckGeometry.BaseWidth * DeckGeometry.MaxStretch * DeckGeometry.MaxScale;
+    private const float MinWindowHeight = DeckGeometry.BaseHeight * DeckGeometry.MinScale;
+    private const float MaxWindowHeight = DeckGeometry.BaseHeight * DeckGeometry.MaxScale;
+
+    /// <summary>A pointer within this many points of the right edge hits the
+    /// deck even outside the frame, so the right-hand grips are easy to grab.</summary>
+    private const float GripBand = 6f;
+
+    /// <summary>How the runtime mounts the deck: imported chrome, resizable from the right only.</summary>
+    internal static RetailWindowFrame.Options MountOptions(float left, float top) => new()
+    {
+        WindowName = WindowNames.CommandDeck,
+        Chrome = RetailWindowChrome.Imported,
+        Left = left,
+        Top = top,
+        Resizable = true,
+        ResizeX = true,
+        ResizeY = true,
+        ResizableEdges = ResizeEdges.Right,
+        MinWidth = MinWindowWidth,
+        MaxWidth = MaxWindowWidth,
+        MinHeight = MinWindowHeight,
+        MaxHeight = MaxWindowHeight,
+        Visible = false,
+        ContentClickThrough = false,
+    };
+
+    internal override ResizeEdges FilterResizeEdges(ResizeEdges hit) => hit switch
+    {
+        ResizeEdges.Right
+            or (ResizeEdges.Right | ResizeEdges.Top)
+            or (ResizeEdges.Right | ResizeEdges.Bottom) => hit,
+        _ => ResizeEdges.None,
+    };
+
+    internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
+    {
+        bool corner = (edges & (ResizeEdges.Top | ResizeEdges.Bottom)) != 0;
+        _geometry = corner ? _geometry.WithCornerSize(width, height) : _geometry.WithWidth(width);
+        width = _geometry.Width;
+        height = _geometry.Height;
+    }
+
+    /// <summary>Moves the geometry to the deck's current size (after a restore,
+    /// a reset or a screen limit), and the size to the nearest valid one.</summary>
+    private void SyncGeometry()
+    {
+        if (Width == _geometry.Width && Height == _geometry.Height) return;
+        _geometry = DeckGeometry.FromSize(Width, Height);
+        Width = _geometry.Width;
+        Height = _geometry.Height;
     }
 
     /// <summary>How long the pointer rests on a zone before its tooltip shows.</summary>
@@ -124,6 +184,7 @@ internal sealed partial class UiCommandDeck : UiElement
     /// <summary>Samples the game and rebuilds the view; releases a held attack if the power row went away.</summary>
     internal void Refresh()
     {
+        SyncGeometry();
         _view = _model.Update(_input(), _clock());
         if (_held is not null && _view.Row != DeckContextRow.Power)
             ReleaseHeldAttack();
@@ -139,7 +200,8 @@ internal sealed partial class UiCommandDeck : UiElement
         CapturesPointerDrag = IsControl(_hitZone);
         return _hitZone != DeckZone.None
             || _geometry.Frame.Contains(localX, localY)
-            || _geometry.InOrb(localX, localY);
+            || _geometry.InOrb(localX, localY)
+            || (localX >= Width - GripBand && localY >= 0 && localY < Height);
     }
 
     /// <summary>Zones that act on a press; every other part of the deck drags the window.</summary>

@@ -35,6 +35,7 @@ internal sealed partial class UiCommandDeck
     private static readonly Vector4 Handle = Rgb(0xE2C27A);
     private static readonly Vector4 JumpInk = Rgb(0x7FD6A8);
     private static readonly Vector4 CastLit = Rgb(0xCFE0FF);
+    private static readonly Vector4 GripInk = Rgb(0xE2C27A, 0.55f);
 
     /// <summary>A length in base points at the deck's scale.</summary>
     private float P(float points) => points * _geometry.Scale;
@@ -42,12 +43,37 @@ internal sealed partial class UiCommandDeck
     /// <summary>A line weight at the deck's scale, in whole points, never under one.</summary>
     private float Line(float points) => MathF.Max(1f, MathF.Round(points * _geometry.Scale));
 
+    /// <summary>A faint bronze stroke on the right edge, or an L at the right
+    /// corner, while that grip is hovered or being dragged.</summary>
+    private void DrawResizeGrip(UiRenderContext ctx)
+    {
+        ResizeEdges edges = FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None;
+        if ((edges & ResizeEdges.Right) == 0) return;
+        DeckRect f = _geometry.Frame;
+        float w = Line(2), right = f.X + f.W - w, arm = P(24);
+        if ((edges & ResizeEdges.Top) != 0)
+        {
+            ctx.DrawFill(right, f.Y, w, arm, GripInk);
+            ctx.DrawFill(right - arm + w, f.Y, arm, w, GripInk);
+        }
+        else if ((edges & ResizeEdges.Bottom) != 0)
+        {
+            ctx.DrawFill(right, f.Y + f.H - arm, w, arm, GripInk);
+            ctx.DrawFill(right - arm + w, f.Y + f.H - w, arm, w, GripInk);
+        }
+        else
+        {
+            ctx.DrawFill(right, f.Y + P(10), w, f.H - P(20), GripInk);
+        }
+    }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
         CommandDeckView v = _view;
         double now = _clock();
 
         DrawFrame(ctx);
+        DrawResizeGrip(ctx);
         DrawBar(ctx, _geometry.HealthBar, "HEALTH", v.Health, HealthInk,
             pulse: v.LowHealth ? 0.25f + 0.25f * MathF.Sin((float)now * 6f) : 0f);
         DrawBar(ctx, _geometry.StaminaBar, "STAMINA", v.Stamina, StaminaInk, 0f);
