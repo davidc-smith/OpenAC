@@ -46,6 +46,7 @@ internal static class WindowPlacementGeometry
             WindowNames.Indicators => (margin, margin),
             WindowNames.Vitals or WindowNames.SideVitals => (indicatorWidth + margin * 2f, margin),
             WindowNames.PluginShelf => (margin, centerY),
+            WindowNames.CommandDeck => (centerX, MathF.Max(0f, height - authored.Height - 20f)),
             _ => (centerX, centerY),
         };
         return authored with
