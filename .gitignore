@@ -34,3 +34,6 @@ __pycache__/
 
 # DocFX output
 _site/
+
+# Decompiled retail acclient reference (local only, never commit)
+ac-client-src/
