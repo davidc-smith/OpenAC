@@ -73,7 +73,7 @@ public sealed class ScopedEventsTests
         // Every event IEvents declares today. If a new event is added
         // without a matching branch in CreateHandler/Fire below, those
         // helpers throw before this assertion is ever reached.
-        Assert.Equal(13, walked);
+        Assert.Equal(14, walked);
 
         foreach (EventInfo eventInfo in events)
             Fire(inner, worldEntities, eventInfo.Name);
@@ -134,6 +134,8 @@ public sealed class ScopedEventsTests
                 new Action<uint>(_ => counter[0]++),
             nameof(IEvents.ConfirmationRequested) =>
                 new Action<PluginConfirmation>(_ => counter[0]++),
+            nameof(IEvents.StatusTextReceived) =>
+                new Action<string>(_ => counter[0]++),
             _ => throw new InvalidOperationException(
                 "No handler mapping for IEvents." + eventInfo.Name
                     + " - add one here and to Fire() below."),
@@ -191,6 +193,9 @@ public sealed class ScopedEventsTests
             case nameof(IEvents.ConfirmationRequested):
                 inner.FireConfirmationRequested(
                     new PluginConfirmation(1u, 5, "continue?"));
+                break;
+            case nameof(IEvents.StatusTextReceived):
+                inner.FireStatusTextReceived("You're too busy!");
                 break;
             default:
                 throw new InvalidOperationException(

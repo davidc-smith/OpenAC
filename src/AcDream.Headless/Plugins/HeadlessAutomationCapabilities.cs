@@ -5,6 +5,7 @@ using AcDream.Runtime;
 using AcDream.Runtime.Navigation;
 using AcDream.Runtime.Plugins;
 using AcDream.Runtime.Session;
+using AcDream.Runtime.Session.Windowless;
 
 namespace AcDream.Headless.Plugins;
 
@@ -161,7 +162,7 @@ internal static partial class HeadlessAutomationCapabilities
     /// with, so the census reads the code rather than a list beside it.
     /// </summary>
     internal static GameRuntimeDependencies BuildRuntimeDependencies(
-        HeadlessGameplayOperations gameplay,
+        RuntimeWindowlessGameplayOperations gameplay,
         TimeProvider timeProvider,
         Action<string> log,
         ILiveSessionOperations? sessionOperations)
