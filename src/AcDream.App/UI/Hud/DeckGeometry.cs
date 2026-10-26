@@ -73,9 +73,26 @@ public sealed record DeckGeometry
         if (!float.IsFinite(width) || !float.IsFinite(height)) return Default;
         float scale = SnapScale(height / BaseHeight);
         if (BaseWidth * scale > width + 0.5f)
-            scale = Math.Max(MinScale, MathF.Floor(width / BaseWidth / ScaleStep + 1e-4f) * ScaleStep);
+            scale = StepDown(width / BaseWidth);
         return Create(scale, width / (BaseWidth * scale));
     }
+
+    /// <summary>This geometry limited to a room: when it does not fit, the scale
+    /// steps down to the largest step that does (at the smallest stretch), then
+    /// the stretch narrows until the width fits. A room smaller than the
+    /// smallest deck gives the smallest deck.</summary>
+    public DeckGeometry FitWithin(float width, float height)
+    {
+        const float slack = 0.01f;
+        if (!float.IsFinite(width) || !float.IsFinite(height)) return this;
+        if (Width <= width + slack && Height <= height + slack) return this;
+        float scale = Math.Min(Scale, StepDown(Math.Min(height / BaseHeight, width / BaseWidth)));
+        return Create(scale, Math.Min(Stretch, width / (BaseWidth * scale)));
+    }
+
+    /// <summary>The largest scale step at or under <paramref name="raw"/>, never under the minimum.</summary>
+    private static float StepDown(float raw) =>
+        Math.Max(MinScale, MathF.Floor(raw / ScaleStep + 1e-4f) * ScaleStep);
 
     /// <summary>A side-edge resize: the same scale, the width decides the stretch.</summary>
     public DeckGeometry WithWidth(float width) => Create(Scale, width / (BaseWidth * Scale));

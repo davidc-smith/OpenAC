@@ -94,6 +94,7 @@ internal sealed partial class UiCommandDeck : UiElement
         ResizeX = true,
         ResizeY = true,
         ResizableEdges = ResizeEdges.Right,
+        ConstrainResizeToParent = true,
         MinWidth = MinWindowWidth,
         MaxWidth = MaxWindowWidth,
         MinHeight = MinWindowHeight,
@@ -115,6 +116,15 @@ internal sealed partial class UiCommandDeck : UiElement
         bool corner = (edges & (ResizeEdges.Top | ResizeEdges.Bottom)) != 0;
         DeckGeometry from = _resizeFrom ??= _geometry;
         _geometry = corner ? from.WithCornerSize(width, height) : from.WithWidth(width);
+        // The root keeps the proposed size on screen, but the geometry can
+        // grow past it (a scale snapping up, the width following the scale),
+        // so fit it again. The left edge never moves; a top drag keeps the
+        // bottom where it is, any other drag keeps the top.
+        if (ConstrainResizeToParent && Parent is { } parent)
+        {
+            float roomHeight = (edges & ResizeEdges.Top) != 0 ? Top + Height : parent.Height - Top;
+            _geometry = _geometry.FitWithin(parent.Width - Left, roomHeight);
+        }
         width = _geometry.Width;
         height = _geometry.Height;
     }

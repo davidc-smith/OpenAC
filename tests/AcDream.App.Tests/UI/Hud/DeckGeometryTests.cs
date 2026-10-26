@@ -172,6 +172,22 @@ public sealed class DeckGeometryTests
     }
 
     [Theory]
+    [InlineData(1.5f, 2f, 9999f, 9999f, 1.5f, 2f)]      // fits: unchanged
+    [InlineData(1.35f, 1f, 600f, 200f, 1.3f, 1f)]       // too tall: the step under 200 / 150
+    [InlineData(1.45f, 1f, 600f, 999f, 1.4f, 1f)]       // too wide at stretch 1: the step under 600 / 420
+    [InlineData(1.25f, 2f, 600f, 999f, 1.25f, 1.14f)]   // too wide: the stretch gives way first
+    [InlineData(1f, 1f, 100f, 50f, 0.75f, 1f)]          // no room at all: the smallest size
+    public void FitWithin_StepsTheScaleDownAndNarrowsTheStretch(
+        float scale, float stretch, float roomW, float roomH, float fitScale, float fitStretch)
+    {
+        DeckGeometry g = DeckGeometry.Create(scale, stretch).FitWithin(roomW, roomH);
+        Assert.Equal(fitScale, g.Scale, 3);
+        Assert.Equal(fitStretch, g.Stretch, 2);
+        if (fitScale > DeckGeometry.MinScale)
+            Assert.True(g.Width <= roomW + 0.01f && g.Height <= roomH + 0.01f, $"{g.Width} x {g.Height}");
+    }
+
+    [Theory]
     [InlineData(CombatMode.NonCombat)]
     [InlineData(CombatMode.Melee)]
     [InlineData(CombatMode.Magic)]

@@ -23,9 +23,9 @@ public sealed class UiCommandDeckResizeTests
     private const float DeckLeft = 100f, DeckTop = 200f;
 
     /// <summary>A deck mounted the way <c>RetailUiRuntime.MountCommandDeck</c> mounts it.</summary>
-    private static (UiRoot Root, UiCommandDeck Deck) Mount()
+    private static (UiRoot Root, UiCommandDeck Deck) Mount(float rootWidth = 1600, float rootHeight = 900)
     {
-        var root = new UiRoot { Width = 1600, Height = 900 };
+        var root = new UiRoot { Width = rootWidth, Height = rootHeight };
         var input = default(CommandDeckInput) with { Mode = CombatMode.Melee, SessionKey = 1 };
         var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 0.0);
         RetailWindowFrame.Mount(root, deck, _ => (0u, 0, 0), UiCommandDeck.MountOptions(DeckLeft, DeckTop) with { Visible = true });
@@ -227,6 +227,76 @@ public sealed class UiCommandDeckResizeTests
         root.OnMouseMove(px + 42, py);
         Assert.Equal(1.4f, deck.Geometry.Scale, 3);
         root.OnMouseUp(UiMouseButton.Left, px + 42, py);
+    }
+
+    private static void AssertInside(UiRoot root, UiCommandDeck deck)
+    {
+        Assert.True(deck.Left >= 0 && deck.Top >= 0, $"at {deck.Left},{deck.Top}");
+        Assert.True(deck.Left + deck.Width <= root.Width + 0.01f, $"right {deck.Left + deck.Width} > {root.Width}");
+        Assert.True(deck.Top + deck.Height <= root.Height + 0.01f, $"bottom {deck.Top + deck.Height} > {root.Height}");
+        Assert.Equal((deck.Geometry.Width, deck.Geometry.Height), (deck.Width, deck.Height));
+    }
+
+    [Fact]
+    public void MountedDeckIsLimitedToTheScreenWhileResizing() =>
+        Assert.True(UiCommandDeck.MountOptions(0, 0).ConstrainResizeToParent);
+
+    [Theory]
+    [InlineData(0, 100, 1.3f)]     // down: 200 of room is 1.33, the step under it is 1.3
+    [InlineData(300, 0, 1.3f)]     // right: 600 of room is 1.43, but 1.4 is too tall
+    [InlineData(300, 100, 1.3f)]
+    public void BottomRightCornerStaysOnASmallScreen(int dx, int dy, float scale)
+    {
+        var (root, deck) = Mount(700, 400);   // 600 x 200 of room right of and under the deck
+        int px = X(418), py = Y(148);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        root.OnMouseMove(px + dx, py + dy);
+        AssertInside(root, deck);
+        Assert.Equal(scale, deck.Geometry.Scale, 3);
+        root.OnMouseMove(px + dx + 50, py + dy + 50);
+        root.OnMouseUp(UiMouseButton.Left, px + dx + 50, py + dy + 50);
+        AssertInside(root, deck);
+        Assert.Equal(scale, deck.Geometry.Scale, 3);
+    }
+
+    [Fact]
+    public void TopRightCornerStaysOnTheScreen()
+    {
+        var (root, deck) = Mount();
+        deck.Top = 50f;                       // bottom at 200: 200 of room above it
+        int px = X(418), py = (int)(50f + 1f);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        root.OnMouseMove(px, py - 200);
+        root.OnMouseUp(UiMouseButton.Left, px, py - 200);
+        AssertInside(root, deck);
+        Assert.Equal(1.3f, deck.Geometry.Scale, 3);
+        Assert.Equal(200f, deck.Top + deck.Height, 1);
+    }
+
+    [Fact]
+    public void RightEdgeStaysOnASmallScreen()
+    {
+        var (root, deck) = Mount(700, 900);   // 600 of room right of the deck
+        deck.ApplyGeometry(DeckGeometry.Create(1.5f, 1f));   // 630: already past the edge
+        int px = X(628), py = Y(110);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        root.OnMouseMove(px + 100, py);
+        root.OnMouseUp(UiMouseButton.Left, px + 100, py);
+        AssertInside(root, deck);
+        Assert.Equal(1.4f, deck.Geometry.Scale, 3);
+        Assert.Equal(1f, deck.Geometry.Stretch, 3);
+    }
+
+    [Fact]
+    public void RightEdgeStretchStopsAtTheScreenEdge()
+    {
+        var (root, deck) = Mount(700, 900);
+        root.OnMouseDown(UiMouseButton.Left, X(418), Y(75));
+        root.OnMouseMove(X(418) + 400, Y(75));
+        root.OnMouseUp(UiMouseButton.Left, X(418) + 400, Y(75));
+        AssertInside(root, deck);
+        Assert.Equal(600f, deck.Width, 1);
+        Assert.Equal(1f, deck.Geometry.Scale, 3);
     }
 
     [Theory]
