@@ -74,6 +74,11 @@ the icons when the interface is torn down, and loads a file again if it has
 changed on disk. A host that predates PNG dock icons takes only `.svg`
 here; it logs a `.png` and falls back to the next icon.
 
+Like a file icon (see "Light and dark images"), a dock PNG may have a
+`.light` and a `.dark` version beside it, `icons/combat.light.png` and
+`icons/combat.dark.png`, each under the same rules. The dock draws the one
+for its theme when it is there, and the named file otherwise.
+
 ## SVG icons
 
 An SVG icon stays sharp at every display scale and takes the dock's state
@@ -169,6 +174,25 @@ colour, use a token with its original Classic fallback, for example
 `color="theme:text|#FFE8DEC3"` or `background="theme:field|#FF0C0906"`.
 Tokens are `text`, `muted`, `field`, `border`, `accent`, and `background`;
 the fallback uses `#AARRGGBB`.
+
+A semantic colour picked for dark windows (a pale green "ready", a pastel
+heading) can fade on a light theme such as Parchment. Give it a second
+colour for light themes after `|light:`:
+
+```xml
+<label text="Ready" color="#FFB6F0AE|light:#FF2E7D32"/>
+<group border="#FF9CC2FF|light:#FF2F5FA8" padding="6"/>
+```
+
+The first colour is drawn under Classic and every dark theme, and the
+second under a light one; switching theme switches the colour. It works on
+every literal colour attribute (`color`, `background`, `border` and the
+controls' own colour attributes), and only in a `theme="plugin"` window; any
+other window draws the first colour. A bound colour (`color="{Status}"`)
+has no `|light:` form: the plugin reads `host.Ui.Theme.IsLight` and returns
+the colour that suits (see "Plugin theme" in the plugin API guide). A host
+older than contract `0.1.27-fork.2` cannot read the pair and draws it white,
+so a plugin using `|light:` should require that contract.
 
 The `samples/AcDream.Plugins.ThemeGallery` plugin shows every control in one
 opted-in window; switch themes from the dock's gear to compare them.
@@ -1388,6 +1412,27 @@ per file:
 ```
 [UI] plugin image 'acme.hello/icons/sword.png' ignored: is wider or taller than 512 pixels
 ```
+
+### Light and dark images
+
+Art drawn for a dark window can be lost on a light one (the Parchment
+theme) and the other way round. A file icon can come in a light and a dark
+version, saved beside the file the markup names, with `.light` or `.dark`
+before the extension:
+
+```
+icons/sword.png          the file markup names, drawn when no version fits
+icons/sword.light.png    drawn under a light theme
+icons/sword.dark.png     drawn under every other theme, Classic included
+```
+
+Markup does not change: `file="icons/sword.png"` picks the version itself,
+and switching theme switches the picture. Either version may be left out,
+and a plugin that ships neither draws as before; a missing version is not
+reported. Only a window with `theme="plugin"` follows the theme; any other
+window always draws the dark version, as Classic does. Each version follows
+the rules above and counts toward the 256 images. Which themes are light:
+`IUiRegistry.Theme.IsLight` in `docs/plugin-api.md`.
 
 ## Columns
 

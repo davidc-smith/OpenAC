@@ -164,7 +164,7 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             KeepWindowReachable(handle);
 
             var button = new PluginShelfButton(this, descriptor, owner, handle, _resolve, icons.PluginImage, svgIcon,
-                icons.WindowImage)
+                icons.WindowImage, icons.WindowImageLight, icons.WindowImageDark)
             {
                 Width = DockSlot,
                 Height = DockSlot,
@@ -733,6 +733,8 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         private bool _iconAvailable;
         private PluginSvgIconCache.PluginSvgIconEntry? _svgIcon;
         private PluginFileIconCache.Entry? _windowImage;
+        private readonly PluginFileIconCache.Entry? _windowImageLight;
+        private readonly PluginFileIconCache.Entry? _windowImageDark;
 
         internal PluginShelfButton(
             PluginSidePanel dock,
@@ -742,11 +744,15 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
             Func<uint, (uint tex, int width, int height)> resolve,
             (uint Texture, int Width, int Height)? fileIcon = null,
             PluginSvgIconCache.PluginSvgIconEntry? svgIcon = null,
-            PluginFileIconCache.Entry? windowImage = null)
+            PluginFileIconCache.Entry? windowImage = null,
+            PluginFileIconCache.Entry? windowImageLight = null,
+            PluginFileIconCache.Entry? windowImageDark = null)
         {
             _dock = dock;
             _svgIcon = svgIcon;
             _windowImage = windowImage;
+            _windowImageLight = windowImageLight;
+            _windowImageDark = windowImageDark;
             _handle = handle;
             _resolve = resolve;
             _fileIcon = fileIcon;
@@ -800,6 +806,12 @@ public sealed class PluginSidePanel : UiPanel, IDisposable, IRetainedWindowState
         internal void DrawIcon(UiRenderContext ctx, float x, float y, float extent, Vector4 colour)
         {
             float alpha = IsOpen || ThemeState != UiControlState.Normal ? 1f : ClosedArtAlpha;
+            if (_windowImage is not null
+                && (_dock.Palette.IsLight ? _windowImageLight : _windowImageDark) is { Texture: not 0u and var own })
+            {
+                ctx.DrawSprite(own, x, y, extent, extent, 0f, 0f, 1f, 1f, Vector4.One with { W = alpha });
+                return;
+            }
             if (_windowImage is { } image)
             {
                 if (image.Texture != 0u)

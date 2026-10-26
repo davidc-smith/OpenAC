@@ -268,6 +268,13 @@ public static class MarkupDocument
                 Vector4 Read() => themedPanel is not null && themes?.Palette is { } p ? p.Token(token) : classic;
                 setValue(Read()); setSource(Read);
             }
+            else if (LightColor(expression) is { } light)
+            {
+                // "#dark|light:#light": the light colour under a light theme, in a themed window.
+                Vector4 dark = Color(expression);
+                Vector4 Read() => themedPanel is not null && themes?.Palette is { IsLight: true } ? light : dark;
+                setValue(Read()); setSource(Read);
+            }
             else MarkupDocument.BindColorSource(expression, model, setValue, setSource);
         }
         MarkupBuildContext Context() => new(
@@ -1649,10 +1656,24 @@ public static class MarkupDocument
             ? value
             : fallback;
 
+    /// <summary>The marker that adds a light-theme colour to a literal: <c>#FF112233|light:#FF445566</c>.</summary>
+    private const string LightColorMarker = "|light:";
+
+    /// <summary>A literal's light-theme colour, or null when it has none.</summary>
+    internal static Vector4? LightColor(string? expression)
+    {
+        if (expression is null || expression.StartsWith("theme:", StringComparison.Ordinal))
+            return null;
+        int marker = expression.IndexOf(LightColorMarker, StringComparison.Ordinal);
+        return marker < 0 ? null : Color(expression[(marker + LightColorMarker.Length)..]);
+    }
+
     internal static Vector4 Color(string? hex)
     {
         if (hex?.StartsWith("theme:", StringComparison.Ordinal) == true)
             hex = hex.Contains('|') ? hex[(hex.IndexOf('|') + 1)..] : null;
+        else if (hex?.IndexOf(LightColorMarker, StringComparison.Ordinal) is >= 0 and var marker)
+            hex = hex[..marker];
         if (hex is { Length: 9 } && hex[0] == '#'
             && uint.TryParse(hex.AsSpan(1), NumberStyles.HexNumber,
                              CultureInfo.InvariantCulture, out uint argb))

@@ -33,4 +33,18 @@ public sealed class PluginAppearanceBindingTests
         Assert.Equal(PluginUiTheme.Brass, settings.Theme);
         Assert.Equal("Warm graphite + brass", binding.Selected);
     }
+
+    [Fact]
+    public void TheThemeMenuListsTheNewThemes()
+    {
+        var settings = new PluginUiThemeSettings();
+        var binding = new PluginAppearanceBinding(settings);
+        Assert.Equal(
+            ["Classic", "Charcoal + moss", "Warm graphite + brass",
+             "Lavender Dusk", "Ember", "Bloodmoon", "Glacier", "Parchment"],
+            binding.Themes);
+        binding.Select("Glacier");
+        Assert.Equal(PluginUiTheme.Glacier, settings.Theme);
+        Assert.Equal("Glacier", binding.Selected);
+    }
 }
