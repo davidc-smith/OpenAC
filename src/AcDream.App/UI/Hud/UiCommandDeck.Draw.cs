@@ -8,6 +8,13 @@ internal sealed partial class UiCommandDeck
     private static Vector4 Rgb(int hex, float a = 1f) =>
         new(((hex >> 16) & 0xFF) / 255f, ((hex >> 8) & 0xFF) / 255f, (hex & 0xFF) / 255f, a);
 
+    private static readonly string[] HeightLetters = ["H", "M", "L"];
+    private static readonly AttackHeight[] HeightValues = [AttackHeight.High, AttackHeight.Medium, AttackHeight.Low];
+    private static readonly string[] RecallIcons =
+    [
+        HudIcons.RecallLifestone, HudIcons.RecallMarketplace, HudIcons.RecallHouse,
+        HudIcons.RecallMansion, HudIcons.RecallAllegiance,
+    ];
     private static readonly Vector4 FrameTop = Rgb(0x2B2A31);
     private static readonly Vector4 FrameBottom = Rgb(0x17161B);
     private static readonly Vector4 FrameEdge = Rgb(0x0B0A0D);
@@ -91,10 +98,8 @@ internal sealed partial class UiCommandDeck
         float hx = t.X + t.W * v.DesiredPower;
         ctx.FillRoundedRect(hx - 5f, t.Y - 5f, 10f, t.H + 10f, 3f, Handle);
 
-        string[] letters = ["H", "M", "L"];
-        AttackHeight[] heights = [AttackHeight.High, AttackHeight.Medium, AttackHeight.Low];
         for (int i = 0; i < 3; i++)
-            DrawStud(ctx, CommandDeckLayout.HeightButton(i), on: v.Height == heights[i], icon: null, letter: letters[i]);
+            DrawStud(ctx, CommandDeckLayout.HeightButton(i), on: v.Height == HeightValues[i], icon: null, letter: HeightLetters[i]);
     }
 
     private void DrawCastingRow(UiRenderContext ctx, CommandDeckView v)
@@ -111,13 +116,8 @@ internal sealed partial class UiCommandDeck
     {
         DeckRect label = CommandDeckLayout.RowLabel;
         DrawText(ctx, "RECALL", label.X, label.Y + 6, LabelInk, small: true);
-        string[] icons =
-        [
-            HudIcons.RecallLifestone, HudIcons.RecallMarketplace, HudIcons.RecallHouse,
-            HudIcons.RecallMansion, HudIcons.RecallAllegiance,
-        ];
         for (int i = 0; i < 5; i++)
-            DrawStud(ctx, CommandDeckLayout.RecallStud(i), on: false, icon: icons[i], letter: null);
+            DrawStud(ctx, CommandDeckLayout.RecallStud(i), on: false, icon: RecallIcons[i], letter: null);
     }
 
     private void DrawJump(UiRenderContext ctx, CommandDeckView v)
