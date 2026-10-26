@@ -63,7 +63,7 @@ public sealed class CommandDeckModelTests
         CommandDeckView unknown = new CommandDeckModel().Update(
             Input(health: new DeckVitalInput(null, null, null)), 0);
         Assert.False(unknown.Health.Known);
-        Assert.Equal("–", unknown.Health.Text);
+        Assert.Equal("-", unknown.Health.Text);
         Assert.Equal(0f, unknown.Health.Fill);
         Assert.Equal(0f, unknown.Health.Trail);
     }
@@ -88,7 +88,7 @@ public sealed class CommandDeckModelTests
 
         CommandDeckView overlapping = model.Update(
             Input(CombatMode.Magic, pending: true, pendingName: null, lastName: "Frost Bolt I"), 0);
-        Assert.Equal("Casting…", overlapping.CastingText);
+        Assert.Equal("Casting...", overlapping.CastingText);
         Assert.True(overlapping.CastingLit);
         Assert.False(overlapping.RecastEnabled);
 
@@ -124,5 +124,43 @@ public sealed class CommandDeckModelTests
         CommandDeckView newSession = model.Update(
             Input(health: new DeckVitalInput(0.3f, 30, 100), session: 2), 1.05);
         Assert.Equal(0.3f, newSession.Health.Trail);
+    }
+
+    /// <summary>DefaultFont bakes only printable ASCII, so nothing the deck draws may use other characters.</summary>
+    [Fact]
+    public void EveryDeckStringIsAscii()
+    {
+        CombatMode[] modes = [CombatMode.NonCombat, CombatMode.Melee, CombatMode.Missile, CombatMode.Magic];
+        DeckVitalInput[] vitals = [new(0.61f, 412, 675), new(null, null, null)];
+        (bool Pending, string? PendingName, string? Last)[] casts =
+        [
+            (false, null, null), (true, null, null), (true, "Flame Bolt", "Frost Bolt"), (false, null, "Frost Bolt"),
+        ];
+        JumpChargeSnapshot[] jumps = [default, new(true, 0.4f)];
+
+        foreach (CombatMode mode in modes)
+        foreach (DeckVitalInput vital in vitals)
+        foreach (var cast in casts)
+        foreach (JumpChargeSnapshot jump in jumps)
+        {
+            var input = Input(mode, vital, cast.Pending, cast.PendingName, cast.Last, jump) with
+            {
+                Stamina = vital, Mana = vital,
+            };
+            CommandDeckView view = new CommandDeckModel().Update(input, 0.0);
+            var strings = new List<string?>
+            {
+                view.Health.Text, view.Stamina.Text, view.Mana.Text, view.CastingText, view.PowerLabel,
+            };
+            foreach (DeckZone zone in Enum.GetValues<DeckZone>())
+            {
+                HudTooltipContent? tip = UiCommandDeck.TooltipFor(zone, view);
+                if (tip is null) continue;
+                strings.AddRange([tip.Title, tip.State, tip.Detail, tip.Hint]);
+            }
+            foreach (string? text in strings)
+                if (text is not null)
+                    Assert.True(text.All(c => c >= ' ' && c <= '~'), $"{mode}: \"{text}\"");
+        }
     }
 }

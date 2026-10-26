@@ -92,7 +92,7 @@ public sealed class CommandDeckModel
         (string castingText, bool castingLit) = input switch
         {
             { HasPendingCast: true, PendingSpellName: string name } => (name, true),
-            { HasPendingCast: true } => ("Casting…", true),
+            { HasPendingCast: true } => ("Casting...", true),
             { LastSpellName: string last } => (last, false),
             _ => ("No spell cast yet", false),
         };
@@ -124,7 +124,7 @@ public sealed class CommandDeckModel
         if (vital.Percent is not float percent)
         {
             trail.Update(null, now);
-            return new DeckVitalView(0f, 0f, "–", Known: false);
+            return new DeckVitalView(0f, 0f, "-", Known: false);
         }
 
         float fill = Math.Clamp(percent, 0f, 1f);
