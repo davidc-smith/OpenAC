@@ -68,9 +68,10 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         0x1000031Du, 0x1000031Eu, 0x1000031Fu, 0x10000320u,
     ];
 
-    private const float DecrementZoneStart = 80f;
-    private const float IncrementZoneStart = 127f;
-    private const float IncrementZoneEnd = 174f;
+    /// <summary>A spin's step-back arrow, the same id under every spin.</summary>
+    internal const uint DecrementArrowId = 0x1000030Au;
+    /// <summary>A spin's step-forward arrow.</summary>
+    internal const uint IncrementArrowId = 0x1000030Bu;
 
     private readonly CharacterCreationRuntimeBindings _bindings;
     private readonly UiButton? _femaleButton;
@@ -92,11 +93,30 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
     private readonly UiDatElement? _gradCircle;
 
     private Choice _currentChoice = Choice.Face;
+    private bool _zoomedIn;
+    private IChargenPreviewControl? _previewControl;
     private Part _currentPart = Part.Hair;
-    private bool _eyesArrowsDisabled;
+    private readonly List<(Part Part, UiButton Arrow)> _spinArrows = [];
     private bool _disposed;
 
-    internal IChargenPreviewControl? PreviewControl { get; set; }
+    /// <summary>
+    /// The 3-D preview. Attaching one hands it the page's current zoom, so
+    /// a preview attached after the page opened starts framed the same way.
+    /// </summary>
+    internal IChargenPreviewControl? PreviewControl
+    {
+        get => _previewControl;
+        set
+        {
+            _previewControl = value;
+            if (value is null)
+                return;
+            if (_zoomedIn)
+                value.ZoomIn();
+            else
+                value.ZoomOut();
+        }
+    }
 
     internal IChargenPalSetSource? PalSetSource { get; set; }
     internal IChargenClothingTableSource? ClothingTableSource { get; set; }
@@ -114,10 +134,10 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
 
         _femaleButton = Find<UiButton>(pageRoot, FemaleButtonId);
         if (_femaleButton is not null)
-            _femaleButton.OnClick = () => _bindings.SelectGender(2u);
+            _femaleButton.OnClick = () => SelectGender(2u);
         _maleButton = Find<UiButton>(pageRoot, MaleButtonId);
         if (_maleButton is not null)
-            _maleButton.OnClick = () => _bindings.SelectGender(1u);
+            _maleButton.OnClick = () => SelectGender(1u);
 
         _faceButton = Find<UiButton>(pageRoot, FaceButtonId);
         if (_faceButton is not null)
@@ -168,20 +188,10 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
             _rotateCounterClockwise.OnClick = () => PreviewControl?.RotateCounterClockwise();
         _zoomIn = Find<UiButton>(pageRoot, ZoomInId);
         if (_zoomIn is not null)
-            _zoomIn.OnClick = () =>
-            {
-                PreviewControl?.ZoomIn();
-                _zoomIn.TrySetRetailState(UiButtonStateMachine.Highlight);
-                _zoomOut?.TrySetRetailState(UiButtonStateMachine.Normal);
-            };
+            _zoomIn.OnClick = ZoomIn;
         _zoomOut = Find<UiButton>(pageRoot, ZoomOutId);
         if (_zoomOut is not null)
-            _zoomOut.OnClick = () =>
-            {
-                PreviewControl?.ZoomOut();
-                _zoomOut.TrySetRetailState(UiButtonStateMachine.Highlight);
-                _zoomIn?.TrySetRetailState(UiButtonStateMachine.Normal);
-            };
+            _zoomOut.OnClick = ZoomOut;
 
         _helpText = Find<UiText>(pageRoot, HelpTextId);
         if (_helpText is not null)
@@ -191,7 +201,9 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
                 helpScroll.Model = _helpText.Scroll;
         }
 
+        // The page opens on the face choice, which frames the figure close up.
         ApplyChoiceVisibility();
+        ZoomIn();
     }
 
     internal void Refresh(
@@ -213,7 +225,7 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
             noseSpin.Visible = !clothesHidden;
         if (_spins.TryGetValue(Part.Mouth, out UiButton? mouthSpin))
             mouthSpin.Visible = !clothesHidden;
-        _eyesArrowsDisabled = clothesHidden;
+        SetArrowsEnabled(Part.Eyes, !clothesHidden);
         if (clothesHidden)
         {
             _currentChoice = Choice.Face;
@@ -236,6 +248,30 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
             _bindings.RandomizeClothing?.Invoke();
         else
             _bindings.RandomizeAppearance?.Invoke();
+        OnPageUpdate();
+    }
+
+    /// <summary>
+    /// Runs where the original refreshes the whole page: the page shown, a
+    /// gender pick and a randomize, not every change of the character. A
+    /// heritage without clothes is put back on the face choice there, which
+    /// zooms the preview in.
+    /// </summary>
+    internal void OnPageUpdate()
+    {
+        if (_disposed)
+            return;
+        uint heritageId = _bindings.View()?.Snapshot.HeritageId ?? 0u;
+        if (IsClothesHiddenHeritage(heritageId))
+            SelectChoice(Choice.Face);
+    }
+
+    private void SelectGender(uint genderKey)
+    {
+        if (_disposed)
+            return;
+        _bindings.SelectGender(genderKey);
+        OnPageUpdate();
     }
 
 
@@ -246,7 +282,37 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         _currentChoice = choice;
         _currentPart = choice == Choice.Face ? Part.Hair : Part.Headgear;
         ApplyChoiceVisibility();
+        // The face choice frames the figure close up, the clothes choice
+        // pulls back to show it whole.
+        if (choice == Choice.Face)
+            ZoomIn();
+        else
+            ZoomOut();
         RefreshColorAndShadeControlsFromLatestSnapshot();
+    }
+
+    private void ZoomIn()
+    {
+        if (_disposed)
+            return;
+        _zoomIn?.TrySetRetailState(UiButtonStateMachine.Highlight);
+        if (_zoomedIn)
+            return;
+        _zoomedIn = true;
+        _zoomOut?.TrySetRetailState(UiButtonStateMachine.Normal);
+        _previewControl?.ZoomIn();
+    }
+
+    private void ZoomOut()
+    {
+        if (_disposed)
+            return;
+        _zoomOut?.TrySetRetailState(UiButtonStateMachine.Highlight);
+        if (!_zoomedIn)
+            return;
+        _zoomedIn = false;
+        _zoomIn?.TrySetRetailState(UiButtonStateMachine.Normal);
+        _previewControl?.ZoomOut();
     }
 
     private void ApplyChoiceVisibility()
@@ -268,22 +334,37 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         if (spin is null)
             return;
         _spins[part] = spin;
+        spin.OnClick = () => SelectPart(part);
 
+        // The arrows are buttons of their own inside the spin. Skin has no
+        // styles to step through, so its arrows stay ghosted.
+        UiButton? decrement = Find<UiButton>(spin, DecrementArrowId);
+        UiButton? increment = Find<UiButton>(spin, IncrementArrowId);
+        if (decrement is not null)
+            _spinArrows.Add((part, decrement));
+        if (increment is not null)
+            _spinArrows.Add((part, increment));
         if (part == Part.Skin)
         {
-            spin.OnClickAt = (_, _) => SelectPart(Part.Skin);
+            SetArrowsEnabled(part, false);
             return;
         }
+        if (decrement is not null)
+            decrement.OnClick = () => CycleStyle(part, -1);
+        if (increment is not null)
+            increment.OnClick = () => CycleStyle(part, +1);
+    }
 
-        spin.OnClickAt = (x, _) =>
+    private void SetArrowsEnabled(Part part, bool enabled)
+    {
+        foreach ((Part arrowPart, UiButton arrow) in _spinArrows)
         {
-            if (x >= DecrementZoneStart && x < IncrementZoneStart)
-                CycleStyle(part, -1);
-            else if (x >= IncrementZoneStart && x < IncrementZoneEnd)
-                CycleStyle(part, +1);
-            else
-                SelectPart(part);
-        };
+            // Only a flip changes the arrow; otherwise it keeps the state it
+            // worked out itself (its rollover under the pointer).
+            if (arrowPart != part || arrow.Enabled == enabled)
+                continue;
+            arrow.TrySetRetailState(enabled ? UiButtonStateMachine.Normal : UiButtonStateMachine.Ghosted);
+        }
     }
 
     private void SelectPart(Part part)
@@ -338,11 +419,6 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
     {
         if (_disposed)
             return;
-        if (part == Part.Eyes && _eyesArrowsDisabled)
-        {
-            SelectPart(part);
-            return;
-        }
 
         IRuntimeCharacterCreationView? view = _bindings.View();
         if (view is null)
@@ -804,8 +880,11 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         if (_faceButton is not null) _faceButton.OnClick = null;
         if (_clothesButton is not null) _clothesButton.OnClick = null;
         foreach (UiButton spin in _spins.Values)
-            spin.OnClickAt = null;
+            spin.OnClick = null;
         _spins.Clear();
+        foreach ((_, UiButton arrow) in _spinArrows)
+            arrow.OnClick = null;
+        _spinArrows.Clear();
         foreach (UiButton? swatch in _swatches)
         {
             if (swatch is not null)

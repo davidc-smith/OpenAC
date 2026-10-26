@@ -108,6 +108,15 @@ public static class LayoutImporter
                 if (cw is not null) w.AddChild(cw);
             }
         }
+        else if (w is UiButton)
+        {
+            foreach (var child in info.Children)
+            {
+                if (!DatWidgetFactory.IsChildButton(child)) continue;
+                var cw = BuildWidget(child, resolve, datFont, fontResolve, stringResolve, byId, sourceLayoutDid);
+                if (cw is not null) w.AddChild(cw);
+            }
+        }
         else if (w is UiText or UiField)
         {
             foreach (var child in info.Children)

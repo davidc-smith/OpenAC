@@ -3161,14 +3161,17 @@ public sealed class Transition
             (ObjectInfo.State & ObjectInfoState.IsViewer) != 0);
 
         // PerfectClip exact time-of-impact reposition. Block offset = 0.
+        float radsumEps = radsum + PhysicsGlobals.EPSILON;
         Vector3 checkOffset = checkSphere.Origin - gCenter;
-        double toi = FindSphereTimeOfCollision(checkOffset, globalOffset, radsum + PhysicsGlobals.EPSILON);
+        double toi = FindSphereTimeOfCollision(checkOffset, globalOffset, radsumEps);
         if (toi < PhysicsGlobals.EPSILON || toi > 1.0)
             return TransitionState.Collided;
+        // Pull the check sphere back along its own movement to the touching
+        // point; the contact direction is only the collision normal.
         Vector3 collisionOffset = checkOffset * (float)toi - checkOffset;
         Vector3 oldDisp = collisionOffset + checkSphere.Origin - obj.Position;
-        CollisionInfo.SetCollisionNormal(oldDisp / radsum);
-        sp.AddOffsetToCheckPos(oldDisp);
+        CollisionInfo.SetCollisionNormal(oldDisp / radsumEps);
+        sp.AddOffsetToCheckPos(collisionOffset);
         return TransitionState.Adjusted;
     }
 
@@ -3220,10 +3223,12 @@ public sealed class Transition
         float similar = -Vector3.Dot(spherePos, movement);
         double nonCollideB = (double)similar * similar - (double)nonCollide * distSq;
         if (nonCollideB < 0) return -1;
+        // The fraction of the movement at which the spheres first touch:
+        // the nearer root, or the farther one when the nearer lies behind.
         double cDist = Math.Sqrt(nonCollideB);
         if (similar - cDist < 0)
-            return -1 * (cDist + similar) / distSq;
-        return -1 * (similar - cDist) / distSq;
+            return (cDist + similar) / distSq;
+        return (similar - cDist) / distSq;
     }
 
     private TransitionState CylinderCollision(ShadowEntry obj, SpherePath sp, PhysicsEngine engine)

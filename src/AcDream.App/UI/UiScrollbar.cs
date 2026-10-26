@@ -59,6 +59,27 @@ public sealed class UiScrollbar : UiElement
 
     public uint TrackSprite { get; set; }
 
+    /// <summary>
+    /// Track art per bar state, for a bar whose track authors an image for
+    /// each state (an attribute slider draws another track while locked).
+    /// </summary>
+    public IReadOnlyDictionary<uint, uint>? TrackSpritesByState { get; set; }
+
+    /// <summary>
+    /// Enters bar state <paramref name="stateId"/>: the track shows that
+    /// state's art. False when the track authors no art for it.
+    /// </summary>
+    public bool TrySetTrackState(uint stateId)
+    {
+        if (TrackSpritesByState is null
+            || !TrackSpritesByState.TryGetValue(stateId, out uint sprite))
+        {
+            return false;
+        }
+        TrackSprite = sprite;
+        return true;
+    }
+
     public uint ThumbSprite { get; set; }
 
     public uint ThumbTopSprite { get; set; }
