@@ -12,6 +12,36 @@ public sealed class SpellDeckModelTests
         Assert.Equal([1u, 2u], SpellDeckModel.Visible([1u, 2u, 3u], 2));
 
     [Fact]
+    public void Visible_WhenCapacityFitsEverything_ReturnsAll() =>
+        Assert.Equal([1u, 2u, 3u], SpellDeckModel.Visible([1u, 2u, 3u], 5));
+
+    [Fact]
+    public void Drop_SlotIntoTabThatAlreadyHasTheSpell_IsAMove_EvenWhenFull()
+    {
+        var plan = SpellDeckModel.PlanDrop(
+            new SpellDeckDragSource(Tab: 0, SpellId: 2u), destTab: 1, index: 0,
+            favorites: Tabs([1, 2], [3, 2, 4]), capacity: 3);
+        Assert.Equal(SpellDeckDropKind.Move, plan.Kind);
+        Assert.Equal([SpellDeckFavoriteOp.Set(1, 0, 2u), SpellDeckFavoriteOp.Remove(0, 2u)], plan.Ops);
+    }
+
+    [Fact]
+    public void Drop_NewSlotSpellIntoFullTab_IsRefused_WithNoOps()
+    {
+        var plan = SpellDeckModel.PlanDrop(
+            new SpellDeckDragSource(Tab: 0, SpellId: 9u), destTab: 1, index: 0,
+            favorites: Tabs([9], [3, 4, 5]), capacity: 3);
+        Assert.Equal(SpellDeckDropKind.RefusedFull, plan.Kind);
+        Assert.Empty(plan.Ops);
+    }
+
+    [Fact]
+    public void Drop_NegativeIndex_ClampsToTheStart() =>
+        Assert.Equal([SpellDeckFavoriteOp.Set(0, 0, 3u)],
+            SpellDeckModel.PlanDrop(SpellDeckDragSource.FromSpellbook(3u), destTab: 0, index: -4,
+                favorites: Tabs([1, 2, 3]), capacity: 3).Ops);
+
+    [Fact]
     public void MinSlots_IsTheFullestShownRow_Capped()
     {
         var rows = new[] { new SpellDeckRow(1, 0), new SpellDeckRow(2, 2) };

@@ -56,8 +56,13 @@ public static class SpellDeckModel
     {
         IReadOnlyList<uint> dest = favorites(destTab);
         if (dest.Contains(source.SpellId))
-            return new(SpellDeckDropKind.Reorder,
-                [SpellDeckFavoriteOp.Set(destTab, Math.Clamp(index, 0, dest.Count - 1), source.SpellId)]);
+        {
+            var reorder = SpellDeckFavoriteOp.Set(destTab, Math.Clamp(index, 0, dest.Count - 1), source.SpellId);
+            // A slot dragged into another tab that already holds the spell is a move: drop it from the source tab.
+            return !source.IsFromSpellbook && source.Tab != destTab
+                ? new(SpellDeckDropKind.Move, [reorder, SpellDeckFavoriteOp.Remove(source.Tab, source.SpellId)])
+                : new(SpellDeckDropKind.Reorder, [reorder]);
+        }
         if (dest.Count + 1 > capacity)
             return new(SpellDeckDropKind.RefusedFull, []);
         var set = SpellDeckFavoriteOp.Set(destTab, Math.Clamp(index, 0, dest.Count), source.SpellId);
