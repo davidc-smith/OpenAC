@@ -300,7 +300,8 @@ public sealed class SettingsStore
             return new MiscSettings(
                 TooltipEnable:       ReadBool (misc, "tooltipEnable",       d.TooltipEnable),
                 TooltipDelaySeconds: ReadFloat(misc, "tooltipDelaySeconds", d.TooltipDelaySeconds),
-                ExtendedLevels:      ReadBool (misc, "extendedLevels",      d.ExtendedLevels));
+                ExtendedLevels:      ReadBool (misc, "extendedLevels",      d.ExtendedLevels),
+                ModernHud:           ReadBool (misc, "modernHud",           d.ModernHud));
         }
         catch (Exception ex)
         {
@@ -1002,6 +1003,7 @@ public sealed class SettingsStore
         => new(StringComparer.Ordinal)
         {
             ["extendedLevels"]      = m.ExtendedLevels,
+            ["modernHud"]           = m.ModernHud,
             ["tooltipDelaySeconds"] = m.TooltipDelaySeconds,
             ["tooltipEnable"]       = m.TooltipEnable,
         };
