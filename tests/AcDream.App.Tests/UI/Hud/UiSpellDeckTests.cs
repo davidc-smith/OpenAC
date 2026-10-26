@@ -63,7 +63,10 @@ public sealed class UiSpellDeckTests
             spellInfo: id => Spells.GetValueOrDefault(id),
             keyLabel: a => a == InputAction.UseSpellSlot_1 ? "1" : string.Empty,
             pendingSpell: () => rig!.Pending,
-            clock: () => rig!.Now);
+            clock: () => rig!.Now,
+            isLocked: () => false,
+            toggleClickCasts: () => { },
+            setAttached: _ => { });
         rig = new Rig { Deck = deck, Controller = c, Game = g };
         deck.Refresh();
         return rig;

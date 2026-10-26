@@ -4,11 +4,17 @@ using AcDream.UI.Abstractions.Input;
 
 namespace AcDream.App.UI.Hud;
 
+/// <summary>A spell lifted from a Spell Deck slot. Nothing changes until it lands.</summary>
+public sealed record SpellDeckDragPayload(int Tab, uint SpellId);
+
 /// <summary>
 /// The Spell Deck: one element that draws a <see cref="SpellDeckController"/>'s
 /// rows in the Command Deck's style and turns clicks, double-clicks, hovers
 /// and tab-chip clicks into controller calls. Slots, the item socket and the
 /// chips take clicks; a press anywhere else on the frame drags the window.
+/// Filled slots are drag sources: nothing changes when a drag starts, only
+/// when it lands (on the deck, or outside every window). Right-click opens
+/// the row/slot menu.
 /// </summary>
 internal sealed partial class UiSpellDeck : UiElement
 {
@@ -18,7 +24,11 @@ internal sealed partial class UiSpellDeck : UiElement
     private readonly Func<InputAction, string> _keyLabel;
     private readonly Func<uint?> _pendingSpell;
     private readonly Func<double> _clock;
+    private readonly Func<bool> _isLocked;
+    private readonly Action _toggleClickCasts;
+    private readonly Action<bool> _setAttached;
     private readonly DeckFonts? _fonts;
+    private readonly UiMarkupContextMenu _menu;
     private SpellDeckGeometry _geometry;
     /// <summary>The geometry when the current resize drag started; null between drags.</summary>
     private SpellDeckGeometry? _resizeFrom;
@@ -39,6 +49,9 @@ internal sealed partial class UiSpellDeck : UiElement
         Func<InputAction, string> keyLabel,
         Func<uint?> pendingSpell,
         Func<double> clock,
+        Func<bool> isLocked,
+        Action toggleClickCasts,
+        Action<bool> setAttached,
         DeckFonts? fonts = null)
     {
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
@@ -47,6 +60,9 @@ internal sealed partial class UiSpellDeck : UiElement
         _keyLabel = keyLabel ?? throw new ArgumentNullException(nameof(keyLabel));
         _pendingSpell = pendingSpell ?? throw new ArgumentNullException(nameof(pendingSpell));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _isLocked = isLocked ?? throw new ArgumentNullException(nameof(isLocked));
+        _toggleClickCasts = toggleClickCasts ?? throw new ArgumentNullException(nameof(toggleClickCasts));
+        _setAttached = setAttached ?? throw new ArgumentNullException(nameof(setAttached));
         _fonts = fonts;
         _geometry = SpellDeckGeometry.Create(1f, 1f, controller.Rows.Count);
         Width = _geometry.Width;
@@ -57,6 +73,17 @@ internal sealed partial class UiSpellDeck : UiElement
         MaxHeight = MaxWindowHeight;
         Resizable = true;
         ResizableEdges = ResizeEdges.Right;
+
+        _menu = new UiMarkupContextMenu
+        {
+            DatFont = fonts?.Small,
+            ItemsSource = () => _menuItems.ConvertAll(i => i.Text),
+            ItemsEnabledSource = () => _menuItems.ConvertAll(i => i.Enabled),
+            Selected = SelectMenuItem,
+            Opening = (x, y) => MenuItemsAt(x, y),
+        };
+        AddChild(_menu);
+        ContextMenu = _menu;
     }
 
     // Every size the deck can have: 1-10 rows at any scale and stretch.
@@ -137,7 +164,11 @@ internal sealed partial class UiSpellDeck : UiElement
             ApplyGeometry(_geometry.WithRows(rows));
     }
 
-    protected override void OnTick(double deltaSeconds) => Refresh();
+    protected override void OnTick(double deltaSeconds)
+    {
+        Refresh();
+        TrackDropHighlight();
+    }
 
     internal bool HitTestLocal(float x, float y) => OnHitTest(x, y);
 
@@ -247,6 +278,7 @@ internal sealed partial class UiSpellDeck : UiElement
         {
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
+                _press = _geometry.HitAt(e.Data1, e.Data2);
                 return false;   // the window drag or the click has the press
             case UiEventType.Click:
                 return Click(_geometry.HitAt(e.Data1, e.Data2));
@@ -258,6 +290,16 @@ internal sealed partial class UiSpellDeck : UiElement
             case UiEventType.HoverLeave:
                 SetHover(NoHit);
                 return true;
+            case UiEventType.DragEnter:
+                _dropPayload = e.Payload;
+                SetDropHighlight(e.Data1, e.Data2);
+                return false;
+            case UiEventType.DragOver:   // the leave
+                ClearDropHighlight();
+                return false;
+            case UiEventType.DropReleased:
+                ClearDropHighlight();
+                return DropReleased(e.Payload, e.Data1, e.Data2);
             default:
                 return false;
         }
@@ -297,5 +339,160 @@ internal sealed partial class UiSpellDeck : UiElement
             default:
                 return false;
         }
+    }
+
+    // ── Drag and drop ─────────────────────────────────────────────
+
+    /// <summary>Where the last press landed; the drag lifts the slot under it.</summary>
+    private SpellDeckHit _press = NoHit;
+    /// <summary>The payload of a drag over the deck (DragEnter to leave or drop); null otherwise.</summary>
+    private object? _dropPayload;
+
+    /// <summary>The slot a drag over the deck would land on, and whether the controller would accept it.</summary>
+    internal (int Row, int Slot, bool Accept)? DropHighlight { get; private set; }
+
+    // _hit is the hit test of the press itself: the root asks before it sends the MouseDown.
+    public override bool IsDragSource => _hit.Zone == SpellDeckZone.Slot && !_isLocked();
+
+    public override object? GetDragPayload()
+    {
+        if (_isLocked() || _press.Zone != SpellDeckZone.Slot) return null;
+        if (SlotSpell(_press.Row, _press.Slot) is not uint id) return null;
+        return new SpellDeckDragPayload(_controller.Rows[_press.Row].Tab, id);
+    }
+
+    public override (uint tex, int w, int h)? GetDragGhost() =>
+        GetDragPayload() is SpellDeckDragPayload p ? (_spellIcon(p.SpellId), 32, 32) : null;
+
+    /// <summary>A payload the deck takes as a drop, as the controller's drag source; null for any other.</summary>
+    private static SpellDeckDragSource? SourceOf(object? payload) => payload switch
+    {
+        SpellDeckDragPayload p => new SpellDeckDragSource(p.Tab, p.SpellId),
+        SpellbookShortcutDragPayload s => SpellDeckDragSource.FromSpellbook(s.SpellId),
+        _ => null,
+    };
+
+    /// <summary>The (row, slot) a drop at a point lands on: a slot, or the end of a row
+    /// when the point is in the row's band past its slots; null anywhere else.</summary>
+    private (int Row, int Slot)? DropTargetAt(float x, float y)
+    {
+        SpellDeckHit hit = _geometry.HitAt(x, y);
+        if (hit.Zone == SpellDeckZone.Slot && hit.Row < _controller.Rows.Count)
+            return (hit.Row, hit.Slot);
+        if (hit.Zone != SpellDeckZone.Frame) return null;
+        for (int row = 0; row < _geometry.Rows && row < _controller.Rows.Count; row++)
+        {
+            DeckRect first = _geometry.Slot(row, 0);
+            if (y >= first.Y && y < first.Y + first.H && x >= first.X)
+                return (row, _controller.Favorites(_controller.Rows[row].Tab).Count);
+        }
+        return null;
+    }
+
+    private bool DropReleased(object? payload, float x, float y)
+    {
+        if (SourceOf(payload) is not { } source) return false;
+        if (DropTargetAt(x, y) is { } at) _controller.Drop(source, at.Row, at.Slot);
+        return true;
+    }
+
+    /// <summary>The runtime calls this for a drag released outside every window:
+    /// a slot dragged off the deck leaves its tab. Any other payload is ignored.</summary>
+    internal void OnDragReleasedOutsideUi(object payload)
+    {
+        if (payload is SpellDeckDragPayload p)
+            _controller.DropOutside(new SpellDeckDragSource(p.Tab, p.SpellId));
+    }
+
+    private void SetDropHighlight(float x, float y)
+    {
+        if (SourceOf(_dropPayload) is not { } source || DropTargetAt(x, y) is not { } at
+            || at.Slot >= _geometry.SlotsPerRow)
+        {
+            DropHighlight = null;
+            return;
+        }
+        DropHighlight = (at.Row, at.Slot, _controller.CanDrop(source, at.Row, at.Slot));
+    }
+
+    private void ClearDropHighlight()
+    {
+        _dropPayload = null;
+        DropHighlight = null;
+    }
+
+    /// <summary>The root sends DragEnter once per element, so the highlight follows the
+    /// pointer from slot to slot here; a drag that ended without a leave clears it.</summary>
+    private void TrackDropHighlight()
+    {
+        if (_dropPayload is null) return;
+        if (FindRoot() is not { } root || root.DragSource is null)
+        {
+            ClearDropHighlight();
+            return;
+        }
+        System.Numerics.Vector2 origin = ScreenPosition;
+        SetDropHighlight(root.MouseX - origin.X, root.MouseY - origin.Y);
+    }
+
+    // ── Right-click menu ──────────────────────────────────────────
+
+    private List<(string Text, bool Enabled)> _menuItems = [];
+    private readonly List<Action?> _menuActions = [];
+
+    /// <summary>Builds the menu for a right click at a point (owner coordinates):
+    /// the slot items over a filled slot, then the row items over a slot or tab chip.
+    /// Empty anywhere else, so no menu opens. "-" is a separator.</summary>
+    internal IReadOnlyList<(string Text, bool Enabled)> MenuItemsAt(float x, float y)
+    {
+        _menuItems = [];
+        _menuActions.Clear();
+        SpellDeckHit hit = _geometry.HitAt(x, y);
+        if (hit.Zone is not (SpellDeckZone.Slot or SpellDeckZone.TabChip) || hit.Row >= _controller.Rows.Count)
+            return _menuItems;
+
+        int rowIndex = hit.Row;
+        SpellDeckRow row = _controller.Rows[rowIndex];
+        if (hit.Zone == SpellDeckZone.Slot && SlotSpell(rowIndex, hit.Slot) is not null)
+        {
+            int slot = hit.Slot;
+            Add("Examine spell", true, () => _controller.Examine(rowIndex, slot));
+            Add("Remove from row", true, () => _controller.RemoveFromRow(rowIndex, slot));
+            Separator();
+        }
+        Add("Add row below", _controller.CanAddRow(), () => _controller.AddRowBelow(row.Id));
+        Add("Remove this row", _controller.CanRemoveRow, () => _controller.RemoveRow(row.Id));
+        Separator();
+        for (int tab = 0; tab < SpellDeckModel.Tabs; tab++)
+        {
+            int t = tab;
+            Add(tab == row.Tab ? $"Show tab {tab + 1} (shown)" : $"Show tab {tab + 1}", true,
+                () => _controller.SetRowTab(row.Id, t));
+        }
+        Separator();
+        Add(_controller.ClickCasts ? "Click casts: on" : "Click casts: off", true, _toggleClickCasts);
+        Separator();
+        bool attached = _controller.Attached;
+        Add(attached ? "Detach from deck" : "Attach to deck", true, () => _setAttached(!attached));
+        return _menuItems;
+
+        void Add(string text, bool enabled, Action action)
+        {
+            _menuItems.Add((text, enabled));
+            _menuActions.Add(action);
+        }
+
+        void Separator()
+        {
+            _menuItems.Add((UiMarkupContextMenu.Separator, false));
+            _menuActions.Add(null);
+        }
+    }
+
+    /// <summary>Runs menu item <paramref name="index"/> from the last <see cref="MenuItemsAt"/>; separators and disabled items do nothing.</summary>
+    internal void SelectMenuItem(int index)
+    {
+        if (index < 0 || index >= _menuActions.Count || !_menuItems[index].Enabled) return;
+        _menuActions[index]?.Invoke();
     }
 }

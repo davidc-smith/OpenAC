@@ -5,6 +5,9 @@ namespace AcDream.App.UI.Hud;
 
 internal sealed partial class UiSpellDeck
 {
+    private static readonly Vector4 DropAccept = Rgb(0x6FD38A);
+    private static readonly Vector4 DropReject = Rgb(0xE0505E);
+
     /// <summary>A length in base points at the deck's scale.</summary>
     private float P(float points) => points * _geometry.Scale;
 
@@ -52,6 +55,9 @@ internal sealed partial class UiSpellDeck
                     StrokeAround(ctx, s, gap: 3f, width: 2f, CastLit with { W = 0.8f });
             }
         }
+
+        if (DropHighlight is { } drop && drop.Row < g.Rows)
+            StrokeAround(ctx, g.Slot(drop.Row, drop.Slot), gap: 1f, width: 2f, drop.Accept ? DropAccept : DropReject);
 
         if (!_controller.Attached)
             DeckChrome.DrawResizeGrip(ctx, FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None, g.Frame, g.Scale);
