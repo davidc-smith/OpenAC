@@ -55,6 +55,42 @@ public sealed class UiCommandDeckDrawTests
     }
 
     [Theory]
+    [InlineData(CombatMode.NonCombat, true)]
+    [InlineData(CombatMode.NonCombat, false)]
+    [InlineData(CombatMode.Melee, true)]
+    [InlineData(CombatMode.Melee, false)]
+    [InlineData(CombatMode.Missile, true)]
+    [InlineData(CombatMode.Missile, false)]
+    [InlineData(CombatMode.Magic, true)]
+    [InlineData(CombatMode.Magic, false)]
+    public void DrawsEveryModeInsideTheDeck_Scaled(CombatMode mode, bool known)
+    {
+        DeckVitalInput Vital(float p, uint cur) => known ? new(p, cur, 100) : new(null, null, null);
+        var input = default(CommandDeckInput) with
+        {
+            Mode = mode, DesiredPower = 0.5f, PowerBarLevel = 0.3f, SessionKey = 1,
+            Health = Vital(0.2f, 20), Stamina = Vital(0.6f, 60), Mana = Vital(1f, 100),
+            LastSpellName = "Flame Bolt", RepeatAttacks = true,
+        };
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 1.0);
+        deck.Refresh();
+        deck.ApplyGeometry(DeckGeometry.Create(1.5f, 2f));
+
+        var renderer = MarkupDrawProbe.Draw(deck, deck.Width, deck.Height);
+
+        int quads = 0;
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+            for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+            {
+                quads++;
+                float x = s.Verts[i], y = s.Verts[i + 1];
+                Assert.InRange(x, -0.01f, deck.Width + 0.01f);
+                Assert.InRange(y, -0.01f, deck.Height + 0.01f);
+            }
+        Assert.True(quads > 0);
+    }
+
+    [Theory]
     [InlineData(CombatMode.NonCombat, DeckZone.Recall2)]
     [InlineData(CombatMode.NonCombat, DeckZone.Orb)]
     [InlineData(CombatMode.Melee, DeckZone.StudRepeat)]

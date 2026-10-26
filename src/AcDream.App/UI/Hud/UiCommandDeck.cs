@@ -73,6 +73,14 @@ internal sealed partial class UiCommandDeck : UiElement
     internal CommandDeckView View => _view;
     internal DeckGeometry Geometry => _geometry;
 
+    /// <summary>Sets the deck to <paramref name="geometry"/>'s size and geometry.</summary>
+    internal void ApplyGeometry(DeckGeometry geometry)
+    {
+        _geometry = geometry;
+        Width = geometry.Width;
+        Height = geometry.Height;
+    }
+
     /// <summary>
     /// The tooltip the deck is showing now, or null. The deck is one element
     /// with many zones, so it times its own tooltip rather than using the

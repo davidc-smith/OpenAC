@@ -4,21 +4,49 @@ using AcDream.App.Rendering;
 namespace AcDream.App.UI.Hud;
 
 /// <summary>
-/// The Modern HUD's fonts: the bundled sans, baked on first use. Without them
-/// (tests, or before textures exist) the context's default font stands in.
+/// The Modern HUD's fonts: the bundled sans, baked on first use at each deck
+/// scale it is drawn at. Without them (tests, or before textures exist) the
+/// context's default font stands in.
 /// </summary>
-internal sealed class DeckFonts(Lazy<UiDatFont> text, Lazy<UiDatFont> small, Lazy<UiDatFont> bold)
+internal sealed class DeckFonts(Func<float, BundledUiFontWeight, UiDatFont> bake)
 {
     /// <summary>Values: vital numbers, tooltip body.</summary>
     public const float TextPixelHeight = 14f;
     /// <summary>Labels and the casting line, a size below the values.</summary>
     public const float SmallPixelHeight = 12f;
 
-    public static DeckFonts Load(TextureCache textures) => new(
-        new(() => BundledUiFont.Load(textures, TextPixelHeight)),
-        new(() => BundledUiFont.Load(textures, SmallPixelHeight)),
-        new(() => BundledUiFont.Load(textures, TextPixelHeight, BundledUiFontWeight.SemiBold)));
+    private readonly Dictionary<float, DeckFontSet> _sets = [];
 
+    public static DeckFonts Load(TextureCache textures) =>
+        new((pixelHeight, weight) => BundledUiFont.Load(textures, pixelHeight, weight));
+
+    /// <summary>The faces at scale 1, used by the tooltips.</summary>
+    public UiDatFont Text => At(1f).Text;
+    public UiDatFont Small => At(1f).Small;
+    public UiDatFont Bold => At(1f).Bold;
+
+    /// <summary>The faces for a deck drawn at <paramref name="scale"/>; each bakes when first used.</summary>
+    public DeckFontSet At(float scale)
+    {
+        if (!_sets.TryGetValue(scale, out DeckFontSet? set))
+        {
+            float text = PixelHeight(TextPixelHeight, scale), small = PixelHeight(SmallPixelHeight, scale);
+            _sets[scale] = set = new DeckFontSet(
+                new(() => bake(text, BundledUiFontWeight.Regular)),
+                new(() => bake(small, BundledUiFontWeight.Regular)),
+                new(() => bake(text, BundledUiFontWeight.SemiBold)));
+        }
+        return set;
+    }
+
+    /// <summary>A base pixel height at a deck scale, in whole pixels.</summary>
+    internal static float PixelHeight(float basePixels, float scale) =>
+        MathF.Round(basePixels * scale, MidpointRounding.AwayFromZero);
+}
+
+/// <summary>The deck's three faces at one scale.</summary>
+internal sealed class DeckFontSet(Lazy<UiDatFont> text, Lazy<UiDatFont> small, Lazy<UiDatFont> bold)
+{
     public UiDatFont Text => text.Value;
     public UiDatFont Small => small.Value;
     public UiDatFont Bold => bold.Value;
