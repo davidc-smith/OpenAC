@@ -20,29 +20,9 @@ internal sealed partial class UiCommandDeck
     /// <summary>A line weight at the deck's scale, in whole points, never under one.</summary>
     private float Line(float points) => DeckChrome.Line(points, _geometry.Scale);
 
-    /// <summary>A faint bronze stroke on the right edge, or an L at the right
-    /// corner, while that grip is hovered or being dragged.</summary>
-    private void DrawResizeGrip(UiRenderContext ctx)
-    {
-        ResizeEdges edges = FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None;
-        if ((edges & ResizeEdges.Right) == 0) return;
-        DeckRect f = _geometry.Frame;
-        float w = Line(2), right = f.X + f.W - w, arm = P(24);
-        if ((edges & ResizeEdges.Top) != 0)
-        {
-            ctx.DrawFill(right, f.Y, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y, arm, w, GripInk);
-        }
-        else if ((edges & ResizeEdges.Bottom) != 0)
-        {
-            ctx.DrawFill(right, f.Y + f.H - arm, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y + f.H - w, arm, w, GripInk);
-        }
-        else
-        {
-            ctx.DrawFill(right, f.Y + P(10), w, f.H - P(20), GripInk);
-        }
-    }
+    /// <summary>The right-edge grip while it is hovered or being dragged.</summary>
+    private void DrawResizeGrip(UiRenderContext ctx) =>
+        DeckChrome.DrawResizeGrip(ctx, FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None, _geometry.Frame, _geometry.Scale);
 
     protected override void OnDraw(UiRenderContext ctx)
     {
@@ -192,12 +172,7 @@ internal sealed partial class UiCommandDeck
         if (texture != 0) ctx.DrawCoverageIcon(texture, x, y, pixels, ink);
     }
 
-    private DeckFace Face(bool small)
-    {
-        if (_fonts is null) return new(null);
-        DeckFontSet set = _fonts.At(_geometry.Scale);
-        return new(small ? set.Small : set.Text);
-    }
+    private DeckFace Face(bool small) => DeckFace.For(_fonts, _geometry.Scale, small);
 
     /// <summary>Text from <paramref name="x"/>, centred on <paramref name="band"/>'s height.</summary>
     private void DrawText(UiRenderContext ctx, string text, float x, DeckRect band, Vector4 ink, bool small = false)

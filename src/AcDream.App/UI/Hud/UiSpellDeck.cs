@@ -129,7 +129,10 @@ internal sealed partial class UiSpellDeck : UiElement
         _controller.Tick();
         int rows = _controller.Rows.Count;
         if (Width != _geometry.Width || Height != _geometry.Height)
-            ApplyGeometry(SpellDeckGeometry.FromSize(Width, Height, _geometry.Rows).WithRows(rows));
+        {
+            SpellDeckGeometry g = SpellDeckGeometry.FromSize(Width, Height, _geometry.Rows).WithRows(rows);
+            ApplyGeometry(g.WithStretch(MathF.Max(g.Stretch, MinStretchNow)));
+        }
         else if (rows != _geometry.Rows)
             ApplyGeometry(_geometry.WithRows(rows));
     }

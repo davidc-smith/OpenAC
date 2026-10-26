@@ -230,14 +230,18 @@ public sealed class UiSpellDeckTests
         AssertAround(b.Value, r.Deck.Geometry.Slot(1, 0), inside: 3f, outside: 6f);
     }
 
-    [Fact]
-    public void DrawsInsideTheDeckAtEveryScale()
+    [Theory]
+    [InlineData(0.75f, 1f)]
+    [InlineData(1f, 1f)]
+    [InlineData(1.5f, 2f)]
+    public void DrawsInsideTheDeckAtEveryScale(float scale, float stretch)
     {
         Rig r = Make();
         r.Game.Item = new ItemSpell(1u, 30u);
         r.Pending = 11u;
+        r.Controller.Click(0, 0);
         r.Deck.Refresh();
-        r.Deck.ApplyGeometry(SpellDeckGeometry.Create(1.5f, 2f, 3));
+        r.Deck.ApplyGeometry(SpellDeckGeometry.Create(scale, stretch, 3));
         TextRenderer renderer = MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height);
         int quads = 0;
         foreach (var s in renderer.DebugSpriteSegmentVerts)
@@ -248,6 +252,27 @@ public sealed class UiSpellDeckTests
                 Assert.InRange(s.Verts[i + 1], -3.01f, r.Deck.Height + 3.01f);
             }
         Assert.True(quads > 0);
+    }
+
+    [Fact]
+    public void ARestoredNarrowSizeIsWidenedToTheFullestRow()
+    {
+        Rig r = Make();
+        r.Game.Tabs[1].AddRange(Enumerable.Range(100, 15).Select(i => (uint)i));   // row 1 holds 16
+        float min = SpellDeckGeometry.StretchFor(16);
+        Assert.True(min > 1f);
+
+        // A restore puts back a size saved before the row grew: stretch 1.05, scale 1.
+        SpellDeckGeometry saved = SpellDeckGeometry.Create(1f, 1.05f, 3);
+        Assert.True(saved.Stretch < min);
+        r.Deck.Width = saved.Width;
+        r.Deck.Height = saved.Height;
+        r.Deck.Refresh();
+
+        Assert.Equal(min, r.Deck.Geometry.Stretch, 4);
+        Assert.Equal(1f, r.Deck.Geometry.Scale, 4);
+        Assert.Equal(r.Deck.Geometry.Width, r.Deck.Width);
+        Assert.True(r.Deck.Geometry.SlotsPerRow >= 16);
     }
 
     [Fact]

@@ -55,4 +55,27 @@ internal static class DeckChrome
         Vector4 ink = on ? TextInk : StudOffInk;
         return dim ? ink with { W = 0.4f } : ink;
     }
+
+    /// <summary>A faint bronze stroke on the right edge, or an L at the right
+    /// corner, while that grip is hovered or being dragged.</summary>
+    internal static void DrawResizeGrip(UiRenderContext ctx, ResizeEdges edges, DeckRect frame, float scale)
+    {
+        if ((edges & ResizeEdges.Right) == 0) return;
+        DeckRect f = frame;
+        float w = Line(2, scale), right = f.X + f.W - w, arm = 24f * scale;
+        if ((edges & ResizeEdges.Top) != 0)
+        {
+            ctx.DrawFill(right, f.Y, w, arm, GripInk);
+            ctx.DrawFill(right - arm + w, f.Y, arm, w, GripInk);
+        }
+        else if ((edges & ResizeEdges.Bottom) != 0)
+        {
+            ctx.DrawFill(right, f.Y + f.H - arm, w, arm, GripInk);
+            ctx.DrawFill(right - arm + w, f.Y + f.H - w, arm, w, GripInk);
+        }
+        else
+        {
+            ctx.DrawFill(right, f.Y + 10f * scale, w, f.H - 20f * scale, GripInk);
+        }
+    }
 }

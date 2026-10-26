@@ -53,7 +53,8 @@ internal sealed partial class UiSpellDeck
             }
         }
 
-        if (!_controller.Attached) DrawResizeGrip(ctx);
+        if (!_controller.Attached)
+            DeckChrome.DrawResizeGrip(ctx, FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None, g.Frame, g.Scale);
     }
 
     /// <summary>A rounded stroke <paramref name="width"/> wide whose inner edge is <paramref name="gap"/> outside <paramref name="r"/>.</summary>
@@ -88,36 +89,7 @@ internal sealed partial class UiSpellDeck
         }
     }
 
-    /// <summary>A faint bronze stroke on the right edge, or an L at the right
-    /// corner, while that grip is hovered or being dragged (as the Command Deck's).</summary>
-    private void DrawResizeGrip(UiRenderContext ctx)
-    {
-        ResizeEdges edges = FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None;
-        if ((edges & ResizeEdges.Right) == 0) return;
-        DeckRect f = _geometry.Frame;
-        float w = Line(2), right = f.X + f.W - w, arm = P(24);
-        if ((edges & ResizeEdges.Top) != 0)
-        {
-            ctx.DrawFill(right, f.Y, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y, arm, w, GripInk);
-        }
-        else if ((edges & ResizeEdges.Bottom) != 0)
-        {
-            ctx.DrawFill(right, f.Y + f.H - arm, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y + f.H - w, arm, w, GripInk);
-        }
-        else
-        {
-            ctx.DrawFill(right, f.Y + P(10), w, f.H - P(20), GripInk);
-        }
-    }
-
-    private DeckFace Face(bool small)
-    {
-        if (_fonts is null) return new(null);
-        DeckFontSet set = _fonts.At(_geometry.Scale);
-        return new(small ? set.Small : set.Text);
-    }
+    private DeckFace Face(bool small) => DeckFace.For(_fonts, _geometry.Scale, small);
 
     /// <summary>Small text centred on <paramref name="centre"/> and on <paramref name="band"/>'s height.</summary>
     private void DrawTextCentered(UiRenderContext ctx, string text, float centre, DeckRect band, Vector4 ink)

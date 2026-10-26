@@ -55,6 +55,14 @@ internal sealed class DeckFontSet(Lazy<UiDatFont> text, Lazy<UiDatFont> small, L
 /// <summary>One face to draw with: a bundled sans face, or the context's default font when there is none.</summary>
 internal readonly record struct DeckFace(UiDatFont? Font)
 {
+    /// <summary>The text or small face for a deck drawn at <paramref name="scale"/>; the default font without fonts.</summary>
+    public static DeckFace For(DeckFonts? fonts, float scale, bool small)
+    {
+        if (fonts is null) return new(null);
+        DeckFontSet set = fonts.At(scale);
+        return new(small ? set.Small : set.Text);
+    }
+
     public float Measure(UiRenderContext ctx, string text) =>
         Font?.MeasureWidth(text) ?? ctx.DefaultFont?.MeasureWidth(text) ?? 0f;
 
