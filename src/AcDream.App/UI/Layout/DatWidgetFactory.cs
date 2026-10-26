@@ -219,6 +219,8 @@ public static class DatWidgetFactory
             {
                 ElementInfo? authoredTrack = info.Children.FirstOrDefault(child => child.Id == 4u);
                 bar.TrackSprite = authoredTrack is null ? 0u : DefaultImage(authoredTrack);
+                if (authoredTrack is not null)
+                    bar.TrackSpritesByState = StateImages(authoredTrack);
             }
 
             ElementInfo? meter = info.Children.FirstOrDefault(child => child.Type == 7u);
@@ -344,6 +346,19 @@ public static class DatWidgetFactory
             && direct.Image is { } directImage)
             return directImage.File;
         return 0u;
+    }
+
+    // The image each named state authors, or null when fewer than two do.
+    private static IReadOnlyDictionary<uint, uint>? StateImages(ElementInfo info)
+    {
+        Dictionary<uint, uint>? images = null;
+        foreach (var (stateId, state) in info.States)
+        {
+            if (stateId == UiStateInfo.DirectStateId || state.Image is not { } image)
+                continue;
+            (images ??= [])[stateId] = image.File;
+        }
+        return images is { Count: > 1 } ? images : null;
     }
 
     private static uint ButtonStateImage(ElementInfo? info, string stateName)

@@ -478,6 +478,34 @@ public sealed class CharacterCreationLiveDatTests
     }
 
     [InstalledDatFact]
+    public void ProfessionAttributeLock_AndItsSlider_ShowTheAuthoredLockedArt()
+    {
+        const uint unlocked = 0x10000018u;
+        const uint locked = 0x10000019u;
+        using var dats = new DatCollection(DatDirectory, DatAccessType.Read);
+        uint layoutId = RetailDataIdResolver.Resolve(
+            dats, CharacterCreationUiController.RootEnum, 5u);
+        ImportedLayout screen = BuildSelected(
+            dats, layoutId, CharacterCreationUiController.RootElementId);
+
+        UiElement strength = Assert.IsAssignableFrom<UiElement>(screen.FindElement(0x100003E6u));
+        UiButton lockButton = Assert.IsType<UiButton>(UiElement.FindDescendant(strength, 0x100002ECu));
+        UiScrollbar slider = Assert.IsType<UiScrollbar>(UiElement.FindDescendant(strength, 0x100002EEu));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(0x06004D39u, slider.TrackSprite);
+
+        Assert.True(lockButton.TrySetRetailState(locked));
+        Assert.True(slider.TrySetTrackState(locked));
+        Assert.Equal("Locked", lockButton.ActiveState);
+        Assert.Equal(0x06004D3Au, slider.TrackSprite);
+
+        Assert.True(lockButton.TrySetRetailState(unlocked));
+        Assert.True(slider.TrySetTrackState(unlocked));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(0x06004D39u, slider.TrackSprite);
+    }
+
+    [InstalledDatFact]
     public void RequiredChargenStringsResolve()
     {
         using var dats = new DatCollection(DatDirectory, DatAccessType.Read);

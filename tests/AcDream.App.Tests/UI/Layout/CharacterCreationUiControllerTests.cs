@@ -247,6 +247,38 @@ public sealed class CharacterCreationUiControllerTests
     }
 
     [Fact]
+    public void ProfessionLock_Click_ShowsLockedArtOnTheLockAndTheSlider_AndClickAgainUnlocks()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        environment.Runtime.SelectHeritageDirect(AluvianId);
+        environment.TabButton(CharacterCreationUiController.ProfessionTabElementId).OnClick!();
+
+        UiElement strengthContainer = Assert.IsAssignableFrom<UiElement>(
+            environment.Screen.FindElement(0x100003E6u));
+        UiButton lockButton = Assert.IsType<UiButton>(
+            UiElement.FindDescendant(strengthContainer, 0x100002ECu));
+        UiScrollbar slider = Assert.IsType<UiScrollbar>(
+            UiElement.FindDescendant(strengthContainer, 0x100002EEu));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(ScrollbarFixtures.UnlockedTrack, slider.TrackSprite);
+
+        lockButton.OnClick!();
+        BumpRevisionAndTick(environment);
+
+        Assert.True(environment.Runtime.View.Snapshot.IsAttributeLocked(ChargenAttributeId.Strength));
+        Assert.Equal("Locked", lockButton.ActiveState);
+        Assert.Equal(ScrollbarFixtures.LockedTrack, slider.TrackSprite);
+
+        lockButton.OnClick!();
+        BumpRevisionAndTick(environment);
+
+        Assert.False(environment.Runtime.View.Snapshot.IsAttributeLocked(ChargenAttributeId.Strength));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(ScrollbarFixtures.UnlockedTrack, slider.TrackSprite);
+    }
+
+    [Fact]
     public void ProfessionValueField_DirectEntry_SetsTheAttribute()
     {
         using var environment = new EnvironmentHarness();
@@ -1857,7 +1889,7 @@ public sealed class CharacterCreationUiControllerTests
                 SelectGender,
                 SelectTemplate,
                 SetAttribute,
-                (_, _) => Result(RuntimeCommandStatus.Accepted),
+                SetAttributeLock,
                 skillId => SetSkillLevel(skillId, ChargenSkillAdvancementClass.Trained),
                 skillId => SetSkillLevel(skillId, ChargenSkillAdvancementClass.Specialized),
                 skillId => SetSkillLevel(skillId, ChargenSkillAdvancementClass.Untrained),
@@ -1944,6 +1976,14 @@ public sealed class CharacterCreationUiControllerTests
         {
             LastAttributeSet = attribute;
             LastAttributeValue = value;
+            return Result(RuntimeCommandStatus.Accepted);
+        }
+
+        private RuntimeCommandResult SetAttributeLock(ChargenAttributeId attribute, bool locked)
+        {
+            uint bit = 1u << ((int)attribute - 1);
+            uint mask = View.Snapshot.AttributeLockMask;
+            View.Snapshot = View.Snapshot with { AttributeLockMask = locked ? mask | bit : mask & ~bit };
             return Result(RuntimeCommandStatus.Accepted);
         }
 
@@ -2328,8 +2368,8 @@ public sealed class CharacterCreationUiControllerTests
         page.Children.Add(ButtonInfo(0x100003DAu)); // Bow Hunter
 
         var strengthSlider = ContainerInfo(0x100003E6u);
-        strengthSlider.Children.Add(ButtonInfo(0x100002ECu));
-        strengthSlider.Children.Add(ScrollbarInfo(0x100002EEu));
+        strengthSlider.Children.Add(LockButtonInfo());
+        strengthSlider.Children.Add(ScrollbarFixtures.LockableScalarBar());
         strengthSlider.Children.Add(EditableFieldInfo(0x100002EFu));
         page.Children.Add(strengthSlider);
 
@@ -2474,6 +2514,29 @@ public sealed class CharacterCreationUiControllerTests
         page.Children.Add(helpText);
 
         return page;
+    }
+
+    // The attribute lock as authored: a toggle with its own Unlocked and
+    // Locked art and no Normal/Highlight pair.
+    private static ElementInfo LockButtonInfo()
+    {
+        var info = new ElementInfo
+        {
+            Id = 0x100002ECu,
+            Type = 1u,
+            Width = 15f,
+            Height = 24f,
+            DefaultStateName = "Unlocked",
+            DefaultStateId = ScrollbarFixtures.UnlockedState,
+        };
+        var direct = new UiStateInfo { Id = UiStateInfo.DirectStateId };
+        direct.Properties.Set(0x0Bu, new UiPropertyValue { Kind = UiPropertyKind.Bool, BoolValue = true });
+        info.States[UiStateInfo.DirectStateId] = direct;
+        info.States[ScrollbarFixtures.UnlockedState] = new UiStateInfo { Id = ScrollbarFixtures.UnlockedState, Name = "Unlocked" };
+        info.States[ScrollbarFixtures.LockedState] = new UiStateInfo { Id = ScrollbarFixtures.LockedState, Name = "Locked" };
+        info.StateMedia["Unlocked"] = (0x06004D3Bu, 3);
+        info.StateMedia["Locked"] = (0x06004D3Cu, 3);
+        return info;
     }
 
     private static ElementInfo ZoomButtonInfo(uint id)
