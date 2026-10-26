@@ -419,6 +419,17 @@ internal sealed class ParityServer(WorldSession session, Func<uint> playerGuid)
         GameEvent(GameEventType.ChannelBroadcast, [.. payload]);
     }
 
+    /// <summary>
+    /// A passing notice for the status line, such as a refusal to open a
+    /// container someone else already has open.
+    /// </summary>
+    internal void TransientString(string text)
+    {
+        var payload = new List<byte>();
+        WriteString(payload, text);
+        GameEvent(GameEventType.CommunicationTransientString, [.. payload]);
+    }
+
     /// <summary>A tell, as the server delivers one to its listener.</summary>
     internal void Tell(
         string text,
