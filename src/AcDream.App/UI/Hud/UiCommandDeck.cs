@@ -1,4 +1,5 @@
 using System.Globalization;
+using AcDream.App.UI.Layout;
 using AcDream.Core.Combat;
 using AcDream.Core.Net.Messages;
 using AcDream.Runtime;
@@ -31,6 +32,11 @@ internal sealed partial class UiCommandDeck : UiElement
     private readonly EmbeddedSvgSpriteCache? _icons;
     private readonly Func<double> _clock;
     private readonly DeckFonts? _fonts;
+    private DeckGeometry _geometry = DeckGeometry.Default;
+    /// <summary>The geometry when the current resize drag started; null between drags.
+    /// The root proposes each move's size from the drag start, so each move is
+    /// measured from here, not from the previous move.</summary>
+    private DeckGeometry? _resizeFrom;
     private CommandDeckView _view = CommandDeckView.Empty;
     private AttackHeight? _held;
     private bool _draggingPower;
@@ -56,11 +62,81 @@ internal sealed partial class UiCommandDeck : UiElement
         _icons = icons;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _fonts = fonts;
-        Width = CommandDeckLayout.Width;
-        Height = CommandDeckLayout.Height;
-        MinWidth = MaxWidth = Width;
-        MinHeight = MaxHeight = Height;
-        Resizable = false;
+        Width = _geometry.Width;
+        Height = _geometry.Height;
+        MinWidth = MinWindowWidth;
+        MaxWidth = MaxWindowWidth;
+        MinHeight = MinWindowHeight;
+        MaxHeight = MaxWindowHeight;
+        Resizable = true;
+        ResizableEdges = ResizeEdges.Right;
+    }
+
+    // The window's full size range. Scale and stretch together are enforced
+    // by ConstrainResize and SyncGeometry, not by these.
+    private const float MinWindowWidth = DeckGeometry.BaseWidth * DeckGeometry.MinStretch * DeckGeometry.MinScale;
+    private const float MaxWindowWidth = DeckGeometry.BaseWidth * DeckGeometry.MaxStretch * DeckGeometry.MaxScale;
+    private const float MinWindowHeight = DeckGeometry.BaseHeight * DeckGeometry.MinScale;
+    private const float MaxWindowHeight = DeckGeometry.BaseHeight * DeckGeometry.MaxScale;
+
+    /// <summary>A pointer within this many points of the right edge hits the
+    /// deck even outside the frame, so the right-hand grips are easy to grab.</summary>
+    private const float GripBand = 6f;
+
+    /// <summary>How the runtime mounts the deck: imported chrome, resizable from the right only.</summary>
+    internal static RetailWindowFrame.Options MountOptions(float left, float top) => new()
+    {
+        WindowName = WindowNames.CommandDeck,
+        Chrome = RetailWindowChrome.Imported,
+        Left = left,
+        Top = top,
+        Resizable = true,
+        ResizeX = true,
+        ResizeY = true,
+        ResizableEdges = ResizeEdges.Right,
+        ConstrainResizeToParent = true,
+        MinWidth = MinWindowWidth,
+        MaxWidth = MaxWindowWidth,
+        MinHeight = MinWindowHeight,
+        MaxHeight = MaxWindowHeight,
+        Visible = false,
+        ContentClickThrough = false,
+    };
+
+    internal override ResizeEdges FilterResizeEdges(ResizeEdges hit) => hit switch
+    {
+        ResizeEdges.Right
+            or (ResizeEdges.Right | ResizeEdges.Top)
+            or (ResizeEdges.Right | ResizeEdges.Bottom) => hit,
+        _ => ResizeEdges.None,
+    };
+
+    internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
+    {
+        bool corner = (edges & (ResizeEdges.Top | ResizeEdges.Bottom)) != 0;
+        DeckGeometry from = _resizeFrom ??= _geometry;
+        _geometry = corner ? from.WithCornerSize(width, height) : from.WithWidth(width);
+        // The root keeps the proposed size on screen, but the geometry can
+        // grow past it (a scale snapping up, the width following the scale),
+        // so fit it again. The left edge never moves; a top drag keeps the
+        // bottom where it is, any other drag keeps the top.
+        if (ConstrainResizeToParent && Parent is { } parent)
+        {
+            float roomHeight = (edges & ResizeEdges.Top) != 0 ? Top + Height : parent.Height - Top;
+            _geometry = _geometry.FitWithin(parent.Width - Left, roomHeight);
+        }
+        width = _geometry.Width;
+        height = _geometry.Height;
+    }
+
+    /// <summary>Moves the geometry to the deck's current size (after a restore,
+    /// a reset or a screen limit), and the size to the nearest valid one.</summary>
+    private void SyncGeometry()
+    {
+        if (Width == _geometry.Width && Height == _geometry.Height) return;
+        _geometry = DeckGeometry.FromSize(Width, Height);
+        Width = _geometry.Width;
+        Height = _geometry.Height;
     }
 
     /// <summary>How long the pointer rests on a zone before its tooltip shows.</summary>
@@ -70,6 +146,15 @@ internal sealed partial class UiCommandDeck : UiElement
     public override bool ReceivesHoverMouseMove => true;
 
     internal CommandDeckView View => _view;
+    internal DeckGeometry Geometry => _geometry;
+
+    /// <summary>Sets the deck to <paramref name="geometry"/>'s size and geometry.</summary>
+    internal void ApplyGeometry(DeckGeometry geometry)
+    {
+        _geometry = geometry;
+        Width = geometry.Width;
+        Height = geometry.Height;
+    }
 
     /// <summary>
     /// The tooltip the deck is showing now, or null. The deck is one element
@@ -105,7 +190,7 @@ internal sealed partial class UiCommandDeck : UiElement
         ctx.PushAlphaAbsolute(1f);
         try
         {
-            HudTooltip.Draw(ctx, tip, TooltipStyle, CommandDeckLayout.RectFor(_hover),
+            HudTooltip.Draw(ctx, tip, TooltipStyle, _geometry.RectFor(_hover),
                 ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
         }
         finally { ctx.PopAlpha(); }
@@ -114,6 +199,9 @@ internal sealed partial class UiCommandDeck : UiElement
     /// <summary>Samples the game and rebuilds the view; releases a held attack if the power row went away.</summary>
     internal void Refresh()
     {
+        if (FindRoot()?.ActiveResizeEdges is null or ResizeEdges.None)
+            _resizeFrom = null;
+        SyncGeometry();
         _view = _model.Update(_input(), _clock());
         if (_held is not null && _view.Row != DeckContextRow.Power)
             ReleaseHeldAttack();
@@ -125,11 +213,12 @@ internal sealed partial class UiCommandDeck : UiElement
 
     protected override bool OnHitTest(float localX, float localY)
     {
-        _hitZone = CommandDeckLayout.ZoneAt(_view, localX, localY);
+        _hitZone = _geometry.ZoneAt(_view, localX, localY);
         CapturesPointerDrag = IsControl(_hitZone);
         return _hitZone != DeckZone.None
-            || CommandDeckLayout.Frame.Contains(localX, localY)
-            || CommandDeckLayout.InOrb(localX, localY);
+            || _geometry.Frame.Contains(localX, localY)
+            || _geometry.InOrb(localX, localY)
+            || (localX >= Width - GripBand && localY >= 0 && localY < Height);
     }
 
     /// <summary>Zones that act on a press; every other part of the deck drags the window.</summary>
@@ -155,6 +244,7 @@ internal sealed partial class UiCommandDeck : UiElement
     /// so a deck shown again under a still pointer waits out a fresh dwell.</summary>
     public void OnHidden()
     {
+        _resizeFrom = null;
         _draggingPower = false;
         ReleaseHeldAttack();
         ResetHover();
@@ -175,12 +265,12 @@ internal sealed partial class UiCommandDeck : UiElement
         {
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
-                return Press(CommandDeckLayout.ZoneAt(_view, e.Data1, e.Data2), e.Data1);
+                return Press(_geometry.ZoneAt(_view, e.Data1, e.Data2), e.Data1);
             case UiEventType.MouseMove:
-                SetHover(CommandDeckLayout.ZoneAt(_view, e.Data1, e.Data2));
+                SetHover(_geometry.ZoneAt(_view, e.Data1, e.Data2));
                 if (_draggingPower)
                 {
-                    _actions.SetDesiredPower(CommandDeckLayout.PowerAt(e.Data1));
+                    _actions.SetDesiredPower(DeckGeometry.SnapPower(_geometry.PowerAt(e.Data1)));
                     return true;
                 }
                 return _hover != DeckZone.None;
@@ -196,7 +286,7 @@ internal sealed partial class UiCommandDeck : UiElement
                 return true;
             case UiEventType.Scroll:
                 if (_view.Row != DeckContextRow.Power
-                    || CommandDeckLayout.ZoneAt(_view, e.Data1, e.Data2) != DeckZone.PowerTrack
+                    || _geometry.ZoneAt(_view, e.Data1, e.Data2) != DeckZone.PowerTrack
                     || e.Data0 == 0)
                     return false;
                 _actions.SetDesiredPower(Math.Clamp(
@@ -226,7 +316,7 @@ internal sealed partial class UiCommandDeck : UiElement
                 return true;
             case DeckZone.PowerTrack:
                 _draggingPower = true;
-                _actions.SetDesiredPower(CommandDeckLayout.PowerAt(x));
+                _actions.SetDesiredPower(DeckGeometry.SnapPower(_geometry.PowerAt(x)));
                 return true;
             case DeckZone.High:
             case DeckZone.Medium:

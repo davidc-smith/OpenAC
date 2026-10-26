@@ -40,7 +40,7 @@ public sealed class UiCommandDeckDrawTests
         var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 1.0);
         deck.Refresh();
 
-        var renderer = MarkupDrawProbe.Draw(deck, CommandDeckLayout.Width, CommandDeckLayout.Height);
+        var renderer = MarkupDrawProbe.Draw(deck, DeckGeometry.Default.Width, DeckGeometry.Default.Height);
 
         int quads = 0;
         foreach (var s in renderer.DebugSpriteSegmentVerts)
@@ -48,8 +48,44 @@ public sealed class UiCommandDeckDrawTests
             {
                 quads++;
                 float x = s.Verts[i], y = s.Verts[i + 1];
-                Assert.InRange(x, -0.01f, CommandDeckLayout.Width + 0.01f);
-                Assert.InRange(y, -0.01f, CommandDeckLayout.Height + 0.01f);
+                Assert.InRange(x, -0.01f, DeckGeometry.Default.Width + 0.01f);
+                Assert.InRange(y, -0.01f, DeckGeometry.Default.Height + 0.01f);
+            }
+        Assert.True(quads > 0);
+    }
+
+    [Theory]
+    [InlineData(CombatMode.NonCombat, true)]
+    [InlineData(CombatMode.NonCombat, false)]
+    [InlineData(CombatMode.Melee, true)]
+    [InlineData(CombatMode.Melee, false)]
+    [InlineData(CombatMode.Missile, true)]
+    [InlineData(CombatMode.Missile, false)]
+    [InlineData(CombatMode.Magic, true)]
+    [InlineData(CombatMode.Magic, false)]
+    public void DrawsEveryModeInsideTheDeck_Scaled(CombatMode mode, bool known)
+    {
+        DeckVitalInput Vital(float p, uint cur) => known ? new(p, cur, 100) : new(null, null, null);
+        var input = default(CommandDeckInput) with
+        {
+            Mode = mode, DesiredPower = 0.5f, PowerBarLevel = 0.3f, SessionKey = 1,
+            Health = Vital(0.2f, 20), Stamina = Vital(0.6f, 60), Mana = Vital(1f, 100),
+            LastSpellName = "Flame Bolt", RepeatAttacks = true,
+        };
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 1.0);
+        deck.Refresh();
+        deck.ApplyGeometry(DeckGeometry.Create(1.5f, 2f));
+
+        var renderer = MarkupDrawProbe.Draw(deck, deck.Width, deck.Height);
+
+        int quads = 0;
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+            for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+            {
+                quads++;
+                float x = s.Verts[i], y = s.Verts[i + 1];
+                Assert.InRange(x, -0.01f, deck.Width + 0.01f);
+                Assert.InRange(y, -0.01f, deck.Height + 0.01f);
             }
         Assert.True(quads > 0);
     }
@@ -75,7 +111,7 @@ public sealed class UiCommandDeckDrawTests
 
         Assert.Empty(MarkupDrawProbe.DrawOverlays(deck).DebugSpriteSegmentVerts);
 
-        DeckRect r = CommandDeckLayout.RectFor(zone);
+        DeckRect r = DeckGeometry.Default.RectFor(zone);
         deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseMove, Data1: (int)(r.X + r.W / 2), Data2: (int)(r.Y + r.H / 2)));
         now = 2.0;
         Assert.NotNull(deck.VisibleTooltip);
@@ -93,7 +129,7 @@ public sealed class UiCommandDeckDrawTests
         var input = default(CommandDeckInput) with { Mode = CombatMode.NonCombat, SessionKey = 1 };
         var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => now);
         deck.Refresh();
-        DeckRect r = CommandDeckLayout.RectFor(DeckZone.Recall0);
+        DeckRect r = DeckGeometry.Default.RectFor(DeckZone.Recall0);
         deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseMove, Data1: (int)(r.X + r.W / 2), Data2: (int)(r.Y + r.H / 2)));
         now = 2.0;
 
@@ -112,12 +148,14 @@ public sealed class UiCommandDeckDrawTests
     public void LongCastingTextIsShortenedToStopBeforeRecast()
     {
         static float Measure(string text) => text.Length * 8f;
-        float room = CommandDeckLayout.Recast.X - CommandDeckLayout.CastingText.X - 6f;
+        float room = DeckGeometry.Default.Recast.X - DeckGeometry.Default.CastingText.X - 6f;
 
-        string fitted = UiCommandDeck.FitCastingText("Incantation of Coordination", Measure);
+        float width = DeckGeometry.Default.CastingText.W;
+
+        string fitted = UiCommandDeck.FitCastingText("Incantation of Coordination", Measure, width);
 
         Assert.EndsWith("...", fitted);
         Assert.True(Measure(fitted) <= room);
-        Assert.Equal("Flame Bolt", UiCommandDeck.FitCastingText("Flame Bolt", Measure));
+        Assert.Equal("Flame Bolt", UiCommandDeck.FitCastingText("Flame Bolt", Measure, width));
     }
 }
