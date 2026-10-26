@@ -40,6 +40,12 @@ public sealed record PluginUiThemeInfo(PluginUiThemeKind Kind, string DisplayNam
 {
     /// <summary>Classic: what a host without themes, or without a window, answers.</summary>
     public static PluginUiThemeInfo Classic { get; } = new(PluginUiThemeKind.Classic, "Classic", null);
+
+    /// <summary>
+    /// Whether the theme is light: a pale face meant for dark text and art.
+    /// False under Classic. Needs contract 0.1.27-fork.2.
+    /// </summary>
+    public bool IsLight => Palette?.IsLight == true;
 }
 
 /// <summary>The colours a plugin theme draws themed windows in.</summary>
@@ -57,7 +63,14 @@ public sealed record PluginThemePalette(
     PluginColor Text,
     PluginColor Muted,
     PluginColor Accent,
-    PluginColor Selected);
+    PluginColor Selected)
+{
+    /// <summary>
+    /// Whether <see cref="Background"/> is pale enough that the palette is a
+    /// light one, meant for dark text and art. Needs contract 0.1.27-fork.2.
+    /// </summary>
+    public bool IsLight => 0.2126 * Background.R + 0.7152 * Background.G + 0.0722 * Background.B > 127.5;
+}
 
 /// <summary>
 /// The sizes themed windows are drawn with, in interface pixels, so a canvas

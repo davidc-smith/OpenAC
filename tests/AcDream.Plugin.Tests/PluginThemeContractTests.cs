@@ -112,6 +112,20 @@ public sealed class PluginThemeContractTests
     }
 
     [Fact]
+    public void APaleBackgroundMakesTheThemeLight()
+    {
+        PluginThemePalette Palette(PluginColor background) => new(
+            background, new(0, 0, 0), new(0, 0, 0), new(0, 0, 0),
+            new(0, 0, 0), new(0, 0, 0), new(0, 0, 0));
+
+        Assert.True(Palette(new(0xED, 0xE7, 0xDC)).IsLight);
+        Assert.False(Palette(new(0x17, 0x14, 0x1F)).IsLight);
+        Assert.True(new PluginUiThemeInfo(PluginUiThemeKind.Parchment, "Parchment", Palette(new(0xED, 0xE7, 0xDC))).IsLight);
+        Assert.False(new PluginUiThemeInfo(PluginUiThemeKind.Moss, "Charcoal + moss", Palette(new(0x17, 0x1D, 0x1B))).IsLight);
+        Assert.False(PluginUiThemeInfo.Classic.IsLight);
+    }
+
+    [Fact]
     public void TheMetricsAreTheThemedWindowsSizes()
     {
         Assert.Equal(10f, PluginThemeMetrics.WindowRadius);

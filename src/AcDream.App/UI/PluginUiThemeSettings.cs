@@ -134,6 +134,9 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
     /// </summary>
     internal static PluginUiPalette ClassicDock { get; } = new(C(0x000000) with { W = 0.88f }, C(0x060605),
         C(0x9E7A29), C(0xF0EBDD), C(0xA8925C), C(0xDBB852), C(0x17300E));
+    /// <summary>Whether the face is pale: a light theme, meant for dark text and art.</summary>
+    public bool IsLight => 0.2126f * Background.X + 0.7152f * Background.Y + 0.0722f * Background.Z > 0.5f;
+
     /// <summary>The palette as plugins read it, each channel rounded to a byte.</summary>
     public PluginThemePalette ToPluginPalette() => new(
         ToColor(Background), ToColor(Field), ToColor(Border),

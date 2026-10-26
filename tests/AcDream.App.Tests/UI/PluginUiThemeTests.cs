@@ -110,6 +110,19 @@ public sealed class PluginUiThemeTests
     }
 
     [Fact]
+    public void OnlyParchmentIsLight()
+    {
+        foreach (PluginUiTheme theme in Enum.GetValues<PluginUiTheme>())
+        {
+            var settings = new PluginUiThemeSettings { Theme = theme };
+            bool light = theme == PluginUiTheme.Parchment;
+            Assert.Equal(light, settings.Palette?.IsLight == true);
+            Assert.Equal(light, settings.ThemeInfo.IsLight);
+        }
+        Assert.False(PluginUiPalette.ClassicDock.IsLight);
+    }
+
+    [Fact]
     public void ANewThemePersistsByName()
     {
         string path = Path.Combine(Path.GetTempPath(), $"plugin-theme-{Guid.NewGuid()}.json");
