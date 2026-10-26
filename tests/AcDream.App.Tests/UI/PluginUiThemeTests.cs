@@ -77,6 +77,96 @@ public sealed class PluginUiThemeTests
         Assert.Equal("ExactVariableName description", field.BoundText!());
     }
 
+    [Theory]
+    [InlineData(PluginUiTheme.LavenderDusk, "Lavender Dusk", 0x17141Fu, 0xBBA0FFu, 0x512F4Au)]
+    [InlineData(PluginUiTheme.Ember, "Ember", 0x151A21u, 0xFF9447u, 0x1E3B44u)]
+    [InlineData(PluginUiTheme.Bloodmoon, "Bloodmoon", 0x1C1617u, 0xFF6B6Bu, 0x4D2327u)]
+    [InlineData(PluginUiTheme.Glacier, "Glacier", 0x11161Cu, 0x5ED6E8u, 0x1F3554u)]
+    [InlineData(PluginUiTheme.Parchment, "Parchment", 0xEDE7DCu, 0xB4471Fu, 0xDDCFB6u)]
+    public void NewThemesHaveTheirNameAndColours(PluginUiTheme theme, string name, uint background, uint accent, uint selected)
+    {
+        var settings = new PluginUiThemeSettings { Theme = theme };
+        var palette = settings.Palette!;
+        Assert.Equal(Rgb(background), palette.Background);
+        Assert.Equal(Rgb(accent), palette.Accent);
+        Assert.Equal(Rgb(selected), palette.Selected);
+        Assert.Same(palette, settings.DockPalette);
+        Assert.Equal(name, settings.ThemeInfo.DisplayName);
+        Assert.Equal(theme.ToString(), settings.ThemeInfo.Kind.ToString());
+    }
+
+    [Fact]
+    public void EveryThemeButClassicHasItsOwnPaletteAndAMatchingKind()
+    {
+        var themes = Enum.GetValues<PluginUiTheme>();
+        Assert.Equal(themes.Length, PluginUiThemeSettings.ThemeNames.Count);
+        Assert.Equal(
+            themes.Select(t => t.ToString()),
+            Enum.GetValues<AcDream.Plugin.Abstractions.PluginUiThemeKind>().Select(k => k.ToString()));
+        var palettes = themes.Where(t => t != PluginUiTheme.Classic)
+            .Select(t => new PluginUiThemeSettings { Theme = t }.Palette).ToList();
+        Assert.All(palettes, Assert.NotNull);
+        Assert.Equal(palettes.Count, palettes.Distinct().Count());
+    }
+
+    [Fact]
+    public void OnlyParchmentIsLight()
+    {
+        foreach (PluginUiTheme theme in Enum.GetValues<PluginUiTheme>())
+        {
+            var settings = new PluginUiThemeSettings { Theme = theme };
+            bool light = theme == PluginUiTheme.Parchment;
+            Assert.Equal(light, settings.Palette?.IsLight == true);
+            Assert.Equal(light, settings.ThemeInfo.IsLight);
+        }
+        Assert.False(PluginUiPalette.ClassicDock.IsLight);
+    }
+
+    [Theory]
+    [InlineData("theme=\"plugin\"", PluginUiTheme.Parchment, true)]
+    [InlineData("theme=\"plugin\"", PluginUiTheme.Moss, false)]
+    [InlineData("theme=\"plugin\"", PluginUiTheme.Classic, false)]
+    [InlineData("", PluginUiTheme.Parchment, false)]
+    public void ALightColourIsUsedUnderALightThemeInAThemedWindow(string theme, PluginUiTheme selected, bool light)
+    {
+        var settings = new PluginUiThemeSettings();
+        var panel = MarkupDocument.Build($$"""
+            <panel x="0" y="0" w="250" h="200" {{theme}}>
+              <label x="0" y="0" text="Status" color="#FF112233|light:#FF445566" />
+              <group x="0" y="20" w="50" h="50" border="#FF778899|light:#FFAABBCC" />
+            </panel>
+            """, new Binding(), _ => (0u, 0, 0), themes: settings);
+        var root = new UiRoot(); root.AddChild(panel);
+        var label = (UiLabel)panel.Children[0];
+        var group = (UiPanel)panel.Children[1];
+        Assert.Equal(Rgba(0xFF112233u), label.TextColor);
+
+        settings.Theme = selected; root.Tick(0.016, 10);
+
+        Assert.Equal(Rgba(light ? 0xFF445566u : 0xFF112233u), label.TextColorSource!());
+        Assert.Equal(Rgba(light ? 0xFFAABBCCu : 0xFF778899u), group.BorderColorSource!());
+    }
+
+    private static Vector4 Rgba(uint argb) =>
+        new((argb >> 16 & 255) / 255f, (argb >> 8 & 255) / 255f, (argb & 255) / 255f, (argb >> 24) / 255f);
+
+    [Fact]
+    public void ANewThemePersistsByName()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"plugin-theme-{Guid.NewGuid()}.json");
+        try
+        {
+            var store = new SettingsStore(path);
+            new PluginUiThemeSettings(store).Theme = PluginUiTheme.Parchment;
+            Assert.Equal("Parchment", store.LoadPluginUi().Theme);
+            Assert.Equal(PluginUiTheme.Parchment, new PluginUiThemeSettings(store).Theme);
+        }
+        finally { File.Delete(path); }
+    }
+
+    private static Vector4 Rgb(uint rgb) =>
+        new((rgb >> 16 & 255) / 255f, (rgb >> 8 & 255) / 255f, (rgb & 255) / 255f, 1f);
+
     [Fact]
     public void ThemePersistsWithoutReplacingOtherSettings()
     {

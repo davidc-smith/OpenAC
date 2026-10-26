@@ -4,7 +4,7 @@ using AcDream.UI.Abstractions.Panels.Settings;
 
 namespace AcDream.App.UI;
 
-public enum PluginUiTheme { Classic, Moss, Brass }
+public enum PluginUiTheme { Classic, Moss, Brass, LavenderDusk, Ember, Bloodmoon, Glacier, Parchment }
 
 /// <summary>Where the plugin dock sits: floating anywhere, or locked to the left or right screen edge.</summary>
 public enum PluginDockMode { Floating, Left, Right }
@@ -55,7 +55,7 @@ public sealed class PluginUiThemeSettings
     public event Action? ThemeChanged;
 
     /// <summary>What the Appearance picker calls each theme, in <see cref="PluginUiTheme"/> order.</summary>
-    internal static IReadOnlyList<string> ThemeNames { get; } = ["Classic", "Charcoal + moss", "Warm graphite + brass"];
+    internal static IReadOnlyList<string> ThemeNames { get; } = ["Classic", "Charcoal + moss", "Warm graphite + brass", "Lavender Dusk", "Ember", "Bloodmoon", "Glacier", "Parchment"];
 
     /// <summary>The selected theme as plugins read it: its kind, name and colours.</summary>
     public PluginUiThemeInfo ThemeInfo => Theme == PluginUiTheme.Classic
@@ -78,6 +78,11 @@ public sealed class PluginUiThemeSettings
     {
         PluginUiTheme.Moss => PluginUiPalette.Moss,
         PluginUiTheme.Brass => PluginUiPalette.Brass,
+        PluginUiTheme.LavenderDusk => PluginUiPalette.LavenderDusk,
+        PluginUiTheme.Ember => PluginUiPalette.Ember,
+        PluginUiTheme.Bloodmoon => PluginUiPalette.Bloodmoon,
+        PluginUiTheme.Glacier => PluginUiPalette.Glacier,
+        PluginUiTheme.Parchment => PluginUiPalette.Parchment,
         _ => null,
     };
 
@@ -110,6 +115,18 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
         C(0x35443B), C(0xE0E8E2), C(0x9AA99E), C(0x97BE81), C(0x344B37));
     public static PluginUiPalette Brass { get; } = new(C(0x221F1B), C(0x181612),
         C(0x4C4335), C(0xE9E2D5), C(0xB2A58E), C(0xC9A665), C(0x51442D));
+    public static PluginUiPalette LavenderDusk { get; } = new(C(0x17141F), C(0x100E17),
+        C(0x352C4A), C(0xEEEAF6), C(0xA69EBA), C(0xBBA0FF), C(0x512F4A));
+    public static PluginUiPalette Ember { get; } = new(C(0x151A21), C(0x0E1218),
+        C(0x2C3644), C(0xE8ECF1), C(0x9AA6B5), C(0xFF9447), C(0x1E3B44));
+    public static PluginUiPalette Bloodmoon { get; } = new(C(0x1C1617), C(0x140F10),
+        C(0x43302F), C(0xF2E9E7), C(0xB8A3A0), C(0xFF6B6B), C(0x4D2327));
+    public static PluginUiPalette Glacier { get; } = new(C(0x11161C), C(0x0A0E13),
+        C(0x26323F), C(0xE4EEF4), C(0x93A4B3), C(0x5ED6E8), C(0x1F3554));
+
+    /// <summary>The one light theme: paper face, ink text, rust accent.</summary>
+    public static PluginUiPalette Parchment { get; } = new(C(0xEDE7DC), C(0xFAF7F1),
+        C(0xC9BFAE), C(0x2A2520), C(0x655C50), C(0xB4471F), C(0xDDCFB6));
 
     /// <summary>
     /// The plugin dock's colours under Classic, taken from the Classic dock's old black and gold.
@@ -117,6 +134,9 @@ public sealed record PluginUiPalette(Vector4 Background, Vector4 Field, Vector4 
     /// </summary>
     internal static PluginUiPalette ClassicDock { get; } = new(C(0x000000) with { W = 0.88f }, C(0x060605),
         C(0x9E7A29), C(0xF0EBDD), C(0xA8925C), C(0xDBB852), C(0x17300E));
+    /// <summary>Whether the face is pale: a light theme, meant for dark text and art.</summary>
+    public bool IsLight => 0.2126f * Background.X + 0.7152f * Background.Y + 0.0722f * Background.Z > 0.5f;
+
     /// <summary>The palette as plugins read it, each channel rounded to a byte.</summary>
     public PluginThemePalette ToPluginPalette() => new(
         ToColor(Background), ToColor(Field), ToColor(Border),

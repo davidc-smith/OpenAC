@@ -32,8 +32,57 @@ public sealed class PluginMarkupIconResolverTests : IDisposable
         public (uint tex, int w, int h) ResolveItem(uint objectId) => (3u, 32, 32);
     }
 
+    private bool _light;
+
     private PluginMarkupIconResolver Resolver(string? directory) =>
-        new(new Retail(), _cache, "acme.hello", directory);
+        new(new Retail(), _cache, "acme.hello", directory, () => _light);
+
+    [Fact]
+    public void ALightThemeDrawsTheLightFileWhenThereIsOne()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "icons", "sword.light.png"), PngTestData.Sized(12, 12));
+        PluginMarkupIconResolver resolver = Resolver(_root);
+
+        Assert.Equal((501u, 20, 10), resolver.ResolveFile("icons/sword.png"));
+        _light = true;
+        Assert.Equal((502u, 12, 12), resolver.ResolveFile("icons/sword.png"));
+        _light = false;
+        Assert.Equal((501u, 20, 10), resolver.ResolveFile("icons/sword.png"));
+        Assert.Equal(2, _uploads);
+        Assert.Empty(_reports);
+    }
+
+    [Fact]
+    public void ADarkThemeDrawsTheDarkFileWhenThereIsOne()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "icons", "sword.dark.png"), PngTestData.Sized(14, 14));
+        PluginMarkupIconResolver resolver = Resolver(_root);
+
+        Assert.Equal((501u, 14, 14), resolver.ResolveFile("icons/sword.png"));
+        _light = true;
+        Assert.Equal((502u, 20, 10), resolver.ResolveFile("icons/sword.png"));
+    }
+
+    [Fact]
+    public void WithoutAVariantTheFileItselfIsDrawnAndNothingIsReported()
+    {
+        PluginMarkupIconResolver resolver = Resolver(_root);
+        _light = true;
+
+        Assert.Equal((501u, 20, 10), resolver.ResolveFile("icons/sword.png"));
+        Assert.Equal((501u, 20, 10), resolver.ResolveFile("icons/sword.png"));
+        Assert.Equal(1, _uploads);
+        Assert.Empty(_reports);
+    }
+
+    [Theory]
+    [InlineData("icons/sword.png", "light", "icons/sword.light.png")]
+    [InlineData("icons/a.b/sword.png", "dark", "icons/a.b/sword.dark.png")]
+    [InlineData("sword", "light", "sword.light")]
+    [InlineData("icons/sword.light.png", "light", null)]
+    [InlineData("icons/sword.dark.png", "light", null)]
+    public void TheVariantNameGoesBeforeTheExtension(string path, string variant, string? expected) =>
+        Assert.Equal(expected, PluginImageVariants.PathFor(path, variant));
 
     [Fact]
     public void ClientIconsGoToTheRetailResolver()
