@@ -7,6 +7,7 @@ using AcDream.Headless.Hosting;
 using AcDream.Runtime;
 using AcDream.Runtime.Entities;
 using AcDream.Runtime.Gameplay;
+using AcDream.Runtime.Session.Windowless;
 
 namespace AcDream.Headless.Tests;
 
@@ -25,7 +26,7 @@ public sealed class HeadlessAutoTargetSelectionTests
     [Fact]
     public void SelectClosestTarget_SkipsHiddenAndDeadCreatures()
     {
-        var gameplay = new HeadlessGameplayOperations();
+        var gameplay = new RuntimeWindowlessGameplayOperations();
         using var runtime = new GameRuntime(new GameRuntimeDependencies(
             gameplay,
             gameplay,
@@ -57,7 +58,7 @@ public sealed class HeadlessAutoTargetSelectionTests
     [Fact]
     public void TheTargetRuleIsTheRuntimeOwnersInThisHostToo()
     {
-        var gameplay = new HeadlessGameplayOperations();
+        var gameplay = new RuntimeWindowlessGameplayOperations();
         using var runtime = new GameRuntime(new GameRuntimeDependencies(
             gameplay,
             gameplay,

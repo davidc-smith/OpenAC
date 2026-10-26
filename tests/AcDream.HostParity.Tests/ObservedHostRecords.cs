@@ -158,7 +158,7 @@ internal static class ObservedHostRecords
     /// </summary>
     internal static GameRuntimeDependencies WindowlessRuntimeDependencies() =>
         HeadlessAutomationCapabilities.BuildRuntimeDependencies(
-            Part<AcDream.Headless.Hosting.HeadlessGameplayOperations>(),
+            Part<AcDream.Runtime.Session.Windowless.RuntimeWindowlessGameplayOperations>(),
             TimeProvider.System,
             Note,
             Part<AcDream.Runtime.Session.ProductionLiveSessionOperations>());

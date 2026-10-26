@@ -71,4 +71,13 @@ public interface IPluginEventSink : IEvents
     /// <summary>The player is being asked to accept or decline something.</summary>
     /// <param name="confirmation">What is being asked, and under which id.</param>
     void FireConfirmationRequested(PluginConfirmation confirmation);
+
+    /// <summary>
+    /// A short status notice is going to the status line. Raised from the one
+    /// runtime owner that routes status notices, before the chat filters
+    /// decide whether it is shown, so both clients report every notice once,
+    /// in arrival order.
+    /// </summary>
+    /// <param name="text">The notice as the status line would show it.</param>
+    void FireStatusTextReceived(string text);
 }

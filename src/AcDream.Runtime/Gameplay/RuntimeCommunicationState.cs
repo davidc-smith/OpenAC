@@ -173,6 +173,13 @@ public sealed class RuntimeCommunicationState : IDisposable
         LocalPlayerDied?.Invoke(deathMessage);
     }
 
+    /// <summary>
+    /// Raised with every status notice on its way to the status line, before
+    /// the chat filters decide whether it is shown. A status notice never
+    /// enters the log, so this is the only place a listener can hear one.
+    /// </summary>
+    public event Action<string>? StatusTextReceived;
+
     public void AddText(string text, RetailLogTextType type, uint windowId = 0)
         => AddText(text, type, allowsMarkup: false);
 
@@ -197,6 +204,11 @@ public sealed class RuntimeCommunicationState : IDisposable
             // otherwise appear there as raw markup.
             if (allowsMarkup)
                 text = ChatTagMarkup.ToPlainText(text);
+
+            // Heard before the filters: a filter decides what the player
+            // sees, not what a listener is told.
+            if (!_disposed)
+                StatusTextReceived?.Invoke(text);
 
             // A status notice never enters the log, so it would otherwise
             // escape the filters entirely. Offer it under its own kind.
