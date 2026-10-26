@@ -53,7 +53,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
             Persistence.ResetToDefaults();
             dock = new SpellDeckDock(
                 new SpellDeckWindowDockHost(Root, () => Persistence, deck, deckHandle, Spell, spellHandle), Controller);
-            sync = new SpellDeckCharacterSync(Controller, dock, Store, () => Key, () => Persistence.RestoredCharacter);
+            sync = new SpellDeckCharacterSync(Controller, dock, Store, () => Key, () => Persistence.RestoreCount);
             Sync = sync;
             Dock = dock;
         }
@@ -191,6 +191,30 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         rig.Reflow(1000, 170);   // too short for the deck: the window shrinks
         rig.Reflow(1600, 900);
 
+        AssertSpellDeckAt(rig, bob, "Bob", 1.2f, 5);
+    }
+
+    [Fact]
+    public void SpellDeck_SameCharacterRelogThroughDefault_WaitsForTheRestore()
+    {
+        var store = new SettingsStore(PathName);
+        UiWindowLayout bob = StoreDetachedSpellDeck(store, "Bob", 300f, 100f, 1.2f, 5);
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+        AssertSpellDeckAt(rig, bob, "Bob", 1.2f, 5);
+
+        // Log out (the key falls back to "default", whose deck is attached), then Bob again.
+        rig.Key = "default";
+        rig.Frames(3);
+        Assert.True(rig.Controller.Attached);
+        rig.Key = "Bob";
+        rig.Frames(3);
+        Assert.True(rig.Sync.AwaitingRestore);   // Bob's layout has not been restored this login
+
+        rig.EnterWorld("Bob");
+        Assert.False(rig.Sync.AwaitingRestore);
+        Assert.False(rig.Controller.Attached);
         AssertSpellDeckAt(rig, bob, "Bob", 1.2f, 5);
     }
 }

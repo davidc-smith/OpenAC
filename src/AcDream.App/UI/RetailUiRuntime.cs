@@ -3518,7 +3518,7 @@ public sealed class RetailUiRuntime : IDisposable
             dock,
             _bindings.Persistence?.Store,
             _bindings.Persistence?.CharacterKey ?? (() => "default"),
-            () => _persistence?.RestoredCharacter);
+            () => _persistence?.RestoreCount);
         Host.Root.DragReleasedOutsideUi += OnSpellDeckDragReleasedOutsideUi;
         Console.WriteLine("[UI] Spell Deck mounted (Modern HUD).");
     }

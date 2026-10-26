@@ -132,6 +132,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         if (!CanPersist(character)) return;
         var screen = ValidScreenSize();
         _restoredCharacter = character;
+        RestoreCount++;
 
         // The settings file holds every section, so it is read once for all
         // the windows and written once after them, not once per window.
@@ -480,6 +481,11 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
 
     /// <summary>The character whose layout was last restored; null before the first restore.</summary>
     public string? RestoredCharacter => _restoredCharacter;
+
+    /// <summary>How many character layout restores have run (each <see cref="RestoreAll"/> or
+    /// <see cref="RestoreAfterDisplayChange"/> that restored a character). A caller waiting for
+    /// a restore records it and waits for it to advance.</summary>
+    public int RestoreCount { get; private set; }
 
     /// <summary>Whether a character key has its own saved layout (not blank, not "default").</summary>
     internal static bool CanPersist(string key)
