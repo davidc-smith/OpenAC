@@ -912,6 +912,81 @@ public sealed class CharacterCreationUiControllerTests
         Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: true).Enabled);
     }
 
+    [Fact]
+    public void AppearanceEyesArrow_KeepsItsRollover_WhenItsClickRefreshesThePage()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        SelectAluvianMale(environment);
+        UiButton up = SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: true);
+
+        var hover = new UiEvent(up.EventId, up, UiEventType.HoverEnter);
+        up.OnEvent(in hover);
+        Assert.Equal("Normal_rollover", up.ActiveState);
+
+        up.OnClick!();
+        BumpRevisionAndTick(environment);
+
+        Assert.Equal(ChargenAppearanceSlot.EyesStrip, environment.Runtime.LastAppearanceSlot);
+        Assert.Equal("Normal_rollover", up.ActiveState);
+    }
+
+    [Fact]
+    public void AppearancePage_OlthoiReZoomsIn_WhereThePageUpdates_GenderRandomAndShown()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+        environment.Runtime.SelectHeritageDirect(OlthoiId);
+        environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
+        UiButton zoomIn = environment.Button(CharacterCreationAppearancePage.ZoomInId);
+        UiButton zoomOut = environment.Button(CharacterCreationAppearancePage.ZoomOutId);
+        int zoomIns = preview.ZoomInCalls;
+
+        // A gender pick: the original refreshes the page, which puts these
+        // heritages back on the face choice, zoomed in.
+        zoomOut.OnClick!();
+        environment.Button(CharacterCreationAppearancePage.FemaleButtonId).OnClick!();
+        Assert.Equal(zoomIns + 1, preview.ZoomInCalls);
+        Assert.Equal("Highlight", zoomIn.ActiveState);
+        Assert.Equal("Normal", zoomOut.ActiveState);
+
+        // Random on this page.
+        zoomOut.OnClick!();
+        environment.Button(CharacterCreationUiController.RandomElementId).OnClick!();
+        Assert.Equal(zoomIns + 2, preview.ZoomInCalls);
+
+        // The page shown again.
+        zoomOut.OnClick!();
+        environment.TabButton(CharacterCreationUiController.HeritageTabElementId).OnClick!();
+        environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
+        Assert.Equal(zoomIns + 3, preview.ZoomInCalls);
+
+        // A plain snapshot change is not one of those.
+        zoomOut.OnClick!();
+        BumpRevisionAndTick(environment);
+        Assert.Equal(zoomIns + 3, preview.ZoomInCalls);
+        Assert.Equal("Highlight", zoomOut.ActiveState);
+    }
+
+    [Fact]
+    public void AppearancePage_AluvianGenderPick_LeavesTheZoomAlone()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+        SelectAluvianMale(environment);
+        int zoomIns = preview.ZoomInCalls;
+
+        environment.Button(CharacterCreationAppearancePage.ZoomOutId).OnClick!();
+        environment.Button(CharacterCreationAppearancePage.FemaleButtonId).OnClick!();
+
+        Assert.Equal(zoomIns, preview.ZoomInCalls);
+        Assert.Equal("Highlight", environment.Button(CharacterCreationAppearancePage.ZoomOutId).ActiveState);
+    }
+
     private static UiButton SpinArrow(EnvironmentHarness environment, uint spinId, bool increment) =>
         Assert.IsType<UiButton>(UiElement.FindDescendant(
             environment.Button(spinId),
@@ -2596,9 +2671,23 @@ public sealed class CharacterCreationUiControllerTests
             Width = 200f,
             Height = 24f,
         };
-        spin.Children.Add(new ElementInfo { Id = 0x1000030Au, Type = 1u, X = 80f, Width = 47f, Height = 24f });
-        spin.Children.Add(new ElementInfo { Id = 0x1000030Bu, Type = 1u, X = 127f, Width = 47f, Height = 24f });
+        spin.Children.Add(SpinArrowInfo(0x1000030Au, x: 80f));
+        spin.Children.Add(SpinArrowInfo(0x1000030Bu, x: 127f));
         return spin;
+    }
+
+    // A spin arrow as authored: Normal, Normal_rollover and Ghosted art,
+    // rollover on.
+    private static ElementInfo SpinArrowInfo(uint id, float x)
+    {
+        var arrow = new ElementInfo { Id = id, Type = 1u, X = x, Width = 47f, Height = 24f, DefaultStateName = "Normal" };
+        arrow.StateMedia["Normal"] = (0x06004C92u, 3);
+        arrow.StateMedia["Normal_rollover"] = (0x06004C93u, 3);
+        arrow.StateMedia["Ghosted"] = (0x06005F13u, 3);
+        var direct = new UiStateInfo { Id = UiStateInfo.DirectStateId };
+        direct.Properties.Set(0x13u, new UiPropertyValue { Kind = UiPropertyKind.Bool, BoolValue = true });
+        arrow.States[UiStateInfo.DirectStateId] = direct;
+        return arrow;
     }
 
     private static ElementInfo ArrowButtonInfo(uint id)

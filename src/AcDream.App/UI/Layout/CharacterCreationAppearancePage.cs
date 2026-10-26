@@ -134,10 +134,10 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
 
         _femaleButton = Find<UiButton>(pageRoot, FemaleButtonId);
         if (_femaleButton is not null)
-            _femaleButton.OnClick = () => _bindings.SelectGender(2u);
+            _femaleButton.OnClick = () => SelectGender(2u);
         _maleButton = Find<UiButton>(pageRoot, MaleButtonId);
         if (_maleButton is not null)
-            _maleButton.OnClick = () => _bindings.SelectGender(1u);
+            _maleButton.OnClick = () => SelectGender(1u);
 
         _faceButton = Find<UiButton>(pageRoot, FaceButtonId);
         if (_faceButton is not null)
@@ -228,11 +228,8 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
         SetArrowsEnabled(Part.Eyes, !clothesHidden);
         if (clothesHidden)
         {
-            bool wasClothes = _currentChoice == Choice.Clothes;
             _currentChoice = Choice.Face;
             _currentPart = Part.Hair;
-            if (wasClothes)
-                ZoomIn();
         }
         ApplyChoiceVisibility();
 
@@ -251,6 +248,30 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
             _bindings.RandomizeClothing?.Invoke();
         else
             _bindings.RandomizeAppearance?.Invoke();
+        OnPageUpdate();
+    }
+
+    /// <summary>
+    /// Runs where the original refreshes the whole page: the page shown, a
+    /// gender pick and a randomize, not every change of the character. A
+    /// heritage without clothes is put back on the face choice there, which
+    /// zooms the preview in.
+    /// </summary>
+    internal void OnPageUpdate()
+    {
+        if (_disposed)
+            return;
+        uint heritageId = _bindings.View()?.Snapshot.HeritageId ?? 0u;
+        if (IsClothesHiddenHeritage(heritageId))
+            SelectChoice(Choice.Face);
+    }
+
+    private void SelectGender(uint genderKey)
+    {
+        if (_disposed)
+            return;
+        _bindings.SelectGender(genderKey);
+        OnPageUpdate();
     }
 
 
@@ -338,7 +359,9 @@ internal sealed class CharacterCreationAppearancePage : IDisposable
     {
         foreach ((Part arrowPart, UiButton arrow) in _spinArrows)
         {
-            if (arrowPart != part)
+            // Only a flip changes the arrow; otherwise it keeps the state it
+            // worked out itself (its rollover under the pointer).
+            if (arrowPart != part || arrow.Enabled == enabled)
                 continue;
             arrow.TrySetRetailState(enabled ? UiButtonStateMachine.Normal : UiButtonStateMachine.Ghosted);
         }
