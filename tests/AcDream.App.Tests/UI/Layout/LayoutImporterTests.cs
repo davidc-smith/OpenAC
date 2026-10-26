@@ -316,6 +316,67 @@ public class LayoutImporterTests
         Assert.True(found.Visible);
     }
 
+    [Fact]
+    public void ButtonChildThatIsItselfAButton_IsBuiltAsItsOwnControl_NotFoldedIntoTheParentFace()
+    {
+        // A captioned spin whose arrows share its Normal state name: the
+        // arrows are separate buttons with their own rollover and hit area.
+        var root = new ElementInfo { Id = 0x1, Type = 3, Width = 300, Height = 100 };
+        var spin = new ElementInfo { Id = 0x10, Type = 1, Width = 175, Height = 44, DefaultStateName = "Normal" };
+        spin.States[UiButtonStateMachine.Normal] = new UiStateInfo { Id = UiButtonStateMachine.Normal, Name = "Normal" };
+        spin.States[UiButtonStateMachine.Highlight] = new UiStateInfo { Id = UiButtonStateMachine.Highlight, Name = "Highlight" };
+        spin.States[UiStateInfo.DirectStateId] = ToggleDirectState();
+        spin.TooltipEnabled = true;
+        spin.Children.Add(Arrow(0x11, x: 80f));
+        spin.Children.Add(Arrow(0x12, x: 127f));
+
+        ImportedLayout tree = LayoutImporter.BuildFromInfos(root, [spin], NoTex, null);
+
+        UiButton builtSpin = Assert.IsType<UiButton>(tree.FindElement(0x10));
+        Assert.Equal(0, builtSpin.FaceSegmentCount);
+        UiButton decrement = Assert.IsType<UiButton>(UiElement.FindDescendant(builtSpin, 0x11));
+        UiButton increment = Assert.IsType<UiButton>(UiElement.FindDescendant(builtSpin, 0x12));
+        Assert.Same(builtSpin, increment.Parent);
+
+        // The spin's own state does not reach its arrows' art.
+        Assert.True(builtSpin.TrySetRetailState(UiButtonStateMachine.Highlight));
+        Assert.Equal("Normal", increment.ActiveState);
+
+        // Each arrow rolls over on its own.
+        var hover = new UiEvent(increment.EventId, increment, UiEventType.HoverEnter);
+        increment.OnEvent(in hover);
+        Assert.Equal("Normal_rollover", increment.ActiveState);
+        Assert.Equal("Normal", decrement.ActiveState);
+
+        // The pointer over an arrow is over the arrow, which authors no
+        // tooltip; the spin keeps its own for the rest of its area.
+        var ui = new UiRoot { Width = 300, Height = 100 };
+        ui.AddChild(tree.Root);
+        Assert.Same(increment, ui.Pick(150, 20));
+        Assert.Same(builtSpin, ui.Pick(20, 20));
+        Assert.False(increment.AuthoredTooltipEnabled);
+        Assert.True(builtSpin.AuthoredTooltipEnabled);
+
+        static ElementInfo Arrow(uint id, float x)
+        {
+            var arrow = new ElementInfo { Id = id, Type = 1, X = x, Width = 47, Height = 44, DefaultStateName = "Normal" };
+            arrow.StateMedia["Normal"] = (0x06004C92u, 3);
+            arrow.StateMedia["Normal_rollover"] = (0x06004C93u, 3);
+            arrow.StateMedia["Ghosted"] = (0x06005F13u, 3);
+            var direct = new UiStateInfo { Id = UiStateInfo.DirectStateId };
+            direct.Properties.Set(0x13u, new UiPropertyValue { Kind = UiPropertyKind.Bool, BoolValue = true });
+            arrow.States[UiStateInfo.DirectStateId] = direct;
+            return arrow;
+        }
+
+        static UiStateInfo ToggleDirectState()
+        {
+            var direct = new UiStateInfo { Id = UiStateInfo.DirectStateId };
+            direct.Properties.Set(0x0Bu, new UiPropertyValue { Kind = UiPropertyKind.Bool, BoolValue = true });
+            return direct;
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ElementInfo BuildSliceContainer(uint id, uint ReadOrder, uint l, uint t, uint r)

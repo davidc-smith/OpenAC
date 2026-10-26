@@ -66,6 +66,44 @@ internal static class ScrollbarFixtures
         return bar;
     }
 
+    public const uint UnlockedState = 0x10000018u;
+    public const uint LockedState = 0x10000019u;
+    public const uint UnlockedTrack = 0x06004D39u;
+    public const uint LockedTrack = 0x06004D3Au;
+
+    /// <summary>
+    /// A character-creation attribute slider as authored: a 291 x 39 scalar
+    /// bar starting Unlocked, its thumb, and a track child that authors an
+    /// image for each of the Unlocked and Locked states.
+    /// </summary>
+    public static ElementInfo LockableScalarBar()
+    {
+        var bar = new ElementInfo
+        {
+            Id = 0x100002EEu, Type = 11u, Width = 291f, Height = 39f, DefaultStateName = "Unlocked", DefaultStateId = UnlockedState,
+        };
+        bar.States[UnlockedState] = new UiStateInfo { Id = UnlockedState, Name = "Unlocked", PassToChildren = true };
+        bar.States[LockedState] = new UiStateInfo { Id = LockedState, Name = "Locked", PassToChildren = true };
+        var thumb = new ElementInfo { Id = 1u, Type = 1u, Width = 37f, Height = 39f };
+        thumb.States[UiStateInfo.DirectStateId] = new UiStateInfo
+        {
+            Id = UiStateInfo.DirectStateId,
+            Image = new UiImageMedia(0x06004D34u, 3),
+        };
+        bar.Children.Add(thumb);
+        var track = new ElementInfo { Id = 4u, Type = 3u, Width = 291f, Height = 39f, DefaultStateName = "Unlocked", DefaultStateId = UnlockedState };
+        track.States[UnlockedState] = new UiStateInfo
+        {
+            Id = UnlockedState, Name = "Unlocked", Image = new UiImageMedia(UnlockedTrack, 3),
+        };
+        track.States[LockedState] = new UiStateInfo
+        {
+            Id = LockedState, Name = "Locked", Image = new UiImageMedia(LockedTrack, 3),
+        };
+        bar.Children.Add(track);
+        return bar;
+    }
+
     private static ElementInfo Button(uint id, float y, float height, uint sprite)
     {
         var button = new ElementInfo { Id = id, Type = 1u, X = 0f, Y = y, Width = 37f, Height = height };
