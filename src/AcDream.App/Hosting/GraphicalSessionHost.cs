@@ -304,6 +304,20 @@ internal sealed class GraphicalSessionHost : IDisposable
     internal GraphicalSessionContent? Content => _content;
 
     /// <summary>
+    /// The spell tables from the game files: the spells the character's
+    /// spellbook can name, and the formulas the session's own casts check
+    /// components against. Part of <see cref="UseContent"/>.
+    /// </summary>
+    internal void UseMagic(AcDream.Content.MagicCatalog magic)
+    {
+        ArgumentNullException.ThrowIfNull(magic);
+        Runtime.CharacterOwner.InstallSpellMetadata(magic.SpellTable);
+        SessionGameplay.UseMagicCatalog(magic);
+        Console.WriteLine(
+            $"spells: loaded {magic.SpellTable.Count} entries from portal.dat");
+    }
+
+    /// <summary>
     /// Takes the game files the session is played from, for the life of the
     /// process: installs what the session reads from them (spell tables,
     /// character creation choices, trade notes) and builds the session's
@@ -317,10 +331,7 @@ internal sealed class GraphicalSessionHost : IDisposable
             throw new InvalidOperationException("The session's game files are already open.");
 
         _content = content;
-        Runtime.CharacterOwner.InstallSpellMetadata(content.Magic.SpellTable);
-        SessionGameplay.UseMagicCatalog(content.Magic);
-        Console.WriteLine(
-            $"spells: loaded {content.Magic.SpellTable.Count} entries from portal.dat");
+        UseMagic(content.Magic);
         AcDream.Core.CharGen.ChargenOptions chargen;
         lock (content.DatLock)
         {

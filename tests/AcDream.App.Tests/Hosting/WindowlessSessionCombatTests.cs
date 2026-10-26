@@ -25,7 +25,7 @@ namespace AcDream.App.Tests.Hosting;
 /// search found nothing, and a slot a closed window had let go of was empty
 /// again.
 /// </summary>
-public sealed class WindowlessSessionCombatTests
+public sealed partial class WindowlessSessionCombatTests
 {
     private const uint Player = WindowlessSessionFixture.CharacterId;
     private const uint Monster = 0x80000101u;
@@ -236,10 +236,17 @@ public sealed class WindowlessSessionCombatTests
         });
     }
 
-    private static void Add(GameRuntime runtime, uint guid, float x, ClientObject item)
+    private static void Add(
+        GameRuntime runtime,
+        uint guid,
+        float x,
+        ClientObject item,
+        uint cell = 0x01010001u,
+        float y = 10f,
+        float z = 5f)
     {
         RuntimeEntityRecord record = runtime.EntityObjects
-            .RegisterEntity(Spawn(guid, x))
+            .RegisterEntity(Spawn(guid, x, cell, y, z))
             .Canonical!;
         runtime.EntityObjects.ApplyAcceptedSpawn(
             record,
@@ -249,10 +256,15 @@ public sealed class WindowlessSessionCombatTests
         runtime.InventoryOwner.Objects.AddOrUpdate(item);
     }
 
-    private static WorldSession.EntitySpawn Spawn(uint guid, float x)
+    private static WorldSession.EntitySpawn Spawn(
+        uint guid,
+        float x,
+        uint cell = 0x01010001u,
+        float y = 10f,
+        float z = 5f)
     {
         var position = new CreateObject.ServerPosition(
-            0x01010001u, x, 10f, 5f, 1f, 0f, 0f, 0f);
+            cell, x, y, z, 1f, 0f, 0f, 0f);
         var timestamps = new PhysicsTimestamps(
             Position: 1,
             Movement: 1,
