@@ -467,6 +467,11 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
             d.Character.ExtendedLevelCurve =
                 d.Settings.LayoutStore?.LoadMisc().ExtendedLevels ?? false;
 
+            // Modern HUD (the Command Deck in place of the retail vitals,
+            // combat and jump windows), also chosen on the Config page. The
+            // runtime reads it every frame, so a change shows on the next one.
+            bool modernHud = d.Settings.LayoutStore?.LoadMisc().ModernHud ?? false;
+
             var characterTitleResolver = new CharacterTitleResolver(d.Dats);
             var characterUiStrings = new DatStringResolver(d.Dats);
             var characterSheet = new CharacterSheetProvider(
@@ -910,6 +915,14 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                             d.Character.ExtendedLevelCurve = value;
                             if (d.Settings.LayoutStore is { } store)
                                 store.SaveMisc(store.LoadMisc() with { ExtendedLevels = value });
+                        }),
+                    ModernHud: new ConfigOptionsPageController.ModernHudBindings(
+                        Load: () => modernHud,
+                        Save: value =>
+                        {
+                            modernHud = value;
+                            if (d.Settings.LayoutStore is { } store)
+                                store.SaveMisc(store.LoadMisc() with { ModernHud = value });
                         })),
                 Social: new SocialRuntimeBindings(
                     () => d.Runtime.Fellowship.Snapshot,
@@ -1087,6 +1100,10 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                 WorldDrag: new WorldDragRuntimeBindings(
                     (x, y) => late.Selection.PickAt(x, y, includeSelf: true),
                     () => d.Actions.Combat.CurrentMode == CombatMode.NonCombat),
+                CommandDeck: new CommandDeckRuntimeBindings(
+                    Enabled: () => modernHud,
+                    ToggleCombat: d.CombatModeCommands.Toggle,
+                    Recall: command => late.GameRuntime.Recall(command)),
                 PluginCanvases: new PluginCanvasHostServices(
                     d.GpuDevice,
                     d.GpuFrameSource,

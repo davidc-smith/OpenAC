@@ -18,6 +18,7 @@ public static class WindowNames
     public const string Radar = "radar";
     public const string Combat = "combat";
     public const string JumpPowerbar = "jump-powerbar";
+    public const string CommandDeck = "command-deck";
     public const string Spellbook = "spellbook";
     public const string Indicators = "indicators";
     public const string PositiveEffects = "effects-positive";

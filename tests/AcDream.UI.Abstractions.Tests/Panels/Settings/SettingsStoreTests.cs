@@ -778,6 +778,18 @@ public sealed class SettingsStoreTests : System.IDisposable
     }
 
     [Fact]
+    public void Modern_hud_is_off_by_default_and_round_trips()
+    {
+        var store = new SettingsStore(_tempPath);
+        Assert.False(MiscSettings.Default.ModernHud);
+
+        store.SaveMisc(MiscSettings.Default with { ModernHud = true });
+
+        Assert.True(store.LoadMisc().ModernHud);
+        Assert.Contains("\"modernHud\"", File.ReadAllText(_tempPath));
+    }
+
+    [Fact]
     public void LoadMisc_falls_back_per_field_when_keys_missing()
     {
         File.WriteAllText(_tempPath, """

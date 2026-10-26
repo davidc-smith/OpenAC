@@ -4,7 +4,8 @@ namespace AcDream.App.UI.Layout;
 
 public sealed class VitalsSideBySideController
 {
-    private readonly UiRoot _root;
+    private readonly Func<string, bool> _show;
+    private readonly Func<string, bool> _hide;
     private readonly Func<bool> _sideBySideVitals;
     private readonly string _stackedWindow;
     private readonly string _sideWindow;
@@ -15,8 +16,26 @@ public sealed class VitalsSideBySideController
         Func<bool> sideBySideVitals,
         string stackedWindow,
         string sideWindow)
+        : this(
+            (root ?? throw new ArgumentNullException(nameof(root))).ShowWindow,
+            root.HideWindow,
+            sideBySideVitals,
+            stackedWindow,
+            sideWindow)
     {
-        _root = root ?? throw new ArgumentNullException(nameof(root));
+    }
+
+    /// <summary>Shows and hides through <paramref name="show"/> and
+    /// <paramref name="hide"/>, so a caller can gate the windows (Modern HUD).</summary>
+    public VitalsSideBySideController(
+        Func<string, bool> show,
+        Func<string, bool> hide,
+        Func<bool> sideBySideVitals,
+        string stackedWindow,
+        string sideWindow)
+    {
+        _show = show ?? throw new ArgumentNullException(nameof(show));
+        _hide = hide ?? throw new ArgumentNullException(nameof(hide));
         _sideBySideVitals = sideBySideVitals
             ?? throw new ArgumentNullException(nameof(sideBySideVitals));
         _stackedWindow = stackedWindow;
@@ -34,13 +53,20 @@ public sealed class VitalsSideBySideController
 
         if (sideBySide)
         {
-            _root.HideWindow(_stackedWindow);
-            _root.ShowWindow(_sideWindow);
+            _hide(_stackedWindow);
+            _show(_sideWindow);
         }
         else
         {
-            _root.ShowWindow(_stackedWindow);
-            _root.HideWindow(_sideWindow);
+            _show(_stackedWindow);
+            _hide(_sideWindow);
         }
+    }
+
+    /// <summary>Forgets the applied bit and applies the current one again.</summary>
+    public void SyncVisibility()
+    {
+        _applied = null;
+        Tick();
     }
 }
