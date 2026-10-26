@@ -53,4 +53,36 @@ public sealed class UiCommandDeckDrawTests
             }
         Assert.True(quads > 0);
     }
+
+    [Theory]
+    [InlineData(CombatMode.NonCombat, DeckZone.Recall2)]
+    [InlineData(CombatMode.NonCombat, DeckZone.Orb)]
+    [InlineData(CombatMode.Melee, DeckZone.StudRepeat)]
+    [InlineData(CombatMode.Melee, DeckZone.Health)]
+    public void DrawsAVisibleTooltipInTheOverlay(CombatMode mode, DeckZone zone)
+    {
+        double now = 1.0;
+        var input = default(CommandDeckInput) with
+        {
+            Mode = mode, DesiredPower = 0.5f, SessionKey = 1,
+            Health = new(0.5f, 50, 100), RepeatAttacks = true,
+        };
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => now)
+        {
+            Left = 300f, Top = 400f,
+        };
+        deck.Refresh();
+
+        Assert.Empty(MarkupDrawProbe.DrawOverlays(deck).DebugSpriteSegmentVerts);
+
+        DeckRect r = CommandDeckLayout.RectFor(zone);
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseMove, Data1: (int)(r.X + r.W / 2), Data2: (int)(r.Y + r.H / 2)));
+        now = 2.0;
+        Assert.NotNull(deck.VisibleTooltip);
+
+        var renderer = MarkupDrawProbe.DrawOverlays(deck);
+        int verts = 0;
+        foreach (var s in renderer.DebugSpriteSegmentVerts) verts += s.Verts.Count;
+        Assert.True(verts > 0);
+    }
 }

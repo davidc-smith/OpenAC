@@ -66,6 +66,26 @@ public static class CommandDeckLayout
         for (int i = 0; i < 3; i++) yield return Stud(i);
     }
 
+    /// <summary>The rectangle a zone's tooltip points at; the whole frame for <see cref="DeckZone.None"/>.</summary>
+    internal static DeckRect RectFor(DeckZone zone) => zone switch
+    {
+        DeckZone.Orb => Orb,
+        DeckZone.StudRepeat => Stud(0),
+        DeckZone.StudAutoTarget => Stud(1),
+        DeckZone.StudKeepInView => Stud(2),
+        DeckZone.Health => HealthBar,
+        DeckZone.Stamina => StaminaBar,
+        DeckZone.Mana => ManaBar,
+        DeckZone.PowerTrack => PowerTrack,
+        DeckZone.High => HeightButton(0),
+        DeckZone.Medium => HeightButton(1),
+        DeckZone.Low => HeightButton(2),
+        DeckZone.Recast => Recast,
+        >= DeckZone.Recall0 and <= DeckZone.Recall4 => RecallStud(zone - DeckZone.Recall0),
+        DeckZone.Jump => JumpTrack,
+        _ => Frame,
+    };
+
     /// <summary>Desired power for a pointer at <paramref name="x"/>, clamped to 0..1.</summary>
     public static float PowerAt(float x) =>
         Math.Clamp((x - PowerTrack.X) / PowerTrack.W, 0f, 1f);

@@ -172,10 +172,88 @@ public sealed class UiCommandDeckTests
     [Fact]
     public void EveryLiveZoneHasATooltip()
     {
+        Assert.Null(UiCommandDeck.TooltipFor(DeckZone.None, CommandDeckView.Empty));
         foreach (DeckZone zone in Enum.GetValues<DeckZone>())
         {
             if (zone == DeckZone.None) continue;
-            Assert.False(string.IsNullOrWhiteSpace(UiCommandDeck.TooltipFor(zone, CommandDeckView.Empty)), zone.ToString());
+            HudTooltipContent? tip = UiCommandDeck.TooltipFor(zone, CommandDeckView.Empty);
+            Assert.NotNull(tip);
+            Assert.False(string.IsNullOrWhiteSpace(tip.Title), zone.ToString());
         }
+    }
+
+    [Fact]
+    public void StudTooltipShowsItsState()
+    {
+        var (on, _, _) = Make(CombatMode.Melee);
+        Assert.Equal("ON", UiCommandDeck.TooltipFor(DeckZone.StudRepeat, on.View)!.State);
+
+        var model = new CommandDeckModel();
+        var off = model.Update(Input(CombatMode.Melee) with { RepeatAttacks = false }, 0.0);
+        Assert.Equal("OFF", UiCommandDeck.TooltipFor(DeckZone.StudRepeat, off)!.State);
+    }
+
+    private static void Move(UiCommandDeck d, DeckRect r) =>
+        d.OnEvent(new UiEvent(0, d, UiEventType.MouseMove, Data1: (int)(r.X + r.W / 2), Data2: (int)(r.Y + r.H / 2)));
+
+    [Fact]
+    public void TooltipShowsAfterADwell()
+    {
+        double now = 10.0;
+        CommandDeckInput input = Input(CombatMode.Melee);
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new Recorder(), icons: null, clock: () => now);
+        deck.Refresh();
+
+        Move(deck, CommandDeckLayout.Stud(0));
+        now = 10.3;
+        Assert.Null(deck.VisibleTooltip);
+        now = 10.5;
+        Assert.Equal("Repeat attacks", deck.VisibleTooltip?.Title);
+
+        // Moving within the same zone keeps it; a new zone starts a new dwell.
+        Move(deck, CommandDeckLayout.Stud(0));
+        Assert.NotNull(deck.VisibleTooltip);
+        Move(deck, CommandDeckLayout.Stud(1));
+        now = 10.9;
+        Assert.Null(deck.VisibleTooltip);
+        now = 10.96;
+        Assert.Equal("Auto-target", deck.VisibleTooltip?.Title);
+
+        // A press hides it until the zone changes.
+        Down(deck, CommandDeckLayout.Stud(1));
+        now = 12.0;
+        Assert.Null(deck.VisibleTooltip);
+        Move(deck, CommandDeckLayout.Stud(1));
+        Assert.Null(deck.VisibleTooltip);
+        Move(deck, CommandDeckLayout.Stud(2));
+        now = 13.0;
+        Assert.Equal("Keep target in view", deck.VisibleTooltip?.Title);
+
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.HoverLeave));
+        Assert.Null(deck.VisibleTooltip);
+    }
+
+    [Theory]
+    [InlineData(CombatMode.NonCombat, HudTooltipStyle.Card)]
+    [InlineData(CombatMode.Melee, HudTooltipStyle.Compact)]
+    [InlineData(CombatMode.Magic, HudTooltipStyle.Compact)]
+    public void TooltipStyleFollowsTheMode(CombatMode mode, HudTooltipStyle style)
+    {
+        var (deck, _, _) = Make(mode);
+        Assert.Equal(style, deck.TooltipStyle);
+    }
+
+    [Fact]
+    public void EveryZoneHasAnAnchorInsideTheDeck()
+    {
+        foreach (DeckZone zone in Enum.GetValues<DeckZone>())
+        {
+            DeckRect r = CommandDeckLayout.RectFor(zone);
+            Assert.True(r.W > 0 && r.H > 0, zone.ToString());
+            Assert.InRange(r.X, 0f, CommandDeckLayout.Width);
+            Assert.InRange(r.X + r.W, 0f, CommandDeckLayout.Width);
+        }
+        Assert.Equal(CommandDeckLayout.Stud(1), CommandDeckLayout.RectFor(DeckZone.StudAutoTarget));
+        Assert.Equal(CommandDeckLayout.RecallStud(3), CommandDeckLayout.RectFor(DeckZone.Recall3));
     }
 }
