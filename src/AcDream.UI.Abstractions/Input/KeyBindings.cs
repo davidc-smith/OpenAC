@@ -217,6 +217,15 @@ public sealed class KeyBindings
             b.Add(new(new KeyChord(k, ModifierMask.None), action, Scope: InputScope.MagicCombat));
         }
 
+        // Spell Deck rows 2 and 3: Shift / Ctrl + 1-9. Rows 4-10 and slots 10-12 start
+        // unbound (Ctrl+0 is CreateShortcut).
+        for (int i = 1; i <= 9; i++)
+        {
+            var k = (Key)((int)Key.Number0 + i);
+            b.Add(new(new KeyChord(k, ModifierMask.Shift), SpellBarActions.ForSlot(1, i - 1), Scope: InputScope.MagicCombat));
+            b.Add(new(new KeyChord(k, ModifierMask.Ctrl), SpellBarActions.ForSlot(2, i - 1), Scope: InputScope.MagicCombat));
+        }
+
         // ── Emotes ──────────────────────────────────────────────
         b.Add(new(new KeyChord(Key.U, ModifierMask.None), InputAction.Cry));
         b.Add(new(new KeyChord(Key.I, ModifierMask.None), InputAction.Laugh));
