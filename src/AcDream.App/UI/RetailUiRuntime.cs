@@ -528,7 +528,7 @@ public sealed class RetailUiRuntime : IDisposable
                 JumpPowerbarController?.SyncVisibility();
                 _vitalsSideBySide?.SyncVisibility();
             },
-            onDeckHidden: () => _commandDeck?.ReleaseHeldAttack());
+            onDeckHidden: () => _commandDeck?.OnHidden());
         MountVitals();
         MountRadar();
         MountChat();

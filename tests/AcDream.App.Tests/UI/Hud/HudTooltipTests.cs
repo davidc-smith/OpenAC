@@ -69,4 +69,25 @@ public sealed class HudTooltipTests
         var (free, _, _) = HudTooltip.Place(anchor, 100f, 30f, screenLeft: 1900f, screenTop: 600f, screenWidth: null);
         Assert.Equal(-40f, free, 3);
     }
+
+    [Fact]
+    public void LayoutCacheMeasuresOnlyWhenTheContentOrStyleChanges()
+    {
+        var cache = new HudTooltipLayoutCache();
+        int calls = 0;
+        float Counting(string t) { calls++; return SixPerChar(t); }
+
+        var first = cache.Get(Long, HudTooltipStyle.Card, null, Counting, 14f);
+        int afterFirst = calls;
+        var again = cache.Get(Long with { }, HudTooltipStyle.Card, null, Counting, 14f);
+        Assert.Equal(afterFirst, calls);
+        Assert.Equal(first, again);
+        Assert.Equal(HudTooltip.Measure(Long, HudTooltipStyle.Card, SixPerChar, 14f).H, first.H);
+
+        cache.Get(Long, HudTooltipStyle.Compact, null, Counting, 14f);
+        Assert.True(calls > afterFirst);
+        int afterStyle = calls;
+        cache.Get(Long with { State = "OFF" }, HudTooltipStyle.Compact, null, Counting, 14f);
+        Assert.True(calls > afterStyle);
+    }
 }

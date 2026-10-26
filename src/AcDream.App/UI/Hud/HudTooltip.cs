@@ -106,11 +106,13 @@ internal static class HudTooltip
     /// <summary>Draws the tooltip pointing at <paramref name="anchor"/> (local coordinates).</summary>
     internal static void Draw(
         UiRenderContext ctx, HudTooltipContent c, HudTooltipStyle s, DeckRect anchor,
-        Vector2 screenPosition, float? screenWidth)
+        Vector2 screenPosition, float? screenWidth, HudTooltipLayoutCache? cache = null)
     {
         Func<string, float> measure = text => ctx.DefaultFont?.MeasureWidth(text) ?? 0f;
         float lh = ctx.DefaultFont?.LineHeight ?? 14f;
-        var (w, h, lines) = Measure(c, s, measure, lh);
+        var (w, h, lines) = cache is null
+            ? Measure(c, s, measure, lh)
+            : cache.Get(c, s, ctx.DefaultFont, measure, lh);
         var (x, y, below) = Place(anchor, w, h, screenPosition.X, screenPosition.Y, screenWidth);
         bool card = s == HudTooltipStyle.Card;
         float radius = card ? CardRadius : CompactRadius;
@@ -181,5 +183,35 @@ internal static class HudTooltip
     {
         float d = size / (2f * MathF.Sqrt(2f));
         ctx.DrawSmoothLine(cx - d, cy - d, cx + d, cy + d, color, size);
+    }
+}
+
+/// <summary>
+/// The last measured tooltip layout, so a tooltip that stays the same from
+/// frame to frame is wrapped and measured once. Content is compared by value,
+/// so a fresh but equal <see cref="HudTooltipContent"/> each frame still hits.
+/// </summary>
+internal sealed class HudTooltipLayoutCache
+{
+    private HudTooltipContent? _content;
+    private HudTooltipStyle _style;
+    private object? _font;
+    private float _lineHeight;
+    private (float W, float H, IReadOnlyList<string> DetailLines) _layout;
+
+    /// <summary>The layout for this content and style; measured again only when either (or the font) changes.</summary>
+    internal (float W, float H, IReadOnlyList<string> DetailLines) Get(
+        HudTooltipContent c, HudTooltipStyle s, object? font, Func<string, float> measure, float lineHeight)
+    {
+        if (_content is null || !_content.Equals(c) || _style != s
+            || !ReferenceEquals(_font, font) || _lineHeight != lineHeight)
+        {
+            _layout = HudTooltip.Measure(c, s, measure, lineHeight);
+            _content = c;
+            _style = s;
+            _font = font;
+            _lineHeight = lineHeight;
+        }
+        return _layout;
     }
 }

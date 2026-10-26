@@ -233,6 +233,37 @@ public sealed class UiCommandDeckTests
         Assert.Null(deck.VisibleTooltip);
     }
 
+    [Fact]
+    public void HidingTheDeckForgetsTheHover()
+    {
+        double now = 10.0;
+        CommandDeckInput input = Input(CombatMode.Melee);
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new Recorder(), icons: null, clock: () => now);
+        deck.Refresh();
+        Move(deck, CommandDeckLayout.Stud(0));
+        now = 11.0;
+        Assert.NotNull(deck.VisibleTooltip);
+
+        deck.OnHidden();
+        now = 12.0;
+        Assert.Null(deck.VisibleTooltip);
+
+        Move(deck, CommandDeckLayout.Stud(0));
+        now = 13.0;
+        Assert.NotNull(deck.VisibleTooltip);
+        deck.Detach();
+        Assert.Null(deck.VisibleTooltip);
+    }
+
+    [Fact]
+    public void HidingTheDeckReleasesAHeldAttack()
+    {
+        var (deck, actions, _) = Make(CombatMode.Melee);
+        Down(deck, CommandDeckLayout.HeightButton(0));
+        deck.OnHidden();
+        Assert.Equal(["press High", "release"], actions.Calls);
+    }
+
     [Theory]
     [InlineData(CombatMode.NonCombat, HudTooltipStyle.Card)]
     [InlineData(CombatMode.Melee, HudTooltipStyle.Compact)]

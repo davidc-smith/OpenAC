@@ -83,6 +83,8 @@ internal sealed partial class UiCommandDeck : UiElement
     internal HudTooltipStyle TooltipStyle =>
         _view.Orb == DeckOrbMode.Peace ? HudTooltipStyle.Card : HudTooltipStyle.Compact;
 
+    private readonly HudTooltipLayoutCache _tooltipLayout = new();
+
     private void SetHover(DeckZone zone)
     {
         if (zone == _hover) return;
@@ -101,7 +103,7 @@ internal sealed partial class UiCommandDeck : UiElement
         try
         {
             HudTooltip.Draw(ctx, tip, TooltipStyle, CommandDeckLayout.RectFor(_hover),
-                ScreenPosition, FindRoot()?.Width);
+                ScreenPosition, FindRoot()?.Width, _tooltipLayout);
         }
         finally { ctx.PopAlpha(); }
     }
@@ -146,11 +148,22 @@ internal sealed partial class UiCommandDeck : UiElement
         _actions.ReleaseAttack();
     }
 
-    /// <summary>Called when the deck is torn down.</summary>
-    public void Detach()
+    /// <summary>Called when the deck is hidden: ends a held attack and forgets the hover,
+    /// so a deck shown again under a still pointer waits out a fresh dwell.</summary>
+    public void OnHidden()
     {
         _draggingPower = false;
         ReleaseHeldAttack();
+        ResetHover();
+    }
+
+    /// <summary>Called when the deck is torn down.</summary>
+    public void Detach() => OnHidden();
+
+    private void ResetHover()
+    {
+        SetHover(DeckZone.None);
+        _tooltipSuppressed = false;
     }
 
     public override bool OnEvent(in UiEvent e)

@@ -85,4 +85,26 @@ public sealed class UiCommandDeckDrawTests
         foreach (var s in renderer.DebugSpriteSegmentVerts) verts += s.Verts.Count;
         Assert.True(verts > 0);
     }
+
+    [Fact]
+    public void CachedTooltipDrawsTheSameEveryFrame()
+    {
+        double now = 1.0;
+        var input = default(CommandDeckInput) with { Mode = CombatMode.NonCombat, SessionKey = 1 };
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => now);
+        deck.Refresh();
+        DeckRect r = CommandDeckLayout.RectFor(DeckZone.Recall0);
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseMove, Data1: (int)(r.X + r.W / 2), Data2: (int)(r.Y + r.H / 2)));
+        now = 2.0;
+
+        static List<float> Verts(UiCommandDeck d)
+        {
+            var all = new List<float>();
+            foreach (var s in MarkupDrawProbe.DrawOverlays(d).DebugSpriteSegmentVerts) all.AddRange(s.Verts);
+            return all;
+        }
+        List<float> first = Verts(deck), second = Verts(deck);
+        Assert.NotEmpty(first);
+        Assert.Equal(first, second);
+    }
 }
