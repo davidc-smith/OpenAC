@@ -116,6 +116,7 @@ internal sealed partial class UiCommandDeck : UiElement
         bool corner = (edges & (ResizeEdges.Top | ResizeEdges.Bottom)) != 0;
         DeckGeometry from = _resizeFrom ??= _geometry;
         _geometry = corner ? from.WithCornerSize(width, height) : from.WithWidth(width);
+        _geometry = DeckGeometry.Create(_geometry.Scale, _geometry.Stretch, MinStretchNow);
         // The root keeps the proposed size on screen, but the geometry can
         // grow past it (a scale snapping up, the width following the scale),
         // so fit it again. The left edge never moves; a top drag keeps the
@@ -129,12 +130,39 @@ internal sealed partial class UiCommandDeck : UiElement
         height = _geometry.Height;
     }
 
+    /// <summary>The narrowest stretch the deck may have (the attached Spell Deck's fullest row); null = no limit.</summary>
+    internal Func<float>? MinStretch { get; set; }
+
+    /// <summary>The highest the deck's top may go (room for the attached Spell Deck above it); null = no limit.</summary>
+    internal Func<float>? TopLimit { get; set; }
+
+    private float MinStretchNow => MinStretch?.Invoke() ?? DeckGeometry.MinStretch;
+
+    // Mounted with imported chrome, the deck is its own outer frame, so the
+    // root's window drag reaches this override directly.
+    internal override void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY)
+    {
+        if (TopLimit?.Invoke() is float limit && top < limit) top = limit;
+    }
+
+    /// <summary>Widens the deck to <see cref="MinStretch"/> when it is narrower, keeping it on screen. True when it changed.</summary>
+    internal bool EnforceMinStretch()
+    {
+        float min = MinStretchNow;
+        if (_geometry.Stretch >= min - 1e-4f) return false;
+        ApplyGeometry(DeckGeometry.Create(_geometry.Scale, min, min));
+        if (Parent is { } parent && Left + Width > parent.Width)
+            Left = Math.Max(0f, parent.Width - Width);
+        return true;
+    }
+
     /// <summary>Moves the geometry to the deck's current size (after a restore,
     /// a reset or a screen limit), and the size to the nearest valid one.</summary>
     private void SyncGeometry()
     {
         if (Width == _geometry.Width && Height == _geometry.Height) return;
-        _geometry = DeckGeometry.FromSize(Width, Height);
+        DeckGeometry fromSize = DeckGeometry.FromSize(Width, Height);
+        _geometry = DeckGeometry.Create(fromSize.Scale, fromSize.Stretch, MinStretchNow);
         Width = _geometry.Width;
         Height = _geometry.Height;
     }
@@ -227,7 +255,7 @@ internal sealed partial class UiCommandDeck : UiElement
         DeckZone.Orb
             or DeckZone.StudRepeat or DeckZone.StudAutoTarget or DeckZone.StudKeepInView
             or DeckZone.PowerTrack or DeckZone.High or DeckZone.Medium or DeckZone.Low
-            or DeckZone.Recast => true,
+            or DeckZone.Cast => true,
         >= DeckZone.Recall0 and <= DeckZone.Recall4 => true,
         _ => false,
     };
@@ -330,8 +358,8 @@ internal sealed partial class UiCommandDeck : UiElement
                 };
                 _actions.PressAttack(_held.Value);
                 return true;
-            case DeckZone.Recast:
-                if (_view.RecastEnabled) _actions.Recast();
+            case DeckZone.Cast:
+                if (_view.CastEnabled) _actions.CastOutlined();
                 return true;
             case >= DeckZone.Recall0 and <= DeckZone.Recall4:
                 _actions.Recall(Recalls[zone - DeckZone.Recall0]);
@@ -365,9 +393,9 @@ internal sealed partial class UiCommandDeck : UiElement
         DeckZone.High => new("High attack", null, "Aim at the head and shoulders.", HoldToAttack),
         DeckZone.Medium => new("Medium attack", null, "Aim at the body.", HoldToAttack),
         DeckZone.Low => new("Low attack", null, "Aim at the legs.", HoldToAttack),
-        DeckZone.Recast => new("Recast", view.RecastEnabled ? view.CastingText : null,
-            "Cast your last spell again on the same target.",
-            view.RecastEnabled ? "Click to recast" : "Nothing to recast yet"),
+        DeckZone.Cast => new("Cast", view.CastEnabled ? view.CastingText : null,
+            "Cast the outlined spell on your target.",
+            view.CastEnabled ? "Click to cast" : "Nothing selected"),
         DeckZone.Recall0 => new("Lifestone recall", null, "Return to the lifestone you are tied to.", ClickToRecall),
         DeckZone.Recall1 => new("Marketplace recall", null, "Travel to the Marketplace.", ClickToRecall),
         DeckZone.Recall2 => new("House recall", null, "Return to your house.", ClickToRecall),

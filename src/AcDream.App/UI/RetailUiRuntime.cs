@@ -3412,7 +3412,7 @@ public sealed class RetailUiRuntime : IDisposable
             RequestedHeight: attacks.RequestedHeight,
             HasPendingCast: casting.HasPendingCast,
             PendingSpellName: SpellName(casting.PendingSpellId),
-            LastSpellName: SpellName(casting.LastRequestedSpellId),
+            OutlinedSpellName: null,
             Jump: _bindings.JumpPowerbar.Snapshot(),
             RepeatAttacks: _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.AutoRepeatAttack),
             AutoTarget: _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.AutoTarget),
@@ -3440,14 +3440,9 @@ public sealed class RetailUiRuntime : IDisposable
         public void SetOption(CharacterOptionId option, bool value) =>
             bindings.Options.CommandBus().Publish(new SetSingleCharacterOptionRuntimeCmd((uint)option, value));
         public void Recall(AcDream.Runtime.RuntimePortalCommand command) => deck.Recall(command);
-        public void Recast()
+        public void CastOutlined()
         {
-            RuntimeSpellCastState casting = bindings.Magic.Casting;
-            if (casting.HasPendingCast || casting.LastRequestedSpellId is not uint spell) return;
-            if (casting.LastRequestedTargetId is uint target && target != 0)
-                casting.Cast(spell, target);
-            else
-                casting.Cast(spell);
+            // wired to the Spell Deck in Task 13
         }
     }
 

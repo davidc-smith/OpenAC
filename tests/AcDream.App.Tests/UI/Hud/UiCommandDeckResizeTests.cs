@@ -17,7 +17,7 @@ public sealed class UiCommandDeckResizeTests
         public void SetDesiredPower(float power) { }
         public void SetOption(CharacterOptionId option, bool value) { }
         public void Recall(RuntimePortalCommand command) { }
-        public void Recast() { }
+        public void CastOutlined() { }
     }
 
     private const float DeckLeft = 100f, DeckTop = 200f;
@@ -35,6 +35,65 @@ public sealed class UiCommandDeckResizeTests
 
     private static int X(float local) => (int)(DeckLeft + local);
     private static int Y(float local) => (int)(DeckTop + local);
+
+    [Fact]
+    public void MinStretch_StopsANarrowingDrag()
+    {
+        var (_, deck) = Mount();
+        deck.ApplyGeometry(DeckGeometry.Create(1f, 1.8f));
+        deck.MinStretch = () => 1.5f;
+        float w = DeckGeometry.BaseWidth * 1.1f, h = deck.Height;
+        deck.ConstrainResize(ResizeEdges.Right, ref w, ref h);
+        Assert.Equal(1.5f, deck.Geometry.Stretch, 3);
+    }
+
+    [Fact]
+    public void MinStretch_HoldsOnARestoredSize()
+    {
+        var (_, deck) = Mount();
+        deck.MinStretch = () => 1.5f;
+        deck.Width = 500f;   // a narrower restored size (stretch about 1.19)
+        deck.Refresh();
+        Assert.Equal(1.5f, deck.Geometry.Stretch, 3);
+        Assert.Equal(deck.Geometry.Width, deck.Width);
+    }
+
+    [Fact]
+    public void EnforceMinStretch_WidensAtOnce()
+    {
+        var (_, deck) = Mount();
+        deck.MinStretch = () => 1.25f;
+        Assert.True(deck.EnforceMinStretch());
+        Assert.Equal(1.25f, deck.Geometry.Stretch, 3);
+        Assert.Equal(deck.Geometry.Width, deck.Width);
+        Assert.False(deck.EnforceMinStretch());
+    }
+
+    [Fact]
+    public void EnforceMinStretch_PullsLeftWhenTheScreenForcesIt()
+    {
+        var (_, deck) = Mount(700, 400);
+        deck.Left = 400f;
+        deck.MinStretch = () => 1.5f;   // 630 wide
+        Assert.True(deck.EnforceMinStretch());
+        Assert.Equal(700f - deck.Width, deck.Left, 2);
+    }
+
+    [Fact]
+    public void TopLimit_StopsAWindowDrag()
+    {
+        // Imported chrome: the deck is its own outer frame, so the root's drag
+        // constrains the deck itself.
+        var (root, deck) = Mount();
+        deck.TopLimit = () => 120f;
+        DeckRect bar = DeckGeometry.Default.HealthBar;   // a bar drags the window
+        int px = X(bar.X + bar.W / 2), py = Y(bar.Y + bar.H / 2);
+        root.OnMouseMove(px, py);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        root.OnMouseMove(px, py - 150);
+        root.OnMouseUp(UiMouseButton.Left, px, py - 150);
+        Assert.Equal(120f, deck.Top);
+    }
 
     [Fact]
     public void MountedDeckIsResizableOverTheFullRange()

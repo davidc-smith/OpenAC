@@ -16,7 +16,7 @@ public sealed class UiCommandDeckDrawTests
         public void SetDesiredPower(float power) { }
         public void SetOption(CharacterOptionId option, bool value) { }
         public void Recall(RuntimePortalCommand command) { }
-        public void Recast() { }
+        public void CastOutlined() { }
     }
 
     [Theory]
@@ -35,7 +35,7 @@ public sealed class UiCommandDeckDrawTests
         {
             Mode = mode, DesiredPower = 0.5f, PowerBarLevel = 0.3f, SessionKey = 1,
             Health = Vital(0.2f, 20), Stamina = Vital(0.6f, 60), Mana = Vital(1f, 100),
-            LastSpellName = "Flame Bolt", RepeatAttacks = true,
+            OutlinedSpellName = "Flame Bolt", RepeatAttacks = true,
         };
         var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 1.0);
         deck.Refresh();
@@ -70,7 +70,7 @@ public sealed class UiCommandDeckDrawTests
         {
             Mode = mode, DesiredPower = 0.5f, PowerBarLevel = 0.3f, SessionKey = 1,
             Health = Vital(0.2f, 20), Stamina = Vital(0.6f, 60), Mana = Vital(1f, 100),
-            LastSpellName = "Flame Bolt", RepeatAttacks = true,
+            OutlinedSpellName = "Flame Bolt", RepeatAttacks = true,
         };
         var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 1.0);
         deck.Refresh();
@@ -145,10 +145,10 @@ public sealed class UiCommandDeckDrawTests
     }
 
     [Fact]
-    public void LongCastingTextIsShortenedToStopBeforeRecast()
+    public void LongCastingTextIsShortenedToStopBeforeCast()
     {
         static float Measure(string text) => text.Length * 8f;
-        float room = DeckGeometry.Default.Recast.X - DeckGeometry.Default.CastingText.X - 6f;
+        float room = DeckGeometry.Default.Cast.X - DeckGeometry.Default.CastingText.X - 6f;
 
         float width = DeckGeometry.Default.CastingText.W;
 

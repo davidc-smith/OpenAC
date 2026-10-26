@@ -20,7 +20,7 @@ public sealed class UiCommandDeckDragTests
         public void SetDesiredPower(float power) => Calls.Add("power");
         public void SetOption(CharacterOptionId option, bool value) => Calls.Add("option " + option);
         public void Recall(RuntimePortalCommand command) => Calls.Add("recall " + command);
-        public void Recast() => Calls.Add("recast");
+        public void CastOutlined() => Calls.Add("cast");
     }
 
     private const float Left = 100f;

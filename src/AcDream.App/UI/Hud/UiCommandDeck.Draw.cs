@@ -140,12 +140,12 @@ internal sealed partial class UiCommandDeck
         DrawText(ctx, "CASTING", label.X, label, LabelInk, small: true);
         DeckRect text = _geometry.CastingText;
         DrawText(ctx, FitCastingText(v.CastingText, t => Face(small: true).Measure(ctx, t), text.W), text.X, text,
-            v.CastingLit ? CastLit : StudOffInk, small: true);
-        DeckRect recast = _geometry.Recast;
-        DrawStud(ctx, recast, on: false, icon: HudIcons.Recast, letter: null, dim: !v.RecastEnabled);
+            v.CastingLit ? CastLit : v.CastingDim ? StudOffInk : TextInk, small: true);
+        DeckRect cast = _geometry.Cast;
+        DrawStud(ctx, cast, on: false, icon: HudIcons.Cast, letter: null, dim: !v.CastEnabled);
     }
 
-    /// <summary>The spell name, shortened with "..." so it stops short of the RECAST button;
+    /// <summary>The spell name, shortened with "..." so it stops short of the CAST button;
     /// the button's tooltip carries the full name.</summary>
     internal static string FitCastingText(string text, Func<string, float> measure, float width) =>
         PluginWindowChrome.Ellipsize(text, measure, width);

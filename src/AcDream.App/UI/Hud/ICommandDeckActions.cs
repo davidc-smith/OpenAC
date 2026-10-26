@@ -14,5 +14,5 @@ public interface ICommandDeckActions
     void SetDesiredPower(float power);
     void SetOption(CharacterOptionId option, bool value);
     void Recall(RuntimePortalCommand command);
-    void Recast();
+    void CastOutlined();
 }

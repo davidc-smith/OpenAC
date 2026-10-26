@@ -13,7 +13,7 @@ public static class HudIcons
     public const string Repeat = "repeat";
     public const string AutoTarget = "autotarget";
     public const string KeepInView = "keepinview";
-    public const string Recast = "recast";
+    public const string Cast = "cast";
     public const string RecallLifestone = "recall-lifestone";
     public const string RecallMarketplace = "recall-marketplace";
     public const string RecallHouse = "recall-house";
@@ -22,7 +22,7 @@ public static class HudIcons
 
     public static IReadOnlyList<string> All { get; } =
     [
-        Peace, Melee, Missile, Magic, Repeat, AutoTarget, KeepInView, Recast,
+        Peace, Melee, Missile, Magic, Repeat, AutoTarget, KeepInView, Cast,
         RecallLifestone, RecallMarketplace, RecallHouse, RecallMansion, RecallAllegiance,
     ];
 }
