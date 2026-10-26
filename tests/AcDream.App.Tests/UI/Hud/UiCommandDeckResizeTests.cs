@@ -112,6 +112,123 @@ public sealed class UiCommandDeckResizeTests
         Assert.Equal((420f, 150f), (deck.Width, deck.Height));
     }
 
+    /// <summary>One step of the scale in points along an axis of <paramref name="deck"/>.</summary>
+    private static float StepW(UiCommandDeck deck) => DeckGeometry.BaseWidth * deck.Geometry.Stretch * DeckGeometry.ScaleStep;
+    private const float StepH = DeckGeometry.BaseHeight * DeckGeometry.ScaleStep;
+
+    [Fact]
+    public void BottomRightCorner_VerticalDragFollowsThePointerOnEveryMove()
+    {
+        var (root, deck) = Mount();
+        int px = X(418), py = Y(148);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        (int Dy, float Scale)[] moves = [(15, 1.1f), (30, 1.2f), (45, 1.3f), (45, 1.3f), (60, 1.4f), (30, 1.2f)];
+        foreach (var (dy, scale) in moves)
+        {
+            root.OnMouseMove(px, py + dy);
+            Assert.Equal(scale, deck.Geometry.Scale, 3);
+            Assert.Equal(1f, deck.Geometry.Stretch, 3);
+            Assert.Equal(150f * scale, deck.Height, 1);
+            Assert.Equal((DeckLeft, DeckTop), (deck.Left, deck.Top));
+            Assert.True(MathF.Abs(deck.Top + deck.Height - (py + dy)) <= StepH, $"dy {dy}: bottom {deck.Top + deck.Height}");
+        }
+        root.OnMouseUp(UiMouseButton.Left, px, py + 30);
+        Assert.Equal(1.2f, deck.Geometry.Scale, 3);
+    }
+
+    [Fact]
+    public void TopRightCorner_VerticalDragFollowsThePointerOnEveryMove()
+    {
+        var (root, deck) = Mount();
+        int px = X(418), py = Y(1);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        (int Dy, float Scale)[] moves = [(-15, 1.1f), (-30, 1.2f), (-45, 1.3f), (-45, 1.3f), (-60, 1.4f), (-30, 1.2f)];
+        foreach (var (dy, scale) in moves)
+        {
+            root.OnMouseMove(px, py + dy);
+            Assert.Equal(scale, deck.Geometry.Scale, 3);
+            Assert.Equal(DeckTop + 150f, deck.Top + deck.Height, 1);
+            Assert.True(MathF.Abs(deck.Top - (py + dy)) <= StepH, $"dy {dy}: top {deck.Top}");
+        }
+        root.OnMouseUp(UiMouseButton.Left, px, py - 30);
+    }
+
+    [Fact]
+    public void BottomRightCorner_HorizontalDragFollowsThePointerOnEveryMove()
+    {
+        var (root, deck) = Mount();
+        int px = X(418), py = Y(148);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        (int Dx, float Scale)[] moves = [(42, 1.1f), (84, 1.2f), (126, 1.3f), (126, 1.3f), (168, 1.4f), (84, 1.2f)];
+        foreach (var (dx, scale) in moves)
+        {
+            root.OnMouseMove(px + dx, py);
+            Assert.Equal(scale, deck.Geometry.Scale, 3);
+            Assert.Equal(1f, deck.Geometry.Stretch, 3);
+            Assert.Equal(420f * scale, deck.Width, 1);
+            Assert.True(MathF.Abs(deck.Left + deck.Width - (px + dx)) <= StepW(deck), $"dx {dx}: right {deck.Left + deck.Width}");
+        }
+        root.OnMouseUp(UiMouseButton.Left, px + 84, py);
+    }
+
+    [Fact]
+    public void BottomRightCorner_DiagonalDragFollowsTheLeadingAxisOnEveryMove()
+    {
+        var (root, deck) = Mount();
+        deck.ApplyGeometry(DeckGeometry.Create(1f, 1.5f));   // 630 x 150
+        int px = X(628), py = Y(148);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        // Height leads: dy / 150 grows faster than dx / 630.
+        (int Dx, int Dy, float Scale)[] moves = [(20, 15, 1.1f), (40, 30, 1.2f), (60, 45, 1.3f), (60, 45, 1.3f), (80, 60, 1.4f), (40, 30, 1.2f)];
+        foreach (var (dx, dy, scale) in moves)
+        {
+            root.OnMouseMove(px + dx, py + dy);
+            Assert.Equal(scale, deck.Geometry.Scale, 3);
+            Assert.Equal(1.5f, deck.Geometry.Stretch, 3);
+            Assert.Equal(630f * scale, deck.Width, 1);
+            Assert.True(MathF.Abs(deck.Top + deck.Height - (py + dy)) <= StepH, $"dy {dy}: bottom {deck.Top + deck.Height}");
+        }
+        root.OnMouseUp(UiMouseButton.Left, px + 40, py + 30);
+    }
+
+    [Fact]
+    public void RightEdge_TracksThePointerOneToOneOnEveryMove()
+    {
+        var (root, deck) = Mount();
+        deck.ApplyGeometry(DeckGeometry.Create(1.25f, 1f));   // 525 x 187.5
+        int px = X(523), py = Y(90);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        foreach (int dx in new[] { 50, 100, 150, 150, 80, 10 })
+        {
+            root.OnMouseMove(px + dx, py + 7);
+            Assert.Equal(525f + dx, deck.Width, 1);
+            Assert.Equal(187.5f, deck.Height, 1);
+            Assert.Equal(1.25f, deck.Geometry.Scale, 3);
+            Assert.True(MathF.Abs(deck.Left + deck.Width - (px + dx)) <= 2f, $"dx {dx}: right {deck.Left + deck.Width}");
+        }
+        root.OnMouseUp(UiMouseButton.Left, px + 10, py);
+    }
+
+    [Fact]
+    public void ANewDragStartsFromTheScaleTheLastOneEndedAt()
+    {
+        var (root, deck) = Mount();
+        root.OnMouseDown(UiMouseButton.Left, X(418), Y(148));
+        root.OnMouseMove(X(418), Y(148) + 45);                 // 1.3
+        root.OnMouseUp(UiMouseButton.Left, X(418), Y(148) + 45);
+        deck.Refresh();
+        Assert.Equal(1.3f, deck.Geometry.Scale, 3);
+
+        // 546 x 195 now; a horizontal drag measures against 1.3, not 1.0.
+        int px = X(544), py = Y(193);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        root.OnMouseMove(px + 42, py);                          // 588 / 420 = 1.4
+        Assert.Equal(1.4f, deck.Geometry.Scale, 3);
+        root.OnMouseMove(px + 42, py);
+        Assert.Equal(1.4f, deck.Geometry.Scale, 3);
+        root.OnMouseUp(UiMouseButton.Left, px + 42, py);
+    }
+
     [Theory]
     [InlineData(1f, 75f)]     // left edge
     [InlineData(1f, 1f)]      // top-left corner

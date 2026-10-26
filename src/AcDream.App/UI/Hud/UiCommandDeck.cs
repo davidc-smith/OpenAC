@@ -33,6 +33,10 @@ internal sealed partial class UiCommandDeck : UiElement
     private readonly Func<double> _clock;
     private readonly DeckFonts? _fonts;
     private DeckGeometry _geometry = DeckGeometry.Default;
+    /// <summary>The geometry when the current resize drag started; null between drags.
+    /// The root proposes each move's size from the drag start, so each move is
+    /// measured from here, not from the previous move.</summary>
+    private DeckGeometry? _resizeFrom;
     private CommandDeckView _view = CommandDeckView.Empty;
     private AttackHeight? _held;
     private bool _draggingPower;
@@ -109,7 +113,8 @@ internal sealed partial class UiCommandDeck : UiElement
     internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
     {
         bool corner = (edges & (ResizeEdges.Top | ResizeEdges.Bottom)) != 0;
-        _geometry = corner ? _geometry.WithCornerSize(width, height) : _geometry.WithWidth(width);
+        DeckGeometry from = _resizeFrom ??= _geometry;
+        _geometry = corner ? from.WithCornerSize(width, height) : from.WithWidth(width);
         width = _geometry.Width;
         height = _geometry.Height;
     }
@@ -184,6 +189,8 @@ internal sealed partial class UiCommandDeck : UiElement
     /// <summary>Samples the game and rebuilds the view; releases a held attack if the power row went away.</summary>
     internal void Refresh()
     {
+        if (FindRoot()?.ActiveResizeEdges is null or ResizeEdges.None)
+            _resizeFrom = null;
         SyncGeometry();
         _view = _model.Update(_input(), _clock());
         if (_held is not null && _view.Row != DeckContextRow.Power)
@@ -227,6 +234,7 @@ internal sealed partial class UiCommandDeck : UiElement
     /// so a deck shown again under a still pointer waits out a fresh dwell.</summary>
     public void OnHidden()
     {
+        _resizeFrom = null;
         _draggingPower = false;
         ReleaseHeldAttack();
         ResetHover();

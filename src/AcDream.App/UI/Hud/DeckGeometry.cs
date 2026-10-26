@@ -80,8 +80,9 @@ public sealed record DeckGeometry
     /// <summary>A side-edge resize: the same scale, the width decides the stretch.</summary>
     public DeckGeometry WithWidth(float width) => Create(Scale, width / (BaseWidth * Scale));
 
-    /// <summary>A corner resize: whichever axis moved further from the current
-    /// size decides the scale; the stretch is kept.</summary>
+    /// <summary>A corner resize from this geometry (the one at the drag start):
+    /// whichever axis moved further from its size decides the scale; the
+    /// stretch is kept.</summary>
     public DeckGeometry WithCornerSize(float width, float height)
     {
         float fromWidth = width / (BaseWidth * Stretch);
