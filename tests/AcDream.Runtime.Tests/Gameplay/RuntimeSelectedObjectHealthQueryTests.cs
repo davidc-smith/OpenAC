@@ -1,6 +1,7 @@
 using AcDream.Core.Combat;
 using AcDream.Core.Items;
 using AcDream.Core.Net;
+using AcDream.Core.Physics;
 using AcDream.Core.Selection;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Session;
@@ -17,6 +18,7 @@ public sealed class RuntimeSelectedObjectHealthQueryTests
 {
     private const uint Player = 0x50000001u;
     private const uint Monster = 0x50000020u;
+    private const uint NextMonster = 0x50000021u;
     private const uint Crate = 0x70000030u;
 
     [Fact]
@@ -76,6 +78,42 @@ public sealed class RuntimeSelectedObjectHealthQueryTests
     }
 
     /// <summary>
+    /// A dead target is replaced by the nearest monster while its own clearing
+    /// is still being reported, so the replacement reaches this owner first and
+    /// the clearing after it. The stream follows the selection as it stands:
+    /// the replacement's stream stays open, and the server keeps sending its
+    /// health as it is damaged. Mutation: follow the reported transition
+    /// instead and the clearing that arrives last closes the replacement's
+    /// stream, so its meter stops at the first answer.
+    /// </summary>
+    [Fact]
+    public void ADeadTargetsAutomaticReplacementKeepsItsHealthStreaming()
+    {
+        var sent = new List<uint>();
+        var selection = new SelectionState();
+        var combat = new CombatState();
+        combat.SetCombatMode(CombatMode.Melee);
+        // The combat target owner is built with the action state, before the
+        // session routing attaches this query, so it hears every change first.
+        using var target = new RuntimeCombatTargetState(
+            combat,
+            selection,
+            new AutoTargetOperations(() =>
+            {
+                selection.Select(NextMonster, SelectionChangeSource.Keyboard);
+                return NextMonster;
+            }));
+        using RuntimeSelectedObjectHealthQuery query = Query(selection, sent);
+        selection.Select(Monster, SelectionChangeSource.World);
+
+        target.OnMotionApplied(Monster, MotionCommand.Dead);
+
+        Assert.Equal(NextMonster, selection.SelectedObjectId);
+        Assert.Equal(new[] { Monster, 0u, NextMonster }, sent);
+        Assert.Equal(NextMonster, query.StreamingObjectId);
+    }
+
+    /// <summary>
     /// The binding itself: a runtime with no window, routed exactly as the
     /// no-window host routes it, asks for the selected creature's health.
     /// </summary>
@@ -117,6 +155,12 @@ public sealed class RuntimeSelectedObjectHealthQueryTests
         });
         objects.AddOrUpdate(new ClientObject
         {
+            ObjectId = NextMonster,
+            Type = ItemType.Creature,
+            PublicWeenieBitfield = SelectedObjectHealthPolicy.BfAttackable,
+        });
+        objects.AddOrUpdate(new ClientObject
+        {
             ObjectId = Crate,
             Type = ItemType.Container,
         });
@@ -125,5 +169,12 @@ public sealed class RuntimeSelectedObjectHealthQueryTests
             objects,
             () => Player,
             sent.Add);
+    }
+
+    private sealed class AutoTargetOperations(Func<uint?> selectClosestTarget)
+        : IRuntimeCombatTargetOperations
+    {
+        public bool AutoTarget => true;
+        public uint? SelectClosestTarget() => selectClosestTarget();
     }
 }

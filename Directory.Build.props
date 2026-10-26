@@ -11,7 +11,7 @@
     <Deterministic>true</Deterministic>
     <!-- Upstream's version, unchanged between upstream syncs: lock files record it.
          Our release version is OpenACReleaseVersion below (see BRANCHING.md). -->
-    <Version>0.1.27</Version>
+    <Version>0.1.28</Version>
     <OpenACProduct>OpenAC Gateway</OpenACProduct>
     <OpenACReleaseLabel>gateway</OpenACReleaseLabel>
     <OpenACReleaseNumber>1</OpenACReleaseNumber>

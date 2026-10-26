@@ -17,6 +17,7 @@ public sealed class RuntimeSelectedObjectHealthQuery : IDisposable
     private readonly Func<uint> _playerGuid;
     private readonly Action<uint> _send;
     private uint _streaming;
+    private uint _followed;
     private bool _disposed;
 
     /// <summary>The object whose health the server is currently streaming, or zero.</summary>
@@ -33,6 +34,7 @@ public sealed class RuntimeSelectedObjectHealthQuery : IDisposable
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _playerGuid = playerGuid ?? throw new ArgumentNullException(nameof(playerGuid));
         _send = sendQueryHealth ?? throw new ArgumentNullException(nameof(sendQueryHealth));
+        _followed = _selection.SelectedObjectId ?? 0u;
         _selection.Changed += OnSelectionChanged;
     }
 
@@ -45,8 +47,18 @@ public sealed class RuntimeSelectedObjectHealthQuery : IDisposable
         _selection.Changed -= OnSelectionChanged;
     }
 
-    private void OnSelectionChanged(SelectionTransition transition)
+    private void OnSelectionChanged(SelectionTransition _)
     {
+        // The selection as it stands is followed, not the change being
+        // reported. A change made while another is still being reported (a
+        // dead target replaced by the nearest monster) reaches this owner
+        // before the change it interrupted; acting on that older one would
+        // close the stream just opened for the replacement.
+        uint selected = _selection.SelectedObjectId ?? 0u;
+        if (selected == _followed)
+            return;
+        _followed = selected;
+
         // A stream we opened is closed before another is asked for; the
         // server takes object zero to mean "stop telling me".
         if (_streaming != 0u)
@@ -55,7 +67,7 @@ public sealed class RuntimeSelectedObjectHealthQuery : IDisposable
             _send(0u);
         }
 
-        if (transition.SelectedObjectId is not uint selected || selected == 0u)
+        if (selected == 0u)
             return;
         uint player = _playerGuid();
         if (!SelectedObjectHealthPolicy.ShouldQueryHealth(

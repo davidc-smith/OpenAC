@@ -34,6 +34,9 @@ internal sealed class CharacterCreationProfessionPage : IDisposable
     private const uint SliderControlRelativeId = 0x100002EEu;
     private const uint SliderValueRelativeId = 0x100002EFu;
 
+    private const uint UnlockedState = 0x10000018u;
+    private const uint LockedState = 0x10000019u;
+
     private sealed record SliderWidgets(UiButton? Lock, UiScrollbar? Slider, UiField? Value);
 
     private const uint SliderNameRelativeId = 0x100002EDu;
@@ -144,8 +147,11 @@ internal sealed class CharacterCreationProfessionPage : IDisposable
             float scalar = value / 100f;
             widgets.Slider?.SetScalarPosition(scalar);
             widgets.Value?.SetText(value.ToString(CultureInfo.InvariantCulture));
-            if (widgets.Lock is { } lockButton)
-                lockButton.Selected = snapshot.IsAttributeLocked(attribute);
+            // The lock and its slider show the authored Locked/Unlocked
+            // art; the lock is a toggle with no Normal/Highlight pair.
+            uint lockState = snapshot.IsAttributeLocked(attribute) ? LockedState : UnlockedState;
+            widgets.Lock?.TrySetRetailState(lockState);
+            widgets.Slider?.TrySetTrackState(lockState);
         }
 
         SetDisplay(_availableValue, snapshot.RemainingAttributeCredits);
