@@ -108,6 +108,23 @@ public class WorldEventsReportTests
     /// event, and the failure never reaches the caller that raised it.
     /// </summary>
     [Fact]
+    public void AStatusTextHandlerThatThrowsIsNamedAndTheNextOneStillHears()
+    {
+        (WorldEvents events, List<string> reported) = Build();
+        var heard = new List<string>();
+        events.StatusTextReceived += _ => throw new InvalidOperationException("boom");
+        events.StatusTextReceived += heard.Add;
+
+        events.FireStatusTextReceived("You're too busy!");
+        events.FireStatusTextReceived("Out of Range!");
+
+        Assert.Equal(["You're too busy!", "Out of Range!"], heard);
+        Assert.Equal(2, reported.Count);
+        Assert.All(reported, line =>
+            Assert.StartsWith("Plugin status-text handler threw: ", line));
+    }
+
+    [Fact]
     public void AFailingHandlerDoesNotStopTheNextOneOrReachTheCaller()
     {
         (WorldEvents events, List<string> reported) = Build();

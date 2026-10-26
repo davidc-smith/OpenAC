@@ -164,6 +164,24 @@ internal sealed class RuntimeCombatModeOperationsSlot
     : IRuntimeCombatModeOperations
 {
     private IRuntimeCombatModeOperations? _owner;
+    private IRuntimeCombatModeOperations? _session;
+
+    /// <summary>
+    /// The session's own operations, answered whenever nothing else is
+    /// bound: a session with no window attached plays through these. A
+    /// window's operations, bound while it is attached, take precedence;
+    /// when the window lets go, the session's operations answer again.
+    /// </summary>
+    public void UseSessionOperations(IRuntimeCombatModeOperations session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (_session is not null && !ReferenceEquals(_session, session))
+            throw new InvalidOperationException(
+                "The session's own operations are already in use.");
+        _session = session;
+    }
+
+    private IRuntimeCombatModeOperations? Current => _owner ?? _session;
 
     public IDisposable BindOwned(IRuntimeCombatModeOperations owner)
     {
@@ -181,13 +199,13 @@ internal sealed class RuntimeCombatModeOperationsSlot
             _owner = null;
     }
 
-    public bool IsInWorld => _owner?.IsInWorld == true;
+    public bool IsInWorld => Current?.IsInWorld == true;
     public IReadOnlyList<ClientObject> GetOrderedEquipment() =>
-        _owner?.GetOrderedEquipment() ?? [];
+        Current?.GetOrderedEquipment() ?? [];
     public void NotifyExplicitCombatModeRequest() =>
-        _owner?.NotifyExplicitCombatModeRequest();
+        Current?.NotifyExplicitCombatModeRequest();
     public void SendChangeCombatMode(CombatMode mode) =>
-        _owner?.SendChangeCombatMode(mode);
+        Current?.SendChangeCombatMode(mode);
 
     private sealed class Binding : IDisposable
     {
