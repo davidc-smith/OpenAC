@@ -47,7 +47,7 @@ public sealed class UiSpellDeckTests
         [30] = Spell(30, "Blade Blessing", "Item Enchantment"),
     };
 
-    private static Rig Make(bool clickCasts = false)
+    private static Rig Make(bool clickCasts = false, Func<uint, string?>? itemName = null)
     {
         var g = new Game();
         g.Tabs[0].AddRange([10u, 11u, 12u]);
@@ -66,7 +66,8 @@ public sealed class UiSpellDeckTests
             clock: () => rig!.Now,
             isLocked: () => false,
             toggleClickCasts: () => { },
-            setAttached: _ => { });
+            setAttached: _ => { },
+            itemName: itemName);
         rig = new Rig { Deck = deck, Controller = c, Game = g };
         deck.Refresh();
         return rig;
@@ -192,6 +193,18 @@ public sealed class UiSpellDeckTests
         Assert.NotNull(tip);
         Assert.Equal("Item spell", tip.Title);
         Assert.Equal("Blade Blessing", tip.Detail);
+    }
+
+    [Fact]
+    public void ItemTooltip_NamesTheItemAndItsSpell()
+    {
+        Rig r = Make(itemName: id => id == 0x5000_0001u ? "Ivory Wand" : null);
+        r.Game.Item = new ItemSpell(0x5000_0001u, 30u);
+        r.Deck.Refresh();
+        Send(r.Deck, UiEventType.MouseMove, r.Deck.Geometry.ItemSlot);
+        r.Now += 1;
+        Assert.Equal(new HudTooltipContent("Ivory Wand (Blade Blessing)", null, null, "Double-click to cast"),
+            r.Deck.VisibleTooltip);
     }
 
     [Fact]

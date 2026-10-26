@@ -1,6 +1,7 @@
 using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 using AcDream.App.UI.Layout;
+using AcDream.UI.Abstractions.Input;
 
 namespace AcDream.App.Tests.UI.Hud;
 
@@ -46,5 +47,76 @@ public sealed class ModernHudWiringTests
         Assert.False(deck.Visible);
         Assert.False(stacked.Visible);
         Assert.True(side.Visible);
+    }
+
+    private sealed class Routes
+    {
+        public readonly List<InputAction> Deck = [];
+        public readonly List<InputAction> Retail = [];
+        public readonly List<InputAction> Redispatched = [];
+        public InputAction? Game;
+
+        public bool Route(InputAction action, bool spellDeckActive) =>
+            SpellActionRouter.Route(
+                action,
+                spellDeckActive,
+                a => { Deck.Add(a); return true; },
+                a => { Retail.Add(a); return true; },
+                () => Game,
+                Redispatched.Add);
+    }
+
+    [Fact]
+    public void SpellDeckActive_SpellKeysReachTheSpellDeckNotTheRetailBar()
+    {
+        var r = new Routes();
+        Assert.True(r.Route(InputAction.UseSpellSlot_1, spellDeckActive: true));
+        Assert.True(r.Route(InputAction.UseSpellRow3Slot1, spellDeckActive: true));
+        Assert.True(r.Route(InputAction.CastItemSpell, spellDeckActive: true));
+        Assert.Equal([InputAction.UseSpellSlot_1, InputAction.UseSpellRow3Slot1, InputAction.CastItemSpell], r.Deck);
+        Assert.Empty(r.Retail);
+        Assert.Empty(r.Redispatched);
+    }
+
+    [Fact]
+    public void SpellDeckInactive_RetailActionsKeepTheRetailBar()
+    {
+        var r = new Routes();
+        Assert.True(r.Route(InputAction.UseSpellSlot_1, spellDeckActive: false));
+        Assert.True(r.Route(InputAction.CombatNextSpell, spellDeckActive: false));
+        Assert.Equal([InputAction.UseSpellSlot_1, InputAction.CombatNextSpell], r.Retail);
+        Assert.Empty(r.Deck);
+    }
+
+    [Fact]
+    public void SpellDeckInactive_ClientOnlyAction_RedispatchesTheGameKey()
+    {
+        var r = new Routes { Game = InputAction.UseQuickSlot_1 };
+        Assert.True(r.Route(InputAction.UseSpellRow3Slot1, spellDeckActive: false));
+        Assert.True(r.Route(InputAction.CastItemSpell, spellDeckActive: false));
+        Assert.Equal([InputAction.UseQuickSlot_1, InputAction.UseQuickSlot_1], r.Redispatched);
+        Assert.Empty(r.Retail);
+        Assert.Empty(r.Deck);
+    }
+
+    [Fact]
+    public void SpellDeckInactive_ClientOnlyActionWithNoGameKey_DoesNothing()
+    {
+        var r = new Routes();
+        Assert.True(r.Route(InputAction.UseSpellRow2Slot4, spellDeckActive: false));
+        r.Game = InputAction.UseSpellRow2Slot1;   // never loops back to a client-only action
+        Assert.True(r.Route(InputAction.UseSpellRow2Slot4, spellDeckActive: false));
+        Assert.Empty(r.Redispatched);
+        Assert.Empty(r.Retail);
+    }
+
+    [Fact]
+    public void ClientOnly_IsRowsTwoToTenAndTheItemSpell()
+    {
+        Assert.False(SpellActionRouter.IsClientOnly(InputAction.UseSpellSlot_12));
+        Assert.False(SpellActionRouter.IsClientOnly(InputAction.UseQuickSlot_1));
+        Assert.True(SpellActionRouter.IsClientOnly(SpellBarActions.ForSlot(1, 0)));
+        Assert.True(SpellActionRouter.IsClientOnly(SpellBarActions.ForSlot(9, 11)));
+        Assert.True(SpellActionRouter.IsClientOnly(InputAction.CastItemSpell));
     }
 }

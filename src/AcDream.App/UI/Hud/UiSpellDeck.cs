@@ -28,6 +28,7 @@ internal sealed partial class UiSpellDeck : UiElement
     private readonly Action _toggleClickCasts;
     private readonly Action<bool> _setAttached;
     private readonly DeckFonts? _fonts;
+    private readonly Func<uint, string?> _itemName;
     private readonly UiMarkupContextMenu _menu;
     private SpellDeckGeometry _geometry;
     /// <summary>The geometry when the current resize drag started; null between drags.</summary>
@@ -52,7 +53,8 @@ internal sealed partial class UiSpellDeck : UiElement
         Func<bool> isLocked,
         Action toggleClickCasts,
         Action<bool> setAttached,
-        DeckFonts? fonts = null)
+        DeckFonts? fonts = null,
+        Func<uint, string?>? itemName = null)
     {
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
         _spellIcon = spellIcon ?? throw new ArgumentNullException(nameof(spellIcon));
@@ -64,6 +66,7 @@ internal sealed partial class UiSpellDeck : UiElement
         _toggleClickCasts = toggleClickCasts ?? throw new ArgumentNullException(nameof(toggleClickCasts));
         _setAttached = setAttached ?? throw new ArgumentNullException(nameof(setAttached));
         _fonts = fonts;
+        _itemName = itemName ?? (_ => null);
         _geometry = SpellDeckGeometry.Create(1f, 1f, controller.Rows.Count);
         Width = _geometry.Width;
         Height = _geometry.Height;
@@ -226,9 +229,11 @@ internal sealed partial class UiSpellDeck : UiElement
             case SpellDeckZone.TabChip when hit.Row < _controller.Rows.Count:
                 return new($"Tab {_controller.Rows[hit.Row].Tab + 1}", null, null, ChipHint);
             case SpellDeckZone.Item:
-                return _controller.ItemSpell is { } item
-                    ? new("Item spell", null, SpellName(item.SpellId), castHint)
-                    : new("Item spell", null, "No wielded item has a spell.", null);
+                if (_controller.ItemSpell is not { } item)
+                    return new("Item spell", null, "No wielded item has a spell.", null);
+                return _itemName(item.ItemId) is { Length: > 0 } name
+                    ? new(ItemSpellText(name, SpellName(item.SpellId)), null, null, castHint)
+                    : new("Item spell", null, SpellName(item.SpellId), castHint);
             case SpellDeckZone.Slot when SlotSpell(hit.Row, hit.Slot) is uint id:
                 string key = KeyLabel(hit.Row, hit.Slot);
                 return new(SpellName(id), key.Length == 0 ? null : key, _spellInfo(id)?.School, castHint);
@@ -236,6 +241,9 @@ internal sealed partial class UiSpellDeck : UiElement
                 return null;
         }
     }
+
+    /// <summary>How the item spell is named in its tooltip and on the Command Deck's CASTING row.</summary>
+    internal static string ItemSpellText(string itemName, string spellName) => $"{itemName} ({spellName})";
 
     private string SpellName(uint id) => _spellInfo(id)?.Name is { Length: > 0 } name ? name : $"Spell {id}";
 
