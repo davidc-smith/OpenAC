@@ -49,7 +49,7 @@ public sealed class UiCommandDeckTests
     public void OrbTogglesCombat()
     {
         var (deck, actions, _) = Make(CombatMode.NonCombat);
-        Down(deck, CommandDeckLayout.Orb);
+        Down(deck, DeckGeometry.Default.Orb);
         Assert.Equal(["toggle"], actions.Calls);
     }
 
@@ -57,8 +57,8 @@ public sealed class UiCommandDeckTests
     public void StudFlipsItsOption()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
-        Down(deck, CommandDeckLayout.Stud(0));
-        Down(deck, CommandDeckLayout.Stud(1));
+        Down(deck, DeckGeometry.Default.Stud(0));
+        Down(deck, DeckGeometry.Default.Stud(1));
         Assert.Equal(
             [$"option {CharacterOptionId.AutoRepeatAttack} False", $"option {CharacterOptionId.AutoTarget} True"],
             actions.Calls);
@@ -68,7 +68,7 @@ public sealed class UiCommandDeckTests
     public void PowerTrackPressDragAndWheel()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
-        DeckRect t = CommandDeckLayout.PowerTrack;
+        DeckRect t = DeckGeometry.Default.PowerTrack;
         deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseDown, Data1: (int)(t.X + t.W / 4), Data2: (int)(t.Y + 2)));
         deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseMove, Data1: (int)(t.X + t.W + 50), Data2: (int)(t.Y + 2)));
         Up(deck, t.X + t.W + 50, t.Y + 2);
@@ -83,7 +83,7 @@ public sealed class UiCommandDeckTests
     public void AttackReleasedOnMouseUpInside()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
-        DeckRect m = CommandDeckLayout.HeightButton(1);
+        DeckRect m = DeckGeometry.Default.HeightButton(1);
         Down(deck, m);
         Up(deck, m.X + 2, m.Y + 2);
         deck.ReleaseHeldAttack();
@@ -94,7 +94,7 @@ public sealed class UiCommandDeckTests
     public void AttackReleasedOnMouseUpOutside()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
-        Down(deck, CommandDeckLayout.HeightButton(0));
+        Down(deck, DeckGeometry.Default.HeightButton(0));
         Up(deck, -50, -50);
         Assert.Equal(["press High", "release"], actions.Calls);
     }
@@ -103,7 +103,7 @@ public sealed class UiCommandDeckTests
     public void AttackReleasedOnCaptureLost()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
-        Down(deck, CommandDeckLayout.HeightButton(2));
+        Down(deck, DeckGeometry.Default.HeightButton(2));
         deck.OnEvent(new UiEvent(0, deck, UiEventType.CaptureChanged));
         Up(deck, 0, 0);
         Assert.Equal(["press Low", "release"], actions.Calls);
@@ -113,7 +113,7 @@ public sealed class UiCommandDeckTests
     public void AttackReleasedWhenTheRowLeavesPower()
     {
         var (deck, actions, set) = Make(CombatMode.Melee);
-        Down(deck, CommandDeckLayout.HeightButton(1));
+        Down(deck, DeckGeometry.Default.HeightButton(1));
         set(Input(CombatMode.Magic));
         Assert.Equal(["press Medium", "release"], actions.Calls);
     }
@@ -122,7 +122,7 @@ public sealed class UiCommandDeckTests
     public void AttackReleasedOnDetach()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
-        Down(deck, CommandDeckLayout.HeightButton(1));
+        Down(deck, DeckGeometry.Default.HeightButton(1));
         deck.Detach();
         deck.Detach();
         Assert.Equal(["press Medium", "release"], actions.Calls);
@@ -132,11 +132,11 @@ public sealed class UiCommandDeckTests
     public void RecastOnlyWhenEnabled()
     {
         var (none, noneActions, _) = Make(CombatMode.Magic);
-        Down(none, CommandDeckLayout.Recast);
+        Down(none, DeckGeometry.Default.Recast);
         Assert.Empty(noneActions.Calls);
 
         var (deck, actions, _) = Make(CombatMode.Magic, last: "Flame Bolt I");
-        Down(deck, CommandDeckLayout.Recast);
+        Down(deck, DeckGeometry.Default.Recast);
         Assert.Equal(["recast"], actions.Calls);
     }
 
@@ -144,7 +144,7 @@ public sealed class UiCommandDeckTests
     public void RecallStudsInOrder()
     {
         var (deck, actions, _) = Make(CombatMode.NonCombat);
-        for (int i = 0; i < 5; i++) Down(deck, CommandDeckLayout.RecallStud(i));
+        for (int i = 0; i < 5; i++) Down(deck, DeckGeometry.Default.RecallStud(i));
         Assert.Equal(
         [
             "recall RecallLifestone", "recall RecallMarketplace", "recall RecallHouse",
@@ -156,7 +156,7 @@ public sealed class UiCommandDeckTests
     public void OnlyTheCornersOutsideFrameAndOrbFallThrough()
     {
         var (deck, _, _) = Make(CombatMode.Melee);
-        DeckRect f = CommandDeckLayout.Frame;
+        DeckRect f = DeckGeometry.Default.Frame;
         Assert.False(deck.HitTestLocal(2, 4));
 
         // The frame body hits (so the window can be dragged by it) but is not a control.
@@ -164,7 +164,7 @@ public sealed class UiCommandDeckTests
         Assert.False(deck.HandlesClick);
         Assert.False(deck.CapturesPointerDrag);
 
-        Assert.True(deck.HitTestLocal(CommandDeckLayout.Orb.X + 46, CommandDeckLayout.Orb.Y + 46));
+        Assert.True(deck.HitTestLocal(DeckGeometry.Default.Orb.X + 46, DeckGeometry.Default.Orb.Y + 46));
         Assert.True(deck.HandlesClick);
         Assert.True(deck.CapturesPointerDrag);
     }
@@ -204,28 +204,28 @@ public sealed class UiCommandDeckTests
         var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new Recorder(), icons: null, clock: () => now);
         deck.Refresh();
 
-        Move(deck, CommandDeckLayout.Stud(0));
+        Move(deck, DeckGeometry.Default.Stud(0));
         now = 10.3;
         Assert.Null(deck.VisibleTooltip);
         now = 10.5;
         Assert.Equal("Repeat attacks", deck.VisibleTooltip?.Title);
 
         // Moving within the same zone keeps it; a new zone starts a new dwell.
-        Move(deck, CommandDeckLayout.Stud(0));
+        Move(deck, DeckGeometry.Default.Stud(0));
         Assert.NotNull(deck.VisibleTooltip);
-        Move(deck, CommandDeckLayout.Stud(1));
+        Move(deck, DeckGeometry.Default.Stud(1));
         now = 10.9;
         Assert.Null(deck.VisibleTooltip);
         now = 10.96;
         Assert.Equal("Auto-target", deck.VisibleTooltip?.Title);
 
         // A press hides it until the zone changes.
-        Down(deck, CommandDeckLayout.Stud(1));
+        Down(deck, DeckGeometry.Default.Stud(1));
         now = 12.0;
         Assert.Null(deck.VisibleTooltip);
-        Move(deck, CommandDeckLayout.Stud(1));
+        Move(deck, DeckGeometry.Default.Stud(1));
         Assert.Null(deck.VisibleTooltip);
-        Move(deck, CommandDeckLayout.Stud(2));
+        Move(deck, DeckGeometry.Default.Stud(2));
         now = 13.0;
         Assert.Equal("Keep target in view", deck.VisibleTooltip?.Title);
 
@@ -240,7 +240,7 @@ public sealed class UiCommandDeckTests
         CommandDeckInput input = Input(CombatMode.Melee);
         var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new Recorder(), icons: null, clock: () => now);
         deck.Refresh();
-        Move(deck, CommandDeckLayout.Stud(0));
+        Move(deck, DeckGeometry.Default.Stud(0));
         now = 11.0;
         Assert.NotNull(deck.VisibleTooltip);
 
@@ -248,7 +248,7 @@ public sealed class UiCommandDeckTests
         now = 12.0;
         Assert.Null(deck.VisibleTooltip);
 
-        Move(deck, CommandDeckLayout.Stud(0));
+        Move(deck, DeckGeometry.Default.Stud(0));
         now = 13.0;
         Assert.NotNull(deck.VisibleTooltip);
         deck.Detach();
@@ -259,7 +259,7 @@ public sealed class UiCommandDeckTests
     public void HidingTheDeckReleasesAHeldAttack()
     {
         var (deck, actions, _) = Make(CombatMode.Melee);
-        Down(deck, CommandDeckLayout.HeightButton(0));
+        Down(deck, DeckGeometry.Default.HeightButton(0));
         deck.OnHidden();
         Assert.Equal(["press High", "release"], actions.Calls);
     }
@@ -279,12 +279,12 @@ public sealed class UiCommandDeckTests
     {
         foreach (DeckZone zone in Enum.GetValues<DeckZone>())
         {
-            DeckRect r = CommandDeckLayout.RectFor(zone);
+            DeckRect r = DeckGeometry.Default.RectFor(zone);
             Assert.True(r.W > 0 && r.H > 0, zone.ToString());
-            Assert.InRange(r.X, 0f, CommandDeckLayout.Width);
-            Assert.InRange(r.X + r.W, 0f, CommandDeckLayout.Width);
+            Assert.InRange(r.X, 0f, DeckGeometry.Default.Width);
+            Assert.InRange(r.X + r.W, 0f, DeckGeometry.Default.Width);
         }
-        Assert.Equal(CommandDeckLayout.Stud(1), CommandDeckLayout.RectFor(DeckZone.StudAutoTarget));
-        Assert.Equal(CommandDeckLayout.RecallStud(3), CommandDeckLayout.RectFor(DeckZone.Recall3));
+        Assert.Equal(DeckGeometry.Default.Stud(1), DeckGeometry.Default.RectFor(DeckZone.StudAutoTarget));
+        Assert.Equal(DeckGeometry.Default.RecallStud(3), DeckGeometry.Default.RectFor(DeckZone.Recall3));
     }
 }

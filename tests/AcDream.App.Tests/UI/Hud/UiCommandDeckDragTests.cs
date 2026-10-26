@@ -57,7 +57,7 @@ public sealed class UiCommandDeckDragTests
     public void PressOnTheHealthBarDragsTheWindow()
     {
         var (root, deck, actions) = Mount();
-        var (x, y) = Centre(CommandDeckLayout.HealthBar);
+        var (x, y) = Centre(DeckGeometry.Default.HealthBar);
 
         root.OnMouseMove(x, y);
         root.OnMouseDown(UiMouseButton.Left, x, y);
@@ -74,7 +74,7 @@ public sealed class UiCommandDeckDragTests
     public void PressOnMediumAttacksAndDoesNotMove()
     {
         var (root, deck, actions) = Mount();
-        var (x, y) = Centre(CommandDeckLayout.HeightButton(1));
+        var (x, y) = Centre(DeckGeometry.Default.HeightButton(1));
 
         root.OnMouseMove(x, y);
         root.OnMouseDown(UiMouseButton.Left, x, y);

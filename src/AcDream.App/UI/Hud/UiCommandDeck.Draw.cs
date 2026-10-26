@@ -42,10 +42,10 @@ internal sealed partial class UiCommandDeck
         double now = _clock();
 
         DrawFrame(ctx);
-        DrawBar(ctx, CommandDeckLayout.HealthBar, "HEALTH", v.Health, HealthInk,
+        DrawBar(ctx, _geometry.HealthBar, "HEALTH", v.Health, HealthInk,
             pulse: v.LowHealth ? 0.25f + 0.25f * MathF.Sin((float)now * 6f) : 0f);
-        DrawBar(ctx, CommandDeckLayout.StaminaBar, "STAMINA", v.Stamina, StaminaInk, 0f);
-        DrawBar(ctx, CommandDeckLayout.ManaBar, "MANA", v.Mana, ManaInk, 0f);
+        DrawBar(ctx, _geometry.StaminaBar, "STAMINA", v.Stamina, StaminaInk, 0f);
+        DrawBar(ctx, _geometry.ManaBar, "MANA", v.Mana, ManaInk, 0f);
 
         switch (v.Row)
         {
@@ -58,9 +58,9 @@ internal sealed partial class UiCommandDeck
         if (v.ShowStuds) DrawStuds(ctx, v);
     }
 
-    private static void DrawFrame(UiRenderContext ctx)
+    private void DrawFrame(UiRenderContext ctx)
     {
-        DeckRect f = CommandDeckLayout.Frame;
+        DeckRect f = _geometry.Frame;
         ctx.FillRoundedRect(f.X - 2, f.Y - 2, f.W + 4, f.H + 4, 10f, FrameEdge);
         ctx.FillVerticalGradient(f.X, f.Y, f.W, f.H, new CanvasCornerRadii(8f, 8f, 8f, 8f), FrameTop, FrameBottom);
         ctx.StrokeRoundedRect(f.X + 3, f.Y + 3, f.W - 6, f.H - 6, 5f, Bronze, 1f);
@@ -86,10 +86,10 @@ internal sealed partial class UiCommandDeck
 
     private void DrawPowerRow(UiRenderContext ctx, CommandDeckView v)
     {
-        DeckRect label = CommandDeckLayout.RowLabel;
+        DeckRect label = _geometry.RowLabel;
         DrawText(ctx, v.PowerLabel, label.X, label, LabelInk, small: true);
 
-        DeckRect t = CommandDeckLayout.PowerTrack;
+        DeckRect t = _geometry.PowerTrack;
         ctx.FillRoundedRect(t.X, t.Y, t.W, t.H, 5f, Track);
         for (int i = 1; i < 4; i++)
             ctx.DrawFill(t.X + t.W * i / 4f, t.Y, 1f, t.H, Rgb(0x4A4752));
@@ -99,38 +99,38 @@ internal sealed partial class UiCommandDeck
         ctx.FillRoundedRect(hx - 5f, t.Y - 5f, 10f, t.H + 10f, 3f, Handle);
 
         for (int i = 0; i < 3; i++)
-            DrawStud(ctx, CommandDeckLayout.HeightButton(i), on: v.Height == HeightValues[i], icon: null, letter: HeightLetters[i]);
+            DrawStud(ctx, _geometry.HeightButton(i), on: v.Height == HeightValues[i], icon: null, letter: HeightLetters[i]);
     }
 
     private void DrawCastingRow(UiRenderContext ctx, CommandDeckView v)
     {
-        DeckRect label = CommandDeckLayout.RowLabel;
+        DeckRect label = _geometry.RowLabel;
         DrawText(ctx, "CASTING", label.X, label, LabelInk, small: true);
-        DeckRect text = CommandDeckLayout.CastingText;
-        DrawText(ctx, FitCastingText(v.CastingText, t => Face(small: true).Measure(ctx, t)), text.X, text,
+        DeckRect text = _geometry.CastingText;
+        DrawText(ctx, FitCastingText(v.CastingText, t => Face(small: true).Measure(ctx, t), text.W), text.X, text,
             v.CastingLit ? CastLit : StudOffInk, small: true);
-        DeckRect recast = CommandDeckLayout.Recast;
+        DeckRect recast = _geometry.Recast;
         DrawStud(ctx, recast, on: false, icon: HudIcons.Recast, letter: null, dim: !v.RecastEnabled);
     }
 
     /// <summary>The spell name, shortened with "..." so it stops short of the RECAST button;
     /// the button's tooltip carries the full name.</summary>
-    internal static string FitCastingText(string text, Func<string, float> measure) =>
-        PluginWindowChrome.Ellipsize(text, measure, CommandDeckLayout.CastingText.W);
+    internal static string FitCastingText(string text, Func<string, float> measure, float width) =>
+        PluginWindowChrome.Ellipsize(text, measure, width);
 
     private void DrawRecallRow(UiRenderContext ctx)
     {
-        DeckRect label = CommandDeckLayout.RowLabel;
+        DeckRect label = _geometry.RowLabel;
         DrawText(ctx, "RECALL", label.X, label, LabelInk, small: true);
         for (int i = 0; i < 5; i++)
-            DrawStud(ctx, CommandDeckLayout.RecallStud(i), on: false, icon: RecallIcons[i], letter: null);
+            DrawStud(ctx, _geometry.RecallStud(i), on: false, icon: RecallIcons[i], letter: null);
     }
 
     private void DrawJump(UiRenderContext ctx, CommandDeckView v)
     {
-        DeckRect label = CommandDeckLayout.JumpLabel;
+        DeckRect label = _geometry.JumpLabel;
         DrawText(ctx, "JUMP", label.X, label, v.JumpCharging ? JumpInk : LabelInk with { W = 0.5f }, small: true);
-        DeckRect t = CommandDeckLayout.JumpTrack;
+        DeckRect t = _geometry.JumpTrack;
         ctx.FillRoundedRect(t.X, t.Y, t.W, t.H, 3f, Track);
         if (v.JumpFill > 0f)
             ctx.FillRoundedRect(t.X, t.Y, t.W * v.JumpFill, t.H, 3f, JumpInk);
@@ -138,7 +138,7 @@ internal sealed partial class UiCommandDeck
 
     private void DrawOrb(UiRenderContext ctx, CommandDeckView v)
     {
-        DeckRect o = CommandDeckLayout.Orb;
+        DeckRect o = _geometry.Orb;
         bool combat = v.Orb != DeckOrbMode.Peace;
         ctx.FillEllipse(o.X - 6, o.Y - 6, o.W + 12, o.H + 12, combat ? CombatGlow : PeaceGlow);
         ctx.FillEllipse(o.X - 2, o.Y - 2, o.W + 4, o.H + 4, FrameEdge);
@@ -167,9 +167,9 @@ internal sealed partial class UiCommandDeck
 
     private void DrawStuds(UiRenderContext ctx, CommandDeckView v)
     {
-        DrawStud(ctx, CommandDeckLayout.Stud(0), v.RepeatAttacks, HudIcons.Repeat, null);
-        DrawStud(ctx, CommandDeckLayout.Stud(1), v.AutoTarget, HudIcons.AutoTarget, null);
-        DrawStud(ctx, CommandDeckLayout.Stud(2), v.KeepInView, HudIcons.KeepInView, null);
+        DrawStud(ctx, _geometry.Stud(0), v.RepeatAttacks, HudIcons.Repeat, null);
+        DrawStud(ctx, _geometry.Stud(1), v.AutoTarget, HudIcons.AutoTarget, null);
+        DrawStud(ctx, _geometry.Stud(2), v.KeepInView, HudIcons.KeepInView, null);
     }
 
     private void DrawStud(UiRenderContext ctx, DeckRect r, bool on, string? icon, string? letter, bool dim = false)

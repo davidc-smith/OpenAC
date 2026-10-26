@@ -31,6 +31,7 @@ internal sealed partial class UiCommandDeck : UiElement
     private readonly EmbeddedSvgSpriteCache? _icons;
     private readonly Func<double> _clock;
     private readonly DeckFonts? _fonts;
+    private DeckGeometry _geometry = DeckGeometry.Default;
     private CommandDeckView _view = CommandDeckView.Empty;
     private AttackHeight? _held;
     private bool _draggingPower;
@@ -56,8 +57,8 @@ internal sealed partial class UiCommandDeck : UiElement
         _icons = icons;
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _fonts = fonts;
-        Width = CommandDeckLayout.Width;
-        Height = CommandDeckLayout.Height;
+        Width = _geometry.Width;
+        Height = _geometry.Height;
         MinWidth = MaxWidth = Width;
         MinHeight = MaxHeight = Height;
         Resizable = false;
@@ -70,6 +71,7 @@ internal sealed partial class UiCommandDeck : UiElement
     public override bool ReceivesHoverMouseMove => true;
 
     internal CommandDeckView View => _view;
+    internal DeckGeometry Geometry => _geometry;
 
     /// <summary>
     /// The tooltip the deck is showing now, or null. The deck is one element
@@ -105,7 +107,7 @@ internal sealed partial class UiCommandDeck : UiElement
         ctx.PushAlphaAbsolute(1f);
         try
         {
-            HudTooltip.Draw(ctx, tip, TooltipStyle, CommandDeckLayout.RectFor(_hover),
+            HudTooltip.Draw(ctx, tip, TooltipStyle, _geometry.RectFor(_hover),
                 ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
         }
         finally { ctx.PopAlpha(); }
@@ -125,11 +127,11 @@ internal sealed partial class UiCommandDeck : UiElement
 
     protected override bool OnHitTest(float localX, float localY)
     {
-        _hitZone = CommandDeckLayout.ZoneAt(_view, localX, localY);
+        _hitZone = _geometry.ZoneAt(_view, localX, localY);
         CapturesPointerDrag = IsControl(_hitZone);
         return _hitZone != DeckZone.None
-            || CommandDeckLayout.Frame.Contains(localX, localY)
-            || CommandDeckLayout.InOrb(localX, localY);
+            || _geometry.Frame.Contains(localX, localY)
+            || _geometry.InOrb(localX, localY);
     }
 
     /// <summary>Zones that act on a press; every other part of the deck drags the window.</summary>
@@ -175,12 +177,12 @@ internal sealed partial class UiCommandDeck : UiElement
         {
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
-                return Press(CommandDeckLayout.ZoneAt(_view, e.Data1, e.Data2), e.Data1);
+                return Press(_geometry.ZoneAt(_view, e.Data1, e.Data2), e.Data1);
             case UiEventType.MouseMove:
-                SetHover(CommandDeckLayout.ZoneAt(_view, e.Data1, e.Data2));
+                SetHover(_geometry.ZoneAt(_view, e.Data1, e.Data2));
                 if (_draggingPower)
                 {
-                    _actions.SetDesiredPower(CommandDeckLayout.PowerAt(e.Data1));
+                    _actions.SetDesiredPower(_geometry.PowerAt(e.Data1));
                     return true;
                 }
                 return _hover != DeckZone.None;
@@ -196,7 +198,7 @@ internal sealed partial class UiCommandDeck : UiElement
                 return true;
             case UiEventType.Scroll:
                 if (_view.Row != DeckContextRow.Power
-                    || CommandDeckLayout.ZoneAt(_view, e.Data1, e.Data2) != DeckZone.PowerTrack
+                    || _geometry.ZoneAt(_view, e.Data1, e.Data2) != DeckZone.PowerTrack
                     || e.Data0 == 0)
                     return false;
                 _actions.SetDesiredPower(Math.Clamp(
@@ -226,7 +228,7 @@ internal sealed partial class UiCommandDeck : UiElement
                 return true;
             case DeckZone.PowerTrack:
                 _draggingPower = true;
-                _actions.SetDesiredPower(CommandDeckLayout.PowerAt(x));
+                _actions.SetDesiredPower(_geometry.PowerAt(x));
                 return true;
             case DeckZone.High:
             case DeckZone.Medium:

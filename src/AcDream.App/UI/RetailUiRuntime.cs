@@ -3395,8 +3395,8 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 WindowName = WindowNames.CommandDeck,
                 Chrome = RetailWindowChrome.Imported,
-                Left = Math.Max(0f, (Host.Root.Width - Hud.CommandDeckLayout.Width) * 0.5f),
-                Top = Math.Max(0f, Host.Root.Height - Hud.CommandDeckLayout.Height - 20f),
+                Left = Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f),
+                Top = Math.Max(0f, Host.Root.Height - Hud.DeckGeometry.Default.Height - 20f),
                 Resizable = false,
                 ResizeX = false,
                 ResizeY = false,
