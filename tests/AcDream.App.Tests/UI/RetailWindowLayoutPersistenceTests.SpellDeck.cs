@@ -19,8 +19,10 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public void ShowMessage(string text) { }
     }
 
-    /// <summary>The runtime's favourite commands: the local spellbook takes each op at once (raising
-    /// <c>SpellbookChanged</c> inside it), as <c>RuntimeCharacterState.TryAddFavorite</c> does.</summary>
+    /// <summary>The runtime's favourite commands: the spellbook takes each op at once (raising
+    /// <c>SpellbookChanged</c> inside it), as <c>RuntimeCharacterState.TryAddFavorite</c> does, but with the
+    /// server's rules: ACE's <c>AddSpellToBar</c> ignores a Set of a spell already in the bar, so the book
+    /// here is what the server ends up holding.</summary>
     private sealed class ServerSpellActions(Spellbook book, Func<string> key, List<(string Key, string Op)> sent)
         : ISpellDeckActions
     {
@@ -29,6 +31,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public void SetFavorite(int tab, int position, uint spellId)
         {
             sent.Add((key(), $"set {tab} {position} {spellId}"));
+            if (book.GetFavorites(tab).Contains(spellId)) return;
             book.SetFavorite(tab, position, spellId);
         }
         public void RemoveFavorite(int tab, uint spellId)

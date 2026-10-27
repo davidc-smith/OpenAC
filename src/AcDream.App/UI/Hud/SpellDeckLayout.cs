@@ -13,8 +13,9 @@ public readonly record struct SpellDeckSlot(int Row, int Col) : IComparable<Spel
 public readonly record struct SpellDeckSlotSpell(int Row, int Col, uint SpellId);
 
 /// <summary>A server favourite change for one tab, in the order to send it.
-/// <see cref="Set"/> follows ACE's <c>AddSpellToBar</c> (and <c>Spellbook.SetFavorite</c>): the spell is
-/// removed if present, then inserted at <c>min(position, count)</c>. <see cref="Remove"/> removes it.</summary>
+/// <see cref="Set"/> inserts the spell at <c>min(position, count)</c>; ACE's <c>AddSpellToBar</c> ignores it when
+/// the spell is already in the bar (the client's <c>Spellbook.SetFavorite</c> removes and re-inserts it instead),
+/// so a spell is only ever Set when it is not in the list. <see cref="Remove"/> removes it.</summary>
 public readonly record struct SpellDeckSyncOp(bool IsRemove, int Position, uint SpellId)
 {
     public static SpellDeckSyncOp Set(int position, uint spellId) => new(false, position, spellId);
@@ -182,10 +183,12 @@ public sealed class SpellDeckLayout : IEquatable<SpellDeckLayout>
 
     /// <summary>
     /// The server changes that make <paramref name="serverList"/> (a tab's dense list, each spell once) equal
-    /// <see cref="Distinct"/>, when applied in order with ACE's rules: first a <see cref="SpellDeckSyncOp.Remove"/>
-    /// for each server spell the layout no longer holds, then a <see cref="SpellDeckSyncOp.Set"/> for each spell
-    /// that is new or out of place, in reading order. Spells on the longest run already in the right relative
-    /// order are not touched, so one moved spell is one Set.
+    /// <see cref="Distinct"/>, when applied in order with ACE's rules (a Set of a spell already in the list is
+    /// ignored) or the client's (a Set removes the spell first): first a <see cref="SpellDeckSyncOp.Remove"/> for
+    /// each server spell the layout no longer holds, then, in reading order, a <see cref="SpellDeckSyncOp.Set"/>
+    /// for each spell that is new, or a Remove then a Set for each spell that is out of place. Spells on the
+    /// longest run already in the right relative order are not touched, so one moved spell is one Remove and
+    /// one Set.
     /// </summary>
     public IReadOnlyList<SpellDeckSyncOp> SyncOps(IReadOnlyList<uint> serverList)
     {
@@ -210,7 +213,7 @@ public sealed class SpellDeckLayout : IEquatable<SpellDeckLayout>
         {
             uint spell = target[i];
             if (keep.Contains(spell)) continue;
-            work.Remove(spell);
+            if (work.Remove(spell)) ops.Add(SpellDeckSyncOp.Remove(spell));   // ACE ignores a Set of a spell it has
             int position = i == 0 ? 0 : work.IndexOf(target[i - 1]) + 1;
             work.Insert(position, spell);
             ops.Add(SpellDeckSyncOp.Set(position, spell));

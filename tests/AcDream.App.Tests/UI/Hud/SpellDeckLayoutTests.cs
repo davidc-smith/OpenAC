@@ -330,8 +330,18 @@ public sealed class SpellDeckLayoutTests
     }
 
     [Fact]
-    public void SyncOps_MovingOneSpellToTheEnd_IsOneSet() =>
-        Assert.Equal([SpellDeckSyncOp.Set(2, 1)], L((0, 0, 2), (0, 1, 3), (1, 5, 1)).SyncOps([1, 2, 3]));
+    public void SyncOps_MovingOneSpellToTheEnd_IsARemoveThenASet() =>
+        Assert.Equal([SpellDeckSyncOp.Remove(1), SpellDeckSyncOp.Set(2, 1)],
+            L((0, 0, 2), (0, 1, 3), (1, 5, 1)).SyncOps([1, 2, 3]));
+
+    [Fact]
+    public void SyncOps_ASpellAlreadyOnTheServer_IsRemovedBeforeItIsSetAgain()
+    {
+        // ACE's AddSpellToBar ignores a Set for a spell already in the bar, so a move must remove it first.
+        IReadOnlyList<SpellDeckSyncOp> ops = L((0, 0, 3), (0, 1, 1), (0, 2, 2)).SyncOps([1, 2, 3]);
+        Assert.Equal([SpellDeckSyncOp.Remove(3), SpellDeckSyncOp.Set(0, 3)], ops);
+        Assert.Equal([3u, 1u, 2u], ApplyAce([1, 2, 3], ops));
+    }
 
     [Fact]
     public void SyncOps_ExtraCopies_NeverReachTheServer() =>
@@ -344,14 +354,29 @@ public sealed class SpellDeckLayoutTests
         Assert.Equal(SpellDeckFavoriteOp.Remove(3, 9), SpellDeckSyncOp.Remove(9).ToFavoriteOp(3));
     }
 
-    /// <summary>The client's (and ACE's) rules: Set removes the spell if present, then inserts it at min(pos, count).</summary>
-    private static List<uint> Apply(IReadOnlyList<uint> server, IEnumerable<SpellDeckSyncOp> ops)
+    /// <summary>ACE's rules (<c>AddSpellToBar</c>, <c>TryRemoveSpellFromBar</c>): a Set of a spell already in
+    /// the bar is ignored; a Set of a new spell inserts it at min(pos, count); a Remove removes it.</summary>
+    private static List<uint> ApplyAce(IReadOnlyList<uint> server, IEnumerable<SpellDeckSyncOp> ops)
     {
         var list = server.ToList();
         foreach (SpellDeckSyncOp op in ops)
         {
             if (op.IsRemove) { list.Remove(op.SpellId); continue; }
             Assert.True(op.Position >= 0);
+            if (list.Contains(op.SpellId)) continue;
+            list.Insert(Math.Min(op.Position, list.Count), op.SpellId);
+        }
+        return list;
+    }
+
+    /// <summary>The local client's rules (<c>Spellbook.SetFavorite</c>): a Set removes the spell if present, then
+    /// inserts it at min(pos, count); a Remove removes it.</summary>
+    private static List<uint> ApplyLocal(IReadOnlyList<uint> server, IEnumerable<SpellDeckSyncOp> ops)
+    {
+        var list = server.ToList();
+        foreach (SpellDeckSyncOp op in ops)
+        {
+            if (op.IsRemove) { list.Remove(op.SpellId); continue; }
             int pos = Math.Min(op.Position, list.Count);
             list.Remove(op.SpellId);
             list.Insert(Math.Min(pos, list.Count), op.SpellId);
@@ -377,12 +402,29 @@ public sealed class SpellDeckLayoutTests
                 .Where(_ => rng.Next(3) > 0).OrderBy(_ => rng.Next()).ToList();
 
             IReadOnlyList<SpellDeckSyncOp> ops = layout.SyncOps(server);
-            Assert.Equal(layout.Distinct, Apply(server, ops));
+            // The server (ACE) and the local spellbook both end on the layout's distinct spells.
+            Assert.Equal(layout.Distinct, ApplyAce(server, ops));
+            Assert.Equal(layout.Distinct, ApplyLocal(server, ops));
 
-            // Removals first, then sets; each spell touched at most once; no more sets than out-of-place spells.
-            int firstSet = ops.ToList().FindIndex(o => !o.IsRemove);
-            Assert.True(firstSet < 0 || ops.Skip(firstSet).All(o => !o.IsRemove), $"seed {seed}");
-            Assert.Equal(ops.Count, ops.Select(o => o.SpellId).Distinct().Count());
+            // Under ACE's rules no Set is ever ignored: each Set is of a spell not in the list at that point.
+            var list = server.ToList();
+            foreach (SpellDeckSyncOp op in ops)
+            {
+                if (op.IsRemove) { Assert.True(list.Remove(op.SpellId), $"seed {seed}"); continue; }
+                Assert.DoesNotContain(op.SpellId, list);
+                list.Insert(Math.Min(op.Position, list.Count), op.SpellId);
+            }
+
+            // Removals of spells leaving the server come first; a spell is removed and set at most once each;
+            // a remove of a spell that stays is followed at once by its set.
+            List<SpellDeckSyncOp> opList = [.. ops];
+            int leaving = opList.TakeWhile(o => o.IsRemove && !layout.Contains(o.SpellId)).Count();
+            Assert.True(opList.Skip(leaving).All(o => layout.Contains(o.SpellId)), $"seed {seed}");
+            Assert.Equal(ops.Count(o => o.IsRemove), ops.Where(o => o.IsRemove).Select(o => o.SpellId).Distinct().Count());
+            Assert.Equal(ops.Count(o => !o.IsRemove), ops.Where(o => !o.IsRemove).Select(o => o.SpellId).Distinct().Count());
+            for (int k = 0; k < opList.Count; k++)
+                if (opList[k].IsRemove && layout.Contains(opList[k].SpellId))
+                    Assert.Equal(SpellDeckSyncOp.Set(opList[k + 1].Position, opList[k].SpellId), opList[k + 1]);
             Assert.True(ops.Count(o => !o.IsRemove) <= layout.Distinct.Count);
 
             // Already applied: nothing more to do.
@@ -391,9 +433,9 @@ public sealed class SpellDeckLayoutTests
     }
 
     [Fact]
-    public void SyncOps_SetsAreMinimal_ForAPureReorder()
+    public void SyncOps_OneMovedSpell_IsOneRemoveAndOneSet()
     {
-        // n spells, one moved: always a single Set.
+        // n spells, one moved: at most one Remove plus one Set (ACE ignores a Set of a spell already there).
         for (int seed = 0; seed < 500; seed++)
         {
             var rng = new Random(seed);
@@ -406,8 +448,11 @@ public sealed class SpellDeckLayoutTests
             target.Insert(to, moved);
             SpellDeckLayout layout = SpellDeckLayout.FromList(target, cols: 5);
             IReadOnlyList<SpellDeckSyncOp> ops = layout.SyncOps(server);
-            Assert.True(ops.Count <= 1, $"seed {seed}: {ops.Count} ops");
-            Assert.Equal(target, Apply(server, ops));
+            Assert.True(ops.Count <= 2, $"seed {seed}: {ops.Count} ops");
+            if (ops.Count > 0)
+                Assert.Equal([SpellDeckSyncOp.Remove(ops[1].SpellId), SpellDeckSyncOp.Set(ops[1].Position, ops[1].SpellId)], ops);
+            Assert.Equal(target, ApplyAce(server, ops));
+            Assert.Equal(target, ApplyLocal(server, ops));
         }
     }
 }

@@ -4,7 +4,8 @@ namespace AcDream.App.Tests.UI.Hud;
 
 public sealed class SpellDeckTabsTests
 {
-    /// <summary>The server's favourite lists, applying each call with ACE's rules (as the local spellbook does).
+    /// <summary>The server's favourite lists, applying each call with ACE's rules: a Set of a spell
+    /// already in the tab is ignored.
     /// <see cref="OnChange"/> runs inside every change, as the spellbook's changed event does.</summary>
     private sealed class Server : ISpellDeckActions
     {
@@ -16,7 +17,8 @@ public sealed class SpellDeckTabsTests
         public void SetFavorite(int tab, int pos, uint id)
         {
             Calls.Add($"set {tab} {pos} {id}");
-            Tabs[tab].Remove(id); Tabs[tab].Insert(Math.Min(pos, Tabs[tab].Count), id);
+            if (Tabs[tab].Contains(id)) return;     // ACE's AddSpellToBar ignores a spell already in the bar
+            Tabs[tab].Insert(Math.Min(pos, Tabs[tab].Count), id);
             OnChange?.Invoke();
         }
         public void RemoveFavorite(int tab, uint id) { Calls.Add($"remove {tab} {id}"); Tabs[tab].Remove(id); OnChange?.Invoke(); }
@@ -25,6 +27,20 @@ public sealed class SpellDeckTabsTests
     }
 
     private static SpellDeckLayout L(params (int Row, int Col, uint Spell)[] slots) => SpellDeckLayout.FromSlots(slots);
+
+    /// <summary>No spell left the server: every remove is of a spell set again by the next call (a move:
+    /// ACE ignores a Set of a spell already in the bar, so a move is a remove then a set).</summary>
+    private static void AssertNoSpellLeft(IReadOnlyList<string> calls)
+    {
+        for (int i = 0; i < calls.Count; i++)
+        {
+            if (!calls[i].StartsWith("remove ")) continue;
+            string[] remove = calls[i].Split(' ');
+            Assert.True(i + 1 < calls.Count, calls[i]);
+            string[] set = calls[i + 1].Split(' ');
+            Assert.Equal(("set", remove[1], remove[2]), (set[0], set[1], set[3]));
+        }
+    }
 
     private static (SpellDeckTabs T, Server S, List<int> Saves) Make(int localCount = 0, Dictionary<int, SpellDeckLayout>? layouts = null)
     {
@@ -75,9 +91,9 @@ public sealed class SpellDeckTabsTests
         var (t, s, _) = Make(layouts: new() { [0] = L((0, 0, 10u), (0, 1, 11u), (1, 0, 10u)) });
         t.Apply([new(0, L((0, 1, 11u), (1, 0, 10u)))]);          // a copy of 10 is left: 11 now reads first
         Assert.Equal([11u, 10u], s.Tabs[0]);
-        Assert.DoesNotContain(s.Calls, c => c.StartsWith("remove"));
+        Assert.Equal(["remove 0 10", "set 0 1 10"], s.Calls);      // a move: 10 stays on the server
         t.Apply([new(0, L((0, 1, 11u)))]);
-        Assert.Equal(["remove 0 10"], s.Calls.Skip(1));
+        Assert.Equal(["remove 0 10"], s.Calls.Skip(2));
         Assert.Equal([11u], s.Tabs[0]);
     }
 
@@ -170,7 +186,7 @@ public sealed class SpellDeckTabsTests
         Assert.Equal(max, l.Distinct.Count);
         uint[] unshown = [.. s2.Tabs[0].Where(id => !l.Contains(id))];
         Assert.Equal(3, unshown.Length);
-        Assert.DoesNotContain(s2.Calls, c => c.StartsWith("remove"));   // never removed from the server
+        AssertNoSpellLeft(s2.Calls);                                    // never removed from the server
         Assert.Equal([.. l.Distinct, .. unshown], s2.Tabs[0]);          // kept after the layout's spells
         Assert.Equal([3u, 2u, 1u], unshown);                            // in server order
 

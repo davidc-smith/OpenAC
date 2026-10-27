@@ -6,7 +6,8 @@ namespace AcDream.App.Tests.UI.Hud;
 
 public sealed class SpellDeckControllerTests
 {
-    /// <summary>The server's favourite lists, applying each call with ACE's rules. <see cref="OnChange"/> runs
+    /// <summary>The server's favourite lists, applying each call with ACE's rules (a Set of a spell
+    /// already in the tab is ignored). <see cref="OnChange"/> runs
     /// inside every change, as the spellbook's changed event does (the runtime applies favourites at once).</summary>
     private sealed class Game : ISpellDeckActions
     {
@@ -19,12 +20,27 @@ public sealed class SpellDeckControllerTests
         public void SetFavorite(int tab, int pos, uint id)
         {
             Calls.Add($"set {tab} {pos} {id}");
-            Tabs[tab].Remove(id); Tabs[tab].Insert(Math.Min(pos, Tabs[tab].Count), id);
+            if (Tabs[tab].Contains(id)) return;     // ACE's AddSpellToBar ignores a spell already in the bar
+            Tabs[tab].Insert(Math.Min(pos, Tabs[tab].Count), id);
             OnChange?.Invoke();
         }
         public void RemoveFavorite(int tab, uint id) { Calls.Add($"remove {tab} {id}"); Tabs[tab].Remove(id); OnChange?.Invoke(); }
         public void ExamineSpell(uint id) => Calls.Add($"examine {id}");
         public void ShowMessage(string text) => Calls.Add("msg " + text);
+    }
+
+    /// <summary>No spell left the server: every remove is of a spell set again by the next call (a move:
+    /// ACE ignores a Set of a spell already in the bar, so a move is a remove then a set).</summary>
+    private static void AssertNoSpellLeft(IReadOnlyList<string> calls)
+    {
+        for (int i = 0; i < calls.Count; i++)
+        {
+            if (!calls[i].StartsWith("remove ")) continue;
+            string[] remove = calls[i].Split(' ');
+            Assert.True(i + 1 < calls.Count, calls[i]);
+            string[] set = calls[i + 1].Split(' ');
+            Assert.Equal(("set", remove[1], remove[2]), (set[0], set[1], set[3]));
+        }
     }
 
     private sealed class Rig
@@ -289,7 +305,7 @@ public sealed class SpellDeckControllerTests
         Assert.Equal(SpellDeckGeometry.MaxCapacity, r.C.MinColumns);
         Assert.Equal(max, r.C.LayoutOf(4).Distinct.Count);
         Assert.Equal(max + 2, r.G.Tabs[4].Count);                       // nothing removed
-        Assert.DoesNotContain(r.G.Calls, c => c.StartsWith("remove"));
+        AssertNoSpellLeft(r.G.Calls);
         Assert.Equal([1000u + (uint)max + 1, 1000u + (uint)max + 2], r.G.Tabs[4].Skip(max));
     }
 
@@ -488,13 +504,30 @@ public sealed class SpellDeckControllerTests
         Assert.Null(r.C.SlotSpell(0, 1));
         Assert.Equal(11u, r.C.SlotSpell(2, 3));
         AssertInSync(r);
-        Assert.Single(r.G.Calls);                                     // one moved spell is one op
+        Assert.Equal(["remove 0 11", "set 0 3 11"], r.G.Calls);      // one moved spell: a remove, then a set
 
         r.G.Calls.Clear();
         r.C.DropOnSlot(Slot(0, 0, 3, 12u), 1, 1, copy: false);       // 12 ↔ 13
         Assert.Equal((13u, 12u), (r.C.SlotSpell(0, 3)!.Value, r.C.SlotSpell(1, 1)!.Value));
         AssertInSync(r);
-        Assert.Single(r.G.Calls);
+        Assert.Equal(2, r.G.Calls.Count);
+        AssertNoSpellLeft(r.G.Calls);
+    }
+
+    [Fact]
+    public void AMove_RaisesTwoEchoes_TheRemoveAndTheSet_AndNeitherReconciles()
+    {
+        // Between the remove and the set the server lacks 11: a reconcile there would clear its slot.
+        var r = Make();
+        int echoes = 0;
+        r.G.OnChange = () => { echoes++; r.C.ServerFavoritesChanged(); };
+        r.C.DropOnSlot(Slot(0, 0, 1, 11u), 2, 3, copy: false);
+        Assert.Equal(2, echoes);
+        Assert.Equal(["remove 0 11", "set 0 3 11"], r.G.Calls);
+        Assert.Equal(11u, r.C.SlotSpell(2, 3));
+        Assert.Null(r.C.SlotSpell(0, 1));
+        AssertInSync(r);
+        Assert.Single(r.Saved);
     }
 
     [Fact]

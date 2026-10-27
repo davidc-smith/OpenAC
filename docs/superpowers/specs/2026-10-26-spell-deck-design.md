@@ -505,7 +505,7 @@ The second live look found: the bar should match the deck frame's width (orb exc
 
 - Each tab has a **layout**: which slot `(row, column)` holds which spell. Slots may be empty; the same spell may sit in several slots.
 - The layout is saved per character, per tab, in this PC's settings. Local tabs (9–16) are only a layout.
-- **Server tabs (1–8):** the server list is kept equal to the tab's distinct spells in reading order (row by row, left to right; each spell at its first slot). Placing a spell new to the tab adds it on the server; removing a spell's last copy removes it on the server; a change of reading order repositions it. Extra copies never reach the server.
+- **Server tabs (1–8):** the server list is kept equal to the tab's distinct spells in reading order (row by row, left to right; each spell at its first slot). Placing a spell new to the tab adds it on the server; removing a spell's last copy removes it on the server; a change of reading order repositions it with a Remove then a Set (ACE ignores a Set of a spell already in the bar). Extra copies never reach the server.
 - **Reconcile** (login, character change, and whenever the server list changes from elsewhere): a server spell missing from the layout goes into the tab's first empty slot in reading order (a new row's slots count only if a row exists); a layout spell no longer in the server list is cleared from every slot. Without a saved layout (first use, another PC) the server list fills the slots in reading order.
 - **Edits:**
   - Spellbook → empty slot: place. Spellbook → filled slot: replace (the replaced spell's last copy is removed from the server).

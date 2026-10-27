@@ -142,7 +142,9 @@ public sealed class UiSpellDeckDragTests
         Rig r = Make();
         Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), r.Deck.Geometry.Slot(0, 2)));
         Assert.Equal((12u, 10u), (r.Controller.SlotSpell(0, 0)!.Value, r.Controller.SlotSpell(0, 2)!.Value));
-        Assert.DoesNotContain(r.Game.Calls, c => c.StartsWith("remove"));
+        // Moves only: each remove is followed by the set that puts the spell back (ACE ignores a Set of a
+        // spell already in the bar).
+        Assert.Equal(["remove 0 11", "set 0 2 11", "remove 0 10", "set 0 2 10"], r.Game.Calls);
     }
 
     [Fact]
@@ -150,7 +152,7 @@ public sealed class UiSpellDeckDragTests
     {
         Rig r = Make(capacity: 2);   // 10 11 / 12 _
         Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), r.Deck.Geometry.Slot(1, 1)));
-        Assert.Equal(["set 0 2 10"], r.Game.Calls);
+        Assert.Equal(["remove 0 10", "set 0 2 10"], r.Game.Calls);
         Assert.Equal(10u, r.Controller.SlotSpell(1, 1));
         Assert.Null(r.Controller.SlotSpell(0, 0));
     }
@@ -369,7 +371,7 @@ public sealed class UiSpellDeckDragTests
         Assert.Empty(r.Game.Calls);
         root.OnMouseMove(tx, ty);
         root.OnMouseUp(UiMouseButton.Left, tx, ty);
-        Assert.Equal(["set 0 2 10"], r.Game.Calls);
+        Assert.Equal(["remove 0 10", "set 0 2 10"], r.Game.Calls);
         Assert.Equal(Left, r.Deck.Left, 1f);
     }
 
