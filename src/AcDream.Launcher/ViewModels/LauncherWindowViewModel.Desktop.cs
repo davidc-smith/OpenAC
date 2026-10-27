@@ -214,6 +214,26 @@ public sealed partial class LauncherWindowViewModel
         OnPropertyChanged(nameof(ShowNewInstallationNotice));
     }
 
+    private ClassicMigrationViewModel? _classicMigration;
+
+    /// <summary>The VirindiTank and UtilityBelt import dialog; null until configured.</summary>
+    public ClassicMigrationViewModel? ClassicMigration => _classicMigration;
+
+    /// <summary>Whether the import button is shown.</summary>
+    public bool HasClassicMigration => _classicMigration is not null;
+
+    /// <summary>Gives the launcher its VirindiTank and UtilityBelt import dialog.</summary>
+    public void ConfigureClassicMigration(ClassicMigrationViewModel classicMigration)
+    {
+        ArgumentNullException.ThrowIfNull(classicMigration);
+        if (_classicMigration is not null)
+            _classicMigration.PropertyChanged -= OnModalPropertyChanged;
+        _classicMigration = classicMigration;
+        _classicMigration.PropertyChanged += OnModalPropertyChanged;
+        OnPropertyChanged(nameof(ClassicMigration));
+        OnPropertyChanged(nameof(HasClassicMigration));
+    }
+
     /// <summary>Whether the install may move now: nothing running and nothing busy.</summary>
     internal bool CanMoveInstallFolder => _rowLaunches.Count == 0 && !IsBusy && !_stopGate.IsPending && !_automaticRelaunch.IsLaunching && Sessions.All(session => !session.IsActive);
 
@@ -324,6 +344,8 @@ public sealed partial class LauncherWindowViewModel
         _healthCancellation.Dispose();
         TextEditor.PropertyChanged -= OnModalPropertyChanged;
         AddServerDialog.PropertyChanged -= OnModalPropertyChanged;
+        if (_classicMigration is not null)
+            _classicMigration.PropertyChanged -= OnModalPropertyChanged;
         TextEditor.Close();
         UpdatePrompt.PropertyChanged -= OnDesktopUpdateChanged;
     }

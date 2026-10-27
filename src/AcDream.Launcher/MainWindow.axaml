@@ -468,6 +468,8 @@
                 <TextBlock Text="{Binding UpdatePrompt.Status}" TextWrapping="Wrap" Classes="muted" />
               </StackPanel></Flyout></Button.Flyout>
             </Button>
+            <Button Content="Import VTank &amp; UB…" Command="{Binding ClassicMigration.OpenCommand}" IsVisible="{Binding HasClassicMigration}"
+                    ToolTip.Tip="Copy profiles from a classic VirindiTank and UtilityBelt install" AutomationProperties.Name="Import VirindiTank and UtilityBelt profiles" />
             <Button Content="Log" Command="{Binding OpenSessionLogCommand}" />
             <Button Content="Cancel" IsVisible="{Binding HasCancelableOperation}" Command="{Binding CancelOperationCommand}" />
           </StackPanel>
@@ -918,6 +920,55 @@
             </Grid>
           </Border>
           <Button Grid.Row="5" Content="Close" HorizontalAlignment="Right" MinWidth="96" Command="{Binding AddServerDialog.CloseCommand}" />
+        </Grid>
+      </Border>
+    </Border>
+    <Border Grid.RowSpan="5" ZIndex="40" Background="#E010171C" IsVisible="{Binding ClassicMigration.IsOpen, FallbackValue=False}"
+            KeyboardNavigation.TabNavigation="Cycle" KeyDown="OnModalKeyDown" AutomationProperties.Name="Import VirindiTank and UtilityBelt dialog">
+      <Border Classes="card" Margin="24" MaxWidth="900" VerticalAlignment="Stretch">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" RowSpacing="10">
+          <StackPanel Spacing="4">
+            <TextBlock Text="Import VirindiTank &amp; UtilityBelt" FontFamily="Georgia,serif" FontSize="22" Foreground="#DBB573" />
+            <TextBlock Text="Copies your classic profiles, metas, navs, loot and UtilityBelt profiles to where MossTank reads them. The original folders are only read."
+                       Classes="muted" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+          <Grid Grid.Row="1" ColumnDefinitions="100,*,Auto" ColumnSpacing="8">
+            <TextBlock Text="VirindiTank" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" Text="{Binding ClassicMigration.VirindiTankPath, Mode=TwoWay}" PlaceholderText="C:\Games\VirindiPlugins\VirindiTank"
+                     AutomationProperties.Name="VirindiTank folder" />
+            <Button Grid.Column="2" Content="Browse…" Command="{Binding ClassicMigration.BrowseVirindiTankCommand}" AutomationProperties.Name="Browse for the VirindiTank folder" />
+          </Grid>
+          <Grid Grid.Row="2" ColumnDefinitions="100,*,Auto" ColumnSpacing="8">
+            <TextBlock Text="UtilityBelt" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" Text="{Binding ClassicMigration.UtilityBeltPath, Mode=TwoWay}" PlaceholderText="Documents\Decal Plugins\UtilityBelt"
+                     AutomationProperties.Name="UtilityBelt folder" />
+            <Button Grid.Column="2" Content="Browse…" Command="{Binding ClassicMigration.BrowseUtilityBeltCommand}" AutomationProperties.Name="Browse for the UtilityBelt folder" />
+          </Grid>
+          <StackPanel Grid.Row="3" Spacing="4">
+            <CheckBox Content="Replace files that differ" IsChecked="{Binding ClassicMigration.Overwrite, Mode=TwoWay}" AutomationProperties.Name="Replace files that differ" />
+            <TextBlock Text="{Binding ClassicMigration.TargetPath, StringFormat='Into {0}'}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+          <Panel Grid.Row="4">
+            <TextBlock Text="{Binding ClassicMigration.Error}" Foreground="#FFB0A0" TextWrapping="Wrap" IsVisible="{Binding ClassicMigration.HasError, FallbackValue=False}" />
+            <TextBlock Text="{Binding ClassicMigration.Status}" Foreground="#8FD18F" TextWrapping="Wrap" IsVisible="{Binding !ClassicMigration.HasError, FallbackValue=False}" />
+          </Panel>
+          <Border Grid.Row="5" Classes="well">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto">
+              <ItemsControl ItemsSource="{Binding ClassicMigration.Lines}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <SelectableTextBlock Text="{Binding}" FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="12" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
+          <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="ClassicMigrationCloseButton" Content="Close" IsCancel="True" MinWidth="96" Command="{Binding ClassicMigration.CloseCommand}"
+                    AutomationProperties.Name="Close the import dialog" />
+            <Button Content="Preview" MinWidth="96" Command="{Binding ClassicMigration.PreviewCommand}" AutomationProperties.Name="Preview the import" />
+            <Button Content="Import" Classes="primary ready" MinWidth="96" Command="{Binding ClassicMigration.ImportCommand}" AutomationProperties.Name="Import the profiles" />
+          </StackPanel>
         </Grid>
       </Border>
     </Border>

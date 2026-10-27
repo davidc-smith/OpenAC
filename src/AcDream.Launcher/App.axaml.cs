@@ -129,6 +129,7 @@ public sealed partial class App : Application
                 LegacyApplicationLayout.ExistingFolders(
                     paths,
                     launcherDirectory: AppContext.BaseDirectory)));
+            _viewModel.ConfigureClassicMigration(new ClassicMigrationViewModel(paths.VtankProfilesDirectory));
             var mainWindow = new MainWindow
             {
                 DataContext = _viewModel,

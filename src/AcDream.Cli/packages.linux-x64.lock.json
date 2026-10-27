@@ -38,6 +38,15 @@
           "StbImageWriteSharp": "[1.16.7, )"
         }
       },
+      "acdream.launcher.core": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Platform": "[0.1.26, )"
+        }
+      },
+      "acdream.platform": {
+        "type": "Project"
+      },
       "acdream.plugin.abstractions": {
         "type": "Project"
       },

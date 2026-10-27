@@ -74,6 +74,7 @@ public sealed partial class MainWindow : Window
             _observedViewModel.PropertyChanged += OnViewModelPropertyChanged;
             _observedViewModel.ConsoleRequested += OnConsoleRequested;
             _observedViewModel.InstallFolder?.AttachShell(new InstallFolderShell(this));
+            _observedViewModel.ClassicMigration?.AttachShell(new InstallFolderShell(this));
             _observedViewModel.TextEditor.UseClipboard(new ProfileEditorClipboard(this));
         }
 
@@ -97,6 +98,13 @@ public sealed partial class MainWindow : Window
             && sender is LauncherWindowViewModel configured)
         {
             configured.InstallFolder?.AttachShell(new InstallFolderShell(this));
+            return;
+        }
+
+        if (e.PropertyName == nameof(LauncherWindowViewModel.ClassicMigration)
+            && sender is LauncherWindowViewModel withImport)
+        {
+            withImport.ClassicMigration?.AttachShell(new InstallFolderShell(this));
             return;
         }
 
@@ -145,6 +153,10 @@ public sealed partial class MainWindow : Window
         else if (viewModel.AddServerDialog.IsOpen)
         {
             OwnServerNameTextBox.Focus();
+        }
+        else if (viewModel.ClassicMigration?.IsOpen == true)
+        {
+            ClassicMigrationCloseButton.Focus();
         }
         else if (viewModel.HasProfileMigrationNotice)
         {
