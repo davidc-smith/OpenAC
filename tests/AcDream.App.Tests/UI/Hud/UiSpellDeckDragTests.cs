@@ -57,6 +57,9 @@ public sealed class UiSpellDeckDragTests
         return rig;
     }
 
+    private static DeckRect Mark(Rig r, int tab) => r.Deck.Geometry.Bookmark(tab, r.Controller.TabCount);
+    private static DeckRect Plus(Rig r) => r.Deck.Geometry.Plus(r.Controller.TabCount);
+
     private static (int X, int Y) Centre(DeckRect r) => ((int)(r.X + r.W / 2), (int)(r.Y + r.H / 2));
 
     /// <summary>A press as the root makes it: the hit test, then the MouseDown.</summary>
@@ -92,14 +95,16 @@ public sealed class UiSpellDeckDragTests
     }
 
     [Fact]
-    public void AnEmptySlotTheFrameOrTheChipLiftNothing()
+    public void AnEmptySlotTheFrameOrABookmarkLiftNothing()
     {
         Rig r = Make();
         Press(r.Deck, r.Deck.Geometry.Slot(1, 3));
         Assert.Null(r.Deck.GetDragPayload());
-        Press(r.Deck, r.Deck.Geometry.TabChip(0));
+        Press(r.Deck, Mark(r, 0));
         Assert.False(r.Deck.IsDragSource);
         Assert.Null(r.Deck.GetDragPayload());
+        Press(r.Deck, Plus(r));
+        Assert.False(r.Deck.IsDragSource);
         Press(r.Deck, r.Deck.Geometry.ItemSlot);
         Assert.Null(r.Deck.GetDragPayload());
     }
@@ -167,7 +172,7 @@ public sealed class UiSpellDeckDragTests
         Rig r = Make();
         DeckRect s = r.Deck.Geometry.Slot(0, 1);
         int x = (int)(s.X + s.W + 1), y = (int)(s.Y + s.H / 2);
-        Assert.Equal(SpellDeckZone.Frame, r.Deck.Geometry.HitAt(x, y).Zone);
+        Assert.Equal(SpellDeckZone.Frame, r.Deck.Geometry.HitAt(x, y, r.Controller.TabCount).Zone);
         Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), x, y));
         Assert.Equal(["set 0 1 99"], r.Game.Calls);
     }
@@ -177,7 +182,7 @@ public sealed class UiSpellDeckDragTests
     {
         Rig r = Make();
         Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), r.Deck.Geometry.ItemSlot));
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), r.Deck.Geometry.TabChip(0)));
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), Plus(r)));
         Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), 2, 2));
         Assert.Empty(r.Game.Calls);
     }
@@ -196,6 +201,51 @@ public sealed class UiSpellDeckDragTests
         Rig r = Make(capacity: 1);   // 3 rows of 1: tab 0's three spells fill the deck
         Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), r.Deck.Geometry.Slot(0, 0)));
         Assert.Equal(["msg " + SpellDeckController.FullTabMessage], r.Game.Calls);
+    }
+
+    [Fact]
+    public void ASlotDroppedOnABookmarkMovesToTheEndOfThatTab()
+    {
+        Rig r = Make();
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 11u), Mark(r, 2)));
+        Assert.Equal(["set 2 2 11", "remove 0 11"], r.Game.Calls);
+    }
+
+    [Fact]
+    public void ASpellbookSpellDroppedOnABookmarkIsAddedThere()
+    {
+        Rig r = Make();
+        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), Mark(r, 1)));
+        Assert.Equal(["set 1 1 99"], r.Game.Calls);
+    }
+
+    [Fact]
+    public void ADropOnALocalBookmarkStaysLocal()
+    {
+        Rig r = Make();
+        r.Controller.AddLocalTab();
+        r.Controller.ShowTab(0);
+        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), Mark(r, 8)));
+        Assert.Empty(r.Game.Calls);
+        Assert.Equal([99u], r.Controller.Favorites(8));
+    }
+
+    [Fact]
+    public void ADropOnTheBookmarkOfATabThatHoldsTheSpellDoesNothing()
+    {
+        Rig r = Make();
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 11u), Mark(r, 0)));
+        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(20u), Mark(r, 1)));
+        Assert.Empty(r.Game.Calls);
+    }
+
+    [Fact]
+    public void ARefusedBookmarkDropSaysTheTabIsFull()
+    {
+        Rig r = Make(capacity: 1);   // 3 rows of 1: a tab holds 3
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), Mark(r, 2)));
+        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), Mark(r, 0)));
+        Assert.Equal(["set 2 2 10", "remove 0 10", "msg " + SpellDeckController.FullTabMessage], r.Game.Calls);
     }
 
     [Fact]
@@ -231,6 +281,43 @@ public sealed class UiSpellDeckDragTests
         Drop(r.Deck, new SpellbookShortcutDragPayload(99u), x, y);
         Assert.Null(r.Deck.DropHighlight);
         Assert.DoesNotContain(r.Game.Calls, c => !c.StartsWith("msg"));
+    }
+
+    [Fact]
+    public void DragEnterOnABookmarkHighlightsItFromThePlan()
+    {
+        Rig r = Make(capacity: 1);   // 3 rows of 1: tab 0 is full, tab 1 has room
+        var (x, y) = Centre(Mark(r, 1));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
+            Payload: new SpellDeckDragPayload(0, 10u)));
+        Assert.Equal((1, true), r.Deck.BookmarkDropHighlight);
+        Assert.Null(r.Deck.DropHighlight);
+
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragOver, Payload: new SpellDeckDragPayload(0, 10u)));
+        Assert.Null(r.Deck.BookmarkDropHighlight);
+
+        (x, y) = Centre(Mark(r, 0));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
+            Payload: new SpellbookShortcutDragPayload(99u)));
+        Assert.Equal((0, false), r.Deck.BookmarkDropHighlight);   // full
+
+        (x, y) = Centre(Mark(r, 1));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
+            Payload: new SpellbookShortcutDragPayload(20u)));
+        Assert.Equal((1, false), r.Deck.BookmarkDropHighlight);   // already there
+
+        (x, y) = Centre(r.Deck.Geometry.Slot(0, 0));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
+            Payload: new SpellDeckDragPayload(0, 10u)));
+        Assert.Null(r.Deck.BookmarkDropHighlight);
+        Assert.NotNull(r.Deck.DropHighlight);
+
+        (x, y) = Centre(Plus(r));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
+            Payload: new SpellDeckDragPayload(0, 10u)));
+        Assert.Null(r.Deck.BookmarkDropHighlight);
+        Assert.Null(r.Deck.DropHighlight);
+        Assert.Empty(r.Game.Calls);
     }
 
     [Fact]
@@ -302,11 +389,9 @@ public sealed class UiSpellDeckDragTests
 
     // ── Right-click menu ──────────────────────────────────────────
 
-    private static readonly string[] RowItems =
+    private static readonly string[] DeckItems =
     [
         "Add row", "Remove row", "-",
-        "Show tab 1 (shown)", "Show tab 2", "Show tab 3", "Show tab 4",
-        "Show tab 5", "Show tab 6", "Show tab 7", "Show tab 8", "-",
         "Click casts: off", "-", "Detach from deck",
     ];
 
@@ -321,28 +406,55 @@ public sealed class UiSpellDeckDragTests
     {
         Rig r = Make();
         var items = MenuAt(r, r.Deck.Geometry.Slot(0, 1));
-        Assert.Equal(["Examine spell", "Remove from tab", "-", .. RowItems], items.Select(i => i.Text));
+        Assert.Equal(["Examine spell", "Remove from tab", "-", .. DeckItems], items.Select(i => i.Text));
     }
 
     [Fact]
-    public void AChipMenuHasTheDeckItemsOnly_WithTheDecksOneTabShown()
+    public void AnywhereElseOnTheDeckHasTheDeckItemsOnly()
     {
         Rig r = Make();
-        r.Controller.ShowTab(1);
-        var items = MenuAt(r, r.Deck.Geometry.TabChip(2));
-        Assert.Equal(RowItems.Select(t => t.Replace("Show tab 1 (shown)", "Show tab 1").Replace("Show tab 2", "Show tab 2 (shown)")),
-            items.Select(i => i.Text));
+        SpellDeckGeometry g = r.Deck.Geometry;
+        DeckRect frame = new(g.Width - 3, g.Height / 2, 1, 1);
+        foreach (DeckRect at in new[] { g.Slot(2, 5), g.ItemSlot, Mark(r, 0), Mark(r, 7), Plus(r), frame })
+            Assert.Equal(DeckItems, MenuAt(r, at).Select(i => i.Text));
+        Assert.Empty(r.Deck.MenuItemsAt(-5, -5));
     }
 
     [Fact]
-    public void NoMenuOffTheRows()
+    public void TheLastLocalBookmarkHasRemoveTabOnly()
     {
         Rig r = Make();
-        Assert.Empty(MenuAt(r, r.Deck.Geometry.ItemSlot));
+        r.Controller.AddLocalTab();
+        r.Controller.AddLocalTab();
+        Assert.Equal(DeckItems, MenuAt(r, Mark(r, 8)).Select(i => i.Text));   // local, not the last
+        var items = MenuAt(r, Mark(r, 9));
+        Assert.Equal([("Remove tab", true)], items);
+
+        r.Controller.ShowTab(9);
+        r.Deck.SelectMenuItem(0);
+        Assert.Equal(9, r.Controller.TabCount);
+        Assert.Equal(8, r.Controller.Tab);
+        Assert.Empty(r.Game.Calls);
     }
 
     [Fact]
-    public void RowItemsFollowTheControllerAndTheModes()
+    public void RemoveTabDoesNothingWhenTheTabIsNoLongerTheLast()
+    {
+        Rig r = Make();
+        r.Controller.AddLocalTab();
+        MenuAt(r, Mark(r, 8));
+        r.Controller.AddLocalTab();   // tab 8 is no longer the last
+        r.Deck.SelectMenuItem(0);
+        Assert.Equal(10, r.Controller.TabCount);
+
+        MenuAt(r, Mark(r, 9));
+        r.Controller.RemoveLastLocalTab();   // tab 9 is gone
+        r.Deck.SelectMenuItem(0);
+        Assert.Equal(9, r.Controller.TabCount);
+    }
+
+    [Fact]
+    public void DeckItemsFollowTheControllerAndTheModes()
     {
         Rig r = Make();
         r.CanAddRow = false;
@@ -351,11 +463,11 @@ public sealed class UiSpellDeckDragTests
         r.Controller.RemoveRow();
         r.Controller.RemoveRow();
         r.Deck.Refresh();
-        var items = MenuAt(r, r.Deck.Geometry.TabChip(0));
+        var items = MenuAt(r, r.Deck.Geometry.ItemSlot);
         Assert.Equal(("Add row", false), items[0]);
         Assert.Equal(("Remove row", false), items[1]);
-        Assert.Equal("Click casts: on", items[12].Text);
-        Assert.Equal("Attach to deck", items[14].Text);
+        Assert.Equal("Click casts: on", items[3].Text);
+        Assert.Equal("Attach to deck", items[5].Text);
     }
 
     [Fact]
@@ -363,7 +475,7 @@ public sealed class UiSpellDeckDragTests
     {
         Rig r = Make();
         DeckRect slot = r.Deck.Geometry.Slot(0, 1);
-        var items = MenuAt(r, slot);
+        MenuAt(r, slot);
         r.Deck.SelectMenuItem(0);
         Assert.Equal(["examine 11"], r.Game.Calls);
         r.Deck.SelectMenuItem(2);   // separator
@@ -371,21 +483,17 @@ public sealed class UiSpellDeckDragTests
         r.Deck.SelectMenuItem(1);
         Assert.Equal(["examine 11", "remove 0 11"], r.Game.Calls);
 
-        MenuAt(r, slot);
-        r.Deck.SelectMenuItem(Index(items, "Show tab 5"));
-        Assert.Equal(4, r.Controller.Tab);
-
-        MenuAt(r, r.Deck.Geometry.TabChip(0));
+        MenuAt(r, Mark(r, 0));
         r.Deck.SelectMenuItem(0);
         Assert.Equal(4, r.Controller.RowCount);
 
-        var chip = MenuAt(r, r.Deck.Geometry.TabChip(1));
-        r.Deck.SelectMenuItem(Index(chip, "Remove row"));
+        var deck = MenuAt(r, r.Deck.Geometry.ItemSlot);
+        r.Deck.SelectMenuItem(Index(deck, "Remove row"));
         Assert.Equal(3, r.Controller.RowCount);
 
-        chip = MenuAt(r, r.Deck.Geometry.TabChip(0));
-        r.Deck.SelectMenuItem(Index(chip, "Click casts: off"));
-        r.Deck.SelectMenuItem(Index(chip, "Detach from deck"));
+        deck = MenuAt(r, Plus(r));
+        r.Deck.SelectMenuItem(Index(deck, "Click casts: off"));
+        r.Deck.SelectMenuItem(Index(deck, "Detach from deck"));
         Assert.Equal(["toggle click casts", "attached False"], r.Callbacks);
     }
 
@@ -425,7 +533,7 @@ public sealed class UiSpellDeckDragTests
     {
         Rig r = Make();
         r.CanAddRow = false;
-        MenuAt(r, r.Deck.Geometry.TabChip(0));
+        MenuAt(r, r.Deck.Geometry.ItemSlot);
         r.Deck.SelectMenuItem(0);
         Assert.Equal(3, r.Controller.RowCount);
     }
@@ -434,11 +542,41 @@ public sealed class UiSpellDeckDragTests
     public void ARightClickOpensTheMenu()
     {
         var (root, r) = Mount();
-        var (x, y) = Screen(r.Deck.Geometry.TabChip(0));
+        var (x, y) = Screen(Mark(r, 0));
         root.OnMouseMove(x, y);
         root.OnMouseDown(UiMouseButton.Right, x, y);
         root.OnMouseUp(UiMouseButton.Right, x, y);
         Assert.Contains(r.Deck.Children, c => c is UiMarkupContextMenu { IsOpen: true });
+    }
+
+    [Fact]
+    public void ClickingABookmarkThroughTheRootShowsThatTab_AndDoesNotMoveTheWindow()
+    {
+        var (root, r) = Mount();
+        var (x, y) = Screen(Mark(r, 2));
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseMove(x + 10, y + 10);
+        root.OnMouseUp(UiMouseButton.Left, x + 10, y + 10);
+        Assert.Equal(Left, r.Deck.Left, 1f);
+        Assert.Null(root.DragSource);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseUp(UiMouseButton.Left, x, y);
+        Assert.Equal(2, r.Controller.Tab);
+    }
+
+    [Fact]
+    public void DraggingASlotOntoABookmarkThroughTheRootMovesIt()
+    {
+        var (root, r) = Mount();
+        var (x, y) = Screen(r.Deck.Geometry.Slot(0, 0));
+        var (tx, ty) = Screen(Mark(r, 1));
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseMove(x + 10, y);
+        root.OnMouseMove(tx, ty);
+        root.OnMouseUp(UiMouseButton.Left, tx, ty);
+        Assert.Equal(["set 1 1 10", "remove 0 10"], r.Game.Calls);
     }
 
     private static int Index(IReadOnlyList<(string Text, bool Enabled)> items, string text) =>

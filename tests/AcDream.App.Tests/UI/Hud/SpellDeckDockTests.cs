@@ -166,13 +166,13 @@ public sealed class SpellDeckDockTests
         Assert.Equal(1f, host.DeckGeometry.Scale);
         Assert.Equal(0f, host.SpellDeckTop, 3);
 
-        // 150 + 96 > 200: steps down to 0.8 (120 + 76.8), the block at the top.
+        // 150 + 114 > 215: steps down to 0.8 (120 + 91.2), the block at the top.
         (dock, host, _, _) = Make();
-        host.Screen = (0f, 0f, 1600f, 200f);
+        host.Screen = (0f, 0f, 1600f, 215f);
         host.DeckTop = 50f;
         dock.FitToScreen();
         Assert.Equal(0.8f, host.DeckGeometry.Scale, 3);
-        Assert.Equal(76.8f, host.DeckTop, 3);
+        Assert.Equal(91.2f, host.DeckTop, 3);
         Assert.Equal(0f, host.SpellDeckTop, 3);
 
         // Never fits: stops at 0.75 with the deck on the bottom of the screen.

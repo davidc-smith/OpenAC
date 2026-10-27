@@ -118,17 +118,47 @@ public sealed class UiSpellDeckTests
         Assert.Equal([$"item {0x5000_0001u}"], r.Game.Calls);
     }
 
+    private static DeckRect Mark(Rig r, int tab) => r.Deck.Geometry.Bookmark(tab, r.Controller.TabCount);
+    private static DeckRect Plus(Rig r) => r.Deck.Geometry.Plus(r.Controller.TabCount);
+
     [Fact]
-    public void TabChipClickShowsTheNextTab()
+    public void ABookmarkClickShowsThatTab()
     {
         Rig r = Make();
-        // Until the tab strip (Task 18): any row's chip steps the deck's one tab, wrapping.
-        Send(r.Deck, UiEventType.Click, r.Deck.Geometry.TabChip(1));
+        Send(r.Deck, UiEventType.Click, Mark(r, 1));
         Assert.Equal(1, r.Controller.Tab);
+        Send(r.Deck, UiEventType.Click, Mark(r, 1));
+        Assert.Equal(1, r.Controller.Tab);   // not a step: that tab again
+        Send(r.Deck, UiEventType.DoubleClick, Mark(r, 1));
+        Send(r.Deck, UiEventType.Click, Mark(r, 7));
+        Assert.Equal(7, r.Controller.Tab);
+        Assert.Empty(r.Game.Calls);
+    }
 
-        r.Controller.ShowTab(7);
-        Send(r.Deck, UiEventType.Click, r.Deck.Geometry.TabChip(2));
-        Assert.Equal(0, r.Controller.Tab);
+    [Fact]
+    public void APlusClickAddsALocalTabAndShowsIt()
+    {
+        Rig r = Make();
+        Send(r.Deck, UiEventType.Click, Plus(r));
+        Assert.Equal(9, r.Controller.TabCount);
+        Assert.Equal(8, r.Controller.Tab);
+        Assert.Empty(r.Game.Calls);
+    }
+
+    [Fact]
+    public void TheStripFollowsTheTabCount_AndThePlusGoesAt16()
+    {
+        Rig r = Make();
+        for (int i = 0; i < 8; i++) Send(r.Deck, UiEventType.Click, Plus(r));
+        Assert.Equal(16, r.Controller.TabCount);
+        DeckRect plus = r.Deck.Geometry.Plus(16);
+        Assert.False(r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.Click,
+            Data1: (int)(plus.X + plus.W / 2), Data2: (int)(plus.Y + plus.H / 2))));
+        Assert.Equal(16, r.Controller.TabCount);
+        Send(r.Deck, UiEventType.Click, Mark(r, 15));
+        Assert.Equal(15, r.Controller.Tab);
+        Send(r.Deck, UiEventType.Click, Mark(r, 3));
+        Assert.Equal(3, r.Controller.Tab);
     }
 
     [Fact]
@@ -145,10 +175,12 @@ public sealed class UiSpellDeckTests
     {
         Rig r = Make();
         SpellDeckGeometry g = r.Deck.Geometry;
-        DeckRect s = g.Slot(0, 0), chip = g.TabChip(0), item = g.ItemSlot;
+        DeckRect s = g.Slot(0, 0), mark = g.Bookmark(2, 8), plus = g.Plus(8), item = g.ItemSlot;
         Assert.True(r.Deck.HitTestLocal(s.X + 2, s.Y + 2));
         Assert.True(r.Deck.HandlesClick);
-        Assert.True(r.Deck.HitTestLocal(chip.X + 2, chip.Y + 2));
+        Assert.True(r.Deck.HitTestLocal(mark.X + 2, mark.Y + 2));
+        Assert.True(r.Deck.HandlesClick);
+        Assert.True(r.Deck.HitTestLocal(plus.X + 2, plus.Y + 2));
         Assert.True(r.Deck.HandlesClick);
         Assert.True(r.Deck.HitTestLocal(item.X + item.W / 2, item.Y + item.H / 2));
         Assert.True(r.Deck.HandlesClick);
@@ -178,14 +210,33 @@ public sealed class UiSpellDeckTests
     }
 
     [Fact]
-    public void ChipAndItemTooltips()
+    public void BookmarkPlusAndItemTooltips()
     {
         Rig r = Make();
         r.Game.Item = new ItemSpell(0x5000_0001u, 30u);
         r.Deck.Refresh();
-        Send(r.Deck, UiEventType.MouseMove, r.Deck.Geometry.TabChip(1));
+        Send(r.Deck, UiEventType.MouseMove, Mark(r, 0));
         r.Now += 1;
-        Assert.Equal(new HudTooltipContent("Tab 1", null, null, "Click for the next tab, right-click for more"),
+        Assert.Equal(new HudTooltipContent("Tab 1", null, "3 spells", null), r.Deck.VisibleTooltip);
+
+        Send(r.Deck, UiEventType.MouseMove, Mark(r, 1));
+        r.Now += 1;
+        Assert.Equal(new HudTooltipContent("Tab 2", null, "1 spell", "Click to show"), r.Deck.VisibleTooltip);
+
+        Send(r.Deck, UiEventType.MouseMove, Mark(r, 5));
+        r.Now += 1;
+        Assert.Equal(new HudTooltipContent("Tab 6", null, "No spells", "Click to show"), r.Deck.VisibleTooltip);
+
+        Send(r.Deck, UiEventType.MouseMove, Plus(r));
+        r.Now += 1;
+        Assert.Equal(new HudTooltipContent("Add a tab", null, "Tabs 9-16 are saved on this PC only.", null),
+            r.Deck.VisibleTooltip);
+
+        r.Controller.AddLocalTab();
+        r.Controller.ShowTab(0);
+        Send(r.Deck, UiEventType.MouseMove, Mark(r, 8));
+        r.Now += 1;
+        Assert.Equal(new HudTooltipContent("Tab 9", "Local tab", "No spells", "Click to show, right-click to remove"),
             r.Deck.VisibleTooltip);
 
         Send(r.Deck, UiEventType.MouseMove, r.Deck.Geometry.ItemSlot);
@@ -246,6 +297,88 @@ public sealed class UiSpellDeckTests
         var b = Bounds(MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height), DeckChrome.CastLit);
         Assert.NotNull(b);
         AssertAround(b.Value, r.Deck.Geometry.Slot(1, 0), inside: 3f, outside: 6f);
+    }
+
+    [Theory]
+    [InlineData(0.75f, 1f)]
+    [InlineData(1f, 1f)]
+    [InlineData(1.5f, 2f)]
+    [InlineData(1f, 2f)]
+    public void DrawsTheBookmarks_TheCurrentOneLit_ThenThePlus(float scale, float stretch)
+    {
+        Rig r = Make();
+        r.Controller.ShowTab(3);
+        r.Deck.ApplyGeometry(SpellDeckGeometry.Create(scale, stretch, 3));
+        TextRenderer renderer = MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height);
+        SpellDeckGeometry g = r.Deck.Geometry;
+
+        var lit = Bounds(renderer, UiSpellDeck.TabLit);
+        Assert.NotNull(lit);
+        AssertAround(lit.Value, g.Bookmark(3, 8), inside: -1f, outside: 1f);
+
+        var off = Bounds(renderer, UiSpellDeck.TabOff);
+        Assert.NotNull(off);
+        DeckRect first = g.Bookmark(0, 8), plus = g.Plus(8);
+        Assert.InRange(off.Value.X0, first.X - 1f, first.X + 1f);
+        Assert.InRange(off.Value.X1, plus.X + plus.W - 1f, plus.X + plus.W + 1f);
+        Assert.True(off.Value.Y0 >= first.Y - 1f && off.Value.Y1 <= first.Y + first.H + 1f);
+
+        var cross = Bounds(renderer, UiSpellDeck.PlusInk);
+        Assert.NotNull(cross);
+        Assert.True(cross.Value.X0 > plus.X && cross.Value.X1 < plus.X + plus.W);
+        Assert.True(cross.Value.Y0 > plus.Y && cross.Value.Y1 < plus.Y + plus.H);
+    }
+
+    [Fact]
+    public void ThePlusIsNotDrawnAt16Tabs()
+    {
+        Rig r = Make();
+        for (int i = 0; i < 8; i++) r.Controller.AddLocalTab();
+        TextRenderer renderer = MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height);
+        Assert.Null(Bounds(renderer, UiSpellDeck.PlusInk));
+        var lit = Bounds(renderer, UiSpellDeck.TabLit);
+        Assert.NotNull(lit);
+        AssertAround(lit.Value, r.Deck.Geometry.Bookmark(15, 16), inside: -1f, outside: 1f);
+    }
+
+    [Theory]
+    [InlineData(0.75f)]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void AttachedDrawsSquareBottomCorners_DetachedRounded(float scale)
+    {
+        Rig r = Make();
+        r.Deck.ApplyGeometry(SpellDeckGeometry.Create(scale, 1f, 2));
+        Assert.True(r.Controller.Attached);
+        Assert.True(r.Deck.SquareBottomCorners);
+        Assert.True(CornerFilled(r, bottom: true));
+        Assert.False(CornerFilled(r, bottom: false));
+
+        r.Controller.SetAttached(false);
+        Assert.False(r.Deck.SquareBottomCorners);
+        Assert.False(CornerFilled(r, bottom: true));
+    }
+
+    /// <summary>Whether the frame's dark edge reaches into the very corner (bottom-left or top-left).
+    /// The draw is clipped to the deck, so a square corner leaves a vertex on the corner itself.</summary>
+    private static bool CornerFilled(Rig r, bool bottom)
+    {
+        TextRenderer renderer = MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height);
+        float h = r.Deck.Height;
+        Vector4 c = DeckChrome.FrameEdge;
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+        {
+            if (s.Texture != 0u) continue;
+            for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+            {
+                if (s.Verts[i + 7] <= 0f || MathF.Abs(s.Verts[i + 4] - c.X) > 0.01f
+                    || MathF.Abs(s.Verts[i + 5] - c.Y) > 0.01f || MathF.Abs(s.Verts[i + 6] - c.Z) > 0.01f)
+                    continue;
+                float x = s.Verts[i], y = s.Verts[i + 1];
+                if (x < 0.25f && (bottom ? y > h - 0.25f : y < 0.25f)) return true;
+            }
+        }
+        return false;
     }
 
     [Theory]

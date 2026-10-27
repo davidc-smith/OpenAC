@@ -9,12 +9,14 @@ public sealed record SpellDeckDragPayload(int Tab, uint SpellId);
 
 /// <summary>
 /// The Spell Deck: one element that draws a <see cref="SpellDeckController"/>'s
-/// rows in the Command Deck's style and turns clicks, double-clicks, hovers
-/// and tab-chip clicks into controller calls. Slots, the item socket and the
-/// chips take clicks; a press anywhere else on the frame drags the window.
-/// Filled slots are drag sources: nothing changes when a drag starts, only
-/// when it lands (on the deck, or outside every window). Right-click opens
-/// the row/slot menu.
+/// tab strip and rows in the Command Deck's style and turns clicks,
+/// double-clicks, hovers and drops into controller calls. A bookmark shows
+/// its tab and the <c>+</c> adds a local one. Slots, the item socket, the
+/// bookmarks and the <c>+</c> take clicks; a press anywhere else on the frame
+/// drags the window. Filled slots are drag sources: nothing changes when a
+/// drag starts, only when it lands (on a slot or a bookmark, or outside every
+/// window). Right-click opens the slot/deck menu, or Remove tab on the last
+/// local bookmark.
 /// </summary>
 internal sealed partial class UiSpellDeck : UiElement
 {
@@ -90,8 +92,8 @@ internal sealed partial class UiSpellDeck : UiElement
     }
 
     // Every size the deck can have: 1-10 rows at any scale and stretch.
-    private const float MinWindowWidth = SpellDeckGeometry.BaseWidth * DeckGeometry.MinStretch * DeckGeometry.MinScale;
-    private const float MaxWindowWidth = SpellDeckGeometry.BaseWidth * DeckGeometry.MaxStretch * DeckGeometry.MaxScale;
+    private static float MinWindowWidth => SpellDeckGeometry.BaseWidthAt(DeckGeometry.MinStretch) * DeckGeometry.MinScale;
+    private static float MaxWindowWidth => SpellDeckGeometry.BaseWidthAt(DeckGeometry.MaxStretch) * DeckGeometry.MaxScale;
     private static float MinWindowHeight => SpellDeckGeometry.BaseHeight(SpellDeckGeometry.MinRows) * DeckGeometry.MinScale;
     private static float MaxWindowHeight => SpellDeckGeometry.BaseHeight(SpellDeckGeometry.MaxRows) * DeckGeometry.MaxScale;
 
@@ -142,6 +144,12 @@ internal sealed partial class UiSpellDeck : UiElement
     internal SpellDeckGeometry Geometry => _geometry;
     internal SpellDeckController Controller => _controller;
 
+    /// <summary>Attached, the frame's bottom corners are square so it meets the Command Deck on one seam.</summary>
+    internal bool SquareBottomCorners => _controller.Attached;
+
+    /// <summary>What a point (local coordinates) is over, with the controller's tab count.</summary>
+    private SpellDeckHit HitAt(float x, float y) => _geometry.HitAt(x, y, _controller.TabCount);
+
     /// <summary>Sets the deck to <paramref name="geometry"/>'s size and geometry.</summary>
     internal void ApplyGeometry(SpellDeckGeometry geometry)
     {
@@ -177,13 +185,13 @@ internal sealed partial class UiSpellDeck : UiElement
 
     protected override bool OnHitTest(float localX, float localY)
     {
-        _hit = _geometry.HitAt(localX, localY);
+        _hit = HitAt(localX, localY);
         return _geometry.Frame.Contains(localX, localY);
     }
 
     /// <summary>Zones that take a click; the rest of the frame drags the window.</summary>
     internal static bool IsControl(SpellDeckZone zone) =>
-        zone is SpellDeckZone.Slot or SpellDeckZone.Item or SpellDeckZone.TabChip;
+        zone is SpellDeckZone.Slot or SpellDeckZone.Item or SpellDeckZone.Bookmark or SpellDeckZone.Plus;
 
     // ── Tooltip ───────────────────────────────────────────────────
 
@@ -214,20 +222,23 @@ internal sealed partial class UiSpellDeck : UiElement
     private DeckRect RectFor(SpellDeckHit hit) => hit.Zone switch
     {
         SpellDeckZone.Item => _geometry.ItemSlot,
-        SpellDeckZone.TabChip => _geometry.TabChip(hit.Row),
+        SpellDeckZone.Bookmark => _geometry.Bookmark(hit.Tab, _controller.TabCount),
+        SpellDeckZone.Plus => _geometry.Plus(_controller.TabCount),
         SpellDeckZone.Slot => _geometry.Slot(hit.Row, hit.Slot),
         _ => _geometry.Frame,
     };
 
-    private const string ChipHint = "Click for the next tab, right-click for more";
+    private const string PlusDetail = "Tabs 9-16 are saved on this PC only.";
 
     internal HudTooltipContent? TooltipFor(SpellDeckHit hit)
     {
         string castHint = _controller.ClickCasts ? "Click to cast" : "Double-click to cast";
         switch (hit.Zone)
         {
-            case SpellDeckZone.TabChip when hit.Row < _controller.RowCount:
-                return new($"Tab {_controller.Tab + 1}", null, null, ChipHint);
+            case SpellDeckZone.Bookmark when hit.Tab < _controller.TabCount:
+                return BookmarkTooltip(hit.Tab);
+            case SpellDeckZone.Plus when _controller.CanAddLocalTab:
+                return new("Add a tab", null, PlusDetail, null);
             case SpellDeckZone.Item:
                 if (_controller.ItemSpell is not { } item)
                     return new("Item spell", null, "No wielded item has a spell.", null);
@@ -241,6 +252,20 @@ internal sealed partial class UiSpellDeck : UiElement
                 return null;
         }
     }
+
+    private HudTooltipContent BookmarkTooltip(int tab)
+    {
+        int count = _controller.Favorites(tab).Count;
+        string spells = count switch { 0 => "No spells", 1 => "1 spell", _ => $"{count} spells" };
+        bool local = _controller.Tabs.IsLocal(tab);
+        string? hint = tab == _controller.Tab ? null : "Click to show";
+        if (IsLastLocal(tab))
+            hint = hint is null ? "Right-click to remove" : hint + ", right-click to remove";
+        return new($"Tab {tab + 1}", local ? "Local tab" : null, spells, hint);
+    }
+
+    /// <summary>Whether <paramref name="tab"/> is the last tab and a local one (the one that can be removed).</summary>
+    private bool IsLastLocal(int tab) => tab == _controller.TabCount - 1 && _controller.Tabs.IsLocal(tab);
 
     /// <summary>How the item spell is named in its tooltip and on the Command Deck's CASTING row.</summary>
     internal static string ItemSpellText(string itemName, string spellName) => $"{itemName} ({spellName})";
@@ -281,14 +306,14 @@ internal sealed partial class UiSpellDeck : UiElement
         {
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
-                _press = _geometry.HitAt(e.Data1, e.Data2);
+                _press = HitAt(e.Data1, e.Data2);
                 return false;   // the window drag or the click has the press
             case UiEventType.Click:
-                return Click(_geometry.HitAt(e.Data1, e.Data2));
+                return Click(HitAt(e.Data1, e.Data2));
             case UiEventType.DoubleClick:
-                return DoubleClick(_geometry.HitAt(e.Data1, e.Data2));
+                return DoubleClick(HitAt(e.Data1, e.Data2));
             case UiEventType.MouseMove:
-                SetHover(_geometry.HitAt(e.Data1, e.Data2));
+                SetHover(HitAt(e.Data1, e.Data2));
                 return _hover.Zone != SpellDeckZone.None;
             case UiEventType.HoverLeave:
                 SetHover(NoHit);
@@ -318,8 +343,11 @@ internal sealed partial class UiSpellDeck : UiElement
             case SpellDeckZone.Item:
                 _controller.ClickItem();
                 return true;
-            case SpellDeckZone.TabChip when hit.Row < _controller.RowCount:
-                _controller.NextTab();
+            case SpellDeckZone.Bookmark when hit.Tab < _controller.TabCount:
+                _controller.ShowTab(hit.Tab);
+                return true;
+            case SpellDeckZone.Plus when _controller.CanAddLocalTab:
+                _controller.AddLocalTab();
                 return true;
             default:
                 return false;
@@ -336,8 +364,8 @@ internal sealed partial class UiSpellDeck : UiElement
             case SpellDeckZone.Item:
                 _controller.DoubleClickItem();
                 return true;
-            case SpellDeckZone.TabChip:
-                return true;   // both clicks already stepped the tab
+            case SpellDeckZone.Bookmark or SpellDeckZone.Plus:
+                return true;   // each click already acted
             default:
                 return false;
         }
@@ -352,6 +380,9 @@ internal sealed partial class UiSpellDeck : UiElement
 
     /// <summary>The slot a drag over the deck would land on, and whether the controller would accept it.</summary>
     internal (int Row, int Slot, bool Accept)? DropHighlight { get; private set; }
+
+    /// <summary>The bookmark a drag over the deck would land on, and whether the controller would accept it.</summary>
+    internal (int Tab, bool Accept)? BookmarkDropHighlight { get; private set; }
 
     // _hit is the hit test of the press itself: the root asks before it sends the MouseDown.
     public override bool IsDragSource => _hit.Zone == SpellDeckZone.Slot && !_isLocked();
@@ -378,7 +409,7 @@ internal sealed partial class UiSpellDeck : UiElement
     /// left when the point is in the row's band between or past its slots; null anywhere else.</summary>
     private (int Row, int Slot)? DropTargetAt(float x, float y)
     {
-        SpellDeckHit hit = _geometry.HitAt(x, y);
+        SpellDeckHit hit = HitAt(x, y);
         if (hit.Zone == SpellDeckZone.Slot && hit.Row < _controller.RowCount)
             return (hit.Row, hit.Slot);
         if (hit.Zone != SpellDeckZone.Frame) return null;
@@ -397,8 +428,16 @@ internal sealed partial class UiSpellDeck : UiElement
     private bool DropReleased(object? payload, float x, float y)
     {
         if (SourceOf(payload) is not { } source) return false;
-        if (DropTargetAt(x, y) is { } at) _controller.DropOnSlot(source, at.Row, at.Slot);
+        if (BookmarkAt(x, y) is int tab) _controller.DropOnTab(source, tab);
+        else if (DropTargetAt(x, y) is { } at) _controller.DropOnSlot(source, at.Row, at.Slot);
         return true;
+    }
+
+    /// <summary>The tab whose bookmark is under a point, or null.</summary>
+    private int? BookmarkAt(float x, float y)
+    {
+        SpellDeckHit hit = HitAt(x, y);
+        return hit.Zone == SpellDeckZone.Bookmark && hit.Tab < _controller.TabCount ? hit.Tab : null;
     }
 
     /// <summary>The runtime calls this for a drag released outside every window:
@@ -411,6 +450,13 @@ internal sealed partial class UiSpellDeck : UiElement
 
     private void SetDropHighlight(float x, float y)
     {
+        BookmarkDropHighlight = null;
+        if (SourceOf(_dropPayload) is { } payload && BookmarkAt(x, y) is int tab)
+        {
+            DropHighlight = null;
+            BookmarkDropHighlight = (tab, _controller.CanDropOnTab(payload, tab));
+            return;
+        }
         if (SourceOf(_dropPayload) is not { } source || DropTargetAt(x, y) is not { } at
             || at.Slot >= _geometry.SlotsPerRow)
         {
@@ -424,6 +470,7 @@ internal sealed partial class UiSpellDeck : UiElement
     {
         _dropPayload = null;
         DropHighlight = null;
+        BookmarkDropHighlight = null;
     }
 
     /// <summary>The root sends DragEnter once per element, so the highlight follows the
@@ -445,18 +492,29 @@ internal sealed partial class UiSpellDeck : UiElement
     private List<(string Text, bool Enabled)> _menuItems = [];
     private readonly List<Action?> _menuActions = [];
 
-    /// <summary>Builds the menu for a right click at a point (owner coordinates):
-    /// the slot items over a filled slot, then the deck items over a slot or tab chip.
-    /// Empty anywhere else, so no menu opens. "-" is a separator.</summary>
+    /// <summary>Builds the menu for a right click at a point (owner coordinates): Remove tab
+    /// alone on the last local tab's bookmark; else the slot items over a filled slot, then
+    /// the deck items anywhere on the deck. Empty off the deck, so no menu opens. "-" is a separator.</summary>
     internal IReadOnlyList<(string Text, bool Enabled)> MenuItemsAt(float x, float y)
     {
         _menuItems = [];
         _menuActions.Clear();
-        SpellDeckHit hit = _geometry.HitAt(x, y);
-        if (hit.Zone is not (SpellDeckZone.Slot or SpellDeckZone.TabChip) || hit.Row >= _controller.RowCount)
-            return _menuItems;
+        SpellDeckHit hit = HitAt(x, y);
+        if (hit.Zone == SpellDeckZone.None) return _menuItems;
 
-        if (hit.Zone == SpellDeckZone.Slot && SlotSpell(hit.Row, hit.Slot) is uint spellId)
+        if (hit.Zone == SpellDeckZone.Bookmark && IsLastLocal(hit.Tab))
+        {
+            // Only while that tab is still the last local one when the item is chosen.
+            int last = hit.Tab;
+            Add("Remove tab", true, () =>
+            {
+                if (IsLastLocal(last)) _controller.RemoveLastLocalTab();
+            });
+            return _menuItems;
+        }
+
+        if (hit.Zone == SpellDeckZone.Slot && hit.Row < _controller.RowCount
+            && SlotSpell(hit.Row, hit.Slot) is uint spellId)
         {
             // The spell, not the slot: the favourites can change while the menu is
             // open, and the item then acts on that spell only if the deck still shows it.
@@ -467,14 +525,6 @@ internal sealed partial class UiSpellDeck : UiElement
         }
         Add("Add row", _controller.CanAddRow(), _controller.AddRow);
         Add("Remove row", _controller.CanRemoveRow, _controller.RemoveRow);
-        Separator();
-        // Until the tab strip (Task 18): one item per tab that exists.
-        for (int tab = 0; tab < _controller.TabCount; tab++)
-        {
-            int t = tab;
-            Add(tab == _controller.Tab ? $"Show tab {tab + 1} (shown)" : $"Show tab {tab + 1}", true,
-                () => _controller.ShowTab(t));
-        }
         Separator();
         Add(_controller.ClickCasts ? "Click casts: on" : "Click casts: off", true, _toggleClickCasts);
         Separator();

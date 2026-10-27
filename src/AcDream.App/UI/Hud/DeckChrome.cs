@@ -37,13 +37,16 @@ internal static class DeckChrome
     /// <summary>A line weight at a deck scale, in whole points, never under one.</summary>
     internal static float Line(float points, float scale) => MathF.Max(1f, MathF.Round(points * scale));
 
-    /// <summary>The dark rounded frame with its gradient and inner bronze rule.</summary>
-    internal static void DrawFrame(UiRenderContext ctx, DeckRect f, float scale)
+    /// <summary>The dark rounded frame with its gradient and inner bronze rule. With
+    /// <paramref name="squareBottom"/> the bottom corners are square (an attached Spell Deck
+    /// meeting the Command Deck on one seam).</summary>
+    internal static void DrawFrame(UiRenderContext ctx, DeckRect f, float scale, bool squareBottom = false)
     {
         float P(float points) => points * scale;
-        ctx.FillRoundedRect(f.X - P(2), f.Y - P(2), f.W + P(4), f.H + P(4), P(10), FrameEdge);
-        ctx.FillVerticalGradient(f.X, f.Y, f.W, f.H, new CanvasCornerRadii(P(8), P(8), P(8), P(8)), FrameTop, FrameBottom);
-        ctx.StrokeRoundedRect(f.X + P(3), f.Y + P(3), f.W - P(6), f.H - P(6), P(5), Bronze, Line(1, scale));
+        CanvasCornerRadii Radii(float r) => new(P(r), P(r), squareBottom ? 0f : P(r), squareBottom ? 0f : P(r));
+        ctx.FillRoundedRect(f.X - P(2), f.Y - P(2), f.W + P(4), f.H + P(4), Radii(10), FrameEdge);
+        ctx.FillVerticalGradient(f.X, f.Y, f.W, f.H, Radii(8), FrameTop, FrameBottom);
+        ctx.StrokeRoundedRect(f.X + P(3), f.Y + P(3), f.W - P(6), f.H - P(6), Radii(5), Bronze, Line(1, scale));
     }
 
     /// <summary>A stud's backing (lit when <paramref name="on"/>). Returns the ink for its icon or letter.</summary>

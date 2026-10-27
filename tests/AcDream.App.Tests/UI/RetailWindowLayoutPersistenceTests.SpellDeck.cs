@@ -180,7 +180,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
     public void SpellDeck_ReflowToASmallerScreenAndBack_LeavesTheDetachedPlacement()
     {
         var store = new SettingsStore(PathName);
-        UiWindowLayout bob = StoreDetachedSpellDeck(store, "Bob", 1000f, 700f, 1.2f, 5);
+        UiWindowLayout bob = StoreDetachedSpellDeck(store, "Bob", 1000f, 690f, 1.2f, 5);   // 204 tall: on screen
         using var rig = new SpellDeckRig(PathName);
         rig.Frames(2);
         rig.EnterWorld("Bob");
