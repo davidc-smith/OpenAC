@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AcDream.App.Spells;
 using AcDream.UI.Abstractions.Input;
 
@@ -10,11 +11,15 @@ namespace AcDream.App.UI.Hud;
 /// run through the pure model and outline rules. Tabs come from
 /// <see cref="SpellDeckTabs"/>: server tabs 0-7 are changed through
 /// <see cref="ISpellDeckActions"/>, local tabs 8-15 in the settings. Every change
-/// to the tab, the rows, attachment or a local tab saves the settings once.
+/// to the rows, attachment or a local tab saves the settings once; a plain tab switch
+/// only marks the settings dirty and <see cref="Tick"/> saves once the switching has
+/// paused for <see cref="TabSaveDelaySeconds"/> (or <see cref="Load"/> flushes it first).
 /// </summary>
 public sealed class SpellDeckController
 {
     public const string FullTabMessage = "That spell tab is full.";
+    /// <summary>How long after the last tab switch a pending tab save waits.</summary>
+    public const double TabSaveDelaySeconds = 0.5;
 
     private readonly ISpellDeckActions _actions;
     private readonly SpellDeckTabs _tabs;
@@ -30,6 +35,9 @@ public sealed class SpellDeckController
     /// <summary>Above zero while one change runs: the saves it causes become one, at its end.</summary>
     private int _batch;
     private bool _dirty;
+    private readonly Func<double> _seconds;
+    private bool _tabDirty;
+    private double _lastTabSwitch;
 
     /// <param name="favorites">The server's favourite list for a tab 0-7 (the spellbook's).</param>
     /// <param name="capacity">Slots per row the deck shows now (from its geometry).</param>
@@ -42,8 +50,15 @@ public sealed class SpellDeckController
         SpellDeckSettings settings,
         Action<SpellDeckSettings> save,
         Func<bool> clickCasts,
-        Func<bool> canAddRow)
+        Func<bool> canAddRow,
+        Func<double>? seconds = null)
     {
+        if (seconds is null)
+        {
+            var clock = Stopwatch.StartNew();
+            seconds = () => clock.Elapsed.TotalSeconds;
+        }
+        _seconds = seconds;
         _actions = actions ?? throw new ArgumentNullException(nameof(actions));
         _tabs = new SpellDeckTabs(favorites ?? throw new ArgumentNullException(nameof(favorites)), actions, Changed);
         _itemSpell = itemSpell ?? throw new ArgumentNullException(nameof(itemSpell));
@@ -108,13 +123,24 @@ public sealed class SpellDeckController
     /// <summary>Replaces the tab, rows, local tabs and attachment (character change), without saving. The outline is repaired.</summary>
     public void Load(SpellDeckSettings settings)
     {
+        FlushTab();   // a pending tab switch belongs to the character being left
         Apply(settings);
         Outline = SpellDeckMark.None;
         Tick();
     }
 
     /// <summary>Re-checks the outline against the current tab, favourites, rows, capacity and item.</summary>
-    public void Tick() => Outline = SpellDeckMark.Validate(Outline, Context);
+    public void Tick()
+    {
+        Outline = SpellDeckMark.Validate(Outline, Context);
+        if (_tabDirty && _batch == 0 && _seconds() - _lastTabSwitch >= TabSaveDelaySeconds) FlushTab();
+    }
+
+    private void FlushTab()
+    {
+        if (!_tabDirty) return;
+        Save();
+    }
 
     // ── Command Deck ──────────────────────────────────────────────
     public bool CanCastOutlined => Outline.Kind != SpellDeckMarkKind.None;
@@ -141,7 +167,8 @@ public sealed class SpellDeckController
         if (tab < 0 || tab >= _tabs.Count || tab == _tab) return;
         _tab = tab;
         Outline = SpellDeckMark.ShowTab(Context);
-        Save();
+        _tabDirty = true;
+        _lastTabSwitch = _seconds();
     }
 
     public void NextTab() => ShowTab((_tab + 1) % _tabs.Count);
@@ -356,6 +383,7 @@ public sealed class SpellDeckController
     private void Save()
     {
         if (_batch > 0) { _dirty = true; return; }
+        _tabDirty = false;
         _save(ToSettings());
     }
 
@@ -365,7 +393,7 @@ public sealed class SpellDeckController
         _batch++;
         try { change(); }
         finally { _batch--; }
-        if (_batch == 0 && _dirty)
+        if (_batch == 0 && (_dirty || _tabDirty))
         {
             _dirty = false;
             Save();

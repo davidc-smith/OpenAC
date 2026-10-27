@@ -21,8 +21,9 @@ public readonly record struct PluginCanvasPosition(string Anchor, double X, doub
 /// <summary>One remembered markup control value: which window, which named control, which kind of state.</summary>
 public readonly record struct MarkupControlKey(string Window, string Control, string Kind);
 
-/// <summary>A character's Spell Deck rows (id, tab), whether it is attached to the Command Deck,
-/// and the row count its stored detached placement was saved with (null when not recorded).</summary>
+/// <summary>A character's Spell Deck: the current tab, the row count, whether it is attached to the
+/// Command Deck, the row count its stored detached placement was saved with (null when not recorded),
+/// and the local tabs (9-16) with their spell ids.</summary>
 public sealed record StoredSpellDeck(
     int Tab,
     int RowCount,

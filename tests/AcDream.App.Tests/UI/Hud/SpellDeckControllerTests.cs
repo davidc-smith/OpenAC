@@ -31,6 +31,7 @@ public sealed class SpellDeckControllerTests
         public int PerRow = 4;
         public bool ClickCasts;
         public bool CanAddRow = true;
+        public double Now;
     }
 
     /// <summary>4 slots per row, 3 rows (capacity 12). Tab 0 holds 10-15 (rows 0 and 1), tab 1 holds 20.</summary>
@@ -43,13 +44,44 @@ public sealed class SpellDeckControllerTests
             r.G, favorites: tab => r.G.Tabs[tab], itemSpell: () => r.G.Item,
             capacity: () => r.PerRow, settings: settings ?? SpellDeckSettings.Default,
             save: r.Saved.Add,
-            clickCasts: () => r.ClickCasts, canAddRow: () => r.CanAddRow);
+            clickCasts: () => r.ClickCasts, canAddRow: () => r.CanAddRow, seconds: () => r.Now);
         r.C.Tick();
         return r;
     }
 
     private static SpellDeckSettings WithLocal(params uint[][] local) =>
         SpellDeckSettings.Default with { LocalTabs = [.. local.Select(l => (IReadOnlyList<uint>)l)] };
+
+    [Fact]
+    public void TabSwitches_Coalesce_IntoOneSave_AfterTheDelay()
+    {
+        var r = Make();
+        for (int i = 0; i < 10; i++) { r.Now += 0.05; r.C.NextTab(); }
+        r.C.Tick();
+        Assert.Empty(r.Saved);                       // still switching
+        r.Now += SpellDeckController.TabSaveDelaySeconds;
+        r.C.Tick();
+        Assert.Single(r.Saved);
+        Assert.Equal(r.C.Tab, r.Saved[0].Tab);
+        Assert.Equal(2, r.C.Tab);                    // 10 steps round 8 tabs
+        r.Now += 5; r.C.Tick();
+        Assert.Single(r.Saved);                      // nothing pending any more
+    }
+
+    [Fact]
+    public void Load_WithAPendingTabSave_SavesFirst_UnderThePreviousCharacter()
+    {
+        var r = Make();
+        r.C.NextTab();
+        r.C.NextTab();
+        Assert.Empty(r.Saved);
+        r.C.Load(SpellDeckSettings.Default with { Tab = 5 });
+        Assert.Single(r.Saved);
+        Assert.Equal(2, r.Saved[0].Tab);             // the character left, not the one loaded
+        Assert.Equal(5, r.C.Tab);
+        r.Now += 5; r.C.Tick();
+        Assert.Single(r.Saved);
+    }
 
     // ── Tab, rows, slices ─────────────────────────────────────────
 
@@ -86,11 +118,14 @@ public sealed class SpellDeckControllerTests
         r.C.ShowTab(1);
         Assert.Equal(1, r.C.Tab);
         Assert.Equal(SpellDeckMark.Spell(1, 20u), r.C.Outline);
+        Assert.Empty(r.Saved);           // saved later, from Tick
+        r.Now += 1; r.C.Tick();
         Assert.Single(r.Saved);
         Assert.Equal(1, r.Saved[^1].Tab);
         r.C.ShowTab(1);                  // already shown: nothing
         r.C.ShowTab(8);                  // no such tab: nothing
         r.C.ShowTab(-1);
+        r.Now += 1; r.C.Tick();
         Assert.Single(r.Saved);
         r.C.ShowTab(2);                  // an empty tab: the item, else nothing
         Assert.Equal(SpellDeckMark.None, r.C.Outline);
@@ -112,7 +147,9 @@ public sealed class SpellDeckControllerTests
         Assert.Equal(0, r.C.Tab);
         r.C.NextTab(); r.C.PrevTab(); r.C.LastTab(); r.C.FirstTab();
         Assert.Equal(0, r.C.Tab);
-        Assert.Equal(8, r.Saved.Count);
+        Assert.Empty(r.Saved);
+        r.Now += 1; r.C.Tick();
+        Assert.Single(r.Saved);
     }
 
     // ── Hotkeys ───────────────────────────────────────────────────
@@ -364,11 +401,11 @@ public sealed class SpellDeckControllerTests
         r.C.ShowTab(8);
         r.C.DropOnTab(new SpellDeckDragSource(8, 90u), 1);        // local → server
         Assert.Equal(["set 1 1 90"], r.G.Calls);
-        Assert.Equal(3, r.Saved.Count);
+        Assert.Equal(2, r.Saved.Count);                           // the drop's save carries the pending tab too
         Assert.Equal([10u], r.Saved[^1].LocalTabs[0]);
 
         r.C.DropOnTab(new SpellDeckDragSource(8, 10u), 9);        // local → local: one save for both halves
-        Assert.Equal(4, r.Saved.Count);
+        Assert.Equal(3, r.Saved.Count);
         Assert.Empty(r.Saved[^1].LocalTabs[0]);
         Assert.Equal([10u], r.Saved[^1].LocalTabs[1]);
     }
@@ -410,7 +447,7 @@ public sealed class SpellDeckControllerTests
         Assert.False(r.C.CanRemoveLastLocalTab);
         r.C.RemoveLastLocalTab();                                 // server tabs cannot be removed
         Assert.Equal(8, r.C.TabCount);
-        Assert.Equal(3, r.Saved.Count);
+        Assert.Equal(2, r.Saved.Count);
         Assert.Empty(r.G.Calls);
     }
 
