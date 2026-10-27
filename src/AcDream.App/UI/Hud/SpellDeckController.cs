@@ -5,15 +5,15 @@ using AcDream.UI.Abstractions.Input;
 namespace AcDream.App.UI.Hud;
 
 /// <summary>
-/// The Spell Deck's live state and behaviour: one current tab, shown over
-/// <see cref="RowCount"/> rows of <see cref="PerRow"/> slots (row r shows spells
-/// r·N … r·N + N − 1), the outline, hotkeys, clicks, drops and row and tab edits,
-/// run through the pure model and outline rules. Tabs come from
-/// <see cref="SpellDeckTabs"/>: server tabs 0-7 are changed through
-/// <see cref="ISpellDeckActions"/>, local tabs 8-15 in the settings. Every change
-/// to the rows, attachment or a local tab saves the settings once; a plain tab switch
-/// only marks the settings dirty and <see cref="Tick"/> saves once the switching has
-/// paused for <see cref="TabSaveDelaySeconds"/> (or <see cref="Load"/> flushes it first).
+/// The Spell Deck's live state and behaviour: one current tab, shown over <see cref="RowCount"/> rows of
+/// <see cref="PerRow"/> slots, each tab a slot layout (<see cref="SpellDeckLayout"/>: any slot, gaps and
+/// duplicates), the outline, hotkeys, clicks, drops and row and tab edits, run through the pure model and
+/// outline rules. Tabs and layouts live in <see cref="SpellDeckTabs"/>, which keeps the server tabs 0-7 equal
+/// to their layouts' distinct spells; local tabs 8-15 are only layouts. Server tabs are reconciled on
+/// construction, <see cref="Load"/> and <see cref="ServerFavoritesChanged"/>. Every change to the rows,
+/// attachment or a layout saves the settings once; a plain tab switch only marks the settings dirty and
+/// <see cref="Tick"/> saves once the switching has paused for <see cref="TabSaveDelaySeconds"/> (or
+/// <see cref="Load"/> drops it after the host flushed it).
 /// </summary>
 public sealed class SpellDeckController
 {
@@ -66,20 +66,32 @@ public sealed class SpellDeckController
         _save = save ?? throw new ArgumentNullException(nameof(save));
         _clickCasts = clickCasts ?? throw new ArgumentNullException(nameof(clickCasts));
         _canAddRow = canAddRow ?? throw new ArgumentNullException(nameof(canAddRow));
-        Apply(settings);
+        // Construction is not a change: the first reconcile is kept, but saved with the next change.
+        _batch++;
+        try
+        {
+            Apply(settings);
+            ReconcileServerTabs();
+        }
+        finally
+        {
+            _batch--;
+            _dirty = false;
+        }
     }
 
     private void Apply(SpellDeckSettings settings)
     {
         SpellDeckSettings s = (settings ?? SpellDeckSettings.Default).Normalize();
-        _tabs.Load(s.LocalTabs);
+        _tabs.Load(s.LayoutsAt(PerRow), s.LocalTabs.Count);
         _tab = s.Tab;
         _rowCount = s.RowCount;
         _attached = s.Attached;
         _detachedRows = s.DetachedRows;
+        FitRows();
     }
 
-    private SpellDeckSettings ToSettings() => new(_tab, _rowCount, _attached, _detachedRows, _tabs.Local);
+    private SpellDeckSettings ToSettings() => new(_tab, _rowCount, _attached, _detachedRows, _tabs.Local, _tabs.Layouts);
 
     // ── State ─────────────────────────────────────────────────────
 
@@ -99,39 +111,86 @@ public sealed class SpellDeckController
     public bool ClickCasts => _clickCasts();
     public ItemSpell? ItemSpell => _itemSpell();
 
-    public IReadOnlyList<uint> Favorites(int tab) => _tabs.Get(tab);
+    /// <summary>The current tab's layout.</summary>
+    public SpellDeckLayout Layout => _tabs.Layout(_tab);
 
-    /// <summary>The spells the deck shows (and can cast): the current tab's first <c>RowCount·PerRow</c>.</summary>
-    public IReadOnlyList<uint> Visible => SpellDeckModel.Visible(_tabs.Get(_tab), _rowCount, PerRow);
+    /// <summary>A tab's layout; empty for a tab that does not exist.</summary>
+    public SpellDeckLayout LayoutOf(int tab) => _tabs.Layout(tab);
 
-    /// <summary>The spells row <paramref name="row"/> shows; empty for a row that is not shown.</summary>
-    public IReadOnlyList<uint> RowSpells(int row) =>
-        row < 0 || row >= _rowCount ? [] : SpellDeckModel.Slice(_tabs.Get(_tab), row, PerRow);
+    /// <summary>A tab's spells once each, in reading order (for a server tab, what the server list is kept equal to).</summary>
+    public IReadOnlyList<uint> Favorites(int tab) => _tabs.Layout(tab).Distinct;
 
-    /// <summary>The fewest slots per row with which the rows hold the fullest of all tabs, server and local.</summary>
-    public int MinSlotsPerRow => SpellDeckModel.MinSlotsPerRow(_rowCount, AllTabCounts());
-
-    private IEnumerable<int> AllTabCounts()
+    /// <summary>The current tab's filled slots the deck shows (row below <see cref="RowCount"/>, column below <see cref="PerRow"/>), in reading order.</summary>
+    public IReadOnlyList<SpellDeckSlot> ShownSlots
     {
-        for (int t = 0; t < _tabs.Count; t++) yield return _tabs.Get(t).Count;
+        get
+        {
+            int rows = _rowCount, cols = PerRow;
+            return [.. Layout.Filled.Where(f => f.Row < rows && f.Col < cols).Select(f => new SpellDeckSlot(f.Row, f.Col))];
+        }
     }
 
-    private int Capacity => _rowCount * PerRow;
+    /// <summary>The spells in <see cref="ShownSlots"/> (a duplicate once per slot).</summary>
+    public IReadOnlyList<uint> Visible
+    {
+        get
+        {
+            SpellDeckLayout layout = Layout;
+            return [.. ShownSlots.Select(s => layout.Get(s.Row, s.Col))];
+        }
+    }
 
-    private SpellDeckMarkContext Context => new(_tab, Visible, _itemSpell() is not null);
+    /// <summary>The fewest slots per row that show every tab's right-most occupied column (server and local); feeds the minimum stretch.</summary>
+    public int MinColumns => SpellDeckModel.MinColumns(_tabs.All);
 
-    /// <summary>Replaces the tab, rows, local tabs and attachment (character change), without saving. The outline is repaired.</summary>
+    /// <summary>The fewest rows that show every tab's lowest occupied row (server and local).</summary>
+    public int MinRows => SpellDeckModel.MinRows(_tabs.All);
+
+    private SpellDeckMarkContext Context => new(_tab, ShownSlots, _itemSpell() is not null);
+
+    /// <summary>Replaces the tab, rows, layouts and attachment (character change), and reconciles the server
+    /// tabs; saves once only when that changed something. The outline is repaired.</summary>
     public void Load(SpellDeckSettings settings)
     {
         // A pending tab switch belongs to the character being left; the host flushes it
         // (FlushPendingSave) before its key changes, so here it is only dropped.
         _tabDirty = false;
-        Apply(settings);
+        _dirty = false;
+        Batch(() =>
+        {
+            Apply(settings);
+            ReconcileServerTabs();
+        });
         Outline = SpellDeckMark.None;
         Tick();
     }
 
-    /// <summary>Re-checks the outline against the current tab, favourites, rows, capacity and item.</summary>
+    /// <summary>The spellbook's favourites changed (from elsewhere, or the echo of this deck's own ops):
+    /// reconciles the server tabs. The echo finds nothing to do, so it sends and saves nothing. Call it only
+    /// while the spellbook belongs to the character whose settings are loaded.</summary>
+    public void ServerFavoritesChanged()
+    {
+        if (_tabs.IsSyncing) return;
+        Batch(ReconcileServerTabs);
+        Revalidate();
+    }
+
+    private void ReconcileServerTabs()
+    {
+        _tabs.Reconcile(Math.Max(_rowCount, MinRows), Math.Max(PerRow, MinColumns));
+        if (FitRows()) Changed();
+    }
+
+    /// <summary>Adds rows until every tab's lowest occupied row is shown; true when it did.</summary>
+    private bool FitRows()
+    {
+        int need = Math.Min(MinRows, SpellDeckGeometry.MaxRows);
+        if (_rowCount >= need) return false;
+        _rowCount = need;
+        return true;
+    }
+
+    /// <summary>Re-checks the outline against the current tab, layout, rows, capacity and item.</summary>
     public void Tick()
     {
         Revalidate();
@@ -148,10 +207,10 @@ public sealed class SpellDeckController
     }
 
     // ── Command Deck ──────────────────────────────────────────────
-    public bool CanCastOutlined => Outline.Kind != SpellDeckMarkKind.None;
+    public bool CanCastOutlined => OutlinedSpellId is not null;
     public uint? OutlinedSpellId => Outline.Kind switch
     {
-        SpellDeckMarkKind.Spell => Outline.SpellId,
+        SpellDeckMarkKind.Slot when Outline.Tab == _tab && Layout.Get(Outline.Row, Outline.Col) is uint id and not 0 => id,
         SpellDeckMarkKind.Item => _itemSpell()?.SpellId,
         _ => null,
     };
@@ -159,14 +218,14 @@ public sealed class SpellDeckController
     {
         switch (Outline.Kind)
         {
-            case SpellDeckMarkKind.Spell: _actions.CastSpell(Outline.SpellId); break;
+            case SpellDeckMarkKind.Slot when OutlinedSpellId is uint id: _actions.CastSpell(id); break;
             case SpellDeckMarkKind.Item when _itemSpell() is { } item: _actions.CastItemSpell(item.ItemId); break;
         }
     }
 
     // ── Tabs ──────────────────────────────────────────────────────
 
-    /// <summary>Shows tab <paramref name="tab"/>; its first visible spell is outlined.</summary>
+    /// <summary>Shows tab <paramref name="tab"/>; its first filled slot is outlined.</summary>
     public void ShowTab(int tab)
     {
         if (tab < 0 || tab >= _tabs.Count || tab == _tab) return;
@@ -193,7 +252,7 @@ public sealed class SpellDeckController
         });
     }
 
-    /// <summary>Removes the last local tab and its spells; when it was shown, the tab before it is shown.</summary>
+    /// <summary>Removes the last local tab and its layout; when it was shown, the tab before it is shown.</summary>
     public void RemoveLastLocalTab()
     {
         Batch(() =>
@@ -213,7 +272,7 @@ public sealed class SpellDeckController
     {
         if (SpellBarActions.TryParse(action, out int row, out int slot))
         {
-            if (SlotSpell(row, slot) is uint id) { Outline = SpellDeckMark.Spell(_tab, id); CastOutlined(); }
+            if (SlotSpell(row, slot) is not null) { Outline = SpellDeckMark.Slot(_tab, row, slot); CastOutlined(); }
             return true;
         }
         switch (action)
@@ -232,27 +291,29 @@ public sealed class SpellDeckController
         }
     }
 
-    /// <summary>The spell slot <paramref name="slot"/> of row <paramref name="row"/> shows, or null
-    /// (an empty slot, a row not shown, or a slot past the row's end).</summary>
-    public uint? SlotSpell(int row, int slot)
+    /// <summary>The spell in slot (<paramref name="row"/>, <paramref name="col"/>) of the current tab, or null
+    /// (an empty slot, a row not shown, or a column past the row's end).</summary>
+    public uint? SlotSpell(int row, int col)
     {
-        if (slot < 0 || slot >= PerRow) return null;
-        IReadOnlyList<uint> spells = RowSpells(row);
-        return slot < spells.Count ? spells[slot] : null;
+        if (!IsShown(row, col)) return null;
+        uint id = Layout.Get(row, col);
+        return id == 0 ? null : id;
     }
 
+    private bool IsShown(int row, int col) => row >= 0 && row < _rowCount && col >= 0 && col < PerRow;
+
     // ── Pointer ───────────────────────────────────────────────────
-    public void Click(int row, int slot)
+    public void Click(int row, int col)
     {
-        if (SlotSpell(row, slot) is not uint id) return;
-        Outline = SpellDeckMark.Spell(_tab, id);
+        if (SlotSpell(row, col) is null) return;
+        Outline = SpellDeckMark.Slot(_tab, row, col);
         if (ClickCasts) CastOutlined();
     }
 
-    public void DoubleClick(int row, int slot)
+    public void DoubleClick(int row, int col)
     {
-        if (ClickCasts || SlotSpell(row, slot) is not uint id) return;
-        Outline = SpellDeckMark.Spell(_tab, id);
+        if (ClickCasts || SlotSpell(row, col) is null) return;
+        Outline = SpellDeckMark.Slot(_tab, row, col);
         CastOutlined();
     }
 
@@ -268,85 +329,75 @@ public sealed class SpellDeckController
 
     // ── Drops ─────────────────────────────────────────────────────
 
-    /// <summary>The plan for a drop on (row, slot) of the current tab; null off the shown slots.
-    /// A slot lifted from another tab (the tab changed mid-drag) leaves that tab.</summary>
-    private SpellDeckDropPlan? PlanSlot(SpellDeckDragSource source, int row, int slot)
-    {
-        if (row < 0 || row >= _rowCount || slot < 0 || slot >= PerRow) return null;
-        SpellDeckDropPlan plan = SpellDeckModel.PlanDropOnSlot(source, _tab, row * PerRow + slot, _tabs.Get(_tab), Capacity);
-        if (plan.Accepted && !source.IsFromSpellbook && source.Tab != _tab)
-            plan = new(SpellDeckDropKind.Move, [.. plan.Ops, SpellDeckFavoriteOp.Remove(source.Tab, source.SpellId)]);
-        return plan;
-    }
+    /// <summary>The edit for a drop on shown slot (row, col) of the current tab; null off the shown slots or for a stale source.</summary>
+    private SpellDeckEdit? PlanSlot(SpellDeckDragSource source, int row, int col, bool copy) =>
+        IsShown(row, col) ? SpellDeckModel.PlanDropOnSlot(source, _tab, row, col, copy, _tabs.Layout) : null;
 
-    private SpellDeckDropPlan? PlanTab(SpellDeckDragSource source, int tab) =>
+    private SpellDeckEdit? PlanTab(SpellDeckDragSource source, int tab, bool copy) =>
         tab < 0 || tab >= _tabs.Count ? null
-        : SpellDeckModel.PlanDropOnTab(source, tab, _tabs.Get(tab), Capacity);
+        : SpellDeckModel.PlanDropOnTab(source, tab, copy, _rowCount, PerRow, _tabs.Layout);
 
-    /// <summary>Whether a drop on (row, slot) would be accepted, for the drag highlight.</summary>
-    public bool CanDropOnSlot(SpellDeckDragSource source, int row, int slot) =>
-        PlanSlot(source, row, slot)?.Accepted == true;
+    /// <summary>Whether a drop on (row, col) would be accepted, for the drag highlight.</summary>
+    public bool CanDropOnSlot(SpellDeckDragSource source, int row, int col, bool copy) =>
+        PlanSlot(source, row, col, copy)?.Accepted == true;
 
     /// <summary>Whether a drop on tab <paramref name="tab"/>'s bookmark would change something.</summary>
-    public bool CanDropOnTab(SpellDeckDragSource source, int tab) =>
-        PlanTab(source, tab) is { Accepted: true, Kind: not SpellDeckDropKind.None };
+    public bool CanDropOnTab(SpellDeckDragSource source, int tab, bool copy) =>
+        PlanTab(source, tab, copy) is { Accepted: true, Kind: not SpellDeckEditKind.None };
 
-    /// <summary>A drop on row <paramref name="row"/>, slot <paramref name="slot"/>: position <c>row·PerRow + slot</c> of the current tab.</summary>
-    public void DropOnSlot(SpellDeckDragSource source, int row, int slot) => Run(PlanSlot(source, row, slot));
+    /// <summary>A drop on slot (row, col) of the current tab: a spellbook spell is placed (empty slot) or replaces
+    /// (filled slot); a slot's spell moves (empty) or swaps (filled); <paramref name="copy"/> (Ctrl held at release)
+    /// copies a slot's spell instead.</summary>
+    public void DropOnSlot(SpellDeckDragSource source, int row, int col, bool copy) => Run(PlanSlot(source, row, col, copy));
 
-    /// <summary>A drop on a tab bookmark: to the end of that tab (a slot's spell moves there).</summary>
-    public void DropOnTab(SpellDeckDragSource source, int tab) => Run(PlanTab(source, tab));
+    /// <summary>A drop on a tab bookmark: into that tab's first empty slot (a slot's spell moves there, or with
+    /// <paramref name="copy"/> is copied); <see cref="FullTabMessage"/> when it has none.</summary>
+    public void DropOnTab(SpellDeckDragSource source, int tab, bool copy) => Run(PlanTab(source, tab, copy));
 
-    /// <summary>A slot dragged off every window leaves its tab; a spellbook spell does nothing.</summary>
-    public void DropOutside(SpellDeckDragSource source)
+    /// <summary>A slot dragged off every window is cleared; a spellbook spell does nothing.</summary>
+    public void DropOutside(SpellDeckDragSource source) => Run(SpellDeckModel.PlanClear(source, _tabs.Layout));
+
+    /// <summary>Clears slot (row, col) of <paramref name="tab"/>, only while the deck still shows that tab with <paramref name="spellId"/> there.</summary>
+    public void RemoveFromTab(int tab, int row, int col, uint spellId)
     {
-        if (source.IsFromSpellbook) return;
-        Run(SpellDeckModel.PlanRemove(source));
+        if (Shows(tab, row, col, spellId)) DropOutside(new SpellDeckDragSource(tab, row, col, spellId));
     }
 
-    /// <summary>Removes <paramref name="spellId"/> from <paramref name="tab"/>, only while the deck still shows that tab and spell.</summary>
-    public void RemoveFromTab(int tab, uint spellId)
+    /// <summary>Examines <paramref name="spellId"/>, only while the deck still shows it in that slot of <paramref name="tab"/>.</summary>
+    public void Examine(int tab, int row, int col, uint spellId)
     {
-        if (Shows(tab, spellId)) DropOutside(new SpellDeckDragSource(tab, spellId));
+        if (Shows(tab, row, col, spellId)) _actions.ExamineSpell(spellId);
     }
 
-    /// <summary>Examines <paramref name="spellId"/>, only while the deck still shows <paramref name="tab"/> and that spell.</summary>
-    public void Examine(int tab, uint spellId)
-    {
-        if (Shows(tab, spellId)) _actions.ExamineSpell(spellId);
-    }
+    private bool Shows(int tab, int row, int col, uint spellId) => tab == _tab && SlotSpell(row, col) == spellId;
 
-    private bool Shows(int tab, uint spellId) => tab == _tab && Visible.Contains(spellId);
-
-    /// <summary>The spellbook's "add to favourites": the end of the current tab; a spell already there is outlined.</summary>
+    /// <summary>The spellbook's "add to favourites": the current tab's first empty slot (<see cref="FullTabMessage"/>
+    /// when none); a spell the deck already shows is only outlined (its first slot).</summary>
     public void AddFavoriteFromSpellbook(uint spellId)
     {
-        IReadOnlyList<uint> tab = _tabs.Get(_tab);
-        if (tab.Contains(spellId))
-        {
-            Outline = SpellDeckMark.Spell(_tab, spellId);
-            Tick();
-            return;
-        }
-        Run(SpellDeckModel.PlanDropOnSlot(SpellDeckDragSource.FromSpellbook(spellId), _tab, tab.Count, tab, Capacity));
+        SpellDeckLayout layout = Layout;
+        foreach (SpellDeckSlot slot in ShownSlots)
+            if (layout.Get(slot.Row, slot.Col) == spellId)
+            {
+                Outline = SpellDeckMark.Slot(_tab, slot.Row, slot.Col);
+                Tick();
+                return;
+            }
+        Run(PlanTab(SpellDeckDragSource.FromSpellbook(spellId), _tab, copy: false));
     }
 
-    private void Run(SpellDeckDropPlan? plan)
+    private void Run(SpellDeckEdit? edit)
     {
-        if (plan is null) return;
-        if (!plan.Accepted) { _actions.ShowMessage(FullTabMessage); return; }
-        Batch(() =>
-        {
-            foreach (SpellDeckFavoriteOp op in plan.Ops)
-                if (op.IsRemove) _tabs.Remove(op.Tab, op.SpellId);
-                else _tabs.Set(op.Tab, op.Position, op.SpellId);
-        });
+        if (edit is null) return;
+        if (!edit.Accepted) { _actions.ShowMessage(FullTabMessage); return; }
+        Batch(() => _tabs.Apply(edit.Layouts));
         Tick();
     }
 
     // ── Rows ──────────────────────────────────────────────────────
     public bool CanAddRow() => _rowCount < SpellDeckGeometry.MaxRows && _canAddRow();
-    public bool CanRemoveRow => SpellDeckModel.CanRemoveRow(_rowCount, AllTabCounts());
+    /// <summary>Remove row is allowed while no tab (server or local) holds a spell in the last row.</summary>
+    public bool CanRemoveRow => SpellDeckModel.CanRemoveRow(_rowCount, _tabs.All);
 
     public void AddRow()
     {

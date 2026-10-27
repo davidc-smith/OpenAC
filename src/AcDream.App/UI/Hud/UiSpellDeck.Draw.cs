@@ -38,12 +38,12 @@ internal sealed partial class UiSpellDeck
         int tab = _controller.Tab;
         for (int row = 0; row < g.Rows && row < _controller.RowCount; row++)
         {
-            IReadOnlyList<uint> spells = _controller.RowSpells(row);
             for (int slot = 0; slot < g.SlotsPerRow; slot++)
             {
                 DeckRect s = g.Slot(row, slot);
-                if (slot < spells.Count)
-                    ctx.DrawSprite(_spellIcon(spells[slot]), s.X, s.Y, s.W, s.H, 0, 0, 1, 1, Vector4.One);
+                uint? spell = _controller.SlotSpell(row, slot);
+                if (spell is uint shown)
+                    ctx.DrawSprite(_spellIcon(shown), s.X, s.Y, s.W, s.H, 0, 0, 1, 1, Vector4.One);
                 else
                     ctx.FillRoundedRect(s.X, s.Y, s.W, s.H, P(4), Track);
 
@@ -54,9 +54,8 @@ internal sealed partial class UiSpellDeck
                     face.Draw(ctx, key, s.X + P(2), s.Y + P(2), LabelInk);
                 }
 
-                if (slot >= spells.Count) continue;
-                uint id = spells[slot];
-                if (outline.Kind == SpellDeckMarkKind.Spell && outline.Tab == tab && outline.SpellId == id)
+                if (spell is not uint id) continue;
+                if (outline == SpellDeckMark.Slot(tab, row, slot))
                     StrokeAround(ctx, s, gap: 1f, width: 2f, Handle);
                 if (pending == id)
                     StrokeAround(ctx, s, gap: 3f, width: 2f, CastLit with { W = 0.8f });

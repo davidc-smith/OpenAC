@@ -89,7 +89,7 @@ public sealed class SpellDeckDock
     private int RowCount => _controller.RowCount;
 
     /// <summary>The narrowest stretch the Spell Deck (and, attached, the deck) may have: its rows must hold the fullest tab.</summary>
-    private float MinStretch() => SpellDeckGeometry.StretchFor(_controller.MinSlotsPerRow);
+    private float MinStretch() => SpellDeckGeometry.StretchFor(_controller.MinColumns);
 
     private static SpellDeckGeometry AttachedGeometry(DeckGeometry deck, int rows) =>
         SpellDeckGeometry.Create(deck.Scale, deck.Stretch, rows);

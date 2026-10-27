@@ -3,15 +3,19 @@ using AcDream.UI.Abstractions.Panels.Settings;
 namespace AcDream.App.UI.Hud;
 
 /// <summary>A character's Spell Deck, validated: the one tab the whole deck shows (0-7 server
-/// tabs, 8+ local tabs), how many rows continue it, attachment, and the local tabs' spell ids.
+/// tabs, 8+ local tabs), how many rows show it, attachment, the local tabs and each tab's slot layout.
 /// <paramref name="DetachedRows"/> is the row count the stored detached placement goes with (its
-/// height is that many rows at its scale); null when not recorded, which means the current row count.</summary>
+/// height is that many rows at its scale); null when not recorded, which means the current row count.
+/// <paramref name="LocalTabs"/> gives how many local tabs exist (and, saved, each one's spells once in
+/// reading order). <paramref name="Layouts"/> is each tab's slot layout by tab number; null for data saved
+/// before layouts existed (v2), whose local tabs <see cref="LayoutsAt"/> lays out in reading order.</summary>
 public sealed record SpellDeckSettings(
     int Tab,
     int RowCount,
     bool Attached,
     int? DetachedRows,
-    IReadOnlyList<IReadOnlyList<uint>> LocalTabs)
+    IReadOnlyList<IReadOnlyList<uint>> LocalTabs,
+    IReadOnlyDictionary<int, SpellDeckLayout>? Layouts = null)
 {
     public const int MaxLocalTabs = 8;
 
@@ -29,19 +33,64 @@ public sealed record SpellDeckSettings(
             local.Add([.. (tab ?? []).Where(id => id != 0 && seen.Add(id))]);
         }
         int tabCount = SpellDeckTabs.ServerTabs + local.Count;
+        Dictionary<int, SpellDeckLayout>? layouts = null;
+        if (Layouts is not null)
+        {
+            layouts = [];
+            foreach ((int tab, SpellDeckLayout? layout) in Layouts)
+            {
+                if (tab < 0 || tab >= tabCount || layout is null) continue;
+                // Slots past the deck's limits could never be shown; a server tab re-places those spells on reconcile.
+                SpellDeckLayout kept = SpellDeckLayout.FromSlots(layout.Filled
+                    .Where(s => s.Row < SpellDeckGeometry.MaxRows && s.Col < SpellDeckGeometry.MaxCapacity)
+                    .Select(s => (s.Row, s.Col, s.SpellId)));
+                if (!kept.IsEmpty) layouts[tab] = kept;
+            }
+        }
         return new(
             Tab >= 0 && Tab < tabCount ? Tab : 0,
             Math.Clamp(RowCount, SpellDeckGeometry.MinRows, SpellDeckGeometry.MaxRows),
             Attached,
             detachedRows,
-            local);
+            local,
+            layouts);
+    }
+
+    /// <summary>Each tab's layout (non-empty ones only). For v2 data (no <see cref="Layouts"/>) each local tab's
+    /// list is laid out in reading order at <paramref name="perRow"/> slots per row; server tabs get none and
+    /// fill from the server on reconcile.</summary>
+    public IReadOnlyDictionary<int, SpellDeckLayout> LayoutsAt(int perRow)
+    {
+        if (Layouts is not null)
+            return Layouts.Where(kv => !kv.Value.IsEmpty).ToDictionary(kv => kv.Key, kv => kv.Value);
+        var migrated = new Dictionary<int, SpellDeckLayout>();
+        for (int i = 0; i < LocalTabs.Count; i++)
+            if (LocalTabs[i].Count > 0)
+                migrated[SpellDeckTabs.ServerTabs + i] = SpellDeckLayout.FromList(LocalTabs[i], Math.Max(1, perRow));
+        return migrated;
     }
 
     public static SpellDeckSettings Load(SettingsStore? store, string toonKey) =>
         store?.LoadSpellDeck(toonKey) is { } s
-            ? new SpellDeckSettings(s.Tab, s.RowCount, s.Attached, s.DetachedRows, s.LocalTabs).Normalize()
+            ? new SpellDeckSettings(s.Tab, s.RowCount, s.Attached, s.DetachedRows, s.LocalTabs, FromStored(s.Layouts)).Normalize()
             : Default;
 
     public void Save(SettingsStore? store, string toonKey) =>
-        store?.SaveSpellDeck(toonKey, new StoredSpellDeck(Tab, RowCount, Attached, DetachedRows, LocalTabs));
+        store?.SaveSpellDeck(toonKey, new StoredSpellDeck(Tab, RowCount, Attached, DetachedRows, LocalTabs, ToStored(Layouts)));
+
+    private static Dictionary<int, SpellDeckLayout>? FromStored(IReadOnlyDictionary<int, IReadOnlyList<StoredSpellDeckSlot>>? stored)
+    {
+        if (stored is null) return null;
+        var layouts = new Dictionary<int, SpellDeckLayout>();
+        foreach ((int tab, IReadOnlyList<StoredSpellDeckSlot> slots) in stored)
+            layouts[tab] = SpellDeckLayout.FromSlots(slots
+                .Where(s => s.Row >= 0 && s.Col >= 0)
+                .Select(s => (s.Row, s.Col, s.Spell)));
+        return layouts;
+    }
+
+    private static Dictionary<int, IReadOnlyList<StoredSpellDeckSlot>>? ToStored(IReadOnlyDictionary<int, SpellDeckLayout>? layouts) =>
+        layouts?.Where(kv => !kv.Value.IsEmpty).ToDictionary(
+            kv => kv.Key,
+            kv => (IReadOnlyList<StoredSpellDeckSlot>)[.. kv.Value.Filled.Select(s => new StoredSpellDeckSlot(s.Row, s.Col, s.SpellId))]);
 }

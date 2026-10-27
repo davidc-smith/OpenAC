@@ -88,11 +88,11 @@ public sealed class UiSpellDeckDragTests
         Rig r = Make(capacity: 2);   // rows show tab 0 two at a time: row 1 starts with 12
         Press(r.Deck, r.Deck.Geometry.Slot(1, 0));
         Assert.True(r.Deck.IsDragSource);
-        Assert.Equal(new SpellDeckDragPayload(0, 12u), r.Deck.GetDragPayload());
+        Assert.Equal(new SpellDeckDragPayload(0, 1, 0, 12u), r.Deck.GetDragPayload());
         Assert.Equal((0x0600_0000u + 12u, 32, 32), r.Deck.GetDragGhost());
         r.Controller.ShowTab(2);
         Press(r.Deck, r.Deck.Geometry.Slot(0, 1));
-        Assert.Equal(new SpellDeckDragPayload(2, 31u), r.Deck.GetDragPayload());
+        Assert.Equal(new SpellDeckDragPayload(2, 0, 1, 31u), r.Deck.GetDragPayload());
     }
 
     [Fact]
@@ -136,55 +136,59 @@ public sealed class UiSpellDeckDragTests
     // ── Drops ─────────────────────────────────────────────────────
 
     [Fact]
-    public void ADropOnASlotInTheSameTabReorders()
+    public void ASlotDroppedOnAFilledSlotInTheSameTabSwaps()
     {
         Rig r = Make();
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), r.Deck.Geometry.Slot(0, 2)));
-        Assert.Equal(["set 0 2 10"], r.Game.Calls);
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), r.Deck.Geometry.Slot(0, 2)));
+        Assert.Equal((12u, 10u), (r.Controller.SlotSpell(0, 0)!.Value, r.Controller.SlotSpell(0, 2)!.Value));
+        Assert.DoesNotContain(r.Game.Calls, c => c.StartsWith("remove"));
     }
 
     [Fact]
-    public void ADropOnAnotherRowReordersWithinTheTab()
+    public void ASlotDroppedOnAnEmptySlotInAnotherRowMovesThere()
     {
-        Rig r = Make(capacity: 2);   // row 1 slot 0 is position 2
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), r.Deck.Geometry.Slot(1, 0)));
+        Rig r = Make(capacity: 2);   // 10 11 / 12 _
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), r.Deck.Geometry.Slot(1, 1)));
         Assert.Equal(["set 0 2 10"], r.Game.Calls);
+        Assert.Equal(10u, r.Controller.SlotSpell(1, 1));
+        Assert.Null(r.Controller.SlotSpell(0, 0));
     }
 
     [Fact]
-    public void ASpellbookDropInserts()
+    public void ASpellbookDropOnAnEmptySlotPlacesIt()
     {
-        Rig r = Make(capacity: 2);   // row 1 slot 0 is position 2
-        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), r.Deck.Geometry.Slot(1, 0)));
-        Assert.Equal(["set 0 2 99"], r.Game.Calls);
+        Rig r = Make(capacity: 2);
+        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), r.Deck.Geometry.Slot(1, 1)));
+        Assert.Equal(["set 0 3 99"], r.Game.Calls);
     }
 
     [Fact]
-    public void ADropOnAnEmptySlotGoesToTheEnd()
+    public void ADropOnAnEmptySlotPastAGapLandsInThatSlot()
     {
         Rig r = Make();
         Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), r.Deck.Geometry.Slot(1, 5)));
         Assert.Equal(["set 0 3 99"], r.Game.Calls);
+        Assert.Equal(99u, r.Controller.SlotSpell(1, 5));
     }
 
     [Fact]
     public void ADropInTheRowBandBetweenSlotsGoesToTheSlotOnItsLeft()
     {
         Rig r = Make();
-        DeckRect s = r.Deck.Geometry.Slot(0, 1);
+        DeckRect s = r.Deck.Geometry.Slot(1, 1);
         int x = (int)(s.X + s.W + 1), y = (int)(s.Y + s.H / 2);
         Assert.Equal(SpellDeckZone.Frame, r.Deck.Geometry.HitAt(x, y, r.Controller.TabCount).Zone);
         Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), x, y));
-        Assert.Equal(["set 0 1 99"], r.Game.Calls);
+        Assert.Equal(99u, r.Controller.SlotSpell(1, 1));
     }
 
     [Fact]
     public void ADropAnywhereElseDoesNothing()
     {
         Rig r = Make();
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), r.Deck.Geometry.ItemSlot));
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), Plus(r)));
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), 2, 2));
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), r.Deck.Geometry.ItemSlot));
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), Plus(r)));
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), 2, 2));
         Assert.Empty(r.Game.Calls);
     }
 
@@ -197,18 +201,18 @@ public sealed class UiSpellDeckDragTests
     }
 
     [Fact]
-    public void ARefusedDropSaysTheTabIsFull()
+    public void ASpellbookDropOnAFilledSlotReplacesIt()
     {
         Rig r = Make(capacity: 1);   // 3 rows of 1: tab 0's three spells fill the deck
         Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), r.Deck.Geometry.Slot(0, 0)));
-        Assert.Equal(["msg " + SpellDeckController.FullTabMessage], r.Game.Calls);
+        Assert.Equal(["remove 0 10", "set 0 0 99"], r.Game.Calls);
     }
 
     [Fact]
-    public void ASlotDroppedOnABookmarkMovesToTheEndOfThatTab()
+    public void ASlotDroppedOnABookmarkMovesToThatTabsFirstEmptySlot()
     {
         Rig r = Make();
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 11u), Mark(r, 2)));
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 1, 11u), Mark(r, 2)));
         Assert.Equal(["set 2 2 11", "remove 0 11"], r.Game.Calls);
     }
 
@@ -232,11 +236,13 @@ public sealed class UiSpellDeckDragTests
     }
 
     [Fact]
-    public void ADropOnTheBookmarkOfATabThatHoldsTheSpellDoesNothing()
+    public void ASlotOnItsOwnBookmarkDoesNothing_AndADuplicateNeverReachesTheServer()
     {
         Rig r = Make();
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 11u), Mark(r, 0)));
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 1, 11u), Mark(r, 0)));
+        Assert.Equal(11u, r.Controller.SlotSpell(0, 1));
         Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(20u), Mark(r, 1)));
+        Assert.Equal(20u, r.Controller.LayoutOf(1).Get(0, 1));   // a second copy, kept locally
         Assert.Empty(r.Game.Calls);
     }
 
@@ -244,8 +250,8 @@ public sealed class UiSpellDeckDragTests
     public void ARefusedBookmarkDropSaysTheTabIsFull()
     {
         Rig r = Make(capacity: 1);   // 3 rows of 1: a tab holds 3
-        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 10u), Mark(r, 2)));
-        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), Mark(r, 0)));
+        Assert.True(Drop(r.Deck, new SpellDeckDragPayload(0, 0, 0, 10u), Mark(r, 2)));
+        Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(99u), Mark(r, 2)));   // now full
         Assert.Equal(["set 2 2 10", "remove 0 10", "msg " + SpellDeckController.FullTabMessage], r.Game.Calls);
     }
 
@@ -256,7 +262,7 @@ public sealed class UiSpellDeckDragTests
         r.Deck.OnDragReleasedOutsideUi(new SpellbookShortcutDragPayload(10u));
         r.Deck.OnDragReleasedOutsideUi("an item");
         Assert.Empty(r.Game.Calls);
-        r.Deck.OnDragReleasedOutsideUi(new SpellDeckDragPayload(0, 11u));
+        r.Deck.OnDragReleasedOutsideUi(new SpellDeckDragPayload(0, 0, 1, 11u));
         Assert.Equal(["remove 0 11"], r.Game.Calls);
     }
 
@@ -268,20 +274,24 @@ public sealed class UiSpellDeckDragTests
         Rig r = Make(capacity: 1);   // 3 rows of 1: tab 0's three spells fill the deck
         var (x, y) = Centre(r.Deck.Geometry.Slot(1, 0));
         r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
-            Payload: new SpellDeckDragPayload(0, 10u)));
-        Assert.Equal((1, 0, true), r.Deck.DropHighlight);    // a reorder is always allowed
+            Payload: new SpellDeckDragPayload(0, 0, 0, 10u)));
+        Assert.Equal((1, 0, true), r.Deck.DropHighlight);    // a swap
 
-        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragOver, Payload: new SpellDeckDragPayload(0, 10u)));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragOver, Payload: new SpellDeckDragPayload(0, 0, 0, 10u)));
         Assert.Null(r.Deck.DropHighlight);
 
         (x, y) = Centre(r.Deck.Geometry.Slot(0, 0));
         r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
             Payload: new SpellbookShortcutDragPayload(99u)));
-        Assert.Equal((0, 0, false), r.Deck.DropHighlight);   // tab 0 already fills the deck
+        Assert.Equal((0, 0, true), r.Deck.DropHighlight);    // a replace
 
-        Drop(r.Deck, new SpellbookShortcutDragPayload(99u), x, y);
+        var stale = new SpellDeckDragPayload(0, 2, 0, 77u);  // its slot no longer holds it
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y, Payload: stale));
+        Assert.Equal((0, 0, false), r.Deck.DropHighlight);
+
+        Drop(r.Deck, stale, x, y);
         Assert.Null(r.Deck.DropHighlight);
-        Assert.DoesNotContain(r.Game.Calls, c => !c.StartsWith("msg"));
+        Assert.Empty(r.Game.Calls);
     }
 
     [Fact]
@@ -290,11 +300,11 @@ public sealed class UiSpellDeckDragTests
         Rig r = Make(capacity: 1);   // 3 rows of 1: tab 0 is full, tab 1 has room
         var (x, y) = Centre(Mark(r, 1));
         r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
-            Payload: new SpellDeckDragPayload(0, 10u)));
+            Payload: new SpellDeckDragPayload(0, 0, 0, 10u)));
         Assert.Equal((1, true), r.Deck.BookmarkDropHighlight);
         Assert.Null(r.Deck.DropHighlight);
 
-        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragOver, Payload: new SpellDeckDragPayload(0, 10u)));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragOver, Payload: new SpellDeckDragPayload(0, 0, 0, 10u)));
         Assert.Null(r.Deck.BookmarkDropHighlight);
 
         (x, y) = Centre(Mark(r, 0));
@@ -305,17 +315,17 @@ public sealed class UiSpellDeckDragTests
         (x, y) = Centre(Mark(r, 1));
         r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
             Payload: new SpellbookShortcutDragPayload(20u)));
-        Assert.Equal((1, false), r.Deck.BookmarkDropHighlight);   // already there
+        Assert.Equal((1, true), r.Deck.BookmarkDropHighlight);    // a duplicate is allowed
 
         (x, y) = Centre(r.Deck.Geometry.Slot(0, 0));
         r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
-            Payload: new SpellDeckDragPayload(0, 10u)));
+            Payload: new SpellDeckDragPayload(0, 0, 0, 10u)));
         Assert.Null(r.Deck.BookmarkDropHighlight);
         Assert.NotNull(r.Deck.DropHighlight);
 
         (x, y) = Centre(Plus(r));
         r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DragEnter, Data1: x, Data2: y,
-            Payload: new SpellDeckDragPayload(0, 10u)));
+            Payload: new SpellDeckDragPayload(0, 0, 0, 10u)));
         Assert.Null(r.Deck.BookmarkDropHighlight);
         Assert.Null(r.Deck.DropHighlight);
         Assert.Empty(r.Game.Calls);
@@ -346,11 +356,11 @@ public sealed class UiSpellDeckDragTests
     private static (int X, int Y) Screen(DeckRect rect) => ((int)(Left + rect.X + rect.W / 2), (int)(Top + rect.Y + rect.H / 2));
 
     [Fact]
-    public void DraggingASlotToAnotherSlotReordersOnce()
+    public void DraggingASlotToAnEmptySlotMovesItOnce()
     {
         var (root, r) = Mount();
         var (x, y) = Screen(r.Deck.Geometry.Slot(0, 0));
-        var (tx, ty) = Screen(r.Deck.Geometry.Slot(0, 2));
+        var (tx, ty) = Screen(r.Deck.Geometry.Slot(0, 4));
         root.OnMouseMove(x, y);
         root.OnMouseDown(UiMouseButton.Left, x, y);
         root.OnMouseMove(x + 10, y);
@@ -371,7 +381,7 @@ public sealed class UiSpellDeckDragTests
         root.OnMouseDown(UiMouseButton.Left, x, y);
         root.OnMouseUp(UiMouseButton.Left, x, y);
         Assert.Null(root.DragSource);
-        Assert.Equal(SpellDeckMark.Spell(0, 11u), r.Controller.Outline);
+        Assert.Equal(SpellDeckMark.Slot(0, 0, 1), r.Controller.Outline);
         Assert.Empty(r.Game.Calls);
     }
 
@@ -459,7 +469,7 @@ public sealed class UiSpellDeckDragTests
     {
         Rig r = Make();
         r.Controller.AddLocalTab();
-        r.Controller.Tabs.Set(8, 0, 99u);
+        r.Controller.Tabs.Apply([new(8, SpellDeckLayout.FromSlots([(0, 0, 99u)]))]);
         MenuAt(r, Mark(r, 8));
         r.Controller.RemoveLastLocalTab();
         r.Controller.AddLocalTab();   // a new tab 9, again the last local one
@@ -516,31 +526,33 @@ public sealed class UiSpellDeckDragTests
     }
 
     [Fact]
-    public void SlotItemsActOnTheSpellTheMenuOpenedOn_NotTheSlot()
+    public void SlotItemsDoNothingWhenTheSlotNoLongerHoldsTheSpell()
     {
-        // Opened on spell 11; another spell is put in front, so 11 moves to slot 2.
+        // Opened on spell 11 in slot (0, 1); 10 is then swapped into that slot.
         Rig r = Make();
         MenuAt(r, r.Deck.Geometry.Slot(0, 1));
-        r.Game.Tabs[0].Insert(0, 99u);
+        r.Controller.DropOnSlot(new SpellDeckDragSource(0, 0, 0, 10u), 0, 1, copy: false);
+        r.Game.Calls.Clear();
         r.Deck.SelectMenuItem(1);   // Remove from tab
-        Assert.Equal(["remove 0 11"], r.Game.Calls);
         r.Deck.SelectMenuItem(0);   // Examine spell
-        Assert.Equal(["remove 0 11", "examine 11"], r.Game.Calls);
+        Assert.Empty(r.Game.Calls);
+        Assert.Equal(10u, r.Controller.SlotSpell(0, 1));
     }
 
     [Fact]
     public void SlotItemsDoNothingWhenTheSpellLeftTheTab()
     {
-        // Opened on spell 11; 11 is removed elsewhere, so 12 takes its slot.
+        // Opened on spell 11; 11 is removed elsewhere and the deck reconciles.
         Rig r = Make();
         MenuAt(r, r.Deck.Geometry.Slot(0, 1));
         r.Game.Tabs[0].Remove(11u);
+        r.Controller.ServerFavoritesChanged();
         r.Deck.SelectMenuItem(1);
         r.Deck.SelectMenuItem(0);
         Assert.Empty(r.Game.Calls);
 
         // The deck now shows another tab.
-        MenuAt(r, r.Deck.Geometry.Slot(0, 1));   // spell 12
+        MenuAt(r, r.Deck.Geometry.Slot(0, 2));   // spell 12
         r.Controller.ShowTab(2);
         r.Deck.SelectMenuItem(1);
         Assert.Empty(r.Game.Calls);

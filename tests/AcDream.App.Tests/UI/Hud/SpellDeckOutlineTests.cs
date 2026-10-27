@@ -2,124 +2,84 @@ using AcDream.App.UI.Hud;
 
 namespace AcDream.App.Tests.UI.Hud;
 
-/// <summary>The outline: <see cref="SpellDeckMark"/> = None | Item | Spell(tab, spellId) over the current tab's visible spells.</summary>
+/// <summary>The outline: <see cref="SpellDeckMark"/> = None | Item | Slot(tab, row, col) over the current tab's
+/// filled shown slots in reading order.</summary>
 public sealed class SpellDeckOutlineTests
 {
-    private static SpellDeckMarkContext Ctx(int tab, bool item, params uint[] visible) => new(tab, visible, item);
+    private static SpellDeckMarkContext Ctx(int tab, bool item, params (int Row, int Col)[] filled) =>
+        new(tab, [.. filled.Select(f => new SpellDeckSlot(f.Row, f.Col))], item);
+
+    private static SpellDeckMark S(int tab, int row, int col) => SpellDeckMark.Slot(tab, row, col);
 
     [Fact]
-    public void Repair_PrefersFirstVisibleSpell_ThenItem_ThenNone()
+    public void Repair_PrefersTheFirstFilledSlot_ThenItem_ThenNone()
     {
-        Assert.Equal(SpellDeckMark.Spell(2, 5u), SpellDeckMark.Repair(Ctx(2, true, 5, 6)));
+        Assert.Equal(S(2, 1, 3), SpellDeckMark.Repair(Ctx(2, true, (1, 3), (2, 0))));
         Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Repair(Ctx(2, true)));
         Assert.Equal(SpellDeckMark.None, SpellDeckMark.Repair(Ctx(2, false)));
     }
 
     [Fact]
-    public void Validate_ReorderedSpell_KeepsTheOutline()
+    public void Validate_AFilledSlotKeepsTheOutline_ACleared_OrNotShownSlotIsRepaired()
     {
-        var m = SpellDeckMark.Spell(0, 6u);
-        Assert.Equal(m, SpellDeckMark.Validate(m, Ctx(0, false, 6, 5)));
-        Assert.Equal(m, SpellDeckMark.Validate(m, Ctx(0, false, 5, 6)));
+        Assert.Equal(S(0, 1, 2), SpellDeckMark.Validate(S(0, 1, 2), Ctx(0, false, (0, 0), (1, 2))));
+        Assert.Equal(S(0, 0, 0), SpellDeckMark.Validate(S(0, 1, 2), Ctx(0, false, (0, 0))));
     }
 
     [Fact]
-    public void Validate_SpellThatLeftTheTabOrVisibleRange_IsRepaired() =>
-        Assert.Equal(SpellDeckMark.Spell(0, 5u), SpellDeckMark.Validate(SpellDeckMark.Spell(0, 6u), Ctx(0, false, 5)));
-
-    [Fact]
-    public void Validate_SpellOnAnotherTab_IsRepairedToTheCurrentTab() =>
-        // Even when the new tab also holds the spell, the outline is the new tab's first spell.
-        Assert.Equal(SpellDeckMark.Spell(3, 7u), SpellDeckMark.Validate(SpellDeckMark.Spell(0, 6u), Ctx(3, true, 7, 6)));
+    public void Validate_ASlotOnAnotherTab_IsRepairedToTheCurrentTab() =>
+        // Even when the new tab has the same slot filled, the outline moves to the new tab's first slot.
+        Assert.Equal(S(3, 0, 1), SpellDeckMark.Validate(S(0, 0, 4), Ctx(3, true, (0, 1), (0, 4))));
 
     [Fact]
     public void Validate_Item_KeptWhileThereIsOne_ElseRepaired()
     {
-        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Validate(SpellDeckMark.Item, Ctx(0, true, 5)));
-        Assert.Equal(SpellDeckMark.Spell(0, 5u), SpellDeckMark.Validate(SpellDeckMark.Item, Ctx(0, false, 5)));
+        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Validate(SpellDeckMark.Item, Ctx(0, true, (0, 1))));
+        Assert.Equal(S(0, 0, 1), SpellDeckMark.Validate(SpellDeckMark.Item, Ctx(0, false, (0, 1))));
+        Assert.Equal(S(0, 0, 1), SpellDeckMark.Validate(SpellDeckMark.None, Ctx(0, false, (0, 1))));
     }
 
     [Fact]
-    public void Validate_None_RepairsWhenSomethingBecomesAvailable()
+    public void ShowTab_IsTheNewTabsFirstFilledSlot_ElseItem_ElseNone()
     {
-        Assert.Equal(SpellDeckMark.Spell(1, 4u), SpellDeckMark.Validate(SpellDeckMark.None, Ctx(1, false, 4)));
-        Assert.Equal(SpellDeckMark.None, SpellDeckMark.Validate(SpellDeckMark.None, Ctx(1, false)));
-    }
-
-    [Fact]
-    public void ShowTab_MovesToThatTabsFirstSpell_EvenIfTheOldSpellIsThere()
-    {
-        Assert.Equal(SpellDeckMark.Spell(4, 8u), SpellDeckMark.ShowTab(Ctx(4, true, 8, 6)));
+        Assert.Equal(S(4, 2, 0), SpellDeckMark.ShowTab(Ctx(4, true, (2, 0))));
         Assert.Equal(SpellDeckMark.Item, SpellDeckMark.ShowTab(Ctx(4, true)));
         Assert.Equal(SpellDeckMark.None, SpellDeckMark.ShowTab(Ctx(4, false)));
     }
 
     [Fact]
-    public void Next_WalksItemThenSpells_AndWraps()
+    public void NextPrev_WalkTheFilledSlotsInReadingOrder_ItemFirst_Wrapping_SkippingGaps()
     {
-        var ctx = Ctx(0, true, 5, 6);
-        Assert.Equal(SpellDeckMark.Spell(0, 5u), SpellDeckMark.Next(SpellDeckMark.Item, ctx));
-        Assert.Equal(SpellDeckMark.Spell(0, 6u), SpellDeckMark.Next(SpellDeckMark.Spell(0, 5u), ctx));
-        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Next(SpellDeckMark.Spell(0, 6u), ctx));
+        var ctx = Ctx(1, true, (0, 2), (1, 0), (1, 5));
+        Assert.Equal(S(1, 0, 2), SpellDeckMark.Next(SpellDeckMark.Item, ctx));
+        Assert.Equal(S(1, 1, 0), SpellDeckMark.Next(S(1, 0, 2), ctx));
+        Assert.Equal(S(1, 1, 5), SpellDeckMark.Next(S(1, 1, 0), ctx));
+        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Next(S(1, 1, 5), ctx));
+        Assert.Equal(S(1, 1, 5), SpellDeckMark.Prev(SpellDeckMark.Item, ctx));
+        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Prev(S(1, 0, 2), ctx));
+
+        var noItem = Ctx(1, false, (0, 2), (1, 0));
+        Assert.Equal(S(1, 0, 2), SpellDeckMark.Next(S(1, 1, 0), noItem));
+        Assert.Equal(S(1, 1, 0), SpellDeckMark.Prev(S(1, 0, 2), noItem));
     }
 
     [Fact]
-    public void Prev_WalksBackwards_AndWraps()
+    public void NextPrev_FromNone_GoToTheEdges_AndWithNothingStay()
     {
-        var ctx = Ctx(0, true, 5, 6);
-        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Prev(SpellDeckMark.Spell(0, 5u), ctx));
-        Assert.Equal(SpellDeckMark.Spell(0, 6u), SpellDeckMark.Prev(SpellDeckMark.Item, ctx));
-    }
-
-    [Fact]
-    public void NextPrev_WithoutItem_WrapsOverSpellsOnly()
-    {
-        var ctx = Ctx(0, false, 5, 6);
-        Assert.Equal(SpellDeckMark.Spell(0, 5u), SpellDeckMark.Next(SpellDeckMark.Spell(0, 6u), ctx));
-        Assert.Equal(SpellDeckMark.Spell(0, 6u), SpellDeckMark.Prev(SpellDeckMark.Spell(0, 5u), ctx));
-    }
-
-    [Fact]
-    public void NextPrev_FromNone_GoToFirstAndLast()
-    {
-        var ctx = Ctx(0, true, 5, 6);
-        Assert.Equal(SpellDeckMark.Spell(0, 5u), SpellDeckMark.Next(SpellDeckMark.None, ctx));
-        Assert.Equal(SpellDeckMark.Spell(0, 6u), SpellDeckMark.Prev(SpellDeckMark.None, ctx));
-    }
-
-    [Fact]
-    public void NextPrev_FromAStaleSpell_GoToFirstAndLast()
-    {
-        var ctx = Ctx(1, false, 5, 6);
-        Assert.Equal(SpellDeckMark.Spell(1, 5u), SpellDeckMark.Next(SpellDeckMark.Spell(0, 9u), ctx));
-        Assert.Equal(SpellDeckMark.Spell(1, 6u), SpellDeckMark.Prev(SpellDeckMark.Spell(0, 9u), ctx));
-    }
-
-    [Fact]
-    public void NextPrev_NothingToWalk_IsUnchanged() =>
+        var ctx = Ctx(0, true, (0, 0), (0, 3));
+        Assert.Equal(S(0, 0, 0), SpellDeckMark.Next(SpellDeckMark.None, ctx));
+        Assert.Equal(S(0, 0, 3), SpellDeckMark.Prev(SpellDeckMark.None, ctx));
         Assert.Equal(SpellDeckMark.None, SpellDeckMark.Next(SpellDeckMark.None, Ctx(0, false)));
-
-    [Fact]
-    public void FirstLast_AreTheFirstAndLastVisibleSpell()
-    {
-        var ctx = Ctx(2, true, 5, 6, 7);
-        Assert.Equal(SpellDeckMark.Spell(2, 5u), SpellDeckMark.First(ctx));
-        Assert.Equal(SpellDeckMark.Spell(2, 7u), SpellDeckMark.Last(ctx));
+        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.Next(SpellDeckMark.Item, Ctx(0, true)));
     }
 
     [Fact]
-    public void FirstLast_NoSpells_FallBackToItemThenNone()
+    public void FirstLast_AreTheEdgeFilledSlots_ElseItem_ElseNone()
     {
-        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.First(Ctx(2, true)));
-        Assert.Equal(SpellDeckMark.None, SpellDeckMark.Last(Ctx(2, false)));
-    }
-
-    [Fact]
-    public void Kinds_AreReportedAndSpellCarriesTabAndId()
-    {
-        Assert.Equal(SpellDeckMarkKind.None, SpellDeckMark.None.Kind);
-        Assert.Equal(SpellDeckMarkKind.Item, SpellDeckMark.Item.Kind);
-        var s = SpellDeckMark.Spell(11, 42u);
-        Assert.Equal((SpellDeckMarkKind.Spell, 11, 42u), (s.Kind, s.Tab, s.SpellId));
+        var ctx = Ctx(0, true, (0, 1), (2, 2));
+        Assert.Equal(S(0, 0, 1), SpellDeckMark.First(ctx));
+        Assert.Equal(S(0, 2, 2), SpellDeckMark.Last(ctx));
+        Assert.Equal(SpellDeckMark.Item, SpellDeckMark.First(Ctx(0, true)));
+        Assert.Equal(SpellDeckMark.None, SpellDeckMark.Last(Ctx(0, false)));
     }
 }

@@ -101,7 +101,7 @@ public sealed class UiSpellDeckTests
         Send(r.Deck, UiEventType.Click, slot);
         Send(r.Deck, UiEventType.DoubleClick, slot);
         Assert.Equal(Enumerable.Repeat("cast 11", casts), r.Game.Calls);
-        Assert.Equal(SpellDeckMark.Spell(0, 11u), r.Controller.Outline);
+        Assert.Equal(SpellDeckMark.Slot(0, 0, 1), r.Controller.Outline);
     }
 
     [Fact]
@@ -297,6 +297,7 @@ public sealed class UiSpellDeckTests
         Assert.Null(Bounds(MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height), DeckChrome.CastLit));
 
         r.Game.Tabs[0].AddRange(Enumerable.Range(100, 10).Select(i => (uint)i));   // the 13th spell, 109, is row 1's first
+        r.Controller.ServerFavoritesChanged();
         r.Pending = 109u;
         var b = Bounds(MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height), DeckChrome.CastLit);
         Assert.NotNull(b);
@@ -417,7 +418,7 @@ public sealed class UiSpellDeckTests
     public void ARestoredNarrowSizeIsWidenedSoTheRowsHoldTheFullestTab()
     {
         Rig r = Make();
-        r.Game.Tabs[1].AddRange(Enumerable.Range(100, 47).Select(i => (uint)i));   // tab 1 (not shown) holds 48: 16 a row
+        r.Controller.Tabs.Apply([new(1, SpellDeckLayout.FromSlots([(0, 15, 100u)]))]);   // tab 1 (not shown): a spell in column 16
         float min = SpellDeckGeometry.StretchFor(16);
         Assert.True(min > 1f);
 

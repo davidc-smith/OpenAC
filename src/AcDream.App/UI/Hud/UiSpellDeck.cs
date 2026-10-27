@@ -5,7 +5,7 @@ using AcDream.UI.Abstractions.Input;
 namespace AcDream.App.UI.Hud;
 
 /// <summary>A spell lifted from a Spell Deck slot. Nothing changes until it lands.</summary>
-public sealed record SpellDeckDragPayload(int Tab, uint SpellId);
+public sealed record SpellDeckDragPayload(int Tab, int Row, int Col, uint SpellId);
 
 /// <summary>
 /// The Spell Deck: one element that draws a <see cref="SpellDeckController"/>'s
@@ -144,7 +144,7 @@ internal sealed partial class UiSpellDeck : UiElement
         WindowDrag?.Invoke(ref left, ref top);
 
     /// <summary>The narrowest the deck may be: its rows must hold the fullest tab.</summary>
-    private float MinStretchNow => SpellDeckGeometry.StretchFor(_controller.MinSlotsPerRow);
+    private float MinStretchNow => SpellDeckGeometry.StretchFor(_controller.MinColumns);
 
     public override bool HandlesClick => IsControl(_hit.Zone);
     public override bool ReceivesHoverMouseMove => true;
@@ -411,7 +411,7 @@ internal sealed partial class UiSpellDeck : UiElement
     {
         if (_isLocked() || _press.Zone != SpellDeckZone.Slot) return null;
         if (SlotSpell(_press.Row, _press.Slot) is not uint id) return null;
-        return new SpellDeckDragPayload(_controller.Tab, id);
+        return new SpellDeckDragPayload(_controller.Tab, _press.Row, _press.Slot, id);
     }
 
     public override (uint tex, int w, int h)? GetDragGhost() =>
@@ -420,7 +420,7 @@ internal sealed partial class UiSpellDeck : UiElement
     /// <summary>A payload the deck takes as a drop, as the controller's drag source; null for any other.</summary>
     private static SpellDeckDragSource? SourceOf(object? payload) => payload switch
     {
-        SpellDeckDragPayload p => new SpellDeckDragSource(p.Tab, p.SpellId),
+        SpellDeckDragPayload p => new SpellDeckDragSource(p.Tab, p.Row, p.Col, p.SpellId),
         SpellbookShortcutDragPayload s => SpellDeckDragSource.FromSpellbook(s.SpellId),
         _ => null,
     };
@@ -448,8 +448,9 @@ internal sealed partial class UiSpellDeck : UiElement
     private bool DropReleased(object? payload, float x, float y)
     {
         if (SourceOf(payload) is not { } source) return false;
-        if (BookmarkAt(x, y) is int tab) _controller.DropOnTab(source, tab);
-        else if (DropTargetAt(x, y) is { } at) _controller.DropOnSlot(source, at.Row, at.Slot);
+        // Ctrl-copy is Task 24's: the element does not pass it yet.
+        if (BookmarkAt(x, y) is int tab) _controller.DropOnTab(source, tab, copy: false);
+        else if (DropTargetAt(x, y) is { } at) _controller.DropOnSlot(source, at.Row, at.Slot, copy: false);
         return true;
     }
 
@@ -465,7 +466,7 @@ internal sealed partial class UiSpellDeck : UiElement
     internal void OnDragReleasedOutsideUi(object payload)
     {
         if (payload is SpellDeckDragPayload p)
-            _controller.DropOutside(new SpellDeckDragSource(p.Tab, p.SpellId));
+            _controller.DropOutside(new SpellDeckDragSource(p.Tab, p.Row, p.Col, p.SpellId));
     }
 
     private void SetDropHighlight(float x, float y)
@@ -475,7 +476,7 @@ internal sealed partial class UiSpellDeck : UiElement
         if (payload is { } onTab && BookmarkAt(x, y) is int tab)
         {
             DropHighlight = null;
-            BookmarkDropHighlight = (tab, _controller.CanDropOnTab(onTab, tab));
+            BookmarkDropHighlight = (tab, _controller.CanDropOnTab(onTab, tab, copy: false));
             return;
         }
         if (payload is not { } source || DropTargetAt(x, y) is not { } at
@@ -484,7 +485,7 @@ internal sealed partial class UiSpellDeck : UiElement
             DropHighlight = null;
             return;
         }
-        DropHighlight = (at.Row, at.Slot, _controller.CanDropOnSlot(source, at.Row, at.Slot));
+        DropHighlight = (at.Row, at.Slot, _controller.CanDropOnSlot(source, at.Row, at.Slot, copy: false));
     }
 
     private void ClearDropHighlight()
@@ -541,9 +542,9 @@ internal sealed partial class UiSpellDeck : UiElement
         {
             // The spell, not the slot: the favourites can change while the menu is
             // open, and the item then acts on that spell only if the deck still shows it.
-            int tab = _controller.Tab;
-            Add("Examine spell", true, () => _controller.Examine(tab, spellId));
-            Add("Remove from tab", true, () => _controller.RemoveFromTab(tab, spellId));
+            int tab = _controller.Tab, row = hit.Row, col = hit.Slot;
+            Add("Examine spell", true, () => _controller.Examine(tab, row, col, spellId));
+            Add("Remove from tab", true, () => _controller.RemoveFromTab(tab, row, col, spellId));
             Separator();
         }
         Add("Add row", _controller.CanAddRow(), _controller.AddRow);

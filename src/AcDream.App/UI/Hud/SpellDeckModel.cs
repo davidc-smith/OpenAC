@@ -1,9 +1,10 @@
 namespace AcDream.App.UI.Hud;
 
-/// <summary>What is being dragged: a slot's spell (Tab 0-15; 8-15 are local), or a spellbook spell (Tab -1).</summary>
-public readonly record struct SpellDeckDragSource(int Tab, uint SpellId)
+/// <summary>What is being dragged: a slot's spell (Tab 0-15, 8-15 local; the slot it was lifted from),
+/// or a spellbook spell (Tab, Row and Col -1).</summary>
+public readonly record struct SpellDeckDragSource(int Tab, int Row, int Col, uint SpellId)
 {
-    public static SpellDeckDragSource FromSpellbook(uint spellId) => new(-1, spellId);
+    public static SpellDeckDragSource FromSpellbook(uint spellId) => new(-1, -1, -1, spellId);
     public bool IsFromSpellbook => Tab < 0;
 }
 
@@ -14,94 +15,96 @@ public readonly record struct SpellDeckFavoriteOp(bool IsRemove, int Tab, int Po
     public static SpellDeckFavoriteOp Remove(int tab, uint spellId) => new(true, tab, -1, spellId);
 }
 
-/// <summary><see cref="None"/>: an accepted drop with nothing to do (a bookmark drop on the
-/// spell's own tab, or on a tab that already holds it).</summary>
-public enum SpellDeckDropKind { Reorder, Insert, Move, Remove, RefusedFull, None }
+/// <summary><see cref="None"/>: an accepted drop with nothing to do (a slot dropped on itself or on its own
+/// tab's bookmark, or a spell dropped on a slot that already holds it).</summary>
+public enum SpellDeckEditKind { Place, Replace, Move, Swap, Copy, Clear, RefusedFull, None }
 
-public sealed record SpellDeckDropPlan(SpellDeckDropKind Kind, IReadOnlyList<SpellDeckFavoriteOp> Ops)
+/// <summary>A tab's new layout.</summary>
+public readonly record struct SpellDeckTabLayout(int Tab, SpellDeckLayout Layout);
+
+/// <summary>A planned edit: the new layout of each tab it changes, in the order to apply them (a move's
+/// destination before its source).</summary>
+public sealed record SpellDeckEdit(SpellDeckEditKind Kind, IReadOnlyList<SpellDeckTabLayout> Layouts)
 {
-    public bool Accepted => Kind != SpellDeckDropKind.RefusedFull;
+    public bool Accepted => Kind != SpellDeckEditKind.RefusedFull;
+    public static SpellDeckEdit Nothing { get; } = new(SpellDeckEditKind.None, []);
+    public static SpellDeckEdit Full { get; } = new(SpellDeckEditKind.RefusedFull, []);
 }
 
-/// <summary>Pure Spell Deck rules. Nothing here changes state: a drop is a plan
-/// the caller sends, so a refused or cancelled drag can never lose a favourite.</summary>
+/// <summary>Pure Spell Deck rules over slot layouts. Nothing here changes state: a drop is a plan the caller
+/// applies, so a refused or cancelled drag can never lose a spell. A plan is null when its slot source no
+/// longer holds the dragged spell (the layout changed during the drag).</summary>
 public static class SpellDeckModel
 {
-    // One current tab; row r shows spells r·perRow … r·perRow + perRow − 1 of it.
-
-    /// <summary>The spells row <paramref name="row"/> (0-based) shows: <c>row·perRow … row·perRow + perRow − 1</c> of the tab
-    /// (shorter, or empty, where the tab ends).</summary>
-    public static IReadOnlyList<uint> Slice(IReadOnlyList<uint> tab, int row, int perRow)
+    /// <summary>A drop on slot (<paramref name="row"/>, <paramref name="col"/>) of <paramref name="tab"/>.
+    /// A spellbook spell is placed in an empty slot or replaces a filled one. A slot's spell moves to an empty
+    /// slot or swaps with a filled one (across tabs too); with <paramref name="copy"/> it is copied instead,
+    /// overwriting the target and keeping the source.</summary>
+    public static SpellDeckEdit? PlanDropOnSlot(
+        SpellDeckDragSource source, int tab, int row, int col, bool copy, Func<int, SpellDeckLayout> layoutOf)
     {
-        if (row < 0 || perRow <= 0) return [];
-        long start = (long)row * perRow;
-        if (start >= tab.Count) return [];
-        return tab.Skip((int)start).Take(perRow).ToArray();
+        if (row < 0 || col < 0 || !Holds(source, layoutOf)) return null;
+        SpellDeckLayout dest = layoutOf(tab);
+        uint target = dest.Get(row, col);
+        uint spell = source.SpellId;
+        if (source.IsFromSpellbook || copy)
+        {
+            if (target == spell) return SpellDeckEdit.Nothing;
+            SpellDeckEditKind kind = copy && !source.IsFromSpellbook ? SpellDeckEditKind.Copy
+                : target == 0 ? SpellDeckEditKind.Place : SpellDeckEditKind.Replace;
+            return new(kind, [new(tab, dest.Replace(row, col, spell))]);
+        }
+        if (source.Tab == tab)
+        {
+            if ((source.Row == row && source.Col == col) || target == spell) return SpellDeckEdit.Nothing;
+            return target == 0
+                ? new(SpellDeckEditKind.Move, [new(tab, dest.Move(source.Row, source.Col, row, col))])
+                : new(SpellDeckEditKind.Swap, [new(tab, dest.Swap(source.Row, source.Col, row, col))]);
+        }
+        if (target == spell) return SpellDeckEdit.Nothing;
+        SpellDeckLayout from = layoutOf(source.Tab);
+        return target == 0
+            ? new(SpellDeckEditKind.Move,
+                [new(tab, dest.Replace(row, col, spell)), new(source.Tab, from.Clear(source.Row, source.Col))])
+            : new(SpellDeckEditKind.Swap,
+                [new(tab, dest.Replace(row, col, spell)), new(source.Tab, from.Replace(source.Row, source.Col, target))]);
     }
 
-    /// <summary>The spells the deck shows (and can cast): the first <c>rows·perRow</c> of the tab.</summary>
-    public static IReadOnlyList<uint> Visible(IReadOnlyList<uint> tab, int rows, int perRow)
+    /// <summary>A drop on <paramref name="tab"/>'s bookmark: the spell goes into that tab's first empty slot within
+    /// <paramref name="rows"/> × <paramref name="cols"/>; refused when there is none. A slot's spell moves there
+    /// (destination first, then the source slot is cleared), or with <paramref name="copy"/> is copied. A slot
+    /// dropped on its own tab's bookmark without copy does nothing.</summary>
+    public static SpellDeckEdit? PlanDropOnTab(
+        SpellDeckDragSource source, int tab, bool copy, int rows, int cols, Func<int, SpellDeckLayout> layoutOf)
     {
-        int capacity = (int)Math.Clamp((long)Math.Max(0, rows) * Math.Max(0, perRow), 0, int.MaxValue);
-        return tab.Count <= capacity ? tab : tab.Take(capacity).ToArray();
+        if (!Holds(source, layoutOf)) return null;
+        if (!source.IsFromSpellbook && source.Tab == tab && !copy) return SpellDeckEdit.Nothing;
+        SpellDeckLayout dest = layoutOf(tab);
+        if (dest.FirstEmpty(rows, cols) is not { } empty) return SpellDeckEdit.Full;
+        var placed = new SpellDeckTabLayout(tab, dest.Place(empty.Row, empty.Col, source.SpellId));
+        if (source.IsFromSpellbook) return new(SpellDeckEditKind.Place, [placed]);
+        if (copy) return new(SpellDeckEditKind.Copy, [placed]);
+        return new(SpellDeckEditKind.Move, [placed, new(source.Tab, layoutOf(source.Tab).Clear(source.Row, source.Col))]);
     }
 
-    /// <summary>The fewest slots per row with which <paramref name="rows"/> rows hold the fullest of all tabs
-    /// (server and local): <c>ceil(max / rows)</c>, at least 1, capped at <see cref="SpellDeckGeometry.MaxCapacity"/>.</summary>
-    public static int MinSlotsPerRow(int rows, IEnumerable<int> allTabCounts)
-    {
-        int most = Most(allTabCounts);
-        rows = Math.Max(1, rows);
-        int need = (most + rows - 1) / rows;
-        return Math.Clamp(need, 1, Math.Max(1, SpellDeckGeometry.MaxCapacity));
-    }
+    /// <summary>A slot dragged off every window (or Remove from tab): that slot is cleared. Null for a
+    /// spellbook spell.</summary>
+    public static SpellDeckEdit? PlanClear(SpellDeckDragSource source, Func<int, SpellDeckLayout> layoutOf) =>
+        source.IsFromSpellbook || !Holds(source, layoutOf) ? null
+        : new(SpellDeckEditKind.Clear, [new(source.Tab, layoutOf(source.Tab).Clear(source.Row, source.Col))]);
 
-    /// <summary>Remove row is allowed when there is more than one row and the remaining rows,
-    /// at the widest stretch, still hold the fullest of all tabs.</summary>
-    public static bool CanRemoveRow(int rows, IEnumerable<int> allTabCounts) =>
-        rows > 1 && (long)(rows - 1) * SpellDeckGeometry.MaxCapacity >= Most(allTabCounts);
+    /// <summary>The fewest slots per row that show every tab's right-most occupied column; at least 1.</summary>
+    public static int MinColumns(IEnumerable<SpellDeckLayout> all) => Math.Max(1, all.Select(l => l.MaxCol + 1).DefaultIfEmpty(0).Max());
 
-    /// <summary>A drop on a slot at <paramref name="position"/> (<c>r·perRow + n</c>) of <paramref name="tab"/>, whose spells are
-    /// <paramref name="favorites"/>. A spell already in the tab (or a slot from this tab) is a reorder, always allowed, to
-    /// <c>min(position, count − 1)</c>; a new spell is inserted at <c>min(position, count)</c> when <c>count + 1 &lt;= capacity</c>,
-    /// else refused. <paramref name="capacity"/> is <c>rows·perRow</c>.</summary>
-    public static SpellDeckDropPlan PlanDropOnSlot(
-        SpellDeckDragSource source, int tab, int position, IReadOnlyList<uint> favorites, int capacity)
-    {
-        bool sameTabSlot = !source.IsFromSpellbook && source.Tab == tab;
-        if (sameTabSlot || favorites.Contains(source.SpellId))
-            return new(SpellDeckDropKind.Reorder,
-                [SpellDeckFavoriteOp.Set(tab, Math.Clamp(position, 0, Math.Max(0, favorites.Count - 1)), source.SpellId)]);
-        if (favorites.Count + 1 > capacity)
-            return new(SpellDeckDropKind.RefusedFull, []);
-        return new(SpellDeckDropKind.Insert,
-            [SpellDeckFavoriteOp.Set(tab, Math.Clamp(position, 0, favorites.Count), source.SpellId)]);
-    }
+    /// <summary>The fewest rows that show every tab's lowest occupied row; at least 1.</summary>
+    public static int MinRows(IEnumerable<SpellDeckLayout> all) => Math.Max(1, all.Select(l => l.MaxRow + 1).DefaultIfEmpty(0).Max());
 
-    /// <summary>A drop on <paramref name="destTab"/>'s bookmark, whose spells are <paramref name="destFavorites"/>.
-    /// Its own tab, or a tab that already holds the spell: <see cref="SpellDeckDropKind.None"/> (no ops, not refused).
-    /// A full tab (<c>count + 1 &gt; capacity</c>): refused. A spellbook spell: inserted at the end. A slot from another tab:
-    /// moved to the end (add there first, then remove from its tab).</summary>
-    public static SpellDeckDropPlan PlanDropOnTab(
-        SpellDeckDragSource source, int destTab, IReadOnlyList<uint> destFavorites, int capacity)
-    {
-        if ((!source.IsFromSpellbook && source.Tab == destTab) || destFavorites.Contains(source.SpellId))
-            return new(SpellDeckDropKind.None, []);
-        if (destFavorites.Count + 1 > capacity)
-            return new(SpellDeckDropKind.RefusedFull, []);
-        var add = SpellDeckFavoriteOp.Set(destTab, destFavorites.Count, source.SpellId);
-        return source.IsFromSpellbook
-            ? new(SpellDeckDropKind.Insert, [add])
-            : new(SpellDeckDropKind.Move, [add, SpellDeckFavoriteOp.Remove(source.Tab, source.SpellId)]);
-    }
+    /// <summary>Remove row is allowed when there is more than one row and no tab holds a spell in the last one.</summary>
+    public static bool CanRemoveRow(int rows, IEnumerable<SpellDeckLayout> all) => rows > 1 && rows - 1 >= MinRows(all);
 
-    private static int Most(IEnumerable<int> counts)
-    {
-        int most = 0;
-        foreach (int c in counts) most = Math.Max(most, c);
-        return most;
-    }
-
-    public static SpellDeckDropPlan PlanRemove(SpellDeckDragSource source) =>
-        new(SpellDeckDropKind.Remove, [SpellDeckFavoriteOp.Remove(source.Tab, source.SpellId)]);
+    /// <summary>A spellbook source always holds its spell; a slot source only while its slot still holds it.</summary>
+    private static bool Holds(SpellDeckDragSource source, Func<int, SpellDeckLayout> layoutOf) =>
+        source.SpellId != 0
+        && (source.IsFromSpellbook
+            || (source.Row >= 0 && source.Col >= 0 && layoutOf(source.Tab).Get(source.Row, source.Col) == source.SpellId));
 }

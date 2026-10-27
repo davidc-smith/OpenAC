@@ -120,8 +120,8 @@ public sealed class SpellDeckDockTests
     [Fact]
     public void SpellDeckDock_Attached_DeckMinStretchAndTopLimitFollowTheSpellDeck()
     {
-        var (dock, host, _, tabs) = Make();
-        tabs[0].AddRange(Enumerable.Range(1, 60).Select(i => (uint)i));   // 3 rows of 20
+        var (dock, host, c, _) = Make();
+        c.Tabs.Apply([new(0, SpellDeckLayout.FromSlots([(0, 19, 1u)]))]);   // a spell in column 20
 
         dock.Tick();
 
@@ -157,11 +157,11 @@ public sealed class SpellDeckDockTests
     {
         // The dock has no notion of the Spell Deck being shown: it runs every tick
         // (peace, melee, missile alike), so a hidden Spell Deck still widens the deck.
-        var (dock, host, _, tabs) = Make();
+        var (dock, host, c, _) = Make();
         dock.Tick();
         Assert.Equal(1f, host.DeckGeometry.Stretch);
 
-        tabs[0].AddRange(Enumerable.Range(1, 60).Select(i => (uint)i));   // 3 rows of 20
+        c.Tabs.Apply([new(0, SpellDeckLayout.FromSlots([(0, 19, 1u)]))]);   // a spell in column 20
         int before = host.EnforceCalls;
         dock.Tick();
 
@@ -214,7 +214,7 @@ public sealed class SpellDeckDockTests
     [Fact]
     public void SpellDeckDock_DetachAndAttach_GateLimitsAndTheSameDetachedSpot()
     {
-        var (dock, host, c, tabs) = Make(detachedRows: 3);
+        var (dock, host, c, _) = Make(detachedRows: 3);
         dock.Tick();
         host.Stored = (300f, 200f, 588f, SpellDeckGeometry.BaseHeight(3) * 1.2f);   // scale 1.2, stretch 588/504
 
@@ -235,7 +235,7 @@ public sealed class SpellDeckDockTests
         Assert.Equal((300f, 200f), (host.SpellDeckLeft, host.SpellDeckTop));
 
         // Detached, the Spell Deck keeps its own size but follows the rows and the minimum width.
-        tabs[0].AddRange(Enumerable.Range(1, 60).Select(i => (uint)i));   // 3 rows of 20
+        c.Tabs.Apply([new(0, SpellDeckLayout.FromSlots([(0, 19, 1u)]))]);   // a spell in column 20
         dock.Tick();
         Assert.Equal(SpellDeckGeometry.StretchFor(20), host.SpellDeckGeometry.Stretch, 4);
         Assert.Equal(1.2f, host.SpellDeckGeometry.Scale, 3);
