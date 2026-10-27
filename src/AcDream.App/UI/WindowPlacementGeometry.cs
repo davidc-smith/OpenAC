@@ -39,7 +39,7 @@ internal static class WindowPlacementGeometry
         float indicatorWidth = windows.TryGetValue(WindowNames.Indicators, out var indicators) ? indicators.Width : 0f;
         (float x, float y) = name switch
         {
-            WindowNames.Chat => (margin, bottom),
+            WindowNames.Chat or WindowNames.ChatDeck => (margin, bottom),
             WindowNames.Radar => (right, margin),
             WindowNames.Toolbar => (right, bottom),
             WindowNames.Combat => (right, MathF.Max(0f, bottom - toolbarHeight - margin)),

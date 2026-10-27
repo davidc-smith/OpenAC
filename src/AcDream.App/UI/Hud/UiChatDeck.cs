@@ -126,6 +126,23 @@ internal sealed partial class UiChatDeck : UiElement
 
     protected override void OnTick(double deltaSeconds) => Refresh();
 
+    /// <summary>How the runtime mounts the Chat Deck: imported chrome, resizable from every side, hidden until shown.</summary>
+    internal static RetailWindowFrame.Options MountOptions(float left, float top) => new()
+    {
+        WindowName = WindowNames.ChatDeck,
+        Chrome = RetailWindowChrome.Imported,
+        Left = left,
+        Top = top,
+        Resizable = true,
+        ResizeX = true,
+        ResizeY = true,
+        ConstrainResizeToParent = true,
+        MinWidth = ChatDeckGeometry.MinWidth,
+        MinHeight = ChatDeckGeometry.MinHeight,
+        Visible = false,
+        ContentClickThrough = false,
+    };
+
     /// <summary>The window is on screen (the switch showed it).</summary>
     public void OnShown()
     {
