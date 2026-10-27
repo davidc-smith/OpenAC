@@ -25,7 +25,7 @@ public sealed class TargetAutoAppraisal : IDisposable
     private readonly Func<uint, bool> _requestAppraisal;
     private readonly Func<double> _clock;
     private uint _target;
-    private double _lastSentAt = double.NegativeInfinity;
+    private readonly Dictionary<uint, double> _lastSentAt = new();
     private bool _pending;
     private bool _disposed;
 
@@ -55,7 +55,7 @@ public sealed class TargetAutoAppraisal : IDisposable
     /// <summary>Sends a combined trigger once the gap has passed. Call every frame.</summary>
     public void Tick()
     {
-        if (_pending && _target != 0u && _clock() - _lastSentAt >= MinimumGapSeconds)
+        if (_pending && _target != 0u && GapElapsed())
             Send();
     }
 
@@ -68,7 +68,6 @@ public sealed class TargetAutoAppraisal : IDisposable
     private void Retarget(uint selected)
     {
         _pending = false;
-        _lastSentAt = double.NegativeInfinity;
         TargetKind kind = TargetKindClassifier.Classify(_objects.Get(selected), _playerGuid()).Kind;
         _target = selected != 0u && Qualifies(kind) ? selected : 0u;
         if (_target == 0u)
@@ -94,7 +93,16 @@ public sealed class TargetAutoAppraisal : IDisposable
         Trigger();
     }
 
-    private void OnObjectRemoved(ClientObject obj) => _log.Forget(obj.ObjectId);
+    // The gap is kept per target and survives a change of selection, so
+    // flicking between two targets cannot send more often than the gap.
+    private bool GapElapsed() =>
+        !_lastSentAt.TryGetValue(_target, out double at) || _clock() - at >= MinimumGapSeconds;
+
+    private void OnObjectRemoved(ClientObject obj)
+    {
+        _log.Forget(obj.ObjectId);
+        _lastSentAt.Remove(obj.ObjectId);
+    }
 
     private void Trigger()
     {
@@ -105,7 +113,7 @@ public sealed class TargetAutoAppraisal : IDisposable
     private void Send()
     {
         _pending = false;
-        _lastSentAt = _clock();
+        _lastSentAt[_target] = _clock();
         _requestAppraisal(_target);
     }
 
