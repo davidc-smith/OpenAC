@@ -483,3 +483,7 @@ Per character: `tab` (0–15), `rowCount` (1–10), `attached`, `detachedRows`, 
 ### Testing v2
 
 Slices and capacity across stretches; hotkey `r·N + n` mapping; outline rules above; drops on slots (reorder / insert / full) and on bookmarks (move / add / full / already there); min stretch over all tabs including local; Remove row disabled rule; local tab add / remove-last / persist / no server call; tab strip hit-testing and bookmark shrink; attached placement (left, width, bottom) and square-corner flags; attached drag moves the deck and keeps the block on screen; settings migration from the v1 `rows` array.
+
+### CAST button label
+
+The Command Deck's CAST button shows the cast icon **and the word `CAST`** (small SemiBold label, `DeckFonts`), not the icon alone. The stud is 54 base points wide (was 26); the casting-name text area shrinks by the difference and still ends in `...` before the button.
