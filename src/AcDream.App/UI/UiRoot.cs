@@ -1021,6 +1021,11 @@ public sealed class UiRoot : UiElement
         Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
         || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true;
 
+    /// <summary>Whether control is held on the attached keyboard (a drop asks at its release).</summary>
+    internal bool CtrlHeld =>
+        Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ControlLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ControlRight) == true;
+
     private bool RouteHorizontal(int dx)
     {
         UiElement? popup = PopupHit(MouseX, MouseY);

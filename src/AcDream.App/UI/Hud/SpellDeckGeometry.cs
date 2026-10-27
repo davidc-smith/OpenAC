@@ -18,8 +18,9 @@ public readonly record struct SpellDeckHit(SpellDeckZone Zone, int Row, int Slot
 /// </summary>
 public sealed record SpellDeckGeometry
 {
-    /// <summary>The width at stretch 1: from the Command Deck's orb to its right edge.</summary>
-    public const float BaseWidth = 388f;
+    /// <summary>The width at stretch 1: the Command Deck's frame without the orb, from 70 in
+    /// from the deck's left edge to its right edge.</summary>
+    public const float BaseWidth = 350f;
     /// <summary>What one whole stretch adds, as on the Command Deck.</summary>
     public const float StretchWidth = DeckGeometry.BaseWidth;
     public const int MinRows = 1;
@@ -40,7 +41,7 @@ public sealed record SpellDeckGeometry
         Math.Clamp(float.IsFinite(stretch) ? stretch : 1f, DeckGeometry.MinStretch, DeckGeometry.MaxStretch),
         Math.Clamp(rows, MinRows, MaxRows));
 
-    /// <summary>The width in base points at a stretch: <c>388 + 420·(stretch − 1)</c>.</summary>
+    /// <summary>The width in base points at a stretch: <c>350 + 420·(stretch − 1)</c>.</summary>
     public static float BaseWidthAt(float stretch) => BaseWidth + StretchWidth * (stretch - 1f);
 
     /// <summary>The stretch whose base width is <paramref name="baseWidth"/> (unclamped).</summary>

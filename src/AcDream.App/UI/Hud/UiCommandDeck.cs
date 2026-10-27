@@ -143,6 +143,25 @@ internal sealed partial class UiCommandDeck : UiElement
         height = _geometry.Height;
     }
 
+    /// <summary>A resize forwarded from the attached Spell Deck's grip (the root resizes the
+    /// Spell Deck, not this window): the same rules as this window's own <paramref name="edges"/>
+    /// grip, from the proposed size, applied here with no report to the layout (the dock
+    /// reports it once the drag ends, then calls <see cref="EndForwardedResize"/>). The left
+    /// edge stays; a top drag keeps the bottom, any other keeps the top.</summary>
+    internal DeckGeometry ResizeForwarded(ResizeEdges edges, float width, float height)
+    {
+        float bottom = Top + Height;
+        ConstrainResize(edges, ref width, ref height);
+        Width = width;
+        Height = height;
+        if ((edges & ResizeEdges.Top) != 0) Top = bottom - height;
+        ResetAnchorCapture();
+        return _geometry;
+    }
+
+    /// <summary>Ends a forwarded resize: the next one measures from the size then.</summary>
+    internal void EndForwardedResize() => _resizeFrom = null;
+
     /// <summary>The narrowest stretch the deck may have (the attached Spell Deck's fullest row); null = no limit.</summary>
     internal Func<float>? MinStretch { get; set; }
 

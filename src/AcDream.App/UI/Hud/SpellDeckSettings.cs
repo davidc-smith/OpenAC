@@ -19,6 +19,11 @@ public sealed record SpellDeckSettings(
 {
     public const int MaxLocalTabs = 8;
 
+    /// <summary>Saved slots in a column at or past this are dropped on load. Well past the widest deck
+    /// (<see cref="SpellDeckGeometry.MaxCapacity"/>), so columns saved by a wider deck (v2 held 27) keep
+    /// their spells: they stay unshown, and the deck widens as far as it can to show them.</summary>
+    public const int MaxSavedColumns = 64;
+
     public static SpellDeckSettings Default { get; } = new(0, 3, true, null, []);
 
     public SpellDeckSettings Normalize()
@@ -40,9 +45,9 @@ public sealed record SpellDeckSettings(
             foreach ((int tab, SpellDeckLayout? layout) in Layouts)
             {
                 if (tab < 0 || tab >= tabCount || layout is null) continue;
-                // Slots past the deck's limits could never be shown; a server tab re-places those spells on reconcile.
+                // Slots far past the deck's limits are junk; a server tab re-places those spells on reconcile.
                 SpellDeckLayout kept = SpellDeckLayout.FromSlots(layout.Filled
-                    .Where(s => s.Row < SpellDeckGeometry.MaxRows && s.Col < SpellDeckGeometry.MaxCapacity)
+                    .Where(s => s.Row < SpellDeckGeometry.MaxRows && s.Col < MaxSavedColumns)
                     .Select(s => (s.Row, s.Col, s.SpellId)));
                 if (!kept.IsEmpty) layouts[tab] = kept;
             }

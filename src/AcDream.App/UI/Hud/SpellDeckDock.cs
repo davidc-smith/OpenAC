@@ -3,6 +3,10 @@ namespace AcDream.App.UI.Hud;
 /// <summary>A window drag's proposed spot (already inside the screen); the receiver may change it.</summary>
 public delegate void WindowDragConstraint(ref float left, ref float top);
 
+/// <summary>A resize of the attached Spell Deck: the root's proposed size for <paramref name="edges"/>. The
+/// answer is the Spell Deck's geometry, which then sets its size; null leaves the resize to the window.</summary>
+public delegate SpellDeckGeometry? SpellDeckResizeForward(ResizeEdges edges, float width, float height);
+
 /// <summary>What <see cref="SpellDeckDock"/> needs from the Command Deck, the Spell Deck window and the screen.</summary>
 public interface ISpellDeckDockHost
 {
@@ -29,6 +33,14 @@ public interface ISpellDeckDockHost
     void ReportDeckMoved();
     /// <summary>Whether a window drag is under way.</summary>
     bool WindowDragActive { get; }
+    /// <summary>Resizes the deck during a resize of the attached Spell Deck, by the deck's own
+    /// rules for its <paramref name="edges"/> grip and the proposed size, without reporting it
+    /// to the layout (<see cref="ReportDeckResized"/> does that once, when the resize ends).</summary>
+    DeckGeometry ResizeDeckDuringDrag(ResizeEdges edges, float width, float height);
+    /// <summary>Ends a forwarded resize and tells the layout the deck changed size, so it is saved.</summary>
+    void ReportDeckResized();
+    /// <summary>Whether a window resize is under way.</summary>
+    bool WindowResizeActive { get; }
 
     // Spell Deck window
     /// <summary>Places and sizes the window and reports it to the layout even when it did not
@@ -42,16 +54,18 @@ public interface ISpellDeckDockHost
     float SpellDeckHeight { get; }
     void ApplyStoredSpellDeckPlacement();
     void SetSpellDeckCaptureOpen(bool open);
-    void SetSpellDeckResizable(bool resizable);
     /// <summary>Hands the Spell Deck window the constraint for its own window drag.</summary>
     void SetSpellDeckDrag(WindowDragConstraint? drag);
+    /// <summary>Hands the Spell Deck window the forward for its own resize.</summary>
+    void SetSpellDeckResize(SpellDeckResizeForward? resize);
 }
 
 /// <summary>
 /// Ties the Spell Deck to the Command Deck. Attached, the Spell Deck sits on
 /// the deck's frame, from the orb's left edge to the deck's right edge, with the
 /// deck's scale and stretch, and its rows grow upwards; dragging it moves the
-/// deck (the two are one block). The deck takes the width at which the Spell Deck's rows hold its fullest tab as its minimum
+/// deck (the two are one block), and its right edge and top-right corner
+/// resize the deck as the deck's own grips do (the Spell Deck follows). The deck takes the width at which the Spell Deck's rows hold its fullest tab as its minimum
 /// width and keeps room above it for the Spell Deck. Detached, the Spell Deck
 /// is its own window, back where it was last detached (its placement is not
 /// recorded while attached); the first detach puts it just above the deck.
@@ -66,9 +80,12 @@ public sealed class SpellDeckDock
     private bool? _mode;
     /// <summary>The deck moved during a block drag and the layout has not been told yet.</summary>
     private bool _deckDragUnreported;
+    /// <summary>The deck's geometry when the current forwarded resize started; null between resizes.</summary>
+    private DeckGeometry? _resizeStart;
 
-    /// <summary>How far right of the deck's left edge the attached Spell Deck starts (the orb's left edge), in base points.</summary>
-    internal const float AttachedInset = 32f;
+    /// <summary>How far right of the deck's left edge the attached Spell Deck starts (where the frame
+    /// starts, past the orb), in base points.</summary>
+    internal const float AttachedInset = 70f;
     /// <summary>How far below the deck's top the attached Spell Deck's bottom sits (the frame's top), in base points.</summary>
     internal const float AttachedOverlap = 4f;
 
@@ -80,6 +97,7 @@ public sealed class SpellDeckDock
         _topLimit = () => AboveHeight(_host.DeckGeometry.Scale);
         _aboveHeightAtScale = AboveHeight;
         _host.SetSpellDeckDrag(DragAttached);
+        _host.SetSpellDeckResize(ResizeAttached);
     }
 
     /// <summary>How far the attached Spell Deck reaches above the deck's top at a scale (its height less the overlap).</summary>
@@ -105,6 +123,11 @@ public sealed class SpellDeckDock
         {
             _deckDragUnreported = false;
             _host.ReportDeckMoved();
+        }
+        if (_resizeStart is not null && !_host.WindowResizeActive)
+        {
+            _resizeStart = null;
+            _host.ReportDeckResized();
         }
         SyncMode();
         if (_controller.Attached)
@@ -207,6 +230,27 @@ public sealed class SpellDeckDock
         (left, top) = AttachedSpot(deckLeft, deckTop, deck, g);
     }
 
+    /// <summary>The Spell Deck window's resize. Attached, its right edge stretches the block and its
+    /// top-right corner scales it: the root's proposed Spell Deck size becomes the deck's proposal for
+    /// the same grip, the deck applies its own rules (steps, limits, the block on screen) and the Spell
+    /// Deck takes the size that sits on the resized deck; the next <see cref="Tick"/> seats it. The
+    /// deck's size is reported once the resize ends. Detached (null), the resize is the window's own.</summary>
+    public SpellDeckGeometry? ResizeAttached(ResizeEdges edges, float width, float height)
+    {
+        if (!_controller.Attached) return null;
+        // Measured from the drag start, as the root's proposals are: an edge drag keeps
+        // the scale and a corner drag keeps the stretch, so each translates exactly.
+        DeckGeometry start = _resizeStart ??= _host.DeckGeometry;
+        int rows = RowCount;
+        bool corner = (edges & ResizeEdges.Top) != 0;
+        DeckGeometry deck = corner
+            ? _host.ResizeDeckDuringDrag(ResizeEdges.Right | ResizeEdges.Top,
+                width / SpellDeckGeometry.BaseWidthAt(start.Stretch) * DeckGeometry.BaseWidth * start.Stretch,
+                height / SpellDeckGeometry.BaseHeight(rows) * DeckGeometry.BaseHeight)
+            : _host.ResizeDeckDuringDrag(ResizeEdges.Right, width + AttachedInset * start.Scale, start.Height);
+        return AttachedGeometry(deck, rows);
+    }
+
     public void Detach()
     {
         _controller.SetAttached(false);
@@ -227,7 +271,6 @@ public sealed class SpellDeckDock
         bool attached = _controller.Attached;
         if (_mode == attached) return;
         _mode = attached;
-        _host.SetSpellDeckResizable(!attached);
         _host.SetDeckJoined(attached);
         if (attached)
         {

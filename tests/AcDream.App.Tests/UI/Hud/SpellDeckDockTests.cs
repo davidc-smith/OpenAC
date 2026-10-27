@@ -1,3 +1,4 @@
+using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 
 namespace AcDream.App.Tests.UI.Hud;
@@ -43,7 +44,7 @@ public sealed class SpellDeckDockTests
         public float SpellDeckTop { get; set; }
         public float SpellDeckWidth { get; set; }
         public float SpellDeckHeight { get; set; }
-        public bool CaptureOpen = true, Resizable = true;
+        public bool CaptureOpen = true;
         public int StoredApplied;
         // The persistence's recorded placement: only follows the window while capture is open.
         public (float Left, float Top, float Width, float Height) Stored = (100f, 600f, 420f, 96f);
@@ -62,7 +63,6 @@ public sealed class SpellDeckDockTests
         }
 
         public void SetSpellDeckCaptureOpen(bool open) => CaptureOpen = open;
-        public void SetSpellDeckResizable(bool resizable) => Resizable = resizable;
 
         public bool? Joined;
         public void SetDeckJoined(bool joined) => Joined = joined;
@@ -74,11 +74,32 @@ public sealed class SpellDeckDockTests
         public int DeckMovesReported;
         public void MoveDeckDuringDrag(float left, float top) => (DeckLeft, DeckTop) = (left, top);
         public void ReportDeckMoved() => DeckMovesReported++;
+
+        public SpellDeckResizeForward? SpellResize;
+        public void SetSpellDeckResize(SpellDeckResizeForward? resize) => SpellResize = resize;
+
+        // The deck's own grip rules, simplified: measured from the resize start.
+        public bool WindowResizeActive { get; set; }
+        public DeckGeometry? ResizeFrom;
+        public readonly List<(ResizeEdges Edges, float Width, float Height)> DeckResizes = [];
+        public int DeckResizesReported;
+        public DeckGeometry ResizeDeckDuringDrag(ResizeEdges edges, float width, float height)
+        {
+            DeckResizes.Add((edges, width, height));
+            DeckGeometry from = ResizeFrom ??= DeckGeometry;
+            DeckGeometry = (edges & ResizeEdges.Top) != 0 ? from.WithCornerSize(width, height) : from.WithWidth(width);
+            return DeckGeometry;
+        }
+        public void ReportDeckResized()
+        {
+            ResizeFrom = null;
+            DeckResizesReported++;
+        }
     }
 
     /// <summary>The attached Spell Deck's spot on the deck: from the orb's left edge, on the frame's top.</summary>
     private static (float Left, float Bottom) AttachedSpot(Host host) =>
-        (host.DeckLeft + 32f * host.DeckGeometry.Scale, host.DeckTop + 4f * host.DeckGeometry.Scale);
+        (host.DeckLeft + 70f * host.DeckGeometry.Scale, host.DeckTop + 4f * host.DeckGeometry.Scale);
 
     private static (SpellDeckDock Dock, Host Host, SpellDeckController C, List<uint>[] Tabs) Make(
         bool attached = true, int? detachedRows = null, List<SpellDeckSettings>? saved = null)
@@ -105,10 +126,9 @@ public sealed class SpellDeckDockTests
 
         SpellDeckGeometry g = host.SpellDeckGeometry;
         Assert.Equal((1.25f, 1.5f, 3), (g.Scale, g.Stretch, g.Rows));
-        Assert.Equal(140f, host.SpellDeckLeft);              // 100 + 32 x 1.25
+        Assert.Equal(187.5f, host.SpellDeckLeft);            // 100 + 70 x 1.25
         Assert.Equal(605f, host.SpellDeckTop + g.Height, 3);   // 600 + 4 x 1.25
         Assert.False(host.CaptureOpen);
-        Assert.False(host.Resizable);
 
         c.AddRow();
         dock.Tick();
@@ -222,7 +242,6 @@ public sealed class SpellDeckDockTests
 
         Assert.False(c.Attached);
         Assert.True(host.CaptureOpen);
-        Assert.True(host.Resizable);
         Assert.Equal(1, host.StoredApplied);
         Assert.Null(host.MinStretch);
         Assert.Null(host.TopLimit);
@@ -317,7 +336,7 @@ public sealed class SpellDeckDockTests
         Assert.Equal(0, host.StoredApplied);
         Assert.Equal(attached, host.SpellDeckGeometry);
         // Where it sat attached: from the orb's left edge, on the frame's top (scale 1.2).
-        (float Left, float Top) spot = (250f + 32f * 1.2f, 500f + 4f * 1.2f - attached.Height);
+        (float Left, float Top) spot = (250f + 70f * 1.2f, 500f + 4f * 1.2f - attached.Height);
         Assert.Equal(spot, (host.SpellDeckLeft, host.SpellDeckTop));
         Assert.Equal(spot, (host.Stored.Left, host.Stored.Top));   // and saved
         Assert.Equal(3, c.DetachedRows);
@@ -362,9 +381,10 @@ public sealed class SpellDeckDockTests
         dock.Tick();
 
         SpellDeckGeometry g = host.SpellDeckGeometry;
-        Assert.Equal(200f + 32f * scale, host.SpellDeckLeft, 3);                              // the orb's left edge
+        Assert.Equal(200f + 70f * scale, host.SpellDeckLeft, 3);                              // the frame's left, past the orb
         Assert.Equal(200f + host.DeckGeometry.Width, host.SpellDeckLeft + g.Width, 2);        // the deck's right edge
-        Assert.Equal(host.DeckGeometry.Width - 32f * scale, g.Width, 2);
+        Assert.Equal(host.DeckGeometry.Width - 70f * scale, g.Width, 2);
+        Assert.Equal((350f + 420f * (stretch - 1f)) * scale, g.Width, 2);
         Assert.Equal(600f + host.DeckGeometry.Frame.Y, host.SpellDeckTop + g.Height, 3);      // the frame's top
         Assert.Equal(600f + 4f * scale, host.SpellDeckTop + g.Height, 3);
     }
@@ -453,14 +473,14 @@ public sealed class SpellDeckDockTests
         var placed = DragSpellTo(host, -500f, -500f);
         Assert.Equal(0f, host.DeckLeft, 3);
         Assert.Equal(spellHeight - 4f * scale, host.DeckTop, 3);
-        Assert.Equal(32f * scale, placed.Left, 3);
+        Assert.Equal(70f * scale, placed.Left, 3);
         Assert.Equal(0f, placed.Top, 3);
 
         // Down and right past the corner: the deck's bottom and right edge on the screen's.
         placed = DragSpellTo(host, 5000f, 5000f);
         Assert.Equal(screen.Width - deckWidth, host.DeckLeft, 3);
         Assert.Equal(screen.Height - deckHeight, host.DeckTop, 3);
-        Assert.Equal(host.DeckLeft + 32f * scale, placed.Left, 3);
+        Assert.Equal(host.DeckLeft + 70f * scale, placed.Left, 3);
         Assert.Equal(host.DeckTop + 4f * scale - spellHeight, placed.Top, 3);
     }
 
@@ -478,5 +498,103 @@ public sealed class SpellDeckDockTests
         Assert.Equal((123f, 45f), placed);
         Assert.Equal((100f, 700f), (host.DeckLeft, host.DeckTop));
         Assert.Equal(0, host.DeckMovesReported);
+    }
+
+    // ── Resizing the attached block ───────────────────────────────
+
+    /// <summary>The root's resize of the Spell Deck: it proposes a size, the dock answers.</summary>
+    private static SpellDeckGeometry? ResizeSpellTo(Host host, ResizeEdges edges, float width, float height)
+    {
+        Assert.NotNull(host.SpellResize);
+        return host.SpellResize!(edges, width, height);
+    }
+
+    [Theory]
+    [InlineData(0.75f)]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void SpellDeckDock_TheAttachedRightEdge_StretchesTheDeck_TheSpellDeckFollows_SavedOnce(float scale)
+    {
+        var (dock, host, c, _) = Make(detachedRows: 3);
+        host.DeckGeometry = DeckGeometry.Create(scale, 1f);
+        host.DeckLeft = 300f;
+        host.DeckTop = 600f;
+        dock.Tick();
+        var stored = host.Stored;
+        SpellDeckGeometry before = host.SpellDeckGeometry;
+
+        host.WindowResizeActive = true;
+        // 84 points more at this scale: stretch 1.2 (504 / 420).
+        SpellDeckGeometry? answer = ResizeSpellTo(host, ResizeEdges.Right, before.Width + 84f * scale, before.Height);
+        Assert.Equal((ResizeEdges.Right, 504f * scale), (host.DeckResizes[^1].Edges, host.DeckResizes[^1].Width));
+        Assert.Equal(1.2f, host.DeckGeometry.Stretch, 3);
+        Assert.Equal(scale, host.DeckGeometry.Scale, 3);
+        Assert.NotNull(answer);
+        Assert.Equal(SpellDeckGeometry.Create(scale, 1.2f, 3), answer);
+        dock.Tick();
+        Assert.Equal(answer, host.SpellDeckGeometry);
+        Assert.Equal(AttachedSpot(host).Left, host.SpellDeckLeft, 3);
+        Assert.Equal(host.DeckLeft + host.DeckGeometry.Width, host.SpellDeckLeft + host.SpellDeckGeometry.Width, 2);
+
+        // A second move is measured from the start too.
+        ResizeSpellTo(host, ResizeEdges.Right, before.Width + 42f * scale, before.Height);
+        Assert.Equal(1.1f, host.DeckGeometry.Stretch, 3);
+        dock.Tick();
+        Assert.Equal(0, host.DeckResizesReported);   // not saved on every pointer move
+
+        host.WindowResizeActive = false;   // the resize ends
+        dock.Tick();
+        Assert.Equal(1, host.DeckResizesReported);
+        dock.Tick();
+        Assert.Equal(1, host.DeckResizesReported);
+        Assert.Equal(stored, host.Stored);   // the Spell Deck's own placement is untouched
+        Assert.Equal(3, c.DetachedRows);
+    }
+
+    [Theory]
+    [InlineData(0.75f, 1f)]
+    [InlineData(1f, 1.25f)]
+    [InlineData(1.5f, 1.25f)]
+    public void SpellDeckDock_TheAttachedTopRightCorner_ScalesTheDeck_TheSpellDeckFollows(float scale, float to)
+    {
+        var (dock, host, _, _) = Make();
+        host.DeckGeometry = DeckGeometry.Create(scale, 1.5f);
+        host.DeckLeft = 300f;
+        host.DeckTop = 600f;
+        dock.Tick();
+        SpellDeckGeometry before = host.SpellDeckGeometry;
+
+        host.WindowResizeActive = true;
+        SpellDeckGeometry? answer = ResizeSpellTo(host, ResizeEdges.Right | ResizeEdges.Top,
+            before.Width * to / scale, before.Height);
+
+        Assert.Equal(ResizeEdges.Right | ResizeEdges.Top, host.DeckResizes[^1].Edges);
+        Assert.Equal((to, 1.5f), (host.DeckGeometry.Scale, host.DeckGeometry.Stretch));
+        Assert.Equal(SpellDeckGeometry.Create(to, 1.5f, 3), answer);
+        dock.Tick();
+        Assert.Equal(answer, host.SpellDeckGeometry);
+        Assert.Equal(AttachedSpot(host).Left, host.SpellDeckLeft, 3);
+        Assert.Equal(AttachedSpot(host).Bottom, host.SpellDeckTop + host.SpellDeckGeometry.Height, 3);
+
+        // From the height alone, too.
+        ResizeSpellTo(host, ResizeEdges.Right | ResizeEdges.Top, before.Width, before.Height * to / scale);
+        Assert.Equal(to, host.DeckGeometry.Scale, 3);
+    }
+
+    [Fact]
+    public void SpellDeckDock_TheDetachedSpellDeckResizesOnItsOwn()
+    {
+        var (dock, host, _, _) = Make(attached: false, detachedRows: 3);
+        dock.AfterRestore();
+        host.WindowResizeActive = true;
+
+        Assert.Null(ResizeSpellTo(host, ResizeEdges.Right, 600f, 114f));
+        Assert.Null(ResizeSpellTo(host, ResizeEdges.Right | ResizeEdges.Top, 600f, 200f));
+        host.WindowResizeActive = false;
+        dock.Tick();
+
+        Assert.Empty(host.DeckResizes);
+        Assert.Equal(DeckGeometry.Default, host.DeckGeometry);
+        Assert.Equal(0, host.DeckResizesReported);
     }
 }

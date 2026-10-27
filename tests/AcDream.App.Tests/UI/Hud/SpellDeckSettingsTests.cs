@@ -107,12 +107,25 @@ public sealed class SpellDeckSettingsTests
     {
         var layouts = new Dictionary<int, SpellDeckLayout>
         {
-            [0] = L((0, 0, 1u), (SpellDeckGeometry.MaxRows, 0, 2u), (0, SpellDeckGeometry.MaxCapacity, 3u)),
+            [0] = L((0, 0, 1u), (SpellDeckGeometry.MaxRows, 0, 2u), (0, SpellDeckSettings.MaxSavedColumns, 3u)),
             [3] = SpellDeckLayout.Empty,
             [9] = L((0, 0, 4u)),     // no tab 9: only one local tab
         };
         var n = new SpellDeckSettings(0, 3, true, null, [[]], layouts).Normalize();
         Assert.Equal([0], n.Layouts!.Keys);
         Assert.Equal(L((0, 0, 1u)), n.Layouts[0]);
+    }
+
+    [Fact]
+    public void Normalize_KeepsColumnsPastTheWidestDeck_SoNoSpellIsLost()
+    {
+        // Saved by v2, whose widest deck held 27 slots a row: columns 25 and 26 are past v3's 25.
+        var layouts = new Dictionary<int, SpellDeckLayout>
+        {
+            [8] = L((0, 0, 1u), (0, 25, 2u), (1, 26, 3u), (2, SpellDeckSettings.MaxSavedColumns - 1, 4u)),
+        };
+        var n = new SpellDeckSettings(8, 3, true, null, [[1u, 2u, 3u, 4u]], layouts).Normalize();
+        Assert.Equal(layouts[8], n.Layouts![8]);
+        Assert.True(SpellDeckSettings.MaxSavedColumns > SpellDeckGeometry.MaxCapacity);
     }
 }

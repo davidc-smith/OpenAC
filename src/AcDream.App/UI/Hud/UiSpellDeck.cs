@@ -117,16 +117,24 @@ internal sealed partial class UiSpellDeck : UiElement
         ContentClickThrough = false,
     };
 
+    // Attached, the bottom-right corner sits on the Command Deck's top edge: it stretches, as the right edge does.
     internal override ResizeEdges FilterResizeEdges(ResizeEdges hit) => hit switch
     {
-        ResizeEdges.Right
-            or (ResizeEdges.Right | ResizeEdges.Top)
-            or (ResizeEdges.Right | ResizeEdges.Bottom) => hit,
+        ResizeEdges.Right or (ResizeEdges.Right | ResizeEdges.Top) => hit,
+        ResizeEdges.Right | ResizeEdges.Bottom => _controller.Attached ? ResizeEdges.Right : hit,
         _ => ResizeEdges.None,
     };
 
     internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
     {
+        // Attached, the dock resizes the Command Deck and answers with the size that sits on it.
+        if (ResizeForward?.Invoke(edges, width, height) is { } attached)
+        {
+            _geometry = attached;
+            width = attached.Width;
+            height = attached.Height;
+            return;
+        }
         bool corner = (edges & (ResizeEdges.Top | ResizeEdges.Bottom)) != 0;
         SpellDeckGeometry from = _resizeFrom ??= _geometry;
         SpellDeckGeometry g = corner ? from.WithCornerSize(width, height) : from.WithWidth(width);
@@ -134,6 +142,10 @@ internal sealed partial class UiSpellDeck : UiElement
         width = _geometry.Width;
         height = _geometry.Height;
     }
+
+    /// <summary>Set by the dock: attached, a resize of this window resizes the Command Deck (the
+    /// whole block) and the answer is this window's size on it; null from it = this window's own resize.</summary>
+    internal SpellDeckResizeForward? ResizeForward { get; set; }
 
     /// <summary>Set by the dock: attached, a drag of this window moves the whole block (the Command Deck with it).</summary>
     internal WindowDragConstraint? WindowDrag { get; set; }
@@ -448,11 +460,14 @@ internal sealed partial class UiSpellDeck : UiElement
     private bool DropReleased(object? payload, float x, float y)
     {
         if (SourceOf(payload) is not { } source) return false;
-        // Ctrl-copy is Task 24's: the element does not pass it yet.
-        if (BookmarkAt(x, y) is int tab) _controller.DropOnTab(source, tab, copy: false);
-        else if (DropTargetAt(x, y) is { } at) _controller.DropOnSlot(source, at.Row, at.Slot, copy: false);
+        bool copy = CopyHeld;
+        if (BookmarkAt(x, y) is int tab) _controller.DropOnTab(source, tab, copy);
+        else if (DropTargetAt(x, y) is { } at) _controller.DropOnSlot(source, at.Row, at.Slot, copy);
         return true;
     }
+
+    /// <summary>Ctrl held: a slot dropped on a slot or a bookmark is copied, not moved.</summary>
+    private bool CopyHeld => FindRoot()?.CtrlHeld == true;
 
     /// <summary>The tab whose bookmark is under a point, or null.</summary>
     private int? BookmarkAt(float x, float y)
@@ -473,10 +488,11 @@ internal sealed partial class UiSpellDeck : UiElement
     {
         BookmarkDropHighlight = null;
         SpellDeckDragSource? payload = SourceOf(_dropPayload);
+        bool copy = CopyHeld;
         if (payload is { } onTab && BookmarkAt(x, y) is int tab)
         {
             DropHighlight = null;
-            BookmarkDropHighlight = (tab, _controller.CanDropOnTab(onTab, tab, copy: false));
+            BookmarkDropHighlight = (tab, _controller.CanDropOnTab(onTab, tab, copy));
             return;
         }
         if (payload is not { } source || DropTargetAt(x, y) is not { } at
@@ -485,7 +501,7 @@ internal sealed partial class UiSpellDeck : UiElement
             DropHighlight = null;
             return;
         }
-        DropHighlight = (at.Row, at.Slot, _controller.CanDropOnSlot(source, at.Row, at.Slot, copy: false));
+        DropHighlight = (at.Row, at.Slot, _controller.CanDropOnSlot(source, at.Row, at.Slot, copy));
     }
 
     private void ClearDropHighlight()

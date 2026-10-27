@@ -373,6 +373,93 @@ public sealed class UiSpellDeckDragTests
     }
 
     [Fact]
+    public void CtrlHeldAtTheReleaseCopiesASlot_ADuplicateNeverReachesTheServer()
+    {
+        var (root, r) = Mount();
+        var keyboard = new AcDream.App.Tests.Plugins.FakeKeyboard();
+        root.Keyboard = keyboard;
+        var (x, y) = Screen(r.Deck.Geometry.Slot(0, 0));
+        var (tx, ty) = Screen(r.Deck.Geometry.Slot(1, 3));   // an empty slot in another row
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseMove(x + 10, y);
+        root.OnMouseMove(tx, ty);
+        keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);   // pressed during the drag: the release decides
+        root.OnMouseUp(UiMouseButton.Left, tx, ty);
+
+        Assert.Equal(10u, r.Controller.SlotSpell(0, 0));
+        Assert.Equal(10u, r.Controller.SlotSpell(1, 3));
+        Assert.Empty(r.Game.Calls);
+    }
+
+    [Fact]
+    public void CtrlHeldAtTheReleaseCopiesOverAFilledSlot_AndWithoutItTheSlotsSwap()
+    {
+        var (root, r) = Mount();
+        var keyboard = new AcDream.App.Tests.Plugins.FakeKeyboard();
+        root.Keyboard = keyboard;
+        keyboard.Held.Add(Silk.NET.Input.Key.ControlRight);
+        DragSlot(root, r, (0, 0), (0, 2));
+        Assert.Equal((10u, 11u, 10u), (r.Controller.SlotSpell(0, 0)!.Value, r.Controller.SlotSpell(0, 1)!.Value,
+            r.Controller.SlotSpell(0, 2)!.Value));
+        Assert.Equal(["remove 0 12"], r.Game.Calls);   // 12's last copy was overwritten
+
+        keyboard.Held.Clear();
+        r.Game.Calls.Clear();
+        DragSlot(root, r, (0, 1), (0, 2));
+        Assert.Equal((11u, 10u), (r.Controller.SlotSpell(0, 2)!.Value, r.Controller.SlotSpell(0, 1)!.Value));
+    }
+
+    [Fact]
+    public void ASpellbookDropOnAnyRowsSlot_EmptyOrFilled_LandsInThatSlot()
+    {
+        Rig r = Make();
+        Assert.Equal(10, r.Deck.Geometry.SlotsPerRow);
+        foreach (var (row, col, spell) in new[] { (1, 0, 91u), (2, 9, 92u), (0, 1, 93u), (2, 0, 94u) })
+        {
+            Assert.True(Drop(r.Deck, new SpellbookShortcutDragPayload(spell), r.Deck.Geometry.Slot(row, col)));
+            Assert.Equal(spell, r.Controller.SlotSpell(row, col));
+        }
+        Assert.Equal((10u, 12u), (r.Controller.SlotSpell(0, 0)!.Value, r.Controller.SlotSpell(0, 2)!.Value));
+    }
+
+    [Fact]
+    public void CtrlHeldTurnsTheHighlightIntoACopy_ASlotOnItsOwnBookmarkThenAccepts()
+    {
+        var (root, r) = Mount();
+        var keyboard = new AcDream.App.Tests.Plugins.FakeKeyboard();
+        root.Keyboard = keyboard;
+        var (x, y) = Screen(r.Deck.Geometry.Slot(0, 0));
+        var (bx, by) = Screen(Mark(r, 0));
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseMove(x + 10, y);
+        root.OnMouseMove(bx, by);
+        root.Tick(0.016, 16);
+        Assert.Equal((0, false), r.Deck.BookmarkDropHighlight);   // a move onto its own tab does nothing
+
+        keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);
+        root.Tick(0.016, 16);
+        Assert.Equal((0, true), r.Deck.BookmarkDropHighlight);    // a copy into the first empty slot
+        root.OnMouseUp(UiMouseButton.Left, bx, by);
+
+        Assert.Equal(10u, r.Controller.SlotSpell(0, 0));
+        Assert.Equal(10u, r.Controller.SlotSpell(0, 3));
+        Assert.Empty(r.Game.Calls);
+    }
+
+    private static void DragSlot(UiRoot root, Rig r, (int Row, int Col) from, (int Row, int Col) to)
+    {
+        var (x, y) = Screen(r.Deck.Geometry.Slot(from.Row, from.Col));
+        var (tx, ty) = Screen(r.Deck.Geometry.Slot(to.Row, to.Col));
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseMove(x + 10, y);
+        root.OnMouseMove(tx, ty);
+        root.OnMouseUp(UiMouseButton.Left, tx, ty);
+    }
+
+    [Fact]
     public void AClickWithoutMovingStillOutlines()
     {
         var (root, r) = Mount();

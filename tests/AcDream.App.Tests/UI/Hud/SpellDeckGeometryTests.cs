@@ -7,27 +7,43 @@ public sealed class SpellDeckGeometryTests
     [Fact]
     public void Capacity_AtTheStretchEnds()
     {
-        Assert.Equal(12, SpellDeckGeometry.Capacity(1f));
-        Assert.Equal(27, SpellDeckGeometry.Capacity(2f));
-        Assert.Equal(27, SpellDeckGeometry.MaxCapacity);
+        Assert.Equal(10, SpellDeckGeometry.Capacity(1f));
+        Assert.Equal(25, SpellDeckGeometry.Capacity(2f));
+        Assert.Equal(25, SpellDeckGeometry.MaxCapacity);
     }
 
     [Theory]
-    [InlineData(1f, 1f, 388f)]
-    [InlineData(1f, 1.5f, 598f)]
-    [InlineData(1f, 2f, 808f)]
-    [InlineData(0.75f, 1f, 291f)]
-    [InlineData(1.5f, 2f, 1212f)]
+    [InlineData(0.75f, 1f)] [InlineData(1f, 1f)] [InlineData(1.5f, 1f)]
+    [InlineData(0.75f, 2f)] [InlineData(1f, 2f)] [InlineData(1.5f, 2f)]
+    public void Width_IsTheDeckFrameWidth_WithoutTheOrb(float scale, float stretch)
+    {
+        var g = SpellDeckGeometry.Create(scale, stretch, 3);
+        DeckGeometry deck = DeckGeometry.Create(scale, stretch);
+        Assert.Equal(deck.Width - 70f * scale, g.Width, 3);
+        Assert.Equal((350f + 420f * (stretch - 1f)) * scale, g.Width, 3);
+        Assert.Equal(stretch == 1f ? 10 : 25, g.SlotsPerRow);
+        DeckRect last = g.Slot(0, g.SlotsPerRow - 1);
+        Assert.True(last.X + last.W <= g.Width - 6f * scale + 1e-3f);
+    }
+
+    [Theory]
+    [InlineData(1f, 1f, 350f)]
+    [InlineData(1f, 1.5f, 560f)]
+    [InlineData(1f, 2f, 770f)]
+    [InlineData(0.75f, 1f, 262.5f)]
+    [InlineData(1.5f, 2f, 1155f)]
     public void Width_IsTheBaseWidthPlusTheStretch(float scale, float stretch, float width) =>
         Assert.Equal(width, SpellDeckGeometry.Create(scale, stretch, 1).Width, 3);
 
     [Fact]
     public void StretchFor_IsTheSmallestStretchThatFits()
     {
-        Assert.Equal(1f, SpellDeckGeometry.StretchFor(12));
-        for (int n = 1; n <= 27; n++)
+        Assert.Equal(1f, SpellDeckGeometry.StretchFor(10));
+        Assert.True(SpellDeckGeometry.StretchFor(11) > 1f);
+        Assert.Equal(2f, SpellDeckGeometry.StretchFor(26));   // more than the widest deck holds: as wide as it goes
+        for (int n = 1; n <= 25; n++)
             Assert.True(SpellDeckGeometry.Capacity(SpellDeckGeometry.StretchFor(n)) >= n, $"n={n}");
-        for (int n = 13; n <= 27; n++)
+        for (int n = 11; n <= 25; n++)
             Assert.True(SpellDeckGeometry.Capacity(SpellDeckGeometry.StretchFor(n) - 0.01f) < n, $"n={n}");
         Assert.Equal(2f, SpellDeckGeometry.StretchFor(40));
     }
@@ -73,7 +89,7 @@ public sealed class SpellDeckGeometryTests
     }
 
     [Theory]
-    [InlineData(1f, 8)] [InlineData(1f, 11)] [InlineData(2f, 16)]
+    [InlineData(1f, 8)] [InlineData(1f, 10)] [InlineData(2f, 16)]
     public void Bookmarks_Are24WideWith2GapWhenTheyFit(float stretch, int count)
     {
         var g = SpellDeckGeometry.Create(1f, stretch, 1);
@@ -101,7 +117,7 @@ public sealed class SpellDeckGeometryTests
         DeckRect first = g.Bookmark(0, count);
         DeckRect last = count < SpellDeckTabs.MaxTabs ? g.Plus(count) : g.Bookmark(count - 1, count);
         Assert.InRange(first.W, 16f * scale - 1e-3f, 24f * scale + 1e-3f);
-        Assert.True(first.W < 24f * scale);   // 13+ items do not fit 336 at 24 wide
+        Assert.True(first.W < 24f * scale);   // 12+ items do not fit 298 at 24 wide
         Assert.True(last.X + last.W <= right + 1e-3f);
         for (int i = 1; i < count; i++)
         {

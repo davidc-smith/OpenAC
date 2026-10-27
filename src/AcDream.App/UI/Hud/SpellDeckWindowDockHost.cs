@@ -76,6 +76,19 @@ internal sealed class SpellDeckWindowDockHost(
 
     public void SetSpellDeckDrag(WindowDragConstraint? drag) => spell.WindowDrag = drag;
 
+    public void SetSpellDeckResize(SpellDeckResizeForward? resize) => spell.ResizeForward = resize;
+
+    public DeckGeometry ResizeDeckDuringDrag(ResizeEdges edges, float width, float height) =>
+        deck.ResizeForwarded(edges, width, height);
+
+    public void ReportDeckResized()
+    {
+        deck.EndForwardedResize();
+        root.NotifyWindowResized(deckHandle.OuterFrame);
+    }
+
+    public bool WindowResizeActive => root.ActiveResizeEdges != ResizeEdges.None;
+
     public void PlaceSpellDeck(float left, float top, SpellDeckGeometry geometry)
     {
         UiElement frame = spellHandle.OuterFrame;
@@ -101,13 +114,6 @@ internal sealed class SpellDeckWindowDockHost(
     // The capture gate reads the controller's attachment, which the dock has
     // already set by the time it calls this.
     public void SetSpellDeckCaptureOpen(bool open) { }
-
-    public void SetSpellDeckResizable(bool resizable)
-    {
-        UiElement frame = spellHandle.OuterFrame;
-        frame.Resizable = resizable;
-        frame.ResizableEdges = resizable ? ResizeEdges.Right : ResizeEdges.None;
-    }
 
     private static (float Left, float Top, float Width, float Height) Bounds(UiElement frame) =>
         (frame.Left, frame.Top, frame.Width, frame.Height);

@@ -29,6 +29,9 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public readonly RetailWindowLayoutPersistence Persistence;
         public readonly SpellDeckCharacterSync Sync;
         public readonly SpellDeckDock Dock;
+        public readonly UiCommandDeck Deck;
+        /// <summary>How many times the root reported each window resized (each report saves its placement).</summary>
+        public readonly Dictionary<string, int> Resized = [];
         public string Key = "default";
         public (int Width, int Height) Screen = (1600, 900);
 
@@ -36,6 +39,8 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         {
             Store = new SettingsStore(path);
             UiCommandDeck deck = MountDeck(Root);
+            Deck = deck;
+            Root.WindowResized += (name, _) => Resized[name] = Resized.GetValueOrDefault(name) + 1;
             SpellDeckCharacterSync? sync = null;
             SpellDeckDock? dock = null;
             Controller = new SpellDeckController(
@@ -251,9 +256,9 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         rig.Dock.Detach();
         rig.Frames(2);
 
-        // Where it sat attached: from the orb's left edge (32), on the frame's top (4).
+        // Where it sat attached: from the frame's left past the orb (70), on the frame's top (4).
         SpellDeckGeometry g = SpellDeckGeometry.Create(1f, 1f, 3);
-        AssertSpellDeckAt(rig, new UiWindowLayout(732f, 604f - g.Height, g.Width, g.Height, false, false, false), "Bob", 1f, 3);
+        AssertSpellDeckAt(rig, new UiWindowLayout(770f, 604f - g.Height, g.Width, g.Height, false, false, false), "Bob", 1f, 3);
     }
 
     [Fact]
@@ -268,7 +273,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         rig.Frames(2);
         UiWindowLayout? spellStored = rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default);
         SpellDeckGeometry g = rig.Spell.Geometry;
-        Assert.Equal((732f, 604f - g.Height), (rig.Spell.Left, rig.Spell.Top));
+        Assert.Equal((770f, 604f - g.Height), (rig.Spell.Left, rig.Spell.Top));
 
         // A press on the frame, left of the item socket.
         int x = (int)(rig.Spell.Left + 3f), y = (int)(rig.Spell.Top + g.Height / 2f);
@@ -283,11 +288,148 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         rig.Frames(1);
 
         Assert.Equal((750f, 580f), (deck.Left, deck.Top));
-        Assert.Equal((782f, 584f - g.Height), (rig.Spell.Left, rig.Spell.Top));
+        Assert.Equal((820f, 584f - g.Height), (rig.Spell.Left, rig.Spell.Top));
         UiWindowLayout saved = Assert.IsType<UiWindowLayout>(
             rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.CommandDeck, default));
         Assert.Equal((750f, 580f), (saved.X, saved.Y));
         Assert.Equal(spellStored, rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default));
+    }
+
+    /// <summary>Bob in the world with the attached block's deck at (700, <paramref name="deckTop"/>).</summary>
+    private static (RetailWindowHandle Deck, UiWindowLayout? SpellStored) AttachedBlock(SpellDeckRig rig, float deckTop = 600f)
+    {
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+        Assert.True(rig.Controller.Attached);
+        Assert.True(rig.Root.WindowManager.TryGet(WindowNames.CommandDeck, out RetailWindowHandle deck));
+        deck.MoveTo(700f, deckTop);
+        rig.Frames(2);
+        rig.Resized.Clear();
+        return (deck, rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default));
+    }
+
+    /// <summary>A press-drag-release of the left button through the root, with frames between the moves.</summary>
+    private static void DragThroughRoot(SpellDeckRig rig, int x, int y, params (int Dx, int Dy)[] moves)
+    {
+        rig.Root.OnMouseMove(x, y);
+        rig.Root.OnMouseDown(UiMouseButton.Left, x, y);
+        foreach (var (dx, dy) in moves)
+        {
+            rig.Root.OnMouseMove(x + dx, y + dy);
+            rig.Frames(1);
+        }
+        var (lx, ly) = moves[^1];
+        rig.Root.OnMouseUp(UiMouseButton.Left, x + lx, y + ly);
+        rig.Frames(2);
+    }
+
+    [Fact]
+    public void SpellDeck_TheAttachedRightEdge_StretchesBothDecks_AndSavesTheDeckOnce()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        var (deck, spellStored) = AttachedBlock(rig);
+        int x = (int)(rig.Spell.Left + rig.Spell.Width - 1f), y = (int)(rig.Spell.Top + rig.Spell.Height / 2f);
+
+        rig.Root.OnMouseMove(x, y);
+        rig.Root.OnMouseDown(UiMouseButton.Left, x, y);
+        Assert.Equal(ResizeEdges.Right, rig.Root.ActiveResizeEdges);
+        rig.Root.OnMouseMove(x + 40, y);
+        rig.Frames(1);
+        rig.Root.OnMouseMove(x + 84, y);
+        rig.Frames(1);
+        Assert.Empty(rig.Resized);   // nothing saved while the resize runs
+        rig.Root.OnMouseUp(UiMouseButton.Left, x + 84, y);
+        rig.Frames(2);
+
+        // 84 more: stretch 1.2 for both; the deck's left and top stay; the Spell Deck sits on it.
+        Assert.Equal((1f, 1.2f), (rig.Deck.Geometry.Scale, rig.Deck.Geometry.Stretch));
+        Assert.Equal((700f, 600f, 150f), (deck.Left, deck.Top, deck.Height));
+        Assert.Equal(504f, deck.Width, 2);
+        SpellDeckGeometry g = rig.Spell.Geometry;
+        Assert.Equal((1f, 1.2f, 3), (g.Scale, g.Stretch, g.Rows));
+        Assert.Equal((770f, 604f - g.Height), (rig.Spell.Left, rig.Spell.Top));
+        Assert.Equal((g.Width, g.Height), (rig.Spell.Width, rig.Spell.Height));
+        Assert.Equal(1204f, rig.Spell.Left + rig.Spell.Width, 2);   // the deck's right edge
+
+        Assert.Equal(1, rig.Resized[WindowNames.CommandDeck]);
+        UiWindowLayout saved = Assert.IsType<UiWindowLayout>(
+            rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.CommandDeck, default));
+        Assert.Equal((700f, 600f, 150f), (saved.X, saved.Y, saved.Height));
+        Assert.Equal(504f, saved.Width, 2);
+        Assert.Equal(spellStored, rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default));
+
+        // A second resize starts from the new size.
+        x = (int)(rig.Spell.Left + rig.Spell.Width - 1f);
+        DragThroughRoot(rig, x, y, (-42, 0));
+        Assert.Equal(1.1f, rig.Deck.Geometry.Stretch, 3);
+        Assert.Equal(1.1f, rig.Spell.Geometry.Stretch, 3);
+        Assert.Equal(2, rig.Resized[WindowNames.CommandDeck]);
+    }
+
+    [Fact]
+    public void SpellDeck_TheAttachedTopRightCorner_ScalesBothDecks_KeepingTheBlocksBottom()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        var (deck, spellStored) = AttachedBlock(rig);
+        int x = (int)(rig.Spell.Left + rig.Spell.Width - 1f), y = (int)rig.Spell.Top + 1;
+
+        // 70 more on the Spell Deck's 350: scale 1.2 for both.
+        DragThroughRoot(rig, x, y, (30, 0), (70, 0));
+
+        Assert.Equal((1.2f, 1f), (rig.Deck.Geometry.Scale, rig.Deck.Geometry.Stretch));
+        Assert.Equal(700f, deck.Left);
+        Assert.Equal(750f, deck.Top + deck.Height, 2);   // the block's bottom stays
+        Assert.Equal(570f, deck.Top, 2);
+        SpellDeckGeometry g = rig.Spell.Geometry;
+        Assert.Equal((1.2f, 1f, 3), (g.Scale, g.Stretch, g.Rows));
+        Assert.Equal(700f + 70f * 1.2f, rig.Spell.Left, 2);
+        Assert.Equal(570f + 4f * 1.2f, rig.Spell.Top + rig.Spell.Height, 2);
+        Assert.Equal(deck.Left + deck.Width, rig.Spell.Left + rig.Spell.Width, 2);
+
+        Assert.Equal(1, rig.Resized[WindowNames.CommandDeck]);
+        UiWindowLayout saved = Assert.IsType<UiWindowLayout>(
+            rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.CommandDeck, default));
+        Assert.Equal(570f, saved.Y, 2);
+        Assert.Equal(180f, saved.Height, 2);
+        Assert.Equal(spellStored, rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default));
+    }
+
+    [Fact]
+    public void SpellDeck_TheAttachedCornerScaleStopsWhereTheBlockStillFitsOnScreen()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        // The Spell Deck's top on the screen's top: no room to grow upwards.
+        var (deck, _) = AttachedBlock(rig, deckTop: SpellDeckGeometry.BaseHeight(3) - 4f);
+        Assert.Equal(0f, rig.Spell.Top, 2);
+        int x = (int)(rig.Spell.Left + rig.Spell.Width - 1f), y = (int)rig.Spell.Top + 1;
+
+        DragThroughRoot(rig, x, y, (70, 0));
+
+        Assert.Equal(1f, rig.Deck.Geometry.Scale);
+        Assert.Equal(1f, rig.Spell.Geometry.Scale);
+        Assert.Equal(SpellDeckGeometry.BaseHeight(3) - 4f, deck.Top, 2);
+        Assert.Equal(0f, rig.Spell.Top, 2);
+    }
+
+    [Fact]
+    public void SpellDeck_TheDetachedSpellDeckResizesAlone()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        var (deck, _) = AttachedBlock(rig);
+        rig.Dock.Detach();
+        rig.Frames(2);
+        rig.Resized.Clear();
+        int x = (int)(rig.Spell.Left + rig.Spell.Width - 1f), y = (int)(rig.Spell.Top + rig.Spell.Height / 2f);
+
+        DragThroughRoot(rig, x, y, (84, 0));
+
+        Assert.Equal(1.2f, rig.Spell.Geometry.Stretch, 3);
+        Assert.Equal(DeckGeometry.Default, rig.Deck.Geometry);
+        Assert.Equal((700f, 600f), (deck.Left, deck.Top));
+        Assert.False(rig.Resized.ContainsKey(WindowNames.CommandDeck));
+        UiWindowLayout saved = Assert.IsType<UiWindowLayout>(
+            rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default));
+        Assert.Equal(rig.Spell.Width, saved.Width, 2);
     }
 
     [Fact]
