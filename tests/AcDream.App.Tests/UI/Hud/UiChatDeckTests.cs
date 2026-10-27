@@ -124,15 +124,15 @@ public sealed class UiChatDeckTests
     {
         var h = new Harness();
         h.Deck.OnShown();
-        h.Deck.Refresh();
         Assert.True(h.Model!.ViewVisible);
         h.Say("seen");
         Assert.Equal(0, h.Model.FindTab("all")!.Unread);
 
+        // A hidden window gets no ticks, so hiding must tell the model at once (no Refresh here).
         h.Deck.OnHidden();
-        h.Deck.Refresh();
         Assert.False(h.Model.ViewVisible);
-        h.Say("unseen");
+        h.Log.OnLocalSpeech("Bob", "unseen", 0x50000002u, isRanged: false, logTextType: 0x02u);
+        h.Model.Tick();
         Assert.Equal(1, h.Model.FindTab("all")!.Unread);
     }
 

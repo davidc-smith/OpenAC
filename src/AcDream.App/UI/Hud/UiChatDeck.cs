@@ -127,12 +127,18 @@ internal sealed partial class UiChatDeck : UiElement
     protected override void OnTick(double deltaSeconds) => Refresh();
 
     /// <summary>The window is on screen (the switch showed it).</summary>
-    public void OnShown() => _shown = true;
+    public void OnShown()
+    {
+        _shown = true;
+        _model?.SetView(true, Transcript.Scroll.AtEnd);
+    }
 
     /// <summary>The window left the screen: lines arriving now are unread.</summary>
     public void OnHidden()
     {
         _shown = false;
+        // A hidden element gets no ticks, so Refresh will not tell the model until it is shown again.
+        _model?.SetView(false, Transcript.Scroll.AtEnd);
         _tabMenu.Close(restoreFocus: false);
         OnInputHidden();           // UiChatDeck.Input.cs (Task 10)
     }
