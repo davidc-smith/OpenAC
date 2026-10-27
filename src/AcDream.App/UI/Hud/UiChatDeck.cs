@@ -225,7 +225,7 @@ internal sealed partial class UiChatDeck : UiElement
         _layout = _transcriptBuilder.Build(tab.Snapshot(), new ChatDeckTranscriptStyle(
             wrap, measure, font, appearance.Timestamps,
             line => ChannelColour(line, appearance),
-            ChatDeckPalette.TagInk, ChatDeckPalette.TimestampInk, _searchText));
+            ChatDeckPalette.TagInk, ChatDeckPalette.TimestampInk, _searchText, ColourKey: appearance));
     }
 
     private static Vector4 ChannelColour(ChatDeckLine line, ChatDeckAppearance appearance) =>

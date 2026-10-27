@@ -15,8 +15,9 @@ public sealed class ChatDeckTranscriptTests
     private const uint PlayerGuid = 0x5000000Au;
 
     private static ChatDeckTranscriptStyle Style(
-        float width = 1000f, ChatDeckTimestamps stamps = ChatDeckTimestamps.Off, string search = "") =>
-        new(width, s => s.Length * 7f, FontKey: null, stamps, _ => Channel, Tag, Stamp, search);
+        float width = 1000f, ChatDeckTimestamps stamps = ChatDeckTimestamps.Off, string search = "",
+        object? colourKey = null, Func<ChatDeckLine, Vector4>? channel = null) =>
+        new(width, s => s.Length * 7f, FontKey: null, stamps, channel ?? (_ => Channel), Tag, Stamp, search, colourKey);
 
     private static ChatDeckLine Line(ChatEntry entry, uint? lineColour = null, uint? matchColour = null,
         IReadOnlyList<ChatDeckSpan>? spans = null)
@@ -122,6 +123,49 @@ public sealed class ChatDeckTranscriptTests
         t.Build([line], Style());
         t.Build([line], Style(width: 500f));
         Assert.Equal(1, t.ProjectionsForTest);
+    }
+
+    [Fact]
+    public void AppendingALine_ColoursOnlyTheNewLine()
+    {
+        var t = new ChatDeckTranscript();
+        var key = new object();
+        ChatDeckLine a = Line(Sys("first", 1)), b = Line(Sys("second", 2)), c = Line(Sys("third", 3));
+        t.Build([a, b], Style(colourKey: key));
+        Assert.Equal(2, t.ColourPassesForTest);
+
+        ChatDeckTranscriptLayout layout = t.Build([a, b, c], Style(colourKey: key));
+
+        Assert.Equal(3, t.ColourPassesForTest);
+        Assert.Equal(["first", "second", "third"], layout.Lines.Select(l => l.Text));
+        Assert.Equal([1L, 2L, 3L], layout.Keys.Select(k => k.Source));
+    }
+
+    [Fact]
+    public void NewColourKey_RecoloursEveryLine()
+    {
+        var t = new ChatDeckTranscript();
+        ChatDeckLine a = Line(Sys("first", 1)), b = Line(Sys("second", 2));
+        t.Build([a, b], Style(colourKey: new object()));
+        var green = new Vector4(0f, 1f, 0f, 1f);
+
+        ChatDeckTranscriptLayout layout = t.Build([a, b], Style(colourKey: new object(), channel: _ => green));
+
+        Assert.Equal(4, t.ColourPassesForTest);
+        Assert.All(layout.Lines, l => Assert.Equal(green, l.Color));
+    }
+
+    [Fact]
+    public void NewWrapWidth_RecoloursEveryLine()
+    {
+        var t = new ChatDeckTranscript();
+        var key = new object();
+        ChatDeckLine a = Line(Sys("aaaa bbbb cccc", 1));
+        t.Build([a], Style(colourKey: key));
+        ChatDeckTranscriptLayout layout = t.Build([a], Style(width: 35f, colourKey: key));
+
+        Assert.Equal(2, t.ColourPassesForTest);
+        Assert.True(layout.Lines.Count >= 2);
     }
 
     [Fact]

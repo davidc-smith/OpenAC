@@ -10,6 +10,10 @@ namespace AcDream.App.UI.Hud;
 
 /// <summary>How a transcript is drawn: wrap width and font, timestamps, colours, and the search text ("" for none).</summary>
 /// <param name="FontKey">The font the widths were measured with; a new font wraps again.</param>
+/// <param name="ColourKey">
+/// What <paramref name="ChannelColour"/> reads (the appearance settings), compared by reference:
+/// a new key colours every line again, the same key reuses each line's colours.
+/// </param>
 internal readonly record struct ChatDeckTranscriptStyle(
     float WrapWidth,
     Func<string, float> Measure,
@@ -18,7 +22,8 @@ internal readonly record struct ChatDeckTranscriptStyle(
     Func<ChatDeckLine, Vector4> ChannelColour,
     Vector4 TagColour,
     Vector4 TimestampColour,
-    string Search);
+    string Search,
+    object? ColourKey = null);
 
 /// <summary>A tab laid out for a <see cref="UiText"/>: one entry per visual line in every list.</summary>
 internal sealed class ChatDeckTranscriptLayout
@@ -32,8 +37,9 @@ internal sealed class ChatDeckTranscriptLayout
 
 /// <summary>
 /// Lays a tab's lines out for the transcript. A line is worded once (it is shared by
-/// every tab it is in) and wrapped again only when the width, font or timestamp
-/// mode changes, so a busy tab costs a copy per frame, not a re-wording.
+/// every tab it is in), wrapped again only when the width, font or timestamp mode
+/// changes, and coloured again only when that or the colours change, so a busy tab
+/// costs a copy per frame for the lines it already had, not a re-colouring.
 /// </summary>
 internal sealed class ChatDeckTranscript
 {
@@ -46,11 +52,23 @@ internal sealed class ChatDeckTranscript
         public string Stamp = "";
         public string[] Fragments = [];
         public int[] Starts = [];
+
+        // The finished visual lines, valid while the wrap and the colour inputs below hold.
+        public bool Shaped;
+        public object? ColourKey;
+        public Vector4 TagColour;
+        public Vector4 TimestampColour;
+        public UiText.Line[] Lines = [];
+        public IReadOnlyList<UiText.TextRun>?[] Runs = [];
+        public IReadOnlyList<(int Start, int Length, ChatTextTag Tag)>?[] Tags = [];
+        public UiText.LineKey[] Keys = [];
+        public Vector4? Marker;
     }
 
     private readonly ConditionalWeakTable<ChatDeckLine, Cached> _cache = new();
 
     internal int ProjectionsForTest { get; private set; }
+    internal int ColourPassesForTest { get; private set; }
 
     public ChatDeckTranscriptLayout Build(IReadOnlyList<ChatDeckLine> lines, ChatDeckTranscriptStyle style)
     {
@@ -61,8 +79,14 @@ internal sealed class ChatDeckTranscript
             if (style.Search.Length > 0
                 && c.Projected.Text.IndexOf(style.Search, StringComparison.OrdinalIgnoreCase) < 0)
                 continue;
-            Wrap(c, line, style);
-            AddLine(layout, line, c, style);
+            bool rewrapped = Wrap(c, line, style);
+            if (rewrapped || !c.Shaped || !ReferenceEquals(c.ColourKey, style.ColourKey)
+                || c.TagColour != style.TagColour || c.TimestampColour != style.TimestampColour)
+            {
+                ColourPassesForTest++;
+                Shape(line, c, style);
+            }
+            AddLine(layout, c);
         }
         return layout;
     }
@@ -76,10 +100,11 @@ internal sealed class ChatDeckTranscript
         return cached;
     }
 
-    private static void Wrap(Cached c, ChatDeckLine line, ChatDeckTranscriptStyle style)
+    /// <summary>Wraps the line again if the width, font or timestamp mode changed; true when it did.</summary>
+    private static bool Wrap(Cached c, ChatDeckLine line, ChatDeckTranscriptStyle style)
     {
         if (c.WrapWidth.Equals(style.WrapWidth) && ReferenceEquals(c.FontKey, style.FontKey) && c.Stamps == style.Timestamps)
-            return;
+            return false;
         c.WrapWidth = style.WrapWidth;
         c.FontKey = style.FontKey;
         c.Stamps = style.Timestamps;
@@ -98,6 +123,7 @@ internal sealed class ChatDeckTranscript
         }
         c.Fragments = [.. fragments];
         c.Starts = [.. starts];
+        return true;
     }
 
     internal static string Stamp(DateTime receivedUtc, ChatDeckTimestamps mode) => mode switch
@@ -107,10 +133,19 @@ internal sealed class ChatDeckTranscript
         _ => "",
     };
 
-    private static void AddLine(ChatDeckTranscriptLayout layout, ChatDeckLine line, Cached c, ChatDeckTranscriptStyle style)
+    private static void AddLine(ChatDeckTranscriptLayout layout, Cached c)
+    {
+        layout.Lines.AddRange(c.Lines);
+        layout.Runs.AddRange(c.Runs);
+        layout.Tags.AddRange(c.Tags);
+        layout.Keys.AddRange(c.Keys);
+        for (int i = 0; i < c.Lines.Length; i++) layout.Markers.Add(c.Marker);
+    }
+
+    /// <summary>Colours the line's fragments and keeps them as its finished visual lines.</summary>
+    private static void Shape(ChatDeckLine line, Cached c, ChatDeckTranscriptStyle style)
     {
         Vector4 lineColour = line.LineColour is uint argb ? Argb(argb) : style.ChannelColour(line);
-        Vector4? marker = line.LineColour is uint bar ? Argb(bar) : null;
 
         // The line's spans with the timestamp in front, as the feed builds them, so tag
         // ranges and colours are measured over the text as shown.
@@ -120,18 +155,27 @@ internal sealed class ChatDeckTranscript
         else spans.Add(new ChatTextSpan(c.Projected.Text, null));
 
         Vector4[] colours = Colours(line, c, spans, lineColour, style);
-        for (int i = 0; i < c.Fragments.Length; i++)
+        int count = c.Fragments.Length;
+        c.Lines = new UiText.Line[count];
+        c.Runs = new IReadOnlyList<UiText.TextRun>?[count];
+        c.Tags = new IReadOnlyList<(int Start, int Length, ChatTextTag Tag)>?[count];
+        c.Keys = new UiText.LineKey[count];
+        for (int i = 0; i < count; i++)
         {
             string frag = c.Fragments[i];
             int at = c.Starts[i];
-            layout.Lines.Add(new UiText.Line(frag, lineColour));
-            layout.Runs.Add(Runs(frag, at, colours, lineColour));
-            layout.Tags.Add(frag.Length == 0 ? null : ChatTranscriptRenderer.TaggedRangesForFragment(spans, at, frag.Length));
+            c.Lines[i] = new UiText.Line(frag, lineColour);
+            c.Runs[i] = Runs(frag, at, colours, lineColour);
+            c.Tags[i] = frag.Length == 0 ? null : ChatTranscriptRenderer.TaggedRangesForFragment(spans, at, frag.Length);
             // The offset into the shown text, timestamp included: UiText anchors a selection as
             // Start + column, and its columns count the timestamp on the first line.
-            layout.Keys.Add(new UiText.LineKey(line.Sequence, at));
-            layout.Markers.Add(marker);
+            c.Keys[i] = new UiText.LineKey(line.Sequence, at);
         }
+        c.Marker = line.LineColour is uint bar ? Argb(bar) : null;
+        c.ColourKey = style.ColourKey;
+        c.TagColour = style.TagColour;
+        c.TimestampColour = style.TimestampColour;
+        c.Shaped = true;
     }
 
     /// <summary>One colour per character of the shown line (timestamp included).</summary>
