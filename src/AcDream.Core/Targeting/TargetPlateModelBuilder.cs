@@ -135,7 +135,8 @@ public static class TargetPlateModelBuilder
             : !entry.Success ? TargetVitalsState.Failed
             : input.Now - entry.At > StaleAfterSeconds ? TargetVitalsState.Stale
             : TargetVitalsState.Fresh;
-        if (state is TargetVitalsState.Fresh or TargetVitalsState.Stale
+        // A failed assess keeps the last good values the creature profile gave.
+        if (state is TargetVitalsState.Fresh or TargetVitalsState.Stale or TargetVitalsState.Failed
             && input.Combat.TryGetCreatureVitals(id, out CombatState.CreatureVitals v))
         {
             float? Frac(uint? cur, uint? max) => cur is uint c && max is uint m && m > 0 ? Math.Clamp(c / (float)m, 0f, 1f) : null;

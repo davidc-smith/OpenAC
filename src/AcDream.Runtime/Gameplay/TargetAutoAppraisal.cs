@@ -17,6 +17,13 @@ public sealed class TargetAutoAppraisal : IDisposable
 {
     public const double MinimumGapSeconds = 2.0;
 
+    /// <summary>
+    /// How long to wait before asking again after a failed reply. ACE answers
+    /// a repeat request for a target whose assess has not succeeded, inside 5 s,
+    /// with a failure and no new roll, so an earlier retry is wasted.
+    /// </summary>
+    public const double FailedRetrySeconds = 5.5;
+
     private readonly SelectionState _selection;
     private readonly ClientObjectTable _objects;
     private readonly CombatState _combat;
@@ -26,6 +33,7 @@ public sealed class TargetAutoAppraisal : IDisposable
     private readonly Func<double> _clock;
     private uint _target;
     private readonly Dictionary<uint, double> _lastSentAt = new();
+    private readonly Dictionary<uint, double> _notBefore = new();
     private bool _pending;
     private bool _disposed;
 
@@ -73,8 +81,14 @@ public sealed class TargetAutoAppraisal : IDisposable
         // The reply is current, so a trigger still waiting for the target is
         // answered by it. This also drops the one the reply's own creature
         // profile raised through HealthChanged just before it was logged.
+        if (success)
+            _notBefore.Remove(objectId);
+        else
+            _notBefore[objectId] = _clock() + FailedRetrySeconds;
+        // A failure keeps the target pending, so it is retried once the server
+        // would roll again, with no hit or health change needed to prompt it.
         if (objectId == _target)
-            _pending = false;
+            _pending = !success;
     }
 
     private void OnSelectionChanged(SelectionTransition _) => Retarget(_selection.SelectedObjectId ?? 0u);
@@ -113,12 +127,14 @@ public sealed class TargetAutoAppraisal : IDisposable
     // The gap is kept per target and survives a change of selection, so
     // flicking between two targets cannot send more often than the gap.
     private bool GapElapsed() =>
-        !_lastSentAt.TryGetValue(_target, out double at) || _clock() - at >= MinimumGapSeconds;
+        (!_lastSentAt.TryGetValue(_target, out double at) || _clock() - at >= MinimumGapSeconds)
+        && (!_notBefore.TryGetValue(_target, out double notBefore) || _clock() >= notBefore);
 
     private void OnObjectRemoved(ClientObject obj)
     {
         _log.Forget(obj.ObjectId);
         _lastSentAt.Remove(obj.ObjectId);
+        _notBefore.Remove(obj.ObjectId);
     }
 
     private void Trigger()

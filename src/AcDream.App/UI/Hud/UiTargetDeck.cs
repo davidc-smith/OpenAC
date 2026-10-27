@@ -476,6 +476,7 @@ internal sealed partial class UiTargetDeck : UiElement
     };
 
     private const string AssessFailedDetail = "Your assess skill check failed; health is still live.";
+    private const string AssessFailedKnownDetail = "Your assess failed; showing the last known value. Health is still live.";
     private const string StaleDetail = "Last assessed over 10 s ago";
 
     internal static HudTooltipContent? TooltipFor(TargetZone zone, TargetPlateModel view)
@@ -499,7 +500,8 @@ internal sealed partial class UiTargetDeck : UiElement
                 float? value = zone == TargetZone.Stamina ? vitals.Stamina : vitals.Mana;
                 return vitals.State switch
                 {
-                    TargetVitalsState.Failed => new("Assess failed", null, AssessFailedDetail, null),
+                    TargetVitalsState.Failed => new("Assess failed", null,
+                        value is null ? AssessFailedDetail : AssessFailedKnownDetail, null),
                     TargetVitalsState.Stale => new(title, value is float s ? Percent(s) : null, StaleDetail, null),
                     TargetVitalsState.Fresh when value is float f => new(title, Percent(f), null, null),
                     _ => null,

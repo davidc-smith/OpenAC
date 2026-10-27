@@ -64,6 +64,30 @@ public sealed class TargetPlateModelBuilderTests
     }
 
     [Fact]
+    public void FailedAssessKeepsTheLastKnownStaminaAndMana()
+    {
+        var combat = new CombatState();
+        combat.OnCreatureProfile(7, new CombatState.CreatureVitals(80, 100, 50, 100, 25, 100));
+        var log = new TargetAppraisalLog();
+        log.Record(7, false, 0.8f, now: 49.0);
+        TargetVitals v = Build(Monster(), combat, log)!.Vitals!.Value;
+        Assert.Equal(TargetVitalsState.Failed, v.State);
+        Assert.Equal(0.5f, v.Stamina);
+        Assert.Equal(0.25f, v.Mana);
+    }
+
+    [Fact]
+    public void FailedAssessWithNoEarlierVitalsHasNone()
+    {
+        var log = new TargetAppraisalLog();
+        log.Record(7, false, 1f, now: 49.0);
+        TargetVitals v = Build(Monster(), log: log)!.Vitals!.Value;
+        Assert.Equal(TargetVitalsState.Failed, v.State);
+        Assert.Null(v.Stamina);
+        Assert.Null(v.Mana);
+    }
+
+    [Fact]
     public void AnUnassessedItemAsksForAssess()
     {
         var sword = new ClientObject { ObjectId = 9, Name = "Fine Silver Long Sword", Type = ItemType.MeleeWeapon, Value = 4200, Burden = 320 };

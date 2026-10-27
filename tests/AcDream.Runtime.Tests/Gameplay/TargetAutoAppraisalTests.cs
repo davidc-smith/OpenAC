@@ -152,7 +152,7 @@ public sealed class TargetAutoAppraisalTests
             auto.OnAppraised(Monster, success: false);
             Assert.True(log.TryGet(Monster, out TargetAppraisalEntry e));
             Assert.False(e.Success);
-            _now += 2.5;
+            _now += 5.5;
             combat.OnAttackerNotification("Drudge Ravener", 1u, 10u, 0.1);
             Assert.Equal(2, sent.Count);
         }
@@ -211,9 +211,9 @@ public sealed class TargetAutoAppraisalTests
             _now += 1.0;
             sel.Select(Monster2, SelectionChangeSource.World);  // fresh success: nothing
             Assert.Equal(2, sent.Count);
-            sel.Select(Monster, SelectionChangeSource.World);   // failed: wants a retry, but the gap holds it
+            sel.Select(Monster, SelectionChangeSource.World);   // failed: wants a retry, but the server holds it
             Assert.Equal(2, sent.Count);
-            _now += 1.0;
+            _now += 4.5; // 5.5 s since the failure
             auto.Tick();
             Assert.Equal(new[] { Monster, Monster2, Monster }, sent);
         }
@@ -288,5 +288,101 @@ public sealed class TargetAutoAppraisalTests
             auto.Tick();
             Assert.Single(sent);
         }
+    }
+
+    [Fact]
+    public void AFailedReplyRetriesAfterTheServerWindowWithNoTrigger()
+    {
+        var (auto, sel, _, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            auto.OnAppraised(Monster, success: false);
+            _now += 5.4;
+            auto.Tick();
+            Assert.Single(sent);
+            _now += 0.1;
+            auto.Tick();
+            Assert.Equal(new[] { Monster, Monster }, sent);
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+        }
+    }
+
+    [Fact]
+    public void AHitInsideTheFailedWindowDoesNotSendEarly()
+    {
+        var (auto, sel, combat, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            auto.OnAppraised(Monster, success: false);
+            _now += 3.0;
+            combat.OnAttackerNotification("Drudge Ravener", 1u, 10u, 0.1);
+            auto.Tick();
+            Assert.Single(sent);
+            _now += 2.5;
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+        }
+    }
+
+    [Fact]
+    public void ASuccessAfterARetryStopsFurtherSends()
+    {
+        var (auto, sel, _, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            auto.OnAppraised(Monster, success: false);
+            _now += 5.5;
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+            auto.OnAppraised(Monster, success: true);
+            _now += 20.0;
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+        }
+    }
+
+    [Fact]
+    public void ReselectingATargetThatFailedRecentlyWaitsForTheWindow()
+    {
+        var (auto, sel, _, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            auto.OnAppraised(Monster, success: false);
+            _now += 1.0;
+            sel.Select(Monster2, SelectionChangeSource.World);
+            sel.Select(Monster, SelectionChangeSource.World);
+            Assert.Equal(new[] { Monster, Monster2 }, sent);
+            _now += 4.4; // 5.4 s since the failure
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+            _now += 0.1;
+            auto.Tick();
+            Assert.Equal(new[] { Monster, Monster2, Monster }, sent);
+        }
+    }
+
+    [Fact]
+    public void RemovingTheObjectDropsItsFailedWindow()
+    {
+        var objects = new ClientObjectTable();
+        var make = () => new ClientObject { ObjectId = Monster, Name = "Drudge Ravener", Type = ItemType.Creature, PublicWeenieBitfield = (uint)PublicWeenieFlags.Attackable };
+        objects.AddOrUpdate(make());
+        var sel = new SelectionState();
+        var sent = new List<uint>();
+        using var auto = new TargetAutoAppraisal(sel, objects, new CombatState(), new TargetAppraisalLog(),
+            () => Player, id => { sent.Add(id); return true; }, () => _now);
+        sel.Select(Monster, SelectionChangeSource.World);
+        auto.OnAppraised(Monster, success: false);
+        objects.Remove(Monster);
+        objects.AddOrUpdate(make());
+        sel.Clear(SelectionChangeSource.System);
+        _now += 2.0;
+        sel.Select(Monster, SelectionChangeSource.World);
+        Assert.Equal(2, sent.Count);
     }
 }

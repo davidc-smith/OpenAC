@@ -53,10 +53,11 @@ internal static class TargetDeckModels
 
     public static TargetPlateModel Build(ClientObject obj, uint selectedPackItem = 0,
         TargetAppraisalLog? log = null, IReadOnlyList<TargetPluginRow>? pluginRows = null,
-        string? overflow = null, IReadOnlyList<TargetPluginAction>? pluginActions = null)
+        string? overflow = null, IReadOnlyList<TargetPluginAction>? pluginActions = null,
+        CombatState? combat = null)
     {
         var input = new TargetPlateInput(
-            Object: obj, PlayerId: Me, PlayerLevel: 100, Combat: new CombatState(),
+            Object: obj, PlayerId: Me, PlayerLevel: 100, Combat: combat ?? new CombatState(),
             Log: log ?? new TargetAppraisalLog(), Now: 50.0, DistanceMeters: 4f,
             SelectedPackItemId: selectedPackItem, IsFellow: _ => false,
             PluginRows: pluginRows ?? Array.Empty<TargetPluginRow>(), PluginOverflowTooltip: overflow,

@@ -1305,6 +1305,7 @@ public sealed class RetailUiRuntime : IDisposable
     {
         // Any identify reply (auto-ID's or the player's) feeds the Target Deck's
         // vitals, and plugins describe the object again with what it now knows.
+        Console.WriteLine($"[target-deck] reply 0x{appraisal.Guid:X8} success={appraisal.Success} creature={appraisal.CreatureProfile is not null}");
         _targetAuto?.OnAppraised(appraisal.Guid, appraisal.Success);
         _bindings.Plugins?.TargetPlateStore.Invalidate(appraisal.Guid);
         return AppraisalController is { } controller
@@ -3794,7 +3795,12 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.TargetDeck!.Combat,
             _targetAppraisalLog!,
             _bindings.Magic.PlayerGuid,
-            id => TargetDeckShown && ItemInteraction.TryAppraiseForAutomation(id),
+            id =>
+            {
+                bool sent = TargetDeckShown && ItemInteraction.TryAppraiseForAutomation(id);
+                Console.WriteLine($"[target-deck] auto-ID 0x{id:X8} {(sent ? "sent" : "refused")}");
+                return sent;
+            },
             () => clock.Elapsed.TotalSeconds);
     }
 

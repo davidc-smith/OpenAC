@@ -1,3 +1,4 @@
+using AcDream.Core.Combat;
 using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 using AcDream.Core.Targeting;
@@ -254,6 +255,31 @@ public sealed class UiTargetDeckTests
         now += UiCommandDeck.TooltipDwell + 0.01;
         Assert.Equal("Trade", deck.VisibleTooltip!.Title);
         Assert.Null(deck.VisibleTooltip!.Detail);
+    }
+
+    [Fact]
+    public void FailedStaminaWithAnEarlierValueSaysItIsTheLastKnown()
+    {
+        var combat = new CombatState();
+        combat.OnCreatureProfile(7, new CombatState.CreatureVitals(80, 100, 50, 100, 25, 100));
+        var log = new TargetAppraisalLog();
+        log.Record(7, false, 0.8f, now: 49.0);
+        TargetPlateModel model = Build(Monster(), log: log, combat: combat);
+        foreach (TargetZone zone in new[] { TargetZone.Stamina, TargetZone.Mana })
+        {
+            HudTooltipContent tip = UiTargetDeck.TooltipFor(zone, model)!;
+            Assert.Equal("Assess failed", tip.Title);
+            Assert.Equal("Your assess failed; showing the last known value. Health is still live.", tip.Detail);
+        }
+    }
+
+    [Fact]
+    public void FailedStaminaWithoutAnEarlierValueKeepsTheFailedText()
+    {
+        var log = new TargetAppraisalLog();
+        log.Record(7, false, 1f, now: 49.0);
+        HudTooltipContent tip = UiTargetDeck.TooltipFor(TargetZone.Mana, Build(Monster(), log: log))!;
+        Assert.Equal("Your assess skill check failed; health is still live.", tip.Detail);
     }
 
     [Fact]
