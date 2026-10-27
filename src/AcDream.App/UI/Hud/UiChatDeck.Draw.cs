@@ -16,7 +16,7 @@ internal sealed partial class UiChatDeck
         DrawStud(ctx, _geometry.SearchStud, HudIcons.Search, _searchOpen);
         if (_searchOpen) ctx.FillRoundedRect(_geometry.SearchField.X, _geometry.SearchField.Y,
             _geometry.SearchField.W, _geometry.SearchField.H, 4f, ChatDeckPalette.FieldFill);
-        DrawInputRow(ctx);        // UiChatDeck.Input.cs (Task 10); a no-op until then
+        DrawInputRow(ctx);        // UiChatDeck.Input.cs
     }
 
     private void DrawTabs(UiRenderContext ctx)

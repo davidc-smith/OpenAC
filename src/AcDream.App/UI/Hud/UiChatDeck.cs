@@ -96,7 +96,7 @@ internal sealed partial class UiChatDeck : UiElement
         AddChild(NewLinesMarker);
         AddChild(SearchField);
         AddChild(_tabMenu);
-        CreateInputRow();          // UiChatDeck.Input.cs (Task 10); until then an empty partial method
+        CreateInputRow();          // UiChatDeck.Input.cs
     }
 
     private static readonly string[] TabMenuItems = ["Mark as read", "Mark all read"];
