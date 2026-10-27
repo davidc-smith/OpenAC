@@ -150,13 +150,14 @@ public static class ChatDeckSettingsJson
     private static JsonObject WriteRule(ChatDeckRule r, JsonObject o)
     {
         // Keys this build could not read were loaded as fallbacks and the rule switched off;
-        // while the rule still holds that fallback, leave the stored value for a build that can.
-        bool keepKind = KeepUnreadable(o, "kind", r.Kind, ChatDeckMatchKind.Contains);
-        bool keepField = KeepUnreadable(o, "field", r.Field, ChatDeckMatchField.Text);
-        bool keepAction = KeepUnreadable(o, "action", r.Action, ChatDeckRuleAction.Hide);
+        // while the rule still holds that fallback and is still off, leave the stored value for a build
+        // that can. Loading always switches such a rule off, so an enabled one was deliberately repaired.
+        bool keepKind = !r.Enabled && KeepUnreadable(o, "kind", r.Kind, ChatDeckMatchKind.Contains);
+        bool keepField = !r.Enabled && KeepUnreadable(o, "field", r.Field, ChatDeckMatchField.Text);
+        bool keepAction = !r.Enabled && KeepUnreadable(o, "action", r.Action, ChatDeckRuleAction.Hide);
 
         o["id"] = r.Id;
-        if (!((keepKind || keepField || keepAction) && !r.Enabled)) o["enabled"] = r.Enabled;
+        if (!(keepKind || keepField || keepAction)) o["enabled"] = r.Enabled;
         if (!keepKind) o["kind"] = r.Kind.ToString();
         o["pattern"] = r.Pattern;
         o["presetId"] = r.PresetId;

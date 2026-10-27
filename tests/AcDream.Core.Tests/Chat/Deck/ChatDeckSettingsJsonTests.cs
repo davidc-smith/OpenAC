@@ -149,6 +149,51 @@ public sealed class ChatDeckSettingsJsonTests
     }
 
     [Fact]
+    public void RepairedRuleWithUnknownAction_SavesHideAndReloadsEnabled()
+    {
+        var (settings, _) = ChatDeckSettingsJson.Parse(FutureRule);
+        Assert.False(settings.Rules.Single(r => r.Id == "n1").Enabled);
+
+        ChatDeckSettings repaired = settings with
+        {
+            Rules = settings.Rules.Select(r => r.Id == "n1" ? r with { Enabled = true } : r).ToList(),
+        };
+        string json = ChatDeckSettingsJson.Serialize(repaired, FutureRule);
+
+        var saved = (JsonObject)JsonNode.Parse(json)!;
+        JsonObject written = saved["rules"]!.AsArray().OfType<JsonObject>().Single(o => (string?)o["id"] == "n1");
+        Assert.Equal("Hide", (string?)written["action"]);
+        Assert.True((bool?)written["enabled"]);
+        var (reloaded, error) = ChatDeckSettingsJson.Parse(json);
+        Assert.Null(error);
+        ChatDeckRule rule = reloaded.Rules.Single(r => r.Id == "n1");
+        Assert.True(rule.Enabled);
+        Assert.Equal(ChatDeckRuleAction.Hide, rule.Action);
+    }
+
+    [Fact]
+    public void RepairedRuleWithUnknownKind_SavesContainsAndReloadsEnabled()
+    {
+        const string source = """{"rules":[{"id":"n1","enabled":true,"kind":"Fuzzy","action":"Hide","pattern":"x"}]}""";
+        var (settings, _) = ChatDeckSettingsJson.Parse(source);
+        Assert.False(settings.Rules.Single(r => r.Id == "n1").Enabled);
+
+        ChatDeckSettings repaired = settings with
+        {
+            Rules = settings.Rules.Select(r => r.Id == "n1" ? r with { Enabled = true } : r).ToList(),
+        };
+        string json = ChatDeckSettingsJson.Serialize(repaired, source);
+
+        var saved = (JsonObject)JsonNode.Parse(json)!;
+        JsonObject written = saved["rules"]!.AsArray().OfType<JsonObject>().Single(o => (string?)o["id"] == "n1");
+        Assert.Equal("Contains", (string?)written["kind"]);
+        Assert.True((bool?)written["enabled"]);
+        ChatDeckRule rule = ChatDeckSettingsJson.Parse(json).Settings.Rules.Single(r => r.Id == "n1");
+        Assert.True(rule.Enabled);
+        Assert.Equal(ChatDeckMatchKind.Contains, rule.Kind);
+    }
+
+    [Fact]
     public void RuleWithUnknownKindOrField_LoadsDisabledAndKeepsThem()
     {
         const string json = """{"rules":[{"id":"n1","kind":"Fuzzy","field":"Nick","action":"Hide","pattern":"x"}]}""";
