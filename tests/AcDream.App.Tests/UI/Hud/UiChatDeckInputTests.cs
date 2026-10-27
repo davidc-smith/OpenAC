@@ -115,12 +115,13 @@ public sealed class UiChatDeckInputTests
     }
 
     [Fact]
-    public void CtrlArrows_CycleTabs()
+    public void OptionCmdArrows_CycleTabs()
     {
         // macOS keeps Tab for itself while Ctrl is held, so Ctrl+Tab never arrives there.
         var h = new Harness();
         string first = h.Model!.SelectedTabId;
-        h.Keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.AltLeft);
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.SuperLeft);
         Key(h.Deck.Input, Silk.NET.Input.Key.Right);
         Assert.Equal("local", h.Model.SelectedTabId);
 
@@ -128,6 +129,11 @@ public sealed class UiChatDeckInputTests
         Assert.Equal(first, h.Model.SelectedTabId);
 
         Key(h.Deck.Input, Silk.NET.Input.Key.Left);
+        Assert.Equal(h.Model.Settings.Tabs[^1].Id, h.Model.SelectedTabId);
+
+        // Plain arrows still move the caret and leave the tab alone.
+        h.Keyboard.Held.Clear();
+        Key(h.Deck.Input, Silk.NET.Input.Key.Right);
         Assert.Equal(h.Model.Settings.Tabs[^1].Id, h.Model.SelectedTabId);
     }
 

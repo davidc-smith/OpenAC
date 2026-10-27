@@ -88,6 +88,12 @@ public sealed class UiField : UiElement
     /// The second argument says whether Shift is held too.
     /// </summary>
     public Func<Silk.NET.Input.Key, bool, bool>? OnControlKey { get; set; }
+
+    /// <summary>
+    /// A key pressed with Option (Alt) and Cmd (Super) both held, offered to the
+    /// owner before the field's own handling; true when the owner took it.
+    /// </summary>
+    public Func<Silk.NET.Input.Key, bool>? OnCommandOptionKey { get; set; }
     public Action? OnFocusGained { get; set; }
     public Action<string>? OnFocusLost { get; set; }
 
@@ -799,6 +805,14 @@ public sealed class UiField : UiElement
         && (Keyboard.IsKeyPressed(Silk.NET.Input.Key.ControlLeft)
             || Keyboard.IsKeyPressed(Silk.NET.Input.Key.ControlRight));
 
+    private bool AltHeld() => Keyboard is not null
+        && (Keyboard.IsKeyPressed(Silk.NET.Input.Key.AltLeft)
+            || Keyboard.IsKeyPressed(Silk.NET.Input.Key.AltRight));
+
+    private bool SuperHeld() => Keyboard is not null
+        && (Keyboard.IsKeyPressed(Silk.NET.Input.Key.SuperLeft)
+            || Keyboard.IsKeyPressed(Silk.NET.Input.Key.SuperRight));
+
     private bool ShiftHeld() => Keyboard is not null
         && (Keyboard.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft)
             || Keyboard.IsKeyPressed(Silk.NET.Input.Key.ShiftRight));
@@ -886,6 +900,8 @@ public sealed class UiField : UiElement
                     }
                     return true;
                 }
+                if (AltHeld() && SuperHeld() && OnCommandOptionKey?.Invoke(key) == true)
+                    return true;
 
                 bool shift = Selectable && ShiftHeld();
                 switch (key)
