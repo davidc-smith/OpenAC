@@ -123,4 +123,32 @@ public sealed class ChatDeckTranscriptTests
         t.Build([line], Style(width: 500f));
         Assert.Equal(1, t.ProjectionsForTest);
     }
+
+    [Fact]
+    public void Keys_CountTheTimestamp_SoSelectionsResolveToTheirOwnLine()
+    {
+        var received = new DateTime(2026, 10, 27, 9, 5, 7, DateTimeKind.Utc);
+        var entry = Sys("aaaa bbbb cccc dddd", seq: 7) with { Received = received };
+        string stamp = received.ToLocalTime().ToString(@"H\:mm\:ss ", CultureInfo.InvariantCulture);
+        string shown = stamp + "aaaa bbbb cccc dddd";
+
+        ChatDeckTranscriptLayout layout = new ChatDeckTranscript().Build(
+            [Line(entry)], Style(width: 7f * (stamp.Length + 9), stamps: ChatDeckTimestamps.HourMinuteSecond));
+
+        Assert.True(layout.Lines.Count >= 2);
+        Assert.Equal(0, layout.Keys[0].Start);
+        int searchFrom = 0;
+        for (int i = 0; i < layout.Lines.Count; i++)
+        {
+            int at = shown.IndexOf(layout.Lines[i].Text, searchFrom, StringComparison.Ordinal);
+            Assert.Equal(at, layout.Keys[i].Start);
+            searchFrom = at + layout.Lines[i].Text.Length;
+            if (i > 0) Assert.True(layout.Keys[i].Start > layout.Keys[i - 1].Start);
+        }
+        // The separator WrapText dropped between line 0 and line 1 is counted.
+        Assert.Equal(layout.Keys[0].Start + layout.Lines[0].Text.Length + 1, layout.Keys[1].Start);
+
+        Assert.True(UiText.TryResolveAnchor(layout.Keys, layout.Lines, 7, layout.Keys[1].Start + 2, out UiText.Pos pos));
+        Assert.Equal(new UiText.Pos(1, 2), pos);
+    }
 }

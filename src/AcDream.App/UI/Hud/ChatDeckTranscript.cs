@@ -127,7 +127,9 @@ internal sealed class ChatDeckTranscript
             layout.Lines.Add(new UiText.Line(frag, lineColour));
             layout.Runs.Add(Runs(frag, at, colours, lineColour));
             layout.Tags.Add(frag.Length == 0 ? null : ChatTranscriptRenderer.TaggedRangesForFragment(spans, at, frag.Length));
-            layout.Keys.Add(new UiText.LineKey(line.Sequence, Math.Max(0, at - c.Stamp.Length)));
+            // The offset into the shown text, timestamp included: UiText anchors a selection as
+            // Start + column, and its columns count the timestamp on the first line.
+            layout.Keys.Add(new UiText.LineKey(line.Sequence, at));
             layout.Markers.Add(marker);
         }
     }
