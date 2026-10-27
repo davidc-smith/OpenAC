@@ -46,6 +46,7 @@ internal sealed partial class UiChatDeck : UiElement
     private bool _searchOpen;
     private string _searchText = "";
     private bool _shown;
+    private ChatDeckModel? _appliedFor;
     private long? _addedAtScrollUp;
     private int _menuTab = -1;
     private ChatDeckHit _hit;
@@ -99,6 +100,7 @@ internal sealed partial class UiChatDeck : UiElement
         AddChild(_tabMenu);
         CreateInputRow();          // UiChatDeck.Input.cs
         CreateStrip();             // UiChatDeck.Strip.cs
+        CreateDrawer();            // UiChatDeck.Drawer.cs
     }
 
     private static readonly string[] TabMenuItems = ["Mark as read", "Mark all read"];
@@ -150,17 +152,17 @@ internal sealed partial class UiChatDeck : UiElement
     public void OnShown()
     {
         _shown = true;
-        _model?.SetView(true, Transcript.Scroll.AtEnd);
+        ApplyDrawer();
     }
 
     /// <summary>The window left the screen: lines arriving now are unread.</summary>
     public void OnHidden()
     {
         _shown = false;
-        // A hidden element gets no ticks, so Refresh will not tell the model until it is shown again.
-        _model?.SetView(false, Transcript.Scroll.AtEnd);
+        _drawer.Close();
         _tabMenu.Close(restoreFocus: false);
         OnInputHidden();           // UiChatDeck.Input.cs
+        ApplyDrawer();             // reports the hidden view to the model: a hidden element gets no ticks
     }
 
     internal ChatDeckModel? Model => _model;
@@ -173,9 +175,19 @@ internal sealed partial class UiChatDeck : UiElement
         ChatDeckModel? model = _b.Model();
         if (!ReferenceEquals(model, _model))
         {
-            if (_model is not null) _model.Cleared -= ResetView;
+            if (_model is not null)
+            {
+                _model.Cleared -= ResetView;
+                _model.LinesDelivered -= OnLinesDelivered;
+            }
             _model = model;
-            if (_model is not null) _model.Cleared += ResetView;
+            if (_model is not null)
+            {
+                _model.Cleared += ResetView;
+                _model.LinesDelivered += OnLinesDelivered;
+                _drawer.Restore(_model.Settings.Layout.Pinned, _model.Settings.Layout.Edge);
+            }
+            _peek.Clear();
             ResetView();
         }
 
@@ -199,7 +211,12 @@ internal sealed partial class UiChatDeck : UiElement
 
         RebuildTranscript(appearance);
         TrackNewLines();
-        _model?.SetView(_shown, Transcript.Scroll.AtEnd);
+        _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd);
+        if (_shown && model is not null && !ReferenceEquals(_appliedFor, model))
+        {
+            _appliedFor = model;
+            ApplyDrawer();
+        }
     }
 
     /// <summary>
@@ -264,6 +281,7 @@ internal sealed partial class UiChatDeck : UiElement
     {
         _addedAtScrollUp = null;
         NewLineCount = 0;
+        _peek.Clear();
         _builtFor = null;
         Transcript.Scroll.ScrollToEnd();
         OnViewReset();             // UiChatDeck.Input.cs: drops a one-line channel override
@@ -355,6 +373,8 @@ internal sealed partial class UiChatDeck : UiElement
                 switch (hit.Zone)
                 {
                     case ChatDeckZone.Tab: SelectTab(hit.Tab); return true;
+                    case ChatDeckZone.PinStud: PressPin(); return true;
+                    case ChatDeckZone.CollapseStud: PressCollapse(); return true;
                     case ChatDeckZone.SearchStud: ToggleSearch(); return true;
                     case ChatDeckZone.Chip: OpenChipMenu(e.Data1, e.Data2); return true;   // UiChatDeck.Input.cs
                     default: return false;

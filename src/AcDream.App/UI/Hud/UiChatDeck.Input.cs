@@ -64,7 +64,11 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
     internal void Detach()
     {
         _b.Entry.DraftChanged -= OnDraftChanged;
-        if (_model is not null) _model.Cleared -= ResetView;
+        if (_model is not null)
+        {
+            _model.Cleared -= ResetView;
+            _model.LinesDelivered -= OnLinesDelivered;
+        }
     }
 
     private void OnDraftChanged(string text)

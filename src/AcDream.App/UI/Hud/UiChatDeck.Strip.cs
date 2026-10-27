@@ -189,7 +189,4 @@ internal sealed partial class UiChatDeck
 
         protected override void OnDraw(UiRenderContext ctx) => deck.DrawPeek(ctx, Width, Height);
     }
-
-    private void PressStripTab(int index) { }
-    private void PressStripPin() { }
 }
