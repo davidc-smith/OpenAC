@@ -14,6 +14,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
     private readonly List<RetailWindowHandle> _attached = new();
     private readonly Dictionary<string, UiWindowLayout> _defaults = new(StringComparer.Ordinal);
     private readonly Dictionary<string, UiWindowPlacement> _placements = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _heldVisibility = new(StringComparer.Ordinal);
     private string? _restoredCharacter;
     private bool _restoring;
     private bool _disposed;
@@ -49,6 +50,38 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
     private void OnWindowRegistered(RetailWindowHandle handle) => Attach(handle);
 
     private void OnWindowUnregistered(RetailWindowHandle handle) => Detach(handle);
+
+    /// <summary>
+    /// Hands a window's visibility to whatever stands in for it (a Modern HUD
+    /// window): from now its own shows and hides are not saved, a restore records
+    /// the saved visibility instead of applying it, and every save writes the
+    /// visibility recorded here. A second hold keeps the first record.
+    /// </summary>
+    public void HoldVisibility(string windowName)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(windowName);
+        if (_heldVisibility.ContainsKey(windowName)) return;
+        RetailWindowHandle? handle = _attached.Find(h => h.Name == windowName);
+        _heldVisibility[windowName] = handle is not null && Capture(handle).Visible;
+    }
+
+    /// <summary>Ends a hold; the visibility the window should go back to.</summary>
+    public bool ReleaseVisibility(string windowName)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(windowName);
+        return _heldVisibility.Remove(windowName, out bool visible)
+            ? visible
+            : _attached.Find(h => h.Name == windowName)?.IsVisible ?? false;
+    }
+
+    /// <summary>The window's layout as it should be saved: a held window keeps its recorded visibility.</summary>
+    private UiWindowLayout CaptureForSave(RetailWindowHandle handle)
+    {
+        UiWindowLayout layout = Capture(handle);
+        return _heldVisibility.TryGetValue(handle.Name, out bool visible) ? layout with { Visible = visible } : layout;
+    }
 
     public void RestoreAll(bool saveBack = true)
         => RestoreAllCore(
@@ -160,8 +193,10 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
             Layout = MigrateAuthoredGeometry(placement.Layout, AuthoredGeometry(handle, fallback)),
         };
         _placements[handle.Name] = placement;
+        bool held = _heldVisibility.ContainsKey(handle.Name);
+        if (held) _heldVisibility[handle.Name] = placement.Layout.Visible;
         ApplyPlacement(handle, placement, screen,
-            restoreVisibility && !_stateManagedVisibilityWindows.Contains(handle.Name));
+            restoreVisibility && !held && !_stateManagedVisibilityWindows.Contains(handle.Name));
         placement = WithCurrentState(handle, placement);
         _placements[handle.Name] = placement;
         return placement;
@@ -213,7 +248,7 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         ArgumentNullException.ThrowIfNull(profileName);
         if (!_gameplayActive) return;
         foreach (RetailWindowHandle handle in _attached.ToArray())
-            _store?.SaveNamedWindowLayout(profileName, handle.Name, Capture(handle));
+            _store?.SaveNamedWindowLayout(profileName, handle.Name, CaptureForSave(handle));
     }
 
     public void RestoreNamed(string profileName)
@@ -235,12 +270,14 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
                 layout = MigrateAuthoredGeometry(
                     layout,
                     AuthoredGeometry(handle, fallback));
+                bool held = _heldVisibility.ContainsKey(handle.Name);
+                if (held) _heldVisibility[handle.Name] = layout.Visible;
                 Apply(
                     handle,
                     layout,
                     screen,
-                    restoreVisibility: !_stateManagedVisibilityWindows.Contains(handle.Name));
-                _placements[handle.Name] = new UiWindowPlacement(Capture(handle), screen.Width, screen.Height);
+                    restoreVisibility: !held && !_stateManagedVisibilityWindows.Contains(handle.Name));
+                _placements[handle.Name] = new UiWindowPlacement(CaptureForSave(handle), screen.Width, screen.Height);
             }
         }
         finally
@@ -297,9 +334,9 @@ public sealed class RetailWindowLayoutPersistence : IDisposable
         OnChanged(handle);
     }
 
-    private static UiWindowPlacement WithCurrentState(RetailWindowHandle handle, UiWindowPlacement placement)
+    private UiWindowPlacement WithCurrentState(RetailWindowHandle handle, UiWindowPlacement placement)
     {
-        var current = Capture(handle);
+        var current = CaptureForSave(handle);
         return placement with
         {
             Layout = placement.Layout with
