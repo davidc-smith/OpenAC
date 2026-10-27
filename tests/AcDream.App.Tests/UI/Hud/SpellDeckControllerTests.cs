@@ -51,6 +51,7 @@ public sealed class SpellDeckControllerTests
         public int PerRow = 4;
         public bool ClickCasts;
         public bool CanAddRow = true;
+        public bool CanSend = true;
         public double Now;
     }
 
@@ -77,7 +78,8 @@ public sealed class SpellDeckControllerTests
             r.G, favorites: tab => r.G.Tabs[tab], itemSpell: () => r.G.Item,
             capacity: () => r.PerRow, settings: settings,
             save: r.Saved.Add,
-            clickCasts: () => r.ClickCasts, canAddRow: () => r.CanAddRow, seconds: () => r.Now);
+            clickCasts: () => r.ClickCasts, canAddRow: () => r.CanAddRow, seconds: () => r.Now,
+            canSendToServer: () => r.CanSend);
         r.G.OnChange = r.C.ServerFavoritesChanged;
         r.C.Tick();
         return r;
@@ -528,6 +530,34 @@ public sealed class SpellDeckControllerTests
         Assert.Null(r.C.SlotSpell(0, 1));
         AssertInSync(r);
         Assert.Single(r.Saved);
+    }
+
+    [Fact]
+    public void ServerTabEdits_WhileTheServerGateIsShut_AreRefused_LocalTabEditsStillWork()
+    {
+        // The gate: the spellbook belongs to the loaded character, its layout is restored, the deck is active.
+        var r = Make(settings: Saved(new() { [0] = Tab0, [8] = L((0, 0, 30u)) }, [30u]));
+        r.CanSend = false;
+        SpellDeckLayout tab0 = r.C.LayoutOf(0);
+        r.C.DropOnSlot(Slot(0, 0, 1, 11u), 2, 3, copy: false);      // move
+        r.C.DropOnSlot(Book(99u), 1, 0, copy: false);               // place
+        r.C.DropOutside(Slot(0, 0, 0, 10u));                        // clear
+        r.C.AddFavoriteFromSpellbook(98u);
+        r.C.DropOnTab(Slot(8, 0, 0, 30u), 0, copy: false);          // local → server tab
+        Assert.Equal(tab0, r.C.LayoutOf(0));
+        Assert.Equal(L((0, 0, 30u)), r.C.LayoutOf(8));
+        Assert.Empty(r.G.Calls);
+        Assert.Empty(r.Saved);
+
+        r.C.DropOnTab(Book(31u), 8, copy: false);                   // a local tab only: allowed
+        Assert.True(r.C.LayoutOf(8).Contains(31u));
+        Assert.Empty(r.G.Calls);
+        Assert.Single(r.Saved);
+
+        r.CanSend = true;
+        r.C.DropOnSlot(Slot(0, 0, 1, 11u), 2, 3, copy: false);
+        Assert.Equal(11u, r.C.SlotSpell(2, 3));
+        AssertInSync(r);
     }
 
     [Fact]

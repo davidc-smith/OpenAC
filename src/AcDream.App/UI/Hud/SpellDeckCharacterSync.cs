@@ -114,12 +114,15 @@ internal sealed class SpellDeckCharacterSync
         ReconcileIfReady();
     }
 
-    private bool CanReconcile =>
+    /// <summary>The deck may send favourite ops: the loaded character is the one in the world, its layout is
+    /// restored and the Spell Deck is active. Reconcile waits for it; the controller refuses server-tab
+    /// edits without it.</summary>
+    public bool CanSendToServer =>
         LoadedCharacter is { } loaded && loaded == _characterKey() && !AwaitingRestore && _active();
 
     private void ReconcileIfReady()
     {
-        if (!_reconcilePending || !CanReconcile) return;
+        if (!_reconcilePending || !CanSendToServer) return;
         _reconcilePending = false;
         _controller.ServerFavoritesChanged();
     }

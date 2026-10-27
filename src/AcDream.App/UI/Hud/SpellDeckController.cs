@@ -28,6 +28,7 @@ public sealed class SpellDeckController
     private readonly Action<SpellDeckSettings> _save;
     private readonly Func<bool> _clickCasts;
     private readonly Func<bool> _canAddRow;
+    private readonly Func<bool> _canSendToServer;
     private int _tab;
     private int _rowCount;
     private bool _attached;
@@ -42,6 +43,9 @@ public sealed class SpellDeckController
     /// <param name="favorites">The server's favourite list for a tab 0-7 (the spellbook's).</param>
     /// <param name="capacity">Slots per row the deck shows now (from its geometry).</param>
     /// <param name="canAddRow">Whether one more row would still fit on screen.</param>
+    /// <param name="canSendToServer">Whether the spellbook belongs to the loaded character, so a server-tab edit
+    /// may send its ops (<see cref="SpellDeckCharacterSync.CanSendToServer"/>, the gate reconcile uses). While it
+    /// is false an edit that changes a server tab is refused. Null means always.</param>
     public SpellDeckController(
         ISpellDeckActions actions,
         Func<int, IReadOnlyList<uint>> favorites,
@@ -51,7 +55,8 @@ public sealed class SpellDeckController
         Action<SpellDeckSettings> save,
         Func<bool> clickCasts,
         Func<bool> canAddRow,
-        Func<double>? seconds = null)
+        Func<double>? seconds = null,
+        Func<bool>? canSendToServer = null)
     {
         if (seconds is null)
         {
@@ -66,6 +71,7 @@ public sealed class SpellDeckController
         _save = save ?? throw new ArgumentNullException(nameof(save));
         _clickCasts = clickCasts ?? throw new ArgumentNullException(nameof(clickCasts));
         _canAddRow = canAddRow ?? throw new ArgumentNullException(nameof(canAddRow));
+        _canSendToServer = canSendToServer ?? (() => true);
         // Construction is not a change and does not reconcile: the settings it gets are a placeholder
         // until the character's own load (Load), which reconciles.
         _batch++;
@@ -392,6 +398,10 @@ public sealed class SpellDeckController
     {
         if (edit is null) return;
         if (!edit.Accepted) { _actions.ShowMessage(FullTabMessage); return; }
+        // A server-tab change sends ops: refused (nothing changes, nothing is sent) unless the spellbook is
+        // the loaded character's, as for reconcile.
+        if (!_canSendToServer() && edit.Layouts.Any(e => _tabs.IsServer(e.Tab) && !e.Layout.Equals(_tabs.Layout(e.Tab))))
+            return;
         Batch(() => _tabs.Apply(edit.Layouts));
         Tick();
     }

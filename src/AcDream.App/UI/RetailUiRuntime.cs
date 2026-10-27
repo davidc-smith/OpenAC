@@ -3469,7 +3469,9 @@ public sealed class RetailUiRuntime : IDisposable
             Hud.SpellDeckSettings.Default,   // the character's own settings load on the first Tick
             settings => _spellDeckSync?.Save(settings),
             () => _spellDeckClickCasts,
-            () => dock?.CanAddRow() ?? true);
+            () => dock?.CanAddRow() ?? true,
+            // Server-tab edits send only while reconcile could run (the sync is created below).
+            canSendToServer: () => _spellDeckSync?.CanSendToServer == true);
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var deck = new Hud.UiSpellDeck(

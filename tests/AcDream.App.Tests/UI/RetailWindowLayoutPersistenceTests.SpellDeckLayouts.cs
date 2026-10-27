@@ -203,10 +203,16 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         Assert.Empty(rig.Sent);
         Assert.Equal([SpellA, SpellB, SpellX], book.GetFavorites(0));
         Assert.Equal(Slots((0, 0, SpellB), (0, 1, SpellA)), StoredLayout(rig.Store, "Bob"));
+        // A server-tab edit is refused as well: it would send the deck's order to retail's bar.
+        Assert.False(rig.Sync.CanSendToServer);
+        rig.Controller.DropOnSlot(new SpellDeckDragSource(0, 0, 0, SpellB), 1, 3, copy: false);
+        Assert.Empty(rig.Sent);
+        Assert.Equal(Slots((0, 0, SpellB), (0, 1, SpellA)), rig.Controller.LayoutOf(0));
 
         // Modern HUD on: the layout reconciles on the next frame.
         rig.Active = true;
         rig.Frames(1);
+        Assert.True(rig.Sync.CanSendToServer);
         Assert.Equal(Slots((0, 0, SpellB), (0, 1, SpellA), (0, 2, SpellX)), rig.Controller.LayoutOf(0));
         Assert.Equal([SpellB, SpellA, SpellX], book.GetFavorites(0));
         Assert.All(rig.Sent, s => Assert.Equal("Bob", s.Key));

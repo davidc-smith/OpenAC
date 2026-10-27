@@ -80,7 +80,8 @@ public sealed partial class RetailWindowLayoutPersistenceTests
                 book is null ? new NoSpellActions() : new ServerSpellActions(book, () => Key, Sent),
                 book is null ? _ => [] : book.GetFavorites,
                 () => (ItemSpell?)null, () => 12,
-                SpellDeckSettings.Default, s => sync?.Save(s), () => false, () => dock?.CanAddRow() ?? true);
+                SpellDeckSettings.Default, s => sync?.Save(s), () => false, () => dock?.CanAddRow() ?? true,
+                canSendToServer: () => sync?.CanSendToServer == true);
             Spell = new UiSpellDeck(Controller, _ => 0u, _ => null, _ => "", () => null, () => 0.0,
                 () => false, () => { }, _ => { });
             RetailWindowHandle spellHandle = RetailWindowFrame.Mount(
