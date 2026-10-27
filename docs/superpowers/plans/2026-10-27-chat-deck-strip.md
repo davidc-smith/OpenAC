@@ -2193,3 +2193,11 @@ Claude-Session: https://claude.ai/code/session_017hCEwjbupaVz5o7Zx5rwfZ"
 - [ ] **Step 2: Ask the user whether they are available for the live check. Do not launch the client before they say yes.** Build and launch per `~/OpenAC-dev/dev-client.env` (local ACE only), Modern HUD on.
 - [ ] **Step 3: Walk the acceptance list with the user;** record each result in the plan's task status.
 - [ ] **Step 4: Commit the status** on `docs/chat-deck-spec` (`docs: Chat Deck plan 3 task status ...`). Merging into main and rynth is the finishing step (finishing-a-development-branch), after the user's choice.
+
+---
+
+## Task status (2026-10-27)
+
+Tasks 1-9 complete on `feat/chat-deck-strip` (worktree `~/code/OpenAC/OpenAC-chat-deck-strip`), subagent-driven with per-task reviews, then a final whole-branch review and one fix wave (`bcef4ffc`: drawer synced to the session's model at session start/end and before layout restore, so a character switch never inherits the last character's capture gate; peek only while shown). Head `bcef4ffc`.
+
+Task 10: full Mac suite green at `e2a80d8b` (0 failed); App project green again at `bcef4ffc` (12,062 + 5 timing, 0 failed). **Live check pending** — user working remote; not started or asked. Things to look at live: z-order of the fly-out and strip against edge-parked retail windows; peek sits 8 px above the strip bottom; lit pin stud in StudOn red; hover opening when another window covers the strip.
