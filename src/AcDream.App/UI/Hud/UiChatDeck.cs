@@ -114,7 +114,8 @@ internal sealed partial class UiChatDeck : UiElement
     public override bool HandlesClick => IsControl(_hit);
 
     private static bool IsControl(ChatDeckHit hit) =>
-        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.Chip;
+        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.Chip
+            or ChatDeckZone.PinStud or ChatDeckZone.CollapseStud;
 
     internal bool HitTestLocal(float x, float y) => OnHitTest(x, y);
 

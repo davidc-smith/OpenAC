@@ -244,10 +244,11 @@ public sealed class UiChatDeckTests
         var h = new Harness();
         h.Say("hey Davian, over here");
         Assert.True(h.Model!.FindTab("all")!.Alert);
-        // Search is closed, so the lit stud (the same red) is not drawn: the red is the badge.
+        // Search is closed, so only the badge adds red beyond the lit pin stud.
         var renderer = MarkupDrawProbe.Draw(h.Deck, 460, 220);
-        Assert.True(MarkupDrawProbe.CountQuads(renderer, ChatDeckPalette.BadgeRed) > 0);
+        // The lit pin stud shares that red, so compare against a calm deck rather than against zero.
         var calm = MarkupDrawProbe.Draw(new Harness().Deck, 460, 220);
-        Assert.Equal(0, MarkupDrawProbe.CountQuads(calm, ChatDeckPalette.BadgeRed));
+        Assert.True(MarkupDrawProbe.CountQuads(renderer, ChatDeckPalette.BadgeRed)
+            > MarkupDrawProbe.CountQuads(calm, ChatDeckPalette.BadgeRed));
     }
 }
