@@ -21,7 +21,7 @@ public sealed class CommandDeckModelTests
             RequestedHeight: AttackHeight.Medium,
             HasPendingCast: pending,
             PendingSpellName: pendingName,
-            LastSpellName: lastName,
+            OutlinedSpellName: lastName,
             Jump: jump,
             RepeatAttacks: true,
             AutoTarget: false,
@@ -76,31 +76,22 @@ public sealed class CommandDeckModelTests
         Assert.True(model.Update(Input(health: new DeckVitalInput(0.24f, 24, 100)), 0).LowHealth);
     }
 
-    [Fact]
-    public void CastingTextPrecedenceAndRecast()
+    [Theory]
+    [InlineData(true, "Flame Bolt", null, "Flame Bolt", true)]
+    [InlineData(true, null, "Frost Bolt", "Casting...", true)]
+    [InlineData(false, null, "Frost Bolt", "Frost Bolt", false)]
+    [InlineData(false, null, null, "No spell selected", false)]
+    public void CastingText_PendingThenOutlined(bool pending, string? pendingName, string? outlined, string text, bool lit)
     {
-        var model = new CommandDeckModel();
-        CommandDeckView pendingNamed = model.Update(
-            Input(CombatMode.Magic, pending: true, pendingName: "Flame Bolt I", lastName: "Flame Bolt I"), 0);
-        Assert.Equal("Flame Bolt I", pendingNamed.CastingText);
-        Assert.True(pendingNamed.CastingLit);
-        Assert.False(pendingNamed.RecastEnabled);
-
-        CommandDeckView overlapping = model.Update(
-            Input(CombatMode.Magic, pending: true, pendingName: null, lastName: "Frost Bolt I"), 0);
-        Assert.Equal("Casting...", overlapping.CastingText);
-        Assert.True(overlapping.CastingLit);
-        Assert.False(overlapping.RecastEnabled);
-
-        CommandDeckView idle = model.Update(
-            Input(CombatMode.Magic, lastName: "Frost Bolt I"), 0);
-        Assert.Equal("Frost Bolt I", idle.CastingText);
-        Assert.False(idle.CastingLit);
-        Assert.True(idle.RecastEnabled);
-
-        CommandDeckView none = model.Update(Input(CombatMode.Magic), 0);
-        Assert.Equal("No spell cast yet", none.CastingText);
-        Assert.False(none.RecastEnabled);
+        var view = new CommandDeckModel().Update(default(CommandDeckInput) with
+        {
+            Mode = CombatMode.Magic, HasPendingCast = pending,
+            PendingSpellName = pendingName, OutlinedSpellName = outlined,
+        }, 0);
+        Assert.Equal(text, view.CastingText);
+        Assert.Equal(lit, view.CastingLit);
+        Assert.Equal(!pending && outlined is not null, view.CastEnabled);
+        Assert.Equal(outlined is null && !pending, view.CastingDim);
     }
 
     [Fact]

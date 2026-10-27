@@ -378,4 +378,16 @@ public enum InputAction
     ToggleCharacterOptionDisableDistanceFog,
     ToggleCharacterOptionShowCloak,
     ToggleCharacterOptionSideBySideVitals,
+
+    // Spell Deck rows 2-10 (row 1 is UseSpellSlot_1..12). Client-only.
+    UseSpellRow2Slot1, UseSpellRow2Slot2, UseSpellRow2Slot3, UseSpellRow2Slot4, UseSpellRow2Slot5, UseSpellRow2Slot6, UseSpellRow2Slot7, UseSpellRow2Slot8, UseSpellRow2Slot9, UseSpellRow2Slot10, UseSpellRow2Slot11, UseSpellRow2Slot12,
+    UseSpellRow3Slot1, UseSpellRow3Slot2, UseSpellRow3Slot3, UseSpellRow3Slot4, UseSpellRow3Slot5, UseSpellRow3Slot6, UseSpellRow3Slot7, UseSpellRow3Slot8, UseSpellRow3Slot9, UseSpellRow3Slot10, UseSpellRow3Slot11, UseSpellRow3Slot12,
+    UseSpellRow4Slot1, UseSpellRow4Slot2, UseSpellRow4Slot3, UseSpellRow4Slot4, UseSpellRow4Slot5, UseSpellRow4Slot6, UseSpellRow4Slot7, UseSpellRow4Slot8, UseSpellRow4Slot9, UseSpellRow4Slot10, UseSpellRow4Slot11, UseSpellRow4Slot12,
+    UseSpellRow5Slot1, UseSpellRow5Slot2, UseSpellRow5Slot3, UseSpellRow5Slot4, UseSpellRow5Slot5, UseSpellRow5Slot6, UseSpellRow5Slot7, UseSpellRow5Slot8, UseSpellRow5Slot9, UseSpellRow5Slot10, UseSpellRow5Slot11, UseSpellRow5Slot12,
+    UseSpellRow6Slot1, UseSpellRow6Slot2, UseSpellRow6Slot3, UseSpellRow6Slot4, UseSpellRow6Slot5, UseSpellRow6Slot6, UseSpellRow6Slot7, UseSpellRow6Slot8, UseSpellRow6Slot9, UseSpellRow6Slot10, UseSpellRow6Slot11, UseSpellRow6Slot12,
+    UseSpellRow7Slot1, UseSpellRow7Slot2, UseSpellRow7Slot3, UseSpellRow7Slot4, UseSpellRow7Slot5, UseSpellRow7Slot6, UseSpellRow7Slot7, UseSpellRow7Slot8, UseSpellRow7Slot9, UseSpellRow7Slot10, UseSpellRow7Slot11, UseSpellRow7Slot12,
+    UseSpellRow8Slot1, UseSpellRow8Slot2, UseSpellRow8Slot3, UseSpellRow8Slot4, UseSpellRow8Slot5, UseSpellRow8Slot6, UseSpellRow8Slot7, UseSpellRow8Slot8, UseSpellRow8Slot9, UseSpellRow8Slot10, UseSpellRow8Slot11, UseSpellRow8Slot12,
+    UseSpellRow9Slot1, UseSpellRow9Slot2, UseSpellRow9Slot3, UseSpellRow9Slot4, UseSpellRow9Slot5, UseSpellRow9Slot6, UseSpellRow9Slot7, UseSpellRow9Slot8, UseSpellRow9Slot9, UseSpellRow9Slot10, UseSpellRow9Slot11, UseSpellRow9Slot12,
+    UseSpellRow10Slot1, UseSpellRow10Slot2, UseSpellRow10Slot3, UseSpellRow10Slot4, UseSpellRow10Slot5, UseSpellRow10Slot6, UseSpellRow10Slot7, UseSpellRow10Slot8, UseSpellRow10Slot9, UseSpellRow10Slot10, UseSpellRow10Slot11, UseSpellRow10Slot12,
+    CastItemSpell,
 }

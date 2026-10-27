@@ -1,0 +1,49 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-27-spell-deck-v3.md",
+  "tasks": [
+    {
+      "id": 22,
+      "subject": "Task 22: Slot layout model (pure)",
+      "status": "completed",
+      "blockedBy": [],
+      "description": "**Goal:** `SpellDeckLayout` per tab with placement, move/swap/copy/replace/clear, reading-order distinct list, reconcile against a server list, server-sync op planning, and min rows/columns.\n\n**Files:** Create `src/AcDream.App/UI/Hud/SpellDeckLayout.cs`; tests `tests/AcDream.App.Tests/UI/Hud/SpellDeckLayoutTests.cs`.\n\n**Acceptance Criteria:**\n- [ ] Immutable value with `Get(row, col)`, `Place/Clear/Move/Swap/Copy/Replace` returning new layouts; `Filled` in reading order; `Distinct` = first copies in reading order\n- [ ] `Reconcile(serverList, rows, cols)`: clears spells absent from the server list; places server spells missing from the layout into first empty slots in reading order within rows × cols; reports spells that did not fit\n- [ ] `SyncOps(serverList)` → minimal ordered `Set`/`Remove` ops making the server list equal `Distinct` (removals first, then sets in order)\n- [ ] `MaxRow` / `MaxCol` (occupied extents), `FirstEmpty(rows, cols)`, `FromList(list, cols)` (v2 migration / no saved layout)\n- [ ] Tests for every bullet, including duplicates (removing one copy keeps the spell in `Distinct`), swap across rows, and reconcile with a reordered server list (layout positions win)\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckLayout'`.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": false}\n```"
+    },
+    {
+      "id": 23,
+      "subject": "Task 23: Settings v3, tabs source and controller on layouts",
+      "status": "completed",
+      "blockedBy": [
+        22
+      ],
+      "description": "**Goal:** Layouts saved per character per tab; `SpellDeckTabs` serves layouts, reconciles server tabs and sends `SyncOps`; the controller uses layouts for slices, hotkeys, drops (any slot, swap, Ctrl-copy, replace, bookmark → first empty), remove, outline `Slot(tab,row,col)`, min rows/columns across tabs.\n\n**Files:** Modify `SpellDeckSettings.cs`, `SettingsStore.cs` (`layouts`), `SpellDeckTabs.cs`, `SpellDeckController.cs`, `SpellDeckModel.cs`/`SpellDeckOutline.cs` (retire what layouts replace), tests; adapt `UiSpellDeck` minimally so it builds (Task 24 finishes it).\n\n**Acceptance Criteria:**\n- [ ] Settings v3 round-trip with `layouts`; v2 data migrates via `FromList` at the current slots per row\n- [ ] Server-tab edits send exactly the layout's `SyncOps`; extra copies never reach the server; local tabs never call the server\n- [ ] Reconcile runs on load, character change and whenever a server tab's list changes from elsewhere (spellbook favourites changed event), saving the layout once\n- [ ] Drops: spellbook→empty place, spellbook→filled replace, slot→empty move, slot→filled swap, Ctrl copy, bookmark → first empty or `That spell tab is full.`; drag-off / Remove clears the slot\n- [ ] `MinColumns`/`MinRows` across all tabs feed min stretch and Remove row\n- [ ] Outline `Slot(tab,row,col)` with v3 navigation; hotkeys cast slot `(r, n)`\n- [ ] Tests for each bullet\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeck'` then full suite.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": false}\n```"
+    },
+    {
+      "id": 24,
+      "subject": "Task 24: Geometry v3, element drops and attached resize grip",
+      "status": "completed",
+      "blockedBy": [
+        23
+      ],
+      "description": "**Goal:** Frame-width geometry (10 slots), element drop targets for every slot including empties (with Ctrl copy), attached Spell Deck right edge / top-right corner resizing both decks, dock placement at `deck.Left + 70·s`.\n\n**Files:** Modify `SpellDeckGeometry.cs`, `UiSpellDeck.cs`/`.Draw.cs`, `SpellDeckDock.cs`, `SpellDeckWindowDockHost.cs`, `UiCommandDeck.cs` (accept forwarded resize), tests.\n\n**Acceptance Criteria:**\n- [ ] Base width `350 + 420·(stretch−1)`, `Capacity(1)=10`, `Capacity(2)=25`, `StretchFor` inverse\n- [ ] Attached spot `deck.Left + 70·s`, width = deck frame width; detached same base width\n- [ ] Attached: Spell Deck right edge stretches both, top-right corner scales both (deck geometry drives; Spell Deck follows); block stays on screen; detached grips independent\n- [ ] Drop highlight and drop on any slot, empty or filled; Ctrl held at release → copy\n- [ ] Tests (geometry at 3 scales × 2 stretches, forwarded resize through a real root, drop variants)\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeck|FullyQualifiedName~CommandDeck'` then full suite.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": false}\n```"
+    },
+    {
+      "id": 25,
+      "subject": "Task 25: Runtime wiring v3",
+      "status": "completed",
+      "blockedBy": [
+        24
+      ],
+      "description": "**Goal:** Wire layouts, reconcile triggers and the forwarded resize into `RetailUiRuntime`/`SpellDeckCharacterSync`; rig tests for layouts surviving relog, per character, and reconcile after an outside server change.\n\n**Files:** `RetailUiRuntime.cs`, `SpellDeckCharacterSync.cs`, rig tests.\n\n**Acceptance Criteria:**\n- [ ] Layouts load/save per character with the existing guards; reconcile on load and on spellbook favourites change\n- [ ] Rig: gap + duplicate layout survives relog; another character unaffected; a server-side add from elsewhere lands in the first empty slot\n- [ ] Full suite 0 failures\n\n**Verify:** full suite.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": false}\n```"
+    },
+    {
+      "id": 26,
+      "subject": "Task 26: Live check (user gate)",
+      "status": "pending",
+      "blockedBy": [
+        25
+      ],
+      "description": "> **USER-ORDERED GATE — NON-SKIPPABLE.** Close only after the user confirms each item in the real client.\n\n**Goal:** The user confirms v3 plus the open v1/v2 items live on 10.10.20.20.\n\n**Files:** none.\n\n**Acceptance Criteria:**\n- [ ] Default width matches the deck frame; Spell Deck grips resize both when attached\n- [ ] Place a spell in any slot (row 2 slot 1 with gaps), duplicate with Ctrl, swap, replace, bookmark move, remove; layout survives relog\n- [ ] Remaining v1/v2 items (tabs, +, click modes, item spell, drag cases, detach/attach, Retina, glyphs, two-digit bookmarks, seam look)\n\n**Verify:** user confirmation per item.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": true}\n```"
+    }
+  ],
+  "lastUpdated": "2026-10-27T09:58:35.319802"
+}

@@ -35,8 +35,8 @@ public sealed class DeckGeometryTests
         Assert.Equal(new DeckRect(200f, 98f, 118f, 10f), G.PowerTrack);
         Assert.Equal(new DeckRect(326f, 92f, 26f, 22f), G.HeightButton(0));
         Assert.Equal(new DeckRect(382f, 92f, 26f, 22f), G.HeightButton(2));
-        Assert.Equal(new DeckRect(382f, 92f, 26f, 22f), G.Recast);
-        Assert.Equal(new DeckRect(200f, 92f, 176f, 22f), G.CastingText);
+        Assert.Equal(new DeckRect(354f, 92f, 54f, 22f), G.Cast);
+        Assert.Equal(new DeckRect(200f, 92f, 148f, 22f), G.CastingText);
         Assert.Equal(new DeckRect(260f, 92f, 26f, 22f), G.RecallStud(2));
         Assert.Equal(new DeckRect(134f, 122f, 60f, 14f), G.JumpLabel);
         Assert.Equal(new DeckRect(200f, 125f, 208f, 8f), G.JumpTrack);
@@ -63,11 +63,11 @@ public sealed class DeckGeometryTests
         DeckGeometry g = DeckGeometry.Create(scale, stretch);
         float right = g.HealthBar.X + g.HealthBar.W;
         Assert.Equal(right, g.HeightButton(2).X + g.HeightButton(2).W, 2);
-        Assert.Equal(right, g.Recast.X + g.Recast.W, 2);
+        Assert.Equal(right, g.Cast.X + g.Cast.W, 2);
         Assert.Equal(right, g.JumpTrack.X + g.JumpTrack.W, 2);
         Assert.Equal(g.Width - 12f * g.Scale, right, 2);
         Assert.True(g.PowerTrack.X + g.PowerTrack.W < g.HeightButton(0).X);
-        Assert.True(g.CastingText.X + g.CastingText.W < g.Recast.X);
+        Assert.True(g.CastingText.X + g.CastingText.W < g.Cast.X);
     }
 
     [Theory]
@@ -78,7 +78,7 @@ public sealed class DeckGeometryTests
         DeckRect[] power = [g.PowerTrack, g.HeightButton(0), g.HeightButton(1), g.HeightButton(2)];
         DeckRect[] recall = [g.RecallStud(0), g.RecallStud(1), g.RecallStud(2), g.RecallStud(3), g.RecallStud(4)];
         DeckRect[] studs = [g.Stud(0), g.Stud(1), g.Stud(2)];
-        foreach (DeckRect[] group in new[] { power, recall, studs, [g.CastingText, g.Recast] })
+        foreach (DeckRect[] group in new[] { power, recall, studs, [g.CastingText, g.Cast] })
             for (int i = 0; i < group.Length; i++)
                 for (int j = i + 1; j < group.Length; j++)
                     Assert.False(Overlaps(group[i], group[j]), $"{group[i]} / {group[j]}");
@@ -101,7 +101,7 @@ public sealed class DeckGeometryTests
         Assert.Equal(G.RecallStud(4), wide.RecallStud(4));
         Assert.Equal(G.Stud(0), wide.Stud(0));
         Assert.Equal(G.RowLabel, wide.RowLabel);
-        Assert.Equal(G.Recast.W, wide.Recast.W);
+        Assert.Equal(G.Cast.W, wide.Cast.W);
     }
 
     [Fact]
@@ -222,15 +222,15 @@ public sealed class DeckGeometryTests
     {
         DeckGeometry g = DeckGeometry.Create(scale, stretch);
         var (hx, hy) = Centre(g.HeightButton(0));
-        var (rx, ry) = Centre(g.Recast);
+        var (rx, ry) = Centre(g.Cast);
         var (lx, ly) = Centre(g.RecallStud(2));
 
         Assert.Equal(DeckZone.High, g.ZoneAt(View(CombatMode.Melee), hx, hy));
-        Assert.Equal(DeckZone.Recast, g.ZoneAt(View(CombatMode.Magic), rx, ry));
+        Assert.Equal(DeckZone.Cast, g.ZoneAt(View(CombatMode.Magic), rx, ry));
         Assert.Equal(DeckZone.Recall2, g.ZoneAt(View(CombatMode.NonCombat), lx, ly));
 
         Assert.NotEqual(DeckZone.High, g.ZoneAt(View(CombatMode.Magic), hx, hy));
-        Assert.NotEqual(DeckZone.Recast, g.ZoneAt(View(CombatMode.NonCombat), rx, ry));
+        Assert.NotEqual(DeckZone.Cast, g.ZoneAt(View(CombatMode.NonCombat), rx, ry));
         Assert.NotEqual(DeckZone.Recall2, g.ZoneAt(View(CombatMode.Melee), lx, ly));
     }
 
@@ -277,11 +277,41 @@ public sealed class DeckGeometryTests
     }
 
     [Fact]
-    public void RecastIsAnIconButtonAndTheCastingLineEndsBeforeIt()
+    public void CastIsALabelledButtonAndTheCastingLineEndsBeforeIt()
     {
-        DeckRect recast = G.Recast, text = G.CastingText;
-        Assert.Equal(G.RecallStud(0).W, recast.W);
-        Assert.True(text.X + text.W < recast.X);
-        Assert.True(text.W >= 170f);
+        DeckRect cast = G.Cast, text = G.CastingText;
+        Assert.Equal(54f, cast.W);
+        Assert.Equal(G.RecallStud(0).H, cast.H);
+        Assert.Equal(6f, cast.X - (text.X + text.W), 3);
+        Assert.Equal(148f, text.W);
+    }
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
+    public void CastHitZoneCoversTheWholeStud(float scale, float stretch)
+    {
+        DeckGeometry g = DeckGeometry.Create(scale, stretch);
+        DeckRect c = g.Cast;
+        CommandDeckView magic = View(CombatMode.Magic);
+        foreach (var (x, y) in new[] { (c.X + 0.5f, c.Y + 0.5f), (c.X + c.W - 0.5f, c.Y + c.H - 0.5f), (c.X + 4f * scale, c.Y + c.H / 2f) })
+            Assert.Equal(DeckZone.Cast, g.ZoneAt(magic, x, y));
+    }
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
+    public void CastLabelSitsInsideTheStud_IconThenWord(float scale, float stretch)
+    {
+        DeckGeometry g = DeckGeometry.Create(scale, stretch);
+        DeckRect c = g.Cast;
+        float word = 26f * scale;   // "CAST" in the small face
+        var (iconX, iconY, iconSize, textX) = DeckGeometry.CastLabel(c, word, scale);
+
+        Assert.Equal(14f * scale, iconSize, 3);
+        Assert.Equal(c.Y + (c.H - iconSize) / 2f, iconY, 3);
+        Assert.True(iconX >= c.X + 3f * scale - 0.01f);
+        Assert.True(textX >= iconX + iconSize);
+        Assert.True(textX + word <= c.X + c.W - 3f * scale + 0.01f);
+        // Centred as a group.
+        Assert.Equal(c.X + c.W / 2f, (iconX + textX + word) / 2f, 2);
     }
 }

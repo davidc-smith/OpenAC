@@ -642,11 +642,8 @@ public sealed class SpellcastingUiController : IRetainedPanelController
 
     private void UpdateEndowment()
     {
-        ClientObject? endowment = _objects.GetEquippedBy(_playerGuid())
-            .FirstOrDefault(item =>
-                (item.CurrentlyEquippedLocation & EquipMask.Held) != 0
-                && (item.Type & ItemType.Caster) != 0
-                && item.SpellId.GetValueOrDefault() != 0u);
+        ItemSpell? found = ItemSpellSource.Find(_objects, _playerGuid());
+        ClientObject? endowment = found is { } f ? _objects.Get(f.ItemId) : null;
 
         _endowmentItemId = endowment?.ObjectId ?? 0u;
         _endowmentSpellId = endowment?.SpellId ?? 0u;

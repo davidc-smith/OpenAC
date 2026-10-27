@@ -13,6 +13,9 @@ public sealed class ModernHudSwitchTests
         public bool Gameplay = true;
         public int Resyncs;
         public int DeckHidden;
+        public bool Magic;
+        public bool SpellMounted = true;
+        public int SpellDeckHidden;
         public ModernHudSwitch Switch = null!;
 
         public Harness()
@@ -24,7 +27,10 @@ public sealed class ModernHudSwitchTests
                 gameplayActive: () => Gameplay,
                 resyncRetail: () => Resyncs++,
                 onDeckHidden: () => DeckHidden++,
-                log: Log.Add);
+                log: Log.Add,
+                spellDeckMounted: () => SpellMounted,
+                magicMode: () => Magic,
+                onSpellDeckHidden: () => SpellDeckHidden++);
         }
     }
 
@@ -126,5 +132,56 @@ public sealed class ModernHudSwitchTests
         h.Visible.Add(WindowNames.Vitals);   // something else showed it
         h.Switch.Apply(true);
         Assert.Contains(WindowNames.Vitals, h.Visible);
+    }
+
+    [Fact]
+    public void SpellDeck_ShownOnlyInMagic()
+    {
+        var h = new Harness();
+        h.Switch.Apply(true);
+        Assert.DoesNotContain(WindowNames.SpellDeck, h.Visible);
+        h.Magic = true; h.Switch.Tick();
+        Assert.Contains(WindowNames.SpellDeck, h.Visible);
+        Assert.True(h.Switch.SpellDeckActive);
+        h.Magic = false; h.Switch.Tick();
+        Assert.DoesNotContain(WindowNames.SpellDeck, h.Visible);
+        Assert.Equal(1, h.SpellDeckHidden);
+        h.Magic = true; h.Switch.Tick(); h.Switch.Apply(false);
+        Assert.DoesNotContain(WindowNames.SpellDeck, h.Visible);
+        Assert.Equal(2, h.SpellDeckHidden);
+        Assert.False(h.Switch.SpellDeckActive);
+    }
+
+    [Fact]
+    public void SpellDeck_HiddenWhenLeavingTheWorld()
+    {
+        var h = new Harness { Magic = true };
+        h.Switch.Apply(true);
+        Assert.Contains(WindowNames.SpellDeck, h.Visible);
+        h.Gameplay = false; h.Switch.Tick();
+        Assert.DoesNotContain(WindowNames.SpellDeck, h.Visible);
+        Assert.DoesNotContain(WindowNames.CommandDeck, h.Visible);
+        Assert.True(h.Switch.SpellDeckActive);
+    }
+
+    [Fact]
+    public void SpellDeckNotMounted_DeckStillOn_SpellDeckInactive()
+    {
+        var h = new Harness { SpellMounted = false, Magic = true };
+        h.Switch.Apply(true);
+        h.Switch.Tick();
+        Assert.True(h.Switch.Active);
+        Assert.False(h.Switch.SpellDeckActive);
+        Assert.DoesNotContain(WindowNames.SpellDeck, h.Visible);
+    }
+
+    [Fact]
+    public void SpellDeck_NeverShownWhileOff()
+    {
+        var h = new Harness { Magic = true };
+        h.Switch.Tick();
+        Assert.False(h.Switch.SpellDeckActive);
+        Assert.DoesNotContain(WindowNames.SpellDeck, h.Visible);
+        Assert.Equal(0, h.SpellDeckHidden);
     }
 }

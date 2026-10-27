@@ -222,7 +222,7 @@ public sealed class UiRoot : UiElement
     private int _resizeMouseX, _resizeMouseY;
     private const int ResizeGrip = 5;   // px proximity to an edge to start a resize
     private const int DragDistanceThreshold = 3;
-    private const int DoubleClickDelayMs = 500;
+    internal const int DoubleClickDelayMs = 500;
 
     // Hover / tooltip tracking.
     private UiElement? _hoverWidget;
@@ -1032,6 +1032,18 @@ public sealed class UiRoot : UiElement
     internal bool ShiftHeld =>
         Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
         || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true;
+
+    /// <summary>Whether control is held on the attached keyboard (a drop asks at its release).</summary>
+    internal bool CtrlHeld =>
+        Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ControlLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ControlRight) == true;
+
+    /// <summary>Whether a copy modifier is held: control, or Cmd on macOS (the Win/Super keys,
+    /// <c>ModifierMask.Win</c>). A drop asks at its release.</summary>
+    internal bool CopyModifierHeld =>
+        CtrlHeld
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.SuperLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.SuperRight) == true;
 
     private bool RouteHorizontal(int dx)
     {

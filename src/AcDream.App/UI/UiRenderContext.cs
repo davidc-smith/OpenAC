@@ -410,11 +410,14 @@ public sealed class UiRenderContext
         FillRoundedRect(x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), color);
 
     /// <summary>A rounded rectangle's outline, centred on the outline.</summary>
-    internal void StrokeRoundedRect(float x, float y, float w, float h, float radius, Vector4 color, float thickness)
+    internal void StrokeRoundedRect(float x, float y, float w, float h, float radius, Vector4 color, float thickness) =>
+        StrokeRoundedRect(x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), color, thickness);
+
+    /// <summary>A rounded rectangle's outline with a radius per corner, centred on the outline.</summary>
+    internal void StrokeRoundedRect(float x, float y, float w, float h, CanvasCornerRadii radii, Vector4 color, float thickness)
     {
         _shape.Clear();
-        CanvasGeometry.StrokeRoundedRect(
-            x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), color, thickness, DevicePixel, _shape);
+        CanvasGeometry.StrokeRoundedRect(x, y, w, h, radii, color, thickness, DevicePixel, _shape);
         DrawShape();
     }
 

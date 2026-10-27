@@ -1,13 +1,11 @@
 using System.Numerics;
 using AcDream.Core.Combat;
+using static AcDream.App.UI.Hud.DeckChrome;
 
 namespace AcDream.App.UI.Hud;
 
 internal sealed partial class UiCommandDeck
 {
-    private static Vector4 Rgb(int hex, float a = 1f) =>
-        new(((hex >> 16) & 0xFF) / 255f, ((hex >> 8) & 0xFF) / 255f, (hex & 0xFF) / 255f, a);
-
     private static readonly string[] HeightLetters = ["H", "M", "L"];
     private static readonly AttackHeight[] HeightValues = [AttackHeight.High, AttackHeight.Medium, AttackHeight.Low];
     private static readonly string[] RecallIcons =
@@ -15,57 +13,16 @@ internal sealed partial class UiCommandDeck
         HudIcons.RecallLifestone, HudIcons.RecallMarketplace, HudIcons.RecallHouse,
         HudIcons.RecallMansion, HudIcons.RecallAllegiance,
     ];
-    private static readonly Vector4 FrameTop = Rgb(0x2B2A31);
-    private static readonly Vector4 FrameBottom = Rgb(0x17161B);
-    private static readonly Vector4 FrameEdge = Rgb(0x0B0A0D);
-    private static readonly Vector4 Bronze = Rgb(0x6B5A3A, 0.7f);
-    private static readonly Vector4 Track = Rgb(0x0C0B0F);
-    private static readonly Vector4 TrailInk = Rgb(0xF3E2C0, 0.45f);
-    private static readonly Vector4 TextInk = Rgb(0xFFFFFF);
-    private static readonly Vector4 LabelInk = Rgb(0xC9BFA6);
-    private static readonly Vector4 StudOff = Rgb(0x34323B);
-    private static readonly Vector4 StudOffInk = Rgb(0xA8A3B5);
-    private static readonly Vector4 StudOn = Rgb(0xD14A5C);
-    private static readonly Vector4 CombatGlow = Rgb(0xC2233A, 0.55f);
-    private static readonly Vector4 PeaceGlow = Rgb(0x78C8A0, 0.35f);
-    private static readonly (Vector4 Top, Vector4 Bottom) HealthInk = (Rgb(0xFF6B7D), Rgb(0x7D0F1C));
-    private static readonly (Vector4 Top, Vector4 Bottom) StaminaInk = (Rgb(0xFFE27A), Rgb(0x8A6C10));
-    private static readonly (Vector4 Top, Vector4 Bottom) ManaInk = (Rgb(0x8FB0FF), Rgb(0x1A3590));
-    private static readonly Vector4 PowerInk = Rgb(0xFFF6D8);
-    private static readonly Vector4 Handle = Rgb(0xE2C27A);
-    private static readonly Vector4 JumpInk = Rgb(0x7FD6A8);
-    private static readonly Vector4 CastLit = Rgb(0xCFE0FF);
-    private static readonly Vector4 GripInk = Rgb(0xE2C27A, 0.55f);
 
     /// <summary>A length in base points at the deck's scale.</summary>
     private float P(float points) => points * _geometry.Scale;
 
     /// <summary>A line weight at the deck's scale, in whole points, never under one.</summary>
-    private float Line(float points) => MathF.Max(1f, MathF.Round(points * _geometry.Scale));
+    private float Line(float points) => DeckChrome.Line(points, _geometry.Scale);
 
-    /// <summary>A faint bronze stroke on the right edge, or an L at the right
-    /// corner, while that grip is hovered or being dragged.</summary>
-    private void DrawResizeGrip(UiRenderContext ctx)
-    {
-        ResizeEdges edges = FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None;
-        if ((edges & ResizeEdges.Right) == 0) return;
-        DeckRect f = _geometry.Frame;
-        float w = Line(2), right = f.X + f.W - w, arm = P(24);
-        if ((edges & ResizeEdges.Top) != 0)
-        {
-            ctx.DrawFill(right, f.Y, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y, arm, w, GripInk);
-        }
-        else if ((edges & ResizeEdges.Bottom) != 0)
-        {
-            ctx.DrawFill(right, f.Y + f.H - arm, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y + f.H - w, arm, w, GripInk);
-        }
-        else
-        {
-            ctx.DrawFill(right, f.Y + P(10), w, f.H - P(20), GripInk);
-        }
-    }
+    /// <summary>The right-edge grip while it is hovered or being dragged.</summary>
+    private void DrawResizeGrip(UiRenderContext ctx) =>
+        DeckChrome.DrawResizeGrip(ctx, FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None, _geometry.Frame, _geometry.Scale);
 
     protected override void OnDraw(UiRenderContext ctx)
     {
@@ -90,13 +47,8 @@ internal sealed partial class UiCommandDeck
         if (v.ShowStuds) DrawStuds(ctx, v);
     }
 
-    private void DrawFrame(UiRenderContext ctx)
-    {
-        DeckRect f = _geometry.Frame;
-        ctx.FillRoundedRect(f.X - P(2), f.Y - P(2), f.W + P(4), f.H + P(4), P(10), FrameEdge);
-        ctx.FillVerticalGradient(f.X, f.Y, f.W, f.H, new CanvasCornerRadii(P(8), P(8), P(8), P(8)), FrameTop, FrameBottom);
-        ctx.StrokeRoundedRect(f.X + P(3), f.Y + P(3), f.W - P(6), f.H - P(6), P(5), Bronze, Line(1));
-    }
+    private void DrawFrame(UiRenderContext ctx) =>
+        DeckChrome.DrawFrame(ctx, _geometry.Frame, _geometry.Scale, squareTop: SquareTopCorners);
 
     private void DrawBar(UiRenderContext ctx, DeckRect r, string label, DeckVitalView vital,
         (Vector4 Top, Vector4 Bottom) ink, float pulse)
@@ -140,12 +92,22 @@ internal sealed partial class UiCommandDeck
         DrawText(ctx, "CASTING", label.X, label, LabelInk, small: true);
         DeckRect text = _geometry.CastingText;
         DrawText(ctx, FitCastingText(v.CastingText, t => Face(small: true).Measure(ctx, t), text.W), text.X, text,
-            v.CastingLit ? CastLit : StudOffInk, small: true);
-        DeckRect recast = _geometry.Recast;
-        DrawStud(ctx, recast, on: false, icon: HudIcons.Recast, letter: null, dim: !v.RecastEnabled);
+            v.CastingLit ? CastLit : v.CastingDim ? StudOffInk : TextInk, small: true);
+        DrawCastButton(ctx, _geometry.Cast, dim: !v.CastEnabled);
     }
 
-    /// <summary>The spell name, shortened with "..." so it stops short of the RECAST button;
+    /// <summary>The CAST button: the cast icon and the word CAST in the small SemiBold face.</summary>
+    private void DrawCastButton(UiRenderContext ctx, DeckRect r, bool dim)
+    {
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, _geometry.Scale, on: false, dim);
+        DeckFace face = DeckFace.SmallBoldFor(_fonts, _geometry.Scale);
+        const string word = "CAST";
+        var (iconX, iconY, iconSize, textX) = DeckGeometry.CastLabel(r, face.Measure(ctx, word), _geometry.Scale);
+        DrawIcon(ctx, HudIcons.Cast, iconX, iconY, iconSize, ink);
+        face.Draw(ctx, word, textX, r.Y + (r.H - face.LineHeight(ctx)) / 2f, ink);
+    }
+
+    /// <summary>The spell name, shortened with "..." so it stops short of the CAST button;
     /// the button's tooltip carries the full name.</summary>
     internal static string FitCastingText(string text, Func<string, float> measure, float width) =>
         PluginWindowChrome.Ellipsize(text, measure, width);
@@ -206,10 +168,7 @@ internal sealed partial class UiCommandDeck
 
     private void DrawStud(UiRenderContext ctx, DeckRect r, bool on, string? icon, string? letter, bool dim = false)
     {
-        ctx.FillRoundedRect(r.X - P(1), r.Y - P(1), r.W + P(2), r.H + P(2), P(6), FrameEdge);
-        ctx.FillRoundedRect(r.X, r.Y, r.W, r.H, P(5), on ? StudOn : StudOff);
-        Vector4 ink = on ? TextInk : StudOffInk;
-        if (dim) ink = ink with { W = 0.4f };
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, _geometry.Scale, on, dim);
         if (icon is not null)
             DrawIcon(ctx, icon, r.X + (r.W - P(14)) / 2, r.Y + (r.H - P(14)) / 2, P(14), ink);
         else if (letter is not null)
@@ -224,12 +183,7 @@ internal sealed partial class UiCommandDeck
         if (texture != 0) ctx.DrawCoverageIcon(texture, x, y, pixels, ink);
     }
 
-    private DeckFace Face(bool small)
-    {
-        if (_fonts is null) return new(null);
-        DeckFontSet set = _fonts.At(_geometry.Scale);
-        return new(small ? set.Small : set.Text);
-    }
+    private DeckFace Face(bool small) => DeckFace.For(_fonts, _geometry.Scale, small);
 
     /// <summary>Text from <paramref name="x"/>, centred on <paramref name="band"/>'s height.</summary>
     private void DrawText(UiRenderContext ctx, string text, float x, DeckRect band, Vector4 ink, bool small = false)

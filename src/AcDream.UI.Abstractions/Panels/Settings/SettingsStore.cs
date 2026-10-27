@@ -21,6 +21,22 @@ public readonly record struct PluginCanvasPosition(string Anchor, double X, doub
 /// <summary>One remembered markup control value: which window, which named control, which kind of state.</summary>
 public readonly record struct MarkupControlKey(string Window, string Control, string Kind);
 
+/// <summary>A character's Spell Deck: the current tab, the row count, whether it is attached to the
+/// Command Deck, the row count its stored detached placement was saved with (null when not recorded),
+/// the local tabs (9-16) with their spell ids, and (v3) each tab's slot layout keyed by tab number.
+/// <paramref name="Layouts"/> is null for data saved before layouts existed (v2), which the reader
+/// migrates from the lists.</summary>
+public sealed record StoredSpellDeck(
+    int Tab,
+    int RowCount,
+    bool Attached,
+    int? DetachedRows,
+    IReadOnlyList<IReadOnlyList<uint>> LocalTabs,
+    IReadOnlyDictionary<int, IReadOnlyList<StoredSpellDeckSlot>>? Layouts = null);
+
+/// <summary>One filled slot of a stored Spell Deck tab layout.</summary>
+public readonly record struct StoredSpellDeckSlot(int Row, int Col, uint Spell);
+
 public sealed class SettingsStore
 {
     private const int CurrentSchemaVersion = 4;
@@ -301,7 +317,8 @@ public sealed class SettingsStore
                 TooltipEnable:       ReadBool (misc, "tooltipEnable",       d.TooltipEnable),
                 TooltipDelaySeconds: ReadFloat(misc, "tooltipDelaySeconds", d.TooltipDelaySeconds),
                 ExtendedLevels:      ReadBool (misc, "extendedLevels",      d.ExtendedLevels),
-                ModernHud:           ReadBool (misc, "modernHud",           d.ModernHud));
+                ModernHud:           ReadBool (misc, "modernHud",           d.ModernHud),
+                SpellDeckClickCasts: ReadBool (misc, "spellDeckClickCasts", d.SpellDeckClickCasts));
         }
         catch (Exception ex)
         {
@@ -356,6 +373,114 @@ public sealed class SettingsStore
 
         JsonObject characterMap = GetOrCreateObject(root, "character");
         characterMap[toonKey] = toonObj;
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
+    public StoredSpellDeck? LoadSpellDeck(string toonKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        if (!File.Exists(_path)) return null;
+        try
+        {
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+            if (root?["spellDeck"]?[toonKey] is not JsonObject deck) return null;
+            int tab = 0, rowCount = 3;
+            if (deck["rowCount"] is JsonValue rc && rc.TryGetValue(out int rcv)) rowCount = rcv;
+            if (deck["tab"] is JsonValue tv && tv.TryGetValue(out int tabv)) tab = tabv;
+            else if (deck["rows"] is JsonArray old)
+            {
+                // v1: one row per tab; the deck now has one tab and continues it.
+                int count = 0; int? first = null;
+                foreach (JsonNode? node in old)
+                {
+                    if (node is not JsonObject row || row["id"] is not JsonValue || row["tab"] is not JsonValue tn
+                        || !tn.TryGetValue(out int t)) continue;
+                    count++; first ??= t;
+                }
+                if (count > 0) rowCount = count;
+                tab = first ?? 0;
+            }
+            var localTabs = new List<IReadOnlyList<uint>>();
+            if (deck["localTabs"] is JsonArray tabs)
+                foreach (JsonNode? tabNode in tabs)
+                {
+                    if (tabNode is not JsonArray ids) continue;
+                    var list = new List<uint>();
+                    bool ok = true;
+                    foreach (JsonNode? idNode in ids)
+                    {
+                        if (idNode is JsonValue iv && iv.TryGetValue(out uint id)) list.Add(id);
+                        else { ok = false; break; }
+                    }
+                    if (ok) localTabs.Add(list);
+                }
+            int? detachedRows = deck["detachedRows"] is JsonValue value && value.TryGetValue(out int n) ? n : null;
+            bool attached = deck["attached"] is JsonValue av && av.TryGetValue(out bool ab) ? ab : true;
+            return new StoredSpellDeck(tab, Math.Clamp(rowCount, 1, 10), attached, detachedRows, localTabs, ReadSpellDeckLayouts(deck["layouts"]));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load spell deck from {_path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>The v3 <c>layouts</c> object (tab number to a list of <c>{row, col, spell}</c>); null when
+    /// absent (v2 data). Entries that do not parse are skipped.</summary>
+    private static IReadOnlyDictionary<int, IReadOnlyList<StoredSpellDeckSlot>>? ReadSpellDeckLayouts(JsonNode? node)
+    {
+        if (node is not JsonObject byTab) return null;
+        var layouts = new Dictionary<int, IReadOnlyList<StoredSpellDeckSlot>>();
+        foreach ((string key, JsonNode? slotsNode) in byTab)
+        {
+            if (!int.TryParse(key, NumberStyles.None, CultureInfo.InvariantCulture, out int tab)
+                || slotsNode is not JsonArray slots) continue;
+            var list = new List<StoredSpellDeckSlot>();
+            foreach (JsonNode? slotNode in slots)
+                if (slotNode is JsonObject slot
+                    && slot["row"] is JsonValue rv && rv.TryGetValue(out int row)
+                    && slot["col"] is JsonValue cv && cv.TryGetValue(out int col)
+                    && slot["spell"] is JsonValue sv && sv.TryGetValue(out uint spell))
+                    list.Add(new StoredSpellDeckSlot(row, col, spell));
+            layouts[tab] = list;
+        }
+        return layouts;
+    }
+
+    public void SaveSpellDeck(string toonKey, StoredSpellDeck deck)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentNullException.ThrowIfNull(deck);
+        JsonObject root = LoadMutableRoot();
+        var localTabs = new JsonArray();
+        foreach (IReadOnlyList<uint> ids in deck.LocalTabs)
+        {
+            var arr = new JsonArray();
+            foreach (uint id in ids) arr.Add(id);
+            localTabs.Add(arr);
+        }
+        var entry = new JsonObject
+        {
+            ["tab"] = deck.Tab,
+            ["rowCount"] = deck.RowCount,
+            ["attached"] = deck.Attached,
+            ["localTabs"] = localTabs,
+        };
+        if (deck.DetachedRows is int detachedRows) entry["detachedRows"] = detachedRows;
+        if (deck.Layouts is { } layouts)
+        {
+            var byTab = new JsonObject();
+            foreach ((int tab, IReadOnlyList<StoredSpellDeckSlot> slots) in layouts.OrderBy(kv => kv.Key))
+            {
+                var arr = new JsonArray();
+                foreach (StoredSpellDeckSlot slot in slots)
+                    arr.Add(new JsonObject { ["row"] = slot.Row, ["col"] = slot.Col, ["spell"] = slot.Spell });
+                byTab[tab.ToString(CultureInfo.InvariantCulture)] = arr;
+            }
+            entry["layouts"] = byTab;
+        }
+        GetOrCreateObject(root, "spellDeck")[toonKey] = entry;
         root["version"] = CurrentSchemaVersion;
         WriteMutableRoot(root);
     }
@@ -1004,6 +1129,7 @@ public sealed class SettingsStore
         {
             ["extendedLevels"]      = m.ExtendedLevels,
             ["modernHud"]           = m.ModernHud,
+            ["spellDeckClickCasts"] = m.SpellDeckClickCasts,
             ["tooltipDelaySeconds"] = m.TooltipDelaySeconds,
             ["tooltipEnable"]       = m.TooltipEnable,
         };
