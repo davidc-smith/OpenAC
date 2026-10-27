@@ -15,6 +15,22 @@ public sealed class DeckFontsTests
         Assert.Equal(expected, DeckFonts.PixelHeight(basePx, scale));
 
     [Fact]
+    public void Face_BakesOncePerPixelHeightAndWeight()
+    {
+        var baked = new List<(float Px, BundledUiFontWeight Weight)>();
+        var fonts = new DeckFonts((px, weight) => { baked.Add((px, weight)); return null!; });
+
+        fonts.Face(14f, BundledUiFontWeight.Regular);
+        fonts.Face(14.2f, BundledUiFontWeight.Regular);   // rounds to the same 14 px face
+        fonts.Face(14f, BundledUiFontWeight.SemiBold);
+        fonts.Face(16f, BundledUiFontWeight.Regular);
+
+        Assert.Equal(
+            [(14f, BundledUiFontWeight.Regular), (14f, BundledUiFontWeight.SemiBold), (16f, BundledUiFontWeight.Regular)],
+            baked);
+    }
+
+    [Fact]
     public void BakesEachFaceOncePerScale_OnlyWhenUsed()
     {
         var baked = new List<(float Px, BundledUiFontWeight Weight)>();

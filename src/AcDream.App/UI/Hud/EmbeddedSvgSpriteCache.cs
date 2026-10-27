@@ -19,11 +19,14 @@ public static class HudIcons
     public const string RecallHouse = "recall-house";
     public const string RecallMansion = "recall-mansion";
     public const string RecallAllegiance = "recall-allegiance";
+    public const string Search = "search";
+    public const string ChevronDown = "chevron-down";
 
     public static IReadOnlyList<string> All { get; } =
     [
         Peace, Melee, Missile, Magic, Repeat, AutoTarget, KeepInView, Recast,
         RecallLifestone, RecallMarketplace, RecallHouse, RecallMansion, RecallAllegiance,
+        Search, ChevronDown,
     ];
 }
 
