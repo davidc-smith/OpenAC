@@ -37,6 +37,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         };
         Input.TextReplacer = text => ChatTextReplacements.Expand(text, _b.LastIncomingTellSender());
         Input.OnSubmit = Send;
+        Input.OnEscape = EndEntry;
         Input.OnTextChanged = text => _b.Entry.SetDraft(text);
         Input.OnControlKey = (key, shift) => key == Silk.NET.Input.Key.Tab && CycleTab(shift ? -1 : 1);
         // macOS keeps Tab for itself while Ctrl is held, so Option+Cmd+Left/Right as well.
@@ -103,6 +104,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         ChatChannelKind channel = ChatDeckSend.ToKind(SendChannel);
         _override = null;
         _b.Entry.SubmitTo(text, channel, _b.Feedback, _b.Bus());
+        EndEntry();
     }
 
     private bool CycleTab(int step)
@@ -128,6 +130,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
 
     public void EnterChatMode(KeyChord? physicalChord)
     {
+        RevealForEntry();
         UiRoot? root = FindRoot();
         root?.SetKeyboardFocus(Input);
         if (physicalChord is { Device: 0 } chord)
@@ -138,19 +141,24 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
     public void ToggleChatEntry(KeyChord? physicalChord)
     {
         if (FindRoot() is not { } root) return;
-        root.SetKeyboardFocus(ReferenceEquals(root.KeyboardFocus, Input) ? null : Input);
+        bool focused = ReferenceEquals(root.KeyboardFocus, Input);
+        if (!focused) RevealForEntry();
+        root.SetKeyboardFocus(focused ? null : Input);
         if (physicalChord is { Device: 0 } chord)
             root.SuppressPhysicalKeyUntilRelease(chord.Key);
+        if (focused) EndEntry();
     }
 
     public void StartCommand()
     {
+        RevealForEntry();
         Input.SetText("/");
         FindRoot()?.SetKeyboardFocus(Input);
     }
 
     public void StartTell(string name)
     {
+        RevealForEntry();
         Input.SetText($"@tell {name}, ");
         FindRoot()?.SetKeyboardFocus(Input);
     }
@@ -163,6 +171,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
     public bool Focus()
     {
         if (FindRoot() is not { } root) return false;
+        RevealForEntry();
         root.SetKeyboardFocus(Input);
         return true;
     }

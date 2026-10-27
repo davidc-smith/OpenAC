@@ -6,7 +6,26 @@ internal sealed partial class UiChatDeck
 {
     private bool? _frameDraggable;
 
-    private void OnLinesDelivered(IReadOnlyList<ChatDeckDelivery> deliveries) { }
+    private void OnLinesDelivered(IReadOnlyList<ChatDeckDelivery> deliveries)
+    {
+        if (_drawer.State == ChatDeckDrawerState.Collapsed && _model is { } model)
+            _peek.Add(deliveries, model.Settings.Tabs);
+    }
+
+    /// <summary>A chat-entry action on a collapsed deck: fly out first, so the input it focuses is on screen.</summary>
+    private void RevealForEntry()
+    {
+        if (_shown) OpenFlyout(ChatDeckOpenReason.Entry);
+    }
+
+    /// <summary>A line was sent or Esc left the input: a fly-out a chat-entry action opened closes now.</summary>
+    private void EndEntry()
+    {
+        ChatDeckDrawerState before = _drawer.State;
+        _drawer.EntryDone();
+        AfterDrawerMoved(before);
+        ApplyDrawer();
+    }
 
     private void CreateDrawer() =>
         _drawer.LayoutChanged += () => _model?.SetLayout(_drawer.Pinned, _drawer.Edge);
