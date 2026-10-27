@@ -39,6 +39,9 @@ public sealed record ClassicMigrationItem(
 /// </summary>
 public static class ClassicMigration
 {
+    /// <summary>The plugin the imported profiles are for.</summary>
+    public const string MossTankPluginId = "acdream.mosstank";
+
     /// <summary>The folder MossTank keeps everything a person edits in.</summary>
     public const string MossTankFolder = "mosstank";
 
