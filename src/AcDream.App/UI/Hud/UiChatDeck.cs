@@ -200,8 +200,15 @@ internal sealed partial class UiChatDeck : UiElement
         _model?.SetView(_shown, Transcript.Scroll.AtEnd);
     }
 
+    /// <summary>
+    /// Puts a child where the geometry says. The deck lays its children out itself, so a
+    /// placed child carries no anchors: with the default Left|Top anchor, every draw's
+    /// layout pass would put it back where it was on the first frame drawn (the search
+    /// field at 0x0, the transcript over the search row, any child at its pre-resize size).
+    /// </summary>
     private static void Place(UiElement child, DeckRect r)
     {
+        if (child.Anchors != AnchorEdges.None) child.Anchors = AnchorEdges.None;
         child.Left = r.X;
         child.Top = r.Y;
         child.Width = r.W;
