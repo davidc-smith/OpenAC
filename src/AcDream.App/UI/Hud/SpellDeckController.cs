@@ -123,7 +123,9 @@ public sealed class SpellDeckController
     /// <summary>Replaces the tab, rows, local tabs and attachment (character change), without saving. The outline is repaired.</summary>
     public void Load(SpellDeckSettings settings)
     {
-        FlushTab();   // a pending tab switch belongs to the character being left
+        // A pending tab switch belongs to the character being left; the host flushes it
+        // (FlushPendingSave) before its key changes, so here it is only dropped.
+        _tabDirty = false;
         Apply(settings);
         Outline = SpellDeckMark.None;
         Tick();
@@ -132,14 +134,17 @@ public sealed class SpellDeckController
     /// <summary>Re-checks the outline against the current tab, favourites, rows, capacity and item.</summary>
     public void Tick()
     {
-        Outline = SpellDeckMark.Validate(Outline, Context);
-        if (_tabDirty && _batch == 0 && _seconds() - _lastTabSwitch >= TabSaveDelaySeconds) FlushTab();
+        Revalidate();
+        if (_tabDirty && _batch == 0 && _seconds() - _lastTabSwitch >= TabSaveDelaySeconds) Save();
     }
 
-    private void FlushTab()
+    private void Revalidate() => Outline = SpellDeckMark.Validate(Outline, Context);
+
+    /// <summary>Writes a tab switch still waiting for its delay, now. The host calls it before the
+    /// character changes, while saves still go to the character being left.</summary>
+    public void FlushPendingSave()
     {
-        if (!_tabDirty) return;
-        Save();
+        if (_tabDirty) Save();
     }
 
     // ── Command Deck ──────────────────────────────────────────────
@@ -376,7 +381,7 @@ public sealed class SpellDeckController
     // ── Saving ────────────────────────────────────────────────────
     private void Changed()
     {
-        Tick();
+        Revalidate();
         Save();
     }
 

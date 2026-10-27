@@ -136,6 +136,27 @@ public sealed partial class RetailWindowLayoutPersistenceTests
     }
 
     [Fact]
+    public void SpellDeck_TabSwitchJustBeforeACharacterChange_IsSavedForTheCharacterLeft()
+    {
+        var store = new SettingsStore(PathName);
+        store.SaveSpellDeck("Bob", new StoredSpellDeck(0, 3, false, null, []));
+        store.SaveSpellDeck("Carol", new StoredSpellDeck(4, 2, false, null, []));
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+
+        rig.Controller.ShowTab(2);               // pending: the 0.5 s delay has not passed
+        Assert.Equal(0, store.LoadSpellDeck("Bob")!.Tab);
+        rig.Key = "Carol";
+        rig.Sync.LoadIfChanged();
+
+        Assert.Equal(2, new SettingsStore(PathName).LoadSpellDeck("Bob")!.Tab);
+        StoredSpellDeck carol = new SettingsStore(PathName).LoadSpellDeck("Carol")!;
+        Assert.Equal((4, 2), (carol.Tab, carol.RowCount));
+        Assert.Equal(4, rig.Controller.Tab);
+    }
+
+    [Fact]
     public void SpellDeck_DetachedToDetachedSwitchKeepsBothPlacements()
     {
         var store = new SettingsStore(PathName);

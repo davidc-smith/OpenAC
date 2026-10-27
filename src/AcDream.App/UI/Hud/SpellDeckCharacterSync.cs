@@ -49,6 +49,7 @@ internal sealed class SpellDeckCharacterSync
     {
         string key = _characterKey();
         if (key == LoadedCharacter) return;
+        _controller.FlushPendingSave();   // under the character being left (Save guards CanPersist)
         LoadedCharacter = key;
         _controller.Load(RetailWindowLayoutPersistence.CanPersist(key)
             ? SpellDeckSettings.Load(_store, key)

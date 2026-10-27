@@ -69,18 +69,23 @@ public sealed class SpellDeckControllerTests
     }
 
     [Fact]
-    public void Load_WithAPendingTabSave_SavesFirst_UnderThePreviousCharacter()
+    public void FlushPendingSave_WritesTheTab_AndLoadDropsAnyPendingOne()
     {
         var r = Make();
         r.C.NextTab();
         r.C.NextTab();
         Assert.Empty(r.Saved);
-        r.C.Load(SpellDeckSettings.Default with { Tab = 5 });
+        r.C.FlushPendingSave();
         Assert.Single(r.Saved);
-        Assert.Equal(2, r.Saved[0].Tab);             // the character left, not the one loaded
-        Assert.Equal(5, r.C.Tab);
+        Assert.Equal(2, r.Saved[0].Tab);
+        r.C.FlushPendingSave();                      // nothing pending: no second write
+        Assert.Single(r.Saved);
+
+        r.C.NextTab();
+        r.C.Load(SpellDeckSettings.Default with { Tab = 5 });   // never saves, not even later
         r.Now += 5; r.C.Tick();
         Assert.Single(r.Saved);
+        Assert.Equal(5, r.C.Tab);
     }
 
     // ── Tab, rows, slices ─────────────────────────────────────────
