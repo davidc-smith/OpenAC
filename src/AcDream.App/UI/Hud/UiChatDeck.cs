@@ -98,6 +98,7 @@ internal sealed partial class UiChatDeck : UiElement
         AddChild(SearchField);
         AddChild(_tabMenu);
         CreateInputRow();          // UiChatDeck.Input.cs
+        CreateStrip();             // UiChatDeck.Strip.cs
     }
 
     private static readonly string[] TabMenuItems = ["Mark as read", "Mark all read"];
