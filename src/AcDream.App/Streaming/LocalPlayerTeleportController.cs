@@ -183,7 +183,7 @@ internal sealed class RuntimeLocalPlayerLogoutOperations
             var bitfield = (AcDream.Core.Items.PublicWeenieFlags)(_objects.Get(_identity.ServerGuid)
                 ?.PublicWeenieBitfield ?? 0u);
             return (bitfield & AcDream.Core.Items.PublicWeenieFlags.PlayerKiller) != 0
-                || (bitfield & AcDream.Core.Items.PublicWeenieFlags.PkLiteStatus) != 0;
+                || (bitfield & AcDream.Core.Items.PublicWeenieFlags.PlayerKillerLite) != 0;
         }
     }
 

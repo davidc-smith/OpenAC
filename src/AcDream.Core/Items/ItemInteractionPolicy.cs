@@ -3,6 +3,42 @@ using System.Collections.Generic;
 
 namespace AcDream.Core.Items;
 
+[Flags]
+public enum PublicWeenieFlags : uint
+{
+    None = 0,
+    Openable = 0x00000001,
+    Inscribable = 0x00000002,
+    Stuck = 0x00000004,
+    Player = 0x00000008,
+    Attackable = 0x00000010,
+    PlayerKiller = 0x00000020,
+    HiddenAdmin = 0x00000040,
+    UiHidden = 0x00000080,
+    Book = 0x00000100,
+    Vendor = 0x00000200,
+    PlayerKillerSwitch = 0x00000400,
+    NonPlayerKillerSwitch = 0x00000800,
+    Door = 0x00001000,
+    Corpse = 0x00002000,
+    Lifestone = 0x00004000,
+    Food = 0x00008000,
+    Healer = 0x00010000,
+    Lockpick = 0x00020000,
+    Portal = 0x00040000,
+    Admin = 0x00100000,
+    FreePlayerKiller = 0x00200000,
+    ImmuneCellRestrictions = 0x00400000,
+    RequiresPackSlot = 0x00800000,
+    Retained = 0x01000000,
+    PlayerKillerLite = 0x02000000,
+    IncludesSecondHeader = 0x04000000,
+    Bindstone = 0x08000000,
+    VolatileRare = 0x10000000,
+    WieldOnUse = 0x20000000,
+    WieldLeft = 0x40000000,
+}
+
 public enum ItemPrimaryUseResult : ushort
 {
     None = 0,
@@ -221,10 +257,10 @@ public static class ItemInteractionPolicy
 
         if (ItemUseability.IsUseable(source.Useability))
         {
-            if ((source.Flags & PublicWeenieFlags.PkSwitch) != 0)
+            if ((source.Flags & PublicWeenieFlags.PlayerKillerSwitch) != 0)
                 return Consumed(new ItemPolicyAction(
                     ItemPolicyActionKind.ConfirmPlayerKillerSwitch, source.Id));
-            if ((source.Flags & PublicWeenieFlags.NpkSwitch) != 0)
+            if ((source.Flags & PublicWeenieFlags.NonPlayerKillerSwitch) != 0)
                 return Consumed(new ItemPolicyAction(
                     ItemPolicyActionKind.ConfirmNonPlayerKillerSwitch, source.Id));
             if ((source.Flags & PublicWeenieFlags.VolatileRare) != 0

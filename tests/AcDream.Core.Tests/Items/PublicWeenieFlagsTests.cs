@@ -14,11 +14,11 @@ public sealed class PublicWeenieFlagsTests
     [InlineData(PublicWeenieFlags.Vendor, 0x200u)]
     [InlineData(PublicWeenieFlags.Door, 0x1000u)]
     [InlineData(PublicWeenieFlags.Corpse, 0x2000u)]
-    [InlineData(PublicWeenieFlags.LifeStone, 0x4000u)]
+    [InlineData(PublicWeenieFlags.Lifestone, 0x4000u)]
     [InlineData(PublicWeenieFlags.Portal, 0x40000u)]
-    [InlineData(PublicWeenieFlags.FreePkStatus, 0x200000u)]
-    [InlineData(PublicWeenieFlags.PkLiteStatus, 0x2000000u)]
-    [InlineData(PublicWeenieFlags.BindStone, 0x8000000u)]
+    [InlineData(PublicWeenieFlags.FreePlayerKiller, 0x200000u)]
+    [InlineData(PublicWeenieFlags.PlayerKillerLite, 0x2000000u)]
+    [InlineData(PublicWeenieFlags.Bindstone, 0x8000000u)]
     public void BitsMatchTheRetailBitfield(PublicWeenieFlags flag, uint bit) =>
         Assert.Equal(bit, (uint)flag);
 
@@ -28,8 +28,8 @@ public sealed class PublicWeenieFlagsTests
         Assert.Equal((uint)PublicWeenieFlags.Player, SelectedObjectHealthPolicy.BfPlayer);
         Assert.Equal((uint)PublicWeenieFlags.Attackable, SelectedObjectHealthPolicy.BfAttackable);
         Assert.Equal((uint)PublicWeenieFlags.PlayerKiller, SelectedObjectHealthPolicy.BfPlayerKiller);
-        Assert.Equal((uint)PublicWeenieFlags.FreePkStatus, SelectedObjectHealthPolicy.BfFreePkStatus);
-        Assert.Equal((uint)PublicWeenieFlags.PkLiteStatus, SelectedObjectHealthPolicy.BfPkLiteStatus);
+        Assert.Equal((uint)PublicWeenieFlags.FreePlayerKiller, SelectedObjectHealthPolicy.BfFreePkStatus);
+        Assert.Equal((uint)PublicWeenieFlags.PlayerKillerLite, SelectedObjectHealthPolicy.BfPkLiteStatus);
     }
 
     [Fact]

@@ -225,8 +225,8 @@ public sealed class ItemInteractionPolicyTests
     }
 
     [Theory]
-    [InlineData(PublicWeenieFlags.PkSwitch, ItemPolicyActionKind.ConfirmPlayerKillerSwitch)]
-    [InlineData(PublicWeenieFlags.NpkSwitch, ItemPolicyActionKind.ConfirmNonPlayerKillerSwitch)]
+    [InlineData(PublicWeenieFlags.PlayerKillerSwitch, ItemPolicyActionKind.ConfirmPlayerKillerSwitch)]
+    [InlineData(PublicWeenieFlags.NonPlayerKillerSwitch, ItemPolicyActionKind.ConfirmNonPlayerKillerSwitch)]
     [InlineData(PublicWeenieFlags.VolatileRare, ItemPolicyActionKind.ConfirmVolatileRare)]
     public void UseObject_confirmationFlags_blockWireUse(
         PublicWeenieFlags flag,

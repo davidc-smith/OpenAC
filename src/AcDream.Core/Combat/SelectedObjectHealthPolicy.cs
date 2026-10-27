@@ -7,8 +7,8 @@ public static class SelectedObjectHealthPolicy
     public const uint BfPlayer = (uint)PublicWeenieFlags.Player;
     public const uint BfAttackable = (uint)PublicWeenieFlags.Attackable;
     public const uint BfPlayerKiller = (uint)PublicWeenieFlags.PlayerKiller;
-    public const uint BfFreePkStatus = (uint)PublicWeenieFlags.FreePkStatus;
-    public const uint BfPkLiteStatus = (uint)PublicWeenieFlags.PkLiteStatus;
+    public const uint BfFreePkStatus = (uint)PublicWeenieFlags.FreePlayerKiller;
+    public const uint BfPkLiteStatus = (uint)PublicWeenieFlags.PlayerKillerLite;
 
     public static bool ShouldQueryHealth(
         uint playerId,

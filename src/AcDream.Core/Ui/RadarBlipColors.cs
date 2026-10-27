@@ -23,8 +23,8 @@ public readonly record struct RadarObjectTraits(
     private const uint BfVendor = (uint)PublicWeenieFlags.Vendor;
     private const uint BfPortal = (uint)PublicWeenieFlags.Portal;
     private const uint BfAdmin = (uint)PublicWeenieFlags.Admin;
-    private const uint BfFreePk = (uint)PublicWeenieFlags.FreePkStatus;
-    private const uint BfPkLite = (uint)PublicWeenieFlags.PkLiteStatus;
+    private const uint BfFreePk = (uint)PublicWeenieFlags.FreePlayerKiller;
+    private const uint BfPkLite = (uint)PublicWeenieFlags.PlayerKillerLite;
 
     public static RadarObjectTraits FromPublicWeenieDescription(
         uint itemType,

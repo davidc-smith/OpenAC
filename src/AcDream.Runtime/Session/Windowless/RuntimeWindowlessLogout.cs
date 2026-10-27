@@ -89,7 +89,7 @@ internal sealed class RuntimeWindowlessLogout
             var bitfield = (PublicWeenieFlags)(_runtime.InventoryOwner.Objects
                 .Get(_runtime.PlayerIdentity.ServerGuid)?.PublicWeenieBitfield ?? 0u);
             return (bitfield & PublicWeenieFlags.PlayerKiller) != 0
-                || (bitfield & PublicWeenieFlags.PkLiteStatus) != 0;
+                || (bitfield & PublicWeenieFlags.PlayerKillerLite) != 0;
         }
     }
 

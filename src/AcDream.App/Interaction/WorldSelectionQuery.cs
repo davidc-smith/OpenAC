@@ -467,9 +467,9 @@ internal sealed class WorldSelectionQuery
         bool isFellow = _isFellow(guid);
         bool isCombatCompass = _combatMode() is CombatMode.Melee or CombatMode.Missile;
         bool isSpecialCompassObject = (flags
-            & (PublicWeenieFlags.LifeStone
+            & (PublicWeenieFlags.Lifestone
                 | PublicWeenieFlags.Portal
-                | PublicWeenieFlags.BindStone)) != 0;
+                | PublicWeenieFlags.Bindstone)) != 0;
 
         if (obj.ContainerId != 0u
             || (physicsState & PhysicsStateFlags.Cloaked) != 0
