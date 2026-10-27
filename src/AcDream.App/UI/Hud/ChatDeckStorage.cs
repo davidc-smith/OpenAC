@@ -62,8 +62,9 @@ internal sealed class ChatDeckStorage(IChatDeckStore? store, Action<string> log)
         {
             store.Save(toonKey, json);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception ex)
         {
+            // A save runs inside a click or a settings change; a failure is reported, never thrown there.
             log($"[UI] Chat Deck: saving settings for {toonKey} failed: {ex.Message}");
             return false;
         }

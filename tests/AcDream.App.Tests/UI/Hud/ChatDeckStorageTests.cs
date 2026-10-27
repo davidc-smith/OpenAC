@@ -99,6 +99,16 @@ public sealed class ChatDeckStorageTests
     }
 
     [Fact]
+    public void AnyStoreFailure_IsCaughtAndLogged()
+    {
+        var (storage, store, log) = Make();
+        storage.Load("Davian");
+        store.Throw = new InvalidOperationException("store closed");
+        Assert.False(storage.Save("Davian", ChatDeckDefaults.Create()));
+        Assert.Contains(log, l => l.Contains("store closed"));
+    }
+
+    [Fact]
     public void NoStore_DefaultsAndNoSave()
     {
         var log = new List<string>();

@@ -3440,40 +3440,49 @@ public sealed class RetailUiRuntime : IDisposable
     {
         if (_bindings.CommandDeck is null || _bindings.Chat.Log is not { } log) return;
 
-        var storage = new Hud.ChatDeckStorage(
-            _bindings.Persistence?.Store is { } store ? new Hud.SettingsStoreChatDeckStore(store) : null,
-            Console.WriteLine);
-        var session = new Hud.ChatDeckSession(
-            log,
-            storage,
-            _bindings.Persistence?.CharacterKey ?? (() => "default"),
-            () => _bindings.IsGameplayDisplay?.Invoke() ?? true);
-        _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
-        _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
-
-        var deck = new Hud.UiChatDeck(
-            new Hud.ChatDeckBindings(
-                Model: () => session.Model,
-                Entry: _bindings.Chat.Entry,
-                Feedback: _bindings.Chat.ViewModel,
-                Bus: _bindings.Chat.CommandBus,
-                LastIncomingTellSender: () => _bindings.Chat.ViewModel.LastIncomingTellSender,
-                StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
-                LinkClicked: _bindings.Chat.LinkClicked,
-                Keyboard: Host.Keyboard),
-            _deckFonts,
-            _hudIcons);
-
-        float top = MathF.Max(0f, Host.Root.Height - Hud.ChatDeckGeometry.DefaultHeight - 10f);
+        Hud.ChatDeckSession? session = null;
+        Hud.UiChatDeck? deck = null;
         try
         {
+            var storage = new Hud.ChatDeckStorage(
+                _bindings.Persistence?.Store is { } store ? new Hud.SettingsStoreChatDeckStore(store) : null,
+                Console.WriteLine);
+            var liveSession = session = new Hud.ChatDeckSession(
+                log,
+                storage,
+                _bindings.Persistence?.CharacterKey ?? (() => "default"),
+                () => _bindings.IsGameplayDisplay?.Invoke() ?? true);
+            _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
+            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+
+            deck = new Hud.UiChatDeck(
+                new Hud.ChatDeckBindings(
+                    Model: () => liveSession.Model,
+                    Entry: _bindings.Chat.Entry,
+                    Feedback: _bindings.Chat.ViewModel,
+                    Bus: _bindings.Chat.CommandBus,
+                    LastIncomingTellSender: () => _bindings.Chat.ViewModel.LastIncomingTellSender,
+                    StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
+                    LinkClicked: _bindings.Chat.LinkClicked,
+                    Keyboard: Host.Keyboard),
+                _deckFonts,
+                _hudIcons);
+
+            float top = MathF.Max(0f, Host.Root.Height - Hud.ChatDeckGeometry.DefaultHeight - 10f);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite, Hud.UiChatDeck.MountOptions(10f, top));
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
-            deck.Detach();
-            session.Dispose();
-            Console.WriteLine($"[UI] Chat Deck unavailable; keeping the retail chat. ({ex.Message})");
+            // Anything that fails here leaves the retail chat as the only chat; undo what was built.
+            if (deck is not null)
+            {
+                UiElement window = deck;
+                while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
+                if (window.Parent is not null) Host.Root.RemoveChild(window);
+                deck.Detach();
+            }
+            session?.Dispose();
+            Console.WriteLine($"[UI] Chat Deck unavailable; keeping the retail chat. ({ex.GetType().Name}: {ex.Message})");
             return;
         }
 

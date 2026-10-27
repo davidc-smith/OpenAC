@@ -157,7 +157,7 @@ internal sealed partial class UiChatDeck : UiElement
         // A hidden element gets no ticks, so Refresh will not tell the model until it is shown again.
         _model?.SetView(false, Transcript.Scroll.AtEnd);
         _tabMenu.Close(restoreFocus: false);
-        OnInputHidden();           // UiChatDeck.Input.cs (Task 10)
+        OnInputHidden();           // UiChatDeck.Input.cs
     }
 
     internal ChatDeckModel? Model => _model;
@@ -187,7 +187,7 @@ internal sealed partial class UiChatDeck : UiElement
         Place(SearchField, _searchOpen ? _geometry.SearchField : default);
         SearchField.Visible = _searchOpen;
         Place(NewLinesMarker, _geometry.NewLines);
-        LayoutInputRow();          // UiChatDeck.Input.cs (Task 10)
+        LayoutInputRow();          // UiChatDeck.Input.cs
 
         ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
         Transcript.DatFont = _fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular);
@@ -255,7 +255,7 @@ internal sealed partial class UiChatDeck : UiElement
         NewLineCount = 0;
         _builtFor = null;
         Transcript.Scroll.ScrollToEnd();
-        OnViewReset();             // UiChatDeck.Input.cs (Task 10): drops a one-line channel override
+        OnViewReset();             // UiChatDeck.Input.cs: drops a one-line channel override
     }
 
     private void FollowNewest()
@@ -324,7 +324,7 @@ internal sealed partial class UiChatDeck : UiElement
             }
             if (tag.IsTell && tag.TryGetIidString(out _, out string name) && name.Length > 0)
             {
-                StartTell(name);   // UiChatDeck.Input.cs (Task 10)
+                StartTell(name);   // UiChatDeck.Input.cs
                 return true;
             }
         }
@@ -345,7 +345,7 @@ internal sealed partial class UiChatDeck : UiElement
                 {
                     case ChatDeckZone.Tab: SelectTab(hit.Tab); return true;
                     case ChatDeckZone.SearchStud: ToggleSearch(); return true;
-                    case ChatDeckZone.Chip: OpenChipMenu(e.Data1, e.Data2); return true;   // Task 10
+                    case ChatDeckZone.Chip: OpenChipMenu(e.Data1, e.Data2); return true;   // UiChatDeck.Input.cs
                     default: return false;
                 }
             }

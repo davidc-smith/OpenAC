@@ -14,8 +14,10 @@ internal sealed class ChatDeckSession(
     ChatLog log,
     ChatDeckStorage storage,
     Func<string> characterKey,
-    Func<bool> gameplayActive) : IDisposable
+    Func<bool> gameplayActive,
+    Action<string>? report = null) : IDisposable
 {
+    private readonly Action<string> _report = report ?? Console.WriteLine;
     private string? _key;
 
     public ChatDeckModel? Model { get; private set; }
@@ -40,7 +42,11 @@ internal sealed class ChatDeckSession(
     /// <summary>The session ended; the next character (or the same one again) starts empty.</summary>
     public void EndSession()
     {
-        if (Model is null) return;
+        if (Model is null)
+        {
+            _key = null;   // a start that failed is tried again at the next login
+            return;
+        }
         Stop();
         ModelChanged?.Invoke();
     }
@@ -55,8 +61,17 @@ internal sealed class ChatDeckSession(
 
     private void Start(string key)
     {
+        // Kept even if the model cannot start, so a failure is reported once and not retried every frame.
         _key = key;
-        Model = new ChatDeckModel(log, storage.Load(key), key);
+        try
+        {
+            Model = new ChatDeckModel(log, storage.Load(key), key);
+        }
+        catch (Exception ex)
+        {
+            _report($"[UI] Chat Deck: could not start for {key}; the deck stays empty this session. ({ex.GetType().Name}: {ex.Message})");
+            return;
+        }
         Model.SettingsChanged += OnSettingsChanged;
         ModelChanged?.Invoke();
     }

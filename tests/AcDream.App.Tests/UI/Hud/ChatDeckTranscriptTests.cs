@@ -169,6 +169,18 @@ public sealed class ChatDeckTranscriptTests
     }
 
     [Fact]
+    public void Runs_PastTheColours_TakeTheLineColour()
+    {
+        var gold = new Vector4(1f, 0.8f, 0f, 1f);
+        Vector4[] colours = [Channel, Channel, gold, gold];
+
+        IReadOnlyList<UiText.TextRun>? runs = ChatDeckTranscript.Runs("cdef", 2, colours, Channel);
+
+        Assert.NotNull(runs);
+        Assert.Equal([("cd", gold), ("ef", Channel)], runs!.Select(r => (r.Text, r.Color)));
+    }
+
+    [Fact]
     public void Keys_CountTheTimestamp_SoSelectionsResolveToTheirOwnLine()
     {
         var received = new DateTime(2026, 10, 27, 9, 5, 7, DateTimeKind.Utc);

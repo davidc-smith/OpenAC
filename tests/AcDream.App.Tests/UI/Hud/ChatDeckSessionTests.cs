@@ -10,7 +10,13 @@ public sealed class ChatDeckSessionTests
     {
         public readonly Dictionary<string, string> Saved = [];
         public readonly List<string> Loads = [];
-        public string? Load(string toonKey) { Loads.Add(toonKey); return Saved.GetValueOrDefault(toonKey); }
+        public Exception? LoadThrow;
+        public string? Load(string toonKey)
+        {
+            Loads.Add(toonKey);
+            if (LoadThrow is not null) throw LoadThrow;
+            return Saved.GetValueOrDefault(toonKey);
+        }
         public void Save(string toonKey, string json) => Saved[toonKey] = json;
     }
 
@@ -21,11 +27,12 @@ public sealed class ChatDeckSessionTests
         public string Key = "default";
         public bool Gameplay = true;
         public int Changes;
+        public readonly List<string> Logged = [];
         public readonly ChatDeckSession Session;
 
         public Harness()
         {
-            Session = new ChatDeckSession(Log, new ChatDeckStorage(Store, _ => { }), () => Key, () => Gameplay);
+            Session = new ChatDeckSession(Log, new ChatDeckStorage(Store, _ => { }), () => Key, () => Gameplay, Logged.Add);
             Session.ModelChanged += () => Changes++;
         }
 
@@ -116,5 +123,36 @@ public sealed class ChatDeckSessionTests
         Assert.Equal("Bob", h.Session.Model!.CharacterName);
         Assert.NotSame(first, h.Session.Model);
         Assert.Equal(["Davian", "Bob"], h.Store.Loads);
+    }
+
+    [Fact]
+    public void FailedStart_LogsOnce_AndDoesNotRetryEveryFrame()
+    {
+        var h = new Harness { Key = "Davian" };
+        h.Store.LoadThrow = new IOException("disk gone");
+
+        h.Session.Tick();
+        h.Session.Tick();
+        h.Session.Tick();
+
+        Assert.Null(h.Session.Model);
+        Assert.Equal(["Davian"], h.Store.Loads);
+        Assert.Contains("disk gone", Assert.Single(h.Logged));
+        Assert.Equal(0, h.Changes);
+    }
+
+    [Fact]
+    public void FailedStart_TriesAgainAfterTheSessionEnds()
+    {
+        var h = new Harness { Key = "Davian" };
+        h.Store.LoadThrow = new IOException("disk gone");
+        h.Session.Tick();
+
+        h.Store.LoadThrow = null;
+        h.Session.EndSession();
+        h.Session.Tick();
+
+        Assert.NotNull(h.Session.Model);
+        Assert.Equal(["Davian", "Davian"], h.Store.Loads);
     }
 }

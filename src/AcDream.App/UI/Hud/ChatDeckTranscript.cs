@@ -216,17 +216,22 @@ internal sealed class ChatDeckTranscript
         return colours;
     }
 
-    /// <summary>The fragment as runs of one colour; null when it is all the line colour.</summary>
-    private static IReadOnlyList<UiText.TextRun>? Runs(string frag, int at, Vector4[] colours, Vector4 lineColour)
+    /// <summary>
+    /// The fragment as runs of one colour; null when it is all the line colour. A character
+    /// past the colours (a fragment placed where WrapText's text could not be found) takes
+    /// the line colour.
+    /// </summary>
+    internal static IReadOnlyList<UiText.TextRun>? Runs(string frag, int at, Vector4[] colours, Vector4 lineColour)
     {
         if (frag.Length == 0) return null;
+        Vector4 ColourAt(int i) => (uint)(at + i) < (uint)colours.Length ? colours[at + i] : lineColour;
         var runs = new List<UiText.TextRun>();
         bool plain = true;
         int start = 0;
         for (int i = 1; i <= frag.Length; i++)
         {
-            if (i < frag.Length && colours[at + i] == colours[at + start]) continue;
-            Vector4 colour = colours[at + start];
+            if (i < frag.Length && ColourAt(i) == ColourAt(start)) continue;
+            Vector4 colour = ColourAt(start);
             plain &= colour == lineColour;
             runs.Add(new UiText.TextRun(frag[start..i], colour));
             start = i;
