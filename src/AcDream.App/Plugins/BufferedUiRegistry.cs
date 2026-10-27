@@ -7,6 +7,10 @@ namespace AcDream.App.Plugins;
 
 public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRegistry
 {
+    public BufferedUiRegistry() =>
+        _targetPlateStore = new(() => new PluginTargetPlateStore(() => TargetPlateAvailable?.Invoke() == true,
+            (id, message) => Serilog.Log.Warning("[plugin {Plugin}] {Message}", id, message)));
+
     public readonly record struct Pending(
         PluginUiOwner Owner,
         PluginPanelDescriptor Descriptor,
@@ -222,6 +226,21 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
         return WorldMarkerStore.For(owner.Id);
+    }
+
+    /// <summary>Every plugin's Target Deck providers, read by the Target Deck.</summary>
+    internal PluginTargetPlateStore TargetPlateStore => _targetPlateStore.Value;
+
+    // Built on first use: its delegates read this registry's TargetPlateAvailable.
+    private readonly Lazy<PluginTargetPlateStore> _targetPlateStore;
+
+    /// <summary>Set by the UI when the Target Deck mounts: true while the Modern HUD is on.</summary>
+    internal Func<bool>? TargetPlateAvailable { get; set; }
+
+    public IPluginTargetPlate TargetPlateFor(PluginUiOwner owner)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner.Id);
+        return TargetPlateStore.For(owner.Id, owner.DisplayName);
     }
 
     // The plugin theme, told to the registry by the interface: the one the
@@ -765,6 +784,9 @@ public sealed class BufferedUiRegistry : IScopedUiRegistry, IPluginDirectoryUiRe
 
     public IPluginWorldMarkers WorldMarkers =>
         WorldMarkersFor(new PluginUiOwner("unscoped", "Plugin"));
+
+    public IPluginTargetPlate TargetPlate =>
+        TargetPlateFor(new PluginUiOwner("unscoped", "Plugin"));
 
     public IDisposable RegisterMarkupPanel(string markupPath, object binding)
         => RegisterPanel(
