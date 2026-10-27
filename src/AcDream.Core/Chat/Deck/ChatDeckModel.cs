@@ -8,6 +8,9 @@ public sealed record ChatDeckDelivery(ChatDeckLine Line, IReadOnlyList<string> T
 /// <summary>
 /// The Chat Deck for one game session. Lines may arrive on any thread; they are queued
 /// and applied by <see cref="Tick"/>, which, like every other member, runs on the game thread.
+/// <see cref="Tick"/> must run every frame while the session lives, whether or not the window is
+/// visible: the queue is unbounded and the model keeps collecting lines while hidden.
+/// Event handlers run inside <see cref="Tick"/> (and <see cref="SelectTab"/>) and may call the model's members.
 /// </summary>
 public sealed class ChatDeckModel : IDisposable
 {
@@ -30,7 +33,10 @@ public sealed class ChatDeckModel : IDisposable
         _log.Cleared += OnCleared;
     }
 
+    public string CharacterName => _characterName;
     public ChatDeckSettings Settings { get; private set; }
+    /// <summary>Each rule as compiled, with its status (invalid pattern, faulted, ...), for the editor.</summary>
+    public IReadOnlyList<ChatDeckCompiledRule> CompiledRules => _engine.Rules;
     public IReadOnlyList<ChatDeckTabState> Tabs => _tabs;
     public string SelectedTabId { get; private set; }
     public bool ViewVisible { get; private set; }
@@ -65,7 +71,7 @@ public sealed class ChatDeckModel : IDisposable
                 continue;
             }
 
-            ChatDeckLineFacts facts = ChatDeckLineFacts.From(entry);
+            ChatDeckLineFacts facts = ChatDeckLineFacts.From(entry, _characterName);
             ChatDeckVerdict verdict = _engine.Evaluate(facts);
             if (verdict.TimedOutRuleIds.Count > 0)
             {
@@ -87,6 +93,10 @@ public sealed class ChatDeckModel : IDisposable
         if (delivered is not null) LinesDelivered?.Invoke(delivered);
     }
 
+    /// <summary>
+    /// Replaces the settings and rebuilds rules and tabs. Raises no <see cref="SettingsChanged"/>:
+    /// the caller supplied these settings and saves <see cref="Settings"/> itself.
+    /// </summary>
     public void ApplySettings(ChatDeckSettings settings)
     {
         Settings = ChatDeckSettingsNormalizer.Normalize(settings);

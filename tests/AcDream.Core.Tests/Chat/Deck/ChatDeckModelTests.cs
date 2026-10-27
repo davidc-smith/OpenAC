@@ -140,6 +140,31 @@ public sealed class ChatDeckModelTests
         Assert.True(model.Settings.Rules.Single(r => r.Id == "slow").Faulted);
         Assert.Single(changes);
         Assert.Equal(2, model.FindTab("local")!.Count);
+        Assert.Equal(ChatDeckRuleStatus.Faulted, model.CompiledRules.Single(r => r.Rule.Id == "slow").Status);
+        Assert.Empty(model.Test(ChatDeckMatcherTests.Facts(new string('a', 1990) + "#")).TimedOutRuleIds);
+    }
+
+    [Fact]
+    public void CompiledRules_ReportInvalidPatterns()
+    {
+        var d = ChatDeckDefaults.Create();
+        var (_, model) = Create();
+        model.ApplySettings(d with { Rules = [.. d.Rules, new ChatDeckRule { Id = "bad", Kind = ChatDeckMatchKind.Regex, Pattern = "(", Action = ChatDeckRuleAction.Hide }] });
+        Assert.Equal(ChatDeckRuleStatus.Invalid, model.CompiledRules.Single(r => r.Rule.Id == "bad").Status);
+        Assert.Equal("Davian", model.CharacterName);
+    }
+
+    [Fact]
+    public void OwnLinesUnderTheCharactersName_AreOwnAndDoNotAlert()
+    {
+        var (log, model) = Create();
+        var delivered = new List<ChatDeckDelivery>();
+        model.LinesDelivered += batch => delivered.AddRange(batch);
+        log.OnLocalSpeech("Davian", "Davian is here", 0x50000002u, isRanged: true, logTextType: 0x02u);
+        model.Tick();
+        ChatDeckLine line = Assert.Single(delivered).Line;
+        Assert.True(line.Facts.IsOwn);
+        Assert.False(line.Alert);
     }
 
     [Fact]

@@ -149,13 +149,17 @@ public static class ChatDeckChannels
             };
         }
 
+        bool own = IsOwnLine(entry);
+
         // Legacy channel bits, as Runtime's ChannelResolver and RetailChannelTagTable number them.
         return entry.ChannelId switch
         {
             0x00000800u => ChatDeckChannel.Fellowship,
-            0x00001000u => ChatDeckChannel.Vassals,
-            0x00002000u => ChatDeckChannel.Patron,
-            0x00004000u => ChatDeckChannel.Monarch,
+            // The hierarchy ids name the speaker's side: a line heard on 0x1000 comes from your
+            // patron, one you send on 0x1000 goes to your vassals. Channels name the partner.
+            0x00001000u => own ? ChatDeckChannel.Vassals : ChatDeckChannel.Patron,
+            0x00002000u => own ? ChatDeckChannel.Patron : ChatDeckChannel.Vassals,
+            0x00004000u => own ? ChatDeckChannel.Monarch : ChatDeckChannel.Vassals,
             0x01000000u => ChatDeckChannel.CoVassals,
             0x02000000u => ChatDeckChannel.Allegiance,
             0x40000000u => ChatDeckChannel.Olthoi,

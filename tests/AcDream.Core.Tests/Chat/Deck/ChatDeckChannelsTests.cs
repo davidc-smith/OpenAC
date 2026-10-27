@@ -10,9 +10,6 @@ public sealed class ChatDeckChannelsTests
 
     [Theory]
     [InlineData(0x00000800u, ChatDeckChannel.Fellowship)]
-    [InlineData(0x00001000u, ChatDeckChannel.Vassals)]
-    [InlineData(0x00002000u, ChatDeckChannel.Patron)]
-    [InlineData(0x00004000u, ChatDeckChannel.Monarch)]
     [InlineData(0x01000000u, ChatDeckChannel.CoVassals)]
     [InlineData(0x02000000u, ChatDeckChannel.Allegiance)]
     [InlineData(0x40000000u, ChatDeckChannel.Olthoi)]
@@ -22,6 +19,16 @@ public sealed class ChatDeckChannelsTests
     {
         Assert.Equal(expected, ChatDeckChannels.Classify(Channel(id, "Bob", LegacyChannelChatType.Resolve(id, false))));
         Assert.Equal(expected, ChatDeckChannels.Classify(Channel(id, "", LegacyChannelChatType.Resolve(id, true))));
+    }
+
+    [Theory]
+    [InlineData(0x00001000u, ChatDeckChannel.Vassals, ChatDeckChannel.Patron)]
+    [InlineData(0x00002000u, ChatDeckChannel.Patron, ChatDeckChannel.Vassals)]
+    [InlineData(0x00004000u, ChatDeckChannel.Monarch, ChatDeckChannel.Vassals)]
+    public void HierarchyChannel_NamesThePartner(uint id, ChatDeckChannel sent, ChatDeckChannel heard)
+    {
+        Assert.Equal(heard, ChatDeckChannels.Classify(Channel(id, "Bob", LegacyChannelChatType.Resolve(id, false))));
+        Assert.Equal(sent, ChatDeckChannels.Classify(Channel(id, "", LegacyChannelChatType.Resolve(id, true))));
     }
 
     [Theory]

@@ -129,4 +129,49 @@ public sealed class ChatDeckSettingsJsonTests
         Assert.Equal(6, s.Tabs.Count);
         Assert.NotNull(ChatDeckSettingsJson.Serialize(s, json));
     }
+
+    private const string FutureRule =
+        """{"version":1,"rules":[{"id":"n1","enabled":true,"kind":"Contains","pattern":"x","field":"Text","action":"Notify","target":"","colour":"#FF112233"}]}""";
+
+    [Fact]
+    public void RuleWithUnknownAction_LoadsDisabledAndKeepsItsValueOnSave()
+    {
+        var (settings, error) = ChatDeckSettingsJson.Parse(FutureRule);
+        Assert.Null(error);
+        ChatDeckRule rule = settings.Rules.Single(r => r.Id == "n1");
+        Assert.False(rule.Enabled);
+
+        var saved = (JsonObject)JsonNode.Parse(ChatDeckSettingsJson.Serialize(settings, FutureRule))!;
+        JsonObject written = saved["rules"]!.AsArray().OfType<JsonObject>().Single(o => (string?)o["id"] == "n1");
+        Assert.Equal("Notify", (string?)written["action"]);
+        Assert.Equal("Contains", (string?)written["kind"]);
+        Assert.True((bool?)written["enabled"]);
+    }
+
+    [Fact]
+    public void RuleWithUnknownKindOrField_LoadsDisabledAndKeepsThem()
+    {
+        const string json = """{"rules":[{"id":"n1","kind":"Fuzzy","field":"Nick","action":"Hide","pattern":"x"}]}""";
+        var (settings, _) = ChatDeckSettingsJson.Parse(json);
+        Assert.False(settings.Rules.Single(r => r.Id == "n1").Enabled);
+        var saved = (JsonObject)JsonNode.Parse(ChatDeckSettingsJson.Serialize(settings, json))!;
+        JsonObject written = saved["rules"]!.AsArray().OfType<JsonObject>().Single(o => (string?)o["id"] == "n1");
+        Assert.Equal("Fuzzy", (string?)written["kind"]);
+        Assert.Equal("Nick", (string?)written["field"]);
+    }
+
+    [Fact]
+    public void RuleWithoutAction_LoadsDisabled()
+    {
+        var (settings, _) = ChatDeckSettingsJson.Parse("""{"rules":[{"id":"n1","kind":"Contains","field":"Text","pattern":"x"}]}""");
+        Assert.False(settings.Rules.Single(r => r.Id == "n1").Enabled);
+    }
+
+    [Fact]
+    public void RuleWithoutColour_GetsVisibleDefault()
+    {
+        var (settings, _) = ChatDeckSettingsJson.Parse(
+            """{"rules":[{"id":"c1","kind":"Contains","field":"Text","action":"ColourLine","pattern":"x","colour":"nope"}]}""");
+        Assert.Equal(ChatDeckDefaults.MyNameColour, settings.Rules.Single(r => r.Id == "c1").Colour);
+    }
 }

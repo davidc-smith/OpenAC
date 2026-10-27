@@ -66,10 +66,12 @@ public static class ChatDeckSettingsJson
         Peek = Bool(o, "peek", false),
     };
 
+    // A rule whose kind, field or action this build cannot read (missing, or written by a newer
+    // build) loads switched off: running it on a guess could hide or recolour the wrong lines.
     private static ChatDeckRule ReadRule(JsonObject o) => new()
     {
         Id = Str(o, "id", ""),
-        Enabled = Bool(o, "enabled", true),
+        Enabled = Bool(o, "enabled", true) && !Unreadable(o),
         Kind = Enum(o, "kind", ChatDeckMatchKind.Contains),
         Pattern = Str(o, "pattern", ""),
         PresetId = Str(o, "presetId", ""),
@@ -77,7 +79,7 @@ public static class ChatDeckSettingsJson
         Channels = Channels(o, "channels"),
         Action = Enum(o, "action", ChatDeckRuleAction.Hide),
         TargetTabId = Str(o, "target", ""),
-        Colour = Colour(o["colour"]) ?? 0u,
+        Colour = Colour(o["colour"]) ?? ChatDeckDefaults.MyNameColour,
         Alert = Bool(o, "alert", false),
         Faulted = Bool(o, "faulted", false),
     };
@@ -147,14 +149,20 @@ public static class ChatDeckSettingsJson
 
     private static JsonObject WriteRule(ChatDeckRule r, JsonObject o)
     {
+        // Keys this build could not read were loaded as fallbacks and the rule switched off;
+        // while the rule still holds that fallback, leave the stored value for a build that can.
+        bool keepKind = KeepUnreadable(o, "kind", r.Kind, ChatDeckMatchKind.Contains);
+        bool keepField = KeepUnreadable(o, "field", r.Field, ChatDeckMatchField.Text);
+        bool keepAction = KeepUnreadable(o, "action", r.Action, ChatDeckRuleAction.Hide);
+
         o["id"] = r.Id;
-        o["enabled"] = r.Enabled;
-        o["kind"] = r.Kind.ToString();
+        if (!((keepKind || keepField || keepAction) && !r.Enabled)) o["enabled"] = r.Enabled;
+        if (!keepKind) o["kind"] = r.Kind.ToString();
         o["pattern"] = r.Pattern;
         o["presetId"] = r.PresetId;
-        o["field"] = r.Field.ToString();
+        if (!keepField) o["field"] = r.Field.ToString();
         o["channels"] = ChannelArray(r.Channels);
-        o["action"] = r.Action.ToString();
+        if (!keepAction) o["action"] = r.Action.ToString();
         o["target"] = r.TargetTabId;
         o["colour"] = ColourText(r.Colour);
         o["alert"] = r.Alert;
@@ -239,6 +247,19 @@ public static class ChatDeckSettingsJson
             && System.Enum.TryParse(s, out TEnum value) && System.Enum.IsDefined(value)
             ? value
             : fallback;
+
+    private static bool Unreadable(JsonObject o) =>
+        !IsDefined<ChatDeckMatchKind>(o, "kind") || !IsDefined<ChatDeckMatchField>(o, "field")
+        || !IsDefined<ChatDeckRuleAction>(o, "action");
+
+    private static bool IsDefined<TEnum>(JsonObject o, string key) where TEnum : struct, System.Enum =>
+        o[key] is JsonValue v && v.TryGetValue(out string? s)
+        && System.Enum.TryParse(s, out TEnum value) && System.Enum.IsDefined(value);
+
+    // True when the stored value is present but unreadable and the rule still holds the fallback.
+    private static bool KeepUnreadable<TEnum>(JsonObject o, string key, TEnum current, TEnum fallback)
+        where TEnum : struct, System.Enum =>
+        o.ContainsKey(key) && !IsDefined<TEnum>(o, key) && EqualityComparer<TEnum>.Default.Equals(current, fallback);
 
     private static string ColourText(uint argb) => "#" + argb.ToString("X8", CultureInfo.InvariantCulture);
 

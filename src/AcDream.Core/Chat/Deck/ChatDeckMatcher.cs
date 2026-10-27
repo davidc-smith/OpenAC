@@ -109,10 +109,10 @@ public static class ChatDeckMatcher
                     : ChatDeckMatch.None;
 
             var spans = new List<ChatDeckSpan>();
-            for (Match m = compiled.Regex.Match(input); m.Success && spans.Count < MaxSpans; m = m.NextMatch())
+            for (Match m = compiled.Regex.Match(input); m.Success; m = m.NextMatch())
             {
-                if (m.Length == 0) continue;
-                spans.Add(new ChatDeckSpan(compiled.Field, m.Index, m.Length));
+                if (m.Length > 0) spans.Add(new ChatDeckSpan(compiled.Field, m.Index, m.Length));
+                if (spans.Count >= MaxSpans) break;
             }
             return spans.Count > 0 ? new ChatDeckMatch(ChatDeckMatchOutcome.Match, spans) : ChatDeckMatch.None;
         }

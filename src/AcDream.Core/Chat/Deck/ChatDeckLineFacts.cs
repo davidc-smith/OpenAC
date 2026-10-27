@@ -12,13 +12,21 @@ public sealed record ChatDeckLineFacts(
     string Line,
     bool IsOwn)
 {
-    public static ChatDeckLineFacts From(in ChatEntry entry) => new(
+    /// <param name="characterName">
+    /// The character's own name. Ranged speech and Turbine rooms carry it on your own lines, so a
+    /// line from that sender is own too.
+    /// </param>
+    public static ChatDeckLineFacts From(in ChatEntry entry, string characterName = "") => new(
         entry,
         ChatDeckChannels.Classify(entry),
         entry.Text,
         entry.Sender,
         ChatLineWording.Format(entry),
-        ChatDeckChannels.IsOwnLine(entry));
+        ChatDeckChannels.IsOwnLine(entry) || IsSender(entry.Sender, characterName));
+
+    private static bool IsSender(string sender, string characterName) =>
+        !string.IsNullOrWhiteSpace(characterName)
+        && string.Equals(sender.Trim(), characterName.Trim(), StringComparison.OrdinalIgnoreCase);
 
     public string Read(ChatDeckMatchField field) => field switch
     {
