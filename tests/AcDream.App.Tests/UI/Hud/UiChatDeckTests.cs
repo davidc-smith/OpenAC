@@ -35,6 +35,7 @@ public sealed class UiChatDeckTests
         public readonly List<PluginChatLinkClicked> Links = [];
         public readonly FakeKeyboard Keyboard = new();
         public readonly UiChatDeck Deck;
+        public Action? RestorePlacement;
 
         public Harness(bool withModel = true, DeckFonts? fonts = null)
         {
@@ -48,7 +49,8 @@ public sealed class UiChatDeckTests
                     LastIncomingTellSender: () => Feedback.LastIncomingTellSender,
                     StayInChatMode: () => false,
                     LinkClicked: Links.Add,
-                    Keyboard: Keyboard),
+                    Keyboard: Keyboard,
+                    RestorePinnedPlacement: () => RestorePlacement?.Invoke()),
                 fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();
@@ -244,9 +246,7 @@ public sealed class UiChatDeckTests
         var h = new Harness();
         h.Say("hey Davian, over here");
         Assert.True(h.Model!.FindTab("all")!.Alert);
-        // Search is closed, so only the badge adds red beyond the lit pin stud.
         var renderer = MarkupDrawProbe.Draw(h.Deck, 460, 220);
-        // The lit pin stud shares that red, so compare against a calm deck rather than against zero.
         var calm = MarkupDrawProbe.Draw(new Harness().Deck, 460, 220);
         Assert.True(MarkupDrawProbe.CountQuads(renderer, ChatDeckPalette.BadgeRed)
             > MarkupDrawProbe.CountQuads(calm, ChatDeckPalette.BadgeRed));

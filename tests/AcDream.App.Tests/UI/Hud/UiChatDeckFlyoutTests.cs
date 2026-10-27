@@ -117,7 +117,7 @@ public sealed class UiChatDeckFlyoutTests
     }
 
     [Fact]
-    public void FlyoutStuds_CollapseCloses_PinPinsInPlace()
+    public void FlyoutStuds_CollapseCloses_StripPinPinsBack()
     {
         var w = Collapsed();
         w.Deck.EnterChatMode(null);
@@ -126,9 +126,9 @@ public sealed class UiChatDeckFlyoutTests
 
         w.PressStrip(w.Deck.StripGeometry.Studs[0]);
         w.Tick(0.2);
-        w.Press(w.Deck.Geometry.PinStud);
+        w.PressStrip(w.Deck.StripGeometry.PinStud);
         Assert.True(w.Deck.Pinned);
-        Assert.Equal(ChatDeckStripGeometry.Width, w.Deck.Left);
+        Assert.Equal(10f, w.Deck.Left);
     }
 
     [Fact]

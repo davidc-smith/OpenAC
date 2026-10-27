@@ -19,7 +19,8 @@ internal sealed record ChatDeckBindings(
     Func<string?> LastIncomingTellSender,
     Func<bool> StayInChatMode,
     Action<PluginChatLinkClicked>? LinkClicked = null,
-    Silk.NET.Input.IKeyboard? Keyboard = null);
+    Silk.NET.Input.IKeyboard? Keyboard = null,
+    Action? RestorePinnedPlacement = null);
 
 /// <summary>
 /// The Chat Deck window (pinned layout): a tab bar, a transcript of the selected
@@ -117,7 +118,7 @@ internal sealed partial class UiChatDeck : UiElement
 
     private static bool IsControl(ChatDeckHit hit) =>
         hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.Chip
-            or ChatDeckZone.PinStud or ChatDeckZone.CollapseStud;
+            or ChatDeckZone.CollapseStud;
 
     internal bool HitTestLocal(float x, float y) => OnHitTest(x, y);
 
@@ -352,7 +353,6 @@ internal sealed partial class UiChatDeck : UiElement
                 switch (hit.Zone)
                 {
                     case ChatDeckZone.Tab: SelectTab(hit.Tab); return true;
-                    case ChatDeckZone.PinStud: PressPin(); return true;
                     case ChatDeckZone.CollapseStud: PressCollapse(); return true;
                     case ChatDeckZone.SearchStud: ToggleSearch(); return true;
                     case ChatDeckZone.Chip: OpenChipMenu(e.Data1, e.Data2); return true;   // UiChatDeck.Input.cs

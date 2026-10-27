@@ -38,7 +38,6 @@ internal sealed class ChatDeckGeometry
     public required DeckRect Frame { get; init; }
     public required IReadOnlyList<DeckRect> Tabs { get; init; }
     public required DeckRect SearchStud { get; init; }
-    public required DeckRect PinStud { get; init; }
     public required DeckRect CollapseStud { get; init; }
     /// <summary>Zero width while search is closed.</summary>
     public required DeckRect SearchField { get; init; }
@@ -56,8 +55,7 @@ internal sealed class ChatDeckGeometry
         Func<string, float> measureLabel)
     {
         var collapse = new DeckRect(width - Pad - StudSize, Pad, StudSize, StudSize);
-        var pin = collapse with { X = collapse.X - StudGap - StudSize };
-        var stud = pin with { X = pin.X - StudGap - StudSize };
+        var stud = collapse with { X = collapse.X - StudGap - StudSize };
         float tabsRight = stud.X - TabGap;
         float room = MathF.Max(0f, tabsRight - Pad);
 
@@ -105,7 +103,6 @@ internal sealed class ChatDeckGeometry
             Frame = new DeckRect(0f, 0f, width, height),
             Tabs = rects,
             SearchStud = stud,
-            PinStud = pin,
             CollapseStud = collapse,
             SearchField = search,
             Transcript = transcript,
@@ -121,7 +118,6 @@ internal sealed class ChatDeckGeometry
         for (int i = 0; i < Tabs.Count; i++)
             if (Tabs[i].W > 0 && Tabs[i].Contains(x, y)) return new(ChatDeckZone.Tab, i);
         if (SearchStud.Contains(x, y)) return new(ChatDeckZone.SearchStud);
-        if (PinStud.Contains(x, y)) return new(ChatDeckZone.PinStud);
         if (CollapseStud.Contains(x, y)) return new(ChatDeckZone.CollapseStud);
         if (Chip.Contains(x, y)) return new(ChatDeckZone.Chip);
         return Frame.Contains(x, y) ? new(ChatDeckZone.Frame) : new(ChatDeckZone.None);

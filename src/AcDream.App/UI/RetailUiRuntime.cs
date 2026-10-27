@@ -3640,7 +3640,8 @@ public sealed class RetailUiRuntime : IDisposable
                     LastIncomingTellSender: () => _bindings.Chat.ViewModel.LastIncomingTellSender,
                     StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
                     LinkClicked: _bindings.Chat.LinkClicked,
-                    Keyboard: Host.Keyboard),
+                    Keyboard: Host.Keyboard,
+                    RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck)),
                 _deckFonts,
                 _hudIcons);
 

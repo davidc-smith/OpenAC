@@ -5,6 +5,7 @@ namespace AcDream.App.UI.Hud;
 internal sealed partial class UiChatDeck
 {
     private bool? _frameDraggable;
+    private (float Left, float Top)? _pinnedPlace;   // where the window sat when it last collapsed
 
     private void OnLinesDelivered(IReadOnlyList<ChatDeckDelivery> deliveries)
     {
@@ -47,6 +48,12 @@ internal sealed partial class UiChatDeck
             _model.Cleared += ResetView;
             _model.LinesDelivered += OnLinesDelivered;
             _drawer.Restore(_model.Settings.Layout.Pinned, _model.Settings.Layout.Edge);
+            if (!_drawer.Pinned)
+            {
+                // The saved window's place is where the strip sits and where a pin returns to.
+                _b.RestorePinnedPlacement?.Invoke();
+                _pinnedPlace = (Left, Top);
+            }
         }
         else
         {
@@ -72,12 +79,6 @@ internal sealed partial class UiChatDeck
         ApplyDrawer();
     }
 
-    private void PressPin()
-    {
-        if (_drawer.Pinned) CollapseToEdge();
-        else PinWhereItFliesOut();
-    }
-
     private void PressCollapse()
     {
         if (_drawer.Pinned) CollapseToEdge();
@@ -90,23 +91,30 @@ internal sealed partial class UiChatDeck
         OpenFlyout(ChatDeckOpenReason.Stud);
     }
 
-    private void PressStripPin() => PinWhereItFliesOut();
+    private void PressStripPin() => PinBack();
 
     internal void CollapseToEdge()
     {
         if (FindRoot() is not { } root) return;
+        if (_drawer.Pinned) _pinnedPlace = (Left, Top);
         _drawer.Collapse(ChatDeckDrawer.NearestEdge(Left, Width, root.Width));
         LeaveDeck();
         ApplyDrawer();
     }
 
-    /// <summary>Pins the window where the fly-out puts it, beside the edge, and has the layout record that place.</summary>
-    private void PinWhereItFliesOut()
+    /// <summary>
+    /// Pins the window back where it sat when it was last pinned: the saved layout's place when there is
+    /// one, else the place remembered at collapse. The layout then records it.
+    /// </summary>
+    private void PinBack()
     {
         if (_drawer.Pinned || FindRoot() is not { } root) return;
-        DeckRect strip = ChatDeckStripGeometry.Place(_drawer.Edge, Top, Height, _labels.Count, root.Width, root.Height);
-        Left = ChatDeckStripGeometry.FlyoutLeft(_drawer.Edge, Width, root.Width, 1);
-        Top = strip.Y;
+        if (_pinnedPlace is { } place)
+        {
+            Left = place.Left;
+            Top = place.Top;
+        }
+        _b.RestorePinnedPlacement?.Invoke();   // the stored layout wins when it has one
         _drawer.Pin();
         ApplyDrawer();
         ResetAnchorCapture();

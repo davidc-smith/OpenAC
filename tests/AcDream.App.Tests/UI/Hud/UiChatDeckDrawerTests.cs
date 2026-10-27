@@ -85,15 +85,7 @@ public sealed class UiChatDeckDrawerTests
     }
 
     [Fact]
-    public void PinStud_WhilePinned_Collapses()
-    {
-        var w = new DrawerWorld();
-        w.Press(w.Deck.Geometry.PinStud);
-        Assert.Equal(ChatDeckDrawerState.Collapsed, w.Deck.Drawer.State);
-    }
-
-    [Fact]
-    public void StripPin_PinsBesideTheEdge()
+    public void StripPin_PinsBackWhereItWas()
     {
         var w = new DrawerWorld();
         w.Press(w.Deck.Geometry.CollapseStud);
@@ -101,12 +93,70 @@ public sealed class UiChatDeckDrawerTests
 
         Assert.True(w.Deck.Visible);
         Assert.False(w.Deck.Strip.Visible);
-        Assert.Equal(ChatDeckStripGeometry.Width, w.Deck.Left);
-        Assert.Equal(w.Deck.Strip.Top, w.Deck.Top, 1);
+        Assert.Equal(10f, w.Deck.Left);
+        Assert.Equal(670f, w.Deck.Top);
         Assert.True(w.H.Model!.Settings.Layout.Pinned);
         Assert.True(w.Deck.Resizable);
         Assert.True(w.Deck.Draggable);
         Assert.Equal(1f, w.Deck.Opacity);
+    }
+
+    [Fact]
+    public void StripPin_FromTheBottomLeftCorner_LeavesNoGap()
+    {
+        var w = new DrawerWorld(left: 0f, top: 680f);
+        w.Press(w.Deck.Geometry.CollapseStud);
+        w.PressStrip(w.Deck.StripGeometry.PinStud);
+
+        Assert.True(w.Deck.Pinned);
+        Assert.Equal(0f, w.Deck.Left);
+        Assert.Equal(680f, w.Deck.Top);
+    }
+
+    [Fact]
+    public void StripPin_AfterAFlyout_LeavesNoGap()
+    {
+        var w = new DrawerWorld(left: 0f, top: 680f);
+        w.Press(w.Deck.Geometry.CollapseStud);
+        w.Root.OnMouseMove(800, 100);
+        w.Deck.EnterChatMode(null);
+        w.Tick(0.3);
+        Assert.Equal(ChatDeckDrawerState.Open, w.Deck.Drawer.State);
+        w.PressStrip(w.Deck.StripGeometry.PinStud);
+
+        Assert.True(w.Deck.Pinned);
+        Assert.Equal(0f, w.Deck.Left);
+        Assert.Equal(680f, w.Deck.Top);
+    }
+
+    [Fact]
+    public void StripPin_TheStoredPlacementWins()
+    {
+        var w = new DrawerWorld(left: 0f, top: 680f);
+        w.H.RestorePlacement = () => { w.Deck.Left = 200f; w.Deck.Top = 300f; };
+        w.Press(w.Deck.Geometry.CollapseStud);
+        w.PressStrip(w.Deck.StripGeometry.PinStud);
+
+        Assert.Equal(200f, w.Deck.Left);
+        Assert.Equal(300f, w.Deck.Top);
+    }
+
+    [Fact]
+    public void CollapsedLayoutFromANewModel_RestoresTheSavedPlace_SoTheStripFollows()
+    {
+        var w = new DrawerWorld();
+        int calls = 0;
+        w.H.RestorePlacement = () => { calls++; w.Deck.Left = 0f; w.Deck.Top = 400f; };
+        w.H.Model = new ChatDeckModel(w.H.Log, ChatDeckDefaults.Create() with
+        {
+            Layout = new ChatDeckLayoutState { Pinned = false, Edge = ChatDeckEdge.Left },
+        }, "Davian");
+        w.Deck.SyncDrawerFromModel();
+
+        Assert.Equal(1, calls);
+        Assert.Equal(ChatDeckDrawerState.Collapsed, w.Deck.Drawer.State);
+        Assert.Equal(400f, w.Deck.Top);
+        Assert.Equal(400f, w.Deck.Strip.Top, 1);
     }
 
     [Fact]

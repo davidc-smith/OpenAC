@@ -57,7 +57,8 @@ public sealed class ChatDeckWiringTests : IDisposable
             Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(
                 () => Model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
-                () => null, () => false), fonts: null, icons: null);
+                () => null, () => false,
+                RestorePinnedPlacement: () => Persistence?.ApplyStoredPlacement(WindowNames.ChatDeck)), fonts: null, icons: null);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0), UiChatDeck.MountOptions(10f, 670f));
             Root.AddChild(Deck.Strip);
             Root.AddChild(Deck.Peek);
@@ -157,7 +158,7 @@ public sealed class ChatDeckWiringTests : IDisposable
         deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseDown, Data1: (int)(r.X + 2), Data2: (int)(r.Y + 2)));
 
     [Fact]
-    public void FlyoutMoves_StayOutOfTheLayout_PinRecordsTheNewPlace()
+    public void FlyoutMoves_StayOutOfTheLayout_StripPinPutsTheWindowBackWhereItWas()
     {
         var w = new World(_path);
         w.Switch.Apply(true);
@@ -174,7 +175,8 @@ public sealed class ChatDeckWiringTests : IDisposable
         w.Deck.Strip.OnEvent(new UiEvent(0, w.Deck.Strip, UiEventType.MouseDown,
             Data1: (int)(w.Deck.StripGeometry.PinStud.X + 2), Data2: (int)(w.Deck.StripGeometry.PinStud.Y + 2)));
         w.Persistence.SaveAll();
-        Assert.Equal(ChatDeckStripGeometry.Width, SavedDeck().X);
+        Assert.Equal(10f, SavedDeck().X);
+        Assert.Equal(10f, w.Deck.Left);
     }
 
     [Fact]
