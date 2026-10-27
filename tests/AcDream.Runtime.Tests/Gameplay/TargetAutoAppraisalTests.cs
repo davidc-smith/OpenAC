@@ -143,7 +143,7 @@ public sealed class TargetAutoAppraisalTests
     }
 
     [Fact]
-    public void AFailedIdIsLoggedAndRetriedOnTriggers()
+    public void AFailedIdIsLoggedAndRetriedByAHitOnceTheServerWindowPasses()
     {
         var (auto, sel, combat, sent, log) = Make();
         using (auto)

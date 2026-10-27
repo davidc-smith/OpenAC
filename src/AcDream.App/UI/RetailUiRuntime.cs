@@ -3786,6 +3786,8 @@ public sealed class RetailUiRuntime : IDisposable
     /// Auto-ID over the selection. Its requests go out only while the deck is
     /// shown: a selection change under the retail HUD sends nothing.
     /// </summary>
+    private uint _lastRefusedAutoId;
+
     private TargetAutoAppraisal CreateTargetAutoAppraisal()
     {
         System.Diagnostics.Stopwatch clock = _targetDeckClock!;
@@ -3798,7 +3800,17 @@ public sealed class RetailUiRuntime : IDisposable
             id =>
             {
                 bool sent = TargetDeckShown && ItemInteraction.TryAppraiseForAutomation(id);
-                Console.WriteLine($"[target-deck] auto-ID 0x{id:X8} {(sent ? "sent" : "refused")}");
+                // A refusal stays pending and is retried every tick, so log it once per id.
+                if (sent)
+                {
+                    _lastRefusedAutoId = 0u;
+                    Console.WriteLine($"[target-deck] auto-ID 0x{id:X8} sent");
+                }
+                else if (id != _lastRefusedAutoId)
+                {
+                    _lastRefusedAutoId = id;
+                    Console.WriteLine($"[target-deck] auto-ID 0x{id:X8} refused");
+                }
                 return sent;
             },
             () => clock.Elapsed.TotalSeconds);
