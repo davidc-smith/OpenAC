@@ -58,11 +58,14 @@ public sealed class ChatDeckWiringTests : IDisposable
                 () => model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
                 () => null, () => false), fonts: null, icons: null);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0), UiChatDeck.MountOptions(10f, 670f));
+            Root.AddChild(Deck.Strip);
+            Root.AddChild(Deck.Peek);
 
             Persistence = new RetailWindowLayoutPersistence(
                 Root.WindowManager, new SettingsStore(path), () => "Alice", () => (1600, 900),
                 stateManagedVisibilityWindows: [WindowNames.CommandDeck, WindowNames.ChatDeck]);
             Persistence.RestoreAll();
+            Persistence.SetCaptureGate(WindowNames.ChatDeck, () => Deck.Pinned);
 
             Switch = new ModernHudSwitch(
                 Root.ShowWindow, Root.HideWindow, Root.IsWindowVisible, () => true,
@@ -144,5 +147,49 @@ public sealed class ChatDeckWiringTests : IDisposable
         Assert.Equal(ChatDeckGeometry.MinWidth, o.MinWidth);
         Assert.Equal(ChatDeckGeometry.MinHeight, o.MinHeight);
         Assert.False(o.Visible);
+    }
+
+    private UiWindowLayout SavedDeck() =>
+        new SettingsStore(_path).LoadWindowLayout("Alice", "1600x900", WindowNames.ChatDeck, default)!.Value;
+
+    private static void PressDeck(UiChatDeck deck, DeckRect r) =>
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseDown, Data1: (int)(r.X + 2), Data2: (int)(r.Y + 2)));
+
+    [Fact]
+    public void FlyoutMoves_StayOutOfTheLayout_PinRecordsTheNewPlace()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Persistence.SaveAll();
+        Assert.Equal(10f, SavedDeck().X);
+
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+        w.Deck.EnterChatMode(null);
+        w.Deck.TickDrawer(0.2);
+        Assert.Equal(ChatDeckStripGeometry.Width, w.Deck.Left);
+        w.Persistence.SaveAll();
+        Assert.Equal(10f, SavedDeck().X);
+
+        w.Deck.Strip.OnEvent(new UiEvent(0, w.Deck.Strip, UiEventType.MouseDown,
+            Data1: (int)(w.Deck.StripGeometry.PinStud.X + 2), Data2: (int)(w.Deck.StripGeometry.PinStud.Y + 2)));
+        w.Persistence.SaveAll();
+        Assert.Equal(ChatDeckStripGeometry.Width, SavedDeck().X);
+    }
+
+    [Fact]
+    public void Collapsed_SurvivesTheSwitchTick_AndOffBringsTheRetailChatBack()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+
+        w.Switch.Tick();
+        Assert.False(w.Deck.Visible);
+        Assert.True(w.Deck.Strip.Visible);
+        Assert.False(w.Chat.Visible);
+
+        w.Switch.Apply(false);
+        Assert.False(w.Deck.Strip.Visible);
+        Assert.True(w.Chat.Visible);
     }
 }

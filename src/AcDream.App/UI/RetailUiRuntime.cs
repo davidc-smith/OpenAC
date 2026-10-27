@@ -645,6 +645,8 @@ public sealed class RetailUiRuntime : IDisposable
                 ]);
             // Closed from mount: an attached Spell Deck is placed by its dock, never by the layout.
             _persistence.SetCaptureGate(WindowNames.SpellDeck, () => !(_spellDeckController?.Attached ?? true));
+            // The saved window geometry is the pinned window's; a fly-out's place is the strip's.
+            _persistence.SetCaptureGate(WindowNames.ChatDeck, () => _chatDeck?.Pinned ?? true);
             _persistence.ResetToDefaults();
             _persistence.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
             _canvasPositions = new PluginCanvasPositionPersistence(
@@ -856,6 +858,8 @@ public sealed class RetailUiRuntime : IDisposable
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
+        // After the model, so a line delivered this frame can peek this frame.
+        _chatDeck?.TickDrawer(deltaSeconds);
         Layout.UiMediaClock.Advance(deltaSeconds);
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
@@ -3641,12 +3645,18 @@ public sealed class RetailUiRuntime : IDisposable
 
             float top = MathF.Max(0f, Host.Root.Height - Hud.ChatDeckGeometry.DefaultHeight - 10f);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite, Hud.UiChatDeck.MountOptions(10f, top));
+            Host.Root.AddChild(deck.Strip);
+            Layout.UiOverlayLayer peekLayer = OverlayHost.AddLayer("ChatDeckPeek");
+            peekLayer.Visible = true;   // click-through; the peek element shows itself when it has lines
+            peekLayer.AddChild(deck.Peek);
         }
         catch (Exception ex)
         {
             // Anything that fails here leaves the retail chat as the only chat; undo what was built.
             if (deck is not null)
             {
+                deck.Strip.Parent?.RemoveChild(deck.Strip);
+                deck.Peek.Parent?.RemoveChild(deck.Peek);
                 UiElement window = deck;
                 while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
                 if (window.Parent is not null) Host.Root.RemoveChild(window);
