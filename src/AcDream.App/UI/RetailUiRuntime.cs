@@ -1350,6 +1350,7 @@ public sealed class RetailUiRuntime : IDisposable
         // attachment) first, so the restore sees the right capture gate; the
         // Spell Deck is placed after it.
         _spellDeckSync?.LoadIfChanged();
+        _chatDeck?.SyncDrawerFromModel();   // likewise the Chat Deck's pinned/collapsed state
         _persistence?.RestoreAll();
         _spellDeckSync?.AfterRestore();
         // Root is sized to the screen above, so a restored canvas is kept
@@ -3669,6 +3670,7 @@ public sealed class RetailUiRuntime : IDisposable
 
         _chatDeck = deck;
         _chatDeckSession = session;
+        session!.ModelChanged += _chatDeck.SyncDrawerFromModel;
         // A composed line (automation, a plugin) goes to whichever chat input is showing.
         _bindings.Chat.Entry.BindEntryFocus(() => ChatEntryTarget?.Focus() == true);
         Console.WriteLine("[UI] Chat Deck mounted (Modern HUD).");
@@ -5922,6 +5924,8 @@ public sealed class RetailUiRuntime : IDisposable
                 _spellDeckSpellbook = null;
                 _spellDeck?.OnHidden();
                 _chatDeck?.Detach();
+                if (_chatDeckSession is not null && _chatDeck is not null)
+                    _chatDeckSession.ModelChanged -= _chatDeck.SyncDrawerFromModel;
                 _chatDeckSession?.Dispose();
                 _chatDeckSession = null;
                 _hudIcons?.Dispose();

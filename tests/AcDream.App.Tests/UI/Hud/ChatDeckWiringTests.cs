@@ -33,6 +33,7 @@ public sealed class ChatDeckWiringTests : IDisposable
         public readonly RetailWindowLayoutPersistence Persistence;
         public readonly ModernHudSwitch Switch;
         public bool DeckMounted = true;
+        public ChatDeckModel? Model;
 
         public World(string path)
         {
@@ -53,9 +54,9 @@ public sealed class ChatDeckWiringTests : IDisposable
             Root.DefaultTextInput = RetailInput;
 
             var log = new ChatLog();
-            var model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
+            Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(
-                () => model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
+                () => Model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
                 () => null, () => false), fonts: null, icons: null);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0), UiChatDeck.MountOptions(10f, 670f));
             Root.AddChild(Deck.Strip);
@@ -191,5 +192,22 @@ public sealed class ChatDeckWiringTests : IDisposable
         w.Switch.Apply(false);
         Assert.False(w.Deck.Strip.Visible);
         Assert.True(w.Chat.Visible);
+    }
+
+    [Fact]
+    public void CharacterSwitch_FromCollapsed_RestoresThePinnedCharactersPlace()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Persistence.SaveAll();                          // pinned at x 10
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+        w.Deck.Left = 500f;                               // a stale place the closed gate must not keep
+
+        w.Model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Alice");   // the next login, saved pinned
+        w.Deck.SyncDrawerFromModel();                     // what the session's ModelChanged does
+        w.Persistence.RestoreAll();
+
+        Assert.True(w.Deck.Pinned);
+        Assert.Equal(10f, w.Deck.Left);
     }
 }

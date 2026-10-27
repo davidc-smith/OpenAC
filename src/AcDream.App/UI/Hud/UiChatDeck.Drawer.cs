@@ -8,7 +8,7 @@ internal sealed partial class UiChatDeck
 
     private void OnLinesDelivered(IReadOnlyList<ChatDeckDelivery> deliveries)
     {
-        if (_drawer.State == ChatDeckDrawerState.Collapsed && _model is { } model)
+        if (_shown && _drawer.State == ChatDeckDrawerState.Collapsed && _model is { } model)
             _peek.Add(deliveries, model.Settings.Tabs);
     }
 
@@ -24,6 +24,36 @@ internal sealed partial class UiChatDeck
         ChatDeckDrawerState before = _drawer.State;
         _drawer.EntryDone();
         AfterDrawerMoved(before);
+        ApplyDrawer();
+    }
+
+    /// <summary>
+    /// Follows the model the session holds: a new one brings its saved layout, none (the session
+    /// ended) puts the drawer back to pinned. The runtime calls this the moment a session starts or
+    /// ends, so the capture gate and the first shown frame already match the incoming character.
+    /// </summary>
+    internal void SyncDrawerFromModel()
+    {
+        ChatDeckModel? model = _b.Model();
+        if (ReferenceEquals(model, _model)) return;
+        if (_model is not null)
+        {
+            _model.Cleared -= ResetView;
+            _model.LinesDelivered -= OnLinesDelivered;
+        }
+        _model = model;
+        if (_model is not null)
+        {
+            _model.Cleared += ResetView;
+            _model.LinesDelivered += OnLinesDelivered;
+            _drawer.Restore(_model.Settings.Layout.Pinned, _model.Settings.Layout.Edge);
+        }
+        else
+        {
+            _drawer.Restore(true, ChatDeckEdge.Left);   // raises nothing: no layout to save
+        }
+        _peek.Clear();
+        ResetView();
         ApplyDrawer();
     }
 

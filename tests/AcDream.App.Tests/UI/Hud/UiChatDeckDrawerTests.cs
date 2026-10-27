@@ -128,4 +128,53 @@ public sealed class UiChatDeckDrawerTests
         w.Tick(0.016);
         Assert.Equal(1, w.H.Model!.FindTab(ChatDeckDefaults.AllTabId)!.Unread);
     }
+
+    [Fact]
+    public void SessionEnd_ResetsTheDrawerToPinned()
+    {
+        var w = new DrawerWorld();
+        w.Press(w.Deck.Geometry.CollapseStud);
+        Assert.False(w.Deck.Pinned);
+
+        w.H.Model = null;
+        w.Deck.SyncDrawerFromModel();
+
+        Assert.True(w.Deck.Pinned);                       // the capture gate is open for the next character
+        Assert.False(w.Deck.Strip.Visible);
+    }
+
+    [Fact]
+    public void NewModelWithCollapsedLayout_SyncedWhileHidden_NeverShowsPinned()
+    {
+        var w = new DrawerWorld();
+        w.Deck.OnHidden();
+        w.Deck.Visible = false;
+        w.H.Model = new ChatDeckModel(w.H.Log, ChatDeckDefaults.Create() with
+        {
+            Layout = new ChatDeckLayoutState { Pinned = false, Edge = ChatDeckEdge.Left },
+        }, "Davian");
+
+        w.Deck.SyncDrawerFromModel();
+        Assert.Equal(ChatDeckDrawerState.Collapsed, w.Deck.Drawer.State);
+        Assert.False(w.Deck.Strip.Visible);               // still hidden
+
+        w.Deck.OnShown();
+        Assert.False(w.Deck.Visible);                     // no pinned frame
+        Assert.True(w.Deck.Strip.Visible);
+    }
+
+    [Fact]
+    public void LinesWhileHidden_DoNotPeek_NorAppearOnShow()
+    {
+        var w = new DrawerWorld();
+        w.Press(w.Deck.Geometry.CollapseStud);
+        w.Deck.OnHidden();
+
+        w.H.Say("hello");
+        w.H.Model!.Tick();
+        Assert.Empty(w.Deck.PeekLines);
+
+        w.Deck.OnShown();
+        Assert.Empty(w.Deck.PeekLines);
+    }
 }

@@ -46,7 +46,6 @@ internal sealed partial class UiChatDeck : UiElement
     private bool _searchOpen;
     private string _searchText = "";
     private bool _shown;
-    private ChatDeckModel? _appliedFor;
     private long? _addedAtScrollUp;
     private int _menuTab = -1;
     private ChatDeckHit _hit;
@@ -152,6 +151,7 @@ internal sealed partial class UiChatDeck : UiElement
     public void OnShown()
     {
         _shown = true;
+        SyncDrawerFromModel();   // a no-op when the session already did; never undoes its state
         ApplyDrawer();
     }
 
@@ -160,6 +160,7 @@ internal sealed partial class UiChatDeck : UiElement
     {
         _shown = false;
         _drawer.Close();
+        _peek.Clear();
         _tabMenu.Close(restoreFocus: false);
         OnInputHidden();           // UiChatDeck.Input.cs
         ApplyDrawer();             // reports the hidden view to the model: a hidden element gets no ticks
@@ -172,24 +173,7 @@ internal sealed partial class UiChatDeck : UiElement
     /// <summary>Samples the model, lays the window out and rebuilds the transcript if anything it shows changed.</summary>
     internal void Refresh()
     {
-        ChatDeckModel? model = _b.Model();
-        if (!ReferenceEquals(model, _model))
-        {
-            if (_model is not null)
-            {
-                _model.Cleared -= ResetView;
-                _model.LinesDelivered -= OnLinesDelivered;
-            }
-            _model = model;
-            if (_model is not null)
-            {
-                _model.Cleared += ResetView;
-                _model.LinesDelivered += OnLinesDelivered;
-                _drawer.Restore(_model.Settings.Layout.Pinned, _model.Settings.Layout.Edge);
-            }
-            _peek.Clear();
-            ResetView();
-        }
+        SyncDrawerFromModel();
 
         _labels = _model is null
             ? []
@@ -212,11 +196,6 @@ internal sealed partial class UiChatDeck : UiElement
         RebuildTranscript(appearance);
         TrackNewLines();
         _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd);
-        if (_shown && model is not null && !ReferenceEquals(_appliedFor, model))
-        {
-            _appliedFor = model;
-            ApplyDrawer();
-        }
     }
 
     /// <summary>
