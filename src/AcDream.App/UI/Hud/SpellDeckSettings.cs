@@ -2,39 +2,46 @@ using AcDream.UI.Abstractions.Panels.Settings;
 
 namespace AcDream.App.UI.Hud;
 
-/// <summary>A character's Spell Deck rows and attachment, validated. <paramref name="DetachedRows"/>
-/// is the row count the stored detached placement goes with (its height is that many rows at
-/// its scale); null when not recorded, which means the current row count.</summary>
-public sealed record SpellDeckSettings(IReadOnlyList<SpellDeckRow> Rows, bool Attached, int? DetachedRows = null)
+/// <summary>A character's Spell Deck, validated: the one tab the whole deck shows (0-7 server
+/// tabs, 8+ local tabs), how many rows continue it, attachment, and the local tabs' spell ids.
+/// <paramref name="DetachedRows"/> is the row count the stored detached placement goes with (its
+/// height is that many rows at its scale); null when not recorded, which means the current row count.</summary>
+public sealed record SpellDeckSettings(
+    int Tab,
+    int RowCount,
+    bool Attached,
+    int? DetachedRows,
+    IReadOnlyList<IReadOnlyList<uint>> LocalTabs)
 {
-    public static SpellDeckSettings Default { get; } =
-        new([new(1, 0), new(2, 1), new(3, 2)], Attached: true);
+    public const int MaxLocalTabs = 8;
 
-    public int NextRowId => Rows.Count == 0 ? 1 : Rows.Max(r => r.Id) + 1;
+    public static SpellDeckSettings Default { get; } = new(0, 3, true, null, []);
 
     public SpellDeckSettings Normalize()
     {
         int? detachedRows = DetachedRows is int n
             ? Math.Clamp(n, SpellDeckGeometry.MinRows, SpellDeckGeometry.MaxRows)
             : null;
-        if (Rows.Count == 0) return Default with { Attached = Attached, DetachedRows = detachedRows };
-        var seen = new HashSet<int>();
-        int next = Math.Max(1, Rows.Max(r => r.Id) + 1);
-        var rows = new List<SpellDeckRow>();
-        foreach (SpellDeckRow row in Rows.Take(SpellDeckGeometry.MaxRows))
+        var local = new List<IReadOnlyList<uint>>();
+        foreach (IReadOnlyList<uint>? tab in (LocalTabs ?? []).Take(MaxLocalTabs))
         {
-            int id = row.Id > 0 && seen.Add(row.Id) ? row.Id : next++;
-            seen.Add(id);
-            rows.Add(new(id, row.Tab is >= 0 and < SpellDeckModel.Tabs ? row.Tab : 0));
+            var seen = new HashSet<uint>();
+            local.Add([.. (tab ?? []).Where(id => id != 0 && seen.Add(id))]);
         }
-        return new(rows, Attached, detachedRows);
+        int tabCount = SpellDeckModel.Tabs + local.Count;
+        return new(
+            Tab >= 0 && Tab < tabCount ? Tab : 0,
+            Math.Clamp(RowCount, SpellDeckGeometry.MinRows, SpellDeckGeometry.MaxRows),
+            Attached,
+            detachedRows,
+            local);
     }
 
     public static SpellDeckSettings Load(SettingsStore? store, string toonKey) =>
         store?.LoadSpellDeck(toonKey) is { } s
-            ? new SpellDeckSettings(s.Rows.Select(r => new SpellDeckRow(r.Id, r.Tab)).ToArray(), s.Attached, s.DetachedRows).Normalize()
+            ? new SpellDeckSettings(s.Tab, s.RowCount, s.Attached, s.DetachedRows, s.LocalTabs).Normalize()
             : Default;
 
     public void Save(SettingsStore? store, string toonKey) =>
-        store?.SaveSpellDeck(toonKey, new StoredSpellDeck(Attached, Rows.Select(r => (r.Id, r.Tab)).ToArray(), DetachedRows));
+        store?.SaveSpellDeck(toonKey, new StoredSpellDeck(Tab, RowCount, Attached, DetachedRows, LocalTabs));
 }

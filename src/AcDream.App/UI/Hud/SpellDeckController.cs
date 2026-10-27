@@ -23,6 +23,7 @@ public sealed class SpellDeckController
     private readonly List<SpellDeckRow> _rows;
     private bool _attached;
     private int? _detachedRows;
+    private IReadOnlyList<IReadOnlyList<uint>> _localTabs = [];
     private int _nextRowId;
 
     public SpellDeckController(
@@ -43,11 +44,20 @@ public sealed class SpellDeckController
         _clickCasts = clickCasts ?? throw new ArgumentNullException(nameof(clickCasts));
         _canAddRow = canAddRow ?? throw new ArgumentNullException(nameof(canAddRow));
         SpellDeckSettings s = settings.Normalize();
-        _rows = [.. s.Rows];
+        _rows = RowsOf(s);
+        _localTabs = s.LocalTabs;
         _attached = s.Attached;
         _detachedRows = s.DetachedRows;
-        _nextRowId = s.NextRowId;
+        _nextRowId = s.RowCount + 1;
     }
+
+    // v1 row model until Tasks 16-17: RowCount rows, ids 1..n. Each row shows its own server tab,
+    // starting at Tab (so the default is still tabs 1-3), as the v1 controller behaviour expects.
+    private static List<SpellDeckRow> RowsOf(SpellDeckSettings s) =>
+        [.. Enumerable.Range(1, s.RowCount).Select(i => new SpellDeckRow(i, (Math.Min(s.Tab, SpellDeckModel.Tabs - 1) + i - 1) % SpellDeckModel.Tabs))];
+
+    private SpellDeckSettings ToSettings() =>
+        new(_rows.Count > 0 ? _rows[0].Tab : 0, _rows.Count, _attached, _detachedRows, _localTabs);
 
     public IReadOnlyList<SpellDeckRow> Rows => _rows;
     public SpellDeckOutline Outline { get; private set; }
@@ -62,8 +72,9 @@ public sealed class SpellDeckController
     public void Load(SpellDeckSettings settings)
     {
         SpellDeckSettings s = settings.Normalize();
-        _rows.Clear(); _rows.AddRange(s.Rows);
-        _attached = s.Attached; _detachedRows = s.DetachedRows; _nextRowId = s.NextRowId;
+        _rows.Clear(); _rows.AddRange(RowsOf(s));
+        _localTabs = s.LocalTabs;
+        _attached = s.Attached; _detachedRows = s.DetachedRows; _nextRowId = s.RowCount + 1;
         Outline = SpellDeckOutline.None;
         Tick();
     }
@@ -264,12 +275,12 @@ public sealed class SpellDeckController
     {
         if (_detachedRows == rows) return;
         _detachedRows = rows;
-        _save(new SpellDeckSettings([.. _rows], _attached, _detachedRows));
+        _save(ToSettings());
     }
 
     private void Changed()
     {
         Tick();
-        _save(new SpellDeckSettings([.. _rows], _attached, _detachedRows));
+        _save(ToSettings());
     }
 }

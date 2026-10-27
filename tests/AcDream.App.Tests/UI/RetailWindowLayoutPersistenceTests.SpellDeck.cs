@@ -97,8 +97,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
     private static UiWindowLayout StoreDetachedSpellDeck(
         SettingsStore store, string key, float left, float top, float scale, int rows)
     {
-        store.SaveSpellDeck(key, new StoredSpellDeck(false,
-            Enumerable.Range(1, rows).Select(i => (i, (i - 1) % 8)).ToArray(), DetachedRows: rows));
+        store.SaveSpellDeck(key, new StoredSpellDeck(0, rows, false, rows, []));
         SpellDeckGeometry g = SpellDeckGeometry.Create(scale, 1f, rows);
         var layout = new UiWindowLayout(left, top, g.Width, g.Height, false, false, false);
         store.SaveWindowLayout(key, "1600x900", WindowNames.SpellDeck, layout);
@@ -163,8 +162,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         // attached, added 2 rows and logged out.
         var store = new SettingsStore(PathName);
         StoreDetachedSpellDeck(store, "Bob", 300f, 100f, 1.2f, 3);
-        store.SaveSpellDeck("Bob", new StoredSpellDeck(true,
-            Enumerable.Range(1, 5).Select(i => (i, i - 1)).ToArray(), DetachedRows: 3));
+        store.SaveSpellDeck("Bob", new StoredSpellDeck(0, 5, true, 3, []));
         using var rig = new SpellDeckRig(PathName);
         rig.Frames(2);
         rig.EnterWorld("Bob");

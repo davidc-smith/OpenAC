@@ -23,7 +23,12 @@ public readonly record struct MarkupControlKey(string Window, string Control, st
 
 /// <summary>A character's Spell Deck rows (id, tab), whether it is attached to the Command Deck,
 /// and the row count its stored detached placement was saved with (null when not recorded).</summary>
-public sealed record StoredSpellDeck(bool Attached, IReadOnlyList<(int Id, int Tab)> Rows, int? DetachedRows = null);
+public sealed record StoredSpellDeck(
+    int Tab,
+    int RowCount,
+    bool Attached,
+    int? DetachedRows,
+    IReadOnlyList<IReadOnlyList<uint>> LocalTabs);
 
 public sealed class SettingsStore
 {
@@ -373,15 +378,39 @@ public sealed class SettingsStore
         {
             var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             if (root?["spellDeck"]?[toonKey] is not JsonObject deck) return null;
-            var rows = new List<(int, int)>();
-            if (deck["rows"] is JsonArray array)
-                foreach (JsonNode? node in array)
-                    if (node is JsonObject row
-                        && row["id"]?.GetValue<int>() is int id
-                        && row["tab"]?.GetValue<int>() is int tab)
-                        rows.Add((id, tab));
+            int tab = 0, rowCount = 3;
+            if (deck["rowCount"] is JsonValue rc && rc.TryGetValue(out int rcv)) rowCount = rcv;
+            if (deck["tab"] is JsonValue tv && tv.TryGetValue(out int tabv)) tab = tabv;
+            else if (deck["rows"] is JsonArray old)
+            {
+                // v1: one row per tab; the deck now has one tab and continues it.
+                int count = 0; int? first = null;
+                foreach (JsonNode? node in old)
+                {
+                    if (node is not JsonObject row || row["id"] is not JsonValue || row["tab"] is not JsonValue tn
+                        || !tn.TryGetValue(out int t)) continue;
+                    count++; first ??= t;
+                }
+                if (count > 0) rowCount = count;
+                tab = first ?? 0;
+            }
+            var localTabs = new List<IReadOnlyList<uint>>();
+            if (deck["localTabs"] is JsonArray tabs)
+                foreach (JsonNode? tabNode in tabs)
+                {
+                    if (tabNode is not JsonArray ids) continue;
+                    var list = new List<uint>();
+                    bool ok = true;
+                    foreach (JsonNode? idNode in ids)
+                    {
+                        if (idNode is JsonValue iv && iv.TryGetValue(out uint id)) list.Add(id);
+                        else { ok = false; break; }
+                    }
+                    if (ok) localTabs.Add(list);
+                }
             int? detachedRows = deck["detachedRows"] is JsonValue value && value.TryGetValue(out int n) ? n : null;
-            return new StoredSpellDeck(deck["attached"]?.GetValue<bool>() ?? true, rows, detachedRows);
+            bool attached = deck["attached"] is JsonValue av && av.TryGetValue(out bool ab) ? ab : true;
+            return new StoredSpellDeck(tab, Math.Clamp(rowCount, 1, 10), attached, detachedRows, localTabs);
         }
         catch (Exception ex)
         {
@@ -395,9 +424,20 @@ public sealed class SettingsStore
         ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
         ArgumentNullException.ThrowIfNull(deck);
         JsonObject root = LoadMutableRoot();
-        var rows = new JsonArray();
-        foreach ((int id, int tab) in deck.Rows) rows.Add(new JsonObject { ["id"] = id, ["tab"] = tab });
-        var entry = new JsonObject { ["attached"] = deck.Attached, ["rows"] = rows };
+        var localTabs = new JsonArray();
+        foreach (IReadOnlyList<uint> ids in deck.LocalTabs)
+        {
+            var arr = new JsonArray();
+            foreach (uint id in ids) arr.Add(id);
+            localTabs.Add(arr);
+        }
+        var entry = new JsonObject
+        {
+            ["tab"] = deck.Tab,
+            ["rowCount"] = deck.RowCount,
+            ["attached"] = deck.Attached,
+            ["localTabs"] = localTabs,
+        };
         if (deck.DetachedRows is int detachedRows) entry["detachedRows"] = detachedRows;
         GetOrCreateObject(root, "spellDeck")[toonKey] = entry;
         root["version"] = CurrentSchemaVersion;
