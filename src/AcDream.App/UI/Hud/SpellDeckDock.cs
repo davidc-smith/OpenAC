@@ -62,7 +62,7 @@ public interface ISpellDeckDockHost
 
 /// <summary>
 /// Ties the Spell Deck to the Command Deck. Attached, the Spell Deck sits on
-/// the deck's frame, from the orb's left edge to the deck's right edge, with the
+/// the deck's frame, from the frame's left (past the orb) to the deck's right edge, with the
 /// deck's scale and stretch, and its rows grow upwards; dragging it moves the
 /// deck (the two are one block), and its right edge and top-right corner
 /// resize the deck as the deck's own grips do (the Spell Deck follows). The deck takes the width at which the Spell Deck's rows hold its fullest tab as its minimum

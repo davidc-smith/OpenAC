@@ -97,7 +97,7 @@ public sealed class SpellDeckDockTests
         }
     }
 
-    /// <summary>The attached Spell Deck's spot on the deck: from the orb's left edge, on the frame's top.</summary>
+    /// <summary>The attached Spell Deck's spot on the deck: from the frame's left, past the orb, on the frame's top.</summary>
     private static (float Left, float Bottom) AttachedSpot(Host host) =>
         (host.DeckLeft + 70f * host.DeckGeometry.Scale, host.DeckTop + 4f * host.DeckGeometry.Scale);
 
@@ -335,7 +335,7 @@ public sealed class SpellDeckDockTests
 
         Assert.Equal(0, host.StoredApplied);
         Assert.Equal(attached, host.SpellDeckGeometry);
-        // Where it sat attached: from the orb's left edge, on the frame's top (scale 1.2).
+        // Where it sat attached: from the frame's left, past the orb, on the frame's top (scale 1.2).
         (float Left, float Top) spot = (250f + 70f * 1.2f, 500f + 4f * 1.2f - attached.Height);
         Assert.Equal(spot, (host.SpellDeckLeft, host.SpellDeckTop));
         Assert.Equal(spot, (host.Stored.Left, host.Stored.Top));   // and saved
@@ -371,7 +371,7 @@ public sealed class SpellDeckDockTests
 
     [Theory]
     [MemberData(nameof(Sizes))]
-    public void SpellDeckDock_Attached_SitsOnTheFrameFromTheOrbToTheRightEdge(float scale, float stretch)
+    public void SpellDeckDock_Attached_SitsOnTheFrameFromItsLeftPastTheOrbToTheRightEdge(float scale, float stretch)
     {
         var (dock, host, _, _) = Make();
         host.DeckGeometry = DeckGeometry.Create(scale, stretch);
