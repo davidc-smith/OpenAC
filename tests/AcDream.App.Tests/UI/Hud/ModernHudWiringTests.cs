@@ -22,10 +22,16 @@ public sealed class ModernHudWiringTests
         VitalsSideBySideController? vitals = null;
         var hud = new ModernHudSwitch(
             root.ShowWindow, root.HideWindow,
-            deckMounted: () => true,
+            isVisible: root.IsWindowVisible,
             gameplayActive: () => true,
-            resyncRetail: () => vitals!.SyncVisibility(),
-            onDeckHidden: () => { });
+            [
+                new ModernHudReplacement(
+                    "Command Deck", WindowNames.CommandDeck, ModernHudSwitch.CommandDeckRetailWindows,
+                    Mounted: () => true,
+                    OnShown: () => { },
+                    OnHidden: () => { },
+                    ResyncRetail: () => vitals!.SyncVisibility()),
+            ]);
         vitals = new VitalsSideBySideController(
             hud.GatedShow, root.HideWindow, () => sideBySide,
             WindowNames.Vitals, WindowNames.SideVitals);

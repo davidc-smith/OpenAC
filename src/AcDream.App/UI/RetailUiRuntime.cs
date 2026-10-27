@@ -523,15 +523,23 @@ public sealed class RetailUiRuntime : IDisposable
         _hudSwitch = new Hud.ModernHudSwitch(
             show: Host.ShowWindow,
             hide: Host.HideWindow,
-            deckMounted: () => _commandDeck is not null,
+            isVisible: Host.IsWindowVisible,
             gameplayActive: () => _bindings.IsGameplayDisplay?.Invoke() ?? true,
-            resyncRetail: () =>
-            {
-                CombatUiController?.SyncVisibility();
-                JumpPowerbarController?.SyncVisibility();
-                _vitalsSideBySide?.SyncVisibility();
-            },
-            onDeckHidden: () => _commandDeck?.OnHidden());
+            [
+                new Hud.ModernHudReplacement(
+                    "Command Deck", WindowNames.CommandDeck, Hud.ModernHudSwitch.CommandDeckRetailWindows,
+                    Mounted: () => _commandDeck is not null,
+                    OnShown: () => { },
+                    OnHidden: () => _commandDeck?.OnHidden(),
+                    ResyncRetail: () =>
+                    {
+                        CombatUiController?.SyncVisibility();
+                        JumpPowerbarController?.SyncVisibility();
+                        _vitalsSideBySide?.SyncVisibility();
+                    }),
+            ],
+            holdVisibility: window => _persistence?.HoldVisibility(window),
+            releaseVisibility: window => _persistence?.ReleaseVisibility(window) ?? false);
         MountVitals();
         MountRadar();
         MountChat();

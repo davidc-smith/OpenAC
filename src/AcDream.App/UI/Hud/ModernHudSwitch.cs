@@ -1,15 +1,32 @@
 namespace AcDream.App.UI.Hud;
 
+/// <summary>A Modern HUD window and the retail windows it stands in for.</summary>
+/// <param name="Name">For the log line when it did not mount ("Command Deck").</param>
+/// <param name="ResyncRetail">After Modern HUD turns off: lets the retail controllers show what they own.</param>
+/// <param name="HoldsRetailVisibility">The retail windows' visibility is the player's, kept for them while
+/// replaced and put back after (the chat windows); otherwise their controllers decide it (the vitals).</param>
+public sealed record ModernHudReplacement(
+    string Name,
+    string Window,
+    IReadOnlyList<string> RetailWindows,
+    Func<bool> Mounted,
+    Action OnShown,
+    Action OnHidden,
+    Action? ResyncRetail = null,
+    bool HoldsRetailVisibility = false);
+
 /// <summary>
-/// Turns Modern HUD on and off. While active, the retail vitals, side
-/// vitals, combat and jump windows cannot be shown (their controllers' show
-/// requests go through <see cref="GateVisibility"/> / <see cref="GatedShow"/>)
-/// and the Command Deck is shown while gameplay is on screen. Turning on is
-/// refused, leaving retail untouched, when the deck did not mount.
+/// Turns Modern HUD on and off. Each replacement that mounted takes over its
+/// retail windows while Modern HUD is on: they cannot be shown (their
+/// controllers' show requests go through <see cref="GateVisibility"/> /
+/// <see cref="GatedShow"/>, and a chat window shown anyway is hidden again on
+/// the next tick), and the replacement is shown while gameplay is on screen.
+/// A replacement that did not mount leaves its retail windows alone; the
+/// others still apply.
 /// </summary>
 public sealed class ModernHudSwitch
 {
-    public static IReadOnlyList<string> RetailWindows { get; } =
+    public static IReadOnlyList<string> CommandDeckRetailWindows { get; } =
     [
         WindowNames.Vitals,
         WindowNames.SideVitals,
@@ -17,46 +34,67 @@ public sealed class ModernHudSwitch
         WindowNames.JumpPowerbar,
     ];
 
+    public static IReadOnlyList<string> ChatDeckRetailWindows { get; } =
+    [
+        WindowNames.Chat,
+        WindowNames.ChatWindow1,
+        WindowNames.ChatWindow2,
+        WindowNames.ChatWindow3,
+        WindowNames.ChatWindow4,
+    ];
+
     private readonly Func<string, bool> _show;
     private readonly Func<string, bool> _hide;
-    private readonly Func<bool> _deckMounted;
+    private readonly Func<string, bool> _isVisible;
     private readonly Func<bool> _gameplayActive;
-    private readonly Action _resyncRetail;
-    private readonly Action _onDeckHidden;
+    private readonly IReadOnlyList<ModernHudReplacement> _replacements;
+    private readonly Action<string> _holdVisibility;
+    private readonly Func<string, bool>? _releaseVisibility;
     private readonly Action<string> _log;
+    private readonly HashSet<string> _inForce = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _shown = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _reportedMountFailure = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, bool> _wasVisible = new(StringComparer.Ordinal);
     private bool? _requested;
-    private bool _deckShown;
-    private bool _reportedMountFailure;
 
     public ModernHudSwitch(
         Func<string, bool> show,
         Func<string, bool> hide,
-        Func<bool> deckMounted,
+        Func<string, bool> isVisible,
         Func<bool> gameplayActive,
-        Action resyncRetail,
-        Action onDeckHidden,
+        IReadOnlyList<ModernHudReplacement> replacements,
+        Action<string>? holdVisibility = null,
+        Func<string, bool>? releaseVisibility = null,
         Action<string>? log = null)
     {
         _show = show ?? throw new ArgumentNullException(nameof(show));
         _hide = hide ?? throw new ArgumentNullException(nameof(hide));
-        _deckMounted = deckMounted ?? throw new ArgumentNullException(nameof(deckMounted));
+        _isVisible = isVisible ?? throw new ArgumentNullException(nameof(isVisible));
         _gameplayActive = gameplayActive ?? throw new ArgumentNullException(nameof(gameplayActive));
-        _resyncRetail = resyncRetail ?? throw new ArgumentNullException(nameof(resyncRetail));
-        _onDeckHidden = onDeckHidden ?? throw new ArgumentNullException(nameof(onDeckHidden));
+        _replacements = replacements ?? throw new ArgumentNullException(nameof(replacements));
+        _holdVisibility = holdVisibility ?? (_ => { });
+        _releaseVisibility = releaseVisibility;
         _log = log ?? Console.WriteLine;
     }
 
-    public bool Active { get; private set; }
+    /// <summary>Modern HUD is on and at least one replacement took over.</summary>
+    public bool Active => _inForce.Count > 0;
+
+    /// <summary>Whether a replacement's window is on screen now.</summary>
+    public bool IsShown(string window) => _shown.Contains(window);
 
     /// <summary>A retail controller's <c>setWindowVisible</c> delegate, gated.</summary>
     public Action<bool> GateVisibility(string window) => visible =>
     {
         if (!visible) _hide(window);
-        else if (!Active) _show(window);
+        else if (!IsReplaced(window)) _show(window);
     };
 
-    /// <summary>A show call that does nothing while active.</summary>
-    public bool GatedShow(string window) => !Active && _show(window);
+    /// <summary>A show call that does nothing while the window is replaced.</summary>
+    public bool GatedShow(string window) => !IsReplaced(window) && _show(window);
+
+    private bool IsReplaced(string retailWindow) =>
+        _replacements.Any(r => _inForce.Contains(r.Window) && r.RetailWindows.Contains(retailWindow));
 
     public void Apply(bool enabled)
     {
@@ -65,42 +103,73 @@ public sealed class ModernHudSwitch
 
         if (enabled)
         {
-            if (!_deckMounted())
+            foreach (ModernHudReplacement r in _replacements)
             {
-                if (!_reportedMountFailure)
+                if (!r.Mounted())
                 {
-                    _reportedMountFailure = true;
-                    _log("[UI] modern HUD: Command Deck unavailable; keeping the retail windows.");
+                    if (_reportedMountFailure.Add(r.Window))
+                        _log($"[UI] modern HUD: {r.Name} unavailable; keeping the retail windows.");
+                    continue;
                 }
-                return;
+                _inForce.Add(r.Window);
+                foreach (string window in r.RetailWindows)
+                {
+                    if (r.HoldsRetailVisibility)
+                    {
+                        _wasVisible.TryAdd(window, _isVisible(window));
+                        _holdVisibility(window);
+                    }
+                    _hide(window);
+                }
             }
-            Active = true;
-            foreach (string window in RetailWindows) _hide(window);
             Tick();
             return;
         }
 
-        if (!Active) return;
-        Active = false;
-        SetDeckShown(false);
-        _resyncRetail();
+        foreach (ModernHudReplacement r in _replacements)
+        {
+            if (!_inForce.Remove(r.Window)) continue;
+            SetShown(r, false);
+            if (r.HoldsRetailVisibility)
+            {
+                foreach (string window in r.RetailWindows)
+                {
+                    bool was = _wasVisible.Remove(window, out bool recorded) && recorded;
+                    if (_releaseVisibility?.Invoke(window) ?? was) _show(window);
+                }
+            }
+            r.ResyncRetail?.Invoke();
+        }
     }
 
-    /// <summary>Keeps the deck shown only while active and gameplay is on screen.</summary>
-    public void Tick() => SetDeckShown(Active && _gameplayActive());
-
-    private void SetDeckShown(bool shown)
+    /// <summary>Keeps each replacement shown only while it is in force and gameplay is on screen.</summary>
+    public void Tick()
     {
-        if (shown == _deckShown) return;
-        _deckShown = shown;
+        bool gameplay = _gameplayActive();
+        foreach (ModernHudReplacement r in _replacements)
+        {
+            bool inForce = _inForce.Contains(r.Window);
+            SetShown(r, inForce && gameplay);
+            if (!inForce || !r.HoldsRetailVisibility) continue;
+            foreach (string window in r.RetailWindows)
+                if (_isVisible(window)) _hide(window);
+        }
+    }
+
+    private void SetShown(ModernHudReplacement r, bool shown)
+    {
+        if (shown == _shown.Contains(r.Window)) return;
         if (shown)
         {
-            _show(WindowNames.CommandDeck);
+            _shown.Add(r.Window);
+            _show(r.Window);
+            r.OnShown();
         }
         else
         {
-            _hide(WindowNames.CommandDeck);
-            _onDeckHidden();
+            _shown.Remove(r.Window);
+            _hide(r.Window);
+            r.OnHidden();
         }
     }
 }
