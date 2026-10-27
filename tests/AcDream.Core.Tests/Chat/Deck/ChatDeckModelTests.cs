@@ -77,17 +77,29 @@ public sealed class ChatDeckModelTests
     public void Clear_EmptiesTabsInOrder()
     {
         var (log, model) = Create();
-        int cleared = 0;
-        model.Cleared += () => cleared++;
+        var events = new List<string>();
+        model.LinesDelivered += batch => events.Add("lines:" + string.Join(",", batch.Select(d => d.Line.Entry.Text)));
+        model.Cleared += () => events.Add("cleared");
         Say(log, "before");
         log.Clear();
         Say(log, "after");
         model.Tick();
 
-        Assert.Equal(1, cleared);
+        Assert.Equal(["lines:before", "cleared", "lines:after"], events);
         ChatDeckTabState local = model.FindTab("local")!;
         Assert.Equal(1, local.Count);
         Assert.Equal("after", local[0].Entry.Text);
+    }
+
+    [Fact]
+    public void ApplySettings_KeepsLastTabInSyncWithSelection()
+    {
+        var (_, model) = Create();
+        model.SelectTab("group");
+        var s = model.Settings;
+        model.ApplySettings(s with { Layout = s.Layout with { LastTabId = "social" } });
+        Assert.Equal("group", model.SelectedTabId);
+        Assert.Equal("group", model.Settings.Layout.LastTabId);
     }
 
     [Fact]

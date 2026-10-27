@@ -55,6 +55,11 @@ public sealed class ChatDeckModel : IDisposable
         {
             if (item is not { } entry)
             {
+                if (delivered is not null)
+                {
+                    LinesDelivered?.Invoke(delivered);
+                    delivered = null;
+                }
                 foreach (ChatDeckTabState tab in _tabs) tab.Clear();
                 Cleared?.Invoke();
                 continue;
@@ -88,6 +93,8 @@ public sealed class ChatDeckModel : IDisposable
         _engine = new ChatDeckRuleEngine(Settings.Rules, Settings.Tabs, _characterName);
         RebuildTabs();
         if (FindTab(SelectedTabId) is null) SelectedTabId = ChatDeckDefaults.AllTabId;
+        if (Settings.Layout.LastTabId != SelectedTabId)
+            Settings = Settings with { Layout = Settings.Layout with { LastTabId = SelectedTabId } };
     }
 
     public void SelectTab(string tabId)
