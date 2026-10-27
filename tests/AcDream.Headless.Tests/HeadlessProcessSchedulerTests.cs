@@ -200,7 +200,7 @@ public sealed class HeadlessProcessSchedulerTests
     }
 
     [Fact]
-    public void SystemTimerCadenceDoesNotBusyLoopBetweenTurns()
+    public async Task SystemTimerCadenceDoesNotBusyLoopBetweenTurns()
     {
         var operations = new FixtureSessionOperations();
         using HeadlessSessionHost session =
@@ -213,15 +213,26 @@ public sealed class HeadlessProcessSchedulerTests
             session.Start().Status);
         var scheduler = new HeadlessProcessScheduler([session]);
         scheduler.RebaseDeadlinesAfterSessionStart();
+        // The run ends after a few turns, not after a fixed time: a busy
+        // machine may not give this thread the processor within any short
+        // window, and a run cut off before its first turn proves nothing.
         using var cancellation =
-            new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+            new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        Task stopAfterTurns = Task.Run(() =>
+        {
+            SpinWait.SpinUntil(
+                () => scheduler.TurnCount >= 5L,
+                TimeSpan.FromSeconds(10));
+            cancellation.Cancel();
+        });
 
         scheduler.Run(cancellation.Token);
+        await stopAfterTurns;
 
         HeadlessSchedulerSnapshot snapshot =
             scheduler.CaptureSnapshot();
+        Assert.True(snapshot.TurnCount >= 5L);
         Assert.InRange(snapshot.WaitCount, 1L, 1000L);
-        Assert.True(snapshot.TurnCount > 0L);
     }
 
     [Fact]

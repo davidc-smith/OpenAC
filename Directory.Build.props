@@ -14,6 +14,12 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' == ''">$(MSBuildProjectDirectory)/packages.neutral.lock.json</NuGetLockFilePath>
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' != ''">$(MSBuildProjectDirectory)/packages.$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
+
+    <!-- No source lives under obj. The SDK leaves out only the current
+         intermediate folder, so a build given its own (the launcher's inner
+         Bake build) would otherwise compile the files another build
+         generated there. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <!-- XML documentation files of our own assemblies feed the IDE and the plugin
