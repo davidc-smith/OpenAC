@@ -58,6 +58,8 @@ public sealed class UiText : UiElement, IUiDatStateful
     public Func<IReadOnlyList<TextRun>>? RunsProvider { get; set; }
 
     public Func<int, IReadOnlyList<TextRun>?>? LineRunsProvider { get; set; }
+    /// <summary>A colour for a 2 px bar left of a line (a highlighted chat line), or null for none.</summary>
+    public Func<int, Vector4?>? LineMarkerProvider { get; set; }
 
     internal static List<(string Text, float X, Vector4 Color)> LayoutRuns(
         IReadOnlyList<TextRun> runs,
@@ -490,6 +492,8 @@ public sealed class UiText : UiElement, IUiDatStateful
         {
             float y = baseY + i * lh;
             if (!LineIntersectsViewport(y, lh, top, bottom)) continue;
+            if (LineMarkerProvider?.Invoke(i) is { } marker)
+                ctx.DrawFill(Padding + MarginLeft - 4f, y, 2f, lh, marker);
 
             string text = lines[i].Text;
             float lineX = HorizontalOffset(text, datFont, bitmapFont);

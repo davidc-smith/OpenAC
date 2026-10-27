@@ -55,7 +55,8 @@ public sealed record ChatRuntimeBindings(
     ChatWindowState Windows,
     AcDream.Runtime.Chat.RuntimeChatEntryOwner Entry,
     SettingsStore? Store = null,
-    Action<PluginChatLinkClicked>? LinkClicked = null);
+    Action<PluginChatLinkClicked>? LinkClicked = null,
+    AcDream.Core.Chat.ChatLog? Log = null);
 
 public sealed record RadarRuntimeBindings(
     Func<UiRadarSnapshot> Snapshot,
@@ -405,6 +406,13 @@ public sealed class RetailUiRuntime : IDisposable
 
     /// <summary>Chat seam for client extensions: claims on any action that focuses the chat entry (EnterChatMode, ToggleChatEntry, FocusChatEntry, ChatStartCommand, replies, tell-to-selected) and the hide switch.</summary>
     internal AcDream.App.Extensions.ClientChatSeam? ExtensionChat { get; set; }
+
+    /// <summary>The chat input the chat-entry actions go to: the Chat Deck while it is shown, the retail chat otherwise.</summary>
+    private IChatEntryTarget? ChatEntryTarget =>
+        _chatDeck is not null && _hudSwitch?.IsShown(WindowNames.ChatDeck) == true
+            ? _chatDeck
+            : _chatWindowController;
+
     private readonly FloatingChatWindowController?[] _floatingChatControllers = new FloatingChatWindowController?[4];
     private GameplayConfirmationController? _gameplayConfirmationController;
     private RetailItemConfirmationController? _itemConfirmationController;
@@ -441,6 +449,8 @@ public sealed class RetailUiRuntime : IDisposable
     /// <summary>MiscSettings.SpellDeckClickCasts, read once at mount and kept here as it is toggled.</summary>
     private bool _spellDeckClickCasts;
     private Hud.EmbeddedSvgSpriteCache? _hudIcons;
+    private Hud.UiChatDeck? _chatDeck;
+    private Hud.ChatDeckSession? _chatDeckSession;
     private CharacterManagementUiMountCoordinator? _characterManagementMount;
     private ConnectionUiMountCoordinator? _connectionMount;
     private CreditsUiController? _creditsController;
@@ -534,15 +544,39 @@ public sealed class RetailUiRuntime : IDisposable
         _hudSwitch = new Hud.ModernHudSwitch(
             show: Host.ShowWindow,
             hide: Host.HideWindow,
-            deckMounted: () => _commandDeck is not null,
+            isVisible: Host.IsWindowVisible,
             gameplayActive: () => _bindings.IsGameplayDisplay?.Invoke() ?? true,
-            resyncRetail: () =>
-            {
-                CombatUiController?.SyncVisibility();
-                JumpPowerbarController?.SyncVisibility();
-                _vitalsSideBySide?.SyncVisibility();
-            },
-            onDeckHidden: () => _commandDeck?.OnHidden(),
+            [
+                new Hud.ModernHudReplacement(
+                    "Command Deck", WindowNames.CommandDeck, Hud.ModernHudSwitch.CommandDeckRetailWindows,
+                    Mounted: () => _commandDeck is not null,
+                    OnShown: () => { },
+                    OnHidden: () => _commandDeck?.OnHidden(),
+                    ResyncRetail: () =>
+                    {
+                        CombatUiController?.SyncVisibility();
+                        JumpPowerbarController?.SyncVisibility();
+                        _vitalsSideBySide?.SyncVisibility();
+                    }),
+                new Hud.ModernHudReplacement(
+                    "Chat Deck", WindowNames.ChatDeck, Hud.ModernHudSwitch.ChatDeckRetailWindows,
+                    Mounted: () => _chatDeck is not null,
+                    OnShown: () =>
+                    {
+                        _chatDeck!.OnShown();
+                        Host.Root.DefaultTextInput = _chatDeck.Input;
+                    },
+                    OnHidden: () =>
+                    {
+                        _chatDeck?.OnHidden();
+                        if (_chatDeck is not null && ReferenceEquals(Host.Root.DefaultTextInput, _chatDeck.Input))
+                            Host.Root.DefaultTextInput = null;
+                    },
+                    HoldsRetailVisibility: true),
+            ],
+            // _persistence is nulled once disposed, so a late Apply never reaches it.
+            holdVisibility: window => _persistence?.HoldVisibility(window),
+            releaseVisibility: window => _persistence?.ReleaseVisibility(window) ?? false,
             spellDeckMounted: () => _spellDeck is not null,
             magicMode: () => _bindings.Combat.State.CurrentMode == CombatMode.Magic,
             onSpellDeckHidden: () => _spellDeck?.OnHidden());
@@ -563,6 +597,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountJumpPowerbar();
         MountCommandDeck();
         MountSpellDeck();
+        MountChatDeck();
         MountDialogFactory();
         MountTooltipPresenter();
         MountSocialPanel();
@@ -613,6 +648,7 @@ public sealed class RetailUiRuntime : IDisposable
                     WindowNames.PluginShelf,
                     WindowNames.CommandDeck,
                     WindowNames.SpellDeck,
+                    WindowNames.ChatDeck,
                 ]);
             // Closed from mount: an attached Spell Deck is placed by its dock, never by the layout.
             _persistence.SetCaptureGate(WindowNames.SpellDeck, () => !(_spellDeckController?.Attached ?? true));
@@ -825,6 +861,8 @@ public sealed class RetailUiRuntime : IDisposable
         _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
         _hudSwitch?.Tick();
         _spellDeckSync?.Tick();
+        // Every frame, shown or not: the model queues every line until it is ticked.
+        _chatDeckSession?.Tick();
         Layout.UiMediaClock.Advance(deltaSeconds);
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
@@ -965,16 +1003,16 @@ public sealed class RetailUiRuntime : IDisposable
                 _bindings.Options.DisplaySystemMessage(OptionsPanelText.UrgentAssistanceUnavailable);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatReply:
-                _chatWindowController?.StartReply(_bindings.Chat.ViewModel.LastIncomingTellSender);
+                ChatEntryTarget?.StartReply(_bindings.Chat.ViewModel.LastIncomingTellSender);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatMonarchReply:
-                _chatWindowController?.StartReply(_bindings.Chat.ViewModel.LastMonarchSender);
+                ChatEntryTarget?.StartReply(_bindings.Chat.ViewModel.LastMonarchSender);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatPatronReply:
-                _chatWindowController?.StartReply(_bindings.Chat.ViewModel.LastPatronSender);
+                ChatEntryTarget?.StartReply(_bindings.Chat.ViewModel.LastPatronSender);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatStartCommand:
-                _chatWindowController?.StartCommand();
+                ChatEntryTarget?.StartCommand();
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatTellToSelected:
             {
@@ -983,16 +1021,16 @@ public sealed class RetailUiRuntime : IDisposable
                 {
                     string? name = _bindings.Toolbar.ResolveName(selected);
                     if (!string.IsNullOrEmpty(name))
-                        _chatWindowController?.StartTell(name);
+                        ChatEntryTarget?.StartTell(name);
                 }
                 return true;
             }
             case AcDream.UI.Abstractions.Input.InputAction.EnterChatMode:
-                _chatWindowController?.EnterChatMode(
+                ChatEntryTarget?.EnterChatMode(
                     _bindings.Keyboard?.Dispatcher?.CurrentPhysicalChord);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ToggleChatEntry:
-                _chatWindowController?.ToggleChatEntry(
+                ChatEntryTarget?.ToggleChatEntry(
                     _bindings.Keyboard?.Dispatcher?.CurrentPhysicalChord);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ToggleCharacterInfoPanel:
@@ -1152,10 +1190,10 @@ public sealed class RetailUiRuntime : IDisposable
 
     public void FocusChatEntry()
     {
-        if (ExtensionChat?.TryClaimEntry() == true)
+        // A client extension claims the retail chat's entry only; a shown Chat Deck keeps its own.
+        if (ChatEntryTarget is not Hud.UiChatDeck && ExtensionChat?.TryClaimEntry() == true)
             return;
-        if (Host.Root.DefaultTextInput is { } input)
-            Host.Root.SetKeyboardFocus(input);
+        ChatEntryTarget?.Focus();
     }
 
     /// <summary>Stages text in the chat entry without sending it.</summary>
@@ -1291,6 +1329,7 @@ public sealed class RetailUiRuntime : IDisposable
         AppraisalController?.ResetSession();
         Host.HideWindow(WindowNames.Examination);
         SocialPanelController?.ResetSessionDeclaration();
+        _chatDeckSession?.EndSession();
     }
 
     public void RedeclareSocialPanelAfterWorldEntry() =>
@@ -3441,7 +3480,7 @@ public sealed class RetailUiRuntime : IDisposable
             actions,
             _hudIcons,
             () => clock.Elapsed.TotalSeconds,
-            _deckFonts = Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
+            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
 
         RetailWindowFrame.Mount(
             Host.Root,
@@ -3577,6 +3616,67 @@ public sealed class RetailUiRuntime : IDisposable
         public void RemoveFavorite(int tab, uint spellId) => ui._bindings.Magic.RemoveFavorite(tab, spellId);
         public void ExamineSpell(uint spellId) => ui.AppraisalController?.ExamineSpell(spellId);
         public void ShowMessage(string text) => ui._bindings.Options.DisplaySystemMessage(text);
+    }
+
+    /// <summary>
+    /// The Chat Deck (Modern HUD's chat window) and its per-character model.
+    /// Without it the retail chat and floaties stay while Modern HUD is on.
+    /// </summary>
+    private void MountChatDeck()
+    {
+        if (_bindings.CommandDeck is null || _bindings.Chat.Log is not { } log) return;
+
+        Hud.ChatDeckSession? session = null;
+        Hud.UiChatDeck? deck = null;
+        try
+        {
+            var storage = new Hud.ChatDeckStorage(
+                _bindings.Persistence?.Store is { } store ? new Hud.SettingsStoreChatDeckStore(store) : null,
+                Console.WriteLine);
+            var liveSession = session = new Hud.ChatDeckSession(
+                log,
+                storage,
+                _bindings.Persistence?.CharacterKey ?? (() => "default"),
+                () => _bindings.IsGameplayDisplay?.Invoke() ?? true);
+            _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
+            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+
+            deck = new Hud.UiChatDeck(
+                new Hud.ChatDeckBindings(
+                    Model: () => liveSession.Model,
+                    Entry: _bindings.Chat.Entry,
+                    Feedback: _bindings.Chat.ViewModel,
+                    Bus: _bindings.Chat.CommandBus,
+                    LastIncomingTellSender: () => _bindings.Chat.ViewModel.LastIncomingTellSender,
+                    StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
+                    LinkClicked: _bindings.Chat.LinkClicked,
+                    Keyboard: Host.Keyboard),
+                _deckFonts,
+                _hudIcons);
+
+            float top = MathF.Max(0f, Host.Root.Height - Hud.ChatDeckGeometry.DefaultHeight - 10f);
+            RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite, Hud.UiChatDeck.MountOptions(10f, top));
+        }
+        catch (Exception ex)
+        {
+            // Anything that fails here leaves the retail chat as the only chat; undo what was built.
+            if (deck is not null)
+            {
+                UiElement window = deck;
+                while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
+                if (window.Parent is not null) Host.Root.RemoveChild(window);
+                deck.Detach();
+            }
+            session?.Dispose();
+            Console.WriteLine($"[UI] Chat Deck unavailable; keeping the retail chat. ({ex.GetType().Name}: {ex.Message})");
+            return;
+        }
+
+        _chatDeck = deck;
+        _chatDeckSession = session;
+        // A composed line (automation, a plugin) goes to whichever chat input is showing.
+        _bindings.Chat.Entry.BindEntryFocus(() => ChatEntryTarget?.Focus() == true);
+        Console.WriteLine("[UI] Chat Deck mounted (Modern HUD).");
     }
 
     private Hud.CommandDeckInput ReadCommandDeckInput()
@@ -5801,7 +5901,12 @@ public sealed class RetailUiRuntime : IDisposable
                 _controlState?.Save(ignoreBackoff: true);
                 // Flushes a pending canvas move through the same store, so first.
                 try { _canvasPositions?.Dispose(); }
-                finally { _persistence?.Dispose(); }
+                finally
+                {
+                    _persistence?.Dispose();
+                    // The Modern HUD switch's visibility hold reads it; after this it holds nothing.
+                    _persistence = null;
+                }
             },
             () =>
             {
@@ -5821,6 +5926,9 @@ public sealed class RetailUiRuntime : IDisposable
                     _spellDeckSpellbook.SpellbookChanged -= OnSpellDeckFavoritesChanged;
                 _spellDeckSpellbook = null;
                 _spellDeck?.OnHidden();
+                _chatDeck?.Detach();
+                _chatDeckSession?.Dispose();
+                _chatDeckSession = null;
                 _hudIcons?.Dispose();
                 _hudIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;

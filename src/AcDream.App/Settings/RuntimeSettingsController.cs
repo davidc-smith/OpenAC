@@ -130,7 +130,7 @@ internal interface IRuntimeSettingsPreviewSource
 internal sealed class RuntimeSettingsController :
     IRuntimeSettingsPreviewSource
 {
-    private const string DefaultToonKey = "default";
+    internal const string DefaultToonKey = "default";
 
     private readonly IRuntimeSettingsStorage _storage;
     private readonly Func<QualityPreset, QualitySettings> _resolveQuality;

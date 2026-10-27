@@ -11,7 +11,7 @@ using AcDream.UI.Abstractions.Panels.Chat;
 
 namespace AcDream.App.UI.Layout;
 
-public sealed class ChatWindowController : IRetainedWindowStateController, IRetainedPanelController
+public sealed class ChatWindowController : IRetainedWindowStateController, IRetainedPanelController, IChatEntryTarget
 {
     public const uint LayoutId = 0x2100006Fu;
     private bool _disposed;
@@ -759,6 +759,19 @@ public sealed class ChatWindowController : IRetainedWindowStateController, IReta
             if (ReferenceEquals(at, subtree))
                 return true;
         return false;
+    }
+
+    void IChatEntryTarget.EnterChatMode(KeyChord? physicalChord) => EnterChatMode(physicalChord);
+    void IChatEntryTarget.ToggleChatEntry(KeyChord? physicalChord) => ToggleChatEntry(physicalChord);
+    void IChatEntryTarget.StartCommand() => StartCommand();
+    void IChatEntryTarget.StartTell(string name) => StartTell(name);
+    void IChatEntryTarget.StartReply(string? name) => StartReply(name);
+
+    bool IChatEntryTarget.Focus()
+    {
+        if (FindRootOf(Input) is not { } root) return false;
+        root.SetKeyboardFocus(Input);
+        return true;
     }
 
     private static UiRoot? FindRootOf(UiElement element)

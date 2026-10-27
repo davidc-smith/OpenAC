@@ -362,17 +362,61 @@ public sealed class SettingsStore
 
         JsonObject root = LoadMutableRoot();
 
-        // Build the toon's payload.
-        var toonObj = new JsonObject
-        {
-            ["autoAttack"]         = settings.AutoAttack,
-            ["confirmSalvage"]     = settings.ConfirmSalvage,
-            ["defaultChatChannel"] = settings.DefaultChatChannel,
-            ["showPickupMessages"] = settings.ShowPickupMessages,
-        };
-
         JsonObject characterMap = GetOrCreateObject(root, "character");
-        characterMap[toonKey] = toonObj;
+        // Only these four keys are the character settings'; anything else in
+        // the object (the Chat Deck's, a newer build's) is kept.
+        JsonObject toonObj = GetOrCreateObject(characterMap, toonKey);
+        toonObj["autoAttack"]         = settings.AutoAttack;
+        toonObj["confirmSalvage"]     = settings.ConfirmSalvage;
+        toonObj["defaultChatChannel"] = settings.DefaultChatChannel;
+        toonObj["showPickupMessages"] = settings.ShowPickupMessages;
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
+    /// <summary>
+    /// The Chat Deck's saved object for one character, as JSON text, read from
+    /// <c>character[toonKey].chatDeck</c>; null when there is none or the file
+    /// cannot be read. The Chat Deck parses and checks it itself.
+    /// </summary>
+    public string? LoadChatDeck(string toonKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        if (!File.Exists(_path)) return null;
+        try
+        {
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+            return root?["character"]?[toonKey]?["chatDeck"] is JsonObject deck ? deck.ToJsonString() : null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load chat deck from {_path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Replaces <c>character[toonKey].chatDeck</c> with <paramref name="json"/>,
+    /// keeping the character's other keys, other characters and every other section.
+    /// </summary>
+    /// <exception cref="ArgumentException">The text is not a JSON object.</exception>
+    public void SaveChatDeck(string toonKey, string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentNullException.ThrowIfNull(json);
+        JsonObject deck;
+        try
+        {
+            deck = JsonNode.Parse(json) as JsonObject
+                ?? throw new ArgumentException("The Chat Deck settings are not a JSON object.", nameof(json));
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException("The Chat Deck settings are not valid JSON.", nameof(json), ex);
+        }
+
+        JsonObject root = LoadMutableRoot();
+        GetOrCreateObject(GetOrCreateObject(root, "character"), toonKey)["chatDeck"] = deck;
         root["version"] = CurrentSchemaVersion;
         WriteMutableRoot(root);
     }

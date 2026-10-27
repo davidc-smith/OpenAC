@@ -47,4 +47,21 @@ public sealed class ChatDeckTabStateTests
         Assert.Equal(0, tab.Count);
         Assert.Equal(0, tab.Unread);
     }
+
+    [Fact]
+    public void VersionAndAdded_TrackAddsAndClears()
+    {
+        var tab = new ChatDeckTabState("t", capacity: 2);
+        long v0 = tab.Version;
+        tab.Add(Line("a"), seen: true);
+        tab.Add(Line("b"), seen: true);
+        tab.Add(Line("c"), seen: true);
+        Assert.Equal(3, tab.Added);
+        Assert.Equal(2, tab.Count);
+        Assert.Equal(v0 + 3, tab.Version);
+
+        tab.Clear();
+        Assert.Equal(0, tab.Added);
+        Assert.Equal(v0 + 4, tab.Version);
+    }
 }

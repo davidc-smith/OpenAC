@@ -171,6 +171,34 @@ public sealed class RuntimeChatEntryOwner : IChatEntryHistory
         return outcome;
     }
 
+    /// <summary>
+    /// Sends a line the way <see cref="Submit"/> does, but with plain text aimed
+    /// at <paramref name="channel"/> instead of the entry's own channel and tell
+    /// target, which stay as they are: for a front end that decides where plain
+    /// text goes itself (a Chat Deck tab). Commands are routed unchanged.
+    /// </summary>
+    public SubmitOutcome SubmitTo(
+        string? text,
+        ChatChannelKind channel,
+        IChatCommandFeedback feedback,
+        ICommandBus bus)
+    {
+        ArgumentNullException.ThrowIfNull(feedback);
+        ArgumentNullException.ThrowIfNull(bus);
+        string line = text ?? _draft;
+        _composedDraftPending = false;
+        if (line.Trim().Length == 0)
+        {
+            Clear();
+            return SubmitOutcome.Empty;
+        }
+
+        SubmitOutcome outcome = ChatCommandRouter.Submit(line, feedback, bus, channel);
+        Remember(line);
+        Clear();
+        return outcome;
+    }
+
     /// <summary>Empties the draft and stops recalling.</summary>
     public void Clear()
     {

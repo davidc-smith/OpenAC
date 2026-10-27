@@ -237,4 +237,35 @@ public sealed class RuntimeChatEntryOwnerTests
 
         Assert.Equal(string.Empty, state.ChatEntryOwner.Draft);
     }
+
+    [Fact]
+    public void SubmitTo_SendsPlainTextOnTheGivenChannel_LeavingTheEntryAimed()
+    {
+        var owner = new RuntimeChatEntryOwner();
+        owner.SetTellTarget("Bob", 0x50000001u);
+        owner.SetDraft("group up");
+        var bus = new RecordingBus();
+
+        SubmitOutcome outcome = owner.SubmitTo(null, ChatChannelKind.Fellowship, new RecordingFeedback(), bus);
+
+        Assert.Equal(SubmitOutcome.Sent, outcome);
+        var sent = Assert.IsType<SendChatCmd>(Assert.Single(bus.Published));
+        Assert.Equal(ChatChannelKind.Fellowship, sent.Channel);
+        Assert.Equal("group up", sent.Text);
+        Assert.Equal("", owner.Draft);
+        Assert.Equal(1, owner.Count);
+        Assert.Equal(ChatChannelKind.Tell, owner.ActiveChannel);
+        Assert.Equal("Bob", owner.TellTarget);
+    }
+
+    [Fact]
+    public void SubmitTo_Blank_IsEmptyAndClears()
+    {
+        var owner = new RuntimeChatEntryOwner();
+        owner.SetDraft("   ");
+        Assert.Equal(SubmitOutcome.Empty,
+            owner.SubmitTo(null, ChatChannelKind.General, new RecordingFeedback(), new RecordingBus()));
+        Assert.Equal("", owner.Draft);
+        Assert.Equal(0, owner.Count);
+    }
 }
