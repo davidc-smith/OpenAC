@@ -97,7 +97,10 @@ as a whole word in `Text` and never matches lines you sent yourself. It is the b
 "Highlight my name" rule, on by default with a colour and alert.
 
 **Regex safety.** Regexes compile with `RegexOptions.NonBacktracking |
-CultureInvariant | IgnoreCase` and a 20 ms match timeout. A pattern that fails to
+CultureInvariant | IgnoreCase` and a 20 ms match timeout. A user regex that needs
+lookarounds or backreferences (which NonBacktracking rejects) falls back to the
+backtracking engine with the same timeout; `MyName` and the presets use the
+backtracking engine with the timeout because their patterns need lookarounds. A pattern that fails to
 compile marks the rule invalid; a timeout marks it faulted. Either way the rule is
 disabled until edited and the editor shows it red. Patterns are capped at 256
 characters; matching reads at most the first 2,000 characters of a line.
@@ -122,8 +125,9 @@ is collected once, in rule order. Then:
 **Limits.** At most 16 tabs, 200 rules, tab names 24 characters, a saved `chatDeck`
 object of 256 KB. History is 1,000 line references per tab.
 
-**Presets** are rules that ship in code (`ChatDeckPresets`), about 80, grouped
-Combat / Magic / Pets / Items / Spam / Notices, matching the set RynthChat offers
+**Presets** are rules that ship in code (`ChatDeckPresets`), about 70, grouped
+Casting / Combat / Items / Social / Notices / NPCs / Pets, ported from RynthCore's two
+preset files (MIT, attributed in `NOTICE.md`), matching the set RynthChat offers
 (damage dealt / taken, evades, resists, crits, procs, periodic ticks, fizzles, buffs
 others cast on you, spell expiry, component use, pets, salvage results, kill-task
 progress, trade/buff-bot spam, Master Arbitrator spam and so on). Almost all of them
