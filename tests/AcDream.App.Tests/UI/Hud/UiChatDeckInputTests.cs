@@ -1,3 +1,4 @@
+using DatReaderWriter.Types;
 using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 using AcDream.Core.Chat;
@@ -186,5 +187,45 @@ public sealed class UiChatDeckInputTests
         h.Log.Clear();
         h.Model.Tick();
         Assert.Equal(ChatDeckSendChannel.Trade, h.Deck.ChannelOverride);
+    }
+
+    private static UiDatFont WideFont()
+    {
+        var glyphs = new Dictionary<char, FontCharDesc>();
+        for (char c = ' '; c <= '~'; c++)
+            glyphs[c] = new FontCharDesc { Unicode = c, Width = 12, Height = 8 };
+        return new UiDatFont(fgTex: 1u, fgW: 32, fgH: 32, bgTex: 0, bgW: 0, bgH: 0,
+            lineHeight: 16f, baselineOffset: 12f, glyphs);
+    }
+
+    [Fact]
+    public void Menus_CarryTheDecksPalette()
+    {
+        var h = new Harness();
+        Assert.Same(ChatDeckPalette.Menu, h.Deck.ChipMenu.ThemePalette);
+        Assert.Same(ChatDeckPalette.Menu, h.Deck.TabMenu.ThemePalette);
+    }
+
+    [Fact]
+    public void Menus_TakeTheTranscriptFont_OnlyWhenFontsExist()
+    {
+        Assert.Null(new Harness().Deck.ChipMenu.DatFont);
+        UiDatFont font = WideFont();
+        var h = new Harness(fonts: new DeckFonts((_, _) => font));
+        Assert.Same(font, h.Deck.ChipMenu.DatFont);
+        Assert.Same(font, h.Deck.TabMenu.DatFont);
+    }
+
+    [Fact]
+    public void ChipMenu_IsWideEnoughForItsWidestItem()
+    {
+        UiDatFont font = WideFont();
+        var h = new Harness(fonts: new DeckFonts((_, _) => font));
+        var root = new UiRoot { Width = 1200, Height = 800 };
+        root.AddChild(h.Deck);
+        Assert.True(h.Deck.ChipMenu.TryOpen(20, 20));
+        float widest = ChatDeckSend.All.Max(c => font.MeasureWidth(ChatDeckSend.DisplayName(c)));
+        Assert.True(widest > 0f);
+        Assert.True(h.Deck.ChipMenu.PopupScreenRect.W >= widest + 2f * UiMarkupContextMenu.TextIndent);
     }
 }

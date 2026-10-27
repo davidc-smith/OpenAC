@@ -36,7 +36,7 @@ public sealed class UiChatDeckTests
         public readonly FakeKeyboard Keyboard = new();
         public readonly UiChatDeck Deck;
 
-        public Harness(bool withModel = true)
+        public Harness(bool withModel = true, DeckFonts? fonts = null)
         {
             if (withModel) Model = new ChatDeckModel(Log, ChatDeckDefaults.Create(), "Davian");
             Deck = new UiChatDeck(
@@ -49,7 +49,7 @@ public sealed class UiChatDeckTests
                     StayInChatMode: () => false,
                     LinkClicked: Links.Add,
                     Keyboard: Keyboard),
-                fonts: null, icons: null)
+                fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();
         }

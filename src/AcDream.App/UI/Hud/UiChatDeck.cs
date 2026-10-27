@@ -36,7 +36,8 @@ internal sealed partial class UiChatDeck : UiElement
     private readonly DeckFonts? _fonts;
     private readonly EmbeddedSvgSpriteCache? _icons;
     private readonly ChatDeckTranscript _transcriptBuilder = new();
-    private readonly UiMarkupContextMenu _tabMenu = new();
+    private readonly UiMarkupContextMenu _tabMenu = new() { ThemePalette = ChatDeckPalette.Menu };
+    internal UiMarkupContextMenu TabMenu => _tabMenu;
     private ChatDeckTranscriptLayout _layout = new();
     private ChatDeckModel? _model;
     private ChatDeckGeometry _geometry;
@@ -192,6 +193,7 @@ internal sealed partial class UiChatDeck : UiElement
         ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
         Transcript.DatFont = _fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular);
         SearchField.DatFont = _fonts?.Face(appearance.InputFontSize, BundledUiFontWeight.Regular);
+        _tabMenu.DatFont = Transcript.DatFont;
 
         RebuildTranscript(appearance);
         TrackNewLines();

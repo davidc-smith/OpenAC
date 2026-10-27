@@ -27,6 +27,11 @@ internal static class ChatDeckPalette
     internal static readonly Vector4 TimestampInk = Rgb(0x8C8698);
     internal static readonly Vector4 MarkerFill = Rgb(0x3A3842, 0.95f);
 
+    /// <summary>The deck's popup menus (channel chip, tab right-click): dark face, bronze edge, gold accent.</summary>
+    internal static readonly PluginUiPalette Menu = new(
+        Background: FrameBottom, Field: FrameTop, Border: Bronze with { W = 1f }, Text: TextInk,
+        Muted: StudOffInk, Accent: TabUnderline, Selected: TabSelected);
+
     /// <summary>The dark rounded frame, its fill at <paramref name="opacity"/> (the edge and rule stay solid).</summary>
     internal static void DrawFrame(UiRenderContext ctx, DeckRect f, float opacity)
     {

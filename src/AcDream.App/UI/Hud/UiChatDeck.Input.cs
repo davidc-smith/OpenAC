@@ -7,7 +7,8 @@ namespace AcDream.App.UI.Hud;
 
 internal sealed partial class UiChatDeck : IChatEntryTarget
 {
-    private readonly UiMarkupContextMenu _chipMenu = new();
+    private readonly UiMarkupContextMenu _chipMenu = new() { ThemePalette = ChatDeckPalette.Menu };
+    internal UiMarkupContextMenu ChipMenu => _chipMenu;
     private ChatDeckSendChannel? _override;
 
     internal UiField Input { get; private set; } = null!;
@@ -70,6 +71,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         Place(Input, _geometry.Input);
         ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
         Input.DatFont = _fonts?.Face(appearance.InputFontSize, BundledUiFontWeight.Regular);
+        _chipMenu.DatFont = _fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular);
     }
 
     /// <summary>Sends the next line on <paramref name="channel"/> instead of the tab's own (null: the tab's).</summary>
