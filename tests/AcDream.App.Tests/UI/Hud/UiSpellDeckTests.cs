@@ -149,7 +149,11 @@ public sealed class UiSpellDeckTests
     public void TheStripFollowsTheTabCount_AndThePlusGoesAt16()
     {
         Rig r = Make();
-        for (int i = 0; i < 8; i++) Send(r.Deck, UiEventType.Click, Plus(r));
+        for (int i = 0; i < 8; i++)
+        {
+            r.Now += 1;   // separate clicks, not a double-click
+            Send(r.Deck, UiEventType.Click, Plus(r));
+        }
         Assert.Equal(16, r.Controller.TabCount);
         DeckRect plus = r.Deck.Geometry.Plus(16);
         Assert.False(r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.Click,
@@ -304,6 +308,8 @@ public sealed class UiSpellDeckTests
     [InlineData(1f, 1f)]
     [InlineData(1.5f, 2f)]
     [InlineData(1f, 2f)]
+    [InlineData(0.75f, 2f)]
+    [InlineData(1.5f, 1f)]
     public void DrawsTheBookmarks_TheCurrentOneLit_ThenThePlus(float scale, float stretch)
     {
         Rig r = Make();
@@ -385,6 +391,8 @@ public sealed class UiSpellDeckTests
     [InlineData(0.75f, 1f)]
     [InlineData(1f, 1f)]
     [InlineData(1.5f, 2f)]
+    [InlineData(0.75f, 2f)]
+    [InlineData(1.5f, 1f)]
     public void DrawsInsideTheDeckAtEveryScale(float scale, float stretch)
     {
         Rig r = Make();

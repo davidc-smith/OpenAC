@@ -98,7 +98,8 @@ public sealed record SpellDeckGeometry
     public DeckRect ItemSlot => S(Pad + (Gutter - ItemSize) / 2f,
         (RowsTop + BaseHeight(Rows) - BottomPad - ItemSize) / 2f, ItemSize, ItemSize);
 
-    public DeckRect Divider => S(Pad + Gutter - 1f, TopPad, 1f, BaseHeight(Rows) - TopPad - BottomPad);
+    /// <summary>The rule between the gutter and the slots, beside the rows (not the tab strip).</summary>
+    public DeckRect Divider => S(Pad + Gutter - 1f, RowsTop, 1f, BaseHeight(Rows) - RowsTop - BottomPad);
     public DeckRect Slot(int row, int index) => S(SlotsLeft + index * SlotPitch, RowsTop + row * RowPitch, SlotSize, SlotSize);
 
     /// <summary>The tab strip's band: the bookmarks' height, from the slots' left edge to the right padding.</summary>

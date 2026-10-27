@@ -222,7 +222,7 @@ public sealed class UiRoot : UiElement
     private int _resizeMouseX, _resizeMouseY;
     private const int ResizeGrip = 5;   // px proximity to an edge to start a resize
     private const int DragDistanceThreshold = 3;
-    private const int DoubleClickDelayMs = 500;
+    internal const int DoubleClickDelayMs = 500;
 
     // Hover / tooltip tracking.
     private UiElement? _hoverWidget;

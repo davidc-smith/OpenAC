@@ -53,6 +53,15 @@ public sealed class SpellDeckGeometryTests
         Assert.True(mark.Y >= 0f && mark.Y + mark.H <= first.Y);
     }
 
+    [Fact]
+    public void Divider_RunsBesideTheRows()
+    {
+        var g = SpellDeckGeometry.Create(1.5f, 1f, 3);
+        DeckRect d = g.Divider, top = g.Slot(0, 0), bottom = g.Slot(2, 0);
+        Assert.Equal(top.Y, d.Y, 3);
+        Assert.Equal(bottom.Y + bottom.H, d.Y + d.H, 3);
+    }
+
     [Theory]
     [InlineData(1)] [InlineData(3)] [InlineData(10)]
     public void ItemSlot_IsCentredOnTheRowsInTheGutter(int rows)

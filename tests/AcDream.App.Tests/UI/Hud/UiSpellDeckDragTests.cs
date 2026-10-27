@@ -28,6 +28,7 @@ public sealed class UiSpellDeckDragTests
         public bool Locked;
         public bool ClickCasts;
         public bool CanAddRow = true;
+        public double Now;
         public readonly List<string> Callbacks = [];
     }
 
@@ -48,7 +49,7 @@ public sealed class UiSpellDeckDragTests
             spellInfo: _ => null,
             keyLabel: _ => string.Empty,
             pendingSpell: () => null,
-            clock: () => 0.0,
+            clock: () => rig!.Now,
             isLocked: () => rig!.Locked,
             toggleClickCasts: () => rig!.Callbacks.Add("toggle click casts"),
             setAttached: a => rig!.Callbacks.Add($"attached {a}"));
@@ -454,6 +455,23 @@ public sealed class UiSpellDeckDragTests
     }
 
     [Fact]
+    public void RemoveTabDoesNothingWhenTheLastTabWasReplacedSinceTheMenuOpened()
+    {
+        Rig r = Make();
+        r.Controller.AddLocalTab();
+        r.Controller.Tabs.Set(8, 0, 99u);
+        MenuAt(r, Mark(r, 8));
+        r.Controller.RemoveLastLocalTab();
+        r.Controller.AddLocalTab();   // a new tab 9, again the last local one
+        r.Deck.SelectMenuItem(0);
+        Assert.Equal(9, r.Controller.TabCount);
+
+        MenuAt(r, Mark(r, 8));   // opened on this tab: it goes
+        r.Deck.SelectMenuItem(0);
+        Assert.Equal(8, r.Controller.TabCount);
+    }
+
+    [Fact]
     public void DeckItemsFollowTheControllerAndTheModes()
     {
         Rig r = Make();
@@ -563,6 +581,33 @@ public sealed class UiSpellDeckDragTests
         root.OnMouseDown(UiMouseButton.Left, x, y);
         root.OnMouseUp(UiMouseButton.Left, x, y);
         Assert.Equal(2, r.Controller.Tab);
+    }
+
+    /// <summary>A left press and release at a screen point, with the root's clock and the deck's at <paramref name="ms"/>.</summary>
+    private static void ClickAt(UiRoot root, Rig r, int x, int y, long ms)
+    {
+        r.Now = ms / 1000.0;
+        root.Tick(0.0, ms);
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseUp(UiMouseButton.Left, x, y);
+    }
+
+    [Fact]
+    public void ADoubleClickOnThePlusAddsOneTab_ASlowSecondClickAddsAnother()
+    {
+        var (root, r) = Mount();
+        for (int i = 0; i < 4; i++) r.Controller.AddLocalTab();
+        Assert.Equal(12, r.Controller.TabCount);
+        Assert.Equal(1f, r.Deck.Geometry.Stretch);
+        var (x, y) = Screen(Plus(r));
+        ClickAt(root, r, x, y, 10_000);
+        ClickAt(root, r, x, y, 10_200);   // a double-click: the + is still under the pointer
+        Assert.Equal(SpellDeckZone.Plus, r.Deck.Geometry.HitAt(x - Left, y - Top, r.Controller.TabCount).Zone);
+        Assert.Equal(13, r.Controller.TabCount);
+
+        ClickAt(root, r, x, y, 10_200 + UiSpellDeck.PlusRepeatMs + 100);
+        Assert.Equal(14, r.Controller.TabCount);
     }
 
     [Fact]

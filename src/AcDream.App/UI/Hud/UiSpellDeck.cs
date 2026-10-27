@@ -355,12 +355,24 @@ internal sealed partial class UiSpellDeck : UiElement
                 _controller.ShowTab(hit.Tab);
                 return true;
             case SpellDeckZone.Plus when _controller.CanAddLocalTab:
+                // The root sends a Click on each release of a double-click; the + is often
+                // still under the pointer after the add, so a second quick click is ignored.
+                double now = _clock();
+                if (_lastPlusAddAt is double last && now - last >= 0 && now - last <= PlusRepeatMs / 1000.0)
+                    return true;
+                _lastPlusAddAt = now;
                 _controller.AddLocalTab();
                 return true;
             default:
                 return false;
         }
     }
+
+    /// <summary>The root's double-click window: a + click this soon after an add is the double-click's second click.</summary>
+    internal const int PlusRepeatMs = UiRoot.DoubleClickDelayMs;
+
+    /// <summary>When the + last added a tab (the deck's clock); null before the first.</summary>
+    private double? _lastPlusAddAt;
 
     private bool DoubleClick(SpellDeckHit hit)
     {
@@ -459,13 +471,14 @@ internal sealed partial class UiSpellDeck : UiElement
     private void SetDropHighlight(float x, float y)
     {
         BookmarkDropHighlight = null;
-        if (SourceOf(_dropPayload) is { } payload && BookmarkAt(x, y) is int tab)
+        SpellDeckDragSource? payload = SourceOf(_dropPayload);
+        if (payload is { } onTab && BookmarkAt(x, y) is int tab)
         {
             DropHighlight = null;
-            BookmarkDropHighlight = (tab, _controller.CanDropOnTab(payload, tab));
+            BookmarkDropHighlight = (tab, _controller.CanDropOnTab(onTab, tab));
             return;
         }
-        if (SourceOf(_dropPayload) is not { } source || DropTargetAt(x, y) is not { } at
+        if (payload is not { } source || DropTargetAt(x, y) is not { } at
             || at.Slot >= _geometry.SlotsPerRow)
         {
             DropHighlight = null;
@@ -512,11 +525,13 @@ internal sealed partial class UiSpellDeck : UiElement
 
         if (hit.Zone == SpellDeckZone.Bookmark && IsLastLocal(hit.Tab))
         {
-            // Only while that tab is still the last local one when the item is chosen.
-            int last = hit.Tab;
+            // Only while that same tab is still the last local one when the item is
+            // chosen: the generation changes on any local add or remove since the menu opened.
+            int last = hit.Tab, generation = _controller.Tabs.LocalGeneration;
             Add("Remove tab", true, () =>
             {
-                if (IsLastLocal(last)) _controller.RemoveLastLocalTab();
+                if (IsLastLocal(last) && _controller.Tabs.LocalGeneration == generation)
+                    _controller.RemoveLastLocalTab();
             });
             return _menuItems;
         }

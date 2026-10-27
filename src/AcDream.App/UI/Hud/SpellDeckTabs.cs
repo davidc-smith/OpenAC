@@ -27,6 +27,10 @@ public sealed class SpellDeckTabs
     /// <summary>All tabs: 8 server tabs plus the local ones.</summary>
     public int Count => ServerTabs + _local.Count;
     public int LocalCount => _local.Count;
+
+    /// <summary>Changes whenever the set of local tabs changes (a load, an add, a remove), so a
+    /// caller can tell that "the last local tab" is still the one it saw.</summary>
+    public int LocalGeneration { get; private set; }
     public bool CanAddLocal => _local.Count < SpellDeckSettings.MaxLocalTabs;
     public bool IsLocal(int tab) => tab >= ServerTabs && tab < Count;
 
@@ -36,6 +40,7 @@ public sealed class SpellDeckTabs
     /// <summary>Replaces the local tabs (character change). Not a change: nothing is saved.</summary>
     public void Load(IReadOnlyList<IReadOnlyList<uint>> local)
     {
+        LocalGeneration++;
         _local.Clear();
         foreach (IReadOnlyList<uint> tab in (local ?? []).Take(SpellDeckSettings.MaxLocalTabs))
             _local.Add([.. tab ?? []]);
@@ -74,6 +79,7 @@ public sealed class SpellDeckTabs
     {
         if (!CanAddLocal) return false;
         _local.Add([]);
+        LocalGeneration++;
         _localChanged();
         return true;
     }
@@ -83,6 +89,7 @@ public sealed class SpellDeckTabs
     {
         if (_local.Count == 0) return false;
         _local.RemoveAt(_local.Count - 1);
+        LocalGeneration++;
         _localChanged();
         return true;
     }
