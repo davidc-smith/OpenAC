@@ -95,7 +95,7 @@ public sealed class SpellDeckDockTests
         Assert.False(host.CaptureOpen);
         Assert.False(host.Resizable);
 
-        c.AddRowBelow(c.Rows[0].Id);
+        c.AddRow();
         dock.Tick();
         Assert.Equal(4, host.SpellDeckGeometry.Rows);
         Assert.Equal(600f, host.SpellDeckTop + host.SpellDeckGeometry.Height, 3);   // grows upwards
@@ -106,7 +106,7 @@ public sealed class SpellDeckDockTests
     public void SpellDeckDock_Attached_DeckMinStretchAndTopLimitFollowTheSpellDeck()
     {
         var (dock, host, _, tabs) = Make();
-        tabs[0].AddRange(Enumerable.Range(1, 20).Select(i => (uint)i));
+        tabs[0].AddRange(Enumerable.Range(1, 60).Select(i => (uint)i));   // 3 rows of 20
 
         dock.Tick();
 
@@ -127,13 +127,13 @@ public sealed class SpellDeckDockTests
         dock.Tick();
 
         Assert.False(dock.CanAddRow());
-        c.AddRowBelow(c.Rows[0].Id);
-        Assert.Equal(3, c.Rows.Count);
+        c.AddRow();
+        Assert.Equal(3, c.RowCount);
 
         host.DeckTop = SpellDeckGeometry.BaseHeight(4);
         Assert.True(dock.CanAddRow());
-        c.AddRowBelow(c.Rows[0].Id);
-        Assert.Equal(4, c.Rows.Count);
+        c.AddRow();
+        Assert.Equal(4, c.RowCount);
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public sealed class SpellDeckDockTests
         dock.Tick();
         Assert.Equal(1f, host.DeckGeometry.Stretch);
 
-        tabs[0].AddRange(Enumerable.Range(1, 20).Select(i => (uint)i));
+        tabs[0].AddRange(Enumerable.Range(1, 60).Select(i => (uint)i));   // 3 rows of 20
         int before = host.EnforceCalls;
         dock.Tick();
 
@@ -219,7 +219,7 @@ public sealed class SpellDeckDockTests
         Assert.Equal((300f, 200f), (host.SpellDeckLeft, host.SpellDeckTop));
 
         // Detached, the Spell Deck keeps its own size but follows the rows and the minimum width.
-        tabs[0].AddRange(Enumerable.Range(1, 20).Select(i => (uint)i));
+        tabs[0].AddRange(Enumerable.Range(1, 60).Select(i => (uint)i));   // 3 rows of 20
         dock.Tick();
         Assert.Equal(SpellDeckGeometry.StretchFor(20), host.SpellDeckGeometry.Stretch, 4);
         Assert.Equal(1.2f, host.SpellDeckGeometry.Scale, 3);
@@ -256,10 +256,10 @@ public sealed class SpellDeckDockTests
         var (dock, host, c, _) = Make(detachedRows: 3, saved: saved);
         host.Stored = (300f, 200f, 588f, SpellDeckGeometry.BaseHeight(3) * 1.2f);
         dock.Tick();
-        c.AddRowBelow(c.Rows[0].Id);
-        c.AddRowBelow(c.Rows[0].Id);
+        c.AddRow();
+        c.AddRow();
         dock.Tick();
-        Assert.Equal(5, c.Rows.Count);
+        Assert.Equal(5, c.RowCount);
         Assert.Equal(3, c.DetachedRows);   // attached moves are not the detached placement
 
         dock.Detach();
@@ -278,7 +278,7 @@ public sealed class SpellDeckDockTests
         var (dock, host, c, _) = Make(attached: false, detachedRows: 3);
         host.Stored = (300f, 200f, 588f, SpellDeckGeometry.BaseHeight(3) * 1.2f);
         dock.AfterRestore();
-        c.AddRowBelow(c.Rows[0].Id);
+        c.AddRow();
         dock.Tick();
         Assert.Equal(4, c.DetachedRows);
         Assert.Equal(1.2f, host.SpellDeckGeometry.Scale, 3);

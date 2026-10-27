@@ -3492,7 +3492,7 @@ public sealed class RetailUiRuntime : IDisposable
         // Detached, the Spell Deck starts just above the Command Deck's default place.
         float deckLeft = Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f);
         float deckTop = Math.Max(0f, Host.Root.Height - Hud.DeckGeometry.Default.Height - 20f);
-        var spellDefault = Hud.SpellDeckGeometry.Create(1f, 1f, controller.Rows.Count);
+        var spellDefault = Hud.SpellDeckGeometry.Create(1f, 1f, controller.RowCount);
         RetailWindowHandle spellHandle;
         try
         {
@@ -3538,7 +3538,7 @@ public sealed class RetailUiRuntime : IDisposable
     {
         if (_spellDeckController is not { } controller || controller.OutlinedSpellId is not uint id) return null;
         string spell = SpellName(id)!;
-        return controller.Outline.Kind == Hud.SpellDeckOutlineKind.Item
+        return controller.Outline.Kind == Hud.SpellDeckMarkKind.Item
             && controller.ItemSpell is { } item
             && _bindings.Magic.Objects.Get(item.ItemId)?.GetAppropriateName() is { Length: > 0 } itemName
                 ? Hud.UiSpellDeck.ItemSpellText(itemName, spell)

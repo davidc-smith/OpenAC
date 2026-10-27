@@ -23,15 +23,15 @@ internal sealed partial class UiSpellDeck
 
         DrawItemSocket(ctx);
         uint? pending = _pendingSpell();
-        SpellDeckOutline outline = _controller.Outline;
-        for (int row = 0; row < g.Rows && row < _controller.Rows.Count; row++)
+        SpellDeckMark outline = _controller.Outline;
+        int tab = _controller.Tab;
+        for (int row = 0; row < g.Rows && row < _controller.RowCount; row++)
         {
-            SpellDeckRow r = _controller.Rows[row];
             DeckRect chip = g.TabChip(row);
             Vector4 ink = DeckChrome.DrawStud(ctx, chip, g.Scale, on: false);
-            DrawTextCentered(ctx, (r.Tab + 1).ToString(), chip.X + chip.W / 2, chip, ink);
+            DrawTextCentered(ctx, (tab + 1).ToString(), chip.X + chip.W / 2, chip, ink);
 
-            IReadOnlyList<uint> spells = _controller.Visible(r.Tab);
+            IReadOnlyList<uint> spells = _controller.RowSpells(row);
             for (int slot = 0; slot < g.SlotsPerRow; slot++)
             {
                 DeckRect s = g.Slot(row, slot);
@@ -49,7 +49,7 @@ internal sealed partial class UiSpellDeck
 
                 if (slot >= spells.Count) continue;
                 uint id = spells[slot];
-                if (outline.Kind == SpellDeckOutlineKind.Slot && outline.RowId == r.Id && outline.SpellId == id)
+                if (outline.Kind == SpellDeckMarkKind.Spell && outline.Tab == tab && outline.SpellId == id)
                     StrokeAround(ctx, s, gap: 1f, width: 2f, Handle);
                 if (pending == id)
                     StrokeAround(ctx, s, gap: 3f, width: 2f, CastLit with { W = 0.8f });
@@ -88,7 +88,7 @@ internal sealed partial class UiSpellDeck
         ctx.DrawSprite(_spellIcon(item.SpellId), s.X + inset, s.Y + inset, side, side, 0, 0, 1, 1, Vector4.One);
         float rim = Line(1.5f);
         ctx.StrokeRoundedRect(s.X, s.Y, s.W, s.H, radius, Handle, rim);
-        if (_controller.Outline.Kind == SpellDeckOutlineKind.Item)
+        if (_controller.Outline.Kind == SpellDeckMarkKind.Item)
         {
             float w = Line(2), grow = P(1) + rim / 2f + w / 2f;
             ctx.StrokeEllipse(s.X - grow, s.Y - grow, s.W + 2f * grow, s.H + 2f * grow, Handle, w);

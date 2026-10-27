@@ -84,7 +84,7 @@ public sealed class UiSpellDeckTests
         Assert.Equal(r.Deck.Geometry.Width, r.Deck.Width);
         Assert.Equal(r.Deck.Geometry.Height, r.Deck.Height);
 
-        r.Controller.AddRowBelow(r.Controller.Rows[^1].Id);
+        r.Controller.AddRow();
         r.Deck.Refresh();
         Assert.Equal(4, r.Deck.Geometry.Rows);
         Assert.Equal(SpellDeckGeometry.Create(1f, 1f, 4).Height, r.Deck.Height);
@@ -101,7 +101,7 @@ public sealed class UiSpellDeckTests
         Send(r.Deck, UiEventType.Click, slot);
         Send(r.Deck, UiEventType.DoubleClick, slot);
         Assert.Equal(Enumerable.Repeat("cast 11", casts), r.Game.Calls);
-        Assert.Equal(SpellDeckOutline.ForSlot(1, 0, 11u), r.Controller.Outline);
+        Assert.Equal(SpellDeckMark.Spell(0, 11u), r.Controller.Outline);
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public sealed class UiSpellDeckTests
         r.Deck.Refresh();
         DeckRect item = r.Deck.Geometry.ItemSlot;
         Send(r.Deck, UiEventType.Click, item);
-        Assert.Equal(SpellDeckOutline.Item, r.Controller.Outline);
+        Assert.Equal(SpellDeckMark.Item, r.Controller.Outline);
         Assert.Empty(r.Game.Calls);
         Send(r.Deck, UiEventType.DoubleClick, item);
         Assert.Equal([$"item {0x5000_0001u}"], r.Game.Calls);
@@ -122,12 +122,13 @@ public sealed class UiSpellDeckTests
     public void TabChipClickShowsTheNextTab()
     {
         Rig r = Make();
+        // Until the tab strip (Task 18): any row's chip steps the deck's one tab, wrapping.
         Send(r.Deck, UiEventType.Click, r.Deck.Geometry.TabChip(1));
-        Assert.Equal(2, r.Controller.Rows[1].Tab);
+        Assert.Equal(1, r.Controller.Tab);
 
-        r.Controller.SetRowTab(r.Controller.Rows[2].Id, 7);
+        r.Controller.ShowTab(7);
         Send(r.Deck, UiEventType.Click, r.Deck.Geometry.TabChip(2));
-        Assert.Equal(0, r.Controller.Rows[2].Tab);
+        Assert.Equal(0, r.Controller.Tab);
     }
 
     [Fact]
@@ -184,7 +185,7 @@ public sealed class UiSpellDeckTests
         r.Deck.Refresh();
         Send(r.Deck, UiEventType.MouseMove, r.Deck.Geometry.TabChip(1));
         r.Now += 1;
-        Assert.Equal(new HudTooltipContent("Tab 2", null, null, "Click for the next tab, right-click for more"),
+        Assert.Equal(new HudTooltipContent("Tab 1", null, null, "Click for the next tab, right-click for more"),
             r.Deck.VisibleTooltip);
 
         Send(r.Deck, UiEventType.MouseMove, r.Deck.Geometry.ItemSlot);
@@ -217,8 +218,8 @@ public sealed class UiSpellDeckTests
         foreach (var s in renderer.DebugSpriteSegmentVerts)
             if (s.Texture != 0u)
                 sprites[s.Texture] = sprites.GetValueOrDefault(s.Texture) + s.Verts.Count / 48;
-        // Row 0 shows tab 0 (10, 11, 12), row 1 tab 1 (20), row 2 the empty tab 2.
-        Assert.Equal(new Dictionary<uint, int> { [Icon(10)] = 1, [Icon(11)] = 1, [Icon(12)] = 1, [Icon(20)] = 1 }, sprites);
+        // Every row shows more of tab 0: row 0 holds all three of its spells; tab 1 is not shown.
+        Assert.Equal(new Dictionary<uint, int> { [Icon(10)] = 1, [Icon(11)] = 1, [Icon(12)] = 1 }, sprites);
     }
 
     [Fact]
@@ -240,7 +241,8 @@ public sealed class UiSpellDeckTests
         Rig r = Make();
         Assert.Null(Bounds(MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height), DeckChrome.CastLit));
 
-        r.Pending = 20u;
+        r.Game.Tabs[0].AddRange(Enumerable.Range(100, 10).Select(i => (uint)i));   // the 13th spell, 109, is row 1's first
+        r.Pending = 109u;
         var b = Bounds(MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height), DeckChrome.CastLit);
         Assert.NotNull(b);
         AssertAround(b.Value, r.Deck.Geometry.Slot(1, 0), inside: 3f, outside: 6f);
@@ -271,10 +273,10 @@ public sealed class UiSpellDeckTests
     }
 
     [Fact]
-    public void ARestoredNarrowSizeIsWidenedToTheFullestRow()
+    public void ARestoredNarrowSizeIsWidenedSoTheRowsHoldTheFullestTab()
     {
         Rig r = Make();
-        r.Game.Tabs[1].AddRange(Enumerable.Range(100, 15).Select(i => (uint)i));   // row 1 holds 16
+        r.Game.Tabs[1].AddRange(Enumerable.Range(100, 47).Select(i => (uint)i));   // tab 1 (not shown) holds 48: 16 a row
         float min = SpellDeckGeometry.StretchFor(16);
         Assert.True(min > 1f);
 

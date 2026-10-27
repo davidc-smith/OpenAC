@@ -28,7 +28,7 @@ public sealed record SpellDeckSettings(
             var seen = new HashSet<uint>();
             local.Add([.. (tab ?? []).Where(id => id != 0 && seen.Add(id))]);
         }
-        int tabCount = SpellDeckModel.Tabs + local.Count;
+        int tabCount = SpellDeckTabs.ServerTabs + local.Count;
         return new(
             Tab >= 0 && Tab < tabCount ? Tab : 0,
             Math.Clamp(RowCount, SpellDeckGeometry.MinRows, SpellDeckGeometry.MaxRows),

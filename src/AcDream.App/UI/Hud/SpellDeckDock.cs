@@ -36,7 +36,7 @@ public interface ISpellDeckDockHost
 /// <summary>
 /// Ties the Spell Deck to the Command Deck. Attached, the Spell Deck sits on
 /// the deck's top with the deck's left edge, scale and stretch, and its rows
-/// grow upwards; the deck takes the Spell Deck's fullest row as its minimum
+/// grow upwards; the deck takes the width at which the Spell Deck's rows hold its fullest tab as its minimum
 /// width and keeps room above it for the Spell Deck. Detached, the Spell Deck
 /// is its own window, back where it was last detached (its placement is not
 /// recorded while attached); the first detach puts it just above the deck.
@@ -59,10 +59,10 @@ public sealed class SpellDeckDock
         _aboveHeightAtScale = scale => SpellDeckGeometry.Create(scale, 1f, RowCount).Height;
     }
 
-    private int RowCount => _controller.Rows.Count;
+    private int RowCount => _controller.RowCount;
 
-    /// <summary>The narrowest stretch the Spell Deck (and, attached, the deck) may have: its fullest row.</summary>
-    private float MinStretch() => SpellDeckGeometry.StretchFor(_controller.MinSlots);
+    /// <summary>The narrowest stretch the Spell Deck (and, attached, the deck) may have: its rows must hold the fullest tab.</summary>
+    private float MinStretch() => SpellDeckGeometry.StretchFor(_controller.MinSlotsPerRow);
 
     /// <summary>The attached Spell Deck's height at the deck's size.</summary>
     private float SpellHeight() => AttachedGeometry(_host.DeckGeometry, RowCount).Height;

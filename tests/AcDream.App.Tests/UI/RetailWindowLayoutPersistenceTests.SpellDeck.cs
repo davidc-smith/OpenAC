@@ -241,7 +241,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         rig.Frames(2);
         Assert.Equal("default", rig.Sync.LoadedCharacter);
 
-        rig.Controller.AddRowBelow(rig.Controller.Rows[0].Id);
+        rig.Controller.AddRow();
         rig.Dock.Detach();
         rig.Frames(2);
 

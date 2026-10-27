@@ -67,7 +67,7 @@ internal sealed partial class UiSpellDeck : UiElement
         _setAttached = setAttached ?? throw new ArgumentNullException(nameof(setAttached));
         _fonts = fonts;
         _itemName = itemName ?? (_ => null);
-        _geometry = SpellDeckGeometry.Create(1f, 1f, controller.Rows.Count);
+        _geometry = SpellDeckGeometry.Create(1f, 1f, controller.RowCount);
         Width = _geometry.Width;
         Height = _geometry.Height;
         MinWidth = MinWindowWidth;
@@ -133,8 +133,8 @@ internal sealed partial class UiSpellDeck : UiElement
         height = _geometry.Height;
     }
 
-    /// <summary>The narrowest the deck may be: its fullest row must fit.</summary>
-    private float MinStretchNow => SpellDeckGeometry.StretchFor(_controller.MinSlots);
+    /// <summary>The narrowest the deck may be: its rows must hold the fullest tab.</summary>
+    private float MinStretchNow => SpellDeckGeometry.StretchFor(_controller.MinSlotsPerRow);
 
     public override bool HandlesClick => IsControl(_hit.Zone);
     public override bool ReceivesHoverMouseMove => true;
@@ -157,7 +157,7 @@ internal sealed partial class UiSpellDeck : UiElement
         if (FindRoot()?.ActiveResizeEdges is null or ResizeEdges.None)
             _resizeFrom = null;
         _controller.Tick();
-        int rows = _controller.Rows.Count;
+        int rows = _controller.RowCount;
         if (Width != _geometry.Width || Height != _geometry.Height)
         {
             SpellDeckGeometry g = SpellDeckGeometry.FromSize(Width, Height, _geometry.Rows).WithRows(rows);
@@ -226,8 +226,8 @@ internal sealed partial class UiSpellDeck : UiElement
         string castHint = _controller.ClickCasts ? "Click to cast" : "Double-click to cast";
         switch (hit.Zone)
         {
-            case SpellDeckZone.TabChip when hit.Row < _controller.Rows.Count:
-                return new($"Tab {_controller.Rows[hit.Row].Tab + 1}", null, null, ChipHint);
+            case SpellDeckZone.TabChip when hit.Row < _controller.RowCount:
+                return new($"Tab {_controller.Tab + 1}", null, null, ChipHint);
             case SpellDeckZone.Item:
                 if (_controller.ItemSpell is not { } item)
                     return new("Item spell", null, "No wielded item has a spell.", null);
@@ -254,12 +254,7 @@ internal sealed partial class UiSpellDeck : UiElement
             : string.Empty;
 
     /// <summary>The spell shown in a slot, or null when the slot is empty or the row is not shown.</summary>
-    private uint? SlotSpell(int row, int slot)
-    {
-        if (row < 0 || row >= _controller.Rows.Count || slot < 0) return null;
-        IReadOnlyList<uint> spells = _controller.Visible(_controller.Rows[row].Tab);
-        return slot < spells.Count ? spells[slot] : null;
-    }
+    private uint? SlotSpell(int row, int slot) => _controller.SlotSpell(row, slot);
 
     private void SetHover(SpellDeckHit hit)
     {
@@ -323,9 +318,8 @@ internal sealed partial class UiSpellDeck : UiElement
             case SpellDeckZone.Item:
                 _controller.ClickItem();
                 return true;
-            case SpellDeckZone.TabChip when hit.Row < _controller.Rows.Count:
-                SpellDeckRow row = _controller.Rows[hit.Row];
-                _controller.SetRowTab(row.Id, (row.Tab + 1) % SpellDeckModel.Tabs);
+            case SpellDeckZone.TabChip when hit.Row < _controller.RowCount:
+                _controller.NextTab();
                 return true;
             default:
                 return false;
@@ -366,7 +360,7 @@ internal sealed partial class UiSpellDeck : UiElement
     {
         if (_isLocked() || _press.Zone != SpellDeckZone.Slot) return null;
         if (SlotSpell(_press.Row, _press.Slot) is not uint id) return null;
-        return new SpellDeckDragPayload(_controller.Rows[_press.Row].Tab, id);
+        return new SpellDeckDragPayload(_controller.Tab, id);
     }
 
     public override (uint tex, int w, int h)? GetDragGhost() =>
@@ -380,19 +374,22 @@ internal sealed partial class UiSpellDeck : UiElement
         _ => null,
     };
 
-    /// <summary>The (row, slot) a drop at a point lands on: a slot, or the end of a row
-    /// when the point is in the row's band past its slots; null anywhere else.</summary>
+    /// <summary>The (row, slot) a drop at a point lands on: a slot, or the nearest slot to its
+    /// left when the point is in the row's band between or past its slots; null anywhere else.</summary>
     private (int Row, int Slot)? DropTargetAt(float x, float y)
     {
         SpellDeckHit hit = _geometry.HitAt(x, y);
-        if (hit.Zone == SpellDeckZone.Slot && hit.Row < _controller.Rows.Count)
+        if (hit.Zone == SpellDeckZone.Slot && hit.Row < _controller.RowCount)
             return (hit.Row, hit.Slot);
         if (hit.Zone != SpellDeckZone.Frame) return null;
-        for (int row = 0; row < _geometry.Rows && row < _controller.Rows.Count; row++)
+        for (int row = 0; row < _geometry.Rows && row < _controller.RowCount; row++)
         {
             DeckRect first = _geometry.Slot(row, 0);
             if (y >= first.Y && y < first.Y + first.H && x >= first.X)
-                return (row, _controller.Favorites(_controller.Rows[row].Tab).Count);
+            {
+                int slot = (int)((x - first.X) / (_geometry.Slot(row, 1).X - first.X));
+                return (row, Math.Min(slot, _geometry.SlotsPerRow - 1));
+            }
         }
         return null;
     }
@@ -400,7 +397,7 @@ internal sealed partial class UiSpellDeck : UiElement
     private bool DropReleased(object? payload, float x, float y)
     {
         if (SourceOf(payload) is not { } source) return false;
-        if (DropTargetAt(x, y) is { } at) _controller.Drop(source, at.Row, at.Slot);
+        if (DropTargetAt(x, y) is { } at) _controller.DropOnSlot(source, at.Row, at.Slot);
         return true;
     }
 
@@ -420,7 +417,7 @@ internal sealed partial class UiSpellDeck : UiElement
             DropHighlight = null;
             return;
         }
-        DropHighlight = (at.Row, at.Slot, _controller.CanDrop(source, at.Row, at.Slot));
+        DropHighlight = (at.Row, at.Slot, _controller.CanDropOnSlot(source, at.Row, at.Slot));
     }
 
     private void ClearDropHighlight()
@@ -449,35 +446,34 @@ internal sealed partial class UiSpellDeck : UiElement
     private readonly List<Action?> _menuActions = [];
 
     /// <summary>Builds the menu for a right click at a point (owner coordinates):
-    /// the slot items over a filled slot, then the row items over a slot or tab chip.
+    /// the slot items over a filled slot, then the deck items over a slot or tab chip.
     /// Empty anywhere else, so no menu opens. "-" is a separator.</summary>
     internal IReadOnlyList<(string Text, bool Enabled)> MenuItemsAt(float x, float y)
     {
         _menuItems = [];
         _menuActions.Clear();
         SpellDeckHit hit = _geometry.HitAt(x, y);
-        if (hit.Zone is not (SpellDeckZone.Slot or SpellDeckZone.TabChip) || hit.Row >= _controller.Rows.Count)
+        if (hit.Zone is not (SpellDeckZone.Slot or SpellDeckZone.TabChip) || hit.Row >= _controller.RowCount)
             return _menuItems;
 
-        int rowIndex = hit.Row;
-        SpellDeckRow row = _controller.Rows[rowIndex];
-        if (hit.Zone == SpellDeckZone.Slot && SlotSpell(rowIndex, hit.Slot) is uint spellId)
+        if (hit.Zone == SpellDeckZone.Slot && SlotSpell(hit.Row, hit.Slot) is uint spellId)
         {
             // The spell, not the slot: the favourites can change while the menu is
-            // open, and the item then acts on that spell only if the row still shows it.
-            int rowId = row.Id, tab = row.Tab;
-            Add("Examine spell", true, () => _controller.Examine(rowId, tab, spellId));
-            Add("Remove from row", true, () => _controller.RemoveFromRow(rowId, tab, spellId));
+            // open, and the item then acts on that spell only if the deck still shows it.
+            int tab = _controller.Tab;
+            Add("Examine spell", true, () => _controller.Examine(tab, spellId));
+            Add("Remove from tab", true, () => _controller.RemoveFromTab(tab, spellId));
             Separator();
         }
-        Add("Add row below", _controller.CanAddRow(), () => _controller.AddRowBelow(row.Id));
-        Add("Remove this row", _controller.CanRemoveRow, () => _controller.RemoveRow(row.Id));
+        Add("Add row", _controller.CanAddRow(), _controller.AddRow);
+        Add("Remove row", _controller.CanRemoveRow, _controller.RemoveRow);
         Separator();
-        for (int tab = 0; tab < SpellDeckModel.Tabs; tab++)
+        // Until the tab strip (Task 18): one item per tab that exists.
+        for (int tab = 0; tab < _controller.TabCount; tab++)
         {
             int t = tab;
-            Add(tab == row.Tab ? $"Show tab {tab + 1} (shown)" : $"Show tab {tab + 1}", true,
-                () => _controller.SetRowTab(row.Id, t));
+            Add(tab == _controller.Tab ? $"Show tab {tab + 1} (shown)" : $"Show tab {tab + 1}", true,
+                () => _controller.ShowTab(t));
         }
         Separator();
         Add(_controller.ClickCasts ? "Click casts: on" : "Click casts: off", true, _toggleClickCasts);
