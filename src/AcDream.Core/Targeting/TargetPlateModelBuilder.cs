@@ -14,7 +14,10 @@ public sealed record TargetPlateInput(
 public static class TargetPlateModelBuilder
 {
     public const double StaleAfterSeconds = 10.0;
-    private const string NoPackItem = "Select an item in your pack first";
+    // The pack item is the source of a pending use-with-target, so the hint
+    // says to start the use from the pack, not merely to select an item.
+    private const string NoPackItem = "Use an item from your pack first, then pick this";
+    private const string NoPackKey = "Use a key or lockpick from your pack first, then pick this";
 
     public static TargetPlateModel? Build(TargetPlateInput input)
     {
@@ -32,10 +35,11 @@ public static class TargetPlateModelBuilder
         TargetAction[] more = { TargetAction.Examine, TargetAction.CopyName };
         string kindWord;
         bool needsAssess = false;
+        string? owner = null;
 
         TargetStud Give() => new(TargetAction.Give, hasPackItem, hasPackItem ? null : NoPackItem);
         TargetStud UseOn() => new(TargetAction.UseItemOn, hasPackItem, hasPackItem ? null : NoPackItem);
-        TargetStud Key() => new(TargetAction.UseKey, hasPackItem, hasPackItem ? null : "Select a key or lockpick in your pack first");
+        TargetStud Key() => new(TargetAction.UseKey, hasPackItem, hasPackItem ? null : NoPackKey);
         TargetStud S(TargetAction a) => new(a, true);
 
         switch (c.Kind)
@@ -49,7 +53,7 @@ public static class TargetPlateModelBuilder
                 kindWord = "SUMMON";
                 if (c.OwnedByPlayer) chips.Add(TargetChip.Yours);
                 else if (obj.PetOwnerId != 0u && input.NameOf(obj.PetOwnerId) is string ownerName)
-                    rows.Add(new("Owner", ownerName));
+                    owner = ownerName;
                 vitals = Vitals(input, obj.ObjectId, appraised, entry);
                 studs = new[] { S(TargetAction.Assess), S(TargetAction.Follow), S(TargetAction.More) };
                 break;
@@ -112,6 +116,10 @@ public static class TargetPlateModelBuilder
             ? (input.PlayerLevel > 0 ? string.Create(CultureInfo.InvariantCulture, $"LEVEL {input.PlayerLevel} · YOU") : "YOU")
             : (level is int l && (c.Kind is TargetKind.Monster or TargetKind.Summon or TargetKind.Player))
                 ? string.Create(CultureInfo.InvariantCulture, $"LEVEL {l} · {kindWord}") : kindWord;
+        // Another's summon names its owner on the sub line: kind rows are not
+        // drawn while the plate shows vitals, which a summon always does.
+        if (owner is not null)
+            sub += " · " + owner;
         if (input.DistanceMeters is float d && c.Kind != TargetKind.Self)
             sub += string.Create(CultureInfo.InvariantCulture, $" · {MathF.Round(d):0} m");
 

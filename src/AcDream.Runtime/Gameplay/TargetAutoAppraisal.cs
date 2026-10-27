@@ -59,9 +59,23 @@ public sealed class TargetAutoAppraisal : IDisposable
             Send();
     }
 
+    /// <summary>
+    /// Starts over from the current selection, as a fresh select would. The
+    /// plate calls it when it is shown, since selections made while it was
+    /// hidden may have been refused.
+    /// </summary>
+    public void Resync() => Retarget(_selection.SelectedObjectId ?? 0u);
+
     /// <summary>An identify reply arrived for <paramref name="objectId"/> (any origin).</summary>
-    public void OnAppraised(uint objectId, bool success) =>
+    public void OnAppraised(uint objectId, bool success)
+    {
         _log.Record(objectId, success, _combat.GetHealthPercent(objectId), _clock());
+        // The reply is current, so a trigger still waiting for the target is
+        // answered by it. This also drops the one the reply's own creature
+        // profile raised through HealthChanged just before it was logged.
+        if (objectId == _target)
+            _pending = false;
+    }
 
     private void OnSelectionChanged(SelectionTransition _) => Retarget(_selection.SelectedObjectId ?? 0u);
 
@@ -90,7 +104,10 @@ public sealed class TargetAutoAppraisal : IDisposable
             return;
         if (_log.TryGet(guid, out TargetAppraisalEntry e) && Math.Abs(e.HealthPercent - percent) < 0.0001f)
             return;
-        Trigger();
+        // Pending only, never sent from here: an identify reply raises this
+        // before it is logged, and OnAppraised then drops the trigger before
+        // the next frame's Tick could send it.
+        _pending = true;
     }
 
     // The gap is kept per target and survives a change of selection, so
@@ -110,11 +127,13 @@ public sealed class TargetAutoAppraisal : IDisposable
         Tick();
     }
 
+    // A refused request (no session, say) stays pending, so a later Tick retries it.
     private void Send()
     {
+        if (!_requestAppraisal(_target))
+            return;
         _pending = false;
         _lastSentAt[_target] = _clock();
-        _requestAppraisal(_target);
     }
 
     public void Dispose()

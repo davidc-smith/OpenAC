@@ -81,8 +81,17 @@ public sealed class TargetPlateModelBuilderTests
         var player = new ClientObject { ObjectId = 2, Name = "Sammy", Type = ItemType.Creature, PublicWeenieBitfield = (uint)PublicWeenieFlags.Player };
         TargetStud give = Build(player)!.Studs.Single(s => s.Action == TargetAction.Give);
         Assert.False(give.Enabled);
-        Assert.False(string.IsNullOrEmpty(give.DisabledReason));
+        Assert.Equal("Use an item from your pack first, then pick this", give.DisabledReason);
         Assert.True(Build(player, selectedPackItem: 0x80001234u)!.Studs.Single(s => s.Action == TargetAction.Give).Enabled);
+    }
+
+    [Fact]
+    public void UseKeyIsDisabledWithoutAPackItemAndSaysWhatToDo()
+    {
+        var door = new ClientObject { ObjectId = 11, Name = "Door", Type = ItemType.Misc, PublicWeenieBitfield = (uint)PublicWeenieFlags.Door };
+        TargetStud key = Build(door)!.Studs.Single(s => s.Action == TargetAction.UseKey);
+        Assert.False(key.Enabled);
+        Assert.Equal("Use a key or lockpick from your pack first, then pick this", key.DisabledReason);
     }
 
     [Fact]
@@ -131,14 +140,19 @@ public sealed class TargetPlateModelBuilderTests
     }
 
     [Fact]
-    public void SummonsShowYoursOrTheOwnerName()
+    public void SummonsShowYoursOrTheOwnerNameOnTheSubLine()
     {
         var mine = new ClientObject { ObjectId = 3, Name = "Wolf", Type = ItemType.Creature, PetOwnerId = Me };
         TargetPlateModel a = Build(mine, nameOf: _ => "Sammy")!;
         Assert.Contains(TargetChip.Yours, a.Chips);
-        Assert.DoesNotContain(a.Rows, r => r.Label == "Owner");
+        Assert.Equal("SUMMON · 4 m", a.SubLine);
         var theirs = new ClientObject { ObjectId = 3, Name = "Wolf", Type = ItemType.Creature, PetOwnerId = 0x50000099u };
-        Assert.Contains(Build(theirs, nameOf: _ => "Bob")!.Rows, r => r.Label == "Owner" && r.Value == "Bob");
+        TargetPlateModel b = Build(theirs, nameOf: _ => "Bob")!;
+        Assert.Equal("SUMMON · Bob · 4 m", b.SubLine);
+        Assert.Empty(b.Rows);
+        theirs.Properties.Ints[(uint)PropertyInt.Level] = 80;
+        Assert.Equal("LEVEL 80 · SUMMON · Bob · 4 m", Build(theirs, nameOf: _ => "Bob")!.SubLine);
+        Assert.Equal("LEVEL 80 · SUMMON · 4 m", Build(theirs)!.SubLine);
     }
 
     [Fact]

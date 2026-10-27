@@ -22,6 +22,7 @@ public sealed class TargetDeckWiringTests
         public readonly UiTargetDeck Deck;
         public readonly ModernHudSwitch Switch;
         public int Ticks;
+        public int Shown;
         public bool DeckMounted = true;
 
         public World()
@@ -43,7 +44,7 @@ public sealed class TargetDeckWiringTests
                 [
                     new ModernHudReplacement("Command Deck", WindowNames.CommandDeck, ModernHudSwitch.CommandDeckRetailWindows,
                         () => true, OnShown: () => { }, OnHidden: () => { }),
-                    RetailUiRuntime.TargetDeckReplacement(() => DeckMounted ? Deck : null),
+                    RetailUiRuntime.TargetDeckReplacement(() => DeckMounted ? Deck : null, () => Shown++),
                 ],
                 log: _ => { });
         }
@@ -72,6 +73,16 @@ public sealed class TargetDeckWiringTests
         w.Switch.Apply(false);
         Assert.False(w.Root.IsWindowVisible(WindowNames.TargetDeck));
         Assert.True(w.Chat.Visible);
+    }
+
+    [Fact]
+    public void ShowingTheDeck_RunsItsOnShown()
+    {
+        var w = new World();
+        w.Switch.Apply(true);
+        Assert.Equal(1, w.Shown);
+        w.Switch.Apply(false);
+        Assert.Equal(1, w.Shown);
     }
 
     [Fact]

@@ -37,9 +37,6 @@ public sealed class PluginTargetPlateStore
         _warn = warn ?? throw new ArgumentNullException(nameof(warn));
     }
 
-    /// <summary>Raised when a plugin asks for an object to be described again.</summary>
-    public event Action<uint>? RefreshRequested;
-
     public IPluginTargetPlate For(string pluginId, string displayName)
     {
         if (!_surfaces.TryGetValue(pluginId, out Surface? s))
@@ -51,6 +48,13 @@ public sealed class PluginTargetPlateStore
     {
         if (_cachedObject == objectId)
             _cached = null;
+    }
+
+    /// <summary>Forgets every cached description and action route (a session reset).</summary>
+    public void InvalidateAll()
+    {
+        _cached = null;
+        _actionOwners.Clear();
     }
 
     public TargetPlatePluginContent Describe(PluginTargetPlateQuery query)
@@ -139,11 +143,8 @@ public sealed class PluginTargetPlateStore
             return new Unregister(store, reg);
         }
 
-        public void Refresh(uint objectId)
-        {
-            store.Invalidate(objectId);
-            store.RefreshRequested?.Invoke(objectId);
-        }
+        // The deck pulls each frame, so dropping the cache is enough.
+        public void Refresh(uint objectId) => store.Invalidate(objectId);
 
         public void Dispose()
         {

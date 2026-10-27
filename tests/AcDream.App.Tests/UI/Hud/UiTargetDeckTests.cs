@@ -179,6 +179,26 @@ public sealed class UiTargetDeckTests
         Assert.Same(deck.MenuEntries, deck.MenuEntries);
     }
 
+    [Fact]
+    public void AnEqualRebuiltModelKeepsTheMenuEntries_AChangedOneRebuildsThem()
+    {
+        TargetPluginAction[] actions = [new("a", "Plugin A", "one", "A one", true)];
+        TargetPlateModel model = Build(Monster(), pluginActions: actions);
+        var deck = new UiTargetDeck(() => model, new Recorder(), icons: null, clock: () => 0.0);
+        deck.Refresh();
+        IReadOnlyList<TargetMenuEntry> first = deck.MenuEntries;
+
+        // Built afresh each frame, as the runtime does: equal content keeps the cache.
+        model = Build(Monster(), pluginActions: [new("a", "Plugin A", "one", "A one", true)]);
+        deck.Refresh();
+        Assert.Same(first, deck.MenuEntries);
+
+        model = Build(Monster(), pluginActions: [new("a", "Plugin A", "one", "A one", false)]);
+        deck.Refresh();
+        Assert.NotSame(first, deck.MenuEntries);
+        Assert.False(deck.MenuEntries[^1].Enabled);
+    }
+
     [Theory]
     [InlineData(900f, false)]
     [InlineData(450f, true)]
@@ -248,9 +268,11 @@ public sealed class UiTargetDeckTests
     }
 
     [Fact]
-    public void ThePluginRowTooltipIsTheOverflowWhenThereIsOne()
+    public void ThePluginRowTooltipIsTheRowsOwnThenTheOverflow()
     {
         TargetPlateModel model = Build(Monster(), pluginRows: [PluginRow], overflow: "Loot Bot: 3 more rows");
+        Assert.Equal(PluginRow.Tooltip + "\nLoot Bot: 3 more rows", UiTargetDeck.TooltipFor(TargetZone.PluginRow0, model)!.Detail);
+        model = Build(Monster(), pluginRows: [PluginRow with { Tooltip = null }], overflow: "Loot Bot: 3 more rows");
         Assert.Equal("Loot Bot: 3 more rows", UiTargetDeck.TooltipFor(TargetZone.PluginRow0, model)!.Detail);
         model = Build(Monster(), pluginRows: [PluginRow]);
         Assert.Equal(PluginRow.Tooltip, UiTargetDeck.TooltipFor(TargetZone.PluginRow0, model)!.Detail);

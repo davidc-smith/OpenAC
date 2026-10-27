@@ -76,6 +76,21 @@ public sealed class PluginTargetPlateStoreTests
     }
 
     [Fact]
+    public void InvalidateAllDropsTheCacheAndTheActionRoutes()
+    {
+        var store = new PluginTargetPlateStore(() => true, (_, _) => { });
+        var p = new P(_ => new PluginTargetPlateContent(new[] { new PluginTargetPlateRow("x", "y") },
+            new[] { new PluginTargetPlateAction("nav", "Navigate here") }));
+        store.For("a", "Alpha").AddProvider(p);
+        store.Describe(Q);
+        store.InvalidateAll();
+        store.RunAction("a", 7, "nav");
+        Assert.Empty(p.Actions);
+        store.Describe(Q);
+        Assert.Equal(2, p.Calls);
+    }
+
+    [Fact]
     public void DisposingARegistrationRemovesItsRows()
     {
         var store = new PluginTargetPlateStore(() => true, (_, _) => { });

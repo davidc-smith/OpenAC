@@ -12,7 +12,8 @@ public sealed class TargetAutoAppraisalTests
     private const uint Player = 0x50000001u, Monster = 0x80000010u, Monster2 = 0x80000011u, Chest = 0x80000020u, Corpse = 0x80000030u;
     private double _now = 100.0;
 
-    private (TargetAutoAppraisal auto, SelectionState sel, CombatState combat, List<uint> sent, TargetAppraisalLog log) Make()
+    private (TargetAutoAppraisal auto, SelectionState sel, CombatState combat, List<uint> sent, TargetAppraisalLog log) Make(
+        Func<uint, bool>? accept = null)
     {
         var objects = new ClientObjectTable();
         objects.AddOrUpdate(new ClientObject { ObjectId = Monster, Name = "Drudge Ravener", Type = ItemType.Creature, PublicWeenieBitfield = (uint)PublicWeenieFlags.Attackable });
@@ -24,7 +25,13 @@ public sealed class TargetAutoAppraisalTests
         var sent = new List<uint>();
         var log = new TargetAppraisalLog();
         var auto = new TargetAutoAppraisal(sel, objects, combat, log, () => Player,
-            id => { sent.Add(id); return true; }, () => _now);
+            id =>
+            {
+                if (accept is not null && !accept(id))
+                    return false;
+                sent.Add(id);
+                return true;
+            }, () => _now);
         return (auto, sel, combat, sent, log);
     }
 
@@ -209,6 +216,77 @@ public sealed class TargetAutoAppraisalTests
             _now += 1.0;
             auto.Tick();
             Assert.Equal(new[] { Monster, Monster2, Monster }, sent);
+        }
+    }
+
+    [Fact]
+    public void ARefusedSendStaysPendingAndGoesOutOnTheNextTickThatIsAccepted()
+    {
+        bool accepting = false;
+        var (auto, sel, _, sent, _) = Make(_ => accepting);
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            auto.Tick();
+            Assert.Empty(sent);
+            accepting = true;
+            auto.Tick();
+            Assert.Equal(new[] { Monster }, sent);
+            auto.Tick();
+            Assert.Single(sent);
+        }
+    }
+
+    [Fact]
+    public void ResyncWithAMonsterSelectedSendsOnceRespectingTheGap()
+    {
+        var (auto, sel, _, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            _now += 0.5;
+            auto.Resync();
+            Assert.Single(sent);
+            _now += 1.5; // 2.0 s since the first send
+            auto.Tick();
+            Assert.Equal(new[] { Monster, Monster }, sent);
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+        }
+    }
+
+    [Fact]
+    public void APendingTriggerIsDroppedWhenTheNewTargetHasAFreshId()
+    {
+        var (auto, sel, combat, sent, log) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            _now += 0.5;
+            combat.OnAttackerNotification("Drudge Ravener", 1u, 10u, 0.1); // pending inside A's gap
+            log.Record(Monster2, true, 1f, _now);
+            sel.Select(Monster2, SelectionChangeSource.World);
+            _now += 5.0;
+            auto.Tick();
+            Assert.Equal(new[] { Monster }, sent);
+        }
+    }
+
+    [Fact]
+    public void AReplyThatMovesHealthBeforeItIsLoggedDoesNotSendAgain()
+    {
+        var (auto, sel, combat, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            _now += 2.5; // a slow reply, past the gap
+            // The identify reply's creature profile raises HealthChanged before the reply is logged.
+            combat.OnUpdateHealth(Monster, 0.6f);
+            auto.OnAppraised(Monster, success: true);
+            auto.Tick();
+            _now += 3.0;
+            auto.Tick();
+            Assert.Single(sent);
         }
     }
 }

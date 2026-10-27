@@ -174,21 +174,31 @@ internal sealed partial class UiTargetDeck : UiElement
     internal IReadOnlyList<TargetMenuEntry> MenuEntries => Entries();
 
     private List<TargetMenuEntry> _menuEntries = [];
-    /// <summary>The model <see cref="_menuEntries"/> was built from; a new model rebuilds them.</summary>
+    /// <summary>The model <see cref="_menuEntries"/> was built from; a model with other menu content rebuilds them.</summary>
     private TargetPlateModel? _menuEntriesFor;
     /// <summary>Set when the menu opened: true when there was no room below the plate, so it opens upward.</summary>
     private bool _menuAbove;
 
-    /// <summary>The menu lines for the current model, built once per model.</summary>
+    /// <summary>
+    /// The menu lines for the current model. The runtime builds a new model each
+    /// frame, so they are rebuilt only when the object, its more actions or the
+    /// plugin actions differ from the ones they were built from.
+    /// </summary>
     private List<TargetMenuEntry> Entries()
     {
-        if (!ReferenceEquals(_menuEntriesFor, _view))
+        if (!SameMenu(_menuEntriesFor, _view))
         {
             _menuEntriesFor = _view;
             _menuEntries = _view is null ? [] : BuildMenu(_view);
         }
         return _menuEntries;
     }
+
+    private static bool SameMenu(TargetPlateModel? a, TargetPlateModel? b) =>
+        ReferenceEquals(a, b)
+        || (a is not null && b is not null && a.ObjectId == b.ObjectId
+            && a.MoreMenu.SequenceEqual(b.MoreMenu)
+            && (ReferenceEquals(a.PluginActions, b.PluginActions) || a.PluginActions.SequenceEqual(b.PluginActions)));
 
     /// <summary>The kind's more actions, then the plugin actions grouped by plugin in the order
     /// each plugin first appears, one heading per plugin.</summary>
@@ -500,7 +510,10 @@ internal sealed partial class UiTargetDeck : UiElement
                 int i = zone - TargetZone.PluginRow0;
                 if (i >= view.PluginRows.Count) return null;
                 TargetPluginRow row = view.PluginRows[i];
-                string? detail = view.PluginOverflowTooltip ?? row.Tooltip;
+                // The row's own tooltip, then whatever did not fit on the plate.
+                string? detail = row.Tooltip is null ? view.PluginOverflowTooltip
+                    : view.PluginOverflowTooltip is null ? row.Tooltip
+                    : row.Tooltip + "\n" + view.PluginOverflowTooltip;
                 return detail is null ? null : new(row.Label.Length > 0 ? row.Label : row.Value, null, detail, null);
             }
             default:

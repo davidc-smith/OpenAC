@@ -584,7 +584,8 @@ public sealed class RetailUiRuntime : IDisposable
                             Host.Root.DefaultTextInput = null;
                     },
                     HoldsRetailVisibility: true),
-                TargetDeckReplacement(() => _targetDeck),
+                // Selections made under the retail HUD were refused, so auto-ID starts over on show.
+                TargetDeckReplacement(() => _targetDeck, () => _targetAuto?.Resync()),
             ],
             // _persistence is nulled once disposed, so a late Apply never reaches it.
             holdVisibility: window => _persistence?.HoldVisibility(window),
@@ -1345,6 +1346,7 @@ public sealed class RetailUiRuntime : IDisposable
         _chatDeckSession?.EndSession();
         // A new character starts with nothing identified and no auto-ID gaps.
         _targetAppraisalLog?.Clear();
+        _bindings.Plugins?.TargetPlateStore.InvalidateAll();
         if (_targetAuto is not null)
         {
             _targetAuto.Dispose();
@@ -3704,11 +3706,14 @@ public sealed class RetailUiRuntime : IDisposable
     internal static float TargetDeckDefaultLeft(float rootWidth) =>
         Math.Max(0f, (rootWidth - Hud.TargetDeckGeometry.Width) * 0.5f);
 
-    /// <summary>The Target Deck's Modern HUD entry. It replaces no retail window: it adds a plate.</summary>
-    internal static Hud.ModernHudReplacement TargetDeckReplacement(Func<Hud.UiTargetDeck?> deck) =>
+    /// <summary>
+    /// The Target Deck's Modern HUD entry. It replaces no retail window: it adds a plate.
+    /// <paramref name="onShown"/> runs each time it is shown (auto-ID resyncs to the selection).
+    /// </summary>
+    internal static Hud.ModernHudReplacement TargetDeckReplacement(Func<Hud.UiTargetDeck?> deck, Action? onShown = null) =>
         new("Target Deck", WindowNames.TargetDeck, Array.Empty<string>(),
             Mounted: () => deck() is not null,
-            OnShown: () => { },
+            OnShown: () => onShown?.Invoke(),
             OnHidden: () => deck()?.OnHidden());
 
     /// <summary>The deck is mounted and Modern HUD shows it: plugins may describe targets, and auto-ID may ask.</summary>
