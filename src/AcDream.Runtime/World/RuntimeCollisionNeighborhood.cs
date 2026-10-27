@@ -984,6 +984,14 @@ internal sealed class RuntimeCollisionNeighborhood
     /// returned. Their results are never read. Loading is done on the
     /// caller's thread from then on.
     /// </summary>
+    /// <summary>
+    /// Whether the loads started in the background have been told to stop
+    /// (by <see cref="StopBackgroundWork"/> or a newer plan); safe to read
+    /// from any thread.
+    /// </summary>
+    internal bool BackgroundLoadsCancelled =>
+        Volatile.Read(ref _loadsSuperseded)?.IsCancellationRequested == true;
+
     internal void StopBackgroundWork()
     {
         _backgroundStopped = true;
