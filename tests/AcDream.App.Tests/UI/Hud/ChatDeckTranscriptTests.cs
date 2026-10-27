@@ -1,0 +1,126 @@
+using System.Globalization;
+using System.Numerics;
+using AcDream.App.UI;
+using AcDream.App.UI.Hud;
+using AcDream.Core.Chat;
+using AcDream.Core.Chat.Deck;
+
+namespace AcDream.App.Tests.UI.Hud;
+
+public sealed class ChatDeckTranscriptTests
+{
+    private static readonly Vector4 Channel = new(0.8f, 0.8f, 0.8f, 1f);
+    private static readonly Vector4 Tag = new(0.4f, 0.8f, 1f, 1f);
+    private static readonly Vector4 Stamp = new(0.5f, 0.5f, 0.5f, 1f);
+    private const uint PlayerGuid = 0x5000000Au;
+
+    private static ChatDeckTranscriptStyle Style(
+        float width = 1000f, ChatDeckTimestamps stamps = ChatDeckTimestamps.Off, string search = "") =>
+        new(width, s => s.Length * 7f, FontKey: null, stamps, _ => Channel, Tag, Stamp, search);
+
+    private static ChatDeckLine Line(ChatEntry entry, uint? lineColour = null, uint? matchColour = null,
+        IReadOnlyList<ChatDeckSpan>? spans = null)
+    {
+        var facts = ChatDeckLineFacts.From(entry, "Davian");
+        var verdict = new ChatDeckVerdict(
+            Hidden: false, Destinations: ["all"], LineColour: lineColour, MatchColour: matchColour,
+            MatchSpans: spans ?? [], Alert: false, Hits: [], TimedOutRuleIds: []);
+        return new ChatDeckLine(facts, verdict);
+    }
+
+    private static ChatEntry Sys(string text, long seq = 1) =>
+        new(ChatKind.System, "", text, 0u, 0u) { Sequence = seq };
+
+    [Fact]
+    public void Wraps_AndKeysByEntry()
+    {
+        var t = new ChatDeckTranscript();
+        ChatDeckTranscriptLayout layout = t.Build([Line(Sys("aaaa bbbb cccc", seq: 42))], Style(width: 35f));
+
+        Assert.True(layout.Lines.Count >= 2);
+        Assert.All(layout.Keys, k => Assert.Equal(42, k.Source));
+        Assert.Equal(0, layout.Keys[0].Start);
+        Assert.Equal("aaaa bbbb cccc", string.Join(" ", layout.Lines.Select(l => l.Text.Trim())));
+    }
+
+    [Fact]
+    public void Timestamp_PrefixInTimestampColour()
+    {
+        var received = new DateTime(2026, 10, 27, 9, 5, 7, DateTimeKind.Utc);
+        var entry = Sys("hello") with { Received = received };
+        var t = new ChatDeckTranscript();
+        string expected = received.ToLocalTime().ToString(@"H\:mm\:ss ", CultureInfo.InvariantCulture);
+
+        ChatDeckTranscriptLayout layout = t.Build([Line(entry)], Style(stamps: ChatDeckTimestamps.HourMinuteSecond));
+
+        Assert.StartsWith(expected, layout.Lines[0].Text);
+        IReadOnlyList<UiText.TextRun> runs = layout.Runs[0]!;
+        Assert.Equal(expected, runs[0].Text);
+        Assert.Equal(Stamp, runs[0].Color);
+    }
+
+    [Fact]
+    public void LineColour_OverridesChannel_AndMarksEveryVisualLine()
+    {
+        uint red = 0xFFFF0000u;
+        var t = new ChatDeckTranscript();
+        ChatDeckTranscriptLayout layout = t.Build([Line(Sys("aaaa bbbb cccc"), lineColour: red)], Style(width: 35f));
+
+        var expected = new Vector4(1f, 0f, 0f, 1f);
+        Assert.All(layout.Lines, l => Assert.Equal(expected, l.Color));
+        Assert.All(layout.Markers, m => Assert.Equal(expected, m));
+    }
+
+    [Fact]
+    public void PlainLine_HasNoMarker_AndChannelColour()
+    {
+        ChatDeckTranscriptLayout layout = new ChatDeckTranscript().Build([Line(Sys("plain"))], Style());
+        Assert.Null(layout.Markers[0]);
+        Assert.Equal(Channel, layout.Lines[0].Color);
+    }
+
+    [Fact]
+    public void TellTag_IsColouredAndListed()
+    {
+        var tell = new ChatEntry(ChatKind.Tell, "Bob", "meet me", PlayerGuid, 0u) { LogTextType = 0x03u };
+        ChatDeckTranscriptLayout layout = new ChatDeckTranscript().Build([Line(tell)], Style());
+
+        Assert.Contains(layout.Runs[0]!, r => r.Text == "Bob" && r.Color == Tag);
+        var (start, length, tag) = Assert.Single(layout.Tags[0]!);
+        Assert.Equal((0, 3), (start, length));
+        Assert.True(tag.IsTell);
+    }
+
+    [Fact]
+    public void MatchColour_ColoursTheMatchedText()
+    {
+        uint gold = 0xFFFFD700u;
+        var entry = new ChatEntry(ChatKind.LocalSpeech, "Bob", "I found a key", PlayerGuid, 0u) { LogTextType = 0x02u };
+        // "key" in the Text field: offset 10, length 3
+        ChatDeckLine line = Line(entry, matchColour: gold, spans: [new ChatDeckSpan(ChatDeckMatchField.Text, 10, 3)]);
+
+        ChatDeckTranscriptLayout layout = new ChatDeckTranscript().Build([line], Style());
+
+        var expected = new Vector4(1f, 215f / 255f, 0f, 1f);
+        Assert.Contains(layout.Runs[0]!, r => r.Text == "key" && r.Color == expected);
+    }
+
+    [Fact]
+    public void Search_KeepsMatchingLinesOnly()
+    {
+        ChatDeckTranscriptLayout layout = new ChatDeckTranscript().Build(
+            [Line(Sys("the drudge", 1)), Line(Sys("a banderling", 2))], Style(search: "DRUDGE"));
+        Assert.Single(layout.Lines);
+        Assert.Equal(1, layout.Keys[0].Source);
+    }
+
+    [Fact]
+    public void ProjectsEachLineOnce()
+    {
+        var t = new ChatDeckTranscript();
+        ChatDeckLine line = Line(Sys("once"));
+        t.Build([line], Style());
+        t.Build([line], Style(width: 500f));
+        Assert.Equal(1, t.ProjectionsForTest);
+    }
+}
