@@ -4,14 +4,14 @@
     {
       "id": 22,
       "subject": "Task 22: Slot layout model (pure)",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [],
       "description": "**Goal:** `SpellDeckLayout` per tab with placement, move/swap/copy/replace/clear, reading-order distinct list, reconcile against a server list, server-sync op planning, and min rows/columns.\n\n**Files:** Create `src/AcDream.App/UI/Hud/SpellDeckLayout.cs`; tests `tests/AcDream.App.Tests/UI/Hud/SpellDeckLayoutTests.cs`.\n\n**Acceptance Criteria:**\n- [ ] Immutable value with `Get(row, col)`, `Place/Clear/Move/Swap/Copy/Replace` returning new layouts; `Filled` in reading order; `Distinct` = first copies in reading order\n- [ ] `Reconcile(serverList, rows, cols)`: clears spells absent from the server list; places server spells missing from the layout into first empty slots in reading order within rows × cols; reports spells that did not fit\n- [ ] `SyncOps(serverList)` → minimal ordered `Set`/`Remove` ops making the server list equal `Distinct` (removals first, then sets in order)\n- [ ] `MaxRow` / `MaxCol` (occupied extents), `FirstEmpty(rows, cols)`, `FromList(list, cols)` (v2 migration / no saved layout)\n- [ ] Tests for every bullet, including duplicates (removing one copy keeps the spell in `Distinct`), swap across rows, and reconcile with a reordered server list (layout positions win)\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckLayout'`.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": false}\n```"
     },
     {
       "id": 23,
       "subject": "Task 23: Settings v3, tabs source and controller on layouts",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         22
       ],
@@ -20,7 +20,7 @@
     {
       "id": 24,
       "subject": "Task 24: Geometry v3, element drops and attached resize grip",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         23
       ],
@@ -29,7 +29,7 @@
     {
       "id": 25,
       "subject": "Task 25: Runtime wiring v3",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         24
       ],
@@ -45,5 +45,5 @@
       "description": "> **USER-ORDERED GATE — NON-SKIPPABLE.** Close only after the user confirms each item in the real client.\n\n**Goal:** The user confirms v3 plus the open v1/v2 items live on 10.10.20.20.\n\n**Files:** none.\n\n**Acceptance Criteria:**\n- [ ] Default width matches the deck frame; Spell Deck grips resize both when attached\n- [ ] Place a spell in any slot (row 2 slot 1 with gaps), duplicate with Ctrl, swap, replace, bookmark move, remove; layout survives relog\n- [ ] Remaining v1/v2 items (tabs, +, click modes, item spell, drag cases, detach/attach, Retina, glyphs, two-digit bookmarks, seam look)\n\n**Verify:** user confirmation per item.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": true}\n```"
     }
   ],
-  "lastUpdated": "2026-10-27T09:08:36.310685"
+  "lastUpdated": "2026-10-27T09:58:35.319802"
 }
