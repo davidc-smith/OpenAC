@@ -487,3 +487,36 @@ Slices and capacity across stretches; hotkey `r·N + n` mapping; outline rules a
 ### CAST button label
 
 The Command Deck's CAST button shows the cast icon **and the word `CAST`** (small SemiBold label, `DeckFonts`), not the icon alone. The stud is 54 base points wide (was 26); the casting-name text area shrinks by the difference and still ends in `...` before the button.
+
+## v3 (2026-10-27, second live look)
+
+The second live look found: the bar should match the deck frame's width (orb excluded) by default; attached, the Spell Deck's own corner should scale both decks; spells could not be placed in any slot (a drop on row 2 slot 1 landed at the end of row 1) and the same spell could not be placed twice. ACE stores each favourite tab as a gap-free ordered list with each spell at most once (`AddSpellToBar` clamps the position to the count and ignores a spell already in the bar), so slot positions, gaps and duplicates must be kept by the client. This section wins over v2 where they conflict.
+
+### Width
+
+- Attached, the Spell Deck lines up with the deck **frame**: left `deck.Left + 70·scale`, width `(350 + 420·(stretch − 1))·scale`, bottom `deck.Top + 4·scale`. Square meeting corners as in v2. Detached: same base width (350 at stretch 1), rounded.
+- Slots per row: `floor((width/scale − 46 − 6 + 2) / 28)`: **10 at stretch 1**, 25 at stretch 2. Hotkeys unchanged (1–9 bound by default; the 10th slot's key `0` is unbound).
+
+### Resizing the attached block
+
+- Attached, the Spell Deck's **right edge** stretches both decks and its **top-right corner** scales both, exactly as the Command Deck's own right edge and corners do (same steps, limits, block-on-screen rule). The Command Deck's grips keep working. Detached, each resizes on its own.
+
+### Slot layout
+
+- Each tab has a **layout**: which slot `(row, column)` holds which spell. Slots may be empty; the same spell may sit in several slots.
+- The layout is saved per character, per tab, in this PC's settings. Local tabs (9–16) are only a layout.
+- **Server tabs (1–8):** the server list is kept equal to the tab's distinct spells in reading order (row by row, left to right; each spell at its first slot). Placing a spell new to the tab adds it on the server; removing a spell's last copy removes it on the server; a change of reading order repositions it. Extra copies never reach the server.
+- **Reconcile** (login, character change, and whenever the server list changes from elsewhere): a server spell missing from the layout goes into the tab's first empty slot in reading order (a new row's slots count only if a row exists); a layout spell no longer in the server list is cleared from every slot. Without a saved layout (first use, another PC) the server list fills the slots in reading order.
+- **Edits:**
+  - Spellbook → empty slot: place. Spellbook → filled slot: replace (the replaced spell's last copy is removed from the server).
+  - Slot → empty slot: move. Slot → filled slot: swap.
+  - Hold **Ctrl** while dropping a slot onto another slot: copy instead of move (duplicate).
+  - Slot → tab bookmark: move to that tab's first empty slot; refused (`That spell tab is full.`) when it has none in the current rows × slots.
+  - Drag off every window, or right-click → Remove from tab: clears that slot.
+- **No hidden spells:** the deck cannot be narrowed past the right-most occupied column, nor a row removed that holds a spell, in **any** tab (Remove row disabled; narrowing stops). Rows/columns needed by a reconcile that does not fit are added (rows first, up to 10), then the deck widens; spells that still do not fit stay on the server, unshown.
+- **Hotkeys:** row `r` slot `n` casts what that slot holds; an empty slot does nothing.
+- **Outline:** `None | Item | Slot(tab, row, column)`. Next / Prev walk the filled slots in reading order (item first); a cleared slot repairs to the first filled slot.
+
+### Saved state v3
+
+Per character, in addition to v2: `layouts` — for each tab that has one, the list of `{row, col, spell}`. Migration from v2: each tab's list is laid out in reading order at the current slots per row.
