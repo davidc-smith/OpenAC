@@ -38,7 +38,14 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         Input.TextReplacer = text => ChatTextReplacements.Expand(text, _b.LastIncomingTellSender());
         Input.OnSubmit = Send;
         Input.OnTextChanged = text => _b.Entry.SetDraft(text);
-        Input.OnControlKey = (key, shift) => key == Silk.NET.Input.Key.Tab && CycleTab(shift ? -1 : 1);
+        // Ctrl+Left/Right as well as Ctrl+Tab: macOS keeps Tab for itself while Ctrl is held.
+        Input.OnControlKey = (key, shift) => key switch
+        {
+            Silk.NET.Input.Key.Tab => CycleTab(shift ? -1 : 1),
+            Silk.NET.Input.Key.Right => CycleTab(1),
+            Silk.NET.Input.Key.Left => CycleTab(-1),
+            _ => false,
+        };
         _b.Entry.DraftChanged += OnDraftChanged;
         Input.ShowText(_b.Entry.Draft);
 
