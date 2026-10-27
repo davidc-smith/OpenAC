@@ -4,14 +4,14 @@
     {
       "id": 15,
       "subject": "Task 15: Settings v2 and local tabs storage",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [],
       "description": "**Goal:** `SpellDeckSettings` becomes `(int Tab, int RowCount, bool Attached, int? DetachedRows, IReadOnlyList<IReadOnlyList<uint>> LocalTabs)` with validation and v1 migration; the store round-trips it.\n\n**Files:** Modify `src/AcDream.App/UI/Hud/SpellDeckSettings.cs`, `src/AcDream.UI.Abstractions/Panels/Settings/SettingsStore.cs` (`StoredSpellDeck`, `LoadSpellDeck`, `SaveSpellDeck`); tests `SpellDeckSettingsTests.cs`, `SettingsStoreSpellDeckTests.cs`; update callers so the solution builds (callers that used `Rows` read `RowCount`/`Tab`; behaviour changes come in Task 17).\n\n**Acceptance Criteria:**\n- [ ] Default: Tab 0, RowCount 3, Attached true, DetachedRows null, no local tabs\n- [ ] Normalize: RowCount clamped 1–10; LocalTabs truncated to 8 (each list de-duplicated, zero ids dropped); Tab clamped to 0..(7 + LocalTabs.Count), else 0\n- [ ] JSON `spellDeck[toon] = { tab, rowCount, attached, detachedRows?, localTabs: [[ids]] }`; other sections kept\n- [ ] A v1 entry with `rows: [{id, tab}, …]` loads as `RowCount = rows.length` (clamped), `Tab = rows[0].tab`; `detachedRows` carried\n- [ ] A malformed local tab entry is skipped, not the whole deck\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckSettings|FullyQualifiedName~SettingsStore'` → pass; solution builds.\n\n```json:metadata\n{\"modelTier\": \"standard\"}\n```"
     },
     {
       "id": 16,
       "subject": "Task 16: Pure model and outline v2",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         15
       ],
@@ -20,7 +20,7 @@
     {
       "id": 17,
       "subject": "Task 17: Tabs source and controller v2",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         16
       ],
@@ -29,7 +29,7 @@
     {
       "id": 18,
       "subject": "Task 18: Geometry v2 and element v2 (tab strip, menu, drops)",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         17
       ],
@@ -38,7 +38,7 @@
     {
       "id": 19,
       "subject": "Task 19: Seamless join, attached block drag, CAST label",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         18
       ],
@@ -47,7 +47,7 @@
     {
       "id": 20,
       "subject": "Task 20: Runtime wiring v2",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         19
       ],
@@ -63,5 +63,5 @@
       "description": "> **USER-ORDERED GATE — NON-SKIPPABLE.** Close only after every item has been confirmed by the user in the real client, with notes captured.\n\n**Goal:** The user confirms v1's Task 14 checklist plus v2 in the real client on 10.10.20.20, only when they say they are available.\n\n**Files:** none (fixes are their own commits).\n\n**Acceptance Criteria:**\n- [ ] User available before launch; local ACE only\n- [ ] Tab strip: switch tabs by click and Insert/PgUp; `+` adds tab 9; remove last local tab; local tab survives relog\n- [ ] Rows continue the tab; hotkeys cast what the slot shows; Remove row disabled when it would hide spells\n- [ ] Join looks seamless (no gap, aligned edges); dragging the attached Spell Deck moves both; CAST shows its label\n- [ ] Remaining Task 14 items (click modes, item spell, drag cases, resize, relog, Retina, glyphs)\n\n**Verify:** user confirmation per item.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": true, \"tags\": [\"user-gate\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-10-27T07:42:17.832370"
+  "lastUpdated": "2026-10-27T08:37:28.360395"
 }
