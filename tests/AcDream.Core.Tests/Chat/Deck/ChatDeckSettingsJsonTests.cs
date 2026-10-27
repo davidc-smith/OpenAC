@@ -118,4 +118,15 @@ public sealed class ChatDeckSettingsJsonTests
         Assert.Equal(ChatDeckSendChannel.Say, x.SendChannel);
         Assert.Equal(ChatDeckEdge.Left, s.Layout.Edge);
     }
+
+    [Theory]
+    [InlineData("{\"version\":1,\"version\":2}")]
+    [InlineData("{\"tabs\":[{\"id\":\"a\",\"id\":\"b\"}]}")]
+    public void DuplicateKeys_GiveDefaultsWithError_AndSerializeDoesNotThrow(string json)
+    {
+        var (s, error) = ChatDeckSettingsJson.Parse(json);
+        Assert.NotNull(error);
+        Assert.Equal(6, s.Tabs.Count);
+        Assert.NotNull(ChatDeckSettingsJson.Serialize(s, json));
+    }
 }

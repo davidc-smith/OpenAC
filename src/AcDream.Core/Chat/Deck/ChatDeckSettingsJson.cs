@@ -19,28 +19,26 @@ public static class ChatDeckSettingsJson
         if (json.Length > ChatDeckLimits.MaxSettingsJsonLength)
             return new(ChatDeckDefaults.Create(), $"Chat Deck settings are larger than {ChatDeckLimits.MaxSettingsJsonLength} characters.");
 
-        JsonObject root;
         try
         {
-            if (JsonNode.Parse(json) is not JsonObject obj)
+            if (ParseNode(json) is not JsonObject root)
                 return new(ChatDeckDefaults.Create(), "Chat Deck settings are not a JSON object.");
-            root = obj;
+
+            ChatDeckSettings defaults = ChatDeckDefaults.Create();
+            var settings = new ChatDeckSettings
+            {
+                Version = Int(root, "version", ChatDeckSettings.CurrentVersion),
+                Tabs = root["tabs"] is JsonArray tabs ? tabs.OfType<JsonObject>().Select(ReadTab).ToList() : defaults.Tabs,
+                Rules = root["rules"] is JsonArray rules ? rules.OfType<JsonObject>().Select(ReadRule).ToList() : defaults.Rules,
+                Appearance = root["appearance"] is JsonObject a ? ReadAppearance(a) : defaults.Appearance,
+                Layout = root["layout"] is JsonObject l ? ReadLayout(l) : defaults.Layout,
+            };
+            return new(ChatDeckSettingsNormalizer.Normalize(settings), null);
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException)
         {
             return new(ChatDeckDefaults.Create(), $"Chat Deck settings are not valid JSON: {ex.Message}");
         }
-
-        ChatDeckSettings defaults = ChatDeckDefaults.Create();
-        var settings = new ChatDeckSettings
-        {
-            Version = Int(root, "version", ChatDeckSettings.CurrentVersion),
-            Tabs = root["tabs"] is JsonArray tabs ? tabs.OfType<JsonObject>().Select(ReadTab).ToList() : defaults.Tabs,
-            Rules = root["rules"] is JsonArray rules ? rules.OfType<JsonObject>().Select(ReadRule).ToList() : defaults.Rules,
-            Appearance = root["appearance"] is JsonObject a ? ReadAppearance(a) : defaults.Appearance,
-            Layout = root["layout"] is JsonObject l ? ReadLayout(l) : defaults.Layout,
-        };
-        return new(ChatDeckSettingsNormalizer.Normalize(settings), null);
     }
 
     public static string Serialize(ChatDeckSettings settings, string? previousJson)
@@ -193,11 +191,19 @@ public static class ChatDeckSettingsJson
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
+    // Duplicate property names are rejected here, at parse time. Left alone, the tree builds its
+    // lookup lazily and throws on the first index or enumerate, far from the guard.
+    private static JsonNode? ParseNode(string json) =>
+        JsonNode.Parse(json, documentOptions: new JsonDocumentOptions { AllowDuplicateProperties = false });
+
     private static JsonObject? TryParseObject(string? json)
     {
         if (string.IsNullOrWhiteSpace(json) || json.Length > ChatDeckLimits.MaxSettingsJsonLength) return null;
-        try { return JsonNode.Parse(json) as JsonObject; }
-        catch (JsonException) { return null; }
+        try
+        {
+            return ParseNode(json) as JsonObject;
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException) { return null; }
     }
 
     private static JsonObject Clone(JsonObject? o) => o is null ? new JsonObject() : (JsonObject)o.DeepClone();
