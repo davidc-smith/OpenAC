@@ -117,15 +117,43 @@ public sealed class SpellDeckSettingsTests
     }
 
     [Fact]
-    public void Normalize_KeepsColumnsPastTheWidestDeck_SoNoSpellIsLost()
+    public void Normalize_KeepsServerTabColumnsPastTheWidestDeck_SoNoSpellIsLost()
     {
         // Saved by v2, whose widest deck held 27 slots a row: columns 25 and 26 are past v3's 25.
+        // A server tab keeps them (unshown); its reconcile re-places spells it cannot show.
         var layouts = new Dictionary<int, SpellDeckLayout>
         {
-            [8] = L((0, 0, 1u), (0, 25, 2u), (1, 26, 3u), (2, SpellDeckSettings.MaxSavedColumns - 1, 4u)),
+            [0] = L((0, 0, 1u), (0, 25, 2u), (1, 26, 3u), (2, SpellDeckSettings.MaxSavedColumns - 1, 4u)),
+        };
+        var n = new SpellDeckSettings(0, 3, true, null, [], layouts).Normalize();
+        Assert.Equal(layouts[0], n.Layouts![0]);
+        Assert.True(SpellDeckSettings.MaxSavedColumns > SpellDeckGeometry.MaxCapacity);
+    }
+
+    [Fact]
+    public void Normalize_RePlacesALocalTabsSlotsOutsideTheGrid_IntoTheFirstEmptySlots_InReadingOrder()
+    {
+        var layouts = new Dictionary<int, SpellDeckLayout>
+        {
+            [8] = L((0, 0, 1u), (0, 26, 2u), (SpellDeckGeometry.MaxRows, 0, 3u), (0, SpellDeckGeometry.MaxCapacity - 1, 4u)),
         };
         var n = new SpellDeckSettings(8, 3, true, null, [[1u, 2u, 3u, 4u]], layouts).Normalize();
-        Assert.Equal(layouts[8], n.Layouts![8]);
-        Assert.True(SpellDeckSettings.MaxSavedColumns > SpellDeckGeometry.MaxCapacity);
+        Assert.Equal(L((0, 0, 1u), (0, 1, 2u), (0, 2, 3u), (0, SpellDeckGeometry.MaxCapacity - 1, 4u)), n.Layouts![8]);
+    }
+
+    [Fact]
+    public void V2_ALongLocalList_IsLaidOutWideEnoughToFitTheRows()
+    {
+        uint[] list = [.. Enumerable.Range(1, 10 * 2 + 1).Select(i => (uint)i)];
+        SpellDeckLayout l = new SpellDeckSettings(0, 3, true, null, [list]).Normalize().LayoutsAt(perRow: 2)[8];
+        Assert.Equal(list, l.Distinct);
+        Assert.Equal(2, l.MaxCol);                   // ceil(21 / 10) = 3 a row
+        Assert.True(l.MaxRow < SpellDeckGeometry.MaxRows);
+
+        uint[] huge = [.. Enumerable.Range(1, 300).Select(i => (uint)i)];
+        SpellDeckLayout h = new SpellDeckSettings(0, 3, true, null, [huge]).Normalize().LayoutsAt(perRow: 2)[8];
+        Assert.True(h.MaxCol < SpellDeckGeometry.MaxCapacity);
+        Assert.True(h.MaxRow < SpellDeckGeometry.MaxRows);
+        Assert.Equal(SpellDeckGeometry.MaxRows * SpellDeckGeometry.MaxCapacity, h.Distinct.Count);   // only a full grid leaves spells out
     }
 }

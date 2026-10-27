@@ -1026,6 +1026,13 @@ public sealed class UiRoot : UiElement
         Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ControlLeft) == true
         || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ControlRight) == true;
 
+    /// <summary>Whether a copy modifier is held: control, or Cmd on macOS (the Win/Super keys,
+    /// <c>ModifierMask.Win</c>). A drop asks at its release.</summary>
+    internal bool CopyModifierHeld =>
+        CtrlHeld
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.SuperLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.SuperRight) == true;
+
     private bool RouteHorizontal(int dx)
     {
         UiElement? popup = PopupHit(MouseX, MouseY);

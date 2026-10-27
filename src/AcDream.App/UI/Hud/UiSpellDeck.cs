@@ -466,8 +466,8 @@ internal sealed partial class UiSpellDeck : UiElement
         return true;
     }
 
-    /// <summary>Ctrl held: a slot dropped on a slot or a bookmark is copied, not moved.</summary>
-    private bool CopyHeld => FindRoot()?.CtrlHeld == true;
+    /// <summary>Ctrl (or Cmd on macOS) held: a slot dropped on a slot or a bookmark is copied, not moved.</summary>
+    private bool CopyHeld => FindRoot()?.CopyModifierHeld == true;
 
     /// <summary>The tab whose bookmark is under a point, or null.</summary>
     private int? BookmarkAt(float x, float y)

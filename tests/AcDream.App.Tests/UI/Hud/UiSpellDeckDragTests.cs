@@ -43,6 +43,7 @@ public sealed class UiSpellDeckDragTests
             g, favorites: tab => g.Tabs[tab], itemSpell: () => null,
             capacity: () => capacity, settings: SpellDeckSettings.Default, save: _ => { },
             clickCasts: () => rig!.ClickCasts, canAddRow: () => rig!.CanAddRow);
+        c.Load(SpellDeckSettings.Default);   // the character's own load reconciles the server tabs
         var deck = new UiSpellDeck(
             c,
             spellIcon: id => 0x0600_0000u + id,
@@ -385,6 +386,28 @@ public sealed class UiSpellDeckDragTests
         root.OnMouseMove(x + 10, y);
         root.OnMouseMove(tx, ty);
         keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);   // pressed during the drag: the release decides
+        root.OnMouseUp(UiMouseButton.Left, tx, ty);
+
+        Assert.Equal(10u, r.Controller.SlotSpell(0, 0));
+        Assert.Equal(10u, r.Controller.SlotSpell(1, 3));
+        Assert.Empty(r.Game.Calls);
+    }
+
+    [Theory]
+    [InlineData(Silk.NET.Input.Key.SuperLeft)]
+    [InlineData(Silk.NET.Input.Key.SuperRight)]
+    public void CmdHeldAtTheReleaseCopiesLikeCtrl(Silk.NET.Input.Key cmd)
+    {
+        var (root, r) = Mount();
+        var keyboard = new AcDream.App.Tests.Plugins.FakeKeyboard();
+        root.Keyboard = keyboard;
+        var (x, y) = Screen(r.Deck.Geometry.Slot(0, 0));
+        var (tx, ty) = Screen(r.Deck.Geometry.Slot(1, 3));
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseMove(x + 10, y);
+        root.OnMouseMove(tx, ty);
+        keyboard.Held.Add(cmd);
         root.OnMouseUp(UiMouseButton.Left, tx, ty);
 
         Assert.Equal(10u, r.Controller.SlotSpell(0, 0));

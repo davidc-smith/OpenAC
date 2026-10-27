@@ -45,6 +45,13 @@ public sealed record SpellDeckSettings(
             foreach ((int tab, SpellDeckLayout? layout) in Layouts)
             {
                 if (tab < 0 || tab >= tabCount || layout is null) continue;
+                if (tab >= SpellDeckTabs.ServerTabs)
+                {
+                    // A local tab is only its layout: nothing may be hidden or dropped.
+                    SpellDeckLayout fitted = FitLocal(layout);
+                    if (!fitted.IsEmpty) layouts[tab] = fitted;
+                    continue;
+                }
                 // Slots far past the deck's limits are junk; a server tab re-places those spells on reconcile.
                 SpellDeckLayout kept = SpellDeckLayout.FromSlots(layout.Filled
                     .Where(s => s.Row < SpellDeckGeometry.MaxRows && s.Col < MaxSavedColumns)
@@ -62,8 +69,9 @@ public sealed record SpellDeckSettings(
     }
 
     /// <summary>Each tab's layout (non-empty ones only). For v2 data (no <see cref="Layouts"/>) each local tab's
-    /// list is laid out in reading order at <paramref name="perRow"/> slots per row; server tabs get none and
-    /// fill from the server on reconcile.</summary>
+    /// list is laid out in reading order at <c>max(perRow, ceil(count / MaxRows))</c> slots per row (capped at
+    /// <see cref="SpellDeckGeometry.MaxCapacity"/>), so it fits the rows; server tabs get none and fill from the
+    /// server on reconcile.</summary>
     public IReadOnlyDictionary<int, SpellDeckLayout> LayoutsAt(int perRow)
     {
         if (Layouts is not null)
@@ -71,8 +79,28 @@ public sealed record SpellDeckSettings(
         var migrated = new Dictionary<int, SpellDeckLayout>();
         for (int i = 0; i < LocalTabs.Count; i++)
             if (LocalTabs[i].Count > 0)
-                migrated[SpellDeckTabs.ServerTabs + i] = SpellDeckLayout.FromList(LocalTabs[i], Math.Max(1, perRow));
+            {
+                int count = LocalTabs[i].Count;
+                int cols = Math.Clamp(
+                    Math.Max(perRow, (count + SpellDeckGeometry.MaxRows - 1) / SpellDeckGeometry.MaxRows),
+                    1, SpellDeckGeometry.MaxCapacity);
+                migrated[SpellDeckTabs.ServerTabs + i] = FitLocal(SpellDeckLayout.FromList(LocalTabs[i], cols));
+            }
         return migrated;
+    }
+
+    /// <summary>A local tab's layout with every slot outside the usable grid (row at or past
+    /// <see cref="SpellDeckGeometry.MaxRows"/>, column at or past <see cref="SpellDeckGeometry.MaxCapacity"/>)
+    /// re-placed, in reading order, into the first empty slot inside it. Only a full grid can leave a spell out.</summary>
+    public static SpellDeckLayout FitLocal(SpellDeckLayout layout)
+    {
+        static bool Inside(SpellDeckSlotSpell s) => s.Row < SpellDeckGeometry.MaxRows && s.Col < SpellDeckGeometry.MaxCapacity;
+        if (layout.Filled.All(Inside)) return layout;
+        SpellDeckLayout fitted = SpellDeckLayout.FromSlots(layout.Filled.Where(Inside).Select(s => (s.Row, s.Col, s.SpellId)));
+        foreach (SpellDeckSlotSpell s in layout.Filled.Where(s => !Inside(s)))
+            if (fitted.FirstEmpty(SpellDeckGeometry.MaxRows, SpellDeckGeometry.MaxCapacity) is { } empty)
+                fitted = fitted.Place(empty.Row, empty.Col, s.SpellId);
+        return fitted;
     }
 
     public static SpellDeckSettings Load(SettingsStore? store, string toonKey) =>

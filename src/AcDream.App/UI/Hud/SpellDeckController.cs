@@ -10,7 +10,7 @@ namespace AcDream.App.UI.Hud;
 /// duplicates), the outline, hotkeys, clicks, drops and row and tab edits, run through the pure model and
 /// outline rules. Tabs and layouts live in <see cref="SpellDeckTabs"/>, which keeps the server tabs 0-7 equal
 /// to their layouts' distinct spells; local tabs 8-15 are only layouts. Server tabs are reconciled on
-/// construction, <see cref="Load"/> and <see cref="ServerFavoritesChanged"/>. Every change to the rows,
+/// <see cref="Load"/> and <see cref="ServerFavoritesChanged"/> (not on construction). Every change to the rows,
 /// attachment or a layout saves the settings once; a plain tab switch only marks the settings dirty and
 /// <see cref="Tick"/> saves once the switching has paused for <see cref="TabSaveDelaySeconds"/> (or
 /// <see cref="Load"/> drops it after the host flushed it).
@@ -66,12 +66,12 @@ public sealed class SpellDeckController
         _save = save ?? throw new ArgumentNullException(nameof(save));
         _clickCasts = clickCasts ?? throw new ArgumentNullException(nameof(clickCasts));
         _canAddRow = canAddRow ?? throw new ArgumentNullException(nameof(canAddRow));
-        // Construction is not a change: the first reconcile is kept, but saved with the next change.
+        // Construction is not a change and does not reconcile: the settings it gets are a placeholder
+        // until the character's own load (Load), which reconciles.
         _batch++;
         try
         {
             Apply(settings);
-            ReconcileServerTabs();
         }
         finally
         {
@@ -88,7 +88,7 @@ public sealed class SpellDeckController
         _rowCount = s.RowCount;
         _attached = s.Attached;
         _detachedRows = s.DetachedRows;
-        FitRows();
+        if (FitRows()) Changed();   // saved by the Load that runs this (construction saves nothing)
     }
 
     private SpellDeckSettings ToSettings() => new(_tab, _rowCount, _attached, _detachedRows, _tabs.Local, _tabs.Layouts);

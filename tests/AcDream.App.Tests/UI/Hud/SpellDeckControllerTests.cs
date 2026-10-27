@@ -130,17 +130,54 @@ public sealed class SpellDeckControllerTests
     }
 
     [Fact]
-    public void Construction_ReconcilesAServerTabWithNoLayout_InReadingOrder_WithoutSaving()
+    public void Construction_DoesNotReconcile_NothingIsSentOrSaved_UntilTheCharactersLoad()
     {
-        var r = Make(settings: SpellDeckSettings.Default);
-        Assert.Empty(r.C.Layout.Filled);
-        var r2 = new Rig();
-        r2.G.Tabs[0].AddRange([1u, 2u, 3u, 4u, 5u]);
-        r2.C = new SpellDeckController(r2.G, t => r2.G.Tabs[t], () => null, () => r2.PerRow,
-            SpellDeckSettings.Default, r2.Saved.Add, () => false, () => true, () => 0);
-        Assert.Equal(SpellDeckLayout.FromList([1u, 2u, 3u, 4u, 5u], 4), r2.C.Layout);
-        Assert.Empty(r2.Saved);
-        Assert.Empty(r2.G.Calls);
+        // The settings at construction are a placeholder: reconciling against them would reorder the server.
+        var r = new Rig();
+        r.G.Tabs[0].AddRange([1u, 2u, 3u]);
+        SpellDeckSettings settings = Saved(new() { [0] = L((0, 0, 2u), (0, 1, 1u)) });
+        r.C = new SpellDeckController(r.G, t => r.G.Tabs[t], () => null, () => r.PerRow,
+            settings, r.Saved.Add, () => false, () => true, () => 0);
+        r.C.Tick();
+        Assert.Empty(r.G.Calls);
+        Assert.Empty(r.Saved);
+        Assert.Equal(L((0, 0, 2u), (0, 1, 1u)), r.C.Layout);
+
+        r.C.Load(settings);                          // the character's load reconciles
+        Assert.Equal(L((0, 0, 2u), (0, 1, 1u), (0, 2, 3u)), r.C.Layout);
+        Assert.Equal([2u, 1u, 3u], r.G.Tabs[0]);
+        Assert.Single(r.Saved);
+    }
+
+    [Fact]
+    public void Load_ALongV2LocalTab_SurvivesSaveAndLoad_WithEverySpellInsideTheGrid()
+    {
+        var r = Make();
+        r.PerRow = 2;
+        uint[] list = [.. Enumerable.Range(1, 10 * 2 + 1).Select(i => (uint)(500 + i))];
+        r.C.Load(SpellDeckSettings.Default with { LocalTabs = [list] });
+        r.C.SetAttached(false);                      // any change saves the whole settings
+        string path = Path.Combine(Path.GetTempPath(), $"s-{Guid.NewGuid():N}.json");
+        try
+        {
+            var store = new AcDream.UI.Abstractions.Panels.Settings.SettingsStore(path);
+            r.Saved[^1].Save(store, "toon");
+            r.C.Load(SpellDeckSettings.Load(new AcDream.UI.Abstractions.Panels.Settings.SettingsStore(path), "toon"));
+        }
+        finally { File.Delete(path); }
+        SpellDeckLayout back = r.C.LayoutOf(8);
+        Assert.Equal(list, back.Distinct);
+        Assert.All(back.Filled, f => Assert.True(f.Row < SpellDeckGeometry.MaxRows && f.Col < SpellDeckGeometry.MaxCapacity));
+        Assert.Equal(7, r.C.RowCount);               // 21 spells at 3 a row
+    }
+
+    [Fact]
+    public void Load_ThatRaisesTheRowCount_SavesIt()
+    {
+        var r = Make();
+        r.C.Load(Saved(new() { [0] = Tab0, [1] = L((0, 0, 20u)), [8] = L((5, 0, 90u)) }, [90u]));
+        Assert.Equal(6, r.C.RowCount);
+        Assert.Equal(6, Assert.Single(r.Saved).RowCount);
     }
 
     [Fact]

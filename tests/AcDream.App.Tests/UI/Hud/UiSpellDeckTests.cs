@@ -56,6 +56,7 @@ public sealed class UiSpellDeckTests
             g, favorites: tab => g.Tabs[tab], itemSpell: () => g.Item,
             capacity: () => 12, settings: SpellDeckSettings.Default, save: _ => { },
             clickCasts: () => clickCasts, canAddRow: () => true);
+        c.Load(SpellDeckSettings.Default);   // the character's own load reconciles the server tabs
         Rig? rig = null;
         var deck = new UiSpellDeck(
             c,
