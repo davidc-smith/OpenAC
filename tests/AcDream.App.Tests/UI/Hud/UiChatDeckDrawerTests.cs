@@ -39,6 +39,27 @@ internal sealed class DrawerWorld
 public sealed class UiChatDeckDrawerTests
 {
     [Fact]
+    public void StripAndPeek_KeepTheirPlace_ThroughTheRootsAnchorPass()
+    {
+        var w = new DrawerWorld();
+        // The root lays out every child each frame, hidden ones too: the first pass, at
+        // mount, sees both at 0×0.
+        w.Deck.Strip.ApplyAnchor(w.Root.Width, w.Root.Height);
+        w.Deck.Peek.ApplyAnchor(w.Root.Width, w.Root.Height);
+        w.Press(w.Deck.Geometry.CollapseStud);
+        w.H.Say("hello");
+        w.Tick(0.016);
+
+        w.Deck.Strip.ApplyAnchor(w.Root.Width, w.Root.Height);
+        w.Deck.Peek.ApplyAnchor(w.Root.Width, w.Root.Height);
+
+        Assert.Equal(ChatDeckStripGeometry.Width, w.Deck.Strip.Width);
+        Assert.True(w.Deck.Strip.Height > 0f);
+        Assert.True(w.Deck.Peek.Width > 0f);
+        Assert.True(w.Deck.Peek.Height > 0f);
+    }
+
+    [Fact]
     public void Collapse_HidesTheWindow_ShowsTheStripOnTheNearerEdge()
     {
         var w = new DrawerWorld();

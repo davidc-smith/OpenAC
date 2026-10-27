@@ -26,8 +26,10 @@ internal sealed partial class UiChatDeck
 
     private void CreateStrip()
     {
-        Strip = new StripElement(this) { Visible = false };
-        Peek = new PeekElement(this) { Visible = false };
+        // Placed by the deck, so no anchors: the root's anchor pass would otherwise
+        // pin both to the 0×0 they had on the first frame laid out (see Place).
+        Strip = new StripElement(this) { Visible = false, Anchors = AnchorEdges.None };
+        Peek = new PeekElement(this) { Visible = false, Anchors = AnchorEdges.None };
     }
 
     /// <summary>Lays the strip's studs out for its current height and the current tabs.</summary>
