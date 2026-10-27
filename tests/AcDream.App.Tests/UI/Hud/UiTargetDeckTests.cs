@@ -157,6 +157,55 @@ public sealed class UiTargetDeckTests
     }
 
     [Fact]
+    public void InterleavedPluginActionsAreGroupedUnderOneHeaderEach()
+    {
+        TargetPlateModel model = Build(Monster(), pluginActions:
+        [
+            new("a", "Plugin A", "one", "A one", true),
+            new("b", "Plugin B", "two", "B two", true),
+            new("a", "Plugin A", "three", "A three", true),
+        ]);
+        var (deck, _) = Make(model);
+        Assert.Equal(["Examine", "Copy name", "Plugin A", "A one", "A three", "Plugin B", "B two"],
+            deck.MenuEntries.Select(e => e.Label));
+        Assert.Equal(2, deck.MenuEntries.Count(e => e.Header));
+    }
+
+    [Fact]
+    public void TheMenuEntriesAreBuiltOncePerModel()
+    {
+        TargetPlateModel model = Build(Monster());
+        var (deck, _) = Make(model);
+        Assert.Same(deck.MenuEntries, deck.MenuEntries);
+    }
+
+    [Theory]
+    [InlineData(900f, false)]
+    [InlineData(450f, true)]
+    public void TheMenuOpensUpwardWhenThereIsNoRoomBelow(float rootHeight, bool upward)
+    {
+        TargetPlateModel model = Build(Monster(), pluginActions: PluginActions);
+        var actions = new Recorder();
+        var root = new UiRoot { Width = 800, Height = rootHeight };
+        var deck = new UiTargetDeck(() => model, actions, icons: null, clock: () => 0.0) { Left = 200f, Top = 300f };
+        root.AddChild(deck);
+        deck.Refresh();
+
+        Down(deck, TargetDeckGeometry.Stud(3));
+        Assert.True(deck.MenuOpen);
+        DeckRect first = deck.MenuEntryRect(0), last = deck.MenuEntryRect(deck.MenuEntries.Count - 1);
+        if (upward) Assert.True(last.Y + last.H < 0f);
+        else Assert.True(first.Y > TargetDeckGeometry.Height);
+        Assert.InRange(deck.Top + first.Y, 0f, rootHeight);
+        Assert.InRange(deck.Top + last.Y + last.H, 0f, rootHeight);
+
+        Assert.Same(deck, deck.HitTest(first.X + 4, first.Y + 4));
+        Down(deck, first);
+        Assert.Equal([$"run {TargetAction.Examine} {model.ObjectId}"], actions.Calls);
+        Assert.False(deck.MenuOpen);
+    }
+
+    [Fact]
     public void TheMenuClosesWhenTheTargetGoesAway()
     {
         TargetPlateModel? model = Build(Monster());

@@ -33,6 +33,14 @@ internal static class DeckChrome
     internal static readonly Vector4 JumpInk = Rgb(0x7FD6A8);
     internal static readonly Vector4 CastLit = Rgb(0xCFE0FF);
     internal static readonly Vector4 GripInk = Rgb(0xE2C27A, 0.55f);
+    /// <summary>Opaque <see cref="Bronze"/>: a ring drawn over the dark edge (the Target Deck's portrait).</summary>
+    internal static readonly Vector4 BronzeSolid = Rgb(0x6B5A3A);
+    /// <summary>The Target Deck's even-con level pill and PKL chip.</summary>
+    internal static readonly Vector4 ChipAmber = Rgb(0xE8A23C);
+    /// <summary>The Target Deck's lower-con level pill.</summary>
+    internal static readonly Vector4 ConBlue = Rgb(0x5B8DEF);
+    /// <summary>The hovered line of a deck popup menu.</summary>
+    internal static readonly Vector4 MenuHighlight = Rgb(0x3A3742);
 
     /// <summary>A line weight at a deck scale, in whole points, never under one.</summary>
     internal static float Line(float points, float scale) => MathF.Max(1f, MathF.Round(points * scale));

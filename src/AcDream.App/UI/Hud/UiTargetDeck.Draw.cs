@@ -13,12 +13,6 @@ internal sealed partial class UiTargetDeck
     private const float IconSize = 14f;
     private const float PortraitIconSize = 18f;
 
-    private static readonly Vector4 ChipGold = Rgb(0xE2C27A);
-    private static readonly Vector4 ChipAmber = Rgb(0xE8A23C);
-    private static readonly Vector4 ConBlue = Rgb(0x5B8DEF);
-    private static readonly Vector4 ChipInk = Rgb(0x17161B);
-    private static readonly Vector4 MenuHighlight = Rgb(0x3A3742);
-
     protected override void OnDraw(UiRenderContext ctx)
     {
         if (_view is not { } v) return;
@@ -67,8 +61,8 @@ internal sealed partial class UiTargetDeck
     {
         DeckRect p = TargetDeckGeometry.Portrait;
         ctx.FillEllipse(p.X - 1f, p.Y - 1f, p.W + 2f, p.H + 2f, FrameEdge);
-        ctx.FillEllipse(p.X, p.Y, p.W, p.H, Rgb(0x6B5A3A));
-        ctx.FillEllipse(p.X + 2f, p.Y + 2f, p.W - 4f, p.H - 4f, Rgb(0x0B0C12));
+        ctx.FillEllipse(p.X, p.Y, p.W, p.H, BronzeSolid);
+        ctx.FillEllipse(p.X + 2f, p.Y + 2f, p.W - 4f, p.H - 4f, FrameEdge);
         if (_icons is not null)
         {
             DrawIcon(ctx, KindIcon(v.Kind), p.X + (p.W - PortraitIconSize) / 2f, p.Y + (p.H - PortraitIconSize) / 2f,
@@ -127,8 +121,8 @@ internal sealed partial class UiTargetDeck
 
     private static (string Text, Vector4 Ink)? ChipStyle(TargetChip chip) => chip switch
     {
-        TargetChip.Yours => ("YOURS", ChipGold),
-        TargetChip.Fellow => ("FELLOW", ChipGold),
+        TargetChip.Yours => ("YOURS", Handle),
+        TargetChip.Fellow => ("FELLOW", Handle),
         TargetChip.Pk => ("PK", StudOn),
         TargetChip.Npk => ("NPK", JumpInk),
         TargetChip.PkLite => ("PKL", ChipAmber),
@@ -139,7 +133,7 @@ internal sealed partial class UiTargetDeck
     {
         float y = band.Y + (band.H - ChipHeight) / 2f;
         ctx.FillRoundedRect(x, y, w, ChipHeight, 3f, ink);
-        DrawText(ctx, text, x + 4f, new DeckRect(x, y, w, ChipHeight), ChipInk, face);
+        DrawText(ctx, text, x + 4f, new DeckRect(x, y, w, ChipHeight), FrameBottom, face);
     }
 
     // ---- vitals and rows ----
@@ -222,7 +216,7 @@ internal sealed partial class UiTargetDeck
     /// plugin names as headings over their actions.</summary>
     private void DrawMenu(UiRenderContext ctx, TargetPlateModel v)
     {
-        List<TargetMenuEntry> entries = BuildMenu(v);
+        List<TargetMenuEntry> entries = Entries();
         DeckRect m = MenuRect(entries.Count);
         ctx.PushAlphaAbsolute(1f);
         try

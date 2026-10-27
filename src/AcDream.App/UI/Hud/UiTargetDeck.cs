@@ -171,45 +171,64 @@ internal sealed partial class UiTargetDeck : UiElement
     // ---- the ⋯ menu ----
 
     /// <summary>The menu's lines: the kind's more actions, then each plugin's name over its actions.</summary>
-    internal IReadOnlyList<TargetMenuEntry> MenuEntries => _view is null ? [] : BuildMenu(_view);
+    internal IReadOnlyList<TargetMenuEntry> MenuEntries => Entries();
 
-    private static List<TargetMenuEntry> BuildMenu(TargetPlateModel v)
+    private List<TargetMenuEntry> _menuEntries = [];
+    /// <summary>The model <see cref="_menuEntries"/> was built from; a new model rebuilds them.</summary>
+    private TargetPlateModel? _menuEntriesFor;
+    /// <summary>Set when the menu opened: true when there was no room below the plate, so it opens upward.</summary>
+    private bool _menuAbove;
+
+    /// <summary>The menu lines for the current model, built once per model.</summary>
+    private List<TargetMenuEntry> Entries()
+    {
+        if (!ReferenceEquals(_menuEntriesFor, _view))
+        {
+            _menuEntriesFor = _view;
+            _menuEntries = _view is null ? [] : BuildMenu(_view);
+        }
+        return _menuEntries;
+    }
+
+    /// <summary>The kind's more actions, then the plugin actions grouped by plugin in the order
+    /// each plugin first appears, one heading per plugin.</summary>
+    internal static List<TargetMenuEntry> BuildMenu(TargetPlateModel v)
     {
         var entries = new List<TargetMenuEntry>();
         foreach (TargetAction a in v.MoreMenu)
             entries.Add(new(LabelFor(a), a, null, Header: false, Enabled: true));
-        string? plugin = null;
-        foreach (TargetPluginAction p in v.PluginActions)
+        foreach (IGrouping<string, TargetPluginAction> plugin in v.PluginActions.GroupBy(p => p.PluginId, StringComparer.Ordinal))
         {
-            if (p.PluginId != plugin)
-            {
-                plugin = p.PluginId;
-                entries.Add(new(p.PluginName, TargetAction.None, null, Header: true, Enabled: false));
-            }
-            entries.Add(new(p.Label, TargetAction.None, p, Header: false, p.Enabled));
+            entries.Add(new(plugin.First().PluginName, TargetAction.None, null, Header: true, Enabled: false));
+            foreach (TargetPluginAction p in plugin)
+                entries.Add(new(p.Label, TargetAction.None, p, Header: false, p.Enabled));
         }
         return entries;
     }
 
-    /// <summary>The open menu's rectangle, below the plate's right edge, in local coordinates.</summary>
-    private DeckRect MenuRect(int count) =>
-        new(Width - MenuWidth, Height + MenuGap, MenuWidth, MenuInset * 2 + count * MenuLine);
+    private static float MenuHeight(int count) => MenuInset * 2 + count * MenuLine;
+
+    /// <summary>The menu's top in local coordinates: below the plate, or above it when it opened upward.</summary>
+    private float MenuTop(int count) => _menuAbove ? -MenuGap - MenuHeight(count) : Height + MenuGap;
+
+    /// <summary>The open menu's rectangle at the plate's right edge, in local coordinates.</summary>
+    private DeckRect MenuRect(int count) => new(Width - MenuWidth, MenuTop(count), MenuWidth, MenuHeight(count));
 
     /// <summary>Menu line <paramref name="i"/> in local coordinates.</summary>
     internal DeckRect MenuEntryRect(int i) =>
-        new(Width - MenuWidth, Height + MenuGap + MenuInset + i * MenuLine, MenuWidth, MenuLine);
+        new(Width - MenuWidth, MenuTop(Entries().Count) + MenuInset + i * MenuLine, MenuWidth, MenuLine);
 
     private int MenuEntryAt(float x, float y)
     {
         if (!_menuOpen || _view is null) return -1;
-        int count = BuildMenu(_view).Count;
+        int count = Entries().Count;
         for (int i = 0; i < count; i++)
             if (MenuEntryRect(i).Contains(x, y)) return i;
         return -1;
     }
 
     private bool InMenu(float x, float y) =>
-        _menuOpen && _view is not null && MenuRect(BuildMenu(_view).Count).Contains(x, y);
+        _menuOpen && _view is not null && MenuRect(Entries().Count).Contains(x, y);
 
     private void OpenMenu()
     {
@@ -217,7 +236,10 @@ internal sealed partial class UiTargetDeck : UiElement
         _menuOpen = true;
         _menuObjectId = _view.ObjectId;
         _menuHover = -1;
-        if (FindRoot() is { } root)
+        UiRoot? root = FindRoot();
+        _menuAbove = root is not null
+            && ScreenPosition.Y + Height + MenuGap + MenuHeight(Entries().Count) > root.Height;
+        if (root is not null)
         {
             root.SetActivePopup(this, () => CloseMenu());
             _returnFocus = root.KeyboardFocus;
@@ -243,7 +265,7 @@ internal sealed partial class UiTargetDeck : UiElement
     private void PickMenuEntry(int index)
     {
         if (_view is not { } view) return;
-        List<TargetMenuEntry> entries = BuildMenu(view);
+        List<TargetMenuEntry> entries = Entries();
         if (index < 0 || index >= entries.Count) return;
         TargetMenuEntry entry = entries[index];
         if (entry.Header || !entry.Enabled) return;
