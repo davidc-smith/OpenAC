@@ -758,7 +758,7 @@ public sealed class AppraisalUiController : IRetainedPanelController
         var bitfield = (PublicWeenieFlags)(obj.PublicWeenieBitfield ?? 0u);
         if ((bitfield & PublicWeenieFlags.PlayerKiller) != 0)
             return "Player Killer";
-        if ((bitfield & PublicWeenieFlags.PlayerKillerLite) != 0)
+        if ((bitfield & PublicWeenieFlags.PkLiteStatus) != 0)
             return "Player Killer Lite";
         return "Non-Player Killer";
     }

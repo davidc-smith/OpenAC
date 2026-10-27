@@ -50,7 +50,7 @@ public sealed class RetailItemConfirmationControllerTests
     [Fact]
     public void RejectedPlayerKillerAltarDoesNotSendUse()
     {
-        var objects = BuildObjects(PublicWeenieFlags.PlayerKillerSwitch);
+        var objects = BuildObjects(PublicWeenieFlags.PkSwitch);
         var uses = new List<uint>();
         var items = new RuntimeItemInteraction(
             objects,

@@ -4,11 +4,11 @@ namespace AcDream.Core.Combat;
 
 public static class SelectedObjectHealthPolicy
 {
-    public const uint BfPlayer = 0x00000008u;
-    public const uint BfAttackable = 0x00000010u;
-    public const uint BfPlayerKiller = 0x00000020u;
-    public const uint BfFreePkStatus = 0x00200000u;
-    public const uint BfPkLiteStatus = 0x02000000u;
+    public const uint BfPlayer = (uint)PublicWeenieFlags.Player;
+    public const uint BfAttackable = (uint)PublicWeenieFlags.Attackable;
+    public const uint BfPlayerKiller = (uint)PublicWeenieFlags.PlayerKiller;
+    public const uint BfFreePkStatus = (uint)PublicWeenieFlags.FreePkStatus;
+    public const uint BfPkLiteStatus = (uint)PublicWeenieFlags.PkLiteStatus;
 
     public static bool ShouldQueryHealth(
         uint playerId,

@@ -469,7 +469,7 @@ public sealed class CharacterSheetProvider
         var bitfield = (PublicWeenieFlags)publicWeenieBitfield;
         string key = (bitfield & PublicWeenieFlags.PlayerKiller) != 0
             ? "ID_StatManagement_Header_PKStatus_PK"
-            : (bitfield & PublicWeenieFlags.PlayerKillerLite) != 0
+            : (bitfield & PublicWeenieFlags.PkLiteStatus) != 0
                 ? "ID_StatManagement_Header_PKStatus_PKL"
                 : "ID_StatManagement_Header_PKStatus_NPK";
         return resolveUiString?.Invoke(key);
