@@ -107,7 +107,7 @@ public sealed class SpellDeckSettingsTests
     {
         var layouts = new Dictionary<int, SpellDeckLayout>
         {
-            [0] = L((0, 0, 1u), (SpellDeckGeometry.MaxRows, 0, 2u), (0, SpellDeckSettings.MaxSavedColumns, 3u)),
+            [0] = L((0, 0, 1u), (SpellDeckGeometry.MaxRows, 0, 2u), (0, SpellDeckGeometry.MaxCapacity, 3u)),
             [3] = SpellDeckLayout.Empty,
             [9] = L((0, 0, 4u)),     // no tab 9: only one local tab
         };
@@ -117,17 +117,21 @@ public sealed class SpellDeckSettingsTests
     }
 
     [Fact]
-    public void Normalize_KeepsServerTabColumnsPastTheWidestDeck_SoNoSpellIsLost()
+    public void Normalize_DropsServerTabSlotsOutsideTheGrid_AndReconcileRePlacesThoseSpellsFromTheServer()
     {
-        // Saved by v2, whose widest deck held 27 slots a row: columns 25 and 26 are past v3's 25.
-        // A server tab keeps them (unshown); its reconcile re-places spells it cannot show.
+        // Saved by v2, whose widest deck held 27 slots a row: columns 25 and 26 are past v3's 25. Kept, they
+        // would stay hidden for good and pin the deck at full stretch; dropped, reconcile re-places the spells.
+        int max = SpellDeckGeometry.MaxCapacity;
         var layouts = new Dictionary<int, SpellDeckLayout>
         {
-            [0] = L((0, 0, 1u), (0, 25, 2u), (1, 26, 3u), (2, SpellDeckSettings.MaxSavedColumns - 1, 4u)),
+            [0] = L((0, 0, 1u), (0, max, 2u), (1, max + 1, 3u), (SpellDeckGeometry.MaxRows, 0, 4u), (1, max - 1, 5u)),
         };
         var n = new SpellDeckSettings(0, 3, true, null, [], layouts).Normalize();
-        Assert.Equal(layouts[0], n.Layouts![0]);
-        Assert.True(SpellDeckSettings.MaxSavedColumns > SpellDeckGeometry.MaxCapacity);
+        Assert.Equal(L((0, 0, 1u), (1, max - 1, 5u)), n.Layouts![0]);
+
+        SpellDeckReconcile r = n.Layouts[0].Reconcile([1u, 2u, 3u, 4u, 5u], rows: 3, cols: 4);
+        Assert.Empty(r.Unplaced);
+        Assert.Equal(L((0, 0, 1u), (0, 1, 2u), (0, 2, 3u), (0, 3, 4u), (1, max - 1, 5u)), r.Layout);
     }
 
     [Fact]
