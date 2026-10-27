@@ -12,14 +12,15 @@ public sealed class TargetPlateModelBuilderTests
     private double _now = 50.0;
 
     private TargetPlateModel? Build(ClientObject obj, CombatState? combat = null, TargetAppraisalLog? log = null,
-        int playerLevel = 100, uint selectedPackItem = 0, float distance = 4f)
+        int playerLevel = 100, uint selectedPackItem = 0, float distance = 4f,
+        Func<uint, bool>? isFellow = null, Func<uint, string?>? nameOf = null)
     {
         var input = new TargetPlateInput(
             Object: obj, PlayerId: Me, PlayerLevel: playerLevel, Combat: combat ?? new CombatState(),
             Log: log ?? new TargetAppraisalLog(), Now: _now, DistanceMeters: distance,
-            SelectedPackItemId: selectedPackItem, IsFellow: _ => false,
+            SelectedPackItemId: selectedPackItem, IsFellow: isFellow ?? (_ => false),
             PluginRows: Array.Empty<TargetPluginRow>(), PluginOverflowTooltip: null,
-            PluginActions: Array.Empty<TargetPluginAction>());
+            PluginActions: Array.Empty<TargetPluginAction>(), NameOf: nameOf ?? (_ => null));
         return TargetPlateModelBuilder.Build(input);
     }
 
@@ -107,5 +108,62 @@ public sealed class TargetPlateModelBuilderTests
             Assert.Equal(TargetAction.More, m.Studs[^1].Action);
             Assert.DoesNotContain(m.Studs, s => s.Action == TargetAction.None);
         }
+    }
+
+    private static ClientObject PlayerWith(PublicWeenieFlags f) =>
+        new() { ObjectId = 2, Name = "Sammy", Type = ItemType.Creature, PublicWeenieBitfield = (uint)f };
+
+    [Theory]
+    [InlineData(PublicWeenieFlags.Player | PublicWeenieFlags.PlayerKiller, TargetChip.Pk)]
+    [InlineData(PublicWeenieFlags.Player | PublicWeenieFlags.PlayerKillerLite, TargetChip.PkLite)]
+    [InlineData(PublicWeenieFlags.Player, TargetChip.Npk)]
+    public void PlayersGetAPkChip(PublicWeenieFlags flags, TargetChip chip) =>
+        Assert.Contains(chip, Build(PlayerWith(flags))!.Chips);
+
+    [Fact]
+    public void FellowAddsAChipAndVitals()
+    {
+        ClientObject p = PlayerWith(PublicWeenieFlags.Player);
+        Assert.Null(Build(p)!.Vitals);
+        TargetPlateModel m = Build(p, isFellow: _ => true)!;
+        Assert.Contains(TargetChip.Fellow, m.Chips);
+        Assert.NotNull(m.Vitals);
+    }
+
+    [Fact]
+    public void SummonsShowYoursOrTheOwnerName()
+    {
+        var mine = new ClientObject { ObjectId = 3, Name = "Wolf", Type = ItemType.Creature, PetOwnerId = Me };
+        TargetPlateModel a = Build(mine, nameOf: _ => "Sammy")!;
+        Assert.Contains(TargetChip.Yours, a.Chips);
+        Assert.DoesNotContain(a.Rows, r => r.Label == "Owner");
+        var theirs = new ClientObject { ObjectId = 3, Name = "Wolf", Type = ItemType.Creature, PetOwnerId = 0x50000099u };
+        Assert.Contains(Build(theirs, nameOf: _ => "Bob")!.Rows, r => r.Label == "Owner" && r.Value == "Bob");
+    }
+
+    [Fact]
+    public void AnUnreachablePortalLevelRowIsDim()
+    {
+        var portal = new ClientObject { ObjectId = 10, Name = "Portal", Type = ItemType.Portal, PublicWeenieBitfield = (uint)PublicWeenieFlags.Portal };
+        portal.Properties.Ints[(uint)PropertyInt.MinLevel] = 50;
+        Assert.Contains(Build(portal, playerLevel: 20)!.Rows, r => r.Label == "Levels" && r.Dim);
+    }
+
+    [Fact]
+    public void StaleBoundaryIsTenSeconds()
+    {
+        var log = new TargetAppraisalLog();
+        log.Record(7, true, 1f, now: 40.0);
+        Assert.Equal(TargetVitalsState.Fresh, Build(Monster(), log: log)!.Vitals!.Value.State);
+        log.Record(7, true, 1f, now: 39.99);
+        Assert.Equal(TargetVitalsState.Stale, Build(Monster(), log: log)!.Vitals!.Value.State);
+    }
+
+    [Fact]
+    public void SelfSubLineShowsLevel()
+    {
+        var me = new ClientObject { ObjectId = Me, Name = "Me", Type = ItemType.Creature, PublicWeenieBitfield = (uint)PublicWeenieFlags.Player };
+        Assert.Equal("LEVEL 100 · YOU", Build(me)!.SubLine);
+        Assert.Equal("YOU", Build(me, playerLevel: 0)!.SubLine);
     }
 }

@@ -9,7 +9,7 @@ public sealed record TargetPlateInput(
     ClientObject? Object, uint PlayerId, int PlayerLevel, CombatState Combat, TargetAppraisalLog Log,
     double Now, float? DistanceMeters, uint SelectedPackItemId, Func<uint, bool> IsFellow,
     IReadOnlyList<TargetPluginRow> PluginRows, string? PluginOverflowTooltip,
-    IReadOnlyList<TargetPluginAction> PluginActions);
+    IReadOnlyList<TargetPluginAction> PluginActions, Func<uint, string?> NameOf);
 
 public static class TargetPlateModelBuilder
 {
@@ -48,6 +48,8 @@ public static class TargetPlateModelBuilder
             case TargetKind.Summon:
                 kindWord = "SUMMON";
                 if (c.OwnedByPlayer) chips.Add(TargetChip.Yours);
+                else if (obj.PetOwnerId != 0u && input.NameOf(obj.PetOwnerId) is string ownerName)
+                    rows.Add(new("Owner", ownerName));
                 vitals = Vitals(input, obj.ObjectId, appraised, entry);
                 studs = new[] { S(TargetAction.Assess), S(TargetAction.Follow), S(TargetAction.More) };
                 break;
@@ -106,10 +108,12 @@ public static class TargetPlateModelBuilder
                 return null;
         }
 
-        string sub = level is int l && c.Kind is TargetKind.Monster or TargetKind.Summon or TargetKind.Player
-            ? $"LEVEL {l} · {kindWord}" : kindWord;
+        string sub = c.Kind == TargetKind.Self
+            ? (input.PlayerLevel > 0 ? string.Create(CultureInfo.InvariantCulture, $"LEVEL {input.PlayerLevel} · YOU") : "YOU")
+            : (level is int l && (c.Kind is TargetKind.Monster or TargetKind.Summon or TargetKind.Player))
+                ? string.Create(CultureInfo.InvariantCulture, $"LEVEL {l} · {kindWord}") : kindWord;
         if (input.DistanceMeters is float d && c.Kind != TargetKind.Self)
-            sub += $" · {MathF.Round(d):0} m";
+            sub += string.Create(CultureInfo.InvariantCulture, $" · {MathF.Round(d):0} m");
 
         return new TargetPlateModel(obj.ObjectId, c.Kind, c.WorldObject, obj.Name, sub, level,
             Con(level, input.PlayerLevel, c.Kind), chips, vitals, rows, studs, more,
