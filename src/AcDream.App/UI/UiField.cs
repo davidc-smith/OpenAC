@@ -81,6 +81,13 @@ public sealed class UiField : UiElement
     public Action<string>? OnSubmit { get; set; }
     public Action? OnUp { get; set; }
     public Action? OnDown { get; set; }
+
+    /// <summary>
+    /// A key pressed with Ctrl held, offered to the owner before the field's own
+    /// Ctrl handling (select all, copy, cut, paste); true when the owner took it.
+    /// The second argument says whether Shift is held too.
+    /// </summary>
+    public Func<Silk.NET.Input.Key, bool, bool>? OnControlKey { get; set; }
     public Action? OnFocusGained { get; set; }
     public Action<string>? OnFocusLost { get; set; }
 
@@ -868,6 +875,8 @@ public sealed class UiField : UiElement
                 var key = (Silk.NET.Input.Key)e.Data0;
                 if (CtrlHeld())
                 {
+                    if (OnControlKey?.Invoke(key, ShiftHeld()) == true)
+                        return true;
                     switch (key)
                     {
                         case Silk.NET.Input.Key.A when Selectable: SelectAllText(); return true;

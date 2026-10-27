@@ -403,6 +403,9 @@ public sealed class RetailUiRuntime : IDisposable
     private readonly RetailPanelUiController _panelUi;
     private ChatWindowController? _chatWindowController;
 
+    /// <summary>The chat input the chat-entry actions go to.</summary>
+    private IChatEntryTarget? ChatEntryTarget => _chatWindowController;
+
     private readonly FloatingChatWindowController?[] _floatingChatControllers = new FloatingChatWindowController?[4];
     private GameplayConfirmationController? _gameplayConfirmationController;
     private RetailItemConfirmationController? _itemConfirmationController;
@@ -928,16 +931,16 @@ public sealed class RetailUiRuntime : IDisposable
                 _bindings.Options.DisplaySystemMessage(OptionsPanelText.UrgentAssistanceUnavailable);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatReply:
-                _chatWindowController?.StartReply(_bindings.Chat.ViewModel.LastIncomingTellSender);
+                ChatEntryTarget?.StartReply(_bindings.Chat.ViewModel.LastIncomingTellSender);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatMonarchReply:
-                _chatWindowController?.StartReply(_bindings.Chat.ViewModel.LastMonarchSender);
+                ChatEntryTarget?.StartReply(_bindings.Chat.ViewModel.LastMonarchSender);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatPatronReply:
-                _chatWindowController?.StartReply(_bindings.Chat.ViewModel.LastPatronSender);
+                ChatEntryTarget?.StartReply(_bindings.Chat.ViewModel.LastPatronSender);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatStartCommand:
-                _chatWindowController?.StartCommand();
+                ChatEntryTarget?.StartCommand();
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ChatTellToSelected:
             {
@@ -946,16 +949,16 @@ public sealed class RetailUiRuntime : IDisposable
                 {
                     string? name = _bindings.Toolbar.ResolveName(selected);
                     if (!string.IsNullOrEmpty(name))
-                        _chatWindowController?.StartTell(name);
+                        ChatEntryTarget?.StartTell(name);
                 }
                 return true;
             }
             case AcDream.UI.Abstractions.Input.InputAction.EnterChatMode:
-                _chatWindowController?.EnterChatMode(
+                ChatEntryTarget?.EnterChatMode(
                     _bindings.Keyboard?.Dispatcher?.CurrentPhysicalChord);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ToggleChatEntry:
-                _chatWindowController?.ToggleChatEntry(
+                ChatEntryTarget?.ToggleChatEntry(
                     _bindings.Keyboard?.Dispatcher?.CurrentPhysicalChord);
                 return true;
             case AcDream.UI.Abstractions.Input.InputAction.ToggleCharacterInfoPanel:
@@ -1113,11 +1116,7 @@ public sealed class RetailUiRuntime : IDisposable
     public void ToggleGameplayOptionsPage()
         => OpenOptionsPage(OptionsPanelPage.Gameplay);
 
-    public void FocusChatEntry()
-    {
-        if (Host.Root.DefaultTextInput is { } input)
-            Host.Root.SetKeyboardFocus(input);
-    }
+    public void FocusChatEntry() => ChatEntryTarget?.Focus();
 
     /// <summary>Stages text in the chat entry without sending it.</summary>
     public bool ComposeChatText(string text) =>
