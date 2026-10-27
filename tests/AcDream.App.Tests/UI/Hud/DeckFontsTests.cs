@@ -29,5 +29,8 @@ public sealed class DeckFontsTests
         Assert.Same(big, fonts.At(1.5f));
         _ = fonts.Bold;
         Assert.Equal((14f, BundledUiFontWeight.SemiBold), baked[^1]);
+
+        _ = big.SmallBold;
+        Assert.Equal((18f, BundledUiFontWeight.SemiBold), baked[^1]);
     }
 }

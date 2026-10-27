@@ -230,8 +230,43 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         rig.Dock.Detach();
         rig.Frames(2);
 
+        // Where it sat attached: from the orb's left edge (32), on the frame's top (4).
         SpellDeckGeometry g = SpellDeckGeometry.Create(1f, 1f, 3);
-        AssertSpellDeckAt(rig, new UiWindowLayout(700f, 600f - g.Height, g.Width, g.Height, false, false, false), "Bob", 1f, 3);
+        AssertSpellDeckAt(rig, new UiWindowLayout(732f, 604f - g.Height, g.Width, g.Height, false, false, false), "Bob", 1f, 3);
+    }
+
+    [Fact]
+    public void SpellDeck_DraggingTheAttachedSpellDeck_MovesAndSavesTheDeck_NotTheSpellDeck()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+        Assert.True(rig.Controller.Attached);
+        Assert.True(rig.Root.WindowManager.TryGet(WindowNames.CommandDeck, out RetailWindowHandle deck));
+        deck.MoveTo(700f, 600f);
+        rig.Frames(2);
+        UiWindowLayout? spellStored = rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default);
+        SpellDeckGeometry g = rig.Spell.Geometry;
+        Assert.Equal((732f, 604f - g.Height), (rig.Spell.Left, rig.Spell.Top));
+
+        // A press on the frame, left of the item socket.
+        int x = (int)(rig.Spell.Left + 3f), y = (int)(rig.Spell.Top + g.Height / 2f);
+        Assert.Equal(SpellDeckZone.Frame, g.HitAt(x - rig.Spell.Left, y - rig.Spell.Top, 1).Zone);
+        rig.Root.OnMouseDown(UiMouseButton.Left, x, y);
+        rig.Root.OnMouseMove(x + 40, y - 30);
+        Assert.True(rig.Root.IsWindowMoveActive);   // the move cursor
+        rig.Frames(1);
+        rig.Root.OnMouseMove(x + 50, y - 20);
+        rig.Frames(1);
+        rig.Root.OnMouseUp(UiMouseButton.Left, x + 50, y - 20);
+        rig.Frames(1);
+
+        Assert.Equal((750f, 580f), (deck.Left, deck.Top));
+        Assert.Equal((782f, 584f - g.Height), (rig.Spell.Left, rig.Spell.Top));
+        UiWindowLayout saved = Assert.IsType<UiWindowLayout>(
+            rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.CommandDeck, default));
+        Assert.Equal((750f, 580f), (saved.X, saved.Y));
+        Assert.Equal(spellStored, rig.Store.LoadWindowLayout("Bob", "1600x900", WindowNames.SpellDeck, default));
     }
 
     [Fact]

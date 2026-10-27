@@ -47,7 +47,8 @@ internal sealed partial class UiCommandDeck
         if (v.ShowStuds) DrawStuds(ctx, v);
     }
 
-    private void DrawFrame(UiRenderContext ctx) => DeckChrome.DrawFrame(ctx, _geometry.Frame, _geometry.Scale);
+    private void DrawFrame(UiRenderContext ctx) =>
+        DeckChrome.DrawFrame(ctx, _geometry.Frame, _geometry.Scale, squareTop: SquareTopCorners);
 
     private void DrawBar(UiRenderContext ctx, DeckRect r, string label, DeckVitalView vital,
         (Vector4 Top, Vector4 Bottom) ink, float pulse)
@@ -92,8 +93,18 @@ internal sealed partial class UiCommandDeck
         DeckRect text = _geometry.CastingText;
         DrawText(ctx, FitCastingText(v.CastingText, t => Face(small: true).Measure(ctx, t), text.W), text.X, text,
             v.CastingLit ? CastLit : v.CastingDim ? StudOffInk : TextInk, small: true);
-        DeckRect cast = _geometry.Cast;
-        DrawStud(ctx, cast, on: false, icon: HudIcons.Cast, letter: null, dim: !v.CastEnabled);
+        DrawCastButton(ctx, _geometry.Cast, dim: !v.CastEnabled);
+    }
+
+    /// <summary>The CAST button: the cast icon and the word CAST in the small SemiBold face.</summary>
+    private void DrawCastButton(UiRenderContext ctx, DeckRect r, bool dim)
+    {
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, _geometry.Scale, on: false, dim);
+        DeckFace face = DeckFace.SmallBoldFor(_fonts, _geometry.Scale);
+        const string word = "CAST";
+        var (iconX, iconY, iconSize, textX) = DeckGeometry.CastLabel(r, face.Measure(ctx, word), _geometry.Scale);
+        DrawIcon(ctx, HudIcons.Cast, iconX, iconY, iconSize, ink);
+        face.Draw(ctx, word, textX, r.Y + (r.H - face.LineHeight(ctx)) / 2f, ink);
     }
 
     /// <summary>The spell name, shortened with "..." so it stops short of the CAST button;

@@ -1,5 +1,8 @@
 namespace AcDream.App.UI.Hud;
 
+/// <summary>A window drag's proposed spot (already inside the screen); the receiver may change it.</summary>
+public delegate void WindowDragConstraint(ref float left, ref float top);
+
 /// <summary>What <see cref="SpellDeckDock"/> needs from the Command Deck, the Spell Deck window and the screen.</summary>
 public interface ISpellDeckDockHost
 {
@@ -17,6 +20,15 @@ public interface ISpellDeckDockHost
     void SetDeckLimits(Func<float>? minStretch, Func<float>? topLimit, Func<float, float>? aboveHeightAtScale);
     /// <summary>Widens the deck to its minimum stretch when narrower (through the window, so it is saved). True when it widened.</summary>
     bool EnforceDeckMinStretch();
+    /// <summary>Whether the attached Spell Deck sits on the deck (it then draws square top corners while the Spell Deck shows).</summary>
+    void SetDeckJoined(bool joined);
+    /// <summary>Moves the deck during a drag of the attached Spell Deck, without reporting
+    /// it to the layout (<see cref="ReportDeckMoved"/> does that once, when the drag ends).</summary>
+    void MoveDeckDuringDrag(float left, float top);
+    /// <summary>Tells the layout the deck moved, so its placement is saved.</summary>
+    void ReportDeckMoved();
+    /// <summary>Whether a window drag is under way.</summary>
+    bool WindowDragActive { get; }
 
     // Spell Deck window
     /// <summary>Places and sizes the window and reports it to the layout even when it did not
@@ -31,12 +43,15 @@ public interface ISpellDeckDockHost
     void ApplyStoredSpellDeckPlacement();
     void SetSpellDeckCaptureOpen(bool open);
     void SetSpellDeckResizable(bool resizable);
+    /// <summary>Hands the Spell Deck window the constraint for its own window drag.</summary>
+    void SetSpellDeckDrag(WindowDragConstraint? drag);
 }
 
 /// <summary>
 /// Ties the Spell Deck to the Command Deck. Attached, the Spell Deck sits on
-/// the deck's top with the deck's left edge, scale and stretch, and its rows
-/// grow upwards; the deck takes the width at which the Spell Deck's rows hold its fullest tab as its minimum
+/// the deck's frame, from the orb's left edge to the deck's right edge, with the
+/// deck's scale and stretch, and its rows grow upwards; dragging it moves the
+/// deck (the two are one block). The deck takes the width at which the Spell Deck's rows hold its fullest tab as its minimum
 /// width and keeps room above it for the Spell Deck. Detached, the Spell Deck
 /// is its own window, back where it was last detached (its placement is not
 /// recorded while attached); the first detach puts it just above the deck.
@@ -49,37 +64,57 @@ public sealed class SpellDeckDock
     private readonly Func<float> _topLimit;
     private readonly Func<float, float> _aboveHeightAtScale;
     private bool? _mode;
+    /// <summary>The deck moved during a block drag and the layout has not been told yet.</summary>
+    private bool _deckDragUnreported;
+
+    /// <summary>How far right of the deck's left edge the attached Spell Deck starts (the orb's left edge), in base points.</summary>
+    internal const float AttachedInset = 32f;
+    /// <summary>How far below the deck's top the attached Spell Deck's bottom sits (the frame's top), in base points.</summary>
+    internal const float AttachedOverlap = 4f;
 
     public SpellDeckDock(ISpellDeckDockHost host, SpellDeckController controller)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
         _minStretch = MinStretch;
-        _topLimit = SpellHeight;
-        _aboveHeightAtScale = scale => SpellDeckGeometry.Create(scale, 1f, RowCount).Height;
+        _topLimit = () => AboveHeight(_host.DeckGeometry.Scale);
+        _aboveHeightAtScale = AboveHeight;
+        _host.SetSpellDeckDrag(DragAttached);
     }
+
+    /// <summary>How far the attached Spell Deck reaches above the deck's top at a scale (its height less the overlap).</summary>
+    private float AboveHeight(float scale) =>
+        SpellDeckGeometry.Create(scale, 1f, RowCount).Height - AttachedOverlap * scale;
 
     private int RowCount => _controller.RowCount;
 
     /// <summary>The narrowest stretch the Spell Deck (and, attached, the deck) may have: its rows must hold the fullest tab.</summary>
     private float MinStretch() => SpellDeckGeometry.StretchFor(_controller.MinSlotsPerRow);
 
-    /// <summary>The attached Spell Deck's height at the deck's size.</summary>
-    private float SpellHeight() => AttachedGeometry(_host.DeckGeometry, RowCount).Height;
-
     private static SpellDeckGeometry AttachedGeometry(DeckGeometry deck, int rows) =>
         SpellDeckGeometry.Create(deck.Scale, deck.Stretch, rows);
+
+    /// <summary>The attached Spell Deck's spot for a deck at (<paramref name="deckLeft"/>, <paramref name="deckTop"/>).</summary>
+    private static (float Left, float Top) AttachedSpot(float deckLeft, float deckTop, DeckGeometry deck, SpellDeckGeometry g) =>
+        (deckLeft + AttachedInset * deck.Scale, deckTop + AttachedOverlap * deck.Scale - g.Height);
 
     /// <summary>Called every frame, whether or not the Spell Deck is shown.</summary>
     public void Tick()
     {
+        if (_deckDragUnreported && !_host.WindowDragActive)
+        {
+            _deckDragUnreported = false;
+            _host.ReportDeckMoved();
+        }
         SyncMode();
         if (_controller.Attached)
         {
             _host.SetDeckLimits(_minStretch, _topLimit, _aboveHeightAtScale);
             _host.EnforceDeckMinStretch();
-            SpellDeckGeometry g = AttachedGeometry(_host.DeckGeometry, RowCount);
-            Place(_host.DeckLeft, _host.DeckTop - g.Height, g);
+            DeckGeometry deck = _host.DeckGeometry;
+            SpellDeckGeometry g = AttachedGeometry(deck, RowCount);
+            var (left, top) = AttachedSpot(_host.DeckLeft, _host.DeckTop, deck, g);
+            Place(left, top, g);
         }
         else
         {
@@ -99,7 +134,8 @@ public sealed class SpellDeckDock
         if (_controller.Attached)
         {
             DeckGeometry deck = _host.DeckGeometry;
-            return _host.DeckTop - AttachedGeometry(deck, RowCount + 1).Height >= screen.Top - 1e-3f;
+            float above = AttachedGeometry(deck, RowCount + 1).Height - AttachedOverlap * deck.Scale;
+            return _host.DeckTop - above >= screen.Top - 1e-3f;
         }
         SpellDeckGeometry spell = _host.SpellDeckGeometry;
         float extra = SpellDeckGeometry.BaseHeight(RowCount + 1) * spell.Scale - spell.Height;
@@ -118,18 +154,19 @@ public sealed class SpellDeckDock
             int rows = RowCount;
             DeckGeometry deck = _host.DeckGeometry;
             DeckGeometry fitted = deck;
-            while (fitted.Height + AttachedGeometry(fitted, rows).Height > screen.Height
+            float Above(DeckGeometry d) => AttachedGeometry(d, rows).Height - AttachedOverlap * d.Scale;
+            while (fitted.Height + Above(fitted) > screen.Height
                    && fitted.Scale > DeckGeometry.MinScale + 1e-4f)
             {
                 fitted = DeckGeometry.Create(fitted.Scale - DeckGeometry.ScaleStep, fitted.Stretch, MinStretch());
             }
             if (fitted != deck) _host.SetDeckGeometry(fitted);
 
-            float spellHeight = AttachedGeometry(fitted, rows).Height;
-            if (_host.DeckTop - spellHeight < screen.Top)
+            float above = Above(fitted);
+            if (_host.DeckTop - above < screen.Top)
             {
                 float lowest = Math.Max(screen.Top, screen.Top + screen.Height - fitted.Height);
-                _host.DeckTop = Math.Min(screen.Top + spellHeight, lowest);
+                _host.DeckTop = Math.Min(screen.Top + above, lowest);
             }
         }
         Tick();
@@ -143,6 +180,31 @@ public sealed class SpellDeckDock
     {
         _mode = null;
         FitToScreen();
+    }
+
+    /// <summary>The Spell Deck window's drag constraint. Attached, the drag moves the
+    /// whole block: the deck goes by the same amount, kept on screen with the Spell
+    /// Deck above it, and the Spell Deck stays in its spot on the deck. The deck's
+    /// move is reported once the drag ends (on the next <see cref="Tick"/>); the
+    /// Spell Deck's own placement is not recorded while attached. Detached, the drag
+    /// is the window's own.</summary>
+    public void DragAttached(ref float left, ref float top)
+    {
+        if (!_controller.Attached) return;
+        var screen = _host.Screen;
+        DeckGeometry deck = _host.DeckGeometry;
+        SpellDeckGeometry g = AttachedGeometry(deck, RowCount);
+        float deckLeft = left - AttachedInset * deck.Scale;
+        float deckTop = top + g.Height - AttachedOverlap * deck.Scale;
+        deckLeft = Math.Max(screen.Left, Math.Min(deckLeft, screen.Left + screen.Width - deck.Width));
+        deckTop = Math.Min(deckTop, screen.Top + screen.Height - deck.Height);
+        deckTop = Math.Max(deckTop, screen.Top + AboveHeight(deck.Scale));
+        if (deckLeft != _host.DeckLeft || deckTop != _host.DeckTop)
+        {
+            _host.MoveDeckDuringDrag(deckLeft, deckTop);
+            _deckDragUnreported = true;
+        }
+        (left, top) = AttachedSpot(deckLeft, deckTop, deck, g);
     }
 
     public void Detach()
@@ -166,6 +228,7 @@ public sealed class SpellDeckDock
         if (_mode == attached) return;
         _mode = attached;
         _host.SetSpellDeckResizable(!attached);
+        _host.SetDeckJoined(attached);
         if (attached)
         {
             _host.SetSpellDeckCaptureOpen(false);
@@ -175,11 +238,12 @@ public sealed class SpellDeckDock
         _host.SetSpellDeckCaptureOpen(true);
         if (_controller.DetachedRows is null)
         {
-            // Never placed detached (nothing stored to go back to): just above the
-            // deck as it is now, at the size it had attached. This placement is saved.
+            // Never placed detached (nothing stored to go back to): where it sat on
+            // the deck as it is now, at the size it had attached. This placement is saved.
             SpellDeckGeometry first = _host.SpellDeckGeometry.WithRows(RowCount);
             first = first.WithStretch(Math.Max(first.Stretch, MinStretch()));
-            Place(_host.DeckLeft, _host.DeckTop - first.Height, first, force: true);
+            var (left, top) = AttachedSpot(_host.DeckLeft, _host.DeckTop, _host.DeckGeometry, first);
+            Place(left, top, first, force: true);
             return;
         }
         _host.ApplyStoredSpellDeckPlacement();

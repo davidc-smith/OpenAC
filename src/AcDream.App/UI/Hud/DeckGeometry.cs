@@ -140,8 +140,20 @@ public sealed record DeckGeometry
     public DeckRect PowerTrack => S(RowValueLeft, 98f, HeightButtonX(0) - 8f - RowValueLeft, 10f);
     public DeckRect HeightButton(int index) => S(HeightButtonX(index), 92f, 26f, 22f);
 
-    public DeckRect Cast => S(ContentRight - 26f, 92f, 26f, 22f);
-    public DeckRect CastingText => S(RowValueLeft, 92f, ContentRight - 26f - 6f - RowValueLeft, 22f);
+    /// <summary>The CAST button: its icon and the word CAST, wider than the other studs.</summary>
+    private const float CastWidth = 54f;
+    public DeckRect Cast => S(ContentRight - CastWidth, 92f, CastWidth, 22f);
+    public DeckRect CastingText => S(RowValueLeft, 92f, ContentRight - CastWidth - 6f - RowValueLeft, 22f);
+
+    /// <summary>Where the CAST button's icon and word go: a 14-point icon, a 3-point
+    /// gap, then the word (<paramref name="wordWidth"/> wide), centred on the button
+    /// as one group.</summary>
+    public static (float IconX, float IconY, float IconSize, float TextX) CastLabel(DeckRect cast, float wordWidth, float scale)
+    {
+        float icon = 14f * scale, gap = 3f * scale;
+        float iconX = cast.X + (cast.W - (icon + gap + wordWidth)) / 2f;
+        return (iconX, cast.Y + (cast.H - icon) / 2f, icon, iconX + icon + gap);
+    }
 
     public DeckRect RecallStud(int index) => S(RowValueLeft + index * 30f, 92f, 26f, 22f);
 

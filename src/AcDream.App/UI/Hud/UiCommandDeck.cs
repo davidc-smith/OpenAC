@@ -155,6 +155,13 @@ internal sealed partial class UiCommandDeck : UiElement
 
     private float MinStretchNow => MinStretch?.Invoke() ?? DeckGeometry.MinStretch;
 
+    /// <summary>Whether something sits joined on the deck's top now (the attached Spell
+    /// Deck, while it shows); null = nothing attached.</summary>
+    internal Func<bool>? JoinedAbove { get; set; }
+
+    /// <summary>While the attached Spell Deck shows on it, the frame's top corners are square so the two meet on one seam.</summary>
+    internal bool SquareTopCorners => JoinedAbove?.Invoke() == true;
+
     // Mounted with imported chrome, the deck is its own outer frame, so the
     // root's window drag reaches this override directly.
     internal override void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY)

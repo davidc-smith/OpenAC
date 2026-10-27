@@ -38,12 +38,17 @@ internal static class DeckChrome
     internal static float Line(float points, float scale) => MathF.Max(1f, MathF.Round(points * scale));
 
     /// <summary>The dark rounded frame with its gradient and inner bronze rule. With
-    /// <paramref name="squareBottom"/> the bottom corners are square (an attached Spell Deck
-    /// meeting the Command Deck on one seam).</summary>
-    internal static void DrawFrame(UiRenderContext ctx, DeckRect f, float scale, bool squareBottom = false)
+    /// <paramref name="squareBottom"/> the bottom corners are square, with
+    /// <paramref name="squareTop"/> the top ones (an attached Spell Deck meeting the
+    /// Command Deck on one seam).</summary>
+    internal static void DrawFrame(UiRenderContext ctx, DeckRect f, float scale, bool squareBottom = false, bool squareTop = false)
     {
         float P(float points) => points * scale;
-        CanvasCornerRadii Radii(float r) => new(P(r), P(r), squareBottom ? 0f : P(r), squareBottom ? 0f : P(r));
+        CanvasCornerRadii Radii(float r)
+        {
+            float top = squareTop ? 0f : P(r), bottom = squareBottom ? 0f : P(r);
+            return new(top, top, bottom, bottom);
+        }
         ctx.FillRoundedRect(f.X - P(2), f.Y - P(2), f.W + P(4), f.H + P(4), Radii(10), FrameEdge);
         ctx.FillVerticalGradient(f.X, f.Y, f.W, f.H, Radii(8), FrameTop, FrameBottom);
         ctx.StrokeRoundedRect(f.X + P(3), f.Y + P(3), f.W - P(6), f.H - P(6), Radii(5), Bronze, Line(1, scale));

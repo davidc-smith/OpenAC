@@ -35,8 +35,8 @@ public sealed class DeckGeometryTests
         Assert.Equal(new DeckRect(200f, 98f, 118f, 10f), G.PowerTrack);
         Assert.Equal(new DeckRect(326f, 92f, 26f, 22f), G.HeightButton(0));
         Assert.Equal(new DeckRect(382f, 92f, 26f, 22f), G.HeightButton(2));
-        Assert.Equal(new DeckRect(382f, 92f, 26f, 22f), G.Cast);
-        Assert.Equal(new DeckRect(200f, 92f, 176f, 22f), G.CastingText);
+        Assert.Equal(new DeckRect(354f, 92f, 54f, 22f), G.Cast);
+        Assert.Equal(new DeckRect(200f, 92f, 148f, 22f), G.CastingText);
         Assert.Equal(new DeckRect(260f, 92f, 26f, 22f), G.RecallStud(2));
         Assert.Equal(new DeckRect(134f, 122f, 60f, 14f), G.JumpLabel);
         Assert.Equal(new DeckRect(200f, 125f, 208f, 8f), G.JumpTrack);
@@ -277,11 +277,41 @@ public sealed class DeckGeometryTests
     }
 
     [Fact]
-    public void RecastIsAnIconButtonAndTheCastingLineEndsBeforeIt()
+    public void CastIsALabelledButtonAndTheCastingLineEndsBeforeIt()
     {
         DeckRect cast = G.Cast, text = G.CastingText;
-        Assert.Equal(G.RecallStud(0).W, cast.W);
-        Assert.True(text.X + text.W < cast.X);
-        Assert.True(text.W >= 170f);
+        Assert.Equal(54f, cast.W);
+        Assert.Equal(G.RecallStud(0).H, cast.H);
+        Assert.Equal(6f, cast.X - (text.X + text.W), 3);
+        Assert.Equal(148f, text.W);
+    }
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
+    public void CastHitZoneCoversTheWholeStud(float scale, float stretch)
+    {
+        DeckGeometry g = DeckGeometry.Create(scale, stretch);
+        DeckRect c = g.Cast;
+        CommandDeckView magic = View(CombatMode.Magic);
+        foreach (var (x, y) in new[] { (c.X + 0.5f, c.Y + 0.5f), (c.X + c.W - 0.5f, c.Y + c.H - 0.5f), (c.X + 4f * scale, c.Y + c.H / 2f) })
+            Assert.Equal(DeckZone.Cast, g.ZoneAt(magic, x, y));
+    }
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
+    public void CastLabelSitsInsideTheStud_IconThenWord(float scale, float stretch)
+    {
+        DeckGeometry g = DeckGeometry.Create(scale, stretch);
+        DeckRect c = g.Cast;
+        float word = 26f * scale;   // "CAST" in the small face
+        var (iconX, iconY, iconSize, textX) = DeckGeometry.CastLabel(c, word, scale);
+
+        Assert.Equal(14f * scale, iconSize, 3);
+        Assert.Equal(c.Y + (c.H - iconSize) / 2f, iconY, 3);
+        Assert.True(iconX >= c.X + 3f * scale - 0.01f);
+        Assert.True(textX >= iconX + iconSize);
+        Assert.True(textX + word <= c.X + c.W - 3f * scale + 0.01f);
+        // Centred as a group.
+        Assert.Equal(c.X + c.W / 2f, (iconX + textX + word) / 2f, 2);
     }
 }

@@ -63,7 +63,22 @@ public sealed class SpellDeckDockTests
 
         public void SetSpellDeckCaptureOpen(bool open) => CaptureOpen = open;
         public void SetSpellDeckResizable(bool resizable) => Resizable = resizable;
+
+        public bool? Joined;
+        public void SetDeckJoined(bool joined) => Joined = joined;
+
+        public WindowDragConstraint? SpellDrag;
+        public void SetSpellDeckDrag(WindowDragConstraint? drag) => SpellDrag = drag;
+
+        public bool WindowDragActive { get; set; }
+        public int DeckMovesReported;
+        public void MoveDeckDuringDrag(float left, float top) => (DeckLeft, DeckTop) = (left, top);
+        public void ReportDeckMoved() => DeckMovesReported++;
     }
+
+    /// <summary>The attached Spell Deck's spot on the deck: from the orb's left edge, on the frame's top.</summary>
+    private static (float Left, float Bottom) AttachedSpot(Host host) =>
+        (host.DeckLeft + 32f * host.DeckGeometry.Scale, host.DeckTop + 4f * host.DeckGeometry.Scale);
 
     private static (SpellDeckDock Dock, Host Host, SpellDeckController C, List<uint>[] Tabs) Make(
         bool attached = true, int? detachedRows = null, List<SpellDeckSettings>? saved = null)
@@ -90,15 +105,15 @@ public sealed class SpellDeckDockTests
 
         SpellDeckGeometry g = host.SpellDeckGeometry;
         Assert.Equal((1.25f, 1.5f, 3), (g.Scale, g.Stretch, g.Rows));
-        Assert.Equal(100f, host.SpellDeckLeft);
-        Assert.Equal(600f, host.SpellDeckTop + g.Height, 3);
+        Assert.Equal(140f, host.SpellDeckLeft);              // 100 + 32 x 1.25
+        Assert.Equal(605f, host.SpellDeckTop + g.Height, 3);   // 600 + 4 x 1.25
         Assert.False(host.CaptureOpen);
         Assert.False(host.Resizable);
 
         c.AddRow();
         dock.Tick();
         Assert.Equal(4, host.SpellDeckGeometry.Rows);
-        Assert.Equal(600f, host.SpellDeckTop + host.SpellDeckGeometry.Height, 3);   // grows upwards
+        Assert.Equal(605f, host.SpellDeckTop + host.SpellDeckGeometry.Height, 3);   // grows upwards
         Assert.Equal(600f, host.DeckTop);
     }
 
@@ -113,24 +128,25 @@ public sealed class SpellDeckDockTests
         Assert.NotNull(host.MinStretch);
         Assert.NotNull(host.TopLimit);
         Assert.Equal(SpellDeckGeometry.StretchFor(20), host.MinStretch!(), 4);
-        Assert.Equal(host.SpellDeckGeometry.Height, host.TopLimit!(), 4);
-        Assert.Equal(SpellDeckGeometry.BaseHeight(3) * host.DeckGeometry.Scale, host.TopLimit!(), 4);
+        // The Spell Deck overlaps the deck by the 4 points above its frame.
+        Assert.Equal(host.SpellDeckGeometry.Height - 4f, host.TopLimit!(), 4);
+        Assert.Equal((SpellDeckGeometry.BaseHeight(3) - 4f) * host.DeckGeometry.Scale, host.TopLimit!(), 4);
         Assert.NotNull(host.AboveHeightAtScale);
-        Assert.Equal(SpellDeckGeometry.BaseHeight(3) * 1.3f, host.AboveHeightAtScale!(1.3f), 3);
+        Assert.Equal((SpellDeckGeometry.BaseHeight(3) - 4f) * 1.3f, host.AboveHeightAtScale!(1.3f), 3);
     }
 
     [Fact]
     public void SpellDeckDock_CanAddRow_FalseWhenTheNextRowWouldPassTheTop()
     {
         var (dock, host, c, _) = Make();
-        host.DeckTop = SpellDeckGeometry.BaseHeight(4) - 1f;   // 3 rows fit, 4 do not
+        host.DeckTop = SpellDeckGeometry.BaseHeight(4) - 4f - 1f;   // 3 rows fit, 4 do not
         dock.Tick();
 
         Assert.False(dock.CanAddRow());
         c.AddRow();
         Assert.Equal(3, c.RowCount);
 
-        host.DeckTop = SpellDeckGeometry.BaseHeight(4);
+        host.DeckTop = SpellDeckGeometry.BaseHeight(4) - 4f;
         Assert.True(dock.CanAddRow());
         c.AddRow();
         Assert.Equal(4, c.RowCount);
@@ -162,17 +178,17 @@ public sealed class SpellDeckDockTests
         host.Screen = (0f, 0f, 1600f, 900f);
         host.DeckTop = 50f;
         dock.FitToScreen();
-        Assert.Equal(SpellDeckGeometry.BaseHeight(3), host.DeckTop, 3);
+        Assert.Equal(SpellDeckGeometry.BaseHeight(3) - 4f, host.DeckTop, 3);
         Assert.Equal(1f, host.DeckGeometry.Scale);
         Assert.Equal(0f, host.SpellDeckTop, 3);
 
-        // 150 + 114 > 215: steps down to 0.8 (120 + 91.2), the block at the top.
+        // 150 + 114 - 4 > 215: steps down to 0.8 (120 + 91.2 - 3.2), the block at the top.
         (dock, host, _, _) = Make();
         host.Screen = (0f, 0f, 1600f, 215f);
         host.DeckTop = 50f;
         dock.FitToScreen();
         Assert.Equal(0.8f, host.DeckGeometry.Scale, 3);
-        Assert.Equal(91.2f, host.DeckTop, 3);
+        Assert.Equal(88f, host.DeckTop, 3);
         Assert.Equal(0f, host.SpellDeckTop, 3);
 
         // Never fits: stops at 0.75 with the deck on the bottom of the screen.
@@ -232,13 +248,13 @@ public sealed class SpellDeckDockTests
             Assert.True(c.Attached);
             Assert.False(host.CaptureOpen);
             dock.Tick();
-            Assert.Equal(host.DeckLeft, host.SpellDeckLeft);
-            Assert.Equal(host.DeckTop, host.SpellDeckTop + host.SpellDeckGeometry.Height, 3);
+            Assert.Equal(AttachedSpot(host).Left, host.SpellDeckLeft, 3);
+            Assert.Equal(AttachedSpot(host).Bottom, host.SpellDeckTop + host.SpellDeckGeometry.Height, 3);
 
             host.DeckLeft += 50f;
             host.DeckTop -= 30f;
             dock.Tick();
-            Assert.Equal(host.DeckLeft, host.SpellDeckLeft);
+            Assert.Equal(AttachedSpot(host).Left, host.SpellDeckLeft, 3);
 
             dock.Detach();
             Assert.Equal((detachedSpot.Left, detachedSpot.Top), (host.SpellDeckLeft, host.SpellDeckTop));
@@ -300,8 +316,10 @@ public sealed class SpellDeckDockTests
 
         Assert.Equal(0, host.StoredApplied);
         Assert.Equal(attached, host.SpellDeckGeometry);
-        Assert.Equal((250f, 500f - attached.Height), (host.SpellDeckLeft, host.SpellDeckTop));
-        Assert.Equal((250f, 500f - attached.Height), (host.Stored.Left, host.Stored.Top));   // and saved
+        // Where it sat attached: from the orb's left edge, on the frame's top (scale 1.2).
+        (float Left, float Top) spot = (250f + 32f * 1.2f, 500f + 4f * 1.2f - attached.Height);
+        Assert.Equal(spot, (host.SpellDeckLeft, host.SpellDeckTop));
+        Assert.Equal(spot, (host.Stored.Left, host.Stored.Top));   // and saved
         Assert.Equal(3, c.DetachedRows);
 
         // From now on it goes back to that spot.
@@ -310,7 +328,7 @@ public sealed class SpellDeckDockTests
         dock.Tick();
         dock.Detach();
         Assert.Equal(1, host.StoredApplied);
-        Assert.Equal((250f, 500f - attached.Height), (host.SpellDeckLeft, host.SpellDeckTop));
+        Assert.Equal(spot, (host.SpellDeckLeft, host.SpellDeckTop));
     }
 
     [Fact]
@@ -321,5 +339,144 @@ public sealed class SpellDeckDockTests
         dock.Tick();
         dock.Detach();
         Assert.Equal(0f, host.SpellDeckTop);
+    }
+
+    public static TheoryData<float, float> Sizes()
+    {
+        var data = new TheoryData<float, float>();
+        foreach (float scale in new[] { 0.75f, 1f, 1.5f })
+            foreach (float stretch in new[] { 1f, 1.5f, 2f })
+                data.Add(scale, stretch);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
+    public void SpellDeckDock_Attached_SitsOnTheFrameFromTheOrbToTheRightEdge(float scale, float stretch)
+    {
+        var (dock, host, _, _) = Make();
+        host.DeckGeometry = DeckGeometry.Create(scale, stretch);
+        host.DeckLeft = 200f;
+        host.DeckTop = 600f;
+
+        dock.Tick();
+
+        SpellDeckGeometry g = host.SpellDeckGeometry;
+        Assert.Equal(200f + 32f * scale, host.SpellDeckLeft, 3);                              // the orb's left edge
+        Assert.Equal(200f + host.DeckGeometry.Width, host.SpellDeckLeft + g.Width, 2);        // the deck's right edge
+        Assert.Equal(host.DeckGeometry.Width - 32f * scale, g.Width, 2);
+        Assert.Equal(600f + host.DeckGeometry.Frame.Y, host.SpellDeckTop + g.Height, 3);      // the frame's top
+        Assert.Equal(600f + 4f * scale, host.SpellDeckTop + g.Height, 3);
+    }
+
+    [Fact]
+    public void SpellDeckDock_DeckIsJoinedOnlyWhileAttached()
+    {
+        var (dock, host, _, _) = Make();
+        dock.Tick();
+        Assert.True(host.Joined);
+
+        dock.Detach();
+        Assert.False(host.Joined);
+        dock.Tick();
+        Assert.False(host.Joined);
+
+        dock.Attach();
+        dock.Tick();
+        Assert.True(host.Joined);
+    }
+
+    /// <summary>The root's window drag of the Spell Deck: it proposes a spot, the deck's constraint answers.</summary>
+    private static (float Left, float Top) DragSpellTo(Host host, float left, float top)
+    {
+        Assert.NotNull(host.SpellDrag);
+        host.SpellDrag!(ref left, ref top);
+        return (left, top);
+    }
+
+    [Theory]
+    [InlineData(0.75f)]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void SpellDeckDock_DraggingTheAttachedSpellDeck_MovesTheDeckBySameAmount_SavedOnce(float scale)
+    {
+        var (dock, host, c, _) = Make(detachedRows: 3);
+        host.DeckGeometry = DeckGeometry.Create(scale, 1f);
+        host.DeckLeft = 300f;
+        host.DeckTop = 600f;
+        dock.Tick();
+        var stored = host.Stored;
+        float spellLeft = host.SpellDeckLeft, spellTop = host.SpellDeckTop;
+
+        host.WindowDragActive = true;
+        var placed = DragSpellTo(host, spellLeft + 40f, spellTop - 30f);
+        dock.Tick();
+
+        Assert.Equal((340f, 570f), (host.DeckLeft, host.DeckTop));
+        Assert.Equal(spellLeft + 40f, placed.Left, 3);
+        Assert.Equal(spellTop - 30f, placed.Top, 3);
+        Assert.Equal((placed.Left, placed.Top), (host.SpellDeckLeft, host.SpellDeckTop));
+        Assert.Equal(0, host.DeckMovesReported);   // not saved on every pointer move
+
+        DragSpellTo(host, spellLeft - 10f, spellTop + 5f);
+        dock.Tick();
+        Assert.Equal((290f, 605f), (host.DeckLeft, host.DeckTop));
+        Assert.Equal(0, host.DeckMovesReported);
+
+        host.WindowDragActive = false;   // the drag ends
+        dock.Tick();
+        Assert.Equal(1, host.DeckMovesReported);
+        dock.Tick();
+        Assert.Equal(1, host.DeckMovesReported);
+
+        // The Spell Deck's own (detached) placement is untouched.
+        Assert.Equal(stored, host.Stored);
+        Assert.Equal(3, c.DetachedRows);
+    }
+
+    [Theory]
+    [InlineData(0.75f)]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void SpellDeckDock_DraggingTheAttachedSpellDeck_KeepsTheBlockOnScreen(float scale)
+    {
+        var (dock, host, _, _) = Make();
+        host.DeckGeometry = DeckGeometry.Create(scale, 1.5f);
+        host.DeckTop = 600f;
+        dock.Tick();
+        var screen = host.Screen;
+        float spellHeight = host.SpellDeckGeometry.Height;
+        float deckWidth = host.DeckGeometry.Width, deckHeight = host.DeckGeometry.Height;
+        host.WindowDragActive = true;
+
+        // Up and left past the corner: the Spell Deck's top on the screen's top, the deck's left on its left.
+        var placed = DragSpellTo(host, -500f, -500f);
+        Assert.Equal(0f, host.DeckLeft, 3);
+        Assert.Equal(spellHeight - 4f * scale, host.DeckTop, 3);
+        Assert.Equal(32f * scale, placed.Left, 3);
+        Assert.Equal(0f, placed.Top, 3);
+
+        // Down and right past the corner: the deck's bottom and right edge on the screen's.
+        placed = DragSpellTo(host, 5000f, 5000f);
+        Assert.Equal(screen.Width - deckWidth, host.DeckLeft, 3);
+        Assert.Equal(screen.Height - deckHeight, host.DeckTop, 3);
+        Assert.Equal(host.DeckLeft + 32f * scale, placed.Left, 3);
+        Assert.Equal(host.DeckTop + 4f * scale - spellHeight, placed.Top, 3);
+    }
+
+    [Fact]
+    public void SpellDeckDock_DraggingTheDetachedSpellDeck_LeavesTheDeck()
+    {
+        var (dock, host, _, _) = Make(attached: false, detachedRows: 3);
+        dock.AfterRestore();
+        host.WindowDragActive = true;
+
+        var placed = DragSpellTo(host, 123f, 45f);
+        host.WindowDragActive = false;
+        dock.Tick();
+
+        Assert.Equal((123f, 45f), placed);
+        Assert.Equal((100f, 700f), (host.DeckLeft, host.DeckTop));
+        Assert.Equal(0, host.DeckMovesReported);
     }
 }

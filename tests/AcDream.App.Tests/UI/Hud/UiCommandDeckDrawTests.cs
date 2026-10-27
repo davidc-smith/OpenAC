@@ -1,3 +1,4 @@
+using AcDream.App.Rendering;
 using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 using AcDream.Core.Combat;
@@ -157,5 +158,69 @@ public sealed class UiCommandDeckDrawTests
         Assert.EndsWith("...", fitted);
         Assert.True(Measure(fitted) <= room);
         Assert.Equal("Flame Bolt", UiCommandDeck.FitCastingText("Flame Bolt", Measure, width));
+    }
+
+    [Theory]
+    [InlineData(0.75f)]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void JoinedBelowTheSpellDeck_DrawsSquareTopCorners_OtherwiseRounded(float scale)
+    {
+        var input = default(CommandDeckInput) with { Mode = CombatMode.Magic, SessionKey = 1 };
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 1.0);
+        deck.Refresh();
+        deck.ApplyGeometry(DeckGeometry.Create(scale, 1f));
+
+        Assert.False(deck.SquareTopCorners);
+        Assert.False(TopLeftCornerFilled(deck));
+
+        bool shown = true;
+        deck.JoinedAbove = () => shown;
+        Assert.True(deck.SquareTopCorners);
+        Assert.True(TopLeftCornerFilled(deck));
+
+        shown = false;   // attached, but the Spell Deck is hidden (peace, melee, missile)
+        Assert.False(deck.SquareTopCorners);
+        Assert.False(TopLeftCornerFilled(deck));
+
+        deck.JoinedAbove = null;
+        Assert.False(deck.SquareTopCorners);
+    }
+
+    /// <summary>Whether the frame's dark edge reaches into its very top-left corner (an opaque
+    /// vertex within the anti-aliasing band of the corner point).</summary>
+    private static bool TopLeftCornerFilled(UiCommandDeck deck)
+    {
+        TextRenderer renderer = MarkupDrawProbe.Draw(deck, deck.Width, deck.Height);
+        DeckRect f = deck.Geometry.Frame;
+        float cx = f.X - 2f * deck.Geometry.Scale, cy = f.Y - 2f * deck.Geometry.Scale;
+        System.Numerics.Vector4 c = DeckChrome.FrameEdge;
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+        {
+            if (s.Texture != 0u) continue;
+            for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+            {
+                if (s.Verts[i + 7] <= 0f || MathF.Abs(s.Verts[i + 4] - c.X) > 0.01f
+                    || MathF.Abs(s.Verts[i + 5] - c.Y) > 0.01f || MathF.Abs(s.Verts[i + 6] - c.Z) > 0.01f)
+                    continue;
+                if (MathF.Abs(s.Verts[i] - cx) < 0.75f && MathF.Abs(s.Verts[i + 1] - cy) < 0.75f) return true;   // the solid vertex half a pixel in
+            }
+        }
+        return false;
+    }
+
+    [Fact]
+    public void CastingRowDrawsTheCastWordInTheSmallSemiBoldFace()
+    {
+        var baked = new List<(float Px, BundledUiFontWeight Weight)>();
+        var fonts = new DeckFonts((px, weight) => { baked.Add((px, weight)); return null!; });
+        var input = default(CommandDeckInput) with { Mode = CombatMode.Magic, SessionKey = 1, OutlinedSpellName = "Flame Bolt" };
+        var deck = new UiCommandDeck(() => input, new CommandDeckModel(), new NoActions(), icons: null, clock: () => 1.0, fonts);
+        deck.Refresh();
+        Assert.Equal(DeckContextRow.Casting, deck.View.Row);
+
+        MarkupDrawProbe.Draw(deck, deck.Width, deck.Height);
+
+        Assert.Contains((DeckFonts.SmallPixelHeight, BundledUiFontWeight.SemiBold), baked);
     }
 }

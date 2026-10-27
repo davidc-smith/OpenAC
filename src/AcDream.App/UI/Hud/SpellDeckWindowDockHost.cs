@@ -59,6 +59,23 @@ internal sealed class SpellDeckWindowDockHost(
         return true;
     }
 
+    // Square top corners only while the attached Spell Deck actually shows on the deck.
+    public void SetDeckJoined(bool joined) => deck.JoinedAbove = joined ? () => spellHandle.IsVisible : null;
+
+    public void MoveDeckDuringDrag(float left, float top)
+    {
+        UiElement frame = deckHandle.OuterFrame;
+        frame.Left = left;
+        frame.Top = top;
+        frame.ResetAnchorCapture();
+    }
+
+    public void ReportDeckMoved() => root.NotifyWindowMoved(deckHandle.OuterFrame);
+
+    public bool WindowDragActive => root.IsWindowMoveActive;
+
+    public void SetSpellDeckDrag(WindowDragConstraint? drag) => spell.WindowDrag = drag;
+
     public void PlaceSpellDeck(float left, float top, SpellDeckGeometry geometry)
     {
         UiElement frame = spellHandle.OuterFrame;

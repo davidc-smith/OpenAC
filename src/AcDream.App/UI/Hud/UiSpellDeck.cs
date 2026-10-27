@@ -135,6 +135,14 @@ internal sealed partial class UiSpellDeck : UiElement
         height = _geometry.Height;
     }
 
+    /// <summary>Set by the dock: attached, a drag of this window moves the whole block (the Command Deck with it).</summary>
+    internal WindowDragConstraint? WindowDrag { get; set; }
+
+    // Mounted with imported chrome, this element is its own outer frame, so the
+    // root's window drag reaches this override directly.
+    internal override void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY) =>
+        WindowDrag?.Invoke(ref left, ref top);
+
     /// <summary>The narrowest the deck may be: its rows must hold the fullest tab.</summary>
     private float MinStretchNow => SpellDeckGeometry.StretchFor(_controller.MinSlotsPerRow);
 
