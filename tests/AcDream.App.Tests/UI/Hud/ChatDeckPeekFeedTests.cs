@@ -12,9 +12,9 @@ public sealed class ChatDeckPeekFeedTests
         public readonly ChatDeckModel Model;
         public readonly ChatDeckPeekFeed Feed = new(l => l.Facts.Text);
 
-        public Rig()
+        public Rig(ChatDeckSettings? settings = null)
         {
-            Model = new ChatDeckModel(Log, ChatDeckDefaults.Create(), "Davian");
+            Model = new ChatDeckModel(Log, settings ?? ChatDeckDefaults.Create(), "Davian");
             Model.LinesDelivered += d => Feed.Add(d, Model.Settings.Tabs);
         }
 
@@ -23,20 +23,51 @@ public sealed class ChatDeckPeekFeedTests
             Log.OnLocalSpeech(sender, text, 0x50000002u, isRanged: false, logTextType: (uint)RetailLogTextType.Speech);
             Model.Tick();
         }
+
+        public void Tell(string sender, string text)
+        {
+            Log.OnTellReceived(sender, text, 0x50000003u, (uint)RetailLogTextType.Tell);
+            Model.Tick();
+        }
     }
 
+    /// <summary>Default settings with every tab's peek switched off, so only alerts can peek.</summary>
+    private static ChatDeckSettings AllPeekOff() =>
+        ChatDeckDefaults.Create() with
+        {
+            Tabs = ChatDeckDefaults.Create().Tabs.Select(t => t with { Peek = false }).ToList(),
+        };
+
     [Fact]
-    public void PeekTabsAndAlertsPeek_OthersAndOwnLinesDoNot()
+    public void PeekTabsPeek_SystemAndOwnLinesDoNot()
     {
         var r = new Rig();
         r.Say("hello");                                                          // Local: peek on
         r.Log.OnSystemMessage("You feel refreshed.", (uint)RetailLogTextType.System); // System: peek off
         r.Model.Tick();
-        r.Say("me again", sender: "Davian");                                     // own line
-        r.Log.OnTellReceived("Bo", "got a sec?", 0x50000003u, (uint)RetailLogTextType.Tell); // alert
-        r.Model.Tick();
+        r.Say("me again", sender: "Davian");                                     // own line, Local
+        r.Tell("Bo", "got a sec?");                                              // incoming tell: Local peek on, and an alert
 
         Assert.Equal(["hello", "got a sec?"], r.Feed.Lines.Select(l => l.Text));
+    }
+
+    [Fact]
+    public void IncomingTellPeeksOnAlertAlone_WhenNoTabPeeks()
+    {
+        var r = new Rig(AllPeekOff());
+        r.Say("hello");                  // Say: no alert, no peek tab -> must not peek
+        r.Tell("Bo", "got a sec?");      // TellIn: alert -> peeks on its own
+
+        Assert.Equal(["got a sec?"], r.Feed.Lines.Select(l => l.Text));
+    }
+
+    [Fact]
+    public void OwnAlertDoesNotPeek_WhenNoTabPeeks()
+    {
+        var r = new Rig(AllPeekOff());
+        r.Tell("Davian", "talking to myself"); // TellIn alert, but sender is the character -> own
+
+        Assert.Empty(r.Feed.Lines);
     }
 
     [Fact]
