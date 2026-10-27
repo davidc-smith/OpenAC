@@ -32,6 +32,9 @@ public sealed class ChatLog
     /// <summary>Fires every time a new entry is appended.</summary>
     public event Action<ChatEntry>? EntryAppended;
 
+    /// <summary>Fires after <see cref="Clear"/> has emptied the log.</summary>
+    public event Action? Cleared;
+
     public ChatEntry[] Snapshot() => _buffer.ToArray();
 
     public int Count => _buffer.Count;
@@ -294,6 +297,7 @@ public sealed class ChatLog
     {
         while (_buffer.TryDequeue(out _)) { /* drain */ }
         Interlocked.Increment(ref _revision);
+        Cleared?.Invoke();
     }
 }
 
