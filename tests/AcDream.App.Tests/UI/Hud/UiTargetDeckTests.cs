@@ -1,0 +1,222 @@
+using AcDream.App.UI;
+using AcDream.App.UI.Hud;
+using AcDream.Core.Targeting;
+using Silk.NET.Input;
+using static AcDream.App.Tests.UI.Hud.TargetDeckModels;
+
+namespace AcDream.App.Tests.UI.Hud;
+
+public sealed class UiTargetDeckTests
+{
+    private static (UiTargetDeck Deck, Recorder Actions) Make(TargetPlateModel? model, Func<double>? clock = null)
+    {
+        var actions = new Recorder();
+        var deck = new UiTargetDeck(() => model, actions, icons: null, clock: clock ?? (() => 0.0));
+        deck.Refresh();
+        return (deck, actions);
+    }
+
+    private static bool Down(UiTargetDeck d, float x, float y) =>
+        d.OnEvent(new UiEvent(0, d, UiEventType.MouseDown, Data1: (int)x, Data2: (int)y));
+
+    private static bool Down(UiTargetDeck d, DeckRect r) => Down(d, r.X + r.W / 2, r.Y + r.H / 2);
+
+    private static void Move(UiTargetDeck d, DeckRect r) =>
+        d.OnEvent(new UiEvent(0, d, UiEventType.MouseMove, Data1: (int)(r.X + r.W / 2), Data2: (int)(r.Y + r.H / 2)));
+
+    [Fact]
+    public void ANullModelHitsNothing()
+    {
+        var (deck, _) = Make(null);
+        Assert.False(deck.HitTestLocal(170, 50));
+        Assert.False(deck.HitTestLocal(5, 5));
+    }
+
+    [Fact]
+    public void AMonsterHitsItsFirstStud()
+    {
+        var (deck, _) = Make(Build(Monster()));
+        DeckRect s = TargetDeckGeometry.Stud(0);
+        Assert.True(deck.HitTestLocal(s.X + 2, s.Y + 2));
+        Assert.True(deck.CapturesPointerDrag);
+        Assert.True(deck.HitTestLocal(100, 30));
+        Assert.False(deck.CapturesPointerDrag);   // the plate body drags the window
+    }
+
+    [Fact]
+    public void PressingAssessRunsIt()
+    {
+        TargetPlateModel model = Build(Monster());
+        var (deck, actions) = Make(model);
+        Assert.True(Down(deck, TargetDeckGeometry.Stud(0)));
+        Assert.Equal([$"run {TargetAction.Assess} {model.ObjectId}"], actions.Calls);
+    }
+
+    [Fact]
+    public void ADisabledStudTakesThePressButRunsNothing()
+    {
+        TargetPlateModel model = Build(Player());
+        Assert.Equal(TargetAction.Give, model.Studs[1].Action);
+        Assert.False(model.Studs[1].Enabled);
+        var (deck, actions) = Make(model);
+        Assert.True(Down(deck, TargetDeckGeometry.Stud(1)));
+        Assert.Empty(actions.Calls);
+    }
+
+    [Fact]
+    public void TheSizeIsFixedForEveryKind()
+    {
+        foreach (var o in EveryKind())
+        {
+            var (deck, _) = Make(Build(o));
+            Assert.Equal(TargetDeckGeometry.Width, deck.Width);
+            Assert.Equal(TargetDeckGeometry.Height, deck.Height);
+            Assert.False(deck.Resizable);
+        }
+        var options = UiTargetDeck.MountOptions(0, 0);
+        Assert.False(options.Resizable);
+        Assert.Equal(WindowNames.TargetDeck, options.WindowName);
+    }
+
+    [Fact]
+    public void EveryActionHasALabelAndAnIcon()
+    {
+        foreach (TargetAction a in Enum.GetValues<TargetAction>())
+        {
+            if (a == TargetAction.None) continue;
+            Assert.False(string.IsNullOrEmpty(UiTargetDeck.LabelFor(a)));
+            Assert.Contains(UiTargetDeck.IconFor(a), HudIcons.All);
+        }
+        Assert.Equal("Assess again", UiTargetDeck.LabelFor(TargetAction.Assess));
+        Assert.Equal("Use selected key or lockpick", UiTargetDeck.LabelFor(TargetAction.UseKey));
+    }
+
+    private static readonly TargetPluginAction[] PluginActions =
+    [
+        new("lootbot", "Loot Bot", "mark", "Mark for loot", true),
+        new("lootbot", "Loot Bot", "skip", "Skip", false),
+    ];
+
+    [Fact]
+    public void MoreOpensAMenuOfTheMoreActionsThenThePluginActions()
+    {
+        TargetPlateModel model = Build(Monster(), pluginActions: PluginActions);
+        var (deck, actions) = Make(model);
+        Assert.True(Down(deck, TargetDeckGeometry.Stud(3)));
+        Assert.True(deck.MenuOpen);
+        Assert.Empty(actions.Calls);
+
+        var entries = deck.MenuEntries;
+        Assert.Equal(["Examine", "Copy name", "Loot Bot", "Mark for loot", "Skip"], entries.Select(e => e.Label));
+        Assert.True(entries[2].Header);
+
+        DeckRect copy = deck.MenuEntryRect(1);
+        Assert.True(copy.Y > TargetDeckGeometry.Height);
+        Assert.Same(deck, deck.HitTest(copy.X + 4, copy.Y + 4));   // the root's popup hit test, past the plate's bounds
+        Assert.True(Down(deck, copy));
+        Assert.Equal([$"run {TargetAction.CopyName} {model.ObjectId}"], actions.Calls);
+        Assert.False(deck.MenuOpen);
+    }
+
+    [Fact]
+    public void APluginEntryRunsThePluginAction_ADisabledOneDoesNothing()
+    {
+        TargetPlateModel model = Build(Monster(), pluginActions: PluginActions);
+        var (deck, actions) = Make(model);
+        Down(deck, TargetDeckGeometry.Stud(3));
+        Assert.True(Down(deck, deck.MenuEntryRect(4)));   // Skip, disabled
+        Assert.True(Down(deck, deck.MenuEntryRect(2)));   // the header
+        Assert.Empty(actions.Calls);
+        Assert.True(deck.MenuOpen);
+
+        Down(deck, deck.MenuEntryRect(3));
+        Assert.Equal([$"plugin lootbot {model.ObjectId} mark"], actions.Calls);
+        Assert.False(deck.MenuOpen);
+    }
+
+    [Fact]
+    public void EscapeOrAPressElsewhereClosesTheMenu()
+    {
+        var (deck, actions) = Make(Build(Monster()));
+        Down(deck, TargetDeckGeometry.Stud(3));
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.KeyDown, Data0: (int)Key.Escape));
+        Assert.False(deck.MenuOpen);
+
+        Down(deck, TargetDeckGeometry.Stud(3));
+        Assert.True(Down(deck, 100, 30));
+        Assert.False(deck.MenuOpen);
+        Assert.Empty(actions.Calls);
+
+        Down(deck, TargetDeckGeometry.Stud(3));
+        Down(deck, TargetDeckGeometry.Stud(3));   // More again toggles it shut
+        Assert.False(deck.MenuOpen);
+
+        Down(deck, TargetDeckGeometry.Stud(3));
+        deck.OnHidden();
+        Assert.False(deck.MenuOpen);
+    }
+
+    [Fact]
+    public void TheMenuClosesWhenTheTargetGoesAway()
+    {
+        TargetPlateModel? model = Build(Monster());
+        var deck = new UiTargetDeck(() => model, new NoActions(), icons: null, clock: () => 0.0);
+        deck.Refresh();
+        Down(deck, TargetDeckGeometry.Stud(3));
+        model = null;
+        deck.Refresh();
+        Assert.False(deck.MenuOpen);
+    }
+
+    [Fact]
+    public void AStudTooltipShowsAfterTheDwell_WithTheDisabledReason()
+    {
+        double now = 1.0;
+        TargetPlateModel model = Build(Player());
+        var (deck, _) = Make(model, () => now);
+        Move(deck, TargetDeckGeometry.Stud(1));
+        Assert.Null(deck.VisibleTooltip);
+        now += UiCommandDeck.TooltipDwell + 0.01;
+        HudTooltipContent tip = deck.VisibleTooltip!;
+        Assert.Equal("Give selected item", tip.Title);
+        Assert.Equal(model.Studs[1].DisabledReason, tip.Detail);
+
+        Move(deck, TargetDeckGeometry.Stud(0));
+        now += UiCommandDeck.TooltipDwell + 0.01;
+        Assert.Equal("Trade", deck.VisibleTooltip!.Title);
+        Assert.Null(deck.VisibleTooltip!.Detail);
+    }
+
+    [Fact]
+    public void FailedStaminaSaysAssessFailed()
+    {
+        var log = new TargetAppraisalLog();
+        log.Record(7, false, 1f, now: 49.0);
+        TargetPlateModel model = Build(Monster(), log: log);
+        HudTooltipContent tip = UiTargetDeck.TooltipFor(TargetZone.Stamina, model)!;
+        Assert.Equal("Assess failed", tip.Title);
+        Assert.Equal("Assess failed", UiTargetDeck.TooltipFor(TargetZone.Mana, model)!.Title);
+    }
+
+    [Fact]
+    public void ThePluginRowTooltipIsTheOverflowWhenThereIsOne()
+    {
+        TargetPlateModel model = Build(Monster(), pluginRows: [PluginRow], overflow: "Loot Bot: 3 more rows");
+        Assert.Equal("Loot Bot: 3 more rows", UiTargetDeck.TooltipFor(TargetZone.PluginRow0, model)!.Detail);
+        model = Build(Monster(), pluginRows: [PluginRow]);
+        Assert.Equal(PluginRow.Tooltip, UiTargetDeck.TooltipFor(TargetZone.PluginRow0, model)!.Detail);
+    }
+
+    [Fact]
+    public void TickedFiresAfterEachRefreshTick()
+    {
+        TargetPlateModel? seen = null;
+        TargetPlateModel model = Build(Monster());
+        var deck = new UiTargetDeck(() => model, new NoActions(), icons: null, clock: () => 0.0);
+        int ticks = 0;
+        deck.Ticked += () => { ticks++; seen = deck.View; };
+        deck.TickSelfAndChildren(0.016);
+        Assert.Equal(1, ticks);
+        Assert.Same(model, seen);
+    }
+}

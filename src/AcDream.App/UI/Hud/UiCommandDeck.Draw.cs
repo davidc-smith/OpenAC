@@ -53,17 +53,10 @@ internal sealed partial class UiCommandDeck
     private void DrawBar(UiRenderContext ctx, DeckRect r, string label, DeckVitalView vital,
         (Vector4 Top, Vector4 Bottom) ink, float pulse)
     {
-        ctx.FillRoundedRect(r.X, r.Y, r.W, r.H, P(4), Track);
-        if (vital.Known)
-        {
-            if (vital.Trail > vital.Fill)
-                ctx.FillRoundedRect(r.X, r.Y, r.W * vital.Trail, r.H, P(3), TrailInk);
-            if (vital.Fill > 0f)
-                ctx.FillVerticalGradient(r.X, r.Y, r.W * vital.Fill, r.H,
-                    new CanvasCornerRadii(P(3), P(3), P(3), P(3)), ink.Top, ink.Bottom);
-            if (pulse > 0f)
-                ctx.FillRoundedRect(r.X, r.Y, r.W * vital.Fill, r.H, P(3), new Vector4(1f, 1f, 1f, pulse * 0.4f));
-        }
+        DeckChrome.DrawGauge(ctx, r, vital.Known ? vital.Fill : 0f, ink, 1f, _geometry.Scale,
+            trail: vital.Known ? vital.Trail : 0f);
+        if (vital.Known && pulse > 0f)
+            ctx.FillRoundedRect(r.X, r.Y, r.W * vital.Fill, r.H, P(3), new Vector4(1f, 1f, 1f, pulse * 0.4f));
         DrawText(ctx, label, r.X + P(8), r, LabelInk, small: true);
         DrawTextRight(ctx, vital.Text, r.X + r.W - P(8), r, TextInk);
     }
