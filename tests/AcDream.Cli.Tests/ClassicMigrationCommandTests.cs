@@ -10,11 +10,14 @@ public sealed class ClassicMigrationCommandTests
         using var directory = new TemporaryDirectory();
         string vtank = directory.Create("VirindiTank");
         Write(vtank, "Hunt.met", "meta");
+        // Named, though empty: left out, the command looks for the usual
+        // UtilityBelt folder, and a machine with one would add its files.
+        string ub = directory.Create("UtilityBelt");
         string root = Path.Combine(directory.Path, "openac");
         var output = new StringWriter();
 
         int exit = ClassicMigrationCommand.Run(
-            ["--vtank", vtank, "--root", root, "--dry-run"],
+            ["--vtank", vtank, "--ub", ub, "--root", root, "--dry-run"],
             output,
             new StringWriter());
 
