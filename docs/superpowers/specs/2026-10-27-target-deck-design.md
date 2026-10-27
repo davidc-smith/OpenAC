@@ -183,3 +183,24 @@ Also verify that:
 
 - This spec is on branch `docs/target-deck-spec`. Next comes an implementation plan (writing-plans) on the same branch.
 - Implementation happens in a worktree on `feat/target-deck`. It merges to `main` and `rynth` after the live check passes, and the contract moves to `0.1.28-fork.2`.
+
+## Implementation notes (2026-10-27)
+
+These changes were made while the feature was planned and built. They supersede the sections above.
+
+- **Appraisal origin:** auto-ID uses the existing `AppraisalRequestOrigin.Automation`. No new `HudAuto` origin was added, because Automation already behaves as specified.
+- **Triggers:**
+  - No "spell landed" event exists, so spell damage reaches auto-ID through the health-change trigger.
+  - Melee and missile hits are matched by the defender's name.
+  - A refused request stays pending until it is accepted.
+  - When the deck is shown, the current selection is re-synced.
+- **Dropped actions:** "Mark on map" and summon "Dismiss" are dropped because the client has no built-in path for them. The ⋯ menus are trimmed to Examine, Copy name, Follow and Swear allegiance.
+- **Deferred rows:** these rows are not built yet because their data is not wired:
+  - Corpse: whose kill, item count, decay timer
+  - Player: monarch, allegiance
+  - NPC: vendor buy list
+  - Self: burden, buff count
+- **Summon owner:** another player's summon shows its owner on the sub line.
+- **Plugin order:** plugin rows are ordered by provider registration order, not plugin load order. `IsAvailable` reports whether the plate is on screen; `AddProvider` always registers on a host with a window.
+- **Pack-item actions:** Give, Use on and Use key act on the item held by use-with-target mode, because the client has one selection.
+- **PWD flags:** the existing upstream `PublicWeenieFlags` enum is reused with its upstream member names.
