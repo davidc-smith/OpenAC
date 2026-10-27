@@ -20,6 +20,7 @@ public static class WindowNames
     public const string JumpPowerbar = "jump-powerbar";
     public const string CommandDeck = "command-deck";
     public const string SpellDeck = "spell-deck";
+    public const string ChatDeck = "chat-deck";
     public const string Spellbook = "spellbook";
     public const string Indicators = "indicators";
     public const string PositiveEffects = "effects-positive";

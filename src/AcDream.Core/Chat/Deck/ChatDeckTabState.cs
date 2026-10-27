@@ -18,6 +18,10 @@ public sealed class ChatDeckTabState
     public int Count { get; private set; }
     public int Unread { get; private set; }
     public bool Alert { get; private set; }
+    /// <summary>Changes on every add and clear; a reader that laid the tab out keeps its copy while this is unchanged.</summary>
+    public long Version { get; private set; }
+    /// <summary>Lines added since the last clear, including those the ring has since dropped.</summary>
+    public long Added { get; private set; }
 
     public ChatDeckLine this[int index]
     {
@@ -48,6 +52,8 @@ public sealed class ChatDeckTabState
             _ring[_start] = line;
             _start = (_start + 1) % _ring.Length;
         }
+        Version++;
+        Added++;
         if (seen) return;
         Unread++;
         if (line.Alert) Alert = true;
@@ -65,5 +71,7 @@ public sealed class ChatDeckTabState
         _start = 0;
         Count = 0;
         MarkRead();
+        Added = 0;
+        Version++;
     }
 }

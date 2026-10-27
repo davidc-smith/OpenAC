@@ -17,6 +17,17 @@ internal sealed class DeckFonts(Func<float, BundledUiFontWeight, UiDatFont> bake
 
     private readonly Dictionary<float, DeckFontSet> _sets = [];
 
+    private readonly Dictionary<(float, BundledUiFontWeight), Lazy<UiDatFont>> _faces = [];
+
+    /// <summary>A bundled sans face at a whole-pixel height (the Chat Deck's text sizes), baked once.</summary>
+    public UiDatFont Face(float pixelHeight, BundledUiFontWeight weight)
+    {
+        float px = PixelHeight(pixelHeight, 1f);
+        if (!_faces.TryGetValue((px, weight), out Lazy<UiDatFont>? face))
+            _faces[(px, weight)] = face = new(() => bake(px, weight));
+        return face.Value;
+    }
+
     public static DeckFonts Load(TextureCache textures) =>
         new((pixelHeight, weight) => BundledUiFont.Load(textures, pixelHeight, weight));
 
