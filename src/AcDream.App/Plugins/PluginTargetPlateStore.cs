@@ -24,6 +24,8 @@ public sealed class PluginTargetPlateStore
     private readonly List<Registration> _registrations = new();
     private readonly Dictionary<string, Surface> _surfaces = new(StringComparer.Ordinal);
     private readonly HashSet<(Registration, uint)> _warned = new();
+    // Which provider produced each action of the cached object, by (plugin id, action id).
+    private readonly Dictionary<(string, string), Registration> _actionOwners = new();
     private uint _cachedObject;
     private TargetPlatePluginContent? _cached;
 
@@ -58,6 +60,7 @@ public sealed class PluginTargetPlateStore
         var plate = new List<TargetPluginRow>();
         var overflow = new List<string>();
         var actions = new List<TargetPluginAction>();
+        _actionOwners.Clear();
         var perProvider = new List<(Registration Reg, List<PluginTargetPlateRow> Rows)>();
         foreach (Registration reg in _registrations.ToArray())
         {
@@ -66,19 +69,25 @@ public sealed class PluginTargetPlateStore
             catch (Exception error) { WarnOnce(reg, query.ObjectId, $"target plate provider threw {error.GetType().Name}: {error.Message}"); continue; }
             if (content is null)
                 continue;
-            var rows = content.Rows.Take(PluginTargetPlateContent.MaximumRows).ToList();
-            if (content.Rows.Count > PluginTargetPlateContent.MaximumRows || content.Actions.Count > PluginTargetPlateContent.MaximumActions)
+            IReadOnlyList<PluginTargetPlateRow> contentRows = content.Rows ?? Array.Empty<PluginTargetPlateRow>();
+            IReadOnlyList<PluginTargetPlateAction> contentActions = content.Actions ?? Array.Empty<PluginTargetPlateAction>();
+            var rows = contentRows.Take(PluginTargetPlateContent.MaximumRows).ToList();
+            if (contentRows.Count > PluginTargetPlateContent.MaximumRows || contentActions.Count > PluginTargetPlateContent.MaximumActions)
                 WarnOnce(reg, query.ObjectId, $"target plate provider returned more than {PluginTargetPlateContent.MaximumRows} rows or {PluginTargetPlateContent.MaximumActions} actions; the rest were dropped");
             perProvider.Add((reg, rows));
-            foreach (PluginTargetPlateAction a in content.Actions.Take(PluginTargetPlateContent.MaximumActions))
+            foreach (PluginTargetPlateAction a in contentActions.Take(PluginTargetPlateContent.MaximumActions))
+            {
                 actions.Add(new(reg.Surface.Id, reg.Surface.Name, a.Id, a.Label, a.Enabled));
+                _actionOwners.TryAdd((reg.Surface.Id, a.Id), reg);
+            }
         }
+        int withRows = perProvider.Count(p => p.Rows.Count > 0);
         // One line per provider in order, then the rest go to the tooltip.
         foreach (var (_, rows) in perProvider)
             if (rows.Count > 0 && plate.Count < PlateLines) { plate.Add(Map(rows[0])); rows.RemoveAt(0); }
         foreach (var (_, rows) in perProvider)
             foreach (PluginTargetPlateRow r in rows)
-                if (plate.Count < PlateLines && perProvider.Count == 1) plate.Add(Map(r));
+                if (plate.Count < PlateLines && withRows == 1) plate.Add(Map(r));
                 else overflow.Add($"{r.Label}: {r.Value}");
         _cachedObject = query.ObjectId;
         _cached = new(plate, overflow.Count > 0 ? string.Join("\n", overflow) : null, actions);
@@ -87,13 +96,10 @@ public sealed class PluginTargetPlateStore
 
     public void RunAction(string pluginId, uint objectId, string actionId)
     {
-        foreach (Registration reg in _registrations.ToArray())
-        {
-            if (reg.Surface.Id != pluginId)
-                continue;
-            try { reg.Provider.OnAction(objectId, actionId); }
-            catch (Exception error) { _warn(pluginId, $"target plate action '{actionId}' threw {error.GetType().Name}: {error.Message}"); }
-        }
+        if (!_actionOwners.TryGetValue((pluginId, actionId), out Registration? reg))
+            return;
+        try { reg.Provider.OnAction(objectId, actionId); }
+        catch (Exception error) { _warn(pluginId, $"target plate action '{actionId}' threw {error.GetType().Name}: {error.Message}"); }
     }
 
     private static TargetPluginRow Map(PluginTargetPlateRow r) =>
@@ -108,6 +114,9 @@ public sealed class PluginTargetPlateStore
     private void Remove(Registration reg)
     {
         _registrations.Remove(reg);
+        _warned.RemoveWhere(w => w.Item1 == reg);
+        foreach (var key in _actionOwners.Where(o => o.Value == reg).Select(o => o.Key).ToArray())
+            _actionOwners.Remove(key);
         _cached = null;
     }
 
@@ -122,6 +131,8 @@ public sealed class PluginTargetPlateStore
         public IDisposable AddProvider(IPluginTargetPlateProvider provider)
         {
             ArgumentNullException.ThrowIfNull(provider);
+            if (!store._surfaces.TryGetValue(id, out Surface? live) || live != this)
+                return NoRegistration.Instance;
             var reg = new Registration(this, provider);
             store._registrations.Add(reg);
             store._cached = null;
@@ -140,6 +151,12 @@ public sealed class PluginTargetPlateStore
                 store.Remove(reg);
             store._surfaces.Remove(id);
         }
+    }
+
+    private sealed class NoRegistration : IDisposable
+    {
+        public static NoRegistration Instance { get; } = new();
+        public void Dispose() { }
     }
 
     private sealed class Unregister(PluginTargetPlateStore store, Registration reg) : IDisposable

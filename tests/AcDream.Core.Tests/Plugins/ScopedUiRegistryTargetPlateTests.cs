@@ -5,7 +5,7 @@ using AcDream.Plugin.Abstractions;
 namespace AcDream.Core.Tests.Plugins;
 
 /// <summary>
-/// A plugin's world-marker surface is asked of the host once, under the
+/// A plugin's target-plate surface is asked of the host once, under the
 /// plugin's own owner, and goes with the plugin through the scoped
 /// registry's existing rollback.
 /// </summary>
@@ -92,5 +92,17 @@ public sealed class ScopedUiRegistryTargetPlateTests
         scoped.Dispose();
 
         Assert.Equal(1, inner.Plate.Disposals);
+    }
+
+    [Fact]
+    public void ReadingAfterTheHostIsDisposedThrows()
+    {
+        var inner = new FakeScopedUiRegistry();
+        var scoped = new ScopedPluginHost(new StubHost(inner), "example.plugin", "Example");
+        _ = scoped.Ui.TargetPlate;
+
+        scoped.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => scoped.Ui.TargetPlate);
     }
 }

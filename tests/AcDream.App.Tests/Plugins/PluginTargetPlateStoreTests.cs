@@ -42,7 +42,7 @@ public sealed class PluginTargetPlateStoreTests
         var store = new PluginTargetPlateStore(() => true, (id, msg) => warnings.Add(id));
         var p = new P(_ => Rows("1", "2", "3"));
         store.For("a", "Alpha").AddProvider(p);
-        store.Describe(Q);
+        Assert.Equal(2, store.Describe(Q).Rows.Count);
         store.Invalidate(7);
         store.Describe(Q);
         Assert.Single(warnings);
@@ -121,5 +121,65 @@ public sealed class PluginTargetPlateStoreTests
         Assert.NotSame(first, second);
         second.AddProvider(new P(_ => Rows("new")));
         Assert.Equal(new[] { "new" }, store.Describe(Q).Rows.Select(r => r.Label));
+    }
+
+    [Fact]
+    public void ALoneProviderUsesBothLinesWithNoTooltip()
+    {
+        var store = new PluginTargetPlateStore(() => true, (_, _) => { });
+        store.For("a", "Alpha").AddProvider(new P(_ => Rows("a1", "a2")));
+        TargetPlatePluginContent c = store.Describe(Q);
+        Assert.Equal(new[] { "a1", "a2" }, c.Rows.Select(r => r.Label));
+        Assert.Null(c.OverflowTooltip);
+    }
+
+    [Fact]
+    public void AnEmptyOrNullProviderDoesNotStopALoneProviderUsingBothLines()
+    {
+        var store = new PluginTargetPlateStore(() => true, (_, _) => { });
+        store.For("a", "Alpha").AddProvider(new P(_ => Rows("a1", "a2")));
+        store.For("b", "Beta").AddProvider(new P(_ => Rows()));
+        store.For("c", "Gamma").AddProvider(new P(_ => null));
+        TargetPlatePluginContent c = store.Describe(Q);
+        Assert.Equal(new[] { "a1", "a2" }, c.Rows.Select(r => r.Label));
+        Assert.Null(c.OverflowTooltip);
+    }
+
+    [Fact]
+    public void NullRowsAndActionsAreTreatedAsEmpty()
+    {
+        var store = new PluginTargetPlateStore(() => true, (_, _) => { });
+        store.For("a", "Alpha").AddProvider(new P(_ => new PluginTargetPlateContent(null!, null!)));
+        TargetPlatePluginContent c = store.Describe(Q);
+        Assert.Empty(c.Rows);
+        Assert.Empty(c.Actions);
+    }
+
+    [Fact]
+    public void AnActionGoesOnlyToTheProviderThatOfferedIt()
+    {
+        var store = new PluginTargetPlateStore(() => true, (_, _) => { });
+        PluginTargetPlateContent With(string id) => new(Array.Empty<PluginTargetPlateRow>(), new[] { new PluginTargetPlateAction(id, id) });
+        var p1 = new P(_ => With("one"));
+        var p2 = new P(_ => With("two"));
+        IPluginTargetPlate plate = store.For("a", "Alpha");
+        plate.AddProvider(p1);
+        plate.AddProvider(p2);
+        Assert.Equal(2, store.Describe(Q).Actions.Count);
+        store.RunAction("a", 7, "one");
+        store.RunAction("a", 7, "two");
+        Assert.Equal(new[] { (7u, "one") }, p1.Actions);
+        Assert.Equal(new[] { (7u, "two") }, p2.Actions);
+    }
+
+    [Fact]
+    public void AddingAProviderToADisposedSurfaceRegistersNothing()
+    {
+        var store = new PluginTargetPlateStore(() => true, (_, _) => { });
+        IPluginTargetPlate plate = store.For("a", "Alpha");
+        ((IDisposable)plate).Dispose();
+        IDisposable reg = plate.AddProvider(new P(_ => Rows("x")));
+        reg.Dispose();
+        Assert.Empty(store.Describe(Q).Rows);
     }
 }
