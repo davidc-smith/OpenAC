@@ -945,8 +945,9 @@ public sealed class KeyboardConfigControllerTests
         UiButton defaultsButton = (UiButton)layout.FindElement(0x1000002Au)!;
         defaultsButton.OnClick!.Invoke();
 
-        (InputAction Action, IReadOnlyList<Binding> Value) written = Assert.Single(fake.MappedSets);
-        Assert.Equal(InputAction.CombatLowAttack, written.Action);
+        // The Combat page also carries the client-only spell bar rows.
+        (InputAction Action, IReadOnlyList<Binding> Value) written = Assert.Single(
+            fake.MappedSets, s => s.Action == InputAction.CombatLowAttack);
         Binding result = Assert.Single(written.Value);
         Assert.Equal(Silk.NET.Input.Key.Delete, result.Chord.Key); // the DAT default key
         Assert.Equal(ActivationType.Hold, result.Activation);      // preserved, not reset to Press

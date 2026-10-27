@@ -18,7 +18,7 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public void SetDesiredPower(float power) { }
         public void SetOption(CharacterOptionId option, bool value) { }
         public void Recall(RuntimePortalCommand command) { }
-        public void Recast() { }
+        public void CastOutlined() { }
     }
 
     private const float DeckLeft = 100f, DeckTop = 200f;

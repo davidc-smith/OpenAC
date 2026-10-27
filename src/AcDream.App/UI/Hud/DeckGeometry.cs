@@ -14,7 +14,7 @@ public enum DeckZone
     StudRepeat, StudAutoTarget, StudKeepInView,
     Health, Stamina, Mana,
     PowerTrack, High, Medium, Low,
-    Recast,
+    Cast,
     Recall0, Recall1, Recall2, Recall3, Recall4,
     Jump,
 }
@@ -53,8 +53,14 @@ public sealed record DeckGeometry
     public float Height => BaseHeight * Scale;
 
     /// <summary>A geometry with the scale snapped and the stretch limited.</summary>
-    public static DeckGeometry Create(float scale, float stretch) =>
-        new(SnapScale(scale), Math.Clamp(float.IsFinite(stretch) ? stretch : MinStretch, MinStretch, MaxStretch));
+    public static DeckGeometry Create(float scale, float stretch) => Create(scale, stretch, MinStretch);
+
+    /// <summary>As <see cref="Create(float, float)"/>, with the stretch no lower than <paramref name="minStretch"/>.</summary>
+    public static DeckGeometry Create(float scale, float stretch, float minStretch)
+    {
+        float min = Math.Min(Math.Max(MinStretch, float.IsFinite(minStretch) ? minStretch : MinStretch), MaxStretch);
+        return new(SnapScale(scale), Math.Clamp(float.IsFinite(stretch) ? stretch : min, min, MaxStretch));
+    }
 
     /// <summary>A scale limited to the range, locked onto 1 when close, else on a 0.05 step.</summary>
     public static float SnapScale(float raw)
@@ -134,8 +140,20 @@ public sealed record DeckGeometry
     public DeckRect PowerTrack => S(RowValueLeft, 98f, HeightButtonX(0) - 8f - RowValueLeft, 10f);
     public DeckRect HeightButton(int index) => S(HeightButtonX(index), 92f, 26f, 22f);
 
-    public DeckRect Recast => S(ContentRight - 26f, 92f, 26f, 22f);
-    public DeckRect CastingText => S(RowValueLeft, 92f, ContentRight - 26f - 6f - RowValueLeft, 22f);
+    /// <summary>The CAST button: its icon and the word CAST, wider than the other studs.</summary>
+    private const float CastWidth = 54f;
+    public DeckRect Cast => S(ContentRight - CastWidth, 92f, CastWidth, 22f);
+    public DeckRect CastingText => S(RowValueLeft, 92f, ContentRight - CastWidth - 6f - RowValueLeft, 22f);
+
+    /// <summary>Where the CAST button's icon and word go: a 14-point icon, a 3-point
+    /// gap, then the word (<paramref name="wordWidth"/> wide), centred on the button
+    /// as one group.</summary>
+    public static (float IconX, float IconY, float IconSize, float TextX) CastLabel(DeckRect cast, float wordWidth, float scale)
+    {
+        float icon = 14f * scale, gap = 3f * scale;
+        float iconX = cast.X + (cast.W - (icon + gap + wordWidth)) / 2f;
+        return (iconX, cast.Y + (cast.H - icon) / 2f, icon, iconX + icon + gap);
+    }
 
     public DeckRect RecallStud(int index) => S(RowValueLeft + index * 30f, 92f, 26f, 22f);
 
@@ -150,7 +168,7 @@ public sealed record DeckGeometry
         yield return HealthBar; yield return StaminaBar; yield return ManaBar;
         yield return ContextRow; yield return RowLabel; yield return PowerTrack;
         for (int i = 0; i < 3; i++) yield return HeightButton(i);
-        yield return CastingText; yield return Recast;
+        yield return CastingText; yield return Cast;
         for (int i = 0; i < 5; i++) yield return RecallStud(i);
         yield return JumpLabel; yield return JumpTrack;
         for (int i = 0; i < 3; i++) yield return Stud(i);
@@ -170,7 +188,7 @@ public sealed record DeckGeometry
         DeckZone.High => HeightButton(0),
         DeckZone.Medium => HeightButton(1),
         DeckZone.Low => HeightButton(2),
-        DeckZone.Recast => Recast,
+        DeckZone.Cast => Cast,
         >= DeckZone.Recall0 and <= DeckZone.Recall4 => RecallStud(zone - DeckZone.Recall0),
         DeckZone.Jump => JumpTrack,
         _ => Frame,
@@ -217,7 +235,7 @@ public sealed record DeckGeometry
                 if (HeightButton(2).Contains(x, y)) return DeckZone.Low;
                 break;
             case DeckContextRow.Casting:
-                if (Recast.Contains(x, y)) return DeckZone.Recast;
+                if (Cast.Contains(x, y)) return DeckZone.Cast;
                 break;
             case DeckContextRow.Recall:
                 for (int i = 0; i < 5; i++)

@@ -21,7 +21,7 @@ public readonly record struct CommandDeckInput(
     AttackHeight RequestedHeight,
     bool HasPendingCast,
     string? PendingSpellName,
-    string? LastSpellName,
+    string? OutlinedSpellName,
     JumpChargeSnapshot Jump,
     bool RepeatAttacks,
     bool AutoTarget,
@@ -44,7 +44,8 @@ public sealed record CommandDeckView(
     AttackHeight Height,
     string CastingText,
     bool CastingLit,
-    bool RecastEnabled,
+    bool CastingDim,
+    bool CastEnabled,
     bool ShowStuds,
     bool RepeatAttacks,
     bool AutoTarget,
@@ -89,12 +90,12 @@ public sealed class CommandDeckModel
             _ => DeckContextRow.Recall,
         };
 
-        (string castingText, bool castingLit) = input switch
+        (string castingText, bool castingLit, bool castingDim) = input switch
         {
-            { HasPendingCast: true, PendingSpellName: string name } => (name, true),
-            { HasPendingCast: true } => ("Casting...", true),
-            { LastSpellName: string last } => (last, false),
-            _ => ("No spell cast yet", false),
+            { HasPendingCast: true, PendingSpellName: string name } => (name, true, false),
+            { HasPendingCast: true } => ("Casting...", true, false),
+            { OutlinedSpellName: string outlined } => (outlined, false, false),
+            _ => ("No spell selected", false, true),
         };
 
         return new CommandDeckView(
@@ -110,7 +111,8 @@ public sealed class CommandDeckModel
             Height: input.RequestedHeight,
             CastingText: castingText,
             CastingLit: castingLit,
-            RecastEnabled: !input.HasPendingCast && input.LastSpellName is not null,
+            CastingDim: castingDim,
+            CastEnabled: !input.HasPendingCast && input.OutlinedSpellName is not null,
             ShowStuds: row == DeckContextRow.Power,
             RepeatAttacks: input.RepeatAttacks,
             AutoTarget: input.AutoTarget,

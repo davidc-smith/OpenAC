@@ -73,8 +73,9 @@ public sealed class KeyboardConfigInstalledDatConformanceTests
 
         Assert.NotNull(controller);
         Assert.Equal(306, snapshot!.Rows.Count);
-        Assert.Equal(snapshot.Rows.Count, controller!.Rows.Count);
-        Assert.Equal(306, controller.Page.Rows.Count);
+        int clientRows = ClientActionCatalog.Entries.Count; // spell bar rows, not in the DAT
+        Assert.Equal(snapshot.Rows.Count + clientRows, controller!.Rows.Count);
+        Assert.Equal(306 + clientRows, controller.Page.Rows.Count);
         Assert.All(controller.Rows, row =>
         {
             Assert.NotNull(row.MappedAction);
@@ -89,7 +90,9 @@ public sealed class KeyboardConfigInstalledDatConformanceTests
         });
         Assert.Equal(
             snapshot.Rows.Select(static row => (row.InputMapId, row.ActionId)).ToHashSet(),
-            controller.Rows.Select(static row => (row.InputMapId, row.ActionId)).ToHashSet());
+            controller.Rows
+                .Where(static row => row.ActionId < ClientActionCatalog.FirstClientActionId)
+                .Select(static row => (row.InputMapId, row.ActionId)).ToHashSet());
 
         uint key = DatStringResolver.ComputeHash("KEY");
         uint action = DatStringResolver.ComputeHash("ACTION");

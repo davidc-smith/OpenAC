@@ -154,6 +154,18 @@ public sealed class KeyboardConfigController
                 foreach (RetailActionMapRow row in inputMapGroup)
                     controller.BuildActionRow(listBox, row, resolveString, bindings);
             }
+
+            if (cls == RetailActionClass.Combat)
+            {
+                BuildClientHeaderRow(listBox, ClientActionCatalog.SpellBarGroup);
+                KeyBindings retailDefaults = KeyBindings.RetailDefaults();
+                foreach (ClientActionEntry entry in ClientActionCatalog.Entries)
+                    controller.BuildRow(listBox, new RowSpec(
+                        entry.InputMapId, entry.ActionId, entry.Action, entry.Label,
+                        Tooltip: null,
+                        Defaults: retailDefaults.ForAction(entry.Action).Select(b => b.Chord).ToArray()),
+                        bindings);
+            }
         }
 
         WireScreenButtons(layout, controller, bindings);
@@ -198,18 +210,56 @@ public sealed class KeyboardConfigController
         header.LinesProvider = () => new[] { new UiText.Line(label, header.DefaultColor) };
     }
 
+    // Client-only actions have their own keyboard rows, so they are bindable
+    // here and must not count as non-bindable conflicts.
+    private static readonly HashSet<InputAction> ClientActions =
+        ClientActionCatalog.Entries.Select(e => e.Action).ToHashSet();
+
+    private sealed record RowSpec(
+        uint InputMapId,
+        uint ActionId,
+        InputAction? Action,
+        string? Label,
+        string? Tooltip,
+        IReadOnlyList<KeyChord> Defaults);
+
+    private static void BuildClientHeaderRow(UiTemplateListBox listBox, string label)
+    {
+        if (listBox.AddItemFromTemplateList(HeaderTemplateIndex) is not UiText header)
+        {
+            Console.WriteLine(
+                "[UI] KeyboardConfigController: header template did not build as UiText "
+                + $"for client group '{label}'.");
+            return;
+        }
+        header.LinesProvider = () => new[] { new UiText.Line(label, header.DefaultColor) };
+    }
+
     private void BuildActionRow(
         UiTemplateListBox listBox,
         RetailActionMapRow row,
         Func<uint, uint, string?> resolveString,
         Bindings bindings)
     {
+        InputAction? resolved = RetailActionIdentityTable.TryResolve(
+            row.InputMapId, row.ActionId, out InputAction resolvedAction) ? resolvedAction : null;
+        BuildRow(listBox, new RowSpec(
+            row.InputMapId,
+            row.ActionId,
+            resolved,
+            resolveString(RetailInputMapHeaders.StringTableId, row.LabelHash),
+            resolveString(RetailInputMapHeaders.StringTableId, row.TooltipHash),
+            DatDefaultsToChords(row.DefaultBindings)), bindings);
+    }
+
+    private void BuildRow(UiTemplateListBox listBox, RowSpec spec, Bindings bindings)
+    {
         UiElement? built = listBox.AddItemFromTemplateList(RowTemplateIndex);
         if (built is null)
         {
             Console.WriteLine(
                 "[UI] KeyboardConfigController: row template did not build for InputMap "
-                + $"0x{row.InputMapId:X8} action 0x{row.ActionId:X8}.");
+                + $"0x{spec.InputMapId:X8} action 0x{spec.ActionId:X8}.");
             return;
         }
 
@@ -220,11 +270,12 @@ public sealed class KeyboardConfigController
                 keyButtons.Add(button);
         }
 
-        string? label = resolveString(RetailInputMapHeaders.StringTableId, row.LabelHash);
-        string? tooltip = resolveString(RetailInputMapHeaders.StringTableId, row.TooltipHash);
+        string? label = spec.Label;
+        string? tooltip = spec.Tooltip;
 
-        bool mapped = RetailActionIdentityTable.TryResolve(row.InputMapId, row.ActionId, out InputAction action);
-        InputAction? mappedAction = mapped ? action : null;
+        InputAction? mappedAction = spec.Action;
+        bool mapped = mappedAction is not null;
+        InputAction action = mappedAction.GetValueOrDefault();
 
         var captionText = new UiText
         {
@@ -251,13 +302,13 @@ public sealed class KeyboardConfigController
         (ActivationType Activation, InputScope Scope) template = liveBindings.Count > 0
             ? (liveBindings[0].Activation, liveBindings[0].Scope)
             : (
-                RetailActionIdentityTable.ActivationFor(row.InputMapId, row.ActionId),
-                RetailActionIdentityTable.ScopeForInputMap(row.InputMapId));
+                RetailActionIdentityTable.ActivationFor(spec.InputMapId, spec.ActionId),
+                RetailActionIdentityTable.ScopeForInputMap(spec.InputMapId));
 
-        IReadOnlyList<KeyChord> defaults = DatDefaultsToChords(row.DefaultBindings);
+        IReadOnlyList<KeyChord> defaults = spec.Defaults;
         IReadOnlyList<KeyChord> storedUnmapped = mapped
             ? Array.Empty<KeyChord>()
-            : bindings.CurrentForUnmapped((row.InputMapId, row.ActionId));
+            : bindings.CurrentForUnmapped((spec.InputMapId, spec.ActionId));
         IReadOnlyList<KeyChord> initial = mapped
             ? liveBindings.Select(b => b.Chord).ToArray()
             : storedUnmapped.Count > 0 ? storedUnmapped : defaults;
@@ -270,11 +321,11 @@ public sealed class KeyboardConfigController
                     action,
                     real.Select(c => new Binding(c, action, template.Activation, template.Scope)).ToArray());
             else
-                bindings.SetForUnmapped((row.InputMapId, row.ActionId), real);
+                bindings.SetForUnmapped((spec.InputMapId, spec.ActionId), real);
         });
         Page.Register(model);
 
-        var view = new RowView(row.InputMapId, row.ActionId, mappedAction, label, model, keyButtons);
+        var view = new RowView(spec.InputMapId, spec.ActionId, mappedAction, label, model, keyButtons);
         _rows.Add(view);
 
         RefreshRowButtons(view);
@@ -522,6 +573,7 @@ public sealed class KeyboardConfigController
             foreach (InputAction candidate in Enum.GetValues<InputAction>())
             {
                 if (RetailActionIdentityTable.Map.Values.Contains(candidate)) continue;
+                if (ClientActions.Contains(candidate)) continue;
                 if (_bindings.CurrentForAction(candidate).Any(b => b.Chord == chord))
                     return (ConflictOutcome.NonBindable, new List<RowView>());
             }

@@ -116,6 +116,7 @@ internal sealed partial class UiCommandDeck : UiElement
         bool corner = (edges & (ResizeEdges.Top | ResizeEdges.Bottom)) != 0;
         DeckGeometry from = _resizeFrom ??= _geometry;
         _geometry = corner ? from.WithCornerSize(width, height) : from.WithWidth(width);
+        _geometry = DeckGeometry.Create(_geometry.Scale, _geometry.Stretch, MinStretchNow);
         // The root keeps the proposed size on screen, but the geometry can
         // grow past it (a scale snapping up, the width following the scale),
         // so fit it again. The left edge never moves; a top drag keeps the
@@ -125,8 +126,77 @@ internal sealed partial class UiCommandDeck : UiElement
             float roomHeight = (edges & ResizeEdges.Top) != 0 ? Top + Height : parent.Height - Top;
             _geometry = _geometry.FitWithin(parent.Width - Left, roomHeight);
         }
+        // An attached Spell Deck sits on the deck's top and the two must stay
+        // on screen together, so a corner scale stops at the largest step
+        // that leaves room above for it.
+        if (corner && AboveHeightAtScale is { } above)
+        {
+            float bottom = Top + Height;
+            bool topDrag = (edges & ResizeEdges.Top) != 0;
+            while (_geometry.Scale > DeckGeometry.MinScale + 1e-4f
+                   && (topDrag ? bottom - _geometry.Height : Top) - above(_geometry.Scale) < -1e-3f)
+            {
+                _geometry = DeckGeometry.Create(_geometry.Scale - DeckGeometry.ScaleStep, _geometry.Stretch, MinStretchNow);
+            }
+        }
         width = _geometry.Width;
         height = _geometry.Height;
+    }
+
+    /// <summary>A resize forwarded from the attached Spell Deck's grip (the root resizes the
+    /// Spell Deck, not this window): the same rules as this window's own <paramref name="edges"/>
+    /// grip, from the proposed size, applied here with no report to the layout (the dock
+    /// reports it once the drag ends, then calls <see cref="EndForwardedResize"/>). The left
+    /// edge stays; a top drag keeps the bottom, any other keeps the top.</summary>
+    internal DeckGeometry ResizeForwarded(ResizeEdges edges, float width, float height)
+    {
+        float bottom = Top + Height;
+        ConstrainResize(edges, ref width, ref height);
+        Width = width;
+        Height = height;
+        if ((edges & ResizeEdges.Top) != 0) Top = bottom - height;
+        ResetAnchorCapture();
+        return _geometry;
+    }
+
+    /// <summary>Ends a forwarded resize: the next one measures from the size then.</summary>
+    internal void EndForwardedResize() => _resizeFrom = null;
+
+    /// <summary>The narrowest stretch the deck may have (the attached Spell Deck's fullest row); null = no limit.</summary>
+    internal Func<float>? MinStretch { get; set; }
+
+    /// <summary>The highest the deck's top may go (room for the attached Spell Deck above it); null = no limit.</summary>
+    internal Func<float>? TopLimit { get; set; }
+
+    /// <summary>The height of what sits on the deck's top (the attached Spell Deck) at a
+    /// candidate scale; a corner scale stops where it still fits. Null = nothing above.</summary>
+    internal Func<float, float>? AboveHeightAtScale { get; set; }
+
+    private float MinStretchNow => MinStretch?.Invoke() ?? DeckGeometry.MinStretch;
+
+    /// <summary>Whether something sits joined on the deck's top now (the attached Spell
+    /// Deck, while it shows); null = nothing attached.</summary>
+    internal Func<bool>? JoinedAbove { get; set; }
+
+    /// <summary>While the attached Spell Deck shows on it, the frame's top corners are square so the two meet on one seam.</summary>
+    internal bool SquareTopCorners => JoinedAbove?.Invoke() == true;
+
+    // Mounted with imported chrome, the deck is its own outer frame, so the
+    // root's window drag reaches this override directly.
+    internal override void ConstrainWindowDrag(ref float left, ref float top, int pointerX, int pointerY)
+    {
+        if (TopLimit?.Invoke() is float limit && top < limit) top = limit;
+    }
+
+    /// <summary>Widens the deck to <see cref="MinStretch"/> when it is narrower, keeping it on screen. True when it changed.</summary>
+    internal bool EnforceMinStretch()
+    {
+        float min = MinStretchNow;
+        if (_geometry.Stretch >= min - 1e-4f) return false;
+        ApplyGeometry(DeckGeometry.Create(_geometry.Scale, min, min));
+        if (Parent is { } parent && Left + Width > parent.Width)
+            Left = Math.Max(0f, parent.Width - Width);
+        return true;
     }
 
     /// <summary>Moves the geometry to the deck's current size (after a restore,
@@ -134,7 +204,8 @@ internal sealed partial class UiCommandDeck : UiElement
     private void SyncGeometry()
     {
         if (Width == _geometry.Width && Height == _geometry.Height) return;
-        _geometry = DeckGeometry.FromSize(Width, Height);
+        DeckGeometry fromSize = DeckGeometry.FromSize(Width, Height);
+        _geometry = DeckGeometry.Create(fromSize.Scale, fromSize.Stretch, MinStretchNow);
         Width = _geometry.Width;
         Height = _geometry.Height;
     }
@@ -227,7 +298,7 @@ internal sealed partial class UiCommandDeck : UiElement
         DeckZone.Orb
             or DeckZone.StudRepeat or DeckZone.StudAutoTarget or DeckZone.StudKeepInView
             or DeckZone.PowerTrack or DeckZone.High or DeckZone.Medium or DeckZone.Low
-            or DeckZone.Recast => true,
+            or DeckZone.Cast => true,
         >= DeckZone.Recall0 and <= DeckZone.Recall4 => true,
         _ => false,
     };
@@ -330,8 +401,8 @@ internal sealed partial class UiCommandDeck : UiElement
                 };
                 _actions.PressAttack(_held.Value);
                 return true;
-            case DeckZone.Recast:
-                if (_view.RecastEnabled) _actions.Recast();
+            case DeckZone.Cast:
+                if (_view.CastEnabled) _actions.CastOutlined();
                 return true;
             case >= DeckZone.Recall0 and <= DeckZone.Recall4:
                 _actions.Recall(Recalls[zone - DeckZone.Recall0]);
@@ -365,9 +436,9 @@ internal sealed partial class UiCommandDeck : UiElement
         DeckZone.High => new("High attack", null, "Aim at the head and shoulders.", HoldToAttack),
         DeckZone.Medium => new("Medium attack", null, "Aim at the body.", HoldToAttack),
         DeckZone.Low => new("Low attack", null, "Aim at the legs.", HoldToAttack),
-        DeckZone.Recast => new("Recast", view.RecastEnabled ? view.CastingText : null,
-            "Cast your last spell again on the same target.",
-            view.RecastEnabled ? "Click to recast" : "Nothing to recast yet"),
+        DeckZone.Cast => new("Cast", view.CastEnabled ? view.CastingText : null,
+            "Cast the outlined spell on your target.",
+            view.CastEnabled ? "Click to cast" : "Nothing selected"),
         DeckZone.Recall0 => new("Lifestone recall", null, "Return to the lifestone you are tied to.", ClickToRecall),
         DeckZone.Recall1 => new("Marketplace recall", null, "Travel to the Marketplace.", ClickToRecall),
         DeckZone.Recall2 => new("House recall", null, "Return to your house.", ClickToRecall),

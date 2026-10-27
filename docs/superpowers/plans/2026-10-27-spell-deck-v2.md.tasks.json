@@ -1,0 +1,67 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-27-spell-deck-v2.md",
+  "tasks": [
+    {
+      "id": 15,
+      "subject": "Task 15: Settings v2 and local tabs storage",
+      "status": "completed",
+      "blockedBy": [],
+      "description": "**Goal:** `SpellDeckSettings` becomes `(int Tab, int RowCount, bool Attached, int? DetachedRows, IReadOnlyList<IReadOnlyList<uint>> LocalTabs)` with validation and v1 migration; the store round-trips it.\n\n**Files:** Modify `src/AcDream.App/UI/Hud/SpellDeckSettings.cs`, `src/AcDream.UI.Abstractions/Panels/Settings/SettingsStore.cs` (`StoredSpellDeck`, `LoadSpellDeck`, `SaveSpellDeck`); tests `SpellDeckSettingsTests.cs`, `SettingsStoreSpellDeckTests.cs`; update callers so the solution builds (callers that used `Rows` read `RowCount`/`Tab`; behaviour changes come in Task 17).\n\n**Acceptance Criteria:**\n- [ ] Default: Tab 0, RowCount 3, Attached true, DetachedRows null, no local tabs\n- [ ] Normalize: RowCount clamped 1–10; LocalTabs truncated to 8 (each list de-duplicated, zero ids dropped); Tab clamped to 0..(7 + LocalTabs.Count), else 0\n- [ ] JSON `spellDeck[toon] = { tab, rowCount, attached, detachedRows?, localTabs: [[ids]] }`; other sections kept\n- [ ] A v1 entry with `rows: [{id, tab}, …]` loads as `RowCount = rows.length` (clamped), `Tab = rows[0].tab`; `detachedRows` carried\n- [ ] A malformed local tab entry is skipped, not the whole deck\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckSettings|FullyQualifiedName~SettingsStore'` → pass; solution builds.\n\n```json:metadata\n{\"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 16,
+      "subject": "Task 16: Pure model and outline v2",
+      "status": "completed",
+      "blockedBy": [
+        15
+      ],
+      "description": "**Goal:** Slices, capacity, drop planning (slot and bookmark), minimum slots over all tabs, Remove-row rule, and the simplified outline.\n\n**Files:** Modify `SpellDeckModel.cs`, `SpellDeckOutline.cs` (and their tests). Remove v1-only members (`TabForNewRow`, row-id contexts) once unused.\n\n**Acceptance Criteria:**\n- [ ] `Slice(tab, row, perRow)` = spells `row·perRow … +perRow−1`; `Visible(tab, rows, perRow)` = first `rows·perRow`\n- [ ] `MinSlotsPerRow(rows, allTabCounts)` = `ceil(max count / rows)` capped at `SpellDeckGeometry.MaxCapacity`, at least 1\n- [ ] `CanRemoveRow(rows, allTabCounts)` = rows > 1 and `(rows−1)·MaxCapacity >= max count`\n- [ ] `PlanDropOnSlot(source, tab, position, favorites, capacity)`: reorder if present (position clamped to count−1), insert if `count+1 <= capacity` (clamped to count), else `RefusedFull`; a slot source from the same tab is always a reorder\n- [ ] `PlanDropOnTab(source, destTab, favorites, capacity)`: slot source from another tab → `Move` = `[Set(dest, count, id), Remove(src, id)]`; spellbook source → `Insert` at end; dest already holds it or source tab == dest → `None` (no ops, not refused); dest full → `RefusedFull`\n- [ ] Outline `None | Item | Spell(tab, spellId)` with `Repair`, `Validate`, `Next/Prev/First/Last` over the visible spells of the current tab with the item before the first (spec \"Outline\" v2); showing another tab → first spell of that tab\n- [ ] Tests for every bullet\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckModel|FullyQualifiedName~SpellDeckOutline'`.\n\n```json:metadata\n{\"modelTier\": \"standard\"}\n```"
+    },
+    {
+      "id": 17,
+      "subject": "Task 17: Tabs source and controller v2",
+      "status": "completed",
+      "blockedBy": [
+        16
+      ],
+      "description": "**Goal:** `SpellDeckTabs` (server tabs from `Spellbook`, local tabs from settings, edits routed accordingly) and `SpellDeckController` reworked to one current tab, row count, slices, local tab add/remove, bookmark drops.\n\n**Files:** Create `src/AcDream.App/UI/Hud/SpellDeckTabs.cs`; modify `SpellDeckController.cs`, `ISpellDeckActions.cs` (unchanged signature for server edits), tests.\n\n**Acceptance Criteria:**\n- [ ] `SpellDeckTabs`: `Count` (8 + local), `Get(tab)`, `Set(tab, pos, id)` / `Remove(tab, id)` → server actions for 0–7, local list mutation + save callback for 8–15; `AddLocal()` (≤ 8 local), `RemoveLastLocal()`\n- [ ] Controller: `Tab`, `RowCount`, `PerRow` (from capacity), `ShowTab(t)`, `NextTab/PrevTab/FirstTab/LastTab` (Insert/PgUp keys) wrapping over `Count`\n- [ ] Hotkey row r slot n casts `Visible[r·N+n]` and outlines it; hidden row / empty slot handled, no-op\n- [ ] `Click/DoubleClick(row, slot)` and click modes as v1 (counts unchanged)\n- [ ] `DropOnSlot(source, row, slot)`, `DropOnTab(source, tab)`, `DropOutside(source)`; refused → `That spell tab is full.`; an outlined spell moved to another tab is not followed (outline repairs)\n- [ ] `AddRow()` (≤ 10 and `canAddRow`), `RemoveRow()` (model rule), `AddLocalTab()` shows the new tab, `RemoveLastLocalTab()` (if current, show previous)\n- [ ] `MinSlotsPerRow` over all tabs; `AddFavoriteFromSpellbook` → current tab end; Command Deck members (`OutlinedSpellId`, `CanCastOutlined`, `CastOutlined`) unchanged in meaning\n- [ ] Every change saves settings v2 (tab, rows, local tabs) once; local tab edits never call server actions\n- [ ] Tests for every bullet\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckController|FullyQualifiedName~SpellDeckTabs'`.\n\n```json:metadata\n{\"modelTier\": \"frontier\"}\n```"
+    },
+    {
+      "id": 18,
+      "subject": "Task 18: Geometry v2 and element v2 (tab strip, menu, drops)",
+      "status": "completed",
+      "blockedBy": [
+        17
+      ],
+      "description": "**Goal:** Geometry with the tab strip and no chips; the element draws bookmarks and `+`, handles bookmark clicks and drops, and the v2 menu.\n\n**Files:** Modify `SpellDeckGeometry.cs`, `UiSpellDeck.cs`, `UiSpellDeck.Draw.cs`, tests.\n\n**Acceptance Criteria:**\n- [ ] Geometry v2 constants (Global Constraints); `Width = (388 + 420·(stretch−1))·scale`; `Capacity(1)=12`, `Capacity(2)=27`; `StretchFor(n)` inverse; `Bookmark(i, count)` rects (24 wide, 2 gap, shrinking evenly to ≥16 to fit), `Plus` rect after the last; `HitAt` returns `Bookmark(i)`, `Plus`, `Item`, `Slot(row, n)`, `Frame`\n- [ ] Attached flag on geometry or element: square bottom corners when attached, rounded otherwise\n- [ ] Bookmarks drawn with numbers (current raised/lit), `+` hidden at 16 tabs; no row chips\n- [ ] Click bookmark → `ShowTab`; click `+` → `AddLocalTab`; drag-over a bookmark highlights accept/reject from the plan; drop on bookmark → `DropOnTab`\n- [ ] Menu items exactly as spec v2 (slot: Examine spell / Remove from tab; deck: Add row / Remove row / Click casts: on|off / Detach|Attach; last local bookmark: Remove tab only)\n- [ ] Tooltips: bookmark `Tab n` with spell count (\"Local tab\" note for 9–16), `+` \"Add a tab\"\n- [ ] Draw and hit tests at scale 0.75/1/1.5 and stretch 1/2\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckGeometry|FullyQualifiedName~UiSpellDeck'`.\n\n```json:metadata\n{\"modelTier\": \"frontier\"}\n```"
+    },
+    {
+      "id": 19,
+      "subject": "Task 19: Seamless join, attached block drag, CAST label",
+      "status": "completed",
+      "blockedBy": [
+        18
+      ],
+      "description": "**Goal:** The dock places the attached Spell Deck on the deck's visible frame with square meeting corners; dragging it moves the deck; the CAST button shows its label.\n\n**Files:** Modify `SpellDeckDock.cs`, `SpellDeckWindowDockHost.cs`, `UiCommandDeck.cs`/`UiCommandDeck.Draw.cs`/`DeckGeometry.cs` (square top corners flag; CAST stud 54 wide with label), `UiSpellDeck.cs` (attached drag forwarding), tests (`SpellDeckDockTests`, `UiCommandDeck*Tests`, `DeckGeometryTests`).\n\n**Acceptance Criteria:**\n- [ ] Attached placement: left = deck.Left + 32·scale, width = deck width − 32·scale, bottom = deck.Top + 4·scale (spec \"Looking attached\"); deck `TopLimit` and corner-scale limit use the overlap (`spell height − 4·scale`)\n- [ ] While attached the deck draws square top corners and the Spell Deck square bottom corners; detached both rounded\n- [ ] Dragging the attached Spell Deck moves the deck by the same delta, block clamped on screen; the deck's move is saved; the Spell Deck's stored placement is unchanged; the move cursor is shown\n- [ ] CAST stud is 54 base wide with the cast icon and the word `CAST` (small SemiBold); casting text area shrinks and still ends in `...` before it; hit zone covers the whole stud\n- [ ] Tests for each bullet; existing Command Deck tests updated only where geometry intentionally changed\n\n**Verify:** `MAC_TEST_FILTER='FullyQualifiedName~SpellDeckDock|FullyQualifiedName~CommandDeck|FullyQualifiedName~DeckGeometry'`.\n\n```json:metadata\n{\"modelTier\": \"frontier\"}\n```"
+    },
+    {
+      "id": 20,
+      "subject": "Task 20: Runtime wiring v2",
+      "status": "completed",
+      "blockedBy": [
+        19
+      ],
+      "description": "**Goal:** Wire `SpellDeckTabs`, settings v2 and the new controller/element into `RetailUiRuntime`; the Command Deck CASTING row and the spellbook add keep working; full suite green.\n\n**Files:** Modify `src/AcDream.App/UI/RetailUiRuntime.cs`, `SpellDeckCharacterSync.cs`, tests (`ModernHudWiringTests`, persistence rig).\n\n**Acceptance Criteria:**\n- [ ] `SpellDeckTabs` built from `Spellbook` + settings local tabs; local edits save through the sync's save path (never under \"default\")\n- [ ] Character load/switch restores tab, rows, local tabs; restore order guarantees from v1 still hold (rig tests pass, add one for local tabs surviving relog)\n- [ ] Insert/PgUp etc. reach the controller only while the Spell Deck is active; Modern HUD off unchanged\n- [ ] Full suite: 0 failures\n\n**Verify:** `~/code/OpenAC/test-baseline/run-mac-tests.sh ~/code/OpenAC/OpenAC-spell-deck` → 0 failures.\n\n```json:metadata\n{\"modelTier\": \"frontier\"}\n```"
+    },
+    {
+      "id": 21,
+      "subject": "Task 21: Live check (user gate)",
+      "status": "pending",
+      "blockedBy": [
+        20
+      ],
+      "description": "> **USER-ORDERED GATE — NON-SKIPPABLE.** Close only after every item has been confirmed by the user in the real client, with notes captured.\n\n**Goal:** The user confirms v1's Task 14 checklist plus v2 in the real client on 10.10.20.20, only when they say they are available.\n\n**Files:** none (fixes are their own commits).\n\n**Acceptance Criteria:**\n- [ ] User available before launch; local ACE only\n- [ ] Tab strip: switch tabs by click and Insert/PgUp; `+` adds tab 9; remove last local tab; local tab survives relog\n- [ ] Rows continue the tab; hotkeys cast what the slot shows; Remove row disabled when it would hide spells\n- [ ] Join looks seamless (no gap, aligned edges); dragging the attached Spell Deck moves both; CAST shows its label\n- [ ] Remaining Task 14 items (click modes, item spell, drag cases, resize, relog, Retina, glyphs)\n\n**Verify:** user confirmation per item.\n\n```json:metadata\n{\"modelTier\": \"frontier\", \"userGate\": true, \"tags\": [\"user-gate\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-10-27T08:37:28.360395"
+}

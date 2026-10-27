@@ -5,7 +5,8 @@ namespace AcDream.App.UI.Hud;
 /// vitals, combat and jump windows cannot be shown (their controllers' show
 /// requests go through <see cref="GateVisibility"/> / <see cref="GatedShow"/>)
 /// and the Command Deck is shown while gameplay is on screen. Turning on is
-/// refused, leaving retail untouched, when the deck did not mount.
+/// refused, leaving retail untouched, when the deck did not mount. The Spell
+/// Deck, when it mounted, is shown with the deck only in magic combat.
 /// </summary>
 public sealed class ModernHudSwitch
 {
@@ -24,8 +25,12 @@ public sealed class ModernHudSwitch
     private readonly Action _resyncRetail;
     private readonly Action _onDeckHidden;
     private readonly Action<string> _log;
+    private readonly Func<bool> _spellDeckMounted;
+    private readonly Func<bool> _magicMode;
+    private readonly Action _onSpellDeckHidden;
     private bool? _requested;
     private bool _deckShown;
+    private bool _spellDeckShown;
     private bool _reportedMountFailure;
 
     public ModernHudSwitch(
@@ -35,7 +40,10 @@ public sealed class ModernHudSwitch
         Func<bool> gameplayActive,
         Action resyncRetail,
         Action onDeckHidden,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        Func<bool>? spellDeckMounted = null,
+        Func<bool>? magicMode = null,
+        Action? onSpellDeckHidden = null)
     {
         _show = show ?? throw new ArgumentNullException(nameof(show));
         _hide = hide ?? throw new ArgumentNullException(nameof(hide));
@@ -44,9 +52,16 @@ public sealed class ModernHudSwitch
         _resyncRetail = resyncRetail ?? throw new ArgumentNullException(nameof(resyncRetail));
         _onDeckHidden = onDeckHidden ?? throw new ArgumentNullException(nameof(onDeckHidden));
         _log = log ?? Console.WriteLine;
+        _spellDeckMounted = spellDeckMounted ?? (() => false);
+        _magicMode = magicMode ?? (() => false);
+        _onSpellDeckHidden = onSpellDeckHidden ?? (() => { });
     }
 
     public bool Active { get; private set; }
+
+    /// <summary>Modern HUD is on and the Spell Deck mounted: the spell keys,
+    /// CAST and the spellbook's add-to-favourites go to the Spell Deck.</summary>
+    public bool SpellDeckActive => Active && _spellDeckMounted();
 
     /// <summary>A retail controller's <c>setWindowVisible</c> delegate, gated.</summary>
     public Action<bool> GateVisibility(string window) => visible =>
@@ -82,12 +97,34 @@ public sealed class ModernHudSwitch
 
         if (!Active) return;
         Active = false;
+        SetSpellDeckShown(false);
         SetDeckShown(false);
         _resyncRetail();
     }
 
-    /// <summary>Keeps the deck shown only while active and gameplay is on screen.</summary>
-    public void Tick() => SetDeckShown(Active && _gameplayActive());
+    /// <summary>Keeps the deck shown only while active and gameplay is on screen,
+    /// and the Spell Deck only while the deck is shown in magic combat.</summary>
+    public void Tick()
+    {
+        bool gameplay = Active && _gameplayActive();
+        SetDeckShown(gameplay);
+        SetSpellDeckShown(gameplay && _magicMode() && _spellDeckMounted());
+    }
+
+    private void SetSpellDeckShown(bool shown)
+    {
+        if (shown == _spellDeckShown) return;
+        _spellDeckShown = shown;
+        if (shown)
+        {
+            _show(WindowNames.SpellDeck);
+        }
+        else
+        {
+            _hide(WindowNames.SpellDeck);
+            _onSpellDeckHidden();
+        }
+    }
 
     private void SetDeckShown(bool shown)
     {

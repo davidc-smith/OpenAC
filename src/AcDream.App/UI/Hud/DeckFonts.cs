@@ -34,7 +34,8 @@ internal sealed class DeckFonts(Func<float, BundledUiFontWeight, UiDatFont> bake
             _sets[scale] = set = new DeckFontSet(
                 new(() => bake(text, BundledUiFontWeight.Regular)),
                 new(() => bake(small, BundledUiFontWeight.Regular)),
-                new(() => bake(text, BundledUiFontWeight.SemiBold)));
+                new(() => bake(text, BundledUiFontWeight.SemiBold)),
+                new(() => bake(small, BundledUiFontWeight.SemiBold)));
         }
         return set;
     }
@@ -44,17 +45,31 @@ internal sealed class DeckFonts(Func<float, BundledUiFontWeight, UiDatFont> bake
         MathF.Round(basePixels * scale, MidpointRounding.AwayFromZero);
 }
 
-/// <summary>The deck's three faces at one scale.</summary>
-internal sealed class DeckFontSet(Lazy<UiDatFont> text, Lazy<UiDatFont> small, Lazy<UiDatFont> bold)
+/// <summary>The deck's faces at one scale.</summary>
+internal sealed class DeckFontSet(Lazy<UiDatFont> text, Lazy<UiDatFont> small, Lazy<UiDatFont> bold, Lazy<UiDatFont> smallBold)
 {
     public UiDatFont Text => text.Value;
     public UiDatFont Small => small.Value;
     public UiDatFont Bold => bold.Value;
+    /// <summary>The small size in SemiBold: button labels (the Command Deck's CAST).</summary>
+    public UiDatFont SmallBold => smallBold.Value;
 }
 
 /// <summary>One face to draw with: a bundled sans face, or the context's default font when there is none.</summary>
 internal readonly record struct DeckFace(UiDatFont? Font)
 {
+    /// <summary>The text or small face for a deck drawn at <paramref name="scale"/>; the default font without fonts.</summary>
+    public static DeckFace For(DeckFonts? fonts, float scale, bool small)
+    {
+        if (fonts is null) return new(null);
+        DeckFontSet set = fonts.At(scale);
+        return new(small ? set.Small : set.Text);
+    }
+
+    /// <summary>The small SemiBold face for a deck drawn at <paramref name="scale"/>; the default font without fonts.</summary>
+    public static DeckFace SmallBoldFor(DeckFonts? fonts, float scale) =>
+        new(fonts?.At(scale).SmallBold);
+
     public float Measure(UiRenderContext ctx, string text) =>
         Font?.MeasureWidth(text) ?? ctx.DefaultFont?.MeasureWidth(text) ?? 0f;
 

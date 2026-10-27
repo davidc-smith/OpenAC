@@ -430,6 +430,14 @@ public sealed class RetailUiRuntime : IDisposable
     private Layout.VitalsSideBySideController? _vitalsSideBySide;
     private Hud.ModernHudSwitch? _hudSwitch;
     private Hud.UiCommandDeck? _commandDeck;
+    private Hud.DeckFonts? _deckFonts;
+    private Hud.SpellDeckController? _spellDeckController;
+    private Hud.UiSpellDeck? _spellDeck;
+    private Hud.SpellDeckCharacterSync? _spellDeckSync;
+    /// <summary>The spellbook the Spell Deck reconciles from; unsubscribed on teardown.</summary>
+    private Spellbook? _spellDeckSpellbook;
+    /// <summary>MiscSettings.SpellDeckClickCasts, read once at mount and kept here as it is toggled.</summary>
+    private bool _spellDeckClickCasts;
     private Hud.EmbeddedSvgSpriteCache? _hudIcons;
     private CharacterManagementUiMountCoordinator? _characterManagementMount;
     private ConnectionUiMountCoordinator? _connectionMount;
@@ -528,7 +536,10 @@ public sealed class RetailUiRuntime : IDisposable
                 JumpPowerbarController?.SyncVisibility();
                 _vitalsSideBySide?.SyncVisibility();
             },
-            onDeckHidden: () => _commandDeck?.OnHidden());
+            onDeckHidden: () => _commandDeck?.OnHidden(),
+            spellDeckMounted: () => _spellDeck is not null,
+            magicMode: () => _bindings.Combat.State.CurrentMode == CombatMode.Magic,
+            onSpellDeckHidden: () => _spellDeck?.OnHidden());
         MountVitals();
         MountRadar();
         MountChat();
@@ -545,6 +556,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountIndicators();
         MountJumpPowerbar();
         MountCommandDeck();
+        MountSpellDeck();
         MountDialogFactory();
         MountTooltipPresenter();
         MountSocialPanel();
@@ -594,7 +606,10 @@ public sealed class RetailUiRuntime : IDisposable
                     WindowNames.HousePurchase,
                     WindowNames.PluginShelf,
                     WindowNames.CommandDeck,
+                    WindowNames.SpellDeck,
                 ]);
+            // Closed from mount: an attached Spell Deck is placed by its dock, never by the layout.
+            _persistence.SetCaptureGate(WindowNames.SpellDeck, () => !(_spellDeckController?.Attached ?? true));
             _persistence.ResetToDefaults();
             _persistence.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
             _canvasPositions = new PluginCanvasPositionPersistence(
@@ -803,6 +818,7 @@ public sealed class RetailUiRuntime : IDisposable
         _persistence?.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
         _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
         _hudSwitch?.Tick();
+        _spellDeckSync?.Tick();
         Layout.UiMediaClock.Advance(deltaSeconds);
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
@@ -862,7 +878,11 @@ public sealed class RetailUiRuntime : IDisposable
             Host.Root.Height = screenSize.Y;
             bool gameplay = _bindings.IsGameplayDisplay?.Invoke() ?? true;
             _persistence?.SetGameplayActive(gameplay);
-            if (gameplay) _persistence?.ReflowToScreen();
+            if (gameplay)
+            {
+                _persistence?.ReflowToScreen();
+                _spellDeckSync?.AfterReflow();
+            }
             _lastScreenSize = screenSize;
         }
         // The overlay band covers the whole screen; a canvas anchored to a
@@ -891,7 +911,17 @@ public sealed class RetailUiRuntime : IDisposable
         if (AppraisalController?.HandleInputAction(action) == true)
             return true;
 
-        if (SpellcastingUiController?.Handle(action) == true)
+        Hud.SpellDeckController? spellDeck = _hudSwitch?.SpellDeckActive == true ? _spellDeckController : null;
+        if (Hud.SpellActionRouter.Route(
+                action,
+                spellDeck is not null,
+                spellDeck: a => spellDeck?.Handle(a) == true,
+                retail: a => SpellcastingUiController?.Handle(a) == true,
+                gameAction: () => _bindings.Keyboard?.Dispatcher is { } dispatcher
+                    ? Hud.SpellActionRouter.GameActionOnSameKey(
+                        dispatcher.Bindings, dispatcher.CurrentPhysicalChord, action)
+                    : null,
+                redispatch: a => _bindings.Keyboard?.Dispatcher?.TryInvokeAutomationAction(a)))
             return true;
 
         switch (action)
@@ -1278,7 +1308,12 @@ public sealed class RetailUiRuntime : IDisposable
             Host.Root.Height = screen.Height;
             _lastScreenSize = new System.Numerics.Vector2(screen.Width, screen.Height);
         }
+        // The new character's Spell Deck settings (tab, rows, local tabs,
+        // attachment) first, so the restore sees the right capture gate; the
+        // Spell Deck is placed after it.
+        _spellDeckSync?.LoadIfChanged();
         _persistence?.RestoreAll();
+        _spellDeckSync?.AfterRestore();
         // Root is sized to the screen above, so a restored canvas is kept
         // on the screen it will be drawn on.
         _canvasPositions?.RestoreAll();
@@ -1293,7 +1328,11 @@ public sealed class RetailUiRuntime : IDisposable
 
     public void SaveNamedLayout(string profileName) => _persistence?.SaveNamed(profileName);
 
-    public void RestoreNamedLayout(string profileName) => _persistence?.RestoreNamed(profileName);
+    public void RestoreNamedLayout(string profileName)
+    {
+        _persistence?.RestoreNamed(profileName);
+        _spellDeckSync?.AfterRestore();
+    }
 
     public bool ToggleWindow(string name)
         => RetailPanelCatalog.TryGetPanelId(name, out uint panelId)
@@ -2117,7 +2156,13 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.Magic.ResolveComponentIcon,
             _bindings.Magic.SpellLevel,
             _bindings.Magic.SelectObject,
-            spellId => SpellcastingUiController?.AddFavorite(spellId),
+            spellId =>
+            {
+                if (_hudSwitch?.SpellDeckActive == true && _spellDeckController is { } deck)
+                    deck.AddFavoriteFromSpellbook(spellId);
+                else
+                    SpellcastingUiController?.AddFavorite(spellId);
+            },
             _bindings.Magic.SendSpellbookFilter,
             _bindings.Magic.RemoveSpell,
             spellId => AppraisalController?.ExamineSpell(spellId),
@@ -3375,7 +3420,8 @@ public sealed class RetailUiRuntime : IDisposable
     {
         if (_bindings.CommandDeck is not { } deckBindings) return;
 
-        var actions = new CommandDeckActions(_bindings, deckBindings);
+        var actions = new CommandDeckActions(_bindings, deckBindings,
+            () => _hudSwitch?.SpellDeckActive == true ? _spellDeckController : null);
         _hudIcons = new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
         var model = new Hud.CommandDeckModel();
         var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -3385,7 +3431,7 @@ public sealed class RetailUiRuntime : IDisposable
             actions,
             _hudIcons,
             () => clock.Elapsed.TotalSeconds,
-            Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
+            _deckFonts = Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
 
         RetailWindowFrame.Mount(
             Host.Root,
@@ -3395,6 +3441,132 @@ public sealed class RetailUiRuntime : IDisposable
                 Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f),
                 Math.Max(0f, Host.Root.Height - Hud.DeckGeometry.Default.Height - 20f)));
         Console.WriteLine("[UI] Command Deck mounted (Modern HUD).");
+    }
+
+    /// <summary>
+    /// The Spell Deck (Modern HUD's spell bar), docked to the Command Deck.
+    /// Without it the spell keys, CAST and the spellbook's add-to-favourites
+    /// stay with the retail spell bar.
+    /// </summary>
+    private void MountSpellDeck()
+    {
+        if (_bindings.CommandDeck is null) return;
+        if (_commandDeck is null
+            || !Host.WindowManager.TryGet(WindowNames.CommandDeck, out RetailWindowHandle deckHandle))
+        {
+            Console.WriteLine("[UI] Spell Deck unavailable; spell keys stay on the retail bar.");
+            return;
+        }
+
+        MagicRuntimeBindings magic = _bindings.Magic;
+        Hud.SpellDeckDock? dock = null;
+        _spellDeckClickCasts = _bindings.Persistence?.Store?.LoadMisc().SpellDeckClickCasts ?? false;
+        var controller = new Hud.SpellDeckController(
+            new SpellDeckActions(this),
+            magic.Spellbook.GetFavorites,
+            () => ItemSpellSource.Find(magic.Objects, magic.PlayerGuid()),
+            () => _spellDeck?.Geometry.SlotsPerRow ?? SpellBarActions.SlotsPerRow,
+            Hud.SpellDeckSettings.Default,   // the character's own settings load on the first Tick
+            settings => _spellDeckSync?.Save(settings),
+            () => _spellDeckClickCasts,
+            () => dock?.CanAddRow() ?? true,
+            // Server-tab edits send only while reconcile could run (the sync is created below).
+            canSendToServer: () => _spellDeckSync?.CanSendToServer == true);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var deck = new Hud.UiSpellDeck(
+            controller,
+            magic.ResolveSpellIcon,
+            id => magic.Spellbook.TryGetMetadata(id, out SpellMetadata meta) ? meta : null,
+            // The live bindings on every call, so a rebind shows at once.
+            action => _bindings.Keyboard?.Dispatcher is { } dispatcher
+                ? Hud.SpellDeckKeyLabel.For(dispatcher.Bindings, action)
+                : string.Empty,
+            () => magic.Casting.HasPendingCast ? magic.Casting.PendingSpellId : null,
+            () => clock.Elapsed.TotalSeconds,
+            () => Host.WindowManager.IsLocked,
+            ToggleSpellDeckClickCasts,
+            attached =>
+            {
+                if (attached) dock?.Attach();
+                else dock?.Detach();
+            },
+            _deckFonts,
+            itemId => magic.Objects.Get(itemId)?.GetAppropriateName());
+
+        // Detached, the Spell Deck starts just above the Command Deck's default place.
+        float deckLeft = Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f);
+        float deckTop = Math.Max(0f, Host.Root.Height - Hud.DeckGeometry.Default.Height - 20f);
+        var spellDefault = Hud.SpellDeckGeometry.Create(1f, 1f, controller.RowCount);
+        RetailWindowHandle spellHandle;
+        try
+        {
+            spellHandle = RetailWindowFrame.Mount(
+                Host.Root,
+                deck,
+                _bindings.Assets.ResolveSprite,
+                Hud.UiSpellDeck.MountOptions(deckLeft, Math.Max(0f, deckTop - spellDefault.Height - 8f)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.WriteLine($"[UI] Spell Deck unavailable; spell keys stay on the retail bar. ({ex.Message})");
+            return;
+        }
+
+        _spellDeckController = controller;
+        _spellDeck = deck;
+        dock = new Hud.SpellDeckDock(
+            new Hud.SpellDeckWindowDockHost(Host.Root, () => _persistence, _commandDeck, deckHandle, deck, spellHandle),
+            controller);
+        _spellDeckSync = new Hud.SpellDeckCharacterSync(
+            controller,
+            dock,
+            _bindings.Persistence?.Store,
+            _bindings.Persistence?.CharacterKey ?? (() => "default"),
+            () => _persistence?.RestoreCount,
+            () => _hudSwitch?.SpellDeckActive == true);
+        // Server favourites changed (from elsewhere, or the echo of the deck's own ops): the sync
+        // reconciles only while the spellbook belongs to the loaded character.
+        _spellDeckSpellbook = magic.Spellbook;
+        _spellDeckSpellbook.SpellbookChanged += OnSpellDeckFavoritesChanged;
+        Host.Root.DragReleasedOutsideUi += OnSpellDeckDragReleasedOutsideUi;
+        Console.WriteLine("[UI] Spell Deck mounted (Modern HUD).");
+    }
+
+    private void OnSpellDeckFavoritesChanged() => _spellDeckSync?.ServerFavoritesChanged();
+
+    private void OnSpellDeckDragReleasedOutsideUi(object payload, int x, int y) =>
+        _spellDeck?.OnDragReleasedOutsideUi(payload);
+
+    private void ToggleSpellDeckClickCasts()
+    {
+        _spellDeckClickCasts = !_spellDeckClickCasts;
+        if (_bindings.Persistence?.Store is { } store)
+            store.SaveMisc(store.LoadMisc() with { SpellDeckClickCasts = _spellDeckClickCasts });
+    }
+
+    /// <summary>The CASTING row's name for the outlined spell: the item's name and spell for the item slot.</summary>
+    private string? OutlinedSpellName()
+    {
+        if (_spellDeckController is not { } controller || controller.OutlinedSpellId is not uint id) return null;
+        string spell = SpellName(id)!;
+        return controller.Outline.Kind == Hud.SpellDeckMarkKind.Item
+            && controller.ItemSpell is { } item
+            && _bindings.Magic.Objects.Get(item.ItemId)?.GetAppropriateName() is { Length: > 0 } itemName
+                ? Hud.UiSpellDeck.ItemSpellText(itemName, spell)
+                : spell;
+    }
+
+    /// <summary>The Spell Deck's actions, over the same bindings the retail spell bar uses.</summary>
+    private sealed class SpellDeckActions(RetailUiRuntime ui) : Hud.ISpellDeckActions
+    {
+        public void CastSpell(uint spellId) => ui._bindings.Magic.Casting.Cast(spellId);
+        public void CastItemSpell(uint itemId) => ui._bindings.Magic.ActivateEndowment(itemId);
+        public void SetFavorite(int tab, int position, uint spellId) =>
+            ui._bindings.Magic.AddFavorite(tab, position, spellId);
+        public void RemoveFavorite(int tab, uint spellId) => ui._bindings.Magic.RemoveFavorite(tab, spellId);
+        public void ExamineSpell(uint spellId) => ui.AppraisalController?.ExamineSpell(spellId);
+        public void ShowMessage(string text) => ui._bindings.Options.DisplaySystemMessage(text);
     }
 
     private Hud.CommandDeckInput ReadCommandDeckInput()
@@ -3412,7 +3584,7 @@ public sealed class RetailUiRuntime : IDisposable
             RequestedHeight: attacks.RequestedHeight,
             HasPendingCast: casting.HasPendingCast,
             PendingSpellName: SpellName(casting.PendingSpellId),
-            LastSpellName: SpellName(casting.LastRequestedSpellId),
+            OutlinedSpellName: _hudSwitch?.SpellDeckActive == true ? OutlinedSpellName() : null,
             Jump: _bindings.JumpPowerbar.Snapshot(),
             RepeatAttacks: _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.AutoRepeatAttack),
             AutoTarget: _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.AutoTarget),
@@ -3431,7 +3603,8 @@ public sealed class RetailUiRuntime : IDisposable
     /// and spell windows use.</summary>
     private sealed class CommandDeckActions(
         RetailUiRuntimeBindings bindings,
-        CommandDeckRuntimeBindings deck) : Hud.ICommandDeckActions
+        CommandDeckRuntimeBindings deck,
+        Func<Hud.SpellDeckController?> spellDeck) : Hud.ICommandDeckActions
     {
         public void ToggleCombat() => deck.ToggleCombat();
         public void PressAttack(AttackHeight height) => bindings.Combat.Attacks.PressAttack(height);
@@ -3440,15 +3613,7 @@ public sealed class RetailUiRuntime : IDisposable
         public void SetOption(CharacterOptionId option, bool value) =>
             bindings.Options.CommandBus().Publish(new SetSingleCharacterOptionRuntimeCmd((uint)option, value));
         public void Recall(AcDream.Runtime.RuntimePortalCommand command) => deck.Recall(command);
-        public void Recast()
-        {
-            RuntimeSpellCastState casting = bindings.Magic.Casting;
-            if (casting.HasPendingCast || casting.LastRequestedSpellId is not uint spell) return;
-            if (casting.LastRequestedTargetId is uint target && target != 0)
-                casting.Cast(spell, target);
-            else
-                casting.Cast(spell);
-        }
+        public void CastOutlined() => spellDeck()?.CastOutlined();
     }
 
     /// <summary>The experience a fellow needs to go from their level to the next.</summary>
@@ -5641,6 +5806,11 @@ public sealed class RetailUiRuntime : IDisposable
                 _pluginDockImages?.Dispose();
                 _pluginDockImages = null;
                 _commandDeck?.Detach();
+                Host.Root.DragReleasedOutsideUi -= OnSpellDeckDragReleasedOutsideUi;
+                if (_spellDeckSpellbook is not null)
+                    _spellDeckSpellbook.SpellbookChanged -= OnSpellDeckFavoritesChanged;
+                _spellDeckSpellbook = null;
+                _spellDeck?.OnHidden();
                 _hudIcons?.Dispose();
                 _hudIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;

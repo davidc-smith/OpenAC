@@ -19,13 +19,13 @@ public sealed class UiCommandDeckTests
         public void SetDesiredPower(float power) => Calls.Add(string.Create(CultureInfo.InvariantCulture, $"power {power:0.00}"));
         public void SetOption(CharacterOptionId option, bool value) => Calls.Add($"option {option} {value}");
         public void Recall(RuntimePortalCommand command) => Calls.Add("recall " + command);
-        public void Recast() => Calls.Add("recast");
+        public void CastOutlined() => Calls.Add("cast");
     }
 
     private static CommandDeckInput Input(CombatMode mode, string? last = null) =>
         default(CommandDeckInput) with
         {
-            Mode = mode, DesiredPower = 0.5f, LastSpellName = last, SessionKey = 1,
+            Mode = mode, DesiredPower = 0.5f, OutlinedSpellName = last, SessionKey = 1,
             RepeatAttacks = true,
         };
 
@@ -165,15 +165,15 @@ public sealed class UiCommandDeckTests
     }
 
     [Fact]
-    public void RecastOnlyWhenEnabled()
+    public void CastOnlyWithAnOutlinedSpell()
     {
         var (none, noneActions, _) = Make(CombatMode.Magic);
-        Down(none, DeckGeometry.Default.Recast);
+        Down(none, DeckGeometry.Default.Cast);
         Assert.Empty(noneActions.Calls);
 
         var (deck, actions, _) = Make(CombatMode.Magic, last: "Flame Bolt I");
-        Down(deck, DeckGeometry.Default.Recast);
-        Assert.Equal(["recast"], actions.Calls);
+        Down(deck, DeckGeometry.Default.Cast);
+        Assert.Equal(["cast"], actions.Calls);
     }
 
     [Fact]
