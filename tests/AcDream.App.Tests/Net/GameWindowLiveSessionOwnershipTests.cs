@@ -62,17 +62,26 @@ public sealed class GameWindowLiveSessionOwnershipTests
     [Fact]
     public void ProductionWindowConstructsOnlyTheCanonicalRuntimeRoot()
     {
-        IReadOnlyList<CompiledCall> calls =
-            CompiledCallGraph.ReadDeclared(typeof(GameWindow));
-
+        // The session host builds the one runtime root and holds it for the
+        // process; the window builds none and borrows the host's.
+        IReadOnlyList<CompiledCall> hostCalls =
+            CompiledCallGraph.ReadDeclared(typeof(AcDream.App.Hosting.GraphicalSessionHost));
         Assert.Single(
-            calls,
+            hostCalls,
             call => call.Target.DeclaringType == typeof(GameRuntime)
                 && call.Target.IsConstructor);
         Assert.Single(
-            calls,
+            hostCalls,
             call => call.Target.DeclaringType == typeof(GameRuntime)
                 && call.Target.Name == nameof(GameRuntime.AcquireHostLease));
+
+        IReadOnlyList<CompiledCall> calls =
+            CompiledCallGraph.ReadDeclared(typeof(GameWindow));
+        Assert.DoesNotContain(
+            calls,
+            call => call.Target.DeclaringType == typeof(GameRuntime)
+                && (call.Target.IsConstructor
+                    || call.Target.Name == nameof(GameRuntime.AcquireHostLease)));
         HashSet<string> forbiddenRuntimeRoots =
         [
             "RuntimeEntityObjectLifetime",

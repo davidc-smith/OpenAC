@@ -57,6 +57,12 @@ public sealed partial class WbDrawDispatcher : IDisposable, Walk.IWalkShellResid
     internal const int MaximumCompositeWarmupPrepareEntitiesPerFrame = 128;
     private readonly Queue<WorldEntity> _compositeWarmupQueue = new();
     private readonly HashSet<WorldEntity> _compositeWarmupTracked = [];
+    // The candidates the current scan pass has seen. When a pass completes,
+    // an entity it did not see has left the published world near the
+    // destination: it is drawn no more, and once its last owner has gone its
+    // meshes are never uploaded again, so waiting for it would never end.
+    private readonly HashSet<WorldEntity> _compositeWarmupSeen = [];
+    private bool _compositeWarmupPrunePending;
     private IReadOnlyList<WorldEntity>? _compositeWarmupSource;
     private ulong _compositeWarmupSourceGeneration;
     private uint _compositeWarmupDestinationCell;
@@ -77,6 +83,8 @@ public sealed partial class WbDrawDispatcher : IDisposable, Walk.IWalkShellResid
         LastCompositeWarmupPendingCount = 1;
         _compositeWarmupQueue.Clear();
         _compositeWarmupTracked.Clear();
+        _compositeWarmupSeen.Clear();
+        _compositeWarmupPrunePending = false;
         _compositeWarmupSource = null;
         _compositeWarmupSourceGeneration = 0;
         _compositeWarmupDestinationCell = 0;
@@ -125,13 +133,16 @@ public sealed partial class WbDrawDispatcher : IDisposable, Walk.IWalkShellResid
         for (; _compositeWarmupScanIndex < scanEnd; _compositeWarmupScanIndex++)
         {
             WorldEntity entity = entities[_compositeWarmupScanIndex];
-            if (IsCompositeWarmupCandidate(entity, destinationCell, radius)
-                && _compositeWarmupTracked.Add(entity))
+            if (IsCompositeWarmupCandidate(entity, destinationCell, radius))
             {
-                _compositeWarmupQueue.Enqueue(entity);
+                _compositeWarmupSeen.Add(entity);
+                if (_compositeWarmupTracked.Add(entity))
+                    _compositeWarmupQueue.Enqueue(entity);
             }
         }
         _compositeWarmupScanComplete = _compositeWarmupScanIndex == entities.Count;
+        if (_compositeWarmupScanComplete && _compositeWarmupPrunePending)
+            DropCompositeWarmupEntitiesNotSeen();
         if (ShouldBeginCompositeWarmupRescan(
                 _compositeWarmupScanComplete,
                 _compositeWarmupSourceGeneration,
@@ -234,6 +245,8 @@ public sealed partial class WbDrawDispatcher : IDisposable, Walk.IWalkShellResid
     {
         _compositeWarmupQueue.Clear();
         _compositeWarmupTracked.Clear();
+        _compositeWarmupSeen.Clear();
+        _compositeWarmupPrunePending = false;
         _compositeWarmupSource = entities;
         _compositeWarmupSourceGeneration = entityGeneration;
         _compositeWarmupDestinationCell = destinationCell;
@@ -251,8 +264,23 @@ public sealed partial class WbDrawDispatcher : IDisposable, Walk.IWalkShellResid
         _compositeWarmupSourceGeneration = entityGeneration;
         _compositeWarmupScanIndex = 0;
         _compositeWarmupScanComplete = entityCount == 0;
+        _compositeWarmupSeen.Clear();
+        _compositeWarmupPrunePending = true;
         CompositeTexturesReady =
             _compositeWarmupScanComplete && _compositeWarmupQueue.Count == 0;
+    }
+
+    private void DropCompositeWarmupEntitiesNotSeen()
+    {
+        _compositeWarmupPrunePending = false;
+        _compositeWarmupTracked.IntersectWith(_compositeWarmupSeen);
+        int queued = _compositeWarmupQueue.Count;
+        for (int i = 0; i < queued; i++)
+        {
+            WorldEntity entity = _compositeWarmupQueue.Dequeue();
+            if (_compositeWarmupSeen.Contains(entity))
+                _compositeWarmupQueue.Enqueue(entity);
+        }
     }
 
     internal static bool IsCompositeWarmupCandidate(
@@ -750,14 +778,16 @@ public sealed partial class WbDrawDispatcher : IDisposable, Walk.IWalkShellResid
         in RenderInstanceCandidate entity) =>
         entity.CacheLandblockId;
 
-    private static void BuildCurrentCandidateTuples(
+    internal static void BuildCurrentCandidateTuples(
         List<(WorldEntity Entity, int MeshRefIndex, uint LandblockId)> source,
         HashSet<uint>? animatedEntityIds,
         List<RenderInstanceTuple> destination)
     {
         destination.Clear();
-        if (destination.Capacity < source.Count)
-            destination.Capacity = source.Count;
+        // Grows by doubling: sized exactly, a list that grows by a few
+        // entities a frame (walking into new landblocks) reallocated its
+        // large array every frame.
+        destination.EnsureCapacity(source.Count);
 
         int index = 0;
         while (index < source.Count)

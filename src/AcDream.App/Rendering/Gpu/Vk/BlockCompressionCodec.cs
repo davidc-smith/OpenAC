@@ -42,6 +42,36 @@ internal static class BlockCompressionCodec
         }
 
         var rgba = new byte[width * height * 4];
+        DecodeLevel(format, blocks, width, height, rgba);
+        return rgba;
+    }
+
+    /// <summary>
+    /// Decodes a level into <paramref name="rgba"/>, which must hold at least
+    /// <c>width * height * 4</c> bytes; every texel of the level is written.
+    /// </summary>
+    internal static void DecodeLevel(
+        GpuTextureFormat format,
+        ReadOnlySpan<byte> blocks,
+        int width,
+        int height,
+        Span<byte> rgba)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        int blockSize = BlockSizeBytes(format);
+        int blocksX = BlockCount(width);
+        int blocksY = BlockCount(height);
+        if (blocks.Length < blocksX * blocksY * blockSize)
+        {
+            throw new ArgumentException(
+                $"A {width}x{height} {format} level needs {blocksX * blocksY * blockSize} bytes; " +
+                $"{blocks.Length} were supplied.",
+                nameof(blocks));
+        }
+        if (rgba.Length < width * height * 4)
+            throw new ArgumentException($"A {width}x{height} RGBA8 level needs {width * height * 4} bytes.", nameof(rgba));
+
         Span<byte> texels = stackalloc byte[BlockExtent * BlockExtent * 4];
         for (int by = 0; by < blocksY; by++)
         {
@@ -62,13 +92,11 @@ internal static class BlockCompressionCodec
                             break;
                         int source = ((y * BlockExtent) + x) * 4;
                         int destination = ((targetY * width) + targetX) * 4;
-                        texels.Slice(source, 4).CopyTo(rgba.AsSpan(destination, 4));
+                        texels.Slice(source, 4).CopyTo(rgba.Slice(destination, 4));
                     }
                 }
             }
         }
-
-        return rgba;
     }
 
     /// <summary>Decodes one block into 16 RGBA8 texels in row-major order.</summary>

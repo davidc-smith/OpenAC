@@ -43,7 +43,6 @@ internal sealed record WorldRenderResult(
     WorldRenderFoundation Foundation);
 
 internal sealed record WorldRenderDependencies(
-    WorldEnvironmentController Environment,
     IGameRenderResourceLifetime RenderResources,
     IGpuResourceRetirementQueue ResourceRetirement,
     ResidencyBudgetOptions ResidencyBudgets,
@@ -55,6 +54,12 @@ internal sealed record WorldRenderDependencies(
 {
     /// <summary>The texture-detail choice the world starts with; full detail unless the host says otherwise.</summary>
     public WorldTextureDetail TextureDetail { get; init; } = WorldTextureDetail.Full;
+
+    /// <summary>
+    /// The terrain atlas's source layers, being decoded while the window and
+    /// the GPU were set up; null decodes them when the atlas is built.
+    /// </summary>
+    public Task<TerrainAtlas.DecodedSources>? TerrainSources { get; init; }
 }
 
 internal interface IGameWindowWorldRenderPublication
@@ -74,15 +79,12 @@ internal interface IGameWindowWorldRenderPublication
 internal interface IWorldRenderCompositionFactory
 {
     WorldRegionData LoadRegion(IDatReaderWriter dats);
-    void InitializeEnvironment(
-        WorldEnvironmentController environment,
-        Region region,
-        IDatReaderWriter dats);
     TerrainAtlas AcquireBackendNeutralTerrainAtlas(
         IGameRenderResourceLifetime lifetime,
         AcDream.App.Rendering.Gpu.IGpuDevice device,
         IDatReaderWriter dats,
-        WorldTextureDetail textureDetail);
+        WorldTextureDetail textureDetail,
+        Task<TerrainAtlas.DecodedSources>? sources = null);
 
     void ExerciseBackendNeutralWorldTextures(
         AcDream.App.Rendering.Gpu.IGpuDevice device,
@@ -155,26 +157,21 @@ internal sealed class RetailWorldRenderCompositionFactory
         return new WorldRegionData(region, heightTable);
     }
 
-    public void InitializeEnvironment(
-        WorldEnvironmentController environment,
-        Region region,
-        IDatReaderWriter dats)
-    {
-        ArgumentNullException.ThrowIfNull(environment);
-        ArgumentNullException.ThrowIfNull(region);
-        ArgumentNullException.ThrowIfNull(dats);
-        environment.Initialize(region, dats);
-    }
-
     public TerrainAtlas AcquireBackendNeutralTerrainAtlas(
         IGameRenderResourceLifetime lifetime,
         AcDream.App.Rendering.Gpu.IGpuDevice device,
         IDatReaderWriter dats,
-        WorldTextureDetail textureDetail)
+        WorldTextureDetail textureDetail,
+        Task<TerrainAtlas.DecodedSources>? sources = null)
     {
         ArgumentNullException.ThrowIfNull(lifetime);
         return lifetime.AcquireTerrainAtlas(
-            () => TerrainAtlas.BuildBackendNeutral(device, dats, textureDetail));
+            () => TerrainAtlas.BuildBackendNeutral(
+                device,
+                dats,
+                textureDetail,
+                // A decode that failed rethrows its own error here.
+                sources?.GetAwaiter().GetResult()));
     }
 
     public void ExerciseBackendNeutralWorldTextures(
@@ -367,7 +364,6 @@ internal sealed class RetailWorldRenderCompositionFactory
 internal enum WorldRenderCompositionPoint
 {
     RegionLoaded,
-    EnvironmentInitialized,
     TerrainAtlasAcquired,
     SceneLightingPublished,
     DebugLinesPublished,
@@ -424,17 +420,13 @@ internal sealed class WorldRenderCompositionPhase
 
             WorldRegionData region = _factory.LoadRegion(content.Dats);
             Fault(WorldRenderCompositionPoint.RegionLoaded);
-            _factory.InitializeEnvironment(
-                _dependencies.Environment,
-                region.Region,
-                content.Dats);
-            Fault(WorldRenderCompositionPoint.EnvironmentInitialized);
 
             TerrainAtlas terrainAtlas = _factory.AcquireBackendNeutralTerrainAtlas(
                 _dependencies.RenderResources,
                 _dependencies.GpuDevice,
                 content.Dats,
-                _dependencies.TextureDetail);
+                _dependencies.TextureDetail,
+                _dependencies.TerrainSources);
             _factory.SetTerrainAnisotropic(
                 terrainAtlas,
                 settings.ResolvedQuality.AnisotropicLevel);

@@ -41,6 +41,7 @@ internal sealed class HeadlessPluginHost
     private Action<uint>? _containerClosed;
     private Action<PluginConfirmation>? _confirmationRequested;
     private Action<PluginActivationCompletion>? _activationCompleted;
+    private Action<string>? _statusTextReceived;
     private bool _disposed;
 
     internal HeadlessPluginHost(
@@ -51,7 +52,7 @@ internal sealed class HeadlessPluginHost
         PluginSessionSettings? sessionSettings = null,
         Func<string, bool>? submitChatText = null,
         MagicCatalog? magicCatalog = null,
-        HeadlessLogoutAutomation? logout = null,
+        AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout? logout = null,
         Func<uint, bool, bool>? answerConfirmation = null,
         Func<bool>? requestGracefulStop = null,
         AcDream.Content.IDatReaderWriter? content = null,
@@ -274,6 +275,7 @@ internal sealed class HeadlessPluginHost
             _containerOpened = null;
             _containerClosed = null;
             _confirmationRequested = null;
+            _statusTextReceived = null;
         }
         _automation.Dispose();
     }
@@ -499,6 +501,23 @@ internal sealed class HeadlessPluginHost
         }
     }
 
+    public event Action<string> StatusTextReceived
+    {
+        add
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            lock (_tickGate)
+                _statusTextReceived += value;
+        }
+        remove
+        {
+            if (value is null)
+                return;
+            lock (_tickGate)
+                _statusTextReceived -= value;
+        }
+    }
+
     public event Action<PluginActivationCompletion> ActivationCompleted
     {
         add
@@ -708,6 +727,29 @@ internal sealed class HeadlessPluginHost
             catch (Exception error)
             {
                 Log.Warn($"Plugin confirmation handler threw: {error}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// A short status notice is going to the status line, raised before the
+    /// chat filters decide whether it is shown.
+    /// </summary>
+    /// <param name="text">The notice as the status line would show it.</param>
+    public void FireStatusTextReceived(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        Action<string>? handlers;
+        lock (_tickGate)
+            handlers = _statusTextReceived;
+        if (handlers is null)
+            return;
+        foreach (Delegate handler in handlers.GetInvocationList())
+        {
+            try { ((Action<string>)handler)(text); }
+            catch (Exception error)
+            {
+                Log.Warn($"Plugin status-text handler threw: {error}");
             }
         }
     }

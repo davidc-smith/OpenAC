@@ -31,7 +31,8 @@ public sealed class GameWindow :
     IGameWindowInteractionRetainedUiPublication,
     IGameWindowLivePresentationPublication,
     IGameWindowSessionPlayerPublication,
-    IGameWindowFrameRootPublication
+    IGameWindowFrameRootPublication,
+    AcDream.App.Hosting.IGraphicalSessionFrame
 {
     private static double ClientTimerNow() =>
         System.Diagnostics.Stopwatch.GetTimestamp()
@@ -80,11 +81,11 @@ public sealed class GameWindow :
     private readonly WorldGameState _worldGameState;
     private readonly WorldEvents _worldEvents;
     /// <summary>
-    /// Paces the plugin tick, which every client raises at a fixed rate
-    /// rather than at whatever rate this one happens to draw.
+    /// The session this window presents. It owns the runtime, the status
+    /// file, the plugin session and the update tick; the window borrows
+    /// them.
     /// </summary>
-    private readonly AcDream.Runtime.Plugins.RuntimePluginTickClock
-        _pluginTick;
+    private readonly AcDream.App.Hosting.GraphicalSessionHost _host;
     private readonly AcDream.Runtime.Plugins.RuntimeWorldEntityProjection
         _pluginWorldEntities;
     private readonly HostQuiescenceGate _hostQuiescence = new();
@@ -95,6 +96,9 @@ public sealed class GameWindow :
     private SilkWindowCallbackBinding? _windowCallbacks;
     private GameWindowGraphics? _graphics;
     private AcDream.App.Rendering.Gpu.Vk.VulkanGraphicsContext? _vulkanGraphics;
+    // The Vulkan instance made on a worker during the start; the first
+    // window to set up Vulkan takes it.
+    private readonly AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup? _vulkanInstanceWarmup;
     private FramePacingPolicy _startupPacing;
     private AcDream.UI.Abstractions.Settings.QualitySettings _startupQuality =
         AcDream.UI.Abstractions.Settings.QualitySettings.From(
@@ -119,7 +123,7 @@ public sealed class GameWindow :
     private AcDream.App.Interaction.WorldSelectionQuery? _worldSelectionQuery;
     private AcDream.App.Interaction.SelectionInteractionController? _selectionInteractions;
     private DebugLineRenderer? _debugLines;
-    public AcDream.App.Plugins.PluginWorldLineStore WorldLines { get; } = new();
+    internal AcDream.App.Plugins.PluginWorldLineStore WorldLines => _host.WorldLines;
     private readonly AcDream.App.Rendering.WorldSceneDebugState
         _worldSceneDebugState = new();
 
@@ -217,7 +221,12 @@ public sealed class GameWindow :
 
     private readonly CellVisibility _cellVisibility = new();
 
-    private readonly object _datLock = new();
+    /// <summary>
+    /// The lock every reader of the game files takes. The files are the
+    /// session host's when it opened them, shared with the session's own
+    /// readers, so the lock is theirs too.
+    /// </summary>
+    private readonly object _datLock;
 
     private float[]? _heightTable;
     private AcDream.Core.Terrain.TerrainBlendingContext? _blendCtx;
@@ -286,7 +295,6 @@ public sealed class GameWindow :
     private RuntimeActionState _runtimeActions => _runtime.ActionOwner;
     public AcDream.Core.Selection.SelectionState Selection =>
         _runtimeActions.Selection;
-    internal SessionStatusWriter StatusWriter => _statusWriter;
 
     /// <summary>
     /// The keyboard device the retained UI copies text with; null until the
@@ -295,21 +303,12 @@ public sealed class GameWindow :
     internal Silk.NET.Input.IKeyboard? ClipboardKeyboard => _uiHost?.Keyboard;
 
     /// <summary>
-    /// Marshals a plugin-driven clipboard write onto this window's own
-    /// thread -- GLFW clipboard calls are main-thread-only and silently
-    /// do nothing when called off it. Constructed with the GameWindow
-    /// instance, so its owner thread is whatever thread built the window.
-    /// </summary>
-    internal AcDream.App.Plugins.MainThreadDispatchQueue ClipboardDispatch { get; } =
-        new();
-
-    /// <summary>
     /// Cached copy of whether the OS window is minimized, kept current by
     /// OnPluginWindowStateChanged -- itself routed through
     /// SilkWindowCallbackBinding's gated StateChanged fan-out, not a raw
     /// window.StateChanged subscription -- rather than read live off
     /// Silk.NET on a plugin's calling thread. glfwGetWindowAttrib, like the
-    /// clipboard calls ClipboardDispatch exists for, is documented
+    /// clipboard calls the main-thread dispatch queue exists for, is documented
     /// main-thread-only, so a live read from an arbitrary thread would
     /// carry the same silent-failure hazard.
     /// </summary>
@@ -318,10 +317,9 @@ public sealed class GameWindow :
     /// <summary>
     /// Adapter over the native window for plugin minimize/restore/close,
     /// cached alongside _window itself rather than allocated fresh on
-    /// every access. Calls must be marshalled through ClipboardDispatch
-    /// (renamed in spirit only -- it is this window's general main-thread
-    /// dispatch queue) exactly like the clipboard: GLFW window-state and
-    /// close calls are main-thread-only.
+    /// every access. Calls must be marshalled through the session host's
+    /// main-thread dispatch queue exactly like the clipboard: GLFW
+    /// window-state and close calls are main-thread-only.
     /// </summary>
     internal AcDream.App.Plugins.IPluginHostWindowTarget? PluginWindowHandle =>
         _pluginWindowHandle;
@@ -363,13 +361,13 @@ public sealed class GameWindow :
     private readonly AcDream.App.Rendering.Packs.DeferredRenderPackDiagnosticsSource
         _renderPackDiagnostics = new();
     private readonly AcDream.App.Combat.CombatAttackOperationsSlot
-        _combatAttackOperations = new();
+        _combatAttackOperations;
     private readonly AcDream.App.Combat.RuntimeCombatTargetOperationsSlot
-        _combatTargetOperations = new();
+        _combatTargetOperations;
     private readonly AcDream.App.Combat.RuntimeCombatModeOperationsSlot
-        _combatModeOperations = new();
+        _combatModeOperations;
     private readonly AcDream.App.Spells.RuntimeSpellCastOperationsSlot
-        _spellCastOperations = new();
+        _spellCastOperations;
     private readonly AcDream.App.Combat.CombatFeedbackSlot
         _combatFeedback = new();
     private RuntimeCombatAttackState? _combatAttackController;
@@ -390,7 +388,6 @@ public sealed class GameWindow :
     private AcDream.App.Rendering.ChargenPreviewController? _summaryPreviewController;
     private readonly AcDream.App.Plugins.BufferedUiRegistry? _uiRegistry;
     private readonly AcDream.App.Plugins.BufferedRenderPackRegistry? _renderPackRegistry;
-    private AcDream.App.Plugins.GraphicalPluginSession? _pluginSession;
     private const bool DevToolsEnabled = false;
 
     public readonly AcDream.Core.World.WorldTimeService WorldTime;
@@ -473,7 +470,7 @@ public sealed class GameWindow :
     private LiveSessionHost? _liveSessionHost;
     private AcDream.Core.Net.WorldSession? LiveSession =>
         _liveSessionHost?.CurrentSession;
-    private readonly AcDream.App.World.LiveWorldOriginState _liveWorldOrigin = new();
+    private readonly AcDream.App.World.LiveWorldOriginState _liveWorldOrigin;
     private int _liveCenterX => _liveWorldOrigin.CenterX;
     private int _liveCenterY => _liveWorldOrigin.CenterY;
     private static readonly IReadOnlyDictionary<uint, AcDream.Core.Net.WorldSession.EntitySpawn> EmptyLiveSpawnMap =
@@ -486,62 +483,45 @@ public sealed class GameWindow :
         => _playerHostSlot.Host;
 
 
-    public GameWindow(
-        AcDream.App.RuntimeOptions options,
-        WorldGameState worldGameState,
-        WorldEvents worldEvents,
-        AcDream.App.Plugins.BufferedUiRegistry? uiRegistry = null)
-        : this(
-            options,
-            worldGameState,
-            worldEvents,
-            uiRegistry,
-            GraphicalHostPlatformServices.Resolve())
-    {
-    }
-
     internal GameWindow(
-        AcDream.App.RuntimeOptions options,
-        WorldGameState worldGameState,
-        WorldEvents worldEvents,
+        AcDream.App.Hosting.GraphicalSessionHost host,
         AcDream.App.Plugins.BufferedUiRegistry? uiRegistry,
         GraphicalHostPlatformServices platformServices,
-        AcDream.Runtime.Plugins.RuntimeAutomationSurface? automation = null,
         AcDream.App.Plugins.BufferedRenderPackRegistry? renderPackRegistry = null,
-        AcDream.App.Input.AppHotkeyRegistry? hotkeyRegistry = null)
+        AcDream.App.Input.AppHotkeyRegistry? hotkeyRegistry = null,
+        AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup? vulkanInstanceWarmup = null)
     {
-        _options = options ?? throw new System.ArgumentNullException(nameof(options));
+        _host = host ?? throw new System.ArgumentNullException(nameof(host));
+        _vulkanInstanceWarmup = vulkanInstanceWarmup;
+        _joinedPlayingSession = host.HasSessionStarted;
+        AcDream.App.RuntimeOptions options = host.Options;
+        _options = options;
         AcDream.Core.Rendering.RenderingDiagnostics.DumpWalkTranscriptEnabled =
             options.DumpWalkTranscript;
-        _automation = automation;
+        _automation = host.Automation;
         _hotkeyRegistry = hotkeyRegistry;
-        _statusWriter = new SessionStatusWriter(options.StatusFilePath);
+        _statusWriter = host.StatusWriter;
         _platformServices = platformServices
             ?? throw new ArgumentNullException(nameof(platformServices));
         _applicationPaths = _platformServices.Paths;
         _keyBindings = LoadStartupKeyBindings(
             _applicationPaths.KeyBindingsFile);
-        _runtime = new GameRuntime(
-            AcDream.App.Plugins.GraphicalAutomationCapabilities
-                .BuildRuntimeDependencies(
-                    _combatAttackOperations,
-                    _combatTargetOperations,
-                    _combatModeOperations,
-                    _spellCastOperations,
-                    timeSyncDiagnostic:
-                        options.DumpSky ? Console.WriteLine : null));
-        _runtimeHostLease = _runtime.AcquireHostLease(
-            "graphical GameWindow");
-        _automation?.Bind(_runtime, _runtime.CharacterOwner, _runtime.ActionOwner.SpellCast);
-        _localPlayerIdentity = new AcDream.App.Input.LocalPlayerIdentityState(
-            _runtime.PlayerIdentity);
+        _combatAttackOperations = host.CombatAttackOperations;
+        _combatTargetOperations = host.CombatTargetOperations;
+        _combatModeOperations = host.CombatModeOperations;
+        _spellCastOperations = host.SpellCastOperations;
+        // The runtime is the session host's; the window presents it.
+        _runtime = host.Runtime;
+        _runtimeHostLease = host.RuntimeHostLease;
+        _localPlayerIdentity = host.PlayerIdentity;
+        // The world frame a window draws from is the session's.
+        _liveWorldOrigin = host.WorldOrigin;
+        _datLock = host.Content?.DatLock ?? new object();
         _updateFrameClock = new AcDream.App.Update.UpdateFrameClock(
             _runtime);
-        _worldEnvironment = new AcDream.App.World.WorldEnvironmentController(
-            _runtime.EnvironmentOwner,
-            options.ForcedDayGroupIndex,
-            Console.WriteLine,
-            options.PinnedWorldDayFraction);
+        // The sky and the world clock are the session's, set up once from
+        // the game files; every window draws the same ones.
+        _worldEnvironment = host.WorldEnvironment;
         var alphaScratchBudgets =
             AcDream.App.Rendering.Residency.AlphaScratchBudgetProfile.Create(
                 _options.ResidencyBudgets.AlphaScratchBytes);
@@ -549,12 +529,6 @@ public sealed class GameWindow :
             alphaScratchBudgets.QueueBytes);
         WorldTime = _worldEnvironment.WorldTime;
         Weather = _worldEnvironment.Weather;
-        Weather.DisableDistanceFogSource = () =>
-            _runtime.CharacterOwner.Options.GetOptionBit(
-                AcDream.Core.Net.Messages.CharacterOptionId.DisableDistanceFog);
-        _runtime.CommunicationOwner.DisplayTimestampsSource = () =>
-            _runtime.CharacterOwner.Options.GetOptionBit(
-                AcDream.Core.Net.Messages.CharacterOptionId.DisplayTimeStamps);
         _retainedInputCapture = new AcDream.App.Input.RetainedUiInputCaptureSlot();
         _inputCapture = new AcDream.App.Input.CompositeInputCaptureSource(
             new AcDream.App.Input.DevToolsInputCaptureSource(options.DevTools),
@@ -562,29 +536,11 @@ public sealed class GameWindow :
         _movementInput = new AcDream.App.Input.DispatcherMovementInputSource(
             _playerControllerSlot,
             _inputCapture);
-        _playerControllerSlot.RunAsDefaultMovementSource = () =>
-            _runtime.CharacterOwner.Options.GetOptionBit(
-                AcDream.Core.Net.Messages.CharacterOptionId.ToggleRun);
         _framebufferResize = new FramebufferResizeController(_viewportAspect);
         _datDir = options.DatDir;
-        _worldGameState = worldGameState;
-        _worldEvents = worldEvents;
-        _pluginTick = new AcDream.Runtime.Plugins.RuntimePluginTickClock(
-            _worldEvents.FireTick,
-            () => _runtime.Generation.Value);
-        // What a plugin sees in the world comes from the runtime's object
-        // directory, not from what happens to be drawn: the same producer the
-        // windowless client uses, so both answer the same population, ids
-        // and event order.
-        _pluginWorldEntities =
-            new AcDream.Runtime.Plugins.RuntimeWorldEntityProjection(
-                _runtime,
-                // A plugin handler that throws is skipped, not hidden: a
-                // plugin author with an overlay that stopped updating needs
-                // to be told why.
-                line => Serilog.Log.Warning("{Line}", line));
-        _worldGameState.BindWorldEntities(_pluginWorldEntities);
-        _worldEvents.BindWorldEntities(_pluginWorldEntities);
+        _worldGameState = host.WorldGameState;
+        _worldEvents = host.WorldEvents;
+        _pluginWorldEntities = host.PluginWorldEntities;
         _displayFramePacing = new DisplayFramePacingController(
             options.UncappedRendering,
             _frameProfiler,
@@ -617,27 +573,10 @@ public sealed class GameWindow :
                     movement, cellId, update),
             (host, targetGuid) =>
                 _liveEntityMotionBindings.StickToObjectFromWire(host, targetGuid));
-        _movementTruthDiagnostics =
-            new AcDream.App.Input.MovementTruthDiagnosticController(
-                options.DumpMoveTruth,
-                _playerControllerSlot,
-                _localPlayerIdentity);
-        _localPlayerOutbound = new LocalPlayerOutboundController(
-            _movementTruthDiagnostics);
-    }
-
-    internal void StartPluginHosting(
-        AcDream.App.Plugins.GraphicalPluginSession pluginSession)
-    {
-        ArgumentNullException.ThrowIfNull(pluginSession);
-        if (_pluginSession is not null)
-        {
-            throw new InvalidOperationException(
-                "The graphical plugin session is already attached.");
-        }
-
-        _pluginSession = pluginSession;
-        pluginSession.Start();
+        // What the character tells the server about its own movement is the
+        // session's, sent with or without a window.
+        _movementTruthDiagnostics = host.MovementTruth;
+        _localPlayerOutbound = host.LocalPlayerOutbound;
     }
 
     public void Run()
@@ -699,7 +638,7 @@ public sealed class GameWindow :
         _windowCallbacks.Attach();
         try
         {
-            _window.Run();
+            NativeWindowLoop.Run(_window);
             _nativeRunReturned = true;
             CompleteShutdown(releaseNativeWindow: false);
         }
@@ -1210,7 +1149,7 @@ public sealed class GameWindow :
             GameWindowPlatformAcquisition.Acquire(
                 CreateGraphics,
                 static graphics => graphics.Dispose(),
-                () => _window!.CreateInput(),
+                () => GlfwKeyboardMouseInputContext.Create(_window!),
                 static input => input.Dispose(),
                 this);
         if (_graphics is null || _input is null)
@@ -1238,13 +1177,28 @@ public sealed class GameWindow :
                 _startupPacing,
                 _startupQuality.MsaaSamples,
                 _startupMemoryProfile,
-                Console.WriteLine);
+                Console.WriteLine,
+                _vulkanInstanceWarmup);
         _vulkanGraphics = vulkan;
         return new VulkanGameWindowGraphics(vulkan);
     }
 
+    private Task<TerrainAtlas.DecodedSources>? _terrainSourceDecode;
+
+    private Task<TerrainAtlas.DecodedSources>? TakeTerrainSourceDecode()
+    {
+        Task<TerrainAtlas.DecodedSources>? decode = _terrainSourceDecode;
+        _terrainSourceDecode = null;
+        return decode;
+    }
+
     private void OnLoad()
     {
+
+        // The terrain atlas's layers decode on a worker while the window
+        // and the GPU are set up; the world phase picks them up.
+        if (_host.Content is { } sessionFiles)
+            _terrainSourceDecode = TerrainAtlas.BeginDecodeSources(sessionFiles.Dats, sessionFiles.DatLock);
 
         GameWindowPlatformResult<GameWindowGraphics, IInputContext> platform = AcquirePlatform();
 
@@ -1302,6 +1256,7 @@ public sealed class GameWindow :
                     Console.Error.WriteLine)
                 {
                     MixerOptions = _runtimeSettings.AudioMixer,
+                    SessionContent = _host.Content,
                 },
                 this).Compose(platformResult, hostInputCamera),
             (platformResult, hostInputCamera, contentEffectsAudio) =>
@@ -1323,7 +1278,6 @@ public sealed class GameWindow :
                 const uint initialCenterLandblockId = 0xA9B4FFFFu;
                 WorldRenderResult worldRender = new WorldRenderCompositionPhase(
                     new WorldRenderDependencies(
-                        _worldEnvironment,
                         _renderResourceLifetime,
                         _gpuDevice!.Retirement,
                         _options.ResidencyBudgets,
@@ -1335,6 +1289,7 @@ public sealed class GameWindow :
                     {
                         TextureDetail = AcDream.App.Rendering.Wb.WorldTextureDetail.FromDisplay(
                             _runtimeSettings.Startup.Display),
+                        TerrainSources = TakeTerrainSourceDecode(),
                     },
                     this).Compose(platformResult, contentEffectsAudio, settingsDevTools);
                 Console.WriteLine(
@@ -1515,14 +1470,9 @@ public sealed class GameWindow :
                     _combatFeedback,
                     _portalTunnelFallback,
                     Console.WriteLine,
-                    _automation is null
-                        ? null
-                        : _automation.TryHandlePluginCommand,
-                    _automation is null
-                        ? null
-                        : _automation.InterceptChatInput,
-                    _statusWriter,
-                    ChatLogDirectory: _applicationPaths.LogsDirectory),
+                    _host.LiveSession,
+                    _host.Collision,
+                    _host.EnsureDrives),
                 this).Compose(
                     hostInputCamera,
                     contentEffectsAudio,
@@ -1573,7 +1523,8 @@ public sealed class GameWindow :
                         _frameGraphs,
                         Console.WriteLine,
                         _renderPackDiagnostics,
-                        WorldLines),
+                        WorldLines,
+                        _host.Navigation),
                     this).Compose(
                         platformResult,
                         hostInputCamera,
@@ -1585,10 +1536,12 @@ public sealed class GameWindow :
                         sessionPlayer),
             frameRoots => new SessionStartCompositionPhase(
                 new SessionStartDependencies(
-                    Console.WriteLine))
+                    Console.WriteLine,
+                    JoinPlayingSession))
                 .Start(frameRoots));
 
         ApplyPluginAutomationBindings();
+        _host.NoteWindowOpened();
     }
 
     private void OnUpdate(double dt)
@@ -1596,16 +1549,27 @@ public sealed class GameWindow :
         _renderLoopArmed = true;
         using var _updStage = _frameProfiler.BeginStage(
             AcDream.App.Diagnostics.FrameStage.Update);
-        ClipboardDispatch.Drain();
-        _frameGraphs.Tick(new AcDream.App.Update.UpdateFrameInput(dt));
+        _host.Tick(dt, this);
+        _renderLoopArmed = false;
+    }
+
+    /// <summary>
+    /// The window's part of the session host's update: its frame graph,
+    /// then the display mode that follows the session into and out of the
+    /// world.
+    /// </summary>
+    void AcDream.App.Hosting.IGraphicalSessionFrame.TickSessionFrame(
+        AcDream.App.Update.UpdateFrameInput input) => TickSessionFrame(input);
+
+    private void TickSessionFrame(AcDream.App.Update.UpdateFrameInput input)
+    {
+        _frameGraphs.Tick(input);
         if (_options.LiveMode)
         {
             _runtimeSettings.SetGameplayDisplay(
                 _runtime.CharacterSelection.Snapshot.Lifecycle
                     == RuntimeCharacterSelectionLifecycle.InWorld);
         }
-        _pluginTick.Feed(dt);
-        _renderLoopArmed = false;
     }
 
     private void OnRender(double deltaSeconds)
@@ -1617,14 +1581,14 @@ public sealed class GameWindow :
             return;
         }
         Vector2D<int> size = _window!.Size;
-        if (_vulkanGraphics is { } vulkan && !vulkan.PrepareFrame())
-        {
-            _renderLoopArmed = false;
-            return;
-        }
         AcDream.App.Rendering.RenderFrameOutcome outcome;
         try
         {
+            if (_vulkanGraphics is { } vulkan && !vulkan.PrepareFrame())
+            {
+                _renderLoopArmed = false;
+                return;
+            }
             _frameGraphs.Render(
                 new AcDream.App.Rendering.RenderFrameInput(
                     deltaSeconds,
@@ -1639,6 +1603,19 @@ public sealed class GameWindow :
             _renderLoopArmed = false;
             return;
         }
+        catch (Exception error)
+            when (AcDream.App.Rendering.Gpu.Vk.VulkanRenderFailurePolicy.IsFatal(error))
+        {
+            // The GPU device was lost (or ran out of memory, or the surface
+            // went): only the window ends. It closes as a requested close
+            // does, handing the session back to play on without it, and the
+            // session host decides what follows.
+            _renderLoopArmed = false;
+            _renderFailure ??= error;
+            Console.Error.WriteLine($"window: drawing failed, closing the window: {error.Message}");
+            CloseKeepingSession();
+            return;
+        }
 
         if (!outcome.SkippedZeroArea)
             _vulkanGraphics?.NoteFrameClosed();
@@ -1647,6 +1624,43 @@ public sealed class GameWindow :
 
 
 
+
+
+    private Exception? _renderFailure;
+
+    /// <summary>
+    /// Why drawing failed for good (a lost GPU device), when that is how the
+    /// window ended; null otherwise.
+    /// </summary>
+    internal Exception? RenderFailure => _renderFailure;
+    private bool _closeKeepingSession;
+    private bool _joinedPlayingSession;
+
+    /// <summary>
+    /// Closes the window and lets the session play on without it. Called on
+    /// the update thread; the window goes once its loop has returned.
+    /// </summary>
+    internal void CloseKeepingSession()
+    {
+        _closeKeepingSession = true;
+        _window?.Close();
+    }
+
+    /// <summary>Closes the window and logs the character off, as the player's close does.</summary>
+    internal void CloseEndingSession() => _window?.Close();
+
+    /// <summary>Whether this window was built over a session already playing.</summary>
+    internal bool JoinedPlayingSession => _joinedPlayingSession;
+
+    /// <summary>Whether this window closed so that the session plays on.</summary>
+    internal bool ClosedKeepingSession => _closeKeepingSession;
+
+    private bool JoinPlayingSession()
+    {
+        _ = _host.JoinPlayingSession(
+            request => _retailUiRuntime?.ShowHandedOverConfirmation(request) == true);
+        return _joinedPlayingSession;
+    }
     private void OnFramebufferResize(Silk.NET.Maths.Vector2D<int> newSize)
         => _framebufferResize.Resize(newSize);
 
@@ -1664,20 +1678,25 @@ public sealed class GameWindow :
         {
             PersistKeyBindingsAtShutdown();
             _audioMixerCommand?.Dispose();
-            if (_runtime.Session.IsInWorld)
-                _statusWriter.Disconnected(_options.SessionId ?? "app", "stopped");
-            _lifetime.PublishShutdownRoots(CaptureShutdownRoots());
+            // A window closed so the session plays on (asked for, or one that
+            // failed while opening on a session already playing) hands the
+            // session back first and lets go of only what it built; any
+            // other close ends the session, as it always has.
+            bool keepSession = _closeKeepingSession
+                || (_runFailure is not null && _joinedPlayingSession);
+            if (keepSession)
+                _host.LetGoOfWindow(_retailUiRuntime?.TakeOpenConfirmation());
+            else
+                _host.ReportSessionStopping();
+            _lifetime.PublishShutdownRoots(
+                CaptureShutdownRoots() with { KeepSession = keepSession });
         }
 
         GameWindowLifetimeReport report = releaseNativeWindow
             ? _lifetime.CompleteAndReleaseNativeWindow()
             : _lifetime.TryComplete();
         if (report.Status == GameWindowLifetimeStatus.Complete)
-        {
-            if (releaseNativeWindow)
-                ReportExited(report);
             return;
-        }
 
         Console.Error.WriteLine(
             $"[shutdown] status={report.Status}, blocked={report.BlockedStage ?? "none"}");
@@ -1690,9 +1709,6 @@ public sealed class GameWindow :
 
         if (report.Error is not null)
             Console.Error.WriteLine($"[shutdown] {report.Error}");
-
-        if (releaseNativeWindow)
-            ReportExited(report);
     }
 
     private void PersistKeyBindingsAtShutdown()
@@ -1719,20 +1735,11 @@ public sealed class GameWindow :
         }
     }
 
-    private void ReportExited(GameWindowLifetimeReport report)
-    {
-        string sessionId = _options.SessionId ?? "app";
-        if (_runFailure is not null)
-        {
-            _statusWriter.Exited(sessionId, 1, "crashed");
-            return;
-        }
+    /// <summary>How the window's shutdown went, once it has been disposed.</summary>
+    internal GameWindowLifetimeReport LifetimeReport => _lifetime.Report;
 
-        if (report.Status == GameWindowLifetimeStatus.Complete)
-            _statusWriter.Exited(sessionId, 0, "graceful");
-        else
-            _statusWriter.Exited(sessionId, 1, "shutdown-incomplete");
-    }
+    /// <summary>Whether the window's run ended in an exception.</summary>
+    internal bool RunFailed => _runFailure is not null;
 
     private GameWindowShutdownRoots CaptureShutdownRoots() => new(
         new IngressShutdownRoots(
@@ -1747,7 +1754,7 @@ public sealed class GameWindow :
             _kbSource,
             _retailUiLease,
             _uiHost,
-            _pluginSession,
+            _host.PluginSession,
             _runtime,
             _movementInput,
             _cameraInput,
@@ -1807,8 +1814,10 @@ public sealed class GameWindow :
             _renderResourceLifetime,
             _constructionCleanup),
         new PlatformShutdownRoots(
-            _dats,
-            _preparedAssets,
+            // Game files the session host opened are borrowed, not closed
+            // with the window.
+            _host.Content is null ? _dats : null,
+            _host.Content is null ? _preparedAssets : null,
             _input,
             _graphics));
     private void OnFocusChanged(bool focused)
@@ -1827,9 +1836,6 @@ public sealed class GameWindow :
     public void Dispose()
     {
         CompleteShutdown(releaseNativeWindow: true);
-        // After the terminal status line, release the status file so it can
-        // be read, moved or deleted freely.
-        _statusWriter.Dispose();
         _window = null;
         _pluginWindowHandle = null;
     }

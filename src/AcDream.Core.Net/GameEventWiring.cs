@@ -61,6 +61,7 @@ public static class GameEventWiring
         Action<uint /*weenieError*/>? onHouseStatus = null,
         Action<uint /*rentTime*/>? onHouseUpdateRentTime = null,
         Action<IReadOnlyList<GameEvents.HousePayment>>? onHouseUpdateRentPayment = null,
+        Action<GameEvents.HouseProfile>? onHouseProfile = null,
         Action<IReadOnlyDictionary<uint, ContractTracker>>? onContractTable = null,
         Action<ContractTrackerUpdate>? onContractUpdate = null,
         Action<uint /*displayTitleId*/, IReadOnlyList<uint> /*titleIds*/>? onCharacterTitleTable = null,
@@ -324,6 +325,15 @@ public static class GameEventWiring
             {
                 var p = GameEvents.ParseUpdateRentPayment(e.Payload.Span);
                 if (p is not null) onHouseUpdateRentPayment(p);
+            });
+        }
+
+        if (onHouseProfile is not null)
+        {
+            registrar.Register(GameEventType.HouseProfile, e =>
+            {
+                var p = GameEvents.ParseHouseProfile(e.Payload.Span);
+                if (p is not null) onHouseProfile(p.Value);
             });
         }
 
@@ -668,6 +678,18 @@ public static class GameEventWiring
                 onBookAddPageResponse(p.Value);
             });
         }
+
+        registrar.Register(GameEventType.UpdateHAR, e =>
+        {
+            var p = GameEvents.ParseUpdateHar(e.Payload.Span);
+            if (p is null) return;
+
+            string text = HouseGuestListText.Compose(p.Value);
+            if (onInterfaceText is not null)
+                onInterfaceText(text, RetailLogTextType.Default);
+            else
+                chat.OnSystemMessage(text, chatType: (uint)RetailLogTextType.Default);
+        });
 
         registrar.Register(GameEventType.HouseUpdateRestrictions, e =>
         {

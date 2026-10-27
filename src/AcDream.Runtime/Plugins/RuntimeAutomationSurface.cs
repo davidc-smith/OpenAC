@@ -284,8 +284,13 @@ internal sealed class RuntimeAutomationSurface
         ArgumentNullException.ThrowIfNull(runtime);
         lock (_gate)
         {
-            if (_disposed || _navigationCommands is not null)
+            if (_disposed)
                 return;
+            // A host that lends the verbs what it draws may change while the
+            // session plays (a window opens or closes): the verbs are built
+            // again over what the host lends now.
+            _navigationCommands?.Dispose();
+            _navigationCommands = null;
             _navigationCommands =
                 new AcDream.Runtime.Navigation.NavigationChatCommands(
                     _navigation,
@@ -1068,6 +1073,7 @@ internal sealed class RuntimeAutomationSurface
             _wasInWorld =
                 runtime.Lifecycle.State == RuntimeLifecycleState.InWorld;
             runtime.CommunicationOwner.LocalPlayerDied += OnLocalPlayerDied;
+            runtime.CommunicationOwner.StatusTextReceived += OnStatusTextReceived;
             _externalContainerChanged = OnExternalContainerChanged;
             runtime.InventoryOwner.ExternalContainers.Changed +=
                 _externalContainerChanged;
@@ -1349,7 +1355,10 @@ internal sealed class RuntimeAutomationSurface
                 OnUseCompleted;
         }
         if (_communication is not null)
+        {
             _communication.LocalPlayerDied -= OnLocalPlayerDied;
+            _communication.StatusTextReceived -= OnStatusTextReceived;
+        }
         _communicationSubscription?.Dispose();
         _communicationSubscription = null;
         _chatFilterInstallation?.Dispose();
@@ -2798,6 +2807,9 @@ internal sealed class RuntimeAutomationSurface
     private void OnLocalPlayerDied(string deathMessage) =>
         _events?.FireLocalPlayerDied(deathMessage);
 
+    private void OnStatusTextReceived(string text) =>
+        _events?.FireStatusTextReceived(text);
+
     private void OnExternalContainerChanged(ExternalContainerTransition transition)
     {
         AcDream.Core.Plugins.IPluginEventSink? events = _events;
@@ -2878,6 +2890,19 @@ internal sealed class RuntimeAutomationSurface
         lock (_gate)
             _answerConfirmation = answer;
     }
+
+    /// <summary>
+    /// Forgets how a confirmation is answered, when the host that answered
+    /// it goes away while the session plays on.
+    /// </summary>
+    internal void UnbindDialogs()
+    {
+        lock (_gate)
+            _answerConfirmation = null;
+    }
+
+    /// <summary>Forgets the navigation walk the host lent.</summary>
+    internal void UnbindNavigationWalk() => _navigation.UnbindWalk();
 
     /// <summary>Called by the host whenever it shows a confirmation dialog.</summary>
     public void RaiseConfirmationRequested(PluginConfirmation confirmation) =>

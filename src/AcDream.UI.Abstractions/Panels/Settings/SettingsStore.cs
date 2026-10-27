@@ -11,6 +11,9 @@ namespace AcDream.UI.Abstractions.Panels.Settings;
 
 public readonly record struct UiWindowPosition(float X, float Y);
 
+/// <summary>One remembered markup control value: which window, which named control, which kind of state.</summary>
+public readonly record struct MarkupControlKey(string Window, string Control, string Kind);
+
 public sealed class SettingsStore
 {
     private const int CurrentSchemaVersion = 4;
@@ -251,7 +254,7 @@ public sealed class SettingsStore
         if (!File.Exists(_path)) return "Classic";
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(_path));
+            using var doc = JsonDocument.Parse(ReadSettingsText());
             return doc.RootElement.TryGetProperty("pluginUi", out var section)
                 && section.ValueKind == JsonValueKind.Object
                 ? ReadString(section, "theme", "Classic") : "Classic";
@@ -300,7 +303,7 @@ public sealed class SettingsStore
         if (!File.Exists(_path)) return CharacterSettings.Default;
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             var toon = root?["character"]?[toonKey] as JsonObject;
             if (toon is null) return CharacterSettings.Default;
 
@@ -347,7 +350,7 @@ public sealed class SettingsStore
         if (!File.Exists(_path)) return null;
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             var node = root?["windowPositions"]?[toonKey]?[windowName] as JsonObject;
             if (node is null) return null;
             float? x = node["x"]?.GetValue<float>();
@@ -382,6 +385,70 @@ public sealed class SettingsStore
         WriteMutableRoot(root);
     }
 
+    /// <summary>
+    /// What a character's markup controls remember, read from
+    /// <c>markupControls[toonKey][window][control][kind]</c>. Anything that is
+    /// not an object where one is expected, or not a string value, is skipped.
+    /// </summary>
+    /// <returns>False when the file exists but couldn't be read or parsed; values is then empty and must not be saved over.</returns>
+    public bool TryLoadMarkupControlState(string toonKey, out Dictionary<MarkupControlKey, string> values)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        values = new Dictionary<MarkupControlKey, string>();
+        if (!File.Exists(_path)) return true;
+        try
+        {
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+            if (root?["markupControls"] is not JsonObject characters
+                || characters[toonKey] is not JsonObject windows)
+            {
+                return true;
+            }
+            foreach (var (window, windowNode) in windows)
+            {
+                if (windowNode is not JsonObject controls) continue;
+                foreach (var (control, controlNode) in controls)
+                {
+                    if (controlNode is not JsonObject kinds) continue;
+                    foreach (var (kind, valueNode) in kinds)
+                    {
+                        if (valueNode is JsonValue value && value.TryGetValue(out string? text) && text is not null)
+                            values[new MarkupControlKey(window, control, kind)] = text;
+                    }
+                }
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load markup control state from {_path}: {ex.Message}");
+            values = new Dictionary<MarkupControlKey, string>();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Replaces everything a character's markup controls remember, keeping
+    /// every other section and every other character.
+    /// </summary>
+    public void SaveMarkupControlState(string toonKey, IReadOnlyDictionary<MarkupControlKey, string> values)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentNullException.ThrowIfNull(values);
+
+        JsonObject root = LoadMutableRoot();
+        var windows = new JsonObject();
+        foreach (var (key, value) in values)
+        {
+            JsonObject controls = GetOrCreateObject(windows, key.Window);
+            JsonObject kinds = GetOrCreateObject(controls, key.Control);
+            kinds[key.Kind] = value;
+        }
+        GetOrCreateObject(root, "markupControls")[toonKey] = windows;
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
     public UiWindowLayout? LoadWindowLayout(
         string toonKey,
         string resolutionKey,
@@ -395,7 +462,7 @@ public sealed class SettingsStore
 
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             JsonObject? node = root?["windowLayouts"]?[toonKey]?[resolutionKey]?[windowName] as JsonObject;
             if (node is null
                 && root?["windowLayouts"]?[toonKey] is JsonObject resolutions
@@ -446,14 +513,61 @@ public sealed class SettingsStore
         string windowName,
         UiWindowLayout fallback)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(windowName);
+        return LoadWindowPlacements(toonKey, resolutionKey, [new(windowName, fallback)])
+            .TryGetValue(windowName, out UiWindowPlacement placement)
+            ? placement
+            : null;
+    }
+
+    /// <summary>
+    /// <see cref="LoadWindowPlacement"/> for several windows with one read of
+    /// the file: each window name maps to its fallback, and the result holds
+    /// only the windows that have something saved.
+    /// </summary>
+    public IReadOnlyDictionary<string, UiWindowPlacement> LoadWindowPlacements(
+        string toonKey,
+        string resolutionKey,
+        IReadOnlyList<KeyValuePair<string, UiWindowLayout>> windows)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
         ArgumentException.ThrowIfNullOrWhiteSpace(resolutionKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(windowName);
-        if (!TryParseResolution(resolutionKey, out int requestedWidth, out int requestedHeight)
-            || !File.Exists(_path)) return null;
+        ArgumentNullException.ThrowIfNull(windows);
+        foreach (var window in windows)
+            ArgumentException.ThrowIfNullOrWhiteSpace(window.Key, nameof(windows));
+        var found = new Dictionary<string, UiWindowPlacement>(StringComparer.Ordinal);
+        if (windows.Count == 0
+            || !TryParseResolution(resolutionKey, out int requestedWidth, out int requestedHeight)
+            || !File.Exists(_path)) return found;
+        JsonObject? root;
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load window placement from {_path}: {ex.Message}");
+            return found;
+        }
+        foreach ((string windowName, UiWindowLayout fallback) in windows)
+        {
+            if (ReadWindowPlacement(root, toonKey, requestedWidth, requestedHeight, windowName, fallback)
+                is { } placement)
+                found[windowName] = placement;
+        }
+        return found;
+    }
+
+    private UiWindowPlacement? ReadWindowPlacement(
+        JsonObject? root,
+        string toonKey,
+        int requestedWidth,
+        int requestedHeight,
+        string windowName,
+        UiWindowLayout fallback)
+    {
+        try
+        {
             var placements = (root?["windowPlacements"] as JsonObject)?[toonKey] as JsonObject;
             if (placements?[windowName] is JsonObject latest
                 && ReadNodeInt(latest, "screenWidth", 0) is > 0 and var width
@@ -500,12 +614,36 @@ public sealed class SettingsStore
     }
 
     public void SaveWindowPlacement(string toonKey, string windowName, UiWindowPlacement placement)
+        => SaveWindowPlacements(toonKey, [new(windowName, placement)]);
+
+    /// <summary>
+    /// <see cref="SaveWindowPlacement"/> for several windows with one read and
+    /// one write of the file. Every entry is checked before anything is
+    /// written; an empty list writes nothing.
+    /// </summary>
+    public void SaveWindowPlacements(
+        string toonKey,
+        IReadOnlyList<KeyValuePair<string, UiWindowPlacement>> placements)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
-        ArgumentException.ThrowIfNullOrWhiteSpace(windowName);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenWidth);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenHeight);
+        ArgumentNullException.ThrowIfNull(placements);
+        foreach ((string windowName, UiWindowPlacement placement) in placements)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(windowName, nameof(placements));
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenWidth, nameof(placements));
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(placement.ScreenHeight, nameof(placements));
+        }
+        if (placements.Count == 0) return;
         JsonObject root = LoadMutableRoot();
+        foreach ((string windowName, UiWindowPlacement placement) in placements)
+            PutWindowPlacement(root, toonKey, windowName, placement);
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
+    private static void PutWindowPlacement(
+        JsonObject root, string toonKey, string windowName, UiWindowPlacement placement)
+    {
         JsonObject toon = GetOrCreateObject(GetOrCreateObject(root, "windowPlacements"), toonKey);
         toon[windowName] = new JsonObject
         {
@@ -517,8 +655,6 @@ public sealed class SettingsStore
         JsonObject resolution = GetOrCreateObject(
             GetOrCreateObject(GetOrCreateObject(root, "windowLayouts"), toonKey), resolutionKey);
         resolution[windowName] = SerializeWindowLayout(placement.Layout);
-        root["version"] = CurrentSchemaVersion;
-        WriteMutableRoot(root);
     }
 
     private static UiWindowLayout DeserializeWindowLayout(JsonObject node, UiWindowLayout fallback) => new(
@@ -571,7 +707,7 @@ public sealed class SettingsStore
 
         try
         {
-            var root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject;
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
             JsonObject? node = root?["namedWindowLayouts"]?[profileName]?[windowName] as JsonObject;
             return node is null
                 ? null
@@ -612,13 +748,29 @@ public sealed class SettingsStore
         ["authoredGeometryRevision"] = layout.AuthoredGeometryRevision,
     };
 
+    /// <summary>How many times this store has read the whole settings file as text (tests pin batching on it).</summary>
+    internal int FileReads { get; private set; }
+
+    /// <summary>How many times this store has written the settings file (tests pin batching on it).</summary>
+    internal int FileWrites { get; private set; }
+
+    private string ReadSettingsText()
+    {
+        FileReads++;
+        return File.ReadAllText(_path);
+    }
+
     private JsonObject LoadMutableRoot()
     {
         var dir = Path.GetDirectoryName(_path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         if (!File.Exists(_path)) return new JsonObject();
+        // A file that cannot be read fails the save: starting from an empty
+        // root would write away every section this save does not own. One
+        // that reads but does not parse loads as defaults, so it starts over.
+        string text = ReadSettingsText();
         JsonObject root;
-        try { root = JsonNode.Parse(File.ReadAllText(_path)) as JsonObject ?? new JsonObject(); }
+        try { root = JsonNode.Parse(text) as JsonObject ?? new JsonObject(); }
         catch { return new JsonObject(); }
         MigrateSectionsInPlace(root);
         return root;
@@ -641,7 +793,28 @@ public sealed class SettingsStore
     }
 
     private void WriteMutableRoot(JsonObject root)
-        => File.WriteAllText(_path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        => WriteSettingsFile(root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+    /// <summary>
+    /// Writes the whole file through a temporary file beside it, so a save
+    /// that fails part way leaves the old file whole.
+    /// </summary>
+    private void WriteSettingsFile(string text)
+    {
+        FileWrites++;
+        string directory = Path.GetDirectoryName(Path.GetFullPath(_path))!;
+        string temporary = Path.Combine(directory, $".{Path.GetFileName(_path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(temporary, text);
+            File.Move(temporary, _path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+                File.Delete(temporary);
+        }
+    }
 
     private static JsonObject GetOrCreateObject(JsonObject parent, string key)
     {
@@ -812,10 +985,12 @@ public sealed class SettingsStore
         var preservedKeys = new SortedDictionary<string, string>(StringComparer.Ordinal);
         if (File.Exists(_path))
         {
+            // As LoadMutableRoot: a read error fails the save, a file that
+            // does not parse is started over.
+            string text = ReadSettingsText();
             try
             {
-                using var stream = File.OpenRead(_path);
-                var doc  = JsonDocument.Parse(stream);
+                using var doc = JsonDocument.Parse(text);
                 int storedVersion = ReadSchemaVersion(doc.RootElement);
                 foreach (var prop in doc.RootElement.EnumerateObject())
                 {
@@ -845,7 +1020,7 @@ public sealed class SettingsStore
         sb.Append("  \"version\": ").Append(CurrentSchemaVersion).AppendLine();
         sb.Append('}').AppendLine();
 
-        File.WriteAllText(_path, sb.ToString());
+        WriteSettingsFile(sb.ToString());
     }
 
     /// <summary>

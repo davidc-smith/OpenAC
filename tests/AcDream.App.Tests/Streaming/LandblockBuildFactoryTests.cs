@@ -34,7 +34,6 @@ public sealed class LandblockBuildFactoryTests
         Assert.Empty(result.Landblock.Entities);
         Assert.Same(PhysicsDatBundle.Empty, result.Landblock.PhysicsDats);
         Assert.Null(result.EnvCells);
-        Assert.Null(result.Collisions);
         Assert.Equal(HoltburgOrigin, result.Origin);
         Assert.Equal([(typeof(LandBlock), LandblockId)], proxy.Reads);
     }
@@ -83,12 +82,30 @@ public sealed class LandblockBuildFactoryTests
         Assert.Empty(envCells.Shells);
         var physics = Assert.IsType<PhysicsDatBundle>(result.Landblock.PhysicsDats);
         Assert.Null(physics.Info);
-        Assert.Empty(physics.EnvCells);
-        Assert.NotNull(result.Collisions);
-        Assert.Empty(result.Collisions.GfxObjs);
-        Assert.Empty(result.Collisions.Setups);
-        Assert.Empty(result.Collisions.CellStructures);
-        Assert.Empty(result.Collisions.EnvCells);
+        Assert.Empty(physics.Setups);
+    }
+
+    [Theory]
+    [InlineData(LandblockStreamJobKind.LoadNear)]
+    [InlineData(LandblockStreamJobKind.PromoteToNear)]
+    public void ADrawnLandblockBuildsNoCollision(LandblockStreamJobKind kind)
+    {
+        // The session's collision is the session host's, built from the
+        // same files; a landblock the window streams to draw reads none of
+        // what collision needs.
+        var dat = CreateDat(out RecordingDatProxy proxy);
+        AddNearFixture(proxy, LandblockId, environmentId: 1, cellCount: 2);
+        var factory = new LandblockBuildFactory(
+            dat, new object(), new float[256]);
+
+        LandblockBuild? result = factory.Build(Request(kind));
+
+        Assert.NotNull(result);
+        var dats = Assert.IsType<PhysicsDatBundle>(result.Landblock.PhysicsDats);
+        Assert.NotNull(dats.Info);
+        Assert.Empty(dats.EnvCells);
+        Assert.Empty(dats.Environments);
+        Assert.Empty(dats.GfxObjs);
     }
 
     [Fact]
@@ -123,7 +140,7 @@ public sealed class LandblockBuildFactoryTests
         heightTable[10] = 5f;
         heightTable[200] = 40f;
         var factory = new LandblockBuildFactory(
-            dat, TestPreparedCollisionSource.Instance, new object(), heightTable);
+            dat, new object(), heightTable);
 
         LandblockBuild? result = factory.Build(Request(LandblockStreamJobKind.LoadNear));
 
@@ -194,8 +211,7 @@ public sealed class LandblockBuildFactoryTests
         var heightTable = new float[256];
         heightTable[10] = 5.25f;
         heightTable[200] = 40.5f;
-        var source = new TestPreparedCollisionSource(PreparedAssetReadStatus.Missing);
-        var factory = new LandblockBuildFactory(dat, source, new object(), heightTable);
+        var factory = new LandblockBuildFactory(dat, new object(), heightTable);
 
         LandblockBuild? result = factory.Build(Request(LandblockStreamJobKind.LoadFar));
 
@@ -204,39 +220,9 @@ public sealed class LandblockBuildFactoryTests
         Assert.Equal(new LandblockTerrainBounds(240.5f, 4.25f), result.TerrainBounds);
         Assert.Empty(result.Landblock.Entities);
         Assert.Same(PhysicsDatBundle.Empty, result.Landblock.PhysicsDats);
-        Assert.Null(result.Collisions);
-        Assert.Equal(0, source.Reads);
         Assert.Equal([(typeof(LandBlock), LandblockId)], proxy.Reads);
     }
 
-    [Fact]
-    public void NearPreparedFaultRejectsWholeGenerationWhileFarNeverReadsCollision()
-    {
-        var dat = CreateDat(out RecordingDatProxy proxy);
-        AddNearFixture(proxy, LandblockId, environmentId: 1);
-        var source = new TestPreparedCollisionSource(
-            PreparedAssetReadStatus.Missing);
-        var factory = new LandblockBuildFactory(
-            dat,
-            source,
-            new object(),
-            new float[256]);
-
-        LandblockBuild? far = factory.Build(
-            Request(LandblockStreamJobKind.LoadFar));
-        Assert.NotNull(far);
-        Assert.Null(far.Collisions);
-        Assert.Equal(0, source.Reads);
-
-        InvalidDataException failure =
-            Assert.Throws<InvalidDataException>(() =>
-                factory.Build(Request(LandblockStreamJobKind.LoadNear)));
-        Assert.Contains(
-            "complete near-tier generation",
-            failure.Message,
-            StringComparison.Ordinal);
-        Assert.True(source.Reads > 0);
-    }
 
     [Fact]
     public void BuildNear_MissingEnvCellSkipsOnlyThatCellWithoutPartialVisibilityEntry()
@@ -255,12 +241,6 @@ public sealed class LandblockBuildFactoryTests
         Assert.Equal(
             [(LandblockId & 0xFFFF0000u) | 0x0100u],
             envCells.VisibilityCells.Select(cell => cell.CellId));
-        var physics = Assert.IsType<PhysicsDatBundle>(result.Landblock.PhysicsDats);
-        Assert.Single(physics.EnvCells);
-        Assert.DoesNotContain(missingCell, physics.EnvCells.Keys);
-        Assert.Single(result.Collisions!.CellStructures);
-        Assert.Single(result.Collisions.EnvCells);
-        Assert.DoesNotContain(missingCell, result.Collisions.EnvCells.Keys);
     }
 
     // The gate is held per record read, not for a whole build, so two builds
@@ -396,10 +376,6 @@ public sealed class LandblockBuildFactoryTests
             envCells.VisibilityCells.Select(cell => cell.CellId));
         Assert.Empty(envCells.Shells);
         Assert.NotNull(physics.Info);
-        Assert.Equal(2, physics.EnvCells.Count);
-        Assert.Empty(physics.Environments);
-        Assert.Equal(2, result.Collisions!.CellStructures.Count);
-        Assert.Equal(2, result.Collisions.EnvCells.Count);
     }
 
     [Fact]
@@ -409,7 +385,6 @@ public sealed class LandblockBuildFactoryTests
         var heights = Enumerable.Range(0, 256).Select(value => (float)value).ToArray();
         var factory = new LandblockBuildFactory(
             dat,
-            TestPreparedCollisionSource.Instance,
             new object(),
             heights);
         heights[42] = -1f;
@@ -428,7 +403,6 @@ public sealed class LandblockBuildFactoryTests
 
         Assert.Throws<ArgumentException>(() => new LandblockBuildFactory(
             dat,
-            TestPreparedCollisionSource.Instance,
             new object(),
             new float[255]));
     }
@@ -471,13 +445,13 @@ public sealed class LandblockBuildFactoryTests
     }
 
     [Fact]
-    [Trait("Lane", "PreparedPackage")]
-    public void InstalledDatNearBuild_IsDeterministicAndClosesEntityPhysicsPayload()
+    [Trait("Lane", "InstalledDat")]
+    public void InstalledDatNearBuild_IsDeterministicAndCarriesItsObjectsSetups()
     {
         string? datDirectory = ResolveDatDirectory();
         if (datDirectory is null)
             throw new InvalidOperationException(
-                "Lane=PreparedPackage requires installed retail DATs; see docs/release-gate.md.");
+                "Lane=InstalledDat requires installed retail DATs; see docs/release-gate.md.");
 
         using var dat = new BoundedTestDatCollection(datDirectory);
         var bounded = (IDatReaderWriter)dat;
@@ -485,14 +459,8 @@ public sealed class LandblockBuildFactoryTests
         float[]? heights = region?.LandDefs.LandHeightTable;
         Assert.NotNull(heights);
         Assert.True(heights.Length >= 256);
-        string? pakPath = ResolvePreparedPackagePath(datDirectory);
-        if (pakPath is null)
-            throw new InvalidOperationException(
-                "Lane=PreparedPackage requires a validated acdream.pak; see docs/release-gate.md.");
-        using var prepared = new PakPreparedAssetSource(pakPath, bounded);
         var factory = new LandblockBuildFactory(
             bounded,
-            prepared,
             new object(),
             heights);
         LandblockBuildRequest request = Request(LandblockStreamJobKind.LoadNear, generation: 4);
@@ -504,7 +472,6 @@ public sealed class LandblockBuildFactoryTests
         Assert.NotNull(second);
         Assert.Equal(HoltburgOrigin, first.Origin);
         Assert.NotNull(first.EnvCells);
-        Assert.NotNull(first.Collisions);
         Assert.NotEmpty(first.Landblock.Entities);
         AssertEntityBuildsEqual(first.Landblock.Entities, second.Landblock.Entities);
         Assert.Equal(
@@ -538,35 +505,19 @@ public sealed class LandblockBuildFactoryTests
         PhysicsDatBundle physics = Assert.IsType<PhysicsDatBundle>(
             first.Landblock.PhysicsDats);
         Assert.NotNull(physics.Info);
-        Assert.Equal(physics.EnvCells.Keys.Order(), first.Collisions.EnvCells.Keys.Order());
-        Assert.Equal(
-            physics.EnvCells.Keys.Order(),
-            first.Collisions.CellStructures.Keys.Order());
-        Assert.Equal(physics.Setups.Keys.Order(), first.Collisions.Setups.Keys.Order());
+        Assert.Empty(physics.EnvCells);
         Assert.Empty(physics.Environments);
         Assert.Empty(physics.GfxObjs);
-        uint[] expectedGfxObjIds = first.Landblock.Entities
-            .SelectMany(static entity => entity.MeshRefs)
-            .Select(static mesh => mesh.GfxObjId)
-            .Distinct()
-            .Order()
-            .ToArray();
-        Assert.Equal(
-            expectedGfxObjIds,
-            first.Collisions.GfxObjs.Keys.Order());
         foreach (WorldEntity entity in first.Landblock.Entities)
         {
             if ((entity.SourceGfxObjOrSetupId & 0xFF000000u) == 0x02000000u)
                 Assert.Contains(entity.SourceGfxObjOrSetupId, physics.Setups.Keys);
-            foreach (MeshRef mesh in entity.MeshRefs)
-                Assert.Contains(mesh.GfxObjId, first.Collisions.GfxObjs.Keys);
         }
     }
 
     private static LandblockBuildFactory Factory(IDatReaderWriter dat, object gate) =>
         new(
             dat,
-            TestPreparedCollisionSource.Instance,
             gate,
             new float[256]);
 
@@ -667,26 +618,6 @@ public sealed class LandblockBuildFactoryTests
         return Directory.Exists(documents) ? documents : null;
     }
 
-    private static string? ResolvePreparedPackagePath(string datDirectory)
-    {
-        string? configured =
-            System.Environment.GetEnvironmentVariable("ACDREAM_PAK_PATH");
-        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
-            return configured;
-
-        string besideDats = Path.Combine(datDirectory, "acdream.pak");
-        if (File.Exists(besideDats))
-            return besideDats;
-
-        string documents = Path.Combine(
-            System.Environment.GetFolderPath(
-                System.Environment.SpecialFolder.UserProfile),
-            "Documents",
-            "Asheron's Call",
-            "acdream.pak");
-        return File.Exists(documents) ? documents : null;
-    }
-
     private class RecordingDatProxy : DispatchProxy
     {
         private readonly Dictionary<(Type Type, uint Id), object> _objects = new();
@@ -747,99 +678,6 @@ public sealed class LandblockBuildFactoryTests
             if (targetMethod?.ReturnType.IsValueType == true)
                 return Activator.CreateInstance(targetMethod.ReturnType);
             return null;
-        }
-    }
-
-    private sealed class TestPreparedCollisionSource :
-        IPreparedCollisionSource
-    {
-        private static readonly FlatPhysicsBsp EmptyPhysics = new(
-            -1,
-            ImmutableArray<FlatPhysicsBspNode>.Empty,
-            ImmutableArray<int>.Empty,
-            FlatPolygonTable.Empty);
-        private static readonly FlatCellStructureCollisionAsset EmptyCell =
-            new(
-                EmptyPhysics,
-                new FlatCellContainmentBsp(
-                    -1,
-                    ImmutableArray<FlatCellBspNode>.Empty),
-                FlatPolygonTable.Empty);
-        private static readonly FlatEnvCellTopology EmptyTopology = new(
-            ImmutableArray<FlatEnvCellPortal>.Empty,
-            ImmutableArray<uint>.Empty,
-            seenOutside: false);
-
-        private readonly PreparedAssetReadStatus _status;
-
-        internal TestPreparedCollisionSource(
-            PreparedAssetReadStatus status =
-                PreparedAssetReadStatus.Loaded)
-        {
-            _status = status;
-        }
-
-        internal static TestPreparedCollisionSource Instance { get; } = new();
-        internal int Reads { get; private set; }
-
-        public PreparedAssetPresence ProbeCollision(
-            AcDream.Content.Pak.PakAssetType type,
-            uint sourceFileId) =>
-            PreparedAssetPresence.Available;
-
-        public PreparedCollisionReadResult<FlatGfxObjCollisionAsset>
-            ReadGfxObjCollision(
-                uint sourceFileId,
-                CancellationToken cancellationToken = default) =>
-            Result(
-                new FlatGfxObjCollisionAsset(
-                    EmptyPhysics,
-                    null,
-                    null));
-
-        public PreparedCollisionReadResult<FlatSetupCollision>
-            ReadSetupCollision(
-                uint sourceFileId,
-                CancellationToken cancellationToken = default) =>
-            Result(
-                new FlatSetupCollision(
-                    ImmutableArray<FlatCollisionCylinder>.Empty,
-                    ImmutableArray<FlatCollisionSphere>.Empty,
-                    0f,
-                    0f,
-                    0f,
-                    0f));
-
-        public PreparedCollisionReadResult<FlatCellStructureCollisionAsset>
-            ReadCellStructureCollision(
-                uint sourceFileId,
-                CancellationToken cancellationToken = default) =>
-            Result(EmptyCell);
-
-        public PreparedCollisionReadResult<FlatEnvCellTopology>
-            ReadEnvCellTopology(
-                uint sourceFileId,
-                CancellationToken cancellationToken = default) =>
-            Result(EmptyTopology);
-
-        public PreparedCollisionSourceStats CollisionStats => default;
-
-        public void Dispose()
-        {
-        }
-
-        private PreparedCollisionReadResult<T> Result<T>(T value)
-            where T : class
-        {
-            Reads++;
-            return _status switch
-            {
-                PreparedAssetReadStatus.Loaded =>
-                    PreparedCollisionReadResult<T>.Loaded(value),
-                PreparedAssetReadStatus.Missing =>
-                    PreparedCollisionReadResult<T>.Missing,
-                _ => PreparedCollisionReadResult<T>.Corrupt,
-            };
         }
     }
 }

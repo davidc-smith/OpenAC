@@ -252,7 +252,7 @@ public sealed class CharacterCreationAppearancePageSwatchColorTests
 
         UiButton eyesSpin = Assert.IsType<UiButton>(
             UiElement.FindDescendant(root, CharacterCreationAppearancePage.EyesSpinId));
-        eyesSpin.OnClickAt!(180, 10);
+        eyesSpin.OnClick!();
 
         Assert.Equal(ToVector4(EyeColorA), Swatch(root, 0).Tint);
         Assert.Equal(ToVector4(EyeColorB), Swatch(root, 1).Tint);
@@ -298,7 +298,7 @@ public sealed class CharacterCreationAppearancePageSwatchColorTests
 
         UiButton eyesSpin = Assert.IsType<UiButton>(
             UiElement.FindDescendant(root, CharacterCreationAppearancePage.EyesSpinId));
-        eyesSpin.OnClickAt!(180, 10);
+        eyesSpin.OnClick!();
 
         Assert.True(GradCircle(root).Visible);
         Assert.Equal(Vector4.One, GradCircle(root).Tint);
@@ -314,7 +314,7 @@ public sealed class CharacterCreationAppearancePageSwatchColorTests
 
         UiButton skinSpin = Assert.IsType<UiButton>(
             UiElement.FindDescendant(root, CharacterCreationAppearancePage.SkinSpinId));
-        skinSpin.OnClickAt!(10, 10);
+        skinSpin.OnClick!();
 
         Assert.Equal(ToVector4(SkinColor), Swatch(root, 0).Tint);
         Assert.True(Swatch(root, 0).Visible);
@@ -337,7 +337,7 @@ public sealed class CharacterCreationAppearancePageSwatchColorTests
 
         UiButton headgearSpin = Assert.IsType<UiButton>(
             UiElement.FindDescendant(root, CharacterCreationAppearancePage.HeadgearSpinId));
-        headgearSpin.OnClickAt!(180, 10);
+        headgearSpin.OnClick!();
 
         Assert.Equal(ToVector4(HeadgearColorA), Swatch(root, 0).Tint);
 

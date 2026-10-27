@@ -6,13 +6,11 @@ namespace AcDream.App.Streaming;
 public sealed class LandblockBuildFactory
 {
     private readonly IDatReaderWriter _dats;
-    private readonly IPreparedCollisionSource _preparedCollisions;
     private readonly float[] _heightTable;
     private readonly bool _dumpSceneryZ;
 
     public LandblockBuildFactory(
         IDatReaderWriter dats,
-        IPreparedCollisionSource preparedCollisions,
         object datLock,
         float[] heightTable,
         bool dumpSceneryZ = false)
@@ -22,8 +20,6 @@ public sealed class LandblockBuildFactory
         // Every read still holds the content gate; the build no longer holds
         // it from its first read to its last. See LockedContentReads.
         _dats = new LockedContentReads(dats, datLock);
-        _preparedCollisions = preparedCollisions ??
-            throw new ArgumentNullException(nameof(preparedCollisions));
         ArgumentNullException.ThrowIfNull(heightTable);
         if (heightTable.Length < 256)
             throw new ArgumentException(
@@ -57,28 +53,9 @@ public sealed class LandblockBuildFactory
             build = BuildContent(request);
         }
 
-        if (build is null ||
-            request.Kind == LandblockStreamJobKind.LoadFar)
-        {
-            return build;
-        }
-
-        AcDream.Core.World.LandblockCollisionBuild collisions =
-            LandblockPhysicsContentBuilder.BuildPreparedCollisionClosure(
-                _preparedCollisions,
-                build.Landblock);
-        AcDream.Core.World.PhysicsDatBundle publicationDats =
-            (build.Landblock.PhysicsDats
-                ?? AcDream.Core.World.PhysicsDatBundle.Empty)
-            .WithoutCollisionGraphs();
-        return build with
-        {
-            Landblock = build.Landblock with
-            {
-                PhysicsDats = publicationDats,
-            },
-            Collisions = collisions,
-        };
+        // A drawn landblock carries no collision: the session's collision is
+        // built by the session host from the same files.
+        return build;
     }
 
     private AcDream.App.Streaming.LandblockBuild? BuildContent(
@@ -142,7 +119,7 @@ public sealed class LandblockBuildFactory
             request.Origin,
             envCellBuild));
 
-        var physicsDats = LandblockPhysicsContentBuilder.BuildDatBundle(
+        var presentationDats = LandblockPhysicsContentBuilder.BuildPresentationDatBundle(
             _dats,
             landblockId,
             merged);
@@ -152,7 +129,7 @@ public sealed class LandblockBuildFactory
                 baseLoaded.LandblockId,
                 baseLoaded.Heightmap,
                 merged,
-                physicsDats),
+                presentationDats),
             completedEnvCells,
             request.Origin,
             TerrainBounds: new(walkMaxZ, walkMinZ));

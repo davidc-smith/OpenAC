@@ -50,6 +50,8 @@ internal sealed class MeshUploadFrameBudget
         _limits = limits;
     }
 
+    public MeshUploadBudgetLimits Limits => _limits;
+
     public int ObjectCount { get; private set; }
     public long SourceBytes { get; private set; }
     public long ArrayAllocationBytes { get; private set; }

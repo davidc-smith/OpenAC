@@ -166,6 +166,75 @@ public sealed class WorldSessionUpdateObjectTests
         Assert.Equal(0x50000001u, table.Get(ItemGuid)!.Properties.InstanceIds[3u]);
     }
 
+    [Fact]
+    public void PublicStringUpdate_StoresTheNameButKeepsTheShownName()
+    {
+        using var session = CreateSession();
+        var table = new ClientObjectTable();
+        using IDisposable wiring = ObjectTableWiring.Wire(session, table);
+        table.AddOrUpdate(new ClientObject { ObjectId = ItemGuid, Name = "Crystal" });
+
+        var republished = new List<uint>();
+        table.ObjectUpdated += o => republished.Add(o.ObjectId);
+
+        InvokeProcessDatagram(
+            session,
+            BuildPacket(BuildString(0x02D6u, ItemGuid, 1u, "RabidDee's Cottage")));
+
+        // The value lands in the property table only; the shown name changes
+        // only when the object is created or updated again.
+        Assert.Equal(ItemGuid, Assert.Single(republished));
+        Assert.Equal("Crystal", table.Get(ItemGuid)!.Name);
+        Assert.Equal("RabidDee's Cottage", table.Get(ItemGuid)!.Properties.Strings[1u]);
+    }
+
+    [Fact]
+    public void PrivateStringUpdate_StoresTheNameButKeepsThePlayersShownName()
+    {
+        using var session = CreateSession();
+        var table = new ClientObjectTable();
+        using IDisposable wiring = ObjectTableWiring.Wire(
+            session, table, playerGuid: () => 0x50000001u);
+        table.AddOrUpdate(new ClientObject { ObjectId = 0x50000001u, Name = "Player" });
+
+        InvokeProcessDatagram(
+            session,
+            BuildPacket(BuildString(0x02D5u, null, 1u, "Renamed")));
+
+        Assert.Equal("Player", table.Get(0x50000001u)!.Name);
+        Assert.Equal("Renamed", table.Get(0x50000001u)!.Properties.Strings[1u]);
+    }
+
+    [Fact]
+    public void PublicStringUpdate_OtherProperty_LeavesNameAlone()
+    {
+        using var session = CreateSession();
+        var table = new ClientObjectTable();
+        using IDisposable wiring = ObjectTableWiring.Wire(session, table);
+        table.AddOrUpdate(new ClientObject { ObjectId = ItemGuid, Name = "Crystal" });
+
+        InvokeProcessDatagram(
+            session, BuildPacket(BuildString(0x02D6u, ItemGuid, 16u, "A note")));
+
+        Assert.Equal("Crystal", table.Get(ItemGuid)!.Name);
+        Assert.Equal("A note", table.Get(ItemGuid)!.Properties.Strings[16u]);
+    }
+
+    private static byte[] BuildString(uint opcode, uint? guid, uint property, string text)
+    {
+        var b = new List<byte>();
+        WriteU32(b, opcode);
+        b.Add(1);
+        if (guid is uint g) WriteU32(b, g);
+        WriteU32(b, property);
+        while (b.Count % 4 != 0) b.Add(0);
+        byte[] t = Encoding.GetEncoding(1252).GetBytes(text);
+        b.Add((byte)t.Length); b.Add((byte)(t.Length >> 8));
+        b.AddRange(t);
+        while (b.Count % 4 != 0) b.Add(0);
+        return b.ToArray();
+    }
+
     private static WorldSession CreateSession() =>
         new(new IPEndPoint(IPAddress.Loopback, 9000), new NullTransport());
 

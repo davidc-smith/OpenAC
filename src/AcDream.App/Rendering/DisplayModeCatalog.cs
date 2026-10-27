@@ -3,7 +3,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AcDream.UI.Abstractions.Panels.Settings;
+using Silk.NET.GLFW;
+using Silk.NET.Maths;
 using Silk.NET.Windowing;
+using VideoMode = Silk.NET.Windowing.VideoMode;
 
 namespace AcDream.App.Rendering;
 
@@ -19,30 +22,70 @@ internal static class DisplayModeCatalog
 
     public static string? DesktopResolution => _desktopResolution;
 
-    public static void InstallFromWindow(IWindow window)
+    public static bool IsInstalled => _resolutions is not null;
+
+    public static bool InstallFromWindow(IWindow window)
     {
         ArgumentNullException.ThrowIfNull(window);
-        IMonitor? monitor = window.Monitor;
-        if (monitor is null)
-            return;
+        return TryInstall(() => window.Monitor, Console.WriteLine);
+    }
 
-        VideoMode current = monitor.VideoMode;
-        if (current.Resolution is not { } desktop || desktop.X <= 0 || desktop.Y <= 0)
-            return;
+    public static bool EnsureInstalled(IWindow window)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        return EnsureInstalled(() => window.Monitor, Console.WriteLine);
+    }
 
-        IEnumerable<(int W, int H)> modes = monitor
-            .GetAllVideoModes()
-            .Select(m => m.Resolution)
-            .Where(r => r.HasValue)
-            .Select(r => (r!.Value.X, r.Value.Y));
+    internal static bool EnsureInstalled(Func<IMonitor?> queryMonitor, Action<string>? log) =>
+        IsInstalled || TryInstall(queryMonitor, log);
+
+    internal static bool TryInstall(Func<IMonitor?> queryMonitor, Action<string>? log)
+    {
+        ArgumentNullException.ThrowIfNull(queryMonitor);
+        Vector2D<int> desktop;
+        (int W, int H)[] modes;
+        try
+        {
+            IMonitor? monitor = queryMonitor();
+            if (monitor is null)
+                return false;
+
+            VideoMode current = monitor.VideoMode;
+            if (current.Resolution is not { } resolution
+                || resolution.X <= 0
+                || resolution.Y <= 0)
+            {
+                return false;
+            }
+            desktop = resolution;
+
+            modes = monitor
+                .GetAllVideoModes()
+                .Select(m => m.Resolution)
+                .Where(r => r.HasValue)
+                .Select(r => (r!.Value.X, r.Value.Y))
+                .ToArray();
+        }
+        catch (GlfwException ex)
+        {
+            // Windows refuses display-settings queries while the display is
+            // changing (a Remote Desktop connect or disconnect, a busy
+            // start). The built-in resolution list stands in until a later
+            // EnsureInstalled finds the display answering again.
+            log?.Invoke(
+                $"display: the display-mode query failed ({ex.Message}); "
+                + "using the built-in resolution list for now");
+            return false;
+        }
 
         IReadOnlyList<string> curated = Curate(modes, (desktop.X, desktop.Y));
         if (curated.Count == 0)
-            return;
+            return false;
 
         _resolutions = curated;
         _windowedResolutions = BuildWindowedOffering(curated, (desktop.X, desktop.Y));
         _desktopResolution = $"{desktop.X}x{desktop.Y}";
+        return true;
     }
 
     internal static void ResetForTests()

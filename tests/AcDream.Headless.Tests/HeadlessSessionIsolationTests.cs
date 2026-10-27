@@ -392,6 +392,43 @@ public sealed class HeadlessSessionIsolationTests
         Assert.Equal(movedCell, moved.Position!.Value.ObjCellId);
     }
 
+    [Fact]
+    public void ResentDescriptionRecreatesTheObjectWhereItNowSays()
+    {
+        const uint playerGuid = 0x50000001u;
+        const uint remoteGuid = 0x70000032u;
+        var operations = new FixtureOperations(playerGuid);
+        using HeadlessSessionHost host = CreateHost(0, operations);
+        Assert.Equal(
+            RuntimeSessionStartStatus.Connected,
+            host.Start().Status);
+        WorldSession session = operations.ActiveSession(host.SessionId);
+        session.GameActionCapture = _ => { };
+        SpawnInto(session, remoteGuid, 1f);
+
+        // The whole description again, same instance, somewhere else: the
+        // object is created again from it, position included.
+        const uint movedCell = 0x01010025u;
+        WorldSession.EntitySpawn resent = Spawn(remoteGuid, 2f);
+        CreateObject.ServerPosition moved = resent.Position!.Value with
+        {
+            LandblockId = movedCell,
+        };
+        EventDelegate<Action<WorldSession.EntitySpawn>>(
+            session,
+            nameof(session.EntityDescriptionRefreshed))(
+                resent with
+                {
+                    Position = moved,
+                    Physics = resent.Physics!.Value with { Position = moved },
+                });
+
+        Assert.True(host.Runtime.Entities.TryGet(
+            remoteGuid,
+            out RuntimeEntitySnapshot recreated));
+        Assert.Equal(movedCell, recreated.CellId);
+    }
+
     private static HeadlessSessionHost CreateHost(
         int index,
         FixtureOperations operations,

@@ -3,6 +3,48 @@ namespace AcDream.App.UI;
 
 internal static class PluginMarkupTheme
 {
+    /// <summary>
+    /// Themes a window's title bar: the palette for its close button, and the
+    /// theme's font and text colour without outline under a theme; Classic's
+    /// own font, title colour and outline back under Classic. The themed close
+    /// button's "x" takes the theme's font; Classic draws a sprite, so no font.
+    /// </summary>
+    public static void RegisterTitleBar(UiPluginMarkupPanel panel, PluginTitleBar bar)
+    {
+        UiDatFont? classicFont = bar.DatFont;
+        var classicColor = bar.TextColor;
+        panel.AddThemeAction(p =>
+        {
+            bar.ThemePalette = p;
+            bar.DatFont = p is null ? classicFont : panel.ModernFont ?? classicFont;
+            bar.TextColor = p?.Text ?? classicColor;
+            bar.Outline = p is null;
+            bar.Close.DatFont = p is null ? null : panel.ModernFont;
+        });
+    }
+
+    /// <summary>
+    /// Themes the plugin sidepanel's "–" button on a window without a title
+    /// bar the way the bar's close button is themed: a flat face, edge and
+    /// caption in the palette and the theme's font; Classic's look back under Classic.
+    /// </summary>
+    public static void RegisterMinimize(UiPluginMarkupPanel panel, UiSimpleButton button)
+    {
+        var bg = button.BackgroundColor; var border = button.BorderColor;
+        var text = button.TextColor; bool outline = button.Outline;
+        UiDatFont? classicFont = button.DatFont;
+        panel.AddThemeAction(p =>
+        {
+            // The sidepanel removes the button when the window leaves it; a detached one is left as it was.
+            if (button.Parent is null) return;
+            button.BackgroundColor = p?.Field ?? bg;
+            button.BorderColor = p?.Border ?? border;
+            button.TextColor = p?.Text ?? text;
+            button.Outline = p is null && outline;
+            button.DatFont = p is null ? classicFont : panel.ModernFont ?? classicFont;
+        });
+    }
+
     public static void Register(UiPluginMarkupPanel panel, UiElement element, XElement xml)
     {
         if (panel.ModernFont is { } modern)
@@ -17,13 +59,20 @@ internal static class PluginMarkupTheme
                 case UiLabel label: Bind(() => label.DatFont, f => label.DatFont = f); break;
                 case UiSimpleButton button: Bind(() => button.DatFont, f => button.DatFont = f); break;
                 case UiMarkupToggle toggle: Bind(() => toggle.DatFont, f => toggle.DatFont = f); break;
+                case UiMarkupCheckbox checkbox: Bind(() => checkbox.DatFont, f => checkbox.DatFont = f); break;
+                case UiMarkupRadio radio: Bind(() => radio.DatFont, f => radio.DatFont = f); break;
+                case UiMarkupExpander expander: Bind(() => expander.Header.DatFont, f => expander.Header.DatFont = f); break;
                 case UiField field: Bind(() => field.DatFont, f => field.DatFont = f); break;
+                case UiMarkupNumber number: Bind(() => number.Field.DatFont, f => number.Field.DatFont = f); break;
+                case UiMarkupHotkey hotkey: Bind(() => hotkey.DatFont, f => hotkey.DatFont = f); break;
+                case UiMarkupColor color: Bind(() => color.DatFont, f => color.DatFont = f); break;
                 case UiMenu menu:
                     Bind(() => menu.DatFont, f => menu.DatFont = f);
                     Bind(() => menu.ButtonDatFont, f => menu.ButtonDatFont = f);
                     break;
                 case UiMarkupLog log: Bind(() => log.DatFont, f => log.DatFont = f); break;
                 case UiMarkupList list: Bind(() => list.DatFont, f => list.DatFont = f); break;
+                case UiMarkupContextMenu contextMenu: Bind(() => contextMenu.DatFont, f => contextMenu.DatFont = f); break;
             }
         }
         bool Default(string name) => xml.Attribute(name) is null;
@@ -53,21 +102,44 @@ internal static class PluginMarkupTheme
                 panel.AddThemeAction(p => { toggle.ThemePalette = p;
                     if (Default("color")) toggle.TextColor = p?.Text ?? toggleText; });
                 break;
-            case UiField field:
-                var fieldBg = field.BackgroundColor; var fieldText = field.TextColor;
-                var fieldOutline = field.Outline; var sprite = field.BackgroundSprite;
-                var focus = field.FocusFieldSprite; var left = field.FocusRailLeftSprite;
-                var right = field.FocusRailRightSprite; var selection = field.SelectionColor;
+            case UiMarkupCheckbox checkbox:
+                var checkboxText = checkbox.TextColor;
+                panel.AddThemeAction(p => { checkbox.ThemePalette = p;
+                    if (Default("color")) checkbox.TextColor = p?.Text ?? checkboxText; });
+                break;
+            case UiMarkupContextMenu contextMenu:
+                panel.AddThemeAction(p => contextMenu.ThemePalette = p);
+                break;
+            case UiMarkupRadio radio:
+                var radioText = radio.TextColor;
+                panel.AddThemeAction(p => { radio.ThemePalette = p;
+                    if (Default("color")) radio.TextColor = p?.Text ?? radioText; });
+                break;
+            case UiMarkupSeparator separator:
+                var separatorColor = separator.Color;
                 panel.AddThemeAction(p => {
-                    field.Outline = p is null && fieldOutline;
-                    field.BackgroundSprite = p is null ? sprite : 0;
-                    field.FocusFieldSprite = p is null ? focus : 0;
-                    field.FocusRailLeftSprite = p is null ? left : 0;
-                    field.FocusRailRightSprite = p is null ? right : 0;
-                    field.SelectionColor = p?.Selected ?? selection;
-                    if (Default("background")) field.BackgroundColor = p?.Field ?? fieldBg;
-                    if (Default("color")) field.TextColor = p?.Text ?? fieldText;
-                });
+                    if (Default("color")) separator.Color = p?.Border ?? separatorColor; });
+                break;
+            case UiMarkupExpander expander:
+                var expanderText = expander.Header.TextColor;
+                panel.AddThemeAction(p => { expander.Header.ThemePalette = p;
+                    if (Default("color")) expander.Header.TextColor = p?.Text ?? expanderText; });
+                break;
+            case UiMarkupSplit split:
+                panel.AddThemeAction(p => split.Bar.ThemePalette = p);
+                break;
+            case UiField field:
+                ThemeField(panel, field, Default);
+                break;
+            case UiMarkupNumber number:
+                ThemeField(panel, number.Field, Default);
+                panel.AddThemeAction(p => number.ThemePalette = p);
+                break;
+            case UiMarkupHotkey hotkey:
+                panel.AddThemeAction(p => hotkey.ThemePalette = p);
+                break;
+            case UiMarkupColor color:
+                panel.AddThemeAction(p => color.ThemePalette = p);
                 break;
             case UiMenu menu:
                 bool art = menu.RetailButtonArt, menuOutline = menu.Outline;
@@ -108,5 +180,24 @@ internal static class PluginMarkupTheme
                     scroll.PlainNubColor = p?.Muted ?? nub; });
                 break;
         }
+    }
+
+    /// <summary>A field's look under the theme: palette fills, no dat sprites, no outline.</summary>
+    private static void ThemeField(UiPluginMarkupPanel panel, UiField field, Func<string, bool> isDefault)
+    {
+        var fieldBg = field.BackgroundColor; var fieldText = field.TextColor;
+        var fieldOutline = field.Outline; var sprite = field.BackgroundSprite;
+        var focus = field.FocusFieldSprite; var left = field.FocusRailLeftSprite;
+        var right = field.FocusRailRightSprite; var selection = field.SelectionColor;
+        panel.AddThemeAction(p => {
+            field.Outline = p is null && fieldOutline;
+            field.BackgroundSprite = p is null ? sprite : 0;
+            field.FocusFieldSprite = p is null ? focus : 0;
+            field.FocusRailLeftSprite = p is null ? left : 0;
+            field.FocusRailRightSprite = p is null ? right : 0;
+            field.SelectionColor = p?.Selected ?? selection;
+            if (isDefault("background")) field.BackgroundColor = p?.Field ?? fieldBg;
+            if (isDefault("color")) field.TextColor = p?.Text ?? fieldText;
+        });
     }
 }

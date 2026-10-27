@@ -51,6 +51,39 @@ public sealed class WorldRevealCoordinatorTests
     }
 
     [Fact]
+    public void WorldDrawnUnderThePortal_IsNotObservedAsVisible()
+    {
+        const uint outdoorCell = 0x3032001Cu;
+        var state = new State
+        {
+            RenderReady = true,
+            CollisionReady = true,
+            CompositesReady = true,
+        };
+        WorldRevealCoordinator coordinator = state.Build();
+        long generation = BeginPortal(
+            coordinator,
+            state.Transit,
+            outdoorCell,
+            sequence: 1);
+        state.CompositesReady = true;
+        Assert.True(coordinator.Evaluate(outdoorCell).IsReady);
+        coordinator.ObserveMaterialized(generation, 1, outdoorCell);
+        var visibility = new AcDream.App.Rendering.RuntimeWorldFrameVisibilityPreparation(
+            selection: null,
+            new AcDream.App.Rendering.Vfx.ParticleVisibilityController(),
+            terrain: null,
+            coordinator,
+            environmentFrustum: null);
+
+        visibility.Begin(default, waitingForLogin: false, coveredByPortal: true);
+        Assert.False(coordinator.Snapshot.WorldViewportObserved);
+
+        visibility.Begin(default, waitingForLogin: false, coveredByPortal: false);
+        Assert.True(coordinator.Snapshot.WorldViewportObserved);
+    }
+
+    [Fact]
     public void Begin_InvalidatesPriorDestinationAndStartsOneGeneration()
     {
         var state = new State { CompositesReady = true };

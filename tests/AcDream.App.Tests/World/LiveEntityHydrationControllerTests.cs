@@ -97,6 +97,29 @@ public sealed class LiveEntityHydrationControllerTests
         Assert.Equal(1, fixture.Ready.PublishCount);
     }
 
+    /// <summary>
+    /// A window opening on a session that already plays draws what the
+    /// session already knows: the world is measured in the session's frame,
+    /// drawn around the character, and every object in a landblock already
+    /// drawn is drawn from the session's record of it.
+    /// </summary>
+    [Fact]
+    public void PresentPlayingWorld_DrawsWhatTheSessionKnowsInTheSessionsFrame()
+    {
+        using var fixture = new Fixture(originKnown: false);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+        Assert.False(fixture.Runtime.TryGetRecord(Guid, out _));
+        fixture.Origin.IsKnownValue = true;
+        fixture.Origin.AlreadyLoadedLandblocks = [Cell];
+
+        fixture.Controller.PresentPlayingWorld(0xA9B4FFFFu, 0xA9B30040u);
+
+        Assert.Equal([(0xA9B4FFFFu, 0xA9B30040u)], fixture.Origin.PlayingSessionInitializations);
+        Assert.NotNull(fixture.Record.WorldEntity);
+        Assert.Single(fixture.Materializer.Calls);
+        Assert.Equal(LiveProjectionPurpose.SpatialRecovery, fixture.Materializer.Calls[0].Purpose);
+    }
+
     [Fact]
     public void InitialPlayerOriginRecovery_DoesNotReenterSameHydrationTransaction()
     {
@@ -125,6 +148,89 @@ public sealed class LiveEntityHydrationControllerTests
         Assert.Single(fixture.Materializer.Calls);
         Assert.Equal(1, fixture.Resources.RegisterCount);
         Assert.Equal(1, fixture.Ready.PublishCount);
+    }
+
+    /// <summary>
+    /// The session's collision can be published before the window draws
+    /// the landblock: a creature placed there then waits for the window,
+    /// which shows the placement once the landblock is drawn. The landblock
+    /// arriving must leave the creature's cell to that waiting placement.
+    /// Committing the cell itself made the placement stale; the window then
+    /// refused it for good, and every placement queued behind it (and the
+    /// collision waiting on them) waited forever.
+    /// </summary>
+    [Fact]
+    public void LoadedCallback_LeavesTheCellToAPlacementWaitingForThatLandblock()
+    {
+        const uint North = 0x01020001u;
+        using var fixture = new Fixture(originKnown: true);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+        LiveEntityRecord record = fixture.Record;
+        WorldEntity entity = record.WorldEntity!;
+        RuntimeEntityRecord canonical = record.Canonical;
+        Assert.Equal(0, fixture.EntityObjects.Placements.PendingCount);
+
+        // The session publishes the collision of the landblock north of the
+        // creature's; the window has not drawn it yet.
+        var physics = fixture.EntityObjects.Physics;
+        physics.SetPosition.BeginCollisionGeneration(North & 0xFFFF0000u, 1UL);
+        physics.Engine.AddLandblock(
+            North & 0xFFFF0000u,
+            new AcDream.Core.Physics.TerrainSurface(new byte[81], new float[256]),
+            Array.Empty<AcDream.Core.Physics.CellSurface>(),
+            Array.Empty<AcDream.Core.Physics.PortalPlane>(),
+            worldOffsetX: 0f,
+            worldOffsetY: 192f);
+        physics.SetPosition.CommitCollisionGeneration(North & 0xFFFF0000u, 1UL, ready: true);
+        if (canonical.PhysicsBody is null)
+        {
+            var body = new PhysicsBody
+            {
+                Position = new Vector3(10f, 10f, 5f),
+                Orientation = Quaternion.Identity,
+                LastUpdateTime = 1d,
+                State = PhysicsStateFlags.ReportCollisions,
+            };
+            body.SnapToCell(Cell, body.Position, body.Position);
+            fixture.EntityObjects.Entities.SetPhysicsBody(canonical, body);
+        }
+
+        // The creature is put down in that landblock: the window waits for it.
+        var local = new Vector3(10f, 10f, 0f);
+        _ = physics.SetPosition.Apply(
+            canonical,
+            canonical.PositionAuthorityVersion,
+            new AcDream.Runtime.Physics.RuntimeSetPositionCommand(
+                new AcDream.Core.Physics.PhysicsSetPositionRequest(
+                    local + new Vector3(0f, 192f, 0f),
+                    Quaternion.Identity,
+                    North,
+                    local,
+                    System.Collections.Immutable.ImmutableArray<
+                        AcDream.Core.Physics.FlatCollisionSphere>.Empty,
+                    Scale: 1f,
+                    StepUpHeight: 0.4f,
+                    StepDownHeight: 0.4f,
+                    Flags: AcDream.Core.Physics.PhysicsSetPositionFlags.Placement
+                        | AcDream.Core.Physics.PhysicsSetPositionFlags.Slide),
+                AcDream.Runtime.Physics.RuntimeSetPositionOperationKind.RemoteAuthoritative,
+                GameTime: 10d,
+                ExpectedVelocityAuthorityVersion: 0UL,
+                ShadowWorldOffsetX: 0f,
+                ShadowWorldOffsetY: 192f));
+        Assert.Equal(North, canonical.FullCellId);
+        Assert.Equal(1, fixture.EntityObjects.Placements.PendingCount);
+
+        // The window draws the landblock, then shows what waited for it.
+        fixture.Spatial.AddLandblock(new LoadedLandblock(
+            North | 0xFFFFu,
+            new DatReaderWriter.DBObjs.LandBlock(),
+            Array.Empty<WorldEntity>()));
+        fixture.Controller.OnLandblockLoaded(North);
+        fixture.RetryPlacements();
+
+        Assert.Equal(0, fixture.EntityObjects.Placements.PendingCount);
+        Assert.Equal(North, entity.ParentCellId);
     }
 
     [Theory]
@@ -693,6 +799,118 @@ public sealed class LiveEntityHydrationControllerTests
         Assert.Equal(1, fixture.Runtime.RetryPendingTeardowns());
         Assert.Equal(0, fixture.Runtime.PendingTeardownCount);
     }
+
+    [Fact]
+    public void DescriptionRefresh_RecreatesTheObjectWithItsNewPhysicsState()
+    {
+        // A house hook hidden with NoDraw is given an item: the server sends
+        // the hook's whole description again with the item's setup and the
+        // NoDraw bit cleared. The hook is created again from it.
+        using var fixture = new Fixture(originKnown: true);
+        WorldSession.EntitySpawn hook = Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000001u,
+            PhysicsStateFlags.NoDraw | PhysicsStateFlags.Ethereal);
+        fixture.Controller.OnCreate(hook);
+        LiveEntityRecord first = fixture.Record;
+        Assert.True((first.FinalPhysicsState & PhysicsStateFlags.NoDraw) != 0);
+
+        Assert.True(fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.Ethereal)));
+
+        LiveEntityRecord second = fixture.Record;
+        Assert.NotSame(first, second);
+        Assert.Equal(0x02000002u, second.Snapshot.SetupTableId);
+        Assert.Equal(PhysicsStateFlags.None, second.FinalPhysicsState & PhysicsStateFlags.NoDraw);
+        Assert.True((second.FinalPhysicsState & PhysicsStateFlags.Ethereal) != 0);
+        Assert.NotNull(second.WorldEntity);
+        Assert.Equal(2, fixture.Resources.RegisterCount);
+        Assert.Equal(1, fixture.Resources.UnregisterCount);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_FromAnotherGeneration_IsTaken()
+    {
+        using var fixture = new Fixture(originKnown: true);
+        fixture.Controller.OnCreate(Spawn(Generation: 2, PositionSequence: 1));
+
+        Assert.True(fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.ReportCollisions)));
+
+        Assert.Equal((ushort)1, fixture.Record.Generation);
+        Assert.Equal(0x02000002u, fixture.Record.Snapshot.SetupTableId);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_Repeated_RecreatesEachTime()
+    {
+        using var fixture = new Fixture(originKnown: true);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+
+        fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.ReportCollisions));
+        fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000003u,
+            PhysicsStateFlags.ReportCollisions));
+
+        Assert.Equal(0x02000003u, fixture.Record.Snapshot.SetupTableId);
+        Assert.Equal(3, fixture.Resources.RegisterCount);
+        Assert.Equal(2, fixture.Resources.UnregisterCount);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_ForAnObjectWaitingToEnterTheWorld_TakesTheNewDescription()
+    {
+        using var fixture = new Fixture(originKnown: false);
+        fixture.Controller.OnCreate(Spawn(Generation: 1, PositionSequence: 1));
+        Assert.False(fixture.Runtime.TryGetRecord(Guid, out _));
+
+        Assert.True(fixture.Controller.OnDescriptionRefresh(Redescribed(
+            Spawn(Generation: 1, PositionSequence: 1),
+            0x02000002u,
+            PhysicsStateFlags.ReportCollisions)));
+        Assert.Equal(0x02000002u, fixture.Canonical.Snapshot.SetupTableId);
+
+        fixture.Origin.IsKnownValue = true;
+        fixture.Controller.OnLandblockLoaded(Cell);
+
+        Assert.Equal(0x02000002u, fixture.Record.Snapshot.SetupTableId);
+        Assert.NotNull(fixture.Record.WorldEntity);
+    }
+
+    [Fact]
+    public void DescriptionRefresh_ForAnUnknownObject_IsLeftToTheObjectTable()
+    {
+        using var fixture = new Fixture(originKnown: true);
+
+        Assert.False(fixture.Controller.OnDescriptionRefresh(
+            Spawn(Generation: 1, PositionSequence: 1)));
+
+        Assert.False(fixture.Runtime.TryGetCanonical(Guid, out _));
+        Assert.Equal(0, fixture.Resources.RegisterCount);
+    }
+
+    private static WorldSession.EntitySpawn Redescribed(
+        WorldSession.EntitySpawn spawn,
+        uint setupId,
+        PhysicsStateFlags state) =>
+        spawn with
+        {
+            SetupTableId = setupId,
+            PhysicsState = (uint)state,
+            Physics = spawn.Physics!.Value with
+            {
+                SetupTableId = setupId,
+                RawState = (uint)state,
+            },
+        };
 
     [Fact]
     public void UnknownDelete_ForgetsOnlyPendingOwnerState()
@@ -2237,6 +2455,7 @@ public sealed class LiveEntityHydrationControllerTests
                 0x0101FFFFu,
                 new DatReaderWriter.DBObjs.LandBlock(),
                 Array.Empty<WorldEntity>()));
+            Spatial = spatial;
             Runtime = new LiveEntityRuntime(
                 spatial,
                 Resources,
@@ -2293,6 +2512,12 @@ public sealed class LiveEntityHydrationControllerTests
         public AcDream.Runtime.Session.RuntimeFirstEntryDriveController FirstEntry { get; }
         private readonly AcDream.Runtime.Physics
             .RuntimePlacementProjectionSubscription _placements;
+
+        /// <summary>The landblocks the window draws.</summary>
+        public GpuWorldState Spatial { get; }
+
+        /// <summary>Offers the placements still waiting to the window again, as each frame does.</summary>
+        public void RetryPlacements() => _placements.RetryPending();
 
         private sealed class FixturePlacementSink(LiveEntityRuntime runtime)
             : AcDream.Runtime.Physics.IRuntimePlacementProjectionSink
@@ -2678,6 +2903,14 @@ public sealed class LiveEntityHydrationControllerTests
         public bool IsKnown => IsKnownValue;
         public LiveEntityOriginInitialization TryInitialize(WorldSession.EntitySpawn spawn) =>
             new(IsKnownValue, AlreadyLoadedLandblocks);
+        public List<(uint Frame, uint Cell)> PlayingSessionInitializations { get; } = [];
+        public LiveEntityOriginInitialization TryInitializeForPlayingSession(
+            uint frameCenterLandblockId,
+            uint playerCellId)
+        {
+            PlayingSessionInitializations.Add((frameCenterLandblockId, playerCellId));
+            return new(IsKnownValue, AlreadyLoadedLandblocks);
+        }
     }
 
     private sealed class RecordingNetworkSink : ILiveEntityNetworkUpdateSink

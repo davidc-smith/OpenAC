@@ -112,7 +112,11 @@ public sealed class UiRoot : UiElement
         || PopupHit(MouseX, MouseY) is not null
         || HitTestTopDown(MouseX, MouseY).element is not null;
 
-    public bool WantsKeyboard => KeyboardFocus is not null;
+    /// <summary>Whether the focused element takes the keyboard from the game (a plugin dialog does not; it claims only its answer keys).</summary>
+    public bool WantsKeyboard => KeyboardFocus is { HoldsKeyboard: true };
+
+    /// <summary>Whether the focused element keeps this key's press from the game.</summary>
+    public bool FocusClaimsKey(Silk.NET.Input.Key key) => KeyboardFocus?.ClaimsKey(key) == true;
 
     private bool _uiLocked;
     public bool UiLocked
@@ -245,6 +249,15 @@ public sealed class UiRoot : UiElement
     /// <summary>Raised when a drag is released over no UI element.</summary>
     public event Action<object /*payload*/, int /*x*/, int /*y*/>? DragReleasedOutsideUi;
 
+    /// <summary>Asked when a left press on the world (over no UI element) moves
+    /// past the drag distance: what the press point lifts, if anything. The
+    /// point is the press, not where the pointer is now, so the lift is the
+    /// object that was under the pointer when the button went down.</summary>
+    public Func<int /*x*/, int /*y*/, WorldDragStart?>? WorldDragRequested { get; set; }
+
+    /// <summary>A left press on the world that may still become a drag.</summary>
+    private bool _worldDragCandidate;
+
     /// <summary>Raised after a registered top-level window finishes moving.</summary>
     public event Action<string, UiElement>? WindowMoved;
 
@@ -304,6 +317,15 @@ public sealed class UiRoot : UiElement
 
     internal void ClearSubtreeOwnership(UiElement subtree, bool preserveDetachedDrag = false)
     {
+        if (IsWithinSubtree(_activePopup, subtree))
+        {
+            // A popup whose owner hides or leaves the tree closes with it, so it
+            // does not come back open when the owner is shown again.
+            var dismiss = _activePopupDismiss;
+            _activePopup = null;
+            _activePopupDismiss = null;
+            dismiss?.Invoke();
+        }
         if (IsWithinSubtree(KeyboardFocus, subtree))
             SetKeyboardFocus(null);
         if (IsWithinSubtree(Captured, subtree))
@@ -500,8 +522,33 @@ public sealed class UiRoot : UiElement
             return;
         }
 
+        if (_worldDragCandidate
+            && LeftButtonDown
+            && (Math.Abs(x - _pressX) > DragDistanceThreshold
+                || Math.Abs(y - _pressY) > DragDistanceThreshold))
+        {
+            _worldDragCandidate = false;
+            if (WorldDragRequested?.Invoke(_pressX, _pressY) is { } start)
+            {
+                BeginWorldDrag(start);
+                UpdateDragHover(x, y);
+                return;
+            }
+        }
+
         UpdateHover(x, y);
         WorldMouseMoveFallThrough?.Invoke(x, y);
+    }
+
+    /// <summary>A drag lifted off the world has no element to start from, so the
+    /// root holds it: it captures the pointer and is the drag source, and the
+    /// release lands on whatever is under the pointer as any drag does.</summary>
+    private void BeginWorldDrag(WorldDragStart start)
+    {
+        DragSource = this;
+        DragPayload = start.Payload;
+        _dragGhost = start.Ghost;
+        SetCapture(this);
     }
 
     private UiElement? _activePopup;
@@ -520,6 +567,109 @@ public sealed class UiRoot : UiElement
         if (!ReferenceEquals(_activePopup, popup)) return;
         _activePopup = null;
         _activePopupDismiss = null;
+    }
+
+    // Window-modal dialogs: each blocked top-level window with the elements
+    // blocking it, newest last. A press on a blocked window is swallowed,
+    // release and all, and flashes its newest blocker.
+    private readonly Dictionary<UiElement, List<UiElement>> _windowBlocks =
+        new(ReferenceEqualityComparer.Instance);
+    // Buttons whose press was swallowed and whose release is still due.
+    private readonly HashSet<UiMouseButton> _swallowedReleases = new();
+
+    /// <summary>
+    /// Blocks a top-level window until the returned handle is disposed: it
+    /// draws dimmed, presses and scrolls on it are swallowed, and nothing in
+    /// it can take the keyboard focus. A blocked press flashes
+    /// <paramref name="blocker"/>, brings its window to the front and gives
+    /// it the keyboard focus when it accepts focus. Blocking closes a popup
+    /// open in the window and takes pointer capture and keyboard focus out
+    /// of it.
+    /// </summary>
+    internal IDisposable BlockWindow(UiElement window, UiElement blocker)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(blocker);
+        if (!ReferenceEquals(window.Parent, this))
+            throw new ArgumentException("Only a top-level window can be blocked.", nameof(window));
+        if (!_windowBlocks.TryGetValue(window, out List<UiElement>? blockers))
+            _windowBlocks[window] = blockers = new List<UiElement>();
+        blockers.Add(blocker);
+        window.ModalBlockCount++;
+
+        try
+        {
+            if (_activePopup is { } popup && IsWithinSubtree(popup, window))
+            {
+                var dismiss = _activePopupDismiss;
+                _activePopup = null;
+                _activePopupDismiss = null;
+                dismiss?.Invoke();
+            }
+            if (Captured is { } captured && IsWithinSubtree(captured, window))
+                ReleaseCapture();
+            if (KeyboardFocus is { } focused && IsWithinSubtree(focused, window))
+                SetKeyboardFocus(null);
+        }
+        catch
+        {
+            // A popup's dismiss or a blur handler threw: no handle comes back, so take the block off.
+            Unblock(window, blocker);
+            throw;
+        }
+        return new WindowBlock(this, window, blocker);
+    }
+
+    /// <summary>Whether an element can take the keyboard focus now: shown, enabled, mounted, and not in a blocked window.</summary>
+    internal bool CanFocus(UiElement element) =>
+        IsAvailableInputTarget(element) && BlockerFor(element) is null;
+
+    private void Unblock(UiElement window, UiElement blocker)
+    {
+        if (!_windowBlocks.TryGetValue(window, out List<UiElement>? blockers)
+            || !blockers.Remove(blocker))
+            return;
+        window.ModalBlockCount--;
+        if (blockers.Count == 0)
+            _windowBlocks.Remove(window);
+    }
+
+    // The newest element blocking the top-level window an element is in.
+    private UiElement? BlockerFor(UiElement element)
+    {
+        if (_windowBlocks.Count == 0)
+            return null;
+        UiElement top = TopLevelOf(element);
+        return ReferenceEquals(top.Parent, this)
+            && _windowBlocks.TryGetValue(top, out List<UiElement>? blockers)
+            ? blockers[^1]
+            : null;
+    }
+
+    private UiElement TopLevelOf(UiElement element)
+    {
+        UiElement top = element;
+        while (top.Parent is not null && !ReferenceEquals(top.Parent, this))
+            top = top.Parent;
+        return top;
+    }
+
+    private void FlashBlocker(UiElement blocker)
+    {
+        blocker.ModalFlashSeconds = UiElement.ModalFlashDuration;
+        UiElement top = TopLevelOf(blocker);
+        if (ReferenceEquals(top.Parent, this))
+            BringToFront(top);
+        if (blocker.AcceptsFocus && CanFocus(blocker))
+            SetKeyboardFocus(blocker);
+    }
+
+    private sealed class WindowBlock(UiRoot root, UiElement window, UiElement blocker) : IDisposable
+    {
+        private UiRoot? _root = root;
+
+        public void Dispose() =>
+            Interlocked.Exchange(ref _root, null)?.Unblock(window, blocker);
     }
 
     private UiElement? PopupHit(int x, int y)
@@ -546,6 +696,8 @@ public sealed class UiRoot : UiElement
         (x, y) = MapWindowToCanvas(x, y);
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: true);
+        // A new press means any earlier swallowed release for this button was lost.
+        _swallowedReleases.Remove(btn);
         _pressX = x; _pressY = y;
 
         if (Modal is not null && !ContainsAbsolute(Modal, x, y))
@@ -578,10 +730,23 @@ public sealed class UiRoot : UiElement
         if (target is null)
         {
             if (btn == UiMouseButton.Left) SetKeyboardFocus(null);
+            _worldDragCandidate = btn == UiMouseButton.Left;
             WorldMouseFallThrough?.Invoke(btn, x, y, flags);
             return;
         }
 
+        if (BlockerFor(target) is { } blocker)
+        {
+            // A window-modal dialog owns this window: the press, and its
+            // release, go nowhere but flash the dialog.
+            _swallowedReleases.Add(btn);
+            FlashBlocker(blocker);
+            return;
+        }
+
+        // Focus may scroll a scrolling ancestor to reveal the target; the
+        // press is reported where it landed, so read the position first.
+        var sp = target.ScreenPosition;
         if (btn == UiMouseButton.Left)
             SetKeyboardFocus(target.AcceptsFocus && target.FocusOnMouseClick ? target : null);
 
@@ -653,7 +818,6 @@ public sealed class UiRoot : UiElement
             UiMouseButton.Middle => UiEventType.MiddleDown,
             _ => UiEventType.MouseDown,
         };
-        var sp = target.ScreenPosition;
         var e = new UiEvent(target.EventId, target, rawType,
                             Data0: (int)flags, Data1: (int)(x - sp.X), Data2: (int)(y - sp.Y));
         BubbleEvent(target, in e);
@@ -664,6 +828,10 @@ public sealed class UiRoot : UiElement
         (x, y) = MapWindowToCanvas(x, y);
         MouseX = x; MouseY = y;
         UpdateButtonFlag(btn, down: false);
+        if (btn == UiMouseButton.Left)
+            _worldDragCandidate = false;
+        if (_swallowedReleases.Remove(btn))
+            return;
 
         if (_resizeTarget is not null)
         {
@@ -741,7 +909,7 @@ public sealed class UiRoot : UiElement
                 var click = new UiEvent(target.EventId, target, UiEventType.RightClick,
                                         Data0: (int)flags,
                                         Data1: (int)(x - sp.X), Data2: (int)(y - sp.Y));
-                BubbleEvent(target, in click);
+                BubbleRightClick(target, in click);
             }
 
             if (ReferenceEquals(Captured, target))
@@ -753,7 +921,80 @@ public sealed class UiRoot : UiElement
         WorldMouseFallThrough?.Invoke(btn, x, y, flags);
     }
 
-    public void OnScroll(int dy)
+    /// <summary>A vertical wheel step: +1 up, -1 down.</summary>
+    public void OnScroll(int dy) => OnScroll(0, dy, shift: false);
+
+    /// <summary>
+    /// A wheel event with its horizontal and vertical steps (each -1, 0 or +1;
+    /// +1 is left or up) and whether Shift was held. Shift turns a vertical
+    /// step into a horizontal one before routing, as most applications do. A
+    /// vertical step is routed as it always has been: to the element under the
+    /// pointer and up through its parents until one consumes it, else to the
+    /// world. A horizontal step goes the same way as a
+    /// <see cref="UiEventType.ScrollHorizontal"/> event, which only a group
+    /// scrolling horizontally consumes; nothing passes it to the world. A Shift
+    /// step that nothing horizontal takes is routed as the vertical step it was.
+    /// The same goes for a sideways step with Shift held, which is what macOS
+    /// sends for Shift with a mouse wheel: a <c>scroll="x"</c> group under
+    /// the pointer takes it, and otherwise it is routed as a vertical step.
+    ///
+    /// <para>A step the interface takes may move content under the pointer, so
+    /// the hover is checked again; and taken anywhere but over an open popup,
+    /// it closes the popup, which may have scrolled away with its group.</para>
+    /// </summary>
+    public void OnScroll(int dx, int dy, bool shift)
+    {
+        bool overPopup = PopupHit(MouseX, MouseY) is not null;
+        bool taken;
+        if (shift && dx == 0 && dy != 0)
+        {
+            taken = RouteHorizontal(dy) || RouteVertical(dy);
+        }
+        else if (shift && dy == 0 && dx != 0)
+        {
+            // macOS sends Shift with a mouse wheel as a sideways tick: it
+            // scrolls sideways where something does, else it is the wheel.
+            taken = RouteHorizontal(dx) || RouteVertical(dx);
+        }
+        else
+        {
+            taken = false;
+            if (dx != 0) taken |= RouteHorizontal(dx);
+            if (dy != 0) taken |= RouteVertical(dy);
+        }
+        if (!taken) return;
+
+        if (!overPopup && _activePopup is not null)
+        {
+            var dismiss = _activePopupDismiss;
+            _activePopup = null;
+            _activePopupDismiss = null;
+            dismiss?.Invoke();
+        }
+        // As a move would: not while a resize, window drag or capture owns the pointer.
+        if (_resizeTarget is null && _windowDragTarget is null && Captured is null)
+            UpdateHover(MouseX, MouseY);
+    }
+
+    /// <summary>Whether shift is held on the attached keyboard.</summary>
+    internal bool ShiftHeld =>
+        Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
+        || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true;
+
+    private bool RouteHorizontal(int dx)
+    {
+        UiElement? popup = PopupHit(MouseX, MouseY);
+        UiElement? target = popup ?? HitTestTopDown(MouseX, MouseY).element;
+        if (target is null) return false;
+        if (popup is null && BlockerFor(target) is not null) return false;
+        var sp = target.ScreenPosition;
+        var e = new UiEvent(target.EventId, target, UiEventType.ScrollHorizontal, Data0: Math.Sign(dx),
+                            Data1: (int)(MouseX - sp.X), Data2: (int)(MouseY - sp.Y));
+        return BubbleEvent(target, in e);
+    }
+
+    /// <summary>Routes a vertical step; true when the interface took it.</summary>
+    private bool RouteVertical(int dy)
     {
         if (PopupHit(MouseX, MouseY) is { } popupTarget)
         {
@@ -761,19 +1002,20 @@ public sealed class UiRoot : UiElement
             var pe = new UiEvent(popupTarget.EventId, popupTarget, UiEventType.Scroll,
                                  Data0: dy,
                                  Data1: (int)(MouseX - pp.X), Data2: (int)(MouseY - pp.Y));
-            BubbleEvent(popupTarget, in pe);
-            return;
+            return BubbleEvent(popupTarget, in pe);
         }
 
         var (target, lx, ly) = HitTestTopDown(MouseX, MouseY);
         if (target is null)
         {
             WorldScrollFallThrough?.Invoke(dy);
-            return;
+            return false;
         }
+        if (BlockerFor(target) is not null)
+            return false;   // a window-modal dialog owns this window: the step goes nowhere
         var e = new UiEvent(target.EventId, target, UiEventType.Scroll, Data0: dy,
                             Data1: (int)lx, Data2: (int)ly);
-        BubbleEvent(target, in e);
+        return BubbleEvent(target, in e);
     }
 
     public void OnKeyDown(int vk, uint lparam = 0)
@@ -792,9 +1034,7 @@ public sealed class UiRoot : UiElement
             return;
         }
 
-        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(
-                Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftLeft) == true
-                || Keyboard?.IsKeyPressed(Silk.NET.Input.Key.ShiftRight) == true))
+        if (vk == (int)Silk.NET.Input.Key.Tab && MoveMarkupFocus(ShiftHeld))
             return;
 
         // Focus widget first.
@@ -889,6 +1129,8 @@ public sealed class UiRoot : UiElement
 
     public void SetKeyboardFocus(UiElement? e)
     {
+        if (e is not null && BlockerFor(e) is not null)
+            return;
         if (e is UiField field && field.Keyboard is null)
             field.Keyboard = Keyboard;
         if (KeyboardFocus == e) return;
@@ -914,8 +1156,17 @@ public sealed class UiRoot : UiElement
         {
             var gained = new UiEvent(e.EventId, e, UiEventType.FocusGained);
             e.OnEvent(in gained);
+            RevealInScrollingAncestors(e);
         }
         KeyboardFocusChanged?.Invoke(previous, e);
+    }
+
+    /// <summary>Scrolls each scrolling ancestor of <paramref name="e"/>, innermost first, just far enough to show it.</summary>
+    private static void RevealInScrollingAncestors(UiElement e)
+    {
+        for (UiElement? p = e.Parent; p is not null; p = p.Parent)
+            if (p is IUiScrollHost { ScrollArea: { } area })
+                area.Reveal(e);
     }
 
     private bool IsAvailableInputTarget(UiElement element)
@@ -1055,7 +1306,11 @@ public sealed class UiRoot : UiElement
         source?.SetDragSourceActive(false, payload);
 
         var (t, lx, ly) = HitTestTopDown(x, y);
-        if (t is not null)
+        if (t is not null && BlockerFor(t) is not null)
+        {
+            // Dropped onto a window a dialog blocks: the drop goes nowhere.
+        }
+        else if (t is not null)
         {
             var e = new UiEvent(source!.EventId, t, UiEventType.DropReleased,
                                 Data1: (int)lx, Data2: (int)ly, Payload: payload);
@@ -1258,6 +1513,20 @@ public sealed class UiRoot : UiElement
         {
             if (w.OnEvent(in e)) return true;
             w = w.Parent;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Bubbles a right click like any event, but once an element leaves it
+    /// unhandled, offers it to that element's context menu before going on.
+    /// </summary>
+    private bool BubbleRightClick(UiElement start, in UiEvent e)
+    {
+        for (UiElement? w = start; w is not null; w = w.Parent)
+        {
+            if (w.OnEvent(in e)) return true;
+            if (w.ContextMenu is { } menu && w.Enabled && menu.TryOpen(MouseX, MouseY)) return true;
         }
         return false;
     }

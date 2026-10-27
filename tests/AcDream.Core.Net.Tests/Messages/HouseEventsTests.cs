@@ -140,4 +140,191 @@ public sealed class HouseEventsTests
 
         Assert.Null(GameEvents.ParseHouseData(wire));
     }
+
+    private static AceWireWriter ProfileHeader(
+        AceWireWriter w,
+        uint slumlord = 0x70000100u,
+        uint owner = 0u,
+        int minLevel = -1,
+        int maxLevel = -1,
+        int minRank = -1,
+        int maxRank = -1,
+        bool maintenanceFree = false,
+        uint type = 1u,
+        string ownerName = "") =>
+        w.Write(slumlord)
+            .Write(0x12340001u)   // dwelling id
+            .Write(owner)
+            .Write(1u)            // bitmask: Active
+            .Write(minLevel)
+            .Write(maxLevel)
+            .Write(minRank)
+            .Write(maxRank)
+            .Write(maintenanceFree ? 1u : 0u)
+            .Write(type)
+            .WriteString16L(ownerName);
+
+    [Fact]
+    public void ParseHouseProfile_Unowned_EmptyLists()
+    {
+        byte[] wire = ProfileHeader(new AceWireWriter())
+            .Write(0).Write(0)
+            .ToArray();
+
+        GameEvents.HouseProfile? parsed = GameEvents.ParseHouseProfile(wire);
+
+        Assert.NotNull(parsed);
+        GameEvents.HouseProfile p = parsed.Value;
+        Assert.Equal(0x70000100u, p.SlumlordGuid);
+        Assert.Equal(0x12340001u, p.DwellingId);
+        Assert.Equal(0u, p.OwnerGuid);
+        Assert.Equal(1u, p.Bitmask);
+        Assert.Equal(-1, p.MinLevel);
+        Assert.Equal(-1, p.MaxAllegianceRank);
+        Assert.False(p.MaintenanceFree);
+        Assert.Equal(1u, p.Type);
+        Assert.Equal("", p.OwnerName);
+        Assert.Empty(p.Buy);
+        Assert.Empty(p.Rent);
+    }
+
+    [Fact]
+    public void ParseHouseProfile_Owned_ReadsHeaderAndBothLists()
+    {
+        byte[] wire = ProfileHeader(
+                new AceWireWriter(),
+                owner: 0x50000042u,
+                minLevel: 20,
+                maxLevel: 99,
+                minRank: 6,
+                maxRank: 10,
+                maintenanceFree: true,
+                type: 3u,
+                ownerName: "Sammy")
+            .Write(2)
+            .Write(50_000).Write(50_000).Write(273u)
+                .WriteString16L("Pyreal").WriteString16L("Pyreals")
+            .Write(1).Write(1).Write(9000u)
+                .WriteString16L("Bone Totem").WriteString16L("")
+            .Write(1)
+            .Write(5_000).Write(1_250).Write(273u)
+                .WriteString16L("Pyreal").WriteString16L("Pyreals")
+            .ToArray();
+
+        GameEvents.HouseProfile p = GameEvents.ParseHouseProfile(wire)!.Value;
+
+        Assert.Equal(0x50000042u, p.OwnerGuid);
+        Assert.Equal(20, p.MinLevel);
+        Assert.Equal(99, p.MaxLevel);
+        Assert.Equal(6, p.MinAllegianceRank);
+        Assert.Equal(10, p.MaxAllegianceRank);
+        Assert.True(p.MaintenanceFree);
+        Assert.Equal(3u, p.Type);
+        Assert.Equal("Sammy", p.OwnerName);
+        Assert.Equal(2, p.Buy.Count);
+        Assert.Equal(new GameEvents.HousePayment(1, 1, 9000u, "Bone Totem", ""), p.Buy[1]);
+        GameEvents.HousePayment rent = Assert.Single(p.Rent);
+        Assert.Equal(5_000, rent.Num);
+        Assert.Equal(1_250, rent.Paid);
+    }
+
+    [Fact]
+    public void ParseHouseProfile_TruncatedHeader_ReturnsNull()
+    {
+        byte[] wire = new AceWireWriter().Write(0x70000100u).Write(1u).ToArray();
+
+        Assert.Null(GameEvents.ParseHouseProfile(wire));
+    }
+
+    [Fact]
+    public void ParseHouseProfile_TruncatedPayment_ReturnsNull()
+    {
+        byte[] wire = ProfileHeader(new AceWireWriter())
+            .Write(1)
+            .Write(50_000).Write(0)   // the wcid and names are missing
+            .ToArray();
+
+        Assert.Null(GameEvents.ParseHouseProfile(wire));
+    }
+
+    [Fact]
+    public void BuildBuyHouse_WritesSlumlordCountAndGuids()
+    {
+        byte[] body = ClientCommandRequests.BuildBuyHouse(
+            7u, 0x70000100u, [0x60000001u, 0x60000002u]);
+
+        Assert.Equal(28, body.Length);
+        Assert.Equal(7u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(4)));
+        Assert.Equal(0x021Cu, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(8)));
+        Assert.Equal(0x70000100u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(12)));
+        Assert.Equal(2u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(16)));
+        Assert.Equal(0x60000001u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(20)));
+        Assert.Equal(0x60000002u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(24)));
+    }
+
+    [Fact]
+    public void BuildRentHouse_EmptyList_WritesZeroCount()
+    {
+        byte[] body = ClientCommandRequests.BuildRentHouse(3u, 0x70000100u, []);
+
+        Assert.Equal(20, body.Length);
+        Assert.Equal(0x0221u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(8)));
+        Assert.Equal(0x70000100u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(12)));
+        Assert.Equal(0u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(body.AsSpan(16)));
+    }
+
+    [Fact]
+    public void ParseUpdateHar_ReadsFlagsGuestsAndRoommates()
+    {
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u)  // version
+            .Write(0x5u)         // open house + allegiance storage
+            .Write(0x50000001u)  // monarch
+            .Write((ushort)2).Write((ushort)64)
+            .Write(0x50000002u).Write(0u).WriteString16L("Alice")
+            .Write(0x50000003u).Write(1u).WriteString16L("Bob")
+            .Write(1).Write(0x50000004u)
+            .ToArray();
+
+        GameEvents.HouseAccess? har = GameEvents.ParseUpdateHar(wire);
+
+        Assert.NotNull(har);
+        Assert.True(har!.Value.OpenToEveryone);
+        Assert.False(har.Value.AllegianceGuests);
+        Assert.True(har.Value.AllegianceStorage);
+        Assert.Equal(0x50000001u, har.Value.MonarchId);
+        Assert.Collection(har.Value.Guests,
+            g => Assert.Equal(new GameEvents.HouseGuest(0x50000002u, "Alice", false), g),
+            g => Assert.Equal(new GameEvents.HouseGuest(0x50000003u, "Bob", true), g));
+        Assert.Equal(new[] { 0x50000004u }, har.Value.Roommates);
+    }
+
+    [Fact]
+    public void ParseUpdateHar_EmptyPrivateHouse_RoundTrips()
+    {
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u).Write(0u).Write(0u)
+            .Write((ushort)0).Write((ushort)64)
+            .Write(0)
+            .ToArray();
+
+        GameEvents.HouseAccess? har = GameEvents.ParseUpdateHar(wire);
+
+        Assert.NotNull(har);
+        Assert.False(har!.Value.OpenToEveryone);
+        Assert.Empty(har.Value.Guests);
+        Assert.Empty(har.Value.Roommates);
+    }
+
+    [Fact]
+    public void ParseUpdateHar_TruncatedGuest_ReturnsNull()
+    {
+        byte[] wire = new AceWireWriter()
+            .Write(0x10000002u).Write(0u).Write(0u)
+            .Write((ushort)1).Write((ushort)64)
+            .Write(0x50000002u)
+            .ToArray();
+
+        Assert.Null(GameEvents.ParseUpdateHar(wire));
+    }
 }

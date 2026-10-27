@@ -502,7 +502,7 @@ internal sealed class RuntimeApproachSource : IRuntimeApproachSource
 
     public uint? StalledTicks()
     {
-        MoveToManager? moveTo = _runtime.MovementOwner.Controller?.MoveTo;
+        MoveToManager? moveTo = _runtime.MovementOwner.Controller?.ActiveMoveTo;
         return moveTo is { } manager && manager.IsMovingTo()
             ? manager.FailProgressCount
             : null;

@@ -91,6 +91,24 @@ internal sealed class CombatAttackOperationsSlot
     : IRuntimeCombatAttackOperations
 {
     private IRuntimeCombatAttackOperations? _owner;
+    private IRuntimeCombatAttackOperations? _session;
+
+    /// <summary>
+    /// The session's own operations, answered whenever nothing else is
+    /// bound: a session with no window attached plays through these. A
+    /// window's operations, bound while it is attached, take precedence;
+    /// when the window lets go, the session's operations answer again.
+    /// </summary>
+    public void UseSessionOperations(IRuntimeCombatAttackOperations session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (_session is not null && !ReferenceEquals(_session, session))
+            throw new InvalidOperationException(
+                "The session's own operations are already in use.");
+        _session = session;
+    }
+
+    private IRuntimeCombatAttackOperations? Current => _owner ?? _session;
 
     public void Bind(IRuntimeCombatAttackOperations owner)
     {
@@ -118,14 +136,14 @@ internal sealed class CombatAttackOperationsSlot
     }
 
     public bool CanStartAttack(bool allowAutoTarget) =>
-        _owner?.CanStartAttack(allowAutoTarget) == true;
-    public void PrepareAttackRequest() => _owner?.PrepareAttackRequest();
+        Current?.CanStartAttack(allowAutoTarget) == true;
+    public void PrepareAttackRequest() => Current?.PrepareAttackRequest();
     public bool SendAttack(AttackHeight height, float power, bool allowAutoTarget) =>
-        _owner?.SendAttack(height, power, allowAutoTarget) == true;
-    public void SendCancelAttack() => _owner?.SendCancelAttack();
-    public bool IsDualWield => _owner?.IsDualWield == true;
-    public bool PlayerReadyForAttack => _owner?.PlayerReadyForAttack == true;
-    public bool AutoRepeatAttack => _owner?.AutoRepeatAttack == true;
+        Current?.SendAttack(height, power, allowAutoTarget) == true;
+    public void SendCancelAttack() => Current?.SendCancelAttack();
+    public bool IsDualWield => Current?.IsDualWield == true;
+    public bool PlayerReadyForAttack => Current?.PlayerReadyForAttack == true;
+    public bool AutoRepeatAttack => Current?.AutoRepeatAttack == true;
 
     private sealed class Binding : IDisposable
     {

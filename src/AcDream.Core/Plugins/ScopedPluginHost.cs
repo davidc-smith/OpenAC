@@ -1324,6 +1324,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
         private readonly List<Action<uint>> _containerClosedRegistrations = [];
         private readonly List<Action<PluginConfirmation>> _confirmationRequestedRegistrations = [];
         private readonly List<Action<PluginActivationCompletion>> _activationCompletedRegistrations = [];
+        private readonly List<Action<string>> _statusTextReceivedRegistrations = [];
         private bool _disposed;
 
         public event Action<double> Tick
@@ -1830,6 +1831,44 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
 
+        public event Action<string> StatusTextReceived
+        {
+            add
+            {
+                ArgumentNullException.ThrowIfNull(value);
+                try
+                {
+                    inner.StatusTextReceived += value;
+                }
+                catch
+                {
+                    try { inner.StatusTextReceived -= value; }
+                    catch { }
+                    throw;
+                }
+                lock (_gate)
+                {
+                    if (!_disposed)
+                    {
+                        _statusTextReceivedRegistrations.Add(value);
+                        return;
+                    }
+                }
+
+                try { inner.StatusTextReceived -= value; }
+                catch { }
+                throw new ObjectDisposedException(nameof(ScopedEvents));
+            }
+            remove
+            {
+                if (value is null)
+                    return;
+                inner.StatusTextReceived -= value;
+                lock (_gate)
+                    _statusTextReceivedRegistrations.Remove(value);
+            }
+        }
+
         public void Dispose()
         {
             Action<WorldEntitySnapshot>[] registrations;
@@ -1845,6 +1884,7 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             Action<uint>[] containerClosedRegistrations;
             Action<PluginConfirmation>[] confirmationRequestedRegistrations;
             Action<PluginActivationCompletion>[] activationCompletedRegistrations;
+            Action<string>[] statusTextReceivedRegistrations;
             lock (_gate)
             {
                 if (_disposed)
@@ -1880,6 +1920,9 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 confirmationRequestedRegistrations =
                     _confirmationRequestedRegistrations.ToArray();
                 _confirmationRequestedRegistrations.Clear();
+                statusTextReceivedRegistrations =
+                    _statusTextReceivedRegistrations.ToArray();
+                _statusTextReceivedRegistrations.Clear();
             }
 
             for (int index = registrations.Length - 1; index >= 0; index--)
@@ -1960,6 +2003,12 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
                 {
                     inner.ConfirmationRequested -= confirmationRequestedRegistrations[index];
                 }
+                catch { }
+            }
+
+            for (int index = statusTextReceivedRegistrations.Length - 1; index >= 0; index--)
+            {
+                try { inner.StatusTextReceived -= statusTextReceivedRegistrations[index]; }
                 catch { }
             }
         }
@@ -2104,6 +2153,58 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             string controlName,
             bool visible) =>
             _inner.SetControlVisible(_owner, viewName, controlName, visible);
+
+        public bool ShowModal(string viewName, string? ownerView = null)
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+            }
+            return _inner.ShowModal(_owner, viewName, ownerView);
+        }
+
+        // An open dialog's handle is tracked like any other registration, so
+        // an unloading plugin's dialogs are answered with their last button;
+        // the answer lets go of it again. The plugin gets the tracked handle,
+        // so withdrawing a dialog lets go of it too.
+        public IDisposable? Confirm(PluginDialog dialog, Action<int> onResult)
+        {
+            ArgumentNullException.ThrowIfNull(dialog);
+            ArgumentNullException.ThrowIfNull(onResult);
+            lock (_gate)
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+            }
+
+            IDisposable? registration = null;
+            bool answered = false;
+            IDisposable? handle = _inner.Confirm(_owner, dialog, index =>
+            {
+                IDisposable? release;
+                lock (_gate)
+                {
+                    answered = true;
+                    release = registration;
+                }
+                release?.Dispose();
+                onResult(index);
+            });
+            if (handle is null)
+                return null;
+
+            IDisposable tracked = TrackRegistration(handle);
+            bool early;
+            lock (_gate)
+            {
+                registration = tracked;
+                early = answered;
+            }
+            if (early)
+                tracked.Dispose();
+            return tracked;
+        }
 
         // Client-window control is global (retained top-level windows the
         // player toggles with a keybind or toolbar button), not scoped to

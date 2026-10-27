@@ -7,25 +7,32 @@ namespace AcDream.App.Streaming;
 public sealed class LandblockPresentationRetirementOwner
 {
     private readonly LandblockRenderPublisher _render;
-    private readonly LandblockPhysicsPublisher _physics;
     private readonly LandblockStaticPresentationPublisher _staticPresentation;
     private readonly LightingHookSink _lighting;
     private readonly TranslucencyFadeManager _translucency;
+    // The budgeted steps run once per entity; delegates made once, not per
+    // step.
+    private readonly Action<WorldEntity> _removeLighting;
+    private readonly Action<WorldEntity> _removeTranslucency;
+    private readonly Action<WorldEntity> _removePluginProjection;
+    private static readonly Func<WorldEntity, bool> IsStatic =
+        static entity => entity.ServerGuid == 0;
 
     public LandblockPresentationRetirementOwner(
         LandblockRenderPublisher render,
-        LandblockPhysicsPublisher physics,
         LandblockStaticPresentationPublisher staticPresentation,
         LightingHookSink lighting,
         TranslucencyFadeManager translucency)
     {
         _render = render ?? throw new ArgumentNullException(nameof(render));
-        _physics = physics ?? throw new ArgumentNullException(nameof(physics));
         _staticPresentation = staticPresentation
             ?? throw new ArgumentNullException(nameof(staticPresentation));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         _translucency = translucency
             ?? throw new ArgumentNullException(nameof(translucency));
+        _removeLighting = _staticPresentation.RemoveLighting;
+        _removeTranslucency = _staticPresentation.RemoveTranslucency;
+        _removePluginProjection = _staticPresentation.RemovePluginProjection;
         if (!_staticPresentation.MatchesResources(_lighting, _translucency))
         {
             throw new ArgumentException(
@@ -37,10 +44,8 @@ public sealed class LandblockPresentationRetirementOwner
 
     internal bool Matches(
         LandblockRenderPublisher render,
-        LandblockPhysicsPublisher physics,
         LandblockStaticPresentationPublisher staticPresentation) =>
         ReferenceEquals(_render, render)
-        && ReferenceEquals(_physics, physics)
         && ReferenceEquals(_staticPresentation, staticPresentation)
         && _staticPresentation.MatchesResources(_lighting, _translucency);
 
@@ -61,14 +66,6 @@ public sealed class LandblockPresentationRetirementOwner
             static entity => entity.ServerGuid == 0,
             _staticPresentation.RemovePluginProjection);
 
-        if (!ticket.RunOnce(
-            LandblockRetirementStage.Physics,
-            () => ticket.Kind == LandblockRetirementKind.Full
-                ? _physics.AdvanceRemoval(ticket.LandblockId)
-                : _physics.AdvanceDemotion(ticket.LandblockId)))
-        {
-            return;
-        }
         if (ticket.Kind == LandblockRetirementKind.Full)
         {
             ticket.RunOnce(
@@ -95,28 +92,22 @@ public sealed class LandblockPresentationRetirementOwner
             LandblockRetirementStage.EntityLighting =>
                 ticket.RunEntityStep(
                     LandblockRetirementStage.EntityLighting,
-                    static entity => entity.ServerGuid == 0,
-                    _staticPresentation.RemoveLighting),
+                    IsStatic,
+                    _removeLighting),
             LandblockRetirementStage.EntityTranslucency =>
                 ticket.RunEntityStep(
                     LandblockRetirementStage.EntityTranslucency,
-                    static entity => entity.ServerGuid == 0,
-                    _staticPresentation.RemoveTranslucency),
+                    IsStatic,
+                    _removeTranslucency),
             LandblockRetirementStage.PluginProjection =>
                 ticket.RunEntityStep(
                     LandblockRetirementStage.PluginProjection,
-                    static entity => entity.ServerGuid == 0,
-                    _staticPresentation.RemovePluginProjection),
+                    IsStatic,
+                    _removePluginProjection),
             LandblockRetirementStage.Terrain =>
                 ticket.RunOnceStep(
                     LandblockRetirementStage.Terrain,
                     () => _render.RemoveTerrain(ticket.LandblockId)),
-            LandblockRetirementStage.Physics =>
-                ticket.RunOnceStep(
-                    LandblockRetirementStage.Physics,
-                    () => ticket.Kind == LandblockRetirementKind.Full
-                        ? _physics.AdvanceRemoval(ticket.LandblockId)
-                        : _physics.AdvanceDemotion(ticket.LandblockId)),
             LandblockRetirementStage.CellVisibility =>
                 ticket.RunOnceStep(
                     LandblockRetirementStage.CellVisibility,

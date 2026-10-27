@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using AcDream.App.Rendering;
+using AcDream.App.Rendering.Gpu;
 using AcDream.App.Tests.Rendering.Gpu;
 using AcDream.Content;
 using DatReaderWriter;
@@ -54,6 +55,57 @@ public sealed class TextureCacheRenderSurfaceSamplerKeyTests
         cache.Dispose();
 
         Assert.All(device.CreatedTextures, texture => Assert.True(texture.IsDisposed));
+    }
+
+    [Fact]
+    public void AnAlphaImageIsUploadedAsStoredAndShownAsWhiteWithThatAlpha()
+    {
+        var device = new RecordingGpuDevice();
+        device.Clear();
+        var dats = new FakeRenderSurfaceDats();
+        byte[] alpha = [0, 64, 128, 255, 1, 2, 3, 4];
+        dats.Register(new RenderSurface
+        {
+            Width = 4,
+            Height = 2,
+            Format = PixelFormat.PFID_A8,
+            SourceData = alpha,
+        }, RenderSurfaceId);
+        var cache = new TextureCache(device, dats);
+
+        uint handle = cache.GetOrUploadRenderSurface(RenderSurfaceId, out int width, out int height, nearest: true);
+
+        Assert.NotEqual(0u, handle);
+        Assert.Equal((4, 2), (width, height));
+        RecordingGpuTexture texture = Assert.Single(device.CreatedTextures);
+        Assert.Equal(GpuTextureFormat.R8Unorm, texture.Format);
+        Assert.Equal(GpuTextureSwizzle.CoverageAsAlpha, texture.Swizzle);
+        Assert.Equal(alpha, Assert.Single(texture.UploadedBytes));
+        cache.Dispose();
+    }
+
+    [Fact]
+    public void AColourImageIsStillDecodedToFourChannels()
+    {
+        var device = new RecordingGpuDevice();
+        device.Clear();
+        var dats = new FakeRenderSurfaceDats();
+        dats.Register(new RenderSurface
+        {
+            Width = 2,
+            Height = 1,
+            Format = PixelFormat.PFID_A8R8G8B8,
+            SourceData = [1, 2, 3, 4, 5, 6, 7, 8],
+        }, RenderSurfaceId);
+        var cache = new TextureCache(device, dats);
+
+        cache.GetOrUploadRenderSurface(RenderSurfaceId, out _, out _, nearest: false);
+
+        RecordingGpuTexture texture = Assert.Single(device.CreatedTextures);
+        Assert.Equal(GpuTextureFormat.Rgba8Unorm, texture.Format);
+        Assert.Equal(GpuTextureSwizzle.Identity, texture.Swizzle);
+        Assert.Equal(new byte[] { 3, 2, 1, 4, 7, 6, 5, 8 }, Assert.Single(texture.UploadedBytes));
+        cache.Dispose();
     }
 
     private sealed class FakeRenderSurfaceDats : IDatReaderWriter

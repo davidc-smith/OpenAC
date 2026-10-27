@@ -4,6 +4,7 @@ using AcDream.Runtime.Chat;
 using AcDream.Headless.Plugins;
 using AcDream.Plugin.Abstractions;
 using AcDream.Runtime;
+using AcDream.Runtime.Session.Windowless;
 using AcDream.Runtime.Gameplay;
 using AcDream.Runtime.Session;
 
@@ -25,7 +26,7 @@ namespace AcDream.HostParity.Tests;
 /// </summary>
 internal sealed class WindowlessArm : ParityArm
 {
-    private readonly HeadlessGameplayOperations _gameplay;
+    private readonly RuntimeWindowlessGameplayOperations _gameplay;
     private readonly HeadlessPluginHost _host;
 
     /// <summary>
@@ -46,11 +47,11 @@ internal sealed class WindowlessArm : ParityArm
     private DirectGameRuntimeCommandAdapter _commands = null!;
 
     internal WindowlessArm()
-        : this(new HeadlessGameplayOperations())
+        : this(new RuntimeWindowlessGameplayOperations())
     {
     }
 
-    private WindowlessArm(HeadlessGameplayOperations gameplay)
+    private WindowlessArm(RuntimeWindowlessGameplayOperations gameplay)
         : base(
             ParityHost.Windowless,
             operations =>
@@ -232,8 +233,8 @@ internal sealed class WindowlessArm : ParityArm
     protected override RuntimeLocalPlayerFrameController
         CreateFrameController() =>
         Runtime.CreateLocalPlayerFrameController(
-            new HeadlessLocalPlayerFrameHost(Runtime, Session),
-            new HeadlessMovementInputSource(Runtime.MovementOwner));
+            new RuntimeWindowlessLocalPlayerFrameHost(Runtime, Session),
+            new RuntimeWindowlessMovementInputSource(Runtime.MovementOwner));
 
     protected override void DisposeHost() => _host.Dispose();
 

@@ -194,8 +194,10 @@ internal sealed class WorldRevealCoordinator
         WorldRevealReadinessSnapshot snapshot = _readiness.Evaluate(destinationCell);
         ReconcileDestinationReservationRadius(snapshot);
         RuntimePortalSnapshot portal = _transit.Snapshot;
-        _timing?.Observe(snapshot, portal);
-        if (portal.Generation != 0)
+        // A reveal that has ended has nothing more to hear about readiness: a
+        // window opened on a playing session asks every frame until the
+        // world around the character is drawn.
+        if (portal.Generation != 0 && !portal.Completed && !portal.Cancelled)
         {
             _transit.AcknowledgeDestinationReadiness(
                 new RuntimeDestinationReadiness(

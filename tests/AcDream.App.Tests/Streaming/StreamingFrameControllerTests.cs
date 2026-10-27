@@ -206,6 +206,68 @@ public sealed class StreamingFrameControllerTests
     }
 
     [Fact]
+    public void OfflineMode_RevealFollowsTheObserverAheadOfTheStreamingTick()
+    {
+        var calls = new List<string>();
+        var reveal = new OfflineWorldReveal(
+            new RecordingRevealStreaming(calls),
+            new RecordingRevealResources(),
+            () => new StreamingRevealWindow(1, 2),
+            (_, _, _) => false);
+        var fixture = new Fixture(offlineReveal: reveal);
+        fixture.Streaming.OnTick = (_, _, _) => calls.Add("streaming");
+        fixture.Offline.Position = new Vector3(192f, 384f, 0f);
+
+        fixture.Controller.Tick();
+
+        Assert.Equal(["reserve 0B16FFFF", "streaming"], calls);
+        Assert.True(reveal.IsWithholdingWorld);
+    }
+
+    [Fact]
+    public void LiveMode_NeverRunsTheOfflineReveal()
+    {
+        var calls = new List<string>();
+        var reveal = new OfflineWorldReveal(
+            new RecordingRevealStreaming(calls),
+            new RecordingRevealResources(),
+            () => new StreamingRevealWindow(1, 2),
+            (_, _, _) => false);
+        var fixture = new Fixture(
+            liveMode: true,
+            initializeOrigin: true,
+            offlineReveal: reveal);
+        fixture.Session.IsInWorld = true;
+
+        fixture.Controller.Tick();
+
+        Assert.Equal([(10, 20, false)], fixture.Streaming.Calls);
+        Assert.Empty(calls);
+        Assert.False(reveal.IsWithholdingWorld);
+    }
+
+    private sealed class RecordingRevealStreaming(List<string> calls)
+        : IWorldRevealStreamingScheduler
+    {
+        public void BeginDestinationReservation(
+            long revealGeneration,
+            uint destinationCell,
+            int requiredRenderRadius) =>
+            calls.Add($"reserve {destinationCell:X8}");
+
+        public void EndDestinationReservation(long revealGeneration) =>
+            calls.Add("release");
+    }
+
+    private sealed class RecordingRevealResources
+        : IWorldRevealRenderResourceScheduler
+    {
+        public void BeginDestinationReveal(long revealGeneration) { }
+
+        public void EndDestinationReveal(long revealGeneration) { }
+    }
+
+    [Fact]
     public void StreamingBackendTickPrecedesRescueRebucketAtSameObserver()
     {
         var calls = new List<string>();
@@ -402,7 +464,8 @@ public sealed class StreamingFrameControllerTests
         internal Fixture(
             bool liveMode = false,
             bool initializeOrigin = false,
-            IStreamingFrameBackend? streamingBackend = null)
+            IStreamingFrameBackend? streamingBackend = null,
+            OfflineWorldReveal? offlineReveal = null)
         {
             Origin.SetPlaceholder(10, 20);
             if (initializeOrigin)
@@ -418,7 +481,8 @@ public sealed class StreamingFrameControllerTests
                 Dungeon,
                 Convergence,
                 streamingBackend ?? Streaming,
-                Rescues);
+                Rescues,
+                offlineReveal);
         }
 
         internal LocalPlayerModeState Mode { get; } = new();

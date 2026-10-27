@@ -18,6 +18,14 @@ public enum LandblockRetirementStage : ushort
     BuildingRegistry = 1 << 9,
     EnvironmentCells = 1 << 10,
     LegacyPresentation = 1 << 11,
+    /// <summary>
+    /// The landblock's static render projections leave the render scene. A
+    /// ticket carries this stage only when the whole window was detached at
+    /// once (an origin recenter); it then runs before every other stage of
+    /// the ticket, budgeted like them, instead of all landblocks' projections
+    /// leaving in the frame that detached them.
+    /// </summary>
+    StaticProjections = 1 << 12,
 }
 
 internal enum LandblockRetirementOperationResult : byte
@@ -240,11 +248,34 @@ public sealed class LandblockRetirementTicket
             ushort remaining = (ushort)(RequiredStages & ~CompletedStages);
             if (remaining == 0)
                 return LandblockRetirementStage.None;
+            // What the render scene still holds of the landblock leaves
+            // before the owners its projections draw with are released.
+            if ((remaining & (ushort)LandblockRetirementStage.StaticProjections) != 0)
+                return LandblockRetirementStage.StaticProjections;
 
             ushort lowest = (ushort)(remaining & (ushort)-(short)remaining);
             return (LandblockRetirementStage)lowest;
         }
     }
+
+    /// <summary>
+    /// The meter's label for one of this ticket's stages, made once per
+    /// stage: a stage that walks the landblock's entities reserves once per
+    /// entity, and a label per reservation was garbage per entity.
+    /// </summary>
+    internal string StageLabel(LandblockRetirementStage stage)
+    {
+        int index = System.Numerics.BitOperations.TrailingZeroCount(
+            (uint)(ushort)stage);
+        _stageLabels ??= new string?[16];
+        return _stageLabels[index] ??= $"retire-{stage}-0x{LandblockId:X8}";
+    }
+
+    private string?[]? _stageLabels;
+
+    internal bool RequiresStage(LandblockRetirementStage stage) =>
+        (RequiredStages & stage) == stage
+        && (CompletedStages & stage) == 0;
 
     internal void BeginAttempt() => _callbackFailure = null;
 
@@ -300,7 +331,6 @@ public sealed class LandblockRetirementCoordinator
         | LandblockRetirementStage.EntityTranslucency
         | LandblockRetirementStage.PluginProjection
         | LandblockRetirementStage.Terrain
-        | LandblockRetirementStage.Physics
         | LandblockRetirementStage.CellVisibility
         | LandblockRetirementStage.BuildingRegistry
         | LandblockRetirementStage.EnvironmentCells;
@@ -362,6 +392,12 @@ public sealed class LandblockRetirementCoordinator
 
     public int PendingCount { get; private set; }
 
+    /// <summary>
+    /// Tickets whose static render projections have not yet left the render
+    /// scene (see <see cref="LandblockRetirementStage.StaticProjections"/>).
+    /// </summary>
+    internal int PendingStaticProjectionRetirements { get; private set; }
+
     public bool IsPending(uint landblockId) =>
         _pending.ContainsKey(Canonicalize(landblockId));
 
@@ -405,9 +441,15 @@ public sealed class LandblockRetirementCoordinator
             }
         }
 
+        // The render scene's static projections of every detached landblock
+        // leave as budgeted ticket steps, not all in the detaching frame.
+        bool deferProjections =
+            _advancePresentationStep is not null && _onDetached is not null;
         LandblockRetirementStage required =
             CoreStages
             | _requiredPresentationStages(LandblockRetirementKind.Full);
+        if (deferProjections)
+            required |= LandblockRetirementStage.StaticProjections;
         List<Exception>? failures = null;
         for (int index = 0; index < retirements.Count; index++)
         {
@@ -430,13 +472,20 @@ public sealed class LandblockRetirementCoordinator
             if (_advancePresentationStep is not null)
                 EnqueueBudgetedTicket(ticket);
 
-            try
+            if (deferProjections)
             {
-                _onDetached?.Invoke(retirement);
+                PendingStaticProjectionRetirements++;
             }
-            catch (Exception error)
+            else
             {
-                (failures ??= []).Add(error);
+                try
+                {
+                    _onDetached?.Invoke(retirement);
+                }
+                catch (Exception error)
+                {
+                    (failures ??= []).Add(error);
+                }
             }
 
             if (_advancePresentationStep is null)
@@ -695,24 +744,31 @@ public sealed class LandblockRetirementCoordinator
     private void AdvanceTicket(LandblockRetirementTicket ticket)
     {
         ticket.BeginAttempt();
-        ticket.RunOnce(
-            LandblockRetirementStage.MeshReferences,
-            () => _state.ReleaseLandblockMeshReferences(ticket.LandblockId));
-        ticket.RunForEachEntity(
-            LandblockRetirementStage.StaticScripts,
-            static entity => entity.ServerGuid == 0,
-            _state.StopStaticEntityScript);
-        ticket.RunOnce(
-            LandblockRetirementStage.Classification,
-            () => _state.InvalidateLandblockClassification(ticket.LandblockId));
+        // Nothing the projections draw with is released while the render
+        // scene still holds them.
+        if (!ticket.RequiresStage(LandblockRetirementStage.StaticProjections)
+            || RetireStaticProjections(ticket)
+                != LandblockRetirementOperationResult.Failed)
+        {
+            ticket.RunOnce(
+                LandblockRetirementStage.MeshReferences,
+                () => _state.ReleaseLandblockMeshReferences(ticket.LandblockId));
+            ticket.RunForEachEntity(
+                LandblockRetirementStage.StaticScripts,
+                IsStatic,
+                _stopStaticEntityScript ??= _state.StopStaticEntityScript);
+            ticket.RunOnce(
+                LandblockRetirementStage.Classification,
+                () => _state.InvalidateLandblockClassification(ticket.LandblockId));
 
-        try
-        {
-            _advancePresentation(ticket);
-        }
-        catch (Exception error)
-        {
-            ticket.RecordCallbackFailure(error);
+            try
+            {
+                _advancePresentation(ticket);
+            }
+            catch (Exception error)
+            {
+                ticket.RecordCallbackFailure(error);
+            }
         }
 
         if (ticket.TryTakeNewFailure(out Exception? failure))
@@ -740,6 +796,48 @@ public sealed class LandblockRetirementCoordinator
             RemoveCompletedTicket(ticket);
     }
 
+    private static readonly Func<WorldEntity, bool> IsStatic =
+        static entity => entity.ServerGuid == 0;
+    private Action<WorldEntity>? _stopStaticEntityScript;
+
+    private LandblockRetirementOperationResult RetireStaticProjections(
+        LandblockRetirementTicket ticket)
+    {
+        Action<GpuLandblockRetirement> retire = _onDetached
+            ?? throw new InvalidOperationException(
+                "A deferred static-projection retirement has no owner.");
+        LandblockRetirementOperationResult result = ticket.RunOnceStep(
+            LandblockRetirementStage.StaticProjections,
+            () => retire(ticket.State));
+        if (result == LandblockRetirementOperationResult.Progressed)
+            PendingStaticProjectionRetirements--;
+        return result;
+    }
+
+    /// <summary>
+    /// Advances, in ticket order and within the meter, the static-projection
+    /// stage of every ticket that still has it, and nothing else. True once
+    /// no ticket's projections remain in the render scene.
+    /// </summary>
+    internal bool AdvanceStaticProjectionRetirements(StreamingWorkMeter meter)
+    {
+        ArgumentNullException.ThrowIfNull(meter);
+        for (LinkedListNode<LandblockRetirementTicket>? node = _pendingOrder.First;
+             node is not null && PendingStaticProjectionRetirements != 0;
+             node = node.Next)
+        {
+            LandblockRetirementTicket ticket = node.Value;
+            if (!ticket.RequiresStage(LandblockRetirementStage.StaticProjections))
+                continue;
+            if (AdvanceBudgetedTicket(ticket, meter)
+                != BudgetedAdvanceResult.Progressed)
+            {
+                return false;
+            }
+        }
+        return PendingStaticProjectionRetirements == 0;
+    }
+
     private LandblockRetirementOperationResult AdvanceTicketOne(
         LandblockRetirementTicket ticket)
     {
@@ -750,6 +848,8 @@ public sealed class LandblockRetirementCoordinator
         {
             result = stage switch
             {
+                LandblockRetirementStage.StaticProjections =>
+                    RetireStaticProjections(ticket),
                 LandblockRetirementStage.MeshReferences =>
                     ticket.RunOnceStep(
                         stage,
@@ -758,8 +858,8 @@ public sealed class LandblockRetirementCoordinator
                 LandblockRetirementStage.StaticScripts =>
                     ticket.RunEntityStep(
                         stage,
-                        static entity => entity.ServerGuid == 0,
-                        _state.StopStaticEntityScript),
+                        IsStatic,
+                        _stopStaticEntityScript ??= _state.StopStaticEntityScript),
                 LandblockRetirementStage.Classification =>
                     ticket.RunOnceStep(
                         stage,
@@ -797,8 +897,33 @@ public sealed class LandblockRetirementCoordinator
                 "An incomplete retirement ticket has no unfinished stage.");
         }
 
+        // Retiring a landblock's static projections is, per entity, one
+        // unregistration here and one scene removal when the frame's journal
+        // drains: two entity operations each.
+        int projectionOperations = Math.Max(1, ticket.Entities.Count * 2);
+        if (stage == LandblockRetirementStage.StaticProjections)
+        {
+            // The scene removals run when the frame's journal drains, outside
+            // this meter, so a reveal's widened budget must not widen them:
+            // a frame retires at most an ordinary frame's entity operations
+            // of projections (always one landblock's).
+            if (meter.FrameSerial != _projectionFrameSerial)
+            {
+                _projectionFrameSerial = meter.FrameSerial;
+                _projectionOperationsThisFrame = 0;
+            }
+            if (_projectionOperationsThisFrame != 0
+                && _projectionOperationsThisFrame + projectionOperations
+                    > StaticProjectionOperationsPerFrame)
+            {
+                return BudgetedAdvanceResult.Yielded;
+            }
+        }
         StreamingWorkCost cost = new(
-            EntityOperations: 1,
+            EntityOperations:
+                stage == LandblockRetirementStage.StaticProjections
+                    ? projectionOperations
+                    : 1,
             GlRetireOperations:
                 stage is LandblockRetirementStage.MeshReferences
                     or LandblockRetirementStage.Terrain
@@ -806,7 +931,7 @@ public sealed class LandblockRetirementCoordinator
                     : 0);
         StreamingWorkAdmission admission = meter.TryReserve(
             cost,
-            $"retire-{stage}-0x{ticket.LandblockId:X8}");
+            ticket.StageLabel(stage));
         if (admission == StreamingWorkAdmission.Yielded)
             return BudgetedAdvanceResult.Yielded;
 
@@ -818,10 +943,20 @@ public sealed class LandblockRetirementCoordinator
         }
 
         meter.Complete();
+        if (stage == LandblockRetirementStage.StaticProjections)
+            _projectionOperationsThisFrame += projectionOperations;
         if (result == LandblockRetirementOperationResult.Pending)
             return BudgetedAdvanceResult.Yielded;
         return BudgetedAdvanceResult.Progressed;
     }
+
+    /// <summary>The most static-projection entity operations one frame
+    /// retires: an ordinary frame's entity budget.</summary>
+    internal static readonly int StaticProjectionOperationsPerFrame =
+        StreamingWorkBudgetOptions.Default.MaxEntityOperations;
+
+    private long _projectionFrameSerial;
+    private int _projectionOperationsThisFrame;
 
     private void EnqueueBudgetedTicket(LandblockRetirementTicket ticket)
     {

@@ -632,17 +632,17 @@ internal static class VulkanCapabilityGuard
     }
 }
 
+/// <summary>
+/// The report's serializer, generated at build time: building it by
+/// reflection at run time was most of the cost of writing the report at
+/// every start.
+/// </summary>
+[JsonSourceGenerationOptions(WriteIndented = true, UseStringEnumConverter = true)]
+[JsonSerializable(typeof(VulkanCapabilityRecord))]
+internal sealed partial class VulkanCapabilityReportJsonContext : JsonSerializerContext;
+
 internal static class VulkanCapabilityReportWriter
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        WriteIndented = true,
-        Converters =
-        {
-            new JsonStringEnumConverter(),
-        },
-    };
-
     internal static void Write(string path, VulkanCapabilityRecord capabilities)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -657,10 +657,50 @@ internal static class VulkanCapabilityReportWriter
         File.Move(temporaryPath, fullPath, overwrite: true);
     }
 
+    /// <summary>
+    /// Writes the report the capability gate leaves behind. A device that
+    /// fails the gate has its report on disk before this returns, because the
+    /// error raised next names the file. A device that passes has it written
+    /// on a worker while the window keeps opening: serializing it for the
+    /// first time costs tens of milliseconds. A report that cannot be written
+    /// is logged; the report is a diagnostic and never stops the client.
+    /// </summary>
+    /// <returns>The write, complete once the file is on disk or the failure logged.</returns>
+    internal static Task WriteForGate(
+        string path,
+        VulkanCapabilityRecord capabilities,
+        Action<string> log,
+        Func<Action, Task>? runInBackground = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(capabilities);
+        ArgumentNullException.ThrowIfNull(log);
+        if (!capabilities.IsSupported)
+        {
+            Write(path, capabilities);
+            return Task.CompletedTask;
+        }
+
+        runInBackground ??= static work => Task.Run(work);
+        return runInBackground(() =>
+        {
+            try
+            {
+                Write(path, capabilities);
+            }
+            catch (Exception failure)
+            {
+                log($"vulkan: the capability report '{path}' could not be written: {failure.Message}");
+            }
+        });
+    }
+
     /// <summary>Exposed so the report's shape can be asserted without touching the file system.</summary>
     internal static string Serialize(VulkanCapabilityRecord capabilities)
     {
         ArgumentNullException.ThrowIfNull(capabilities);
-        return JsonSerializer.Serialize(capabilities, Options);
+        return JsonSerializer.Serialize(
+            capabilities,
+            VulkanCapabilityReportJsonContext.Default.VulkanCapabilityRecord);
     }
 }

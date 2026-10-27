@@ -100,8 +100,9 @@ public static class LauncherProfileText
     /// <summary>
     /// The accounts saving <paramref name="text"/> would remove that have something saved on them
     /// (characters, plugins or logon commands), each as "account on server (1 character, 2
-    /// plugins)". A changed name counts: it is a different account, with its own characters. Empty
-    /// when there are none, or when the text has an error the save will report.
+    /// plugins)". A changed name counts: it is a different account, with its own characters. A name
+    /// only retyped in another case is the same account and is not removed. Empty when there are
+    /// none, or when the text has an error the save will report.
     /// </summary>
     public static IReadOnlyList<string> DescribeAccountRemovals(LauncherProfileDocument document, string text)
     {
@@ -117,7 +118,8 @@ public static class LauncherProfileText
         var removals = new List<string>();
         foreach ((ServerProfile server, var accounts) in sections)
         {
-            foreach (AccountProfile account in server.Accounts.Where(account => accounts.All(parsed => parsed.Name != account.Account)))
+            AccountProfile?[] kept = MatchSavedAccounts(server, accounts);
+            foreach (AccountProfile account in server.Accounts.Where(account => !kept.Contains(account)))
             {
                 string[] parts =
                 [
@@ -149,16 +151,60 @@ public static class LauncherProfileText
         ThrowIfAny(errors);
         foreach ((ServerProfile server, var accounts) in sections)
         {
-            server.Accounts = [.. accounts.Select(parsed =>
+            AccountProfile?[] kept = MatchSavedAccounts(server, accounts);
+            server.Accounts = [.. accounts.Select((parsed, index) =>
             {
-                AccountProfile account = server.Accounts.Find(existing => existing.Account == parsed.Name)
-                    ?? new AccountProfile { Account = parsed.Name };
+                AccountProfile account = kept[index] ?? new AccountProfile();
+                // A name retyped in another case keeps the account and takes the new spelling.
+                account.Account = parsed.Name;
                 account.Password = parsed.Password;
                 account.Profiles = parsed.Profiles;
                 return account;
             })];
         }
     }
+
+    /// <summary>
+    /// The saved account each parsed line stands for, or null for a new one: the entry spelled
+    /// exactly so, or else the first not yet taken that is the same account. Exact spellings are
+    /// matched first, so a file holding two spellings of one account keeps each entry its own.
+    /// </summary>
+    private static AccountProfile?[] MatchSavedAccounts(
+        ServerProfile server,
+        List<(int Line, string Name, string Password, List<string> Profiles)> accounts)
+    {
+        var kept = new AccountProfile?[accounts.Count];
+        var taken = new HashSet<AccountProfile>(ReferenceEqualityComparer.Instance);
+        for (int index = 0; index < accounts.Count; index++)
+        {
+            kept[index] = server.Accounts.Find(saved =>
+                string.Equals(saved.Account, accounts[index].Name, StringComparison.Ordinal));
+            if (kept[index] is { } exact)
+            {
+                taken.Add(exact);
+            }
+        }
+
+        for (int index = 0; index < accounts.Count; index++)
+        {
+            if (kept[index] is null)
+            {
+                kept[index] = AccountNames.Find(
+                    server.Accounts.Where(saved => !taken.Contains(saved)),
+                    saved => saved.Account,
+                    accounts[index].Name);
+                if (kept[index] is { } sameAccount)
+                {
+                    taken.Add(sameAccount);
+                }
+            }
+        }
+
+        return kept;
+    }
+
+    private static bool IsSavedSpelling(ServerProfile server, string name) =>
+        server.Accounts.Exists(saved => string.Equals(saved.Account, name, StringComparison.Ordinal));
 
     private static List<(ServerProfile Server, List<(int Line, string Name, string Password, List<string> Profiles)> Accounts)> ParseAccounts(
         LauncherProfileDocument document,
@@ -202,7 +248,12 @@ public static class LauncherProfileText
 
             if (TryParseAccountLine(line, number, errors) is { } account)
             {
-                if (current.Any(existing => existing.Name == account.Name))
+                // Two spellings of one account are a duplicate, unless both are already saved:
+                // a file from before names were compared without case keeps both entries.
+                ServerProfile server = sections[^1].Server;
+                if (current.Any(existing => string.Equals(existing.Name, account.Name, StringComparison.Ordinal)
+                    || (AccountNames.Same(existing.Name, account.Name)
+                        && !(IsSavedSpelling(server, existing.Name) && IsSavedSpelling(server, account.Name)))))
                 {
                     errors.Add($"Line {number}: account '{account.Name}' appears more than once on this server.");
                     continue;
@@ -372,7 +423,7 @@ public static class LauncherProfileText
                     continue;
                 }
 
-                AccountProfile? account = server.Accounts.Find(candidate => candidate.Account == name);
+                AccountProfile? account = AccountNames.Find(server.Accounts, candidate => candidate.Account, name);
                 if (account is null)
                 {
                     errors.Add($"Line {number}: server '{server.Name}' has no account '{name}'. Add it in Edit accounts first.");

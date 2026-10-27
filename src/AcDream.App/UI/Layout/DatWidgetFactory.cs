@@ -219,6 +219,8 @@ public static class DatWidgetFactory
             {
                 ElementInfo? authoredTrack = info.Children.FirstOrDefault(child => child.Id == 4u);
                 bar.TrackSprite = authoredTrack is null ? 0u : DefaultImage(authoredTrack);
+                if (authoredTrack is not null)
+                    bar.TrackSpritesByState = StateImages(authoredTrack);
             }
 
             ElementInfo? meter = info.Children.FirstOrDefault(child => child.Type == 7u);
@@ -344,6 +346,19 @@ public static class DatWidgetFactory
             && direct.Image is { } directImage)
             return directImage.File;
         return 0u;
+    }
+
+    // The image each named state authors, or null when fewer than two do.
+    private static IReadOnlyDictionary<uint, uint>? StateImages(ElementInfo info)
+    {
+        Dictionary<uint, uint>? images = null;
+        foreach (var (stateId, state) in info.States)
+        {
+            if (stateId == UiStateInfo.DirectStateId || state.Image is not { } image)
+                continue;
+            (images ??= [])[stateId] = image.File;
+        }
+        return images is { Count: > 1 } ? images : null;
     }
 
     private static uint ButtonStateImage(ElementInfo? info, string stateName)
@@ -844,9 +859,17 @@ public static class DatWidgetFactory
     private static ElementInfo? FindStatefulFaceChild(ElementInfo info)
         => FindStatefulFaceChildren(info).FirstOrDefault();
 
+    /// <summary>
+    /// A button's child that is itself a button (a spin's arrows) is a control
+    /// of its own, with its own states, rollover and hit area. It is built
+    /// under the button and never drawn as part of the button's face.
+    /// </summary>
+    internal static bool IsChildButton(ElementInfo child) => child.Type == 1u;
+
     private static ElementInfo[] FindStatefulFaceChildren(ElementInfo info)
         => info.Children.Where(child =>
-            child.StateMedia.Count != 0
+            !IsChildButton(child)
+            && child.StateMedia.Count != 0
             && child.StateMedia.Keys.Any(childState =>
                 info.States.Values.Any(parentState =>
                     string.Equals(parentState.Name, childState, StringComparison.Ordinal))))

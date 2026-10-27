@@ -123,7 +123,10 @@ namespace AcDream.App.Rendering.Wb {
             _ => throw new NotSupportedException($"Unsupported texture-atlas format {format}.")
         };
 
-        public int AddTexture(TextureKey key, byte[] data, UploadPixelFormat? uploadPixelFormat = null, UploadPixelType? uploadPixelType = null) {
+        public int AddTexture(TextureKey key, byte[] data, UploadPixelFormat? uploadPixelFormat = null, UploadPixelType? uploadPixelType = null) =>
+            AddTexture(key, data, uploadPixelFormat, uploadPixelType, mipChain: null);
+
+        internal int AddTexture(TextureKey key, byte[] data, UploadPixelFormat? uploadPixelFormat, UploadPixelType? uploadPixelType, byte[][]? mipChain) {
             ObjectDisposedException.ThrowIf(_disposed || _disposeTransaction.IsRunning, this);
             _layerRetirement.RetryPendingPublications();
             if (_textureIndices.TryGetValue(key, out var existingIndex)) {
@@ -134,7 +137,7 @@ namespace AcDream.App.Rendering.Wb {
             int index = _slots.Rent();
 
             try {
-                TextureArray.UpdateLayer(index, data, uploadPixelFormat, uploadPixelType);
+                TextureArray.UpdateLayer(index, data, uploadPixelFormat, uploadPixelType, mipChain);
                 _textureIndices[key] = index;
                 _refCounts[index] = 1;
                 return index;

@@ -26,6 +26,7 @@ internal sealed class RuntimeFirstEntryDriveController
     private readonly List<RuntimeEntityKey> _driveScratch = [];
     private bool _driving;
     private object? _routeOwner;
+    private bool _handOverOpen;
     private Action<RuntimeEntityRecord>? _localPlayerCompleted;
 
     internal RuntimeFirstEntryDriveController(
@@ -96,6 +97,25 @@ internal sealed class RuntimeFirstEntryDriveController
         }
     }
 
+    /// <summary>
+    /// Opens a hand-over: the route that lets go next keeps its work for the
+    /// route that attaches after it, instead of abandoning it. Used when a
+    /// window opens or closes on a session that keeps playing; a session
+    /// reset never hands over.
+    /// </summary>
+    internal void BeginRouteHandOver() => _handOverOpen = true;
+
+    /// <summary>
+    /// Closes the hand-over. Work no route took is abandoned, as a plain
+    /// detach would have.
+    /// </summary>
+    internal void EndRouteHandOver()
+    {
+        _handOverOpen = false;
+        if (_routeOwner is null)
+            _pending.Clear();
+    }
+
     internal void AttachRoute(
         object route,
         Action<RuntimeEntityRecord>? localPlayerCompleted = null)
@@ -119,6 +139,8 @@ internal sealed class RuntimeFirstEntryDriveController
             return;
         _routeOwner = null;
         _localPlayerCompleted = null;
+        if (_handOverOpen)
+            return;
         _pending.Clear();
     }
 

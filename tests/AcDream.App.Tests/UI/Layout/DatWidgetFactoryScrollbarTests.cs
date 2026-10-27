@@ -71,4 +71,24 @@ public sealed class DatWidgetFactoryScrollbarTests
         var (_, extent) = bar.ModelThumbRect(model, trackStart: 17f, trackLen: 273f);
         Assert.Equal(37f, extent);
     }
+
+    // A character-creation attribute slider draws a different track while
+    // its attribute is locked; the bar's state picks the track art.
+
+    [Fact]
+    public void HorizontalBar_TrackFollowsTheBarsStateWhenTheTrackAuthorsArtPerState()
+    {
+        ElementInfo info = ScrollbarFixtures.LockableScalarBar();
+
+        UiScrollbar bar = Assert.IsType<UiScrollbar>(
+            DatWidgetFactory.Create(info, _ => (1u, 4, 4), null, null, null));
+
+        Assert.Equal(ScrollbarFixtures.UnlockedTrack, bar.TrackSprite);
+        Assert.True(bar.TrySetTrackState(ScrollbarFixtures.LockedState));
+        Assert.Equal(ScrollbarFixtures.LockedTrack, bar.TrackSprite);
+        Assert.True(bar.TrySetTrackState(ScrollbarFixtures.UnlockedState));
+        Assert.Equal(ScrollbarFixtures.UnlockedTrack, bar.TrackSprite);
+        Assert.False(bar.TrySetTrackState(0x10000099u));
+        Assert.Equal(ScrollbarFixtures.UnlockedTrack, bar.TrackSprite);
+    }
 }

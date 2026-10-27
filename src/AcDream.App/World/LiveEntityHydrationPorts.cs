@@ -233,4 +233,26 @@ internal sealed class LiveEntityWorldOriginCoordinator : ILiveEntityWorldOriginC
             true,
             _worldState.LoadedLandblockIds.ToArray());
     }
+
+    public LiveEntityOriginInitialization TryInitializeForPlayingSession(
+        uint frameCenterLandblockId,
+        uint playerCellId)
+    {
+        if (frameCenterLandblockId == 0u || playerCellId == 0u)
+            return new(_origin.IsKnown, Array.Empty<uint>());
+
+        int frameX = (int)((frameCenterLandblockId >> 24) & 0xFFu);
+        int frameY = (int)((frameCenterLandblockId >> 16) & 0xFFu);
+        if (!_origin.TryInitialize(frameX, frameY))
+            return new(true, Array.Empty<uint>());
+
+        _diagnostic?.Invoke(
+            $"live: window opened on the playing session; world frame ({frameX},{frameY}), "
+            + $"character @0x{playerCellId:X8}");
+        _streaming.InitializeKnownLoginCenter(
+            (int)((playerCellId >> 24) & 0xFFu),
+            (int)((playerCellId >> 16) & 0xFFu),
+            isSealedDungeon: _sealedDungeonCells.IsSealedDungeon(playerCellId));
+        return new(true, _worldState.LoadedLandblockIds.ToArray());
+    }
 }

@@ -6,12 +6,33 @@ plugins its characters start with. Resize the window to fit your desktop; the
 account list scrolls independently of the launch controls.
 
 Choose **Character select** or a known character, then **Graphical** or
-**Headless**. Headless sessions need a named character. Tick accounts and
+**Headless**. Headless sessions need a named character. Both start the same
+client with its console (`--session-config <file> --console`); a headless
+session adds `--no-window`, so it plays without a window. Where no display
+exists (Linux with neither X11 nor Wayland) a headless session runs
+`acdream-headless` instead, which cannot open a window.
+
+While a session runs, its **Launch mode** box switches it between graphical
+and headless without a restart or reconnect: **Graphical** opens a game window
+on it (the client's console gets `/window <session id>`), **Headless** closes
+the window (`/close`) and the session plays on. The pick is also saved for the
+next launch. The box shows the window as the client reports it
+(`windowOpened`, `windowClosed`, `windowFailed` in its status file) and takes
+no other pick until the client answers. A switch that cannot be sent, that the
+client refuses, or that it does not answer within 30 seconds puts the box back
+and says why on the status line. A window that fails leaves the session
+playing headless; closing the game window yourself logs the character off.
+
+Tick accounts and
 choose **Play selected** to start all eligible selections. Each row starts a
 separate supervised session. A failed launch is reported without preventing
 the other selected rows from starting. Already active accounts cannot start
 again on the same server. **Cancel** stops pending starts; use the row's
-**Stop** action to close an active session gracefully.
+**Stop** action to close an active session gracefully. Closing the launcher
+logs off and closes every client it started; while any of them still runs, it
+first asks "Closing the launcher will log off and close N running client(s)."
+with **Close** and **Cancel** (Escape cancels). With none running it closes at
+once.
 
 **Profiles** tag accounts on individual servers, such as `Main`, `Bots` or
 `Mules`. Each account card lists its configured servers. The chips above the
@@ -54,8 +75,7 @@ separate from the automatic relaunch delay.
 
 A row's **Options ▾** menu has **Logon commands…**, **Plugins for this
 account…**, **Plugins for this character…** (with a character chosen),
-**Console** (for a running headless
-session), **Open logs folder** and **Remove character** (a later character
+**Console** (for a running session without a window), **Open logs folder** and **Remove character** (a later character
 refresh brings a removed character back; it asks first).
 
 Each session's `client.err.log` keeps the newest client output. At 2 MiB the

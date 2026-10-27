@@ -94,3 +94,19 @@ public sealed record MalformedStatusEvent : StatusEvent
 {
     public required string Error { get; init; }
 }
+
+/// <summary>A game window opened on the session.</summary>
+public sealed record WindowOpenedStatusEvent : StatusEvent;
+
+/// <summary>The session's game window closed; the session may play on without it.</summary>
+public sealed record WindowClosedStatusEvent : StatusEvent
+{
+    /// <summary><c>requested</c>, <c>closedByUser</c>, <c>renderFailed</c> or <c>shutdown</c>.</summary>
+    public required string Reason { get; init; }
+}
+
+/// <summary>A game window was asked for and could not be opened.</summary>
+public sealed record WindowFailedStatusEvent : StatusEvent
+{
+    public required string Error { get; init; }
+}

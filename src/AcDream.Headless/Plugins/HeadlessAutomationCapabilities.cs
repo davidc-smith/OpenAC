@@ -5,6 +5,7 @@ using AcDream.Runtime;
 using AcDream.Runtime.Navigation;
 using AcDream.Runtime.Plugins;
 using AcDream.Runtime.Session;
+using AcDream.Runtime.Session.Windowless;
 
 namespace AcDream.Headless.Plugins;
 
@@ -36,7 +37,7 @@ internal sealed record HeadlessAutomationParts
     public Func<string, bool>? SubmitChatText { get; init; }
     public IGameRuntimeCommands? SessionCommands { get; init; }
     public NavigationWalkController? NavigationWalk { get; init; }
-    public HeadlessLogoutAutomation? Logout { get; init; }
+    public AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout? Logout { get; init; }
     public Func<uint, bool, bool>? AnswerConfirmation { get; init; }
 
     /// <summary>The tick the plugin surface and its own verbs follow.</summary>
@@ -96,7 +97,7 @@ internal static partial class HeadlessAutomationCapabilities
         HeadlessAutomationParts parts)
     {
         ArgumentNullException.ThrowIfNull(parts);
-        HeadlessLogoutAutomation? logout = parts.Logout;
+        AcDream.Runtime.Session.Windowless.RuntimeWindowlessLogout? logout = parts.Logout;
         return new RuntimeAutomationHostCapabilities
         {
             HostName = "windowless",
@@ -161,7 +162,7 @@ internal static partial class HeadlessAutomationCapabilities
     /// with, so the census reads the code rather than a list beside it.
     /// </summary>
     internal static GameRuntimeDependencies BuildRuntimeDependencies(
-        HeadlessGameplayOperations gameplay,
+        RuntimeWindowlessGameplayOperations gameplay,
         TimeProvider timeProvider,
         Action<string> log,
         ILiveSessionOperations? sessionOperations)

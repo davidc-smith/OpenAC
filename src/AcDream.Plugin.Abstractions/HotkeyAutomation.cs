@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace AcDream.Plugin.Abstractions;
 
 /// <summary>
@@ -219,7 +221,9 @@ public enum PluginKey
 /// <summary>
 /// A key plus the modifiers required to trigger it. Ctrl/Alt/Shift are
 /// side-independent: either physical key of a held pair satisfies the
-/// chord.
+/// chord. A markup <c>&lt;hotkey&gt;</c> box reports a chord as text;
+/// <see cref="TryParseHotkeyText"/> and <see cref="ToHotkeyText"/> convert between the
+/// two.
 /// </summary>
 /// <param name="Key">The key that triggers the hotkey.</param>
 /// <param name="Ctrl">Whether Ctrl must be held.</param>
@@ -229,21 +233,96 @@ public readonly record struct PluginKeyChord(
     PluginKey Key,
     bool Ctrl = false,
     bool Alt = false,
-    bool Shift = false);
+    bool Shift = false)
+{
+    /// <summary>
+    /// Reads the text a markup <c>&lt;hotkey&gt;</c> box reports, such as
+    /// <c>Ctrl+Shift+F</c>: modifiers in any order and any case, then the
+    /// key by its <see cref="PluginKey"/> name in any case (<c>Numpad5</c>,
+    /// <c>Grave</c>).
+    /// </summary>
+    /// <param name="text">The box's text.</param>
+    /// <param name="chord">The chord read, or the default chord when this returns false.</param>
+    /// <returns>
+    /// True when <paramref name="text"/> names a chord; false for empty text
+    /// (an unbound box) and text it can't read, such as a key
+    /// <see cref="PluginKey"/> has no member for.
+    /// </returns>
+    public static bool TryParseHotkeyText(string? text, out PluginKeyChord chord)
+    {
+        chord = default;
+        if (string.IsNullOrEmpty(text))
+            return false;
+        string[] parts = text.Split('+');
+        bool ctrl = false, alt = false, shift = false;
+        for (int i = 0; i < parts.Length - 1; i++)
+        {
+            string part = parts[i];
+            if (!ctrl && IsNamed(part, "Ctrl")) ctrl = true;
+            else if (!alt && IsNamed(part, "Alt")) alt = true;
+            else if (!shift && IsNamed(part, "Shift")) shift = true;
+            else return false;
+        }
+        if (!TryReadKey(parts[^1], out PluginKey key))
+            return false;
+        chord = new PluginKeyChord(key, ctrl, alt, shift);
+        return true;
+    }
+
+    /// <summary>
+    /// This chord as the text a markup <c>&lt;hotkey&gt;</c> box shows, so a
+    /// box bound to it displays a registration's
+    /// <see cref="IPluginHotkeyRegistration.EffectiveChord"/>:
+    /// <c>Ctrl+</c>, <c>Alt+</c>, <c>Shift+</c> in that order, then the key
+    /// by its <see cref="PluginKey"/> name. Empty when there is no key.
+    /// </summary>
+    /// <returns>The box's text for this chord, or an empty string.</returns>
+    public string ToHotkeyText()
+    {
+        if (Key == PluginKey.Unknown || !Enum.IsDefined(Key))
+            return string.Empty;
+        var text = new StringBuilder();
+        if (Ctrl) text.Append("Ctrl+");
+        if (Alt) text.Append("Alt+");
+        if (Shift) text.Append("Shift+");
+        return text.Append(Key.ToString()).ToString();
+    }
+
+    private static bool IsNamed(string part, string name) =>
+        string.Equals(part, name, StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryReadKey(string name, out PluginKey key)
+    {
+        key = default;
+        if (name.Length == 0 || !char.IsAsciiLetter(name[0]))
+            return false;
+        foreach (char c in name)
+        {
+            if (!char.IsAsciiLetterOrDigit(c))
+                return false;
+        }
+        return Enum.TryParse(name, ignoreCase: true, out key)
+            && key != PluginKey.Unknown && Enum.IsDefined(key);
+    }
+}
 
 /// <summary>A live hotkey registration returned by <see cref="IHotkeyRegistry.Register"/>.</summary>
 public interface IPluginHotkeyRegistration : IDisposable
 {
     /// <summary>
-    /// False when the requested chord collided with an already-bound client
-    /// action or another plugin's hotkey and the registration was refused;
-    /// the handler will never fire.
+    /// False when the effective chord is not bound: it collided with an
+    /// already-bound client action or another plugin's hotkey, or it has no
+    /// key (see <see cref="Rebind"/>). The handler does not fire while this
+    /// is false. A registration refused for a collision with another plugin
+    /// binds later, once that plugin's hotkey is disposed or rebound.
     /// </summary>
     bool IsBound { get; }
 
     /// <summary>
-    /// The chord actually bound: the caller's default unless a stored user
-    /// override replaced it at registration time.
+    /// The chord this registration is resolved against: the caller's default
+    /// unless a stored user override replaced it, whether at registration time
+    /// or through <see cref="Rebind"/>. It is reported even when
+    /// <see cref="IsBound"/> is false.
     /// </summary>
     PluginKeyChord EffectiveChord { get; }
 
@@ -252,7 +331,9 @@ public interface IPluginHotkeyRegistration : IDisposable
     /// override under this hotkey's scoped id so it survives across
     /// sessions. Re-resolves immediately if the host's keyboard/dispatcher
     /// are already up; a host with nothing to bind to (headless) treats
-    /// this as a no-op and IsBound stays false.
+    /// this as a no-op and IsBound stays false. Rebinding to the default
+    /// chord (no key) unbinds the hotkey: the override is stored, nothing
+    /// fires, and <see cref="EffectiveChord"/> then reads back as no key.
     /// </summary>
     void Rebind(PluginKeyChord chord);
 }

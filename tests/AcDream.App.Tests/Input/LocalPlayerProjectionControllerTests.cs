@@ -37,8 +37,7 @@ public sealed class LocalPlayerProjectionControllerTests
 
         projection.Project(
             movement,
-            movement.CapturePresentationResult(),
-            hidden: false);
+            movement.CapturePresentationResult());
 
         Assert.InRange(
             MathF.Abs(Quaternion.Dot(
@@ -75,8 +74,7 @@ public sealed class LocalPlayerProjectionControllerTests
 
         projection.Project(
             movement,
-            movement.CapturePresentationResult(),
-            hidden: false);
+            movement.CapturePresentationResult());
 
         Assert.Equal(["rebucket", "suspend"], order);
         Assert.Equal(movement.Position, entity.Position);
@@ -115,8 +113,7 @@ public sealed class LocalPlayerProjectionControllerTests
 
         projection.Project(
             movement,
-            movement.CapturePresentationResult(),
-            hidden: false);
+            movement.CapturePresentationResult());
 
         Assert.Equal(["rebucket", "shadow"], order);
     }

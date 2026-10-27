@@ -8,6 +8,84 @@ namespace AcDream.App.Tests.Rendering;
 public sealed class ArchRenderSceneTests
 {
     [Fact]
+    public void OutdoorBuildingShells_AreTheShellsOfTheOutdoorStaticIndexInItsOrder()
+    {
+        RenderSceneGeneration generation = Generation(1);
+        using var scene = new ArchRenderScene(generation);
+        RenderProjectionRecord ordinary = ShellRecord(1, 0x8A020010u, shell: false);
+        RenderProjectionRecord shell = ShellRecord(2, 0x8A020010u, shell: true);
+        RenderProjectionRecord indoorShell = ShellRecord(3, 0x8A020100u, shell: true);
+        RenderProjectionRecord later = ShellRecord(4, 0x8A020011u, shell: false);
+        scene.Apply(
+        [
+            RenderProjectionDelta.Register(generation, 1, ordinary),
+            RenderProjectionDelta.Register(generation, 2, shell),
+            RenderProjectionDelta.Register(generation, 3, indoorShell),
+            RenderProjectionDelta.Register(generation, 4, later),
+        ]);
+        Assert.Equal([shell.Id], OutdoorShellIds(scene));
+        Assert.Equal(ShellsOfWholeOutdoorIndex(scene), OutdoorShellIds(scene));
+
+        // The same record re-registered as a shell, its index membership unchanged.
+        scene.Apply([RenderProjectionDelta.Register(generation, 5, later with
+        {
+            EntityPayload = new RenderEntityPayload() with { IsBuildingShell = true },
+        })]);
+        Assert.Equal([shell.Id, later.Id], OutdoorShellIds(scene));
+        Assert.Equal(ShellsOfWholeOutdoorIndex(scene), OutdoorShellIds(scene));
+
+        scene.Apply([RenderProjectionDelta.Register(generation, 6, shell with
+        {
+            EntityPayload = new RenderEntityPayload() with { IsBuildingShell = false },
+        })]);
+        Assert.Equal([later.Id], OutdoorShellIds(scene));
+
+        scene.Apply([RenderProjectionDelta.Unregister(generation, 7, later.Id, later.OwnerIncarnation)]);
+        Assert.Empty(OutdoorShellIds(scene));
+        Assert.Equal(0, scene.OpenQuery().OutdoorBuildingShellCount);
+    }
+
+    private static RenderProjectionId[] OutdoorShellIds(ArchRenderScene scene)
+    {
+        RenderSceneQuery query = scene.OpenQuery();
+        var records = new RenderProjectionRecord[query.OutdoorBuildingShellCount];
+        int count = query.CopyOutdoorBuildingShellsTo(records);
+        return records.Take(count).Select(record => record.Id).ToArray();
+    }
+
+    private static RenderProjectionId[] ShellsOfWholeOutdoorIndex(ArchRenderScene scene)
+    {
+        RenderSceneQuery query = scene.OpenQuery();
+        var records = new RenderProjectionRecord[
+            query.IndexCounts.For(RenderSceneIndex.OutdoorStatic)];
+        int count = query.CopyIndexTo(RenderSceneIndex.OutdoorStatic, records);
+        return records.Take(count)
+            .Where(record => record.EntityPayload.IsBuildingShell)
+            .Select(record => record.Id)
+            .ToArray();
+    }
+
+    private static RenderProjectionRecord ShellRecord(uint id, uint cellId, bool shell) =>
+        new RenderProjectionRecord() with
+        {
+            Id = RenderProjectionId.FromRaw(id),
+            ProjectionClass = (cellId & 0xFFFFu) >= 0x0100u
+                ? RenderProjectionClass.IndoorCellStatic
+                : RenderProjectionClass.OutdoorStatic,
+            OwnerIncarnation = RenderOwnerIncarnation.FromRaw(1),
+            Transform = new RenderTransform(Matrix4x4.CreateTranslation(1, 2, 3)),
+            Flags = RenderProjectionFlags.Draw,
+            Source = new RenderSourceMetadata() with
+            {
+                LocalEntityId = 0x48A02000u + id,
+                SourceId = 0x02000030u,
+                ParentCellId = cellId,
+                EffectCellId = cellId,
+            },
+            EntityPayload = new RenderEntityPayload() with { IsBuildingShell = shell },
+        };
+
+    [Fact]
     public void Apply_RegisterChannelUpdatesAndUnregister_PreservesTypedRecord()
     {
         RenderSceneGeneration generation = Generation(1);

@@ -15,6 +15,23 @@ namespace AcDream.App.Tests.Net;
 public sealed class LiveSessionCommandRouterTests
 {
     [Fact]
+    public void HousePurchaseCommands_ReachTheSessionBindings()
+    {
+        var calls = new List<string>();
+        var router = NewRouter(
+            buyHouse: (slumlord, items) =>
+                calls.Add($"buy:{slumlord:X8}:{string.Join(",", items)}"),
+            rentHouse: (slumlord, items) =>
+                calls.Add($"rent:{slumlord:X8}:{string.Join(",", items)}"));
+        router.Activate();
+
+        router.Publish(new BuyHouseRuntimeCmd(0x70000100u, [1u, 2u]));
+        router.Publish(new RentHouseRuntimeCmd(0x70000100u, [3u]));
+
+        Assert.Equal(["buy:70000100:1,2", "rent:70000100:3"], calls);
+    }
+
+    [Fact]
     public void LoginCommandSequenceUsesTheIdenticalGraphicalCommandSurface()
     {
         using var communication = new RuntimeCommunicationState();
@@ -681,7 +698,9 @@ public sealed class LiveSessionCommandRouterTests
         RuntimeCharacterState? characterState = null,
         Action<uint, bool>? sendSingleCharacterOption = null,
         Action? saveCharacterOptions = null,
-        Action<uint>? sendSetTitle = null) => new(
+        Action<uint>? sendSetTitle = null,
+        Action<uint, IReadOnlyList<uint>>? buyHouse = null,
+        Action<uint, IReadOnlyList<uint>>? rentHouse = null) => new(
         new LiveSessionCommandBindings(
             clientBindings ?? NewClientBindings(),
             chat ?? new ChatLog(),
@@ -737,7 +756,9 @@ public sealed class LiveSessionCommandRouterTests
             ResolvePose: _ => null,
             ExecuteMotion: _ => { },
             SendSoulEmote: _ => { },
-            Log: log));
+            Log: log,
+            BuyHouse: buyHouse,
+            RentHouse: rentHouse));
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static (LiveSessionCommandRouter, WeakReference<object>)

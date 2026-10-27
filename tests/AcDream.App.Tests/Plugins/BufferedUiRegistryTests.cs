@@ -42,6 +42,29 @@ public class BufferedUiRegistryTests
     }
 
     [Fact]
+    public void A_closed_interface_leaves_every_panel_for_the_next_window()
+    {
+        var registry = new BufferedUiRegistry();
+        registry.AddMarkupPanel("a.xml", new object());
+        var pending = Assert.Single(registry.Drain());
+        var root = new UiRoot();
+        var element = new UiPanel();
+        root.AddChild(element);
+        registry.CompleteMount(pending, root, element);
+        bool windowRemoved = false;
+        registry.CompleteWindowMount(pending, () => windowRemoved = true);
+        Assert.False(registry.HasUndrained);
+
+        // The window closes while the session and its plugins play on: the
+        // panel goes with the interface, and is mounted again by the next.
+        registry.UnbindPanelHost();
+
+        Assert.False(windowRemoved);
+        Assert.True(registry.HasUndrained);
+        Assert.Equal("a.xml", Assert.Single(registry.Drain()).MarkupPath);
+    }
+
+    [Fact]
     public void ScopedRegistrationTokenRemovesAnAlreadyMountedElement()
     {
         var registry = new BufferedUiRegistry();
@@ -150,6 +173,81 @@ public class BufferedUiRegistryTests
         Assert.False(button.Visible);
         Assert.False(registry.ViewExists(
             new PluginUiOwner("another.plugin", "Other"), "Status View"));
+    }
+
+    private sealed class RepeatRow
+    {
+        public string Id { get; set; } = "";
+    }
+
+    private sealed class RepeatBinding
+    {
+        public IReadOnlyList<RepeatRow> Rows { get; set; } =
+            [new RepeatRow { Id = "a" }, new RepeatRow { Id = "b" }];
+    }
+
+    [Fact]
+    public void NamedControlLookupsSkipRepeatRowsButFindTheControlsAfterThem()
+    {
+        var registry = new BufferedUiRegistry();
+        var owner = new PluginUiOwner("edwards.tank", "Tank");
+        registry.RegisterPanelContent(
+            owner, new PluginPanelDescriptor("meta", "Status View"), "<panel />", new object());
+        BufferedUiRegistry.Pending pending = Assert.Single(registry.Drain());
+        var window = MarkupDocument.BuildWindow(
+            "<panel x=\"0\" y=\"0\" w=\"300\" h=\"400\" layout=\"column\">"
+            + "<repeat items=\"{Rows}\" key=\"{Id}\"><label name=\"row\" h=\"20\" text=\"{Id}\"/></repeat>"
+            + "<label name=\"after\" h=\"20\" text=\"after\"/></panel>",
+            new RepeatBinding(), _ => (0u, 0, 0), fallbackTitle: "Demo");
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(window.Frame);
+        registry.CompleteMount(pending, root, window.Frame);
+
+        Assert.False(registry.ControlExists(owner, "Status View", "row"));
+        Assert.False(registry.SetControlVisible(owner, "Status View", "row", false));
+        Assert.True(registry.ControlExists(owner, "Status View", "after"));
+    }
+
+    [Fact]
+    public void SetControlLabelReachesExpanders()
+    {
+        var registry = new BufferedUiRegistry();
+        var owner = new PluginUiOwner("edwards.tank", "Tank");
+        registry.RegisterPanelContent(
+            owner, new PluginPanelDescriptor("meta", "Status View"), "<panel />", new object());
+        BufferedUiRegistry.Pending pending = Assert.Single(registry.Drain());
+        var root = new UiRoot();
+        var panel = new UiPanel();
+        var expander = new UiMarkupExpander { Name = "adv" };
+        expander.Header.Text = "Old";
+        expander.Header.TextSource = () => "bound";
+        panel.AddChild(expander);
+        root.AddChild(panel);
+        registry.CompleteMount(pending, root, panel);
+
+        Assert.True(registry.SetControlLabel(owner, "Status View", "adv", "New"));
+        Assert.Equal("New", expander.Header.Text);
+        Assert.Null(expander.Header.TextSource);
+    }
+
+    [Fact]
+    public void SetControlLabelReachesCheckboxes()
+    {
+        var registry = new BufferedUiRegistry();
+        var owner = new PluginUiOwner("edwards.tank", "Tank");
+        registry.RegisterPanelContent(
+            owner, new PluginPanelDescriptor("meta", "Status View"), "<panel />", new object());
+        BufferedUiRegistry.Pending pending = Assert.Single(registry.Drain());
+        var root = new UiRoot();
+        var panel = new UiPanel();
+        var box = new UiMarkupCheckbox { Name = "Loot", Text = "Old", TextSource = () => "bound" };
+        panel.AddChild(box);
+        root.AddChild(panel);
+        registry.CompleteMount(pending, root, panel);
+
+        Assert.True(registry.SetControlLabel(owner, "Status View", "Loot", "New"));
+        Assert.Equal("New", box.Text);
+        Assert.Null(box.TextSource);
     }
 
     /// <summary>

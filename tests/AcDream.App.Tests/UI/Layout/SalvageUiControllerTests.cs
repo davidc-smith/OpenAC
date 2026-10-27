@@ -21,6 +21,7 @@ public sealed class SalvageUiControllerTests
         public bool SendSucceeds = true;
         public List<(uint Tool, uint[] Items)> Sends { get; } = [];
         public List<string> Errors { get; } = [];
+        public List<uint> Examined { get; } = [];
 
         public Harness()
         {
@@ -40,7 +41,8 @@ public sealed class SalvageUiControllerTests
                 (tool, items) => { Sends.Add((tool, items.ToArray())); return SendSucceeds; },
                 () => Multiple, (_, icon, _, _, _) => icon,
                 visible => Visible = visible, Errors.Add,
-                ResolveAppropriateName: ItemTooltipCaptionNames.Resolve))!;
+                ResolveAppropriateName: ItemTooltipCaptionNames.Resolve,
+                ExamineItem: Examined.Add))!;
             Controller.Open(Tool);
         }
 
@@ -179,7 +181,7 @@ public sealed class SalvageUiControllerTests
     }
 
     [Fact]
-    public void Dragging_out_and_right_click_remove_staging()
+    public void Dragging_out_and_double_click_remove_staging()
     {
         using var h = new Harness();
         var item = h.Item(1);
@@ -189,9 +191,27 @@ public sealed class SalvageUiControllerTests
         Assert.Equal(0, item.TradeState);
         Assert.Equal(0, h.Controller.ItemCount);
         h.Controller.AddItem(1);
-        h.List.ExamineItemRequested!(1);
+        h.List.GetItem(0)!.DoubleClicked!();
         Assert.Equal(0, item.TradeState);
+        Assert.Equal(0, h.Controller.ItemCount);
         Assert.False(h.Button.Enabled);
+    }
+
+    // #251: right-click on a staged item examines it, as on any other item
+    // cell, and leaves it staged.
+    [Fact]
+    public void Right_click_examines_and_keeps_the_item_staged()
+    {
+        using var h = new Harness();
+        var item = h.Item(1);
+        h.Controller.AddItem(1);
+
+        h.List.GetItem(0)!.OnEvent(new UiEvent(0u, h.List.GetItem(0)!, UiEventType.RightClick));
+
+        Assert.Equal(new uint[] { 1 }, h.Examined);
+        Assert.Equal(1, h.Controller.ItemCount);
+        Assert.Equal(1, item.TradeState);
+        Assert.True(h.Button.Enabled);
     }
 
     [Fact]

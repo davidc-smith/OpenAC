@@ -172,7 +172,8 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         || IsSettingsOpen
         || HasProfileMigrationNotice
         || Plugins.InstallDialog.IsOpen
-        || Plugins.IsRemoveDialogOpen;
+        || Plugins.IsRemoveDialogOpen
+        || IsClosePromptOpen;
 
     public bool HasCancelableOperation => (_operationCancellation is not null && IsBusy) || _rowLaunches.Count > 0;
 
@@ -539,6 +540,12 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
 
     public void CloseActiveModal()
     {
+        if (IsClosePromptOpen)
+        {
+            CancelCloseCommand.Execute(null);
+            return;
+        }
+
         CloseDesktopDialogs();
         ProfileMigrationNotice = null;
         if (TextEditor.IsOpen)
@@ -1074,8 +1081,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
     private LauncherAccountSnapshot FindAccountSnapshot(
         string serverName,
         string accountName) =>
-        FindServerSnapshot(serverName).Accounts.FirstOrDefault(account =>
-            string.Equals(account.AccountName, accountName, StringComparison.Ordinal))
+        AccountNames.Find(FindServerSnapshot(serverName).Accounts, account => account.AccountName, accountName)
         ?? throw new LauncherOperationException(
             $"No account '{accountName}' on server '{serverName}'.");
 
@@ -1103,8 +1109,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
             return server;
         }
 
-        LauncherTreeNodeViewModel? account = server.Children.FirstOrDefault(candidate =>
-            string.Equals(candidate.AccountName, key.AccountName, StringComparison.Ordinal));
+        LauncherTreeNodeViewModel? account = AccountNames.Find(server.Children, candidate => candidate.AccountName, key.AccountName);
         if (account is null || key.Kind == LauncherTreeNodeKind.Account)
         {
             return account;

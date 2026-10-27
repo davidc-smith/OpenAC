@@ -9,7 +9,7 @@ public sealed record LauncherRelaunchSelection(string Server, string Account, st
 public sealed class LauncherRelaunchController(ILauncherOrchestrator orchestrator, TimeProvider? timeProvider = null) : IDisposable
 {
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
-    private readonly Dictionary<(string Server, string Account), Entry> _entries = [];
+    private readonly Dictionary<(string Server, string Account), Entry> _entries = new(AccountNames.KeyComparer);
     private bool _enabled;
     private bool _disposed;
     private int _delaySeconds = 180;
@@ -39,11 +39,13 @@ public sealed class LauncherRelaunchController(ILauncherOrchestrator orchestrato
         }
         _enabled = true;
         var configured = snapshot.Servers.SelectMany(server => server.Accounts.Select(account =>
-            (Server: server.Name, Account: account.AccountName))).ToHashSet();
+            (Server: server.Name, Account: account.AccountName))).ToHashSet(AccountNames.KeyComparer);
+        // Two checked spellings of one account are one entry: the first is kept.
         var selected = checkedAccounts.Where(selection => configured.Contains((selection.Server, selection.Account)))
-            .ToDictionary(selection => (selection.Server, selection.Account));
+            .DistinctBy(selection => (selection.Server, selection.Account), AccountNames.KeyComparer)
+            .ToDictionary(selection => (selection.Server, selection.Account), AccountNames.KeyComparer);
         var sessions = new Dictionary<string, LauncherSessionSnapshot>(StringComparer.Ordinal);
-        var latestPlays = new Dictionary<(string Server, string Account), LauncherSessionSnapshot>();
+        var latestPlays = new Dictionary<(string Server, string Account), LauncherSessionSnapshot>(AccountNames.KeyComparer);
         foreach (var session in snapshot.Sessions)
         {
             sessions[session.SessionId] = session;

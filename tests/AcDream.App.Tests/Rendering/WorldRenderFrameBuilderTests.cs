@@ -84,6 +84,43 @@ public sealed class WorldRenderFrameBuilderTests
         Assert.Equal(foundation, environment.Foundation);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Build_tells_visibility_whether_the_portal_covers_the_world(bool covered)
+    {
+        List<string> calls = [];
+        var camera = new FlyCamera();
+        var cameraFrame = new WorldCameraFrame(
+            camera,
+            camera.Projection,
+            camera.View * camera.Projection,
+            default,
+            Matrix4x4.Identity,
+            camera.Position);
+        var foundation = new RenderFrameFoundation(
+            PortalViewportVisible: covered,
+            Sky: default,
+            Atmosphere: default)
+        {
+            WorldDrawnBehindPortal = covered,
+        };
+        var visibility = new RecordingVisibility(calls);
+        var builder = new WorldRenderFrameBuilder(
+            new RecordingCamera(calls, cameraFrame),
+            visibility,
+            new RecordingSettings(calls),
+            new RecordingRoots(calls, default),
+            new RecordingEnvironment(calls),
+            new RecordingAnimated(calls, []),
+            new RecordingBuildings(calls, default),
+            new RecordingMembership());
+
+        builder.Build(in foundation, waitingForLogin: false, activeDayGroup: null);
+
+        Assert.Equal(covered, visibility.CoveredByPortal);
+    }
+
     [Fact]
     public void Required_sources_fail_fast()
     {
@@ -751,6 +788,7 @@ public sealed class WorldRenderFrameBuilderTests
         : IWorldFrameVisibilityPreparation
     {
         public bool WaitingForLogin { get; private set; }
+        public bool CoveredByPortal { get; private set; }
 
         public RetailLandscapeVisibilityFrame CaptureCompletedLandscapeVisibility()
         {
@@ -758,10 +796,14 @@ public sealed class WorldRenderFrameBuilderTests
             return RetailLandscapeVisibilityFrame.None;
         }
 
-        public void Begin(in WorldCameraFrame camera, bool waitingForLogin)
+        public void Begin(
+            in WorldCameraFrame camera,
+            bool waitingForLogin,
+            bool coveredByPortal)
         {
             calls.Add("visibility:begin");
             WaitingForLogin = waitingForLogin;
+            CoveredByPortal = coveredByPortal;
         }
 
         public void PublishViewProjection(in WorldCameraFrame camera) =>

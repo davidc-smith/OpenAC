@@ -106,6 +106,10 @@ internal sealed class ChargenPreviewController :
 
     private ChargenPreviewAnimator? _animator;
     private ChargenPreviewZoomController? _zoom;
+    // The zoom the page asked for. It outlives each composed figure, and a
+    // request made before the first one (the page opens zoomed in) is kept
+    // for it.
+    private bool _zoomedIn;
     private double _lastElapsedSeconds;
     private bool _hasComposed;
     private uint _lastHeritageId;
@@ -142,7 +146,7 @@ internal sealed class ChargenPreviewController :
             _camera.Eye = ChargenPreviewCamera.ResolveZoomedOutEye(0u);
     }
 
-    internal bool IsZoomedIn => _zoom?.IsZoomedIn ?? false;
+    internal bool IsZoomedIn => _zoomedIn;
 
     /// <summary>Test-observability seam only.</summary>
     internal Vector3 CameraEye => _camera.Eye;
@@ -184,9 +188,8 @@ internal sealed class ChargenPreviewController :
         if (build is null)
             return false;
 
-        bool wasZoomedIn = _animator?.IsZoomedIn ?? false;
         _animator = new ChargenPreviewAnimator(build);
-        if (wasZoomedIn)
+        if (_zoomedIn)
             _animator.SetZoomedIn(true);
 
         bool heritageOrGenderChanged =
@@ -219,8 +222,17 @@ internal sealed class ChargenPreviewController :
         return true;
     }
 
-    public void ZoomIn() => _zoom?.ZoomIn();
-    public void ZoomOut() => _zoom?.ZoomOut();
+    public void ZoomIn()
+    {
+        _zoomedIn = true;
+        _zoom?.ZoomIn();
+    }
+
+    public void ZoomOut()
+    {
+        _zoomedIn = false;
+        _zoom?.ZoomOut();
+    }
     public void RotateClockwise() => _rotation.Toggle(ChargenRotateDirection.Clockwise);
     public void RotateCounterClockwise() => _rotation.Toggle(ChargenRotateDirection.CounterClockwise);
 

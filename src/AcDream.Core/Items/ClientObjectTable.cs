@@ -777,6 +777,21 @@ public sealed class ClientObjectTable
     }
 
     /// <summary>
+    /// Applies one string property the server changed on an object we already
+    /// hold. The value goes into the property bag only: the shown name
+    /// (<see cref="ClientObject.Name"/>) changes only when the object is
+    /// created or updated, even when this is PropertyString.Name.
+    /// </summary>
+    public bool UpdateStringProperty(uint itemId, uint propertyId, string value)
+    {
+        if (!_objects.TryGetValue(itemId, out var item)) return false;
+        ServerShowedObject(item);
+        item.Properties.Strings[propertyId] = value;
+        ObjectUpdated?.Invoke(item);
+        return true;
+    }
+
+    /// <summary>
     /// Applies one instance-id property the server changed on an object we
     /// already hold. Placement (container, wielder) has its own ordered routes,
     /// so this only records the value and republishes the object.

@@ -50,12 +50,6 @@ public sealed class UiMarkupToggle : UiElement
         Vector4 color = Enabled
             ? textColor
             : textColor with { W = DisabledAlpha };
-        float y = DatFont is { } font
-            ? (Height - font.LineHeight) * 0.5f
-            : 1f;
-        if (DatFont is { } dat)
-            ctx.DrawStringDat(dat, caption, 17f, y, color, outline: ThemePalette is null);
-        else
-            ctx.DrawString(caption, 17f, y, color);
+        UiCaption.Draw(ctx, DatFont, caption, 17f, 0f, Height, color, outline: ThemePalette is null);
     }
 }

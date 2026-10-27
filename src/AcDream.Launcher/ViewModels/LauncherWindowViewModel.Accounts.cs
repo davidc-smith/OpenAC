@@ -158,12 +158,13 @@ public sealed partial class LauncherWindowViewModel
             int index = 0;
             var grouped = snapshot.Servers
                 .SelectMany(server => server.Accounts.Select(account => (server, account)))
-                .GroupBy(pair => pair.account.AccountName, StringComparer.Ordinal);
+                .GroupBy(pair => pair.account.AccountName, AccountNames.Comparer);
             foreach (var entries in grouped)
             {
                 LauncherServerSnapshot firstServer = entries.First().server;
+                // A group is reused only under the same spelling, so a renamed one shows its new name.
                 LauncherAccountGroupViewModel? group = Accounts.FirstOrDefault(item =>
-                    item.AccountName == entries.Key);
+                    string.Equals(item.AccountName, entries.Key, StringComparison.Ordinal));
                 if (group is null)
                 {
                     group = new LauncherAccountGroupViewModel(
@@ -181,8 +182,10 @@ public sealed partial class LauncherWindowViewModel
                 int rowIndex = 0;
                 foreach ((LauncherServerSnapshot server, LauncherAccountSnapshot account) in entries)
                 {
+                    // One row per saved entry: a file may hold two spellings of one account on a server.
                     LauncherAccountServerRowViewModel? row = group.Rows.FirstOrDefault(item =>
-                        item.ServerName == server.Name);
+                        item.ServerName == server.Name
+                        && string.Equals(item.AccountName, account.AccountName, StringComparison.Ordinal));
                     if (row is null)
                     {
                         row = new LauncherAccountServerRowViewModel(account.AccountName, server.Name,
@@ -196,6 +199,7 @@ public sealed partial class LauncherWindowViewModel
                             _checkedAccountsLoaded && _checkedAccountStore?.Contains(server.Name, account.AccountName) == true,
                             SaveCheckedAccounts);
                         row.UseConsole(OpenSessionConsole);
+                        row.UseWindowSwitch(SwitchSessionWindow);
                         group.Rows.Insert(Math.Min(rowIndex, group.Rows.Count), row);
                     }
                     else if (group.Rows.IndexOf(row) != rowIndex && rowIndex < group.Rows.Count)
@@ -206,7 +210,7 @@ public sealed partial class LauncherWindowViewModel
                     rowIndex++;
                     retainedRows.Add(row);
                     row.Update(server, account, snapshot.Sessions.OrderByDescending(session => session.CreatedAt).FirstOrDefault(session =>
-                        session.ServerName == server.Name && session.AccountName == account.AccountName));
+                        session.ServerName == server.Name && AccountNames.Same(session.AccountName, account.AccountName)));
                 }
                 foreach (LauncherAccountServerRowViewModel row in group.Rows.Where(row => !retainedRows.Contains(row)).ToArray())
                     group.Rows.Remove(row);
@@ -216,8 +220,65 @@ public sealed partial class LauncherWindowViewModel
             foreach (LauncherAccountGroupViewModel group in Accounts.Where(group => !retained.Contains(group)).ToArray())
                 Accounts.Remove(group);
             RefreshProfileFilters(snapshot);
+            ReportWindowSwitches(snapshot);
         }
         finally { _refreshingAccountRows = false; }
+    }
+
+    // Window switches sent from a row, by session, with the state asked for, until the client
+    // answers; a switch that did not happen goes to the status line.
+    private readonly Dictionary<string, bool> _windowSwitches = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A running row's mode box: switches its session between graphical and headless without
+    /// a restart. False, with the reason on the status line, when the switch was not sent.
+    /// </summary>
+    private bool SwitchSessionWindow(string sessionId, bool open)
+    {
+        try
+        {
+            _orchestrator.SetSessionWindow(sessionId, open);
+        }
+        catch (Exception ex)
+        {
+            LastError = SafeDisplayError(ex, secret: null);
+            RefreshFromCore();
+            return false;
+        }
+
+        _windowSwitches[sessionId] = open;
+        LastError = null;
+        RefreshFromCore();
+        return true;
+    }
+
+    /// <summary>
+    /// Puts on the status line why a switch a row asked for did not happen, once its client
+    /// has answered or the switch was given up.
+    /// </summary>
+    private void ReportWindowSwitches(LauncherStateSnapshot snapshot)
+    {
+        string? failure = null;
+        foreach ((string sessionId, bool open) in _windowSwitches.ToArray())
+        {
+            LauncherSessionSnapshot? session = snapshot.Sessions.FirstOrDefault(
+                candidate => candidate.SessionId == sessionId);
+            if (session is not { IsProcessOrStartActive: true })
+            {
+                _windowSwitches.Remove(sessionId);
+                continue;
+            }
+
+            LauncherSessionWindow window = session.ReportedWindow;
+            if (window.SwitchingTo is not null)
+                continue;
+            if (window.IsOpen != open)
+                failure = window.Error ?? "The client did not switch the session's window.";
+            _windowSwitches.Remove(sessionId);
+        }
+
+        if (failure is not null)
+            LastError = failure;
     }
 
     /// <summary>Rebuilds the chips from the accounts' tags, keeping the chosen one while it exists.</summary>
@@ -285,7 +346,7 @@ public sealed partial class LauncherWindowViewModel
         }
     }
 
-    private readonly HashSet<(string Server, string Account)> _startingRows = new();
+    private readonly HashSet<(string Server, string Account)> _startingRows = new(AccountNames.KeyComparer);
     private readonly HashSet<CancellationTokenSource> _rowLaunches = new();
     private bool CanStartRows => CanInteract;
 
@@ -304,10 +365,10 @@ public sealed partial class LauncherWindowViewModel
         if (row.SelectedLaunchMode is not ("Graphical" or "Headless")) return "Choose Graphical or Headless.";
         LauncherStateSnapshot? current = fresh ? _orchestrator.GetSnapshot() : _snapshot;
         LauncherAccountSnapshot? account = current?.Servers.FirstOrDefault(server => server.Name == row.ServerName)
-            ?.Accounts.FirstOrDefault(account => account.AccountName == row.AccountName);
+            ?.Accounts is { } accounts ? AccountNames.Find(accounts, account => account.AccountName, row.AccountName) : null;
         if (account is null) return "This account is no longer configured on this server.";
         if (account.HasRunningActivity || current!.Sessions.Any(session => session.IsProcessOrStartActive
-            && session.ServerName == row.ServerName && session.AccountName == row.AccountName)) return "This account already has an active session on this server.";
+            && session.ServerName == row.ServerName && AccountNames.Same(session.AccountName, row.AccountName))) return "This account already has an active session on this server.";
         if (characterName is { } name && !account.Characters.Any(character => character.Name == name)) return "Choose a current character.";
         LauncherCapability capability = fresh
             ? _orchestrator.GetAccountLaunchCapability(row.ServerName, row.AccountName, mode)

@@ -309,7 +309,7 @@ public sealed class LauncherProfileStore
     private static IEnumerable<AccountProfile> DistinctKnownAccounts(
         LauncherProfileDocument document) =>
         document.Servers.SelectMany(server => server.Accounts)
-            .DistinctBy(account => account.Account, StringComparer.Ordinal);
+            .DistinctBy(account => account.Account, AccountNames.Comparer);
 
     internal static List<AccountProfile> CopyKnownAccountCredentials(
         LauncherProfileDocument document) =>
@@ -388,8 +388,11 @@ public sealed class LauncherProfileStore
         if (newAccount is not null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(newAccount);
+            // Retyping this account's own name in another case is a rename; any other entry that is
+            // the same account makes it a duplicate.
             if (!string.Equals(newAccount, profile.Account, StringComparison.Ordinal)
-                && FindAccount(server, newAccount) is not null)
+                && server.Accounts.Any(other => !ReferenceEquals(other, profile)
+                    && AccountNames.Same(other.Account, newAccount)))
             {
                 throw new LauncherProfileException(
                     $"Account '{newAccount}' already exists on server '{serverName}'.");
@@ -697,8 +700,7 @@ public sealed class LauncherProfileStore
     }
 
     private static AccountProfile? FindAccount(ServerProfile server, string account) =>
-        server.Accounts.Find(
-            candidate => string.Equals(candidate.Account, account, StringComparison.Ordinal));
+        AccountNames.Find(server.Accounts, candidate => candidate.Account, account);
 
     private static AccountProfile FindAccountOrThrow(ServerProfile server, string account)
     {
@@ -786,6 +788,8 @@ public sealed class LauncherProfileStore
                     $"The accounts collection for server '{server.Name}' cannot be null.");
             }
 
+            // Exact on purpose: a file saved before account names were compared without case may
+            // hold two spellings of one account, and loading it must keep both.
             var accountNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (AccountProfile? account in server.Accounts)
             {

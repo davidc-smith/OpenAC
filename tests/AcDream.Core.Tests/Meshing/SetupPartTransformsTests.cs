@@ -9,6 +9,44 @@ namespace AcDream.Core.Tests.Meshing;
 public class SetupPartTransformsTests
 {
     [Fact]
+    public void ComputeInto_WritesWhatComputeReturns_IncludingPartsPastTheFrames()
+    {
+        var setup = new Setup
+        {
+            Parts = { 0x01000100u, 0x01000101u, 0x01000102u },
+            DefaultScale = { Vector3.One, Vector3.One, Vector3.One },
+            PlacementFrames =
+            {
+                [Placement.Default] = new AnimationFrame(2)
+                {
+                    Frames =
+                    {
+                        new Frame
+                        {
+                            Origin = new Vector3(1f, 2f, 3f),
+                            Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 0.5f),
+                        },
+                        new Frame { Origin = new Vector3(0, 0, 1f), Orientation = Quaternion.Identity },
+                    },
+                },
+            },
+        };
+
+        IReadOnlyList<Matrix4x4> expected = SetupPartTransforms.Compute(setup, objectScale: 1.5f);
+        var written = new Matrix4x4[4];
+        int count = SetupPartTransforms.ComputeInto(setup, written, objectScale: 1.5f);
+
+        Assert.Equal(3, count);
+        Assert.Equal(expected, written.Take(count));
+        Assert.Equal(Matrix4x4.Identity, written[2]);
+
+        Assert.Equal(0, SetupPartTransforms.ComputeInto(
+            new Setup { Parts = { 0x01000100u } },
+            written));
+        Assert.Empty(SetupPartTransforms.Compute(new Setup { Parts = { 0x01000100u } }));
+    }
+
+    [Fact]
     public void Compute_PrefersRestingPlacement_OverDefault()
     {
         var setup = new Setup
@@ -68,6 +106,99 @@ public class SetupPartTransformsTests
         var probe = Vector3.Transform(Vector3.Zero, transforms[0]);
         Assert.Equal(new Vector3(2f, 0, 0), probe);
     }
+
+    [Fact]
+    public void ResolvePlacementFrame_UsesServerPlacement_WhenSetupHasIt()
+    {
+        Setup setup = HookedItemSetup();
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.Hook);
+
+        Assert.Same(setup.PlacementFrames[Placement.Hook], frame);
+    }
+
+    [Fact]
+    public void ResolvePlacementFrame_FallsBackToDefault_WhenServerPlacementMissing()
+    {
+        Setup setup = HookedItemSetup();
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Same(setup.PlacementFrames[Placement.Default], frame);
+    }
+
+    [Fact]
+    public void ResolvePlacementFrame_UsesNoFrame_WhenSetupHasNeitherPlacementNorDefault()
+    {
+        Setup setup = HookedItemSetup();
+        setup.PlacementFrames.Remove(Placement.Default);
+
+        AnimationFrame? frame = SetupPartTransforms.ResolvePlacementFrame(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Null(frame);
+    }
+
+    [Fact]
+    public void ResolveObjectPose_WithNoFrame_LeavesEveryPartAtTheOrigin()
+    {
+        Setup setup = HookedItemSetup();
+        setup.PlacementFrames.Remove(Placement.Default);
+
+        AnimationFrame pose = SetupPartTransforms.ResolveObjectPose(
+            setup,
+            (uint)Placement.RightHandCombat);
+
+        Assert.Empty(pose.Frames);
+        Assert.Equal(Matrix4x4.Identity, Assert.Single(SetupPartTransforms.Compute(setup, pose)));
+    }
+
+    [Theory]
+    [InlineData(null, false, (uint)Placement.Default)]
+    [InlineData((uint)Placement.Hook, false, (uint)Placement.Hook)]
+    [InlineData(null, true, (uint)Placement.Resting)]
+    public void ObjectPlacementId_FollowsWhatTheServerSent(
+        uint? placementId,
+        bool hasMovementData,
+        uint expected)
+    {
+        Assert.Equal(
+            expected,
+            SetupPartTransforms.ObjectPlacementId(placementId, hasMovementData));
+    }
+
+    private static Setup HookedItemSetup() => new()
+    {
+        Parts = { 0x01000100u },
+        DefaultScale = { Vector3.One },
+        PlacementFrames =
+        {
+            [Placement.Default] = new AnimationFrame(1)
+            {
+                Frames = { new Frame { Origin = Vector3.Zero, Orientation = Quaternion.Identity } },
+            },
+            [Placement.Resting] = new AnimationFrame(1)
+            {
+                Frames = { new Frame { Origin = new Vector3(0, 0, 1f), Orientation = Quaternion.Identity } },
+            },
+            [Placement.Hook] = new AnimationFrame(1)
+            {
+                Frames =
+                {
+                    new Frame
+                    {
+                        Origin = Vector3.Zero,
+                        Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI / 2f),
+                    },
+                },
+            },
+        },
+    };
 
     [Fact]
     public void Compute_ReturnsEmpty_WhenNoPlacementFrames()

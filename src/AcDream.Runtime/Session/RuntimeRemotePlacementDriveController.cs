@@ -68,6 +68,7 @@ internal sealed class RuntimeRemotePlacementDriveController
     private readonly List<RuntimeEntityKey> _pendingScratch = [];
     private bool _driving;
     private object? _routeOwner;
+    private bool _handOverOpen;
 
     internal RuntimeRemotePlacementDriveController(
         RuntimeEntityObjectLifetime entityObjects,
@@ -97,6 +98,25 @@ internal sealed class RuntimeRemotePlacementDriveController
             or RuntimeAuthoritativePositionDisposition.SetPositionSimple
         && (route.SetPositionFlags & PhysicsSetPositionFlags.Teleport) != 0;
 
+    /// <summary>
+    /// Opens a hand-over: the route that lets go next keeps its work for the
+    /// route that attaches after it, instead of abandoning it. Used when a
+    /// window opens or closes on a session that keeps playing; a session
+    /// reset never hands over.
+    /// </summary>
+    internal void BeginRouteHandOver() => _handOverOpen = true;
+
+    /// <summary>
+    /// Closes the hand-over. Work no route took is abandoned, as a plain
+    /// detach would have.
+    /// </summary>
+    internal void EndRouteHandOver()
+    {
+        _handOverOpen = false;
+        if (_routeOwner is null)
+            AbandonTracked();
+    }
+
     internal void AttachRoute(object route)
     {
         ArgumentNullException.ThrowIfNull(route);
@@ -117,7 +137,13 @@ internal sealed class RuntimeRemotePlacementDriveController
         if (!ReferenceEquals(_routeOwner, route))
             return;
         _routeOwner = null;
+        if (_handOverOpen)
+            return;
+        AbandonTracked();
+    }
 
+    private void AbandonTracked()
+    {
         RuntimeSetPositionState setPosition = _entityObjects.Physics.SetPosition;
         if (_pending.Count != 0)
         {

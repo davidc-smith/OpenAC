@@ -3,8 +3,14 @@ using AcDream.Runtime.Session;
 
 namespace AcDream.App.Composition;
 
+/// <param name="Log">Where the start's outcome is reported.</param>
+/// <param name="JoinPlayingSession">
+/// Asked first: true when the window joined a session that had already
+/// started without it, which then is not started again.
+/// </param>
 internal sealed record SessionStartDependencies(
-    Action<string> Log);
+    Action<string> Log,
+    Func<bool>? JoinPlayingSession = null);
 
 internal sealed class SessionStartCompositionPhase
     : ISessionStartCompositionPhase<FrameRootResult>
@@ -18,6 +24,8 @@ internal sealed class SessionStartCompositionPhase
     public void Start(FrameRootResult frame)
     {
         ArgumentNullException.ThrowIfNull(frame);
+        if (_dependencies.JoinPlayingSession?.Invoke() == true)
+            return;
         RuntimeSessionStartResult result =
             frame.GameRuntime.Session.Start(frame.GameRuntime.Generation);
         Report(result, _dependencies.Log);

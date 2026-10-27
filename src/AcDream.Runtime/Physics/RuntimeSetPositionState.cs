@@ -620,6 +620,21 @@ internal sealed class RuntimeSetPositionState : IDisposable
     }
 
     internal int PendingProjectionCount => _pendingProjection.Count;
+
+    /// <summary>
+    /// Whether this entity has been put down and the placement waits for the
+    /// presentation to acknowledge it.
+    /// </summary>
+    internal bool IsPlacementAwaitingPresentation(RuntimeEntityKey key)
+    {
+        EnsureNotDisposed();
+        return _operations.TryGetValue(key, out Operation? operation)
+            && operation.ProjectionSequence != 0UL
+            && _pendingProjection.TryGetValue(
+                operation.ProjectionSequence,
+                out RuntimePlacementProjectionSnapshot pending)
+            && pending.Kind is RuntimePlacementProjectionKind.Place;
+    }
     internal bool CanBeginAuthoredPlacementSequence =>
         _nextOperationId != ulong.MaxValue;
 
@@ -872,7 +887,8 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 token,
                 ready ? generation : 0UL,
                 ready,
-                releaseUnavailable: !ready);
+                releaseUnavailable: !ready,
+                stopWhenSpent: _physics.CollisionWorkFrameSpent);
         }
 
         if (current.PendingRestorePlacements.Count != 0
@@ -3341,13 +3357,39 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 continue;
             }
 
+            // Where the body stands, measured in the frame the runtime
+            // measures in now: a portal may have moved that frame since the
+            // body was last placed, and its place within its landblock is
+            // what stays true.
+            Vector3 parkedPosition = body.Position;
+            uint localCellId = body.CellPosition.ObjCellId != 0u
+                ? body.CellPosition.ObjCellId
+                : cellId;
+            bool measured = _physics.TryGetWorldFrameOffset(
+                    cellId,
+                    out float parkedOffsetX,
+                    out float parkedOffsetY)
+                & _physics.TryGetWorldFrameOffset(
+                    localCellId,
+                    out float localOffsetX,
+                    out float localOffsetY);
+            if (measured)
+            {
+                parkedPosition = body.CellPosition.Frame.Origin
+                    + new Vector3(localOffsetX, localOffsetY, 0f);
+            }
+            else
+            {
+                parkedOffsetX = 0f;
+                parkedOffsetY = 0f;
+            }
             bool hasPrepared = _preparedMovers.TryGetValue(
                 key,
                 out PhysicsSetPositionRequest prepared);
             var request = (hasPrepared
                 ? prepared
                 : new PhysicsSetPositionRequest(
-                    body.Position,
+                    parkedPosition,
                     body.Orientation,
                     cellId,
                     body.CellPosition.Frame.Origin,
@@ -3356,7 +3398,7 @@ internal sealed class RuntimeSetPositionState : IDisposable
                     0f,
                     0f)) with
             {
-                Position = body.Position,
+                Position = parkedPosition,
                 Orientation = body.Orientation,
                 CellId = cellId,
                 CellLocalPosition = body.CellPosition.Frame.Origin,
@@ -3368,7 +3410,7 @@ internal sealed class RuntimeSetPositionState : IDisposable
             var result = new PhysicsSetPositionResult(
                 PhysicsSetPositionError.Ok,
                 PhysicsResidenceDisposition.DeferredCell,
-                body.Position,
+                parkedPosition,
                 body.Orientation,
                 cellId,
                 body.CellPosition.Frame.Origin,
@@ -3386,7 +3428,9 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 request,
                 RuntimeSetPositionOperationKind.RemoteAuthoritative,
                 body.LastUpdateTime,
-                record.VelocityAuthorityVersion);
+                record.VelocityAuthorityVersion,
+                parkedOffsetX,
+                parkedOffsetY);
             Operation operation = RentOperation();
             operation.Record = record;
             operation.Body = body;
@@ -3758,7 +3802,8 @@ internal sealed class RuntimeSetPositionState : IDisposable
         in RuntimeCollisionPrefixQuiescenceToken token,
         ulong successorGeneration,
         bool ready,
-        bool releaseUnavailable = false)
+        bool releaseUnavailable = false,
+        Func<bool>? stopWhenSpent = null)
     {
         var snapshot =
             new List<(RuntimeEntityKey Key, RuntimeEntityPlacementToken Token)>(
@@ -3806,6 +3851,11 @@ internal sealed class RuntimeSetPositionState : IDisposable
                 && operation.WithdrawalAcknowledged)
             {
                 RetryDeferred(operation);
+                // A placement handed back is the costly part (it is placed
+                // and projected). The rest stay held and are handed back,
+                // in the same order, by the next call of the release.
+                if (stopWhenSpent?.Invoke() == true)
+                    return;
             }
         }
     }
@@ -4177,7 +4227,7 @@ internal sealed class RuntimeSetPositionState : IDisposable
 
         UnindexDeferred(operation, preserveDeferredOrder);
         operation.CollisionQuiescenceHeld = false;
-        operation.Command = operation.Command with
+        operation.Command = MeasuredInCurrentFrame(operation.Command) with
         {
             GameTime = _physics.PlacementSimulationTime(
                 operation.Command.GameTime),
@@ -4838,6 +4888,42 @@ internal sealed class RuntimeSetPositionState : IDisposable
             == authority.CreateIntegrationVersion
         && operation.Record.PhysicsStateMutationVersion
             == authority.PhysicsStateMutationVersion;
+
+    /// <summary>
+    /// A held command measured again in the frame the runtime measures in
+    /// now. Its world position was worked out from its landblock's place in
+    /// the frame it was built in; a portal into another landblock may have
+    /// moved that frame while it waited, and then the same world position
+    /// names a point a whole landblock (or more) away. The place within its
+    /// landblock does not change, so the position moves by however much its
+    /// landblock's corner moved.
+    /// </summary>
+    private RuntimeSetPositionCommand MeasuredInCurrentFrame(
+        in RuntimeSetPositionCommand command)
+    {
+        if (!_physics.TryGetWorldFrameOffset(
+                command.Physics.CellId,
+                out float offsetX,
+                out float offsetY)
+            || (offsetX == command.ShadowWorldOffsetX
+                && offsetY == command.ShadowWorldOffsetY))
+        {
+            return command;
+        }
+        var shift = new Vector3(
+            offsetX - command.ShadowWorldOffsetX,
+            offsetY - command.ShadowWorldOffsetY,
+            0f);
+        return command with
+        {
+            Physics = command.Physics with
+            {
+                Position = command.Physics.Position + shift,
+            },
+            ShadowWorldOffsetX = offsetX,
+            ShadowWorldOffsetY = offsetY,
+        };
+    }
 
     private void RebindPreparedCommand(Operation operation)
     {

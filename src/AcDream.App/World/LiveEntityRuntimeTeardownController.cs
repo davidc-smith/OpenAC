@@ -90,6 +90,39 @@ internal sealed class LiveEntityRuntimeTeardownController
         record.RuntimeComponentTeardownPlan.Advance();
     }
 
+    public void ReleasePresentation(LiveEntityRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        new LiveEntityTeardownPlan(CreatePresentationReleasePlan(record)).Advance();
+    }
+
+    /// <summary>
+    /// What only the drawing of an entity holds: its presentation, effects,
+    /// animation view, picking class, movement observation, fades, drawn
+    /// children and lights. The body -- its motion, physics host, collision
+    /// shadow, a missile in flight -- and the selection are the session's,
+    /// which plays on, and are left as they are.
+    /// </summary>
+    private List<Action> CreatePresentationReleasePlan(LiveEntityRecord record)
+    {
+        var cleanups = new List<Action>
+        {
+            () => _presentation!.Forget(record),
+            () => _effects!.OnLiveEntityUnregistered(record),
+        };
+        if (record.WorldEntity is not { } existingEntity)
+            return cleanups;
+
+        cleanups.Add(() => _animations!.Remove(record));
+        cleanups.Add(() => _classification!.InvalidateEntity(existingEntity.Id));
+        if (record.ProjectionKey is { } projectionKey)
+            cleanups.Add(() => _remoteMovementObservations!.Remove(projectionKey));
+        cleanups.Add(() => _translucencyFades!.ClearEntity(existingEntity.Id));
+        cleanups.Add(() => _children!.OnLogicalTeardown(record));
+        cleanups.Add(() => _lights!.Forget(record));
+        return cleanups;
+    }
+
     public void ForgetUnknownOwner(uint serverGuid) =>
         _forgetUnknownOwner(serverGuid);
 

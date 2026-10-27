@@ -97,6 +97,65 @@ public sealed partial class RuntimeCollisionPrefixQuiescenceTests
     }
 
     [Fact]
+    public void ASpentFrameHandsBackOnePlacementPerCallInTheSameOrder()
+    {
+        using var fixture = new Fixture(bindGeneration: true);
+        RuntimePhysicsState physics = fixture.Lifetime.Physics;
+        RuntimeEntityRecord first = fixture.Add(
+            0x70003111u, 1, CellP, new Vector3(11f, 40f, 0f));
+        RuntimeEntityRecord second = fixture.Add(
+            0x70003112u, 1, CellP, new Vector3(12f, 41f, 0f));
+        foreach ((RuntimeEntityRecord record, float x) in new[] { (first, 11.5f), (second, 12.5f) })
+        {
+            RuntimeSetPositionOutcome seeded = fixture.Place(
+                record, CellP, new Vector3(x, 40f, 0f));
+            Assert.True(physics.SetPosition.AcknowledgeProjection(seeded.Projection));
+        }
+
+        RuntimeCollisionAdmission admission =
+            physics.BeginCollisionAdmission(PrefixP);
+        using PreparedLandblockCollisionGeneration prepared =
+            PrepareSealedMutation(physics, admission, PrefixP);
+        Assert.False(physics.CommitCollisionGeneration(admission, prepared).EngineCommitted);
+        while (physics.SetPosition.TryPeekProjection(
+                   out RuntimePlacementProjectionSnapshot withdrawn))
+        {
+            Assert.Equal(RuntimePlacementProjectionKind.Withdraw, withdrawn.Kind);
+            Assert.True(physics.SetPosition.AcknowledgeProjection(withdrawn.Token));
+        }
+        _ = SealMutation(physics, admission, prepared);
+
+        physics.CollisionWorkFrameSpent = static () => true;
+        RuntimeCollisionGenerationCommit committed =
+            physics.CommitCollisionGeneration(admission, prepared);
+        Assert.True(committed.EngineCommitted);
+        Assert.False(committed.Completed);
+        Assert.Equal(1, physics.SetPosition.PendingProjectionCount);
+        Assert.True(physics.SetPosition.TryPeekProjection(
+            out RuntimePlacementProjectionSnapshot placedFirst));
+        Assert.Equal(RuntimePlacementProjectionKind.Place, placedFirst.Kind);
+        Assert.True(physics.SetPosition.AcknowledgeProjection(placedFirst.Token));
+
+        RuntimeCollisionGenerationCommit carried =
+            physics.CommitCollisionGeneration(admission, prepared);
+        Assert.False(carried.Completed);
+        Assert.Equal(1, physics.SetPosition.PendingProjectionCount);
+        Assert.True(physics.SetPosition.TryPeekProjection(
+            out RuntimePlacementProjectionSnapshot placedSecond));
+        Assert.Equal(RuntimePlacementProjectionKind.Place, placedSecond.Kind);
+        Assert.NotEqual(placedFirst.Token, placedSecond.Token);
+        Assert.True(physics.SetPosition.AcknowledgeProjection(placedSecond.Token));
+
+        physics.CollisionWorkFrameSpent = null;
+        RuntimeCollisionGenerationCommit completed =
+            physics.CommitCollisionGeneration(admission, prepared);
+        Assert.True(completed.Completed);
+        Assert.True(physics.IsSpatialRoot(first));
+        Assert.True(physics.IsSpatialRoot(second));
+        Assert.Equal(0, physics.CaptureOwnership().CollisionPrefixQuiescenceCount);
+    }
+
+    [Fact]
     public void WithdrawalLeavesResidentUnboundUntilLaterGenerationWakesIt()
     {
         using var fixture = new Fixture(bindGeneration: true);

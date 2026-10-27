@@ -170,7 +170,6 @@ public sealed class WorldRenderCompositionTests
         public WorldRenderResult Compose() =>
             new WorldRenderCompositionPhase(
                 new WorldRenderDependencies(
-                    new WorldEnvironmentController(),
                     Lifetime,
                     ImmediateGpuResourceRetirementQueue.Instance,
                     _budgets,
@@ -221,16 +220,12 @@ public sealed class WorldRenderCompositionTests
         public WorldRegionData LoadRegion(IDatReaderWriter dats) =>
             new(Stub<Region>(), new float[256]);
 
-        public void InitializeEnvironment(
-            WorldEnvironmentController environment,
-            Region region,
-            IDatReaderWriter dats) { }
-
         public TerrainAtlas AcquireBackendNeutralTerrainAtlas(
             IGameRenderResourceLifetime lifetime,
             IGpuDevice device,
             IDatReaderWriter dats,
-            WorldTextureDetail textureDetail) =>
+            WorldTextureDetail textureDetail,
+            Task<TerrainAtlas.DecodedSources>? sources = null) =>
             lifetime.AcquireTerrainAtlas(() => Atlas);
 
         public void ExerciseBackendNeutralWorldTextures(

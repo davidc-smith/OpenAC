@@ -247,6 +247,38 @@ public sealed class CharacterCreationUiControllerTests
     }
 
     [Fact]
+    public void ProfessionLock_Click_ShowsLockedArtOnTheLockAndTheSlider_AndClickAgainUnlocks()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        environment.Runtime.SelectHeritageDirect(AluvianId);
+        environment.TabButton(CharacterCreationUiController.ProfessionTabElementId).OnClick!();
+
+        UiElement strengthContainer = Assert.IsAssignableFrom<UiElement>(
+            environment.Screen.FindElement(0x100003E6u));
+        UiButton lockButton = Assert.IsType<UiButton>(
+            UiElement.FindDescendant(strengthContainer, 0x100002ECu));
+        UiScrollbar slider = Assert.IsType<UiScrollbar>(
+            UiElement.FindDescendant(strengthContainer, 0x100002EEu));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(ScrollbarFixtures.UnlockedTrack, slider.TrackSprite);
+
+        lockButton.OnClick!();
+        BumpRevisionAndTick(environment);
+
+        Assert.True(environment.Runtime.View.Snapshot.IsAttributeLocked(ChargenAttributeId.Strength));
+        Assert.Equal("Locked", lockButton.ActiveState);
+        Assert.Equal(ScrollbarFixtures.LockedTrack, slider.TrackSprite);
+
+        lockButton.OnClick!();
+        BumpRevisionAndTick(environment);
+
+        Assert.False(environment.Runtime.View.Snapshot.IsAttributeLocked(ChargenAttributeId.Strength));
+        Assert.Equal("Unlocked", lockButton.ActiveState);
+        Assert.Equal(ScrollbarFixtures.UnlockedTrack, slider.TrackSprite);
+    }
+
+    [Fact]
     public void ProfessionValueField_DirectEntry_SetsTheAttribute()
     {
         using var environment = new EnvironmentHarness();
@@ -744,47 +776,44 @@ public sealed class CharacterCreationUiControllerTests
     }
 
     [Fact]
-    public void AppearanceSpin_IncrementZoneClick_CyclesStyleForwardFromUnset()
+    public void AppearanceSpin_IncrementArrowClick_CyclesStyleForwardFromUnset()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(150, 10);
+        SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: true).OnClick!();
 
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(0u, environment.Runtime.LastAppearanceIndex);
     }
 
     [Fact]
-    public void AppearanceSpin_DecrementZoneClick_FromUnset_WrapsToLastStyle()
+    public void AppearanceSpin_DecrementArrowClick_FromUnset_WrapsToLastStyle()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(100, 10);
+        SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: false).OnClick!();
 
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(2u, environment.Runtime.LastAppearanceIndex);
     }
 
     [Fact]
-    public void AppearanceSpin_SelectZoneClick_SelectsPartWithoutChangingIndex()
+    public void AppearanceSpin_BodyClick_SelectsPartWithoutChangingIndex()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        // Establish a real Hair index first (increment zone, x=150).
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(150, 10);
+        // Establish a real Hair index first.
+        SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: true).OnClick!();
         Assert.Equal(0u, environment.Runtime.LastAppearanceIndex);
         int callsAfterCycle = environment.Runtime.AppearanceIndexCallCount;
 
-        // x=180 is inside [174,200) — past the increment arrow's own zone,
-        // still inside the 200px-wide spin — the spin's own BODY, not
-        // either arrow.
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(180, 10);
+        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClick!();
 
         Assert.Equal(callsAfterCycle, environment.Runtime.AppearanceIndexCallCount);
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
@@ -792,13 +821,13 @@ public sealed class CharacterCreationUiControllerTests
     }
 
     [Fact]
-    public void AppearanceSpin_SelectZoneClick_FromUnset_NormalizesToLastStyle()
+    public void AppearanceSpin_BodyClick_FromUnset_NormalizesToLastStyle()
     {
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClickAt!(180, 10);
+        environment.Button(CharacterCreationAppearancePage.HairSpinId).OnClick!();
 
         Assert.Equal(ChargenAppearanceSlot.HairStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(2u, environment.Runtime.LastAppearanceIndex);
@@ -813,11 +842,11 @@ public sealed class CharacterCreationUiControllerTests
         environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
         environment.Button(CharacterCreationAppearancePage.ClothesButtonId).OnClick!();
 
-        environment.Button(CharacterCreationAppearancePage.HeadgearSpinId).OnClickAt!(150, 10); // increment
+        SpinArrow(environment, CharacterCreationAppearancePage.HeadgearSpinId, increment: true).OnClick!();
         Assert.Equal(ChargenAppearanceSlot.HeadgearStyle, environment.Runtime.LastAppearanceSlot);
         Assert.Equal(0u, environment.Runtime.LastAppearanceIndex);
 
-        environment.Button(CharacterCreationAppearancePage.HeadgearSpinId).OnClickAt!(100, 10); // decrement
+        SpinArrow(environment, CharacterCreationAppearancePage.HeadgearSpinId, increment: false).OnClick!();
         Assert.Equal(RuntimeCharacterCreationAppearance.Unset, environment.Runtime.LastAppearanceIndex);
     }
 
@@ -847,11 +876,123 @@ public sealed class CharacterCreationUiControllerTests
         environment.Controller.Open();
         SelectAluvianMale(environment);
 
-        environment.Button(CharacterCreationAppearancePage.SkinSpinId).OnClickAt!(100, 10);
-        environment.Button(CharacterCreationAppearancePage.SkinSpinId).OnClickAt!(150, 10);
+        environment.Button(CharacterCreationAppearancePage.SkinSpinId).OnClick!();
 
         Assert.Equal(0, environment.Runtime.AppearanceIndexCallCount);
     }
+
+    [Fact]
+    public void AppearanceSpinArrows_AreTheirOwnButtons_SkinsAlwaysGhosted()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        SelectAluvianMale(environment);
+
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: false).Enabled);
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.HairSpinId, increment: true).Enabled);
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.SkinSpinId, increment: false).Enabled);
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.SkinSpinId, increment: true).Enabled);
+    }
+
+    [Fact]
+    public void AppearanceEyesArrows_GhostedForOlthoi_EnabledAgainForAluvian()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        environment.Runtime.SelectHeritageDirect(OlthoiId);
+        environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
+
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: false).Enabled);
+        Assert.False(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: true).Enabled);
+
+        environment.Runtime.SelectHeritageDirect(AluvianId);
+        BumpRevisionAndTick(environment);
+
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: false).Enabled);
+        Assert.True(SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: true).Enabled);
+    }
+
+    [Fact]
+    public void AppearanceEyesArrow_KeepsItsRollover_WhenItsClickRefreshesThePage()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        SelectAluvianMale(environment);
+        UiButton up = SpinArrow(environment, CharacterCreationAppearancePage.EyesSpinId, increment: true);
+
+        var hover = new UiEvent(up.EventId, up, UiEventType.HoverEnter);
+        up.OnEvent(in hover);
+        Assert.Equal("Normal_rollover", up.ActiveState);
+
+        up.OnClick!();
+        BumpRevisionAndTick(environment);
+
+        Assert.Equal(ChargenAppearanceSlot.EyesStrip, environment.Runtime.LastAppearanceSlot);
+        Assert.Equal("Normal_rollover", up.ActiveState);
+    }
+
+    [Fact]
+    public void AppearancePage_OlthoiReZoomsIn_WhereThePageUpdates_GenderRandomAndShown()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+        environment.Runtime.SelectHeritageDirect(OlthoiId);
+        environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
+        UiButton zoomIn = environment.Button(CharacterCreationAppearancePage.ZoomInId);
+        UiButton zoomOut = environment.Button(CharacterCreationAppearancePage.ZoomOutId);
+        int zoomIns = preview.ZoomInCalls;
+
+        // A gender pick: the original refreshes the page, which puts these
+        // heritages back on the face choice, zoomed in.
+        zoomOut.OnClick!();
+        environment.Button(CharacterCreationAppearancePage.FemaleButtonId).OnClick!();
+        Assert.Equal(zoomIns + 1, preview.ZoomInCalls);
+        Assert.Equal("Highlight", zoomIn.ActiveState);
+        Assert.Equal("Normal", zoomOut.ActiveState);
+
+        // Random on this page.
+        zoomOut.OnClick!();
+        environment.Button(CharacterCreationUiController.RandomElementId).OnClick!();
+        Assert.Equal(zoomIns + 2, preview.ZoomInCalls);
+
+        // The page shown again.
+        zoomOut.OnClick!();
+        environment.TabButton(CharacterCreationUiController.HeritageTabElementId).OnClick!();
+        environment.TabButton(CharacterCreationUiController.AppearanceTabElementId).OnClick!();
+        Assert.Equal(zoomIns + 3, preview.ZoomInCalls);
+
+        // A plain snapshot change is not one of those.
+        zoomOut.OnClick!();
+        BumpRevisionAndTick(environment);
+        Assert.Equal(zoomIns + 3, preview.ZoomInCalls);
+        Assert.Equal("Highlight", zoomOut.ActiveState);
+    }
+
+    [Fact]
+    public void AppearancePage_AluvianGenderPick_LeavesTheZoomAlone()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+        SelectAluvianMale(environment);
+        int zoomIns = preview.ZoomInCalls;
+
+        environment.Button(CharacterCreationAppearancePage.ZoomOutId).OnClick!();
+        environment.Button(CharacterCreationAppearancePage.FemaleButtonId).OnClick!();
+
+        Assert.Equal(zoomIns, preview.ZoomInCalls);
+        Assert.Equal("Highlight", environment.Button(CharacterCreationAppearancePage.ZoomOutId).ActiveState);
+    }
+
+    private static UiButton SpinArrow(EnvironmentHarness environment, uint spinId, bool increment) =>
+        Assert.IsType<UiButton>(UiElement.FindDescendant(
+            environment.Button(spinId),
+            increment
+                ? CharacterCreationAppearancePage.IncrementArrowId
+                : CharacterCreationAppearancePage.DecrementArrowId));
 
     [Fact]
     public void OlthoiHeritage_HidesClothesButtonAndNoseMouthSpins()
@@ -945,7 +1086,7 @@ public sealed class CharacterCreationUiControllerTests
         using var environment = new EnvironmentHarness();
         environment.Controller.Open();
         SelectAluvianMale(environment);
-        environment.Button(CharacterCreationAppearancePage.NoseSpinId).OnClickAt!(10, 10);
+        environment.Button(CharacterCreationAppearancePage.NoseSpinId).OnClick!();
 
         environment.ShadeScroll().ScalarChanged!(0.5f);
 
@@ -1007,7 +1148,7 @@ public sealed class CharacterCreationUiControllerTests
         UiButton zoomIn = environment.Button(CharacterCreationAppearancePage.ZoomInId);
         UiButton zoomOut = environment.Button(CharacterCreationAppearancePage.ZoomOutId);
 
-        Assert.Equal("Normal", zoomIn.ActiveState);
+        Assert.Equal("Highlight", zoomIn.ActiveState);
         Assert.Equal("Normal", zoomOut.ActiveState);
 
         zoomIn.OnClick!();
@@ -1021,6 +1162,45 @@ public sealed class CharacterCreationUiControllerTests
         zoomOut.OnClick!();
         Assert.Equal("Normal", zoomIn.ActiveState);
         Assert.Equal("Highlight", zoomOut.ActiveState);
+    }
+
+    [Fact]
+    public void AppearancePage_OpensOnTheFaceChoiceZoomedIn_SoZoomOutWorksAtOnce()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+
+        UiButton zoomIn = environment.Button(CharacterCreationAppearancePage.ZoomInId);
+        UiButton zoomOut = environment.Button(CharacterCreationAppearancePage.ZoomOutId);
+        Assert.Equal("Highlight", zoomIn.ActiveState);
+        Assert.Equal("Normal", zoomOut.ActiveState);
+        Assert.Equal(1, preview.ZoomInCalls);
+
+        zoomOut.OnClick!();
+
+        Assert.Equal(1, preview.ZoomOutCalls);
+        Assert.Equal("Normal", zoomIn.ActiveState);
+        Assert.Equal("Highlight", zoomOut.ActiveState);
+    }
+
+    [Fact]
+    public void AppearanceChoice_ClothesZoomsOut_FaceZoomsBackIn()
+    {
+        using var environment = new EnvironmentHarness();
+        environment.Controller.Open();
+        var preview = new FakeChargenPreviewControl();
+        environment.Controller.AppearancePreviewControl = preview;
+        SelectAluvianMale(environment);
+
+        environment.Button(CharacterCreationAppearancePage.ClothesButtonId).OnClick!();
+        Assert.Equal(1, preview.ZoomOutCalls);
+        Assert.Equal("Highlight", environment.Button(CharacterCreationAppearancePage.ZoomOutId).ActiveState);
+
+        environment.Button(CharacterCreationAppearancePage.FaceButtonId).OnClick!();
+        Assert.Equal(2, preview.ZoomInCalls);
+        Assert.Equal("Highlight", environment.Button(CharacterCreationAppearancePage.ZoomInId).ActiveState);
     }
 
     private static void SelectAluvianMale(EnvironmentHarness environment)
@@ -1823,7 +2003,7 @@ public sealed class CharacterCreationUiControllerTests
                 SelectGender,
                 SelectTemplate,
                 SetAttribute,
-                (_, _) => Result(RuntimeCommandStatus.Accepted),
+                SetAttributeLock,
                 skillId => SetSkillLevel(skillId, ChargenSkillAdvancementClass.Trained),
                 skillId => SetSkillLevel(skillId, ChargenSkillAdvancementClass.Specialized),
                 skillId => SetSkillLevel(skillId, ChargenSkillAdvancementClass.Untrained),
@@ -1910,6 +2090,14 @@ public sealed class CharacterCreationUiControllerTests
         {
             LastAttributeSet = attribute;
             LastAttributeValue = value;
+            return Result(RuntimeCommandStatus.Accepted);
+        }
+
+        private RuntimeCommandResult SetAttributeLock(ChargenAttributeId attribute, bool locked)
+        {
+            uint bit = 1u << ((int)attribute - 1);
+            uint mask = View.Snapshot.AttributeLockMask;
+            View.Snapshot = View.Snapshot with { AttributeLockMask = locked ? mask | bit : mask & ~bit };
             return Result(RuntimeCommandStatus.Accepted);
         }
 
@@ -2294,8 +2482,8 @@ public sealed class CharacterCreationUiControllerTests
         page.Children.Add(ButtonInfo(0x100003DAu)); // Bow Hunter
 
         var strengthSlider = ContainerInfo(0x100003E6u);
-        strengthSlider.Children.Add(ButtonInfo(0x100002ECu));
-        strengthSlider.Children.Add(ScrollbarInfo(0x100002EEu));
+        strengthSlider.Children.Add(LockButtonInfo());
+        strengthSlider.Children.Add(ScrollbarFixtures.LockableScalarBar());
         strengthSlider.Children.Add(EditableFieldInfo(0x100002EFu));
         page.Children.Add(strengthSlider);
 
@@ -2442,6 +2630,29 @@ public sealed class CharacterCreationUiControllerTests
         return page;
     }
 
+    // The attribute lock as authored: a toggle with its own Unlocked and
+    // Locked art and no Normal/Highlight pair.
+    private static ElementInfo LockButtonInfo()
+    {
+        var info = new ElementInfo
+        {
+            Id = 0x100002ECu,
+            Type = 1u,
+            Width = 15f,
+            Height = 24f,
+            DefaultStateName = "Unlocked",
+            DefaultStateId = ScrollbarFixtures.UnlockedState,
+        };
+        var direct = new UiStateInfo { Id = UiStateInfo.DirectStateId };
+        direct.Properties.Set(0x0Bu, new UiPropertyValue { Kind = UiPropertyKind.Bool, BoolValue = true });
+        info.States[UiStateInfo.DirectStateId] = direct;
+        info.States[ScrollbarFixtures.UnlockedState] = new UiStateInfo { Id = ScrollbarFixtures.UnlockedState, Name = "Unlocked" };
+        info.States[ScrollbarFixtures.LockedState] = new UiStateInfo { Id = ScrollbarFixtures.LockedState, Name = "Locked" };
+        info.StateMedia["Unlocked"] = (0x06004D3Bu, 3);
+        info.StateMedia["Locked"] = (0x06004D3Cu, 3);
+        return info;
+    }
+
     private static ElementInfo ZoomButtonInfo(uint id)
     {
         var info = new ElementInfo { Id = id, Type = 1u, Width = 81f, Height = 38f };
@@ -2460,9 +2671,23 @@ public sealed class CharacterCreationUiControllerTests
             Width = 200f,
             Height = 24f,
         };
-        spin.Children.Add(new ElementInfo { Id = 0x1000030Au, Type = 1u, X = 80f, Width = 47f, Height = 24f });
-        spin.Children.Add(new ElementInfo { Id = 0x1000030Bu, Type = 1u, X = 127f, Width = 47f, Height = 24f });
+        spin.Children.Add(SpinArrowInfo(0x1000030Au, x: 80f));
+        spin.Children.Add(SpinArrowInfo(0x1000030Bu, x: 127f));
         return spin;
+    }
+
+    // A spin arrow as authored: Normal, Normal_rollover and Ghosted art,
+    // rollover on.
+    private static ElementInfo SpinArrowInfo(uint id, float x)
+    {
+        var arrow = new ElementInfo { Id = id, Type = 1u, X = x, Width = 47f, Height = 24f, DefaultStateName = "Normal" };
+        arrow.StateMedia["Normal"] = (0x06004C92u, 3);
+        arrow.StateMedia["Normal_rollover"] = (0x06004C93u, 3);
+        arrow.StateMedia["Ghosted"] = (0x06005F13u, 3);
+        var direct = new UiStateInfo { Id = UiStateInfo.DirectStateId };
+        direct.Properties.Set(0x13u, new UiPropertyValue { Kind = UiPropertyKind.Bool, BoolValue = true });
+        arrow.States[UiStateInfo.DirectStateId] = direct;
+        return arrow;
     }
 
     private static ElementInfo ArrowButtonInfo(uint id)

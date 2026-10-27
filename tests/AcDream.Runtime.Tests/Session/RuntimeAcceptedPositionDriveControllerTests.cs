@@ -491,6 +491,84 @@ public sealed class RuntimeAcceptedPositionDriveControllerTests
     }
 
     [Fact]
+    public void HandOver_KeepsAParkedCorrectionForTheRouteThatReplacesTheOld()
+    {
+        using StartedRuntime started = StartRuntime();
+        GameRuntime runtime = started.Runtime;
+        (RuntimeEntityRecord record, PlayerMovementController controller) =
+            EnterLocalPlayer(runtime);
+        RuntimeAcceptedPositionDriveController drive =
+            CreateAcceptedPositionDrive(runtime, out _);
+        var windowless = new object();
+        var window = new object();
+        drive.AttachRoute(windowless);
+
+        const uint deferredLandblock = 0x02020000u;
+        var deferredPosition = new Vector3(10f, 10f, SpawnHeight);
+        WorldSession.EntityPositionUpdate parkedUpdate = ForceUpdate(
+            deferredPosition,
+            landblockId: deferredLandblock | 0x0001u);
+        (PositionTimestampDisposition disposition, AcceptedPhysicsTimestamps timestamps) =
+            MergeAccepted(runtime, controller, parkedUpdate);
+        Assert.Equal(
+            RuntimeAcceptedPositionExecutionStatus.DeferredCell,
+            drive.TryExecuteAcceptedLocalPosition(
+                record,
+                parkedUpdate,
+                disposition,
+                timestamps,
+                timestamps.PreviousTeleport));
+        Assert.Equal(1, drive.PendingCount);
+
+        // A window opens on the playing session: the route that held the
+        // connection lets go and the window's takes it, and the parked
+        // correction is for the new route to finish.
+        drive.BeginRouteHandOver();
+        drive.DetachRoute(windowless);
+        drive.AttachRoute(window);
+        drive.EndRouteHandOver();
+        Assert.Equal(1, drive.PendingCount);
+
+        CommitLandblockCollision(runtime, deferredLandblock);
+        DrainPlacementFifo(runtime);
+        drive.Advance();
+
+        Assert.Equal(0, drive.PendingCount);
+        Assert.Equal(deferredPosition + new Vector3(192f, 192f, 0f), controller.Position);
+        drive.DetachRoute(window);
+        AssertConverged(runtime);
+    }
+
+    [Fact]
+    public void HandOver_NobodyTookIsAbandonedWhenItEnds()
+    {
+        using StartedRuntime started = StartRuntime();
+        GameRuntime runtime = started.Runtime;
+        (RuntimeEntityRecord record, PlayerMovementController controller) =
+            EnterLocalPlayer(runtime);
+        RuntimeAcceptedPositionDriveController drive =
+            CreateAcceptedPositionDrive(runtime, out _);
+        var route = new object();
+        drive.AttachRoute(route);
+        WorldSession.EntityPositionUpdate parkedUpdate = ForceUpdate(
+            new Vector3(10f, 10f, SpawnHeight),
+            landblockId: 0x02020001u);
+        (PositionTimestampDisposition disposition, AcceptedPhysicsTimestamps timestamps) =
+            MergeAccepted(runtime, controller, parkedUpdate);
+        _ = drive.TryExecuteAcceptedLocalPosition(
+            record, parkedUpdate, disposition, timestamps, timestamps.PreviousTeleport);
+        Assert.Equal(1, drive.PendingCount);
+
+        drive.BeginRouteHandOver();
+        drive.DetachRoute(route);
+        Assert.Equal(1, drive.PendingCount);
+        drive.EndRouteHandOver();
+
+        Assert.Equal(0, drive.PendingCount);
+        AssertConverged(runtime);
+    }
+
+    [Fact]
     public void OneServerCorrectionProducesExactlyOnePlacementAndOneAck()
     {
         using StartedRuntime started = StartRuntime();

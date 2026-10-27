@@ -94,6 +94,7 @@ public sealed class LiveSessionHost
     private readonly LoginCommandSequence? _loginCommands;
     private readonly GameRuntime? _runtime;
     private PendingRouteRollback? _pendingRouteRollback;
+    private BoundEventRoute? _bound;
 
     public LiveSessionHost(
         LiveSessionController controller,
@@ -137,8 +138,20 @@ public sealed class LiveSessionHost
     public IRuntimeConnectionView Connection => _controller.Connection;
     public bool IsInWorld => _controller.IsInWorld;
 
+    /// <summary>
+    /// The character this session entered the world with, until the session
+    /// resets; what a window opening on the playing session presents.
+    /// </summary>
+    public LiveSessionCharacterSelection? EnteredCharacter { get; private set; }
+
     /// <summary>True when the last session ended because the server went silent.</summary>
     public bool ConnectionLost => _controller.ConnectionLost;
+
+    /// <summary>
+    /// Why the last start found no character to enter (see
+    /// <see cref="LiveSessionController.NoCharacterToEnter"/>); null otherwise.
+    /// </summary>
+    public string? NoCharacterToEnter => _controller.NoCharacterToEnter;
 
     public LiveSessionStartResult Start(LiveSessionConnectOptions options) =>
         _controller.Start(options, _lifecycle);
@@ -180,6 +193,30 @@ public sealed class LiveSessionHost
         RuntimeGenerationToken expectedGeneration) =>
         _controller.Stop(expectedGeneration);
 
+    /// <summary>
+    /// Builds the event route of the open connection again, from the route
+    /// factory as it answers now: the route holding the connection lets go
+    /// first, then the new one takes the same connection. Used when what
+    /// presents the session changes while it plays (a window opens or
+    /// closes); nothing the server sends is lost, because the connection is
+    /// read on this same thread. Returns false when no connection is open.
+    /// </summary>
+    public bool ReplaceEventRoute()
+    {
+        if (_bound is not { Events: not null } bound)
+            return false;
+
+        ILiveSessionEventRouting outgoing = bound.Events;
+        bound.Events = null;
+        outgoing.Dispose();
+        ILiveSessionEventRouting events = _routing.CreateEvents(bound.Session)
+            ?? throw new InvalidOperationException(
+                "The live-session event factory returned null.");
+        bound.Events = events;
+        events.Attach();
+        return true;
+    }
+
     public void Tick()
     {
         _controller.Tick();
@@ -206,11 +243,13 @@ public sealed class LiveSessionHost
             commands = _routing.CreateCommands(session)
                 ?? throw new InvalidOperationException(
                     "The live-session command factory returned null.");
+            var bound = new BoundEventRoute(session, events);
+            _bound = bound;
             return new LiveSessionBinding(
                 session,
                 activateCommands: commands.Activate,
                 deactivateCommands: commands.Dispose,
-                detachEvents: events.Dispose);
+                detachEvents: bound.Detach);
         }
         catch (Exception creationError)
         {
@@ -219,10 +258,27 @@ public sealed class LiveSessionHost
         }
     }
 
+    private sealed class BoundEventRoute(
+        WorldSession session,
+        ILiveSessionEventRouting events)
+    {
+        public WorldSession Session { get; } = session;
+
+        public ILiveSessionEventRouting? Events { get; set; } = events;
+
+        public void Detach()
+        {
+            ILiveSessionEventRouting? current = Events;
+            Events = null;
+            current?.Dispose();
+        }
+    }
+
     private void ResetSessionState(
         RuntimeGenerationToken retiringGeneration)
     {
         DrainPendingRouteRollback();
+        EnteredCharacter = null;
         _loginCommands?.Cancel(retiringGeneration);
         _reset(retiringGeneration);
     }
@@ -241,6 +297,7 @@ public sealed class LiveSessionHost
 
     private void ApplyEnteredWorld(LiveSessionCharacterSelection selection)
     {
+        EnteredCharacter = selection;
         string name = selection.CharacterName;
         _enteredWorld.ResumeWorldAudio?.Invoke();
         _enteredWorld.SetActiveCharacter(name);

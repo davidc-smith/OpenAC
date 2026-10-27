@@ -102,7 +102,7 @@ internal sealed record GraphicalWindowBackendSelection(
     }
 }
 
-internal static class GraphicalWindowBackendConfigurator
+internal static unsafe class GraphicalWindowBackendConfigurator
 {
     private const int GlfwPlatformInitHint = 0x00050003;
     private const int GlfwAnyPlatform = 0x00060000;
@@ -167,6 +167,36 @@ internal static class GraphicalWindowBackendConfigurator
             _glfw = glfw;
             _configuredProtocol = requested;
         }
+    }
+
+    /// <summary>
+    /// The instance extensions a Vulkan surface on this window system needs,
+    /// as the window backend reports them, or null when it has no Vulkan
+    /// support. Initializes the window backend, so it is called on the main
+    /// thread, after <see cref="Configure"/>; the window opened later uses
+    /// the same initialized backend.
+    /// </summary>
+    internal static IReadOnlyList<string>? RequiredVulkanInstanceExtensions()
+    {
+        lock (Gate)
+        {
+            if (_configuredProtocol is null)
+            {
+                throw new InvalidOperationException(
+                    "The window backend must be configured first.");
+            }
+        }
+
+        Glfw glfw = GlfwProvider.GLFW.Value;
+        if (!glfw.VulkanSupported())
+            return null;
+        byte** names = glfw.GetRequiredInstanceExtensions(out uint count);
+        if (names is null)
+            return null;
+        var required = new List<string>((int)count);
+        for (uint i = 0; i < count; i++)
+            required.Add(AcDream.App.Rendering.Gpu.Vk.VulkanInterop.ReadString(names[i]));
+        return required;
     }
 
     internal static bool TryGetConfiguredApi(out Glfw? glfw)

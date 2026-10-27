@@ -164,7 +164,10 @@ public static class ChatTagMarkup
     /// <summary>
     /// The spans with every coordinate tag dropped and its caption kept as
     /// plain text. What a player or the server writes may hold a coordinate
-    /// tag; it is shown in the line's colour and is not a link.
+    /// tag; its caption is shown in the line's colour and its hidden value is
+    /// never a link. A caption that is itself a coordinate pair is linked like
+    /// any shown pair, to exactly that pair
+    /// (<see cref="ChatCoordinateLinks.LinkShown"/>).
     /// </summary>
     public static IReadOnlyList<ChatTextSpan> WithoutCoordinateTags(IReadOnlyList<ChatTextSpan> spans)
     {
@@ -237,8 +240,8 @@ public static class ChatTagMarkup
     /// <summary>
     /// A chat line that is not a plugin's own, as it is shown: its tags read
     /// by <see cref="Parse"/>, and a coordinate tag someone wrote in it kept
-    /// as plain text. That tag is hidden and its caption shown, but it is not
-    /// a link.
+    /// as plain text. That tag is hidden and its caption shown, but the tag
+    /// is not a link.
     /// </summary>
     public static IReadOnlyList<ChatTextSpan> ParseLine(string? text)
         => WithoutCoordinateTags(Read(text, readCoordinateTags: true));

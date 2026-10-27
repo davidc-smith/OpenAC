@@ -51,6 +51,44 @@ public sealed class SharedBindingPassTests
             bound.OrderBy(static seam => seam, StringComparer.Ordinal).ToArray());
     }
 
+    /// <summary>
+    /// A window opens on a session that plays with none, closes, and opens
+    /// again: each host binds over the last, the game files are lent again
+    /// without complaint, and what the latest host does not lend (a window's
+    /// confirmation answers) is not asked of the host that went.
+    /// </summary>
+    [Fact]
+    public void ABindingPassOverAnEarlierHostReplacesItAndLetsGoOfWhatTheNewOneLacks()
+    {
+        using GameRuntime runtime = NewRuntime();
+        using var surface = new RuntimeAutomationSurface();
+        using var content = new SkillTableContent();
+        var physics = new PhysicsEngine();
+        int answeredByTheFirst = 0;
+        RuntimeAutomationHostCapabilities first = Everything(content, physics, runtime) with
+        {
+            AnswerConfirmation = (_, _) =>
+            {
+                answeredByTheFirst++;
+                return true;
+            },
+        };
+        RuntimeAutomationBindings.Apply(surface, runtime, first);
+        Assert.True(((IAutomationSurface)surface).Dialogs.Answer(1u, true));
+
+        RuntimeAutomationBindings.Apply(
+            surface,
+            runtime,
+            Everything(content, physics, runtime) with
+            {
+                AnswerConfirmation = null,
+                NavigationWalk = null,
+            });
+
+        Assert.False(((IAutomationSurface)surface).Dialogs.Answer(2u, true));
+        Assert.Equal(1, answeredByTheFirst);
+    }
+
     [Fact]
     public void TheBindingPassRefusesACapabilityTheHostNeverDeclared()
     {

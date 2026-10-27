@@ -1,3 +1,4 @@
+using AcDream.Launcher.Core.Orchestration;
 using AcDream.Launcher.Core.Profiles;
 
 namespace AcDream.Launcher.Tests;
@@ -24,6 +25,40 @@ public sealed partial class LauncherWindowViewModelTests
         Assert.False(reopened.Accounts[0].Rows[0].IsChecked);
         Assert.False(reopened.RelaunchCheckedClientsAutomatically);
         Assert.Empty(reopenedCore.LaunchRequests);
+    }
+
+    [Fact]
+    public void ACheckedAccountMatchesItsRowWhateverTheCaseOfItsName()
+    {
+        using var selection = new CheckedAccountsFixture();
+        selection.NewStore().Save([new LauncherCheckedAccount("Two", "ALICE")]);
+        using var core = BatchOrchestrator();
+        using var vm = CreateInitialized(core, checkedAccountStore: selection.NewStore());
+
+        var selected = Assert.Single(vm.Accounts.SelectMany(group => group.Rows), row => row.IsChecked);
+        Assert.Equal("Alice", selected.AccountName);
+        Assert.Equal("Two", selected.ServerName);
+        var saved = selection.NewStore();
+        saved.Load();
+        Assert.True(saved.Contains("Two", "alice"));
+        Assert.False(saved.Contains("two", "Alice"));
+    }
+
+    [Fact]
+    public void OneAccountIsOneGroupWhateverTheCaseOfItsNameAndEachEntryKeepsItsRow()
+    {
+        using var core = new FakeLauncherOrchestrator
+        {
+            ServersOverride = [BatchServer("One", "Alice", "ALICE", "Bob"), BatchServer("Two", "alice")],
+            Session = FakeLauncherOrchestrator.CreateSession(LauncherActivityState.Exited),
+        };
+        using var vm = CreateInitialized(core);
+
+        Assert.Equal(["Alice", "Bob"], vm.Accounts.Select(group => group.AccountName));
+        Assert.Equal([("One", "Alice"), ("One", "ALICE"), ("Two", "alice")],
+            vm.Accounts[0].Rows.Select(row => (row.ServerName, row.AccountName)));
+        vm.RefreshProfiles();
+        Assert.Equal(3, vm.Accounts[0].Rows.Count);
     }
 
     [Fact]

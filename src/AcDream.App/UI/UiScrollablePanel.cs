@@ -41,6 +41,12 @@ public sealed class UiScrollablePanel : UiPanel
         return removed;
     }
 
+    internal override void RemoveChildren(IReadOnlySet<UiElement> children)
+    {
+        foreach (UiElement child in Children.ToArray())
+            if (children.Contains(child)) RemoveChild(child);
+    }
+
     public void ClearContent()
     {
         foreach (var child in ChildrenBackToFrontSnapshot())

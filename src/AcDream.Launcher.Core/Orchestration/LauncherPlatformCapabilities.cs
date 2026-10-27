@@ -20,6 +20,10 @@ public sealed record LauncherPlatformCapabilities(
 {
     public bool IsMacOS { get; init; }
 
+    /// <summary>A display a game window can open on. Without one (Linux with neither X11 nor
+    /// Wayland) headless rows run the windowless host, which cannot open a window.</summary>
+    public bool HasDisplay { get; init; } = true;
+
     public const string UnsupportedPlatformGraphicalLaunchDisabledReason =
         "Graphical client launches are supported on Windows, Linux, and macOS.";
 
@@ -27,12 +31,19 @@ public sealed record LauncherPlatformCapabilities(
         => ForOperatingSystem(
             OperatingSystem.IsWindows(),
             OperatingSystem.IsLinux(),
-            OperatingSystem.IsMacOS());
+            OperatingSystem.IsMacOS(),
+            hasDisplay: !OperatingSystem.IsLinux() || LinuxHasDisplay());
+
+    /// <summary>An X11 or Wayland display the graphical client can open a window on.</summary>
+    private static bool LinuxHasDisplay() =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))
+        || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
 
     internal static LauncherPlatformCapabilities ForOperatingSystem(
         bool isWindows,
         bool isLinux,
-        bool isMacOS)
+        bool isMacOS,
+        bool hasDisplay = true)
     {
         if (isWindows)
         {
@@ -53,7 +64,10 @@ public sealed record LauncherPlatformCapabilities(
                 CanRunHeadless: true,
                 CanLaunchGraphicalClient: true,
                 PlatformName: "Linux",
-                GraphicalLaunchDisabledReason: null);
+                GraphicalLaunchDisabledReason: null)
+            {
+                HasDisplay = hasDisplay,
+            };
         }
 
         if (isMacOS)

@@ -55,27 +55,27 @@ public sealed class LandblockRetirementCoordinatorTests
     }
 
     [Fact]
-    public void BudgetedPendingPhysicsPollsExactlyOncePerAdvance()
+    public void BudgetedPendingStagePollsExactlyOncePerAdvance()
     {
         const uint landblockId = 0x2023FFFFu;
         var state = StateWith(landblockId);
-        int physicsPolls = 0;
-        int terrainPolls = 0;
-        bool acknowledgePhysics = false;
+        int pendingPolls = 0;
+        int laterPolls = 0;
+        bool acknowledgePending = false;
         LandblockRetirementOperationResult AdvancePresentation(
             LandblockRetirementTicket ticket) =>
             ticket.NextIncompleteStage switch
             {
-                LandblockRetirementStage.Physics => ticket.RunOnceStep(
-                    LandblockRetirementStage.Physics,
-                    () =>
-                    {
-                        physicsPolls++;
-                        return acknowledgePhysics;
-                    }),
                 LandblockRetirementStage.Terrain => ticket.RunOnceStep(
                     LandblockRetirementStage.Terrain,
-                    () => terrainPolls++),
+                    () =>
+                    {
+                        pendingPolls++;
+                        return acknowledgePending;
+                    }),
+                LandblockRetirementStage.CellVisibility => ticket.RunOnceStep(
+                    LandblockRetirementStage.CellVisibility,
+                    () => laterPolls++),
                 { } stage => ticket.RunOnceStep(stage, () => { }),
             };
         LandblockRetirementCoordinator coordinator =
@@ -93,18 +93,18 @@ public sealed class LandblockRetirementCoordinatorTests
         coordinator.Advance(first);
         first.FinishFrame();
 
-        Assert.Equal(1, physicsPolls);
-        Assert.Equal(0, terrainPolls);
+        Assert.Equal(1, pendingPolls);
+        Assert.Equal(0, laterPolls);
         Assert.Equal(0, first.Snapshot.FailureCount);
         Assert.Equal(1, coordinator.PendingCount);
 
-        acknowledgePhysics = true;
+        acknowledgePending = true;
         var second = new StreamingWorkMeter(Budget(maxEntityOperations: 64));
         coordinator.Advance(second);
         second.FinishFrame();
 
-        Assert.Equal(2, physicsPolls);
-        Assert.Equal(1, terrainPolls);
+        Assert.Equal(2, pendingPolls);
+        Assert.Equal(1, laterPolls);
         Assert.Equal(0, second.Snapshot.FailureCount);
         Assert.Equal(0, coordinator.PendingCount);
     }
@@ -626,6 +626,7 @@ public sealed class LandblockRetirementCoordinatorTests
         uint[] landblockIds = [0x4648FFFFu, 0x4649FFFFu];
         var state = new GpuWorldState();
         int detachedCallbacks = 0;
+        bool failOnce = true;
         LandblockRetirementCoordinator coordinator =
             LandblockRetirementCoordinator.CreateBudgeted(
                 state,
@@ -634,8 +635,9 @@ public sealed class LandblockRetirementCoordinatorTests
                 retirement =>
                 {
                     detachedCallbacks++;
-                    if (retirement.LandblockId == landblockIds[0])
+                    if (retirement.LandblockId == landblockIds[0] && failOnce)
                     {
+                        failOnce = false;
                         throw new InvalidOperationException(
                             "injected detached observer failure");
                     }
@@ -647,10 +649,8 @@ public sealed class LandblockRetirementCoordinatorTests
                 Array.Empty<WorldEntity>()))
             .ToArray();
 
-        Exception? failure = coordinator.AdoptDetachedFull(receipts);
-
-        Assert.IsType<InvalidOperationException>(failure);
-        Assert.Equal(2, detachedCallbacks);
+        Assert.Null(coordinator.AdoptDetachedFull(receipts));
+        Assert.Equal(0, detachedCallbacks);
         Assert.Equal(2, coordinator.PendingCount);
         Assert.All(landblockIds, id => Assert.True(coordinator.IsPending(id)));
 
@@ -662,8 +662,137 @@ public sealed class LandblockRetirementCoordinatorTests
             meter.FinishFrame();
         }
 
+        // The failed observer is retried, and nothing else of its ticket
+        // runs before it succeeds.
+        Assert.Equal(3, detachedCallbacks);
         Assert.Equal(0, coordinator.PendingCount);
+        Assert.Equal(0, coordinator.PendingStaticProjectionRetirements);
         Assert.All(landblockIds, id => Assert.False(coordinator.IsPending(id)));
+    }
+
+    [Fact]
+    public void OriginRecenterAdoption_RetiresProjectionsInBudgetedStepsBeforeEachTicketsOwners()
+    {
+        uint[] landblockIds = [0x4650FFFFu, 0x4651FFFFu, 0x4652FFFFu];
+        var state = new GpuWorldState();
+        var events = new List<string>();
+        LandblockRetirementCoordinator coordinator =
+            LandblockRetirementCoordinator.CreateBudgeted(
+                state,
+                ticket => AdvancePresentationStep(
+                    ticket,
+                    lighting: _ => events.Add($"lighting 0x{ticket.LandblockId:X8}")),
+                ticket => CompletePresentation(ticket),
+                retirement => events.Add($"projections 0x{retirement.LandblockId:X8}"));
+        GpuLandblockRetirement[] receipts = landblockIds
+            .Select(id => new GpuLandblockRetirement(
+                id,
+                LandblockRetirementKind.Full,
+                [Entity(1), Entity(2), Entity(3)]))
+            .ToArray();
+
+        Assert.Null(coordinator.AdoptDetachedFull(receipts));
+
+        // Nothing leaves the render scene in the frame that detached it.
+        Assert.Empty(events);
+        Assert.Equal(3, coordinator.PendingStaticProjectionRetirements);
+
+        // Three entities cost six operations: one landblock per frame of six.
+        for (int frame = 0; frame < landblockIds.Length; frame++)
+        {
+            var meter = new StreamingWorkMeter(Budget(maxEntityOperations: 6));
+            bool done = coordinator.AdvanceStaticProjectionRetirements(meter);
+            meter.FinishFrame();
+
+            Assert.Equal(frame == landblockIds.Length - 1, done);
+            Assert.Equal(6, meter.Snapshot.Used.EntityOperations);
+            Assert.Equal(
+                landblockIds.Take(frame + 1)
+                    .Select(id => $"projections 0x{id:X8}"),
+                events);
+        }
+        Assert.Equal(0, coordinator.PendingStaticProjectionRetirements);
+        Assert.Equal(3, coordinator.PendingCount);
+
+        int frames = 0;
+        while (coordinator.PendingCount != 0 && frames++ < 64)
+        {
+            var meter = new StreamingWorkMeter(Budget(maxEntityOperations: 64));
+            coordinator.Advance(meter);
+            meter.FinishFrame();
+        }
+        Assert.Equal(0, coordinator.PendingCount);
+    }
+
+    [Fact]
+    public void OriginRecenterAdoption_AWidenedBudgetRetiresNoMoreThanAnOrdinaryFramesProjections()
+    {
+        uint[] landblockIds = [0x4654FFFFu, 0x4655FFFFu, 0x4656FFFFu];
+        int perLandblock =
+            LandblockRetirementCoordinator.StaticProjectionOperationsPerFrame * 3 / 8;
+        var state = new GpuWorldState();
+        var retired = new List<uint>();
+        LandblockRetirementCoordinator coordinator =
+            LandblockRetirementCoordinator.CreateBudgeted(
+                state,
+                ticket => AdvancePresentationStep(ticket),
+                ticket => CompletePresentation(ticket),
+                retirement => retired.Add(retirement.LandblockId));
+        Assert.Null(coordinator.AdoptDetachedFull(landblockIds
+            .Select(id => new GpuLandblockRetirement(
+                id,
+                LandblockRetirementKind.Full,
+                Enumerable.Range(1, perLandblock)
+                    .Select(i => Entity((uint)i))
+                    .ToArray()))
+            .ToArray()));
+
+        // A reveal widens the frame far past an ordinary frame, but the
+        // scene removals of retired projections are not metered here: each
+        // frame still retires only what fits an ordinary frame (two of the
+        // three landblocks' worth of operations do not).
+        for (int frame = 0; frame < landblockIds.Length; frame++)
+        {
+            var meter = new StreamingWorkMeter(
+                Budget(maxEntityOperations: 1_000_000));
+            coordinator.Advance(meter);
+            coordinator.AdvanceStaticProjectionRetirements(meter);
+            meter.FinishFrame();
+
+            Assert.Equal(landblockIds.Take(frame + 1), retired);
+        }
+        Assert.Equal(0, coordinator.PendingStaticProjectionRetirements);
+    }
+
+    [Fact]
+    public void OriginRecenterAdoption_OrdinaryAdvanceRetiresProjectionsBeforeTheTicketsOtherStages()
+    {
+        const uint landblockId = 0x4653FFFFu;
+        var state = new GpuWorldState();
+        var events = new List<string>();
+        LandblockRetirementCoordinator coordinator =
+            LandblockRetirementCoordinator.CreateBudgeted(
+                state,
+                ticket => AdvancePresentationStep(
+                    ticket,
+                    lighting: _ => events.Add("lighting")),
+                ticket => CompletePresentation(ticket),
+                _ => events.Add("projections"));
+
+        Assert.Null(coordinator.AdoptDetachedFull(
+        [
+            new GpuLandblockRetirement(
+                landblockId,
+                LandblockRetirementKind.Full,
+                [Entity(1)]),
+        ]));
+        Assert.Empty(events);
+        var meter = new StreamingWorkMeter(Budget(maxEntityOperations: 64));
+        coordinator.Advance(meter);
+        meter.FinishFrame();
+
+        Assert.Equal(["projections", "lighting"], events);
+        Assert.Equal(0, coordinator.PendingCount);
     }
 
     [Fact]

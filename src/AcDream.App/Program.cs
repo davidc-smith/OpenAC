@@ -1,6 +1,7 @@
 using AcDream.App;
 using AcDream.App.Configuration;
 using AcDream.App.Credentials;
+using AcDream.App.Hosting;
 using AcDream.App.Plugins;
 using AcDream.App.Platform;
 using AcDream.App.Rendering;
@@ -53,6 +54,19 @@ if (sessionConfigFlagPath is null && sessionConfigFlagPresent)
 }
 string[] positionalArgs =
     SessionConfigArgumentParsing.WithoutFlagAndValue(args, "--session-config");
+// The launcher's start: --console reads typed lines and prints chat;
+// --no-window starts the session with no window, opened later by /window.
+SessionConfigArgumentParsing.ConsoleFlags? consoleFlags =
+    SessionConfigArgumentParsing.ExtractConsoleFlags(
+        positionalArgs,
+        sessionConfigFlagPresent,
+        out positionalArgs,
+        out string? consoleUsageError);
+if (consoleFlags is not { } launch)
+{
+    Log.Error("{Usage}", consoleUsageError);
+    return 2;
+}
 
 var datDirArg = positionalArgs.FirstOrDefault();
 var envDatDir = Environment.GetEnvironmentVariable("ACDREAM_DAT_DIR");
@@ -75,7 +89,7 @@ if (sessionConfigFlagPath is not null)
             or SessionConfigurationException)
     {
         Log.Error("--session-config invalid: {Error}", error.Message);
-        return 2;
+        return 3;
     }
 
     string? resolvedDatDir =
@@ -87,7 +101,7 @@ if (sessionConfigFlagPath is not null)
         Log.Error(
             "usage: AcDream.App <dat-directory>  (or set ACDREAM_DAT_DIR, "
             + "or supply process.content.datDirectory in --session-config)");
-        return 2;
+        return 3;
     }
 
     AppCredentialSecret? secret = null;
@@ -111,7 +125,7 @@ if (sessionConfigFlagPath is not null)
     catch (AppCredentialException error)
     {
         Log.Error("--session-config credential unavailable: {Error}", error.Message);
-        return 2;
+        return 4;
     }
     // A settings map written into the document is refused here in the same
     // words a settings file is refused below, rather than ending the client
@@ -119,7 +133,7 @@ if (sessionConfigFlagPath is not null)
     catch (AcDream.Runtime.Plugins.PluginSessionSettingsException error)
     {
         Log.Error("--session-config plugin settings invalid: {Error}", error.Message);
-        return 2;
+        return 3;
     }
     finally
     {
@@ -144,6 +158,20 @@ else
     runtimeOptions = RuntimeOptions.FromEnvironment(datDir);
 }
 
+// The game files open on a worker while the rest of the start runs; they
+// are taken, and any failure to open them reported, where the session takes
+// them below, before the plugins start.
+Task<GraphicalSessionContent>? contentOpening = runtimeOptions.VulkanCapabilityProbe
+    ? null
+    : Task.Run(() => GraphicalSessionContent.Open(
+        runtimeOptions,
+        line => Log.Warning("{Line}", line)));
+// The Vulkan instance is created on a worker while the rest of the start
+// runs; the window takes it when it sets up Vulkan.
+using AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup? vulkanInstanceWarmup =
+    runtimeOptions.VulkanCapabilityProbe || launch.NoWindow
+        ? null
+        : AcDream.App.Rendering.Gpu.Vk.VulkanInstanceWarmup.Start(runtimeOptions.DevTools);
 // The startup settings each plugin was given. A session-config document that
 // names them is the more specific instruction and outranks the launch option
 // pointing at a file. A named file that cannot be read is a startup fault and
@@ -162,7 +190,7 @@ try
 catch (AcDream.Runtime.Plugins.PluginSessionSettingsException error)
 {
     Log.Error("ACDREAM_PLUGIN_SETTINGS_FILE invalid: {Error}", error.Message);
-    return 2;
+    return sessionConfigFlagPath is null ? 2 : 3;
 }
 
 if (runtimeOptions.DevTools)
@@ -203,20 +231,45 @@ using var automation = AcDream.Runtime.Plugins.RuntimeAutomationBindings
 var lootClassifiers = new AcDream.Core.Plugins.PluginLootClassifierRegistry();
 var hotkeyRegistry = new AcDream.App.Input.AppHotkeyRegistry(
     Path.Combine(applicationPaths.ConfigDirectory, "plugin-hotkeys.json"));
-using var window = new GameWindow(
+// The session is the host's for the life of the process; a window is built
+// over it and borrows what it owns.
+using var sessionHost = new GraphicalSessionHost(
     runtimeOptions,
     worldGameState,
     worldEvents,
-    uiRegistry,
-    graphicalPlatform,
     automation,
-    renderPackRegistry,
-    hotkeyRegistry);
+    applicationPaths.LogsDirectory);
+// The game files are the session's, opened once for the process: the
+// session plays from them with or without a window, and a window borrows
+// them.
+if (contentOpening is not null)
+{
+    GraphicalSessionContent content;
+    try
+    {
+        content = contentOpening.GetAwaiter().GetResult();
+    }
+    catch (Exception error)
+        when (error is IOException
+            or UnauthorizedAccessException
+            or InvalidDataException
+            or InvalidOperationException
+            or NotSupportedException)
+    {
+        Log.Error("the game files could not be opened: {Error}", error.Message);
+        Log.CloseAndFlush();
+        return 3;
+    }
+    Log.Information(
+        "prepared assets: opened '{Path}'",
+        runtimeOptions.PreparedAssetPath);
+    sessionHost.UseContent(content);
+}
 var host = new AppPluginHost(
     new SerilogAdapter(Log.Logger),
     worldGameState,
     worldEvents,
-    window.Selection,
+    sessionHost.Runtime.ActionOwner.Selection,
     uiRegistry,
     automation,
     new AcDream.Core.Plugins.FilePluginStorage(
@@ -227,34 +280,57 @@ var host = new AppPluginHost(
         runtimeOptions.VtankProfileDirectoryOverride
             ?? applicationPaths.VtankProfilesDirectory),
     new AcDream.App.Plugins.WindowPluginClipboard(
-        () => window.ClipboardKeyboard,
-        () => window.ClipboardDispatch),
+        () => sessionHost.Window?.ClipboardKeyboard,
+        () => sessionHost.MainThreadDispatch),
     hotkeyRegistry,
     new AcDream.App.Plugins.WindowPluginHostWindow(
-        () => window.PluginWindowHandle,
-        () => window.PluginWindowIsMinimized,
-        () => window.ClipboardDispatch),
-    window.WorldLines,
+        () => sessionHost.Window?.PluginWindowHandle,
+        () => sessionHost.Window?.PluginWindowIsMinimized ?? false,
+        () => sessionHost.MainThreadDispatch),
+    sessionHost.WorldLines,
     pluginSessionSettings);
 GraphicalPluginSession pluginSession = GraphicalPluginSession.Create(
     applicationPaths,
     runtimeOptions.Plugins,
     runtimeOptions.SessionId ?? "app",
     host,
-    window.StatusWriter,
+    sessionHost.StatusWriter,
     renderPackRegistry);
-window.StartPluginHosting(pluginSession);
+sessionHost.StartPluginHosting(pluginSession);
 
+// With the console (the launcher's start) typed lines are read once the
+// credential line has been, and chat prints on standard error.
+using GraphicalSessionConsole? console = launch.Console
+    ? new GraphicalSessionConsole(sessionHost, Console.In, Console.Error)
+    : null;
+// Ctrl+C and Ctrl+Break log the character off, then the process exits.
+Console.CancelKeyPress += (_, cancel) =>
+{
+    cancel.Cancel = true;
+    sessionHost.WindowLoop?.RequestShutdown();
+};
+GraphicalSessionEnd end;
 try
 {
     try
     {
-        window.Run();
+        console?.Start();
+        end = sessionHost.Run(
+            session => new GameWindow(
+                session,
+                uiRegistry,
+                graphicalPlatform,
+                renderPackRegistry,
+                hotkeyRegistry,
+                vulkanInstanceWarmup),
+            windowAtStart: !launch.NoWindow,
+            events: console?.WindowEvents,
+            console: launch.Console);
     }
     catch (NotSupportedException error)
     {
         Log.Error("{GraphicalStartupFailure}", error.Message);
-        return 4;
+        return 6;
     }
 }
 finally
@@ -262,7 +338,13 @@ finally
     Log.CloseAndFlush();
 }
 
-return 0;
+// 0 graceful, 5 the connection went, 6 the client could not finish.
+return end switch
+{
+    GraphicalSessionEnd.Graceful => 0,
+    GraphicalSessionEnd.ConnectionLost => 5,
+    _ => 6,
+};
 
 static string? NullIfEmpty(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value;

@@ -56,6 +56,27 @@ public sealed class UiScrollbar : UiElement
 
     public uint TrackSprite { get; set; }
 
+    /// <summary>
+    /// Track art per bar state, for a bar whose track authors an image for
+    /// each state (an attribute slider draws another track while locked).
+    /// </summary>
+    public IReadOnlyDictionary<uint, uint>? TrackSpritesByState { get; set; }
+
+    /// <summary>
+    /// Enters bar state <paramref name="stateId"/>: the track shows that
+    /// state's art. False when the track authors no art for it.
+    /// </summary>
+    public bool TrySetTrackState(uint stateId)
+    {
+        if (TrackSpritesByState is null
+            || !TrackSpritesByState.TryGetValue(stateId, out uint sprite))
+        {
+            return false;
+        }
+        TrackSprite = sprite;
+        return true;
+    }
+
     public uint ThumbSprite { get; set; }
 
     public uint ThumbTopSprite { get; set; }
@@ -327,6 +348,27 @@ public sealed class UiScrollbar : UiElement
     {
         ctx.DrawFill(0f, 0f, Width, Height, PlainTrackColor);
         ctx.DrawRectOutline(0f, 0f, Width, Height, PlainBorderColor, 1f);
+
+        // A model-backed bar (a scrolling group, a log) has no scalar
+        // position; draw its thumb where the model puts it, flat, inset 3.
+        if (ScalarChanged is null && Model is { } m)
+        {
+            if (Horizontal)
+            {
+                float start = AxisExtent(DecrementButtonExtent, Width);
+                float len = MathF.Max(0f, Width - start - AxisExtent(IncrementButtonExtent, Width));
+                var (tx, tw) = ModelThumbRect(m, start, len);
+                ctx.DrawFill(tx, 3f, tw, MathF.Max(0f, Height - 6f), PlainNubColor);
+            }
+            else
+            {
+                float start = AxisExtent(DecrementButtonExtent, Height);
+                float len = MathF.Max(0f, Height - start - AxisExtent(IncrementButtonExtent, Height));
+                var (ty, th) = ModelThumbRect(m, start, len);
+                ctx.DrawFill(3f, ty, MathF.Max(0f, Width - 6f), th, PlainNubColor);
+            }
+            return;
+        }
 
         if (Horizontal)
         {

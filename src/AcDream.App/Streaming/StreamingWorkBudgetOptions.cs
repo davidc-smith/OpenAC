@@ -10,7 +10,7 @@ public sealed record StreamingWorkBudgetOptions(
     long MaxGpuUploadBytes,
     int MaxGlRetireOperations,
     float DestinationReserveFraction,
-    double HoldDestinationCeilingMilliseconds = 8.0)
+    double HoldDestinationCeilingMilliseconds = 4.0)
 {
     public const long MiB = 1024L * 1024L;
 
@@ -22,7 +22,12 @@ public sealed record StreamingWorkBudgetOptions(
         MaxGpuUploadBytes: 8 * MiB,
         MaxGlRetireOperations: 64,
         DestinationReserveFraction: 0.75f,
-        HoldDestinationCeilingMilliseconds: 8.0);
+        // While a reveal waits on its destination the frame may give the
+        // streaming work twice its ordinary share, not more: the portal
+        // tunnel's frames also carry the collision steps and the journal's
+        // scene changes, and an arrival readies in well under a second of
+        // a tunnel that lasts five and a half.
+        HoldDestinationCeilingMilliseconds: 4.0);
 
     internal static StreamingWorkBudgetOptions Parse(
         Func<string, string?> env)

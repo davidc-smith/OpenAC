@@ -42,22 +42,41 @@ public sealed class InboundPhysicsStateController
         return false;
     }
 
+    /// <summary>True while an object with this id is held.</summary>
+    public bool IsKnown(uint guid) => _gates.ContainsKey(guid);
+
+    /// <param name="replaceExisting">
+    /// A re-sent description (0xF7DB): an object already held is replaced by
+    /// it as a new generation, whatever instance it carries.
+    /// </param>
     public CreateObjectTimestampDisposition PreviewCreateDisposition(
-        WorldSession.EntitySpawn incoming) =>
+        WorldSession.EntitySpawn incoming,
+        bool replaceExisting = false) =>
         _gates.TryGetValue(incoming.Guid, out PhysicsTimestampGate? gate)
-            ? gate.PreviewCreateObject(incoming.InstanceSequence)
+            ? replaceExisting
+                ? CreateObjectTimestampDisposition.NewGeneration
+                : gate.PreviewCreateObject(incoming.InstanceSequence)
             : CreateObjectTimestampDisposition.InitialGeneration;
 
-    public InboundCreateResult AcceptCreate(WorldSession.EntitySpawn incoming) =>
-        AcceptCreateCore(incoming, deferSameGenerationWeenieDescription: false);
+    public InboundCreateResult AcceptCreate(
+        WorldSession.EntitySpawn incoming,
+        bool replaceExisting = false) =>
+        AcceptCreateCore(
+            incoming,
+            deferSameGenerationWeenieDescription: false,
+            replaceExisting);
 
     internal InboundCreateResult AcceptCreateDeferredSameGeneration(
         WorldSession.EntitySpawn incoming) =>
-        AcceptCreateCore(incoming, deferSameGenerationWeenieDescription: true);
+        AcceptCreateCore(
+            incoming,
+            deferSameGenerationWeenieDescription: true,
+            replaceExisting: false);
 
     private InboundCreateResult AcceptCreateCore(
         WorldSession.EntitySpawn incoming,
-        bool deferSameGenerationWeenieDescription)
+        bool deferSameGenerationWeenieDescription,
+        bool replaceExisting)
     {
         if (!_gates.TryGetValue(incoming.Guid, out PhysicsTimestampGate? gate))
         {
@@ -66,16 +85,27 @@ public sealed class InboundPhysicsStateController
         }
 
         PhysicsTimestamps timestamps = SpawnTimestamps(incoming);
-        CreateObjectTimestampDisposition disposition = gate.SeedForCreateObject(
-            timestamps.Position,
-            timestamps.Movement,
-            timestamps.State,
-            timestamps.Vector,
-            timestamps.Teleport,
-            timestamps.ServerControlledMove,
-            timestamps.ForcePosition,
-            timestamps.ObjDesc,
-            timestamps.Instance);
+        CreateObjectTimestampDisposition disposition = replaceExisting
+            ? gate.SeedForReplacement(
+                timestamps.Position,
+                timestamps.Movement,
+                timestamps.State,
+                timestamps.Vector,
+                timestamps.Teleport,
+                timestamps.ServerControlledMove,
+                timestamps.ForcePosition,
+                timestamps.ObjDesc,
+                timestamps.Instance)
+            : gate.SeedForCreateObject(
+                timestamps.Position,
+                timestamps.Movement,
+                timestamps.State,
+                timestamps.Vector,
+                timestamps.Teleport,
+                timestamps.ServerControlledMove,
+                timestamps.ForcePosition,
+                timestamps.ObjDesc,
+                timestamps.Instance);
 
         if (disposition is CreateObjectTimestampDisposition.StaleGeneration)
             return new InboundCreateResult(disposition, default, null, Current(gate));

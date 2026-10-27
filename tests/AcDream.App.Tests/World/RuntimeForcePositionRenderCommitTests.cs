@@ -214,16 +214,11 @@ public sealed class RuntimeForcePositionRenderCommitTests
                     RuntimeLocalPlayerShadowDisposition.ProvenShapeless));
 
             var localShadowState = new LocalPlayerShadowState();
-            var localShadowIdentity = new LocalPlayerIdentityState
-            {
-                ServerGuid = PlayerGuid,
-            };
             var localShadowOrigin = new LiveWorldOriginState();
             localShadowOrigin.SetPlaceholder(0, 0);
             var localShadowSynchronizer = new LocalPlayerShadowSynchronizer(
                 EntityObjects.Physics.Engine,
                 Runtime,
-                localShadowIdentity,
                 localShadowOrigin,
                 localShadowState);
             var sink = new RuntimePlacementPresentationSink(
@@ -403,6 +398,10 @@ public sealed class RuntimeForcePositionRenderCommitTests
 
         public LiveEntityOriginInitialization TryInitialize(
             WorldSession.EntitySpawn spawn) => new(true, []);
+
+        public LiveEntityOriginInitialization TryInitializeForPlayingSession(
+            uint frameCenterLandblockId,
+            uint playerCellId) => new(true, []);
     }
 
     private sealed class NoopNetworkSink : ILiveEntityNetworkUpdateSink

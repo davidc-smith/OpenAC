@@ -35,287 +35,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
     private const uint PlayerGuid = 0x5000000Au;
 
     [Fact]
-    public void CollisionRefresh_WithMissingGraphicalBackend_PublishesBackendBeforeExactRestoreAck()
-    {
-        using var fixture = new Fixture();
-        RuntimePlacementProjectionToken seeded = fixture.SeedResident(PlayerGuid);
-        Assert.True(fixture.Lifetime.Physics.SetPosition.AcknowledgeProjection(seeded));
-        using var subscription = fixture.Subscribe(PlayerGuid);
-        LandblockStreamResult.Loaded result = fixture.Result();
-
-        fixture.Pipeline.PublishLoaded(result);
-
-        Assert.True(fixture.Pipeline.HasPendingPublication(result));
-        Assert.Equal(0, fixture.Pipeline.Diagnostics.Physics.CompleteCount);
-        Assert.Equal(0, fixture.Pipeline.Diagnostics.Statics.CompleteCount);
-        Assert.True(fixture.Lifetime.Physics.SetPosition.TryPeekProjection(
-            out RuntimePlacementProjectionSnapshot restore));
-        Assert.Equal(RuntimePlacementProjectionKind.Place, restore.Kind);
-        Assert.Equal(CellId, restore.Token.ExactCellId);
-        Assert.True(fixture.State.IsLoaded(LandblockId));
-        Assert.Equal(
-            1,
-            fixture.Lifetime.Physics.CaptureOwnership()
-                .CommittedCollisionPrefixMutationCount);
-        Assert.False(fixture.Controller.IsRenderNeighborhoodResident(
-            LandblockId,
-            nearRadius: 0,
-            farRadius: 0));
-        var serviceWindow = new GraphicalRemotePlacementServiceWindow(
-            fixture.State,
-            fixture.Controller.IsLandblockPresentationReady);
-        Assert.False(serviceWindow.IsWithinServiceWindow(CellId));
-
-        Assert.True(subscription.RetryPending());
-        Assert.False(fixture.Lifetime.Physics.SetPosition.TryPeekProjection(out _));
-        fixture.Pipeline.ResumePublication(result);
-
-        Assert.False(fixture.Pipeline.HasPendingPublication(result));
-        Assert.Equal(1, fixture.Pipeline.Diagnostics.Physics.CompleteCount);
-        Assert.Equal(1, fixture.Pipeline.Diagnostics.Statics.CompleteCount);
-        Assert.True(fixture.Controller.IsRenderNeighborhoodResident(
-            LandblockId,
-            nearRadius: 0,
-            farRadius: 0));
-        Assert.True(serviceWindow.IsWithinServiceWindow(CellId));
-        LiveEntityRecord record = Assert.Single(fixture.Runtime.MaterializedRecords);
-        Assert.True(record.IsSpatiallyProjected);
-        Assert.Equal(CellId, record.FullCellId);
-        WorldEntity projected = Assert.Single(
-            fixture.State.Entities,
-            entity => entity.ServerGuid == PlayerGuid);
-        Assert.Same(
-            Assert.Single(fixture.Runtime.MaterializedRecords).WorldEntity,
-            projected);
-    }
-
-    [Fact]
-    public void CollisionRefresh_TwoResidentsRetainOrderedExactReceiptsAndCompleteOnce()
-    {
-        const uint remoteGuid = 0x5000000Bu;
-        using var fixture = new Fixture();
-        RuntimePlacementProjectionToken firstSeed =
-            fixture.SeedResident(PlayerGuid, isLocalPlayer: true);
-        Assert.True(fixture.Lifetime.Physics.SetPosition.AcknowledgeProjection(
-            firstSeed));
-        RuntimePlacementProjectionToken secondSeed =
-            fixture.SeedResident(remoteGuid, isLocalPlayer: false);
-        Assert.True(fixture.Lifetime.Physics.SetPosition.AcknowledgeProjection(
-            secondSeed));
-        var observer = new PlacementRecorder();
-        using IDisposable observerSubscription =
-            fixture.Lifetime.Events.SubscribePlacement(observer);
-        using var subscription = fixture.Subscribe(PlayerGuid);
-        LandblockStreamResult.Loaded result = fixture.Result();
-
-        fixture.Pipeline.PublishLoaded(result);
-
-        RuntimePlacementProjectionSnapshot head = AssertHead(fixture);
-        RuntimeEntityKey[] orderedPlaces = observer.Placements
-            .Where(static placement =>
-                placement.Kind == RuntimePlacementProjectionKind.Place)
-            .Select(static placement => placement.Token.Entity)
-            .ToArray();
-        Assert.Equal(2, orderedPlaces.Length);
-        Assert.Equal(orderedPlaces[0], head.Token.Entity);
-        Assert.NotEqual(orderedPlaces[0], orderedPlaces[1]);
-        Assert.Equal(2, fixture.Lifetime.Physics.SetPosition.PendingProjectionCount);
-        Assert.True(fixture.State.IsLoaded(LandblockId));
-
-        Assert.True(subscription.RetryPending());
-        Assert.False(fixture.Lifetime.Physics.SetPosition.TryPeekProjection(out _));
-        fixture.Pipeline.ResumePublication(result);
-
-        Assert.False(fixture.Pipeline.HasPendingPublication(result));
-        Assert.Equal(1, fixture.Pipeline.Diagnostics.Physics.CompleteCount);
-        Assert.Equal(1, fixture.Pipeline.Diagnostics.Statics.CompleteCount);
-        Assert.Equal(
-            [PlayerGuid, remoteGuid],
-            fixture.State.Entities
-                .Where(static entity => entity.ServerGuid != 0u)
-                .Select(static entity => entity.ServerGuid)
-                .Order()
-                .ToArray());
-        RuntimePhysicsOwnershipSnapshot ownership =
-            fixture.Lifetime.Physics.CaptureOwnership();
-        Assert.Equal(0, ownership.PendingSetPositionHostAcknowledgementCount);
-        Assert.Equal(0, ownership.CollisionPrefixMutationCount);
-        Assert.Equal(0, ownership.CollisionAdmissionCount);
-    }
-
-    [Fact]
-    public void MeterExpiryAfterEngineTransfer_YieldsBeforeBackendAndNextFrameProgresses()
-    {
-        using var fixture = new Fixture();
-        RuntimePlacementProjectionToken seeded = fixture.SeedResident(PlayerGuid);
-        Assert.True(fixture.Lifetime.Physics.SetPosition.AcknowledgeProjection(seeded));
-        using var subscription = fixture.Subscribe(PlayerGuid);
-        LandblockStreamResult.Loaded result = fixture.Result();
-        long timestamp = 0;
-        var observer = new PlacementRecorder(
-            onPlacement: placement =>
-            {
-                if (placement.Kind == RuntimePlacementProjectionKind.Place)
-                    timestamp = 2;
-            });
-        using IDisposable observerSubscription =
-            fixture.Lifetime.Events.SubscribePlacement(observer);
-        StreamingWorkBudget budget = MeterBudget();
-        var firstMeter = new StreamingWorkMeter(
-            budget,
-            () => timestamp,
-            timestampFrequency: 1_000);
-
-        LandblockPublicationAdvance first = fixture.Pipeline.PublishLoaded(
-            result,
-            LandblockStreamResultCost.Estimate(result),
-            firstMeter,
-            ensureProgress: false);
-        firstMeter.FinishFrame();
-
-        Assert.False(first.Completed);
-        Assert.True(first.Progressed);
-        Assert.Equal(StreamingWorkLimit.Time, firstMeter.Snapshot.LastLimit);
-        Assert.False(fixture.State.IsLoaded(LandblockId));
-        RuntimePlacementProjectionSnapshot head = AssertHead(fixture);
-        Assert.Equal(RuntimePlacementProjectionKind.Place, head.Kind);
-        Assert.Equal(1, observer.Placements.Count(static placement =>
-            placement.Kind == RuntimePlacementProjectionKind.Place));
-
-        timestamp = 0;
-        var secondMeter = new StreamingWorkMeter(
-            budget,
-            () => timestamp,
-            timestampFrequency: 1_000);
-        LandblockPublicationAdvance second = fixture.Pipeline.ResumePublication(
-            result,
-            secondMeter,
-            ensureProgress: false);
-        secondMeter.FinishFrame();
-
-        Assert.False(second.Completed);
-        Assert.True(second.Progressed);
-        Assert.True(fixture.State.IsLoaded(LandblockId));
-        Assert.Equal(1, fixture.Pipeline.Diagnostics.Physics.BeginCount);
-        Assert.Equal(0, fixture.Pipeline.Diagnostics.Physics.CompleteCount);
-        Assert.Equal(1, observer.Placements.Count(static placement =>
-            placement.Kind == RuntimePlacementProjectionKind.Place));
-
-        Assert.True(subscription.RetryPending());
-        var thirdMeter = new StreamingWorkMeter(budget);
-        LandblockPublicationAdvance third = fixture.Pipeline.ResumePublication(
-            result,
-            thirdMeter,
-            ensureProgress: true);
-        thirdMeter.FinishFrame();
-        Assert.True(third.Completed);
-        Assert.Equal(1, fixture.Pipeline.Diagnostics.Physics.CompleteCount);
-        Assert.Equal(1, fixture.Pipeline.Diagnostics.Statics.CompleteCount);
-    }
-
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(true, false)]
-    [InlineData(false, true)]
-    [InlineData(true, true)]
-    public void ControllerResetOrRecenter_AfterEngineTransferRetriesFailedBackendThenRetires(
-        bool recenter,
-        bool activateBeforeRequest = false)
-    {
-        var projection = new FailFirstStaticProjectionSink();
-        using var fixture = new Fixture(projection);
-        RuntimePlacementProjectionToken seeded = fixture.SeedResident(PlayerGuid);
-        Assert.True(fixture.Lifetime.Physics.SetPosition.AcknowledgeProjection(seeded));
-        using var subscription = fixture.Subscribe(PlayerGuid);
-        LandblockStreamResult.Loaded result = fixture.Result();
-        long timestamp = 0;
-        var observer = new PlacementRecorder(
-            onPlacement: placement =>
-            {
-                if (placement.Kind == RuntimePlacementProjectionKind.Place)
-                    timestamp = 2;
-            });
-        using IDisposable observerSubscription =
-            fixture.Lifetime.Events.SubscribePlacement(observer);
-        var firstMeter = new StreamingWorkMeter(
-            MeterBudget(),
-            () => timestamp,
-            timestampFrequency: 1_000);
-        LandblockPublicationAdvance first = fixture.Pipeline.PublishLoaded(
-            result,
-            LandblockStreamResultCost.Estimate(result),
-            firstMeter,
-            ensureProgress: false);
-        firstMeter.FinishFrame();
-        Assert.False(first.Completed);
-        Assert.False(fixture.State.IsLoaded(LandblockId));
-        Assert.Equal(0, projection.Attempts);
-
-        if (activateBeforeRequest)
-        {
-            Assert.Throws<InvalidOperationException>(() =>
-                fixture.Pipeline.ResumePublication(result));
-            Assert.True(fixture.State.IsLoaded(LandblockId));
-            Assert.Equal(1, projection.Attempts);
-            Assert.False(fixture.Controller.IsLandblockPresentationReady(
-                LandblockId));
-        }
-
-        if (recenter)
-            fixture.Controller.BeginOriginRecenter();
-        else
-            fixture.Controller.ForceReloadWindow();
-        fixture.Controller.Tick(0x30, 0x31);
-
-        Assert.True(fixture.Pipeline.HasPendingPublication(result));
-        Assert.True(fixture.State.IsLoaded(LandblockId));
-        Assert.Equal(activateBeforeRequest ? 2 : 1, projection.Attempts);
-        Assert.False(fixture.Controller.IsLandblockPresentationReady(LandblockId));
-        RuntimePhysicsOwnershipSnapshot afterFailure =
-            fixture.Lifetime.Physics.CaptureOwnership();
-        Assert.Equal(1, afterFailure.CommittedCollisionPrefixMutationCount);
-        Assert.Equal(1, afterFailure.PendingSetPositionHostAcknowledgementCount);
-
-        fixture.Controller.Tick(0x30, 0x31);
-        Assert.Equal(2, projection.Attempts);
-        Assert.True(fixture.State.IsLoaded(LandblockId));
-        Assert.False(fixture.Controller.IsLandblockPresentationReady(LandblockId));
-
-        Assert.True(subscription.RetryPending());
-        bool recenterCommitted = false;
-        for (int frame = 0;
-             frame < 16
-                && (fixture.Pipeline.HasPendingPublication(result)
-                    || fixture.State.IsLoaded(LandblockId)
-                    || fixture.Pipeline.PendingRetirementCount != 0);
-             frame++)
-        {
-            fixture.Controller.Tick(0x30, 0x31);
-            if (recenter
-                && !recenterCommitted
-                && fixture.Controller.IsOriginRecenterRetirementComplete())
-            {
-                Assert.True(fixture.Controller.TryCommitOriginRecenter(
-                    destinationX: 0x32,
-                    destinationY: 0x31,
-                    isSealedDungeon: false));
-                recenterCommitted = true;
-            }
-        }
-
-        Assert.False(fixture.Pipeline.HasPendingPublication(result));
-        Assert.False(fixture.State.IsLoaded(LandblockId));
-        Assert.Equal(recenter, recenterCommitted);
-        Assert.Equal(2, projection.Attempts);
-        Assert.Equal(0, fixture.Meshes.ReferenceCount);
-        RuntimePhysicsOwnershipSnapshot completed =
-            fixture.Lifetime.Physics.CaptureOwnership();
-        Assert.Equal(0, completed.CollisionPrefixMutationCount);
-        Assert.Equal(0, completed.CollisionAdmissionCount);
-        Assert.Equal(0, completed.PendingSetPositionHostAcknowledgementCount);
-    }
-
-    [Fact]
     public void PresentationFence_IsExactLandblockAndStopsBeforeLiveRecovery()
     {
         const uint unrelated = 0x4040FFFFu;
@@ -326,18 +45,22 @@ public sealed class LandblockPlacementPublicationCompositionTests
             Assert.True(fixture.Lifetime.Physics.SetPosition.AcknowledgeProjection(
                 seeded));
             using var subscription = fixture.Subscribe(PlayerGuid);
-            LandblockStreamResult.Loaded result = fixture.Result();
-            fixture.Pipeline.PublishLoaded(result);
             fixture.State.AddLandblock(new LoadedLandblock(
                 unrelated,
                 new LandBlock(),
                 Array.Empty<WorldEntity>()));
             var window = new GraphicalRemotePlacementServiceWindow(
                 fixture.State,
-                fixture.Controller.IsLandblockPresentationReady);
+                fixture.Controller.IsLandblockPresentationReady,
+                static _ => true);
 
+            // The fence is the exact landblock: another one being drawn
+            // does not open it.
             Assert.False(window.IsWithinServiceWindow(CellId));
             Assert.True(window.IsWithinServiceWindow(unrelated));
+
+            fixture.Pipeline.PublishLoaded(fixture.Result());
+            Assert.True(window.IsWithinServiceWindow(CellId));
         }
 
         bool failRecovery = true;
@@ -367,51 +90,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
     }
 
     [Fact]
-    public void CollisionRefresh_OutdoorSeamRecordsActualPrefixAndBackend()
-    {
-        const uint adjacentLandblock = 0x3131FFFFu;
-        const uint seamCell = 0x3031003Cu;
-        var seamPosition = new Vector3(191.5f, 84f, 0f);
-        using var fixture = new Fixture();
-        fixture.AddCollisionLandblock(adjacentLandblock);
-        RuntimePlacementProjectionToken seeded = fixture.SeedResident(
-            PlayerGuid,
-            isLocalPlayer: true,
-            seamCell,
-            seamPosition);
-        Assert.True(fixture.Lifetime.Physics.SetPosition.AcknowledgeProjection(
-            seeded));
-        using var subscription = fixture.Subscribe(PlayerGuid);
-        LandblockStreamResult.Loaded result = fixture.Result();
-
-        fixture.Pipeline.PublishLoaded(result);
-
-        RuntimePlacementProjectionSnapshot restore = AssertHead(fixture);
-        uint actualPrefix = restore.Token.ExactCellId & 0xFFFF0000u;
-        Console.WriteLine(
-            $"seam restoreCell=0x{restore.Token.ExactCellId:X8} "
-            + $"actualPrefix=0x{actualPrefix:X8} "
-            + $"targetBackend={fixture.State.IsLoaded(LandblockId)} "
-            + $"adjacentBackend={fixture.State.IsLoaded(adjacentLandblock)}");
-        Assert.Contains(actualPrefix, new[]
-        {
-            LandblockId & 0xFFFF0000u,
-            adjacentLandblock & 0xFFFF0000u,
-        });
-        Assert.True(fixture.State.IsLoaded(LandblockId));
-        Assert.False(fixture.State.IsLoaded(adjacentLandblock));
-        Assert.True(
-            fixture.State.IsLoaded(actualPrefix | 0xFFFFu),
-            $"actual restore prefix 0x{actualPrefix:X8} lacked a backend");
-
-        Assert.True(subscription.RetryPending());
-        fixture.Pipeline.ResumePublication(result);
-        Assert.False(fixture.Pipeline.HasPendingPublication(result));
-        Assert.Equal(restore.Token.ExactCellId,
-            Assert.Single(fixture.Runtime.MaterializedRecords).FullCellId);
-    }
-
-    [Fact]
     public void DebtFreeFullRetirementsDrainMultipleRealOwnersInOneBudgetedFrame()
     {
         uint[] landblockIds =
@@ -436,17 +114,17 @@ public sealed class LandblockPlacementPublicationCompositionTests
         meter.FinishFrame();
 
         Assert.Equal(0, fixture.Pipeline.PendingRetirementCount);
-        Assert.Equal(landblockIds.Length,
-            fixture.PhysicsPublisher.Diagnostics.FullRemovalCount);
         Assert.Equal(landblockIds, removalOrder);
         Assert.Equal(removalOrder.Count, removalOrder.Distinct().Count());
-        Assert.Equal(33, meter.Snapshot.Operations);
-        Assert.Equal(33, meter.Snapshot.CompletedOperations);
+        // Ten stages per landblock: the drawn ones only, no collision.
+        Assert.Equal(30, meter.Snapshot.Operations);
+        Assert.Equal(30, meter.Snapshot.CompletedOperations);
         Assert.Equal(0, meter.Snapshot.YieldCount);
         Assert.All(landblockIds, landblockId =>
         {
             Assert.False(fixture.State.IsLoaded(landblockId));
-            Assert.False(fixture.Lifetime.Physics.Engine
+            // Retiring what is drawn leaves the session's collision alone.
+            Assert.True(fixture.Lifetime.Physics.Engine
                 .IsLandblockTerrainResident(landblockId));
             Assert.False(fixture.Pipeline.IsRetirementPending(landblockId));
         });
@@ -489,90 +167,10 @@ public sealed class LandblockPlacementPublicationCompositionTests
 
         Assert.Equal(5, frames);
         Assert.Equal(0, fixture.Pipeline.PendingRetirementCount);
-        Assert.Equal(landblockIds.Length,
-            fixture.PhysicsPublisher.Diagnostics.FullRemovalCount);
         Assert.All(landblockIds, landblockId =>
-            Assert.False(fixture.Lifetime.Physics.Engine
+            Assert.True(fixture.Lifetime.Physics.Engine
                 .IsLandblockTerrainResident(landblockId)));
     }
-
-    [Fact]
-    public void HeldAndThrowingPlaceKeepsExactRetirementFifoHeadUntilProductionSinkAck()
-    {
-        uint[] retiringLandblockIds =
-        [
-            0x3032FFFFu,
-            0x3033FFFFu,
-        ];
-        var removalOrder = new List<uint>();
-        using var fixture = new Fixture(removeTerrain: removalOrder.Add);
-        fixture.AddDebtFreeLandblock(LandblockId);
-        RuntimePlacementProjectionToken seeded = fixture.SeedResident(PlayerGuid);
-        Assert.True(fixture.Lifetime.Physics.SetPosition
-            .AcknowledgeProjection(seeded));
-        using RuntimePlacementProjectionSubscription subscription =
-            fixture.SubscribeWithThrowThenHold(PlayerGuid, out var sink);
-        RuntimePlacementProjectionToken exact = fixture.MoveResident(PlayerGuid);
-        Assert.Equal(exact, Assert.Single(sink.Attempts));
-        Assert.Equal(RuntimePlacementProjectionKind.Place,
-            AssertHead(fixture).Kind);
-        foreach (uint landblockId in retiringLandblockIds)
-        {
-            fixture.AddDebtFreeLandblock(landblockId);
-            fixture.Pipeline.EnqueueFullRetirement(landblockId);
-        }
-
-        var blockedMeter = new StreamingWorkMeter(RetirementBudget(
-            maxEntityOperations: 64,
-            maxGlRetireOperations: 16));
-        fixture.Pipeline.AdvanceRetirements(blockedMeter);
-        blockedMeter.FinishFrame();
-
-        Assert.Equal(2, fixture.Pipeline.PendingRetirementCount);
-        Assert.Equal(0,
-            fixture.PhysicsPublisher.Diagnostics.FullRemovalCount);
-        Assert.Empty(removalOrder);
-        Assert.True(fixture.Lifetime.Physics.Engine
-            .IsLandblockTerrainResident(retiringLandblockIds[0]));
-
-        Assert.True(subscription.RetryPending());
-        Assert.Equal([exact, exact], sink.Attempts);
-        Assert.Equal(2, fixture.Pipeline.PendingRetirementCount);
-        Assert.True(subscription.RetryPending());
-        Assert.Equal([exact, exact, exact], sink.Attempts);
-        Assert.False(fixture.Lifetime.Physics.SetPosition
-            .TryPeekProjection(out _));
-
-        var completedMeter = new StreamingWorkMeter(RetirementBudget(
-            maxEntityOperations: 64,
-            maxGlRetireOperations: 16));
-        fixture.Pipeline.AdvanceRetirements(completedMeter);
-        completedMeter.FinishFrame();
-
-        Assert.Equal(0, fixture.Pipeline.PendingRetirementCount);
-        Assert.Equal(2,
-            fixture.PhysicsPublisher.Diagnostics.FullRemovalCount);
-        Assert.Equal(
-            retiringLandblockIds,
-            removalOrder);
-        Assert.Equal(removalOrder.Count, removalOrder.Distinct().Count());
-    }
-
-    private static RuntimePlacementProjectionSnapshot AssertHead(Fixture fixture)
-    {
-        Assert.True(fixture.Lifetime.Physics.SetPosition.TryPeekProjection(
-            out RuntimePlacementProjectionSnapshot head));
-        return head;
-    }
-
-    private static StreamingWorkBudget MeterBudget() => new(
-        TimeSpan.FromMilliseconds(1),
-        maxCompletionAdmissions: 64,
-        maxAdoptedCpuBytes: 1_000_000,
-        maxEntityOperations: 32,
-        maxGpuUploadBytes: 1_000_000,
-        maxGlRetireOperations: 64,
-        destinationReserveFraction: 0.75f);
 
     private static StreamingWorkBudget RetirementBudget(
         int maxEntityOperations,
@@ -620,9 +218,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
                 removeTerrain ?? (static _ => { }),
                 new CellVisibility(),
                 State);
-            PhysicsPublisher = new LandblockPhysicsPublisher(
-                physics,
-                new float[256]);
             var lighting = new LightingHookSink(
                 new LightManager(),
                 new NullPoseSource());
@@ -633,13 +228,11 @@ public sealed class LandblockPlacementPublicationCompositionTests
                 new WorldGameState());
             var retirement = new LandblockPresentationRetirementOwner(
                 render,
-                PhysicsPublisher,
                 staticPublisher,
                 lighting,
                 translucency);
             Pipeline = new LandblockPresentationPipeline(
                 render,
-                PhysicsPublisher,
                 staticPublisher,
                 State,
                 retirement,
@@ -661,7 +254,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
         internal CountingMeshAdapter Meshes { get; }
         internal GpuWorldState State { get; }
         internal LiveEntityRuntime Runtime { get; }
-        internal LandblockPhysicsPublisher PhysicsPublisher { get; }
         internal LandblockPresentationPipeline Pipeline { get; }
         internal StreamingController Controller { get; }
 
@@ -761,39 +353,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
             return placed.Projection;
         }
 
-        internal RuntimePlacementProjectionToken MoveResident(uint guid)
-        {
-            Assert.True(Lifetime.Entities.TryGetActive(
-                guid,
-                out RuntimeEntityRecord record));
-            PhysicsBody body = Assert.IsType<PhysicsBody>(record.PhysicsBody);
-            var next = body.Position + new Vector3(0.25f, 0f, 0f);
-            var request = new PhysicsSetPositionRequest(
-                next,
-                body.Orientation,
-                record.FullCellId,
-                next,
-                [new FlatCollisionSphere(Vector3.Zero, 0.48f)],
-                1f,
-                0.4f,
-                0.4f,
-                Flags: PhysicsSetPositionFlags.Placement
-                    | PhysicsSetPositionFlags.Slide,
-                CurrentCellId: record.FullCellId);
-            RuntimeSetPositionOutcome placed = Lifetime.Physics.SetPosition.Apply(
-                record,
-                record.PositionAuthorityVersion,
-                new RuntimeSetPositionCommand(
-                    request,
-                    RuntimeSetPositionOperationKind.LocalAuthoritative,
-                    2d,
-                    record.VelocityAuthorityVersion));
-            Assert.Equal(
-                RuntimeSetPositionStatus.CommittedHostAcknowledgementPending,
-                placed.Status);
-            return placed.Projection;
-        }
-
         internal RuntimePlacementProjectionSubscription Subscribe(uint guid)
         {
             return new RuntimePlacementProjectionSubscription(
@@ -802,20 +361,8 @@ public sealed class LandblockPlacementPublicationCompositionTests
                 CreatePlacementSink(guid));
         }
 
-        internal RuntimePlacementProjectionSubscription SubscribeWithThrowThenHold(
-            uint guid,
-            out ThrowThenHoldPlacementSink sink)
-        {
-            sink = new ThrowThenHoldPlacementSink(CreatePlacementSink(guid));
-            return new RuntimePlacementProjectionSubscription(
-                Lifetime.Placements,
-                static () => new RuntimeGenerationToken(1UL),
-                sink);
-        }
-
         private IRuntimePlacementProjectionSink CreatePlacementSink(uint guid)
         {
-            var identity = new LocalPlayerIdentityState { ServerGuid = guid };
             var origin = new LiveWorldOriginState();
             origin.SetPlaceholder(0, 0);
             return new RuntimePlacementPresentationSink(
@@ -825,7 +372,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
                 new LocalPlayerShadowSynchronizer(
                     Lifetime.Physics.Engine,
                     Runtime,
-                    identity,
                     origin,
                     new LocalPlayerShadowState()),
                 () => guid);
@@ -959,25 +505,6 @@ public sealed class LandblockPlacementPublicationCompositionTests
         {
             Placements.Add(delta.Placement);
             onPlacement?.Invoke(delta.Placement);
-        }
-    }
-
-    internal sealed class ThrowThenHoldPlacementSink(
-        IRuntimePlacementProjectionSink inner)
-        : IRuntimePlacementProjectionSink
-    {
-        internal List<RuntimePlacementProjectionToken> Attempts { get; } = [];
-
-        public bool TryApply(in RuntimePlacementProjectionSnapshot projection)
-        {
-            Attempts.Add(projection.Token);
-            return Attempts.Count switch
-            {
-                1 => throw new InvalidOperationException(
-                    "injected retirement sink failure"),
-                2 => false,
-                _ => inner.TryApply(projection),
-            };
         }
     }
 

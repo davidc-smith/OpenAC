@@ -100,22 +100,10 @@ internal sealed class LiveSessionRuntimeFactory
     private readonly LiveSessionUiRuntime _ui;
     private readonly LiveSessionInteractionRuntime _interaction;
     private readonly LiveSessionWorldRuntime _world;
-    private readonly LiveSessionCommandSurface _commands;
     private readonly Action<string> _log;
-    private readonly SessionStatusWriter _statusWriter;
-    private readonly string _sessionId;
-    private readonly IReadOnlyList<string> _loginCommands;
-    private readonly TimeSpan _loginCommandDelay;
-    private readonly TimeProvider _timeProvider;
-
-    private readonly string _chatLogDirectory;
 
     /// <summary>Told when the server has seeded the character options.</summary>
     private readonly Action _noteOptionsSeeded;
-
-    private ChatSessionLog? _chatSessionLog;
-
-    private ChatTranscriptLogWriter? _chatLogWriter;
 
     public LiveSessionRuntimeFactory(
         LiveSessionPlayerRuntime player,
@@ -123,14 +111,7 @@ internal sealed class LiveSessionRuntimeFactory
         LiveSessionUiRuntime ui,
         LiveSessionInteractionRuntime interaction,
         LiveSessionWorldRuntime world,
-        LiveSessionCommandSurface commands,
         Action<string> log,
-        SessionStatusWriter? statusWriter = null,
-        string sessionId = "app",
-        IReadOnlyList<string>? loginCommands = null,
-        int loginCommandDelayMs = 500,
-        TimeProvider? timeProvider = null,
-        string? chatLogDirectory = null,
         Action? noteOptionsSeeded = null)
     {
         _noteOptionsSeeded = noteOptionsSeeded ?? (() => { });
@@ -140,93 +121,44 @@ internal sealed class LiveSessionRuntimeFactory
         _interaction = interaction
             ?? throw new ArgumentNullException(nameof(interaction));
         _world = world ?? throw new ArgumentNullException(nameof(world));
-        _commands = commands ?? throw new ArgumentNullException(nameof(commands));
         _log = log ?? throw new ArgumentNullException(nameof(log));
-        _statusWriter = statusWriter ?? new SessionStatusWriter(null);
-        _sessionId = sessionId ?? throw new ArgumentNullException(nameof(sessionId));
-        if (loginCommandDelayMs < 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(loginCommandDelayMs));
-        }
-        _chatLogDirectory = chatLogDirectory
-            ?? AcDream.Platform.ApplicationPathSet.Resolve().LogsDirectory;
-        _loginCommands = loginCommands is null ? [] : [.. loginCommands];
-        _loginCommandDelay = TimeSpan.FromMilliseconds(loginCommandDelayMs);
-        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    public LiveSessionHost Create(
-        LiveSessionController controller,
-        LiveSessionConnectOptions connectOptions)
+    /// <summary>
+    /// What this window lends the session host's live session while it is
+    /// attached: its event route, its generation reset, the client commands
+    /// it carries out, and the owners the login steps reach.
+    /// </summary>
+    public AcDream.App.Plugins.GraphicalSessionPresentation Create()
     {
-        ArgumentNullException.ThrowIfNull(controller);
-        ArgumentNullException.ThrowIfNull(connectOptions);
         var resetHost = new GraphicalRuntimeGenerationResetHost(
             _world.LiveEntities,
             () => _world.RenderSceneShadow?.DrainUpdateBoundary());
         LiveSessionResetPlan reset =
             LiveSessionResetManifest.Create(
                 CreateResetBindings(resetHost));
-        var loginCommands = new LoginCommandSequence(
-            _loginCommands,
-            _loginCommandDelay,
-            new RuntimeChatCommandFeedback(_domain.Communication),
-            _commands,
-            failure => _statusWriter.LoginCommandFailed(
-                _sessionId,
-                failure.CommandIndex,
-                failure.Command,
-                failure.Error),
-            _timeProvider);
-        return new LiveSessionHost(
-            controller,
-            AcDream.App.Plugins.GraphicalAutomationCapabilities
-                .BuildSessionHostBindings(
-                    new AcDream.App.Plugins.GraphicalSessionHostParts
-                    {
-                        CreateEvents = CreateEventRouter,
-                        CreateCommands = session => _commands.Attach(
-                            new LiveSessionCommandRouter(
-                                CreateCommandBindings(session))),
-                        Reset = reset.Execute,
-                        Identity = _player.Identity,
-                        Communication = _domain.Communication,
-                        Combat = _domain.Actions.Combat,
-                        Settings = _interaction.Settings,
-                        PlayerModeAutoEntry = _interaction.PlayerModeAutoEntry,
-                        WorldState = _world.WorldState,
-                        Teleport = _world.Teleport,
-                        StatusWriter = _statusWriter,
-                        SessionId = _sessionId,
-                        Vitals = _ui.Vitals,
-                        RetainedUi = _ui.RetailUi,
-                        Paperdoll = _ui.Paperdoll,
-                        WorldAudio = _world.WorldAudio,
-                        LoginCommands = loginCommands,
-                        Warn = _log,
-                    }),
-            connectOptions with { PollConnectionDuringTicks = true },
-            _domain.Runtime);
-    }
-
-    private ChatLogResult SetChatLogFile(string name)
-    {
-        ChatSessionLog log = _chatSessionLog ??= new ChatSessionLog(_chatLogDirectory);
-        ChatTranscriptLogWriter writer = _chatLogWriter ??= new ChatTranscriptLogWriter(log);
-        string? closedName = log.CurrentName;
-
-        writer.Detach();
-        bool closed = log.Close();
-
-        if (string.IsNullOrWhiteSpace(name))
-            return new ChatLogResult(Opened: false, closed, string.Empty, closedName);
-
-        bool opened = log.Open(name, out string resolved);
-        if (opened)
-            writer.Attach(_domain.Communication.Chat);
-
-        return new ChatLogResult(opened, closed, resolved, closedName);
+        return new AcDream.App.Plugins.GraphicalSessionPresentation
+        {
+            CreateEvents = CreateEventRouter,
+            Reset = reset.Execute,
+            ClientCommands = CreateClientCommandHooks(),
+            Settings = _interaction.Settings,
+            PlayerModeAutoEntry = _interaction.PlayerModeAutoEntry,
+            WorldState = _world.WorldState,
+            Teleport = _world.Teleport,
+            Vitals = _ui.Vitals,
+            RetainedUi = _ui.RetailUi,
+            Paperdoll = _ui.Paperdoll,
+            WorldAudio = _world.WorldAudio,
+            ApplyCharacterOptions = options2 =>
+                AcDream.App.Plugins.GraphicalAutomationCapabilities
+                    .ApplyServerCharacterOptions(
+                        _interaction.Settings,
+                        _domain.Character.Options,
+                        options2,
+                        _noteOptionsSeeded),
+            PresentPlayingWorld = _world.Hydration.PresentPlayingWorld,
+        };
     }
 
     private LiveSessionResetBindings CreateResetBindings(
@@ -315,6 +247,7 @@ internal sealed class LiveSessionRuntimeFactory
                 Allegiance: _domain.Runtime.AllegianceOwner,
                 Trade: _domain.Runtime.TradeOwner,
                 House: _domain.Runtime.HouseOwner,
+                HousePurchase: _domain.Runtime.HousePurchaseOwner,
                 Contracts: _domain.Runtime.ContractsOwner,
                 PlayerGuid: () => _player.Identity.ServerGuid,
                 OnLocalPlayerDeath:
@@ -384,41 +317,31 @@ internal sealed class LiveSessionRuntimeFactory
                 });
     }
 
-    private LiveSessionCommandBindings CreateCommandBindings(
-        WorldSession session) =>
-        LiveSessionCommandBindingFactory.Create(
-            _domain.Runtime,
-            session,
-            RuntimeClientCommandBindings.Build(
-                _domain.Runtime,
-                session,
-                new RuntimeClientCommandHostBindings
+    private RuntimeClientCommandHostBindings CreateClientCommandHooks() => new()
+    {
+        ToggleFrameRate = _interaction.Settings.ToggleFrameRate,
+        SetUiLocked = _interaction.Settings.SetUiLocked,
+        ShowConfirmation = (message, completed) =>
+            _ui.RetailUi?.ShowConfirmation(message, completed),
+        SaveUi = name => _ui.RetailUi?.SaveNamedLayout(name),
+        LoadUi = name => _ui.RetailUi?.RestoreNamedLayout(name),
+        SaveAutoUi = () => _ui.RetailUi?.SaveLayout(),
+        LoadAutoUi = () => _ui.RetailUi?.RestoreLayout(),
+        FillComponentBuyList = (category, maximumPrice) =>
+            _ui.RetailUi?.FillComponentBuyList(
+                category ?? VendorComponentFill.AnyCategory,
+                maximumPrice),
+        SetLandscapeRadius = radius =>
+            _interaction.Settings.SaveDisplay(
+                _interaction.Settings.Display with
                 {
-                    ToggleFrameRate = _interaction.Settings.ToggleFrameRate,
-                    SetUiLocked = _interaction.Settings.SetUiLocked,
-                    ShowConfirmation = (message, completed) =>
-                        _ui.RetailUi?.ShowConfirmation(message, completed),
-                    SaveUi = name => _ui.RetailUi?.SaveNamedLayout(name),
-                    LoadUi = name => _ui.RetailUi?.RestoreNamedLayout(name),
-                    SaveAutoUi = () => _ui.RetailUi?.SaveLayout(),
-                    LoadAutoUi = () => _ui.RetailUi?.RestoreLayout(),
-                    FillComponentBuyList = (category, maximumPrice) =>
-                        _ui.RetailUi?.FillComponentBuyList(
-                            category ?? VendorComponentFill.AnyCategory,
-                            maximumPrice),
-                    SetLandscapeRadius = radius =>
-                        _interaction.Settings.SaveDisplay(
-                            _interaction.Settings.Display with
-                            {
-                                LandscapeDrawDistance = radius,
-                            }),
-                    SetFieldOfView = degrees =>
-                        _interaction.Settings.SaveDisplay(
-                            _interaction.Settings.Display with
-                            {
-                                FieldOfView = degrees,
-                            }),
-                },
-                SetChatLogFile),
-            _log);
+                    LandscapeDrawDistance = radius,
+                }),
+        SetFieldOfView = degrees =>
+            _interaction.Settings.SaveDisplay(
+                _interaction.Settings.Display with
+                {
+                    FieldOfView = degrees,
+                }),
+    };
 }

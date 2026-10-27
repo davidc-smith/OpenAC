@@ -5,15 +5,21 @@ using AcDream.UI.Abstractions.Input;
 
 namespace AcDream.App.Input;
 
-public static class RetailKeymapFile
+public static partial class RetailKeymapFile
 {
-    private static readonly Regex BindingLine = new(
+    // Both patterns are generated at build time: compiling one at run time
+    // put the regular-expression compiler on the client's start.
+    [GeneratedRegex(
         "^(?<action>[A-Za-z0-9_]+)\\s*\\[\\s*\"\"\\s*\\[\\s*"
         + "(?<device>[0-9]+)\\s+(?<control>[A-Za-z0-9_]+)"
         + "(?:\\s+(?<sub>[A-Za-z]+))?\\s*\\]"
         + "(?:\\s+(?<modifier>0x[0-9A-Fa-f]+|[0-9]+))?"
         + "(?:\\s+(?<activation>[A-Za-z]+))?\\s*\\]$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.CultureInvariant)]
+    private static partial Regex BindingLine();
+
+    [GeneratedRegex("^[A-Za-z][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex GroupHeader();
 
     private static readonly (uint Id, string Name)[] GroupOrder =
     {
@@ -77,8 +83,7 @@ public static class RetailKeymapFile
             if (!inBindings)
                 continue;
 
-            if (Regex.IsMatch(line, "^[A-Za-z][A-Za-z0-9_]*$",
-                    RegexOptions.CultureInvariant))
+            if (GroupHeader().IsMatch(line))
             {
                 currentGroup = GroupIds.TryGetValue(line, out uint groupId)
                     ? groupId
@@ -88,7 +93,7 @@ public static class RetailKeymapFile
             if (currentGroup is not uint inputMapId || line is "[" or "]")
                 continue;
 
-            Match match = BindingLine.Match(line);
+            Match match = BindingLine().Match(line);
             if (!match.Success)
                 throw new FormatException(
                     $"Malformed retail key binding at line {lineNumber}: {line}");
