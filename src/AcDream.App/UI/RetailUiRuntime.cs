@@ -1306,8 +1306,9 @@ public sealed class RetailUiRuntime : IDisposable
             Host.Root.Height = screen.Height;
             _lastScreenSize = new System.Numerics.Vector2(screen.Width, screen.Height);
         }
-        // The new character's rows and attachment first, so the restore sees
-        // the right capture gate; the Spell Deck is placed after it.
+        // The new character's Spell Deck settings (tab, rows, local tabs,
+        // attachment) first, so the restore sees the right capture gate; the
+        // Spell Deck is placed after it.
         _spellDeckSync?.LoadIfChanged();
         _persistence?.RestoreAll();
         _spellDeckSync?.AfterRestore();

@@ -111,6 +111,94 @@ public sealed class ModernHudWiringTests
         Assert.Empty(r.Retail);
     }
 
+    [Theory]
+    [InlineData(InputAction.CombatPrevSpellTab)]
+    [InlineData(InputAction.CombatNextSpellTab)]
+    [InlineData(InputAction.CombatFirstSpellTab)]
+    [InlineData(InputAction.CombatLastSpellTab)]
+    public void TabKeys_ReachTheSpellDeckOnlyWhileActive(InputAction action)
+    {
+        var r = new Routes { Game = InputAction.UseQuickSlot_1 };
+        Assert.True(r.Route(action, spellDeckActive: true));
+        Assert.True(r.Route(action, spellDeckActive: false));
+        Assert.Equal([action], r.Deck);
+        Assert.Equal([action], r.Retail);
+        Assert.Empty(r.Redispatched);   // a retail action is never re-sent as a Game key
+    }
+
+    private sealed class NoServer : ISpellDeckActions
+    {
+        public readonly List<string> Calls = [];
+        public void CastSpell(uint spellId) => Calls.Add($"cast {spellId}");
+        public void CastItemSpell(uint itemId) => Calls.Add($"item {itemId}");
+        public void SetFavorite(int tab, int position, uint spellId) => Calls.Add($"set {tab} {spellId}");
+        public void RemoveFavorite(int tab, uint spellId) => Calls.Add($"remove {tab} {spellId}");
+        public void ExamineSpell(uint spellId) { }
+        public void ShowMessage(string text) { }
+    }
+
+    /// <summary>The runtime's routing over a real controller with one local tab (tab 9) holding 77.</summary>
+    private static (SpellDeckController Deck, NoServer Server, List<InputAction> Retail, Func<InputAction, bool, bool> Route)
+        LocalTabDeck()
+    {
+        var server = new NoServer();
+        var deck = new SpellDeckController(
+            server, _ => [], () => null, () => 12,
+            SpellDeckSettings.Default with { Tab = 8, LocalTabs = [[77u]] },
+            _ => { }, () => false, () => true);
+        deck.Tick();
+        var retail = new List<InputAction>();
+        return (deck, server, retail, (action, active) => SpellActionRouter.Route(
+            action, active, a => deck.Handle(a), a => { retail.Add(a); return true; }, () => null, _ => { }));
+    }
+
+    [Fact]
+    public void ActiveSpellDeck_TabKeysWrapOverTheLocalTabs_AndSlotKeysCastFromThem()
+    {
+        var (deck, server, retail, route) = LocalTabDeck();
+
+        Assert.True(route(InputAction.UseSpellSlot_1, true));
+        Assert.Equal(["cast 77"], server.Calls);
+        Assert.True(route(InputAction.CombatNextSpellTab, true));    // PgUp from the last tab wraps to 1
+        Assert.Equal(0, deck.Tab);
+        Assert.True(route(InputAction.CombatPrevSpellTab, true));    // Insert wraps back to the local tab
+        Assert.Equal(8, deck.Tab);
+        Assert.True(route(InputAction.CombatFirstSpellTab, true));
+        Assert.Equal(0, deck.Tab);
+        Assert.True(route(InputAction.CombatLastSpellTab, true));
+        Assert.Equal(8, deck.Tab);
+        Assert.Empty(retail);
+    }
+
+    [Fact]
+    public void InactiveSpellDeck_TabAndSlotKeysLeaveItAlone()
+    {
+        var (deck, server, retail, route) = LocalTabDeck();
+
+        Assert.True(route(InputAction.CombatNextSpellTab, false));
+        Assert.True(route(InputAction.UseSpellSlot_1, false));
+
+        Assert.Equal(8, deck.Tab);
+        Assert.Empty(server.Calls);
+        Assert.Equal([InputAction.CombatNextSpellTab, InputAction.UseSpellSlot_1], retail);
+    }
+
+    [Fact]
+    public void SpellbookAdd_OnALocalTab_SavesLocally_AndNeverReachesTheServer()
+    {
+        var server = new NoServer();
+        var saved = new List<SpellDeckSettings>();
+        var deck = new SpellDeckController(
+            server, _ => [], () => null, () => 12,
+            SpellDeckSettings.Default with { Tab = 8, LocalTabs = [[77u]] },
+            saved.Add, () => false, () => true);
+
+        deck.AddFavoriteFromSpellbook(78u);
+
+        Assert.Empty(server.Calls);
+        Assert.Equal([77u, 78u], Assert.Single(saved).LocalTabs[0]);
+    }
+
     [Fact]
     public void ClientOnly_IsRowsTwoToTenAndTheItemSpell()
     {

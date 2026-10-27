@@ -4,8 +4,9 @@ namespace AcDream.App.UI.Hud;
 
 /// <summary>
 /// Keeps the Spell Deck on the character in the world, in the order the
-/// layout needs. A new character's rows and attachment load as soon as its
-/// key appears (the layout's capture gate reads the attachment), but the dock
+/// layout needs. A new character's tab, row count, local tabs (9-16) and
+/// attachment load as soon as its key appears (the layout's capture gate reads
+/// the attachment), but the dock
 /// does not place the Spell Deck until a layout restore has run after that
 /// load: placing it earlier would save the previous character's (or the
 /// default) placement over the new character's. That holds for the same
@@ -83,7 +84,9 @@ internal sealed class SpellDeckCharacterSync
     }
 
     /// <summary>Saves under the loaded character, never one whose settings have not been loaded,
-    /// and never under a key the layout does not persist either (blank or "default").</summary>
+    /// and never under a key the layout does not persist either (blank or "default"). This is
+    /// the only save path, local tab edits included: a local tab made while no character's
+    /// settings persist lives only until the next character loads.</summary>
     public void Save(SpellDeckSettings settings)
     {
         if (LoadedCharacter is { } key && RetailWindowLayoutPersistence.CanPersist(key))

@@ -277,9 +277,85 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         Assert.Equal("default", rig.Sync.LoadedCharacter);
 
         rig.Controller.AddRow();
+        rig.Controller.AddLocalTab();
+        rig.Controller.AddFavoriteFromSpellbook(4242u);
         rig.Dock.Detach();
         rig.Frames(2);
 
+        Assert.Null(rig.Store.LoadSpellDeck("default"));
+    }
+
+    /// <summary>Bob adds a local tab (tab 9), shows it, puts a spell on it and adds a row.</summary>
+    private static void GiveBobALocalTab(SpellDeckRig rig, uint spellId)
+    {
+        rig.Controller.AddLocalTab();
+        rig.Controller.AddFavoriteFromSpellbook(spellId);
+        rig.Controller.AddRow();
+        rig.Frames(2);
+    }
+
+    private static void AssertLocalTab(SpellDeckRig rig, int tab, int rows, params uint[] spells)
+    {
+        Assert.Equal(SpellDeckTabs.ServerTabs + 1, rig.Controller.TabCount);
+        Assert.Equal(tab, rig.Controller.Tab);
+        Assert.Equal(rows, rig.Controller.RowCount);
+        Assert.Equal(spells, rig.Controller.Favorites(SpellDeckTabs.ServerTabs));
+    }
+
+    [Fact]
+    public void SpellDeck_LocalTabsAndTheShownTabSurviveARelog()
+    {
+        using (var first = new SpellDeckRig(PathName))
+        {
+            first.Frames(2);
+            first.EnterWorld("Bob");
+            GiveBobALocalTab(first, 4242u);
+            AssertLocalTab(first, 8, 4, 4242u);
+        }
+
+        // A new session: the client restarts and Bob logs in again.
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        Assert.Equal(SpellDeckTabs.ServerTabs, rig.Controller.TabCount);
+        rig.EnterWorld("Bob");
+
+        AssertLocalTab(rig, 8, 4, 4242u);
+        Assert.Equal(4, rig.Spell.Geometry.Rows);
+        Assert.Equal([4242u], rig.Controller.Visible);
+        Assert.Null(rig.Store.LoadSpellDeck("default"));
+    }
+
+    [Fact]
+    public void SpellDeck_LocalTabsArePerCharacter()
+    {
+        using var rig = new SpellDeckRig(PathName);
+        rig.Frames(2);
+        rig.EnterWorld("Bob");
+        GiveBobALocalTab(rig, 4242u);
+
+        // Bob logs out (the key falls back to "default"), then Carol logs in.
+        rig.Key = "default";
+        rig.Frames(3);
+        Assert.Equal(SpellDeckTabs.ServerTabs, rig.Controller.TabCount);
+        rig.EnterWorld("Carol");
+        Assert.Equal(SpellDeckTabs.ServerTabs, rig.Controller.TabCount);
+        Assert.Equal(0, rig.Controller.Tab);
+        Assert.Equal(3, rig.Controller.RowCount);
+        Assert.Empty(rig.Controller.Favorites(SpellDeckTabs.ServerTabs));
+
+        // Carol's own local tab is hers alone.
+        rig.Controller.AddLocalTab();
+        rig.Controller.AddFavoriteFromSpellbook(5151u);
+        rig.Frames(2);
+
+        rig.EnterWorld("Bob");
+        AssertLocalTab(rig, 8, 4, 4242u);
+        rig.EnterWorld("Carol");
+        Assert.Equal([5151u], rig.Controller.Favorites(SpellDeckTabs.ServerTabs));
+        Assert.Equal(3, rig.Controller.RowCount);
+
+        Assert.Equal([4242u], Assert.Single(rig.Store.LoadSpellDeck("Bob")!.LocalTabs));
+        Assert.Equal([5151u], Assert.Single(rig.Store.LoadSpellDeck("Carol")!.LocalTabs));
         Assert.Null(rig.Store.LoadSpellDeck("default"));
     }
 }
