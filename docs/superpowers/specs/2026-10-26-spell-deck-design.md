@@ -418,3 +418,68 @@ New files go in `src/AcDream.App/UI/Hud/` unless a different folder is given.
 - Renaming tabs.
 - Slots for anything other than spells (items, emotes).
 - Upstream PR.
+
+## v2 (2026-10-27, after the first live look)
+
+The user's first live look found three problems: tabs were invisible (a number chip per row, changed only by clicking it or from the menu), the attached Spell Deck did not look attached (a gap, and it overhung the deck's left edge), and an attached Spell Deck showed a move cursor but could not be moved. They chose: **one tab for the whole deck, picked from bookmark tabs on top**; **dragging the attached Spell Deck moves both decks**; and **more than 8 tabs, the extra ones saved locally**. Where this section conflicts with the sections above, this section wins.
+
+### Tabs on top
+
+- A **tab strip** runs across the top of the Spell Deck: one bookmark per tab, labelled with its number (`1`, `2`, …), the current tab raised and lit. After the last tab, a **`+`** bookmark adds a tab.
+- **The deck shows one tab.** Every row shows more of that tab (below).
+- Click a bookmark to show that tab. Insert / PgUp go to the previous / next tab (wrapping over the tabs that exist); Ctrl+Insert / Ctrl+PgUp go to the first / last.
+- Tabs 1–8 are the server's favourite lists (ACE accepts tab numbers 0–7 only). **Tabs 9–16 are local**: added with `+`, saved in this PC's settings for the character, not sent to the server. They behave exactly like server tabs (drag, hotkeys, casting). They do not follow the character to another PC or the retail client.
+- Right-click on the **last** local tab: **Remove tab** (its spells are discarded with it). Server tabs cannot be removed. `+` is hidden at 16 tabs.
+- Bookmarks are 24 wide with a 2 gap; when they do not fit the strip they shrink evenly, down to 16 wide.
+
+### Rows continue the tab
+
+- With `N` slots per row (`SlotsPerRow`), row `r` (0-based) shows spells `r·N` … `r·N + N − 1` of the current tab. The deck shows up to `rows · N` spells.
+- **No overflow (unchanged rule, new scope):** the narrowest stretch is the smallest one where `rows · N` holds the fullest tab of **all** tabs (server and local), capped at the widest stretch. A tab that does not fit even then shows its first `rows · Nmax` spells; the rest are not shown or castable (as before).
+- **Remove row** is disabled when the remaining rows, at the widest stretch, cannot hold the fullest tab. When allowed, the deck widens as needed (the minimum-width rule does it).
+- Add row: unchanged (disabled when it would leave the screen).
+
+### Hotkeys
+
+- A slot key casts what that slot shows: row `r` slot `n` casts spell `r·N + n` of the current tab. Defaults are unchanged (row 1 plain, row 2 Shift, row 3 Ctrl, slots 1–9). With a wide deck, slots past the 12th of a row have no key.
+
+### Outline
+
+- The outline is `None | Item | Spell(tab, spellId)`.
+- Repair: the current tab's first visible spell, else the item spell, else `None`.
+- Showing another tab moves the outline to that tab's first visible spell (else item, else `None`).
+- Next / Prev walk the current tab's visible spells in order, the item spell (if any) before the first; wrapping. First / Last: the first / last visible spell.
+- An outlined spell that is reordered keeps the outline; one that leaves the tab or the visible range is repaired.
+
+### Editing favourites
+
+- **Drop on a slot** at row `r`, slot `n`: position `r·N + n` in the current tab. Same rules as before: a spell already in the tab is a reorder (always allowed); a new one is refused when the tab already fills `rows · N` (chat: `That spell tab is full.`).
+- **Drop on a tab bookmark:** a slot's spell **moves** to the end of that tab (add there first, then remove from the current tab); a spellbook spell is added to the end. Refused when that tab already fills `rows · N`, or already holds the spell (nothing to do).
+- Drop outside every window: removes the spell from the current tab (unchanged).
+- The spellbook's "add to favourites": the end of the current tab.
+- Local tab edits change the local list and save it; server tab edits send the existing messages (unchanged).
+
+### Right-click menu
+
+- On a filled slot: **Examine spell**, **Remove from tab**, separator.
+- Anywhere on the deck: **Add row**, **Remove row**, separator, **Click casts: on/off**, separator, **Detach from deck** / **Attach to deck**.
+- On the last local tab's bookmark: **Remove tab** (only).
+- The "Show tab n" items are gone.
+
+### Looking attached
+
+- **Attached:** the Spell Deck's left edge is the orb's left edge (`deck.Left + 32·scale`), its right edge the deck's right edge, its bottom the deck frame's top (`deck.Top + 4·scale`). Its width is `(388 + 420·(stretch − 1))·scale`. It draws square bottom corners and the Command Deck draws square top corners, so the two frames meet on one seam with no gap.
+- **Detached:** rounded corners all round, same base width (388 at stretch 1).
+- **Dragging the attached Spell Deck moves the whole block:** the Command Deck moves by the same amount (the block stays on screen) and its position is saved. The Spell Deck's own (detached) placement is untouched.
+
+### Geometry v2
+
+`Pad 6`, `Gutter 40` (item slot centred), `TabStrip 18`, `SlotsLeft 46`, `SlotSize 26`, `SlotPitch 28`, `RowPitch 28`, `TopPad 7`, `BottomPad 7`. Base width `388 + 420·(stretch − 1)`. Height `12 + 18 + 28·rows`. Slots per row `floor((width/scale − 46 − 6 + 2) / 28)`: 12 at stretch 1, 27 at stretch 2.
+
+### Saved state v2
+
+Per character: `tab` (0–15), `rowCount` (1–10), `attached`, `detachedRows`, `localTabs` (array of spell-id arrays, at most 8). Old saves with a `rows` array load as `rowCount = rows.length`, `tab = rows[0].tab`.
+
+### Testing v2
+
+Slices and capacity across stretches; hotkey `r·N + n` mapping; outline rules above; drops on slots (reorder / insert / full) and on bookmarks (move / add / full / already there); min stretch over all tabs including local; Remove row disabled rule; local tab add / remove-last / persist / no server call; tab strip hit-testing and bookmark shrink; attached placement (left, width, bottom) and square-corner flags; attached drag moves the deck and keeps the block on screen; settings migration from the v1 `rows` array.
