@@ -3782,12 +3782,13 @@ public sealed class RetailUiRuntime : IDisposable
         _targetDeck?.OnHidden();
     }
 
+    // The id whose refusal was last logged, so a persistent refusal logs once.
+    private uint _lastRefusedAutoId;
+
     /// <summary>
     /// Auto-ID over the selection. Its requests go out only while the deck is
     /// shown: a selection change under the retail HUD sends nothing.
     /// </summary>
-    private uint _lastRefusedAutoId;
-
     private TargetAutoAppraisal CreateTargetAutoAppraisal()
     {
         System.Diagnostics.Stopwatch clock = _targetDeckClock!;
