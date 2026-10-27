@@ -149,8 +149,10 @@ public sealed class SpellDeckController
     private SpellDeckMarkContext Context => new(_tab, ShownSlots, _itemSpell() is not null);
 
     /// <summary>Replaces the tab, rows, layouts and attachment (character change), and reconciles the server
-    /// tabs; saves once only when that changed something. The outline is repaired.</summary>
-    public void Load(SpellDeckSettings settings)
+    /// tabs; saves once only when that changed something. The outline is repaired. With
+    /// <paramref name="reconcile"/> false (the Spell Deck is not active) the server is left alone until a
+    /// later <see cref="ServerFavoritesChanged"/>.</summary>
+    public void Load(SpellDeckSettings settings, bool reconcile = true)
     {
         // A pending tab switch belongs to the character being left; the host flushes it
         // (FlushPendingSave) before its key changes, so here it is only dropped.
@@ -159,7 +161,7 @@ public sealed class SpellDeckController
         Batch(() =>
         {
             Apply(settings);
-            ReconcileServerTabs();
+            if (reconcile) ReconcileServerTabs();
         });
         Outline = SpellDeckMark.None;
         Tick();

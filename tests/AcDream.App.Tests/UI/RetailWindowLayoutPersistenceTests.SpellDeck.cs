@@ -2,6 +2,7 @@ using AcDream.App.Spells;
 using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 using AcDream.App.UI.Layout;
+using AcDream.Core.Spells;
 using AcDream.UI.Abstractions.Panels.Settings;
 
 namespace AcDream.App.Tests.UI;
@@ -14,6 +15,27 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public void CastItemSpell(uint itemId) { }
         public void SetFavorite(int tab, int position, uint spellId) { }
         public void RemoveFavorite(int tab, uint spellId) { }
+        public void ExamineSpell(uint spellId) { }
+        public void ShowMessage(string text) { }
+    }
+
+    /// <summary>The runtime's favourite commands: the local spellbook takes each op at once (raising
+    /// <c>SpellbookChanged</c> inside it), as <c>RuntimeCharacterState.TryAddFavorite</c> does.</summary>
+    private sealed class ServerSpellActions(Spellbook book, Func<string> key, List<(string Key, string Op)> sent)
+        : ISpellDeckActions
+    {
+        public void CastSpell(uint spellId) { }
+        public void CastItemSpell(uint itemId) { }
+        public void SetFavorite(int tab, int position, uint spellId)
+        {
+            sent.Add((key(), $"set {tab} {position} {spellId}"));
+            book.SetFavorite(tab, position, spellId);
+        }
+        public void RemoveFavorite(int tab, uint spellId)
+        {
+            sent.Add((key(), $"remove {tab} {spellId}"));
+            book.RemoveFavorite(tab, spellId);
+        }
         public void ExamineSpell(uint spellId) { }
         public void ShowMessage(string text) { }
     }
@@ -35,8 +57,16 @@ public sealed partial class RetailWindowLayoutPersistenceTests
         public string Key = "default";
         public (int Width, int Height) Screen = (1600, 900);
 
-        public SpellDeckRig(string path)
+        /// <summary>The server's favourites, when the rig has them (<see cref="ServerSpellActions"/>).</summary>
+        public readonly Spellbook? Book;
+        /// <summary>The favourite ops the deck sent, each with the key in the world when it went out.</summary>
+        public readonly List<(string Key, string Op)> Sent = [];
+        /// <summary>Modern HUD's Spell Deck is active.</summary>
+        public bool Active = true;
+
+        public SpellDeckRig(string path, Spellbook? book = null)
         {
+            Book = book;
             Store = new SettingsStore(path);
             UiCommandDeck deck = MountDeck(Root);
             Deck = deck;
@@ -44,7 +74,9 @@ public sealed partial class RetailWindowLayoutPersistenceTests
             SpellDeckCharacterSync? sync = null;
             SpellDeckDock? dock = null;
             Controller = new SpellDeckController(
-                new NoSpellActions(), _ => [], () => (ItemSpell?)null, () => 12,
+                book is null ? new NoSpellActions() : new ServerSpellActions(book, () => Key, Sent),
+                book is null ? _ => [] : book.GetFavorites,
+                () => (ItemSpell?)null, () => 12,
                 SpellDeckSettings.Default, s => sync?.Save(s), () => false, () => dock?.CanAddRow() ?? true);
             Spell = new UiSpellDeck(Controller, _ => 0u, _ => null, _ => "", () => null, () => 0.0,
                 () => false, () => { }, _ => { });
@@ -58,8 +90,11 @@ public sealed partial class RetailWindowLayoutPersistenceTests
             Persistence.ResetToDefaults();
             dock = new SpellDeckDock(
                 new SpellDeckWindowDockHost(Root, () => Persistence, deck, deckHandle, Spell, spellHandle), Controller);
-            sync = new SpellDeckCharacterSync(Controller, dock, Store, () => Key, () => Persistence.RestoreCount);
+            sync = new SpellDeckCharacterSync(
+                Controller, dock, Store, () => Key, () => Persistence.RestoreCount, () => Active);
             Sync = sync;
+            // RetailUiRuntime.MountSpellDeck's subscription.
+            if (book is not null) book.SpellbookChanged += sync.ServerFavoritesChanged;
             Dock = dock;
         }
 

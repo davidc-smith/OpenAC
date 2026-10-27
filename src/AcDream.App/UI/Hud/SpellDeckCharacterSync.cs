@@ -12,6 +12,13 @@ namespace AcDream.App.UI.Hud;
 /// default) placement over the new character's. That holds for the same
 /// character logging back in, too. A key with no saved layout of its own, or
 /// no layout persistence at all, has nothing to wait for.
+/// <para>
+/// The server's favourites reconcile into the layouts on load and whenever the spellbook changes
+/// (<see cref="ServerFavoritesChanged"/>), but only while the spellbook can belong to the loaded
+/// character: its key is the one in the world, its layout is restored, and the Spell Deck is active
+/// (Modern HUD on, so retail is left alone while it is off). A change while that does not hold waits
+/// and reconciles once it does; a character switch reconciles in its load.
+/// </para>
 /// </summary>
 internal sealed class SpellDeckCharacterSync
 {
@@ -22,19 +29,25 @@ internal sealed class SpellDeckCharacterSync
     /// <summary>The layout's restore count; null when there is no layout persistence.</summary>
     private readonly Func<int?> _restoreCount;
     private int? _loadedAtRestore;
+    /// <summary>Modern HUD's Spell Deck is active; while it is not, nothing reconciles.</summary>
+    private readonly Func<bool> _active;
+    /// <summary>A reconcile was asked for while the gate was shut.</summary>
+    private bool _reconcilePending;
 
     public SpellDeckCharacterSync(
         SpellDeckController controller,
         SpellDeckDock dock,
         SettingsStore? store,
         Func<string> characterKey,
-        Func<int?> restoreCount)
+        Func<int?> restoreCount,
+        Func<bool>? active = null)
     {
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
         _dock = dock ?? throw new ArgumentNullException(nameof(dock));
         _store = store;
         _characterKey = characterKey ?? throw new ArgumentNullException(nameof(characterKey));
         _restoreCount = restoreCount ?? throw new ArgumentNullException(nameof(restoreCount));
+        _active = active ?? (() => true);
     }
 
     /// <summary>The character whose settings are loaded; null before the first load.</summary>
@@ -51,9 +64,13 @@ internal sealed class SpellDeckCharacterSync
         if (key == LoadedCharacter) return;
         _controller.FlushPendingSave();   // under the character being left (Save guards CanPersist)
         LoadedCharacter = key;
+        // The spellbook now in the world is this character's (or empty, which reconciles nothing).
+        bool active = _active();
         _controller.Load(RetailWindowLayoutPersistence.CanPersist(key)
             ? SpellDeckSettings.Load(_store, key)
-            : SpellDeckSettings.Default);
+            : SpellDeckSettings.Default,
+            reconcile: active);
+        _reconcilePending = !active;
         _loadedAtRestore = _restoreCount();
         AwaitingRestore = RetailWindowLayoutPersistence.CanPersist(key) && _loadedAtRestore is not null;
         if (!AwaitingRestore) _dock.AfterRestore();
@@ -63,6 +80,7 @@ internal sealed class SpellDeckCharacterSync
     public void Tick()
     {
         LoadIfChanged();
+        ReconcileIfReady();
         _controller.Tick();
         if (!AwaitingRestore) _dock.Tick();
     }
@@ -82,6 +100,28 @@ internal sealed class SpellDeckCharacterSync
         if (AwaitingRestore && _restoreCount() == _loadedAtRestore) return;
         AwaitingRestore = false;
         _dock.AfterRestore();
+        ReconcileIfReady();
+    }
+
+    /// <summary>The spellbook changed (<c>Spellbook.SpellbookChanged</c>): reconciles the server tabs
+    /// into the loaded character's layouts now, or once the gate opens. During a character switch the
+    /// spellbook can already hold the new character's favourites while the old character is loaded;
+    /// reconciling then would rewrite the old character's layouts and send its order to the new
+    /// character's server.</summary>
+    public void ServerFavoritesChanged()
+    {
+        _reconcilePending = true;
+        ReconcileIfReady();
+    }
+
+    private bool CanReconcile =>
+        LoadedCharacter is { } loaded && loaded == _characterKey() && !AwaitingRestore && _active();
+
+    private void ReconcileIfReady()
+    {
+        if (!_reconcilePending || !CanReconcile) return;
+        _reconcilePending = false;
+        _controller.ServerFavoritesChanged();
     }
 
     /// <summary>Saves under the loaded character, never one whose settings have not been loaded,

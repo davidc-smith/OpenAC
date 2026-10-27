@@ -434,6 +434,8 @@ public sealed class RetailUiRuntime : IDisposable
     private Hud.SpellDeckController? _spellDeckController;
     private Hud.UiSpellDeck? _spellDeck;
     private Hud.SpellDeckCharacterSync? _spellDeckSync;
+    /// <summary>The spellbook the Spell Deck reconciles from; unsubscribed on teardown.</summary>
+    private Spellbook? _spellDeckSpellbook;
     /// <summary>MiscSettings.SpellDeckClickCasts, read once at mount and kept here as it is toggled.</summary>
     private bool _spellDeckClickCasts;
     private Hud.EmbeddedSvgSpriteCache? _hudIcons;
@@ -3519,10 +3521,17 @@ public sealed class RetailUiRuntime : IDisposable
             dock,
             _bindings.Persistence?.Store,
             _bindings.Persistence?.CharacterKey ?? (() => "default"),
-            () => _persistence?.RestoreCount);
+            () => _persistence?.RestoreCount,
+            () => _hudSwitch?.SpellDeckActive == true);
+        // Server favourites changed (from elsewhere, or the echo of the deck's own ops): the sync
+        // reconciles only while the spellbook belongs to the loaded character.
+        _spellDeckSpellbook = magic.Spellbook;
+        _spellDeckSpellbook.SpellbookChanged += OnSpellDeckFavoritesChanged;
         Host.Root.DragReleasedOutsideUi += OnSpellDeckDragReleasedOutsideUi;
         Console.WriteLine("[UI] Spell Deck mounted (Modern HUD).");
     }
+
+    private void OnSpellDeckFavoritesChanged() => _spellDeckSync?.ServerFavoritesChanged();
 
     private void OnSpellDeckDragReleasedOutsideUi(object payload, int x, int y) =>
         _spellDeck?.OnDragReleasedOutsideUi(payload);
@@ -5796,6 +5805,9 @@ public sealed class RetailUiRuntime : IDisposable
                 _pluginDockImages = null;
                 _commandDeck?.Detach();
                 Host.Root.DragReleasedOutsideUi -= OnSpellDeckDragReleasedOutsideUi;
+                if (_spellDeckSpellbook is not null)
+                    _spellDeckSpellbook.SpellbookChanged -= OnSpellDeckFavoritesChanged;
+                _spellDeckSpellbook = null;
                 _spellDeck?.OnHidden();
                 _hudIcons?.Dispose();
                 _hudIcons = null;
