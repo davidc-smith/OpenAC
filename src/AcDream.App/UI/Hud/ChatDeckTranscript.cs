@@ -209,6 +209,10 @@ internal sealed class ChatDeckTranscript
                     _ => 0,
                 };
                 if (origin < 0) continue;
+                // Line spans are measured over the full worded line; the shown line may have lost its prefix,
+                // so they start that far to the left (the clip below drops what falls inside the prefix).
+                if (span.Field is not (ChatDeckMatchField.Text or ChatDeckMatchField.Sender))
+                    origin = c.Shown.Text.Length - c.Projected.Text.Length;
                 int from = stamp + origin + span.Start;
                 int to = Math.Min(colours.Length, from + span.Length);
                 for (int i = Math.Max(stamp, from); i < to; i++) colours[i] = ink;

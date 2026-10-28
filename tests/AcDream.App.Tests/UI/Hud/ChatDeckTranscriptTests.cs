@@ -107,6 +107,26 @@ public sealed class ChatDeckTranscriptTests
     }
 
     [Fact]
+    public void LineFieldMatch_WithThePrefixOff_ColoursExactlyTheMatchedCharacters()
+    {
+        uint gold = 0xFFFFD700u;
+        var entry = new ChatEntry(ChatKind.Channel, "Bob", "hi", PlayerGuid, 0u) { ChannelName = "General" };
+        var expected = new Vector4(1f, 215f / 255f, 0f, 1f);
+        ChatDeckTranscriptStyle style = Style() with { ChannelPrefix = false };
+
+        // The full worded line is "[General] Bob says, \"hi\""; "says" sits at 14..18 of it.
+        ChatDeckLine onSays = Line(entry, matchColour: gold, spans: [new ChatDeckSpan(ChatDeckMatchField.Line, 14, 4)]);
+        ChatDeckTranscriptLayout layout = new ChatDeckTranscript().Build([onSays], style);
+        Assert.StartsWith("Bob", layout.Lines[0].Text);
+        Assert.Contains(layout.Runs[0]!, r => r.Text == "says" && r.Color == expected);
+
+        // A match inside the stripped prefix colours nothing.
+        ChatDeckLine inPrefix = Line(entry, matchColour: gold, spans: [new ChatDeckSpan(ChatDeckMatchField.Line, 1, 7)]);
+        layout = new ChatDeckTranscript().Build([inPrefix], style);
+        Assert.DoesNotContain(layout.Runs[0] ?? [], r => r.Color == expected);
+    }
+
+    [Fact]
     public void Search_KeepsMatchingLinesOnly()
     {
         ChatDeckTranscriptLayout layout = new ChatDeckTranscript().Build(
