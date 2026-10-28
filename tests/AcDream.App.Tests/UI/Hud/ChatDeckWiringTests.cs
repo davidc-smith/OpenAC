@@ -35,6 +35,9 @@ public sealed class ChatDeckWiringTests : IDisposable
         public bool DeckMounted = true;
         public ChatDeckModel? Model;
         public readonly PluginAppearanceWindow SettingsWindow;
+        public readonly ChatDeckEditorBinding EditorBinding;
+        public readonly PluginAppearanceWindow EditorWindow;
+        public readonly ChatLog Log = new();
         public (int Width, int Height) Screen = (1600, 900);
 
         public World(string path)
@@ -59,13 +62,23 @@ public sealed class ChatDeckWiringTests : IDisposable
                 ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, new ChatDeckSettingsBinding(() => Model) { Close = close }, _ => (0u, 0, 0),
                     themes: new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window)), close),
                 onOpen: window => ChatDeckSettingsPlacement.Dock(Root, Deck, window));
-            var log = new ChatLog();
-            Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
+            EditorBinding = new ChatDeckEditorBinding(() => Model);
+            EditorWindow = new PluginAppearanceWindow(Root, close =>
+            {
+                EditorBinding.Close = close;
+                return ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckEditorBinding.Markup, EditorBinding, _ => (0u, 0, 0),
+                    themes: new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window)), close);
+            }, onOpen: window => ChatDeckSettingsPlacement.Dock(Root, Deck, window));
+            Model = new ChatDeckModel(Log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(
                 () => Model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
                 () => null, () => false,
                 RestorePinnedPlacement: () => Persistence?.ApplyStoredPlacement(WindowNames.ChatDeck),
-                OpenSettings: () => SettingsWindow.Toggle(), SettingsOpen: () => SettingsWindow.IsOpen), fonts: null, icons: null);
+                OpenSettings: () => { if (EditorWindow.IsOpen) EditorWindow.Toggle(); SettingsWindow.Toggle(); },
+                SettingsOpen: () => SettingsWindow.IsOpen,
+                OpenEditor: r => { EditorBinding.Open(r); if (SettingsWindow.IsOpen) SettingsWindow.Toggle(); EditorWindow.Show(); },
+                ToggleEditor: () => { if (SettingsWindow.IsOpen) SettingsWindow.Toggle(); EditorWindow.Toggle(); },
+                EditorOpen: () => EditorWindow.IsOpen), fonts: null, icons: null);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0), UiChatDeck.MountOptions(10f, 670f));
             Root.AddChild(Deck.Strip);
             Root.AddChild(Deck.Peek);
@@ -87,6 +100,7 @@ public sealed class ChatDeckWiringTests : IDisposable
                         OnHidden: () =>
                         {
                             if (SettingsWindow.IsOpen) SettingsWindow.Toggle();
+                            if (EditorWindow.IsOpen) EditorWindow.Toggle();
                             Deck.OnHidden();
                             if (ReferenceEquals(Root.DefaultTextInput, Deck.Input)) Root.DefaultTextInput = null;
                         },
@@ -129,6 +143,61 @@ public sealed class ChatDeckWiringTests : IDisposable
         PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
         w.Switch.Apply(false);
         Assert.False(w.SettingsWindow.IsOpen);
+    }
+
+    [Fact]
+    public void FiltersStud_OpensTheEditorDocked_AndReplacesSettings()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Deck.Left = 900f;   // far enough right that the 640-wide editor is not clamped to the screen's left edge
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        Assert.True(w.SettingsWindow.IsOpen);
+        PressDeck(w.Deck, w.Deck.Geometry.FiltersStud);
+        Assert.True(w.EditorWindow.IsOpen);
+        Assert.False(w.SettingsWindow.IsOpen);
+        UiElement editor = w.Root.Children[^1];
+        Assert.Equal(w.Deck.Left + w.Deck.Width, editor.Left + editor.Width);
+        Assert.Equal(w.Deck.Top, editor.Top + editor.Height);
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        Assert.True(w.SettingsWindow.IsOpen);
+        Assert.False(w.EditorWindow.IsOpen);
+        PressDeck(w.Deck, w.Deck.Geometry.FiltersStud);
+        PressDeck(w.Deck, w.Deck.Geometry.FiltersStud);
+        Assert.False(w.EditorWindow.IsOpen);
+    }
+
+    [Fact]
+    public void ModernHudOff_ClosesTheEditor()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        PressDeck(w.Deck, w.Deck.Geometry.FiltersStud);
+        Assert.True(w.EditorWindow.IsOpen);
+        w.Switch.Apply(false);
+        Assert.False(w.EditorWindow.IsOpen);
+    }
+
+    [Fact]
+    // Lane=Timing: the matcher runs rules under a 20 ms regex timeout and the NonBacktracking
+    // automaton is built lazily on first match, so under parallel suite load the match can time
+    // out and the line is not matched. Runs in the serialized pass.
+    [Trait("Lane", "Timing")]
+    public void RuleFromLine_OpensTheEditorWithAPreview()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Log.OnLocalSpeech("Bob", "buy my stuff", 0x50000002u, isRanged: false, logTextType: 0x02u);
+        w.Model!.Tick();
+        w.Deck.Refresh();
+        w.Deck.Transcript.RefreshLines();
+        w.Deck.LineMenuItemsAt(5f, 5f);
+        w.Deck.ChooseLineMenuItem(4);   // Hide these
+        Assert.True(w.EditorWindow.IsOpen);
+        Assert.True(w.EditorBinding.OnRulesPage);
+        Assert.True(w.EditorBinding.FormOpen);
+        Assert.Equal("buy my stuff", w.EditorBinding.Pattern);
+        Assert.Equal("Matches 1 of the last 1 lines.", w.EditorBinding.PreviewText);
     }
 
     private bool SavedChatVisible() =>

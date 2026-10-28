@@ -69,4 +69,17 @@ public sealed class PluginAppearanceWindowTests
         window.Toggle();
         Assert.True(window.IsOpen);
     }
+
+    [Fact]
+    public void Show_OpensOnce_ThenOnlyBringsToFront()
+    {
+        var root = new UiRoot { Width = 800f, Height = 600f };
+        int opens = 0;
+        var window = new PluginAppearanceWindow(root, _ => new UiPanel { Width = 100f, Height = 80f }, onOpen: _ => opens++);
+        window.Show();
+        Assert.True(window.IsOpen);
+        window.Show();
+        Assert.True(window.IsOpen);
+        Assert.Equal(1, opens);
+    }
 }

@@ -95,4 +95,13 @@ public sealed class ChatDeckSettingsTests
         Assert.Equal("all", s.Tabs[0].Id);
         Assert.Equal(d.Tabs.Count, s.Tabs.Count);
     }
+
+    [Fact]
+    public void Normalize_AllTabHasEveryChannel()
+    {
+        ChatDeckSettings s = ChatDeckDefaults.Create();
+        var shrunk = s with { Tabs = [s.Tabs[0] with { Channels = new HashSet<ChatDeckChannel> { ChatDeckChannel.Say } }, .. s.Tabs.Skip(1)] };
+        ChatDeckTab all = ChatDeckSettingsNormalizer.Normalize(shrunk).Tabs[0];
+        Assert.Equal(Enum.GetValues<ChatDeckChannel>().Length, all.Channels.Count);
+    }
 }

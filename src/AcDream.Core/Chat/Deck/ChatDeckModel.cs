@@ -107,6 +107,20 @@ public sealed class ChatDeckModel : IDisposable
             Settings = Settings with { Layout = Settings.Layout with { LastTabId = SelectedTabId } };
     }
 
+    /// <summary>
+    /// Applies an editor change (one of <see cref="ChatDeckSettingsEdits"/>) and raises
+    /// <see cref="SettingsChanged"/> so it is saved. A change that hands back the same
+    /// instance changed nothing: nothing is applied or raised.
+    /// </summary>
+    public bool Edit(Func<ChatDeckSettings, ChatDeckSettings> change)
+    {
+        ChatDeckSettings next = change(Settings);
+        if (ReferenceEquals(next, Settings)) return false;
+        ApplySettings(next);
+        SettingsChanged?.Invoke(Settings);
+        return true;
+    }
+
     public void SelectTab(string tabId)
     {
         if (FindTab(tabId) is not { } tab) return;

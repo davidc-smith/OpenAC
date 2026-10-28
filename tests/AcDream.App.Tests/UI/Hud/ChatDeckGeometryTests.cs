@@ -39,7 +39,7 @@ public sealed class ChatDeckGeometryTests
     {
         ChatDeckGeometry g = Make(460f, 220f);
         Assert.Equal(g.CollapseStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SettingsStud.X);
-        Assert.Equal(g.SettingsStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X);
+        Assert.Equal(g.FiltersStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X);
         Assert.Equal(ChatDeckZone.SettingsStud, g.HitAt(g.SettingsStud.X + 2, g.SettingsStud.Y + 2).Zone);
     }
 
@@ -48,7 +48,7 @@ public sealed class ChatDeckGeometryTests
     {
         ChatDeckGeometry g = Make();
         Assert.Equal(460 - ChatDeckGeometry.Pad - ChatDeckGeometry.StudSize, g.CollapseStud.X, 2);
-        Assert.Equal(g.SettingsStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X, 2);
+        Assert.Equal(g.FiltersStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X, 2);
         Assert.Equal(220 - ChatDeckGeometry.Pad - ChatDeckGeometry.InputHeight, g.InputRow.Y, 2);
         Assert.Equal(g.InputRow.X, g.Chip.X);
         Assert.Equal(g.Chip.X + g.Chip.W + 4, g.Input.X, 2);
@@ -87,4 +87,24 @@ public sealed class ChatDeckGeometryTests
     [InlineData(100, "99+")]
     [InlineData(5000, "99+")]
     public void Badge_IsCapped(int unread, string text) => Assert.Equal(text, ChatDeckBadges.Text(unread));
+
+    [Fact]
+    public void Studs_RightToLeft_CollapseSettingsFiltersSearch()
+    {
+        ChatDeckGeometry g = ChatDeckGeometry.Create(460f, 220f, [], false, "Say", s => s.Length * 7f);
+        Assert.True(g.CollapseStud.X > g.SettingsStud.X && g.SettingsStud.X > g.FiltersStud.X && g.FiltersStud.X > g.SearchStud.X);
+        Assert.Equal(ChatDeckGeometry.StudSize + ChatDeckGeometry.StudGap, g.SettingsStud.X - g.FiltersStud.X);
+        Assert.Equal(ChatDeckZone.FiltersStud, g.HitAt(g.FiltersStud.X + 2, g.FiltersStud.Y + 2).Zone);
+    }
+
+    [Fact]
+    public void AddTab_AfterTheLastTab_OnlyWhenAllowed()
+    {
+        var tabs = new[] { new ChatDeckTabLabel("All", ""), new ChatDeckTabLabel("Local", "") };
+        ChatDeckGeometry g = ChatDeckGeometry.Create(460f, 220f, tabs, false, "Say", s => s.Length * 7f, canAddTab: true);
+        Assert.Equal(ChatDeckGeometry.StudSize, g.AddTab.W);
+        Assert.True(g.AddTab.X >= g.Tabs[^1].X + g.Tabs[^1].W);
+        Assert.Equal(ChatDeckZone.AddTab, g.HitAt(g.AddTab.X + 2, g.AddTab.Y + 2).Zone);
+        Assert.Equal(0f, ChatDeckGeometry.Create(460f, 220f, tabs, false, "Say", s => s.Length * 7f).AddTab.W);
+    }
 }

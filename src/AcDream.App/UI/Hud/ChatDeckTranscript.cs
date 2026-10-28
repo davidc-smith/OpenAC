@@ -35,6 +35,10 @@ internal sealed class ChatDeckTranscriptLayout
     public List<IReadOnlyList<(int Start, int Length, ChatTextTag Tag)>?> Tags { get; } = [];
     public List<UiText.LineKey> Keys { get; } = [];
     public List<Vector4?> Markers { get; } = [];
+    /// <summary>The lines included, oldest first, once each.</summary>
+    public List<ChatDeckLine> Sources { get; } = [];
+    /// <summary>For each visual line, its index in <see cref="Sources"/>.</summary>
+    public List<int> SourceOf { get; } = [];
 }
 
 /// <summary>
@@ -49,6 +53,8 @@ internal sealed class ChatDeckTranscript
     {
         public required ChatProjectedLine Projected;
         public ChatProjectedLine Shown;
+        /// <summary>The projected line with its prefix taken off, worked out the first time a search needs it.</summary>
+        public ChatProjectedLine? Stripped;
         public bool Prefix = true;
         public float Indent;
         public float WrapWidth = float.NaN;
@@ -82,7 +88,7 @@ internal sealed class ChatDeckTranscript
         {
             Cached c = Get(line);
             if (style.Search.Length > 0
-                && c.Projected.Text.IndexOf(style.Search, StringComparison.OrdinalIgnoreCase) < 0)
+                && SearchText(c, line, style.ChannelPrefix).IndexOf(style.Search, StringComparison.OrdinalIgnoreCase) < 0)
                 continue;
             bool rewrapped = Wrap(c, line, style);
             if (rewrapped || !c.Shaped || !ReferenceEquals(c.ColourKey, style.ColourKey)
@@ -91,10 +97,15 @@ internal sealed class ChatDeckTranscript
                 ColourPassesForTest++;
                 Shape(line, c, style);
             }
+            layout.Sources.Add(line);
             AddLine(layout, c);
         }
         return layout;
     }
+
+    /// <summary>The text a search reads: the line as shown, so a hidden channel prefix is not found.</summary>
+    private static string SearchText(Cached c, ChatDeckLine line, bool prefix) =>
+        prefix ? c.Projected.Text : (c.Stripped ??= ChatDeckPrefix.Strip(c.Projected, line.Entry)).Text;
 
     private Cached Get(ChatDeckLine line)
     {
@@ -148,7 +159,11 @@ internal sealed class ChatDeckTranscript
         layout.Runs.AddRange(c.Runs);
         layout.Tags.AddRange(c.Tags);
         layout.Keys.AddRange(c.Keys);
-        for (int i = 0; i < c.Lines.Length; i++) layout.Markers.Add(c.Marker);
+        for (int i = 0; i < c.Lines.Length; i++)
+        {
+            layout.Markers.Add(c.Marker);
+            layout.SourceOf.Add(layout.Sources.Count - 1);
+        }
     }
 
     /// <summary>Colours the line's fragments and keeps them as its finished visual lines.</summary>

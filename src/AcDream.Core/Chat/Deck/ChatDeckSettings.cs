@@ -119,7 +119,11 @@ public static class ChatDeckSettingsNormalizer
         var tabs = new List<ChatDeckTab>();
         var tabIds = new HashSet<string>(StringComparer.Ordinal);
         ChatDeckTab? all = settings.Tabs.FirstOrDefault(t => t.Id == ChatDeckDefaults.AllTabId);
-        tabs.Add((all ?? ChatDeckDefaults.AllTab()) with { Name = CleanName(all?.Name ?? "All") });
+        tabs.Add((all ?? ChatDeckDefaults.AllTab()) with
+        {
+            Name = CleanName(all?.Name ?? "All"),
+            Channels = ChatDeckDefaults.AllTab().Channels,   // All shows every line that is not hidden
+        });
         tabIds.Add(ChatDeckDefaults.AllTabId);
         foreach (ChatDeckTab tab in settings.Tabs)
         {
