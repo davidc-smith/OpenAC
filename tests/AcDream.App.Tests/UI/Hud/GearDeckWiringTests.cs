@@ -275,4 +275,46 @@ public sealed class GearDeckWiringTests
         Assert.True(w.Deck.Draggable);   // empty frame space drags it
         Assert.Same(w.Root, w.Deck.Parent);
     }
+
+    private static (World W, UiPanel Character, RetailPanelUiController PanelUi) WithCharacterPanel()
+    {
+        var w = new World();
+        var character = new UiPanel { Width = 300, Height = 500 };
+        w.Root.AddChild(character);
+        w.Root.RegisterWindow(WindowNames.Character, character, character, null);
+        var panelUi = new RetailPanelUiController(w.Root.IsWindowVisible, w.Root.ShowWindow, w.Root.HideWindow);
+        panelUi.Register(RetailPanelCatalog.Character, WindowNames.Character);
+        panelUi.Register(RetailPanelCatalog.Inventory, WindowNames.Inventory);
+        panelUi.SetPanelVisibility(RetailPanelCatalog.Character, visible: true);
+        return (w, character, panelUi);
+    }
+
+    [Fact]
+    public void ThePacksShow_UnderModernHud_OpensTheDeck_AndLeavesTheCharacterPanelOpen()
+    {
+        var (w, character, panelUi) = WithCharacterPanel();
+        w.Switch.Apply(true);
+
+        RetailUiRuntime.ShowInventoryForController(w.Switch, panelUi, n => w.Route(n, RetailUiRuntime.WindowOp.Show));
+        w.Switch.Tick();
+
+        Assert.True(character.Visible);
+        Assert.False(w.Inventory.Visible);
+        Assert.True(w.DeckVisible);
+    }
+
+    [Fact]
+    public void ThePacksShow_ModernHudOff_ShowsTheRetailPanelInTheSharedSlot()
+    {
+        var (w, character, panelUi) = WithCharacterPanel();
+        w.Switch.Apply(false);
+        var routed = new List<string>();
+
+        RetailUiRuntime.ShowInventoryForController(w.Switch, panelUi, n => { routed.Add(n); return true; });
+
+        Assert.Empty(routed);
+        Assert.True(w.Inventory.Visible);
+        Assert.False(character.Visible);   // the retail panels take turns in the main slot
+        Assert.False(w.DeckVisible);
+    }
 }

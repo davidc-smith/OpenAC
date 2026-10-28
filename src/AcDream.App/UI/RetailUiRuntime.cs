@@ -1625,6 +1625,23 @@ public sealed class RetailUiRuntime : IDisposable
             ToolbarController.SetPanelOpen(panelId, ToolbarButtonLit(windowName, Host.IsWindowVisible(windowName)));
     }
 
+    /// <summary>
+    /// The inventory controller's own show (a carried pack used from a shortcut). Under Modern
+    /// HUD it takes the routed path and opens the Gear Deck: showing the retail panel would
+    /// first close whichever main panel shares its slot (the Character panel).
+    /// </summary>
+    internal static void ShowInventoryForController(
+        Hud.ModernHudSwitch? hudSwitch, RetailPanelUiController panelUi, Func<string, bool> routedShow)
+    {
+        if (hudSwitch?.RedirectTarget(WindowNames.Inventory) is not null)
+        {
+            routedShow(WindowNames.Inventory);
+            return;
+        }
+        if (!panelUi.IsPanelVisible(RetailPanelCatalog.Inventory))
+            panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
+    }
+
     /// <summary>The toolbar button a window lights: its catalogued panel, and the Inventory
     /// button for the Gear Deck that stands in for the inventory.</summary>
     internal static bool TryGetToolbarPanel(string windowName, out uint panelId)
@@ -5446,11 +5463,7 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.Toolbar.Shortcuts,
             LoadShortcutDigitGraphics(),
             _bindings.Toolbar.Combat,
-            showWindow: () =>
-            {
-                if (!_panelUi.IsPanelVisible(RetailPanelCatalog.Inventory))
-                    _panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
-            });
+            showWindow: () => ShowInventoryForController(_hudSwitch, _panelUi, ShowWindow));
         InventoryPanelController = inventory;
         PaperdollController paperdoll = PaperdollController.Bind(
             layout, b.Objects, b.PlayerGuid, b.ResolveIcon, b.Selection, b.ItemInteraction,
