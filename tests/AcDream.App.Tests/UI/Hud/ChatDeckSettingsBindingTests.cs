@@ -18,6 +18,57 @@ public sealed class ChatDeckSettingsBindingTests
     {
         foreach (ChatDeckChannel c in Enum.GetValues<ChatDeckChannel>())
             Assert.Equal(0xFFu, ChatDeckChannelColours.Default(c) >> 24);
+        uint ink = ChatDeckChannelColours.Argb(ChatDeckPalette.TextInk);
+        // Say is white in the retail table, so it cannot tell a real colour from the fallback; these three are not.
+        Assert.NotEqual(ink, ChatDeckChannelColours.Default(ChatDeckChannel.TellOut));
+        Assert.NotEqual(ink, ChatDeckChannelColours.Default(ChatDeckChannel.Combat));
+        Assert.NotEqual(ink, ChatDeckChannelColours.Default(ChatDeckChannel.General));
+        Assert.NotEqual(ink, ChatDeckChannelColours.Default(ChatDeckChannel.TellIn));
+    }
+
+    [Fact]
+    public void EveryAppearanceSetter_ChangesOnlyItsOwnField()
+    {
+        var d = new ChatDeckAppearance();
+        var cases = new (string Name, Action<ChatDeckSettingsBinding> Set, Func<ChatDeckAppearance, ChatDeckAppearance> Expect)[]
+        {
+            ("FontSize", b => b.SetFontSize(d.FontSize + 3), a => a with { FontSize = d.FontSize + 3 }),
+            ("InputFontSize", b => b.SetInputFontSize(d.InputFontSize + 3), a => a with { InputFontSize = d.InputFontSize + 3 }),
+            ("LineSpacing", b => b.SetLineSpacing(1.5), a => a with { LineSpacing = 1.5f }),
+            ("Opacity", b => b.SetOpacity(40), a => a with { BackgroundOpacity = 0.4f }),
+            ("Timestamps", b => b.SetTimestamps(2), a => a with { Timestamps = ChatDeckTimestamps.HourMinuteSecond }),
+            ("ChannelPrefix", b => b.SetChannelPrefix(!d.ChannelPrefix), a => a with { ChannelPrefix = !d.ChannelPrefix }),
+            ("WrapIndent", b => b.SetWrapIndent(!d.WrapIndent), a => a with { WrapIndent = !d.WrapIndent }),
+            ("FadeWhenIdle", b => b.SetFadeWhenIdle(!d.FadeWhenIdle), a => a with { FadeWhenIdle = !d.FadeWhenIdle }),
+            ("FadeAfterSeconds", b => b.SetFadeAfterSeconds(d.FadeAfterSeconds + 7), a => a with { FadeAfterSeconds = d.FadeAfterSeconds + 7 }),
+            ("Beep", b => b.SetBeep(!d.BeepOnAlert), a => a with { BeepOnAlert = !d.BeepOnAlert }),
+        };
+        foreach (var (name, set, expect) in cases)
+        {
+            var (model, b) = Make();
+            ChatDeckAppearance before = model.Settings.Appearance;
+            set(b);
+            ChatDeckAppearance want = expect(before);
+            ChatDeckAppearance got = model.Settings.Appearance;
+            Assert.NotEqual(before, got);
+            Assert.True(want.FontSize == got.FontSize && want.InputFontSize == got.InputFontSize
+                && want.LineSpacing == got.LineSpacing && want.BackgroundOpacity == got.BackgroundOpacity
+                && want.Timestamps == got.Timestamps && want.ChannelPrefix == got.ChannelPrefix
+                && want.WrapIndent == got.WrapIndent && want.FadeWhenIdle == got.FadeWhenIdle
+                && want.FadeAfterSeconds == got.FadeAfterSeconds && want.BeepOnAlert == got.BeepOnAlert,
+                $"{name} did not change exactly its own field");
+        }
+    }
+
+    [Fact]
+    public void PreviousTabKey_RoundTripsAndLeavesNext()
+    {
+        var (model, b) = Make();
+        string next = model.Settings.Keys.NextTab;
+        b.SetPreviousTabKey("Ctrl+Alt+P");
+        Assert.Equal("Ctrl+Alt+P", model.Settings.Keys.PreviousTab);
+        Assert.Equal("Ctrl+Alt+P", b.PreviousTabKey);
+        Assert.Equal(next, model.Settings.Keys.NextTab);
     }
 
     [Fact]
@@ -66,9 +117,36 @@ public sealed class ChatDeckSettingsBindingTests
     [Fact]
     public void NoModel_ReadsDefaults_IgnoresSets()
     {
-        var b = new ChatDeckSettingsBinding(() => null);
-        b.SetFontSize(18);
-        Assert.Equal(new ChatDeckAppearance().FontSize, b.FontSize);
+        var d = new ChatDeckAppearance();
+        var k = new ChatDeckKeys();
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        ChatDeckModel? current = model;
+        var b = new ChatDeckSettingsBinding(() => current);
+        ChatDeckSettings before = model.Settings;
+        current = null;
+
+        var ex = Record.Exception(() =>
+        {
+            b.SetFontSize(18); b.SetInputFontSize(18); b.SetLineSpacing(1.5); b.SetOpacity(10);
+            b.SetTimestamps(2); b.SetChannelPrefix(!d.ChannelPrefix); b.SetWrapIndent(!d.WrapIndent);
+            b.SetFadeWhenIdle(!d.FadeWhenIdle); b.SetFadeAfterSeconds(99); b.SetBeep(!d.BeepOnAlert);
+            b.SetNextTabKey("Ctrl+Alt+N"); b.SetPreviousTabKey("Ctrl+Alt+P");
+            b.Colours[0].SetHex("#FF112233"); b.ResetColours();
+        });
+        Assert.Null(ex);
+        Assert.Equal(d.FontSize, b.FontSize);
+        Assert.Equal(d.InputFontSize, b.InputFontSize);
+        Assert.Equal(Math.Round(d.LineSpacing, 1), b.LineSpacing);
+        Assert.Equal((int)MathF.Round(d.BackgroundOpacity * 100f), b.Opacity);
+        Assert.Equal((int)d.Timestamps, b.Timestamps);
+        Assert.Equal(d.ChannelPrefix, b.ChannelPrefix);
+        Assert.Equal(d.WrapIndent, b.WrapIndent);
+        Assert.Equal(d.FadeWhenIdle, b.FadeWhenIdle);
+        Assert.Equal(d.FadeAfterSeconds, b.FadeAfterSeconds);
+        Assert.Equal(d.BeepOnAlert, b.Beep);
+        Assert.Equal(k.NextTab, b.NextTabKey);
+        Assert.Equal(k.PreviousTab, b.PreviousTabKey);
+        Assert.Equal(before, model.Settings);
     }
 
     [Fact]
