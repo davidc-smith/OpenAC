@@ -68,11 +68,7 @@ internal sealed partial class UiChatDeck : UiElement
         MinHeight = ChatDeckGeometry.MinHeight;
         Resizable = true;
         _geometry = ChatDeckGeometry.Create(Width, Height, [], false, ChipText, MeasureLabel);
-        _peek = new ChatDeckPeekFeed(line =>
-        {
-            AcDream.Runtime.Chat.ChatProjectedLine projected = AcDream.Runtime.Chat.ChatLineProjector.Project(line.Entry);
-            return (_model?.Settings.Appearance.ChannelPrefix ?? true) ? projected.Text : ChatDeckPrefix.Strip(projected, line.Entry).Text;
-        });
+        _peek = new ChatDeckPeekFeed(ShownText);
 
         Transcript = new UiText
         {
@@ -116,6 +112,14 @@ internal sealed partial class UiChatDeck : UiElement
         CreateRenameField();       // UiChatDeck.TabEdit.cs
         CreateStrip();             // UiChatDeck.Strip.cs
         CreateDrawer();            // UiChatDeck.Drawer.cs
+        CreateLineMenu();          // UiChatDeck.LineMenu.cs
+    }
+
+    /// <summary>A line's text as the transcript shows it, without a timestamp.</summary>
+    private string ShownText(ChatDeckLine line)
+    {
+        AcDream.Runtime.Chat.ChatProjectedLine projected = AcDream.Runtime.Chat.ChatLineProjector.Project(line.Entry);
+        return (_model?.Settings.Appearance.ChannelPrefix ?? true) ? projected.Text : ChatDeckPrefix.Strip(projected, line.Entry).Text;
     }
 
     private static readonly string[] TabMenuItems = ["Rename", "Edit tab…", "-", "Mark as read", "Mark all read", "-", "Delete"];
@@ -178,6 +182,7 @@ internal sealed partial class UiChatDeck : UiElement
         _drawer.Close();
         _peek.Clear();
         _tabMenu.Close(restoreFocus: false);
+        _lineMenu.Close(restoreFocus: false);
         FinishRename(null);
         OnInputHidden();           // UiChatDeck.Input.cs
         ApplyDrawer();             // reports the hidden view to the model: a hidden element gets no ticks
