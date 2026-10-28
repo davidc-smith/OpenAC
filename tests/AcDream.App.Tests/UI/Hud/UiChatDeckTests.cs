@@ -39,6 +39,9 @@ public sealed class UiChatDeckTests
         public int Beeps;
         public int SettingsOpened;
         public bool SettingsIsOpen;
+        public readonly List<ChatDeckEditorRequest> EditorRequests = [];
+        public int EditorToggles;
+        public bool EditorIsOpen { get; set; }
 
         public Harness(bool withModel = true, DeckFonts? fonts = null)
         {
@@ -56,7 +59,10 @@ public sealed class UiChatDeckTests
                     RestorePinnedPlacement: () => RestorePlacement?.Invoke(),
                     PlayAlert: () => Beeps++,
                     OpenSettings: () => SettingsOpened++,
-                    SettingsOpen: () => SettingsIsOpen),
+                    SettingsOpen: () => SettingsIsOpen,
+                    OpenEditor: EditorRequests.Add,
+                    ToggleEditor: () => EditorToggles++,
+                    EditorOpen: () => EditorIsOpen),
                 fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();
@@ -165,14 +171,14 @@ public sealed class UiChatDeckTests
         var h = new Harness();
         h.Say("one");
         DeckRect local = h.Deck.Geometry.Tabs[h.TabIndex("local")];
-        Assert.Equal(["Mark as read", "Mark all read"], h.Deck.TabMenuItemsAt(local.X + 2, local.Y + 2));
-        h.Deck.ChooseTabMenuItem(0);
+        Assert.Equal(["Rename", "Edit tab…", "-", "Mark as read", "Mark all read", "-", "Delete"], h.Deck.TabMenuItemsAt(local.X + 2, local.Y + 2));
+        h.Deck.ChooseTabMenuItem(3);
         Assert.Equal(0, h.Model!.FindTab("local")!.Unread);
         Assert.Equal(1, h.Model.FindTab("all")!.Unread);
 
         Assert.Empty(h.Deck.TabMenuItemsAt(5, h.Deck.Geometry.Transcript.Y + 10));
         h.Deck.TabMenuItemsAt(local.X + 2, local.Y + 2);
-        h.Deck.ChooseTabMenuItem(1);
+        h.Deck.ChooseTabMenuItem(4);
         Assert.Equal(0, h.Model.FindTab("all")!.Unread);
     }
 

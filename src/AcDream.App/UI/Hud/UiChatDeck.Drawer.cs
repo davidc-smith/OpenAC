@@ -42,6 +42,7 @@ internal sealed partial class UiChatDeck
     {
         ChatDeckModel? model = _b.Model();
         if (ReferenceEquals(model, _model)) return;
+        FinishRename(null);   // a rename in progress belongs to the previous character's tab
         if (_model is not null)
         {
             _model.Cleared -= ResetView;

@@ -107,4 +107,43 @@ public sealed class UiChatDeckSearchTests
         AssertPlaced(w.Deck.Input, w.Deck.Geometry.Input);
         AssertPlaced(w.Deck.Transcript, w.Deck.Geometry.Transcript);
     }
+
+    [Fact]
+    public void Searching_KeepsNewLinesUnread_UntilTheSearchCloses()
+    {
+        var h = new Harness();
+        h.Deck.OnShown();
+        h.Deck.Refresh();
+        h.Deck.SearchField.SetText("zzz");
+        h.Deck.SearchField.OnTextChanged!("zzz");
+        h.Deck.Refresh();   // a client frame reports the narrowed view before the next line arrives
+        h.Say("hello");
+        h.Deck.Refresh();
+        ChatDeckTabState all = h.Model!.FindTab("all")!;
+        Assert.Equal(1, all.Unread);
+
+        h.Deck.SearchField.OnEscape!();
+        h.Deck.Refresh();
+        Assert.Equal(0, all.Unread);
+    }
+
+    [Fact]
+    public void ScrolledUpWhileSearching_CountsOnlyMatchingLines()
+    {
+        var h = new Harness();
+        h.Deck.OnShown();
+        h.Say("loot one");
+        h.Deck.SearchField.OnTextChanged!("loot");
+        h.Deck.Refresh();
+        UiScrollable scroll = h.Deck.Transcript.Scroll;
+        scroll.SetExtents(1000, 100);
+        scroll.SetScrollY(0);
+        h.Deck.Refresh();
+
+        h.Say("loot two");
+        h.Say("other");
+        h.Say("loot three");
+        h.Deck.Refresh();
+        Assert.Equal(2, h.Deck.NewLineCount);
+    }
 }

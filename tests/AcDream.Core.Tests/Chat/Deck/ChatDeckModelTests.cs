@@ -274,4 +274,26 @@ public sealed class ChatDeckModelTests
         Assert.Equal("Ctrl+Alt+N", model.Settings.Keys.NextTab);
         Assert.Equal(1, raised);
     }
+
+    [Fact]
+    public void Edit_AppliesAndRaisesOnce_NoChangeRaisesNothing()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        int raised = 0;
+        model.SettingsChanged += _ => raised++;
+        Assert.False(model.Edit(s => s));
+        Assert.Equal(0, raised);
+        Assert.True(model.Edit(s => ChatDeckSettingsEdits.AddTab(s, "Loot", out _)));
+        Assert.Equal(1, raised);
+        Assert.NotNull(model.FindTab("tab-1"));
+    }
+
+    [Fact]
+    public void Edit_RebuildsRules()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        model.Edit(s => ChatDeckSettingsEdits.AddRule(s,
+            new ChatDeckRule { Id = "", Kind = ChatDeckMatchKind.Regex, Pattern = "(" }, out _));
+        Assert.Equal(ChatDeckRuleStatus.Invalid, model.CompiledRules[^1].Status);
+    }
 }

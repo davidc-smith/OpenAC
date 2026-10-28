@@ -33,6 +33,17 @@ internal sealed class PluginAppearanceWindow(UiRoot root, Func<Action, UiElement
         root.BringToFront(_window);
     }
 
+    /// <summary>Opens the window when it is closed (placed as any open places it), else brings it to the front.</summary>
+    internal void Show()
+    {
+        if (IsOpen)
+        {
+            root.BringToFront(_window!);
+            return;
+        }
+        Toggle();
+    }
+
     private void Close()
     {
         if (_window is not null)

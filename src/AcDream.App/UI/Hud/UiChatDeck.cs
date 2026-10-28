@@ -23,7 +23,10 @@ internal sealed record ChatDeckBindings(
     Action? RestorePinnedPlacement = null,
     Action? PlayAlert = null,
     Action? OpenSettings = null,
-    Func<bool>? SettingsOpen = null);
+    Func<bool>? SettingsOpen = null,
+    Action<ChatDeckEditorRequest>? OpenEditor = null,
+    Action? ToggleEditor = null,
+    Func<bool>? EditorOpen = null);
 
 /// <summary>
 /// The Chat Deck window (pinned layout): a tab bar, a transcript of the selected
@@ -50,7 +53,7 @@ internal sealed partial class UiChatDeck : UiElement
     private bool _searchOpen;
     private string _searchText = "";
     private bool _shown;
-    private long? _addedAtScrollUp;
+    private long? _seenThrough;   // the newest line shown when the view left the bottom
     private int _menuTab = -1;
     private ChatDeckHit _hit;
 
@@ -65,11 +68,7 @@ internal sealed partial class UiChatDeck : UiElement
         MinHeight = ChatDeckGeometry.MinHeight;
         Resizable = true;
         _geometry = ChatDeckGeometry.Create(Width, Height, [], false, ChipText, MeasureLabel);
-        _peek = new ChatDeckPeekFeed(line =>
-        {
-            AcDream.Runtime.Chat.ChatProjectedLine projected = AcDream.Runtime.Chat.ChatLineProjector.Project(line.Entry);
-            return (_model?.Settings.Appearance.ChannelPrefix ?? true) ? projected.Text : ChatDeckPrefix.Strip(projected, line.Entry).Text;
-        });
+        _peek = new ChatDeckPeekFeed(ShownText);
 
         Transcript = new UiText
         {
@@ -99,6 +98,9 @@ internal sealed partial class UiChatDeck : UiElement
 
         _tabMenu.Opening = (x, y) => _menuTab = _geometry.HitAt(x, y) is { Zone: ChatDeckZone.Tab } hit ? hit.Tab : -1;
         _tabMenu.ItemsSource = () => _menuTab >= 0 ? TabMenuItems : [];
+        _tabMenu.ItemsEnabledSource = () => TabMenuItems
+            .Select(item => item != "Delete" || (_model is { } m && _menuTab > 0 && _menuTab < m.Settings.Tabs.Count))
+            .ToArray();
         _tabMenu.Selected = ChooseTabMenuItem;
         ContextMenu = _tabMenu;
 
@@ -107,11 +109,20 @@ internal sealed partial class UiChatDeck : UiElement
         AddChild(SearchField);
         AddChild(_tabMenu);
         CreateInputRow();          // UiChatDeck.Input.cs
+        CreateRenameField();       // UiChatDeck.TabEdit.cs
         CreateStrip();             // UiChatDeck.Strip.cs
         CreateDrawer();            // UiChatDeck.Drawer.cs
+        CreateLineMenu();          // UiChatDeck.LineMenu.cs
     }
 
-    private static readonly string[] TabMenuItems = ["Mark as read", "Mark all read"];
+    /// <summary>A line's text as the transcript shows it, without a timestamp.</summary>
+    private string ShownText(ChatDeckLine line)
+    {
+        AcDream.Runtime.Chat.ChatProjectedLine projected = AcDream.Runtime.Chat.ChatLineProjector.Project(line.Entry);
+        return (_model?.Settings.Appearance.ChannelPrefix ?? true) ? projected.Text : ChatDeckPrefix.Strip(projected, line.Entry).Text;
+    }
+
+    private static readonly string[] TabMenuItems = ["Rename", "Edit tab…", "-", "Mark as read", "Mark all read", "-", "Delete"];
 
     internal UiText Transcript { get; }
     internal UiField SearchField { get; }
@@ -125,7 +136,7 @@ internal sealed partial class UiChatDeck : UiElement
     public override bool HandlesClick => IsControl(_hit);
 
     private static bool IsControl(ChatDeckHit hit) =>
-        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.SettingsStud or ChatDeckZone.Chip
+        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.SettingsStud or ChatDeckZone.FiltersStud or ChatDeckZone.AddTab or ChatDeckZone.Chip
             or ChatDeckZone.CollapseStud;
 
     internal bool HitTestLocal(float x, float y) => OnHitTest(x, y);
@@ -171,6 +182,8 @@ internal sealed partial class UiChatDeck : UiElement
         _drawer.Close();
         _peek.Clear();
         _tabMenu.Close(restoreFocus: false);
+        _lineMenu.Close(restoreFocus: false);
+        FinishRename(null);
         OnInputHidden();           // UiChatDeck.Input.cs
         ApplyDrawer();             // reports the hidden view to the model: a hidden element gets no ticks
     }
@@ -189,13 +202,15 @@ internal sealed partial class UiChatDeck : UiElement
             : _model.Settings.Tabs
                 .Select(t => new ChatDeckTabLabel(t.Name, ChatDeckBadges.Text(_model.FindTab(t.Id)?.Unread ?? 0)))
                 .ToList();
-        _geometry = ChatDeckGeometry.Create(Width, Height, _labels, _searchOpen, ChipText, MeasureLabel);
+        _geometry = ChatDeckGeometry.Create(Width, Height, _labels, _searchOpen, ChipText, MeasureLabel,
+            canAddTab: _model is { } m && m.Settings.Tabs.Count < ChatDeckLimits.MaxTabs);
 
         Place(Transcript, _geometry.Transcript);
         Place(SearchField, _searchOpen ? _geometry.SearchField : default);
         SearchField.Visible = _searchOpen;
         Place(NewLinesMarker, _geometry.NewLines);
         LayoutInputRow();          // UiChatDeck.Input.cs
+        LayoutRenameField();       // UiChatDeck.TabEdit.cs
 
         ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
         Transcript.DatFont = _fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular);
@@ -205,7 +220,8 @@ internal sealed partial class UiChatDeck : UiElement
 
         RebuildTranscript(appearance);
         TrackNewLines();
-        _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd);
+        // A search hides lines, so a narrowed view has not seen what arrives; closing it shows them (and marks them read).
+        _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd && _searchText.Length == 0);
     }
 
     /// <summary>
@@ -254,23 +270,25 @@ internal sealed partial class UiChatDeck : UiElement
 
     private void TrackNewLines()
     {
-        ChatDeckTabState? tab = SelectedTab;
-        if (tab is null || Transcript.Scroll.AtEnd)
+        if (SelectedTab is null || Transcript.Scroll.AtEnd)
         {
-            _addedAtScrollUp = null;
+            _seenThrough = null;
             NewLineCount = 0;
         }
         else
         {
-            if (_addedAtScrollUp is not long since || tab.Added < since) _addedAtScrollUp = since = tab.Added;
-            NewLineCount = (int)Math.Min(int.MaxValue, tab.Added - since);
+            List<ChatDeckLine> shown = _layout.Sources;
+            _seenThrough ??= shown.Count > 0 ? shown[^1].Sequence : long.MinValue;
+            int n = 0;
+            for (int i = shown.Count - 1; i >= 0 && shown[i].Sequence > _seenThrough; i--) n++;
+            NewLineCount = n;
         }
         NewLinesMarker.Visible = NewLineCount > 0;
     }
 
     private void ResetView()
     {
-        _addedAtScrollUp = null;
+        _seenThrough = null;
         NewLineCount = 0;
         _peek.Clear();
         _builtFor = null;
@@ -281,7 +299,7 @@ internal sealed partial class UiChatDeck : UiElement
     private void FollowNewest()
     {
         Transcript.Scroll.ScrollToEnd();
-        _addedAtScrollUp = null;
+        _seenThrough = null;
         NewLineCount = 0;
         NewLinesMarker.Visible = false;
     }
@@ -322,9 +340,19 @@ internal sealed partial class UiChatDeck : UiElement
 
     internal void ChooseTabMenuItem(int index)
     {
-        if (_model is null || _menuTab < 0 || _menuTab >= _model.Settings.Tabs.Count) return;
-        if (index == 0) _model.FindTab(_model.Settings.Tabs[_menuTab].Id)?.MarkRead();
-        else if (index == 1) _model.MarkAllRead();
+        if (_model is null || _menuTab < 0 || _menuTab >= _model.Settings.Tabs.Count || index < 0 || index >= TabMenuItems.Length) return;
+        string tabId = _model.Settings.Tabs[_menuTab].Id;
+        switch (TabMenuItems[index])
+        {
+            case "Rename": StartRename(_menuTab); break;                                    // UiChatDeck.TabEdit.cs
+            case "Edit tab…": _b.OpenEditor?.Invoke(new ChatDeckEditorRequest { Page = ChatDeckEditorPage.Tabs, TabId = tabId }); break;
+            case "Mark as read": _model.FindTab(tabId)?.MarkRead(); break;
+            case "Mark all read": _model.MarkAllRead(); break;
+            case "Delete":
+                if (tabId != ChatDeckDefaults.AllTabId)
+                    _b.OpenEditor?.Invoke(new ChatDeckEditorRequest { Page = ChatDeckEditorPage.Tabs, TabId = tabId, ConfirmDeleteTab = true });
+                break;
+        }
     }
 
     private bool OnTranscriptClick(UiText.Pos position)
@@ -367,6 +395,8 @@ internal sealed partial class UiChatDeck : UiElement
                     case ChatDeckZone.CollapseStud: PressCollapse(); return true;
                     case ChatDeckZone.SearchStud: ToggleSearch(); return true;
                     case ChatDeckZone.SettingsStud: _b.OpenSettings?.Invoke(); return true;
+                    case ChatDeckZone.FiltersStud: _b.ToggleEditor?.Invoke(); return true;
+                    case ChatDeckZone.AddTab: AddTabAndEdit(); return true;
                     case ChatDeckZone.Chip: OpenChipMenu(e.Data1, e.Data2); return true;   // UiChatDeck.Input.cs
                     default: return false;
                 }

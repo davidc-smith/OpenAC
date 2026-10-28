@@ -122,6 +122,20 @@ public static class ChatDeckMatcher
         }
     }
 
+    /// <summary>Whether the rule's pattern matches empty text, and so every line; the editor warns.</summary>
+    public static bool MatchesEmpty(ChatDeckCompiledRule compiled)
+    {
+        if (compiled.Status != ChatDeckRuleStatus.Ok || compiled.Regex is null) return false;
+        try
+        {
+            return compiled.Regex.IsMatch("");
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
+    }
+
     private static Regex BuildUserRegex(string pattern)
     {
         try

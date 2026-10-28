@@ -887,6 +887,12 @@ public sealed class UiText : UiElement, IUiDatStateful
         return !(start.Line == end.Line && start.Col == end.Col);
     }
 
+    /// <summary>The line and column under a local point (the Chat Deck's line menu).</summary>
+    internal Pos HitCharAt(float localX, float localY) => HitChar(localX, localY);
+
+    /// <summary>The selection's ordered ends; false when nothing is selected.</summary>
+    internal bool TryGetSelection(out Pos start, out Pos end) => TryGetOrderedSelection(out start, out end);
+
     public string SelectedText()
     {
         if (!TryGetOrderedSelection(out var start, out var end)) return string.Empty;
