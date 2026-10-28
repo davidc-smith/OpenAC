@@ -65,4 +65,12 @@ public sealed class ChatDeckRuleSummaryTests
         foreach (ChatDeckChannel c in Enum.GetValues<ChatDeckChannel>())
             Assert.Equal(c, ChatDeckTestLine.Facts(c, "Bob", "hi", "Davian").Channel);
     }
+
+    [Fact]
+    public void TestLine_TellsAreWordedByDirection_AndBlankSenderStaysBlank()
+    {
+        Assert.Equal("Bob tells you, \"hi\"", ChatDeckTestLine.Facts(ChatDeckChannel.TellIn, "Bob", "hi", "Davian").Line);
+        Assert.Equal("You tell Bob, \"hi\"", ChatDeckTestLine.Facts(ChatDeckChannel.TellOut, "Bob", "hi", "Davian").Line);
+        Assert.Equal("", ChatDeckTestLine.Facts(ChatDeckChannel.Say, "", "hi", "Davian").Sender);
+    }
 }

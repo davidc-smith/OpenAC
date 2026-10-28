@@ -13,13 +13,13 @@ public static class ChatDeckTestLine
         string who = sender.Trim();
         ChatEntry entry = Entry(channel, who, text);
         // The channel is the one picked, whatever the synthesized entry would classify as.
-        return ChatDeckLineFacts.From(entry, characterName) with { Channel = channel, IsOwn = false };
+        return ChatDeckLineFacts.From(entry, characterName) with { Channel = channel, IsOwn = false, Sender = who };
     }
 
     private static ChatEntry Entry(ChatDeckChannel channel, string sender, string text)
     {
         string speaker = sender.Length > 0 ? sender : Someone;
-        ChatEntry Speech(ChatKind kind, RetailLogTextType type) => new(kind, speaker, text, 0u, 0u) { LogTextType = (uint)type };
+        ChatEntry Speech(ChatKind kind, RetailLogTextType type, uint guid = 0u) => new(kind, speaker, text, guid, 0u) { LogTextType = (uint)type };
         ChatEntry Room(string name) => new(ChatKind.Channel, speaker, text, 0u, 0u) { ChannelName = name };
         ChatEntry Legacy(uint id) => new(ChatKind.Channel, speaker, text, 0u, id)
         {
@@ -31,7 +31,8 @@ public static class ChatDeckTestLine
         {
             ChatDeckChannel.Say => Speech(ChatKind.LocalSpeech, RetailLogTextType.Speech),
             ChatDeckChannel.Emote => Speech(ChatKind.Emote, RetailLogTextType.Emote),
-            ChatDeckChannel.TellIn => Speech(ChatKind.Tell, RetailLogTextType.Tell),
+            // A player-range guid makes the wording "Bob tells you"; guid 0 would read as a sent tell.
+            ChatDeckChannel.TellIn => Speech(ChatKind.Tell, RetailLogTextType.Tell, PlayerObjectIds.First),
             ChatDeckChannel.TellOut => Speech(ChatKind.Tell, RetailLogTextType.SpeechDirectSend),
             ChatDeckChannel.Fellowship => Legacy(0x00000800u),
             ChatDeckChannel.Patron => Legacy(0x00001000u),
