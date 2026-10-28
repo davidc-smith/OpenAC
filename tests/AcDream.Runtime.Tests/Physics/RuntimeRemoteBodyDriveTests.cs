@@ -121,16 +121,24 @@ public sealed class RuntimeRemoteBodyDriveTests
             world.Tick(SteppingFrameSeconds);
         Assert.Equal(CrowdSize, world.LastAdvancedCount);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int frame = 0; frame < 30; frame++)
+        // Measured frame by frame, so a failure says which frames allocated:
+        // one frame is a one-off event, every frame is the loop itself.
+        Span<long> perFrame = stackalloc long[30];
+        long allocated = 0L;
+        for (int frame = 0; frame < perFrame.Length; frame++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
             world.Tick(SteppingFrameSeconds);
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            perFrame[frame] = GC.GetAllocatedBytesForCurrentThread() - before;
+            allocated += perFrame[frame];
+        }
 
         Assert.Equal(CrowdSize, world.LastAdvancedCount);
         Assert.True(
             allocated == 0L,
             $"Carrying {CrowdSize} bodies for 30 frames allocated "
-            + $"{allocated} bytes; a warm frame must allocate nothing.");
+            + $"{allocated} bytes; a warm frame must allocate nothing. "
+            + $"Bytes per frame: {string.Join(", ", perFrame.ToArray())}.");
     }
 
     /// <summary>

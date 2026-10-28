@@ -133,6 +133,54 @@ public sealed class WbDrawDispatcherCompositeWarmupTests
         Assert.True(WbDrawDispatcher.IsCompositeWarmupCandidate(entity, Destination, radius: 0));
     }
 
+    [Fact]
+    public void AnEntityThatLeavesTheWorldIsNoLongerWaitedFor()
+    {
+        // The fixture's meshes never load, as a mesh whose last owner left
+        // the world never does: its preparation is never uploaded again.
+        using var fx = new AcDream.App.Tests.Rendering.Walk.WalkFrameDriverTests.DispatcherFixture();
+        WbDrawDispatcher dispatcher = fx.Dispatcher;
+        var published = new List<WorldEntity>
+        {
+            CreateEntity(parentCell: Destination, withPalette: true),
+        };
+        dispatcher.InvalidateCompositeWarmupReadiness();
+
+        dispatcher.PrepareCompositeTextures(published, entityGeneration: 1, Destination, radius: 1);
+        Assert.False(dispatcher.CompositeTexturesReady);
+
+        // The entity leaves the world (killed, decayed, logged out, its
+        // landblock dropped) while the destination is still loading.
+        published.Clear();
+        for (int frame = 0; frame < 3; frame++)
+            dispatcher.PrepareCompositeTextures(published, entityGeneration: 2, Destination, radius: 1);
+
+        Assert.True(dispatcher.CompositeTexturesReady);
+        Assert.Equal(0, dispatcher.LastCompositeWarmupPendingCount);
+    }
+
+    [Fact]
+    public void AnEntityThatStaysIsStillWaitedForAfterTheWorldChanges()
+    {
+        using var fx = new AcDream.App.Tests.Rendering.Walk.WalkFrameDriverTests.DispatcherFixture();
+        WbDrawDispatcher dispatcher = fx.Dispatcher;
+        WorldEntity staying = CreateEntity(parentCell: Destination, withPalette: true);
+        var published = new List<WorldEntity>
+        {
+            staying,
+            CreateEntity(parentCell: Destination, withPalette: true),
+        };
+        dispatcher.InvalidateCompositeWarmupReadiness();
+        dispatcher.PrepareCompositeTextures(published, entityGeneration: 1, Destination, radius: 1);
+
+        published.RemoveAt(1);
+        for (int frame = 0; frame < 3; frame++)
+            dispatcher.PrepareCompositeTextures(published, entityGeneration: 2, Destination, radius: 1);
+
+        Assert.False(dispatcher.CompositeTexturesReady);
+        Assert.Equal(1, dispatcher.LastCompositeWarmupPendingCount);
+    }
+
     private static WorldEntity CreateEntity(uint? parentCell, bool withPalette) => new()
     {
         Id = 1,

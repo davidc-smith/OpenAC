@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AcDream.Core\AcDream.Core.csproj" />
+    <ProjectReference Include="..\AcDream.Launcher.Core\AcDream.Launcher.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -11,7 +11,7 @@
     <Deterministic>true</Deterministic>
     <!-- Upstream's version, unchanged between upstream syncs: lock files record it.
          Our release version is OpenACReleaseVersion below (see BRANCHING.md). -->
-    <Version>0.1.28</Version>
+    <Version>0.1.30</Version>
     <OpenACProduct>OpenAC Gateway</OpenACProduct>
     <OpenACReleaseLabel>gateway</OpenACReleaseLabel>
     <OpenACReleaseNumber>1</OpenACReleaseNumber>
@@ -22,6 +22,12 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' == ''">$(MSBuildProjectDirectory)/packages.neutral.lock.json</NuGetLockFilePath>
     <NuGetLockFilePath Condition="'$(RuntimeIdentifier)' != ''">$(MSBuildProjectDirectory)/packages.$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
+
+    <!-- No source lives under obj. The SDK leaves out only the current
+         intermediate folder, so a build given its own (the launcher's inner
+         Bake build) would otherwise compile the files another build
+         generated there. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <!-- A product line's own identity (the rynth branch's Gateway Rynth); main has no such file. -->

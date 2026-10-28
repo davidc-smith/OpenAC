@@ -30,13 +30,22 @@
       "acdream.core": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Plugin.Abstractions": "[0.1.28, )",
+          "AcDream.Plugin.Abstractions": "[0.1.30, )",
           "BCnEncoder.Net": "[2.2.1, )",
           "Chorizite.DatReaderWriter": "[2.1.7, )",
           "Serilog": "[4.0.2, )",
           "StbImageSharp": "[2.30.16, )",
           "StbImageWriteSharp": "[1.16.7, )"
         }
+      },
+      "acdream.launcher.core": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Platform": "[0.1.30, )"
+        }
+      },
+      "acdream.platform": {
+        "type": "Project"
       },
       "acdream.plugin.abstractions": {
         "type": "Project"
