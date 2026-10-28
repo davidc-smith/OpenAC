@@ -238,4 +238,28 @@ public sealed class ChatDeckModelTests
         model.SetLayout(pinned: false, ChatDeckEdge.Left);
         Assert.Equal("combat", model.Settings.Layout.LastTabId);
     }
+
+    [Fact]
+    public void SetAppearance_Normalizes_AndRaisesOnce()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        int raised = 0;
+        model.SettingsChanged += _ => raised++;
+        model.SetAppearance(model.Settings.Appearance with { FontSize = 99 });
+        Assert.Equal(20, model.Settings.Appearance.FontSize);
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void SetKeys_Stores_AndIgnoresNoChange()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        int raised = 0;
+        model.SettingsChanged += _ => raised++;
+        var keys = new ChatDeckKeys { NextTab = "Ctrl+Alt+N" };
+        model.SetKeys(keys);
+        model.SetKeys(keys with { });
+        Assert.Equal("Ctrl+Alt+N", model.Settings.Keys.NextTab);
+        Assert.Equal(1, raised);
+    }
 }
