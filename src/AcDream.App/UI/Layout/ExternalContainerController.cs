@@ -352,6 +352,8 @@ public sealed class ExternalContainerController : IItemListDragHandler, IRetaine
         _topContainer.Flush();
         _containerList.Flush();
         _contentsList.Flush();
+        _containerList.FixedSlotCount = SlotCount(_objects.Get(root)?.ContainersCapacity);
+        _contentsList.FixedSlotCount = SlotCount(_objects.Get(_openContainer)?.ItemsCapacity);
 
         AddRootCell(root);
         foreach (uint guid in visibleContainers)
@@ -686,6 +688,14 @@ public sealed class ExternalContainerController : IItemListDragHandler, IRetaine
         int dropIndex = targetCell.ItemId != 0u ? targetCell.SlotIndex : int.MaxValue;   // an empty cell is past the last item
         return ItemListDropPlacement.Resolve(dropIndex, count, source, wholeStack);
     }
+
+    /// <summary>
+    /// Retail gives a container's strip one cell per unit of capacity, so a
+    /// house hook (capacity 1) shows one cell. A negative capacity, which
+    /// chests and corpses send, means no limit: the strip fills its width.
+    /// </summary>
+    private static int? SlotCount(int? capacity)
+        => capacity is >= 0 ? capacity : null;
 
     private static bool IsContainer(ClientObject? item)
         => item is not null
