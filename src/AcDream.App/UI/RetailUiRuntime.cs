@@ -3806,6 +3806,7 @@ public sealed class RetailUiRuntime : IDisposable
         _chatDeckSession = session;
         session!.ModelChanged += _chatDeck.SyncDrawerFromModel;
         session.ModelChanged += CloseChatDeckEditor;
+        session.ModelChanged += CloseChatDeckSettings;
         // A composed line (automation, a plugin) goes to whichever chat input is showing.
         _bindings.Chat.Entry.BindEntryFocus(() => ChatEntryTarget?.Focus() == true);
         Console.WriteLine("[UI] Chat Deck mounted (Modern HUD).");
@@ -6310,6 +6311,7 @@ public sealed class RetailUiRuntime : IDisposable
                 {
                     _chatDeckSession.ModelChanged -= _chatDeck.SyncDrawerFromModel;
                     _chatDeckSession.ModelChanged -= CloseChatDeckEditor;
+                    _chatDeckSession.ModelChanged -= CloseChatDeckSettings;
                 }
                 _chatDeckSession?.Dispose();
                 _chatDeckSession = null;
