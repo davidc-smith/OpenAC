@@ -161,7 +161,7 @@ public sealed class ChatDeckSettingsBindingTests
     public void Prepare_LetsHotkeyBoxesTakeCommand()
     {
         var (_, b) = Make();
-        UiElement window = ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, b, _ => (0u, 0, 0)));
+        UiElement window = ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, b, _ => (0u, 0, 0)), () => { });
         var boxes = new List<UiMarkupHotkey>();
         void Walk(UiElement e) { if (e is UiMarkupHotkey k) boxes.Add(k); foreach (var c in e.Children) Walk(c); }
         Walk(window);
@@ -177,5 +177,35 @@ public sealed class ChatDeckSettingsBindingTests
         UiElement window = MarkupDocument.Build(ChatDeckSettingsBinding.Markup, b, _ => (0u, 0, 0), themes: themes);
         var panel = Assert.IsType<UiPluginMarkupPanel>(window);
         Assert.Same(ChatDeckPalette.Window, panel.Palette);
+    }
+
+    [Fact]
+    public void Prepare_WiresTheTitleBarCloseToTheCloseAction()
+    {
+        var (_, b) = Make();
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var popup = new PluginAppearanceWindow(root, close =>
+            ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, b, _ => (0u, 0, 0)), close));
+        popup.Toggle();
+        Assert.True(popup.IsOpen);
+        PluginTitleBar bar = FindBar(root);
+        int x = (int)(bar.Close.ScreenPosition.X + bar.Close.Width / 2), y = (int)(bar.Close.ScreenPosition.Y + bar.Close.Height / 2);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseUp(UiMouseButton.Left, x, y);
+        Assert.False(popup.IsOpen);
+    }
+
+    private static PluginTitleBar FindBar(UiElement e)
+    {
+        if (e is PluginTitleBar bar) return bar;
+        foreach (var c in e.Children) { var f = FindBarOrNull(c); if (f is not null) return f; }
+        throw new InvalidOperationException("no title bar");
+    }
+
+    private static PluginTitleBar? FindBarOrNull(UiElement e)
+    {
+        if (e is PluginTitleBar bar) return bar;
+        foreach (var c in e.Children) { var f = FindBarOrNull(c); if (f is not null) return f; }
+        return null;
     }
 }

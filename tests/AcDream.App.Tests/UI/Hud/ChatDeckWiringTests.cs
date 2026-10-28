@@ -57,7 +57,7 @@ public sealed class ChatDeckWiringTests : IDisposable
 
             SettingsWindow = new PluginAppearanceWindow(Root, close =>
                 ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, new ChatDeckSettingsBinding(() => Model) { Close = close }, _ => (0u, 0, 0),
-                    themes: new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window))));
+                    themes: new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window)), close));
             var log = new ChatLog();
             Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(
