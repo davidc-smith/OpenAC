@@ -498,9 +498,7 @@ internal sealed partial class UiTargetDeck : UiElement
             {
                 string title = zone == TargetZone.Stamina ? "Stamina" : "Mana";
                 float? value = zone == TargetZone.Stamina ? vitals.Stamina : vitals.Mana;
-                string? text = value is float v
-                    ? zone == TargetZone.Stamina ? Amount(v, vitals.StaminaCurrent, vitals.StaminaMax) : Amount(v, vitals.ManaCurrent, vitals.ManaMax)
-                    : null;
+                string? text = zone == TargetZone.Stamina ? StaminaText(vitals) : ManaText(vitals);
                 return vitals.State switch
                 {
                     TargetVitalsState.Failed => new("Assess failed", null,
@@ -532,6 +530,14 @@ internal sealed partial class UiTargetDeck : UiElement
     /// </summary>
     internal static string HealthText(TargetVitals vitals) =>
         Amount(vitals.Health, vitals.HealthMax is uint m ? (uint)MathF.Round(vitals.Health * m) : null, vitals.HealthMax);
+
+    /// <summary>The stamina bar's text, or null before any assess gave a value.</summary>
+    internal static string? StaminaText(TargetVitals v) =>
+        v.Stamina is float f ? Amount(f, v.StaminaCurrent, v.StaminaMax) : null;
+
+    /// <summary>The mana bar's text, or null before any assess gave a value.</summary>
+    internal static string? ManaText(TargetVitals v) =>
+        v.Mana is float f ? Amount(f, v.ManaCurrent, v.ManaMax) : null;
 
     private static string Amount(float fraction, uint? current, uint? max) =>
         current is uint c && max is uint m && m > 0

@@ -277,6 +277,41 @@ public sealed class UiTargetDeckTests
     }
 
     [Fact]
+    public void StaminaAndManaBarsCarryTheirTotals()
+    {
+        var combat = new CombatState();
+        combat.OnCreatureProfile(7, new CombatState.CreatureVitals(580, 580, 710, 710, 440, 440));
+        var log = new TargetAppraisalLog();
+        log.Record(7, true, 1f, now: 49.0);
+        TargetVitals v = Build(Monster(), log: log, combat: combat).Vitals!.Value;
+        Assert.Equal("710 / 710", UiTargetDeck.StaminaText(v));
+        Assert.Equal("440 / 440", UiTargetDeck.ManaText(v));
+
+        // A failed assess keeps showing the last known totals (drawn dimmed).
+        log.Record(7, false, 1f, now: 49.5);
+        v = Build(Monster(), log: log, combat: combat).Vitals!.Value;
+        Assert.Equal(TargetVitalsState.Failed, v.State);
+        Assert.Equal("710 / 710", UiTargetDeck.StaminaText(v));
+
+        // Never assessed: no text on the bars.
+        v = Build(Monster()).Vitals!.Value;
+        Assert.Null(UiTargetDeck.StaminaText(v));
+        Assert.Null(UiTargetDeck.ManaText(v));
+    }
+
+    [Fact]
+    public void TheVitalBarsShareHealthsHeightAndPluginLinesFitBelowThem()
+    {
+        Assert.Equal(TargetDeckGeometry.Health.H, TargetDeckGeometry.Stamina.H);
+        Assert.Equal(TargetDeckGeometry.Health.H, TargetDeckGeometry.Mana.H);
+        Assert.True(TargetDeckGeometry.Stamina.Y >= TargetDeckGeometry.Health.Y + TargetDeckGeometry.Health.H);
+        Assert.True(TargetDeckGeometry.Mana.Y >= TargetDeckGeometry.Stamina.Y + TargetDeckGeometry.Stamina.H);
+        Assert.True(TargetDeckGeometry.PluginLine(0).Y >= TargetDeckGeometry.Mana.Y + TargetDeckGeometry.Mana.H);
+        DeckRect last = TargetDeckGeometry.PluginLine(1);
+        Assert.True(last.Y + last.H <= TargetDeckGeometry.Body.Y + TargetDeckGeometry.Body.H - 2f);
+    }
+
+    [Fact]
     public void HealthFallsBackToAPercentWithoutTotals()
     {
         var combat = new CombatState();

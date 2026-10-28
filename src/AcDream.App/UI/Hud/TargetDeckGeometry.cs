@@ -5,7 +5,7 @@ public enum TargetZone { None, Portrait, Name, Health, Stamina, Mana, Row0, Row1
 /// <summary>Fixed layout of the Target Deck at scale 1 (shape B: info left, action column right).</summary>
 public static class TargetDeckGeometry
 {
-    public const float Width = 340f, Height = 104f;
+    public const float Width = 340f, Height = 122f;
     public const float Pad = 10f, StudW = 24f, StudH = 20f, StudGap = 2f;
     public static readonly DeckRect Frame = new(0, 0, Width, Height);
 
@@ -15,8 +15,8 @@ public static class TargetDeckGeometry
     public static readonly DeckRect Name = new(Pad + 36, Pad - 1, Width - Pad * 2 - 36 - StudW - 8, 16);
     public static readonly DeckRect Sub = new(Pad + 36, Pad + 16, Name.W, 13);
     public static readonly DeckRect Health = new(Pad, 46, Width - Pad * 2 - StudW - 8, 14);
-    public static readonly DeckRect Stamina = new(Pad, 63, Health.W, 6);
-    public static readonly DeckRect Mana = new(Pad, 72, Health.W, 6);
+    public static readonly DeckRect Stamina = new(Pad, 63, Health.W, 14);
+    public static readonly DeckRect Mana = new(Pad, 80, Health.W, 14);
 
     /// <summary>The most studs the action column holds.</summary>
     public const int StudCount = 4;
@@ -29,7 +29,7 @@ public static class TargetDeckGeometry
     public static DeckRect Line(int i) => new(Pad, 46 + i * 13, Health.W, 13);
 
     /// <summary>Plugin line i (0-1) under the vitals bars, both above the frame's bottom rule.</summary>
-    public static DeckRect PluginLine(int i) => new(Pad, 79 + i * 10, Health.W, 10);
+    public static DeckRect PluginLine(int i) => new(Pad, 97 + i * 10, Health.W, 10);
 
     public static DeckRect Stud(int i) => new(Width - Pad - StudW, StudTop + i * (StudH + StudGap), StudW, StudH);
 }

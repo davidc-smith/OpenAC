@@ -141,15 +141,21 @@ internal sealed partial class UiTargetDeck
     private void DrawVitals(UiRenderContext ctx, TargetVitals vitals)
     {
         DeckRect h = TargetDeckGeometry.Health;
-        DeckChrome.DrawGauge(ctx, h, vitals.Health, HealthInk, 1f);
-        string health = HealthText(vitals);
-        DrawText(ctx, health, h.X + (h.W - Small.Measure(ctx, health)) / 2f, h, TextInk, Small);
+        DrawBar(ctx, h, vitals.Health, HealthInk, 1f, HealthText(vitals));
 
-        // Health is live; stamina and mana come from the last assess.
+        // Health is live; stamina and mana come from the last assess, kept dimmed when it is old or failed.
         float alpha = vitals.State is TargetVitalsState.Stale or TargetVitalsState.Failed ? DimAlpha : 1f;
-        bool known = vitals.State is TargetVitalsState.Fresh or TargetVitalsState.Stale;
-        DeckChrome.DrawGauge(ctx, TargetDeckGeometry.Stamina, known ? vitals.Stamina ?? 0f : 0f, StaminaInk, alpha);
-        DeckChrome.DrawGauge(ctx, TargetDeckGeometry.Mana, known ? vitals.Mana ?? 0f : 0f, ManaInk, alpha);
+        DrawBar(ctx, TargetDeckGeometry.Stamina, vitals.Stamina ?? 0f, StaminaInk, alpha, StaminaText(vitals));
+        DrawBar(ctx, TargetDeckGeometry.Mana, vitals.Mana ?? 0f, ManaInk, alpha, ManaText(vitals));
+    }
+
+    private void DrawBar(UiRenderContext ctx, DeckRect r, float fraction, (Vector4 Top, Vector4 Bottom) ink, float alpha, string? text)
+    {
+        DeckChrome.DrawGauge(ctx, r, fraction, ink, alpha);
+        if (text is null) return;
+        ctx.PushAlpha(alpha);
+        try { DrawText(ctx, text, r.X + (r.W - Small.Measure(ctx, text)) / 2f, r, TextInk, Small); }
+        finally { ctx.PopAlpha(); }
     }
 
     private void DrawRow(UiRenderContext ctx, DeckRect r, TargetRow row)
