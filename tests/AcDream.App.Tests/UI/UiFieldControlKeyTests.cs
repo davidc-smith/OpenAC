@@ -31,4 +31,23 @@ public sealed class UiFieldControlKeyTests
         field.OnEvent(new UiEvent(0, field, UiEventType.Char, Data0: 'x'));
         Assert.Equal("x", field.Text);      // the typed character replaced the selection
     }
+
+    [Fact]
+    public void ChordKey_NeverAskedForBareKey_AndFalseLetsKeyThrough()
+    {
+        var keyboard = new FakeKeyboard();
+        var asked = 0;
+        var field = new UiField
+        {
+            Keyboard = keyboard, Selectable = true,
+            OnChordKey = (_, _) => { asked++; return false; },
+        };
+        Press(field, Key.N);
+        Assert.Equal(0, asked);
+
+        keyboard.Held.Add(Key.ControlLeft);
+        field.SetText("abc");
+        Assert.True(Press(field, Key.A));   // asked, declined, field still selects all
+        Assert.Equal(1, asked);
+    }
 }

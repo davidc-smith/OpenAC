@@ -376,7 +376,8 @@ public sealed record RetailUiRuntimeBindings(
     Func<bool>? IsPortalViewVisible = null,
     WorldDragRuntimeBindings? WorldDrag = null,
     CommandDeckRuntimeBindings? CommandDeck = null,
-    TargetDeckRuntimeBindings? TargetDeck = null);
+    TargetDeckRuntimeBindings? TargetDeck = null,
+    Action<AcDream.Core.Audio.SoundId>? PlayUiSound = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -463,6 +464,49 @@ public sealed class RetailUiRuntime : IDisposable
     private bool _spellDeckClickCasts;
     private Hud.EmbeddedSvgSpriteCache? _hudIcons;
     private Hud.UiChatDeck? _chatDeck;
+    private Func<KeyChord, string>? _describeKey;
+    private Func<KeyChord, string>? _describeKeyCmd;
+    private Func<KeyChord, string> DescribeKey(bool allowCommand = false)
+    {
+        if ((allowCommand ? _describeKeyCmd : _describeKey) is { } cached) return cached;
+        Layout.RetailKeyNames keyNames;
+        lock (_bindings.Assets.DatLock)
+        {
+            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
+            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
+        }
+        Func<KeyChord, string> describe = chord => MarkupHotkeyText.Describe(chord, key =>
+        {
+            lock (_bindings.Assets.DatLock)
+                return keyNames.Describe(key);
+        }, allowCommand);
+        if (allowCommand) _describeKeyCmd = describe; else _describeKey = describe;
+        return describe;
+    }
+
+    private PluginAppearanceWindow? _chatDeckSettings;
+
+    private void ToggleChatDeckSettings()
+    {
+        // The popup is part of the Modern HUD: the deck's own sans, whatever the plugin theme.
+        Hud.DeckFonts? deck = _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+        Lazy<UiDatFont> body = new(() => deck.Face(Hud.DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular));
+        Lazy<UiDatFont> title = new(() => deck.Face(Hud.DeckFonts.SmallPixelHeight, BundledUiFontWeight.SemiBold));
+        _chatDeckSettings ??= new PluginAppearanceWindow(Host.Root, close =>
+            Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.ChatDeckSettingsBinding.Markup,
+                new Hud.ChatDeckSettingsBinding(() => _chatDeckSession?.Model) { Close = close },
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: (_pluginThemes ?? new PluginUiThemeSettings()).WithFixedLook(Hud.ChatDeckPalette.Window, body, title),
+                describeKey: DescribeKey(allowCommand: true)), close),
+            onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _chatDeck, window));
+        _chatDeckSettings.Toggle();
+    }
+
+    private void CloseChatDeckSettings()
+    {
+        if (_chatDeckSettings is { IsOpen: true } open) open.Toggle();
+    }
+
     private Hud.ChatDeckSession? _chatDeckSession;
     private Hud.UiTargetDeck? _targetDeck;
     /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
@@ -586,6 +630,7 @@ public sealed class RetailUiRuntime : IDisposable
                     },
                     OnHidden: () =>
                     {
+                        CloseChatDeckSettings();
                         _chatDeck?.OnHidden();
                         if (_chatDeck is not null && ReferenceEquals(Host.Root.DefaultTextInput, _chatDeck.Input))
                             Host.Root.DefaultTextInput = null;
@@ -3696,7 +3741,10 @@ public sealed class RetailUiRuntime : IDisposable
                     StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
                     LinkClicked: _bindings.Chat.LinkClicked,
                     Keyboard: Host.Keyboard,
-                    RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck)),
+                    RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck),
+                    PlayAlert: _bindings.PlayUiSound is { } play ? () => play(Hud.ChatDeckAlertBeep.Sound) : null,
+                    OpenSettings: ToggleChatDeckSettings,
+                    SettingsOpen: () => _chatDeckSettings?.IsOpen == true),
                 _deckFonts,
                 _hudIcons);
 
@@ -4918,17 +4966,7 @@ public sealed class RetailUiRuntime : IDisposable
 
         // Hotkey boxes show keys by the game's own names. The table reads go
         // through the dat lock like every other plugin-thread dat read.
-        Layout.RetailKeyNames keyNames;
-        lock (_bindings.Assets.DatLock)
-        {
-            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
-            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
-        }
-        Func<KeyChord, string> describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
-        {
-            lock (_bindings.Assets.DatLock)
-                return keyNames.Describe(key);
-        });
+        Func<KeyChord, string> describeKey = DescribeKey();
 
         // Colour pickers upload their gradients while open and give them back on close.
         var markupTextures = new RetailMarkupTextureService(_bindings.Assets.TextureCache);

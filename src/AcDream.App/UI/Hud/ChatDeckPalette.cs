@@ -32,6 +32,11 @@ internal static class ChatDeckPalette
         Background: FrameBottom, Field: FrameTop, Border: Bronze with { W = 1f }, Text: TextInk,
         Muted: StudOffInk, Accent: TabUnderline, Selected: TabSelected);
 
+    /// <summary>The settings popup's window: the deck's frame colours, bronze edge, gold accent, dark fields.</summary>
+    internal static readonly PluginUiPalette Window = new(
+        Background: FrameBottom, Field: FieldFill with { W = 1f }, Border: Bronze with { W = 1f }, Text: TextInk,
+        Muted: StudOffInk, Accent: TabUnderline, Selected: TabSelected);
+
     /// <summary>The dark rounded frame, its fill at <paramref name="opacity"/> (the edge and rule stay solid).</summary>
     internal static void DrawFrame(UiRenderContext ctx, DeckRect f, float opacity)
     {

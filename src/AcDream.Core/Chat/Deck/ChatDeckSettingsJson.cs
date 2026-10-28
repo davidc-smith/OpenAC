@@ -32,6 +32,7 @@ public static class ChatDeckSettingsJson
                 Rules = root["rules"] is JsonArray rules ? rules.OfType<JsonObject>().Select(ReadRule).ToList() : defaults.Rules,
                 Appearance = root["appearance"] is JsonObject a ? ReadAppearance(a) : defaults.Appearance,
                 Layout = root["layout"] is JsonObject l ? ReadLayout(l) : defaults.Layout,
+                Keys = root["keys"] is JsonObject k ? ReadKeys(k) : defaults.Keys,
             };
             return new(ChatDeckSettingsNormalizer.Normalize(settings), null);
         }
@@ -51,6 +52,7 @@ public static class ChatDeckSettingsJson
         root["rules"] = WriteArray(settings.Rules, previous["rules"] as JsonArray, r => r.Id, WriteRule);
         root["appearance"] = WriteAppearance(settings.Appearance, Clone(previous["appearance"] as JsonObject));
         root["layout"] = WriteLayout(settings.Layout, Clone(previous["layout"] as JsonObject));
+        root["keys"] = WriteKeys(settings.Keys, Clone(previous["keys"] as JsonObject));
         return root.ToJsonString();
     }
 
@@ -119,6 +121,12 @@ public static class ChatDeckSettingsJson
             LastTabId = Str(o, "lastTab", d.LastTabId),
         };
     }
+
+    private static ChatDeckKeys ReadKeys(JsonObject o) => new()
+    {
+        NextTab = Str(o, "nextTab", ""),
+        PreviousTab = Str(o, "previousTab", ""),
+    };
 
     // ── writing ──────────────────────────────────────────────────────────────
 
@@ -195,6 +203,13 @@ public static class ChatDeckSettingsJson
         o["pinned"] = l.Pinned;
         o["edge"] = l.Edge.ToString();
         o["lastTab"] = l.LastTabId;
+        return o;
+    }
+
+    private static JsonObject WriteKeys(ChatDeckKeys k, JsonObject o)
+    {
+        o["nextTab"] = k.NextTab;
+        o["previousTab"] = k.PreviousTab;
         return o;
     }
 

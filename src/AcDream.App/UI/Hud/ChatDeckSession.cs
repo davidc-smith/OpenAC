@@ -15,8 +15,15 @@ internal sealed class ChatDeckSession(
     ChatDeckStorage storage,
     Func<string> characterKey,
     Func<bool> gameplayActive,
-    Action<string>? report = null) : IDisposable
+    Action<string>? report = null,
+    Func<double>? clock = null) : IDisposable
 {
+    /// <summary>A burst of changes (a colour drag, a held spinner) is saved once, this long after the last one.</summary>
+    private const double SaveIdleSeconds = 0.5;
+
+    private readonly Func<double> _clock = clock ?? (() => Environment.TickCount64 / 1000.0);
+    private bool _dirty;
+    private double _lastChange;
     private readonly Action<string> _report = report ?? Console.WriteLine;
     private string? _key;
 
@@ -37,6 +44,7 @@ internal sealed class ChatDeckSession(
             Start(key);
         }
         Model?.Tick();
+        if (_dirty && _clock() - _lastChange >= SaveIdleSeconds) Flush();
     }
 
     /// <summary>The session ended; the next character (or the same one again) starts empty.</summary>
@@ -55,6 +63,12 @@ internal sealed class ChatDeckSession(
     public void Save()
     {
         if (Model is { } model && _key is { } key) storage.Save(key, model.Settings);
+        _dirty = false;
+    }
+
+    private void Flush()
+    {
+        if (_dirty) Save();
     }
 
     public void Dispose() => Stop();
@@ -78,6 +92,7 @@ internal sealed class ChatDeckSession(
 
     private void Stop()
     {
+        Flush();
         if (Model is { } model)
         {
             model.SettingsChanged -= OnSettingsChanged;
@@ -89,6 +104,7 @@ internal sealed class ChatDeckSession(
 
     private void OnSettingsChanged(ChatDeckSettings settings)
     {
-        if (_key is { } key) storage.Save(key, settings);
+        _dirty = true;
+        _lastChange = _clock();
     }
 }

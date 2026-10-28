@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.App.UI.Markup;
 using AcDream.Core.Chat.Deck;
 using AcDream.Runtime.Chat;
 using AcDream.UI.Abstractions.Input;
@@ -47,6 +48,9 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
             Silk.NET.Input.Key.Left => CycleTab(-1),
             _ => false,
         };
+        Input.OnChordKey = (key, mods) =>
+            Matches(_model?.Settings.Keys.NextTab, key, mods) ? CycleTab(1)
+            : Matches(_model?.Settings.Keys.PreviousTab, key, mods) && CycleTab(-1);
         _b.Entry.DraftChanged += OnDraftChanged;
         Input.ShowText(_b.Entry.Draft);
 
@@ -106,6 +110,10 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         _b.Entry.SubmitTo(text, channel, _b.Feedback, _b.Bus());
         EndEntry();
     }
+
+    /// <summary>Whether a saved hotkey string is exactly this key and these modifiers.</summary>
+    private static bool Matches(string? hotkey, Silk.NET.Input.Key key, ModifierMask mods) =>
+        MarkupHotkeyText.Parse(hotkey, allowCommand: true) is { } chord && chord.Key == key && chord.Modifiers == mods;
 
     private bool CycleTab(int step)
     {
