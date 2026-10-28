@@ -23,7 +23,8 @@ internal sealed record GearDeckBindings(
 /// column that resizes in height only. Each tick it rebuilds its
 /// <see cref="GearInventoryModel"/> when the object table, the player or the
 /// strength changed, and its <see cref="GearDeckGeometry"/> when the height or
-/// the layout input changed. Drawing is in UiGearDeck.Draw.cs.
+/// the layout input changed. Drawing is in UiGearDeck.Draw.cs, input in
+/// UiGearDeck.Input.cs.
 /// </summary>
 internal sealed partial class UiGearDeck : UiElement
 {
@@ -58,11 +59,15 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>Empty-slot labels fitted to one or two lines, by slot; cleared with the geometry.</summary>
     private readonly (string First, string? Second)?[] _slotLabels = new (string, string?)?[GearSlotCatalog.Slots.Count];
 
-    public UiGearDeck(GearDeckBindings bindings, DeckFonts? fonts, EmbeddedSvgSpriteCache? icons)
+    public UiGearDeck(GearDeckBindings bindings, DeckFonts? fonts, EmbeddedSvgSpriteCache? icons,
+        Func<double>? clock = null)
     {
         _b = bindings ?? throw new ArgumentNullException(nameof(bindings));
         _fonts = fonts;
         _icons = icons;
+        _clock = clock ?? (() => Environment.TickCount64 / 1000.0);
+        _dispatcherTable = _b.Objects();
+        _dispatcher = new GearDropDispatcher(_dispatcherTable, _b.PlayerGuid, _b.Actions);
         Width = GearDeckGeometry.Width;
         Height = GearDeckGeometry.DefaultHeight;
         MinHeight = GearDeckGeometry.MinHeight;
@@ -98,11 +103,11 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>The first shown grid or list row.</summary>
     internal int ScrollRow => _scrollRow;
 
-    /// <summary>The zone under the pointer, for hover backings; Task 8's input sets it.</summary>
-    internal GearDeckHit Hover { get; set; } = new(GearZone.None);
+    /// <summary>The zone under the pointer, for hover backings and the tooltip.</summary>
+    internal GearDeckHit Hover { get; private set; } = new(GearZone.None);
 
     /// <summary>The drop target being dragged over and whether it accepts, or null.</summary>
-    internal (GearDeckHit Hit, bool Accept)? DropHighlight { get; set; }
+    internal (GearDeckHit Hit, bool Accept)? DropHighlight { get; private set; }
 
     /// <summary>The selected pack when it still exists, else the main pack (the player).</summary>
     internal uint SelectedPackId
@@ -140,6 +145,7 @@ internal sealed partial class UiGearDeck : UiElement
     {
         _b.Session.Tick();
         Refresh();
+        TrackDropHighlight();
     }
 
     /// <summary>Rebuilds the model when the table, player or strength changed, then the geometry when needed.</summary>
@@ -221,12 +227,6 @@ internal sealed partial class UiGearDeck : UiElement
 
     /// <summary>The window left the screen: forget the hover and any drop highlight, keep the scroll.</summary>
     public void OnHidden() => ClearHover();
-
-    private void ClearHover()
-    {
-        Hover = new GearDeckHit(GearZone.None);
-        DropHighlight = null;
-    }
 
     internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
     {
