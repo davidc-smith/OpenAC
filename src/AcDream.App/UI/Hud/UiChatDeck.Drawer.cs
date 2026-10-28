@@ -64,6 +64,19 @@ internal sealed partial class UiChatDeck
         ApplyDrawer();
     }
 
+    /// <summary>
+    /// The runtime calls this after every layout restore and screen reflow. Those leave a window
+    /// that is not pinned where it is (its capture gate is shut), so the deck puts it back at its
+    /// saved place on the screen as it is now, and the strip and any fly-out follow.
+    /// </summary>
+    internal void FollowLayout()
+    {
+        if (_drawer.Pinned) return;
+        _b.RestorePinnedPlacement?.Invoke();
+        _pinnedPlace = (Left, Top);
+        ApplyDrawer();
+    }
+
     private void CreateDrawer() =>
         _drawer.LayoutChanged += () => _model?.SetLayout(_drawer.Pinned, _drawer.Edge);
 
@@ -126,6 +139,7 @@ internal sealed partial class UiChatDeck
         if (_drawer.State != ChatDeckDrawerState.Collapsed) return;
         _drawer.Open(reason);
         _peek.Clear();
+        FindRoot()?.BringToFront(this);   // over any window already at that edge
         ApplyDrawer();
     }
 
@@ -140,7 +154,11 @@ internal sealed partial class UiChatDeck
     private void AfterDrawerMoved(ChatDeckDrawerState before)
     {
         if (before == ChatDeckDrawerState.Open && _drawer.State == ChatDeckDrawerState.Collapsed) LeaveDeck();
-        if (before == ChatDeckDrawerState.Collapsed && _drawer.State == ChatDeckDrawerState.Open) _peek.Clear();
+        if (before == ChatDeckDrawerState.Collapsed && _drawer.State == ChatDeckDrawerState.Open)
+        {
+            _peek.Clear();
+            FindRoot()?.BringToFront(this);
+        }
     }
 
     /// <summary>The window is leaving the screen: its menus close and its fields give the keyboard back.</summary>

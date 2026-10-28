@@ -923,6 +923,7 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 _persistence?.ReflowToScreen();
                 _spellDeckSync?.AfterReflow();
+                _chatDeck?.FollowLayout();
             }
             _lastScreenSize = screenSize;
         }
@@ -1353,6 +1354,7 @@ public sealed class RetailUiRuntime : IDisposable
         _chatDeck?.SyncDrawerFromModel();   // likewise the Chat Deck's pinned/collapsed state
         _persistence?.RestoreAll();
         _spellDeckSync?.AfterRestore();
+        _chatDeck?.FollowLayout();   // a collapsed deck is left out of the restore
         // Root is sized to the screen above, so a restored canvas is kept
         // on the screen it will be drawn on.
         _canvasPositions?.RestoreAll();
@@ -1371,6 +1373,7 @@ public sealed class RetailUiRuntime : IDisposable
     {
         _persistence?.RestoreNamed(profileName);
         _spellDeckSync?.AfterRestore();
+        _chatDeck?.FollowLayout();
     }
 
     public bool ToggleWindow(string name)

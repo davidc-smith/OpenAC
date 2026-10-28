@@ -34,6 +34,7 @@ public sealed class ChatDeckWiringTests : IDisposable
         public readonly ModernHudSwitch Switch;
         public bool DeckMounted = true;
         public ChatDeckModel? Model;
+        public (int Width, int Height) Screen = (1600, 900);
 
         public World(string path)
         {
@@ -64,7 +65,7 @@ public sealed class ChatDeckWiringTests : IDisposable
             Root.AddChild(Deck.Peek);
 
             Persistence = new RetailWindowLayoutPersistence(
-                Root.WindowManager, new SettingsStore(path), () => "Alice", () => (1600, 900),
+                Root.WindowManager, new SettingsStore(path), () => "Alice", () => Screen,
                 stateManagedVisibilityWindows: [WindowNames.CommandDeck, WindowNames.ChatDeck]);
             Persistence.RestoreAll();
             Persistence.SetCaptureGate(WindowNames.ChatDeck, () => Deck.Pinned);
@@ -211,5 +212,37 @@ public sealed class ChatDeckWiringTests : IDisposable
 
         Assert.True(w.Deck.Pinned);
         Assert.Equal(10f, w.Deck.Left);
+    }
+
+    [Fact]
+    public void Collapsed_FollowsTheSavedPlace_WhenTheScreenChangesAfterLogin()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Persistence.SaveAll();                          // pinned at 10, 670 on 1600x900
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+        w.Persistence.SaveAll();
+
+        // The next login: the character list's smaller screen when the session starts...
+        w.Screen = (800, 600);
+        w.Root.Width = 800;
+        w.Root.Height = 600;
+        ChatDeckSettings saved = w.Model!.Settings;
+        w.Model = new ChatDeckModel(new ChatLog(), saved, "Alice");
+        w.Deck.SyncDrawerFromModel();
+        w.Persistence.RestoreAll();
+        w.Deck.FollowLayout();
+
+        // ...then the game's own size, reflowed.
+        w.Screen = (1600, 900);
+        w.Root.Width = 1600;
+        w.Root.Height = 900;
+        w.Persistence.ReflowToScreen();
+        w.Deck.FollowLayout();
+
+        Assert.False(w.Deck.Pinned);
+        Assert.Equal(10f, w.Deck.Left);
+        Assert.Equal(670f, w.Deck.Top);
+        Assert.Equal(MathF.Min(670f, 900f - w.Deck.Strip.Height), w.Deck.Strip.Top);
     }
 }

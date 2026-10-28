@@ -34,6 +34,19 @@ public sealed class UiChatDeckFlyoutTests
     }
 
     [Fact]
+    public void FlyingOut_RaisesTheWindowOverAWindowAtItsEdge()
+    {
+        var w = Collapsed();
+        var other = new UiPanel { Left = 0, Top = 600, Width = 300, Height = 300 };
+        w.Root.AddChild(other);
+        w.Root.BringToFront(other);
+        PointAtStrip(w);
+        w.Tick(0.31);
+        Assert.Equal(ChatDeckDrawerState.Open, w.Deck.Drawer.State);
+        Assert.True(w.Deck.ZOrder > other.ZOrder);
+    }
+
+    [Fact]
     public void PointerAway_ClosesAfterTheDelay()
     {
         var w = Collapsed();
