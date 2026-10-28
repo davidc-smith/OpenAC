@@ -128,6 +128,25 @@ public sealed class MarkupFileIconTests
     }
 
     [Fact]
+    public void TabIcon_KindFile_ResolvesTheIconAsAPath()
+    {
+        var resolver = new FakeFileResolver();
+
+        var tab = Only<UiMarkupTabButton>(
+            "<tab x=\"0\" y=\"0\" w=\"60\" h=\"20\" text=\"Notes\" selected=\"{Selected}\" "
+            + "icon=\"icons/notes.png\" iconkind=\"file\"/>",
+            new TabBinding(), resolver);
+
+        Assert.Equal(41u, tab.IconSource!().tex);
+        Assert.Equal(["icons/notes.png"], resolver.Files);
+    }
+
+    private sealed class TabBinding
+    {
+        public bool Selected { get; set; }
+    }
+
+    [Fact]
     public void List_KindFile_GivesEachDistinctPathOneIdAndResolvesItBack()
     {
         var resolver = new FakeFileResolver();
