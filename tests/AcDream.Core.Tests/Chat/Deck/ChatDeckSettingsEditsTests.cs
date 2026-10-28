@@ -25,6 +25,28 @@ public sealed class ChatDeckSettingsEditsTests
     }
 
     [Fact]
+    public void AddTab_TakenName_GetsANumberedDefault()
+    {
+        ChatDeckSettings s = ChatDeckSettingsEdits.AddTab(D, "New tab", out _);
+        s = ChatDeckSettingsEdits.AddTab(s, "New tab", out _);
+        s = ChatDeckSettingsEdits.AddTab(s, "New tab", out _);
+        Assert.Equal(["New tab", "New tab 2", "New tab 3"], s.Tabs.Skip(D.Tabs.Count).Select(t => t.Name));
+    }
+
+    [Fact]
+    public void SetPresetEnabled_Off_DisablesEveryCopy()
+    {
+        string preset = ChatDeckPresets.All[0].Id;
+        ChatDeckSettings s = ChatDeckSettingsEdits.SetPresetEnabled(D, preset, true);
+        string id = s.Rules.Single(r => r.PresetId == preset).Id;
+        s = ChatDeckSettingsEdits.DuplicateRule(s, id);
+        Assert.Equal(2, s.Rules.Count(r => r.PresetId == preset && r.Enabled));
+        s = ChatDeckSettingsEdits.SetPresetEnabled(s, preset, false);
+        Assert.DoesNotContain(s.Rules, r => r.PresetId == preset && r.Enabled);
+        Assert.Same(s, ChatDeckSettingsEdits.SetPresetEnabled(s, preset, false));
+    }
+
+    [Fact]
     public void AddTab_AtLimit_ChangesNothing()
     {
         ChatDeckSettings s = D;

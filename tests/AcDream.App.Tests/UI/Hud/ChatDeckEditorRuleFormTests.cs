@@ -79,6 +79,27 @@ public sealed class ChatDeckEditorRuleFormTests
     }
 
     [Fact]
+    public void Target_DuplicateTabNames_AreNumberedAndPickable()
+    {
+        var (_, m, b) = Make();
+        m.Edit(s => ChatDeckSettingsEdits.AddTab(s, "Loot", out _));
+        m.Edit(s => ChatDeckSettingsEdits.AddTab(s, "Loot2", out _));
+        string second = m.Settings.Tabs[^1].Id;
+        m.Edit(s => ChatDeckSettingsEdits.UpdateTab(s, second, t => t with { Name = "Loot" }));
+        string first = m.Settings.Tabs[^2].Id;
+        b.NewRule();
+        b.SetPattern("x");
+        b.SetDraftAction((int)ChatDeckRuleAction.MoveTo);
+        Assert.Contains("Loot (1)", b.TargetNames);
+        Assert.Contains("Loot (2)", b.TargetNames);
+        b.SetTarget("Loot (2)");
+        Assert.Equal("Loot (2)", b.TargetName);
+        b.SaveRule();
+        Assert.Equal(second, m.Settings.Rules[^1].TargetTabId);
+        Assert.NotEqual(first, m.Settings.Rules[^1].TargetTabId);
+    }
+
+    [Fact]
     public void FormChannels_EditTheDraft()
     {
         var (_, m, b) = Make();

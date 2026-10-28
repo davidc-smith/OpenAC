@@ -21,6 +21,18 @@ public sealed class ChatDeckEditorPresetsTests
     }
 
     [Fact]
+    public void Presets_DuplicatedRule_UntickReadsOff()
+    {
+        var (m, b) = ChatDeckEditorTabsTests.Make();
+        ChatDeckEditorBinding.PresetRow row = b.PresetGroups[0].Presets[0];
+        row.SetOn(true);
+        string id = m.Settings.Rules.Single(r => r.PresetId == row.Id).Id;
+        m.Edit(s => ChatDeckSettingsEdits.DuplicateRule(s, id));
+        row.SetOn(false);
+        Assert.False(row.On);
+    }
+
+    [Fact]
     public void Panes_SwitchAndClose()
     {
         var (_, b) = ChatDeckEditorTabsTests.Make();

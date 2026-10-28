@@ -23,6 +23,9 @@ public static class ChatDeckSettingsEdits
         tabId = null;
         if (s.Tabs.Count >= ChatDeckLimits.MaxTabs) return s;
         tabId = NewId("tab-", s.Tabs.Select(t => t.Id));
+        string unique = name;
+        for (int n = 2; s.Tabs.Any(t => t.Name == unique); n++) unique = $"{name} {n}";
+        name = unique;
         var tab = new ChatDeckTab
         {
             Id = tabId, Name = name, Icon = ChatDeckIcon.Star,
@@ -111,9 +114,15 @@ public static class ChatDeckSettingsEdits
     /// </summary>
     public static ChatDeckSettings SetPresetEnabled(ChatDeckSettings s, string presetId, bool enabled)
     {
-        ChatDeckRule? existing = s.Rules.FirstOrDefault(r => r.Kind == ChatDeckMatchKind.Preset && r.PresetId == presetId);
-        if (existing is not null) return SetRuleEnabled(s, existing.Id, enabled);
-        if (!enabled) return s;
+        List<ChatDeckRule> all = s.Rules.Where(r => r.Kind == ChatDeckMatchKind.Preset && r.PresetId == presetId).ToList();
+        if (!enabled)
+        {
+            // A duplicated preset rule counts too: switching the preset off turns every copy off.
+            ChatDeckSettings off = s;
+            foreach (ChatDeckRule r in all.Where(r => r.Enabled)) off = SetRuleEnabled(off, r.Id, false);
+            return off;
+        }
+        if (all.Count > 0) return SetRuleEnabled(s, all[0].Id, true);
         return AddRule(s, new ChatDeckRule
         {
             Id = "", Kind = ChatDeckMatchKind.Preset, PresetId = presetId, Action = ChatDeckRuleAction.Hide,

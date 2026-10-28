@@ -96,12 +96,27 @@ public sealed partial class ChatDeckEditorBinding
     public bool ShowsTarget => _draft?.Action is ChatDeckRuleAction.MoveTo or ChatDeckRuleAction.CopyTo;
     public bool ShowsColour => _draft?.Action is ChatDeckRuleAction.ColourLine or ChatDeckRuleAction.ColourMatch;
 
-    public IReadOnlyList<string> TargetNames => S.Tabs.Where(t => t.Id != ChatDeckDefaults.AllTabId).Select(t => t.Name).ToList();
-    public string TargetName => S.Tabs.FirstOrDefault(t => t.Id == _draft?.TargetTabId)?.Name ?? "";
+    /// <summary>Menu labels for the target tabs; tabs sharing a name read "Name (n)" so each is pickable.</summary>
+    private List<(string Label, string Id)> TargetChoices()
+    {
+        List<ChatDeckTab> tabs = S.Tabs.Where(t => t.Id != ChatDeckDefaults.AllTabId).ToList();
+        var seen = new Dictionary<string, int>();
+        var result = new List<(string, string)>();
+        foreach (ChatDeckTab t in tabs)
+        {
+            seen[t.Name] = seen.GetValueOrDefault(t.Name) + 1;
+            result.Add((tabs.Count(o => o.Name == t.Name) > 1 ? $"{t.Name} ({seen[t.Name]})" : t.Name, t.Id));
+        }
+        return result;
+    }
+
+    public IReadOnlyList<string> TargetNames => TargetChoices().Select(c => c.Label).ToList();
+    public string TargetName => TargetChoices().FirstOrDefault(c => c.Id == _draft?.TargetTabId).Label
+        ?? S.Tabs.FirstOrDefault(t => t.Id == _draft?.TargetTabId)?.Name ?? "";
     public Action<string> SetTarget => v =>
     {
-        if (S.Tabs.FirstOrDefault(t => t.Id != ChatDeckDefaults.AllTabId && t.Name == v) is { } tab)
-            SetDraft(r => r with { TargetTabId = tab.Id });
+        var choice = TargetChoices().FirstOrDefault(c => c.Label == v);
+        if (choice.Id is { } id) SetDraft(r => r with { TargetTabId = id });
     };
 
     public string DraftColour => $"#{_draft?.Colour ?? ChatDeckRuleDraft.DefaultColour:X8}";
