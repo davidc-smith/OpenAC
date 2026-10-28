@@ -687,6 +687,42 @@ public sealed class LiveEntityHydrationControllerTests
         Assert.Contains($"create-parent:{Guid:X8}", fixture.Operations);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ChildCreatedBeforeItsParent_IsHandedOnOnceTheParentArrives(
+        bool childCarriesPosition)
+    {
+        // A player you teleport to can arrive after the item in their hand:
+        // the item waits for them, and must still be shown once they come.
+        // ACE can send the held item with the wielder's world position too.
+        using var fixture = new Fixture(originKnown: true);
+        const uint parentGuid = 0x70000002u;
+        var handedOn = new List<uint>();
+        fixture.Relationships.OnSpawnAction = spawn => handedOn.Add(spawn.Guid);
+        WorldSession.EntitySpawn child = CelllessSpawn(
+            PositionSequence: 1,
+            parentGuid: parentGuid);
+        if (childCarriesPosition)
+        {
+            WorldSession.EntitySpawn placed = Spawn(Generation: 1, PositionSequence: 1);
+            child = child with
+            {
+                Position = placed.Position,
+                Physics = child.Physics!.Value with { Position = placed.Physics!.Value.Position },
+            };
+        }
+
+        fixture.Controller.OnCreate(child);
+        Assert.DoesNotContain(Guid, handedOn);
+
+        fixture.Controller.OnCreate(
+            Spawn(Generation: 1, PositionSequence: 1) with { Guid = parentGuid });
+
+        Assert.True(fixture.Runtime.TryGetCanonical(Guid, out _));
+        Assert.Contains(Guid, handedOn);
+    }
+
     [Fact]
     public void SameOlderNewerAndWrappedGenerations_RouteOrReplaceExactlyOnce()
     {
