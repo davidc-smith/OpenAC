@@ -5,6 +5,8 @@ namespace AcDream.App.UI.Hud;
 /// <param name="ResyncRetail">After Modern HUD turns off: lets the retail controllers show what they own.</param>
 /// <param name="HoldsRetailVisibility">The retail windows' visibility is the player's, kept for them while
 /// replaced and put back after (the chat windows); otherwise their controllers decide it (the vitals).</param>
+/// <param name="OnDemand">Shown only while the player has it open (the Gear Deck), not whenever
+/// gameplay is on screen. Opening one of its retail windows opens it instead (<see cref="ModernHudSwitch.RedirectTarget"/>).</param>
 public sealed record ModernHudReplacement(
     string Name,
     string Window,
@@ -13,7 +15,8 @@ public sealed record ModernHudReplacement(
     Action OnShown,
     Action OnHidden,
     Action? ResyncRetail = null,
-    bool HoldsRetailVisibility = false);
+    bool HoldsRetailVisibility = false,
+    bool OnDemand = false);
 
 /// <summary>
 /// Turns Modern HUD on and off. Each replacement that mounted takes over its
@@ -23,7 +26,8 @@ public sealed record ModernHudReplacement(
 /// the next tick), and the replacement is shown while gameplay is on screen.
 /// A replacement that did not mount leaves its retail windows alone; the
 /// others still apply. The Spell Deck, when it mounted, is shown with the
-/// Command Deck only in magic combat.
+/// Command Deck only in magic combat. An on-demand replacement (the Gear Deck)
+/// is shown only while open, and opening one of its retail windows redirects to it.
 /// </summary>
 public sealed class ModernHudSwitch
 {
@@ -53,6 +57,7 @@ public sealed class ModernHudSwitch
     private readonly Func<string, bool>? _releaseVisibility;
     private readonly Action<string> _log;
     private readonly HashSet<string> _inForce = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal);
     private readonly HashSet<string> _shown = new(StringComparer.Ordinal);
     private readonly HashSet<string> _reportedMountFailure = new(StringComparer.Ordinal);
     private readonly Dictionary<string, bool> _wasVisible = new(StringComparer.Ordinal);
@@ -97,6 +102,38 @@ public sealed class ModernHudSwitch
     /// <summary>The Command Deck is in force and the Spell Deck mounted: the spell keys,
     /// CAST and the spellbook's add-to-favourites go to the Spell Deck.</summary>
     public bool SpellDeckActive => _inForce.Contains(WindowNames.CommandDeck) && _spellDeckMounted();
+
+    /// <summary>The Modern HUD window that stands in for <paramref name="retailWindow"/> when it
+    /// is opened, or null when the retail window should open as usual.</summary>
+    public string? RedirectTarget(string retailWindow)
+    {
+        foreach (ModernHudReplacement r in _replacements)
+            if (r.OnDemand && _inForce.Contains(r.Window) && r.RetailWindows.Contains(retailWindow))
+                return r.Window;
+        return null;
+    }
+
+    public bool IsOpen(string window) => _open.Contains(window);
+
+    /// <summary>Opens or closes an on-demand replacement that is in force. False for any other window.</summary>
+    public bool SetOpen(string window, bool open)
+    {
+        if (!IsOnDemandInForce(window)) return false;
+        if (open) _open.Add(window); else _open.Remove(window);
+        return true;
+    }
+
+    public bool ToggleOpen(string window) => SetOpen(window, !_open.Contains(window));
+
+    /// <summary>Closes every on-demand replacement (logout, character switch).</summary>
+    public void CloseAllOnDemand() => _open.Clear();
+
+    private bool IsOnDemandInForce(string window)
+    {
+        foreach (ModernHudReplacement r in _replacements)
+            if (r.OnDemand && r.Window == window) return _inForce.Contains(window);
+        return false;
+    }
 
     /// <summary>A retail controller's <c>setWindowVisible</c> delegate, gated.</summary>
     public Action<bool> GateVisibility(string window) => visible =>
@@ -145,6 +182,7 @@ public sealed class ModernHudSwitch
         foreach (ModernHudReplacement r in _replacements)
         {
             if (!_inForce.Remove(r.Window)) continue;
+            _open.Remove(r.Window);
             SetShown(r, false);
             if (r.HoldsRetailVisibility)
             {
@@ -166,10 +204,17 @@ public sealed class ModernHudSwitch
         foreach (ModernHudReplacement r in _replacements)
         {
             bool inForce = _inForce.Contains(r.Window);
-            SetShown(r, inForce && gameplay);
-            if (!inForce || !r.HoldsRetailVisibility) continue;
-            foreach (string window in r.RetailWindows)
-                if (_isVisible(window)) _hide(window);
+            if (inForce && r.HoldsRetailVisibility)
+            {
+                foreach (string window in r.RetailWindows)
+                {
+                    if (!_isVisible(window)) continue;
+                    _hide(window);
+                    if (r.OnDemand) _open.Add(r.Window);      // a retail open that bypassed the redirect
+                }
+            }
+            bool wanted = inForce && gameplay && (!r.OnDemand || _open.Contains(r.Window));
+            SetShown(r, wanted);
         }
         SetSpellDeckShown(_shown.Contains(WindowNames.CommandDeck) && _magicMode() && _spellDeckMounted());
     }
