@@ -32,6 +32,7 @@ public sealed class GearDeckRootDragTests
         public readonly Recorder Actions = new();
         public readonly UiGearDeck Deck;
         public readonly GearDeckSession Session;
+        public readonly List<string> Log = [];
 
         public World()
         {
@@ -46,7 +47,7 @@ public sealed class GearDeckRootDragTests
             var session = Session = new GearDeckSession(null, () => "Davian", () => true, () => 0.0);
             Deck = new UiGearDeck(
                 new GearDeckBindings(() => t, () => Player, () => 100, (_, _, _, _, _) => 0u, (_, _, _, _, _) => 0u,
-                    o => o.Name, session, Actions, _ => false, () => { }),
+                    o => o.Name, session, Actions, _ => false, () => { }, Log: Log.Add),
                 fonts: null, icons: null, clock: () => 0.0);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0), UiGearDeck.MountOptions(100, 50));
             Deck.Visible = true;
@@ -205,5 +206,38 @@ public sealed class GearDeckRootDragTests
         var (x, y) = w.Screen(pack);
         Drag(w, pack, (x + 2, y + 2));
         Assert.Empty(w.Actions.Calls);
+    }
+
+    [Fact]
+    public void ADragAndDrop_LogsOneDragLine_AndOneDropLine()
+    {
+        var w = new World();
+        Drag(w, w.Deck.Geometry.GridCell(0, 0)!.Value, w.Screen(w.Deck.Geometry.SidePack(1)));
+        Assert.Equal(
+        [
+            "[gear-deck] drag 0x000000A1 from Item 0",
+            "[gear-deck] drop 0x000000A1 on SidePack 1 -> DropOnPack put 0x000000A1 0x000000B1 0 ok",
+        ], w.Log);
+    }
+
+    [Fact]
+    public void ARefusedDrop_LogsWhatStoppedIt()
+    {
+        var w = new World();
+        DeckRect pack = w.Deck.Geometry.SidePack(1);
+        var (x, y) = w.Screen(pack);
+        Drag(w, pack, (x + 2, y + 2));
+        Assert.Equal("[gear-deck] drop 0x000000B1 on SidePack 1 -> none (its own pack) nothing sent", w.Log[^1]);
+    }
+
+    [Fact]
+    public void AStudClick_LogsNothing()
+    {
+        var w = new World();
+        var (x, y) = w.Screen(w.Deck.Geometry.ListStud);
+        w.Root.OnMouseMove(x, y);
+        w.Root.OnMouseDown(UiMouseButton.Left, x, y);
+        w.Root.OnMouseUp(UiMouseButton.Left, x, y);
+        Assert.Empty(w.Log);
     }
 }

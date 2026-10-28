@@ -66,3 +66,38 @@ internal sealed class RuntimeGearItemActions(
     public bool Activate(uint item) => items.ActivateItem(item);
     public bool OpenPack(uint pack) => items.ActivateItem(pack);
 }
+
+/// <summary>Forwards to the real actions and keeps a short note of the last one, for the Gear Deck's drop log line.</summary>
+internal sealed class LoggedGearItemActions(IGearItemActions inner) : IGearItemActions
+{
+    /// <summary>What the last call sent or why nothing was sent; the deck clears it before each drop.</summary>
+    public string? Last { get; set; }
+
+    private bool Note(bool ok, string call)
+    {
+        Last = $"{call} {(ok ? "ok" : "failed")}";
+        return ok;
+    }
+
+    public bool Ready()
+    {
+        bool ready = inner.Ready();
+        if (!ready) Last = "not ready";
+        return ready;
+    }
+
+    public void Report(string text)
+    {
+        Last = $"refused: {text}";
+        inner.Report(text);
+    }
+
+    public bool PutInContainer(uint item, uint container, int placement, bool fromGround) =>
+        Note(inner.PutInContainer(item, container, placement, fromGround), $"put 0x{item:X8} 0x{container:X8} {placement}");
+    public bool Merge(uint from, uint to) => Note(inner.Merge(from, to), $"merge 0x{from:X8} 0x{to:X8}");
+    public bool WieldFromPaperdoll(uint item, EquipMask mask) =>
+        Note(inner.WieldFromPaperdoll(item, mask), $"wield 0x{item:X8} {mask}");
+    public bool WieldSecondary(uint item) => Note(inner.WieldSecondary(item), $"secondary 0x{item:X8}");
+    public bool Activate(uint item) => inner.Activate(item);
+    public bool OpenPack(uint pack) => inner.OpenPack(pack);
+}

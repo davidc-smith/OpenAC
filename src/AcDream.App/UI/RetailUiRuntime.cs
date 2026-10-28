@@ -3930,7 +3930,9 @@ public sealed class RetailUiRuntime : IDisposable
                     Session: session,
                     Actions: new Hud.RuntimeGearItemActions(items, b.Objects, b.SendPutItemInContainer, b.SendStackableMerge),
                     IsPending: items.IsPendingInventorySource,
-                    Close: () => _hudSwitch?.SetOpen(WindowNames.GearDeck, false)),
+                    Close: () => _hudSwitch?.SetOpen(WindowNames.GearDeck, false),
+                    // One line per drag and drop, beside the mount line, for live checks.
+                    Log: Console.WriteLine),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,

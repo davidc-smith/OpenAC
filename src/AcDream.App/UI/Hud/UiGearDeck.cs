@@ -16,7 +16,8 @@ internal sealed record GearDeckBindings(
     GearDeckSession Session,
     IGearItemActions Actions,
     Func<uint, bool> IsPending,
-    Action Close);
+    Action Close,
+    Action<string>? Log = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one 300-point
@@ -66,8 +67,9 @@ internal sealed partial class UiGearDeck : UiElement
         _fonts = fonts;
         _icons = icons;
         _clock = clock ?? (() => Environment.TickCount64 / 1000.0);
+        _actions = new LoggedGearItemActions(_b.Actions);
         _dispatcherTable = _b.Objects();
-        _dispatcher = new GearDropDispatcher(_dispatcherTable, _b.PlayerGuid, _b.Actions);
+        _dispatcher = new GearDropDispatcher(_dispatcherTable, _b.PlayerGuid, _actions);
         Width = GearDeckGeometry.Width;
         Height = GearDeckGeometry.DefaultHeight;
         MinHeight = GearDeckGeometry.MinHeight;

@@ -10,6 +10,8 @@ internal sealed partial class UiGearDeck
     private static readonly GearDeckHit NoHit = new(GearZone.None);
 
     private readonly Func<double> _clock;
+    /// <summary>The bindings' actions, noting what the dispatcher sent for the drop log line.</summary>
+    private readonly LoggedGearItemActions _actions;
     /// <summary>The table <see cref="_dispatcher"/> was built over; a new table rebuilds it.</summary>
     private ClientObjectTable _dispatcherTable;
     private GearDropDispatcher _dispatcher;
@@ -35,7 +37,7 @@ internal sealed partial class UiGearDeck
             if (!ReferenceEquals(table, _dispatcherTable))
             {
                 _dispatcherTable = table;
-                _dispatcher = new GearDropDispatcher(table, _b.PlayerGuid, _b.Actions);
+                _dispatcher = new GearDropDispatcher(table, _b.PlayerGuid, _actions);
             }
             return _dispatcher;
         }
@@ -82,6 +84,10 @@ internal sealed partial class UiGearDeck
                 ScrollTo(_scrollRow - e.Data0);   // Data0 is +1 per notch up
                 SetHover(_g.HitAt(e.Data1, e.Data2));
                 return true;
+            case UiEventType.DragBegin:
+                if (e.Payload is ItemDragPayload lifted)
+                    _b.Log?.Invoke($"[gear-deck] drag 0x{lifted.ObjId:X8} from {_press.Zone} {_press.Index}");
+                return false;
             case UiEventType.DragEnter:
                 _dropPayload = e.Payload;
                 SetDropHighlight(e.Data1, e.Data2);
@@ -242,23 +248,31 @@ internal sealed partial class UiGearDeck
     {
         if (ItemPayload(payload) is not { } p || DropTargetAt(x, y) is not { } hit) return false;
         bool fromGround = p.SourceKind == ItemDragSource.Ground;
+        _actions.Last = null;
+        string action;
         switch (hit.Zone)
         {
             case GearZone.SidePack when _model.Packs[hit.Index].Id == p.ObjId:
-                break;   // a pack dropped back on its own cell stays where it is
+                action = "none (its own pack)";   // a pack dropped back on its own cell stays where it is
+                break;
             case GearZone.SidePack:
+                action = nameof(GearDropDispatcher.DropOnPack);
                 Dispatcher.DropOnPack(p.ObjId, _model.Packs[hit.Index].Id, fromGround);
                 break;
             case GearZone.Item:
+                action = nameof(GearDropDispatcher.DropOnCell);
                 Dispatcher.DropOnCell(p.ObjId, SelectedPackId, Items[hit.Index].ObjectId, hit.Index, fromGround);
                 break;
             case GearZone.Frame:   // empty grid space: after the last item, as retail's list does
+                action = nameof(GearDropDispatcher.DropOnCell);
                 Dispatcher.DropOnCell(p.ObjId, SelectedPackId, 0u, -1, fromGround);
                 break;
-            case GearZone.EquipSlot or GearZone.WornCell:
+            default:   // EquipSlot or WornCell
+                action = nameof(GearDropDispatcher.DropOnSlot);
                 Dispatcher.DropOnSlot(p.ObjId, SlotMaskAt(hit));
                 break;
         }
+        _b.Log?.Invoke($"[gear-deck] drop 0x{p.ObjId:X8} on {hit.Zone} {hit.Index} -> {action} {_actions.Last ?? "nothing sent"}");
         return true;
     }
 
