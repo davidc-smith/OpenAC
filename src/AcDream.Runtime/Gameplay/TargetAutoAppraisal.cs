@@ -6,10 +6,12 @@ using AcDream.Core.Targeting;
 namespace AcDream.Runtime.Gameplay;
 
 /// <summary>
-/// Identifies the selected monster, summon or corpse so the Target Deck can
-/// show its stamina and mana: once on select, then again when something has
-/// probably changed them (the player's hit lands on it, or its health moves),
-/// never more often than <see cref="MinimumGapSeconds"/> per target. The
+/// Identifies the selected monster, summon, corpse or attackable player so the
+/// Target Deck can show its stamina and mana: once on select, then again when
+/// something has probably changed them (the player's hit lands on it, or its
+/// health moves), never more often than <see cref="MinimumGapSeconds"/> per
+/// target. A creature is also asked again every <see cref="RefreshSeconds"/>
+/// while it stays selected, so its vitals never go stale on the plate. The
 /// request goes out with the Automation origin, so the examination window is
 /// never opened or switched by it.
 /// </summary>
@@ -24,6 +26,12 @@ public sealed class TargetAutoAppraisal : IDisposable
     /// </summary>
     public const double FailedRetrySeconds = 5.5;
 
+    /// <summary>
+    /// How often a selected creature is asked again with nothing else to prompt
+    /// it: under the plate's 10 s stale mark, so its vitals stay current.
+    /// </summary>
+    public const double RefreshSeconds = 8.0;
+
     private readonly SelectionState _selection;
     private readonly ClientObjectTable _objects;
     private readonly CombatState _combat;
@@ -32,6 +40,8 @@ public sealed class TargetAutoAppraisal : IDisposable
     private readonly Func<uint, bool> _requestAppraisal;
     private readonly Func<double> _clock;
     private uint _target;
+    // Creatures are refreshed on a timer; a corpse's contents do not drift.
+    private bool _refresh;
     private readonly Dictionary<uint, double> _lastSentAt = new();
     private readonly Dictionary<uint, double> _notBefore = new();
     private bool _pending;
@@ -63,6 +73,8 @@ public sealed class TargetAutoAppraisal : IDisposable
     /// <summary>Sends a combined trigger once the gap has passed. Call every frame.</summary>
     public void Tick()
     {
+        if (_target != 0u && _refresh && !_pending && RefreshDue())
+            _pending = true;
         if (_pending && _target != 0u && GapElapsed())
             Send();
     }
@@ -96,8 +108,14 @@ public sealed class TargetAutoAppraisal : IDisposable
     private void Retarget(uint selected)
     {
         _pending = false;
-        TargetKind kind = TargetKindClassifier.Classify(_objects.Get(selected), _playerGuid()).Kind;
-        _target = selected != 0u && Qualifies(kind) ? selected : 0u;
+        ClientObject? obj = _objects.Get(selected);
+        uint player = _playerGuid();
+        TargetKind kind = TargetKindClassifier.Classify(obj, player).Kind;
+        bool qualifies = Qualifies(kind)
+            || (kind == TargetKind.Player
+                && SelectedObjectHealthPolicy.ObjectIsAttackable(player, _objects.Get(player), selected, obj));
+        _target = selected != 0u && qualifies ? selected : 0u;
+        _refresh = kind != TargetKind.Corpse;
         if (_target == 0u)
             return;
         if (_log.TryGet(_target, out TargetAppraisalEntry e) && e.Success && _clock() - e.At < MinimumGapSeconds)
@@ -129,6 +147,16 @@ public sealed class TargetAutoAppraisal : IDisposable
     private bool GapElapsed() =>
         (!_lastSentAt.TryGetValue(_target, out double at) || _clock() - at >= MinimumGapSeconds)
         && (!_notBefore.TryGetValue(_target, out double notBefore) || _clock() >= notBefore);
+
+    // Due once the last success, and the last request, are both a refresh old.
+    // The request's own age matters when its reply never came.
+    private bool RefreshDue()
+    {
+        double now = _clock();
+        if (_lastSentAt.TryGetValue(_target, out double sentAt) && now - sentAt < RefreshSeconds)
+            return false;
+        return !_log.TryGet(_target, out TargetAppraisalEntry e) || (e.Success && now - e.At >= RefreshSeconds);
+    }
 
     private void OnObjectRemoved(ClientObject obj)
     {

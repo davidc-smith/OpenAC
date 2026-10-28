@@ -1,6 +1,6 @@
 namespace AcDream.App.UI.Hud;
 
-public enum TargetZone { None, Portrait, Name, Health, Stamina, Mana, Row0, Row1, Row2, Row3, PluginRow0, PluginRow1, Stud0, Stud1, Stud2, Stud3 }
+public enum TargetZone { None, Portrait, Name, Health, Stamina, Mana, Row0, Row1, Row2, Row3, PluginRow0, PluginRow1, Close, Stud0, Stud1, Stud2, Stud3 }
 
 /// <summary>Fixed layout of the Target Deck at scale 1 (shape B: info left, action column right).</summary>
 public static class TargetDeckGeometry
@@ -14,6 +14,8 @@ public static class TargetDeckGeometry
     public static readonly DeckRect Portrait = new(Pad, Pad, 30, 30);
     public static readonly DeckRect Name = new(Pad + 36, Pad - 1, Width - Pad * 2 - 36 - StudW - 8, 16);
     public static readonly DeckRect Sub = new(Pad + 36, Pad + 16, Name.W, 13);
+    /// <summary>The deselect cross at the end of the name line.</summary>
+    public static readonly DeckRect Close = new(Name.X + Name.W - 14, Name.Y + 1, 14, 14);
     public static readonly DeckRect Health = new(Pad, 46, Width - Pad * 2 - StudW - 8, 14);
     public static readonly DeckRect Stamina = new(Pad, 63, Health.W, 14);
     public static readonly DeckRect Mana = new(Pad, 80, Health.W, 14);

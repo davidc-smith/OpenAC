@@ -3907,6 +3907,8 @@ public sealed class RetailUiRuntime : IDisposable
             },
             // The inventory's double-click: a wieldable item goes through auto-wield.
             wield: id => items.ActivateItem(id),
+            // The plate hides itself once nothing is selected.
+            deselect: () => _bindings.Toolbar.Selection.Clear(SelectionChangeSource.Toolbar),
             runPluginAction: (pluginId, objectId, actionId) =>
                 _bindings.Plugins?.TargetPlateStore.RunAction(pluginId, objectId, actionId));
     }
@@ -3974,6 +3976,7 @@ public sealed class RetailUiRuntime : IDisposable
         Action toggleCharacter,
         Action<string> copyText,
         Action<uint> wield,
+        Action deselect,
         Action<string, uint, string> runPluginAction) : Hud.ITargetDeckActions
     {
         public void Run(TargetAction action, TargetPlateModel target)
@@ -4007,6 +4010,7 @@ public sealed class RetailUiRuntime : IDisposable
                 case TargetAction.CharacterSheet: toggleCharacter(); break;
                 case TargetAction.CopyName: copyText(target.Name); break;
                 case TargetAction.Wield: wield(id); break;
+                case TargetAction.Deselect: deselect(); break;
                 case TargetAction.None:
                 case TargetAction.More:
                     break;

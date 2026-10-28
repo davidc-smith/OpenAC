@@ -54,6 +54,32 @@ public sealed class UiTargetDeckTests
     }
 
     [Fact]
+    public void PressingTheCloseCrossDeselects()
+    {
+        TargetPlateModel model = Build(Monster());
+        var (deck, actions) = Make(model);
+        DeckRect x = TargetDeckGeometry.Close;
+        Assert.True(deck.HitTestLocal(x.X + x.W / 2, x.Y + x.H / 2));
+        Assert.True(deck.CapturesPointerDrag);   // a press on the cross never drags the window
+        Assert.True(Down(deck, x));
+        Assert.Equal([$"run {TargetAction.Deselect} {model.ObjectId}"], actions.Calls);
+        Assert.Equal("Deselect", UiTargetDeck.TooltipFor(TargetZone.Close, model)!.Title);
+    }
+
+    [Fact]
+    public void TheCloseCrossSitsAtTheEndOfTheNameLineClearOfTheStuds()
+    {
+        DeckRect x = TargetDeckGeometry.Close, n = TargetDeckGeometry.Name;
+        Assert.True(x.X + x.W <= n.X + n.W + 0.01f);
+        Assert.True(x.Y >= n.Y && x.Y + x.H <= n.Y + n.H + 0.01f);
+        for (int i = 0; i < TargetDeckGeometry.StudCount; i++)
+        {
+            DeckRect s = TargetDeckGeometry.Stud(i);
+            Assert.True(x.X + x.W <= s.X || x.Y + x.H <= s.Y || s.Y + s.H <= x.Y);
+        }
+    }
+
+    [Fact]
     public void ADisabledStudTakesThePressButRunsNothing()
     {
         TargetPlateModel model = Build(Player());

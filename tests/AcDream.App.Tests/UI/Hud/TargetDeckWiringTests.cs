@@ -175,6 +175,7 @@ public sealed class TargetDeckWiringTests
             toggleCharacter: () => Calls.Add("character"),
             copyText: text => Calls.Add($"copy {text}"),
             wield: id => Calls.Add($"wield {id}"),
+            deselect: () => Calls.Add("deselect"),
             runPluginAction: (plugin, id, action) => Calls.Add($"plugin {plugin} {id} {action}"));
     }
 
@@ -197,6 +198,7 @@ public sealed class TargetDeckWiringTests
     [InlineData(TargetAction.CharacterSheet, "character")]
     [InlineData(TargetAction.CopyName, "copy Drudge Ravener")]
     [InlineData(TargetAction.Wield, "wield 7")]
+    [InlineData(TargetAction.Deselect, "deselect")]
     public void EachAction_TakesItsPath(TargetAction action, string expected)
     {
         var r = new Routes { PackItem = 99 };

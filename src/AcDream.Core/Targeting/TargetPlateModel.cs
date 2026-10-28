@@ -9,7 +9,7 @@ public enum TargetAction
 {
     None, Assess, UseItemOn, Follow, More, Trade, Give, Tell, FellowshipInvite,
     UseOrTalk, PickUpOrUse, Wield, Open, UseKey, UsePortal, Use, CharacterSheet,
-    Examine, CopyName, SwearAllegiance,
+    Examine, CopyName, SwearAllegiance, Deselect,
 }
 
 public readonly record struct TargetStud(TargetAction Action, bool Enabled, string? DisabledReason = null);

@@ -10,12 +10,17 @@ namespace AcDream.Runtime.Tests.Gameplay;
 public sealed class TargetAutoAppraisalTests
 {
     private const uint Player = 0x50000001u, Monster = 0x80000010u, Monster2 = 0x80000011u, Chest = 0x80000020u, Corpse = 0x80000030u;
+    private const uint PkPlayer = 0x50000002u, NpkPlayer = 0x50000003u;
     private double _now = 100.0;
 
     private (TargetAutoAppraisal auto, SelectionState sel, CombatState combat, List<uint> sent, TargetAppraisalLog log) Make(
-        Func<uint, bool>? accept = null)
+        Func<uint, bool>? accept = null, bool playerIsPk = false)
     {
         var objects = new ClientObjectTable();
+        const uint pk = (uint)(PublicWeenieFlags.Player | PublicWeenieFlags.PlayerKiller);
+        objects.AddOrUpdate(new ClientObject { ObjectId = Player, Name = "Me", Type = ItemType.Creature, PublicWeenieBitfield = playerIsPk ? pk : (uint)PublicWeenieFlags.Player });
+        objects.AddOrUpdate(new ClientObject { ObjectId = PkPlayer, Name = "Red", Type = ItemType.Creature, PublicWeenieBitfield = pk });
+        objects.AddOrUpdate(new ClientObject { ObjectId = NpkPlayer, Name = "Blue", Type = ItemType.Creature, PublicWeenieBitfield = (uint)PublicWeenieFlags.Player });
         objects.AddOrUpdate(new ClientObject { ObjectId = Monster, Name = "Drudge Ravener", Type = ItemType.Creature, PublicWeenieBitfield = (uint)PublicWeenieFlags.Attackable });
         objects.AddOrUpdate(new ClientObject { ObjectId = Monster2, Name = "Olthoi Soldier", Type = ItemType.Creature, PublicWeenieBitfield = (uint)PublicWeenieFlags.Attackable });
         objects.AddOrUpdate(new ClientObject { ObjectId = Chest, Name = "Chest", Type = ItemType.Container, PublicWeenieBitfield = (uint)PublicWeenieFlags.Openable });
@@ -328,7 +333,7 @@ public sealed class TargetAutoAppraisalTests
     }
 
     [Fact]
-    public void ASuccessAfterARetryStopsFurtherSends()
+    public void ASuccessAfterARetryStopsTheRetries()
     {
         var (auto, sel, _, sent, _) = Make();
         using (auto)
@@ -339,9 +344,13 @@ public sealed class TargetAutoAppraisalTests
             auto.Tick();
             Assert.Equal(2, sent.Count);
             auto.OnAppraised(Monster, success: true);
-            _now += 20.0;
+            // No more failure retries: the next send is the timed refresh.
+            _now += TargetAutoAppraisal.RefreshSeconds - 0.1;
             auto.Tick();
             Assert.Equal(2, sent.Count);
+            _now += 0.2;
+            auto.Tick();
+            Assert.Equal(3, sent.Count);
         }
     }
 
@@ -384,5 +393,78 @@ public sealed class TargetAutoAppraisalTests
         _now += 2.0;
         sel.Select(Monster, SelectionChangeSource.World);
         Assert.Equal(2, sent.Count);
+    }
+
+    [Fact]
+    public void ASelectedMonsterIsAssessedAgainBeforeItsVitalsGoStale()
+    {
+        var (auto, sel, _, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            auto.OnAppraised(Monster, success: true);
+            _now += TargetAutoAppraisal.RefreshSeconds - 0.1;
+            auto.Tick();
+            Assert.Single(sent);
+            _now += 0.2;
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+            Assert.True(TargetAutoAppraisal.RefreshSeconds < TargetPlateModelBuilder.StaleAfterSeconds);
+        }
+    }
+
+    [Fact]
+    public void ARefreshWhoseReplyNeverCameIsSentAgain()
+    {
+        var (auto, sel, _, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Monster, SelectionChangeSource.World);
+            _now += TargetAutoAppraisal.RefreshSeconds;
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+        }
+    }
+
+    [Fact]
+    public void ACorpseIsNotRefreshed()
+    {
+        var (auto, sel, _, sent, _) = Make();
+        using (auto)
+        {
+            sel.Select(Corpse, SelectionChangeSource.World);
+            auto.OnAppraised(Corpse, success: true);
+            _now += TargetAutoAppraisal.RefreshSeconds * 3;
+            auto.Tick();
+            Assert.Single(sent);
+        }
+    }
+
+    [Fact]
+    public void APlayerIsAssessedOnlyWhenWeCanAttackThem()
+    {
+        var (auto, sel, _, sent, _) = Make(playerIsPk: true);
+        using (auto)
+        {
+            sel.Select(NpkPlayer, SelectionChangeSource.World);
+            Assert.Empty(sent);
+            sel.Select(PkPlayer, SelectionChangeSource.World);
+            Assert.Equal(new[] { PkPlayer }, sent);
+            auto.OnAppraised(PkPlayer, success: true);
+            _now += TargetAutoAppraisal.RefreshSeconds;
+            auto.Tick();
+            Assert.Equal(2, sent.Count);
+        }
+    }
+
+    [Fact]
+    public void ANonPkPlayerDoesNotAssessAPkPlayer()
+    {
+        var (auto, sel, _, sent, _) = Make(playerIsPk: false);
+        using (auto)
+        {
+            sel.Select(PkPlayer, SelectionChangeSource.World);
+            Assert.Empty(sent);
+        }
     }
 }

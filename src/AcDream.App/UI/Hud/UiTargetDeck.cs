@@ -89,7 +89,10 @@ internal sealed partial class UiTargetDeck : UiElement
     internal TargetPlateModel? View => _view;
     internal bool MenuOpen => _menuOpen;
 
-    public override bool HandlesClick => _menuOpen || _hitZone >= TargetZone.Stud0;
+    public override bool HandlesClick => _menuOpen || Pressable(_hitZone);
+
+    /// <summary>The zones a press acts on: the studs and the deselect cross.</summary>
+    private static bool Pressable(TargetZone zone) => zone >= TargetZone.Stud0 || zone == TargetZone.Close;
     public override bool ReceivesHoverMouseMove => true;
     /// <summary>The deck takes the keyboard only while its menu is open, for Escape.</summary>
     public override bool AcceptsFocus => _menuOpen;
@@ -139,6 +142,7 @@ internal sealed partial class UiTargetDeck : UiElement
     {
         TargetZone.Portrait => TargetDeckGeometry.Portrait,
         TargetZone.Name => TargetDeckGeometry.Name,
+        TargetZone.Close => TargetDeckGeometry.Close,
         TargetZone.Health => TargetDeckGeometry.Health,
         TargetZone.Stamina => TargetDeckGeometry.Stamina,
         TargetZone.Mana => TargetDeckGeometry.Mana,
@@ -154,6 +158,7 @@ internal sealed partial class UiTargetDeck : UiElement
         for (int i = 0; i < Math.Min(v.Studs.Count, TargetDeckGeometry.StudCount); i++)
             if (TargetDeckGeometry.Stud(i).Contains(x, y)) return TargetZone.Stud0 + i;
         if (TargetDeckGeometry.Portrait.Contains(x, y)) return TargetZone.Portrait;
+        if (TargetDeckGeometry.Close.Contains(x, y)) return TargetZone.Close;
         if (TargetDeckGeometry.Name.Contains(x, y)) return TargetZone.Name;
         if (v.Vitals is not null)
         {
@@ -356,7 +361,7 @@ internal sealed partial class UiTargetDeck : UiElement
             return true;
         }
         _hitZone = ZoneAt(_view, localX, localY);
-        CapturesPointerDrag = _hitZone >= TargetZone.Stud0;
+        CapturesPointerDrag = Pressable(_hitZone);
         return TargetDeckGeometry.Frame.Contains(localX, localY);
     }
 
@@ -375,6 +380,11 @@ internal sealed partial class UiTargetDeck : UiElement
                 }
                 if (_view is null) return false;
                 TargetZone zone = ZoneAt(_view, e.Data1, e.Data2);
+                if (zone == TargetZone.Close)
+                {
+                    _actions.Run(TargetAction.Deselect, _view);
+                    return true;
+                }
                 return zone >= TargetZone.Stud0 && Press(zone - TargetZone.Stud0);
             case UiEventType.MouseMove:
                 if (_view is null) return false;
@@ -386,7 +396,7 @@ internal sealed partial class UiTargetDeck : UiElement
                 SetHover(TargetZone.None);
                 return true;
             case UiEventType.Click:
-                return _menuOpen || _hitZone >= TargetZone.Stud0;
+                return _menuOpen || Pressable(_hitZone);
             case UiEventType.KeyDown:
                 if (!_menuOpen) return false;
                 if ((Key)e.Data0 == Key.Escape) CloseMenu();
@@ -440,6 +450,7 @@ internal sealed partial class UiTargetDeck : UiElement
         TargetAction.Examine => "Examine",
         TargetAction.CopyName => "Copy name",
         TargetAction.SwearAllegiance => "Swear allegiance",
+        TargetAction.Deselect => "Deselect",
         _ => "",
     };
 
@@ -490,6 +501,8 @@ internal sealed partial class UiTargetDeck : UiElement
                 TargetStud stud = view.Studs[i];
                 return new(LabelFor(stud.Action), null, stud.Enabled ? null : stud.DisabledReason, null);
             }
+            case TargetZone.Close:
+                return new(LabelFor(TargetAction.Deselect), null, null, null);
             case TargetZone.Name:
                 return new(view.Name, null, null, null);
             case TargetZone.Health when view.Vitals is { } h:

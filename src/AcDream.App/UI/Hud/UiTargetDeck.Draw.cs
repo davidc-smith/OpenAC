@@ -79,7 +79,8 @@ internal sealed partial class UiTargetDeck
     private void DrawIdentity(UiRenderContext ctx, TargetPlateModel v)
     {
         DeckRect n = TargetDeckGeometry.Name;
-        float right = n.X + n.W;
+        DrawClose(ctx);
+        float right = TargetDeckGeometry.Close.X - ChipGap;
         DeckFace chipFace = ChipFace;
 
         if (v.Level is int level)
@@ -117,6 +118,18 @@ internal sealed partial class UiTargetDeck
 
         DeckFace face = NameFace;
         DrawText(ctx, Fit(ctx, face, v.Name, right - n.X), n.X, n, TextInk, face);
+    }
+
+    /// <summary>The deselect cross: two strokes, brighter on a soft backing while hovered.</summary>
+    private void DrawClose(UiRenderContext ctx)
+    {
+        DeckRect c = TargetDeckGeometry.Close;
+        bool hot = _hover == TargetZone.Close;
+        if (hot) ctx.FillRoundedRect(c.X, c.Y, c.W, c.H, 3f, LabelInk with { W = 0.25f });
+        Vector4 ink = hot ? TextInk : LabelInk;
+        const float inset = 4f;
+        ctx.DrawLine(c.X + inset, c.Y + inset, c.X + c.W - inset, c.Y + c.H - inset, ink, 1.5f);
+        ctx.DrawLine(c.X + c.W - inset, c.Y + inset, c.X + inset, c.Y + c.H - inset, ink, 1.5f);
     }
 
     private static (string Text, Vector4 Ink)? ChipStyle(TargetChip chip) => chip switch
