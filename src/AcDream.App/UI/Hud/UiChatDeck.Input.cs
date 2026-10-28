@@ -113,7 +113,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
 
     /// <summary>Whether a saved hotkey string is exactly this key and these modifiers.</summary>
     private static bool Matches(string? hotkey, Silk.NET.Input.Key key, ModifierMask mods) =>
-        MarkupHotkeyText.Parse(hotkey) is { } chord && chord.Key == key && chord.Modifiers == mods;
+        MarkupHotkeyText.Parse(hotkey, allowCommand: true) is { } chord && chord.Key == key && chord.Modifiers == mods;
 
     private bool CycleTab(int step)
     {

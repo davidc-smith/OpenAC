@@ -48,6 +48,9 @@ public sealed class UiMarkupHotkey : UiElement
     /// <summary>The modifiers held now. Defaults to the root's keyboard.</summary>
     public Func<ModifierMask>? ModifiersSource { get; set; }
 
+    /// <summary>Whether a chord with Cmd (Win) held is recorded, written with a <c>Cmd+</c> modifier. Plugin boxes leave it off.</summary>
+    internal bool AllowsCommand { get; set; }
+
     public bool IsCapturing { get; private set; }
     public bool IsFocused { get; private set; }
 
@@ -90,9 +93,9 @@ public sealed class UiMarkupHotkey : UiElement
             return;
         _shownValid = true;
         _shownValue = value;
-        KeyChord? chord = MarkupHotkeyText.Parse(value);
+        KeyChord? chord = MarkupHotkeyText.Parse(value, AllowsCommand);
         _shownBound = chord is not null;
-        _shownText = chord is { } c ? DescribeKey?.Invoke(c) ?? MarkupHotkeyText.Format(c) : UnboundText;
+        _shownText = chord is { } c ? DescribeKey?.Invoke(c) ?? MarkupHotkeyText.Format(c, AllowsCommand) : UnboundText;
     }
 
     private void Begin(bool releaseFocus, Key? startKey)
@@ -180,10 +183,10 @@ public sealed class UiMarkupHotkey : UiElement
             return true;
         }
         ModifierMask mods = Modifiers();
-        if (!MarkupHotkeyText.IsChordKey(key) || (mods & ModifierMask.Win) != 0)
+        if (!MarkupHotkeyText.IsChordKey(key) || (!AllowsCommand && (mods & ModifierMask.Win) != 0))
             return true;   // a modifier alone (or Win held) is not a chord yet
         End(key);
-        Report(MarkupHotkeyText.Format(new KeyChord(key, mods)));
+        Report(MarkupHotkeyText.Format(new KeyChord(key, mods), AllowsCommand));
         return true;
     }
 

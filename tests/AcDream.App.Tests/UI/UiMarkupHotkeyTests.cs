@@ -273,4 +273,25 @@ public class UiMarkupHotkeyTests
         };
         Assert.Equal(4, MarkupDrawProbe.CountQuads(renderer, faded));
     }
+
+    [Fact]
+    public void AllowsCommand_RecordsACmdChord_ElseIgnoresWin()
+    {
+        var (root, box, model) = Mount();
+        model.Mods = ModifierMask.Ctrl | ModifierMask.Win;
+        Click(root);
+        root.OnKeyDown((int)Key.M);
+        Assert.True(box.IsCapturing);
+        Assert.Empty(model.Reports);
+
+        var (root2, box2, model2) = Mount();
+        box2.AllowsCommand = true;
+        model2.Mods = ModifierMask.Ctrl | ModifierMask.Win;
+        Click(root2);
+        root2.OnKeyDown((int)Key.SuperLeft);
+        Assert.True(box2.IsCapturing);
+        root2.OnKeyDown((int)Key.M);
+        Assert.Equal(["Ctrl+Cmd+M"], model2.Reports);
+        Assert.Equal("Ctrl+Cmd+M", box2.DisplayText);
+    }
 }

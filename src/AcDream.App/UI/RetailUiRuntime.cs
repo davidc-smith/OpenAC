@@ -449,20 +449,23 @@ public sealed class RetailUiRuntime : IDisposable
     private Hud.EmbeddedSvgSpriteCache? _hudIcons;
     private Hud.UiChatDeck? _chatDeck;
     private Func<KeyChord, string>? _describeKey;
-    private Func<KeyChord, string> DescribeKey()
+    private Func<KeyChord, string>? _describeKeyCmd;
+    private Func<KeyChord, string> DescribeKey(bool allowCommand = false)
     {
-        if (_describeKey is not null) return _describeKey;
+        if ((allowCommand ? _describeKeyCmd : _describeKey) is { } cached) return cached;
         Layout.RetailKeyNames keyNames;
         lock (_bindings.Assets.DatLock)
         {
             var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
             keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
         }
-        return _describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
+        Func<KeyChord, string> describe = chord => MarkupHotkeyText.Describe(chord, key =>
         {
             lock (_bindings.Assets.DatLock)
                 return keyNames.Describe(key);
-        });
+        }, allowCommand);
+        if (allowCommand) _describeKeyCmd = describe; else _describeKey = describe;
+        return describe;
     }
 
     private PluginAppearanceWindow? _chatDeckSettings;
@@ -470,10 +473,11 @@ public sealed class RetailUiRuntime : IDisposable
     private void ToggleChatDeckSettings()
     {
         _chatDeckSettings ??= new PluginAppearanceWindow(Host.Root, close =>
-            MarkupDocument.Build(Hud.ChatDeckSettingsBinding.Markup,
+            Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.ChatDeckSettingsBinding.Markup,
                 new Hud.ChatDeckSettingsBinding(() => _chatDeckSession?.Model) { Close = close },
                 _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
-                themes: _pluginThemes, describeKey: DescribeKey()));
+                themes: _pluginThemes,
+                describeKey: DescribeKey(allowCommand: true))));
         _chatDeckSettings.Toggle();
     }
 

@@ -6,6 +6,14 @@ namespace AcDream.App.UI.Hud;
 /// <summary>What the Chat Deck settings popup reads and writes: the appearance, the extra tab keys, the channel colours.</summary>
 public sealed class ChatDeckSettingsBinding
 {
+    /// <summary>Lets the popup's hotkey boxes record Cmd chords; returns <paramref name="window"/>.</summary>
+    internal static UiElement Prepare(UiElement window)
+    {
+        if (window is UiMarkupHotkey box) box.AllowsCommand = true;
+        foreach (UiElement child in window.Children) Prepare(child);
+        return window;
+    }
+
     private readonly Func<ChatDeckModel?> _model;
 
     public ChatDeckSettingsBinding(Func<ChatDeckModel?> model)

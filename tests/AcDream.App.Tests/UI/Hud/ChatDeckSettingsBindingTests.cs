@@ -156,4 +156,16 @@ public sealed class ChatDeckSettingsBindingTests
         UiElement window = MarkupDocument.Build(ChatDeckSettingsBinding.Markup, b, _ => (0u, 0, 0));
         Assert.NotNull(window);
     }
+
+    [Fact]
+    public void Prepare_LetsHotkeyBoxesTakeCommand()
+    {
+        var (_, b) = Make();
+        UiElement window = ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, b, _ => (0u, 0, 0)));
+        var boxes = new List<UiMarkupHotkey>();
+        void Walk(UiElement e) { if (e is UiMarkupHotkey k) boxes.Add(k); foreach (var c in e.Children) Walk(c); }
+        Walk(window);
+        Assert.NotEmpty(boxes);
+        Assert.All(boxes, k => Assert.True(k.AllowsCommand));
+    }
 }

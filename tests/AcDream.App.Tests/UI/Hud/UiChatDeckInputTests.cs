@@ -294,4 +294,17 @@ public sealed class UiChatDeckInputTests
         Assert.True(widest > 0f);
         Assert.True(h.Deck.ChipMenu.PopupScreenRect.W >= widest + 2f * UiMarkupContextMenu.TextIndent);
     }
+
+    [Fact]
+    public void CommandChord_CyclesAndDoesNotType()
+    {
+        var h = new Harness();
+        h.Model!.SetKeys(new ChatDeckKeys { NextTab = "Ctrl+Cmd+M" });
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.SuperLeft);
+        Key(h.Deck.Input, Silk.NET.Input.Key.M);
+        h.Deck.Input.OnEvent(new UiEvent(0, h.Deck.Input, UiEventType.Char, Data0: 'm'));
+        Assert.Equal("local", h.Model.SelectedTabId);
+        Assert.Equal("", h.Deck.Input.Text);
+    }
 }
