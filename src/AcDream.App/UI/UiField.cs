@@ -1,4 +1,5 @@
 using System;
+using AcDream.UI.Abstractions.Input;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -94,6 +95,13 @@ public sealed class UiField : UiElement
     /// owner before the field's own handling; true when the owner took it.
     /// </summary>
     public Func<Silk.NET.Input.Key, bool>? OnCommandOptionKey { get; set; }
+
+    /// <summary>Asked first for a key pressed with a modifier held; true consumes it. Never asked for a bare key.</summary>
+    public Func<Silk.NET.Input.Key, ModifierMask, bool>? OnChordKey { get; set; }
+
+    private ModifierMask HeldModifiers() =>
+        (CtrlHeld() ? ModifierMask.Ctrl : 0) | (AltHeld() ? ModifierMask.Alt : 0)
+        | (ShiftHeld() ? ModifierMask.Shift : 0) | (SuperHeld() ? ModifierMask.Win : 0);
     public Action? OnFocusGained { get; set; }
     public Action<string>? OnFocusLost { get; set; }
 
@@ -887,6 +895,8 @@ public sealed class UiField : UiElement
                 if (!Editable)
                     return true;
                 var key = (Silk.NET.Input.Key)e.Data0;
+                if (OnChordKey is not null && HeldModifiers() is var mods && mods != ModifierMask.None && OnChordKey(key, mods))
+                    return true;
                 if (CtrlHeld())
                 {
                     if (OnControlKey?.Invoke(key, ShiftHeld()) == true)
