@@ -1,6 +1,6 @@
 namespace AcDream.App.UI.Hud;
 
-internal enum ChatDeckZone { None, Frame, Tab, SearchStud, Chip, PinStud, CollapseStud }
+internal enum ChatDeckZone { None, Frame, Tab, SearchStud, SettingsStud, Chip, PinStud, CollapseStud }
 
 internal readonly record struct ChatDeckHit(ChatDeckZone Zone, int Tab = -1);
 
@@ -16,6 +16,8 @@ internal static class ChatDeckBadges
 internal sealed class ChatDeckGeometry
 {
     public const float Pad = 8f;
+    /// <summary>How far a wrapped continuation line is indented when Wrap Indent is on.</summary>
+    public const float WrapIndent = 16f;
     public const float TabHeight = 20f;
     public const float TabPadX = 9f;
     public const float TabGap = 3f;
@@ -38,6 +40,7 @@ internal sealed class ChatDeckGeometry
     public required DeckRect Frame { get; init; }
     public required IReadOnlyList<DeckRect> Tabs { get; init; }
     public required DeckRect SearchStud { get; init; }
+    public required DeckRect SettingsStud { get; init; }
     public required DeckRect CollapseStud { get; init; }
     /// <summary>Zero width while search is closed.</summary>
     public required DeckRect SearchField { get; init; }
@@ -55,7 +58,8 @@ internal sealed class ChatDeckGeometry
         Func<string, float> measureLabel)
     {
         var collapse = new DeckRect(width - Pad - StudSize, Pad, StudSize, StudSize);
-        var stud = collapse with { X = collapse.X - StudGap - StudSize };
+        var settings = collapse with { X = collapse.X - StudGap - StudSize };
+        var stud = settings with { X = settings.X - StudGap - StudSize };   // search
         float tabsRight = stud.X - TabGap;
         float room = MathF.Max(0f, tabsRight - Pad);
 
@@ -103,6 +107,7 @@ internal sealed class ChatDeckGeometry
             Frame = new DeckRect(0f, 0f, width, height),
             Tabs = rects,
             SearchStud = stud,
+            SettingsStud = settings,
             CollapseStud = collapse,
             SearchField = search,
             Transcript = transcript,
@@ -118,6 +123,7 @@ internal sealed class ChatDeckGeometry
         for (int i = 0; i < Tabs.Count; i++)
             if (Tabs[i].W > 0 && Tabs[i].Contains(x, y)) return new(ChatDeckZone.Tab, i);
         if (SearchStud.Contains(x, y)) return new(ChatDeckZone.SearchStud);
+        if (SettingsStud.Contains(x, y)) return new(ChatDeckZone.SettingsStud);
         if (CollapseStud.Contains(x, y)) return new(ChatDeckZone.CollapseStud);
         if (Chip.Contains(x, y)) return new(ChatDeckZone.Chip);
         return Frame.Contains(x, y) ? new(ChatDeckZone.Frame) : new(ChatDeckZone.None);

@@ -5,10 +5,15 @@ namespace AcDream.App.UI.Hud;
 internal sealed partial class UiChatDeck
 {
     private bool? _frameDraggable;
+    private readonly ChatDeckIdleFade _fade = new();
+    private ChatDeckAlertBeep _beep = null!;
+    internal float BackgroundFade => _fade.Factor;
     private (float Left, float Top)? _pinnedPlace;   // where the window sat when it last collapsed
 
     private void OnLinesDelivered(IReadOnlyList<ChatDeckDelivery> deliveries)
     {
+        if (_model is { } m && deliveries.Any(d => d.TabIds.Contains(m.SelectedTabId))) _fade.Wake();
+        _beep.Lines(deliveries.Any(d => d.Line.Alert), _shown && (_model?.Settings.Appearance.BeepOnAlert ?? false));
         if (_shown && _drawer.State == ChatDeckDrawerState.Collapsed && _model is { } model)
             _peek.Add(deliveries, model.Settings.Tabs);
     }
@@ -77,19 +82,36 @@ internal sealed partial class UiChatDeck
         ApplyDrawer();
     }
 
-    private void CreateDrawer() =>
+    private void CreateDrawer()
+    {
+        _beep = new ChatDeckAlertBeep(() => _b.PlayAlert?.Invoke());
         _drawer.LayoutChanged += () => _model?.SetLayout(_drawer.Pinned, _drawer.Edge);
+    }
 
     /// <summary>The runtime calls this every frame: a hidden window gets no OnTick.</summary>
     internal void TickDrawer(double deltaSeconds)
     {
+        _beep.Tick(deltaSeconds);
         if (!_shown) return;
         if (!Visible) Refresh();   // the strip's badges follow the model while the window is hidden
         ChatDeckDrawerState before = _drawer.State;
         _peek.Advance(deltaSeconds);
         _drawer.Tick(deltaSeconds, ReadDrawerInput());
+        ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
+        _fade.Tick(deltaSeconds, DeckActive(), appearance.FadeWhenIdle && _drawer.Pinned, appearance.FadeAfterSeconds);
         AfterDrawerMoved(before);
         ApplyDrawer();
+    }
+
+    /// <summary>Anything that keeps a pinned deck from fading: the pointer over it, typing, a menu, a drag-select.</summary>
+    private bool DeckActive()
+    {
+        if (FindRoot() is not { } root) return true;
+        UiElement? focus = root.KeyboardFocus;
+        return Inside(Left, Top, Width, Height, root.MouseX, root.MouseY)
+            || ReferenceEquals(focus, Input) || ReferenceEquals(focus, SearchField)
+            || _tabMenu.IsOpen || _chipMenu.IsOpen || Transcript.IsSelecting
+            || _b.SettingsOpen?.Invoke() == true;
     }
 
     private void PressCollapse()

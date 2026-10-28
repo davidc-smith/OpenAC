@@ -1,4 +1,5 @@
 using AcDream.App.UI;
+using AcDream.App.UI.Markup;
 using AcDream.UI.Abstractions.Input;
 using Silk.NET.Input;
 
@@ -88,5 +89,16 @@ public class MarkupHotkeyTests
         root.OnKeyUp((int)Key.G);
         Assert.Equal("Alt+G", binding.Last);
         Assert.Null(root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void Command_RoundTripsOnlyWhenAllowed()
+    {
+        var chord = new KeyChord(Key.M, ModifierMask.Ctrl | ModifierMask.Win);
+        Assert.Equal("Ctrl+Cmd+M", MarkupHotkeyText.Format(chord, allowCommand: true));
+        Assert.Equal(chord, MarkupHotkeyText.Parse("Ctrl+Cmd+M", allowCommand: true));
+        Assert.Equal(chord, MarkupHotkeyText.Parse("ctrl+win+m", allowCommand: true));
+        Assert.Null(MarkupHotkeyText.Parse("Ctrl+Cmd+M"));
+        Assert.Equal("Ctrl+M", MarkupHotkeyText.Format(chord));
     }
 }

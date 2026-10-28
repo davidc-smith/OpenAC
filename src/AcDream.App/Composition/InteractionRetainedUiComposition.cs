@@ -79,7 +79,8 @@ internal sealed record InteractionRetainedUiDependencies(
     AcDream.Runtime.Plugins.RuntimeAutomationSurface? Automation = null,
     Func<GameplayInputFrameController?>? GameplayInputFrame = null,
     string? JournalDirectory = null,
-    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null)
+    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null,
+    AcDream.App.Audio.UiSoundController? UiSounds = null)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -1116,6 +1117,7 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     Follow: guid => d.Automation?.Navigation.Follow(
                             guid, AcDream.Runtime.Navigation.RuntimeNavigationAutomation.DefaultFollowMeters)
                         == AcDream.Plugin.Abstractions.PluginNavigationCommandStatus.Accepted),
+                PlayUiSound: d.UiSounds is { } uiSounds ? sound => uiSounds.Play(sound) : null,
                 PluginCanvases: new PluginCanvasHostServices(
                     d.GpuDevice,
                     d.GpuFrameSource,

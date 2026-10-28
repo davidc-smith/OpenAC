@@ -17,7 +17,8 @@ public sealed class ChatDeckSessionTests
             if (LoadThrow is not null) throw LoadThrow;
             return Saved.GetValueOrDefault(toonKey);
         }
-        public void Save(string toonKey, string json) => Saved[toonKey] = json;
+        public int Saves;
+        public void Save(string toonKey, string json) { Saves++; Saved[toonKey] = json; }
     }
 
     private sealed class Harness
@@ -27,12 +28,13 @@ public sealed class ChatDeckSessionTests
         public string Key = "default";
         public bool Gameplay = true;
         public int Changes;
+        public double Now;
         public readonly List<string> Logged = [];
         public readonly ChatDeckSession Session;
 
         public Harness()
         {
-            Session = new ChatDeckSession(Log, new ChatDeckStorage(Store, _ => { }), () => Key, () => Gameplay, Logged.Add);
+            Session = new ChatDeckSession(Log, new ChatDeckStorage(Store, _ => { }), () => Key, () => Gameplay, Logged.Add, () => Now);
             Session.ModelChanged += () => Changes++;
         }
 
@@ -78,6 +80,42 @@ public sealed class ChatDeckSessionTests
         var h = new Harness { Key = "Davian" };
         h.Session.Tick();
         h.Session.Model!.SelectTab("group");
+        h.Now += 1;
+        h.Session.Tick();
+        Assert.Contains("\"group\"", h.Store.Saved["Davian"]);
+    }
+
+    [Fact]
+    public void ABurstOfChanges_SavesOnceAfterTheIdleGap()
+    {
+        var h = new Harness { Key = "Davian" };
+        h.Session.Tick();
+        ChatDeckAppearance a = h.Session.Model!.Settings.Appearance;
+        for (int i = 0; i < 10; i++)
+        {
+            h.Session.Model.SetAppearance(a with { BackgroundOpacity = 0.1f + i * 0.05f });
+            h.Now += 0.05;
+            h.Session.Tick();
+        }
+        Assert.Equal(0, h.Store.Saves);
+
+        h.Now += 0.6;
+        h.Session.Tick();
+        Assert.Equal(1, h.Store.Saves);
+        h.Now += 5;
+        h.Session.Tick();
+        Assert.Equal(1, h.Store.Saves);
+    }
+
+    [Fact]
+    public void EndSession_FlushesAPendingSave()
+    {
+        var h = new Harness { Key = "Davian" };
+        h.Session.Tick();
+        h.Session.Model!.SelectTab("group");
+        Assert.Equal(0, h.Store.Saves);
+        h.Session.EndSession();
+        Assert.Equal(1, h.Store.Saves);
         Assert.Contains("\"group\"", h.Store.Saved["Davian"]);
     }
 
