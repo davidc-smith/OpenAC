@@ -233,8 +233,8 @@ internal sealed partial class UiGearDeck
             case GearZone.Item:
                 Dispatcher.DropOnCell(p.ObjId, SelectedPackId, Items[hit.Index].ObjectId, hit.Index, fromGround);
                 break;
-            case GearZone.Frame:
-                Dispatcher.DropOnPack(p.ObjId, SelectedPackId, fromGround);
+            case GearZone.Frame:   // empty grid space: after the last item, as retail's list does
+                Dispatcher.DropOnCell(p.ObjId, SelectedPackId, 0u, -1, fromGround);
                 break;
             case GearZone.EquipSlot or GearZone.WornCell:
                 Dispatcher.DropOnSlot(p.ObjId, SlotMaskAt(hit));

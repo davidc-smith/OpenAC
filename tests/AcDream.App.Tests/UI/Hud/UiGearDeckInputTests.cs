@@ -330,4 +330,40 @@ public sealed class UiGearDeckInputTests
         Assert.Equal(expanded, t.Deck.Height);
         Assert.Equal(700f - expanded, t.Deck.Top);
     }
+
+    [Fact]
+    public void ADropOnEmptyGridSpace_PutsAfterTheLastItem()
+    {
+        Rig r = Make();
+        var t = r.Deck.Bindings.Objects();
+        Place(t, new ClientObject { ObjectId = 0xD1, Name = "Gem", Type = ItemType.Gem }, Bag, 0);
+        r.Deck.Refresh();
+        Assert.Equal(30, r.Deck.Items.Count);
+        DeckRect empty = r.Deck.Geometry.GridCell(31, 0)!.Value;   // past the last item
+        Send(r.Deck, UiEventType.DropReleased, empty, new ItemDragPayload(0xD1, ItemDragSource.Inventory, 0, null));
+        Assert.Equal([$"put D1 {Player:X} 30"], r.Actions.Calls);
+    }
+
+    [Fact]
+    public void ADropOnEmptyGridSpace_OfAnItemInThisPack_MovesItToTheEnd()
+    {
+        Rig r = Make();
+        DeckRect empty = r.Deck.Geometry.GridCell(31, 0)!.Value;
+        Send(r.Deck, UiEventType.DropReleased, empty, new ItemDragPayload(First, ItemDragSource.Inventory, 0, null));
+        Assert.Equal([$"put {First:X} {Player:X} 29"], r.Actions.Calls);   // its old slot closes up first
+    }
+
+    [Fact]
+    public void ABagDroppedOnASidePacksEmptySpace_GoesToTheMainPack()
+    {
+        Rig r = Make(s => s with { SelectedPack = Bag });
+        var t = r.Deck.Bindings.Objects();
+        t.AddOrUpdate(new ClientObject { ObjectId = 0xB2, Type = ItemType.Container, ItemsCapacity = 24, Name = "Sack" });
+        r.Deck.Refresh();
+        Assert.Equal(Bag, r.Deck.SelectedPackId);
+        DeckRect empty = r.Deck.Geometry.GridCell(2, 0)!.Value;
+        Send(r.Deck, UiEventType.DropReleased, empty, new ItemDragPayload(0xB2, ItemDragSource.Ground, 0, null));
+        Assert.Single(r.Actions.Calls);
+        Assert.StartsWith($"put B2 {Player:X} ", r.Actions.Calls[0]);
+    }
 }
