@@ -14,6 +14,11 @@ if (args.Length >= 1 && args[0] == "summarize-frame-history")
     return PerformanceTools.SummarizeFrameHistory(args[1..]);
 }
 
+if (args.Length >= 1 && args[0] == "migrate-classic")
+{
+    return ClassicMigrationCommand.Run(args[1..], Console.Out, Console.Error);
+}
+
 if (args.Length >= 1 && args[0] == "compare-screenshots")
 {
     return PerformanceTools.CompareScreenshots(args[1..]);
