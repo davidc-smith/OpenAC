@@ -142,12 +142,20 @@ public sealed class ExternalContainerControllerTests
         }
 
         public void Open(uint id = Chest, params ContainerContentEntry[] contents)
+            => Open(id, itemsCapacity: 24, containersCapacity: 0, contents);
+
+        public void Open(
+            uint id,
+            int itemsCapacity,
+            int containersCapacity,
+            params ContainerContentEntry[] contents)
         {
             Objects.AddOrUpdate(new ClientObject
             {
                 ObjectId = id,
                 Type = ItemType.Container,
-                ItemsCapacity = 24,
+                ItemsCapacity = itemsCapacity,
+                ContainersCapacity = containersCapacity,
                 Useability = ItemUseability.Remote,
             });
             State.RequestOpen(id);
@@ -237,6 +245,37 @@ public sealed class ExternalContainerControllerTests
         Assert.True(h.Contents.HorizontalScroll);
         Assert.Same(h.Contents.Scroll,
             Assert.IsType<UiScrollbar>(h.Window.ContentRoot.Children.Last()).Model);
+    }
+
+    // #93: a house hook holds one item, so it opens with one cell, the way
+    // retail sizes the strips from the container's capacities.
+    [Fact]
+    public void Hook_showsOneItemCell_andNoPackCells()
+    {
+        using var h = new Harness();
+        h.Open(Chest, itemsCapacity: 1, containersCapacity: 0);
+
+        Assert.Equal(1, h.Contents.GetNumUIItems());
+        Assert.Equal(0u, h.Contents.GetItem(0)!.ItemId);
+        Assert.Equal(0, h.Containers.GetNumUIItems());
+
+        h.Objects.AddOrUpdate(ItemTooltipCaptionNames.Plain(Item));
+        h.Open(Chest, itemsCapacity: 1, containersCapacity: 0,
+            new ContainerContentEntry(Item, 0u));
+
+        Assert.Equal(1, h.Contents.GetNumUIItems());
+        Assert.Equal(Item, h.Contents.GetItem(0)!.ItemId);
+    }
+
+    // Chests and corpses send -1 ("no limit"): the strips fill the window.
+    [Fact]
+    public void UnlimitedContainer_fillsTheVisibleWidth()
+    {
+        using var h = new Harness();
+        h.Open(Chest, itemsCapacity: -1, containersCapacity: -1);
+
+        Assert.Equal(24, h.Contents.GetNumUIItems());
+        Assert.Equal(18, h.Containers.GetNumUIItems());
     }
 
     [Fact]

@@ -123,6 +123,13 @@ public sealed class UiItemList : UiElement
 
     public bool FillVisibleEmptySlots { get; set; }
 
+    /// <summary>
+    /// When set, the list pads itself with empty cells to exactly this many,
+    /// whatever its width, in place of <see cref="FillVisibleEmptySlots"/>.
+    /// A cell holding an item is never dropped to meet it.
+    /// </summary>
+    public int? FixedSlotCount { get; set; }
+
     public Func<UiItemSlot>? EmptySlotFactory { get; set; }
 
     public static int RowCount(int cellCount, int columns)
@@ -209,10 +216,14 @@ public sealed class UiItemList : UiElement
 
     private void UpdateEmptySlots()
     {
-        if (!FillVisibleEmptySlots || !SingleRow || CellWidth <= 0f)
+        if (CellWidth <= 0f)
+            return;
+        if (FixedSlotCount is null && (!FillVisibleEmptySlots || !SingleRow))
             return;
 
-        int visibleCellCount = Math.Max(0, (int)MathF.Floor(Width / CellWidth));
+        int visibleCellCount = FixedSlotCount is int fixedCount
+            ? Math.Max(0, fixedCount)
+            : Math.Max(0, (int)MathF.Floor(Width / CellWidth));
         while (_cells.Count < visibleCellCount)
         {
             UiItemSlot cell = EmptySlotFactory?.Invoke() ?? new UiItemSlot();
