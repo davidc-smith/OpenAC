@@ -1571,6 +1571,24 @@ public sealed class RuntimeItemInteraction : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// A game board out in the world is used by starting its game, not by
+    /// sending a use. True when <paramref name="targetGuid"/> is such a
+    /// board; the begin-game action has then gone to whoever handles it.
+    /// </summary>
+    public bool TryBeginGame(uint targetGuid)
+    {
+        if (_objects.Get(targetGuid) is not { } target
+            || (target.Type & ItemType.Gameboard) == 0
+            || IsOwnedByPlayer(targetGuid))
+            return false;
+
+        var action = new ItemPolicyAction(ItemPolicyActionKind.BeginGame, targetGuid);
+        _auxiliaryAction?.Invoke(action);
+        PolicyActionRequested?.Invoke(action);
+        return true;
+    }
+
     public bool PlaceSelectedIn3D(uint itemGuid, uint targetGuid)
         => PlaceIn3D(itemGuid, fromShortcutBar: false, targetGuid);
 

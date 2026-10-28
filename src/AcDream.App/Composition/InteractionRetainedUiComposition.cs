@@ -1034,6 +1034,14 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                 Connection: new ConnectionRuntimeBindings(
                     () => late.GameRuntime.Connection, d.Window.Close,
                     ShowProgress: d.Options.LiveCharacterSelector is null),
+                Chess: new ChessRuntimeBindings(
+                    Chess: d.Runtime.ChessOwner,
+                    SendJoin: board => late.Session.CurrentSession?.SendChessJoin(board),
+                    SendMove: (fromX, fromY, toX, toY) =>
+                        late.Session.CurrentSession?.SendChessMove(fromX, fromY, toX, toY),
+                    SendPass: () => late.Session.CurrentSession?.SendChessMovePass(),
+                    SendStalemate: offer => late.Session.CurrentSession?.SendChessStalemate(offer),
+                    SendQuit: () => late.Session.CurrentSession?.SendChessQuit()),
                 Book: new BookRuntimeBindings(
                     Book: d.Runtime.BookOwner.View,
                     Commands: d.Runtime.BookOwner,

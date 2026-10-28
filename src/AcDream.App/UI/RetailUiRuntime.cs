@@ -296,6 +296,14 @@ public sealed record ConnectionRuntimeBindings(
     Action RequestExit,
     bool ShowProgress = true);
 
+public sealed record ChessRuntimeBindings(
+    AcDream.Runtime.Gameplay.RuntimeChessState Chess,
+    Action<uint /*boardGuid*/> SendJoin,
+    Action<int /*fromX*/, int /*fromY*/, int /*toX*/, int /*toY*/> SendMove,
+    Action SendPass,
+    Action<bool /*offer*/> SendStalemate,
+    Action SendQuit);
+
 public sealed record BookRuntimeBindings(
     AcDream.Runtime.Gameplay.IRuntimeBookView Book,
     AcDream.Runtime.Gameplay.RuntimeBookState Commands,
@@ -346,6 +354,7 @@ public sealed record RetailUiRuntimeBindings(
     Func<bool>? IsGameplayDisplay = null,
     Action? SynchronizeDisplayPhase = null,
     BookRuntimeBindings? Book = null,
+    ChessRuntimeBindings? Chess = null,
     Func<IReadOnlyList<PluginWorldLabel>>? WorldLabels = null,
     Func<uint, AcDream.App.Interaction.WorldLabelAnchor?>? WorldLabelAnchor = null,
     PluginCanvasHostServices? PluginCanvases = null,
@@ -763,6 +772,7 @@ public sealed class RetailUiRuntime : IDisposable
         JumpPowerbarController?.Tick();
         SecureTradeController?.Tick();
         HousePurchaseController?.Tick();
+        MiniGameUiController?.Tick();
         SelectedObjectController?.Tick(deltaSeconds);
         ExternalContainerController?.Tick();
         SocialPanelController?.Tick();
@@ -2438,9 +2448,12 @@ public sealed class RetailUiRuntime : IDisposable
 
         MiniGameUiController? controller = Layout.MiniGameUiController.Bind(
             layout,
-            () => CloseWindow(WindowNames.MiniGame));
+            () => CloseWindow(WindowNames.MiniGame),
+            _bindings.Chess is { } chess ? MiniGameChessBindings(chess) : null);
         if (controller is null) return;
         MiniGameUiController = controller;
+        if (_bindings.Chess is not null)
+            ItemInteraction.PolicyActionRequested += controller.HandlePolicyAction;
         RegisterIndicatorDetailPanel(
             RetailPanelCatalog.MiniGame,
             WindowNames.MiniGame,
@@ -2448,6 +2461,33 @@ public sealed class RetailUiRuntime : IDisposable
             layout.Root,
             controller);
     }
+
+    private MiniGameUiController.ChessBindings MiniGameChessBindings(ChessRuntimeBindings chess)
+        => new(
+            chess.Chess,
+            CreateSquare: () =>
+            {
+                lock (_bindings.Assets.DatLock)
+                {
+                    return LayoutImporter.Import(
+                        _bindings.Assets.Dats,
+                        MiniGameUiController.LayoutId,
+                        MiniGameUiController.SquareTemplateId,
+                        _bindings.Assets.ResolveSprite,
+                        _bindings.Assets.DefaultFont,
+                        _bindings.Assets.ResolveFont)?.Root;
+                }
+            },
+            SpriteTexture: sprite => _bindings.Assets.ResolveSprite(sprite).Texture,
+            SendJoin: chess.SendJoin,
+            SendMove: (from, to) => chess.SendMove(from.X, from.Y, to.X, to.Y),
+            SendPass: chess.SendPass,
+            SendStalemate: chess.SendStalemate,
+            SendQuit: chess.SendQuit,
+            Confirm: (message, completed) => ShowConfirmation(message, completed),
+            ShowWindow: () => ShowWindow(WindowNames.MiniGame),
+            HideWindow: () => HideWindow(WindowNames.MiniGame),
+            SetIndicatorActive: active => IndicatorBarController?.SetMiniGameActive(active));
 
     private void RegisterIndicatorDetailPanel(
         uint panelId,
