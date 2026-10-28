@@ -14,6 +14,7 @@ internal sealed partial class UiChatDeck
         ChatDeckPalette.DrawFrame(ctx, _geometry.Frame, opacity * _fade.Factor);
         DrawTabs(ctx);
         DrawStud(ctx, _geometry.SearchStud, HudIcons.Search, _searchOpen);
+        DrawStud(ctx, _geometry.SettingsStud, HudIcons.Settings, _b.SettingsOpen?.Invoke() == true);
         DrawStud(ctx, _geometry.CollapseStud, HudIcons.Collapse, on: false);
         if (_searchOpen) ctx.FillRoundedRect(_geometry.SearchField.X, _geometry.SearchField.Y,
             _geometry.SearchField.W, _geometry.SearchField.H, 4f, ChatDeckPalette.FieldFill);

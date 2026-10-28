@@ -35,11 +35,20 @@ public sealed class ChatDeckGeometryTests
     }
 
     [Fact]
+    public void Studs_CollapseSettingsSearch_RightToLeft()
+    {
+        ChatDeckGeometry g = Make(460f, 220f);
+        Assert.Equal(g.CollapseStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SettingsStud.X);
+        Assert.Equal(g.SettingsStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X);
+        Assert.Equal(ChatDeckZone.SettingsStud, g.HitAt(g.SettingsStud.X + 2, g.SettingsStud.Y + 2).Zone);
+    }
+
+    [Fact]
     public void Rows_StackTopToBottom()
     {
         ChatDeckGeometry g = Make();
         Assert.Equal(460 - ChatDeckGeometry.Pad - ChatDeckGeometry.StudSize, g.CollapseStud.X, 2);
-        Assert.Equal(g.CollapseStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X, 2);
+        Assert.Equal(g.SettingsStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X, 2);
         Assert.Equal(220 - ChatDeckGeometry.Pad - ChatDeckGeometry.InputHeight, g.InputRow.Y, 2);
         Assert.Equal(g.InputRow.X, g.Chip.X);
         Assert.Equal(g.Chip.X + g.Chip.W + 4, g.Input.X, 2);

@@ -37,6 +37,7 @@ public sealed class UiChatDeckTests
         public readonly UiChatDeck Deck;
         public Action? RestorePlacement;
         public int Beeps;
+        public int SettingsOpened;
 
         public Harness(bool withModel = true, DeckFonts? fonts = null)
         {
@@ -52,7 +53,8 @@ public sealed class UiChatDeckTests
                     LinkClicked: Links.Add,
                     Keyboard: Keyboard,
                     RestorePinnedPlacement: () => RestorePlacement?.Invoke(),
-                    PlayAlert: () => Beeps++),
+                    PlayAlert: () => Beeps++,
+                    OpenSettings: () => SettingsOpened++),
                 fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();
@@ -76,6 +78,14 @@ public sealed class UiChatDeckTests
             Deck.OnEvent(new UiEvent(0, Deck, UiEventType.MouseDown, Data1: (int)(r.X + 2), Data2: (int)(r.Y + 2)));
 
         public int TabIndex(string id) => Model!.Settings.Tabs.ToList().FindIndex(t => t.Id == id);
+    }
+
+    [Fact]
+    public void SettingsStud_OpensTheSettings()
+    {
+        var h = new Harness();
+        h.Press(h.Deck.Geometry.SettingsStud);
+        Assert.Equal(1, h.SettingsOpened);
     }
 
     [Fact]
