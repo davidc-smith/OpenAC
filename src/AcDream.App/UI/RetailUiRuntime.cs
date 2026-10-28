@@ -481,7 +481,8 @@ public sealed class RetailUiRuntime : IDisposable
                 new Hud.ChatDeckSettingsBinding(() => _chatDeckSession?.Model) { Close = close },
                 _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
                 themes: (_pluginThemes ?? new PluginUiThemeSettings()).WithFixedLook(Hud.ChatDeckPalette.Window, body, title),
-                describeKey: DescribeKey(allowCommand: true)), close));
+                describeKey: DescribeKey(allowCommand: true)), close),
+            onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _chatDeck, window));
         _chatDeckSettings.Toggle();
     }
 

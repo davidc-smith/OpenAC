@@ -57,7 +57,8 @@ public sealed class ChatDeckWiringTests : IDisposable
 
             SettingsWindow = new PluginAppearanceWindow(Root, close =>
                 ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, new ChatDeckSettingsBinding(() => Model) { Close = close }, _ => (0u, 0, 0),
-                    themes: new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window)), close));
+                    themes: new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window)), close),
+                onOpen: window => ChatDeckSettingsPlacement.Dock(Root, Deck, window));
             var log = new ChatLog();
             Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(
@@ -95,6 +96,25 @@ public sealed class ChatDeckWiringTests : IDisposable
                 releaseVisibility: Persistence.ReleaseVisibility,
                 log: _ => { });
         }
+    }
+
+    [Fact]
+    public void SettingsPopup_DocksToTheDecksTopRight_EveryTimeItOpens()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        UiElement popup = w.Root.Children[^1]; // brought to front on open
+        Assert.Equal(w.Deck.Left + w.Deck.Width, popup.Left + popup.Width);
+        Assert.Equal(w.Deck.Top, popup.Top + popup.Height);
+
+        popup.Left = 5; popup.Top = 5;
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        w.Deck.Left -= 40; w.Deck.Top -= 30;
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        Assert.True(w.SettingsWindow.IsOpen);
+        Assert.Equal(w.Deck.Left + w.Deck.Width, popup.Left + popup.Width);
+        Assert.Equal(w.Deck.Top, popup.Top + popup.Height);
     }
 
     [Fact]

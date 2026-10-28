@@ -208,4 +208,27 @@ public sealed class ChatDeckSettingsBindingTests
         foreach (var c in e.Children) { var f = FindBarOrNull(c); if (f is not null) return f; }
         return null;
     }
+
+    [Fact]
+    public void DockedPlace_PutsThePopupAboveTheDeck_RightEdgesAligned()
+    {
+        var (l, t) = ChatDeckSettingsPlacement.DockedPlace(new DeckRect(500, 600, 400, 250), 300, 200, 1600, 900);
+        Assert.Equal((600f, 400f), (l, t));
+    }
+
+    [Fact]
+    public void DockedPlace_NoRoomAbove_GoesBelow()
+    {
+        var (l, t) = ChatDeckSettingsPlacement.DockedPlace(new DeckRect(500, 100, 400, 250), 300, 200, 1600, 900);
+        Assert.Equal((600f, 350f), (l, t));
+    }
+
+    [Fact]
+    public void DockedPlace_ClampsLeftAndBottom()
+    {
+        var (l, _) = ChatDeckSettingsPlacement.DockedPlace(new DeckRect(0, 600, 200, 250), 300, 200, 1600, 900);
+        Assert.Equal(0f, l);
+        var (_, t) = ChatDeckSettingsPlacement.DockedPlace(new DeckRect(500, 100, 400, 750), 300, 200, 1600, 900);
+        Assert.Equal(700f, t);
+    }
 }
