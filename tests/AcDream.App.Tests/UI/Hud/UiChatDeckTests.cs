@@ -36,6 +36,7 @@ public sealed class UiChatDeckTests
         public readonly FakeKeyboard Keyboard = new();
         public readonly UiChatDeck Deck;
         public Action? RestorePlacement;
+        public int Beeps;
 
         public Harness(bool withModel = true, DeckFonts? fonts = null)
         {
@@ -50,7 +51,8 @@ public sealed class UiChatDeckTests
                     StayInChatMode: () => false,
                     LinkClicked: Links.Add,
                     Keyboard: Keyboard,
-                    RestorePinnedPlacement: () => RestorePlacement?.Invoke()),
+                    RestorePinnedPlacement: () => RestorePlacement?.Invoke(),
+                    PlayAlert: () => Beeps++),
                 fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();
@@ -301,5 +303,22 @@ public sealed class UiChatDeckTests
         h.Model!.SetAppearance(h.Model.Settings.Appearance with { LineSpacing = 1.4f });
         h.Deck.Refresh();
         Assert.Equal(1.4f, h.Deck.Transcript.LineSpacing, 3);
+    }
+
+    [Fact]
+    public void AlertLine_Beeps_OnlyWhenOnAndShown()
+    {
+        var w = new DrawerWorld();
+        var h = w.H;
+        h.Say("hello Davian");            // My-name rule: alert
+        Assert.Equal(0, h.Beeps);         // off by default
+        h.Model!.SetAppearance(h.Model.Settings.Appearance with { BeepOnAlert = true });
+        h.Deck.TickDrawer(2.0);
+        h.Say("Davian again");
+        Assert.Equal(1, h.Beeps);
+        h.Deck.OnHidden();
+        h.Deck.TickDrawer(2.0);
+        h.Say("Davian once more");
+        Assert.Equal(1, h.Beeps);
     }
 }

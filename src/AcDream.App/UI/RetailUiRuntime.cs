@@ -363,7 +363,8 @@ public sealed record RetailUiRuntimeBindings(
     Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null,
     Func<bool>? IsPortalViewVisible = null,
     WorldDragRuntimeBindings? WorldDrag = null,
-    CommandDeckRuntimeBindings? CommandDeck = null);
+    CommandDeckRuntimeBindings? CommandDeck = null,
+    Action<AcDream.Core.Audio.SoundId>? PlayUiSound = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -3644,7 +3645,8 @@ public sealed class RetailUiRuntime : IDisposable
                     StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
                     LinkClicked: _bindings.Chat.LinkClicked,
                     Keyboard: Host.Keyboard,
-                    RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck)),
+                    RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck),
+                    PlayAlert: _bindings.PlayUiSound is { } play ? () => play(Hud.ChatDeckAlertBeep.Sound) : null),
                 _deckFonts,
                 _hudIcons);
 

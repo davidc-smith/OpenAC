@@ -20,7 +20,8 @@ internal sealed record ChatDeckBindings(
     Func<bool> StayInChatMode,
     Action<PluginChatLinkClicked>? LinkClicked = null,
     Silk.NET.Input.IKeyboard? Keyboard = null,
-    Action? RestorePinnedPlacement = null);
+    Action? RestorePinnedPlacement = null,
+    Action? PlayAlert = null);
 
 /// <summary>
 /// The Chat Deck window (pinned layout): a tab bar, a transcript of the selected

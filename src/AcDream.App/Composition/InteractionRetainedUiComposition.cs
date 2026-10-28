@@ -79,7 +79,8 @@ internal sealed record InteractionRetainedUiDependencies(
     AcDream.Runtime.Plugins.RuntimeAutomationSurface? Automation = null,
     Func<GameplayInputFrameController?>? GameplayInputFrame = null,
     string? JournalDirectory = null,
-    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null)
+    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null,
+    AcDream.App.Audio.UiSoundController? UiSounds = null)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -1105,6 +1106,7 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     Enabled: () => modernHud,
                     ToggleCombat: d.CombatModeCommands.Toggle,
                     Recall: command => late.GameRuntime.Recall(command)),
+                PlayUiSound: d.UiSounds is { } uiSounds ? sound => uiSounds.Play(sound) : null,
                 PluginCanvases: new PluginCanvasHostServices(
                     d.GpuDevice,
                     d.GpuFrameSource,
