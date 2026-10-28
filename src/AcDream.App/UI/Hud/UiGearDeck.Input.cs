@@ -53,7 +53,9 @@ internal sealed partial class UiGearDeck
     protected override bool OnHitTest(float localX, float localY)
     {
         _hit = _g.HitAt(localX, localY);
-        CapturesPointerDrag = IsControl(_hit.Zone);
+        // A control owns its press, so it never drags the window; a drag source must not
+        // claim it, or a locked UI (which skips the drag-source check) never starts the drag.
+        CapturesPointerDrag = IsControl(_hit.Zone) && DragItem(_hit) is null;
         return _hit.Zone != GearZone.None;
     }
 

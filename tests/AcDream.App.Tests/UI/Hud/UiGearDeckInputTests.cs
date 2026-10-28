@@ -293,6 +293,24 @@ public sealed class UiGearDeckInputTests
     }
 
     [Fact]
+    public void ADragSource_DoesNotCaptureThePointerDrag_SoALockedUiStillDragsIt()
+    {
+        Rig r = Make();
+        var (x, y) = Centre(r.Deck.Geometry.GridCell(0, 0)!.Value);
+        r.Deck.HitTestLocal(x, y);
+        Assert.True(r.Deck.IsDragSource);
+        Assert.False(r.Deck.CapturesPointerDrag);
+
+        (x, y) = Centre(r.Deck.Geometry.EquipSlot(SlotIndex(EquipMask.HeadWear)));
+        r.Deck.HitTestLocal(x, y);
+        Assert.False(r.Deck.CapturesPointerDrag);
+
+        (x, y) = Centre(r.Deck.Geometry.EquipSlot(SlotIndex(EquipMask.FootWear)));   // empty slot
+        r.Deck.HitTestLocal(x, y);
+        Assert.True(r.Deck.CapturesPointerDrag);
+    }
+
+    [Fact]
     public void HoveringAnItem_ShowsItsCaptionAfterTheDwell_AndAnEmptySlotItsLabel()
     {
         Rig r = Make();
