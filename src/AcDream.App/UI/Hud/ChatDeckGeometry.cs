@@ -1,6 +1,6 @@
 namespace AcDream.App.UI.Hud;
 
-internal enum ChatDeckZone { None, Frame, Tab, SearchStud, Chip }
+internal enum ChatDeckZone { None, Frame, Tab, SearchStud, Chip, PinStud, CollapseStud }
 
 internal readonly record struct ChatDeckHit(ChatDeckZone Zone, int Tab = -1);
 
@@ -24,6 +24,7 @@ internal sealed class ChatDeckGeometry
     public const float BadgeGap = 5f;
     public const float BadgeHeight = 14f;
     public const float StudSize = 20f;
+    public const float StudGap = 4f;
     public const float SearchHeight = 22f;
     public const float InputHeight = 26f;
     public const float ChipArrow = 12f;
@@ -37,6 +38,7 @@ internal sealed class ChatDeckGeometry
     public required DeckRect Frame { get; init; }
     public required IReadOnlyList<DeckRect> Tabs { get; init; }
     public required DeckRect SearchStud { get; init; }
+    public required DeckRect CollapseStud { get; init; }
     /// <summary>Zero width while search is closed.</summary>
     public required DeckRect SearchField { get; init; }
     public required DeckRect Transcript { get; init; }
@@ -52,7 +54,8 @@ internal sealed class ChatDeckGeometry
         float width, float height, IReadOnlyList<ChatDeckTabLabel> tabs, bool searchOpen, string chipText,
         Func<string, float> measureLabel)
     {
-        var stud = new DeckRect(width - Pad - StudSize, Pad, StudSize, StudSize);
+        var collapse = new DeckRect(width - Pad - StudSize, Pad, StudSize, StudSize);
+        var stud = collapse with { X = collapse.X - StudGap - StudSize };
         float tabsRight = stud.X - TabGap;
         float room = MathF.Max(0f, tabsRight - Pad);
 
@@ -100,6 +103,7 @@ internal sealed class ChatDeckGeometry
             Frame = new DeckRect(0f, 0f, width, height),
             Tabs = rects,
             SearchStud = stud,
+            CollapseStud = collapse,
             SearchField = search,
             Transcript = transcript,
             NewLines = marker,
@@ -114,6 +118,7 @@ internal sealed class ChatDeckGeometry
         for (int i = 0; i < Tabs.Count; i++)
             if (Tabs[i].W > 0 && Tabs[i].Contains(x, y)) return new(ChatDeckZone.Tab, i);
         if (SearchStud.Contains(x, y)) return new(ChatDeckZone.SearchStud);
+        if (CollapseStud.Contains(x, y)) return new(ChatDeckZone.CollapseStud);
         if (Chip.Contains(x, y)) return new(ChatDeckZone.Chip);
         return Frame.Contains(x, y) ? new(ChatDeckZone.Frame) : new(ChatDeckZone.None);
     }

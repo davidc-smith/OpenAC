@@ -645,6 +645,8 @@ public sealed class RetailUiRuntime : IDisposable
                 ]);
             // Closed from mount: an attached Spell Deck is placed by its dock, never by the layout.
             _persistence.SetCaptureGate(WindowNames.SpellDeck, () => !(_spellDeckController?.Attached ?? true));
+            // The saved window geometry is the pinned window's; a fly-out's place is the strip's.
+            _persistence.SetCaptureGate(WindowNames.ChatDeck, () => _chatDeck?.Pinned ?? true);
             _persistence.ResetToDefaults();
             _persistence.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
             _canvasPositions = new PluginCanvasPositionPersistence(
@@ -856,6 +858,8 @@ public sealed class RetailUiRuntime : IDisposable
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
+        // After the model, so a line delivered this frame can peek this frame.
+        _chatDeck?.TickDrawer(deltaSeconds);
         Layout.UiMediaClock.Advance(deltaSeconds);
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
@@ -919,6 +923,7 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 _persistence?.ReflowToScreen();
                 _spellDeckSync?.AfterReflow();
+                _chatDeck?.FollowLayout();
             }
             _lastScreenSize = screenSize;
         }
@@ -1346,8 +1351,10 @@ public sealed class RetailUiRuntime : IDisposable
         // attachment) first, so the restore sees the right capture gate; the
         // Spell Deck is placed after it.
         _spellDeckSync?.LoadIfChanged();
+        _chatDeck?.SyncDrawerFromModel();   // likewise the Chat Deck's pinned/collapsed state
         _persistence?.RestoreAll();
         _spellDeckSync?.AfterRestore();
+        _chatDeck?.FollowLayout();   // a collapsed deck is left out of the restore
         // Root is sized to the screen above, so a restored canvas is kept
         // on the screen it will be drawn on.
         _canvasPositions?.RestoreAll();
@@ -1366,6 +1373,7 @@ public sealed class RetailUiRuntime : IDisposable
     {
         _persistence?.RestoreNamed(profileName);
         _spellDeckSync?.AfterRestore();
+        _chatDeck?.FollowLayout();
     }
 
     public bool ToggleWindow(string name)
@@ -3635,18 +3643,25 @@ public sealed class RetailUiRuntime : IDisposable
                     LastIncomingTellSender: () => _bindings.Chat.ViewModel.LastIncomingTellSender,
                     StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
                     LinkClicked: _bindings.Chat.LinkClicked,
-                    Keyboard: Host.Keyboard),
+                    Keyboard: Host.Keyboard,
+                    RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck)),
                 _deckFonts,
                 _hudIcons);
 
             float top = MathF.Max(0f, Host.Root.Height - Hud.ChatDeckGeometry.DefaultHeight - 10f);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite, Hud.UiChatDeck.MountOptions(10f, top));
+            Host.Root.AddChild(deck.Strip);
+            Layout.UiOverlayLayer peekLayer = OverlayHost.AddLayer("ChatDeckPeek");
+            peekLayer.Visible = true;   // click-through; the peek element shows itself when it has lines
+            peekLayer.AddChild(deck.Peek);
         }
         catch (Exception ex)
         {
             // Anything that fails here leaves the retail chat as the only chat; undo what was built.
             if (deck is not null)
             {
+                deck.Strip.Parent?.RemoveChild(deck.Strip);
+                deck.Peek.Parent?.RemoveChild(deck.Peek);
                 UiElement window = deck;
                 while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
                 if (window.Parent is not null) Host.Root.RemoveChild(window);
@@ -3659,6 +3674,7 @@ public sealed class RetailUiRuntime : IDisposable
 
         _chatDeck = deck;
         _chatDeckSession = session;
+        session!.ModelChanged += _chatDeck.SyncDrawerFromModel;
         // A composed line (automation, a plugin) goes to whichever chat input is showing.
         _bindings.Chat.Entry.BindEntryFocus(() => ChatEntryTarget?.Focus() == true);
         Console.WriteLine("[UI] Chat Deck mounted (Modern HUD).");
@@ -5912,6 +5928,8 @@ public sealed class RetailUiRuntime : IDisposable
                 _spellDeckSpellbook = null;
                 _spellDeck?.OnHidden();
                 _chatDeck?.Detach();
+                if (_chatDeckSession is not null && _chatDeck is not null)
+                    _chatDeckSession.ModelChanged -= _chatDeck.SyncDrawerFromModel;
                 _chatDeckSession?.Dispose();
                 _chatDeckSession = null;
                 _hudIcons?.Dispose();

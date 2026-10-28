@@ -38,7 +38,8 @@ public sealed class ChatDeckGeometryTests
     public void Rows_StackTopToBottom()
     {
         ChatDeckGeometry g = Make();
-        Assert.Equal(460 - ChatDeckGeometry.Pad - ChatDeckGeometry.StudSize, g.SearchStud.X, 2);
+        Assert.Equal(460 - ChatDeckGeometry.Pad - ChatDeckGeometry.StudSize, g.CollapseStud.X, 2);
+        Assert.Equal(g.CollapseStud.X - ChatDeckGeometry.StudGap - ChatDeckGeometry.StudSize, g.SearchStud.X, 2);
         Assert.Equal(220 - ChatDeckGeometry.Pad - ChatDeckGeometry.InputHeight, g.InputRow.Y, 2);
         Assert.Equal(g.InputRow.X, g.Chip.X);
         Assert.Equal(g.Chip.X + g.Chip.W + 4, g.Input.X, 2);
@@ -63,6 +64,7 @@ public sealed class ChatDeckGeometryTests
         DeckRect t2 = g.Tabs[2];
         Assert.Equal(new ChatDeckHit(ChatDeckZone.Tab, 2), g.HitAt(t2.X + 2, t2.Y + 2));
         Assert.Equal(ChatDeckZone.SearchStud, g.HitAt(g.SearchStud.X + 2, g.SearchStud.Y + 2).Zone);
+        Assert.Equal(ChatDeckZone.CollapseStud, g.HitAt(g.CollapseStud.X + 2, g.CollapseStud.Y + 2).Zone);
         Assert.Equal(ChatDeckZone.Chip, g.HitAt(g.Chip.X + 2, g.Chip.Y + 2).Zone);
         Assert.Equal(ChatDeckZone.Frame, g.HitAt(2, 2).Zone);
         Assert.Equal(ChatDeckZone.None, g.HitAt(-1, 5).Zone);
