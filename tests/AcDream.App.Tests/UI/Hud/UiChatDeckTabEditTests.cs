@@ -6,7 +6,7 @@ namespace AcDream.App.Tests.UI.Hud;
 public sealed class UiChatDeckTabEditTests
 {
     [Fact]
-    public void FiltersStud_TogglesTheEditor_AndLights()
+    public void FiltersStud_TogglesTheEditor()
     {
         var h = new UiChatDeckTests.Harness();
         h.Press(h.Deck.Geometry.FiltersStud);
@@ -40,6 +40,21 @@ public sealed class UiChatDeckTabEditTests
         Assert.Equal(("group", true), (del.TabId, del.ConfirmDeleteTab));
         h.Deck.ChooseTabMenuItem(1);
         Assert.Equal(("group", false), (h.EditorRequests[1].TabId, h.EditorRequests[1].ConfirmDeleteTab));
+    }
+
+    [Fact]
+    public void Rename_DoesNotCarryAcrossACharacterSwitch()
+    {
+        var h = new UiChatDeckTests.Harness();
+        DeckRect local = h.Deck.Geometry.Tabs[1];
+        h.Deck.TabMenuItemsAt(local.X + 2, local.Y + 2);
+        h.Deck.ChooseTabMenuItem(0);
+        Assert.True(h.Deck.RenameField.Visible);
+        h.Model = new ChatDeckModel(h.Log, ChatDeckDefaults.Create(), "Alice");
+        h.Deck.Refresh();
+        Assert.False(h.Deck.RenameField.Visible);
+        h.Deck.RenameField.OnFocusLost?.Invoke("Hijack");
+        Assert.Equal("Local", h.Model.Settings.Tabs[1].Name);
     }
 
     [Fact]
