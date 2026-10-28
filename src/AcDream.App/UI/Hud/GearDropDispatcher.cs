@@ -11,7 +11,8 @@ namespace AcDream.App.UI.Hud;
 internal sealed class GearDropDispatcher(
     ClientObjectTable objects, Func<uint> playerGuid, IGearItemActions actions)
 {
-    /// <summary>A drop on a pack icon: the item goes to the pack's top; a bag goes to the main pack.</summary>
+    /// <summary>A drop on a pack icon: the item goes to the pack's top. A bag goes to the main pack:
+    /// at its top on the main pack's own icon, else to the hovered side pack's place in the pack column.</summary>
     public void DropOnPack(uint item, uint packId, bool fromGround)
     {
         if (item == 0u) return;
@@ -25,7 +26,13 @@ internal sealed class GearDropDispatcher(
         if (!ResolveLegality(item, ref dest, ref legality, out _))
             return;
         if (!actions.Ready()) return;
-        actions.PutInContainer(item, dest, 0, fromGround);
+        int placement = 0;
+        if (sourceIsBag && packId != player)
+        {
+            if (BagListPlacement(player, item, packId) is not int bagPlacement) return;   // already there
+            placement = bagPlacement;
+        }
+        actions.PutInContainer(item, dest, placement, fromGround);
     }
 
     /// <summary>A drop on a cell of a pack's grid: merge onto a same-kind stack, else place left of the cell.</summary>
@@ -151,6 +158,25 @@ internal sealed class GearDropDispatcher(
         }
         int dropIndex = overItem ? targetIndex : int.MaxValue;   // an empty cell is past the last item
         return ItemListDropPlacement.Resolve(dropIndex, count, source, wholeStack: true);
+    }
+
+    // Retail's ListDropPlacement(bags: true): the hovered cell's index among the player's bags.
+    private int? BagListPlacement(uint player, uint itemId, uint targetBag)
+    {
+        int count = 0, source = -1, target = int.MaxValue;
+        foreach (uint guid in objects.GetContents(player))
+        {
+            if (objects.Get(guid) is not { } listed
+                || listed.CurrentlyEquippedLocation != EquipMask.None
+                || !IsBag(listed))
+            {
+                continue;
+            }
+            if (guid == itemId) source = count;
+            if (guid == targetBag) target = count;
+            count++;
+        }
+        return ItemListDropPlacement.Resolve(target, count, source, wholeStack: true);
     }
 
     private static bool IsCapacityRejection(InventoryContainerPlacementRejection r) =>

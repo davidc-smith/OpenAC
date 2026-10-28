@@ -40,6 +40,10 @@ public sealed class GearDeckRootDragTests
             t.AddOrUpdate(new ClientObject { ObjectId = Player, ItemsCapacity = 102, ContainersCapacity = 7 });
             t.AddOrUpdate(new ClientObject { ObjectId = Bag, Type = ItemType.Container, ItemsCapacity = 24 });
             t.MoveItem(Bag, Player, 0);
+            t.AddOrUpdate(new ClientObject { ObjectId = 0xB2, Type = ItemType.Container, ItemsCapacity = 24 });
+            t.MoveItem(0xB2, Player, 1);
+            t.AddOrUpdate(new ClientObject { ObjectId = 0xB3, Type = ItemType.Container, ItemsCapacity = 24 });
+            t.MoveItem(0xB3, Player, 2);
             t.AddOrUpdate(new ClientObject { ObjectId = Sword, Name = "Sword", Type = ItemType.MeleeWeapon, ValidLocations = EquipMask.MeleeWeapon });
             t.MoveItem(Sword, Player, 0);
             t.AddOrUpdate(new ClientObject { ObjectId = Helm, WielderId = Player, Name = "Helm", ValidLocations = EquipMask.HeadWear });
@@ -199,6 +203,14 @@ public sealed class GearDeckRootDragTests
     }
 
     [Fact]
+    public void DragSidePack3OntoSidePack1_ReordersItToPack1sPlace()
+    {
+        var w = new World();
+        Drag(w, w.Deck.Geometry.SidePack(3), w.Screen(w.Deck.Geometry.SidePack(1)));
+        Assert.Equal([$"put {0xB3:X} {Player:X} 0"], w.Actions.Calls);
+    }
+
+    [Fact]
     public void DragSidePackBackOntoItself_SendsNothing()
     {
         var w = new World();
@@ -227,7 +239,7 @@ public sealed class GearDeckRootDragTests
         DeckRect pack = w.Deck.Geometry.SidePack(1);
         var (x, y) = w.Screen(pack);
         Drag(w, pack, (x + 2, y + 2));
-        Assert.Equal("[gear-deck] drop 0x000000B1 on SidePack 1 -> none (its own pack) nothing sent", w.Log[^1]);
+        Assert.Equal("[gear-deck] drop 0x000000B1 on SidePack 1 -> DropOnPack nothing sent", w.Log[^1]);
     }
 
     [Fact]

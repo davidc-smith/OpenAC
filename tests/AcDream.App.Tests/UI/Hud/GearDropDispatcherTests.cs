@@ -56,6 +56,54 @@ public sealed class GearDropDispatcherTests
         Assert.Equal(["put B2 50000001 0"], a.Calls);
     }
 
+    private static (ClientObjectTable t, Fake a, GearDropDispatcher d) ThreeBags()
+    {
+        var w = World();
+        Place(w.t, new ClientObject { ObjectId = 0xB2, Type = ItemType.Container, ItemsCapacity = 24 }, Player, 1);
+        Place(w.t, new ClientObject { ObjectId = 0xB3, Type = ItemType.Container, ItemsCapacity = 24 }, Player, 2);
+        return w;
+    }
+
+    [Fact]
+    public void DropOnPack_Pack3OntoPack1_TakesPack1sPlace()
+    {
+        var (_, a, d) = ThreeBags();
+        d.DropOnPack(0xB3, Bag, fromGround: false);
+        Assert.Equal(["put B3 50000001 0"], a.Calls);
+    }
+
+    [Fact]
+    public void DropOnPack_Pack1OntoPack3_TakesPack3sPlace()
+    {
+        var (_, a, d) = ThreeBags();
+        d.DropOnPack(Bag, 0xB3, fromGround: false);
+        Assert.Equal(["put B1 50000001 1"], a.Calls);   // its old slot closes up first
+    }
+
+    [Fact]
+    public void DropOnPack_PackOntoItsOwnCell_SendsNothing()
+    {
+        var (_, a, d) = ThreeBags();
+        d.DropOnPack(0xB2, 0xB2, fromGround: false);
+        Assert.Empty(a.Calls);
+    }
+
+    [Fact]
+    public void DropOnPack_PackOntoTheCellAfterItsOwn_SendsNothing()
+    {
+        var (_, a, d) = ThreeBags();
+        d.DropOnPack(Bag, 0xB2, fromGround: false);
+        Assert.Empty(a.Calls);
+    }
+
+    [Fact]
+    public void DropOnPack_PackOntoMainPack_GoesToTheTop()
+    {
+        var (_, a, d) = ThreeBags();
+        d.DropOnPack(0xB3, Player, fromGround: false);
+        Assert.Equal(["put B3 50000001 0"], a.Calls);
+    }
+
     [Fact]
     public void DropOnPack_FullPack_FallsThroughToMainPack()
     {

@@ -252,9 +252,6 @@ internal sealed partial class UiGearDeck
         string action;
         switch (hit.Zone)
         {
-            case GearZone.SidePack when _model.Packs[hit.Index].Id == p.ObjId:
-                action = "none (its own pack)";   // a pack dropped back on its own cell stays where it is
-                break;
             case GearZone.SidePack:
                 action = nameof(GearDropDispatcher.DropOnPack);
                 Dispatcher.DropOnPack(p.ObjId, _model.Packs[hit.Index].Id, fromGround);
