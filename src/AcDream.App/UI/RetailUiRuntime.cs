@@ -472,11 +472,15 @@ public sealed class RetailUiRuntime : IDisposable
 
     private void ToggleChatDeckSettings()
     {
+        // The popup is part of the Modern HUD: the deck's own sans, whatever the plugin theme.
+        Hud.DeckFonts? deck = _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+        Lazy<UiDatFont> body = new(() => deck.Face(Hud.DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular));
+        Lazy<UiDatFont> title = new(() => deck.Face(Hud.DeckFonts.SmallPixelHeight, BundledUiFontWeight.SemiBold));
         _chatDeckSettings ??= new PluginAppearanceWindow(Host.Root, close =>
             Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.ChatDeckSettingsBinding.Markup,
                 new Hud.ChatDeckSettingsBinding(() => _chatDeckSession?.Model) { Close = close },
                 _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
-                themes: (_pluginThemes ?? new PluginUiThemeSettings()).WithFixedPalette(Hud.ChatDeckPalette.Window),
+                themes: (_pluginThemes ?? new PluginUiThemeSettings()).WithFixedLook(Hud.ChatDeckPalette.Window, body, title),
                 describeKey: DescribeKey(allowCommand: true)), close));
         _chatDeckSettings.Toggle();
     }

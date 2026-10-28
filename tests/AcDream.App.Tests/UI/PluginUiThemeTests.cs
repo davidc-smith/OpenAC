@@ -198,4 +198,41 @@ public sealed class PluginUiThemeTests
         Assert.Null(baseSettings.Palette);
         Assert.Equal(PluginUiTheme.Classic, baseSettings.Theme);
     }
+
+    [Fact]
+    public void WithFixedLook_UsesTheGivenFontsAndPaletteAndNeverSaves()
+    {
+        var baseFont = new Lazy<UiDatFont>(() => null!);
+        var font = new Lazy<UiDatFont>(() => null!);
+        var titleFont = new Lazy<UiDatFont>(() => null!);
+        var baseSettings = new PluginUiThemeSettings(null, baseFont);
+        var fixedSettings = baseSettings.WithFixedLook(PluginUiPalette.Ember, font, titleFont);
+        Assert.Same(PluginUiPalette.Ember, fixedSettings.Palette);
+        Assert.True(fixedSettings.HasModernFont);
+        fixedSettings.Theme = PluginUiTheme.Moss;
+        Assert.Same(PluginUiPalette.Ember, fixedSettings.Palette);
+        Assert.Equal(PluginUiTheme.Classic, baseSettings.Theme);
+        Assert.Same(font.Value, fixedSettings.ModernFont);
+        Assert.Same(titleFont.Value, fixedSettings.ModernTitleFont);
+    }
+
+    [Fact]
+    public void MarkupPanel_FrameOverride_ReplacesTheChrome()
+    {
+        var settings = new PluginUiThemeSettings().WithFixedPalette(PluginUiPalette.Ember);
+        UiPluginMarkupPanel Panel() => new(_ => (0u, 0, 0), settings) { Width = 200, Height = 100, HasTitle = true };
+        bool Draws(UiPluginMarkupPanel panel, System.Numerics.Vector4 c) =>
+            ThemeDrawCapture.Vertices(MarkupDrawProbe.Draw(panel, 200f, 100f))
+                .Any(v => Math.Abs(v.Color.X - c.X) < 0.01f && Math.Abs(v.Color.Y - c.Y) < 0.01f && Math.Abs(v.Color.Z - c.Z) < 0.01f);
+
+        UiPluginMarkupPanel plain = Panel();
+        Assert.True(Draws(plain, PluginUiPalette.Ember.Background));
+
+        UiPluginMarkupPanel overridden = Panel();
+        int calls = 0;
+        overridden.FrameOverride = (_, w, h) => { calls++; Assert.Equal((200f, 100f), (w, h)); };
+        Assert.False(Draws(overridden, PluginUiPalette.Ember.Background));
+        Assert.False(Draws(overridden, PluginUiPalette.Ember.Border));
+        Assert.True(calls > 0);
+    }
 }

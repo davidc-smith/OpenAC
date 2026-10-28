@@ -13,6 +13,13 @@ public sealed class ChatDeckSettingsBinding
     internal static UiElement Prepare(UiElement window, Action close)
     {
         Walk(window, close);
+        if (window is UiPluginMarkupPanel panel)
+            panel.FrameOverride = (ctx, w, h) =>
+            {
+                ChatDeckPalette.DrawFrame(ctx, new DeckRect(0f, 0f, w, h), 1f);
+                if (panel.HasTitle)
+                    ctx.DrawRect(6f, PluginWindowChrome.TitleBarHeight, w - 12f, 1f, ChatDeckPalette.Bronze);
+            };
         return window;
     }
 
