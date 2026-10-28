@@ -1660,7 +1660,7 @@ provider's rows and actions at once, and unloading the plugin removes all of
 its providers. Call everything here from the tick thread, as with every other
 UI call.
 
-Needs contract `0.1.28-fork.2`.
+Needs contract `0.1.30-fork.2`.
 
 ## World triangles
 
