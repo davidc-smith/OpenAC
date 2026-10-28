@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Numerics;
 using AcDream.App.UI.Layout;
 using AcDream.Core.Items;
@@ -132,7 +131,7 @@ internal sealed partial class UiGearDeck
         ctx.FillRoundedRect(h.X, h.Y, h.W, h.H, 5f, HeaderFill);
         DrawText(ctx, Bold, "Packs", h.X + 6f, h, LabelInk);
 
-        string burden = _model.BurdenPercent.ToString(CultureInfo.InvariantCulture) + "% burden";
+        string burden = _burdenText;
         DrawText(ctx, Small, burden, g.GridStud.X - 6f - Small.Measure(ctx, burden), h, LabelInk);
 
         bool list = g.Input.List;
@@ -143,7 +142,7 @@ internal sealed partial class UiGearDeck
     private void DrawLabelledStud(UiRenderContext ctx, DeckRect r, string label, bool on, bool dim = false)
     {
         Vector4 ink = DeckChrome.DrawStud(ctx, r, 1f, on, dim);
-        DrawCentred(ctx, Bold, Fit(ctx, Bold, label, r.W - 4f), r, ink);
+        DrawCentred(ctx, Bold, label, r, ink);   // fixed labels that fit their studs
     }
 
     /// <summary>A ▾ (<paramref name="down"/>) or ▸ drawn as two strokes on the stud's centre.</summary>
@@ -169,21 +168,20 @@ internal sealed partial class UiGearDeck
     /// empty. Aetheria slots the character has not unlocked are dimmed, as the paper doll hides them.</summary>
     private void DrawSlots(UiRenderContext ctx, ClientObjectTable objects)
     {
-        uint player = _b.PlayerGuid();
-        AetheriaUnlockState unlocked = AetheriaUnlocks.Read(objects.Get(player));
+        AetheriaUnlockState unlocked = _aetheria;
         IReadOnlyList<GearSlot> slots = GearSlotCatalog.Slots;
         for (int i = 0; i < slots.Count; i++)
         {
             GearSlot slot = slots[i];
             DeckRect r = _g.EquipSlot(i);
             bool locked = slot.IsAetheria && (unlocked & AetheriaBit(slot.Mask)) == AetheriaUnlockState.None;
-            uint occupant = GearSlotCatalog.Occupant(objects, player, slot);
+            uint occupant = _slotOccupants[i];
             ctx.PushAlpha(locked || (occupant != 0 && _b.IsPending(occupant)) ? DimAlpha : 1f);
             try
             {
                 DrawCell(ctx, r, SlotFill, SlotEdge, 6f);
                 if (occupant != 0 && objects.Get(occupant) is { } worn) DrawIcon(ctx, IconFor(worn), r);
-                else DrawSlotLabel(ctx, slot.Label, r);
+                else DrawSlotLabel(ctx, i, slot.Label, r);
                 if (Hover.Zone == GearZone.EquipSlot && Hover.Index == i)
                     ctx.StrokeRoundedRect(r.X + 0.5f, r.Y + 0.5f, r.W - 1f, r.H - 1f, 6f, Handle with { W = 0.6f }, 1f);
             }
@@ -200,19 +198,26 @@ internal sealed partial class UiGearDeck
     };
 
     /// <summary>An empty slot's label: one line when it fits, else split at its first space over two.</summary>
-    private void DrawSlotLabel(UiRenderContext ctx, string label, DeckRect r)
+    private void DrawSlotLabel(UiRenderContext ctx, int index, string label, DeckRect r)
     {
         DeckFace face = Small;
-        float room = r.W - 4f;
-        int space = label.IndexOf(' ');
-        if (face.Measure(ctx, label) <= room || space < 0)
+        if (_slotLabels[index] is not { } lines)
         {
-            DrawCentred(ctx, face, Fit(ctx, face, label, room), r, LabelInk);
+            float room = r.W - 4f;
+            int space = label.IndexOf(' ');
+            lines = face.Measure(ctx, label) <= room || space < 0
+                ? (Fit(ctx, face, label, room), null)
+                : (Fit(ctx, face, label[..space], room), Fit(ctx, face, label[(space + 1)..], room));
+            _slotLabels[index] = lines;
+        }
+        if (lines.Second is null)
+        {
+            DrawCentred(ctx, face, lines.First, r, LabelInk);
             return;
         }
         float lh = face.LineHeight(ctx), top = r.Y + (r.H - 2f * lh) / 2f;
-        DrawCentred(ctx, face, Fit(ctx, face, label[..space], room), new DeckRect(r.X, top, r.W, lh), LabelInk);
-        DrawCentred(ctx, face, Fit(ctx, face, label[(space + 1)..], room), new DeckRect(r.X, top + lh, r.W, lh), LabelInk);
+        DrawCentred(ctx, face, lines.First, new DeckRect(r.X, top, r.W, lh), LabelInk);
+        DrawCentred(ctx, face, lines.Second, new DeckRect(r.X, top + lh, r.W, lh), LabelInk);
     }
 
     /// <summary>The folded Equipment section: a row (or up to three) of worn icons.</summary>
@@ -248,7 +253,7 @@ internal sealed partial class UiGearDeck
             {
                 DrawCell(ctx, r, CellFill, CellEdge, 5f);
                 DrawIcon(ctx, IconFor(o), r);
-                string stack = StackText(o.StackSize);
+                string stack = CachedStackText(o.StackSize);
                 if (stack.Length > 0)
                 {
                     float lh = face.LineHeight(ctx);
@@ -280,14 +285,16 @@ internal sealed partial class UiGearDeck
                 var icon = new DeckRect(r.X + 2f, r.Y + (r.H - ListIcon) / 2f, ListIcon, ListIcon);
                 DrawIcon(ctx, IconFor(o), icon);
 
-                string stack = StackText(o.StackSize);
+                string stack = CachedStackText(o.StackSize);
                 float stackW = stack.Length > 0 ? face.Measure(ctx, stack) : 0f;
                 float right = r.X + r.W - 4f;
                 if (stack.Length > 0) DrawText(ctx, face, stack, right - stackW, r, LabelInk);
 
                 float nameX = icon.X + icon.W + 6f;
                 float nameW = right - (stack.Length > 0 ? stackW + 6f : 0f) - nameX;
-                DrawText(ctx, face, Fit(ctx, face, _b.DisplayName(o), nameW), nameX, r, TextInk);
+                if (!_fittedNames.TryGetValue(o.ObjectId, out string? name))
+                    _fittedNames[o.ObjectId] = name = Fit(ctx, face, _b.DisplayName(o), nameW);
+                DrawText(ctx, face, name, nameX, r, TextInk);
             }
             finally { ctx.PopAlpha(); }
         }
@@ -319,7 +326,7 @@ internal sealed partial class UiGearDeck
                 ? _b.ResolveIcon(ItemType.Container, InventoryController.PlayerPackBaseIcon, 0u, 0u, 0u)
                 : objects.Get(pack.Id) is { } bag ? IconFor(bag) : 0u;
             DrawIcon(ctx, texture, r);
-            string badge = pack.IsMain ? "M" : (i + 1).ToString(CultureInfo.InvariantCulture);
+            string badge = _badges[i];
             face.Draw(ctx, badge, r.X + r.W - 2f - face.Measure(ctx, badge), r.Y + r.H - face.LineHeight(ctx), LabelInk);
             if (pack.Id == selected) StrokeAround(ctx, r, Handle);
         }

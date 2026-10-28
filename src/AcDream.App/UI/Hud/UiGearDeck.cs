@@ -1,3 +1,4 @@
+using System.Globalization;
 using AcDream.App.UI.Layout;
 using AcDream.Core.Items;
 using AcDream.Core.Items.Gear;
@@ -41,6 +42,21 @@ internal sealed partial class UiGearDeck : UiElement
     private uint _lastPlayer;
     private int? _lastStrength;
     private bool _built;
+
+    // Built with the model (Refresh's gated rebuild) so a frame does no table scans or string work.
+    /// <summary>Each <see cref="GearSlotCatalog.Slots"/> entry's occupant id, or 0.</summary>
+    private uint[] _slotOccupants = new uint[GearSlotCatalog.Slots.Count];
+    private AetheriaUnlockState _aetheria;
+    private string _burdenText = "";
+    private string[] _badges = [];
+    private string _footer = "";
+    private uint _footerFor;
+    /// <summary>Stack corner texts by stack size; cleared with the model.</summary>
+    private readonly Dictionary<int, string> _stackTexts = [];
+    /// <summary>List names fitted to their row, by item id; cleared with the model and the geometry.</summary>
+    private readonly Dictionary<uint, string> _fittedNames = [];
+    /// <summary>Empty-slot labels fitted to one or two lines, by slot; cleared with the geometry.</summary>
+    private readonly (string First, string? Second)?[] _slotLabels = new (string, string?)?[GearSlotCatalog.Slots.Count];
 
     public UiGearDeck(GearDeckBindings bindings, DeckFonts? fonts, EmbeddedSvgSpriteCache? icons)
     {
@@ -136,6 +152,7 @@ internal sealed partial class UiGearDeck : UiElement
             || player != _lastPlayer || strength != _lastStrength)
         {
             _model = GearInventoryModel.Build(table, player, strength);
+            RebuildCaches(table, player);
             _lastTable = table;
             _lastRevision = table.MutationRevision;
             _lastPlayer = player;
@@ -164,7 +181,39 @@ internal sealed partial class UiGearDeck : UiElement
     {
         GearDeckLayoutInput input = LayoutInput();
         if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeight) != _g.Frame.H)
+        {
             _g = GearDeckGeometry.Create(Height, input);
+            _fittedNames.Clear();
+            Array.Clear(_slotLabels);
+        }
+    }
+
+    /// <summary>What the draw reads per model: slot occupants (a whole-table scan each),
+    /// the Aetheria unlocks, the burden label and the side-pack badges.</summary>
+    private void RebuildCaches(ClientObjectTable table, uint player)
+    {
+        IReadOnlyList<GearSlot> slots = GearSlotCatalog.Slots;
+        for (int i = 0; i < slots.Count; i++)
+            _slotOccupants[i] = _model.Packs.Count == 0 ? 0u : GearSlotCatalog.Occupant(table, player, slots[i]);
+        _aetheria = AetheriaUnlocks.Read(table.Get(player));
+        _burdenText = _model.BurdenPercent.ToString(CultureInfo.InvariantCulture) + "% burden";
+        _badges = new string[_model.Packs.Count];
+        for (int i = 0; i < _badges.Length; i++)
+            _badges[i] = _model.Packs[i].IsMain ? "M" : (i + 1).ToString(CultureInfo.InvariantCulture);
+        _footer = "";
+        _footerFor = 0;
+        _stackTexts.Clear();
+        _fittedNames.Clear();
+    }
+
+    /// <summary>The occupant drawn in slot <paramref name="index"/> of <see cref="GearSlotCatalog.Slots"/>, or 0.</summary>
+    internal uint SlotOccupant(int index) => _slotOccupants[index];
+
+    private string CachedStackText(int stack)
+    {
+        if (stack <= 1) return "";
+        if (!_stackTexts.TryGetValue(stack, out string? text)) _stackTexts[stack] = text = StackText(stack);
+        return text;
     }
 
     /// <summary>The window is on screen: nothing to restore, the scroll is kept.</summary>
@@ -191,22 +240,32 @@ internal sealed partial class UiGearDeck : UiElement
         get
         {
             uint selected = SelectedPackId;
-            for (int i = 0; i < _model.Packs.Count; i++)
+            if (selected != _footerFor || _footer.Length == 0)
             {
-                GearPack p = _model.Packs[i];
-                if (p.Id != selected) continue;
-                string name = p.IsMain ? "Main" : $"Pack {i + 1}";
-                return $"{name} · {_model.Contents(p.Id).Count} / {p.Capacity}";
+                _footer = BuildFooter(selected);
+                _footerFor = selected;
             }
-            return "";
+            return _footer;
         }
+    }
+
+    private string BuildFooter(uint selected)
+    {
+        for (int i = 0; i < _model.Packs.Count; i++)
+        {
+            GearPack p = _model.Packs[i];
+            if (p.Id != selected) continue;
+            string name = p.IsMain ? "Main" : $"Pack {i + 1}";
+            return $"{name} · {_model.Contents(p.Id).Count} / {p.Capacity}";
+        }
+        return "";
     }
 
     /// <summary>A stack count for a cell corner: empty for one, thousands as "9k".</summary>
     internal static string StackText(int stack) => stack switch
     {
         <= 1 => "",
-        < 1000 => stack.ToString(System.Globalization.CultureInfo.InvariantCulture),
-        _ => (stack / 1000).ToString(System.Globalization.CultureInfo.InvariantCulture) + "k",
+        < 1000 => stack.ToString(CultureInfo.InvariantCulture),
+        _ => (stack / 1000).ToString(CultureInfo.InvariantCulture) + "k",
     };
 }

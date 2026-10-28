@@ -5,6 +5,7 @@ using AcDream.App.UI;
 using AcDream.App.UI.Layout;
 using AcDream.App.UI.Hud;
 using AcDream.Core.Items;
+using AcDream.Core.Items.Gear;
 using Xunit;
 
 namespace AcDream.App.Tests.UI.Hud;
@@ -65,15 +66,16 @@ public sealed class UiGearDeckDrawTests
     }
 
     private static UiGearDeck Deck(ClientObjectTable table, uint player = Player, DeckFonts? fonts = null,
-        EmbeddedSvgSpriteCache? icons = null, Func<GearDeckSettings, GearDeckSettings>? settings = null, uint icon = 0u)
+        EmbeddedSvgSpriteCache? icons = null, Func<GearDeckSettings, GearDeckSettings>? settings = null, uint icon = 0u,
+        Func<uint>? playerGuid = null, Func<int?>? strength = null, Func<ItemType, uint, uint, uint, uint, uint>? resolveIcon = null)
     {
         var session = new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
         var b = new GearDeckBindings(
             Objects: () => table,
-            PlayerGuid: () => player,
-            Strength: () => 100,
-            ResolveIcon: (_, _, _, _, _) => icon,
+            PlayerGuid: playerGuid ?? (() => player),
+            Strength: strength ?? (() => 100),
+            ResolveIcon: resolveIcon ?? ((_, _, _, _, _) => icon),
             ResolveDragIcon: (_, _, _, _, _) => 0u,
             DisplayName: o => o.Name,
             Session: session,
@@ -224,6 +226,47 @@ public sealed class UiGearDeckDrawTests
         deck.Refresh();
         Assert.NotSame(before, deck.Model);
         Assert.Equal(31, deck.Items.Count);
+    }
+
+    [Fact]
+    public void TheModelIsRebuiltWhenThePlayerOrStrengthChanges()
+    {
+        var t = World();
+        uint player = Player;
+        int? strength = 100;
+        UiGearDeck deck = Deck(t, playerGuid: () => player, strength: () => strength);
+        var before = deck.Model;
+
+        strength = 200;
+        deck.Refresh();
+        Assert.NotSame(before, deck.Model);
+        Assert.NotEqual(before.CapacityUnits, deck.Model.CapacityUnits);
+
+        before = deck.Model;
+        deck.Refresh();
+        Assert.Same(before, deck.Model);
+
+        player = 0;
+        deck.Refresh();
+        Assert.Same(GearInventoryModel.Empty, deck.Model);
+    }
+
+    [Fact]
+    public void SlotOccupantsFollowTheTable()
+    {
+        const uint Gloves = 0xC3, GloveIcon = 0x06001234;
+        int hands = GearSlotCatalog.Slots.ToList().FindIndex(s => s.Mask == EquipMask.HandWear);
+        var t = World();
+        UiGearDeck deck = Deck(t, resolveIcon: (_, iconId, _, _, _) => iconId);
+        Assert.Equal(0u, deck.SlotOccupant(hands));
+        Assert.DoesNotContain(MarkupDrawProbe.Draw(deck, GearDeckGeometry.Width, deck.Height).DebugSpriteSegmentVerts,
+            s => s.Texture == GloveIcon);
+
+        Wear(t, new ClientObject { ObjectId = Gloves, WielderId = Player, Name = "Gloves", IconId = GloveIcon, ValidLocations = EquipMask.HandWear }, EquipMask.HandWear);
+        deck.Refresh();
+        Assert.Equal(Gloves, deck.SlotOccupant(hands));
+        Assert.Contains(MarkupDrawProbe.Draw(deck, GearDeckGeometry.Width, deck.Height).DebugSpriteSegmentVerts,
+            s => s.Texture == GloveIcon);
     }
 
     [Theory]
