@@ -138,7 +138,11 @@ public sealed partial class ChatDeckEditorBinding
     public bool AnyNumber => _anyNumber;
     public Action<bool> SetAnySender => v => { _anySender = v; Regeneralise(); };
     public Action<bool> SetAnyNumber => v => { _anyNumber = v; Regeneralise(); };
-    public string PatternPreview => _fromLine is { } f ? ChatDeckRuleDraft.Preview(f, _anySender, _anyNumber) : "";
+    public string PatternPreview => _fromLine is not { } f ? ""
+        : ChatDeckRuleDraft.Preview(f, _anySender, _anyNumber)
+          + (PatternTooGeneral ? "   (only a name or number left: matches almost any line)" : "");
+    public uint PatternPreviewColour => 0xFF000000u | (PatternTooGeneral ? ProblemColour : InkColour);
+    private bool PatternTooGeneral => _fromLine is { } f && ChatDeckRuleDraft.IsTooGeneral(f, _anySender, _anyNumber);
 
     private void Regeneralise()
     {
@@ -165,7 +169,7 @@ public sealed partial class ChatDeckEditorBinding
     {
         null => "",
         { Status: not ChatDeckRuleStatus.Ok } p => p.Error is { } e ? $"Invalid: {e}" : ChatDeckRuleSummary.Status(ChatDeckMatcher.Compile(_draft!, M?.CharacterName ?? "")),
-        { TimedOut: true } p => $"Too slow: it timed out on a line after {p.Count} matches. It would be turned off.",
+        { TimedOut: true } p => $"Too slow: it timed out on a line after {p.Count} matches. It may be turned off.",
         { MatchesEverything: true } => "This pattern matches every line.",
         var p => $"Matches {p.Count} of the last {p.Total} lines.",
     };
@@ -223,7 +227,7 @@ public sealed partial class ChatDeckEditorBinding
                 <checkbox text="{AnySenderText}" checked="{AnySender}" onchange="{SetAnySender}" enabled="{CanAnySender}" grow="1" h="16" />
                 <checkbox text="Any number" checked="{AnyNumber}" onchange="{SetAnyNumber}" enabled="{CanAnyNumber}" w="120" h="16" />
               </group>
-              <label text="{PatternPreview}" visible="{FromLine}" h="16" />
+              <label text="{PatternPreview}" color="{PatternPreviewColour}" visible="{FromLine}" h="16" />
               <group layout="row" gap="8" h="96">
                 <group layout="column" gap="2" scroll="y" w="200" visible="{ChannelsInForm}">
                   <label text="Channels (none = any)" h="16" />

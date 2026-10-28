@@ -18,8 +18,13 @@ public sealed class ChatDeckModel : IDisposable
     private readonly string _characterName;
     private readonly ConcurrentQueue<ChatEntry?> _queue = new();   // null marks a /clear
     private readonly List<ChatDeckTabState> _tabs = [];
+    // Timeouts in a row per rule id; a CPU spike can push one match past the timeout.
+    private readonly Dictionary<string, int> _timeoutStrikes = new(StringComparer.Ordinal);
     private ChatDeckRuleEngine _engine;
     private bool _disposed;
+
+    /// <summary>How many timeouts in a row turn a rule off as faulted.</summary>
+    public const int FaultAfterTimeouts = 3;
 
     public ChatDeckModel(ChatLog log, ChatDeckSettings settings, string characterName)
     {
@@ -73,12 +78,13 @@ public sealed class ChatDeckModel : IDisposable
 
             ChatDeckLineFacts facts = ChatDeckLineFacts.From(entry, _characterName);
             ChatDeckVerdict verdict = _engine.Evaluate(facts);
-            if (verdict.TimedOutRuleIds.Count > 0)
+            HashSet<string>? faulted = CountTimeouts(verdict.TimedOutRuleIds);
+            if (faulted is not null)
             {
                 // Turn the rule off at once, so the next line in this tick does not wait on it too.
-                var ids = verdict.TimedOutRuleIds.ToHashSet(StringComparer.Ordinal);
-                Settings = Settings with { Rules = MarkFaulted(Settings.Rules, ids) };
+                Settings = Settings with { Rules = MarkFaulted(Settings.Rules, faulted) };
                 _engine = new ChatDeckRuleEngine(Settings.Rules, Settings.Tabs, _characterName);
+                foreach (string id in faulted) _timeoutStrikes.Remove(id);
                 settingsChanged = true;
             }
             if (verdict.Hidden) continue;
@@ -101,6 +107,7 @@ public sealed class ChatDeckModel : IDisposable
     {
         Settings = ChatDeckSettingsNormalizer.Normalize(settings);
         _engine = new ChatDeckRuleEngine(Settings.Rules, Settings.Tabs, _characterName);
+        _timeoutStrikes.Clear();
         RebuildTabs();
         if (FindTab(SelectedTabId) is null) SelectedTabId = ChatDeckDefaults.AllTabId;
         if (Settings.Layout.LastTabId != SelectedTabId)
@@ -205,6 +212,23 @@ public sealed class ChatDeckModel : IDisposable
         _tabs.Clear();
         foreach (ChatDeckTab tab in Settings.Tabs)
             _tabs.Add(old.TryGetValue(tab.Id, out var kept) ? kept : new ChatDeckTabState(tab.Id));
+    }
+
+    /// <summary>Counts this line's timeouts; returns the rules that reached <see cref="FaultAfterTimeouts"/>, or null.</summary>
+    private HashSet<string>? CountTimeouts(IReadOnlyList<string> timedOut)
+    {
+        if (timedOut.Count == 0 && _timeoutStrikes.Count == 0) return null;
+        foreach (string id in _timeoutStrikes.Keys.ToList())
+            if (!timedOut.Contains(id)) _timeoutStrikes.Remove(id);
+
+        HashSet<string>? faulted = null;
+        foreach (string id in timedOut)
+        {
+            int strikes = _timeoutStrikes.GetValueOrDefault(id) + 1;
+            _timeoutStrikes[id] = strikes;
+            if (strikes >= FaultAfterTimeouts) (faulted ??= new(StringComparer.Ordinal)).Add(id);
+        }
+        return faulted;
     }
 
     private static IReadOnlyList<ChatDeckRule> MarkFaulted(IReadOnlyList<ChatDeckRule> rules, HashSet<string> ids) =>

@@ -46,6 +46,17 @@ public static class ChatDeckRuleDraft
             _ => p.Text,
         }));
 
+    /// <summary>
+    /// Whether generalising leaves no words of the line (only names, numbers, spaces and punctuation),
+    /// so the rule would match almost any line on its channel; the editor warns.
+    /// </summary>
+    public static bool IsTooGeneral(ChatDeckLineFacts facts, bool anySender, bool anyNumber)
+    {
+        List<Part> parts = Parts(facts, anySender, anyNumber);
+        return parts.Any(p => p.Kind != PartKind.Literal)
+            && !parts.Any(p => p.Kind == PartKind.Literal && p.Text.Any(char.IsLetter));
+    }
+
     public static (ChatDeckMatchKind Kind, string Pattern) Pattern(ChatDeckLineFacts facts, bool anySender, bool anyNumber)
     {
         List<Part> parts = Parts(facts, anySender, anyNumber);
