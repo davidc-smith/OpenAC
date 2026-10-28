@@ -112,6 +112,43 @@ public class UiItemListTests
     }
 
     [Fact]
+    public void FixedSlotCount_PadsToTheCount_IgnoringViewportWidth()
+    {
+        var list = new UiItemList
+        {
+            Width = 130f,
+            Height = 32f,
+            CellWidth = 32f,
+            CellHeight = 32f,
+            SingleRow = true,
+            FillVisibleEmptySlots = true,
+            FixedSlotCount = 1,
+            EmptySlotFactory = () => new UiCatalogSlot(),
+        };
+        list.Flush();
+        list.LayoutCells();
+        Assert.Equal(1, list.GetNumUIItems());
+
+        list.FixedSlotCount = 6;
+        list.LayoutCells();
+        Assert.Equal(6, list.GetNumUIItems());
+
+        // Never drops a cell that holds an item.
+        list.FixedSlotCount = 1;
+        using (list.DeferLayout())
+        {
+            list.Flush();
+            list.AddItem(new UiCatalogSlot { EntryId = 1u });
+            list.AddItem(new UiCatalogSlot { EntryId = 2u });
+        }
+        Assert.Equal(2, list.GetNumUIItems());
+
+        list.FixedSlotCount = null;
+        list.LayoutCells();
+        Assert.Equal(4, list.GetNumUIItems());
+    }
+
+    [Fact]
     public void ScrollItemIntoView_moves_only_when_row_is_outside_viewport()
     {
         var list = new UiItemList
