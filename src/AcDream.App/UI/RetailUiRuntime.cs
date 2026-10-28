@@ -424,6 +424,7 @@ public sealed class RetailUiRuntime : IDisposable
     private Func<ImportedLayout?>? _pluginDialogLayout;
     private UiNineSlicePanel? _pluginAppearance;
     private readonly Dictionary<string, (uint Texture, int Width, int Height)?> _pluginIcons = [];
+    private PluginFileImageLoader? _pluginFileImages;
     private bool _pluginsMounted;
     private IDisposable? _characterSheetSubscription;
     private Layout.CharacterTitlesController? _characterTitlesController;
@@ -4140,6 +4141,8 @@ public sealed class RetailUiRuntime : IDisposable
             _bindings.Assets.Dats,
             _bindings.Assets.Icons,
             _bindings.Toolbar.Objects);
+        // Plugin markup's file icons are read here and held in each plugin's image table.
+        _pluginFileImages ??= new PluginFileImageLoader();
 
         // Hotkey boxes show keys by the game's own names. The table reads go
         // through the dat lock like every other plugin-thread dat read.
@@ -4160,6 +4163,14 @@ public sealed class RetailUiRuntime : IDisposable
 
         foreach (var panel in _bindings.Plugins.Drain())
         {
+            PluginUiOwner owner = panel.Owner;
+            // The window's own hold on its file icons, let go when it is unmounted.
+            var windowIcons = new PluginMarkupIconResolver(
+                iconResolver,
+                _pluginFileImages,
+                () => _bindings.Plugins?.ImageTableFor(owner),
+                owner.Id,
+                panel.PluginDirectory);
             try
             {
                 string xml = panel.MarkupContent
@@ -4170,7 +4181,8 @@ public sealed class RetailUiRuntime : IDisposable
                     _bindings.Assets.ResolveSprite,
                     _bindings.Assets.Controls,
                     _bindings.Assets.DefaultFont,
-                    iconResolver, _pluginThemes,
+                    windowIcons,
+                    _pluginThemes,
                     fallbackTitle: panel.Descriptor.Title,
                     controlState: _controlState.ForWindow(panel.WindowName),
                     describeKey: describeKey,
@@ -4202,7 +4214,11 @@ public sealed class RetailUiRuntime : IDisposable
                 RetailWindowHandle handle = window.Register(Host.WindowManager, panel.WindowName, visibility);
                 _bindings.Plugins.CompleteWindowMount(
                     panel,
-                    () => Host.WindowManager.Unregister(panel.WindowName));
+                    () =>
+                    {
+                        Host.WindowManager.Unregister(panel.WindowName);
+                        windowIcons.Dispose();
+                    });
 
                 if (panel.Descriptor.ShowInSidePanel)
                 {
@@ -4233,6 +4249,7 @@ public sealed class RetailUiRuntime : IDisposable
             catch (Exception ex)
             {
                 _bindings.Plugins.FailMount(panel);
+                windowIcons.Dispose();
                 Console.WriteLine($"[UI] plugin UI panel '{panel.MarkupPath}' failed to load: {ex.Message}");
             }
         }
