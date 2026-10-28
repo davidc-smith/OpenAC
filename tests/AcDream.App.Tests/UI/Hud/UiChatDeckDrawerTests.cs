@@ -248,4 +248,28 @@ public sealed class UiChatDeckDrawerTests
         w.Deck.OnShown();
         Assert.Empty(w.Deck.PeekLines);
     }
+
+    [Fact]
+    public void Pinned_IdleFadesTheBackground_PointerBringsItBack()
+    {
+        var w = new DrawerWorld();
+        w.H.Model!.SetAppearance(w.H.Model.Settings.Appearance with { FadeWhenIdle = true, FadeAfterSeconds = 2 });
+        w.Root.OnMouseMove(1500, 100);   // away from the deck
+        w.Tick(2.5);
+        Assert.Equal(0f, w.Deck.BackgroundFade);
+        w.Root.OnMouseMove((int)w.Deck.Left + 20, (int)w.Deck.Top + 60);
+        w.Tick(0.016);
+        Assert.Equal(1f, w.Deck.BackgroundFade);
+    }
+
+    [Fact]
+    public void ALineInTheSelectedTab_WakesTheFade()
+    {
+        var w = new DrawerWorld();
+        w.H.Model!.SetAppearance(w.H.Model.Settings.Appearance with { FadeWhenIdle = true, FadeAfterSeconds = 2 });
+        w.Root.OnMouseMove(1500, 100);
+        w.Tick(2.5);
+        w.H.Say("hello");   // the All tab is selected
+        Assert.Equal(1f, w.Deck.BackgroundFade);
+    }
 }

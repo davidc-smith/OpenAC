@@ -11,7 +11,7 @@ internal sealed partial class UiChatDeck
     protected override void OnDraw(UiRenderContext ctx)
     {
         float opacity = _model?.Settings.Appearance.BackgroundOpacity ?? new ChatDeckAppearance().BackgroundOpacity;
-        ChatDeckPalette.DrawFrame(ctx, _geometry.Frame, opacity);
+        ChatDeckPalette.DrawFrame(ctx, _geometry.Frame, opacity * _fade.Factor);
         DrawTabs(ctx);
         DrawStud(ctx, _geometry.SearchStud, HudIcons.Search, _searchOpen);
         DrawStud(ctx, _geometry.CollapseStud, HudIcons.Collapse, on: false);
