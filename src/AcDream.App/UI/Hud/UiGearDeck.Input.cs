@@ -137,9 +137,12 @@ internal sealed partial class UiGearDeck
     }
 
     /// <summary>Shows a pack's contents from the top. A side pack is opened on the server too,
-    /// as retail's OpenContainer does; the main pack is the player and needs no open.</summary>
+    /// as retail's OpenContainer does; the main pack is the player and needs no open. The
+    /// pack already shown is left as it is (OpenContainer returns early for the open one),
+    /// so a double-click sends one Use and keeps the scroll.</summary>
     private void SelectPack(GearPack pack)
     {
+        if (pack.Id == SelectedPackId) return;
         _b.Session.Update(s => s with { SelectedPack = pack.Id });
         ScrollTo(0);
         if (!pack.IsMain) _b.Actions.OpenPack(pack.Id);

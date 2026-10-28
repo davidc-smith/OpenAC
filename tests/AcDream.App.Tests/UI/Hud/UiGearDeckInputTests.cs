@@ -93,7 +93,20 @@ public sealed class UiGearDeckInputTests
         deck.OnEvent(new UiEvent(0, deck, type, Data0: data0, Data1: (int)x, Data2: (int)y, Payload: payload));
     }
 
-    private static void Click(UiGearDeck deck, DeckRect at) => Send(deck, UiEventType.Click, at);
+    /// <summary>A press and release on one spot, as the root sends it: MouseDown, then Click.</summary>
+    private static void Click(UiGearDeck deck, DeckRect at)
+    {
+        Send(deck, UiEventType.MouseDown, at);
+        Send(deck, UiEventType.Click, at);
+    }
+
+    /// <summary>A double-click as the root sends it: two clicks, the second followed by DoubleClick.</summary>
+    private static void DoubleClick(UiGearDeck deck, DeckRect at)
+    {
+        Click(deck, at);
+        Click(deck, at);
+        Send(deck, UiEventType.DoubleClick, at);
+    }
 
     private static int SlotIndex(EquipMask mask)
     {
@@ -365,5 +378,24 @@ public sealed class UiGearDeckInputTests
         Send(r.Deck, UiEventType.DropReleased, empty, new ItemDragPayload(0xB2, ItemDragSource.Ground, 0, null));
         Assert.Single(r.Actions.Calls);
         Assert.StartsWith($"put B2 {Player:X} ", r.Actions.Calls[0]);
+    }
+
+    [Fact]
+    public void DoubleClickingSidePack1_OpensItOnce_AndClickingItAgainKeepsTheScroll()
+    {
+        Rig r = Make();
+        var t = r.Deck.Bindings.Objects();
+        for (int i = 0; i < 60; i++)   // more rows than show, so it can scroll
+            Place(t, new ClientObject { ObjectId = 0xD00 + (uint)i, Name = $"Gem {i}", Type = ItemType.Gem }, Bag, i);
+        r.Deck.Refresh();
+        DoubleClick(r.Deck, r.Deck.Geometry.SidePack(1));
+        Assert.Equal(Bag, r.Deck.SelectedPackId);
+        Assert.Equal(["open B1"], r.Actions.Calls);
+
+        Send(r.Deck, UiEventType.Scroll, r.Deck.Geometry.Contents, data0: -1);
+        Assert.Equal(1, r.Deck.ScrollRow);
+        Click(r.Deck, r.Deck.Geometry.SidePack(1));
+        Assert.Equal(1, r.Deck.ScrollRow);
+        Assert.Equal(["open B1"], r.Actions.Calls);
     }
 }
