@@ -240,6 +240,11 @@ public sealed class RuntimeCollisionNeighborhoodTests
 
         Task stopping = Task.Run(neighborhood.StopBackgroundWork);
 
+        // The load in hand is let go only once the stop has asked the worker
+        // to stop: before that, going on to the next landblock is right.
+        Assert.True(SpinWait.SpinUntil(
+            () => neighborhood.BackgroundLoadsCancelled,
+            TimeSpan.FromSeconds(5)));
         Assert.NotSame(stopping, await Task.WhenAny(stopping, Task.Delay(200)));
         hold.Set();
         Assert.Same(stopping, await Task.WhenAny(stopping, Task.Delay(5000)));
