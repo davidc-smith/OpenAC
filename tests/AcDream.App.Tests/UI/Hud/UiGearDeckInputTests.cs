@@ -35,13 +35,13 @@ public sealed class UiGearDeckInputTests
         Assert.True(t.MoveItem(o.ObjectId, Player, -1, mask));
     }
 
-    /// <summary>A player with one bag, 30 loose items and two worn items.</summary>
-    private static ClientObjectTable World()
+    /// <summary>A player with one bag, <paramref name="loose"/> loose items and two worn items.</summary>
+    private static ClientObjectTable World(int loose = 30)
     {
         var t = new ClientObjectTable();
         t.AddOrUpdate(new ClientObject { ObjectId = Player, Type = ItemType.Creature, ItemsCapacity = 102, ContainersCapacity = 7 });
         Place(t, new ClientObject { ObjectId = Bag, Type = ItemType.Container, ItemsCapacity = 24, Name = "Pack" }, Player, 0);
-        for (int i = 0; i < 30; i++)
+        for (int i = 0; i < loose; i++)
             Place(t, new ClientObject { ObjectId = First + (uint)i, Name = $"Item {i}", Type = ItemType.Misc }, Player, i);
         Wear(t, new ClientObject { ObjectId = Helm, WielderId = Player, Name = "Helm", ValidLocations = EquipMask.HeadWear }, EquipMask.HeadWear);
         Wear(t, new ClientObject { ObjectId = Sword, WielderId = Player, Name = "Sword", ValidLocations = EquipMask.MeleeWeapon }, EquipMask.MeleeWeapon);
@@ -57,9 +57,10 @@ public sealed class UiGearDeckInputTests
         public double Now;
     }
 
-    private static Rig Make(Func<GearDeckSettings, GearDeckSettings>? settings = null, float? height = null)
+    private static Rig Make(Func<GearDeckSettings, GearDeckSettings>? settings = null, float? height = null, int loose = 30,
+        UiElement? parent = null)
     {
-        ClientObjectTable table = World();
+        ClientObjectTable table = World(loose);
         var session = new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
         var actions = new Fake();
@@ -77,6 +78,7 @@ public sealed class UiGearDeckInputTests
             Close: () => rig.Closed++);
         var deck = new UiGearDeck(b, null, null, () => rig.Now);
         rig = new Rig { Deck = deck, Actions = actions, Session = session };
+        parent?.AddChild(deck);
         if (height is float h) deck.Height = h;
         deck.Refresh();
         return rig;
@@ -130,7 +132,7 @@ public sealed class UiGearDeckInputTests
     [Fact]
     public void ClickingSidePack1_SelectsAndOpensIt()
     {
-        Rig r = Make(height: 456f);
+        Rig r = Make(loose: 60);
         Send(r.Deck, UiEventType.Scroll, r.Deck.Geometry.Contents, data0: -1);
         Assert.Equal(1, r.Deck.ScrollRow);
         Click(r.Deck, r.Deck.Geometry.SidePack(1));
@@ -225,13 +227,13 @@ public sealed class UiGearDeckInputTests
     [Fact]
     public void SixWheelNotchesDown_ClampAtTheLastRow()
     {
-        Rig r = Make(height: 456f);
-        Assert.Equal(4, r.Deck.Geometry.VisibleGridRows);
+        Rig r = Make(height: GearDeckGeometry.MinHeightFor(new(false, false, 2, 60, 7, 0)), loose: 60);
+        Assert.Equal(7, r.Deck.Geometry.VisibleGridRows);
         for (int i = 0; i < 6; i++)
             Send(r.Deck, UiEventType.Scroll, r.Deck.Geometry.Contents, data0: -1);
-        Assert.Equal(5 - 4, r.Deck.MaxScrollRow);
+        Assert.Equal(10 - 7, r.Deck.MaxScrollRow);
         Assert.Equal(r.Deck.MaxScrollRow, r.Deck.ScrollRow);
-        Send(r.Deck, UiEventType.Scroll, r.Deck.Geometry.Contents, data0: 1);
+        Send(r.Deck, UiEventType.Scroll, r.Deck.Geometry.Contents, data0: 3);
         Assert.Equal(0, r.Deck.ScrollRow);
     }
 
@@ -293,5 +295,39 @@ public sealed class UiGearDeckInputTests
 
         Send(r.Deck, UiEventType.HoverLeave, r.Deck.Geometry.Frame);
         Assert.Null(r.Deck.VisibleTooltip);
+    }
+
+    [Fact]
+    public void Unfolding_GrowsTheDeckToItsNewMinimum()
+    {
+        float folded = GearDeckGeometry.MinHeightFor(new(true, false, 2, 30, 7, 0));
+        float expanded = GearDeckGeometry.MinHeightFor(new(false, false, 2, 30, 7, 0));
+        Rig r = Make(s => s with { Folded = true }, height: folded);
+        Assert.Equal(folded, r.Deck.Height);
+        Assert.Equal(folded, r.Deck.MinHeight);
+        Click(r.Deck, r.Deck.Geometry.FoldStud);
+        Assert.Equal(expanded, r.Deck.Height);
+        Assert.Equal(expanded, r.Deck.MinHeight);
+        Assert.Equal(expanded, r.Deck.Geometry.Frame.H);
+        Assert.Equal(8, r.Deck.Geometry.VisibleSidePacks);
+    }
+
+    [Fact]
+    public void Unfolding_GrowsNoTallerThanTheParent_AndKeepsTheDeckInsideIt()
+    {
+        var screen = new UiPanel { Width = 800, Height = 520 };
+        Rig r = Make(s => s with { Folded = true }, height: 470f, parent: screen);
+        r.Deck.Top = 40f;
+        Click(r.Deck, r.Deck.Geometry.FoldStud);
+        Assert.Equal(520f, r.Deck.Height);
+        Assert.Equal(0f, r.Deck.Top);
+
+        var tall = new UiPanel { Width = 800, Height = 700 };
+        Rig t = Make(s => s with { Folded = true }, height: 470f, parent: tall);
+        t.Deck.Top = 300f;
+        Click(t.Deck, t.Deck.Geometry.FoldStud);
+        float expanded = GearDeckGeometry.MinHeightFor(t.Deck.Geometry.Input);
+        Assert.Equal(expanded, t.Deck.Height);
+        Assert.Equal(700f - expanded, t.Deck.Top);
     }
 }

@@ -93,4 +93,35 @@ public sealed class GearDeckGeometryTests
         Assert.Equal(GearZone.Frame, g.HitAt(noItem.X + 1, noItem.Y + 1).Zone);
         Assert.Equal(GearZone.None, g.HitAt(-1, -1).Zone);
     }
+
+    [Fact]
+    public void AtDefaultHeight_ExpandedShowsTheMainPackAndSevenSidePacks()
+    {
+        var g = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeight, Input(sideSlots: 7));
+        Assert.Equal(8, g.VisibleSidePacks);
+        DeckRect last = g.SidePack(7);
+        Assert.Equal(new GearDeckHit(GearZone.SidePack, 7), g.HitAt(last.X + 1, last.Y + last.H - 1));
+    }
+
+    [Theory]
+    [InlineData(false, 7)]
+    [InlineData(true, 7)]
+    [InlineData(false, 0)]
+    [InlineData(true, 30)]
+    public void MinHeightFor_FitsEverySideCell_WithAFloor(bool folded, int sideSlots)
+    {
+        GearDeckLayoutInput input = Input(folded: folded, sideSlots: sideSlots);
+        float min = GearDeckGeometry.MinHeightFor(input);
+        Assert.True(min >= GearDeckGeometry.MinHeight);
+        Assert.Equal(1 + sideSlots, GearDeckGeometry.Create(min, input).VisibleSidePacks);
+        if (min > GearDeckGeometry.MinHeight)
+            Assert.True(GearDeckGeometry.Create(min - 1f, input).VisibleSidePacks < 1 + sideSlots);
+    }
+
+    [Fact]
+    public void MinHeightFor_FoldedIsLessThanExpanded()
+    {
+        Assert.True(GearDeckGeometry.MinHeightFor(Input(folded: true)) < GearDeckGeometry.MinHeightFor(Input()));
+        Assert.Equal(GearDeckGeometry.MinHeight, GearDeckGeometry.MinHeightFor(Input(sideSlots: 0)));
+    }
 }

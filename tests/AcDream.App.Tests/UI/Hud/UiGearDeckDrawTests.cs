@@ -155,7 +155,10 @@ public sealed class UiGearDeckDrawTests
         UiGearDeck deck = Deck(World());
         deck.Height = GearDeckGeometry.MinHeight;
         deck.Refresh();
-        Assert.Equal(GearDeckGeometry.MinHeight, deck.Geometry.Frame.H);
+        float min = GearDeckGeometry.MinHeightFor(deck.Geometry.Input);
+        Assert.Equal(min, deck.Height);   // below the minimum grows to it
+        Assert.Equal(min, deck.Geometry.Frame.H);
+        Assert.Equal(1 + 7, deck.Geometry.VisibleSidePacks);
         DrawInside(deck);
     }
 
@@ -300,6 +303,12 @@ public sealed class UiGearDeckDrawTests
         float w = 420f, h = 100f;
         deck.ConstrainResize(ResizeEdges.Bottom, ref w, ref h);
         Assert.Equal(GearDeckGeometry.Width, w);
-        Assert.Equal(GearDeckGeometry.MinHeight, h);
+        float min = GearDeckGeometry.MinHeightFor(deck.Geometry.Input);
+        Assert.True(min > GearDeckGeometry.MinHeight);
+        Assert.Equal(min, deck.MinHeight);
+        Assert.Equal(min, h);
+        h = min - 1f;
+        deck.ConstrainResize(ResizeEdges.Top, ref w, ref h);
+        Assert.Equal(min, h);
     }
 }

@@ -186,12 +186,32 @@ internal sealed partial class UiGearDeck : UiElement
     private void SyncGeometry()
     {
         GearDeckLayoutInput input = LayoutInput();
+        FitMinHeight(input);
         if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeight) != _g.Frame.H)
         {
             _g = GearDeckGeometry.Create(Height, input);
             _fittedNames.Clear();
             Array.Clear(_slotLabels);
         }
+    }
+
+    /// <summary>
+    /// The window's minimum is the height that shows every side-pack cell for
+    /// the fold state. A deck below it (unfolded, a pack slot gained, an older
+    /// saved size) grows to it, no taller than its parent and kept inside it.
+    /// </summary>
+    private void FitMinHeight(GearDeckLayoutInput input)
+    {
+        float min = GearDeckGeometry.MinHeightFor(input);
+        MinHeight = min;
+        if (Height >= min) return;
+        UiElement? parent = Parent;
+        float target = parent is null ? min : MathF.Min(min, MathF.Max(Height, parent.Height));
+        if (target <= Height) return;
+        Height = target;
+        if (parent is not null && Top + Height > parent.Height) Top = MathF.Max(0f, parent.Height - Height);
+        ResetAnchorCapture();
+        FindRoot()?.NotifyWindowResized(this);   // the layout records the new size
     }
 
     /// <summary>What the draw reads per model: slot occupants (a whole-table scan each),

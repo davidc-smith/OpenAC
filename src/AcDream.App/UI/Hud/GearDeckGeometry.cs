@@ -9,7 +9,7 @@ internal readonly record struct GearDeckHit(GearZone Zone, int Index = -1);
 /// <summary>Where everything in the 300-point Gear Deck column goes, for one height and state.</summary>
 internal sealed class GearDeckGeometry
 {
-    public const float Width = 300f, MinHeight = 360f, DefaultHeight = 600f, Pad = 10f, Gap = 6f;
+    public const float Width = 300f, MinHeight = 360f, DefaultHeight = 620f, Pad = 10f, Gap = 6f;
     public const float TitleH = 22f, HeaderH = 20f, BurdenH = 8f, FooterH = 16f;
     public const float CloseSize = 16f, StudW = 52f, StudH = 18f, StudGap = 4f, FoldW = 20f, ViewStudW = 30f;
     public const float SlotCell = 38f, SlotGap = 4f, WornCellSize = 24f, WornGap = 3f;
@@ -41,6 +41,26 @@ internal sealed class GearDeckGeometry
     public int VisibleSidePacks =>
         Math.Clamp((int)MathF.Floor((SideColumn.H + SideGap) / (SideCell + SideGap)), 0, 1 + Math.Max(0, Input.SidePackSlots));
 
+    /// <summary>
+    /// The smallest height that shows every side-column cell (the main pack and
+    /// each side-pack slot) for <paramref name="input"/>'s fold state, never
+    /// below <see cref="MinHeight"/>. The window's minimum follows it.
+    /// </summary>
+    public static float MinHeightFor(GearDeckLayoutInput input)
+    {
+        int cells = 1 + Math.Max(0, input.SidePackSlots);
+        float top = TitleH + Gap + HeaderH + Gap + EquipmentHeight(input) + Gap + HeaderH + Gap + BurdenH + Gap;
+        float side = cells * SideCell + (cells - 1) * SideGap;
+        return MathF.Max(MinHeight, MathF.Ceiling(top + side + Gap + FooterH + Pad));
+    }
+
+    private static float EquipmentHeight(GearDeckLayoutInput input)
+    {
+        if (!input.Folded) return SlotRows * SlotCell + (SlotRows - 1) * SlotGap;
+        int rows = Math.Clamp((input.WornCount + WornPerRow - 1) / WornPerRow, 1, MaxWornRows);
+        return rows * WornCellSize + (rows - 1) * WornGap;
+    }
+
     public static GearDeckGeometry Create(float height, GearDeckLayoutInput input)
     {
         float h = MathF.Max(height, MinHeight);
@@ -57,16 +77,7 @@ internal sealed class GearDeckGeometry
         var foldStud = new DeckRect(Pad, studY, FoldW, StudH);
         y += HeaderH + Gap;
 
-        float equipH;
-        if (input.Folded)
-        {
-            int rows = Math.Clamp((input.WornCount + WornPerRow - 1) / WornPerRow, 1, MaxWornRows);
-            equipH = rows * WornCellSize + (rows - 1) * WornGap;
-        }
-        else
-        {
-            equipH = SlotRows * SlotCell + (SlotRows - 1) * SlotGap;
-        }
+        float equipH = EquipmentHeight(input);
         var equipment = new DeckRect(Pad, y, inner, equipH);
         y += equipH + Gap;
 
