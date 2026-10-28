@@ -255,6 +255,9 @@ internal static class ParityWorld
         kit.IconUnderlayId = KitIconUnderlay;
         kit.IconOverlayId = KitIconOverlay;
         kit.Priority = KitCoverage;
+        // Test data only: a real kit is not a hook and carries no hook bits.
+        // The bits are copied whatever the item is, so the kit carries them
+        // here to check that they reach both records on both clients.
         kit.HookItemTypes = KitHookItemTypes;
         kit.PluralName = "Healing Kits";
         objects.AddOrUpdate(kit);
