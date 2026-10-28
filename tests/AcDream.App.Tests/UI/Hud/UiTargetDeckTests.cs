@@ -258,6 +258,34 @@ public sealed class UiTargetDeckTests
     }
 
     [Fact]
+    public void VitalsShowTotalsWhenTheyAreKnown()
+    {
+        var combat = new CombatState();
+        combat.OnCreatureProfile(7, new CombatState.CreatureVitals(80, 100, 50, 120, 25, 90));
+        var log = new TargetAppraisalLog();
+        log.Record(7, true, 0.8f, now: 49.0);
+        TargetPlateModel model = Build(Monster(), log: log, combat: combat);
+        Assert.Equal("80 / 100", UiTargetDeck.HealthText(model.Vitals!.Value));
+        Assert.Equal("80 / 100", UiTargetDeck.TooltipFor(TargetZone.Health, model)!.State);
+        Assert.Equal("50 / 120", UiTargetDeck.TooltipFor(TargetZone.Stamina, model)!.State);
+        Assert.Equal("25 / 90", UiTargetDeck.TooltipFor(TargetZone.Mana, model)!.State);
+
+        // Health stays live between assesses: a later health update scales the known maximum.
+        combat.OnUpdateHealth(7, 0.5f);
+        model = Build(Monster(), log: log, combat: combat);
+        Assert.Equal("50 / 100", UiTargetDeck.HealthText(model.Vitals!.Value));
+    }
+
+    [Fact]
+    public void HealthFallsBackToAPercentWithoutTotals()
+    {
+        var combat = new CombatState();
+        combat.OnUpdateHealth(7, 0.42f);
+        TargetPlateModel model = Build(Monster(), combat: combat);
+        Assert.Equal("42%", UiTargetDeck.HealthText(model.Vitals!.Value));
+    }
+
+    [Fact]
     public void FailedStaminaWithAnEarlierValueSaysItIsTheLastKnown()
     {
         var combat = new CombatState();

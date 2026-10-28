@@ -140,9 +140,10 @@ public static class TargetPlateModelBuilder
             && input.Combat.TryGetCreatureVitals(id, out CombatState.CreatureVitals v))
         {
             float? Frac(uint? cur, uint? max) => cur is uint c && max is uint m && m > 0 ? Math.Clamp(c / (float)m, 0f, 1f) : null;
-            return new(health, Frac(v.Stamina, v.StaminaMax), Frac(v.Mana, v.ManaMax), v.StaminaMax, v.ManaMax, state);
+            return new(health, Frac(v.Stamina, v.StaminaMax), Frac(v.Mana, v.ManaMax), v.HealthMax,
+                v.Stamina, v.StaminaMax, v.Mana, v.ManaMax, state);
         }
-        return new(health, null, null, null, null, state);
+        return new(health, null, null, null, null, null, null, null, state);
     }
 
     private static TargetCon Con(int? level, int playerLevel, TargetKind kind)

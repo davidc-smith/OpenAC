@@ -493,17 +493,20 @@ internal sealed partial class UiTargetDeck : UiElement
             case TargetZone.Name:
                 return new(view.Name, null, null, null);
             case TargetZone.Health when view.Vitals is { } h:
-                return new("Health", Percent(h.Health), null, null);
+                return new("Health", HealthText(h), null, null);
             case TargetZone.Stamina or TargetZone.Mana when view.Vitals is { } vitals:
             {
                 string title = zone == TargetZone.Stamina ? "Stamina" : "Mana";
                 float? value = zone == TargetZone.Stamina ? vitals.Stamina : vitals.Mana;
+                string? text = value is float v
+                    ? zone == TargetZone.Stamina ? Amount(v, vitals.StaminaCurrent, vitals.StaminaMax) : Amount(v, vitals.ManaCurrent, vitals.ManaMax)
+                    : null;
                 return vitals.State switch
                 {
                     TargetVitalsState.Failed => new("Assess failed", null,
                         value is null ? AssessFailedDetail : AssessFailedKnownDetail, null),
-                    TargetVitalsState.Stale => new(title, value is float s ? Percent(s) : null, StaleDetail, null),
-                    TargetVitalsState.Fresh when value is float f => new(title, Percent(f), null, null),
+                    TargetVitalsState.Stale => new(title, text, StaleDetail, null),
+                    TargetVitalsState.Fresh when text is not null => new(title, text, null, null),
                     _ => null,
                 };
             }
@@ -522,6 +525,18 @@ internal sealed partial class UiTargetDeck : UiElement
                 return null;
         }
     }
+
+    /// <summary>
+    /// Health as "current / max" once an assess gave the maximum, else a percent.
+    /// Health updates are live fractions, so the current value scales the known maximum.
+    /// </summary>
+    internal static string HealthText(TargetVitals vitals) =>
+        Amount(vitals.Health, vitals.HealthMax is uint m ? (uint)MathF.Round(vitals.Health * m) : null, vitals.HealthMax);
+
+    private static string Amount(float fraction, uint? current, uint? max) =>
+        current is uint c && max is uint m && m > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{c} / {m}")
+            : Percent(fraction);
 
     private static string Percent(float fraction) =>
         string.Create(CultureInfo.InvariantCulture, $"{MathF.Round(fraction * 100f):0}%");

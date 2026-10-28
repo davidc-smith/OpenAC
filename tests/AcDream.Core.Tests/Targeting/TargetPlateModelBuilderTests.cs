@@ -77,6 +77,21 @@ public sealed class TargetPlateModelBuilderTests
     }
 
     [Fact]
+    public void VitalsCarryTheAppraisedTotals()
+    {
+        var combat = new CombatState();
+        combat.OnCreatureProfile(7, new CombatState.CreatureVitals(80, 100, 50, 120, 25, 90));
+        var log = new TargetAppraisalLog();
+        log.Record(7, true, 0.8f, now: 49.0);
+        TargetVitals v = Build(Monster(), combat, log)!.Vitals!.Value;
+        Assert.Equal(100u, v.HealthMax);
+        Assert.Equal(50u, v.StaminaCurrent);
+        Assert.Equal(120u, v.StaminaMax);
+        Assert.Equal(25u, v.ManaCurrent);
+        Assert.Equal(90u, v.ManaMax);
+    }
+
+    [Fact]
     public void FailedAssessWithNoEarlierVitalsHasNone()
     {
         var log = new TargetAppraisalLog();

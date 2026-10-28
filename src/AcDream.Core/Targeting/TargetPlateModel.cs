@@ -14,8 +14,10 @@ public enum TargetAction
 
 public readonly record struct TargetStud(TargetAction Action, bool Enabled, string? DisabledReason = null);
 public readonly record struct TargetRow(string Label, string Value, bool Dim = false);
+/// <summary>Fractions for the bars; the totals, when an assess gave them, for the text.</summary>
 public readonly record struct TargetVitals(
-    float Health, float? Stamina, float? Mana, uint? StaminaMax, uint? ManaMax, TargetVitalsState State);
+    float Health, float? Stamina, float? Mana, uint? HealthMax,
+    uint? StaminaCurrent, uint? StaminaMax, uint? ManaCurrent, uint? ManaMax, TargetVitalsState State);
 
 /// <summary>A row a plugin added. Colour is RGBA, or null for the default ink.</summary>
 public readonly record struct TargetPluginRow(string Label, string Value, uint? Rgba, string? Tooltip);

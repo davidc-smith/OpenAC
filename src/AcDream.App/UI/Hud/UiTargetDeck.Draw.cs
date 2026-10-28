@@ -142,8 +142,8 @@ internal sealed partial class UiTargetDeck
     {
         DeckRect h = TargetDeckGeometry.Health;
         DeckChrome.DrawGauge(ctx, h, vitals.Health, HealthInk, 1f);
-        string percent = Percent(vitals.Health);
-        DrawText(ctx, percent, h.X + (h.W - Small.Measure(ctx, percent)) / 2f, h, TextInk, Small);
+        string health = HealthText(vitals);
+        DrawText(ctx, health, h.X + (h.W - Small.Measure(ctx, health)) / 2f, h, TextInk, Small);
 
         // Health is live; stamina and mana come from the last assess.
         float alpha = vitals.State is TargetVitalsState.Stale or TargetVitalsState.Failed ? DimAlpha : 1f;
