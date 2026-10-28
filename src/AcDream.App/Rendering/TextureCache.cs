@@ -320,7 +320,9 @@ public sealed class TextureCache
         && rs.SourceData is not null
         && rs.SourceData.Length >= rs.Width * rs.Height;
 
-    private GpuUiTextureEntry UploadUiTexture(DecodedTexture decoded, bool nearest, string debugName) =>
+    private GpuUiTextureEntry UploadUiTexture(
+        DecodedTexture decoded, bool nearest, string debugName, bool clamp = false,
+        IReadOnlyList<DecodedTexture>? mipLevels = null) =>
         UploadUiTexture(
             decoded.Rgba8,
             decoded.Width,
@@ -328,7 +330,9 @@ public sealed class TextureCache
             GpuTextureFormat.Rgba8Unorm,
             GpuTextureSwizzle.Identity,
             nearest,
-            debugName);
+            debugName,
+            clamp,
+            mipLevels);
 
     private GpuUiTextureEntry UploadUiTexture(
         ReadOnlySpan<byte> pixels,
@@ -337,7 +341,9 @@ public sealed class TextureCache
         GpuTextureFormat format,
         GpuTextureSwizzle swizzle,
         bool nearest,
-        string debugName)
+        string debugName,
+        bool clamp = false,
+        IReadOnlyList<DecodedTexture>? mipLevels = null)
     {
         IGpuTexture texture = _device.CreateTexture(new GpuTextureDescription(
             debugName,
@@ -346,15 +352,26 @@ public sealed class TextureCache
             Width: width,
             Height: height,
             LayerCount: 1,
-            MipLevelCount: 1,
+            MipLevelCount: mipLevels?.Count ?? 1,
             swizzle));
         try
         {
-            texture.Upload(0, 0, pixels);
+            if (mipLevels is null)
+            {
+                texture.Upload(0, 0, pixels);
+            }
+            else
+            {
+                for (int level = 0; level < mipLevels.Count; level++)
+                    texture.Upload(level, 0, mipLevels[level].Rgba8);
+            }
             uint glName = UploadAccountingName(texture);
             TrackUploadedTexture(glName, width, height, format == GpuTextureFormat.R8Unorm ? 1 : 4);
 
-            IGpuSampler sampler = _device.CreateSampler(nearest ? UiNearestRepeat : GpuSamplerDescription.WorldRepeat);
+            IGpuSampler sampler = _device.CreateSampler(
+                nearest ? UiNearestRepeat
+                : clamp ? GpuSamplerDescription.WorldClamp
+                : GpuSamplerDescription.WorldRepeat);
             GpuTextureSlot slot = _device.RegisterTexture(texture, sampler);
             uint handle = UiTextureTableHandle.FromSlot(slot);
             if (nearest)
@@ -872,14 +889,37 @@ public sealed class TextureCache
     /// Uploads an interface texture that the caller will give back through
     /// <see cref="ReleaseUiTexture"/>. The ad-hoc path keeps every upload for
     /// the life of the cache; this one is for art whose owner comes and goes,
-    /// such as a plugin's own images.
+    /// such as a plugin's own images. It is sampled linearly and clamped, so
+    /// a part cut from the edge of a sheet does not pick up the opposite
+    /// edge.
     /// </summary>
     internal uint UploadReleasableRgba8(byte[] rgba, int width, int height, string debugName)
     {
         ArgumentNullException.ThrowIfNull(rgba);
+        return UploadReleasable(new DecodedTexture(rgba, width, height), mipLevels: null, debugName);
+    }
+
+    /// <summary>
+    /// The same, with every smaller level as well, so art drawn far below its
+    /// own size, such as a large plugin image in a small icon, shrinks
+    /// smoothly instead of breaking up. <paramref name="mipLevels"/> is the
+    /// image and every level below it, as <see cref="RgbaMipChain.Build"/>
+    /// makes them; the caller builds them, so that work can stay off the
+    /// interface thread.
+    /// </summary>
+    internal uint UploadReleasableRgba8(IReadOnlyList<DecodedTexture> mipLevels, string debugName)
+    {
+        ArgumentNullException.ThrowIfNull(mipLevels);
+        ArgumentOutOfRangeException.ThrowIfZero(mipLevels.Count);
+        return UploadReleasable(mipLevels[0], mipLevels, debugName);
+    }
+
+    private uint UploadReleasable(
+        DecodedTexture image, IReadOnlyList<DecodedTexture>? mipLevels, string debugName)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(debugName);
         GpuUiTextureEntry entry = UploadUiTexture(
-            new DecodedTexture(rgba, width, height), nearest: false, debugName);
+            image, nearest: false, debugName, clamp: true, mipLevels: mipLevels);
         uint handle = UiTextureTableHandle.FromSlot(entry.Slot);
         _releasableUiTextures.Add(handle, entry);
         return handle;
