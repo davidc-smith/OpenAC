@@ -159,4 +159,51 @@ public sealed class GearDeckRootDragTests
         Assert.Equal(left + 40, w.Deck.ScreenPosition.X);
         Assert.Null(w.Root.DragSource);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DragSidePackOutOfTheDeck_ReachesTheWorldDrop(bool uiLocked)
+    {
+        var w = new World();
+        w.Root.UiLocked = uiLocked;
+        object? dropped = null;
+        w.Root.DragReleasedOutsideUi += (payload, _, _) => dropped = payload;
+        Drag(w, w.Deck.Geometry.SidePack(1), (1500, 800));
+        Assert.Equal(new ItemDragPayload(Bag, ItemDragSource.Inventory, 1, null), dropped);
+        Assert.Empty(w.Actions.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DragSidePackOntoTheGrid_PutsItInTheMainPack(bool uiLocked)
+    {
+        var w = new World();
+        w.Root.UiLocked = uiLocked;
+        Drag(w, w.Deck.Geometry.SidePack(1), w.Screen(w.Deck.Geometry.GridCell(0, 0)!.Value));
+        Assert.Contains(w.Actions.Calls, c => c.StartsWith($"put {Bag:X} {Player:X} "));
+    }
+
+    [Fact]
+    public void TheMainPack_IsNotADragSource()
+    {
+        var w = new World();
+        var (x, y) = w.Screen(w.Deck.Geometry.SidePack(0));
+        w.Root.OnMouseMove(x, y);
+        w.Root.OnMouseDown(UiMouseButton.Left, x, y);
+        w.Root.OnMouseMove(x + 10, y + 10);
+        Assert.Null(w.Root.DragSource);
+        w.Root.OnMouseUp(UiMouseButton.Left, x + 10, y + 10);
+    }
+
+    [Fact]
+    public void DragSidePackBackOntoItself_SendsNothing()
+    {
+        var w = new World();
+        DeckRect pack = w.Deck.Geometry.SidePack(1);
+        var (x, y) = w.Screen(pack);
+        Drag(w, pack, (x + 2, y + 2));
+        Assert.Empty(w.Actions.Calls);
+    }
 }

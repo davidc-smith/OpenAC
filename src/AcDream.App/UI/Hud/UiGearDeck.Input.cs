@@ -186,11 +186,15 @@ internal sealed partial class UiGearDeck
 
     // ---- drag source ----
 
-    /// <summary>The item a press on <paramref name="hit"/> would lift, and where it leaves from.</summary>
+    /// <summary>The item a press on <paramref name="hit"/> would lift, and where it leaves from.
+    /// A side pack lifts like an item (to the ground, or onto the grid); the main pack is the player.</summary>
     private (uint Id, ItemDragSource Kind)? DragItem(GearDeckHit hit)
     {
         if (hit.Zone == GearZone.Item && hit.Index >= 0 && hit.Index < Items.Count)
             return (Items[hit.Index].ObjectId, ItemDragSource.Inventory);
+        if (hit.Zone == GearZone.SidePack && hit.Index >= 1 && hit.Index < _model.Packs.Count
+            && !_model.Packs[hit.Index].IsMain)
+            return (_model.Packs[hit.Index].Id, ItemDragSource.Inventory);
         return WornAt(hit) is uint worn ? (worn, ItemDragSource.Equipment) : null;
     }
 
@@ -240,6 +244,8 @@ internal sealed partial class UiGearDeck
         bool fromGround = p.SourceKind == ItemDragSource.Ground;
         switch (hit.Zone)
         {
+            case GearZone.SidePack when _model.Packs[hit.Index].Id == p.ObjId:
+                break;   // a pack dropped back on its own cell stays where it is
             case GearZone.SidePack:
                 Dispatcher.DropOnPack(p.ObjId, _model.Packs[hit.Index].Id, fromGround);
                 break;
