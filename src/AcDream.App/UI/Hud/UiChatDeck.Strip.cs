@@ -12,7 +12,7 @@ internal sealed partial class UiChatDeck
     private const float PeekPadX = 6f;
 
     private readonly ChatDeckDrawer _drawer = new();
-    private readonly ChatDeckPeekFeed _peek = new(line => AcDream.Runtime.Chat.ChatLineProjector.Project(line.Entry).Text);
+    private readonly ChatDeckPeekFeed _peek;
     private ChatDeckStripGeometry _strip = ChatDeckStripGeometry.Create(ChatDeckGeometry.MinHeight, 0);
 
     /// <summary>The collapsed strip: a plain child of the interface root, placed by the deck.</summary>

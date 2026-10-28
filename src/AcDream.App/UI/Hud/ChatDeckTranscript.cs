@@ -23,7 +23,9 @@ internal readonly record struct ChatDeckTranscriptStyle(
     Vector4 TagColour,
     Vector4 TimestampColour,
     string Search,
-    object? ColourKey = null);
+    object? ColourKey = null,
+    bool ChannelPrefix = true,
+    float WrapIndent = 0f);
 
 /// <summary>A tab laid out for a <see cref="UiText"/>: one entry per visual line in every list.</summary>
 internal sealed class ChatDeckTranscriptLayout
@@ -46,6 +48,9 @@ internal sealed class ChatDeckTranscript
     private sealed class Cached
     {
         public required ChatProjectedLine Projected;
+        public ChatProjectedLine Shown;
+        public bool Prefix = true;
+        public float Indent;
         public float WrapWidth = float.NaN;
         public object? FontKey;
         public ChatDeckTimestamps Stamps;
@@ -103,13 +108,17 @@ internal sealed class ChatDeckTranscript
     /// <summary>Wraps the line again if the width, font or timestamp mode changed; true when it did.</summary>
     private static bool Wrap(Cached c, ChatDeckLine line, ChatDeckTranscriptStyle style)
     {
-        if (c.WrapWidth.Equals(style.WrapWidth) && ReferenceEquals(c.FontKey, style.FontKey) && c.Stamps == style.Timestamps)
+        if (c.WrapWidth.Equals(style.WrapWidth) && ReferenceEquals(c.FontKey, style.FontKey) && c.Stamps == style.Timestamps
+            && c.Prefix == style.ChannelPrefix && c.Indent.Equals(style.WrapIndent))
             return false;
         c.WrapWidth = style.WrapWidth;
         c.FontKey = style.FontKey;
         c.Stamps = style.Timestamps;
+        c.Prefix = style.ChannelPrefix;
+        c.Indent = style.WrapIndent;
+        c.Shown = style.ChannelPrefix ? c.Projected : ChatDeckPrefix.Strip(c.Projected, line.Entry);
         c.Stamp = Stamp(line.Entry.Received, style.Timestamps);
-        string full = c.Stamp + c.Projected.Text;
+        string full = c.Stamp + c.Shown.Text;
         var fragments = new List<string>();
         var starts = new List<int>();
         int searchFrom = 0;
@@ -151,8 +160,8 @@ internal sealed class ChatDeckTranscript
         // ranges and colours are measured over the text as shown.
         var spans = new List<ChatTextSpan>();
         if (c.Stamp.Length > 0) spans.Add(new ChatTextSpan(c.Stamp, null, ChatSpanRole.Timestamp));
-        if (c.Projected.Spans is { } own) spans.AddRange(own);
-        else spans.Add(new ChatTextSpan(c.Projected.Text, null));
+        if (c.Shown.Spans is { } own) spans.AddRange(own);
+        else spans.Add(new ChatTextSpan(c.Shown.Text, null));
 
         Vector4[] colours = Colours(line, c, spans, lineColour, style);
         int count = c.Fragments.Length;
@@ -164,7 +173,7 @@ internal sealed class ChatDeckTranscript
         {
             string frag = c.Fragments[i];
             int at = c.Starts[i];
-            c.Lines[i] = new UiText.Line(frag, lineColour);
+            c.Lines[i] = new UiText.Line(frag, lineColour, i > 0 ? style.WrapIndent : 0f);
             c.Runs[i] = Runs(frag, at, colours, lineColour);
             c.Tags[i] = frag.Length == 0 ? null : ChatTranscriptRenderer.TaggedRangesForFragment(spans, at, frag.Length);
             // The offset into the shown text, timestamp included: UiText anchors a selection as
@@ -183,7 +192,7 @@ internal sealed class ChatDeckTranscript
         ChatDeckLine line, Cached c, List<ChatTextSpan> spans, Vector4 lineColour, ChatDeckTranscriptStyle style)
     {
         int stamp = c.Stamp.Length;
-        var colours = new Vector4[stamp + c.Projected.Text.Length];
+        var colours = new Vector4[stamp + c.Shown.Text.Length];
         Array.Fill(colours, lineColour);
         for (int i = 0; i < stamp; i++) colours[i] = style.TimestampColour;
 
@@ -194,9 +203,9 @@ internal sealed class ChatDeckTranscript
             {
                 int origin = span.Field switch
                 {
-                    ChatDeckMatchField.Text => c.Projected.Text.LastIndexOf(line.Entry.Text, StringComparison.Ordinal),
+                    ChatDeckMatchField.Text => c.Shown.Text.LastIndexOf(line.Entry.Text, StringComparison.Ordinal),
                     ChatDeckMatchField.Sender => line.Entry.Sender.Length == 0 ? -1
-                        : c.Projected.Text.IndexOf(line.Entry.Sender, StringComparison.Ordinal),
+                        : c.Shown.Text.IndexOf(line.Entry.Sender, StringComparison.Ordinal),
                     _ => 0,
                 };
                 if (origin < 0) continue;

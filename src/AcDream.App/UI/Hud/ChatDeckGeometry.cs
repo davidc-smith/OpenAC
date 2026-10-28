@@ -16,6 +16,8 @@ internal static class ChatDeckBadges
 internal sealed class ChatDeckGeometry
 {
     public const float Pad = 8f;
+    /// <summary>How far a wrapped continuation line is indented when Wrap Indent is on.</summary>
+    public const float WrapIndent = 16f;
     public const float TabHeight = 20f;
     public const float TabPadX = 9f;
     public const float TabGap = 3f;
