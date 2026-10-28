@@ -1,0 +1,262 @@
+using System.Numerics;
+using AcDream.App.Plugins;
+using AcDream.App.Rendering;
+using AcDream.App.UI;
+using AcDream.App.UI.Layout;
+using AcDream.App.UI.Hud;
+using AcDream.Core.Items;
+using Xunit;
+
+namespace AcDream.App.Tests.UI.Hud;
+
+public sealed class UiGearDeckDrawTests
+{
+    private const uint Player = 0x50000001, Bag = 0xB1, Helm = 0xC1, Sword = 0xC2;
+
+    private sealed class NoActions : IGearItemActions
+    {
+        public bool Ready() => true;
+        public void Report(string text) { }
+        public bool PutInContainer(uint item, uint container, int placement, bool fromGround) => true;
+        public bool Merge(uint from, uint to) => true;
+        public bool WieldFromPaperdoll(uint item, EquipMask mask) => true;
+        public bool WieldSecondary(uint item) => true;
+        public bool Activate(uint item) => true;
+        public bool OpenPack(uint pack) => true;
+    }
+
+    private sealed class FakeBackend : IPluginFontBackend
+    {
+        private uint _next = 100;
+        public uint UploadCoverage(byte[] coverage, int width, int height, string debugName) => _next++;
+        public bool ReleaseCoverage(uint texture) => true;
+    }
+
+    private static void Place(ClientObjectTable t, ClientObject o, uint container, int slot)
+    {
+        t.AddOrUpdate(o);
+        Assert.True(t.MoveItem(o.ObjectId, container, slot));
+    }
+
+    private static void Wear(ClientObjectTable t, ClientObject o, EquipMask mask)
+    {
+        t.AddOrUpdate(o);
+        Assert.True(t.MoveItem(o.ObjectId, Player, -1, mask));
+    }
+
+    /// <summary>A player with one bag, 30 loose items (some stacked) and two worn items.</summary>
+    private static ClientObjectTable World()
+    {
+        var t = new ClientObjectTable();
+        t.AddOrUpdate(new ClientObject { ObjectId = Player, Type = ItemType.Creature, ItemsCapacity = 102, ContainersCapacity = 7 });
+        Place(t, new ClientObject { ObjectId = Bag, Type = ItemType.Container, ItemsCapacity = 24, Name = "Pack" }, Player, 0);
+        for (int i = 0; i < 30; i++)
+        {
+            Place(t, new ClientObject
+            {
+                ObjectId = 0xA00u + (uint)i,
+                Name = $"A rather long item name number {i}",
+                StackSize = i % 3 == 0 ? 1 : i * 350,
+            }, Player, i);
+        }
+        Wear(t, new ClientObject { ObjectId = Helm, WielderId = Player, Name = "Helm", ValidLocations = EquipMask.HeadWear }, EquipMask.HeadWear);
+        Wear(t, new ClientObject { ObjectId = Sword, WielderId = Player, Name = "Sword", ValidLocations = EquipMask.MeleeWeapon }, EquipMask.MeleeWeapon);
+        return t;
+    }
+
+    private static UiGearDeck Deck(ClientObjectTable table, uint player = Player, DeckFonts? fonts = null,
+        EmbeddedSvgSpriteCache? icons = null, Func<GearDeckSettings, GearDeckSettings>? settings = null, uint icon = 0u)
+    {
+        var session = new GearDeckSession(null, () => "", () => false);
+        if (settings is not null) session.Update(settings);
+        var b = new GearDeckBindings(
+            Objects: () => table,
+            PlayerGuid: () => player,
+            Strength: () => 100,
+            ResolveIcon: (_, _, _, _, _) => icon,
+            ResolveDragIcon: (_, _, _, _, _) => 0u,
+            DisplayName: o => o.Name,
+            Session: session,
+            Actions: new NoActions(),
+            IsPending: id => id == 0xA01u,
+            Close: () => { });
+        var deck = new UiGearDeck(b, fonts, icons);
+        deck.Refresh();
+        return deck;
+    }
+
+    private static TextRenderer DrawInside(UiGearDeck deck)
+    {
+        var renderer = MarkupDrawProbe.Draw(deck, GearDeckGeometry.Width, deck.Height);
+        int vertices = 0;
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+            for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+            {
+                vertices++;
+                Assert.InRange(s.Verts[i], -0.01f, GearDeckGeometry.Width + 0.01f);
+                Assert.InRange(s.Verts[i + 1], -0.01f, deck.Height + 0.01f);
+            }
+        Assert.True(vertices > 0);
+        return renderer;
+    }
+
+    /// <summary>Tighter than a channel step (1/255): the deck's dark inks differ by one step.</summary>
+    private const float Tol = 0.001f;
+
+    private static bool HasColour(TextRenderer renderer, Vector4 c)
+    {
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+        {
+            if (s.Texture != 0u) continue;
+            for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+                if (MathF.Abs(s.Verts[i + 4] - c.X) < Tol && MathF.Abs(s.Verts[i + 5] - c.Y) < Tol
+                    && MathF.Abs(s.Verts[i + 6] - c.Z) < Tol && MathF.Abs(s.Verts[i + 7] - c.W) < Tol)
+                    return true;
+        }
+        return false;
+    }
+
+    [Fact]
+    public void ExpandedGrid_DrawsCellsGaugeAndSelectedPackInsideTheFrame()
+    {
+        UiGearDeck deck = Deck(World());
+        Assert.Equal(GearDeckGeometry.Width, deck.Width);
+        Assert.Equal(GearDeckGeometry.DefaultHeight, deck.Height);
+        Assert.Equal(30, deck.Items.Count);
+        Assert.Equal(Player, deck.SelectedPackId);
+
+        TextRenderer r = DrawInside(deck);
+        Assert.True(HasColour(r, UiGearDeck.CellFill));
+        Assert.True(HasColour(r, UiGearDeck.SlotFill));
+        Assert.True(HasColour(r, DeckChrome.Track));
+        Assert.True(HasColour(r, DeckChrome.Handle));
+        Assert.True(HasColour(r, UiGearDeck.CellFill with { W = UiGearDeck.DimAlpha }), "the pending item is dimmed");
+    }
+
+    [Fact]
+    public void FoldedList_DrawsWornRowAndListRowsInsideTheFrame()
+    {
+        UiGearDeck deck = Deck(World(), settings: s => s with { Folded = true, View = GearPackView.List });
+        Assert.True(deck.Geometry.Input.Folded);
+        Assert.True(deck.Geometry.Input.List);
+        Assert.Equal(2, deck.Geometry.Input.WornCount);
+
+        TextRenderer r = DrawInside(deck);
+        Assert.True(HasColour(r, UiGearDeck.SlotFill));
+        Assert.True(HasColour(r, UiGearDeck.RowRule));
+        Assert.False(HasColour(r, UiGearDeck.CellFill));
+    }
+
+    [Fact]
+    public void MinimumHeight_StaysInsideTheFrame()
+    {
+        UiGearDeck deck = Deck(World());
+        deck.Height = GearDeckGeometry.MinHeight;
+        deck.Refresh();
+        Assert.Equal(GearDeckGeometry.MinHeight, deck.Geometry.Frame.H);
+        DrawInside(deck);
+    }
+
+    [Fact]
+    public void ASelectedSidePackShowsItsContents()
+    {
+        var t = World();
+        Place(t, new ClientObject { ObjectId = 0xD1, Name = "Gem" }, Bag, 0);
+        UiGearDeck deck = Deck(t, settings: s => s with { SelectedPack = Bag });
+        Assert.Equal(Bag, deck.SelectedPackId);
+        Assert.Equal([0xD1u], deck.Items.Select(o => o.ObjectId).ToArray());
+        Assert.Equal("Pack 2 · 1 / 24", deck.FooterText);
+        DrawInside(deck);
+    }
+
+    [Fact]
+    public void AMissingSelectedPackFallsBackToTheMainPack()
+    {
+        UiGearDeck deck = Deck(World(), settings: s => s with { SelectedPack = 0xEEEE });
+        Assert.Equal(Player, deck.SelectedPackId);
+        Assert.Equal("Main · 30 / 102", deck.FooterText);
+    }
+
+    [Fact]
+    public void AnEmptyTable_DrawsOnlyTheFrameAndTitle()
+    {
+        UiGearDeck deck = Deck(new ClientObjectTable(), player: 0);
+        TextRenderer r = DrawInside(deck);
+        Assert.False(HasColour(r, UiGearDeck.CellFill));
+        Assert.False(HasColour(r, UiGearDeck.SlotFill));
+        Assert.False(HasColour(r, DeckChrome.Track));
+        Assert.False(HasColour(r, DeckChrome.StudOff));
+    }
+
+    [Fact]
+    public void WithFontsAndIcons_StaysInsideTheFrame()
+    {
+        var baked = new List<(float, BundledUiFontWeight)>();
+        var fonts = new DeckFonts((px, w) => { baked.Add((px, w)); return null!; });
+        using var icons = new EmbeddedSvgSpriteCache(new FakeBackend());
+        DrawInside(Deck(World(), fonts: fonts, icons: icons, icon: 7u));
+        DrawInside(Deck(World(), fonts: fonts, icons: icons, settings: s => s with { Folded = true, View = GearPackView.List }, icon: 7u));
+        Assert.Contains((DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular), baked);
+    }
+
+    [Fact]
+    public void LockedAetheriaSlotsAreDimmed()
+    {
+        var t = World();
+        UiGearDeck deck = Deck(t);
+        Assert.True(HasColour(DrawInside(deck), UiGearDeck.SlotFill with { W = UiGearDeck.DimAlpha }));
+
+        t.Get(Player)!.Properties.Ints[AetheriaUnlocks.PropertyId] = (int)AetheriaUnlockState.All;
+        deck = Deck(t);
+        Assert.False(HasColour(DrawInside(deck), UiGearDeck.SlotFill with { W = UiGearDeck.DimAlpha }));
+    }
+
+    [Fact]
+    public void TheModelIsRebuiltOnlyWhenTheTableChanges()
+    {
+        var t = World();
+        UiGearDeck deck = Deck(t);
+        var before = deck.Model;
+        deck.Refresh();
+        Assert.Same(before, deck.Model);
+
+        Place(t, new ClientObject { ObjectId = 0xA99, Name = "New" }, Player, 30);
+        deck.Refresh();
+        Assert.NotSame(before, deck.Model);
+        Assert.Equal(31, deck.Items.Count);
+    }
+
+    [Theory]
+    [InlineData(1, "")]
+    [InlineData(25, "25")]
+    [InlineData(999, "999")]
+    [InlineData(9000, "9k")]
+    [InlineData(12500, "12k")]
+    public void StackCountsShortenThousands(int stack, string expected) =>
+        Assert.Equal(expected, UiGearDeck.StackText(stack));
+
+    [Fact]
+    public void MountOptions_AreHeightOnlyAndHidden()
+    {
+        var o = UiGearDeck.MountOptions(10f, 120f);
+        Assert.Equal(WindowNames.GearDeck, o.WindowName);
+        Assert.Equal(RetailWindowChrome.Imported, o.Chrome);
+        Assert.True(o.Resizable);
+        Assert.False(o.ResizeX);
+        Assert.True(o.ResizeY);
+        Assert.Equal(ResizeEdges.Top | ResizeEdges.Bottom, o.ResizableEdges);
+        Assert.Equal(GearDeckGeometry.MinHeight, o.MinHeight);
+        Assert.True(o.ConstrainResizeToParent);
+        Assert.False(o.Visible);
+    }
+
+    [Fact]
+    public void ConstrainResize_KeepsTheWidthAndTheMinimumHeight()
+    {
+        UiGearDeck deck = Deck(World());
+        float w = 420f, h = 100f;
+        deck.ConstrainResize(ResizeEdges.Bottom, ref w, ref h);
+        Assert.Equal(GearDeckGeometry.Width, w);
+        Assert.Equal(GearDeckGeometry.MinHeight, h);
+    }
+}
