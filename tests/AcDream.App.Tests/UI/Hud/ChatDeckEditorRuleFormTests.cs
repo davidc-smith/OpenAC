@@ -159,6 +159,28 @@ public sealed class ChatDeckEditorRuleFormTests
     }
 
     [Fact]
+    public void FromLine_WarnsWhenGeneralisedToNothing()
+    {
+        var (log, m, b) = Make();
+        System(log, m, "+2,500");
+        ChatDeckLineFacts facts = m.FindTab("all")!.Snapshot()[0].Facts;
+        b.Open(new ChatDeckEditorRequest
+        {
+            Page = ChatDeckEditorPage.Rules,
+            NewRule = ChatDeckRuleDraft.FromLine(facts, ChatDeckRuleAction.Hide),
+            FromLine = facts,
+        });
+        uint ink = b.PatternPreviewColour;
+        Assert.DoesNotContain("almost any line", b.PatternPreview);
+
+        b.SetAnyNumber(true);
+        Assert.StartsWith("+[any number]", b.PatternPreview);
+        Assert.Contains("almost any line", b.PatternPreview);
+        Assert.Equal(0xFF000000u | ChatDeckEditorBinding.ProblemColour, b.PatternPreviewColour);
+        Assert.NotEqual(ink, b.PatternPreviewColour);
+    }
+
+    [Fact]
     public void ModelSwap_ClosesTheForm_WithoutThrowing()
     {
         var log = new ChatLog();
