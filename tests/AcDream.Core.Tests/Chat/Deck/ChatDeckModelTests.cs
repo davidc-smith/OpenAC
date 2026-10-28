@@ -214,4 +214,28 @@ public sealed class ChatDeckModelTests
         Assert.True(verdict.Alert);
         Assert.Equal(0, model.FindTab("all")!.Count);
     }
+
+    [Fact]
+    public void SetLayout_SavesPinnedAndEdge_OncePerChange()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        var saved = new List<ChatDeckSettings>();
+        model.SettingsChanged += saved.Add;
+
+        model.SetLayout(pinned: false, ChatDeckEdge.Right);
+        model.SetLayout(pinned: false, ChatDeckEdge.Right);
+
+        Assert.Single(saved);
+        Assert.False(model.Settings.Layout.Pinned);
+        Assert.Equal(ChatDeckEdge.Right, model.Settings.Layout.Edge);
+    }
+
+    [Fact]
+    public void SetLayout_KeepsTheLastTab()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        model.SelectTab("combat");
+        model.SetLayout(pinned: false, ChatDeckEdge.Left);
+        Assert.Equal("combat", model.Settings.Layout.LastTabId);
+    }
 }

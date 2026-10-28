@@ -19,7 +19,8 @@ internal sealed record ChatDeckBindings(
     Func<string?> LastIncomingTellSender,
     Func<bool> StayInChatMode,
     Action<PluginChatLinkClicked>? LinkClicked = null,
-    Silk.NET.Input.IKeyboard? Keyboard = null);
+    Silk.NET.Input.IKeyboard? Keyboard = null,
+    Action? RestorePinnedPlacement = null);
 
 /// <summary>
 /// The Chat Deck window (pinned layout): a tab bar, a transcript of the selected
@@ -98,6 +99,8 @@ internal sealed partial class UiChatDeck : UiElement
         AddChild(SearchField);
         AddChild(_tabMenu);
         CreateInputRow();          // UiChatDeck.Input.cs
+        CreateStrip();             // UiChatDeck.Strip.cs
+        CreateDrawer();            // UiChatDeck.Drawer.cs
     }
 
     private static readonly string[] TabMenuItems = ["Mark as read", "Mark all read"];
@@ -114,7 +117,8 @@ internal sealed partial class UiChatDeck : UiElement
     public override bool HandlesClick => IsControl(_hit);
 
     private static bool IsControl(ChatDeckHit hit) =>
-        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.Chip;
+        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.Chip
+            or ChatDeckZone.CollapseStud;
 
     internal bool HitTestLocal(float x, float y) => OnHitTest(x, y);
 
@@ -148,17 +152,19 @@ internal sealed partial class UiChatDeck : UiElement
     public void OnShown()
     {
         _shown = true;
-        _model?.SetView(true, Transcript.Scroll.AtEnd);
+        SyncDrawerFromModel();   // a no-op when the session already did; never undoes its state
+        ApplyDrawer();
     }
 
     /// <summary>The window left the screen: lines arriving now are unread.</summary>
     public void OnHidden()
     {
         _shown = false;
-        // A hidden element gets no ticks, so Refresh will not tell the model until it is shown again.
-        _model?.SetView(false, Transcript.Scroll.AtEnd);
+        _drawer.Close();
+        _peek.Clear();
         _tabMenu.Close(restoreFocus: false);
         OnInputHidden();           // UiChatDeck.Input.cs
+        ApplyDrawer();             // reports the hidden view to the model: a hidden element gets no ticks
     }
 
     internal ChatDeckModel? Model => _model;
@@ -168,14 +174,7 @@ internal sealed partial class UiChatDeck : UiElement
     /// <summary>Samples the model, lays the window out and rebuilds the transcript if anything it shows changed.</summary>
     internal void Refresh()
     {
-        ChatDeckModel? model = _b.Model();
-        if (!ReferenceEquals(model, _model))
-        {
-            if (_model is not null) _model.Cleared -= ResetView;
-            _model = model;
-            if (_model is not null) _model.Cleared += ResetView;
-            ResetView();
-        }
+        SyncDrawerFromModel();
 
         _labels = _model is null
             ? []
@@ -197,7 +196,7 @@ internal sealed partial class UiChatDeck : UiElement
 
         RebuildTranscript(appearance);
         TrackNewLines();
-        _model?.SetView(_shown, Transcript.Scroll.AtEnd);
+        _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd);
     }
 
     /// <summary>
@@ -262,6 +261,7 @@ internal sealed partial class UiChatDeck : UiElement
     {
         _addedAtScrollUp = null;
         NewLineCount = 0;
+        _peek.Clear();
         _builtFor = null;
         Transcript.Scroll.ScrollToEnd();
         OnViewReset();             // UiChatDeck.Input.cs: drops a one-line channel override
@@ -353,6 +353,7 @@ internal sealed partial class UiChatDeck : UiElement
                 switch (hit.Zone)
                 {
                     case ChatDeckZone.Tab: SelectTab(hit.Tab); return true;
+                    case ChatDeckZone.CollapseStud: PressCollapse(); return true;
                     case ChatDeckZone.SearchStud: ToggleSearch(); return true;
                     case ChatDeckZone.Chip: OpenChipMenu(e.Data1, e.Data2); return true;   // UiChatDeck.Input.cs
                     default: return false;

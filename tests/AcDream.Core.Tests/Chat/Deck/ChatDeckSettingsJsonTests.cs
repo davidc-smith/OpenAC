@@ -219,4 +219,15 @@ public sealed class ChatDeckSettingsJsonTests
             """{"rules":[{"id":"c1","kind":"Contains","field":"Text","action":"ColourLine","pattern":"x","colour":"nope"}]}""");
         Assert.Equal(ChatDeckDefaults.MyNameColour, settings.Rules.Single(r => r.Id == "c1").Colour);
     }
+
+    [Fact]
+    public void Layout_RoundTrips()
+    {
+        ChatDeckSettings settings = ChatDeckDefaults.Create() with
+        {
+            Layout = new ChatDeckLayoutState { Pinned = false, Edge = ChatDeckEdge.Right, LastTabId = "group" },
+        };
+        ChatDeckSettings back = ChatDeckSettingsJson.Parse(ChatDeckSettingsJson.Serialize(settings, null)).Settings;
+        Assert.Equal(settings.Layout, back.Layout);
+    }
 }
