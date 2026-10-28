@@ -12,10 +12,10 @@ public static class ChatDeckRulePreview
 {
     /// <summary>
     /// Runs the draft over <paramref name="lines"/> (oldest first). The draft is previewed as if it were on,
-    /// whatever its enabled or faulted state. A timeout stops the count.
+    /// whatever its enabled or faulted state. A timeout, or running past the total time budget (50 ms by default), stops the count.
     /// </summary>
     public static ChatDeckPreviewResult Run(
-        ChatDeckRule draft, IReadOnlyList<ChatDeckLine> lines, string characterName, int samples = 3)
+        ChatDeckRule draft, IReadOnlyList<ChatDeckLine> lines, string characterName, int samples = 3, TimeSpan? budget = null)
     {
         ChatDeckCompiledRule compiled = ChatDeckMatcher.Compile(draft with { Enabled = true, Faulted = false }, characterName);
         if (compiled.Status != ChatDeckRuleStatus.Ok)
@@ -24,8 +24,12 @@ public static class ChatDeckRulePreview
         bool everything = ChatDeckMatcher.MatchesEmpty(compiled);
         var found = new List<string>();
         int count = 0, total = 0;
+        TimeSpan limit = budget ?? TimeSpan.FromMilliseconds(50);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         for (int i = lines.Count - 1; i >= 0; i--)
         {
+            if (clock.Elapsed >= limit)
+                return new ChatDeckPreviewResult(count, total, found, ChatDeckRuleStatus.Ok, null, true, everything);
             ChatDeckMatch m = ChatDeckMatcher.Match(compiled, lines[i].Facts, false);
             if (m.Outcome == ChatDeckMatchOutcome.Timeout)
                 return new ChatDeckPreviewResult(count, total, found, ChatDeckRuleStatus.Ok, null, true, everything);

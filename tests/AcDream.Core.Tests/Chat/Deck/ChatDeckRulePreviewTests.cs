@@ -24,6 +24,15 @@ public sealed class ChatDeckRulePreviewTests
     }
 
     [Fact]
+    public void TotalBudget_StopsEarly_AndFlagsTimedOut()
+    {
+        var lines = new[] { Line("loot one"), Line("loot two"), Line("loot three") };
+        ChatDeckPreviewResult r = ChatDeckRulePreview.Run(Contains("loot"), lines, "Davian", budget: TimeSpan.Zero);
+        Assert.True(r.TimedOut);
+        Assert.True(r.Total < lines.Length);
+    }
+
+    [Fact]
     public void InvalidPattern_ReportsWithoutCounting()
     {
         ChatDeckPreviewResult r = ChatDeckRulePreview.Run(
