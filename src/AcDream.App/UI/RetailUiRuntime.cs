@@ -483,20 +483,61 @@ public sealed class RetailUiRuntime : IDisposable
 
     private PluginAppearanceWindow? _chatDeckSettings;
 
-    private void ToggleChatDeckSettings()
+    /// <summary>The look of the Chat Deck's popups: the deck's palette and sans, whatever the plugin theme.</summary>
+    private PluginUiThemeSettings ChatDeckPopupThemes()
     {
-        // The popup is part of the Modern HUD: the deck's own sans, whatever the plugin theme.
-        Hud.DeckFonts? deck = _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+        Hud.DeckFonts deck = _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
         Lazy<UiDatFont> body = new(() => deck.Face(Hud.DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular));
         Lazy<UiDatFont> title = new(() => deck.Face(Hud.DeckFonts.SmallPixelHeight, BundledUiFontWeight.SemiBold));
+        return (_pluginThemes ?? new PluginUiThemeSettings()).WithFixedLook(Hud.ChatDeckPalette.Window, body, title);
+    }
+
+    private void ToggleChatDeckSettings()
+    {
+        CloseChatDeckEditor();
         _chatDeckSettings ??= new PluginAppearanceWindow(Host.Root, close =>
             Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.ChatDeckSettingsBinding.Markup,
                 new Hud.ChatDeckSettingsBinding(() => _chatDeckSession?.Model) { Close = close },
                 _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
-                themes: (_pluginThemes ?? new PluginUiThemeSettings()).WithFixedLook(Hud.ChatDeckPalette.Window, body, title),
+                themes: ChatDeckPopupThemes(),
                 describeKey: DescribeKey(allowCommand: true)), close),
             onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _chatDeck, window));
         _chatDeckSettings.Toggle();
+    }
+
+    private PluginAppearanceWindow? _chatDeckEditor;
+    private Hud.ChatDeckEditorBinding? _chatDeckEditorBinding;
+
+    private PluginAppearanceWindow ChatDeckEditorWindow()
+    {
+        _chatDeckEditorBinding ??= new Hud.ChatDeckEditorBinding(() => _chatDeckSession?.Model);
+        Hud.ChatDeckEditorBinding binding = _chatDeckEditorBinding;
+        return _chatDeckEditor ??= new PluginAppearanceWindow(Host.Root, close =>
+        {
+            binding.Close = close;
+            return Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.ChatDeckEditorBinding.Markup, binding,
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: ChatDeckPopupThemes(), describeKey: DescribeKey(allowCommand: true)), close);
+        }, onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _chatDeck, window));
+    }
+
+    private void ToggleChatDeckEditor()
+    {
+        CloseChatDeckSettings();
+        ChatDeckEditorWindow().Toggle();
+    }
+
+    private void OpenChatDeckEditor(Hud.ChatDeckEditorRequest request)
+    {
+        CloseChatDeckSettings();
+        PluginAppearanceWindow window = ChatDeckEditorWindow();
+        _chatDeckEditorBinding!.Open(request);
+        window.Show();
+    }
+
+    private void CloseChatDeckEditor()
+    {
+        if (_chatDeckEditor is { IsOpen: true } open) open.Toggle();
     }
 
     private void CloseChatDeckSettings()
@@ -624,6 +665,7 @@ public sealed class RetailUiRuntime : IDisposable
                     OnHidden: () =>
                     {
                         CloseChatDeckSettings();
+                        CloseChatDeckEditor();
                         _chatDeck?.OnHidden();
                         if (_chatDeck is not null && ReferenceEquals(Host.Root.DefaultTextInput, _chatDeck.Input))
                             Host.Root.DefaultTextInput = null;
@@ -3729,7 +3771,10 @@ public sealed class RetailUiRuntime : IDisposable
                     RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck),
                     PlayAlert: _bindings.PlayUiSound is { } play ? () => play(Hud.ChatDeckAlertBeep.Sound) : null,
                     OpenSettings: ToggleChatDeckSettings,
-                    SettingsOpen: () => _chatDeckSettings?.IsOpen == true),
+                    SettingsOpen: () => _chatDeckSettings?.IsOpen == true,
+                    OpenEditor: OpenChatDeckEditor,
+                    ToggleEditor: ToggleChatDeckEditor,
+                    EditorOpen: () => _chatDeckEditor?.IsOpen == true),
                 _deckFonts,
                 _hudIcons);
 
@@ -3760,6 +3805,7 @@ public sealed class RetailUiRuntime : IDisposable
         _chatDeck = deck;
         _chatDeckSession = session;
         session!.ModelChanged += _chatDeck.SyncDrawerFromModel;
+        session.ModelChanged += CloseChatDeckEditor;
         // A composed line (automation, a plugin) goes to whichever chat input is showing.
         _bindings.Chat.Entry.BindEntryFocus(() => ChatEntryTarget?.Focus() == true);
         Console.WriteLine("[UI] Chat Deck mounted (Modern HUD).");
@@ -6261,7 +6307,10 @@ public sealed class RetailUiRuntime : IDisposable
                 _spellDeck?.OnHidden();
                 _chatDeck?.Detach();
                 if (_chatDeckSession is not null && _chatDeck is not null)
+                {
                     _chatDeckSession.ModelChanged -= _chatDeck.SyncDrawerFromModel;
+                    _chatDeckSession.ModelChanged -= CloseChatDeckEditor;
+                }
                 _chatDeckSession?.Dispose();
                 _chatDeckSession = null;
                 UnmountTargetDeck();
