@@ -1,6 +1,6 @@
 namespace AcDream.App.UI.Hud;
 
-internal enum ChatDeckZone { None, Frame, Tab, SearchStud, SettingsStud, Chip, PinStud, CollapseStud }
+internal enum ChatDeckZone { None, Frame, Tab, SearchStud, SettingsStud, FiltersStud, AddTab, Chip, PinStud, CollapseStud }
 
 internal readonly record struct ChatDeckHit(ChatDeckZone Zone, int Tab = -1);
 
@@ -41,6 +41,9 @@ internal sealed class ChatDeckGeometry
     public required IReadOnlyList<DeckRect> Tabs { get; init; }
     public required DeckRect SearchStud { get; init; }
     public required DeckRect SettingsStud { get; init; }
+    public required DeckRect FiltersStud { get; init; }
+    /// <summary>Zero width unless a tab can be added.</summary>
+    public required DeckRect AddTab { get; init; }
     public required DeckRect CollapseStud { get; init; }
     /// <summary>Zero width while search is closed.</summary>
     public required DeckRect SearchField { get; init; }
@@ -55,12 +58,13 @@ internal sealed class ChatDeckGeometry
 
     public static ChatDeckGeometry Create(
         float width, float height, IReadOnlyList<ChatDeckTabLabel> tabs, bool searchOpen, string chipText,
-        Func<string, float> measureLabel)
+        Func<string, float> measureLabel, bool canAddTab = false)
     {
         var collapse = new DeckRect(width - Pad - StudSize, Pad, StudSize, StudSize);
         var settings = collapse with { X = collapse.X - StudGap - StudSize };
-        var stud = settings with { X = settings.X - StudGap - StudSize };   // search
-        float tabsRight = stud.X - TabGap;
+        var filters = settings with { X = settings.X - StudGap - StudSize };
+        var stud = filters with { X = filters.X - StudGap - StudSize };   // search
+        float tabsRight = stud.X - TabGap - (canAddTab ? StudSize + TabGap : 0f);
         float room = MathF.Max(0f, tabsRight - Pad);
 
         var natural = tabs.Select(t =>
@@ -82,6 +86,13 @@ internal sealed class ChatDeckGeometry
             }
             rects.Add(new DeckRect(x, Pad, w, TabHeight));
             x += w + TabGap;
+        }
+
+        DeckRect add = default;
+        if (canAddTab)
+        {
+            float after = rects.Where(r => r.W > 0).Select(r => r.X + r.W + TabGap).DefaultIfEmpty(Pad).Max();
+            add = new DeckRect(after, Pad, StudSize, StudSize);
         }
 
         float top = Pad + TabHeight + 4f;
@@ -108,6 +119,8 @@ internal sealed class ChatDeckGeometry
             Tabs = rects,
             SearchStud = stud,
             SettingsStud = settings,
+            FiltersStud = filters,
+            AddTab = add,
             CollapseStud = collapse,
             SearchField = search,
             Transcript = transcript,
@@ -122,7 +135,9 @@ internal sealed class ChatDeckGeometry
     {
         for (int i = 0; i < Tabs.Count; i++)
             if (Tabs[i].W > 0 && Tabs[i].Contains(x, y)) return new(ChatDeckZone.Tab, i);
+        if (AddTab.W > 0 && AddTab.Contains(x, y)) return new(ChatDeckZone.AddTab);
         if (SearchStud.Contains(x, y)) return new(ChatDeckZone.SearchStud);
+        if (FiltersStud.Contains(x, y)) return new(ChatDeckZone.FiltersStud);
         if (SettingsStud.Contains(x, y)) return new(ChatDeckZone.SettingsStud);
         if (CollapseStud.Contains(x, y)) return new(ChatDeckZone.CollapseStud);
         if (Chip.Contains(x, y)) return new(ChatDeckZone.Chip);

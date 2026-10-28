@@ -14,6 +14,14 @@ internal sealed partial class UiChatDeck
         ChatDeckPalette.DrawFrame(ctx, _geometry.Frame, opacity * _fade.Factor);
         DrawTabs(ctx);
         DrawStud(ctx, _geometry.SearchStud, HudIcons.Search, _searchOpen);
+        DrawStud(ctx, _geometry.FiltersStud, HudIcons.Filters, _b.EditorOpen?.Invoke() == true);
+        if (_geometry.AddTab.W > 0)
+        {
+            DeckRect add = _geometry.AddTab;
+            ctx.FillRoundedRect(add.X, add.Y, add.W, add.H, 5f, ChatDeckPalette.StudOff);
+            float w = LabelBold.Measure(ctx, "+");
+            DrawLabel(ctx, LabelBold, "+", add.X + (add.W - w) / 2f, add, ChatDeckPalette.LabelInk);
+        }
         DrawStud(ctx, _geometry.SettingsStud, HudIcons.Settings, _b.SettingsOpen?.Invoke() == true);
         DrawStud(ctx, _geometry.CollapseStud, HudIcons.Collapse, on: false);
         if (_searchOpen) ctx.FillRoundedRect(_geometry.SearchField.X, _geometry.SearchField.Y,
