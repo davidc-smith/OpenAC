@@ -48,6 +48,10 @@ public sealed class ChatDeckEditorPresetsTests
     }
 
     [Fact]
+    // Lane=Timing: the matcher runs rules under a 20 ms regex timeout and the NonBacktracking
+    // automaton is built lazily on first match, so under parallel suite load the match can time
+    // out and the line is not matched. Runs in the serialized pass.
+    [Trait("Lane", "Timing")]
     public void TestBox_TypedLine_UsesAppliedRules()
     {
         var (m, b) = ChatDeckEditorTabsTests.Make();

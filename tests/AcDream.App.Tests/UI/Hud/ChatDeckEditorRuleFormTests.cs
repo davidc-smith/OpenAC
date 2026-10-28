@@ -111,6 +111,10 @@ public sealed class ChatDeckEditorRuleFormTests
     }
 
     [Fact]
+    // Lane=Timing: the matcher runs rules under a 20 ms regex timeout and the NonBacktracking
+    // automaton is built lazily on first match, so under parallel suite load the match can time
+    // out and the line is not matched. Runs in the serialized pass.
+    [Trait("Lane", "Timing")]
     public void Preview_CountsHistory_AndWarns()
     {
         var (log, m, b) = Make();
@@ -128,6 +132,10 @@ public sealed class ChatDeckEditorRuleFormTests
     }
 
     [Fact]
+    // Lane=Timing: the matcher runs rules under a 20 ms regex timeout and the NonBacktracking
+    // automaton is built lazily on first match, so under parallel suite load the match can time
+    // out and the line is not matched. Runs in the serialized pass.
+    [Trait("Lane", "Timing")]
     public void FromLine_GeneraliseRewritesTheDraft()
     {
         var (log, m, b) = Make();
