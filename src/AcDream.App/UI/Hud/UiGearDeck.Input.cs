@@ -66,9 +66,9 @@ internal sealed partial class UiGearDeck
                 _press = _g.HitAt(e.Data1, e.Data2);
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.Click:
-                return Click(_g.HitAt(e.Data1, e.Data2));
+                return ReleasedOnPress(e, out GearDeckHit clicked) ? Click(clicked) : IsControl(clicked.Zone);
             case UiEventType.DoubleClick:
-                return DoubleClick(_g.HitAt(e.Data1, e.Data2));
+                return ReleasedOnPress(e, out GearDeckHit doubled) ? DoubleClick(doubled) : IsControl(doubled.Zone);
             case UiEventType.MouseMove:
                 SetHover(_g.HitAt(e.Data1, e.Data2));
                 return Hover.Zone != GearZone.None;
@@ -96,6 +96,14 @@ internal sealed partial class UiGearDeck
     }
 
     // ---- clicks ----
+
+    /// <summary>A click acts on the zone it was pressed on only: a press on one stud
+    /// released over another (the close box, say) does nothing.</summary>
+    private bool ReleasedOnPress(in UiEvent e, out GearDeckHit hit)
+    {
+        hit = _g.HitAt(e.Data1, e.Data2);
+        return hit == _press;
+    }
 
     private bool Click(GearDeckHit hit)
     {

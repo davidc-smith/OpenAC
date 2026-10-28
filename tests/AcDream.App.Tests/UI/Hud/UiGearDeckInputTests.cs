@@ -168,7 +168,7 @@ public sealed class UiGearDeckInputTests
     public void DoubleClickOnItem0_UsesIt()
     {
         Rig r = Make();
-        Send(r.Deck, UiEventType.DoubleClick, r.Deck.Geometry.GridCell(0, 0)!.Value);
+        DoubleClick(r.Deck, r.Deck.Geometry.GridCell(0, 0)!.Value);
         Assert.Equal([$"use {First:X}"], r.Actions.Calls);
     }
 
@@ -176,7 +176,7 @@ public sealed class UiGearDeckInputTests
     public void DoubleClickOnAWornSlot_TakesItOff()
     {
         Rig r = Make();
-        Send(r.Deck, UiEventType.DoubleClick, r.Deck.Geometry.EquipSlot(SlotIndex(EquipMask.HeadWear)));
+        DoubleClick(r.Deck, r.Deck.Geometry.EquipSlot(SlotIndex(EquipMask.HeadWear)));
         Assert.Single(r.Actions.Calls);
         Assert.StartsWith($"put {Helm:X} ", r.Actions.Calls[0]);
     }
@@ -186,7 +186,7 @@ public sealed class UiGearDeckInputTests
     {
         Rig r = Make(s => s with { Folded = true });
         uint worn = r.Deck.Model.Worn[0].ObjectId;
-        Send(r.Deck, UiEventType.DoubleClick, r.Deck.Geometry.WornCell(0));
+        DoubleClick(r.Deck, r.Deck.Geometry.WornCell(0));
         Assert.Single(r.Actions.Calls);
         Assert.StartsWith($"put {worn:X} ", r.Actions.Calls[0]);
     }
@@ -397,5 +397,27 @@ public sealed class UiGearDeckInputTests
         Click(r.Deck, r.Deck.Geometry.SidePack(1));
         Assert.Equal(1, r.Deck.ScrollRow);
         Assert.Equal(["open B1"], r.Actions.Calls);
+    }
+
+    [Fact]
+    public void AClick_ActsOnlyWhenItIsReleasedWhereItWasPressed()
+    {
+        Rig r = Make(s => s with { View = GearPackView.List });
+        Send(r.Deck, UiEventType.MouseDown, r.Deck.Geometry.GridStud);
+        Send(r.Deck, UiEventType.Click, r.Deck.Geometry.Close);
+        Assert.Equal(0, r.Closed);
+        Assert.Equal(GearPackView.List, r.Session.Settings.View);
+
+        Send(r.Deck, UiEventType.MouseDown, r.Deck.Geometry.SidePack(0));
+        Send(r.Deck, UiEventType.Click, r.Deck.Geometry.SidePack(1));
+        Assert.Equal(Player, r.Deck.SelectedPackId);
+        Assert.Empty(r.Actions.Calls);
+
+        Send(r.Deck, UiEventType.MouseDown, r.Deck.Geometry.ListRow(0, 0)!.Value);
+        Send(r.Deck, UiEventType.DoubleClick, r.Deck.Geometry.ListRow(1, 0)!.Value);
+        Assert.Empty(r.Actions.Calls);
+
+        Click(r.Deck, r.Deck.Geometry.Close);
+        Assert.Equal(1, r.Closed);
     }
 }
