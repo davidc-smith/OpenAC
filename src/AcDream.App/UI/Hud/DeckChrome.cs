@@ -33,6 +33,14 @@ internal static class DeckChrome
     internal static readonly Vector4 JumpInk = Rgb(0x7FD6A8);
     internal static readonly Vector4 CastLit = Rgb(0xCFE0FF);
     internal static readonly Vector4 GripInk = Rgb(0xE2C27A, 0.55f);
+    /// <summary>Opaque <see cref="Bronze"/>: a ring drawn over the dark edge (the Target Deck's portrait).</summary>
+    internal static readonly Vector4 BronzeSolid = Rgb(0x6B5A3A);
+    /// <summary>The Target Deck's even-con level pill and PKL chip.</summary>
+    internal static readonly Vector4 ChipAmber = Rgb(0xE8A23C);
+    /// <summary>The Target Deck's lower-con level pill.</summary>
+    internal static readonly Vector4 ConBlue = Rgb(0x5B8DEF);
+    /// <summary>The hovered line of a deck popup menu.</summary>
+    internal static readonly Vector4 MenuHighlight = Rgb(0x3A3742);
 
     /// <summary>A line weight at a deck scale, in whole points, never under one.</summary>
     internal static float Line(float points, float scale) => MathF.Max(1f, MathF.Round(points * scale));
@@ -52,6 +60,22 @@ internal static class DeckChrome
         ctx.FillRoundedRect(f.X - P(2), f.Y - P(2), f.W + P(4), f.H + P(4), Radii(10), FrameEdge);
         ctx.FillVerticalGradient(f.X, f.Y, f.W, f.H, Radii(8), FrameTop, FrameBottom);
         ctx.StrokeRoundedRect(f.X + P(3), f.Y + P(3), f.W - P(6), f.H - P(6), Radii(5), Bronze, Line(1, scale));
+    }
+
+    /// <summary>A vital gauge: the dark track, an optional damage <paramref name="trail"/>
+    /// (a fraction, drawn only past the fill) and the fill as a vertical gradient. Every
+    /// colour is drawn at <paramref name="alpha"/>; a zero fraction draws the track alone.</summary>
+    internal static void DrawGauge(UiRenderContext ctx, DeckRect r, float fraction,
+        (Vector4 Top, Vector4 Bottom) ink, float alpha, float scale = 1f, float trail = 0f)
+    {
+        float P(float points) => points * scale;
+        Vector4 A(Vector4 c) => c with { W = c.W * alpha };
+        ctx.FillRoundedRect(r.X, r.Y, r.W, r.H, P(4), A(Track));
+        if (trail > fraction)
+            ctx.FillRoundedRect(r.X, r.Y, r.W * trail, r.H, P(3), A(TrailInk));
+        if (fraction > 0f)
+            ctx.FillVerticalGradient(r.X, r.Y, r.W * fraction, r.H,
+                new CanvasCornerRadii(P(3), P(3), P(3), P(3)), A(ink.Top), A(ink.Bottom));
     }
 
     /// <summary>A stud's backing (lit when <paramref name="on"/>). Returns the ink for its icon or letter.</summary>

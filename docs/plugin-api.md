@@ -1593,6 +1593,75 @@ answers null: there is no layer to keep a set in, unlike
 needs markers declares a `minHostVersion` (see the
 [manifest guide](plugin-manifest.md)) of a client that has them.
 
+## Target plate
+
+```csharp
+sealed class CreatureNotes : IPluginTargetPlateProvider
+{
+    public PluginTargetPlateContent? Describe(PluginTargetPlateQuery query)
+    {
+        if (query.Kind != PluginTargetKind.Monster) return null;
+        if (!_notes.TryGetValue(query.WeenieClassId, out var note)) return null;
+        return new PluginTargetPlateContent(
+            [new PluginTargetPlateRow("Weak to", note.Weakness, new PluginColor(240, 180, 60), note.Details)],
+            [new PluginTargetPlateAction("open-notes", "Open notes")]);
+    }
+
+    public void OnAction(uint objectId, string actionId) { /* open the notes window */ }
+}
+
+IDisposable registration = host.Ui.TargetPlate.AddProvider(new CreatureNotes());
+```
+
+The Target Deck is the Modern HUD plate that describes the selected object:
+its name, kind, level, vitals and the actions that fit it. `host.Ui.TargetPlate`
+lets a plugin add lines and menu entries to it. `IsAvailable` says whether
+the plate is on screen now. On a host with a window `AddProvider` always
+registers, whether or not the plate is showing, and providers are asked only
+while the plate is shown; on a host with no window everything is inert, so a
+plugin need not check first. Plugin lines are drawn with a green left edge to
+show they come from a plugin.
+
+A provider implements `IPluginTargetPlateProvider`. `Describe` is given a
+`PluginTargetPlateQuery`: the object id, its `PluginTargetKind` (`None`,
+`Monster`, `Summon`, `Player`, `Npc`, `Item`, `Corpse`, `Container`, `Portal`,
+`WorldObject` or `Self`), name, weenie class id, level (null if not known),
+whether the player owns the object (a summon, or the player's own character),
+whether it has been identified, and its vitals as fractions from 0 to 1.
+Health comes from the health query (the server's health updates), not from an
+identify, and is null until one has arrived; stamina and mana are null until an
+identify has answered with them.
+It returns a `PluginTargetPlateContent` -- up to
+`PluginTargetPlateContent.MaximumRows` (2) `PluginTargetPlateRow` values
+(label, value, an optional `PluginColor`, an optional tooltip) and up to
+`PluginTargetPlateContent.MaximumActions` (4) `PluginTargetPlateAction` values
+(id, label, enabled) -- or null to add nothing. Rows and actions past those
+limits are dropped, with a warning logged once per object to the plugin's log.
+
+`Describe` runs only while the plate is shown. It is called on the UI thread
+when the selection changes, when an identify for the object arrives, and after
+`Refresh(objectId)`. It is never called every frame, and the result is kept
+per object until the next of those.
+It must return quickly: a provider that needs a slow lookup returns null, then
+calls `Refresh(objectId)` when it has the answer.
+
+The plate has room for two plugin lines in all. Providers are ordered by
+registration order (not by plugin load order); each provider's first row goes
+on the plate in turn until the two lines are used, and the only provider with
+rows may use both lines. Rows left over go into the tooltip of the plugin row.
+
+Actions appear in the plate's menu, grouped under the plugin's display name.
+Choosing one calls `OnAction(objectId, actionId)` on the UI thread.
+
+An exception from `Describe` or `OnAction` is caught and logged to the
+plugin's log (once per object for `Describe`), and the provider is skipped for that object until the next
+trigger; it never breaks the plate. Disposing the registration removes that
+provider's rows and actions at once, and unloading the plugin removes all of
+its providers. Call everything here from the tick thread, as with every other
+UI call.
+
+Needs contract `0.1.30-fork.2`.
+
 ## World triangles
 
 ```csharp
