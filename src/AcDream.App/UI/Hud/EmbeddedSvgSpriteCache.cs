@@ -21,6 +21,16 @@ public static class HudIcons
     public const string RecallAllegiance = "recall-allegiance";
     public const string Search = "search";
     public const string ChevronDown = "chevron-down";
+    public const string More = "more";
+    public const string Follow = "follow";
+    public const string Trade = "trade";
+    public const string Give = "give";
+    public const string Tell = "tell";
+    public const string PickUp = "pickup";
+    public const string Open = "open";
+    public const string Key = "key";
+    public const string Portal = "portal";
+    public const string Character = "character";
     public const string ChatAll = "chat-all";
     public const string ChatLocal = "chat-local";
     public const string ChatGroup = "chat-group";
@@ -42,6 +52,7 @@ public static class HudIcons
         Peace, Melee, Missile, Magic, Repeat, AutoTarget, KeepInView, Cast,
         RecallLifestone, RecallMarketplace, RecallHouse, RecallMansion, RecallAllegiance,
         Search, ChevronDown,
+        More, Follow, Trade, Give, Tell, PickUp, Open, Key, Portal, Character,
         ChatAll, ChatLocal, ChatGroup, ChatSocial, ChatCombat, ChatSystem,
         ChatLoot, ChatStar, ChatTell, ChatShield, ChatScroll, ChatCoin,
         Pin, Collapse, Expand,

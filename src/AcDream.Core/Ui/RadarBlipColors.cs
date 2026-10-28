@@ -16,15 +16,15 @@ public readonly record struct RadarObjectTraits(
     bool IsPkLite = false,
     bool IsFreePk = false)
 {
-    private const uint BfPlayer = 0x00000008u;
-    private const uint BfAttackable = 0x00000010u;
-    private const uint BfPlayerKiller = 0x00000020u;
-    private const uint BfHiddenAdmin = 0x00000040u;
-    private const uint BfVendor = 0x00000200u;
-    private const uint BfPortal = 0x00040000u;
-    private const uint BfAdmin = 0x00100000u;
-    private const uint BfFreePk = 0x00200000u;
-    private const uint BfPkLite = 0x02000000u;
+    private const uint BfPlayer = (uint)PublicWeenieFlags.Player;
+    private const uint BfAttackable = (uint)PublicWeenieFlags.Attackable;
+    private const uint BfPlayerKiller = (uint)PublicWeenieFlags.PlayerKiller;
+    private const uint BfHiddenAdmin = (uint)PublicWeenieFlags.HiddenAdmin;
+    private const uint BfVendor = (uint)PublicWeenieFlags.Vendor;
+    private const uint BfPortal = (uint)PublicWeenieFlags.Portal;
+    private const uint BfAdmin = (uint)PublicWeenieFlags.Admin;
+    private const uint BfFreePk = (uint)PublicWeenieFlags.FreePlayerKiller;
+    private const uint BfPkLite = (uint)PublicWeenieFlags.PlayerKillerLite;
 
     public static RadarObjectTraits FromPublicWeenieDescription(
         uint itemType,
