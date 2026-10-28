@@ -177,6 +177,11 @@ internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoaded
         _projectionOperations =
             new(ReferenceEqualityComparer.Instance);
 
+    // Creates that named a parent the client did not hold yet. The Runtime
+    // keeps each one and registers it when the parent arrives, but nothing
+    // shows it then, so it is shown from here once it is registered.
+    private readonly HashSet<uint> _childrenAwaitingParent = [];
+
     private sealed class CanonicalProjectionOperation
     {
         public ulong CreateIntegrationVersion { get; set; }
@@ -232,6 +237,8 @@ internal sealed class LiveEntityHydrationController : ILiveEntityLandblockLoaded
             if (result.Disposition is
                 AcDream.Core.Physics.CreateObjectTimestampDisposition.StaleGeneration)
             {
+                if (registration.DeferredForParent)
+                    _childrenAwaitingParent.Add(spawn.Guid);
                 return;
             }
 
@@ -342,6 +349,32 @@ AppearanceSynchronization:
             _firstEntry?.DriveAll();
             // C4 route 2: same pump for a parked ForcePosition.
             _acceptedPositionDrive?.Advance();
+            ProjectChildrenWhoseParentArrived();
+        }
+    }
+
+    /// <summary>
+    /// Shows every waiting child the Runtime has registered since its parent
+    /// arrived. A child that is still waiting stays in the set.
+    /// </summary>
+    private void ProjectChildrenWhoseParentArrived()
+    {
+        if (_childrenAwaitingParent.Count == 0)
+            return;
+
+        foreach (uint guid in _childrenAwaitingParent.ToArray())
+        {
+            if (!_runtime.TryGetCanonical(guid, out RuntimeEntityRecord canonical))
+                continue;
+
+            _childrenAwaitingParent.Remove(guid);
+            if (_runtime.TryGetProjection(canonical, out _))
+                continue;
+            ProjectExact(
+                canonical,
+                canonical.Snapshot,
+                LiveProjectionPurpose.SpatialRecovery,
+                canonical.CreateIntegrationVersion);
         }
     }
 
@@ -437,6 +470,8 @@ AppearanceSynchronization:
     /// </summary>
     public void OnLandblockLoaded(uint loadedLandblockId)
     {
+        lock (_datLock)
+            ProjectChildrenWhoseParentArrived();
         if (_runtime.Count == 0)
             return;
 
@@ -712,7 +747,11 @@ AppearanceSynchronization:
         }
     }
 
-    public void ResetSessionState() => _materializer.ResetSessionState();
+    public void ResetSessionState()
+    {
+        _childrenAwaitingParent.Clear();
+        _materializer.ResetSessionState();
+    }
 
     private bool SynchronizeAppearance(
         LiveEntityRecord expectedRecord,
