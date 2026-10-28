@@ -50,7 +50,7 @@ public static class ChatDeckMatcher
     public static ChatDeckCompiledRule Compile(ChatDeckRule rule, string characterName)
     {
         if (!rule.Enabled) return Status(rule, ChatDeckRuleStatus.Disabled, null);
-        if (rule.Faulted) return Status(rule, ChatDeckRuleStatus.Faulted, "Timed out on a line; edit it to turn it back on.");
+        if (rule.Faulted) return Status(rule, ChatDeckRuleStatus.Faulted, "Timed out on several lines in a row; edit it to turn it back on.");
 
         switch (rule.Kind)
         {

@@ -135,13 +135,37 @@ public sealed class ChatDeckModelTests
 
         Say(log, new string('a', 1990) + "!");
         Say(log, new string('a', 1990) + "?");
+        Say(log, new string('a', 1990) + ".");
+        Say(log, new string('a', 1990) + ",");
         model.Tick();
 
         Assert.True(model.Settings.Rules.Single(r => r.Id == "slow").Faulted);
         Assert.Single(changes);
-        Assert.Equal(2, model.FindTab("local")!.Count);
+        Assert.Equal(4, model.FindTab("local")!.Count);
         Assert.Equal(ChatDeckRuleStatus.Faulted, model.CompiledRules.Single(r => r.Rule.Id == "slow").Status);
         Assert.Empty(model.Test(ChatDeckMatcherTests.Facts(new string('a', 1990) + "#")).TimedOutRuleIds);
+    }
+
+    [Fact]
+    public void TimedOutRule_IsNotFaultedBeforeThreeTimeoutsInARow()
+    {
+        // A CPU spike can push one match past the timeout; only a rule that keeps timing out is turned off.
+        var d = ChatDeckDefaults.Create();
+        var slow = new ChatDeckRule { Id = "slow", Kind = ChatDeckMatchKind.Regex, Pattern = @"^(\w+\s?)*\1$", Action = ChatDeckRuleAction.Hide };
+        var (log, model) = Create(d with { Rules = [.. d.Rules, slow] });
+        var changes = new List<ChatDeckSettings>();
+        model.SettingsChanged += changes.Add;
+
+        Say(log, new string('a', 1990) + "!");
+        Say(log, new string('a', 1990) + "?");
+        Say(log, "hi there");
+        Say(log, new string('a', 1990) + ".");
+        Say(log, new string('a', 1990) + ",");
+        model.Tick();
+
+        Assert.False(model.Settings.Rules.Single(r => r.Id == "slow").Faulted);
+        Assert.Empty(changes);
+        Assert.Equal(ChatDeckRuleStatus.Ok, model.CompiledRules.Single(r => r.Rule.Id == "slow").Status);
     }
 
     [Fact]

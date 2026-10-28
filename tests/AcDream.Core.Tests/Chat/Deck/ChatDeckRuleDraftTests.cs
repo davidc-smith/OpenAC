@@ -35,6 +35,24 @@ public sealed class ChatDeckRuleDraftTests
     }
 
     [Fact]
+    public void IsTooGeneral_WhenOnlyNamesNumbersAndPunctuationAreLeft()
+    {
+        var bare = ChatDeckMatcherTests.Facts("Bob: 12", ChatDeckChannel.Emote, sender: "Bob");
+        Assert.False(ChatDeckRuleDraft.IsTooGeneral(bare, anySender: false, anyNumber: false));
+        Assert.True(ChatDeckRuleDraft.IsTooGeneral(bare, anySender: true, anyNumber: false));   // "[any name]: 12"
+        Assert.True(ChatDeckRuleDraft.IsTooGeneral(bare, anySender: true, anyNumber: true));
+
+        var greeting = ChatDeckMatcherTests.Facts("Bob says hi", ChatDeckChannel.Emote, sender: "Bob");
+        Assert.False(ChatDeckRuleDraft.IsTooGeneral(greeting, anySender: true, anyNumber: true));
+
+        var number = ChatDeckMatcherTests.Facts("1,250", ChatDeckChannel.System, sender: "");
+        Assert.True(ChatDeckRuleDraft.IsTooGeneral(number, anySender: false, anyNumber: true));
+
+        var worded = ChatDeckMatcherTests.Facts("You receive 1,250 Pyreals.", ChatDeckChannel.System, sender: "");
+        Assert.False(ChatDeckRuleDraft.IsTooGeneral(worded, anySender: false, anyNumber: true));
+    }
+
+    [Fact]
     public void AnyName_ReplacesTheSenderInTheText()
     {
         var facts = ChatDeckMatcherTests.Facts("Bob waves at Bob's dog", ChatDeckChannel.Emote, sender: "Bob");
