@@ -117,6 +117,32 @@ public sealed class ChatDeckModel : IDisposable
         SettingsChanged?.Invoke(Settings);
     }
 
+    /// <summary>Pinned or collapsed, and the edge the strip sits on; saved with the settings.</summary>
+    public void SetLayout(bool pinned, ChatDeckEdge edge)
+    {
+        if (Settings.Layout.Pinned == pinned && Settings.Layout.Edge == edge) return;
+        Settings = Settings with { Layout = Settings.Layout with { Pinned = pinned, Edge = edge } };
+        SettingsChanged?.Invoke(Settings);
+    }
+
+    /// <summary>New appearance settings, kept in range; saved with the settings.</summary>
+    public void SetAppearance(ChatDeckAppearance appearance)
+    {
+        ChatDeckAppearance next = ChatDeckSettingsNormalizer.Normalize(Settings with { Appearance = appearance }).Appearance;
+        if (next == Settings.Appearance) return;
+        Settings = Settings with { Appearance = next };
+        SettingsChanged?.Invoke(Settings);
+    }
+
+    /// <summary>The extra tab keys; saved with the settings.</summary>
+    public void SetKeys(ChatDeckKeys keys)
+    {
+        ChatDeckKeys next = ChatDeckSettingsNormalizer.Normalize(Settings with { Keys = keys }).Keys;
+        if (next == Settings.Keys) return;
+        Settings = Settings with { Keys = next };
+        SettingsChanged?.Invoke(Settings);
+    }
+
     /// <summary>Whether the window shows the transcript (pinned or flown out) and whether it is scrolled to the newest line.</summary>
     public void SetView(bool visible, bool atBottom)
     {

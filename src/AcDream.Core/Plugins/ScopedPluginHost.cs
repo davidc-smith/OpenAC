@@ -2331,6 +2331,30 @@ internal sealed class ScopedPluginHost : IPluginHost, IDisposable
             }
         }
 
+        // The target-plate surface is asked for once and kept, like world
+        // markers; a disposable one is tracked so the plugin's providers go
+        // with the plugin.
+        private IPluginTargetPlate? _targetPlate;
+
+        public IPluginTargetPlate TargetPlate
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(ScopedUiRegistry));
+                    if (_targetPlate is null)
+                    {
+                        _targetPlate = _inner.TargetPlateFor(_owner);
+                        if (_targetPlate is IDisposable disposable)
+                            _registrations.Add(disposable);
+                    }
+                    return _targetPlate;
+                }
+            }
+        }
+
         public PluginUiThemeInfo Theme => _inner.Theme;
 
         private readonly ForwardedEvent<PluginUiThemeInfo> _themeChanged;

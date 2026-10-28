@@ -46,6 +46,17 @@ public sealed record ChatDeckLayoutState
     public string LastTabId { get; init; } = ChatDeckDefaults.AllTabId;
 }
 
+/// <summary>
+/// Extra keys that cycle tabs while the deck's input has focus, as hotkey strings
+/// ("Ctrl+Alt+N"); empty is unbound. The built-in keys always work as well.
+/// </summary>
+public sealed record ChatDeckKeys
+{
+    public const int MaxLength = 40;
+    public string NextTab { get; init; } = "";
+    public string PreviousTab { get; init; } = "";
+}
+
 public sealed record ChatDeckSettings
 {
     public const int CurrentVersion = 1;
@@ -55,6 +66,7 @@ public sealed record ChatDeckSettings
     public required IReadOnlyList<ChatDeckRule> Rules { get; init; }
     public ChatDeckAppearance Appearance { get; init; } = new();
     public ChatDeckLayoutState Layout { get; init; } = new();
+    public ChatDeckKeys Keys { get; init; } = new();
 }
 
 public static class ChatDeckDefaults
@@ -140,7 +152,12 @@ public static class ChatDeckSettingsNormalizer
             ? settings.Layout
             : settings.Layout with { LastTabId = ChatDeckDefaults.AllTabId };
 
-        return settings with { Tabs = tabs, Rules = rules, Appearance = appearance, Layout = layout };
+        // "Mod+...+Key": a string with no '+' has no modifier, so it would type instead of firing; unbound.
+        static string Key(string text) =>
+            text.Trim() is { Length: <= ChatDeckKeys.MaxLength } t && t.Contains('+') ? t : "";
+        var keys = new ChatDeckKeys { NextTab = Key(settings.Keys.NextTab), PreviousTab = Key(settings.Keys.PreviousTab) };
+
+        return settings with { Tabs = tabs, Rules = rules, Appearance = appearance, Layout = layout, Keys = keys };
     }
 
     private static string CleanName(string name)

@@ -29,7 +29,7 @@ public sealed class UiText : UiElement, IUiDatStateful
     /// <summary>Dat element id for imported UIElement_Text widgets. 0 for synthesized text.</summary>
     public uint ElementId { get; set; }
 
-    public readonly record struct Line(string Text, Vector4 Color);
+    public readonly record struct Line(string Text, Vector4 Color, float Indent = 0f);
 
     public readonly record struct TextRun(string Text, Vector4 Color);
 
@@ -123,6 +123,9 @@ public sealed class UiText : UiElement, IUiDatStateful
 
     public float Padding { get; set; }
 
+    /// <summary>Line pitch as a multiple of the font's line height (1 = as the font sets it).</summary>
+    public float LineSpacing { get; set; } = 1f;
+
     public float MarginLeft { get; set; }
     public float MarginRight { get; set; }
     public float MarginTop { get; set; }
@@ -183,6 +186,9 @@ public sealed class UiText : UiElement, IUiDatStateful
     private Pos? _selAnchor;   // where the drag started
     private Pos? _selCaret;
     private bool _selecting;
+
+    /// <summary>A drag-select is under way.</summary>
+    internal bool IsSelecting => _selecting;
 
     /// <summary>A selection endpoint pinned to the text under it rather than to a line index.</summary>
     private readonly record struct Anchored(long Source, int Offset);
@@ -455,7 +461,8 @@ public sealed class UiText : UiElement, IUiDatStateful
 
         _lastDatFont = datFont;
         _lastFont = bitmapFont;
-        _lastLineHeight = datFont is not null ? datFont.LineHeight : bitmapFont!.LineHeight;
+        float fontLineHeight = datFont is not null ? datFont.LineHeight : bitmapFont!.LineHeight;
+        _lastLineHeight = fontLineHeight * MathF.Max(1f, LineSpacing);
         _lastPadding = Padding;
 
         if (lines.Count == 0) return;
@@ -496,7 +503,8 @@ public sealed class UiText : UiElement, IUiDatStateful
                 ctx.DrawFill(Padding + MarginLeft - 4f, y, 2f, lh, marker);
 
             string text = lines[i].Text;
-            float lineX = HorizontalOffset(text, datFont, bitmapFont);
+            float lineX = HorizontalOffset(lines[i], datFont, bitmapFont);
+            float glyphY = y + (lh - fontLineHeight) * 0.5f;
 
             if (hasSel && i >= selStart.Line && i <= selEnd.Line)
             {
@@ -538,21 +546,21 @@ public sealed class UiText : UiElement, IUiDatStateful
                 if (runs is { Count: > 0 })
                 {
                     foreach (var placed in LayoutRuns(runs, lineX, datFont.MeasureWidth))
-                        datLines.Add((placed.Text, placed.X, y, placed.Color));
+                        datLines.Add((placed.Text, placed.X, glyphY, placed.Color));
                 }
                 else
                 {
-                    datLines.Add((text, lineX, y, lines[i].Color));
+                    datLines.Add((text, lineX, glyphY, lines[i].Color));
                 }
             }
             else if (runs is { Count: > 0 })
             {
                 foreach (var placed in LayoutRuns(runs, lineX, bitmapFont!.MeasureWidth))
-                    ctx.DrawString(placed.Text, placed.X, y, placed.Color, bitmapFont);
+                    ctx.DrawString(placed.Text, placed.X, glyphY, placed.Color, bitmapFont);
             }
             else
             {
-                ctx.DrawString(text, lineX, y, lines[i].Color, bitmapFont);
+                ctx.DrawString(text, lineX, glyphY, lines[i].Color, bitmapFont);
             }
         }
 
@@ -636,6 +644,12 @@ public sealed class UiText : UiElement, IUiDatStateful
         => lineHeight > 0f
             && lineTop < viewportBottom
             && lineTop + lineHeight > viewportTop;
+
+    private float HorizontalOffset(in Line line, UiDatFont? datFont, BitmapFont? bitmapFont)
+    {
+        float x = HorizontalOffset(line.Text, datFont, bitmapFont);
+        return Centered || RightAligned ? x : x + line.Indent;
+    }
 
     private float HorizontalOffset(string text, UiDatFont? datFont, BitmapFont? bitmapFont)
     {
@@ -977,7 +991,7 @@ public sealed class UiText : UiElement, IUiDatStateful
         line = Math.Clamp(line, 0, lines.Count - 1);
 
         string text = lines[line].Text;
-        float lineX = HorizontalOffset(text, _lastDatFont, _lastFont);
+        float lineX = HorizontalOffset(lines[line], _lastDatFont, _lastFont);
         int col = _lastDatFont is { } df
             ? CharIndexAt(text, ch => df.TryGetGlyph(ch, out var g) ? UiDatFont.GlyphAdvance(g) : 0f,
                           localX - lineX)

@@ -35,6 +35,10 @@ public sealed class UiChatDeckTests
         public readonly List<PluginChatLinkClicked> Links = [];
         public readonly FakeKeyboard Keyboard = new();
         public readonly UiChatDeck Deck;
+        public Action? RestorePlacement;
+        public int Beeps;
+        public int SettingsOpened;
+        public bool SettingsIsOpen;
 
         public Harness(bool withModel = true, DeckFonts? fonts = null)
         {
@@ -48,7 +52,11 @@ public sealed class UiChatDeckTests
                     LastIncomingTellSender: () => Feedback.LastIncomingTellSender,
                     StayInChatMode: () => false,
                     LinkClicked: Links.Add,
-                    Keyboard: Keyboard),
+                    Keyboard: Keyboard,
+                    RestorePinnedPlacement: () => RestorePlacement?.Invoke(),
+                    PlayAlert: () => Beeps++,
+                    OpenSettings: () => SettingsOpened++,
+                    SettingsOpen: () => SettingsIsOpen),
                 fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();
@@ -61,10 +69,25 @@ public sealed class UiChatDeckTests
             Deck.Refresh();
         }
 
+        public void Channel(string channel, string sender, string text)
+        {
+            Log.OnChannelBroadcast(7u, sender, text, channelName: channel);
+            Model!.Tick();
+            Deck.Refresh();
+        }
+
         public void Press(DeckRect r) =>
             Deck.OnEvent(new UiEvent(0, Deck, UiEventType.MouseDown, Data1: (int)(r.X + 2), Data2: (int)(r.Y + 2)));
 
         public int TabIndex(string id) => Model!.Settings.Tabs.ToList().FindIndex(t => t.Id == id);
+    }
+
+    [Fact]
+    public void SettingsStud_OpensTheSettings()
+    {
+        var h = new Harness();
+        h.Press(h.Deck.Geometry.SettingsStud);
+        Assert.Equal(1, h.SettingsOpened);
     }
 
     [Fact]
@@ -244,10 +267,70 @@ public sealed class UiChatDeckTests
         var h = new Harness();
         h.Say("hey Davian, over here");
         Assert.True(h.Model!.FindTab("all")!.Alert);
-        // Search is closed, so the lit stud (the same red) is not drawn: the red is the badge.
         var renderer = MarkupDrawProbe.Draw(h.Deck, 460, 220);
-        Assert.True(MarkupDrawProbe.CountQuads(renderer, ChatDeckPalette.BadgeRed) > 0);
         var calm = MarkupDrawProbe.Draw(new Harness().Deck, 460, 220);
-        Assert.Equal(0, MarkupDrawProbe.CountQuads(calm, ChatDeckPalette.BadgeRed));
+        Assert.True(MarkupDrawProbe.CountQuads(renderer, ChatDeckPalette.BadgeRed)
+            > MarkupDrawProbe.CountQuads(calm, ChatDeckPalette.BadgeRed));
+    }
+
+    private static IEnumerable<string> TranscriptText(Harness h) => h.Deck.Transcript.LinesProvider!().Select(l => l.Text);
+
+    [Fact]
+    public void ChannelPrefixOff_DropsTheNameFromTheTranscript()
+    {
+        var h = new Harness();
+        h.Model!.SetAppearance(h.Model.Settings.Appearance with { ChannelPrefix = false });
+        h.Channel("General", "Bob", "hi");
+        Assert.DoesNotContain(TranscriptText(h), t => t.Contains("[General]"));
+        Assert.Contains(TranscriptText(h), t => t.Contains("Bob"));
+    }
+
+    [Fact]
+    public void ChannelPrefixOn_KeepsTheName_AndToggleRebuilds()
+    {
+        var h = new Harness();
+        h.Channel("General", "Bob", "hi");
+        Assert.Contains(TranscriptText(h), t => t.Contains("[General]"));
+        h.Model!.SetAppearance(h.Model.Settings.Appearance with { ChannelPrefix = false });
+        h.Deck.Refresh();
+        Assert.DoesNotContain(TranscriptText(h), t => t.Contains("[General]"));
+    }
+
+    [Fact]
+    public void WrapIndent_IndentsContinuationLinesOnly()
+    {
+        var h = new Harness();
+        h.Model!.SetAppearance(h.Model.Settings.Appearance with { WrapIndent = true });
+        h.Say(string.Join(" ", Enumerable.Repeat("wrapping", 40)));
+        var lines = h.Deck.Transcript.LinesProvider!();
+        Assert.True(lines.Count > 1);
+        Assert.Equal(0f, lines[0].Indent);
+        Assert.All(lines.Skip(1), l => Assert.Equal(ChatDeckGeometry.WrapIndent, l.Indent));
+    }
+
+    [Fact]
+    public void LineSpacing_ReachesTheTranscript()
+    {
+        var h = new Harness();
+        h.Model!.SetAppearance(h.Model.Settings.Appearance with { LineSpacing = 1.4f });
+        h.Deck.Refresh();
+        Assert.Equal(1.4f, h.Deck.Transcript.LineSpacing, 3);
+    }
+
+    [Fact]
+    public void AlertLine_Beeps_OnlyWhenOnAndShown()
+    {
+        var w = new DrawerWorld();
+        var h = w.H;
+        h.Say("hello Davian");            // My-name rule: alert
+        Assert.Equal(0, h.Beeps);         // off by default
+        h.Model!.SetAppearance(h.Model.Settings.Appearance with { BeepOnAlert = true });
+        h.Deck.TickDrawer(2.0);
+        h.Say("Davian again");
+        Assert.Equal(1, h.Beeps);
+        h.Deck.OnHidden();
+        h.Deck.TickDrawer(2.0);
+        h.Say("Davian once more");
+        Assert.Equal(1, h.Beeps);
     }
 }

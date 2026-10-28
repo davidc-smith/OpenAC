@@ -1371,7 +1371,8 @@ public sealed class GameWindow :
                     _automation,
                     GameplayInputFrame: () => _gameplayInputFrame,
                     JournalDirectory: _applicationPaths.JournalDirectory,
-                    WorldOrigin: _liveWorldOrigin),
+                    WorldOrigin: _liveWorldOrigin,
+                    UiSounds: contentEffectsAudio.Audio?.UiSounds),
                 _retailUiLease,
                 this).Compose(
                     platformResult,

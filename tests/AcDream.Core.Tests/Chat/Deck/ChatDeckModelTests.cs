@@ -214,4 +214,64 @@ public sealed class ChatDeckModelTests
         Assert.True(verdict.Alert);
         Assert.Equal(0, model.FindTab("all")!.Count);
     }
+
+    [Fact]
+    public void SetLayout_SavesPinnedAndEdge_OncePerChange()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        var saved = new List<ChatDeckSettings>();
+        model.SettingsChanged += saved.Add;
+
+        model.SetLayout(pinned: false, ChatDeckEdge.Right);
+        model.SetLayout(pinned: false, ChatDeckEdge.Right);
+
+        Assert.Single(saved);
+        Assert.False(model.Settings.Layout.Pinned);
+        Assert.Equal(ChatDeckEdge.Right, model.Settings.Layout.Edge);
+    }
+
+    [Fact]
+    public void SetLayout_KeepsTheLastTab()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        model.SelectTab("combat");
+        model.SetLayout(pinned: false, ChatDeckEdge.Left);
+        Assert.Equal("combat", model.Settings.Layout.LastTabId);
+    }
+
+    [Fact]
+    public void SetAppearance_Normalizes_AndRaisesOnce()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        int raised = 0;
+        model.SettingsChanged += _ => raised++;
+        model.SetAppearance(model.Settings.Appearance with { FontSize = 99 });
+        Assert.Equal(20, model.Settings.Appearance.FontSize);
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void SetAppearance_IgnoresNoChange()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        int raised = 0;
+        model.SettingsChanged += _ => raised++;
+        model.SetAppearance(model.Settings.Appearance with { });
+        Assert.Equal(0, raised);
+        model.SetAppearance(model.Settings.Appearance with { BackgroundOpacity = 0.3f });
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
+    public void SetKeys_Stores_AndIgnoresNoChange()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        int raised = 0;
+        model.SettingsChanged += _ => raised++;
+        var keys = new ChatDeckKeys { NextTab = "Ctrl+Alt+N" };
+        model.SetKeys(keys);
+        model.SetKeys(keys with { });
+        Assert.Equal("Ctrl+Alt+N", model.Settings.Keys.NextTab);
+        Assert.Equal(1, raised);
+    }
 }

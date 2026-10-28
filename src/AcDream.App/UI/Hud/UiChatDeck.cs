@@ -19,7 +19,11 @@ internal sealed record ChatDeckBindings(
     Func<string?> LastIncomingTellSender,
     Func<bool> StayInChatMode,
     Action<PluginChatLinkClicked>? LinkClicked = null,
-    Silk.NET.Input.IKeyboard? Keyboard = null);
+    Silk.NET.Input.IKeyboard? Keyboard = null,
+    Action? RestorePinnedPlacement = null,
+    Action? PlayAlert = null,
+    Action? OpenSettings = null,
+    Func<bool>? SettingsOpen = null);
 
 /// <summary>
 /// The Chat Deck window (pinned layout): a tab bar, a transcript of the selected
@@ -61,6 +65,11 @@ internal sealed partial class UiChatDeck : UiElement
         MinHeight = ChatDeckGeometry.MinHeight;
         Resizable = true;
         _geometry = ChatDeckGeometry.Create(Width, Height, [], false, ChipText, MeasureLabel);
+        _peek = new ChatDeckPeekFeed(line =>
+        {
+            AcDream.Runtime.Chat.ChatProjectedLine projected = AcDream.Runtime.Chat.ChatLineProjector.Project(line.Entry);
+            return (_model?.Settings.Appearance.ChannelPrefix ?? true) ? projected.Text : ChatDeckPrefix.Strip(projected, line.Entry).Text;
+        });
 
         Transcript = new UiText
         {
@@ -98,6 +107,8 @@ internal sealed partial class UiChatDeck : UiElement
         AddChild(SearchField);
         AddChild(_tabMenu);
         CreateInputRow();          // UiChatDeck.Input.cs
+        CreateStrip();             // UiChatDeck.Strip.cs
+        CreateDrawer();            // UiChatDeck.Drawer.cs
     }
 
     private static readonly string[] TabMenuItems = ["Mark as read", "Mark all read"];
@@ -114,7 +125,8 @@ internal sealed partial class UiChatDeck : UiElement
     public override bool HandlesClick => IsControl(_hit);
 
     private static bool IsControl(ChatDeckHit hit) =>
-        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.Chip;
+        hit.Zone is ChatDeckZone.Tab or ChatDeckZone.SearchStud or ChatDeckZone.SettingsStud or ChatDeckZone.Chip
+            or ChatDeckZone.CollapseStud;
 
     internal bool HitTestLocal(float x, float y) => OnHitTest(x, y);
 
@@ -148,17 +160,19 @@ internal sealed partial class UiChatDeck : UiElement
     public void OnShown()
     {
         _shown = true;
-        _model?.SetView(true, Transcript.Scroll.AtEnd);
+        SyncDrawerFromModel();   // a no-op when the session already did; never undoes its state
+        ApplyDrawer();
     }
 
     /// <summary>The window left the screen: lines arriving now are unread.</summary>
     public void OnHidden()
     {
         _shown = false;
-        // A hidden element gets no ticks, so Refresh will not tell the model until it is shown again.
-        _model?.SetView(false, Transcript.Scroll.AtEnd);
+        _drawer.Close();
+        _peek.Clear();
         _tabMenu.Close(restoreFocus: false);
         OnInputHidden();           // UiChatDeck.Input.cs
+        ApplyDrawer();             // reports the hidden view to the model: a hidden element gets no ticks
     }
 
     internal ChatDeckModel? Model => _model;
@@ -168,14 +182,7 @@ internal sealed partial class UiChatDeck : UiElement
     /// <summary>Samples the model, lays the window out and rebuilds the transcript if anything it shows changed.</summary>
     internal void Refresh()
     {
-        ChatDeckModel? model = _b.Model();
-        if (!ReferenceEquals(model, _model))
-        {
-            if (_model is not null) _model.Cleared -= ResetView;
-            _model = model;
-            if (_model is not null) _model.Cleared += ResetView;
-            ResetView();
-        }
+        SyncDrawerFromModel();
 
         _labels = _model is null
             ? []
@@ -194,10 +201,11 @@ internal sealed partial class UiChatDeck : UiElement
         Transcript.DatFont = _fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular);
         SearchField.DatFont = _fonts?.Face(appearance.InputFontSize, BundledUiFontWeight.Regular);
         _tabMenu.DatFont = Transcript.DatFont;
+        Transcript.LineSpacing = appearance.LineSpacing;
 
         RebuildTranscript(appearance);
         TrackNewLines();
-        _model?.SetView(_shown, Transcript.Scroll.AtEnd);
+        _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd);
     }
 
     /// <summary>
@@ -218,7 +226,8 @@ internal sealed partial class UiChatDeck : UiElement
     private void RebuildTranscript(ChatDeckAppearance appearance)
     {
         ChatDeckTabState? tab = SelectedTab;
-        float wrap = MathF.Max(1f, Transcript.Width - 2 * Transcript.Padding - Transcript.MarginLeft - Transcript.MarginRight);
+        float indent = appearance.WrapIndent ? ChatDeckGeometry.WrapIndent : 0f;
+        float wrap = MathF.Max(1f, Transcript.Width - 2 * Transcript.Padding - Transcript.MarginLeft - Transcript.MarginRight - indent);
         UiDatFont? font = Transcript.DatFont;
         var key = (_model, tab, tab?.Version ?? -1, wrap, font, _searchText, _model?.Settings);
         if (Equals(key, _builtFor)) return;
@@ -234,7 +243,8 @@ internal sealed partial class UiChatDeck : UiElement
         _layout = _transcriptBuilder.Build(tab.Snapshot(), new ChatDeckTranscriptStyle(
             wrap, measure, font, appearance.Timestamps,
             line => ChannelColour(line, appearance),
-            ChatDeckPalette.TagInk, ChatDeckPalette.TimestampInk, _searchText, ColourKey: appearance));
+            ChatDeckPalette.TagInk, ChatDeckPalette.TimestampInk, _searchText, ColourKey: appearance,
+            ChannelPrefix: appearance.ChannelPrefix, WrapIndent: indent));
     }
 
     private static Vector4 ChannelColour(ChatDeckLine line, ChatDeckAppearance appearance) =>
@@ -262,6 +272,7 @@ internal sealed partial class UiChatDeck : UiElement
     {
         _addedAtScrollUp = null;
         NewLineCount = 0;
+        _peek.Clear();
         _builtFor = null;
         Transcript.Scroll.ScrollToEnd();
         OnViewReset();             // UiChatDeck.Input.cs: drops a one-line channel override
@@ -353,7 +364,9 @@ internal sealed partial class UiChatDeck : UiElement
                 switch (hit.Zone)
                 {
                     case ChatDeckZone.Tab: SelectTab(hit.Tab); return true;
+                    case ChatDeckZone.CollapseStud: PressCollapse(); return true;
                     case ChatDeckZone.SearchStud: ToggleSearch(); return true;
+                    case ChatDeckZone.SettingsStud: _b.OpenSettings?.Invoke(); return true;
                     case ChatDeckZone.Chip: OpenChipMenu(e.Data1, e.Data2); return true;   // UiChatDeck.Input.cs
                     default: return false;
                 }

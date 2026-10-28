@@ -17,6 +17,7 @@ using AcDream.Core.Plugins;
 using AcDream.Core.Properties;
 using AcDream.Core.Selection;
 using AcDream.Core.Spells;
+using AcDream.Core.Targeting;
 using AcDream.Core.Textures;
 using AcDream.Runtime;
 using AcDream.Runtime.Gameplay;
@@ -98,6 +99,17 @@ public sealed record CommandDeckRuntimeBindings(
     Func<bool> Enabled,
     Action ToggleCombat,
     Action<AcDream.Runtime.RuntimePortalCommand> Recall);
+
+/// <summary>The Modern HUD Target Deck: the state it reads and the actions it needs
+/// beyond the item, social and chat bindings.</summary>
+public sealed record TargetDeckRuntimeBindings(
+    Func<bool> Enabled,
+    CombatState Combat,
+    Func<int> PlayerLevel,
+    Func<uint, float?> DistanceMeters,
+    Func<uint> SelectedPackItem,
+    Func<uint, bool> IsFellow,
+    Func<uint, bool> Follow);
 
 public sealed record FpsRuntimeBindings(
     Func<double> FramesPerSecond,
@@ -363,7 +375,9 @@ public sealed record RetailUiRuntimeBindings(
     Func<PluginNavigationPosition, System.Numerics.Vector3?>? WorldPosition = null,
     Func<bool>? IsPortalViewVisible = null,
     WorldDragRuntimeBindings? WorldDrag = null,
-    CommandDeckRuntimeBindings? CommandDeck = null);
+    CommandDeckRuntimeBindings? CommandDeck = null,
+    TargetDeckRuntimeBindings? TargetDeck = null,
+    Action<AcDream.Core.Audio.SoundId>? PlayUiSound = null);
 
 public sealed class RetailUiRuntime : IDisposable
 {
@@ -447,7 +461,55 @@ public sealed class RetailUiRuntime : IDisposable
     private bool _spellDeckClickCasts;
     private Hud.EmbeddedSvgSpriteCache? _hudIcons;
     private Hud.UiChatDeck? _chatDeck;
+    private Func<KeyChord, string>? _describeKey;
+    private Func<KeyChord, string>? _describeKeyCmd;
+    private Func<KeyChord, string> DescribeKey(bool allowCommand = false)
+    {
+        if ((allowCommand ? _describeKeyCmd : _describeKey) is { } cached) return cached;
+        Layout.RetailKeyNames keyNames;
+        lock (_bindings.Assets.DatLock)
+        {
+            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
+            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
+        }
+        Func<KeyChord, string> describe = chord => MarkupHotkeyText.Describe(chord, key =>
+        {
+            lock (_bindings.Assets.DatLock)
+                return keyNames.Describe(key);
+        }, allowCommand);
+        if (allowCommand) _describeKeyCmd = describe; else _describeKey = describe;
+        return describe;
+    }
+
+    private PluginAppearanceWindow? _chatDeckSettings;
+
+    private void ToggleChatDeckSettings()
+    {
+        // The popup is part of the Modern HUD: the deck's own sans, whatever the plugin theme.
+        Hud.DeckFonts? deck = _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+        Lazy<UiDatFont> body = new(() => deck.Face(Hud.DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular));
+        Lazy<UiDatFont> title = new(() => deck.Face(Hud.DeckFonts.SmallPixelHeight, BundledUiFontWeight.SemiBold));
+        _chatDeckSettings ??= new PluginAppearanceWindow(Host.Root, close =>
+            Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.ChatDeckSettingsBinding.Markup,
+                new Hud.ChatDeckSettingsBinding(() => _chatDeckSession?.Model) { Close = close },
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: (_pluginThemes ?? new PluginUiThemeSettings()).WithFixedLook(Hud.ChatDeckPalette.Window, body, title),
+                describeKey: DescribeKey(allowCommand: true)), close),
+            onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _chatDeck, window));
+        _chatDeckSettings.Toggle();
+    }
+
+    private void CloseChatDeckSettings()
+    {
+        if (_chatDeckSettings is { IsOpen: true } open) open.Toggle();
+    }
+
     private Hud.ChatDeckSession? _chatDeckSession;
+    private Hud.UiTargetDeck? _targetDeck;
+    /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
+    private TargetAppraisalLog? _targetAppraisalLog;
+    private TargetAutoAppraisal? _targetAuto;
+    private System.Diagnostics.Stopwatch? _targetDeckClock;
     private CharacterManagementUiMountCoordinator? _characterManagementMount;
     private ConnectionUiMountCoordinator? _connectionMount;
     private CreditsUiController? _creditsController;
@@ -561,11 +623,14 @@ public sealed class RetailUiRuntime : IDisposable
                     },
                     OnHidden: () =>
                     {
+                        CloseChatDeckSettings();
                         _chatDeck?.OnHidden();
                         if (_chatDeck is not null && ReferenceEquals(Host.Root.DefaultTextInput, _chatDeck.Input))
                             Host.Root.DefaultTextInput = null;
                     },
                     HoldsRetailVisibility: true),
+                // Selections made under the retail HUD were refused, so auto-ID starts over on show.
+                TargetDeckReplacement(() => _targetDeck, () => _targetAuto?.Resync()),
             ],
             // _persistence is nulled once disposed, so a late Apply never reaches it.
             holdVisibility: window => _persistence?.HoldVisibility(window),
@@ -591,6 +656,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountCommandDeck();
         MountSpellDeck();
         MountChatDeck();
+        MountTargetDeck();
         MountDialogFactory();
         MountTooltipPresenter();
         MountSocialPanel();
@@ -642,9 +708,12 @@ public sealed class RetailUiRuntime : IDisposable
                     WindowNames.CommandDeck,
                     WindowNames.SpellDeck,
                     WindowNames.ChatDeck,
+                    WindowNames.TargetDeck,
                 ]);
             // Closed from mount: an attached Spell Deck is placed by its dock, never by the layout.
             _persistence.SetCaptureGate(WindowNames.SpellDeck, () => !(_spellDeckController?.Attached ?? true));
+            // The saved window geometry is the pinned window's; a fly-out's place is the strip's.
+            _persistence.SetCaptureGate(WindowNames.ChatDeck, () => _chatDeck?.Pinned ?? true);
             _persistence.ResetToDefaults();
             _persistence.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
             _canvasPositions = new PluginCanvasPositionPersistence(
@@ -856,6 +925,8 @@ public sealed class RetailUiRuntime : IDisposable
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
+        // After the model, so a line delivered this frame can peek this frame.
+        _chatDeck?.TickDrawer(deltaSeconds);
         Layout.UiMediaClock.Advance(deltaSeconds);
         FpsController?.Tick();
         _vividTargetIndicator?.Tick();
@@ -919,6 +990,7 @@ public sealed class RetailUiRuntime : IDisposable
             {
                 _persistence?.ReflowToScreen();
                 _spellDeckSync?.AfterReflow();
+                _chatDeck?.FollowLayout();
             }
             _lastScreenSize = screenSize;
         }
@@ -1280,9 +1352,16 @@ public sealed class RetailUiRuntime : IDisposable
         => _gameplayConfirmationController?.HandleDone(done) == true;
 
     public bool HandleAppraisal(AppraiseInfoParser.Parsed appraisal)
-        => AppraisalController is { } controller
+    {
+        // Any identify reply (auto-ID's or the player's) feeds the Target Deck's
+        // vitals, and plugins describe the object again with what it now knows.
+        Console.WriteLine($"[target-deck] reply 0x{appraisal.Guid:X8} success={appraisal.Success} creature={appraisal.CreatureProfile is not null}");
+        _targetAuto?.OnAppraised(appraisal.Guid, appraisal.Success);
+        _bindings.Plugins?.TargetPlateStore.Invalidate(appraisal.Guid);
+        return AppraisalController is { } controller
             ? controller.Apply(appraisal)
             : ItemInteraction.AcceptAppraisalResponse(appraisal.Guid).Accepted;
+    }
 
     public uint ShowConfirmation(string message, Action<bool> completed)
     {
@@ -1316,6 +1395,14 @@ public sealed class RetailUiRuntime : IDisposable
         Host.HideWindow(WindowNames.Examination);
         SocialPanelController?.ResetSessionDeclaration();
         _chatDeckSession?.EndSession();
+        // A new character starts with nothing identified and no auto-ID gaps.
+        _targetAppraisalLog?.Clear();
+        _bindings.Plugins?.TargetPlateStore.InvalidateAll();
+        if (_targetAuto is not null)
+        {
+            _targetAuto.Dispose();
+            _targetAuto = CreateTargetAutoAppraisal();
+        }
     }
 
     public void RedeclareSocialPanelAfterWorldEntry() =>
@@ -1346,8 +1433,10 @@ public sealed class RetailUiRuntime : IDisposable
         // attachment) first, so the restore sees the right capture gate; the
         // Spell Deck is placed after it.
         _spellDeckSync?.LoadIfChanged();
+        _chatDeck?.SyncDrawerFromModel();   // likewise the Chat Deck's pinned/collapsed state
         _persistence?.RestoreAll();
         _spellDeckSync?.AfterRestore();
+        _chatDeck?.FollowLayout();   // a collapsed deck is left out of the restore
         // Root is sized to the screen above, so a restored canvas is kept
         // on the screen it will be drawn on.
         _canvasPositions?.RestoreAll();
@@ -1366,6 +1455,7 @@ public sealed class RetailUiRuntime : IDisposable
     {
         _persistence?.RestoreNamed(profileName);
         _spellDeckSync?.AfterRestore();
+        _chatDeck?.FollowLayout();
     }
 
     public bool ToggleWindow(string name)
@@ -3635,18 +3725,28 @@ public sealed class RetailUiRuntime : IDisposable
                     LastIncomingTellSender: () => _bindings.Chat.ViewModel.LastIncomingTellSender,
                     StayInChatMode: () => _bindings.Options.CurrentCharacterOption((uint)CharacterOptionId.StayInChatMode),
                     LinkClicked: _bindings.Chat.LinkClicked,
-                    Keyboard: Host.Keyboard),
+                    Keyboard: Host.Keyboard,
+                    RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck),
+                    PlayAlert: _bindings.PlayUiSound is { } play ? () => play(Hud.ChatDeckAlertBeep.Sound) : null,
+                    OpenSettings: ToggleChatDeckSettings,
+                    SettingsOpen: () => _chatDeckSettings?.IsOpen == true),
                 _deckFonts,
                 _hudIcons);
 
             float top = MathF.Max(0f, Host.Root.Height - Hud.ChatDeckGeometry.DefaultHeight - 10f);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite, Hud.UiChatDeck.MountOptions(10f, top));
+            Host.Root.AddChild(deck.Strip);
+            Layout.UiOverlayLayer peekLayer = OverlayHost.AddLayer("ChatDeckPeek");
+            peekLayer.Visible = true;   // click-through; the peek element shows itself when it has lines
+            peekLayer.AddChild(deck.Peek);
         }
         catch (Exception ex)
         {
             // Anything that fails here leaves the retail chat as the only chat; undo what was built.
             if (deck is not null)
             {
+                deck.Strip.Parent?.RemoveChild(deck.Strip);
+                deck.Peek.Parent?.RemoveChild(deck.Peek);
                 UiElement window = deck;
                 while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
                 if (window.Parent is not null) Host.Root.RemoveChild(window);
@@ -3659,9 +3759,206 @@ public sealed class RetailUiRuntime : IDisposable
 
         _chatDeck = deck;
         _chatDeckSession = session;
+        session!.ModelChanged += _chatDeck.SyncDrawerFromModel;
         // A composed line (automation, a plugin) goes to whichever chat input is showing.
         _bindings.Chat.Entry.BindEntryFocus(() => ChatEntryTarget?.Focus() == true);
         Console.WriteLine("[UI] Chat Deck mounted (Modern HUD).");
+    }
+
+    /// <summary>The Target Deck's place before the player moves it: centred, near the top.</summary>
+    internal const float TargetDeckDefaultTop = 12f;
+
+    internal static float TargetDeckDefaultLeft(float rootWidth) =>
+        Math.Max(0f, (rootWidth - Hud.TargetDeckGeometry.Width) * 0.5f);
+
+    /// <summary>
+    /// The Target Deck's Modern HUD entry. It replaces no retail window: it adds a plate.
+    /// <paramref name="onShown"/> runs each time it is shown (auto-ID resyncs to the selection).
+    /// </summary>
+    internal static Hud.ModernHudReplacement TargetDeckReplacement(Func<Hud.UiTargetDeck?> deck, Action? onShown = null) =>
+        new("Target Deck", WindowNames.TargetDeck, Array.Empty<string>(),
+            Mounted: () => deck() is not null,
+            OnShown: () => onShown?.Invoke(),
+            OnHidden: () => deck()?.OnHidden());
+
+    /// <summary>The deck is mounted and Modern HUD shows it: plugins may describe targets, and auto-ID may ask.</summary>
+    private bool TargetDeckShown =>
+        _targetDeck is not null && _hudSwitch?.IsShown(WindowNames.TargetDeck) == true;
+
+    /// <summary>
+    /// The Target Deck (Modern HUD's nameplate for the selected object), its
+    /// identify log and auto-ID. Without it Modern HUD simply has no plate.
+    /// </summary>
+    private void MountTargetDeck()
+    {
+        if (_bindings.TargetDeck is not { } b) return;
+
+        Hud.UiTargetDeck? deck = null;
+        try
+        {
+            var clock = _targetDeckClock = System.Diagnostics.Stopwatch.StartNew();
+            _targetAppraisalLog = new TargetAppraisalLog();
+            _targetAuto = CreateTargetAutoAppraisal();
+            _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
+            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+
+            deck = new Hud.UiTargetDeck(
+                () => BuildTargetPlate(b, clock.Elapsed.TotalSeconds),
+                CreateTargetDeckActions(b),
+                _hudIcons,
+                () => clock.Elapsed.TotalSeconds,
+                _deckFonts);
+            // Ticks only while shown, so auto-ID follows the target only under Modern HUD.
+            deck.Ticked += () => _targetAuto?.Tick();
+            RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
+                Hud.UiTargetDeck.MountOptions(TargetDeckDefaultLeft(Host.Root.Width), TargetDeckDefaultTop));
+        }
+        catch (Exception ex)
+        {
+            // Modern HUD goes on without a plate; undo what was built.
+            if (deck is not null)
+            {
+                UiElement window = deck;
+                while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
+                if (window.Parent is not null) Host.Root.RemoveChild(window);
+            }
+            _targetAuto?.Dispose();
+            _targetAuto = null;
+            _targetAppraisalLog = null;
+            _targetDeckClock = null;
+            Console.WriteLine($"[UI] Target Deck unavailable. ({ex.GetType().Name}: {ex.Message})");
+            return;
+        }
+
+        _targetDeck = deck;
+        if (_bindings.Plugins is { } plugins)
+            plugins.TargetPlateAvailable = () => TargetDeckShown;
+        Console.WriteLine("[UI] Target Deck mounted (Modern HUD).");
+    }
+
+    /// <summary>Teardown: auto-ID lets go of the selection and combat events, and plugins see no plate.</summary>
+    private void UnmountTargetDeck()
+    {
+        _targetAuto?.Dispose();
+        _targetAuto = null;
+        if (_bindings.Plugins is { } plugins)
+            plugins.TargetPlateAvailable = null;
+        _targetDeck?.OnHidden();
+    }
+
+    // The id whose refusal was last logged, so a persistent refusal logs once.
+    private uint _lastRefusedAutoId;
+
+    /// <summary>
+    /// Auto-ID over the selection. Its requests go out only while the deck is
+    /// shown: a selection change under the retail HUD sends nothing.
+    /// </summary>
+    private TargetAutoAppraisal CreateTargetAutoAppraisal()
+    {
+        System.Diagnostics.Stopwatch clock = _targetDeckClock!;
+        return new TargetAutoAppraisal(
+            _bindings.Toolbar.Selection,
+            _bindings.Toolbar.Objects,
+            _bindings.TargetDeck!.Combat,
+            _targetAppraisalLog!,
+            _bindings.Magic.PlayerGuid,
+            id =>
+            {
+                bool sent = TargetDeckShown && ItemInteraction.TryAppraiseForAutomation(id);
+                // A refusal stays pending and is retried every tick, so log it once per id.
+                if (sent)
+                {
+                    _lastRefusedAutoId = 0u;
+                    Console.WriteLine($"[target-deck] auto-ID 0x{id:X8} sent");
+                }
+                else if (id != _lastRefusedAutoId)
+                {
+                    _lastRefusedAutoId = id;
+                    Console.WriteLine($"[target-deck] auto-ID 0x{id:X8} refused");
+                }
+                return sent;
+            },
+            () => clock.Elapsed.TotalSeconds);
+    }
+
+    /// <summary>The plate for the selected object, built from live state each frame; null with no target.</summary>
+    private TargetPlateModel? BuildTargetPlate(TargetDeckRuntimeBindings b, double now)
+    {
+        uint id = _bindings.Toolbar.Selection.SelectedObjectId ?? 0u;
+        if (id == 0u || _targetAppraisalLog is not { } log) return null;
+        ClientObject? obj = _bindings.Toolbar.Objects.Get(id);
+        if (obj is null) return null;
+        uint player = _bindings.Magic.PlayerGuid();
+        TargetClassification c = TargetKindClassifier.Classify(obj, player);
+        // The store asks plugins once per object, so this is cheap every frame.
+        TargetPlatePluginContent plugin =
+            _bindings.Plugins?.TargetPlateStore.Describe(TargetPlateQuery(obj, c, b.Combat, log))
+            ?? TargetPlatePluginContent.Empty;
+        return TargetPlateModelBuilder.Build(new TargetPlateInput(
+            obj, player, b.PlayerLevel(), b.Combat, log, now,
+            b.DistanceMeters(id), b.SelectedPackItem(), b.IsFellow,
+            plugin.Rows, plugin.OverflowTooltip, plugin.Actions,
+            guid => _bindings.Toolbar.Objects.Get(guid)?.Name));
+    }
+
+    /// <summary>What plugins are told about the selected object.</summary>
+    internal static PluginTargetPlateQuery TargetPlateQuery(
+        ClientObject obj, TargetClassification c, CombatState combat, TargetAppraisalLog log)
+    {
+        uint id = obj.ObjectId;
+        float? stamina = null, mana = null;
+        if (combat.TryGetCreatureVitals(id, out CombatState.CreatureVitals v))
+        {
+            stamina = Fraction(v.Stamina, v.StaminaMax);
+            mana = Fraction(v.Mana, v.ManaMax);
+        }
+        return new PluginTargetPlateQuery(
+            id,
+            (PluginTargetKind)(int)c.Kind,
+            obj.Name,
+            obj.WeenieClassId,
+            obj.Properties.Ints.TryGetValue((uint)PropertyInt.Level, out int level) && level > 0 ? level : null,
+            c.OwnedByPlayer,
+            log.TryGet(id, out TargetAppraisalEntry entry) && entry.Success,
+            combat.HasHealth(id) ? combat.GetHealthPercent(id) : null,
+            stamina,
+            mana);
+
+        static float? Fraction(uint? current, uint? max) =>
+            current is uint cur && max is uint m && m > 0u ? Math.Clamp(cur / (float)m, 0f, 1f) : null;
+    }
+
+    private TargetDeckActions CreateTargetDeckActions(TargetDeckRuntimeBindings b)
+    {
+        RuntimeItemInteraction items = ItemInteraction;
+        return new TargetDeckActions(
+            examine: id => items.ExamineSelectedOrEnterMode(id),
+            use: id => items.UseSelectedOrEnterMode(id),
+            packItem: b.SelectedPackItem,
+            // The use-with-target mode's own target pick, for the item it is holding.
+            useItemOnTarget: id => items.AcquireTarget(id),
+            give: (item, id) =>
+            {
+                // The pack item was picked for this target: the targeting cursor ends with the give.
+                if (items.TryGiveItemForAutomation(item, id))
+                    items.CancelTargetMode();
+            },
+            trade: id => items.TryOpenSecureTradeWithPlayer(id),
+            fellowshipRecruit: id => _bindings.Social.FellowshipRecruit(id),
+            allegianceSwear: id => _bindings.Social.AllegianceSwear(id),
+            composeChat: text => ComposeChatText(text),
+            follow: id => b.Follow(id),
+            toggleCharacter: () => ToggleWindow(WindowNames.Character),
+            copyText: text =>
+            {
+                if (Host.Root.Keyboard is { } keyboard) keyboard.ClipboardText = text;
+            },
+            // The inventory's double-click: a wieldable item goes through auto-wield.
+            wield: id => items.ActivateItem(id),
+            // The plate hides itself once nothing is selected.
+            deselect: () => _bindings.Toolbar.Selection.Clear(SelectionChangeSource.Toolbar),
+            runPluginAction: (pluginId, objectId, actionId) =>
+                _bindings.Plugins?.TargetPlateStore.RunAction(pluginId, objectId, actionId));
     }
 
     private Hud.CommandDeckInput ReadCommandDeckInput()
@@ -3709,6 +4006,67 @@ public sealed class RetailUiRuntime : IDisposable
             bindings.Options.CommandBus().Publish(new SetSingleCharacterOptionRuntimeCmd((uint)option, value));
         public void Recall(AcDream.Runtime.RuntimePortalCommand command) => deck.Recall(command);
         public void CastOutlined() => spellDeck()?.CastOutlined();
+    }
+
+    /// <summary>The Target Deck's actions, each over a path the retail windows already use.
+    /// Actions that need a pack item do nothing without one.</summary>
+    internal sealed class TargetDeckActions(
+        Action<uint> examine,
+        Action<uint> use,
+        Func<uint> packItem,
+        Action<uint> useItemOnTarget,
+        Action<uint, uint> give,
+        Action<uint> trade,
+        Action<uint> fellowshipRecruit,
+        Action<uint> allegianceSwear,
+        Action<string> composeChat,
+        Action<uint> follow,
+        Action toggleCharacter,
+        Action<string> copyText,
+        Action<uint> wield,
+        Action deselect,
+        Action<string, uint, string> runPluginAction) : Hud.ITargetDeckActions
+    {
+        public void Run(TargetAction action, TargetPlateModel target)
+        {
+            uint id = target.ObjectId;
+            switch (action)
+            {
+                case TargetAction.Assess:
+                case TargetAction.Examine:
+                    examine(id);
+                    break;
+                case TargetAction.Use:
+                case TargetAction.UseOrTalk:
+                case TargetAction.PickUpOrUse:
+                case TargetAction.Open:
+                case TargetAction.UsePortal:
+                    use(id);
+                    break;
+                case TargetAction.UseItemOn:
+                case TargetAction.UseKey:
+                    if (packItem() != 0u) useItemOnTarget(id);
+                    break;
+                case TargetAction.Give:
+                    if (packItem() is uint item and not 0u) give(item, id);
+                    break;
+                case TargetAction.Trade: trade(id); break;
+                case TargetAction.FellowshipInvite: fellowshipRecruit(id); break;
+                case TargetAction.SwearAllegiance: allegianceSwear(id); break;
+                case TargetAction.Tell: composeChat($"/tell {target.Name}, "); break;
+                case TargetAction.Follow: follow(id); break;
+                case TargetAction.CharacterSheet: toggleCharacter(); break;
+                case TargetAction.CopyName: copyText(target.Name); break;
+                case TargetAction.Wield: wield(id); break;
+                case TargetAction.Deselect: deselect(); break;
+                case TargetAction.None:
+                case TargetAction.More:
+                    break;
+            }
+        }
+
+        public void RunPluginAction(string pluginId, uint objectId, string actionId) =>
+            runPluginAction(pluginId, objectId, actionId);
     }
 
     /// <summary>The experience a fellow needs to go from their level to the next.</summary>
@@ -4593,17 +4951,7 @@ public sealed class RetailUiRuntime : IDisposable
 
         // Hotkey boxes show keys by the game's own names. The table reads go
         // through the dat lock like every other plugin-thread dat read.
-        Layout.RetailKeyNames keyNames;
-        lock (_bindings.Assets.DatLock)
-        {
-            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
-            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
-        }
-        Func<KeyChord, string> describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
-        {
-            lock (_bindings.Assets.DatLock)
-                return keyNames.Describe(key);
-        });
+        Func<KeyChord, string> describeKey = DescribeKey();
 
         // Colour pickers upload their gradients while open and give them back on close.
         var markupTextures = new RetailMarkupTextureService(_bindings.Assets.TextureCache);
@@ -5912,8 +6260,11 @@ public sealed class RetailUiRuntime : IDisposable
                 _spellDeckSpellbook = null;
                 _spellDeck?.OnHidden();
                 _chatDeck?.Detach();
+                if (_chatDeckSession is not null && _chatDeck is not null)
+                    _chatDeckSession.ModelChanged -= _chatDeck.SyncDrawerFromModel;
                 _chatDeckSession?.Dispose();
                 _chatDeckSession = null;
+                UnmountTargetDeck();
                 _hudIcons?.Dispose();
                 _hudIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;

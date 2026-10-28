@@ -38,6 +38,23 @@ public sealed class PluginUiThemeSettings
             && Enum.IsDefined(value) ? value : PluginUiTheme.Classic;
         _dock = ParseDock(saved.Dock);
     }
+    private PluginUiPalette? _fixedPalette;
+
+    /// <summary>
+    /// Settings that always draw with <paramref name="palette"/> and share this one's fonts;
+    /// they never save. For windows that keep their own look whatever the plugin theme.
+    /// </summary>
+    internal PluginUiThemeSettings WithFixedPalette(PluginUiPalette palette) =>
+        WithFixedLook(palette, null, null);
+
+    /// <summary>
+    /// Like <see cref="WithFixedPalette"/>, with its own fonts where given
+    /// (a null one keeps this one's); they never save.
+    /// </summary>
+    internal PluginUiThemeSettings WithFixedLook(
+        PluginUiPalette palette, Lazy<UiDatFont>? font, Lazy<UiDatFont>? titleFont) =>
+        new(null, font ?? _modernFont, titleFont ?? _modernTitleFont) { _fixedPalette = palette };
+
     public PluginUiTheme Theme
     {
         get => _theme;
@@ -74,7 +91,7 @@ public sealed class PluginUiThemeSettings
             Save();
         }
     }
-    public PluginUiPalette? Palette => Theme switch
+    public PluginUiPalette? Palette => _fixedPalette ?? Theme switch
     {
         PluginUiTheme.Moss => PluginUiPalette.Moss,
         PluginUiTheme.Brass => PluginUiPalette.Brass,
@@ -251,8 +268,15 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
     /// <summary>Whether the window's markup gave it a title, so the header band is drawn.</summary>
     internal bool HasTitle { get; set; }
 
+    /// <summary>
+    /// Draws the window's frame in place of the plugin chrome (shadow, fill, header, border);
+    /// given the context, width and height. Null leaves the plugin look.
+    /// </summary>
+    internal Action<UiRenderContext, float, float>? FrameOverride { get; set; }
+
     protected override void OnDraw(UiRenderContext ctx)
     {
+        if (FrameOverride is { } frame && _settings.Palette is not null) { frame(ctx, Width, Height); return; }
         if (_settings.Palette is not { } p) { base.OnDraw(ctx); return; }
         PluginUiStyle.WindowShadow(ctx, Width, Height);
         ctx.FillRoundedRect(0, 0, Width, Height, PluginUiStyle.WindowRadius, p.Background);
@@ -261,7 +285,8 @@ internal sealed class UiPluginMarkupPanel : UiNineSlicePanel
     protected override void OnDrawAfterChildren(UiRenderContext ctx)
     {
         if (_settings.Palette is not { } p) { base.OnDrawAfterChildren(ctx); return; }
-        ctx.StrokeRoundedRect(0.5f, 0.5f, Width - 1f, Height - 1f, PluginUiStyle.WindowRadius - 0.5f, p.Border, 1f);
+        if (FrameOverride is null)
+            ctx.StrokeRoundedRect(0.5f, 0.5f, Width - 1f, Height - 1f, PluginUiStyle.WindowRadius - 0.5f, p.Border, 1f);
         if (Resizable && DrawResizeAffordances)
             PluginUiStyle.ResizeGrip(ctx, p, Width, Height);
     }
