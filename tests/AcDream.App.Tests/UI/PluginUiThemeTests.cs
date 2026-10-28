@@ -183,4 +183,19 @@ public sealed class PluginUiThemeTests
         }
         finally { File.Delete(path); }
     }
+
+    [Fact]
+    public void WithFixedPalette_IgnoresTheThemeSharesFontsAndNeverSaves()
+    {
+        var font = new Lazy<UiDatFont>(() => null!);
+        var baseSettings = new PluginUiThemeSettings(null, font);
+        var fixedSettings = baseSettings.WithFixedPalette(PluginUiPalette.Ember);
+        Assert.Same(PluginUiPalette.Ember, fixedSettings.Palette);
+        Assert.Same(PluginUiPalette.Ember, fixedSettings.DockPalette);
+        Assert.True(fixedSettings.HasModernFont);
+        fixedSettings.Theme = PluginUiTheme.Moss;
+        Assert.Same(PluginUiPalette.Ember, fixedSettings.Palette);
+        Assert.Null(baseSettings.Palette);
+        Assert.Equal(PluginUiTheme.Classic, baseSettings.Theme);
+    }
 }

@@ -56,7 +56,8 @@ public sealed class ChatDeckWiringTests : IDisposable
             Root.DefaultTextInput = RetailInput;
 
             SettingsWindow = new PluginAppearanceWindow(Root, close =>
-                MarkupDocument.Build(ChatDeckSettingsBinding.Markup, new ChatDeckSettingsBinding(() => Model) { Close = close }, _ => (0u, 0, 0)));
+                ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(ChatDeckSettingsBinding.Markup, new ChatDeckSettingsBinding(() => Model) { Close = close }, _ => (0u, 0, 0),
+                    themes: new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window))));
             var log = new ChatLog();
             Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(

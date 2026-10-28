@@ -168,4 +168,14 @@ public sealed class ChatDeckSettingsBindingTests
         Assert.NotEmpty(boxes);
         Assert.All(boxes, k => Assert.True(k.AllowsCommand));
     }
+
+    [Fact]
+    public void Popup_BuiltWithFixedPalette_DrawsInTheDecksPalette()
+    {
+        var (_, b) = Make();
+        var themes = new PluginUiThemeSettings().WithFixedPalette(ChatDeckPalette.Window);
+        UiElement window = MarkupDocument.Build(ChatDeckSettingsBinding.Markup, b, _ => (0u, 0, 0), themes: themes);
+        var panel = Assert.IsType<UiPluginMarkupPanel>(window);
+        Assert.Same(ChatDeckPalette.Window, panel.Palette);
+    }
 }

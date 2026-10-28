@@ -38,6 +38,15 @@ public sealed class PluginUiThemeSettings
             && Enum.IsDefined(value) ? value : PluginUiTheme.Classic;
         _dock = ParseDock(saved.Dock);
     }
+    private PluginUiPalette? _fixedPalette;
+
+    /// <summary>
+    /// Settings that always draw with <paramref name="palette"/> and share this one's fonts;
+    /// they never save. For windows that keep their own look whatever the plugin theme.
+    /// </summary>
+    internal PluginUiThemeSettings WithFixedPalette(PluginUiPalette palette) =>
+        new(null, _modernFont, _modernTitleFont) { _fixedPalette = palette };
+
     public PluginUiTheme Theme
     {
         get => _theme;
@@ -74,7 +83,7 @@ public sealed class PluginUiThemeSettings
             Save();
         }
     }
-    public PluginUiPalette? Palette => Theme switch
+    public PluginUiPalette? Palette => _fixedPalette ?? Theme switch
     {
         PluginUiTheme.Moss => PluginUiPalette.Moss,
         PluginUiTheme.Brass => PluginUiPalette.Brass,
