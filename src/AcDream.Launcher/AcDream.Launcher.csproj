@@ -96,10 +96,15 @@
       <_BakeBuildOutputDirectory Condition="$([System.IO.Path]::IsPathRooted('$(OutputPath)'))">$(OutputPath)</_BakeBuildOutputDirectory>
       <_BakeBuildOutputDirectory Condition="'$(_BakeBuildOutputDirectory)' == ''">$(MSBuildProjectDirectory)\$(OutputPath)</_BakeBuildOutputDirectory>
     </PropertyGroup>
+    <!-- The same build also builds Bake (and what it references) for no
+         runtime. Sharing their obj folders, that restore can rewrite
+         project.assets.json without this runtime's target between this
+         restore and this publish (NETSDK1047), so this build keeps its own
+         intermediate folder in each project. -->
     <MSBuild Projects="$(MSBuildProjectDirectory)\..\AcDream.Bake\AcDream.Bake.csproj"
              Targets="Restore;Publish"
              BuildInParallel="false"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(_BakeBuildRid);SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;EnableSingleFileAnalyzer=false;PublishDir=$(_BakeBuildStagingDirectory);PublishBakeTool=false;CoDeployBakeToolOnBuild=false;RestoreLockedMode=true;RestoreForceEvaluate=true" />
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(_BakeBuildRid);BaseIntermediateOutputPath=obj\bake-$(_BakeBuildRid)\;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;EnableSingleFileAnalyzer=false;PublishDir=$(_BakeBuildStagingDirectory);PublishBakeTool=false;CoDeployBakeToolOnBuild=false;RestoreLockedMode=true;RestoreForceEvaluate=true" />
     <Copy SourceFiles="$(_BakeBuildStagingDirectory)$(_BakeExecutableName)"
           DestinationFolder="$(_BakeBuildOutputDirectory)"
           SkipUnchangedFiles="true" />
@@ -118,6 +123,6 @@
     <MSBuild Projects="$(MSBuildProjectDirectory)\..\AcDream.Bake\AcDream.Bake.csproj"
              Targets="Restore;Publish"
              BuildInParallel="false"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;EnableSingleFileAnalyzer=false;PublishDir=$(_BakePublishDirectory);PublishBakeTool=false;RestoreLockedMode=true;RestoreForceEvaluate=true" />
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);BaseIntermediateOutputPath=obj\bake-$(RuntimeIdentifier)\;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;EnableSingleFileAnalyzer=false;PublishDir=$(_BakePublishDirectory);PublishBakeTool=false;RestoreLockedMode=true;RestoreForceEvaluate=true" />
   </Target>
 </Project>

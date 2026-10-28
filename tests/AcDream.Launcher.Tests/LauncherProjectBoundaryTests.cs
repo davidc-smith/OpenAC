@@ -167,6 +167,35 @@ public sealed class LauncherProjectBoundaryTests
         Assert.Contains("PublishSingleFile=true", project, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The launcher restores and publishes Bake for one runtime while the
+    /// same build also builds Bake for no runtime. Sharing Bake's obj folder,
+    /// the plainer restore can rewrite project.assets.json without the
+    /// runtime's target between the inner restore and the inner publish,
+    /// which then fails (NETSDK1047). Each inner build keeps its restore and
+    /// intermediate files in a folder of its own.
+    /// </summary>
+    [Fact]
+    public void EveryInnerBakeBuildKeepsItsOwnIntermediateFolder()
+    {
+        XDocument project = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "AcDream.Launcher",
+            "AcDream.Launcher.csproj"));
+
+        XElement[] innerBakeBuilds = project.Descendants("MSBuild")
+            .Where(build => ((string?)build.Attribute("Projects") ?? "")
+                .EndsWith("AcDream.Bake.csproj", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.NotEmpty(innerBakeBuilds);
+        Assert.All(innerBakeBuilds, build => Assert.Contains(
+            "BaseIntermediateOutputPath=obj\\bake-",
+            (string?)build.Attribute("Properties") ?? "",
+            StringComparison.Ordinal));
+    }
+
     [Fact]
     public void ModalMarkupAndCodeBehindCarryKeyboardFocusAndAccessibilityGuards()
     {
@@ -182,11 +211,11 @@ public sealed class LauncherProjectBoundaryTests
             "AcDream.Launcher",
             "MainWindow.axaml.cs"));
 
-        Assert.Equal(13, Count(markup, "KeyboardNavigation.TabNavigation=\"Cycle\""));
-        Assert.Equal(13, Count(markup, "KeyDown=\"OnModalKeyDown\""));
-        Assert.True(Count(markup, "AutomationProperties.Name=") >= 13);
+        Assert.Equal(14, Count(markup, "KeyboardNavigation.TabNavigation=\"Cycle\""));
+        Assert.Equal(14, Count(markup, "KeyDown=\"OnModalKeyDown\""));
+        Assert.True(Count(markup, "AutomationProperties.Name=") >= 14);
         Assert.True(Count(markup, "IsDefault=\"True\"") >= 3);
-        Assert.Equal(5, Count(markup, "IsCancel=\"True\""));
+        Assert.Equal(6, Count(markup, "IsCancel=\"True\""));
         Assert.Contains("ServerNameTextBox", markup, StringComparison.Ordinal);
         Assert.Contains("AccountNameTextBox", markup, StringComparison.Ordinal);
         Assert.Contains("CharacterNameTextBox", markup, StringComparison.Ordinal);

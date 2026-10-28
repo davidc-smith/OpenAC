@@ -516,6 +516,10 @@ public sealed class LauncherPluginsViewModel : ObservableObject, IDisposable
 
     public bool HasInstalled => Installed.Count > 0;
 
+    /// <summary>Whether the plugin <paramref name="id"/> is installed, whatever the search shows.</summary>
+    public bool IsInstalled(string id) =>
+        _allInstalled.Any(row => string.Equals(row.Id, id, StringComparison.OrdinalIgnoreCase));
+
     private readonly List<PluginInstalledRowViewModel> _allInstalled = [];
     private readonly List<PluginDiscoverRowViewModel> _allDiscover = [];
     private string _installedFilter = "";

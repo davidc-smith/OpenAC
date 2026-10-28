@@ -169,6 +169,7 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         || NavData.IsOpen
         || (TextEditor?.IsOpen ?? false)
         || (AddServerDialog?.IsOpen ?? false)
+        || (_classicMigration?.IsOpen ?? false)
         || IsCharacterOptionsOpen
         || IsSessionLogOpen
         || IsSettingsOpen
@@ -576,6 +577,10 @@ public sealed partial class LauncherWindowViewModel : ObservableObject, IDisposa
         else if (AddServerDialog.IsOpen)
         {
             AddServerDialog.Close();
+        }
+        else if (_classicMigration?.IsOpen == true)
+        {
+            _classicMigration.Close();
         }
         else if (EditorDialog.IsOpen)
         {

@@ -82,6 +82,9 @@ public sealed partial class LauncherWindowViewModel
         Plugins.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LauncherPluginsViewModel.IsBusy)) NotifyVersions();
+            // Every change to the installed list passes through here, so an install or
+            // removal of MossTank shows or hides its import.
+            if (e.PropertyName == nameof(LauncherPluginsViewModel.HasInstalled)) OnPropertyChanged(nameof(ShowClassicMigration));
         };
         SelectAccountsTabCommand = new RelayCommand(() => SelectedTab = LauncherMainTab.Accounts);
         SelectPluginsTabCommand = new RelayCommand(() =>

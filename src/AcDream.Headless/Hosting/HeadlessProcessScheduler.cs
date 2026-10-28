@@ -123,6 +123,9 @@ internal sealed class HeadlessProcessScheduler
             NextDeadline());
     }
 
+    /// <summary>The turns run so far; safe to read from any thread.</summary>
+    internal long TurnCount => Interlocked.Read(ref _turnCount);
+
     internal void RebaseDeadlinesAfterSessionStart()
     {
         if (Interlocked.Read(ref _waitCount) != 0L

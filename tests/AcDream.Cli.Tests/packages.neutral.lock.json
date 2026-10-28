@@ -111,14 +111,15 @@
       "acdream.cli": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Core": "[0.1.28, )",
+          "AcDream.Core": "[0.1.30, )",
+          "AcDream.Launcher.Core": "[0.1.30, )",
           "Chorizite.DatReaderWriter": "[2.1.7, )"
         }
       },
       "acdream.core": {
         "type": "Project",
         "dependencies": {
-          "AcDream.Plugin.Abstractions": "[0.1.28, )",
+          "AcDream.Plugin.Abstractions": "[0.1.30, )",
           "BCnEncoder.Net": "[2.2.1, )",
           "Chorizite.DatReaderWriter": "[2.1.7, )",
           "Serilog": "[4.0.2, )",
@@ -126,7 +127,20 @@
           "StbImageWriteSharp": "[1.16.7, )"
         }
       },
+      "acdream.launcher.core": {
+        "type": "Project",
+        "dependencies": {
+          "AcDream.Platform": "[0.1.30, )",
+          "AcDream.Rynth.NavData": "[0.1.30, )"
+        }
+      },
+      "acdream.platform": {
+        "type": "Project"
+      },
       "acdream.plugin.abstractions": {
+        "type": "Project"
+      },
+      "acdream.rynth.navdata": {
         "type": "Project"
       },
       "BCnEncoder.Net": {
