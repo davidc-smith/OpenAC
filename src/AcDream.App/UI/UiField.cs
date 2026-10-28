@@ -197,6 +197,7 @@ public sealed class UiField : UiElement
     private int _wrappedVersion = -1;
     private float _wrappedWidth;
     private bool _suppressNextNewlineChar;
+    private bool _suppressNextChar;   // the Char that follows a key OnChordKey consumed
 
     // Held-key auto-repeat (Silk delivers one KeyDown per physical press).
     private Silk.NET.Input.Key? _repeatKey;
@@ -856,6 +857,11 @@ public sealed class UiField : UiElement
             case UiEventType.Char:
             {
                 char value = (char)e.Data0;
+                if (_suppressNextChar)
+                {
+                    _suppressNextChar = false;
+                    return true;
+                }
                 if (_suppressNextNewlineChar
                     && (value == '\r' || value == '\n'))
                 {
@@ -895,8 +901,12 @@ public sealed class UiField : UiElement
                 if (!Editable)
                     return true;
                 var key = (Silk.NET.Input.Key)e.Data0;
+                _suppressNextChar = false;   // a consumed key that sent no Char must not eat a later one
                 if (OnChordKey is not null && HeldModifiers() is var mods && mods != ModifierMask.None && OnChordKey(key, mods))
+                {
+                    _suppressNextChar = true;
                     return true;
+                }
                 if (CtrlHeld())
                 {
                     if (OnControlKey?.Invoke(key, ShiftHeld()) == true)

@@ -152,7 +152,9 @@ public static class ChatDeckSettingsNormalizer
             ? settings.Layout
             : settings.Layout with { LastTabId = ChatDeckDefaults.AllTabId };
 
-        static string Key(string text) => text.Trim() is { Length: <= ChatDeckKeys.MaxLength } t ? t : "";
+        // "Mod+...+Key": a string with no '+' has no modifier, so it would type instead of firing; unbound.
+        static string Key(string text) =>
+            text.Trim() is { Length: <= ChatDeckKeys.MaxLength } t && t.Contains('+') ? t : "";
         var keys = new ChatDeckKeys { NextTab = Key(settings.Keys.NextTab), PreviousTab = Key(settings.Keys.PreviousTab) };
 
         return settings with { Tabs = tabs, Rules = rules, Appearance = appearance, Layout = layout, Keys = keys };

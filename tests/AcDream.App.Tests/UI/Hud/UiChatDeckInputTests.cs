@@ -111,6 +111,22 @@ public sealed class UiChatDeckInputTests
     }
 
     [Fact]
+    public void ShiftOnlyExtraKey_CyclesAndDoesNotAlsoType()
+    {
+        var h = new Harness();
+        h.Model!.SetKeys(new ChatDeckKeys { NextTab = "Shift+N" });
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.ShiftLeft);
+        Key(h.Deck.Input, Silk.NET.Input.Key.N);
+        h.Deck.Input.OnEvent(new UiEvent(0, h.Deck.Input, UiEventType.Char, Data0: 'N'));
+        Assert.Equal("local", h.Model.SelectedTabId);
+        Assert.Equal("", h.Deck.Input.Text);
+
+        // The swallowed Char is one-shot: the next typed character lands.
+        h.Deck.Input.OnEvent(new UiEvent(0, h.Deck.Input, UiEventType.Char, Data0: 'x'));
+        Assert.Equal("x", h.Deck.Input.Text);
+    }
+
+    [Fact]
     public void UnboundOrUnreadableKeys_MatchNothing()
     {
         var h = new Harness();
