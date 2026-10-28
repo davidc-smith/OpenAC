@@ -16,8 +16,9 @@ public sealed class ChatDeckTranscriptTests
 
     private static ChatDeckTranscriptStyle Style(
         float width = 1000f, ChatDeckTimestamps stamps = ChatDeckTimestamps.Off, string search = "",
-        object? colourKey = null, Func<ChatDeckLine, Vector4>? channel = null) =>
-        new(width, s => s.Length * 7f, FontKey: null, stamps, channel ?? (_ => Channel), Tag, Stamp, search, colourKey);
+        object? colourKey = null, Func<ChatDeckLine, Vector4>? channel = null, bool channelPrefix = true) =>
+        new(width, s => s.Length * 7f, FontKey: null, stamps, channel ?? (_ => Channel), Tag, Stamp, search, colourKey,
+            ChannelPrefix: channelPrefix);
 
     private static ChatDeckLine Line(ChatEntry entry, uint? lineColour = null, uint? matchColour = null,
         IReadOnlyList<ChatDeckSpan>? spans = null)
@@ -31,6 +32,37 @@ public sealed class ChatDeckTranscriptTests
 
     private static ChatEntry Sys(string text, long seq = 1) =>
         new(ChatKind.System, "", text, 0u, 0u) { Sequence = seq };
+
+    private static ChatDeckLine ChannelLine(string channel, string sender, string text)
+    {
+        var log = new ChatLog();
+        var model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Davian");
+        log.OnChannelBroadcast(7u, sender, text, channelName: channel);
+        model.Tick();
+        return model.FindTab("all")!.Snapshot().Single();
+    }
+
+    [Fact]
+    public void Search_ReadsTheShownText_NotAHiddenPrefix()
+    {
+        ChatDeckLine line = ChannelLine("General", "Bob", "hi");
+        var builder = new ChatDeckTranscript();
+        Assert.Single(builder.Build([line], Style(search: "General", channelPrefix: true)).Sources);
+        Assert.Empty(builder.Build([line], Style(search: "General", channelPrefix: false)).Sources);
+        Assert.Single(builder.Build([line], Style(search: "Bob", channelPrefix: false)).Sources);
+    }
+
+    [Fact]
+    public void Layout_MapsVisualLinesToSources()
+    {
+        var builder = new ChatDeckTranscript();
+        ChatDeckLine a = Line(Sys(new string('a', 300), 1)), b = Line(Sys("short", 2));
+        ChatDeckTranscriptLayout layout = builder.Build([a, b], Style(width: 200f));
+        Assert.Equal([a, b], layout.Sources);
+        Assert.Equal(layout.Lines.Count, layout.SourceOf.Count);
+        Assert.Equal(0, layout.SourceOf[0]);
+        Assert.Equal(1, layout.SourceOf[^1]);
+    }
 
     [Fact]
     public void Wraps_AndKeysByEntry()

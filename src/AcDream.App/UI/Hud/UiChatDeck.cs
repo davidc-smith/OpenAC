@@ -50,7 +50,7 @@ internal sealed partial class UiChatDeck : UiElement
     private bool _searchOpen;
     private string _searchText = "";
     private bool _shown;
-    private long? _addedAtScrollUp;
+    private long? _seenThrough;   // the newest line shown when the view left the bottom
     private int _menuTab = -1;
     private ChatDeckHit _hit;
 
@@ -205,7 +205,8 @@ internal sealed partial class UiChatDeck : UiElement
 
         RebuildTranscript(appearance);
         TrackNewLines();
-        _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd);
+        // A search hides lines, so a narrowed view has not seen what arrives; closing it shows them (and marks them read).
+        _model?.SetView(_shown && _drawer.DeckVisible, Transcript.Scroll.AtEnd && _searchText.Length == 0);
     }
 
     /// <summary>
@@ -254,23 +255,25 @@ internal sealed partial class UiChatDeck : UiElement
 
     private void TrackNewLines()
     {
-        ChatDeckTabState? tab = SelectedTab;
-        if (tab is null || Transcript.Scroll.AtEnd)
+        if (SelectedTab is null || Transcript.Scroll.AtEnd)
         {
-            _addedAtScrollUp = null;
+            _seenThrough = null;
             NewLineCount = 0;
         }
         else
         {
-            if (_addedAtScrollUp is not long since || tab.Added < since) _addedAtScrollUp = since = tab.Added;
-            NewLineCount = (int)Math.Min(int.MaxValue, tab.Added - since);
+            List<ChatDeckLine> shown = _layout.Sources;
+            _seenThrough ??= shown.Count > 0 ? shown[^1].Sequence : long.MinValue;
+            int n = 0;
+            for (int i = shown.Count - 1; i >= 0 && shown[i].Sequence > _seenThrough; i--) n++;
+            NewLineCount = n;
         }
         NewLinesMarker.Visible = NewLineCount > 0;
     }
 
     private void ResetView()
     {
-        _addedAtScrollUp = null;
+        _seenThrough = null;
         NewLineCount = 0;
         _peek.Clear();
         _builtFor = null;
@@ -281,7 +284,7 @@ internal sealed partial class UiChatDeck : UiElement
     private void FollowNewest()
     {
         Transcript.Scroll.ScrollToEnd();
-        _addedAtScrollUp = null;
+        _seenThrough = null;
         NewLineCount = 0;
         NewLinesMarker.Visible = false;
     }
