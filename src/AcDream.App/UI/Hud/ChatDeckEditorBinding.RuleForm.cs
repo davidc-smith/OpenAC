@@ -44,7 +44,14 @@ public sealed partial class ChatDeckEditorBinding
         _anySender = _anyNumber = false;
     }
 
-    public bool FormOpen => _pane == Pane.Form && _draft is not null;
+    public bool FormOpen
+    {
+        get
+        {
+            _ = M;                 // a model swap resets the panes; read it before trusting the draft
+            return _pane == Pane.Form && _draft is not null;
+        }
+    }
     public string FormTitle => _editingId is null ? "New rule" : "Edit rule";
     public string SaveText => _editingId is null ? "Add" : "Save";
 
@@ -154,23 +161,26 @@ public sealed partial class ChatDeckEditorBinding
     public IReadOnlyList<SampleRow> PreviewSamples => Preview?.Samples.Select(s => new SampleRow(s)).ToList() ?? [];
 
     // ── save ──
-    public bool CanSave => _draft is { } d && Preview is { Status: ChatDeckRuleStatus.Ok }
+    public bool CanSave => FormOpen && _draft is { } d && Preview is { Status: ChatDeckRuleStatus.Ok }
+        && (_editingId is not null || S.Rules.Count < ChatDeckLimits.MaxRules)
         && (!ChatDeckSettingsEdits.Targets(d) || S.Tabs.Any(t => t.Id == d.TargetTabId && t.Id != ChatDeckDefaults.AllTabId));
 
     public Action SaveRule => () =>
     {
         if (!CanSave || _draft is not { } draft) return;
+        bool saved;
         if (_editingId is { } id)
         {
-            Edit(s => ChatDeckSettingsEdits.UpdateRule(s, id, draft));
-            _ruleId = id;
+            saved = Edit(s => ChatDeckSettingsEdits.UpdateRule(s, id, draft));
+            if (saved) _ruleId = id;
         }
         else
         {
             string? added = null;
-            if (Edit(s => ChatDeckSettingsEdits.AddRule(s, draft with { Enabled = true }, out added))) _ruleId = added;
+            saved = Edit(s => ChatDeckSettingsEdits.AddRule(s, draft with { Enabled = true }, out added));
+            if (saved) _ruleId = added;
         }
-        CloseForm();
+        if (saved) CloseForm();
     };
 
     public Action CancelRule => CloseForm;

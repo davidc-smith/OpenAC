@@ -128,4 +128,35 @@ public sealed class ChatDeckEditorRuleFormTests
         System(log, m, "You receive 12 Pyreals.");
         Assert.Equal("Matches 2 of the last 2 lines.", b.PreviewText);
     }
+
+    [Fact]
+    public void ModelSwap_ClosesTheForm_WithoutThrowing()
+    {
+        var log = new ChatLog();
+        var m1 = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Davian");
+        var m2 = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Other");
+        var current = m1;
+        var b = new ChatDeckEditorBinding(() => current);
+        b.NewRule();
+        b.SetPattern("x");
+        Assert.True(b.CanSave);
+        current = m2;
+        Assert.Equal("", b.PreviewText);
+        Assert.False(b.CanSave);
+        Assert.False(b.FormOpen);
+    }
+
+    [Fact]
+    public void AtRuleLimit_NewRuleCannotSave_FormStaysOpen()
+    {
+        var (_, m, b) = Make();
+        while (m.Settings.Rules.Count < ChatDeckLimits.MaxRules)
+            m.Edit(s => ChatDeckSettingsEdits.AddRule(s, new ChatDeckRule { Id = "", Kind = ChatDeckMatchKind.Contains, Pattern = "a" }, out _));
+        b.NewRule();
+        b.SetPattern("x");
+        Assert.False(b.CanSave);
+        b.SaveRule();
+        Assert.True(b.FormOpen);
+        Assert.Equal(ChatDeckLimits.MaxRules, m.Settings.Rules.Count);
+    }
 }
