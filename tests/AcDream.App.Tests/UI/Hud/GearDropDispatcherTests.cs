@@ -142,4 +142,85 @@ public sealed class GearDropDispatcherTests
         d.TakeOff(0xC1);
         Assert.Equal(["put C1 50000001 0"], a.Calls);
     }
+
+    [Fact]
+    public void DropOnCell_GroundStack_Merges()
+    {
+        var (t, a, d) = World();
+        Place(t, new ClientObject { ObjectId = 0xD1, WeenieClassId = 300, StackSize = 5, StackSizeMax = 100 }, Player, 1);
+        t.AddOrUpdate(new ClientObject { ObjectId = 0xD3, WeenieClassId = 300, StackSize = 9, StackSizeMax = 100, ContainerId = 0 });
+        d.DropOnCell(0xD3, Player, 0xD1, 1, fromGround: true);
+        Assert.Equal(["merge D3 D1"], a.Calls);
+    }
+
+    [Fact]
+    public void DropOnSlot_OffHandWeapon_WieldsSecondary()
+    {
+        var (_, a, d) = World();
+        d.DropOnSlot(Sword, EquipMask.Shield);
+        Assert.Equal(["secondary A1"], a.Calls);
+    }
+
+    [Fact]
+    public void DropOnSlot_NotReady_SendsNothing()
+    {
+        var (_, a, d) = World();
+        a.IsReady = false;
+        d.DropOnSlot(Sword, GearSlotCatalog.Weapon);
+        Assert.Empty(a.Calls);
+    }
+
+    [Fact]
+    public void TakeOff_NoRoom_Reports()
+    {
+        var (t, a, d) = World();
+        t.Get(Player)!.ItemsCapacity = 1;
+        t.Get(Bag)!.ItemsCapacity = 1;
+        Place(t, new ClientObject { ObjectId = 0xE1 }, Bag, 0);
+        t.AddOrUpdate(new ClientObject { ObjectId = 0xC1, WielderId = Player, ValidLocations = EquipMask.HeadWear });
+        // not indexed in the pack's contents: a worn item already in the pack would count as fitting
+        d.TakeOff(0xC1);
+        Assert.Single(a.Calls);
+        Assert.StartsWith("report", a.Calls[0]);
+    }
+
+    [Fact]
+    public void TakeOff_NotReady_SendsNothing()
+    {
+        var (t, a, d) = World();
+        t.AddOrUpdate(new ClientObject { ObjectId = 0xC1, WielderId = Player, ValidLocations = EquipMask.HeadWear });
+        Assert.True(t.MoveItem(0xC1, Player, -1, EquipMask.HeadWear));
+        a.IsReady = false;
+        d.TakeOff(0xC1);
+        Assert.Empty(a.Calls);
+    }
+
+    [Fact]
+    public void DropOnCell_NotReady_SendsNothing()
+    {
+        var (t, a, d) = World();
+        Place(t, new ClientObject { ObjectId = 0xD2, WeenieClassId = 301 }, Bag, 0);
+        a.IsReady = false;
+        d.DropOnCell(0xD2, Player, 0, 0, false);
+        Assert.Empty(a.Calls);
+    }
+
+    [Fact]
+    public void DropOnCell_FullPack_FallsThroughToTopOfRoomyPack()
+    {
+        var (t, a, d) = World();
+        t.Get(Player)!.ItemsCapacity = 1;      // sword fills the main pack
+        Place(t, new ClientObject { ObjectId = 0xD2, WeenieClassId = 301 }, Bag, 0);
+        d.DropOnCell(0xD2, Player, Sword, 0, false);
+        Assert.Equal(["put D2 B1 0"], a.Calls);
+    }
+
+    [Fact]
+    public void DropOnCell_Bag_GoesToMainPackTop()
+    {
+        var (t, a, d) = World();
+        Place(t, new ClientObject { ObjectId = 0xB2, Type = ItemType.Container, ItemsCapacity = 24 }, Player, 1);
+        d.DropOnCell(0xB2, Bag, 0, 0, false);
+        Assert.Equal(["put B2 50000001 0"], a.Calls);
+    }
 }

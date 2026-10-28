@@ -57,6 +57,7 @@ internal sealed class GearDropDispatcher(
     public void DropOnSlot(uint item, EquipMask slotMask)
     {
         if (slotMask == EquipMask.None || objects.Get(item) is not { } obj) return;
+        if (!actions.Ready()) return;
         if (ItemEquipRules.IsOffHandWeaponDrop(obj, slotMask))
         {
             actions.WieldSecondary(item);
