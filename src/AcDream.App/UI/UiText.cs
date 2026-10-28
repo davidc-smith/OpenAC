@@ -184,6 +184,9 @@ public sealed class UiText : UiElement, IUiDatStateful
     private Pos? _selCaret;
     private bool _selecting;
 
+    /// <summary>A drag-select is under way.</summary>
+    internal bool IsSelecting => _selecting;
+
     /// <summary>A selection endpoint pinned to the text under it rather than to a line index.</summary>
     private readonly record struct Anchored(long Source, int Offset);
 

@@ -31,6 +31,21 @@ public static class HudIcons
     public const string Key = "key";
     public const string Portal = "portal";
     public const string Character = "character";
+    public const string ChatAll = "chat-all";
+    public const string ChatLocal = "chat-local";
+    public const string ChatGroup = "chat-group";
+    public const string ChatSocial = "chat-social";
+    public const string ChatCombat = "chat-combat";
+    public const string ChatSystem = "chat-system";
+    public const string ChatLoot = "chat-loot";
+    public const string ChatStar = "chat-star";
+    public const string ChatTell = "chat-tell";
+    public const string ChatShield = "chat-shield";
+    public const string ChatScroll = "chat-scroll";
+    public const string ChatCoin = "chat-coin";
+    public const string Pin = "pin";
+    public const string Collapse = "collapse";
+    public const string Expand = "expand";
 
     public static IReadOnlyList<string> All { get; } =
     [
@@ -38,6 +53,9 @@ public static class HudIcons
         RecallLifestone, RecallMarketplace, RecallHouse, RecallMansion, RecallAllegiance,
         Search, ChevronDown,
         More, Follow, Trade, Give, Tell, PickUp, Open, Key, Portal, Character,
+        ChatAll, ChatLocal, ChatGroup, ChatSocial, ChatCombat, ChatSystem,
+        ChatLoot, ChatStar, ChatTell, ChatShield, ChatScroll, ChatCoin,
+        Pin, Collapse, Expand,
     ];
 }
 

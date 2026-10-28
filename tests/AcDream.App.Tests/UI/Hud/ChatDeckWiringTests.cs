@@ -33,6 +33,8 @@ public sealed class ChatDeckWiringTests : IDisposable
         public readonly RetailWindowLayoutPersistence Persistence;
         public readonly ModernHudSwitch Switch;
         public bool DeckMounted = true;
+        public ChatDeckModel? Model;
+        public (int Width, int Height) Screen = (1600, 900);
 
         public World(string path)
         {
@@ -53,16 +55,20 @@ public sealed class ChatDeckWiringTests : IDisposable
             Root.DefaultTextInput = RetailInput;
 
             var log = new ChatLog();
-            var model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
+            Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(
-                () => model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
-                () => null, () => false), fonts: null, icons: null);
+                () => Model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
+                () => null, () => false,
+                RestorePinnedPlacement: () => Persistence?.ApplyStoredPlacement(WindowNames.ChatDeck)), fonts: null, icons: null);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0), UiChatDeck.MountOptions(10f, 670f));
+            Root.AddChild(Deck.Strip);
+            Root.AddChild(Deck.Peek);
 
             Persistence = new RetailWindowLayoutPersistence(
-                Root.WindowManager, new SettingsStore(path), () => "Alice", () => (1600, 900),
+                Root.WindowManager, new SettingsStore(path), () => "Alice", () => Screen,
                 stateManagedVisibilityWindows: [WindowNames.CommandDeck, WindowNames.ChatDeck]);
             Persistence.RestoreAll();
+            Persistence.SetCaptureGate(WindowNames.ChatDeck, () => Deck.Pinned);
 
             Switch = new ModernHudSwitch(
                 Root.ShowWindow, Root.HideWindow, Root.IsWindowVisible, () => true,
@@ -144,5 +150,99 @@ public sealed class ChatDeckWiringTests : IDisposable
         Assert.Equal(ChatDeckGeometry.MinWidth, o.MinWidth);
         Assert.Equal(ChatDeckGeometry.MinHeight, o.MinHeight);
         Assert.False(o.Visible);
+    }
+
+    private UiWindowLayout SavedDeck() =>
+        new SettingsStore(_path).LoadWindowLayout("Alice", "1600x900", WindowNames.ChatDeck, default)!.Value;
+
+    private static void PressDeck(UiChatDeck deck, DeckRect r) =>
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseDown, Data1: (int)(r.X + 2), Data2: (int)(r.Y + 2)));
+
+    [Fact]
+    public void FlyoutMoves_StayOutOfTheLayout_StripPinPutsTheWindowBackWhereItWas()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Persistence.SaveAll();
+        Assert.Equal(10f, SavedDeck().X);
+
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+        w.Deck.EnterChatMode(null);
+        w.Deck.TickDrawer(0.2);
+        Assert.Equal(ChatDeckStripGeometry.Width, w.Deck.Left);
+        w.Persistence.SaveAll();
+        Assert.Equal(10f, SavedDeck().X);
+
+        w.Deck.Strip.OnEvent(new UiEvent(0, w.Deck.Strip, UiEventType.MouseDown,
+            Data1: (int)(w.Deck.StripGeometry.PinStud.X + 2), Data2: (int)(w.Deck.StripGeometry.PinStud.Y + 2)));
+        w.Persistence.SaveAll();
+        Assert.Equal(10f, SavedDeck().X);
+        Assert.Equal(10f, w.Deck.Left);
+    }
+
+    [Fact]
+    public void Collapsed_SurvivesTheSwitchTick_AndOffBringsTheRetailChatBack()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+
+        w.Switch.Tick();
+        Assert.False(w.Deck.Visible);
+        Assert.True(w.Deck.Strip.Visible);
+        Assert.False(w.Chat.Visible);
+
+        w.Switch.Apply(false);
+        Assert.False(w.Deck.Strip.Visible);
+        Assert.True(w.Chat.Visible);
+    }
+
+    [Fact]
+    public void CharacterSwitch_FromCollapsed_RestoresThePinnedCharactersPlace()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Persistence.SaveAll();                          // pinned at x 10
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+        w.Deck.Left = 500f;                               // a stale place the closed gate must not keep
+
+        w.Model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Alice");   // the next login, saved pinned
+        w.Deck.SyncDrawerFromModel();                     // what the session's ModelChanged does
+        w.Persistence.RestoreAll();
+
+        Assert.True(w.Deck.Pinned);
+        Assert.Equal(10f, w.Deck.Left);
+    }
+
+    [Fact]
+    public void Collapsed_FollowsTheSavedPlace_WhenTheScreenChangesAfterLogin()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        w.Persistence.SaveAll();                          // pinned at 10, 670 on 1600x900
+        PressDeck(w.Deck, w.Deck.Geometry.CollapseStud);
+        w.Persistence.SaveAll();
+
+        // The next login: the character list's smaller screen when the session starts...
+        w.Screen = (800, 600);
+        w.Root.Width = 800;
+        w.Root.Height = 600;
+        ChatDeckSettings saved = w.Model!.Settings;
+        w.Model = new ChatDeckModel(new ChatLog(), saved, "Alice");
+        w.Deck.SyncDrawerFromModel();
+        w.Persistence.RestoreAll();
+        w.Deck.FollowLayout();
+
+        // ...then the game's own size, reflowed.
+        w.Screen = (1600, 900);
+        w.Root.Width = 1600;
+        w.Root.Height = 900;
+        w.Persistence.ReflowToScreen();
+        w.Deck.FollowLayout();
+
+        Assert.False(w.Deck.Pinned);
+        Assert.Equal(10f, w.Deck.Left);
+        Assert.Equal(670f, w.Deck.Top);
+        Assert.Equal(MathF.Min(670f, 900f - w.Deck.Strip.Height), w.Deck.Strip.Top);
     }
 }
