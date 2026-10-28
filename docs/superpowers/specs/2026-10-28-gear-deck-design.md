@@ -101,8 +101,8 @@ List columns: icon, name, then up to two value columns. The value columns are th
 
 ## Delivery: one spec, four plans
 
-1. **Gear core**: Core projector and type groups; `UiGearDeck` window and geometry; Modern HUD switch; packs grid and list, side column and burden; drag and drop moves; Equipment section Slots view and folded row; double-click wear and remove; persistence.
-2. **Query**: query model, engine and suggester; query bar, chips and sort; flat results; saved filters; multi-select; right-click menu; "Add N to salvage".
+1. **Gear core**: Core projector; `UiGearDeck` window and geometry; Modern HUD switch; packs grid and list, side column and burden; drag and drop moves; Equipment section Slots view and folded row; double-click wear and remove; persistence.
+2. **Query**: type groups, query model, engine and suggester; query bar, chips and sort; flat results; saved filters; multi-select; right-click menu; "Add N to salvage".
 3. **Figure view**: 3D model in the Equipment section, the slot ring, drops on the body, and hover-highlighting matching pack items.
 4. **Organising**: `GearMoveQueue`; combine (button and on arrival); split picker; pack tidy; pack rules; locks (including the retail paths).
 
