@@ -280,6 +280,13 @@ public interface IUiRegistry
     IPluginWorldMarkers WorldMarkers => NoOpPluginWorldMarkers.Instance;
 
     /// <summary>
+    /// Rows and ⋯ menu actions this plugin adds to the Modern HUD Target Deck,
+    /// the plate that describes the selected object. Inert on a host that draws
+    /// nothing or while the Modern HUD is off (<see cref="IPluginTargetPlate.IsAvailable"/>).
+    /// </summary>
+    IPluginTargetPlate TargetPlate => NoOpPluginTargetPlate.Instance;
+
+    /// <summary>
     /// The plugin theme the player picked under Appearance, and its colours,
     /// so a canvas can draw like the plugin's themed windows. The host
     /// restyles markup windows itself; a canvas reads this and repaints on
@@ -465,6 +472,13 @@ public interface IScopedUiRegistry : IUiRegistry
     /// layer the plugin made.
     /// </summary>
     IPluginWorldMarkers WorldMarkersFor(PluginUiOwner owner) => NoOpPluginWorldMarkers.Instance;
+
+    /// <summary>
+    /// One plugin's target-plate surface, the same object on every call for the
+    /// same owner until it is disposed; disposing it removes every provider the
+    /// plugin added.
+    /// </summary>
+    IPluginTargetPlate TargetPlateFor(PluginUiOwner owner) => NoOpPluginTargetPlate.Instance;
 
     /// <summary>Registers a canvas on behalf of one plugin; see <see cref="IUiRegistry.RegisterCanvas"/>.</summary>
     /// <param name="owner">The plugin the canvas belongs to.</param>

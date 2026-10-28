@@ -7,7 +7,8 @@ namespace AcDream.App.UI;
 /// </summary>
 /// <param name="root">The interface the window is added to.</param>
 /// <param name="build">Builds the window, given what closes it (for its own Close button).</param>
-internal sealed class PluginAppearanceWindow(UiRoot root, Func<Action, UiElement> build)
+/// <param name="onOpen">Called with the window on every open, just before it is shown (to place it).</param>
+internal sealed class PluginAppearanceWindow(UiRoot root, Func<Action, UiElement> build, Action<UiElement>? onOpen = null)
 {
     private UiElement? _window;
 
@@ -27,6 +28,7 @@ internal sealed class PluginAppearanceWindow(UiRoot root, Func<Action, UiElement
             _window = build(Close);
             root.AddChild(_window);
         }
+        onOpen?.Invoke(_window);
         _window.Visible = true;
         root.BringToFront(_window);
     }

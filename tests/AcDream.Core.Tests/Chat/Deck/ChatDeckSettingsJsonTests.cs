@@ -219,4 +219,41 @@ public sealed class ChatDeckSettingsJsonTests
             """{"rules":[{"id":"c1","kind":"Contains","field":"Text","action":"ColourLine","pattern":"x","colour":"nope"}]}""");
         Assert.Equal(ChatDeckDefaults.MyNameColour, settings.Rules.Single(r => r.Id == "c1").Colour);
     }
+
+    [Fact]
+    public void Layout_RoundTrips()
+    {
+        ChatDeckSettings settings = ChatDeckDefaults.Create() with
+        {
+            Layout = new ChatDeckLayoutState { Pinned = false, Edge = ChatDeckEdge.Right, LastTabId = "group" },
+        };
+        ChatDeckSettings back = ChatDeckSettingsJson.Parse(ChatDeckSettingsJson.Serialize(settings, null)).Settings;
+        Assert.Equal(settings.Layout, back.Layout);
+    }
+
+    [Fact]
+    public void Keys_RoundTrip_AndKeepUnknownFields()
+    {
+        ChatDeckSettings s = ChatDeckDefaults.Create() with { Keys = new ChatDeckKeys { NextTab = "Ctrl+Alt+N", PreviousTab = "Ctrl+Alt+P" } };
+        string json = ChatDeckSettingsJson.Serialize(s, """{"keys":{"future":1}}""");
+        Assert.Contains("\"future\":1", json);
+        ChatDeckSettings back = ChatDeckSettingsJson.Parse(json).Settings;
+        Assert.Equal("Ctrl+Alt+N", back.Keys.NextTab);
+        Assert.Equal("Ctrl+Alt+P", back.Keys.PreviousTab);
+    }
+
+    [Fact]
+    public void Keys_MissingObject_LoadsEmpty()
+    {
+        ChatDeckSettings back = ChatDeckSettingsJson.Parse("""{"version":1}""").Settings;
+        Assert.Equal("", back.Keys.NextTab);
+        Assert.Equal("", back.Keys.PreviousTab);
+    }
+
+    [Fact]
+    public void Keys_TooLong_NormalizeToUnbound()
+    {
+        var s = ChatDeckDefaults.Create() with { Keys = new ChatDeckKeys { NextTab = new string('A', 41) } };
+        Assert.Equal("", ChatDeckSettingsNormalizer.Normalize(s).Keys.NextTab);
+    }
 }

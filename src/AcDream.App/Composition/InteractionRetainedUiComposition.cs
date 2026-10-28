@@ -79,7 +79,8 @@ internal sealed record InteractionRetainedUiDependencies(
     AcDream.Runtime.Plugins.RuntimeAutomationSurface? Automation = null,
     Func<GameplayInputFrameController?>? GameplayInputFrame = null,
     string? JournalDirectory = null,
-    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null)
+    AcDream.App.World.LiveWorldOriginState? WorldOrigin = null,
+    AcDream.App.Audio.UiSoundController? UiSounds = null)
 {
     public RuntimeActionState Actions => Runtime.ActionOwner;
 
@@ -1105,6 +1106,18 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                     Enabled: () => modernHud,
                     ToggleCombat: d.CombatModeCommands.Toggle,
                     Recall: command => late.GameRuntime.Recall(command)),
+                TargetDeck: new TargetDeckRuntimeBindings(
+                    Enabled: () => modernHud,
+                    Combat: d.Actions.Combat,
+                    PlayerLevel: () => d.Character.LocalPlayer.Properties.GetInt((uint)PropertyInt.Level),
+                    DistanceMeters: guid => TargetDistanceMeters(d.Runtime, d.PlayerIdentity.ServerGuid, guid),
+                    // The item the use-with-target mode is holding: what "use on" and "give" act with.
+                    SelectedPackItem: () => itemInteraction.PendingSourceItem,
+                    IsFellow: guid => d.Runtime.Fellowship.GetMembers().Any(m => m.Guid == guid),
+                    Follow: guid => d.Automation?.Navigation.Follow(
+                            guid, AcDream.Runtime.Navigation.RuntimeNavigationAutomation.DefaultFollowMeters)
+                        == AcDream.Plugin.Abstractions.PluginNavigationCommandStatus.Accepted),
+                PlayUiSound: d.UiSounds is { } uiSounds ? sound => uiSounds.Play(sound) : null,
                 PluginCanvases: new PluginCanvasHostServices(
                     d.GpuDevice,
                     d.GpuFrameSource,
@@ -1166,6 +1179,25 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
     }
 
     public void Release(IDisposable resource) => resource.Dispose();
+
+    /// <summary>
+    /// Metres from the player to an object, measured the way the hostile-target
+    /// query measures it (each entity's simulated body, else the server's last
+    /// word); null while either has no known position.
+    /// </summary>
+    private static float? TargetDistanceMeters(GameRuntime runtime, uint playerGuid, uint guid)
+    {
+        AcDream.Runtime.Entities.RuntimeEntityDirectory entities = runtime.EntityObjects.Entities;
+        if (playerGuid == 0u
+            || !entities.TryGetActive(playerGuid, out AcDream.Runtime.Entities.RuntimeEntityRecord player)
+            || !entities.TryGetActive(guid, out AcDream.Runtime.Entities.RuntimeEntityRecord target)
+            || !AcDream.Runtime.Physics.RuntimePhysicsState.TryGetAbsoluteWorldPosition(player, out System.Numerics.Vector3 from)
+            || !AcDream.Runtime.Physics.RuntimePhysicsState.TryGetAbsoluteWorldPosition(target, out System.Numerics.Vector3 to))
+        {
+            return null;
+        }
+        return System.Numerics.Vector3.Distance(from, to);
+    }
 
     private static void TryRelease(
         ref IDisposable? resource,

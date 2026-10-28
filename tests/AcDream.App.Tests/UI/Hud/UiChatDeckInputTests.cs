@@ -94,6 +94,49 @@ public sealed class UiChatDeckInputTests
     }
 
     [Fact]
+    public void ExtraTabKeys_CycleTabs_PlainKeyStillTypes()
+    {
+        var h = new Harness();
+        h.Model!.SetKeys(new ChatDeckKeys { NextTab = "Ctrl+Alt+N", PreviousTab = "Ctrl+Alt+P" });
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.AltLeft);
+        Key(h.Deck.Input, Silk.NET.Input.Key.N);
+        Assert.Equal("local", h.Model.SelectedTabId);
+        Key(h.Deck.Input, Silk.NET.Input.Key.P);
+        Assert.Equal(ChatDeckDefaults.AllTabId, h.Model.SelectedTabId);
+
+        h.Keyboard.Held.Clear();
+        Key(h.Deck.Input, Silk.NET.Input.Key.N);
+        Assert.Equal(ChatDeckDefaults.AllTabId, h.Model.SelectedTabId);
+    }
+
+    [Fact]
+    public void ShiftOnlyExtraKey_CyclesAndDoesNotAlsoType()
+    {
+        var h = new Harness();
+        h.Model!.SetKeys(new ChatDeckKeys { NextTab = "Shift+N" });
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.ShiftLeft);
+        Key(h.Deck.Input, Silk.NET.Input.Key.N);
+        h.Deck.Input.OnEvent(new UiEvent(0, h.Deck.Input, UiEventType.Char, Data0: 'N'));
+        Assert.Equal("local", h.Model.SelectedTabId);
+        Assert.Equal("", h.Deck.Input.Text);
+
+        // The swallowed Char is one-shot: the next typed character lands.
+        h.Deck.Input.OnEvent(new UiEvent(0, h.Deck.Input, UiEventType.Char, Data0: 'x'));
+        Assert.Equal("x", h.Deck.Input.Text);
+    }
+
+    [Fact]
+    public void UnboundOrUnreadableKeys_MatchNothing()
+    {
+        var h = new Harness();
+        h.Model!.SetKeys(new ChatDeckKeys { NextTab = "Ctrl+Nonsense" });
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);
+        Key(h.Deck.Input, Silk.NET.Input.Key.N);
+        Assert.Equal(ChatDeckDefaults.AllTabId, h.Model.SelectedTabId);
+    }
+
+    [Fact]
     public void CtrlTab_CyclesTabs()
     {
         var h = new Harness();
@@ -250,5 +293,18 @@ public sealed class UiChatDeckInputTests
         float widest = ChatDeckSend.All.Max(c => font.MeasureWidth(ChatDeckSend.DisplayName(c)));
         Assert.True(widest > 0f);
         Assert.True(h.Deck.ChipMenu.PopupScreenRect.W >= widest + 2f * UiMarkupContextMenu.TextIndent);
+    }
+
+    [Fact]
+    public void CommandChord_CyclesAndDoesNotType()
+    {
+        var h = new Harness();
+        h.Model!.SetKeys(new ChatDeckKeys { NextTab = "Ctrl+Cmd+M" });
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.ControlLeft);
+        h.Keyboard.Held.Add(Silk.NET.Input.Key.SuperLeft);
+        Key(h.Deck.Input, Silk.NET.Input.Key.M);
+        h.Deck.Input.OnEvent(new UiEvent(0, h.Deck.Input, UiEventType.Char, Data0: 'm'));
+        Assert.Equal("local", h.Model.SelectedTabId);
+        Assert.Equal("", h.Deck.Input.Text);
     }
 }

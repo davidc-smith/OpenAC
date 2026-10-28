@@ -5,6 +5,17 @@ namespace AcDream.Core.Tests.Chat.Deck;
 public sealed class ChatDeckSettingsTests
 {
     [Fact]
+    public void KeyWithoutAModifier_NormalizesToUnbound()
+    {
+        ChatDeckSettings s = ChatDeckSettingsNormalizer.Normalize(ChatDeckDefaults.Create() with
+        {
+            Keys = new ChatDeckKeys { NextTab = "N", PreviousTab = " Ctrl+P " },
+        });
+        Assert.Equal("", s.Keys.NextTab);
+        Assert.Equal("Ctrl+P", s.Keys.PreviousTab);
+    }
+
+    [Fact]
     public void Defaults_MatchTheSpec()
     {
         ChatDeckSettings s = ChatDeckDefaults.Create();

@@ -1,4 +1,5 @@
 using System.Numerics;
+using AcDream.App.UI.Markup;
 using AcDream.Core.Chat.Deck;
 using AcDream.Runtime.Chat;
 using AcDream.UI.Abstractions.Input;
@@ -37,6 +38,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         };
         Input.TextReplacer = text => ChatTextReplacements.Expand(text, _b.LastIncomingTellSender());
         Input.OnSubmit = Send;
+        Input.OnEscape = EndEntry;
         Input.OnTextChanged = text => _b.Entry.SetDraft(text);
         Input.OnControlKey = (key, shift) => key == Silk.NET.Input.Key.Tab && CycleTab(shift ? -1 : 1);
         // macOS keeps Tab for itself while Ctrl is held, so Option+Cmd+Left/Right as well.
@@ -46,6 +48,9 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
             Silk.NET.Input.Key.Left => CycleTab(-1),
             _ => false,
         };
+        Input.OnChordKey = (key, mods) =>
+            Matches(_model?.Settings.Keys.NextTab, key, mods) ? CycleTab(1)
+            : Matches(_model?.Settings.Keys.PreviousTab, key, mods) && CycleTab(-1);
         _b.Entry.DraftChanged += OnDraftChanged;
         Input.ShowText(_b.Entry.Draft);
 
@@ -64,7 +69,11 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
     internal void Detach()
     {
         _b.Entry.DraftChanged -= OnDraftChanged;
-        if (_model is not null) _model.Cleared -= ResetView;
+        if (_model is not null)
+        {
+            _model.Cleared -= ResetView;
+            _model.LinesDelivered -= OnLinesDelivered;
+        }
     }
 
     private void OnDraftChanged(string text)
@@ -99,7 +108,12 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         ChatChannelKind channel = ChatDeckSend.ToKind(SendChannel);
         _override = null;
         _b.Entry.SubmitTo(text, channel, _b.Feedback, _b.Bus());
+        EndEntry();
     }
+
+    /// <summary>Whether a saved hotkey string is exactly this key and these modifiers.</summary>
+    private static bool Matches(string? hotkey, Silk.NET.Input.Key key, ModifierMask mods) =>
+        MarkupHotkeyText.Parse(hotkey, allowCommand: true) is { } chord && chord.Key == key && chord.Modifiers == mods;
 
     private bool CycleTab(int step)
     {
@@ -124,6 +138,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
 
     public void EnterChatMode(KeyChord? physicalChord)
     {
+        RevealForEntry();
         UiRoot? root = FindRoot();
         root?.SetKeyboardFocus(Input);
         if (physicalChord is { Device: 0 } chord)
@@ -134,19 +149,24 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
     public void ToggleChatEntry(KeyChord? physicalChord)
     {
         if (FindRoot() is not { } root) return;
-        root.SetKeyboardFocus(ReferenceEquals(root.KeyboardFocus, Input) ? null : Input);
+        bool focused = ReferenceEquals(root.KeyboardFocus, Input);
+        if (!focused) RevealForEntry();
+        root.SetKeyboardFocus(focused ? null : Input);
         if (physicalChord is { Device: 0 } chord)
             root.SuppressPhysicalKeyUntilRelease(chord.Key);
+        if (focused) EndEntry();
     }
 
     public void StartCommand()
     {
+        RevealForEntry();
         Input.SetText("/");
         FindRoot()?.SetKeyboardFocus(Input);
     }
 
     public void StartTell(string name)
     {
+        RevealForEntry();
         Input.SetText($"@tell {name}, ");
         FindRoot()?.SetKeyboardFocus(Input);
     }
@@ -159,6 +179,7 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
     public bool Focus()
     {
         if (FindRoot() is not { } root) return false;
+        RevealForEntry();
         root.SetKeyboardFocus(Input);
         return true;
     }
