@@ -448,6 +448,40 @@ public sealed class RetailUiRuntime : IDisposable
     private bool _spellDeckClickCasts;
     private Hud.EmbeddedSvgSpriteCache? _hudIcons;
     private Hud.UiChatDeck? _chatDeck;
+    private Func<KeyChord, string>? _describeKey;
+    private Func<KeyChord, string> DescribeKey()
+    {
+        if (_describeKey is not null) return _describeKey;
+        Layout.RetailKeyNames keyNames;
+        lock (_bindings.Assets.DatLock)
+        {
+            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
+            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
+        }
+        return _describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
+        {
+            lock (_bindings.Assets.DatLock)
+                return keyNames.Describe(key);
+        });
+    }
+
+    private PluginAppearanceWindow? _chatDeckSettings;
+
+    private void ToggleChatDeckSettings()
+    {
+        _chatDeckSettings ??= new PluginAppearanceWindow(Host.Root, close =>
+            MarkupDocument.Build(Hud.ChatDeckSettingsBinding.Markup,
+                new Hud.ChatDeckSettingsBinding(() => _chatDeckSession?.Model) { Close = close },
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: _pluginThemes, describeKey: DescribeKey()));
+        _chatDeckSettings.Toggle();
+    }
+
+    private void CloseChatDeckSettings()
+    {
+        if (_chatDeckSettings is { IsOpen: true } open) open.Toggle();
+    }
+
     private Hud.ChatDeckSession? _chatDeckSession;
     private CharacterManagementUiMountCoordinator? _characterManagementMount;
     private ConnectionUiMountCoordinator? _connectionMount;
@@ -562,6 +596,7 @@ public sealed class RetailUiRuntime : IDisposable
                     },
                     OnHidden: () =>
                     {
+                        CloseChatDeckSettings();
                         _chatDeck?.OnHidden();
                         if (_chatDeck is not null && ReferenceEquals(Host.Root.DefaultTextInput, _chatDeck.Input))
                             Host.Root.DefaultTextInput = null;
@@ -3646,7 +3681,9 @@ public sealed class RetailUiRuntime : IDisposable
                     LinkClicked: _bindings.Chat.LinkClicked,
                     Keyboard: Host.Keyboard,
                     RestorePinnedPlacement: () => _persistence?.ApplyStoredPlacement(WindowNames.ChatDeck),
-                    PlayAlert: _bindings.PlayUiSound is { } play ? () => play(Hud.ChatDeckAlertBeep.Sound) : null),
+                    PlayAlert: _bindings.PlayUiSound is { } play ? () => play(Hud.ChatDeckAlertBeep.Sound) : null,
+                    OpenSettings: ToggleChatDeckSettings,
+                    SettingsOpen: () => _chatDeckSettings?.IsOpen == true),
                 _deckFonts,
                 _hudIcons);
 
@@ -4611,17 +4648,7 @@ public sealed class RetailUiRuntime : IDisposable
 
         // Hotkey boxes show keys by the game's own names. The table reads go
         // through the dat lock like every other plugin-thread dat read.
-        Layout.RetailKeyNames keyNames;
-        lock (_bindings.Assets.DatLock)
-        {
-            var keyStrings = new DatStringResolver(_bindings.Assets.Dats);
-            keyNames = new Layout.RetailKeyNames((tableId, stringId) => keyStrings.Resolve(tableId, stringId));
-        }
-        Func<KeyChord, string> describeKey = chord => MarkupHotkeyText.Describe(chord, key =>
-        {
-            lock (_bindings.Assets.DatLock)
-                return keyNames.Describe(key);
-        });
+        Func<KeyChord, string> describeKey = DescribeKey();
 
         // Colour pickers upload their gradients while open and give them back on close.
         var markupTextures = new RetailMarkupTextureService(_bindings.Assets.TextureCache);

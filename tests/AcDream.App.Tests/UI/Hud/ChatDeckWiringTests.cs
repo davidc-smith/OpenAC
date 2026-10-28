@@ -34,6 +34,7 @@ public sealed class ChatDeckWiringTests : IDisposable
         public readonly ModernHudSwitch Switch;
         public bool DeckMounted = true;
         public ChatDeckModel? Model;
+        public readonly PluginAppearanceWindow SettingsWindow;
         public (int Width, int Height) Screen = (1600, 900);
 
         public World(string path)
@@ -54,12 +55,15 @@ public sealed class ChatDeckWiringTests : IDisposable
             Root.RegisterWindow(WindowNames.CommandDeck, CommandDeck, CommandDeck, null);
             Root.DefaultTextInput = RetailInput;
 
+            SettingsWindow = new PluginAppearanceWindow(Root, close =>
+                MarkupDocument.Build(ChatDeckSettingsBinding.Markup, new ChatDeckSettingsBinding(() => Model) { Close = close }, _ => (0u, 0, 0)));
             var log = new ChatLog();
             Model = new ChatDeckModel(log, ChatDeckDefaults.Create(), "Alice");
             Deck = new UiChatDeck(new ChatDeckBindings(
                 () => Model, new RuntimeChatEntryOwner(), new UiChatDeckTests.Feedback(), () => new UiChatDeckTests.RecordingBus(),
                 () => null, () => false,
-                RestorePinnedPlacement: () => Persistence?.ApplyStoredPlacement(WindowNames.ChatDeck)), fonts: null, icons: null);
+                RestorePinnedPlacement: () => Persistence?.ApplyStoredPlacement(WindowNames.ChatDeck),
+                OpenSettings: () => SettingsWindow.Toggle(), SettingsOpen: () => SettingsWindow.IsOpen), fonts: null, icons: null);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0), UiChatDeck.MountOptions(10f, 670f));
             Root.AddChild(Deck.Strip);
             Root.AddChild(Deck.Peek);
@@ -80,6 +84,7 @@ public sealed class ChatDeckWiringTests : IDisposable
                         OnShown: () => { Deck.OnShown(); Root.DefaultTextInput = Deck.Input; },
                         OnHidden: () =>
                         {
+                            if (SettingsWindow.IsOpen) SettingsWindow.Toggle();
                             Deck.OnHidden();
                             if (ReferenceEquals(Root.DefaultTextInput, Deck.Input)) Root.DefaultTextInput = null;
                         },
@@ -89,6 +94,20 @@ public sealed class ChatDeckWiringTests : IDisposable
                 releaseVisibility: Persistence.ReleaseVisibility,
                 log: _ => { });
         }
+    }
+
+    [Fact]
+    public void SettingsStud_TogglesThePopup_AndHidingTheDeckClosesIt()
+    {
+        var w = new World(_path);
+        w.Switch.Apply(true);
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        Assert.True(w.SettingsWindow.IsOpen);
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        Assert.False(w.SettingsWindow.IsOpen);
+        PressDeck(w.Deck, w.Deck.Geometry.SettingsStud);
+        w.Switch.Apply(false);
+        Assert.False(w.SettingsWindow.IsOpen);
     }
 
     private bool SavedChatVisible() =>
